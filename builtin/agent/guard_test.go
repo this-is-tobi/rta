@@ -71,14 +71,14 @@ func TestAOneShotAllowNeedsNoPassphraseUnderTheGuard(t *testing.T) {
 	}
 }
 
-// A --ttl answer whose grant will not be issued — a folder-shaped record, or
-// more than one — asks for no passphrase: the refusal is known before
-// anybody types, the call itself is released passphrase-free as any
+// A --ttl answer whose grants will not be issued — a folder-shaped record,
+// alone or among others — asks for no passphrase: the refusal is known
+// before anybody types, the call itself is released passphrase-free as any
 // one-shot answer is, and the answer says why no grant stands.
 func TestATTLThatIssuesNothingAsksNoPassphraseUnderTheGuard(t *testing.T) {
 	for name, records := range map[string][]string{
-		"a folder":    {"prod/"},
-		"two records": {"db-password", "prod-token"},
+		"a folder":           {"prod/"},
+		"a folder among two": {"db-password", "prod/"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			isolate(t)
@@ -91,5 +91,27 @@ func TestATTLThatIssuesNothingAsksNoPassphraseUnderTheGuard(t *testing.T) {
 				t.Fatalf("a grant was issued: %+v", grants)
 			}
 		})
+	}
+}
+
+// A call naming several records costs one passphrase for all the grants it
+// is answered with, each of them signed.
+func TestATTLOnSeveralRecordsUnderTheGuardSignsEachGrant(t *testing.T) {
+	isolate(t)
+	guardOn(t)
+	r := park(t, "kv.rename", "db-password", "db-password-old")
+	c := capability(t, "agent.allow")
+	tui := plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{
+		Caller: map[string]any{"id": r.ID, "ttl": "15m", "passphrase": "correct horse"},
+	}), false, false).WithSurface(plugin.SurfaceTUI)
+	if _, err := c.Run(t.Context(), tui); err != nil {
+		t.Fatal(err)
+	}
+	grants, verr := grant.Load()
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if len(grants) != 2 || grants[0].Sig == "" || grants[1].Sig == "" {
+		t.Fatalf("loaded %+v, want two signed grants", grants)
 	}
 }

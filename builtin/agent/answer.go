@@ -73,11 +73,7 @@ func AnswerRemote(agent string) func(spec operatorid.AnswerSpec, label string) (
 		// machine checking its local policy file would be checking the wrong
 		// team's rules.
 		if spec.Allow {
-			scope := ""
-			if len(r.Scopes) == 1 {
-				scope = r.Scopes[0]
-			}
-			if verr := grant.CheckCeiling(r.Cap, scope, r.Profile); verr != nil {
+			if verr := checkCeiling(r); verr != nil {
 				return operatorid.AnswerOutcome{}, verr
 			}
 		}

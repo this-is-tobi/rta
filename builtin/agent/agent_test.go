@@ -15,6 +15,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/grant"
+	operatorid "github.com/this-is-tobi/rta/internal/operator"
 	"github.com/this-is-tobi/rta/internal/policy"
 	"github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -282,32 +283,118 @@ func TestAllowIsRefusedWhenTheTeamCeilingForbidsTheTarget(t *testing.T) {
 	}
 }
 
-func TestATTLIsRefusedWhenNoSingleGrantWouldCoverTheCall(t *testing.T) {
+// The team's ceiling holds a call by each record it names, as it holds a
+// grant. A call naming two — every kv.rename, whose destination is a record
+// too — was checked as naming none, so `requireScope: [kv.rename]` read the
+// answer as a grant naming no record and refused a call that named two.
+// A record the ceiling forbids still refuses the call, whichever it is.
+func TestAOneShotAllowHoldsEachRecordToTheCeiling(t *testing.T) {
 	isolate(t)
-	// Two records in one call: a standing grant either misses one or
-	// widens to the whole capability, and widening is not what --ttl asked
-	// for.
-	r := park(t, "kv.get", "db-password", "prod-token")
+	withPolicy(t, "requireScope:\n  - kv.rename\n")
+	r := park(t, "kv.rename", "db-password", "db-password-old")
+	v, err := run(t, "agent.allow", map[string]any{"id": r.ID})
+	if err != nil {
+		t.Fatalf("a call naming both its records was refused as naming none: %v", err)
+	}
+	if pairs := v.(view.KeyValue).Pairs; pairs[0].Value != "kv.rename db-password db-password-old" {
+		t.Errorf("answered %+v", pairs)
+	}
+
+	withPolicy(t, "neverProfile:\n  - prod\n")
+	p, err := consent.Ask(consent.Call{
+		Cap: "kv.rename", Safety: "write", Scopes: []string{"a", "b"}, Profile: "prod",
+		Args: map[string]any{"key": "a"}, Why: "no active grant",
+	}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+	var ve *view.Error
+	if _, err := run(t, "agent.allow", map[string]any{"id": p.Request.ID}); !errors.As(err, &ve) ||
+		ve.Code != "grant.policy.refused" {
+		t.Fatalf("a call on a forbidden connection: %v, want the policy refusal", err)
+	}
+}
+
+// The same ceiling, answered over the operator channel: the server holds a
+// remote "yes" to its own policy, record by record, as it holds a local one.
+func TestARemoteAllowHoldsEachRecordToTheCeiling(t *testing.T) {
+	isolate(t)
+	withPolicy(t, "requireScope:\n  - kv.rename\n")
+	p, err := consent.Ask(consent.Call{
+		Cap: "kv.rename", Safety: "write", Scopes: []string{"db-password", "db-password-old"}, Agent: "lab",
+		Args: map[string]any{"key": "db-password"}, Why: "no active grant",
+	}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+	spec := operatorid.AnswerSpec{ID: p.Request.ID, Digest: p.Request.Call().Digest(), Allow: true}
+	if _, verr := AnswerRemote("lab")(spec, "tobi"); verr != nil {
+		t.Fatalf("a remote answer naming both records was refused as naming none: %v", verr)
+	}
+}
+
+// A call naming several records — two keys, or a kv.rename's key and where
+// it goes — gets a grant for each with --ttl, and nothing wider: no grant
+// naming no record, which would cover the whole capability, and no folder.
+// It was refused outright, so a --ttl answer to a parked kv.rename, which
+// always names two, never issued anything.
+func TestATTLOnACallNamingSeveralRecordsGrantsEachOfThem(t *testing.T) {
+	isolate(t)
+	r := park(t, "kv.rename", "db-password", "db-password-old")
 	v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "15m"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	kv := v.(view.KeyValue)
-	joined := ""
-	for _, p := range kv.Pairs {
-		joined += p.Key + "=" + p.Value + ";"
+	pairs := map[string]string{}
+	for _, p := range v.(view.KeyValue).Pairs {
+		pairs[p.Key] = p.Value
 	}
-	if !strings.Contains(joined, "not issued") {
-		t.Fatalf("a multi-record --ttl said nothing about the grant: %s", joined)
+	if pairs["grant"] != "" || !strings.Contains(pairs["for"], "kv.rename db-password and kv.rename db-password-old for the next 15m") {
+		t.Errorf("answered %+v, want both records granted for 15m", pairs)
 	}
-	// The call itself is still allowed — the operator answered the
-	// question they were asked.
-	if !strings.Contains(joined, "allowed=") {
-		t.Fatalf("the call was not allowed: %s", joined)
+	grants, verr := grant.Load()
+	if verr != nil {
+		t.Fatal(verr)
 	}
-	grants, _ := grant.Load()
-	if len(grants) != 0 {
-		t.Fatalf("a grant was issued anyway: %+v", grants)
+	var scopes []string
+	for _, g := range grants {
+		if g.Target != "kv.rename" {
+			t.Errorf("a grant on %s", g.Target)
+		}
+		scopes = append(scopes, g.Scope)
+	}
+	if strings.Join(scopes, " ") != "db-password db-password-old" {
+		t.Errorf("grants name %q, want one for each record the call named", scopes)
+	}
+}
+
+// One of the records a folder, and no grant at all: the folder's width is
+// grant.allow's decision, said out loud, and the answer hands over the calls
+// that would cover every record, the folder among them.
+func TestATTLOnSeveralRecordsOneAFolderGrantsNone(t *testing.T) {
+	isolate(t)
+	r := park(t, "kv.rename", "prod/", "scratch/db-password")
+	v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "1h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairs := map[string]string{}
+	for _, p := range v.(view.KeyValue).Pairs {
+		pairs[p.Key] = p.Value
+	}
+	if pairs["for"] != "this call only" || !strings.Contains(pairs["grant"], "not issued") ||
+		!strings.Contains(pairs["grant"], `"prod/"`) {
+		t.Errorf("answered %+v, want the call alone allowed and the folder named", pairs)
+	}
+	for _, want := range []string{"rta grant allow kv.rename prod/ --ttl 1h", "rta grant allow kv.rename scratch/db-password --ttl 1h"} {
+		if !strings.Contains(pairs["next"], want) {
+			t.Errorf("next = %q, want it to name %q", pairs["next"], want)
+		}
+	}
+	if grants, _ := grant.Load(); len(grants) != 0 {
+		t.Fatalf("a grant was issued: %+v", grants)
 	}
 }
 

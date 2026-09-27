@@ -229,10 +229,11 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Summary: "Allow one parked call",
 				Description: "Authorizes exactly the call the request names, and nothing else — " +
 					"the agent's call proceeds, and no standing state is created. With `ttl` it " +
-					"also issues the grant you would have typed (same target, same record, same " +
-					"connection), which is worth doing when the same question is about to be asked " +
-					"five more times. Never reachable over MCP: an agent that could answer its own " +
-					"request would make the whole mechanism theatre. With `server`: answers " +
+					"also issues the grants you would have typed (same target, same connection, one " +
+					"for each record the call names and none wider), which is worth doing when the " +
+					"same question is about to be asked five more times. Never reachable over MCP: " +
+					"an agent that could answer its own request would make the whole mechanism " +
+					"theatre. With `server`: answers " +
 					"a call parked on a remote rta server as a signed operator call — every remote " +
 					"answer costs your operator key's passphrase, one-shot included, because the " +
 					"local one-shot's shell-equivalence argument does not travel a network.",
@@ -1035,11 +1036,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// approval is minted, rather than duplicated where the call gets parked —
 	// a second gate that could disagree with this one is the mistake
 	// checkAgainst's own comment (internal/grant/grant.go) already names.
-	scope := ""
-	if len(r.Scopes) == 1 {
-		scope = r.Scopes[0]
-	}
-	if verr := grant.CheckCeiling(r.Cap, scope, r.Profile); verr != nil {
+	if verr := checkCeiling(r); verr != nil {
 		return nil, verr
 	}
 	// The guard, before the decision and not after: answering consumes the
@@ -1095,8 +1092,14 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 			// The call is already allowed; a bad --ttl must not read as if
 			// nothing happened. The hint beside it, since the grant that was
 			// not issued is often one the operator can still issue on
-			// purpose, and the hint is how.
-			pairs = append(pairs, view.Pair{Key: "grant", Value: "not issued: " + verr.Message})
+			// purpose, and the hint is how. A note beside a failure is the
+			// grants issued before one failed, which stand.
+			failed := "not issued: "
+			if note != "" {
+				pairs[1] = view.Pair{Key: "for", Value: note}
+				failed = "not all issued: "
+			}
+			pairs = append(pairs, view.Pair{Key: "grant", Value: failed + verr.Message})
 			if verr.Hint != "" {
 				pairs = append(pairs, view.Pair{Key: "next", Value: verr.Hint})
 			}
@@ -1115,59 +1118,115 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	return view.KeyValue{Pairs: pairs}, nil
 }
 
-// noNarrowGrant refuses a --ttl answer no one grant can keep to this call's
-// record, or answers nil when one can. Each case is a width the operator was
-// never shown: the question they answered named one call and its records.
-//
-//   - More than one record in a single call is not something a standing
-//     grant can express narrowly, and widening it to the whole capability
-//     is not what the operator asked for by typing --ttl.
-//   - A record ending in a slash is a folder to the grant matcher
-//     (grant.IsFolderScope), "https://" included. The agent chose that
-//     record, a grant on it covers every record under it, those not yet
-//     written included, and the pending list, the request's page and the
-//     answer all named it as one record — so an agent parking kv.get on
-//     "prod/" came away, one --ttl later, with every secret under prod/,
-//     and one parking http.get on "https://" with the whole web. A folder
-//     is grant.allow's decision, where the width is said out loud, and the
-//     hint is that call.
-func noNarrowGrant(sf plugin.Surface, r consent.Request, ttl string) *view.Error {
-	if len(r.Scopes) > 1 {
-		return view.Errorf("agent.allow.ttl",
-			"this call names %d records, so there is no single grant that covers it and nothing else", len(r.Scopes))
+// checkCeiling holds a parked call to the team's ceiling as a grant for it
+// would be held: record by record, every one it names. It was asked with the
+// call's record when there was one and with none otherwise, so a call naming
+// two — every kv.rename, whose ScopeAlso names where the key goes — was read
+// as a grant naming no record, and `requireScope: [kv.rename]` refused a
+// call that named both of its own.
+func checkCeiling(r consent.Request) *view.Error {
+	for _, scope := range records(r) {
+		if verr := grant.CheckCeiling(r.Cap, scope, r.Profile); verr != nil {
+			return verr
+		}
 	}
-	if len(r.Scopes) == 0 || !grant.IsFolderScope(r.Scopes[0]) {
-		return nil
-	}
-	scope := r.Scopes[0]
-	// Refused as grant.allow would refuse it, before the hint below hands
-	// the operator a grant.allow call that would only be refused in turn.
-	if verr := grant.CheckScope(scope); verr != nil {
-		return verr
-	}
-	args := []plugin.Arg{
-		{Name: "target", Value: r.Cap, Positional: true},
-		{Name: "scope", Value: scope, Positional: true},
-	}
-	if r.Profile != "" {
-		args = append(args, plugin.Arg{Name: "profile", Value: r.Profile})
-	}
-	if r.Agent != "" {
-		args = append(args, plugin.Arg{Name: "agent", Value: r.Agent})
-	}
-	args = append(args, plugin.Arg{Name: "ttl", Value: ttl})
-	return view.Errorf("agent.allow.folder",
-		"%q ends in a slash, so a grant on it would cover every record under it, not this call's alone", scope).
-		WithHint("`" + sf.Call("grant.allow", args...) + "` issues that, if every record under it is what you mean")
+	return nil
 }
 
-// alsoGrant issues exactly the grant the operator would have typed.
+// records is what a parked call names, as grants would name it: each record,
+// or the empty one a call about the capability itself names.
+func records(r consent.Request) []string {
+	if len(r.Scopes) == 0 {
+		return []string{""}
+	}
+	return r.Scopes
+}
+
+// noNarrowGrant refuses a --ttl answer whose grants would reach past this
+// call's records, or answers nil when a grant for each keeps to them. The
+// case is a width the operator was never shown: the question they answered
+// named one call and its records.
+//
+// A record ending in a slash is a folder to the grant matcher
+// (grant.IsFolderScope), "https://" included. The agent chose that record,
+// a grant on it covers every record under it, those not yet written
+// included, and the pending list, the request's page and the answer all
+// named it as one record — so an agent parking kv.get on "prod/" came away,
+// one --ttl later, with every secret under prod/, and one parking http.get on
+// "https://" with the whole web. A folder is grant.allow's decision, where
+// the width is said out loud, and the hint is the calls that issue it, one
+// for each record the call names.
+//
+// Several records are not such a case. A grant for each covers them and no
+// record the call did not name — a kv.rename's key and where it goes, and
+// nothing else under either. They were refused as one, which made every
+// parked kv.rename, naming its destination since a rename grant has to
+// cover it, a call --ttl could never answer.
+func noNarrowGrant(sf plugin.Surface, r consent.Request, ttl string) *view.Error {
+	var folders []string
+	for _, scope := range r.Scopes {
+		// Refused as grant.allow would refuse it, before the hint below hands
+		// the operator a grant.allow call that would only be refused in turn.
+		if verr := grant.CheckScope(scope); verr != nil {
+			return verr
+		}
+		if grant.IsFolderScope(scope) {
+			folders = append(folders, strconv.Quote(scope))
+		}
+	}
+	if len(folders) == 0 {
+		return nil
+	}
+	calls := make([]string, len(r.Scopes))
+	for i, scope := range r.Scopes {
+		args := []plugin.Arg{
+			{Name: "target", Value: r.Cap, Positional: true},
+			{Name: "scope", Value: scope, Positional: true},
+		}
+		if r.Profile != "" {
+			args = append(args, plugin.Arg{Name: "profile", Value: r.Profile})
+		}
+		if r.Agent != "" {
+			args = append(args, plugin.Arg{Name: "agent", Value: r.Agent})
+		}
+		args = append(args, plugin.Arg{Name: "ttl", Value: ttl})
+		calls[i] = "`" + sf.Call("grant.allow", args...) + "`"
+	}
+	ends, issues := "ends", "issues"
+	if len(folders) > 1 {
+		ends = "end"
+	}
+	if len(calls) > 1 {
+		issues = "issue"
+	}
+	return view.Errorf("agent.allow.folder",
+		"%s %s in a slash, so a grant on it would cover every record under it, not this call's alone",
+		andList(folders), ends).
+		WithHint(andList(calls) + " " + issues + " that, if every record under it is what you mean")
+}
+
+// andList joins items as a sentence lists them: "a", "a and b", "a, b and c".
+func andList(items []string) string {
+	if len(items) < 2 {
+		return strings.Join(items, "")
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+}
+
+// alsoGrant issues exactly the grants the operator would have typed: one for
+// each record the call names, or one on the capability for a call naming
+// none.
 //
 // Through internal/grant's own path, so a grant issued from a prompt is
 // indistinguishable from one issued deliberately — it appears in
 // `rta grant list`, expires the same way, and is bound to the same
 // connection. A second mechanism that also authorizes calls would be a
 // second thing to audit.
+//
+// One at a time, as a role's lines are issued: internal/grant writes a grant
+// at a time. Should one fail after another stood, the note names those that
+// stand beside the refusal, so the answer never claims a grant it did not
+// issue nor hides one it did.
 func alsoGrant(r consent.Request, ttl, from string, signer *guard.Signer) (string, *view.Error) {
 	asked, err := time.ParseDuration(ttl)
 	if err != nil {
@@ -1186,71 +1245,77 @@ func alsoGrant(r consent.Request, ttl, from string, signer *guard.Signer) (strin
 	// "for the next 4h" this function had just told the operator never
 	// having said so.
 	d, byPolicy, where := grant.ClampTTL(min(asked, grant.MaxTTL))
-	scope := ""
-	if len(r.Scopes) == 1 {
-		scope = r.Scopes[0]
-	}
 	now := time.Now()
-	g := grant.Grant{
-		Target: r.Cap,
-		Scope:  scope,
-		// The name and the connection behind it, exactly as `grant allow`
-		// records them: the pin is what makes this a grant against a place
-		// rather than against a label.
-		Profile:    r.Profile,
-		ProfilePin: r.Pin,
-		// And who asked. Without it, answering a named agent's question with
-		// --ttl would issue a grant covering the *unnamed* server — a grant
-		// that reads as consent, lists as live, and never authorizes the
-		// agent it was granted to.
-		Agent:  r.Agent,
-		Issued: now,
-		// Measured, never assumed. This was FromForm unconditionally once, on
-		// the argument that answering a parked request is always a person —
-		// but `rta agent allow` runs from any shell, and an agent that parks
-		// a call through its own MCP session can answer it the same way it
-		// would run `grant allow`. The assumption made this the one issuing
-		// path where a self-issued grant got recorded as the *most* trusted
-		// origin, while grant.allow was carefully writing `command` for the
-		// identical act. Same measurement as grant.allow's, same honesty
-		// clause: a pty can still fake `terminal`, and detection of the
-		// ordinary case is still the point.
-		From:    from,
-		Expires: now.Add(d),
-		TTL:     ttl,
-		Note:    "issued while answering request " + r.ID,
-	}
-	// Signed after the Grant is fully built, so the signature covers the
-	// struct as issued; Issue's own backstop refuses if the guard is on and
-	// no signer reached this far.
-	if signer != nil {
-		grant.SignWith(*signer, &g)
-	}
-	if verr := grant.Issue(g, true); verr != nil {
-		return "", verr
-	}
-	// Named as narrowly as the grant is: "note.rm 6 for the next 15m", not
+	// Named as narrowly as each grant is: "note.rm 6 for the next 15m", not
 	// "note.rm for the next 15m", which promised the next note.rm too — and
 	// that one parked and expired, to an operator who had just been told
 	// it would not.
-	what := r.Cap
-	if scope != "" {
-		what += " " + scope
+	var issued []string
+	note := func() string {
+		return fmt.Sprintf("this call, and %s for the next %s", andList(issued), format.Duration(d))
 	}
-	note := fmt.Sprintf("this call, and %s for the next %s", what, format.Duration(d))
+	for _, scope := range records(r) {
+		g := grant.Grant{
+			Target: r.Cap,
+			Scope:  scope,
+			// The name and the connection behind it, exactly as `grant allow`
+			// records them: the pin is what makes this a grant against a place
+			// rather than against a label.
+			Profile:    r.Profile,
+			ProfilePin: r.Pin,
+			// And who asked. Without it, answering a named agent's question with
+			// --ttl would issue a grant covering the *unnamed* server — a grant
+			// that reads as consent, lists as live, and never authorizes the
+			// agent it was granted to.
+			Agent:  r.Agent,
+			Issued: now,
+			// Measured, never assumed. This was FromForm unconditionally once, on
+			// the argument that answering a parked request is always a person —
+			// but `rta agent allow` runs from any shell, and an agent that parks
+			// a call through its own MCP session can answer it the same way it
+			// would run `grant allow`. The assumption made this the one issuing
+			// path where a self-issued grant got recorded as the *most* trusted
+			// origin, while grant.allow was carefully writing `command` for the
+			// identical act. Same measurement as grant.allow's, same honesty
+			// clause: a pty can still fake `terminal`, and detection of the
+			// ordinary case is still the point.
+			From:    from,
+			Expires: now.Add(d),
+			TTL:     ttl,
+			Note:    "issued while answering request " + r.ID,
+		}
+		// Signed after the Grant is fully built, so the signature covers the
+		// struct as issued; Issue's own backstop refuses if the guard is on and
+		// no signer reached this far.
+		if signer != nil {
+			grant.SignWith(*signer, &g)
+		}
+		if verr := grant.Issue(g, true); verr != nil {
+			if len(issued) == 0 {
+				return "", verr
+			}
+			return note(), verr
+		}
+		what := r.Cap
+		if scope != "" {
+			what += " " + scope
+		}
+		issued = append(issued, what)
+	}
+	out := note()
 	if d < asked {
 		// Which ceiling bit, the same distinction grant.allow's own message
 		// makes: "capped" with no source sends the operator to change a flag
 		// that was never the problem.
 		if byPolicy {
-			note += fmt.Sprintf("; capped at %s by your team's policy (you asked for %s) — %s",
+			out += fmt.Sprintf("; capped at %s by your team's policy (you asked for %s) — %s",
 				format.Duration(d), format.Duration(asked), where)
 		} else {
-			note += fmt.Sprintf("; capped at the %s maximum (you asked for %s)",
+			out += fmt.Sprintf("; capped at the %s maximum (you asked for %s)",
 				format.Duration(grant.MaxTTL), format.Duration(asked))
 		}
 	}
-	return note, nil
+	return out, nil
 }
 
 func runDeny(ctx context.Context, req plugin.Request) (view.View, error) {

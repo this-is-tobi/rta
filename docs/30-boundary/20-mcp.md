@@ -151,7 +151,7 @@ rta agent deny 5473aa62
 
 A destructive call is previewed before it parks: rta runs the capability's own `--dry-run` and shows the result on the request, which changes the question from *"may this agent call `note.rm`"* to *"may it remove **this note**"*.
 
-`rta agent allow <id> --ttl 1h` also issues the grant the call was missing, for the record it named and no wider. A call naming more than one record, or a record ending in `/` — a folder to a grant, `https://` included, and the agent chose it — is released on its own and no grant is issued. For a folder, the answer names the `rta grant allow` that issues it on purpose, if every record under it is what you mean.
+`rta agent allow <id> --ttl 1h` also issues the grant the call was missing, for the record it named and no wider — a grant for each record when it names several, as a `kv.rename` names the key and where it goes. A call naming a record ending in `/` — a folder to a grant, `https://` included, and the agent chose it — is released on its own and no grant is issued; the answer names the `rta grant allow` calls that issue them on purpose, if every record under the folder is what you mean. The team's ceiling holds the answer record by record, as it would hold each grant.
 
 `--consent-wait` bounds how long a call waits before it is refused anyway (default 90s).
 
