@@ -605,6 +605,29 @@ func TestASymlinkedGitignoreIsNotFollowed(t *testing.T) {
 	}
 }
 
+// git expands ~user in core.excludesFile to that user's home directory, and a
+// path under %(prefix)/ to where git was installed; this read either as a file
+// of that name in the working tree, and applied its patterns, which git never
+// reads. One this cannot tell the place of is named as not applied, so what it
+// may ignore is listed: git refuses to run where there is no such user, and
+// only the git that reads the prefix knows where it is.
+func TestAnExcludesFileThisCannotTellThePlaceOfIsNotApplied(t *testing.T) {
+	machineConfig(t, "")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, "new.env", "TOKEN=planted\n")
+	for _, value := range []string{"~no-such-user-here/ignore", "%(prefix)/ignore"} {
+		writeFile(t, dir, value, "*.env\n")
+		writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n\texcludesFile = "+value+"\n")
+		tbl := table(t, runStatus, req(t, dir, nil))
+		rowFor(t, tbl, "Path", "new.env")
+		if w := ignoreWarning(tbl); w == nil ||
+			!strings.Contains(w.Message, "core.excludesFile (the file it names is not one this can tell") {
+			t.Errorf("with core.excludesFile = %s, warning = %+v, want it named as not applied", value, w)
+		}
+	}
+}
+
 // core.excludesFile with no value at all, anywhere git reads config, is one
 // git refuses to run with ("missing value"), whatever a later file sets.
 // go-git reads it as set to nothing, no excludes file, which ignored nothing

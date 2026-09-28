@@ -670,16 +670,12 @@ func includePath(f scopedConfig, value string) (path, why string, err error) {
 	if f.hidden {
 		shown = "a file"
 	}
-	if strings.HasPrefix(value, installPrefix) {
-		return "", prefixUnknown, nil
-	}
-	expanded, ok := interpolatePath(value, false)
+	expanded, why := configPathname(value)
 	switch {
-	case !ok && (value == "~" || strings.HasPrefix(value, "~/")):
-		return "", "", fmt.Errorf("%s includes %s, and HOME is not set for git to expand ~ by (could not expand "+
-			"include path)", f.place(), shown)
-	case !ok:
-		return "", "its home directory is one this cannot look up", nil
+	case why == homeUnset:
+		return "", "", fmt.Errorf("%s includes %s, and %s (could not expand include path)", f.place(), shown, why)
+	case why != "":
+		return "", why, nil
 	case filepath.IsAbs(expanded):
 		return expanded, "", nil
 	case f.file == "":
@@ -689,6 +685,40 @@ func includePath(f scopedConfig, value string) (path, why string, err error) {
 	// Joined as git joins them, without cleaning: the kernel resolves a link
 	// before the .. after it, and Clean would take the .. off the name first.
 	return filepath.Dir(f.file) + string(filepath.Separator) + expanded, "", nil
+}
+
+// Why a path git's config holds is one this cannot tell the place of
+// (configPathname), besides the install prefix (prefixUnknown).
+const (
+	homeUnset   = "HOME is not set for git to expand ~ by"
+	userUnknown = "its home directory is one this cannot look up"
+)
+
+// configPathname is value, a path git's config holds, as git's
+// git_config_pathname and an include read it (interpolatePath): ~ and ~user
+// expanded, and not yet taken from any directory. why is what keeps this from
+// telling where it leads, where something does: a path under git's install
+// prefix (prefixUnknown), ~ with no HOME (homeUnset), which git refuses to run
+// with, and a ~user this cannot look up (userUnknown), which git expands or
+// refuses to run with.
+//
+// **Not the ~ alone that plugin.ExpandHome expands.** git reads
+// `core.hooksPath = ~ci/hooks` as the hooks in ci's home, and this read it as
+// a directory named ~ci in the working tree: git.hooks listed what was there
+// as the hooks git runs, and git.status applied a core.excludesFile under it
+// that git never reads.
+func configPathname(value string) (path, why string) {
+	if strings.HasPrefix(value, installPrefix) {
+		return "", prefixUnknown
+	}
+	expanded, ok := interpolatePath(value, false)
+	switch {
+	case ok:
+		return expanded, ""
+	case value == "~" || strings.HasPrefix(value, "~/"):
+		return "", homeUnset
+	}
+	return "", userUnknown
 }
 
 // interpolatePath is p with a leading ~ expanded as git's interpolate_path

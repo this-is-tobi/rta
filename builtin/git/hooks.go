@@ -222,11 +222,15 @@ func hookMode(req plugin.Request, dir, name string, info os.FileInfo) (mode os.F
 //
 // A relative value is taken from where git runs a hook, the working tree's
 // root, or the git directory itself in a bare repository; ~ is the
-// operator's home, as git expands it. Set to nothing, it is the top of the
-// filesystem, where git looks for each hook by its name (hooksPathSetting).
-// Unset, it is the hooks directory of the common git directory, which a
-// linked worktree shares with its main checkout. warnings are what the
-// answer cannot vouch for, and what it has to explain.
+// operator's home and ~user that user's, as git expands them
+// (configPathname), and one this cannot tell the place of — under git's
+// install prefix, or a home it cannot look up — is refused rather than
+// listed as the directory named ~user in the working tree, which git never
+// reads. Set to nothing, it is the top of the filesystem, where git looks
+// for each hook by its name (hooksPathSetting). Unset, it is the hooks
+// directory of the common git directory, which a linked worktree shares with
+// its main checkout. warnings are what the answer cannot vouch for, and what
+// it has to explain.
 func hooksDir(ctx context.Context, req plugin.Request, repo *git.Repository, fs billy.Filesystem) (dir, base string,
 	hidden bool, warnings []view.Error, err error,
 ) {
@@ -243,7 +247,11 @@ func hooksDir(ctx context.Context, req plugin.Request, repo *git.Repository, fs 
 	case value == "":
 		return filesystemTop, base, hidden, warnings, nil
 	}
-	return against(base, plugin.ExpandHome(value)), base, hidden, warnings, nil
+	expanded, why := configPathname(value)
+	if why != "" {
+		return "", "", false, nil, fmt.Errorf("the directory it names is not one this can tell, since %s", why)
+	}
+	return against(base, expanded), base, hidden, warnings, nil
 }
 
 // filesystemTop is the directory a core.hooksPath set to nothing leaves git

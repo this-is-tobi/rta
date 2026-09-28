@@ -23,7 +23,6 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/pkg/format"
-	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -762,7 +761,7 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 ) []excludeSource {
 	var out []excludeSource
 	noValue := valuelessIn(configs, "core", "excludesFile")
-	switch p, scope, hidden := excludesFile(configs, root); {
+	switch p, scope, hidden, why := excludesFile(configs, root); {
 	case cerr != nil:
 		out = append(out, excludeSource{shown: "core.excludesFile", why: "reading the config that sets it: " + cerr.Error()})
 	case noValue != "":
@@ -773,6 +772,11 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 		// and named, as a file past the bounds is.
 		out = append(out, excludeSource{shown: "core.excludesFile", why: noValue +
 			" sets it with no value, which git refuses to run with"})
+	case why != "":
+		// By its key alone: the value may be one of a file the caller is
+		// not shown (scopedConfig.hidden).
+		out = append(out, excludeSource{shown: "core.excludesFile",
+			why: "the file it names is not one this can tell, since " + why})
 	case filepath.Clean(p) == os.DevNull:
 		// `excludesFile = /dev/null` is how git is told to read no excludes
 		// file, and git reads the null device as a file with nothing in it.
@@ -804,12 +808,13 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 
 // excludesFile is the file core.excludesFile names, as git resolves it, and
 // the scope it is set in: the value in the last of the files git reads that
-// sets it (gitConfigs), ~ expanded and a relative one taken from the working
-// tree's root; where none does, git's default, $XDG_CONFIG_HOME/git/ignore,
-// or ~/.config/git/ignore with that unset. "" where it is set to nothing,
-// which git reads as no file. hidden is a value read from a file the caller
-// is not shown.
-func excludesFile(configs []scopedConfig, root string) (path, scope string, hidden bool) {
+// sets it (gitConfigs), ~ and ~user expanded and a relative one taken from
+// the working tree's root; where none does, git's default,
+// $XDG_CONFIG_HOME/git/ignore, or ~/.config/git/ignore with that unset. ""
+// where it is set to nothing, which git reads as no file. hidden is a value
+// read from a file the caller is not shown, and why what keeps this from
+// telling which file the value names (configPathname).
+func excludesFile(configs []scopedConfig, root string) (path, scope string, hidden bool, why string) {
 	for _, f := range configs {
 		if core := f.config.Raw.Section("core"); core.HasOption("excludesFile") {
 			path, scope, hidden = core.Option("excludesFile"), f.scope, f.hidden
@@ -817,17 +822,21 @@ func excludesFile(configs []scopedConfig, root string) (path, scope string, hidd
 	}
 	switch {
 	case scope != "" && path == "":
-		return "", scope, hidden
+		return "", scope, hidden, ""
 	case scope != "":
-		return against(root, plugin.ExpandHome(path)), scope, hidden
+		expanded, why := configPathname(path)
+		if why != "" {
+			return "", scope, hidden, why
+		}
+		return against(root, expanded), scope, hidden, ""
 	case os.Getenv("XDG_CONFIG_HOME") != "":
-		return filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "git", "ignore"), "default", false
+		return filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "git", "ignore"), "default", false, ""
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", "", false
+		return "", "", false, ""
 	}
-	return filepath.Join(home, ".config", "git", "ignore"), "default", false
+	return filepath.Join(home, ".config", "git", "ignore"), "default", false, ""
 }
 
 // ignoreCase reports whether git matches ignore patterns without regard to

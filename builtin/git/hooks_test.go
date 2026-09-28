@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -635,6 +636,47 @@ func TestCoreHooksPathWithNoValueIsRefusedAsGitRefusesIt(t *testing.T) {
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, ".gitconfig"))
 	if path, runs, ok := hooksPathByGit(t, dir); ok && (!runs || path != ".githooks/pre-commit") {
 		t.Errorf("git looks for the pre-commit at %q (runs: %v), not in .githooks", path, runs)
+	}
+}
+
+// git expands ~user in core.hooksPath to that user's home directory, as it
+// expands ~, and a path under %(prefix)/ to where git was installed; this read
+// both as a directory of that name in the working tree, and listed what was
+// there as the hooks git runs. A ~user is that user's home, and one this
+// cannot tell the place of, a user it cannot look up or the install prefix,
+// is refused: git refuses to run where there is no such user.
+func TestCoreHooksPathUnderAUsersHomeIsThatHome(t *testing.T) {
+	machineConfig(t, "")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	for _, value := range []string{"~no-such-user-here/hooks", "%(prefix)/hooks"} {
+		writeExecutable(t, dir, value+"/pre-commit")
+		setHooksPath(t, repo, value)
+		if _, err := runHooks(context.Background(), req(t, dir, nil)); errCode(err) != "git.hooks.failed" ||
+			!strings.Contains(err.Error(), "the directory it names is not one this can tell") {
+			t.Errorf("with core.hooksPath = %s, git.hooks = %v, want it refused as a directory this cannot tell",
+				value, err)
+		}
+	}
+	setHooksPath(t, repo, "~no-such-user-here/hooks")
+	if _, runs, ok := hooksPathByGit(t, dir); ok && runs {
+		t.Error("git runs with core.hooksPath under the home of a user that does not exist")
+	}
+
+	me, err := user.Current()
+	if err == nil {
+		me, err = user.Lookup(me.Username)
+	}
+	if err != nil {
+		t.Skipf("this user's home directory is not one os/user looks up here (%v)", err)
+	}
+	setHooksPath(t, repo, "~"+me.Username+"/rta-test-no-such-hooks")
+	want := filepath.Join(me.HomeDir, "rta-test-no-such-hooks")
+	if tbl := table(t, runHooks, req(t, dir, nil)); tbl.Empty != "no hooks in "+want {
+		t.Errorf("with core.hooksPath under ~%s, git.hooks lists %q, want the hooks in %s", me.Username, tbl.Empty, want)
+	}
+	if path, runs, ok := hooksPathByGit(t, dir); ok && (!runs || path != filepath.Join(want, "pre-commit")) {
+		t.Errorf("git looks for the pre-commit at %q (runs: %v), not in %s", path, runs, want)
 	}
 }
 
