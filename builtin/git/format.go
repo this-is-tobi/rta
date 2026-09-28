@@ -114,7 +114,10 @@ func isGitBool(value string) bool {
 // format, git 2.50 aborts as it sets the repository up ("BUG: hash_algo and
 // compat_hash_algo match"), whatever command it was running, and this opened
 // the repository and answered for it. It is refused as git refuses it, once
-// the version has been judged, since git judges that first.
+// the version has been judged, since git judges that first. And git takes
+// the extension once only: a second line of it, to any value, the same one
+// included, stops git as it reads the config ("already specified"), whatever
+// the version, where the last line was read here as the one in force.
 func repositoryFormat(path string, cfg *gitconfig.Config, blank map[string]valueless, what reads) *view.Error {
 	version, written, err := formatVersion(cfg)
 	if err != nil {
@@ -122,14 +125,14 @@ func repositoryFormat(path string, cfg *gitconfig.Config, blank map[string]value
 			"number", written), "git refuses to read a format version it cannot count")
 	}
 	var versionOne, invalid, unknown, unread []string
-	objects, compat := "sha1", ""
+	objects, compat, compats := "sha1", "", 0
 	for _, o := range cfg.Raw.Section("extensions").Options {
 		name, value := strings.ToLower(o.Key), strings.TrimSpace(o.Value)
 		switch name {
 		case "objectformat":
 			objects = value
 		case "compatobjectformat":
-			compat = value
+			compat, compats = value, compats+1
 		}
 		spelled := "extensions." + o.Key + " = " + o.Value
 		none := o.Value == "" && blank[configKey("extensions", "", o.Key)].any
@@ -154,6 +157,10 @@ func repositoryFormat(path string, cfg *gitconfig.Config, blank map[string]value
 	case len(invalid) > 0:
 		return gitRefuses(path, fmt.Sprintf("its config sets %s, which git does not take",
 			strings.Join(invalid, ", ")), "git stops at a value it does not take, whatever the format version")
+	case compats > 1:
+		return gitRefuses(path, "its config sets extensions.compatObjectFormat more than once, which git takes "+
+			"once only", "git stops at the second line, whatever the format version (\"'extensions.compatobjectformat' "+
+			"already specified\"): keeping one of them makes it a repository git opens")
 	case version == unsetVersion:
 		return nil
 	case version > 1:
