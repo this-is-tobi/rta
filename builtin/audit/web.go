@@ -11,8 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/this-is-tobi/rta/builtin/internal/x509check"
+	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/internal/textclean/glyph"
 	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -50,7 +53,33 @@ var groupOrder = []findings.Group{grpTransport, grpHeaders, grpCORS, grpCookies,
 // addition beyond a plain GET, and only ever used to grade what comes back —
 // nothing here crawls, brute-forces, or sends a second request.
 func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
-	target := normalizeURL(req.String("host"))
+	// Refused rather than trimmed, as a kube audit refuses a padded
+	// namespace: the host is this audit's record, and the gate judged it as
+	// the call spelled it. Trimmed, a call on " staging.example.com" — its
+	// own record, which a grant on staging.example.com does not cover, and
+	// the one a person approving it read — audited staging.example.com. No
+	// host or URL holds white space at either end, so nothing a caller could
+	// have meant is refused.
+	host := req.String("host")
+	if strings.TrimSpace(host) != host {
+		return nil, view.Errorf("audit.web.badhost", "%q has white space around it, which no host or URL holds", host).
+			WithHint("pass the host or URL as it is spelled, with nothing around it")
+	}
+	// Nor a character a reader does not see as itself, wherever it stands
+	// (glyph.Seen), and for the same reason: the request drops one from a
+	// host before the name resolves. net/http maps a host that is not ASCII
+	// through IDNA, which removes a zero-width space, a soft hyphen, a word
+	// joiner or a byte order mark, so a call on example.com with one of them
+	// in it, its own record to the gate, audited example.com: the padded case
+	// again, with nothing on the screen to show it. Named as a record is
+	// (textclean.Record), so the message spells what the value hides.
+	if strings.ContainsFunc(host, func(r rune) bool { return !glyph.Seen(r) }) {
+		return nil, view.Errorf("audit.web.badhost",
+			"%s holds white space or a character that draws as nothing, so it names a host other than the one it reads as",
+			textclean.Record(host)).
+			WithHint("pass the host or URL with nothing unseen in it; an internationalised name goes in its xn-- form")
+	}
+	target := normalizeURL(host)
 	u, err := url.Parse(target)
 	if err != nil {
 		return nil, view.Errorf("audit.web.badhost", "invalid host %q: %v", req.String("host"), err).
@@ -75,6 +104,22 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 	if u.Hostname() == "" {
 		return nil, view.Errorf("audit.web.badhost", "%q names no host", req.String("host")).
 			WithHint("pass a host like example.com or a full https:// URL")
+	}
+	// Nor a host in anything but ASCII, however it was spelled: typed, or
+	// percent-encoded, which url.Parse decodes in a host. The check for an
+	// unseen character reads the value as typed, and the host is mapped after
+	// it: net/http puts a host that is not ASCII through IDNA before the name
+	// resolves, and IDNA does more than drop what draws as nothing. It folds a
+	// fullwidth digit into its digit and an ideographic full stop into a dot,
+	// so a host of fullwidth digits, and https://%E2%80%8B followed by an
+	// address, each its own record to the gate, dialled the address. An ASCII
+	// host goes out as it is, so the xn-- form is the one an internationalised
+	// name is audited under exactly as given.
+	if strings.ContainsFunc(u.Hostname(), func(r rune) bool { return r >= utf8.RuneSelf }) {
+		return nil, view.Errorf("audit.web.badhost",
+			"%s names its host in characters the request maps to others before the name resolves",
+			textclean.Record(host)).
+			WithHint("pass an internationalised name in its xn-- form, the name the request resolves")
 	}
 	timeout := time.Duration(req.Int("timeout")) * time.Second
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -197,9 +242,9 @@ func detailedWeb(ctx context.Context, req plugin.Request, r *findings.Report, re
 }
 
 // normalizeURL defaults a bare host to HTTPS — the audit is about how a host
-// secures its transport, so HTTPS is the subject.
+// secures its transport, so HTTPS is the subject. It trims nothing: see
+// runWeb, which refuses a host with white space around it.
 func normalizeURL(host string) string {
-	host = strings.TrimSpace(host)
 	if !strings.Contains(host, "://") {
 		return "https://" + host
 	}

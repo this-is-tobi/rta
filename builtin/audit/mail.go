@@ -99,7 +99,19 @@ func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 // ends the authority at the first `/` for it, and refuses the userinfo half
 // as this does.
 func mailDomain(raw string) (string, *view.Error) {
-	d := strings.TrimSpace(raw)
+	// Refused rather than trimmed, here and after the cuts below, as a kube
+	// audit refuses a padded namespace: the domain is this audit's record, and
+	// the gate judged it as the call spelled it. Trimmed, a call on
+	// " example.com" — its own record, which a grant on example.com does not
+	// cover, and the one a person approving it read — audited example.com. No
+	// domain holds white space, so nothing a caller could have meant is
+	// refused: one left inside, after an address's @ or before a port, is
+	// refused by checkDomain's grammar.
+	if strings.TrimSpace(raw) != raw {
+		return "", view.Errorf("audit.mail.baddomain", "%q has white space around it, which no domain holds", raw).
+			WithHint("pass the domain, an address at it or a URL on it, with nothing around it")
+	}
+	d := raw
 	scheme := false
 	if i := strings.Index(d, "://"); i >= 0 {
 		d, scheme = d[i+3:], true
@@ -129,7 +141,7 @@ func mailDomain(raw string) (string, *view.Error) {
 			d = d[:i]
 		}
 	}
-	return checkDomain(strings.ToLower(strings.Trim(strings.TrimSpace(d), ".")), raw)
+	return checkDomain(strings.ToLower(strings.Trim(d, ".")), raw)
 }
 
 // A domain and a DKIM selector are the two halves of one DNS name and have
