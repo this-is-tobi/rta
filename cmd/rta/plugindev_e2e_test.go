@@ -3,6 +3,7 @@
 package main_test
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -13,16 +14,15 @@ import (
 	"time"
 )
 
-// `rta plugin dev <dir> -- mcp serve` stops on SIGTERM as `rta mcp serve`
-// does. The command after `--` ran in a nested root executed without the
-// outer command's context, which is the one a signal cancels, and mcp serve
-// owns its shutdown, so no grace cut it short either: it went on serving
-// until its standard input closed, and only a second signal ended it.
-//
-// Through the real binary and a real plugin, because what is under test is
-// which context reaches a command two roots down, and the signal handling
-// that cancels it is main's.
-func TestPluginDevStopsTheCommandItRunsOnSIGTERM(t *testing.T) {
+// What `rta plugin dev <dir> -- <command>` does with the command it runs,
+// through the real binary and a real plugin: the command runs in a root of
+// its own, nested in plugin dev's, and what reaches it from outside — a
+// signal, the format its refusal is drawn in — is decided in main.
+
+// scaffolded is a plugin `rta plugin new` wrote, building against this
+// checkout, and the environment to run plugin dev on it in.
+func scaffolded(t *testing.T) (string, []string) {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("e2e builds the binary")
 	}
@@ -46,7 +46,16 @@ func TestPluginDevStopsTheCommandItRunsOnSIGTERM(t *testing.T) {
 	if out, err := scaffold.CombinedOutput(); err != nil {
 		t.Fatalf("plugin new: %v\n%s", err, out)
 	}
+	return src, env
+}
 
+// `rta plugin dev <dir> -- mcp serve` stops on SIGTERM as `rta mcp serve`
+// does. The command after `--` ran in a nested root executed without the
+// outer command's context, which is the one a signal cancels, and mcp serve
+// owns its shutdown, so no grace cut it short either: it went on serving
+// until its standard input closed, and only a second signal ended it.
+func TestPluginDevStopsTheCommandItRunsOnSIGTERM(t *testing.T) {
+	src, env := scaffolded(t)
 	cmd := exec.Command(binary, "plugin", "dev", src, "--", "mcp", "serve", "--as", "probe")
 	cmd.Env = env
 	stdin, err := cmd.StdinPipe()
@@ -94,5 +103,39 @@ func TestPluginDevStopsTheCommandItRunsOnSIGTERM(t *testing.T) {
 		}
 	case <-time.After(30 * time.Second):
 		t.Fatalf("still serving 30s after SIGTERM (stderr %q)", stderr.String())
+	}
+}
+
+// A refusal from the command after `--` is drawn in the format that command
+// asked for. plugin dev handed it back to main unrendered, and main drew it
+// with plugin dev's own options, which a flag after `--` never reaches, so
+// a script running a plugin's command with -o json got a pretty ERROR line
+// where `rta <command> -o json` gives json.
+func TestPluginDevDrawsTheRefusalOfTheCommandItRunsInThatCommandsFormat(t *testing.T) {
+	src, env := scaffolded(t)
+	for _, args := range [][]string{
+		// A flag pflag stops at, so the -o json after it is never parsed.
+		{"probe", "greet", "--bogus", "-o", "json"},
+		// And a refusal made once every flag was.
+		{"probe", "greet", "-o", "json"},
+	} {
+		cmd := exec.Command(binary, append([]string{"plugin", "dev", src, "--"}, args...)...)
+		cmd.Env = env
+		var stderr strings.Builder
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
+			t.Errorf("%v: %v, want exit 2 (stderr %q)", args, err, stderr.String())
+			continue
+		}
+		var answer map[string]any
+		if err := json.Unmarshal([]byte(stderr.String()), &answer); err != nil {
+			t.Errorf("%v: stderr is not the json asked for (%v): %q", args, err, stderr.String())
+			continue
+		}
+		if answer["code"] != "core.usage" {
+			t.Errorf("%v: stderr = %v, want core.usage", args, answer)
+		}
 	}
 }

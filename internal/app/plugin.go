@@ -902,11 +902,32 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 			root.SetArgs(rest)
 			root.SetOut(cmd.OutOrStdout())
 			root.SetErr(cmd.ErrOrStderr())
-			return root.ExecuteContext(cmd.Context())
+			return renderNested(cmd.ErrOrStderr(), root, rest, root.ExecuteContext(cmd.Context()))
 		},
 	}
 	cmd.Flags().BoolVar(&keep, "keep", false, "leave the compiled binary in place and print where")
 	return cmd
+}
+
+// renderNested draws a refusal the command plugin dev ran did not draw
+// itself, in the format that command asked for, and marks it drawn.
+//
+// Left to main, it was drawn with the options of the root main ran, which is
+// plugin dev's: a flag after `--` reaches only the nested root, so `rta
+// plugin dev -- probe greet -o json` refused a missing argument, or a flag
+// it does not know, with a pretty ERROR line where `rta probe greet -o json`
+// answers in json. A capability's own failure was already drawn right,
+// because runCapability draws it from the flags it parsed; this is the rest.
+func renderNested(w io.Writer, root *cobra.Command, args []string, err error) error {
+	var rendered RenderedError
+	var verr *view.Error
+	if err == nil || errors.As(err, &rendered) || !errors.As(err, &verr) {
+		return err
+	}
+	if cli.RenderError(w, verr, renderOptionsFor(root, args)) != nil {
+		return err
+	}
+	return Rendered(verr)
 }
 
 // devLoadError is a failed launch as plugin dev reports it: a refusal the
