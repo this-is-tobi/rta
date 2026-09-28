@@ -221,16 +221,18 @@ func auditArgs(c plugin.Capability, values map[string]any) map[string]any {
 	return out
 }
 
-// judgedRecords is what the ledger keeps of the records a call is judged on
+// namedRecords is what the ledger keeps of the records a call names
 // (agentlog.Entry.Records): the ones grant.Scopes reads, exactly as the call
-// spelled them, less the empty one a call naming no record is judged on,
-// which names nothing to keep.
+// spelled them, less the empty one a call naming no record reads as, which
+// names nothing to keep. They are the records the grant gate judges when the
+// call needs a grant at all, and a row keeps them either way: a scoped read
+// let through before any grant is looked at named its record all the same.
 //
 // Not cleaned, unlike every argument beside it, and that is the point: a
 // record is compared byte for byte, and one cleaned is a record the call did
 // not name. A scope is never a credential (pkg/plugin refuses Scope and
 // ScopeAlso on a Secret), so there is nothing here to mask either.
-func judgedRecords(c plugin.Capability, values map[string]any) []string {
+func namedRecords(c plugin.Capability, values map[string]any) []string {
 	var out []string
 	for _, s := range grant.Scopes(c, values) {
 		if s != "" {
