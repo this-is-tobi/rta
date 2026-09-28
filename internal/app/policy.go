@@ -131,7 +131,9 @@ func policyShowCommand(render func(*cobra.Command, view.View, *view.Error) error
 			pairs = append(pairs, view.Pair{Key: "requireRepoPolicy", Value: yesNo(ceiling.RequireRepo)})
 			if n := grant.Suppressed(); n > 0 {
 				pairs = append(pairs, view.Pair{Key: "grants suppressed", Value: fmt.Sprintf(
-					"%d stored grant(s) would stand if this ceiling did not forbid them", n)})
+					"%s if this ceiling did not forbid %s",
+					format.Count(n, "stored grant would stand", "stored grants would stand"),
+					format.Plural(n, "it", "them"))})
 			}
 			return render(cmd, view.KeyValue{Pairs: pairs}, nil)
 		},

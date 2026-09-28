@@ -8,10 +8,48 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/policy"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
+
+// The grants a ceiling holds back are counted as a sentence counts them: it
+// read "1 stored grant(s) would stand", the one line of policy show not
+// worded for the number it gave.
+func TestPolicyShowCountsTheGrantsItSuppresses(t *testing.T) {
+	t.Setenv("RTA_POLICY", "")
+	dir := t.TempDir()
+	t.Chdir(dir)
+	run := session(t, testRegistry(t))
+	if err := os.WriteFile(filepath.Join(dir, policy.RepoFile), []byte("never: [kv.get, kv.env]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	for _, c := range []struct {
+		targets []string
+		want    string
+	}{
+		{[]string{"kv.get"}, "1 stored grant would stand if this ceiling did not forbid it"},
+		{[]string{"kv.get", "kv.env"}, "2 stored grants would stand if this ceiling did not forbid them"},
+	} {
+		var stored []grant.Grant
+		for _, target := range c.targets {
+			stored = append(stored, grant.Grant{Target: target, Agent: "claude", Issued: now, Expires: now.Add(time.Hour)})
+		}
+		if verr := grant.Save(stored); verr != nil {
+			t.Fatal(verr)
+		}
+		out, errOut, err := run("policy", "show", "-o", "json")
+		if err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+		if got := answerPairs(t, out)["grants suppressed"]; got != c.want {
+			t.Errorf("grants suppressed = %q, want %q", got, c.want)
+		}
+	}
+}
 
 // A policy file already there is refused, coded and in the format asked for,
 // with --force named: it was the plain error fang styled as a box under
