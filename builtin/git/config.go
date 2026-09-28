@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/go-git/gcfg"
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/storage/filesystem"
@@ -116,8 +119,8 @@ func runConfig(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("git.config.failed", "reading config.worktree: %v", err)
 	}
 	if perWorktree != nil {
-		addConfigRows(&t, "worktree", perWorktree)
-		shown = append(shown, scopedConfig{scope: "worktree", config: perWorktree})
+		addConfigRows(&t, "worktree", perWorktree.config)
+		shown = append(shown, *perWorktree)
 	}
 	// The environment's is the operator's too, and withheld from MCP with the
 	// machine-wide scopes: `git -c http.extraHeader=...` is how a CI system
@@ -128,8 +131,8 @@ func runConfig(ctx context.Context, req plugin.Request) (view.View, error) {
 			return nil, view.Errorf("git.config.failed", "reading the config git's environment sets: %v", err)
 		}
 		if command != nil {
-			addConfigRows(&t, "command", command)
-			shown = append(shown, scopedConfig{scope: "command", config: command})
+			addConfigRows(&t, "command", command.config)
+			shown = append(shown, *command)
 		}
 	}
 
@@ -172,11 +175,65 @@ var (
 	}
 )
 
-// scopedConfig is one file of git config, the scope git reads it as, and
-// where it is ("" for the repository's own, which go-git reads).
+// scopedConfig is one file of git config, the scope git reads it as, where
+// it is ("" for the repository's own, which go-git reads), and each key it
+// sets with no value at all (valueless).
 type scopedConfig struct {
 	scope, path string
 	config      *gitconfig.Config
+	blank       map[string]valueless
+}
+
+// valueless is how a file of config sets a key with no value at all, a name
+// alone on its line or `git -c key` with no =: anywhere in it, and in the
+// last line that sets it.
+//
+// **go-git reads such a key as set to nothing, and git does not.** `hooksPath
+// =` is a value, the empty one, and `hooksPath` alone is none, which git
+// refuses a path key for ("missing value") and stops before running
+// anything. go-git's reader hands both on as "", so git.hooks read the second
+// as the first, and either as unset. Each file is read again for it
+// (valuelessKeys), by the key as configKey spells it.
+type valueless struct{ any, last bool }
+
+// configKey is a key as git compares it: its section and name in lower case,
+// and its subsection as written.
+func configKey(section, subsection, name string) string {
+	if subsection == "" {
+		return strings.ToLower(section) + "." + strings.ToLower(name)
+	}
+	return strings.ToLower(section) + "." + subsection + "." + strings.ToLower(name)
+}
+
+// valuelessKeys is each key content, a file of git config, sets with no
+// value at all. It is read with gcfg, the reader go-git reads config with,
+// whose callback tells a name alone apart from one set to nothing, which
+// go-git passes over; a file gcfg refuses is one go-git refused already.
+func valuelessKeys(content []byte) map[string]valueless {
+	keys := map[string]valueless{}
+	_ = gcfg.ReadWithCallback(bytes.NewReader(content), func(section, subsection, name, _ string, blank bool) error {
+		if name != "" {
+			key := configKey(section, subsection, name)
+			keys[key] = valueless{any: keys[key].any || blank, last: blank}
+		}
+		return nil
+	})
+	return keys
+}
+
+// place is where f is, as a warning or a refusal names it.
+func (f scopedConfig) place() string {
+	switch {
+	case f.path != "":
+		return f.path
+	case f.scope == "local":
+		return "the repository's config"
+	case f.scope == "worktree":
+		return "config.worktree"
+	case f.scope == "command":
+		return "the config in git's environment"
+	}
+	return "the " + f.scope + " config"
 }
 
 // machineConfigSources is every file of the operator's own git config git
@@ -254,20 +311,51 @@ func gitBool(value string) bool {
 // is the repository's, as its config is: read through the filesystem that
 // bounds a git directory's files (regularFiles), from the working tree's own
 // git directory, which for a linked worktree is not the common one.
-func worktreeConfig(repo *git.Repository, local *gitconfig.Config) (*gitconfig.Config, error) {
+func worktreeConfig(repo *git.Repository, local *gitconfig.Config) (*scopedConfig, error) {
 	store, ok := repo.Storer.(*filesystem.Storage)
 	if !ok || !local.Raw.HasSection("extensions") || !gitBool(local.Raw.Section("extensions").Option("worktreeConfig")) {
 		return nil, nil
 	}
-	f, err := store.Filesystem().Open("config.worktree")
+	content, err := readGitDirFile(store.Filesystem(), "config.worktree")
 	if errors.Is(err, iofs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	cfg, err := gitconfig.ReadConfig(bytes.NewReader(content))
+	if err != nil {
+		return nil, err
+	}
+	return &scopedConfig{scope: "worktree", config: cfg, blank: valuelessKeys(content)}, nil
+}
+
+// localConfig is the repository's own config, as go-git reads it, and the
+// keys it sets with no value, read from the file go-git read it from; a
+// repository cloned into memory has no such file, and none.
+func localConfig(repo *git.Repository) (scopedConfig, error) {
+	cfg, err := repo.Config()
+	if err != nil {
+		return scopedConfig{}, err
+	}
+	local := scopedConfig{scope: "local", config: cfg}
+	if store, ok := repo.Storer.(*filesystem.Storage); ok {
+		if content, err := readGitDirFile(store.Filesystem(), "config"); err == nil {
+			local.blank = valuelessKeys(content)
+		}
+	}
+	return local, nil
+}
+
+// readGitDirFile is the whole of name in a git directory, read through fs,
+// which bounds it (regularFiles).
+func readGitDirFile(fs billy.Filesystem, name string) ([]byte, error) {
+	f, err := fs.Open(name)
+	if err != nil {
+		return nil, err
+	}
 	defer func() { _ = f.Close() }()
-	return gitconfig.ReadConfig(f)
+	return io.ReadAll(f)
 }
 
 // machineConfigs is the operator's own git config, every file of it that
@@ -295,7 +383,7 @@ func machineConfigs() ([]scopedConfig, error) {
 		// And held to the bound a repository's own config is held to, since
 		// go-git's reader takes the whole of it into memory first: a sparse
 		// file of gigabytes costs its writer no disk.
-		var cfg *gitconfig.Config
+		var content []byte
 		info, err := f.Stat()
 		switch {
 		case err == nil && !info.Mode().IsRegular():
@@ -303,13 +391,16 @@ func machineConfigs() ([]scopedConfig, error) {
 		case err == nil && info.Size() > maxConfigBytes:
 			err = tooLarge(maxConfigBytes)
 		case err == nil:
-			cfg, err = gitconfig.ReadConfig(io.LimitReader(f, info.Size()))
+			content, err = io.ReadAll(io.LimitReader(f, info.Size()))
 		}
 		_ = f.Close()
+		if err == nil {
+			s.config, err = gitconfig.ReadConfig(bytes.NewReader(content))
+		}
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", s.path, err)
 		}
-		s.config = cfg
+		s.blank = valuelessKeys(content)
 		out = append(out, s)
 	}
 	return out, nil
@@ -328,13 +419,13 @@ func machineConfigs() ([]scopedConfig, error) {
 // pre-commit. And what git refuses to run with — a count that is not one, a
 // key or a value missing, a key with no section — fails here too: git runs
 // no hook at all with it, and an answer naming a directory would be wrong.
-func commandConfig() (*gitconfig.Config, error) {
+func commandConfig() (*scopedConfig, error) {
 	count, counted := os.LookupEnv("GIT_CONFIG_COUNT")
 	parameters, given := os.LookupEnv("GIT_CONFIG_PARAMETERS")
 	if !counted && !given {
 		return nil, nil
 	}
-	cfg := gitconfig.NewConfig()
+	cfg := &scopedConfig{scope: "command", config: gitconfig.NewConfig(), blank: map[string]valueless{}}
 	if counted {
 		// Read as git reads it, with C's strtoul: white space before it and a
 		// sign are taken, and anything after it is not. `GIT_CONFIG_COUNT=" 1"`
@@ -355,7 +446,7 @@ func commandConfig() (*gitconfig.Config, error) {
 			if !found {
 				return nil, fmt.Errorf("GIT_CONFIG_COUNT is %d, and GIT_CONFIG_VALUE_%d is not set", n, i)
 			}
-			if err := addCommandKey(cfg, key, value); err != nil {
+			if err := addCommandKey(cfg, key, value, false); err != nil {
 				return nil, fmt.Errorf("GIT_CONFIG_KEY_%d: %w", i, err)
 			}
 		}
@@ -369,7 +460,8 @@ func commandConfig() (*gitconfig.Config, error) {
 }
 
 // addCommandKey adds key, spelled section.name or section.subsection.name as
-// git spells one on its command line, set to value.
+// git spells one on its command line, set to value, or with no value at all
+// where none is set, as `git -c key` with no = sets one.
 //
 // A key git's git_config_parse_key refuses is refused: a section or a name
 // holding anything but letters, digits and dashes, a name that does not start
@@ -384,7 +476,7 @@ func commandConfig() (*gitconfig.Config, error) {
 // rows show it: `url.https://oauth2:<token>@host/.insteadOf` carries the
 // token in the key, and the refusal reaches a terminal, and an MCP caller
 // through git.hooks, where the command scope's rows never do.
-func addCommandKey(cfg *gitconfig.Config, key, value string) error {
+func addCommandKey(cfg *scopedConfig, key, value string, none bool) error {
 	first, last := strings.IndexByte(key, '.'), strings.LastIndexByte(key, '.')
 	switch {
 	case last <= 0:
@@ -395,12 +487,15 @@ func addCommandKey(cfg *gitconfig.Config, key, value string) error {
 		strings.IndexByte(key[first:last], '\n') >= 0:
 		return fmt.Errorf("%q is not a key git reads", maskURLCredentials(key))
 	}
-	section, name := cfg.Raw.Section(key[:first]), key[last+1:]
+	section, name, subsection := cfg.config.Raw.Section(key[:first]), key[last+1:], ""
 	if first == last {
 		section.AddOption(name, value)
 	} else {
-		section.Subsection(key[first+1:last]).AddOption(name, value)
+		subsection = key[first+1 : last]
+		section.Subsection(subsection).AddOption(name, value)
 	}
+	k := configKey(key[:first], subsection, name)
+	cfg.blank[k] = valueless{any: cfg.blank[k].any || none, last: none}
 	return nil
 }
 
@@ -412,20 +507,23 @@ var errConfigParameters = errors.New("not in the shape git writes it")
 // as git's parse_config_env_list reads them: each a single-quoted word
 // (sqDequote), 'key'='value' as git writes it now, 'key'= for a key with no
 // value, and 'key=value' or 'key' as older git wrote it, separated by space.
-func parseConfigParameters(cfg *gitconfig.Config, env string) error {
+// 'key'= and 'key' set no value at all, and 'key=', or 'key'= and an empty
+// quoted word, the empty one, as `git -c key` and `git -c key=` set them.
+func parseConfigParameters(cfg *scopedConfig, env string) error {
 	for rest := env; rest != ""; rest = strings.TrimLeft(rest, gitSpace) {
 		key, after, ok := sqDequote(rest)
 		if !ok {
 			return errConfigParameters
 		}
-		value := ""
+		value, none := "", false
 		switch {
 		case after == "" || isSpace(after[0]):
 			// The older 'key=value', split at its first =, which git trims.
-			key, value, _ = strings.Cut(key, "=")
-			key = strings.Trim(key, gitSpace)
+			var set bool
+			key, value, set = strings.Cut(key, "=")
+			key, none = strings.Trim(key, gitSpace), !set
 		case after[0] == '=' && (len(after) == 1 || isSpace(after[1])):
-			after = after[1:]
+			after, none = after[1:], true
 		case after[0] == '=' && after[1] == '\'':
 			if value, after, ok = sqDequote(after[1:]); !ok || after != "" && !isSpace(after[0]) {
 				return errConfigParameters
@@ -433,7 +531,7 @@ func parseConfigParameters(cfg *gitconfig.Config, env string) error {
 		default:
 			return errConfigParameters
 		}
-		if err := addCommandKey(cfg, key, value); err != nil {
+		if err := addCommandKey(cfg, key, value, none); err != nil {
 			return err
 		}
 		rest = after
