@@ -296,12 +296,12 @@ func remoteRevoke(ctx context.Context, req plugin.Request, server string, spec o
 					"` shows what a revoke without it would match")
 		}
 		if spec.DryRun {
-			return view.Text{Body: revokeBody(req.Surface(), spec, seen, true)}, nil
+			return view.Text{Body: revokeBody(req.Surface(), spec, server, seen, true)}, nil
 		}
 	}
 	var out operatorid.RevokeOutcome
 	if verr := client.Call(ctx, operatorid.VerbGrantRevoke, spec, &out); verr != nil {
 		return nil, verr
 	}
-	return view.Text{Body: revokeBody(req.Surface(), spec, out, req.DryRun)}, nil
+	return view.Text{Body: revokeBody(req.Surface(), spec, server, out, req.DryRun)}, nil
 }

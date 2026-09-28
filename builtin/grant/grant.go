@@ -1669,7 +1669,7 @@ func runRevoke(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	body := revokeBody(req.Surface(), spec, out, req.DryRun)
+	body := revokeBody(req.Surface(), spec, "", out, req.DryRun)
 	if spec.Role != "" && !req.DryRun {
 		body += "\n" + stillStanding(req.Surface(), spec.Agent)
 	}
