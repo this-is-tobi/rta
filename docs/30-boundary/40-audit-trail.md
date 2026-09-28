@@ -35,7 +35,7 @@ rta records the claim for provenance and authorizes on the name you gave, becaus
 
 ## Operators appear too
 
-A remote operator's mutations land in the same record: a revoked or issued grant, an answered consent, a lock placed or lifted — each on its own line with `operator.` in front of the verb (`operator.lock.add`), the credential column naming the enrolled key (`operator:dash`), and `operator` in the authorization column, because the signature was the authorization, not any grant. So the row that shows an agent's call `approved` has a partner row naming who approved it, from which key.
+A remote operator's mutations land in the same record: a revoked or issued grant, an answered consent, a lock placed or lifted — each on its own line with `operator.` in front of the verb (`operator.lock.add`), the credential column naming the enrolled key (`operator:dash`), and `operator` in the authorization column, because the signature was the authorization, not any grant. So the row that shows an agent's call `approved` has a partner row naming who approved it, from which key. A grant issued or revoked on a record keeps that record in the `record` column, exactly as the signed call spelled it, as an agent's call keeps its own.
 
 The channel's reads stay out, as do the commands you type at the machine itself: the record answers "what happened while I was away", and a status poll every few seconds would churn real history out of retention to say nothing.
 
