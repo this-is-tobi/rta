@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -83,19 +84,35 @@ func prune(dryRun bool) ([]Pruned, *view.Error) {
 		}
 		if !dryRun {
 			for _, d := range p.Removed {
-				// By digest, as remove does: untrusting by name would also
-				// revoke a same-named binary the operator trusted on $PATH.
-				if verr := withdrawStored(d); verr != nil {
+				if verr := pruneStored(name, d); verr != nil {
 					return nil, verr
-				}
-				if err := os.RemoveAll(filepath.Join(StoreDir(), name, d)); err != nil {
-					return nil, view.Errorf("plugin.prune.store", "%v", err)
 				}
 			}
 		}
 		out = append(out, p)
 	}
 	return out, nil
+}
+
+// pruneStored takes one stored version out: its trust, then its copy.
+//
+// The two are held off a forced exit together, one version at a time, as an
+// install's and a remove's writes are. An exit between them left a copy in
+// the store whose trust was gone — kept for a rollback it could no longer
+// serve, and holding its space until a prune ran again. Between versions an
+// exit leaves each one whole, gone or kept, which is all a prune promises:
+// the next one takes what this one did not reach.
+func pruneStored(name, digest string) *view.Error {
+	defer shutdown.Hold()()
+	// By digest, as remove does: untrusting by name would also revoke a
+	// same-named binary the operator trusted on $PATH.
+	if verr := withdrawStored(digest); verr != nil {
+		return verr
+	}
+	if err := removeAll(filepath.Join(StoreDir(), name, digest)); err != nil {
+		return view.Errorf("plugin.prune.store", "%v", err)
+	}
+	return nil
 }
 
 // dirSize is the bytes under dir, for the receipt. An entry that cannot be
