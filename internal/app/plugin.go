@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -845,10 +846,9 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 			defer host.CloseAll()
 			client, err := host.Open(cmd.Context(), binary)
 			if err != nil {
-				return view.Errorf("plugin.dev.load", "%v", err).
-					WithHint("rta loads a plugin by running it and asking what it declares; " +
-						"a failure here is usually a panic in Plugin() or a declaration " +
-						"rta refuses — the message above says which")
+				return devLoadError(err, "rta loads a plugin by running it and asking what it "+
+					"declares; a failure here is usually a panic in Plugin() or a declaration "+
+					"rta refuses — the message above says which")
 			}
 			// A declaration that asks for a credential location is honoured
 			// here, and here only, for the reason dev mode is already exempt
@@ -866,9 +866,8 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 			if len(client.Declared.Needs) > 0 {
 				relaxed, err := host.OpenAllowing(cmd.Context(), binary, client.Declared.Needs)
 				if err != nil {
-					return view.Errorf("plugin.dev.load", "%v", err).
-						WithHint("the plugin declares a credential location it needs, and " +
-							"relaunching it with that location readable failed")
+					return devLoadError(err, "the plugin declares a credential location it "+
+						"needs, and relaunching it with that location readable failed")
 				}
 				client = relaxed
 			}
@@ -900,6 +899,25 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 	}
 	cmd.Flags().BoolVar(&keep, "keep", false, "leave the compiled binary in place and print where")
 	return cmd
+}
+
+// devLoadError is a failed launch as plugin dev reports it: a refusal the
+// host already coded passed on as itself, and anything else as
+// plugin.dev.load, with a hint saying where such a failure usually comes
+// from.
+//
+// A coded refusal names its own cause and its own fix — a TMPDIR too long
+// for the plugin's socket, or one that cannot hold the socket's directory
+// (pluginhost's socketDir) — and wrapping it replaced both: the code read as
+// this plugin failing to load, and the hint sent the author looking for a
+// panic in Plugin() or a declaration rta refuses, which is to say in their
+// own code, for a problem in their environment.
+func devLoadError(err error, hint string) error {
+	var verr *view.Error
+	if errors.As(err, &verr) {
+		return verr
+	}
+	return view.Errorf("plugin.dev.load", "%v", err).WithHint(hint)
 }
 
 // buildPlugin compiles dir into a temporary binary.
