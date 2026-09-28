@@ -477,6 +477,7 @@ func (m Model) actionSeed(a capAction, tbl view.Table) (map[string]any, bool) {
 		// note.rm rows used to revoke both because only the target seeded.
 		// The boxes still open for anything a person would change; these
 		// fill them with what the row already says.
+		unread := false
 		for _, f := range a.cap.Inputs {
 			if _, done := base[f.Name]; done || f.Local || (f.Type != plugin.String && f.Type != plugin.Int) {
 				continue
@@ -495,7 +496,11 @@ func (m Model) actionSeed(a capAction, tbl view.Table) (map[string]any, bool) {
 				// cell that reads back as no value leaves its box for the
 				// form, like the dash below.
 				value, ok := read(raw)
-				if !ok || value == "" {
+				if !ok {
+					unread = true
+					continue
+				}
+				if value == "" {
 					continue
 				}
 				base[f.Name] = value
@@ -507,6 +512,18 @@ func (m Model) actionSeed(a capAction, tbl view.Table) (map[string]any, bool) {
 			if v, err := rowKey(f, raw); err == nil {
 				base[f.Name] = v
 			}
+		}
+		// A row on the roster is one grant, and the cells it leaves empty —
+		// a record drawn "any", a profile or an agent drawn as a dash —
+		// mean the grant naming none. Left out of a revoke or a renew, they
+		// meant every one: x and n on a row naming no record acted on every
+		// grant for its target and agent, and a renewal extended grants the
+		// row never pointed at. The target's exact switch makes the row's
+		// cells name it alone. Not set when a cell could not be read back:
+		// its box is left for the form, and exact would read an empty box
+		// as none rather than as the grant the row shows.
+		if in := rowNamesOne[a.from]; in != "" && !unread && hasBoolInput(a.cap, in) {
+			base[in] = true
 		}
 	case srcSelf:
 		// The page already knows its subject: a seeded key from the line the
@@ -574,6 +591,22 @@ var cellReader = map[string]map[string]func(string) (string, bool){
 		"record":  grant.RecordOfRoster,
 		"profile": grant.ProfileOfRoster,
 	},
+}
+
+// rowNamesOne is, by the capability that drew the table, the switch of an
+// action's target that makes a row's cells name one record exactly — the
+// roster's cellReader's companion, keyed the same way and for its reason: a
+// row of another capability's table names what its own cells say.
+var rowNamesOne = map[string]string{"grant.list": "exact"}
+
+// hasBoolInput reports whether c declares a Bool input named name.
+func hasBoolInput(c plugin.Capability, name string) bool {
+	for _, f := range c.Inputs {
+		if f.Name == name && f.Type == plugin.Bool {
+			return true
+		}
+	}
+	return false
 }
 
 func cellNamed(tbl view.Table, row []string, name string) (string, bool) {

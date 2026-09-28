@@ -59,7 +59,10 @@ rta grant list                       # what is allowed right now
 rta grant renew kv.get db-password   # push out the deadline
 rta grant revoke kv.get db-password  # take it back now
 rta grant revoke kv                  # or all of it
+rta grant revoke kv.get --agent claude --exact   # the one grant naming no record, on the base connection
 ```
+
+Each selector narrows, and one left out matches every grant: `grant revoke kv.get` takes back the grant on every record, every connection and every agent, and a plugin name everything inside it. `--exact` makes the selectors name one grant — a record, `--profile` or `--agent` left out means the grant naming none, and a plugin name its grant on the whole plugin alone — which is the only way to name the grant on no record, or on the base connection, without taking its neighbours with it. `grant renew` takes it too. In the TUI, `x` and `n` on a row of `grant list` act on that row's grant alone, as `--exact`, and `x` on a roster read with `--server` does so on that server: one older than the switch would read it as absent, so it is asked first and refused rather than trusted.
 
 `grant list` shows the target, the scope, what remains of each bound, the agent and profile it is narrowed to, and your `--note`. `--detail` adds the plugin build each grant is bound to: the short digest of the plugin's artifact, or `built in`. A grant whose plugin has been replaced since it was issued is marked `(replaced)` on every listing of this machine's grants, and one whose plugin rta no longer loads `(not loaded)`, each with a warning beside the rows saying what fixes it. A roster read with `--server` is judged by that server, against the plugins that answer there, which this machine cannot see, and carries the same marks and warnings; a server on an older rta sends no verdict, and each of its grants is marked `(unknown)`. It is the answer to "what can an agent do right now", and it is the one screen worth checking before you walk away from a machine with a server running.
 

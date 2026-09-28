@@ -175,6 +175,113 @@ func givenRecord(sf plugin.Surface, scope string) *view.Error {
 		WithHint("name the record, or leave " + sf.ArgumentName("scope") + " out to mean every record")
 }
 
+// exactField is the switch that makes revoke's and renew's selectors name
+// one grant; verb is the command's, for its help.
+func exactField(verb string) plugin.Field {
+	return plugin.Field{Name: "exact", Type: plugin.Bool,
+		Help: verb + " the one grant named: a record, profile or agent left out means the grant naming " +
+			"none rather than every one, and a plugin name its grant on the whole plugin alone"}
+}
+
+// selector is what revoke and renew match stored grants by: one spelling of
+// the rule for both, the local flows and the operator channel's revoke.
+//
+// **Every selector narrows, and one left out matches every grant** — a
+// record left out is every record, a profile every connection, an agent
+// every agent, a plugin name every grant inside it. That is the command
+// line's reading, and the right one there: `grant revoke kv.get` in a
+// hurry takes back every grant on it.
+//
+// **It left the grant naming no record, or the base connection, with no
+// selector at all**, since the empty value was already "any". So x and n on
+// a TUI roster row whose record read "any" or whose profile read "—" acted
+// on every grant for that target and agent the other cells matched — and a
+// renewal extended grants the row never pointed at, which is the widening
+// direction. exact is that selector: the target, record, profile and agent
+// each as given, a left-out one meaning the grant that names none, and a
+// plugin name its grant on the whole plugin rather than everything in it.
+// A grant is stored once per target, record, connection and agent
+// (core.Issue), so exact names at most one; role still narrows.
+type selector struct {
+	all                                 bool
+	target, scope, profile, agent, role string
+	exact                               bool
+}
+
+func (s selector) matches(g core.Grant) bool {
+	if s.role != "" && g.Role != s.role {
+		return false
+	}
+	if s.exact {
+		return g.Target == s.target && g.Scope == s.scope && g.Profile == s.profile && g.Agent == s.agent
+	}
+	// A plugin name takes every grant inside it, and --all every target —
+	// never widening --profile or --agent into "every one of them": the
+	// narrowest request must never silently do the widest thing.
+	if !s.all && s.target != "" && g.Target != s.target && core.Namespace(g.Target) != s.target {
+		return false
+	}
+	switch {
+	case s.scope != "" && g.Scope != s.scope,
+		s.profile != "" && g.Profile != s.profile,
+		s.agent != "" && g.Agent != s.agent:
+		return false
+	}
+	return true
+}
+
+// check refuses an exact selector that can name no grant: one with no
+// target, which every grant has, and one beside all, which names every
+// grant there is. sf is the surface asking, for the names of the inputs.
+func (s selector) check(sf plugin.Surface) *view.Error {
+	if !s.exact {
+		return nil
+	}
+	if s.all {
+		return view.Errorf("grant.exact.all", "%s takes every grant and %s one — give one of them",
+			sf.InputName("all"), sf.InputName("exact")).
+			WithHint(sf.CapabilityName("grant.list") + " shows the grants, one row each")
+	}
+	if s.target == "" {
+		return view.Errorf("grant.exact.target", "%s names one grant, and a grant names what it allows — give %s",
+			sf.InputName("exact"), sf.ArgumentName("target")).
+			WithHint(sf.CapabilityName("grant.list") + " shows the grants, one row each")
+	}
+	return nil
+}
+
+// described is the grant an exact selector names, for a sentence saying
+// none is standing: "kv.get on no record, on the base connection, for
+// claude". Every part said, since the parts left out are what exact reads
+// differently — and the role when one was given, which still narrows: left
+// unsaid, the sentence denied a grant the roster showed standing under
+// another role, or under none.
+func (s selector) described() string {
+	record := "on no record"
+	if s.scope != "" {
+		record = "on " + core.ShownRecord(s.scope, "any")
+	}
+	connection := "on the base connection"
+	if s.profile != "" {
+		connection = "via profile " + s.profile
+	}
+	who := "for no named agent"
+	if s.agent != "" {
+		who = "for " + s.agent
+	}
+	described := s.target + " " + record + ", " + connection + ", " + who
+	if s.role != "" {
+		described += ", under role " + s.role
+	}
+	return described
+}
+
+// revokeSelector is the selector a revoke's spec names.
+func revokeSelector(spec operatorid.RevokeSpec) selector {
+	return selector{all: spec.All, target: spec.Target, scope: spec.Scope, profile: spec.Profile,
+		agent: spec.Agent, role: spec.Role, exact: spec.Exact}
+}
+
 // stillCovering answers, after a revoke, whether anything left in the file
 // still authorizes the target — for *whoever* holds it.
 //
@@ -186,13 +293,18 @@ func givenRecord(sf plugin.Surface, scope string) *view.Error {
 // server still reach this", and there are no unnamed servers — so the
 // warning that exists to stop `revoke` reporting success while a wider grant
 // survives would never fire again.
+//
+// An exact revoke asks it of the agent and connection it named, the ones
+// left out included: the grant it took back was the one for no named agent,
+// or on the base connection, and a wider grant covering that holder is the
+// one worth naming.
 func stillCovering(live []core.Grant, spec operatorid.RevokeSpec) *core.Grant {
 	for i := range live {
 		g := live[i]
-		if spec.Agent != "" && g.Agent != spec.Agent {
+		if (spec.Exact || spec.Agent != "") && g.Agent != spec.Agent {
 			continue
 		}
-		if spec.Profile != "" && g.Profile != spec.Profile {
+		if (spec.Exact || spec.Profile != "") && g.Profile != spec.Profile {
 			continue
 		}
 		by := core.Caller{Agent: g.Agent, Profile: g.Profile, Pin: g.ProfilePin, Digest: g.Digest}
@@ -465,6 +577,9 @@ func PrepareRemote(catalog func() []plugin.Capability,
 // lets `grant revoke` run without the passphrase locally.
 func RevokeRemote(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
 	spec.Target = core.Normalize(spec.Target)
+	if verr := revokeSelector(spec).check(plugin.SurfaceUnknown); verr != nil {
+		return operatorid.RevokeOutcome{}, verr
+	}
 	// Role counts as a selector here as it does locally: `revoke --role dev`
 	// takes one role back from every agent, and refusing it for naming
 	// nothing sent an operator to --all, the widest revoke there is. Worded
@@ -492,7 +607,10 @@ func RevokeRemote(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutc
 // "revoked 1 grant" while a Reserve running at that instant put the
 // grant back.
 func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
-	var out operatorid.RevokeOutcome
+	// Said back, so a client that asked for exact can tell this revoke
+	// matched it from one by a server that never heard of it.
+	out := operatorid.RevokeOutcome{Exact: spec.Exact}
+	sel := revokeSelector(spec)
 	verr := core.Mutate(func(stored []core.Grant) ([]core.Grant, bool) {
 		now := time.Now()
 		kept := make([]core.Grant, 0, len(stored))
@@ -505,27 +623,9 @@ func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOut
 		for _, g := range stored {
 			// Revoking a plugin takes back every grant inside it: the point of
 			// `rta grant revoke kv` in a hurry is that nothing kv-shaped survives
-			// it, not that grants naming a capability slip through.
-			match := spec.All || spec.Target == "" || g.Target == spec.Target ||
-				core.Namespace(g.Target) == spec.Target
-			if match && spec.Scope != "" && g.Scope != spec.Scope {
-				match = false
-			}
-			// A revoke that names a profile takes back that connection and no
-			// other — and --all does not widen --profile or --agent into
-			// "every one of them"; each selector keeps its narrowing meaning.
-			// The full reasoning lived on this logic before it moved here, in
-			// runRevoke; the short version is that the narrowest request must
-			// never silently do the widest thing.
-			if match && spec.Profile != "" && g.Profile != spec.Profile {
-				match = false
-			}
-			if match && spec.Agent != "" && g.Agent != spec.Agent {
-				match = false
-			}
-			if match && spec.Role != "" && g.Role != spec.Role {
-				match = false
-			}
+			// it, not that grants naming a capability slip through. The rule,
+			// and exact's reading of it, is selector's, shared with renew.
+			match := sel.matches(g)
 			active := g.Active(now)
 			if match {
 				if active {
@@ -562,7 +662,8 @@ func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOut
 // alike — the sentences an operator acts on must not depend on which
 // machine computed them. sf is the surface asking, which is this machine's
 // either way, for the call a leftover grant is named with.
-func revokeBody(sf plugin.Surface, target string, out operatorid.RevokeOutcome, dry bool) string {
+func revokeBody(sf plugin.Surface, spec operatorid.RevokeSpec, out operatorid.RevokeOutcome, dry bool) string {
+	target := spec.Target
 	if out.NoneActive {
 		return "Nothing to revoke — no grant is active."
 	}
@@ -576,7 +677,13 @@ func revokeBody(sf plugin.Surface, target string, out operatorid.RevokeOutcome, 
 	}
 	if out.Revoked == 0 {
 		msg := fmt.Sprintf("No active grant for %s.", target)
-		if out.Still != nil {
+		switch {
+		case spec.Exact:
+			// Every part named: the ones left out are what exact reads as
+			// none, and "no active grant for kv.get" beside a roster of
+			// kv.get grants read as a revoke that failed.
+			msg = "No active grant is exactly " + revokeSelector(spec).described() + "."
+		case out.Still != nil:
 			// "No active grant" would be a flat lie here: nothing named this
 			// target exactly, but something else still authorizes it.
 			msg = fmt.Sprintf("No grant named exactly %s to remove.", target)
