@@ -86,6 +86,9 @@ const killTimeout = 3 * time.Second
 type Host struct {
 	mu      sync.Mutex
 	running map[string]*Client
+	// unregister takes CloseAll off the forced exit's list (New), once
+	// CloseAll has done what the exit would. Guarded by mu.
+	unregister func()
 	// untrusted is what discovery found and refused to launch, in $PATH
 	// order. Kept rather than only reported, so `rta plugin list` and `rta
 	// doctor` can show an operator the plugin that is installed and silent —
@@ -135,9 +138,23 @@ func (h *Host) Untrusted() []Untrusted {
 	return append([]Untrusted(nil), h.untrusted...)
 }
 
-// New builds a host. The zero Host works; New exists for the Stderr option.
+// New builds a host whose plugins a forced exit ends with it.
+//
+// The exit closed the host main attaches to it (internal/app's signal
+// handling) and no other, and commands make hosts of their own: install and
+// upgrade verify a plugin through one, and plugin manifest, plugin doc and
+// plugin dev read one through one. An exit taken while such a host held a
+// plugin left it running after rta had gone, in a process group of its own.
+// So every host's CloseAll is registered with the exit from the moment it
+// exists (shutdown.OnExit), and taken off once CloseAll has run, which makes
+// a host one to close once, at the end of what made it. The zero Host works
+// and is not registered: New is how a command gets one.
 func New(stderr io.Writer) *Host {
-	return &Host{running: map[string]*Client{}, Stderr: stderr}
+	h := &Host{running: map[string]*Client{}, Stderr: stderr}
+	h.mu.Lock()
+	h.unregister = shutdown.OnExit(h.CloseAll)
+	h.mu.Unlock()
+	return h
 }
 
 // Client is one running plugin process.
@@ -543,6 +560,11 @@ func (h *Host) CloseAll() {
 	for key, c := range h.running {
 		c.Close()
 		delete(h.running, key)
+	}
+	// Off the exit's list only now, with nothing left on it to close.
+	if h.unregister != nil {
+		h.unregister()
+		h.unregister = nil
 	}
 }
 
