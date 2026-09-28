@@ -27,7 +27,6 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
-	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/storage/filesystem"
@@ -85,23 +84,29 @@ func pathField(help string) plugin.Field {
 // done closes the packfiles reading the repository kept open (keptPacks),
 // and every caller defers it.
 func openRepo(ctx context.Context, req plugin.Request) (repo *git.Repository, done func(), _ *view.Error) {
-	return open(ctx, req, true)
+	return open(ctx, req, readsObjects)
 }
 
-// openRepoConfigOnly is the same repository without that refusal, for the
-// three capabilities whose answers never come out of a packfile: `git config`
-// reads .git/config, `git hooks` reads .git/hooks, and `git remotes` reads
-// the refs and the configured remotes. An object database this reader can
-// only see part of cannot make any of those wrong, and refusing them would
-// report a fault in an answer that does not have one.
+// openRepoConfigOnly is the same repository for the two capabilities whose
+// answers come out of its config and its hooks directory alone, git.config
+// and git.hooks, and openRepoRefs for git.remotes, which reads its refs as
+// well. An object database this reader can only see part of, or one in a
+// format it does not read, cannot make any of those wrong, and neither can
+// refs it does not read for the first two; refusing them would report a
+// fault in an answer that does not have one, and left a hooks audit
+// impossible in a sha256 repository (repositoryFormat).
 //
-// A named opener rather than a flag on openRepo, so that a capability which
+// Named openers rather than a flag on openRepo, so that a capability which
 // grows an object read has to come here and change which one it calls.
 func openRepoConfigOnly(ctx context.Context, req plugin.Request) (repo *git.Repository, done func(), _ *view.Error) {
-	return open(ctx, req, false)
+	return open(ctx, req, readsConfig)
 }
 
-func open(ctx context.Context, req plugin.Request, readsObjects bool) (*git.Repository, func(), *view.Error) {
+func openRepoRefs(ctx context.Context, req plugin.Request) (repo *git.Repository, done func(), _ *view.Error) {
+	return open(ctx, req, readsRefs)
+}
+
+func open(ctx context.Context, req plugin.Request, what reads) (*git.Repository, func(), *view.Error) {
 	path := req.String("path")
 	if gitclone.IsRemote(path) {
 		if verr := gitclone.RefuseOverMCP(req, "repository"); verr != nil {
@@ -126,12 +131,12 @@ func open(ctx context.Context, req plugin.Request, readsObjects bool) (*git.Repo
 	if verr != nil {
 		return nil, nil, verr
 	}
-	repo, verr := openAt(req, root, path)
+	repo, verr := openAt(req, root, path, what)
 	if verr != nil {
 		return nil, nil, verr
 	}
 	done := func() { release(repo) }
-	if readsObjects {
+	if what == readsObjects {
 		if verr := objectsAllReadable(repo, root); verr != nil {
 			done()
 			return nil, nil, verr
@@ -260,7 +265,10 @@ func objectsAllReadable(repo *git.Repository, root string) *view.Error {
 // never answered, and each call held an OS thread for good. regularFiles is
 // the filesystem both the git directory and the working tree are read
 // through.
-func openAt(req plugin.Request, root, path string) (*git.Repository, *view.Error) {
+//
+// And its format is decided as git decides it, for what the capability
+// reads, before go-git is handed it (repositoryFormat).
+func openAt(req plugin.Request, root, path string, what reads) (*git.Repository, *view.Error) {
 	notARepo := func(err error) *view.Error {
 		return view.Errorf("git.notarepo", "%s is not a git repository: %v", path, err).
 			WithHint("run this against a directory inside a git repository, a checkout's own root, or a bare repository's own directory")
@@ -319,84 +327,24 @@ func openAt(req plugin.Request, root, path string) (*git.Repository, *view.Error
 
 	storage := filesystem.NewStorageWithOptions(dotgit.NewRepositoryFilesystem(dot, common), cache.NewObjectLRUDefault(),
 		filesystem.Options{MaxOpenDescriptors: keptPacks})
-	repo, err := git.Open(readerExtensions{storage}, wt)
-	if err != nil {
-		if verr := unsupportedFormat(path, storage, err); verr != nil {
+	// A config that cannot be read is go-git's to refuse, as it refused it.
+	if cfg, err := storage.Config(); err == nil {
+		var blank map[string]valueless
+		if content, err := readGitDirFile(storage.Filesystem(), "config"); err == nil {
+			blank = valuelessKeys(content)
+		}
+		if verr := repositoryFormat(path, cfg, blank, what); verr != nil {
 			return nil, verr
 		}
+	}
+	repo, err := git.Open(decidedFormat{storage}, wt)
+	if err != nil {
 		return nil, notARepo(err)
 	}
 	// The storage itself from here on, whose config is the whole file, and
 	// which every capability here asks for by its type.
 	repo.Storer = storage
 	return repo, nil
-}
-
-// readerExtensions is a repository's storage as git.Open is handed it, whose
-// config leaves out the one extension that changes nothing this reads.
-//
-// **`git sparse-checkout set` turns on extensions.worktreeConfig, and go-git
-// refused every repository that had it**, so each capability here answered
-// such a checkout as "not a git repository". go-git lists the extension as
-// one a format-0 repository may carry and then compares that list with the
-// name lowercased, which never matches, and a format-1 repository's is
-// unknown to it. All the extension says is that git also reads
-// config.worktree, which this reads itself where it matters (worktreeConfig);
-// the objects, refs and index are git's usual ones. Every other extension is
-// left for go-git to refuse: one that changes how objects or refs are stored
-// is one this cannot read, and the refusal names it (unsupportedFormat).
-type readerExtensions struct{ *filesystem.Storage }
-
-func (s readerExtensions) Config() (*gitconfig.Config, error) {
-	cfg, err := s.Storage.Config()
-	if err != nil {
-		return nil, err
-	}
-	if cfg.Raw.HasSection("extensions") {
-		cfg.Raw.Section("extensions").RemoveOption("worktreeConfig")
-	}
-	return cfg, nil
-}
-
-// unsupportedFormat is the refusal of a repository go-git would not open for
-// an extension its config sets, naming the extension; nil where err is not
-// that.
-//
-// **A repository git reads is not "not a git repository".** `git init
-// --object-format=sha256` sets extensions.objectFormat, and `git init
-// --ref-format=reftable`, or `git refs migrate`, extensions.refStorage: the
-// first names its objects by SHA-256 and the second keeps its refs in a
-// reftable, and go-git reads neither. It refuses them, rightly, since it
-// would read such a repository wrong, and every capability here passed its
-// refusal on as git.notarepo, telling the caller to find a directory inside
-// a git repository while standing in one. The wording did not help either:
-// go-git never reads core.repositoryFormatVersion back from the config, so
-// whatever the extension it says the format version does not support it.
-// Every extension still set once readerExtensions has left out the one it
-// reads around is named, with its value, as the config spells them.
-func unsupportedFormat(path string, storage *filesystem.Storage, err error) *view.Error {
-	if !errors.Is(err, git.ErrUnknownExtension) && !errors.Is(err, git.ErrUnsupportedExtensionRepositoryFormatVersion) &&
-		!errors.Is(err, git.ErrUnsupportedRepositoryFormatVersion) {
-		return nil
-	}
-	cfg, cerr := readerExtensions{storage}.Config()
-	if cerr != nil {
-		return nil //nolint:nilerr // a config that cannot be read names no extension, and go-git's refusal is passed on as it was
-	}
-	var named []string
-	if cfg.Raw.HasSection("extensions") {
-		for _, o := range cfg.Raw.Section("extensions").Options {
-			named = append(named, "extensions."+o.Key+" = "+o.Value)
-		}
-	}
-	if len(named) == 0 {
-		named = append(named, "core.repositoryformatversion = "+
-			cfg.Raw.Section("core").Option("repositoryformatversion"))
-	}
-	return view.Errorf("git.repository.unsupported", "%s is a git repository in a format this reader "+
-		"does not support yet: its config sets %s", path, strings.Join(named, ", ")).
-		WithHint("git itself reads it; this reader opens a repository whose objects are named by SHA-1, " +
-			"whose refs are files, and which holds every object it names")
 }
 
 // maxPointerBytes bounds a file that points at a directory — a `.git` file
