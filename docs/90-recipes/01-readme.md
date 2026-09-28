@@ -271,7 +271,7 @@ The two probes mean different things, which is the only reason there are two. `/
 | `rta_agent_calls_total` | every call ever, including any retention has dropped — a counter that survives rotation |
 | `rta_agent_calls_recorded_total{capability,agent,outcome,authorized}` | the retained record, split the four ways worth splitting |
 | `rta_agent_calls_retired_total` | what retention dropped, so the gap between the two above is visible rather than merely handled |
-| `rta_grants_active{capability,agent}` | reach in force right now |
+| `rta_grants_active{capability,agent}` | reach in force right now — a grant bound to a plugin build that no longer answers covers nothing, and is not counted |
 | `rta_agent_pending` | calls parked, waiting for a person |
 | `rta_record_intact` | 1 while the hash chain verifies end to end |
 | `rta_record_bytes`, `rta_record_segments` | the record's own size |
