@@ -7,6 +7,9 @@ import (
 	"time"
 
 	core "github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/mcp"
+	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -164,12 +167,97 @@ func TestAGrantOnAPluginThatDoesNotLoadIsMarkedSo(t *testing.T) {
 	}
 }
 
-// A remote roster is judged by the server that holds it: this machine's
-// plugins say nothing about that server's, so no build is marked here.
-func TestARemoteRosterMarksNoBuild(t *testing.T) {
-	tbl := grantsTable([]core.Grant{{Target: "hello.wipe", Digest: helloBuild, Expires: time.Now().Add(time.Hour)}}, nil, nil, false)
-	if hasColumn(tbl, "Artifact") || len(tbl.Warnings) != 0 {
-		t.Errorf("a remote roster = %v / %v, want no Artifact column and no warning", tbl.Columns, tbl.Warnings)
+// remoteRoster is grant list --server lab, as a person runs it.
+func remoteRoster(t *testing.T) view.Table {
+	t.Helper()
+	v, err := listCap(t).Run(context.Background(),
+		reqTUI(map[string]any{"server": "lab", "passphrase": "correct horse"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tbl, ok := v.(view.Table)
+	if !ok {
+		t.Fatalf("the remote roster is %s, want a Table", view.TypeOf(v))
+	}
+	return tbl
+}
+
+// A remote roster is judged by the server that holds it, against its own
+// plugins — this machine's say nothing about that server's — and drawn as
+// the local one is: it marked no build at all, so a grant a plugin upgrade
+// on the server had left covering nothing read there as live.
+func TestARemoteRosterIsMarkedAsTheServerJudgesIt(t *testing.T) {
+	setup(t)
+	remoteLabAs(t, mcp.OperatorConfig{Artifact: answering(helloRebuilt)})
+	helloGrants(t)
+	tbl := remoteRoster(t)
+	if got := cell(t, tbl, rowFor(t, tbl, "hello.wipe"), "Artifact"); got != helloBuild[:12]+" (replaced)" {
+		t.Errorf("hello.wipe's artifact reads %q, want its build marked replaced by the server", got)
+	}
+	if got := cell(t, tbl, rowFor(t, tbl, "kv.get"), "Artifact"); got != "built in" {
+		t.Errorf("kv.get's artifact reads %q, want built in, unmarked", got)
+	}
+	if tbl.Columns[0].Name != "Capability" {
+		t.Errorf("the capability is no longer the row's first cell: %v", tbl.Columns)
+	}
+	w := warning(t, tbl, "grant.artifact.replaced")
+	if !w.Advisory || !strings.Contains(w.Message, "1 grant on lab was issued on a plugin that has been replaced there") {
+		t.Errorf("the warning reads %q (advisory %v), want it to name the server", w.Message, w.Advisory)
+	}
+	issue := plugin.SurfaceTUI.Call("grant.allow", plugin.Arg{Name: "server", Value: "lab"})
+	if !strings.Contains(w.Hint, issue) || strings.Contains(w.Hint, "renew") {
+		t.Errorf("the hint reads %q, want the fix issued there, and no renew, which takes no server", w.Hint)
+	}
+}
+
+// A grant naming a plugin the server does not load is marked so, the server
+// named in the warning; with the server's own builds answering there is
+// nothing to mark, and no column on the compact roster, as here.
+func TestARemoteRosterMarksWhatTheServerDoesNotLoad(t *testing.T) {
+	setup(t)
+	remoteLabAs(t, mcp.OperatorConfig{Artifact: answering("")})
+	helloGrants(t)
+	if w := warning(t, remoteRoster(t), "grant.artifact.gone"); !strings.Contains(w.Message, "1 grant on lab names") ||
+		!strings.Contains(w.Hint, "`rta plugin list` on lab") {
+		t.Errorf("the warning reads %q / %q, want the server named", w.Message, w.Hint)
+	}
+
+	setup(t)
+	remoteLabAs(t, mcp.OperatorConfig{Artifact: answering(helloBuild)})
+	helloGrants(t)
+	if tbl := remoteRoster(t); hasColumn(tbl, "Artifact") || len(tbl.Warnings) != 0 {
+		t.Errorf("a remote roster whose builds all answer = %v / %v, want no column and no warning", tbl.Columns, tbl.Warnings)
+	}
+}
+
+// A server older than the verdict sends none, and the roster cannot say
+// which build answers there: every row says unknown, once, rather than
+// drawing its grants as live or as dead.
+func TestARemoteRosterWithNoVerdictSaysUnknown(t *testing.T) {
+	setup(t)
+	remoteLabAs(t, mcp.OperatorConfig{})
+	helloGrants(t)
+	tbl := remoteRoster(t)
+	for target, want := range map[string]string{"hello.wipe": helloBuild[:12] + " (unknown)", "kv.get": "built in (unknown)"} {
+		if got := cell(t, tbl, rowFor(t, tbl, target), "Artifact"); got != want {
+			t.Errorf("%s's artifact reads %q, want %q", target, got, want)
+		}
+	}
+	w := warning(t, tbl, "grant.artifact.unknown")
+	if !w.Advisory || !strings.Contains(w.Message, "lab does not say") || !strings.Contains(w.Hint, plugin.SurfaceTUI.Call("operator.status", plugin.Arg{Name: "server", Value: "lab"})) {
+		t.Errorf("the warning = %+v, want it to name the server and how to see its build", w)
+	}
+	if len(tbl.Warnings) != 1 {
+		t.Errorf("warnings = %v, want the one unknown warning", tbl.Warnings)
+	}
+	// A list of verdicts the roster's length is not says nothing about
+	// which grant is whose, and is read as none.
+	grants := []core.Grant{{Target: "kv.get"}, {Target: "hello.wipe"}}
+	short := operatorid.GrantList{Grants: grants, Artifacts: []core.ArtifactState{core.ArtifactReplaced}}
+	for i, s := range remoteStates(short) {
+		if s != core.ArtifactUnknown {
+			t.Errorf("row %d of a mismatched list reads %v, want unknown", i, s)
+		}
 	}
 }
 

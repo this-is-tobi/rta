@@ -264,6 +264,12 @@ func TestAHostilePrepareIsNotASigningOracle(t *testing.T) {
 // it, and points remotes.yaml at it.
 func remoteLab(t *testing.T) {
 	t.Helper()
+	remoteLabAs(t, mcp.OperatorConfig{Revoke: RevokeRemote})
+}
+
+// remoteLabAs is remoteLab serving cfg, its roster and URL filled in.
+func remoteLabAs(t *testing.T, cfg mcp.OperatorConfig) {
+	t.Helper()
 	operatorid.ScryptWorkFactor = 10
 	if _, verr := operatorid.Init("correct horse"); verr != nil {
 		t.Fatal(verr)
@@ -285,9 +291,8 @@ func remoteLab(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := "http://" + ln.Addr().String()
-	srv := httptest.NewUnstartedServer(mcp.NewOperatorHandler(mcp.OperatorConfig{
-		Roster: roster, URL: base, Revoke: RevokeRemote,
-	}))
+	cfg.Roster, cfg.URL = roster, base
+	srv := httptest.NewUnstartedServer(mcp.NewOperatorHandler(cfg))
 	srv.Listener.Close()
 	srv.Listener = ln
 	srv.Start()

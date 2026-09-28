@@ -72,6 +72,13 @@ type OperatorConfig struct {
 	// each attributed to the enrolled operator the envelope verified.
 	Pending func() (operator.ConsentList, *view.Error)
 	Answer  func(spec operator.AnswerSpec, label string) (operator.AnswerOutcome, *view.Error)
+	// Artifact is the registry's lookup of the plugin answering for a
+	// namespace now (registry.Artifact), wired from the app layer: the
+	// grant.list verb judges each grant's plugin build against it and sends
+	// the verdict beside the grant (operator.GrantList.Artifacts). nil sends
+	// none, which the operator's roster shows as unknown — the answer a
+	// server older than the verdict gives.
+	Artifact func(namespace string) (string, bool)
 	// Consent says whether this process itself parks calls (--consent).
 	// The consent verbs refuse without it, and the gate is load-bearing
 	// rather than tidy: the queue on disk is machine-global — several
@@ -478,7 +485,18 @@ func (h *operatorHandler) dispatch(env operator.Envelope, label string, role ope
 		if verr != nil {
 			return nil, verr
 		}
-		return operator.GrantList{Grants: grants, Suppressed: grant.Suppressed()}, nil
+		list := operator.GrantList{Grants: grants, Suppressed: grant.Suppressed()}
+		// Judged here, by this server's registry, because the plugins that
+		// answer are this server's and the operator reading the roster is
+		// on another machine: the same verdict this machine's own grant
+		// list marks and the gate refuses by.
+		if h.cfg.Artifact != nil {
+			list.Artifacts = make([]grant.ArtifactState, len(grants))
+			for i, g := range grants {
+				list.Artifacts[i] = g.ArtifactFrom(h.cfg.Artifact)
+			}
+		}
+		return list, nil
 	case operator.VerbGrantRevoke:
 		if h.cfg.Revoke == nil {
 			return nil, verbUnoffered(env.Verb)

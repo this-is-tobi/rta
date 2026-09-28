@@ -213,8 +213,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"bound to, then everything an agent can reach with no grant at all, and everything " +
 					"that would need one — because \"what did I allow\" is only half of \"what can it do\". " +
 					"With `server` (a name from remotes.yaml): the same roster read from a " +
-					"remote rta server as a signed operator call, your operator key's passphrase asked " +
-					"first. Can only be run by a person at a terminal, the same as grant.allow/renew/revoke: " +
+					"remote rta server as a signed operator call, each grant's plugin build judged by that " +
+					"server, your operator key's passphrase asked first. Can only be run by a person at a terminal, the same as grant.allow/renew/revoke: " +
 					"the roster names every agent by name, which is exactly the cross-agent visibility an " +
 					"agent asking about itself must not get.",
 				Inputs: []plugin.Field{
@@ -1171,7 +1171,7 @@ func heldTable(sf plugin.Surface, role string, detail bool, artifact func(string
 		}
 		return nil, verr
 	}
-	bound := boundBy(artifact)
+	states := judged(grants, boundBy(artifact))
 	cfg, cfgErr := config.Load()
 	t := grantsTable(grants, func(g core.Grant) bool {
 		// A grant whose connection has been repointed since it was issued is
@@ -1184,14 +1184,14 @@ func heldTable(sf plugin.Surface, role string, detail bool, artifact func(string
 		// profile exists and that consent was once given for it — so the person
 		// has to be able to find out here instead.
 		return cfgErr == nil && g.Stale(profiles.ConnStampFor(cfg, g.Profile, core.Namespace(g.Target)))
-	}, bound, detail)
+	}, states, detail)
 	if w := olderServerWarning(); w != nil {
 		t.Warnings = append(t.Warnings, *w)
 	}
 	// The remedy, beside the rows it is about, for the reason the one for a
 	// changed connection is here: the refusal an agent gets says only what
 	// an ungranted call is told.
-	t.Warnings = append(t.Warnings, artifactWarnings(sf, grants, bound)...)
+	t.Warnings = append(t.Warnings, artifactWarnings(sf, grants, states, "")...)
 	// An empty roster is still the table, with what a person is told in
 	// place of it beside it (view.Table.Empty). It answered with the
 	// sentence as a Text view, which every format carried: `jq '.rows[]'`
@@ -1308,12 +1308,13 @@ func rolesInForce(grants []core.Grant) string {
 // store or a remote server's answer. stale reports whether a row's
 // connection changed under it; the remote path passes nil, because
 // staleness is judged against the server's config and the server already
-// judged it by the same rule when it loaded the rows. bound says how a
-// row's artifact compares with the plugin answering now (boundBy), and the
-// remote path passes nil for it too: the plugins that answer are the
-// server's, which this machine cannot see. detail is `grant list
-// --detail`'s page.
-func grantsTable(grants []core.Grant, stale func(core.Grant) bool, bound func(core.Grant) core.ArtifactState,
+// judged it by the same rule when it loaded the rows. states says, row for
+// row, how each grant's artifact compares with the plugin answering now:
+// judged here against this machine's registry (judged), or by the server
+// that holds the rows against its own (remoteStates), since the plugins
+// that answer there are the server's; nil judges nothing. detail is `grant
+// list --detail`'s page.
+func grantsTable(grants []core.Grant, stale func(core.Grant) bool, states []core.ArtifactState,
 	detail bool,
 ) view.Table {
 	// The Agent column appears only once something has one, and that is the
@@ -1360,14 +1361,12 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool, bound func(co
 	// noise until the day one of them is the finding. That day it is the
 	// only sign of it: upgrading a plugin invalidates every grant standing on
 	// it, and each such row read as live while every call it was issued for
-	// was refused.
-	states := make([]core.ArtifactState, len(grants))
-	artifacts := detail && bound != nil
-	for i, g := range grants {
-		if bound != nil {
-			states[i] = bound(g)
-		}
-		if states[i] != core.ArtifactCurrent {
+	// was refused. A grant nobody judged — a remote roster from a server
+	// older than the verdict — is not what answers either, as far as this
+	// screen can say, so the column is there to say unknown.
+	artifacts := detail && states != nil
+	for _, s := range states {
+		if s != core.ArtifactCurrent {
 			artifacts = true
 		}
 	}
@@ -1451,64 +1450,125 @@ func boundBy(artifact func(string) (string, bool)) func(core.Grant) core.Artifac
 	if artifact == nil {
 		return nil
 	}
-	return func(g core.Grant) core.ArtifactState {
-		current, known := artifact(core.Namespace(g.Target))
-		return g.ArtifactNow(current, known)
+	return func(g core.Grant) core.ArtifactState { return g.ArtifactFrom(artifact) }
+}
+
+// judged is each grant's state by bound, position for position, and nil
+// when there is no bound to judge by.
+func judged(grants []core.Grant, bound func(core.Grant) core.ArtifactState) []core.ArtifactState {
+	if bound == nil {
+		return nil
 	}
+	states := make([]core.ArtifactState, len(grants))
+	for i, g := range grants {
+		states[i] = bound(g)
+	}
+	return states
 }
 
 // artifactWarnings is what the Artifact column's marks mean and what to do
 // about them, one warning per kind of mark: coded, so a script reading -o
-// json finds them, and worded for the person who has to act.
+// json finds them, and worded for the person who has to act. states is the
+// column's, row for row (grantsTable); server names the remote server the
+// rows came from, empty for this machine's own.
 //
 // Beside the rows rather than in the refusal an agent gets. That refusal is
 // deliberately the sentence an ungranted call is told, so the fix — issue
 // the grant again, against the plugin as it is now — has nowhere else to be
 // found. renew is named as what does not fix it: it moves a deadline and
 // never rebinds a grant, for the reason it never adopts a new connection.
+// On a remote roster the fix is issued there, and renew is not named: it
+// takes no server.
 //
 // Advisory (view.Error.Advisory): the rows they are about are all on the
 // roster, marked, and a surface heads the roster as partial only for what
 // is missing from it.
-func artifactWarnings(sf plugin.Surface, grants []core.Grant, bound func(core.Grant) core.ArtifactState) []view.Error {
-	if bound == nil {
+func artifactWarnings(sf plugin.Surface, grants []core.Grant, states []core.ArtifactState, server string) []view.Error {
+	if states == nil {
 		return nil
 	}
 	var replaced, gone []string
-	for _, g := range grants {
-		switch bound(g) {
+	unknown := 0
+	for i, g := range grants {
+		switch states[i] {
 		case core.ArtifactReplaced:
 			replaced = append(replaced, g.Named())
 		case core.ArtifactGone:
 			gone = append(gone, g.Named())
+		case core.ArtifactUnknown:
+			unknown++
 		}
+	}
+	// "1 grant was issued" here, "1 grant on lab was issued" of a roster
+	// read from lab, and a plugin replaced or not loaded "there".
+	on, there := "", ""
+	if server != "" {
+		on, there = " on "+server, " there"
 	}
 	var out []view.Error
 	if n := len(replaced); n > 0 {
+		hint := fmt.Sprintf("a grant is bound to the plugin build it was issued against, and an upgrade or a "+
+			"rebuild is another build — issue %s again after the upgrade with %s; %s moves a deadline "+
+			"and does not rebind a grant", format.Plural(n, "it", "each"),
+			sf.CapabilityName("grant.allow"), sf.CapabilityName("grant.renew"))
+		if server != "" {
+			hint = fmt.Sprintf("a grant is bound to the plugin build it was issued against, and an upgrade or a "+
+				"rebuild is another build — issue %s again there with `%s`", format.Plural(n, "it", "each"),
+				sf.Call("grant.allow", plugin.Arg{Name: "server", Value: server}))
+		}
 		out = append(out, view.Error{
 			Code: "grant.artifact.replaced",
-			Message: fmt.Sprintf("%s on a plugin that has been replaced since, and %s nothing now: %s",
-				format.Count(n, "grant was issued", "grants were issued"), format.Plural(n, "authorizes", "authorize"),
-				strings.Join(replaced, ", ")),
-			Hint: fmt.Sprintf("a grant is bound to the plugin build it was issued against, and an upgrade or a "+
-				"rebuild is another build — issue %s again after the upgrade with %s; %s moves a deadline "+
-				"and does not rebind a grant", format.Plural(n, "it", "each"),
-				sf.CapabilityName("grant.allow"), sf.CapabilityName("grant.renew")),
+			Message: fmt.Sprintf("%s on a plugin that has been replaced%s since, and %s nothing now: %s",
+				format.Count(n, "grant"+on+" was issued", "grants"+on+" were issued"), there,
+				format.Plural(n, "authorizes", "authorize"), strings.Join(replaced, ", ")),
+			Hint:     hint,
 			Advisory: true,
 		})
 	}
 	if n := len(gone); n > 0 {
+		hint := "`rta plugin list` says which plugins load; once it does, a grant issued against " +
+			"another build of it has to be issued again"
+		if server != "" {
+			hint = "`rta plugin list` on " + server + " says which plugins load there; once it does, a grant " +
+				"issued against another build of it has to be issued again"
+		}
 		out = append(out, view.Error{
 			Code: "grant.artifact.gone",
-			Message: fmt.Sprintf("%s a plugin rta does not load now, and %s nothing: %s",
-				format.Count(n, "grant names", "grants name"), format.Plural(n, "authorizes", "authorize"),
-				strings.Join(gone, ", ")),
-			Hint: "`rta plugin list` says which plugins load; once it does, a grant issued against " +
-				"another build of it has to be issued again",
+			Message: fmt.Sprintf("%s a plugin rta does not load%s now, and %s nothing: %s",
+				format.Count(n, "grant"+on+" names", "grants"+on+" name"), there,
+				format.Plural(n, "authorizes", "authorize"), strings.Join(gone, ", ")),
+			Hint:     hint,
+			Advisory: true,
+		})
+	}
+	// Said once for the roster rather than per row: it is the server that
+	// sent no verdict, not any grant that has none.
+	if unknown > 0 {
+		out = append(out, view.Error{
+			Code: "grant.artifact.unknown",
+			Message: fmt.Sprintf("%s does not say whether the plugin build each grant is bound to still "+
+				"answers there, so the Artifact column cannot say either", server),
+			Hint: "a server on a build of rta older than that verdict sends none — `" +
+				sf.Call("operator.status", plugin.Arg{Name: "server", Value: server}) + "` says which it runs",
 			Advisory: true,
 		})
 	}
 	return out
+}
+
+// remoteStates is the server's verdict on each of gl's grants, and
+// ArtifactUnknown for every one when there is none to read: a server older
+// than the verdict sends none, and a list that is not the roster's length
+// cannot say which verdict is whose.
+func remoteStates(gl operatorid.GrantList) []core.ArtifactState {
+	if len(gl.Artifacts) == len(gl.Grants) {
+		return gl.Artifacts
+	}
+	states := make([]core.ArtifactState, len(gl.Grants))
+	for i := range states {
+		states[i] = core.ArtifactUnknown
+	}
+	return states
 }
 
 // suppressedNote accounts for grants the ceiling is holding back, so that

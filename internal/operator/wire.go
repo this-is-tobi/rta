@@ -172,6 +172,18 @@ func (o OperatorInfo) String() string {
 type GrantList struct {
 	Grants     []grant.Grant `json:"grants"`
 	Suppressed int           `json:"suppressed"`
+	// Artifacts is the server's verdict on each grant's plugin build,
+	// position for position with Grants: whether the build it was issued
+	// against still answers there (grant.ArtifactFrom, against the server's
+	// own registry). Judged by the server because the plugins that answer
+	// are the server's, which the operator's machine cannot see — so a
+	// remote roster marked nothing, while every grant a plugin upgrade had
+	// left standing there covered no call.
+	//
+	// Additive: a server older than it sends none, and a list whose length
+	// is not the roster's is read as none, since which verdict belongs to
+	// which grant is then a guess. The roster says unknown either way.
+	Artifacts []grant.ArtifactState `json:"artifacts,omitempty"`
 }
 
 // ConsentList is VerbConsentList's result: the queue as the server's own

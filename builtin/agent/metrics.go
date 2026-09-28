@@ -224,7 +224,7 @@ func callSamples(entries []agentlog.Entry) []sample {
 // same reason: upgrading or removing a plugin leaves every grant standing on
 // it inside its window and covering no call, and the gauge went on counting
 // each one — a dashboard's reach flat across an upgrade that had taken all
-// of it away. Judged by Grant.ArtifactNow against artifact, the registry's
+// of it away. Judged by Grant.ArtifactFrom against artifact, the registry's
 // lookup, which is how grant list marks such a grant and how the gate
 // refuses its calls; nil judges nothing, as the listing's boundBy does.
 func grantSamples(artifact func(string) (string, bool)) []sample {
@@ -239,10 +239,8 @@ func grantSamples(artifact func(string) (string, bool)) []sample {
 		if !g.Active(now) {
 			continue
 		}
-		if artifact != nil {
-			if current, known := artifact(grant.Namespace(g.Target)); g.ArtifactNow(current, known) != grant.ArtifactCurrent {
-				continue
-			}
+		if artifact != nil && g.ArtifactFrom(artifact) != grant.ArtifactCurrent {
+			continue
 		}
 		counts[key{g.Target, g.Agent}]++
 	}
