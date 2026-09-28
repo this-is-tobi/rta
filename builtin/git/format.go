@@ -96,7 +96,10 @@ func isGitBool(value string) bool {
 // capability reads: an object format but SHA-1 is one the objects are
 // unreadable in, refs kept in a reftable are unreadable as files, and neither
 // changes the config or the hooks. What is left is handed to go-git with no
-// extension at all (decidedFormat).
+// extension at all (decidedFormat). An extension set on more than one line
+// is judged by its last, the one git reads: every line was judged, and a
+// config naming sha256 and then sha1 was refused as objects this cannot read,
+// in a repository git reads as the SHA-1 one it is.
 //
 // git reads each extension's value as it reads the config, before it looks at
 // the version, so a value it does not take stops it whatever the version,
@@ -126,7 +129,12 @@ func repositoryFormat(path string, cfg *gitconfig.Config, blank map[string]value
 	}
 	var versionOne, invalid, unknown, unread []string
 	objects, compat, compats := "sha1", "", 0
-	for _, o := range cfg.Raw.Section("extensions").Options {
+	options := cfg.Raw.Section("extensions").Options
+	last := map[string]int{}
+	for i, o := range options {
+		last[strings.ToLower(o.Key)] = i
+	}
+	for i, o := range options {
 		name, value := strings.ToLower(o.Key), strings.TrimSpace(o.Value)
 		switch name {
 		case "objectformat":
@@ -146,7 +154,7 @@ func repositoryFormat(path string, cfg *gitconfig.Config, blank map[string]value
 		case none && ext.valued, ext.takes != nil && !ext.takes(value):
 			invalid = append(invalid, spelled)
 		case !ext.versionOne:
-		case !readable(name, value, what):
+		case last[name] == i && !readable(name, value, what):
 			versionOne = append(versionOne, spelled)
 			unread = append(unread, spelled)
 		default:
