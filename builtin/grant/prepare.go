@@ -397,6 +397,9 @@ func olderServerWarning() *view.Error {
 			"started with, so a grant listed here can still be refused",
 			format.Count(n, "server is", "servers are")),
 		Hint: "reconnect the client: " + named,
+		// Every row is there: this is about how a server will judge them,
+		// so it heads the roster as a warning and never as partial.
+		Advisory: true,
 	}
 }
 

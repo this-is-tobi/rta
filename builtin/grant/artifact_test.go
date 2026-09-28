@@ -125,6 +125,9 @@ func TestAGrantOnAReplacedPluginIsMarkedWithTheFix(t *testing.T) {
 			t.Errorf("detail=%v: the capability is no longer the row's first cell: %v", detail, tbl.Columns)
 		}
 		w := warning(t, tbl, "grant.artifact.replaced")
+		if !w.Advisory {
+			t.Errorf("detail=%v: the warning is not advisory, so a roster missing nothing is headed partial", detail)
+		}
 		for _, want := range []string{"1 grant was issued on a plugin that has been replaced", "authorizes nothing", "hello.wipe"} {
 			if !strings.Contains(w.Message, want) {
 				t.Errorf("detail=%v: the warning reads %q, want it to say %q", detail, w.Message, want)
@@ -137,7 +140,8 @@ func TestAGrantOnAReplacedPluginIsMarkedWithTheFix(t *testing.T) {
 		}
 	}
 	raw, err := view.Marshal(view.Envelope{View: view.Redact(listWith(t, answering(helloRebuilt), false))})
-	if err != nil || !strings.Contains(string(raw), `"grant.artifact.replaced"`) || !strings.Contains(string(raw), "(replaced)") {
+	if err != nil || !strings.Contains(string(raw), `"grant.artifact.replaced"`) || !strings.Contains(string(raw), "(replaced)") ||
+		!strings.Contains(string(raw), `"advisory":true`) {
 		t.Errorf("json = %s (%v), want the mark and the coded warning", raw, err)
 	}
 }
@@ -152,6 +156,9 @@ func TestAGrantOnAPluginThatDoesNotLoadIsMarkedSo(t *testing.T) {
 		t.Errorf("hello.wipe's artifact reads %q, want its build marked not loaded", got)
 	}
 	w := warning(t, tbl, "grant.artifact.gone")
+	if !w.Advisory {
+		t.Error("the warning is not advisory, so a roster missing nothing is headed partial")
+	}
 	if !strings.Contains(w.Message, "hello.wipe") || !strings.Contains(w.Hint, "rta plugin list") {
 		t.Errorf("the warning reads %q / %q, want the grant named and where to look", w.Message, w.Hint)
 	}
