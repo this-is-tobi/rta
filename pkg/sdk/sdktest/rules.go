@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/sdk/spelling"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -265,9 +266,12 @@ func checkVerbs(t reporter, p plugin.Plugin, cfg config) {
 	}
 	sort.Strings(novel)
 	novel = dedupe(novel)
-	t.Logf("sdktest: %s: %s introduces %d verb(s) the catalogue does not use: %s. "+
-		"Fine for a domain word; if one of these means %s, use that instead.",
-		RuleVerbs, p.Name, len(novel), strings.Join(novel, ", "), strings.Join(vocabulary, "/"))
+	// Counted as the host counts (pkg/format), so the suite that holds a
+	// plugin's words does not print "2 verb(s)" at the author it holds.
+	t.Logf("sdktest: %s: %s introduces %s the catalogue does not use: %s. "+
+		"Fine for a domain word; if %s %s, use that instead.",
+		RuleVerbs, p.Name, format.CountOf(len(novel), "verb"), strings.Join(novel, ", "),
+		format.Plural(len(novel), "it means", "one of these means"), strings.Join(vocabulary, "/"))
 }
 
 func dedupe(sorted []string) []string {
