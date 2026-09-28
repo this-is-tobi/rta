@@ -299,8 +299,8 @@ func TestARecordIsKeptExactlyAndWrittenWithNothingUnseenRaw(t *testing.T) {
 	}
 }
 
-// Records beside enormous arguments stay, since they are what the call was
-// judged on, and are never clipped: past a field's bound they go with the
+// Records beside enormous arguments stay, since they are the records the
+// call named, and are never clipped: past a field's bound they go with the
 // arguments, and the note says so.
 func TestAnEnormousEntryKeepsItsRecordsWhileTheyFit(t *testing.T) {
 	isolate(t)

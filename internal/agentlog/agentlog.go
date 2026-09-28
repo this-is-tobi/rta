@@ -224,9 +224,14 @@ type Entry struct {
 	At   time.Time `json:"at"`
 	Cap  string    `json:"capability"`
 	Tool string    `json:"tool,omitempty"`
-	// Records are the records the grant gate judged this call on — its
-	// Scope's values and ScopeAlso's, the strings a grant is compared with
-	// byte for byte — exactly as the call spelled them, and nothing else.
+	// Records are the records this call named — its Scope's values and
+	// ScopeAlso's, the strings a grant is compared with byte for byte, which
+	// the grant gate judges when it judges the call at all — exactly as the
+	// call spelled them, and nothing else. "When it judges": a scoped read
+	// that needs no grant is let through before any grant is looked at, and
+	// its row keeps the records it named all the same, as does an operator's
+	// grant issued or revoked on a record, which no gate judges either. Said
+	// once as "the records the call was judged on", which those rows' are not.
 	//
 	// **Their own field, because Args cannot be exact.** Args are cleaned for
 	// whoever reads them next, a model included, and cleaning drops the
@@ -779,7 +784,7 @@ func Append(e Entry) (err error) {
 		// rather than fatal.
 		//
 		// The records stay while they fit a field's bound, since they are
-		// what the call was judged on and usually a key beside a value that
+		// the records the call named and usually a key beside a value that
 		// is the unbounded part. A record is never clipped: a clipped one is
 		// a record nobody named. Past the bound they go with the arguments,
 		// and the note says so.

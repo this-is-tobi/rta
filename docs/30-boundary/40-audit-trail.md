@@ -10,9 +10,9 @@ rta agent pending     # anything parked, waiting on you
 
 ## What a line carries
 
-Every call that arrived over MCP is written down: the capability, the records it was judged on, the arguments with every input declared `Secret` or `SecretSlice` masked, the profile it resolved through, what happened, and **how it was authorized** — no grant needed, a standing grant, or you answering live.
+Every call that arrived over MCP is written down: the capability, the records it named, the arguments with every input declared `Secret` or `SecretSlice` masked, the profile it resolved through, what happened, and **how it was authorized** — no grant needed, a standing grant, or you answering live.
 
-The records are the ones a grant is compared with, kept exactly as the call spelled them, and `agent log` shows them in a `record` column the way [grants](./30-grants.md) are shown: quoted, each unseen character named by its code point, when one holds white space or a character that draws as nothing. The arguments are kept as a model may read them, cleaned of the zero-width, direction and tag characters, so the record column is the one that says which record a call named. In the file itself, every character a reader would not see is written as its JSON escape, so `tail -f` shows it rather than hiding or reordering the line, and anything that parses the line reads the same value.
+The records are the ones a grant is compared with, kept exactly as the call spelled them whether the call needed a grant or ran without one, and `agent log` shows them in a `record` column the way [grants](./30-grants.md) are shown: quoted, each unseen character named by its code point, when one holds white space or a character that draws as nothing. The arguments are kept as a model may read them, cleaned of the zero-width, direction and tag characters, so the record column is the one that says which record a call named. In the file itself, every character a reader would not see is written as its JSON escape, so `tail -f` shows it rather than hiding or reordering the line, and anything that parses the line reads the same value.
 
 ```bash
 rta agent log --limit 50

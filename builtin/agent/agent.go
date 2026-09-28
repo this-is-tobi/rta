@@ -85,8 +85,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 			{
 				ID:      "agent.log",
 				Summary: "The record of what agents did — one line per call, refusals included",
-				Description: "Every call that arrived over MCP: the capability, the records it was judged " +
-					"on exactly as the call spelled them, the arguments (secrets masked), the profile, " +
+				Description: "Every call that arrived over MCP: the capability, the records it named, " +
+					"exactly as the call spelled them, the arguments (secrets masked), the profile, " +
 					"what happened, and how it was authorized — no " +
 					"grant needed, a standing grant, or you answering live. The file is chained, so " +
 					"an edited or missing line is visible: `detail` verifies it and says where it " +
@@ -628,7 +628,7 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		if e.Agent != "" || e.Client != "" {
 			named = true
 		}
-		// The same rule for the records a call was judged on: a record
+		// The same rule for the records a call named: a record
 		// written before the ledger kept them, or one whose calls named no
 		// record, shows no column for them.
 		if len(e.Records) > 0 {
@@ -704,7 +704,7 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		if roled {
 			row = slices.Insert(row, roleColumn(named, namedCred, sessioned), dashed(e.Role))
 		}
-		// The records as the gate judged them, shown as every other surface
+		// The records as the call named them, shown as every other surface
 		// shows a record (textclean.Record): the arguments beside them are
 		// kept cleaned, and a record padded with a zero-width character read
 		// there as the bare one.
