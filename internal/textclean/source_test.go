@@ -13,6 +13,8 @@ import (
 	"testing"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/this-is-tobi/rta/internal/textclean/glyph"
 )
 
 // The rule this package applies to what rta displays, applied to what rta is
@@ -50,6 +52,20 @@ import (
 // acts on it. A name is not what makes a file text; its bytes are, so a file
 // is passed over as binary the way git decides it — a NUL in its first 8000
 // bytes — and nothing else is.
+//
+// **What a reader cannot see is what glyph.Seen says, not what Deceives
+// does.** Deceives is the set the display filter drops, and it leaves out on
+// purpose what a result may carry intact — a joiner that builds an emoji or a
+// letter form, a selector that picks how the character before it is drawn
+// (isInvisible says why) — and it never named the Hangul fillers, the soft
+// hyphen or the Braille blank, which draw as nothing too. Source has no such
+// data to keep, and each of them hides something in it: a Hangul filler is a
+// letter to Go, so an identifier made of one is a name nobody sees, and a run
+// of selectors after one emoji spells bytes nobody reads. So a file is held to
+// Record's rule rather than Terminal's: every character in it reads as itself.
+// The tree met it but for three selectors choosing an emoji's colour form: the
+// docs' two went, as the changelog's warning sign never had one, and the
+// fixture's is built from its code point.
 //
 // **And no file may hold a character that reads as an ASCII one it is not**
 // (lookalike): a curly quote, a hyphen other than the ASCII one, a space
@@ -120,12 +136,18 @@ func TestTheSourceGuardReadsWhatGitTracks(t *testing.T) {
 	write("nbsp.md", "a"+nbsp+"b\n")
 	write("hyphen.yaml", "name: claude"+nbhy+"desktop\n")
 	write("prose.go", "package main\n\n// one "+string(rune(0x2014))+" and "+string(rune(0x2026))+" "+
-		string(rune(0x2192))+"\n")
+		string(rune(0x2192))+" "+string(rune(0x26a0))+"\n")
+	// What draws as nothing though Deceives passes it: an identifier Go reads
+	// as a letter, and a selector after an emoji, the shape a run of them
+	// spells bytes in.
+	write("filler.go", "package main\n\nvar "+string(rune(0x3164))+" = 1\n")
+	write("selector.md", "mark it "+string(rune(0x2764))+string(rune(0xfe0f))+"\n")
 	// A binary file is read by nothing that reviews it as text: it is passed
 	// over, whatever its bytes happen to spell.
 	write("logo.png", "\x89PNG\r\n\x1a\n\x00\x00"+rlo)
 	tracked := []string{"docs/windows.md", "main.go", "charts/x/templates/_helpers.tpl",
-		"mise.toml", "go.mod", ".gitignore", "logo.png", "quote.go", "nbsp.md", "hyphen.yaml", "prose.go"}
+		"mise.toml", "go.mod", ".gitignore", "logo.png", "quote.go", "nbsp.md", "hyphen.yaml", "prose.go",
+		"filler.go", "selector.md"}
 	if err := os.Symlink("nowhere.md", filepath.Join(dir, "gone.md")); err == nil {
 		tracked = append(tracked, "gone.md")
 	}
@@ -139,9 +161,10 @@ func TestTheSourceGuardReadsWhatGitTracks(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		".gitignore:2 holds U+202E", "charts/x/templates/_helpers.tpl:1 holds U+202E", "go.mod:1 holds U+202E",
-		"hyphen.yaml:1 holds U+2011", "main.go:3 holds U+202E", "mise.toml:2 holds U+202E",
-		"nbsp.md:1 holds U+00A0", "quote.go:3 holds U+201D",
+		".gitignore:2 holds U+202E", "charts/x/templates/_helpers.tpl:1 holds U+202E", "filler.go:3 holds U+3164",
+		"go.mod:1 holds U+202E", "hyphen.yaml:1 holds U+2011", "main.go:3 holds U+202E",
+		"mise.toml:2 holds U+202E", "nbsp.md:1 holds U+00A0", "quote.go:3 holds U+201D",
+		"selector.md:1 holds U+FE0F",
 	}
 	if len(found) != len(want) {
 		t.Fatalf("found %q, want each of %q and nothing else", found, want)
@@ -215,9 +238,9 @@ func hiddenInTrackedSource(root string) ([]string, error) {
 			case r == '\n':
 				line++
 			case r == '\t':
-			case Deceives(string(r)):
+			case Deceives(string(r)), !glyph.Seen(r) && lookalike(r) == 0:
 				found = append(found, fmt.Sprintf("%s:%d holds U+%04X, which no reader of the file can see; "+
-					"build it at run time from its code point instead", rel, line, r))
+					"remove it, or build it at run time from its code point where it is the point", rel, line, r))
 			case lookalike(r) != 0:
 				ascii := string(lookalike(r))
 				why := ""

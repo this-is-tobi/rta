@@ -20,8 +20,8 @@ That is it for a client that ships its own configuration command. For one that d
 | VS Code | runs `code --add-mcp` | VS Code's user `mcp.json` | ✅ against the real CLI |
 | Cursor | prints the block | `~/.cursor/mcp.json`, or `.cursor/mcp.json` per project | block only — Cursor has no CLI for this |
 | GitHub Copilot CLI | prints the block | `~/.copilot/mcp-config.json` | block only — Copilot configures MCP from its own `/mcp` prompt |
-| OpenAI Codex CLI | runs `codex mcp add` | `~/.codex/config.toml` | ⚠️ command declared, not verified |
-| Gemini CLI | runs `gemini mcp add` | `~/.gemini/settings.json` | ⚠️ command declared, not verified |
+| OpenAI Codex CLI | runs `codex mcp add` | `~/.codex/config.toml` | ⚠ command declared, not verified |
+| Gemini CLI | runs `gemini mcp add` | `~/.gemini/settings.json` | ⚠ command declared, not verified |
 
 The "verified" column is honest rather than reassuring. Two of these commands were written from their documented interface and have not been run against the tool itself, so if one has moved, rta falls back to printing the block instead of failing — which is the whole reason the fallback exists.
 
