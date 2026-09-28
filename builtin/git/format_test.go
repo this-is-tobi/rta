@@ -111,12 +111,13 @@ func TestARepositoryGitMadeInAnotherFormatIsAuditedAsGitMadeIt(t *testing.T) {
 // version 1 one refuses an extension git does not know and a value it does
 // not take; and SHA-1 named as the object format, a map to another format
 // kept beside it, objects kept precious or worktrees named relatively, is
-// the repository it always was. A value git does not take stops it whatever
-// the version, none included, and so does no value at all for an extension
-// that names something, `partialClone` alone on its line, which go-git reads
-// as set to nothing and this opened. go-git refused most of them, by rules
-// of its own, and the refusal said git read them. Where git is on PATH, it
-// is asked too.
+// the repository it always was, where a map to the format the objects are
+// named in already is one git 2.50 aborts at, and this opened. A value git
+// does not take stops it whatever the version, none included, and so does no
+// value at all for an extension that names something, `partialClone` alone
+// on its line, which go-git reads as set to nothing and this opened. go-git
+// refused most of them, by rules of its own, and the refusal said git read
+// them. Where git is on PATH, it is asked too.
 func TestARepositorysFormatIsDecidedAsGitDecidesIt(t *testing.T) {
 	// What git on PATH says about these depends on how that git was built, not
 	// on the repository: a map to a second object format is kept by code git
@@ -129,33 +130,37 @@ func TestARepositorysFormatIsDecidedAsGitDecidesIt(t *testing.T) {
 		"\trepositoryformatversion = 1\n[extensions]\n\tcompatObjectFormat = sha256\n": true,
 	}
 	for config, want := range map[string]string{
-		"[extensions]\n\tobjectFormat = sha256\n":                                      "",
-		"[extensions]\n\trefStorage = reftable\n":                                      "",
-		"[extensions]\n\tsomethingNew = yes\n":                                         "",
-		"[extensions]\n\tpreciousObjects = true\n":                                     "",
-		"[extensions]\n\tpreciousObjects = 1k\n":                                       "",
-		"[extensions]\n\tpreciousObjects = OFF\n":                                      "",
-		"[extensions]\n\tpreciousObjects = 1x\n":                                       "git.repository.invalid",
-		"[extensions]\n\trefStorage = bogus\n":                                         "git.repository.invalid",
-		"[extensions]\n\tobjectFormat = SHA256\n":                                      "git.repository.invalid",
-		"[extensions]\n\tpartialClone\n":                                               "git.repository.invalid",
-		"[extensions]\n\tpartialClone =\n":                                             "",
-		"\trepositoryformatversion = 0\n[extensions]\n\trelativeWorktrees = true\n":    "git.repository.invalid",
-		"\trepositoryformatversion = 0\n[extensions]\n\tworktreeConfig = maybe\n":      "git.repository.invalid",
-		"\trepositoryformatversion = 1\n[extensions]\n\trelativeWorktrees = true\n":    "",
-		"\trepositoryformatversion = 1\n[extensions]\n\trelativeWorktrees = maybe\n":   "git.repository.invalid",
-		"\trepositoryformatversion = 0\n[extensions]\n\tobjectFormat = sha256\n":       "git.repository.invalid",
-		"\trepositoryformatversion = 0\n[extensions]\n\trefStorage = files\n":          "git.repository.invalid",
-		"\trepositoryformatversion = 0\n[extensions]\n\tnoop-v1 = true\n":              "git.repository.invalid",
-		"\trepositoryformatversion = 0\n[extensions]\n\tsomethingNew = yes\n":          "",
-		"\trepositoryformatversion = 1\n[extensions]\n\tobjectFormat = sha1\n":         "",
-		"\trepositoryformatversion = 1\n[extensions]\n\tcompatObjectFormat = sha256\n": "",
-		"\trepositoryformatversion = 1\n[extensions]\n\tsomethingNew = yes\n":          "git.repository.unsupported",
-		"\trepositoryformatversion = 1\n[extensions]\n\tobjectFormat = SHA256\n":       "git.repository.invalid",
-		"\trepositoryformatversion = 1\n[extensions]\n\tobjectFormat\n":                "git.repository.invalid",
-		"\trepositoryformatversion = 1\n[extensions]\n\tpartialClone\n":                "git.repository.invalid",
-		"\trepositoryformatversion = 2\n":                                              "git.repository.unsupported",
-		"\trepositoryformatversion = one\n":                                            "git.repository.invalid",
+		"[extensions]\n\tobjectFormat = sha256\n":                                                               "",
+		"[extensions]\n\trefStorage = reftable\n":                                                               "",
+		"[extensions]\n\tsomethingNew = yes\n":                                                                  "",
+		"[extensions]\n\tpreciousObjects = true\n":                                                              "",
+		"[extensions]\n\tpreciousObjects = 1k\n":                                                                "",
+		"[extensions]\n\tpreciousObjects = OFF\n":                                                               "",
+		"[extensions]\n\tpreciousObjects = 1x\n":                                                                "git.repository.invalid",
+		"[extensions]\n\trefStorage = bogus\n":                                                                  "git.repository.invalid",
+		"[extensions]\n\tobjectFormat = SHA256\n":                                                               "git.repository.invalid",
+		"[extensions]\n\tpartialClone\n":                                                                        "git.repository.invalid",
+		"[extensions]\n\tpartialClone =\n":                                                                      "",
+		"\trepositoryformatversion = 0\n[extensions]\n\trelativeWorktrees = true\n":                             "git.repository.invalid",
+		"\trepositoryformatversion = 0\n[extensions]\n\tworktreeConfig = maybe\n":                               "git.repository.invalid",
+		"\trepositoryformatversion = 1\n[extensions]\n\trelativeWorktrees = true\n":                             "",
+		"\trepositoryformatversion = 1\n[extensions]\n\trelativeWorktrees = maybe\n":                            "git.repository.invalid",
+		"\trepositoryformatversion = 0\n[extensions]\n\tobjectFormat = sha256\n":                                "git.repository.invalid",
+		"\trepositoryformatversion = 0\n[extensions]\n\trefStorage = files\n":                                   "git.repository.invalid",
+		"\trepositoryformatversion = 0\n[extensions]\n\tnoop-v1 = true\n":                                       "git.repository.invalid",
+		"\trepositoryformatversion = 0\n[extensions]\n\tsomethingNew = yes\n":                                   "",
+		"\trepositoryformatversion = 1\n[extensions]\n\tobjectFormat = sha1\n":                                  "",
+		"\trepositoryformatversion = 1\n[extensions]\n\tcompatObjectFormat = sha256\n":                          "",
+		"\trepositoryformatversion = 1\n[extensions]\n\tcompatObjectFormat = sha1\n":                            "git.repository.invalid",
+		"\trepositoryformatversion = 1\n[extensions]\n\tobjectFormat = sha256\n\tcompatObjectFormat = sha256\n": "git.repository.invalid",
+		"\trepositoryformatversion = 1\n[extensions]\n\tcompatObjectFormat = sha256\n\tobjectFormat = sha256\n": "git.repository.invalid",
+		"[extensions]\n\tcompatObjectFormat = sha1\n":                                                           "",
+		"\trepositoryformatversion = 1\n[extensions]\n\tsomethingNew = yes\n":                                   "git.repository.unsupported",
+		"\trepositoryformatversion = 1\n[extensions]\n\tobjectFormat = SHA256\n":                                "git.repository.invalid",
+		"\trepositoryformatversion = 1\n[extensions]\n\tobjectFormat\n":                                         "git.repository.invalid",
+		"\trepositoryformatversion = 1\n[extensions]\n\tpartialClone\n":                                         "git.repository.invalid",
+		"\trepositoryformatversion = 2\n":                                                                       "git.repository.unsupported",
+		"\trepositoryformatversion = one\n":                                                                     "git.repository.invalid",
 	} {
 		dir := withConfig(t, config)
 		for name, code := range codes(t, dir) {
