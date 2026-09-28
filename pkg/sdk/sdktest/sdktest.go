@@ -97,8 +97,10 @@ const (
 	// labels — spells nothing only a terminal can act on, a flag or an `rta …`
 	// command line (see checkSpelling). Given WithSource, nor does a sentence
 	// its source spells out, every call the source names through a naming
-	// helper is one its reader can make, and every setting it names through
-	// SettingName or SettingTo is an input it declares Local (see checkSource).
+	// helper is one its reader can make, every setting it names through
+	// SettingName or SettingTo is an input it declares Local, and every input
+	// it gives through InputTo is one an agent gives as an argument (see
+	// checkSource).
 	// Skipped by capability ID, or by the plugin's name for its own summary;
 	// the source has no waiver.
 	RuleSpelling Rule = "spelling"

@@ -20,8 +20,9 @@ import (
 // declares — "." from a test file beside the plugin's own — and hold it to
 // RuleSpelling: no sentence the source spells out names a flag or an `rta …`
 // command line, every call it names through a naming helper is one its
-// reader can make, and every connection setting it names through SettingName
-// or SettingTo is an input it declares Local (see checkSource).
+// reader can make, every connection setting it names through SettingName or
+// SettingTo is an input it declares Local, and every input it gives through
+// InputTo is one an agent gives as an argument (see checkSource).
 //
 // An option rather than the default because Check is not always called from
 // the plugin's own directory: rta runs it over every built-in from the
@@ -80,7 +81,7 @@ func checkSource(t reporter, p plugin.Plugin, dir string) {
 			}
 		}
 		for _, st := range namedSettings(f) {
-			if problem := settingProblem(p, st); problem != "" {
+			if problem := settingHelpers[st.helper](p, st); problem != "" {
 				t.Errorf("sdktest: %s: %s: %s", RuleSpelling, fset.Position(st.pos), problem)
 			}
 		}
@@ -417,12 +418,19 @@ func callProblems(p plugin.Plugin, c namedCall) []string {
 	return out
 }
 
-// settingHelpers are the plugin.Surface methods that name a connection
-// setting by the literal names they are given: each of SettingName's, and
-// SettingTo's first.
-var settingHelpers = map[string]bool{"SettingName": true, "SettingTo": true}
+// settingHelpers are the plugin.Surface methods that name an input by the
+// literal names they are given — each of SettingName's, SettingTo's and
+// InputTo's first — with what each holds the name to: a connection setting
+// for the first two, an input an agent gives as an argument for InputTo.
+var settingHelpers = map[string]func(plugin.Plugin, namedSetting) string{
+	"SettingName": settingProblem, "SettingTo": settingProblem, "InputTo": givenProblem,
+}
 
-// namedSetting is one setting a setting helper was given as a literal.
+// valuedHelpers are the setting helpers given a value after the name, which
+// is not a name to hold.
+var valuedHelpers = map[string]bool{"SettingTo": true, "InputTo": true}
+
+// namedSetting is one input a setting helper was given as a literal.
 type namedSetting struct {
 	pos    token.Pos
 	helper string
@@ -440,11 +448,11 @@ func namedSettings(f *ast.File) []namedSetting {
 			return true
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || !settingHelpers[sel.Sel.Name] {
+		if !ok || settingHelpers[sel.Sel.Name] == nil {
 			return true
 		}
 		args := call.Args
-		if sel.Sel.Name == "SettingTo" && len(args) > 1 {
+		if valuedHelpers[sel.Sel.Name] && len(args) > 1 {
 			args = args[:1]
 		}
 		for _, a := range args {
@@ -465,10 +473,15 @@ func namedSettings(f *ast.File) []namedSetting {
 // And a setting helper tells an agent the input is the operator's, where it
 // can only be reported: true of a Local input, which is in no tool's schema,
 // and false of any other, which the agent's tool takes as an argument it
-// would then never think to pass — InputName names that one. Every capability
-// declaring the name is asked, since the helper is handed no capability and
-// a hint is often shared between several.
+// would then never think to pass — InputName names that one, and InputTo
+// one given a value, as SettingTo is. Every capability declaring the name is
+// asked, since the helper is handed no capability and a hint is often shared
+// between several.
 func settingProblem(p plugin.Plugin, s namedSetting) string {
+	sibling := "InputName"
+	if valuedHelpers[s.helper] {
+		sibling = "InputTo"
+	}
 	declared := false
 	for _, c := range p.Capabilities {
 		for _, f := range c.Inputs {
@@ -477,7 +490,40 @@ func settingProblem(p plugin.Plugin, s namedSetting) string {
 			}
 			if !f.Local {
 				return s.helper + " names " + strconv.Quote(s.name) + ", which " + c.ID +
-					" declares without Local: an agent gives it as an argument, and InputName names it"
+					" declares without Local: an agent gives it as an argument, and " + sibling + " names it"
+			}
+			declared = true
+		}
+	}
+	if !declared {
+		return s.helper + " names " + strconv.Quote(s.name) + ", an input this plugin does not declare"
+	}
+	return ""
+}
+
+// givenProblem is settingProblem for InputTo, which spells a flag at a
+// terminal and an argument to an agent: a name no capability declares, one
+// a capability declares Local, or one it takes by its place.
+//
+// Each is the hint naming what is not there. A Local input is in no tool's
+// schema, and an agent told to set the argument passes one the bridge drops
+// — SettingTo names it as the operator's. A Positional one has no flag, and
+// the --name InputTo spells at a terminal is one the command refuses — Call
+// gives it by its place.
+func givenProblem(p plugin.Plugin, s namedSetting) string {
+	declared := false
+	for _, c := range p.Capabilities {
+		for _, f := range c.Inputs {
+			if f.Name != s.name {
+				continue
+			}
+			switch {
+			case f.Local:
+				return s.helper + " names " + strconv.Quote(s.name) + ", which " + c.ID +
+					" declares Local: no agent's tool takes it as an argument, and SettingTo names it"
+			case f.Positional:
+				return s.helper + " names " + strconv.Quote(s.name) + ", which " + c.ID +
+					" takes by its place rather than as a flag, and Call gives it there"
 			}
 			declared = true
 		}

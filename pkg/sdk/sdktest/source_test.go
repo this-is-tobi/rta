@@ -152,6 +152,54 @@ func TestTheSettingsTheSourceNamesAreOnesItDeclaresLocal(t *testing.T) {
 	}
 }
 
+// An input is given through InputTo only when an agent gives it as an
+// argument and a terminal as a flag: a Local input is in no tool's schema,
+// so the agent passes one the bridge drops, and a Positional one has no
+// flag for the CLI to take. A name nothing declares is a flag the CLI
+// refuses; the value beside the name is no name at all. And a setting
+// helper handed such an input is sent to the one that names it as SettingTo
+// or SettingName would have: InputTo given a value, InputName without.
+func TestTheInputsTheSourceGivesAreOnesAnAgentGivesAsArguments(t *testing.T) {
+	demo := sourceDemo()
+	demo.Capabilities[0].Inputs = append(demo.Capabilities[0].Inputs,
+		plugin.Field{Name: "endpoint", Type: plugin.String, Local: true})
+
+	src := "package main\n" +
+		"\n" +
+		"func hints(sf plugin.Surface, v string) []string {\n" +
+		"\treturn []string{\n" +
+		"\t\tsf.InputTo(\"jobs\", \"endpoint\"),\n" +
+		"\t\tsf.InputTo(v, 1),\n" +
+		"\t\tsf.InputTo(\"endpoint\", v),\n" +
+		"\t\tsf.InputTo(\"key\", v),\n" +
+		"\t\tsf.InputTo(\"jbos\", 1),\n" +
+		"\t\tsf.SettingTo(\"jobs\", 1),\n" +
+		"\t\tsf.SettingName(\"jobs\"),\n" +
+		"\t}\n" +
+		"}\n"
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "hints.go", src, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wrong []string
+	for _, st := range namedSettings(f) {
+		if problem := settingHelpers[st.helper](demo, st); problem != "" {
+			wrong = append(wrong, fmt.Sprintf("%d: %s", fset.Position(st.pos).Line, problem))
+		}
+	}
+	want := []string{
+		`7: InputTo names "endpoint", which demo.key.list declares Local: no agent's tool takes it as an argument, and SettingTo names it`,
+		`8: InputTo names "key", which demo.key.get takes by its place rather than as a flag, and Call gives it there`,
+		`9: InputTo names "jbos", an input this plugin does not declare`,
+		`10: SettingTo names "jobs", which demo.key.list declares without Local: an agent gives it as an argument, and InputTo names it`,
+		`11: SettingName names "jobs", which demo.key.list declares without Local: an agent gives it as an argument, and InputName names it`,
+	}
+	if !slices.Equal(wrong, want) {
+		t.Errorf("inputs held:\n%s\nwant:\n%s", strings.Join(wrong, "\n"), strings.Join(want, "\n"))
+	}
+}
+
 // AskOperator is known by the name its file imports pkg/plugin under: an
 // author who renames the import hands the operator the same command, and it
 // is let through the same way.
