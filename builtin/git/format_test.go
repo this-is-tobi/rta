@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 
@@ -69,6 +70,39 @@ func TestARepositoryInAFormatThisDoesNotReadIsRefusedOnlyWhereItChangesTheAnswer
 				t.Errorf("pre-commit row = %v, want it active", row)
 			}
 		})
+	}
+}
+
+// git reads the last line of extensions.objectFormat and of
+// extensions.refStorage, as it reads the last of most keys: a repository
+// whose config names sha256, then sha1, is the SHA-1 one git opens. This
+// judged every line, and refused it as a format it does not read. The last
+// line decides, both ways, and the refusal names that line alone.
+func TestTheLastLineOfAFormatExtensionIsTheOneJudged(t *testing.T) {
+	for config, unsupported := range map[string][]string{
+		"objectFormat = sha256\n\tobjectFormat = sha1\n": nil,
+		"refStorage = reftable\n\trefStorage = files\n":  nil,
+		"objectFormat = sha1\n\tobjectFormat = sha256\n": {"git.log", "git.status"},
+		"refStorage = files\n\trefStorage = reftable\n":  {"git.log", "git.remotes", "git.status"},
+	} {
+		dir := withConfig(t, "\trepositoryformatversion = 1\n[extensions]\n\t"+config)
+		for name, code := range codes(t, dir) {
+			if want := slices.Contains(unsupported, name); want != (code == "git.repository.unsupported") ||
+				!want && code != "" {
+				t.Errorf("with %q, %s = %q, want it refused as unsupported: %v", config, name, code, want)
+			}
+		}
+		_, err := runStatus(context.Background(), req(t, dir, nil))
+		if first, _, _ := strings.Cut(config, "\n"); unsupported != nil && (err == nil || strings.Contains(err.Error(), first)) {
+			t.Errorf("with %q, the refusal %v names the line git does not read", config, err)
+		}
+		cmd := exec.Command("git", "-C", dir, "rev-parse", "HEAD")
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1")
+		if _, lookErr := exec.LookPath("git"); lookErr == nil && unsupported == nil {
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Errorf("with %q, git does not open it: %v: %s", config, err, out)
+			}
+		}
 	}
 }
 
