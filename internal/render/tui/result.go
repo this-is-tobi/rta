@@ -379,11 +379,6 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 	return m, m.startRun(cap, base, false)
 }
 
-// hereOnly drops the inputs that point a call at another machine, and the
-// ones only read beside them, from a form an action opens: the queue under
-// the cursor is this machine's, so a box for the server it might instead be
-// parked on is a box for a different call. Typing the capability's name in
-// the catalogue still offers every input.
 // aimedElsewhere are the values that point the view on screen at another
 // machine, read off the call that produced it — `server` on the lock, grant
 // and agent listings, which all spell it the same way.
@@ -427,6 +422,11 @@ func (m Model) follows(a capAction) (string, bool) {
 	return "", true
 }
 
+// hereOnly drops the inputs that point a call at another machine, and the
+// ones only read beside them, from a form an action opens: the queue under
+// the cursor is this machine's, so a box for the server it might instead be
+// parked on is a box for a different call. Typing the capability's name in
+// the catalogue still offers every input.
 func hereOnly(fields []plugin.Field) []plugin.Field {
 	remote := map[string]bool{}
 	for _, f := range fields {
