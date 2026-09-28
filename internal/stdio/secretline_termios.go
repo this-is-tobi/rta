@@ -27,7 +27,18 @@ const drainWindow = 2
 // already written to reach the terminal, and a terminal whose other end has
 // stopped reading would hold the prompt there. What arrives after the
 // window is the next thing typed, not the paste.
-func readTerminalLine(fd int) ([]byte, bool, error) {
+func readTerminalLine(fd int) ([]byte, bool, error) { return readTerminal(fd, true) }
+
+// readTerminalSecret reads one line as readTerminalLine does and nothing
+// after it: one byte at a time, so what was typed ahead of the prompt that
+// follows — a passphrase's "Once more:" — stays on the terminal for it, as
+// it did when the discipline read the line.
+func readTerminalSecret(fd int) ([]byte, error) {
+	line, _, err := readTerminal(fd, false)
+	return line, err
+}
+
+func readTerminal(fd int, drainPaste bool) ([]byte, bool, error) {
 	old, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
 	if err != nil {
 		return nil, false, err
@@ -42,6 +53,10 @@ func readTerminalLine(fd int) ([]byte, bool, error) {
 	}
 	defer func() { _ = unix.IoctlSetTermios(fd, ioctlSetTermios, old) }()
 
+	if !drainPaste {
+		line, _, err := keysOf(old).readLine(byteReader{terminalReader(fd)})
+		return line, false, err
+	}
 	line, rest, err := keysOf(old).readLine(terminalReader(fd))
 	if err != nil {
 		return line, false, err
