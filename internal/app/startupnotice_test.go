@@ -3,10 +3,13 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/pluginhost"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // **A sentence of English above somebody's JSON is a sentence they have to
@@ -106,5 +109,78 @@ func TestTheRootCommandDecidesTheNoticeByTheRequestedFormat(t *testing.T) {
 		t.Fatal(err)
 	} else if strings.Contains(errOut, "installed and not run") {
 		t.Errorf("the notice was written to a stream nobody is watching: %q", errOut)
+	}
+}
+
+// What could not be loaded is said once per cause, naming every plugin the
+// cause stopped, and a coded refusal is drawn with its hint. The launch makes
+// a new refusal for each plugin it tries, so the same words from two
+// launches are one cause; the same words under another code or hint, or a
+// problem that wraps nothing, are not.
+func TestLoadProblemsAreSaidOncePerCauseAndCodedOnesKeepTheirHint(t *testing.T) {
+	saved := stderrIsTerminal
+	t.Cleanup(func() { stderrIsTerminal = saved })
+	stderrIsTerminal = func() bool { return false }
+
+	tooLong := func() error {
+		return view.Errorf("plugin.tmpdir.toolong", "TMPDIR is too long").WithHint("use a shorter one")
+	}
+	unconfined := errors.New("sandbox-exec is not available")
+	var out bytes.Buffer
+	ReportLoadProblems(&out, []error{
+		fmt.Errorf("plugin one: %w", tooLong()),
+		fmt.Errorf("plugin two: %w", unconfined),
+		fmt.Errorf("plugin three: %w", tooLong()),
+		fmt.Errorf("plugin four: %w", unconfined),
+		fmt.Errorf("plugin five: %w",
+			view.Errorf("plugin.tmpdir.toolong", "TMPDIR is too long").WithHint("another hint")),
+		fmt.Errorf("plugin six: %w", errors.New("starting plugin /bin/six: exit status 1")),
+		errors.New("plugin seven is the same binary as the one already loaded as one"),
+	}, nil)
+	want := strings.Join([]string{
+		"ERROR plugin.tmpdir.toolong plugins one, three: TMPDIR is too long",
+		"HINT use a shorter one",
+		"rta: plugins two, four: sandbox-exec is not available",
+		"ERROR plugin.tmpdir.toolong plugin five: TMPDIR is too long",
+		"HINT another hint",
+		"rta: plugin six: starting plugin /bin/six: exit status 1",
+		"rta: plugin seven is the same binary as the one already loaded as one",
+	}, "\n") + "\n"
+	if out.String() != want {
+		t.Errorf("said:\n%s\nwant:\n%s", out.String(), want)
+	}
+}
+
+// A load problem on a terminal is drawn in colour unless the command line
+// says --no-color. The lines it replaced were plain text, and it is drawn
+// before the command line is parsed, so the flag the command then honours
+// was not there yet to refuse the badges.
+func TestALoadProblemHonoursNoColorOnTheCommandLine(t *testing.T) {
+	savedErr, savedOut := stderrIsTerminal, isTTY
+	t.Cleanup(func() { stderrIsTerminal, isTTY = savedErr, savedOut })
+	stderrIsTerminal = func() bool { return true }
+	isTTY = func() bool { return true }
+
+	problems := []error{fmt.Errorf("plugin one: %w",
+		view.Errorf("plugin.tmpdir.toolong", "TMPDIR is too long").WithHint("use a shorter one"))}
+	escape := string(rune(0x1b))
+	for _, c := range []struct {
+		args   []string
+		colour bool
+	}{
+		{nil, true},
+		{[]string{"--no-color", "sys", "host"}, false},
+		{[]string{"sys", "host", "--no-color=true"}, false},
+		{[]string{"--no-color", "--no-color=false"}, true},
+		{[]string{"plugin", "dev", "--", "--no-color"}, true},
+	} {
+		var out bytes.Buffer
+		ReportLoadProblems(&out, problems, c.args)
+		if got := strings.Contains(out.String(), escape); got != c.colour {
+			t.Errorf("%q: colour %v, want %v: %q", c.args, got, c.colour, out.String())
+		}
+		if !strings.Contains(out.String(), "use a shorter one") {
+			t.Errorf("%q: the hint is gone: %q", c.args, out.String())
+		}
 	}
 }

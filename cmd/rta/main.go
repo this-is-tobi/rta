@@ -18,7 +18,6 @@ import (
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/internal/stdio"
-	"github.com/this-is-tobi/rta/internal/textclean"
 )
 
 // version and commit are set by the linker at release time
@@ -133,16 +132,7 @@ func main() {
 	// which is a thing a user experiences once and then stops installing
 	// plugins over.
 	host, problems := app.LoadPlugins(ctx, reg, os.Stderr)
-	for _, p := range problems {
-		// Through textclean, not as it came. A problem can quote what the
-		// plugin wrote — go-plugin puts the first line that is not a
-		// handshake in the error it returns — so a trusted plugin that wrote
-		// an OSC had it acted on by the operator's terminal, before every
-		// command. Its stderr already goes through escapeActedOn (pluginhost)
-		// and its answers through the renderer; this is the same rule for
-		// what is said about it failing to load.
-		fmt.Fprintln(os.Stderr, "rta:", textclean.Terminal(p.Error()))
-	}
+	app.ReportLoadProblems(os.Stderr, problems, os.Args[1:])
 	// Everything else worth knowing about a loaded plugin goes to `rta
 	// doctor` instead of here: this runs before every command, and a fact
 	// about the installation printed on every command is noise.
