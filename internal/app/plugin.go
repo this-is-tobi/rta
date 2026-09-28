@@ -1083,6 +1083,12 @@ func confinementLine(allowed ...plugin.Need) string {
 	if err != nil {
 		return "unavailable: " + err.Error()
 	}
-	return fmt.Sprintf("sandboxed: %d paths denied read+write, %d denied read (`rta doctor` lists them)",
-		len(d.NoAccess), len(d.NoRead))
+	return sandboxedLine(d)
+}
+
+// sandboxedLine is confinementLine for a platform that confines, over the
+// deny set this run resolved.
+func sandboxedLine(d pluginhost.DenySet) string {
+	return fmt.Sprintf("sandboxed: %s denied read+write, %d denied read (`rta doctor` lists them)",
+		format.Count(len(d.NoAccess), "path", "paths"), len(d.NoRead))
 }

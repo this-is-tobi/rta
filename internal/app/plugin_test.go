@@ -1174,3 +1174,19 @@ func TestPluginDevPassesALaunchRefusalOnAsItself(t *testing.T) {
 		t.Errorf("the hint is not the launch's own: %q", verr.Hint)
 	}
 }
+
+// The dev report's confinement line agrees with its count, one included.
+func TestTheDevReportCountsWhatItsSandboxDenies(t *testing.T) {
+	for want, deny := range map[string]pluginhost.DenySet{
+		"sandboxed: 1 path denied read+write, 1 denied read": {
+			NoAccess: []string{"/a"}, NoRead: []string{"/b"},
+		},
+		"sandboxed: 2 paths denied read+write, 2 denied read": {
+			NoAccess: []string{"/a", "/b"}, NoRead: []string{"/c", "/d"},
+		},
+	} {
+		if got := sandboxedLine(deny); !strings.HasPrefix(got, want) {
+			t.Errorf("got %q, want it to start %q", got, want)
+		}
+	}
+}
