@@ -134,6 +134,24 @@ func TestAnExactRevokeTakesBackTheOneGrantNamed(t *testing.T) {
 	}
 }
 
+// After an exact revoke, the grant still covering what it took back is
+// named as exactly: the target alone would take back every grant on it,
+// for every agent and connection, a wider decision than the one row the
+// revoke was about.
+func TestAnExactRevokeNamesTheGrantStillCoveringExactly(t *testing.T) {
+	setup(t)
+	neighbours(t)
+	body := run(t, runRevoke, map[string]any{"target": "kv.get", "agent": "claude", "exact": true}).(view.Text).Body
+	if want := "still covered by an active grant on kv (record: any) — revoke that too: " +
+		"`rta grant revoke kv --agent claude --exact`"; !strings.Contains(body, want) {
+		t.Errorf("an exact revoke said %q, want %q", body, want)
+	}
+	body = run(t, runRevoke, map[string]any{"target": "kv.get", "scope": "db-password"}).(view.Text).Body
+	if want := "revoke that too: `rta grant revoke kv.get`"; !strings.HasSuffix(body, want) {
+		t.Errorf("a revoke without exact said %q, want %q", body, want)
+	}
+}
+
 // exact names one grant, so it needs a target, which every grant has, and
 // refuses --all, which names them all.
 func TestAnExactSelectorThatCanNameNoGrantIsRefused(t *testing.T) {
