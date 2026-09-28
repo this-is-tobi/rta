@@ -239,6 +239,37 @@ func SurfaceFromProto(s rtav1.Surface) plugin.Surface {
 	return plugin.SurfaceUnknown
 }
 
+var tunnels = []struct {
+	go_ plugin.Tunnel
+	pb  rtav1.Tunnel
+}{
+	{plugin.TunnelKube, rtav1.Tunnel_TUNNEL_KUBE},
+	{plugin.TunnelSSH, rtav1.Tunnel_TUNNEL_SSH},
+}
+
+// TunnelToProto encodes the forward a call reached its server through.
+func TunnelToProto(t plugin.Tunnel) rtav1.Tunnel {
+	for _, m := range tunnels {
+		if m.go_ == t {
+			return m.pb
+		}
+	}
+	return rtav1.Tunnel_TUNNEL_UNSPECIFIED
+}
+
+// TunnelFromProto decodes the forward a call reached its server through. One
+// nobody recognises decodes to none, as a host older than the field sends:
+// what a plugin does with it is word a receipt, and a guess at the kind of
+// forward would be a guess in that sentence.
+func TunnelFromProto(t rtav1.Tunnel) plugin.Tunnel {
+	for _, m := range tunnels {
+		if m.pb == t {
+			return m.go_
+		}
+	}
+	return plugin.TunnelNone
+}
+
 // FieldToProto encodes one input declaration.
 func FieldToProto(f plugin.Field) *rtav1.Field {
 	return &rtav1.Field{

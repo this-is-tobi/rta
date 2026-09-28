@@ -139,6 +139,30 @@ func TestEverySurfaceOnTheWireHasAMapping(t *testing.T) {
 	}
 }
 
+// Every kind of forward in the contract decodes to itself, and one nobody
+// recognises to none, which is what an older host sends.
+func TestEveryTunnelOnTheWireHasAMapping(t *testing.T) {
+	for v, name := range rtav1.Tunnel_name {
+		if rtav1.Tunnel(v) == rtav1.Tunnel_TUNNEL_UNSPECIFIED {
+			continue
+		}
+		got := TunnelFromProto(rtav1.Tunnel(v))
+		if got == plugin.TunnelNone {
+			t.Errorf("%s is in the contract and decodes to none", name)
+			continue
+		}
+		if back := TunnelToProto(got); back != rtav1.Tunnel(v) {
+			t.Errorf("%s round-tripped to %s", name, back)
+		}
+	}
+	if got := TunnelFromProto(rtav1.Tunnel(99)); got != plugin.TunnelNone {
+		t.Errorf("an unknown tunnel decoded to %q, want none", got)
+	}
+	if got := TunnelToProto(plugin.TunnelNone); got != rtav1.Tunnel_TUNNEL_UNSPECIFIED {
+		t.Errorf("no tunnel encoded as %s", got)
+	}
+}
+
 func TestEveryChartAndColumnKindOnTheWireHasAMapping(t *testing.T) {
 	for v, name := range rtav1.ChartKind_name {
 		if rtav1.ChartKind(v) == rtav1.ChartKind_CHART_KIND_UNSPECIFIED {

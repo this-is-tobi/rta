@@ -86,6 +86,16 @@ enum Surface {
   SURFACE_COMPLETION = 4;
 }
 
+// Tunnel is the kind of forward a call reached its server through: a
+// `kube:` port-forward or an `ssh:` jump host, opened by the host for that
+// one call and closed when it ends. Unspecified is no forward, which is what
+// a host older than this field sends.
+enum Tunnel {
+  TUNNEL_UNSPECIFIED = 0;
+  TUNNEL_KUBE = 1;
+  TUNNEL_SSH = 2;
+}
+
 // Field declares one capability input.
 message Field {
   string name = 1;
@@ -365,6 +375,23 @@ message CallRequest {
   // A human explicitly confirmed a destructive operation.
   bool yes = 4;
   Surface surface = 5;
+  // The operator's connection profile this call came through, empty for
+  // none, and the kind of forward the host opened on it for this call.
+  //
+  // Added so a plugin can name the connection again once the call is over:
+  // a dump taken through a `kube:` profile is reached through a 127.0.0.1
+  // forward that closes when the call does, and a restore line naming that
+  // address named a port nothing listens on any more, where `--profile prod`
+  // reaches the same server again. A plugin has no other way to know which
+  // profile, if any, filled the values it was given.
+  //
+  // A profile's name is operator configuration, not a secret, and nothing
+  // more about the profile is sent: not its coordinate, not which values it
+  // filled, not where its credentials come from. Added rather than
+  // renumbered, so a host older than these fields sends none, and a plugin
+  // older than them ignores them.
+  string profile = 6;
+  Tunnel tunnel = 7;
 }
 
 message CallResponse {

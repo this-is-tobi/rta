@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // Every rule about "the forward fills the endpoint inputs" was written while
@@ -45,11 +46,14 @@ func TestAnSSHTargetFillsEndpointsFromAForwardThatAnswers(t *testing.T) {
 	fakeSSHOnPath(t, "exec cat\n")
 
 	conn := config.Connection{SSH: sshTarget}
-	got, closeTunnel, verr := Dial(context.Background(), "bastion", conn, tunnelCap(), nil)
+	got, via, closeTunnel, verr := Dial(context.Background(), "bastion", conn, tunnelCap(), nil)
 	if verr != nil {
 		t.Fatalf("dial: %v", verr)
 	}
 	defer closeTunnel()
+	if via != plugin.TunnelSSH {
+		t.Errorf("an ssh forward reports tunnel %q", via)
+	}
 
 	port, ok := got["port"].(int)
 	if got["host"] != "127.0.0.1" || !ok || port == 0 {

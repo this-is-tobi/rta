@@ -474,3 +474,29 @@ func TestAJSONNumberIsReadAsTheNumberItSpells(t *testing.T) {
 		}
 	}
 }
+
+// The request a surface builds carries the profile in play and the tunnel
+// opened on it, as ResolveRequest's Inputs name them, through everything a
+// handler does to a request on its way down: a Page's section is the same
+// call, on the same connection. A tunnel is never claimed without a
+// profile, and a request nobody stamped carries neither.
+func TestARequestCarriesTheProfileItCameThrough(t *testing.T) {
+	c := Capability{ID: "db.status", Inputs: []Field{{Name: "host", Type: String, Config: "host"}}}
+	req := ResolveRequest(c, Inputs{ProfileName: "homelab", Tunnel: TunnelKube,
+		Profile: map[string]any{"host": "127.0.0.1"}}, false, false)
+	if req.Profile() != "homelab" || req.Tunnel() != TunnelKube {
+		t.Errorf("resolved request carries profile %q, tunnel %q", req.Profile(), req.Tunnel())
+	}
+	if sec := req.With(map[string]any{"detail": false}); sec.Profile() != "homelab" || sec.Tunnel() != TunnelKube {
+		t.Errorf("a section of the call lost its profile: %q, %q", sec.Profile(), sec.Tunnel())
+	}
+	if bare := ResolveRequest(c, Inputs{Tunnel: TunnelSSH}, false, false); bare.Profile() != "" || bare.Tunnel() != TunnelNone {
+		t.Errorf("a tunnel with no profile was claimed: %q, %q", bare.Profile(), bare.Tunnel())
+	}
+	if none := NewRequest(nil, false, false); none.Profile() != "" || none.Tunnel() != TunnelNone {
+		t.Errorf("an unstamped request claims profile %q, tunnel %q", none.Profile(), none.Tunnel())
+	}
+	if direct := NewRequest(nil, false, false).WithProfile("direct", TunnelNone); direct.Profile() != "direct" {
+		t.Errorf("WithProfile stamped %q", direct.Profile())
+	}
+}

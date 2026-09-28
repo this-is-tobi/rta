@@ -377,7 +377,8 @@ func argLit(e ast.Expr) (namedInput, bool) {
 //
 // An input the capability does not declare is still one its command takes
 // when it is one of the host's switches (spelling.HostSwitches), given as a
-// flag: `--output json` is every capability's.
+// flag: `--output json` is every capability's, and `--profile prod` the one
+// a receipt names to reach its connection again (plugin.Request.Profile).
 func callProblems(p plugin.Plugin, c namedCall) []string {
 	if ns, _, _ := strings.Cut(c.id, "."); ns != p.Name {
 		return nil

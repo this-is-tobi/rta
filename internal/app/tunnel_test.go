@@ -3,6 +3,8 @@ package app
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -169,7 +171,7 @@ profiles:
 			if err := sub.Flags().Set("profile", tc.profile); err != nil {
 				t.Fatal(err)
 			}
-			_, _, closeTunnel, _ := resolveProfile(context.Background(), sub, c, nil)
+			_, closeTunnel, _ := resolveProfile(context.Background(), sub, c, nil)
 			if closeTunnel == nil {
 				t.Fatal("the teardown is nil, so runCapability's deferred close panics here")
 			}
@@ -215,5 +217,65 @@ profiles:
 	}
 	if !strings.Contains(out, "secrets.nosuchinput names an input") {
 		t.Errorf("a mapping onto an input the plugin really does not have was not flagged:\n%s", out)
+	}
+}
+
+// A handler is told which profile its call came through, and whether the host
+// opened a forward on it, so a receipt can name the connection again with
+// --profile rather than the 127.0.0.1 address of a forward that closed with
+// the call. Nothing for a call no profile touched, and no tunnel for a
+// profile that names no coordinate.
+func TestAHandlerIsToldTheProfileItsCallCameThrough(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	// A kubectl of this test's own, first on PATH, that reports a forward to
+	// the listener above: no cluster, and no kubeconfig, is ever read.
+	bin := t.TempDir()
+	script := fmt.Sprintf("#!/bin/sh\necho 'Forwarding from 127.0.0.1:%d -> 5432'\nwhile true; do sleep 1; done\n",
+		ln.Addr().(*net.TCPAddr).Port)
+	if err := os.WriteFile(filepath.Join(bin, "kubectl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	reg := connRegistry(t)
+	c, _ := reg.Capability("db.status")
+	c.ID, c.Run = "db.whoami", func(_ context.Context, req plugin.Request) (view.View, error) {
+		return view.Text{Body: fmt.Sprintf("profile=%q tunnel=%q", req.Profile(), req.Tunnel())}, nil
+	}
+	reg = registry.New()
+	if err := reg.Register(plugin.Plugin{Name: "db", Summary: "db plugin", Capabilities: []plugin.Capability{c}}); err != nil {
+		t.Fatal(err)
+	}
+	yaml := `
+profiles:
+  homelab:
+    plugins:
+      db:
+        kube: homelab/databases/svc/postgres:5432
+  direct:
+    plugins:
+      db:
+        set: {host: db.internal}
+`
+	for args, want := range map[string]string{
+		"":                  `profile="" tunnel=""`,
+		"--profile direct":  `profile="direct" tunnel=""`,
+		"--profile homelab": `profile="homelab" tunnel="kube"`,
+		// Named by the caller, the endpoint is reached straight, with no
+		// forward opened: the profile is still the one in play.
+		"--profile homelab --host db.elsewhere": `profile="homelab" tunnel=""`,
+	} {
+		out, errOut, err := runWith(t, reg, yaml, append([]string{"db", "whoami"}, strings.Fields(args)...)...)
+		if err != nil {
+			t.Errorf("%q: %v\n%s", args, err, errOut)
+			continue
+		}
+		if !strings.Contains(out, want) {
+			t.Errorf("%q: the handler was told %q, want %s", args, strings.TrimSpace(out), want)
+		}
 	}
 }

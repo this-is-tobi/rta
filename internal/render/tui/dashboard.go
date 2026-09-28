@@ -821,7 +821,7 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 				"%s did not answer within %s", t.cap.ID, refreshTimeout).
 				WithHint("enter opens it on its own screen, where a run is not on the dashboard's clock")
 		}
-		dialled, closeTunnel, verr := profile.Dial(ctx, profileName, conn, t.cap, t.values)
+		dialled, via, closeTunnel, verr := profile.Dial(ctx, profileName, conn, t.cap, t.values)
 		defer closeTunnel()
 		if verr != nil {
 			if timed := deadlineHit(); timed != nil {
@@ -846,7 +846,7 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 			filled = merged
 		}
 		req := plugin.ResolveRequest(t.cap, plugin.Inputs{
-			Caller: t.values, Profile: filled, ProfileName: profileName, Config: cfg.values,
+			Caller: t.values, Profile: filled, ProfileName: profileName, Tunnel: via, Config: cfg.values,
 			ConfigSection: cfg.section,
 		}, false, false).WithSurface(plugin.SurfaceTUI)
 		v, err := t.cap.Run(ctx, req)

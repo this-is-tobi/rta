@@ -87,6 +87,48 @@ func TestATileUnderAClusterConnectionRunsThroughTheForward(t *testing.T) {
 	}
 }
 
+// A run and a tile each tell the handler which profile they came through and
+// the forward opened on it, as the CLI and the MCP bridge do, so a receipt
+// read in the TUI names the profile rather than the 127.0.0.1 end of a
+// forward that closed with the call. A host typed over the coordinate is
+// reached straight: the profile is still the one in play, with no forward.
+func TestARunAndATileTellTheHandlerTheProfileAndItsForward(t *testing.T) {
+	fakeForward(t)
+	var told string
+	c := reachedTile(t, new(string)).cap
+	c.Run = func(_ context.Context, req plugin.Request) (view.View, error) {
+		told = fmt.Sprintf("%s/%s", req.Profile(), req.Tunnel())
+		return view.Text{Body: "ok"}, nil
+	}
+	conn := config.Connection{Kube: "homelab/databases/svc/postgres:5432"}
+
+	for _, tc := range []struct {
+		name   string
+		values map[string]any
+		want   string
+	}{
+		{"through the forward", nil, "homelab/kube"},
+		{"typed over", map[string]any{"host": "db.direct.internal"}, "homelab/"},
+	} {
+		told = ""
+		if rm := runCmd(context.Background(), 1, c, tc.values, false, statedConfig{}, "homelab", nil, conn,
+			false)().(resultMsg); rm.err != nil {
+			t.Fatalf("%s: run: %s", tc.name, rm.err.Message)
+		}
+		if told != tc.want {
+			t.Errorf("%s: a run told the handler %q, want %q", tc.name, told, tc.want)
+		}
+	}
+
+	told = ""
+	if msg := tileCmd(0, tile{cap: c}, statedConfig{}, "homelab", nil, conn)().(tileMsg); msg.err != nil {
+		t.Fatalf("tile: %v", msg.err)
+	}
+	if told != "homelab/kube" {
+		t.Errorf("a tile told the handler %q, want homelab/kube", told)
+	}
+}
+
 // A tile whose connection names no cluster opens nothing and runs where it
 // always did — the overwhelmingly common case, and the one a per-refresh dial
 // must not slow down or break.

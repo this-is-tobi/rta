@@ -79,7 +79,8 @@ func (s *server) Call(ctx context.Context, req *rtav1.CallRequest) (resp *rtav1.
 	}()
 
 	pr := plugin.NewRequest(wire.ValuesFromProto(req.GetValues()), req.GetDryRun(), req.GetYes()).
-		WithSurface(wire.SurfaceFromProto(req.GetSurface()))
+		WithSurface(wire.SurfaceFromProto(req.GetSurface())).
+		WithProfile(req.GetProfile(), wire.TunnelFromProto(req.GetTunnel()))
 
 	v, runErr := c.Run(ctx, pr)
 	if runErr = plugin.Failure(runErr); runErr != nil {

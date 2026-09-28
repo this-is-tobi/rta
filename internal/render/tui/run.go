@@ -277,7 +277,7 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 	// and the environment over it.
 	collected := values
 	return func() tea.Msg {
-		dialled, closeTunnel, verr := profile.Dial(ctx, profileName, conn, c, collected)
+		dialled, via, closeTunnel, verr := profile.Dial(ctx, profileName, conn, c, collected)
 		defer closeTunnel()
 		if verr != nil {
 			if dryRun {
@@ -310,7 +310,7 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 		// Resolve rather than "fill defaults only when nothing was given":
 		// a caller who supplies one value must not lose the other defaults.
 		req := plugin.ResolveRequest(c, plugin.Inputs{
-			Caller: values, Profile: filled, ProfileName: profileName, Config: cfg.values,
+			Caller: values, Profile: filled, ProfileName: profileName, Tunnel: via, Config: cfg.values,
 			ConfigSection: cfg.section,
 		}, dryRun, yes).WithSurface(plugin.SurfaceTUI)
 		// A default, not an override. Forcing detail on unconditionally made

@@ -220,6 +220,7 @@ An upgrade also leaves the grants standing on the plugin covering nothing: each 
 | Adds capabilities to all three surfaces | ✅ automatic |
 | Declares its own safety classes | ✅ — and rta enforces them |
 | Names a secret it wants from your store | ❌ never — [you write that mapping](../20-using/40-profiles.md#secrets-holds-a-reference-never-a-value) |
+| Learns which of your profiles a call came through | ✅ its name, and whether rta opened a `kube:` or `ssh:` forward for the call — so a receipt can name `--profile` rather than a forward that has closed — and nothing else: never the coordinate, which values the profile filled, or where its credentials come from |
 | Invents an output format | ❌ — one envelope, so `--output` works everywhere |
 | Runs before you approve its digest | ❌ |
 | Bypasses grants, path roots or the safety gate | ❌ — all enforced host-side |

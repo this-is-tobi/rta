@@ -35,6 +35,12 @@ type Inputs struct {
 	// namespace-wide environment layer off below.
 	ProfileName string
 
+	// Tunnel is the kind of forward the host opened on the profile's
+	// connection for this call, TunnelNone for none. No layer either: it
+	// rides with ProfileName onto the Request ResolveRequest builds, for a
+	// handler that names the connection again (Request.Profile).
+	Tunnel Tunnel
+
 	// Config is the operator's plugins:<ns@pin> section, keyed by Field.Config.
 	Config map[string]any
 
@@ -100,9 +106,14 @@ func Resolve(c Capability, in Inputs) map[string]any {
 // second way, the note was dropped with no sign: every surface did that
 // when this first existed, so the readdressed refusal it carries was
 // reached by no call at all.
+//
+// It carries the profile in play and the tunnel opened on it as well
+// (Request.Profile), which a handler may read: the name of the operator's
+// connection, for an answer that names it again. Stamped here rather than
+// by each surface, for the same reason as the note.
 func ResolveRequest(c Capability, in Inputs, dryRun, yes bool) Request {
 	values, from := resolve(c, in)
-	req := NewRequest(values, dryRun, yes)
+	req := NewRequest(values, dryRun, yes).WithProfile(in.ProfileName, in.Tunnel)
 	req.origins = from
 	return req
 }
