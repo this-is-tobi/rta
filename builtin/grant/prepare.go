@@ -276,6 +276,28 @@ func (s selector) described() string {
 	return described
 }
 
+// stillArgs is the revoke that takes back still, the grant left covering
+// what spec took back: its target, as it always was, and after an exact
+// revoke that grant exactly. The target alone takes back every grant on
+// it, for every agent and connection, which is a wider decision than the
+// one row an exact revoke was about — the x on a roster row.
+func stillArgs(spec operatorid.RevokeSpec, still core.Grant) []plugin.Arg {
+	args := []plugin.Arg{{Name: "target", Value: still.Target, Positional: true}}
+	if !spec.Exact {
+		return args
+	}
+	if still.Scope != "" {
+		args = append(args, plugin.Arg{Name: "scope", Value: still.Scope, Positional: true})
+	}
+	if still.Profile != "" {
+		args = append(args, plugin.Arg{Name: "profile", Value: still.Profile})
+	}
+	if still.Agent != "" {
+		args = append(args, plugin.Arg{Name: "agent", Value: still.Agent})
+	}
+	return append(args, plugin.Arg{Name: "exact", Value: true})
+}
+
 // revokeSelector is the selector a revoke's spec names.
 func revokeSelector(spec operatorid.RevokeSpec) selector {
 	return selector{all: spec.All, target: spec.Target, scope: spec.Scope, profile: spec.Profile,
@@ -673,7 +695,7 @@ func revokeBody(sf plugin.Surface, spec operatorid.RevokeSpec, out operatorid.Re
 		}
 		record := core.ShownRecord(out.Still.Scope, "any")
 		return line + fmt.Sprintf("\nstill covered by an active grant on %s (record: %s) — revoke that too: `%s`",
-			out.Still.Target, record, sf.Call("grant.revoke", plugin.Arg{Name: "target", Value: out.Still.Target, Positional: true}))
+			out.Still.Target, record, sf.Call("grant.revoke", stillArgs(spec, *out.Still)...))
 	}
 	if out.Revoked == 0 {
 		msg := fmt.Sprintf("No active grant for %s.", target)
