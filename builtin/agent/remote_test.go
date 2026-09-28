@@ -229,8 +229,15 @@ func TestRemotePendingSurfacesTamperedRequests(t *testing.T) {
 		t.Fatalf("view = %+v, want the queue plus the kept-off section", v)
 	}
 	body := sections.Items[1].View.(view.Text).Body
-	if !strings.Contains(body, "beef0001") {
-		t.Fatalf("tampered note says: %s", body)
+	if want := "1 request on lab does not describe the call it is bound to: beef0001 — " +
+		"something on that machine rewrote it after rta parked it"; !strings.Contains(body, want) {
+		t.Fatalf("tampered note says: %s\nwant it to say: %s", body, want)
+	}
+	if got, want := tamperedNote([]string{"beef0001", "beef0002"}, "lab", "audit doctor"),
+		"2 requests on lab do not describe the calls they are bound to: beef0001, beef0002 — "+
+			"something on that machine rewrote them after rta parked them, and its audit doctor "+
+			"reports it."; got != want {
+		t.Errorf("two tampered requests:\n got %s\nwant %s", got, want)
 	}
 
 	_, rerr = remoteCap(t, "agent.allow").Run(context.Background(),
