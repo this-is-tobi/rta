@@ -405,13 +405,9 @@ func expectedDigest(ctx context.Context, c *registryClient, rel release, assetNa
 		if !ok {
 			continue
 		}
-		raw, verr := fetchChecksums(ctx, u)
+		sums, verr := fetchChecksums(ctx, name, u)
 		if verr != nil {
 			return "", verr
-		}
-		sums, verr := plugindist.ParseChecksums(raw)
-		if verr != nil {
-			return "", view.Errorf("pkg.tool.checksums", "%s: %s", name, verr.Message)
 		}
 		if d, ok := sums[assetName]; ok {
 			return d, nil
@@ -433,7 +429,14 @@ func expectedDigest(ctx context.Context, c *registryClient, rel release, assetNa
 // temporary directory, where nothing of rta's looks again. Made, and its
 // removal registered, under a brief hold of their own, as the tool's staging
 // directory is (installTool).
-func fetchChecksums(ctx context.Context, u string) ([]byte, *view.Error) {
+//
+// What it downloaded is read no further than a checksums file may be
+// (plugindist.ReadChecksums). It was read whole before its size was looked
+// at, and the download is bounded only by what any artifact may be, so a
+// release publishing a checksums asset of 256 MiB had every upgrade of its
+// tool take that much memory to be told it was too big. One names a digest
+// per asset: a real release's is a few kilobytes.
+func fetchChecksums(ctx context.Context, name, u string) (map[string]string, *view.Error) {
 	release := shutdown.Hold()
 	tmp, err := os.CreateTemp("", "rta-checksums-*")
 	if err != nil {
@@ -451,11 +454,16 @@ func fetchChecksums(ctx context.Context, u string) ([]byte, *view.Error) {
 	if closeErr != nil {
 		return nil, view.Errorf("pkg.tool.fetch", "%v", closeErr)
 	}
-	raw, err := os.ReadFile(tmp.Name())
+	f, err := os.Open(tmp.Name())
 	if err != nil {
 		return nil, view.Errorf("pkg.tool.fetch", "%v", err)
 	}
-	return raw, nil
+	defer func() { _ = f.Close() }()
+	sums, verr := plugindist.ReadChecksums(f)
+	if verr != nil {
+		return nil, view.Errorf("pkg.tool.checksums", "%s: %s", name, verr.Message)
+	}
+	return sums, nil
 }
 
 // installTool is the upgrade of one direct binary: claims first, evidence
