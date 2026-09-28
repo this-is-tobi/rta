@@ -423,12 +423,12 @@ func diskKind(mode os.FileMode) filemode.FileMode {
 // submodule at the commit the index records, which is what it reads for a
 // submodule the config does not name. Left out of the config the status
 // reads, such a submodule is read the same, and nothing is written. The
-// config is the one openAt hands git.Open, too (readerExtensions), since the
+// config is the one openAt hands git.Open, too (decidedFormat), since the
 // status opens the repository a second time through it.
 type submodulesOnDisk struct{ *filesystem.Storage }
 
 func (s submodulesOnDisk) Config() (*config.Config, error) {
-	cfg, err := readerExtensions(s).Config()
+	cfg, err := decidedFormat(s).Config()
 	if err != nil {
 		return nil, err
 	}
