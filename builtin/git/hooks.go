@@ -355,8 +355,7 @@ func gitConfigs(ctx context.Context, req plugin.Request, repo *git.Repository) (
 	if err != nil {
 		return nil, err
 	}
-	r := newConfigReading(ctx, req, repo)
-	r.everything = everyConfig(repository)
+	r := newConfigReading(ctx, req, repo, repository)
 	sources, err := r.everything()
 	if err != nil {
 		return nil, err

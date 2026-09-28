@@ -172,25 +172,38 @@ type configReading struct {
 	// and headRead that both are read.
 	branch, noBranch string
 	headRead         bool
-	// everything is every source of config git reads for the repository, for
-	// the URLs a hasconfig:remote.*.url condition is matched against, which
-	// urls holds once read.
+	// everything is every source of config git reads for the repository, and
+	// repository the repository's own, for the URLs a hasconfig:remote.*.url
+	// condition is matched against (remoteURLs), which all and own hold once
+	// read of each.
 	everything func() ([]configSource, error)
-	urls       []string
-	urlsRead   bool
-	// collecting is the reading git makes for those URLs (remoteURLs).
+	repository []configSource
+	all, own   remoteURLSet
+	// collecting is the reading git makes for those URLs (remoteURLs), and
+	// collected what it found.
 	collecting bool
+	collected  []string
 	// followed and read are how many includes this reading followed, and how
 	// many bytes it read of them, which maxIncludes and maxIncludedBytes bound.
 	followed int
 	read     int64
 }
 
-// newConfigReading is a reading of the config git reads for repo, for req,
-// held to one call's time for matching conditions, as a status is
-// (statusBudget).
-func newConfigReading(ctx context.Context, req plugin.Request, repo *git.Repository) *configReading {
-	r := &configReading{req: req, repo: repo, budget: &statusBudget{ctx: ctx, deadline: statusDeadline(ctx)}}
+// remoteURLSet is the URLs one reading of the config for them found
+// (remoteURLs), and whether it was made.
+type remoteURLSet struct {
+	urls []string
+	read bool
+}
+
+// newConfigReading is a reading of the config git reads for repo, whose own is
+// repository (repositoryConfigs), for req, held to one call's time for
+// matching conditions, as a status is (statusBudget).
+func newConfigReading(ctx context.Context, req plugin.Request, repo *git.Repository,
+	repository []configSource,
+) *configReading {
+	r := &configReading{req: req, repo: repo, budget: &statusBudget{ctx: ctx, deadline: statusDeadline(ctx)},
+		repository: repository, everything: everyConfig(repository)}
 	if store, ok := repo.Storer.(*filesystem.Storage); ok {
 		r.gitDirFound = store.Filesystem().Root()
 		r.gitDir = r.gitDirFound
@@ -340,7 +353,7 @@ func (r *configReading) condition(f scopedConfig, cond string) (holds bool, why 
 	case strings.HasPrefix(cond, "onbranch:"):
 		return r.onBranch(strings.TrimPrefix(cond, "onbranch:"))
 	case strings.HasPrefix(cond, remoteURLCondition):
-		return r.hasRemoteURL(strings.TrimPrefix(cond, remoteURLCondition))
+		return r.hasRemoteURL(f, strings.TrimPrefix(cond, remoteURLCondition))
 	}
 	return false, "", nil
 }
@@ -472,15 +485,30 @@ func refsInReftable(cfg *gitconfig.Config) bool {
 }
 
 // hasRemoteURL is whether a URL of any remote the config names matches
-// pattern, a hasconfig:remote.*.url: condition, as git's
-// include_by_remote_url matches it, with git's matcher, * matching no slash.
-// While the URLs themselves are being read, every such condition holds, as it
-// does for git (remoteURLs).
-func (r *configReading) hasRemoteURL(pattern string) (bool, string, error) {
+// pattern, a hasconfig:remote.*.url: condition written in the piece f, as
+// git's include_by_remote_url matches it, with git's matcher, * matching no
+// slash. While the URLs themselves are being read, every such condition holds,
+// as it does for git (remoteURLs).
+//
+// **Over MCP one the repository's own config writes is matched against the
+// URLs the repository's own config sets alone**, in the files of it inside the
+// roots, the ones git.config shows. The pattern is a glob a caller can write
+// there, and whether the file it names is read shows in the answer: matched
+// against every URL git reads, as it was, it let a caller try pattern after
+// pattern against the URLs of the operator's own config, of git's
+// environment, and of a file the repository's config included from outside
+// the roots, and spell each out one character after another — which masking a
+// URL's credentials in it shortened by the token and no more. So a URL the
+// caller is not shown is not one such a pattern is matched against at all,
+// and matching one answers as matching nothing does. A condition the
+// operator's own config writes is theirs, and matched against every URL, as
+// git matches it; at a terminal every one is.
+func (r *configReading) hasRemoteURL(f scopedConfig, pattern string) (bool, string, error) {
 	if r.collecting {
 		return true, "", nil
 	}
-	urls, err := r.remoteURLs()
+	own := r.req.Surface() == plugin.SurfaceMCP && (f.scope == "local" || f.scope == "worktree")
+	urls, err := r.remoteURLs(own)
 	if err != nil {
 		return false, "", err
 	}
@@ -489,7 +517,9 @@ func (r *configReading) hasRemoteURL(pattern string) (bool, string, error) {
 }
 
 // remoteURLs is the URL of every remote the config git reads names, read as
-// git's populate_remote_urls reads them, once, the first time a condition asks.
+// git's populate_remote_urls reads them, once, the first time a condition asks;
+// where own is set, of every remote the repository's own config names, read
+// the same way from its files alone (hasRemoteURL).
 //
 // **git reads the whole of its config a second time for them**, every scope
 // and every file an include names, including the ones an includeIf names
@@ -498,22 +528,31 @@ func (r *configReading) hasRemoteURL(pattern string) (bool, string, error) {
 // such a file, may set no URL in that reading: git refuses to run where one
 // does ("remote URLs cannot be configured in file directly or indirectly
 // included by includeIf.hasconfig:remote.*.url"), whatever condition the
-// includeIf has, and so is it refused here (collect).
-func (r *configReading) remoteURLs() ([]string, error) {
-	if r.urlsRead {
-		return r.urls, nil
+// includeIf has, and so is it refused here (collect). The repository's own
+// files are read so for their own URLs, and a file of the operator's, being
+// no file of the repository's, is not one they refuse over.
+func (r *configReading) remoteURLs(own bool) ([]string, error) {
+	set := &r.all
+	if own {
+		set = &r.own
 	}
-	sources, err := r.everything()
-	if err != nil {
-		return nil, err
+	if set.read {
+		return set.urls, nil
+	}
+	sources := r.repository
+	if !own {
+		var err error
+		if sources, err = r.everything(); err != nil {
+			return nil, err
+		}
 	}
 	c := &configReading{req: r.req, repo: r.repo, budget: r.budget, gitDir: r.gitDir, gitDirFound: r.gitDirFound,
 		branch: r.branch, noBranch: r.noBranch, headRead: r.headRead, collecting: true}
 	if _, err := c.follow(sources); err != nil {
 		return nil, err
 	}
-	r.urls, r.urlsRead = c.urls, true
-	return r.urls, nil
+	*set = remoteURLSet{urls: c.collected, read: true}
+	return set.urls, nil
 }
 
 // collect keeps l, a line of the piece f, where it sets a remote's URL, for
@@ -521,12 +560,12 @@ func (r *configReading) remoteURLs() ([]string, error) {
 //
 // **Over MCP a URL the caller is not shown is matched with its credentials
 // masked**, as git.config would show it: the operator's own config's and the
-// environment's. The condition is
-// a glob the caller writes into the repository's config, and whether the file
-// it names was followed shows in the answer, so matching the URL as written
-// would let a caller spell out, one character after another, a token kept in
-// a URL it can never read. A pattern that is not after a credential matches
-// the masked URL as it matches the URL.
+// environment's, which only a condition of the operator's own config is
+// matched against (hasRemoteURL). Such a condition is in a file the caller
+// cannot write, most of the time: a root drawn around the home directory holds
+// ~/.gitconfig, and a pattern written there would spell out a token kept in a
+// URL the caller never reads. A pattern that is not after a credential
+// matches the masked URL as it matches the URL.
 func (r *configReading) collect(f scopedConfig, l configLine, forbid bool) error {
 	if l.name == "" || !strings.EqualFold(l.section, "remote") || l.subsection == "" && !l.emptySubsection ||
 		!strings.EqualFold(l.name, "url") {
@@ -544,7 +583,7 @@ func (r *configReading) collect(f scopedConfig, l configLine, forbid bool) error
 	if r.req.Surface() == plugin.SurfaceMCP && f.scope != "local" && f.scope != "worktree" {
 		url = maskURLCredentials(url)
 	}
-	r.urls = append(r.urls, url)
+	r.collected = append(r.collected, url)
 	return nil
 }
 

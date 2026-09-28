@@ -613,32 +613,87 @@ func TestAnIncludeOfRtasOwnStateIsRefusedOverMCP(t *testing.T) {
 	}
 }
 
-// A hasconfig:remote.*.url condition is a glob a caller writes into the
-// repository's config, and whether the file it names is read shows in the
-// answer: matched against a URL as written, it would spell out, one
-// character after another, a token kept in a URL of the operator's that the
-// caller can never read. Over MCP such a URL is matched with its credentials
-// masked, as git.config shows one, so a pattern that is after the token
-// matches nothing and one that is not matches as it does at a terminal.
-func TestAHasconfigConditionCannotSpellOutACredentialOverMCP(t *testing.T) {
-	machineConfig(t, "[remote \"operator\"]\n\turl = https://bob:planted-token@git.example/team/r.git\n")
+// A hasconfig:remote.*.url condition is a glob, and whether the file it names
+// is read shows in the answer. One written in the repository's config, which a
+// caller can write inside the roots, was matched against every URL git reads,
+// so a caller could try pattern after pattern against URLs it is never shown —
+// the operator's own, the environment's, one set in a file outside the roots
+// — and spell one out. Over MCP such a condition is matched against the URLs
+// the repository's own config sets inside the roots alone: a pattern that
+// matches a URL the caller is not shown gets the answer one that matches
+// nothing gets, and a refusal a file of the operator's would bring about is
+// not reached. One the operator's config writes is matched against every URL,
+// as before. At a terminal each is matched as git matches it.
+func TestAHasconfigConditionInTheRepositoryMatchesItsOwnRemotesOverMCP(t *testing.T) {
+	home := machineConfig(t, "[remote \"operator\"]\n\turl = https://bob:planted-token@git.example/team/r.git\n"+
+		"[includeIf \"hasconfig:remote.*.url:https://*@git.example/team/**\"]\n\tpath = ~/team.cfg\n")
 	dir, repo := testRepo(t)
-	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
-	writeFile(t, dir, ".git/probe.cfg", "[x]\n\tprobe = matched\n")
-	for pattern, overMCP := range map[string]bool{
-		"https://bob:planted-token@git.example/**": false,
-		"https://bob:planted-*@git.example/**":     false,
-		"https://bob:*@git.example/**":             true,
-		"https://*@git.example/team/**":            true,
+	commitFileAt(t, repo, dir, "a.txt", "v1\n", "initial", time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, home, "team.cfg", "[core]\n\thooksPath = "+filepath.Join(resolved, "team-hooks")+"\n")
+	writeExecutable(t, dir, "team-hooks/pre-commit")
+	writeFile(t, home, "outside.cfg", "[remote \"outside\"]\n\turl = https://outside.example/planted/r.git\n")
+	writeFile(t, dir, ".git/inner.cfg", "[remote \"inner\"]\n\turl = https://inner.example/r.git\n")
+	writeFile(t, dir, ".git/probe.cfg", "[x]\n\tprobe = matched\n[core]\n\thooksPath = probe-hooks\n")
+	writeExecutable(t, dir, "probe-hooks/pre-push")
+	t.Setenv("GIT_CONFIG_PARAMETERS", "'remote.env.url'='https://env.example/planted/r.git'")
+	own := "[include]\n\tpath = ~/outside.cfg\n\tpath = inner.cfg\n[remote \"own\"]\n\turl = https://own.example/r.git\n"
+	unmatched := ""
+	for _, c := range []struct {
+		pattern       string
+		terminal, mcp bool
+	}{
+		{"https://nowhere.example/**", false, false},
+		{"https://bob:planted-token@git.example/**", true, false},
+		{"https://bob:planted-*@git.example/**", true, false},
+		{"https://*@git.example/team/**", true, false},
+		{"https://outside.example/**", true, false},
+		{"https://env.example/**", true, false},
+		{"https://own.example/**", true, true},
+		{"https://inner.example/**", true, true},
 	} {
-		writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n[includeIf \"hasconfig:remote.*.url:"+pattern+
-			"\"]\n\tpath = probe.cfg\n")
-		if got := keyRows(table(t, runConfig, req(t, dir, nil)), "x.probe"); len(got) != 1 {
-			t.Errorf("at a terminal, with %s, x.probe rows = %v, want the file read", pattern, got)
+		writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n"+own+"[includeIf \"hasconfig:remote.*.url:"+
+			c.pattern+"\"]\n\tpath = probe.cfg\n")
+		if got := len(keyRows(table(t, runConfig, req(t, dir, nil)), "x.probe")) == 1; got != c.terminal {
+			t.Errorf("at a terminal, with %s, the file it names is read: %v, want %v", c.pattern, got, c.terminal)
 		}
-		if got := keyRows(table(t, runConfig, mcpReq(t, dir, dir)), "x.probe"); (len(got) == 1) != overMCP {
-			t.Errorf("over MCP, with %s, x.probe rows = %v, want the file read: %v", pattern, got, overMCP)
+		if got := len(keyRows(table(t, runConfig, mcpReq(t, dir, dir)), "x.probe")) == 1; got != c.mcp {
+			t.Errorf("over MCP, with %s, the file it names is read: %v, want %v", c.pattern, got, c.mcp)
 		}
+		if value, _, runs, ok := gitGets(t, dir, "x.probe"); ok && runs && (value == "matched") != c.terminal {
+			skipGitOlderThan(t, gitSince{"2.36.0", "read hasconfig: conditions"})
+			t.Errorf("git, with %s, reads the file it names: %v", c.pattern, value == "matched")
+		}
+		if c.mcp {
+			continue
+		}
+		// The pattern itself is a row of git.config's, its credential masked.
+		got := strings.ReplaceAll(answersOf(t, mcpReq(t, dir, dir)), c.pattern, "<pattern>")
+		got = strings.ReplaceAll(got, maskURLCredentials(c.pattern), "<pattern>")
+		if unmatched == "" {
+			unmatched = got
+			if row := rowFor(t, table(t, runHooks, mcpReq(t, dir, dir)), "Name", "pre-commit"); row[2] != "team-hooks/pre-commit" {
+				t.Errorf("over MCP, pre-commit row = %v, want the directory the operator's condition includes", row)
+			}
+		} else if got != unmatched {
+			t.Errorf("over MCP, with %s, which matches a URL the caller is not shown:\n%s\nwhere one matching "+
+				"nothing gets:\n%s", c.pattern, got, unmatched)
+		}
+	}
+
+	home = machineConfig(t, "[includeIf \"gitdir:/\"]\n\tpath = ~/url.cfg\n")
+	writeFile(t, home, "url.cfg", "[remote \"z\"]\n\turl = https://z.example/r\n")
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n[includeIf \"hasconfig:remote.*.url:https://z/**\"]\n"+
+		"\tpath = probe.cfg\n")
+	if _, err := runConfig(context.Background(), req(t, dir, nil)); err == nil ||
+		!strings.Contains(err.Error(), "remote URLs cannot be configured") {
+		t.Errorf("at a terminal, git.config = %v, want it refused as git refuses it", err)
+	}
+	if v, err := runConfig(context.Background(), mcpReq(t, dir, dir)); err != nil || strings.Contains(fmt.Sprint(v), "url.cfg") {
+		t.Errorf("over MCP, git.config = %v %v, want the operator's file never reached", v, err)
 	}
 }
 
