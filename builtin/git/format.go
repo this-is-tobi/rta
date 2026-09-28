@@ -106,6 +106,15 @@ func isGitBool(value string) bool {
 // its line is "missing value", where go-git reads it as set to nothing and
 // this opened a repository git refuses. blank is each key the config sets
 // with no value (valuelessKeys).
+//
+// **A second object format that is the first is a repository git cannot
+// open.** extensions.compatObjectFormat names the format git keeps a map to,
+// beside the one the objects are named in: extensions.objectFormat, the last
+// line of it as git reads it, or SHA-1 where none is set. Set to that same
+// format, git 2.50 aborts as it sets the repository up ("BUG: hash_algo and
+// compat_hash_algo match"), whatever command it was running, and this opened
+// the repository and answered for it. It is refused as git refuses it, once
+// the version has been judged, since git judges that first.
 func repositoryFormat(path string, cfg *gitconfig.Config, blank map[string]valueless, what reads) *view.Error {
 	version, written, err := formatVersion(cfg)
 	if err != nil {
@@ -113,8 +122,15 @@ func repositoryFormat(path string, cfg *gitconfig.Config, blank map[string]value
 			"number", written), "git refuses to read a format version it cannot count")
 	}
 	var versionOne, invalid, unknown, unread []string
+	objects, compat := "sha1", ""
 	for _, o := range cfg.Raw.Section("extensions").Options {
 		name, value := strings.ToLower(o.Key), strings.TrimSpace(o.Value)
+		switch name {
+		case "objectformat":
+			objects = value
+		case "compatobjectformat":
+			compat = value
+		}
 		spelled := "extensions." + o.Key + " = " + o.Value
 		none := o.Value == "" && blank[configKey("extensions", "", o.Key)].any
 		if none {
@@ -149,6 +165,11 @@ func repositoryFormat(path string, cfg *gitconfig.Config, blank map[string]value
 			"only format version 1 has", strings.Join(versionOne, ", ")),
 			"git says \"repo version is 0, but v1-only extension found\"; setting core.repositoryformatversion "+
 				"to 1 makes it a repository git reads, where the extension is meant")
+	case compat != "" && compat == objects:
+		return gitRefuses(path, fmt.Sprintf("its config sets extensions.compatObjectFormat = %s, the format its "+
+			"objects are named in already", compat), "git 2.50 stops at it (\"BUG: hash_algo and compat_hash_algo "+
+			"match\"): a second format that is the first one is none, and unsetting extensions.compatObjectFormat "+
+			"makes it a repository git opens")
 	case len(unread) > 0:
 		return unsupportedFormat(path, unread, true)
 	}
