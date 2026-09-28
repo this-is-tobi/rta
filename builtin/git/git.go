@@ -90,11 +90,12 @@ func openRepo(ctx context.Context, req plugin.Request) (repo *git.Repository, do
 // openRepoConfigOnly is the same repository for the two capabilities whose
 // answers come out of its config and its hooks directory alone, git.config
 // and git.hooks, and openRepoRefs for git.remotes, which reads its refs as
-// well. An object database this reader can only see part of, or one in a
-// format it does not read, cannot make any of those wrong, and neither can
-// refs it does not read for the first two; refusing them would report a
-// fault in an answer that does not have one, and left a hooks audit
-// impossible in a sha256 repository (repositoryFormat).
+// well. An object database this reader can only see part of, a partial
+// clone's (notPartial) or one in a format it does not read, cannot make any
+// of those wrong, and neither can refs it does not read for the first two;
+// refusing them would report a fault in an answer that does not have one,
+// and left a hooks audit impossible in a sha256 repository
+// (repositoryFormat).
 //
 // Named openers rather than a flag on openRepo, so that a capability which
 // grows an object read has to come here and change which one it calls.
@@ -137,7 +138,11 @@ func open(ctx context.Context, req plugin.Request, what reads) (*git.Repository,
 	}
 	done := func() { release(repo) }
 	if what == readsObjects {
-		if verr := objectsAllReadable(repo, root); verr != nil {
+		verr := objectsAllReadable(repo, root)
+		if local, err := localConfig(repo); verr == nil && err == nil {
+			verr = notPartial(local, root)
+		}
+		if verr != nil {
 			done()
 			return nil, nil, verr
 		}

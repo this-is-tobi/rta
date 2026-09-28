@@ -3,6 +3,7 @@ package git
 import (
 	"fmt"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -244,4 +245,51 @@ func (s decidedFormat) Config() (*gitconfig.Config, error) {
 	cfg.Raw.RemoveSection("extensions")
 	cfg.Core.RepositoryFormatVersion = ""
 	return cfg, nil
+}
+
+// notPartial refuses a partial clone, which root holds and whose own config
+// is local, to a capability that reads its objects.
+//
+// **A partial clone lacks objects on purpose.** `git clone --filter=blob:none`
+// fetches the history and leaves each file's content on the server until git
+// needs it, and git fetches it then; this reader fetches nothing, and failed
+// at the first object the clone did not hold, as whatever capability was
+// running, or read a tree it lacked as an empty one. git marks the remote it
+// fetches from as a promisor, remote.<name>.promisor, and an older git named
+// it in extensions.partialClone too, which git reads only where the config
+// sets a format version (unsetVersion); either is refused here up front, as a
+// pack this reader cannot open is (objectsAllReadable), naming why. A
+// promisor set with no value at all, `promisor` alone on its line, is one git
+// reads as true, and go-git as nothing (valuelessKeys).
+//
+// **Any line that makes a remote a promisor makes it one.** git's
+// promisor_remote_config adds the remote at each such line and takes none
+// away, so `promisor = true` then `promisor = false` is a promisor git
+// fetches from: reading the last value alone let such a clone through, to
+// fail at the first object it lacked.
+func notPartial(local scopedConfig, root string) *view.Error {
+	cfg := local.config
+	var promisors []string
+	if extensionsInEffect(cfg) && cfg.Raw.HasSection("extensions") {
+		if name := cfg.Raw.Section("extensions").Option("partialClone"); name != "" {
+			promisors = append(promisors, name)
+		}
+	}
+	if cfg.Raw.HasSection("remote") {
+		for _, sub := range cfg.Raw.Section("remote").Subsections {
+			promisor := local.blank[configKey("remote", sub.Name, "promisor")].any ||
+				slices.ContainsFunc(sub.Options.GetAll("promisor"), gitBool)
+			if promisor && !slices.Contains(promisors, sub.Name) {
+				promisors = append(promisors, sub.Name)
+			}
+		}
+	}
+	if len(promisors) == 0 {
+		return nil
+	}
+	sort.Strings(promisors)
+	return view.Errorf("git.objects.partial", "%s is a partial clone: git fetches the objects it lacks from %s as "+
+		"it needs them, and this reader fetches nothing", root, strings.Join(promisors, ", ")).
+		WithHint("git.config, git.hooks and git.remotes answer here; for history and files, run this on a " +
+			"clone made without --filter, which holds every object")
 }
