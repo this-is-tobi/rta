@@ -59,6 +59,52 @@ func TestHooksClassifiesActiveSampleAndDisabled(t *testing.T) {
 	}
 }
 
+// git runs a hook where access(2) finds it executable, which follows a link
+// at the hook's name: a link is judged by what it leads to. This judged the
+// link itself, rwx on Linux, so a link to a file git does not run was listed
+// active and a link to a directory listed at all; and on macOS, where a
+// link's own mode can be set apart, a link to a script git runs on every
+// commit was listed disabled. Over MCP a link leading out of the roots is
+// not followed, and is listed active.
+func TestAHookThatIsALinkIsJudgedByWhatItLeadsTo(t *testing.T) {
+	machineConfig(t, "")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeExecutable(t, dir, "scripts/run")
+	writeFile(t, dir, "scripts/plain", "#!/bin/sh\n")
+	outside := t.TempDir()
+	writeFile(t, outside, "plain", "#!/bin/sh\n")
+	hooks := filepath.Join(dir, ".git", "hooks")
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, target := range map[string]string{
+		"pre-commit": "../../scripts/run", "pre-push": "../../scripts/plain", "post-commit": "../../scripts",
+		"commit-msg": "../../scripts/missing", "post-merge": filepath.Join(outside, "plain"),
+	} {
+		symlink(t, hooks, target, name)
+	}
+	hidden := lchmod(filepath.Join(hooks, "pre-commit"), 0o644) == nil
+
+	for surface, r := range map[string]plugin.Request{"terminal": req(t, dir, nil), "MCP": guarded(t, dir, dir)} {
+		want := map[string]string{"pre-commit": "active", "pre-push": "disabled", "commit-msg": "disabled", "post-merge": "disabled"}
+		if surface == "MCP" {
+			want["post-merge"] = "active"
+		}
+		tbl := table(t, runHooks, r)
+		for name, status := range want {
+			if row := rowFor(t, tbl, "Name", name); row[1] != status {
+				t.Errorf("%s, %s row = %v, want it %s (link mode set apart: %v)", surface, name, row, status, hidden)
+			}
+		}
+		for _, row := range tbl.Rows {
+			if row[0] == "post-commit" {
+				t.Errorf("%s, a link to a directory is listed as a hook: %v", surface, row)
+			}
+		}
+	}
+}
+
 func TestHooksOnARepositoryWithNoHooksDirectoryReturnsEmptyNotAnError(t *testing.T) {
 	machineConfig(t, "")
 	dir, repo := testRepo(t)
