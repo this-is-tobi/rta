@@ -28,7 +28,9 @@ func hooksCapability() plugin.Capability {
 			"core.hooksPath when any config git reads sets it, the repository's own hooks directory " +
 			"otherwise — judged by the same rule git itself uses to decide whether one fires on " +
 			"commit, push and the rest: named exactly (a `.sample` suffix never runs) and executable, " +
-			"a symbolic link by what it leads to, as git follows one. Over MCP a link leading out of " +
+			"a symbolic link by what it leads to, as git follows one. Anything but a file that passes " +
+			"that rule — a directory, a link to one, a named pipe — is one git tries to run and " +
+			"cannot, failing the command it guards, and is listed as fails. Over MCP a link leading out of " +
 			"the roots is not followed, and is listed active, as git may run what it leads to. " +
 			"The config is read from every file git reads and from the environment, as git.config " +
 			"reads them; a file one of them includes is not followed, and a warning says how many " +
@@ -85,31 +87,57 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 		Warnings: warnings,
 	}
 	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
 		info, err := e.Info()
 		if err != nil {
 			continue
 		}
 		name := e.Name()
 		mode, unfollowed := hookMode(req, judged, name, info)
-		if mode.IsDir() {
-			continue
-		}
-		status := "disabled"
-		switch {
-		case strings.HasSuffix(name, ".sample"):
-			status = "sample"
-		case unfollowed, mode&0o111 != 0:
-			status = "active"
-		}
 		t.Rows = append(t.Rows, []string{
-			strings.TrimSuffix(name, ".sample"), status, shownFrom(base, filepath.Join(dir, name)),
+			strings.TrimSuffix(name, ".sample"), hookStatus(name, mode, unfollowed),
+			shownFrom(base, filepath.Join(dir, name)),
 		})
 	}
 	t.Total = len(t.Rows)
 	return t, nil
+}
+
+// hookStatus is what git does with the entry name of a hooks directory, by
+// the mode it judges it by (hookMode): never runs a `.sample`, runs a file
+// access(2) finds executable (active), passes over one it does not
+// (disabled), and tries to run anything else access(2) lets through and
+// cannot (fails). A link not looked through is active, as git may run what it
+// leads to.
+//
+// **git runs what it finds at a hook's name, not only a file.** It asks
+// access(2) whether the name is executable, and a directory that may be
+// searched, a link to one, or a named pipe with an execute bit, all say yes;
+// exec(2) then refuses anything but a file, and git fails with "cannot exec
+// '.git/hooks/pre-commit': Permission denied" on every commit, a commit a
+// pre-commit guards not made, a push a pre-push guards not sent. This left a
+// directory out and listed a link to one nowhere, and a named pipe as active:
+// a hooks directory whose pre-commit broke every commit answered that nothing
+// ran, or that a script did. Listed as fails, which is what git does with it
+// each time, and the word renderers already draw as a failure. One access(2)
+// refuses is passed over as a file git will not run is, with the hint git
+// prints for it, and is disabled.
+//
+// Any execute bit is read as access(2) saying yes, as it says to the entry's
+// owner, the usual case for a hook. Root is the exception: it may search a
+// directory that has none, so git run as root fails on one this lists as
+// disabled.
+func hookStatus(name string, mode os.FileMode, unfollowed bool) string {
+	switch {
+	case strings.HasSuffix(name, ".sample"):
+		return "sample"
+	case unfollowed:
+		return "active"
+	case mode&0o111 == 0:
+		return "disabled"
+	case mode.IsRegular():
+		return "active"
+	}
+	return "fails"
 }
 
 // hookMode is the mode git judges the entry name of the hooks directory dir
@@ -122,8 +150,8 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 // git runs a hook where access(2) finds it executable, which is a question
 // about what the link leads to: a link to a script is a hook git runs,
 // whatever the link's own mode, and a link to a directory is one it tries to
-// run and fails on, as it does a directory, and is left out as a directory
-// is. This read the link's own mode.
+// run and fails on, as it does a directory (hookStatus). This read the link's
+// own mode.
 // On Linux that is always rwx, so a link to a file git will not run was
 // listed active; on macOS a link's mode can be set apart from its target's
 // (`chmod -h 644`), and a link to a script git ran on every commit was

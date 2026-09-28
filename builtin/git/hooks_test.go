@@ -62,10 +62,10 @@ func TestHooksClassifiesActiveSampleAndDisabled(t *testing.T) {
 // git runs a hook where access(2) finds it executable, which follows a link
 // at the hook's name: a link is judged by what it leads to. This judged the
 // link itself, rwx on Linux, so a link to a file git does not run was listed
-// active and a link to a directory listed at all; and on macOS, where a
-// link's own mode can be set apart, a link to a script git runs on every
-// commit was listed disabled. Over MCP a link leading out of the roots is
-// not followed, and is listed active.
+// active; and on macOS, where a link's own mode can be set apart, a link to a
+// script git runs on every commit was listed disabled. A link to a directory
+// is one git tries to run and cannot, and fails. Over MCP a link leading out
+// of the roots is not followed, and is listed active.
 func TestAHookThatIsALinkIsJudgedByWhatItLeadsTo(t *testing.T) {
 	machineConfig(t, "")
 	dir, repo := testRepo(t)
@@ -87,7 +87,8 @@ func TestAHookThatIsALinkIsJudgedByWhatItLeadsTo(t *testing.T) {
 	hidden := lchmod(filepath.Join(hooks, "pre-commit"), 0o644) == nil
 
 	for surface, r := range map[string]plugin.Request{"terminal": req(t, dir, nil), "MCP": guarded(t, dir, dir)} {
-		want := map[string]string{"pre-commit": "active", "pre-push": "disabled", "commit-msg": "disabled", "post-merge": "disabled"}
+		want := map[string]string{"pre-commit": "active", "pre-push": "disabled", "commit-msg": "disabled",
+			"post-merge": "disabled", "post-commit": "fails"}
 		if surface == "MCP" {
 			want["post-merge"] = "active"
 		}
@@ -97,12 +98,81 @@ func TestAHookThatIsALinkIsJudgedByWhatItLeadsTo(t *testing.T) {
 				t.Errorf("%s, %s row = %v, want it %s (link mode set apart: %v)", surface, name, row, status, hidden)
 			}
 		}
-		for _, row := range tbl.Rows {
-			if row[0] == "post-commit" {
-				t.Errorf("%s, a link to a directory is listed as a hook: %v", surface, row)
+	}
+}
+
+// git runs whatever access(2) finds executable at a hook's name, and exec(2)
+// refuses anything but a file: a directory that may be searched, a link to
+// one, or a named pipe with an execute bit, at pre-commit, fails every commit
+// ("cannot exec '.git/hooks/pre-commit': Permission denied"). This left the
+// directory out, the link too, and listed the pipe active. Each is listed as
+// fails, on every surface, and one access(2) refuses as disabled, as git
+// passes over it; the git on PATH is asked to commit with each in place.
+func TestAnEntryGitCannotRunAtAHooksNameIsListedAsFailing(t *testing.T) {
+	machineConfig(t, "")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	hooks := filepath.Join(dir, ".git", "hooks")
+	if err := os.MkdirAll(filepath.Join(dir, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hook := filepath.Join(hooks, "pre-commit")
+	for what, c := range map[string]struct {
+		make func() error
+		want string
+	}{
+		"a directory":              {func() error { return os.MkdirAll(hook, 0o755) }, "fails"},
+		"a directory with no x":    {func() error { return os.MkdirAll(hook, 0o644) }, "disabled"},
+		"a link to a directory":    {func() error { return os.Symlink("../../scripts", hook) }, "fails"},
+		"a link leading nowhere":   {func() error { return os.Symlink("../../missing", hook) }, "disabled"},
+		"a named pipe with an x":   {func() error { return fifo(hook, 0o755) }, "fails"},
+		"a named pipe with no x":   {func() error { return fifo(hook, 0o644) }, "disabled"},
+		"a script, for comparison": {func() error { return os.WriteFile(hook, []byte("#!/bin/sh\n"), 0o755) }, "active"},
+	} {
+		if err := os.RemoveAll(hook); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(hooks, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.make(); err != nil {
+			t.Logf("%s not made here: %v", what, err)
+			continue
+		}
+		for surface, r := range map[string]plugin.Request{"terminal": req(t, dir, nil), "MCP": guarded(t, dir, dir)} {
+			if row := rowFor(t, table(t, runHooks, r), "Name", "pre-commit"); row[1] != c.want {
+				t.Errorf("%s at pre-commit, %s row = %v, want it %s", what, surface, row, c.want)
 			}
 		}
+		// Root may search a directory with no execute bit, and git run as
+		// root fails on it (hookStatus).
+		asRoot := os.Geteuid() == 0 && what == "a directory with no x"
+		if commits, ok := commitsByGit(t, dir); ok && !asRoot && commits != (c.want != "fails") {
+			t.Errorf("%s at pre-commit, git commits: %v, and this lists it %s", what, commits, c.want)
+		}
 	}
+}
+
+// fifo makes a named pipe at path with mode, set after it is made so the
+// umask takes nothing from it.
+func fifo(path string, mode os.FileMode) error {
+	if err := mkfifo(path); err != nil {
+		return err
+	}
+	return os.Chmod(path, mode)
+}
+
+// commitsByGit is whether the git on PATH makes a commit in dir, running its
+// hooks; ok is false where there is no git to ask.
+func commitsByGit(t *testing.T, dir string) (commits, ok bool) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		return false, false
+	}
+	cmd := exec.Command("git", "-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com",
+		"commit", "--quiet", "--allow-empty", "--message", "hooks")
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1")
+	return cmd.Run() == nil, true
 }
 
 func TestHooksOnARepositoryWithNoHooksDirectoryReturnsEmptyNotAnError(t *testing.T) {
