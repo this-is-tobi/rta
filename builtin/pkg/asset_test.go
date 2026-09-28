@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -221,5 +222,50 @@ func TestRunnableKnowsEachPlatformsExecutables(t *testing.T) {
 		if got := runnable(c.goos, []byte(c.head)); got != c.want {
 			t.Errorf("runnable(%s, %q) = %v, want %v", c.goos, c.head, got, c.want)
 		}
+	}
+}
+
+// A release's checksums file costs the memory one holds, and no more. It was
+// read whole before its size was looked at, bounded only by the 256 MiB any
+// download is, so a release publishing a checksums asset that size had every
+// upgrade of its tool take that much memory to be told the file was too big:
+// a checksums file names one digest per asset, a few kilobytes for any real
+// release.
+func TestAnOversizedChecksumsFileIsRefusedWithoutBeingRead(t *testing.T) {
+	goos, arch := here(t)
+	name := "tool-" + goos + "-" + arch
+	huge := bytes.Repeat([]byte("x"), 32<<20)
+	var srv *httptest.Server
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/o/tool/releases/latest":
+			_, _ = w.Write([]byte(`{"tag_name":"v1.0.0","assets":[` +
+				`{"name":"` + name + `","browser_download_url":"` + srv.URL + `/dl/` + name + `","size":64},` +
+				`{"name":"checksums.txt","browser_download_url":"` + srv.URL + `/dl/checksums.txt","size":` +
+				itoa(len(huge)) + `}]}`))
+		case "/dl/checksums.txt":
+			_, _ = w.Write(huge)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	old := http.DefaultTransport
+	http.DefaultTransport = srv.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = old })
+	c := newRegistryClient()
+	c.http = srv.Client()
+	c.github = srv.URL
+	placedAt(t, "tool")
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, verr := installTool(context.Background(), plugin.SurfaceCLI, c, tool{Bin: "tool", Owner: "o", Repo: "tool"}, false, false)
+	runtime.ReadMemStats(&after)
+	if verr == nil || verr.Code != "pkg.tool.checksums" {
+		t.Fatalf("a checksums file of %d bytes = %v, want pkg.tool.checksums", len(huge), verr)
+	}
+	if taken := after.TotalAlloc - before.TotalAlloc; taken > 8<<20 {
+		t.Errorf("refusing a %d-byte checksums file took %d bytes", len(huge), taken)
 	}
 }

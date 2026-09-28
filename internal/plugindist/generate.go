@@ -301,6 +301,24 @@ var checksumLine = regexp.MustCompile(`^([0-9a-f]{64})\s+\*?(\S.*)$`)
 // checksums file was meant should say so instead of being read.
 const checksumsCap = 1 << 20
 
+// ReadChecksums is ParseChecksums over a file still to be read, which it reads
+// no further than the cap: one past it is refused having read a byte more,
+// never the rest. The cap was only ever looked at once the file had been read
+// whole, so a checksums file of any size cost its size in memory to be told
+// it was too big — a release's, downloaded up to the 256 MiB any artifact may
+// be (Fetch), on every upgrade of a tool that published one that large.
+func ReadChecksums(r io.Reader) (map[string]string, *view.Error) {
+	raw, err := io.ReadAll(io.LimitReader(r, checksumsCap+1))
+	if err != nil {
+		return nil, view.Errorf("plugin.manifest.checksums", "reading the checksums file: %v", err)
+	}
+	if len(raw) > checksumsCap {
+		return nil, view.Errorf("plugin.manifest.checksums",
+			"the checksums file is over the cap of %d bytes", checksumsCap)
+	}
+	return ParseChecksums(raw)
+}
+
 // ParseChecksums reads a checksums file into filename → sha256. Keyed by
 // basename, because that is what a URL's last segment is.
 func ParseChecksums(raw []byte) (map[string]string, *view.Error) {

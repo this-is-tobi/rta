@@ -289,6 +289,35 @@ func TestChecksumsFilesAreReadOrRefusedWholesale(t *testing.T) {
 	}
 }
 
+// A checksums file is read no further than the cap, so one that never ends is
+// refused rather than read until memory runs out, and one within it is read
+// as ParseChecksums reads it.
+func TestAChecksumsFileIsReadNoFurtherThanTheCap(t *testing.T) {
+	endless := &countingReader{}
+	if _, verr := ReadChecksums(endless); verr == nil || verr.Code != "plugin.manifest.checksums" {
+		t.Fatalf("an endless checksums file = %v, want plugin.manifest.checksums", verr)
+	}
+	if endless.n > checksumsCap+1 {
+		t.Errorf("read %d bytes of it, past the cap of %d", endless.n, checksumsCap)
+	}
+	sums, verr := ReadChecksums(strings.NewReader(
+		"3d1d0b3a0e2d2b0a3f4e5d6c7b8a9f0e1d2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a  a.tar.gz\n"))
+	if verr != nil || sums["a.tar.gz"][:2] != "3d" {
+		t.Fatalf("sums = %v, %v", sums, verr)
+	}
+}
+
+// countingReader is a file that never ends, counting what was read of it.
+type countingReader struct{ n int }
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 'x'
+	}
+	r.n += len(p)
+	return len(p), nil
+}
+
 // A declaration missing what an index entry is made of names the plugin to
 // fix rather than the manifest that could not be written.
 func TestAPluginThatCannotBePublishedSaysWhichPartIsMissing(t *testing.T) {
