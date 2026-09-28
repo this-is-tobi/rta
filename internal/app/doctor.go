@@ -129,17 +129,20 @@ func WarnUntrustedPlugins(w io.Writer, machineReadable bool) {
 		}
 		waiting = append(waiting, u.Name)
 	}
-	if len(waiting) > 0 {
+	if n := len(waiting); n > 0 {
 		fmt.Fprintf(w,
-			"rta: %d plugin(s) installed and not run: %s — `rta plugin trust <name>` to load, "+
-				"`rta plugin trust` to see them\n",
-			len(waiting), strings.Join(waiting, ", "))
+			"rta: %s installed and not run: %s — `rta plugin trust <name>` to load, "+
+				"`rta plugin trust` to see %s\n",
+			format.Count(n, "plugin", "plugins"), strings.Join(waiting, ", "),
+			format.Plural(n, "it", "them"))
 	}
-	if len(colliding) > 0 {
+	if n := len(colliding); n > 0 {
 		fmt.Fprintf(w,
-			"rta: %d artifact(s) on $PATH name something already registered and were not run: "+
-				"%s — trusting one would collide; remove or rename the file\n",
-			len(colliding), strings.Join(colliding, ", "))
+			"rta: %s on $PATH %s something already registered and %s not run: "+
+				"%s — trusting %s would collide; remove or rename the %s\n",
+			format.Count(n, "artifact", "artifacts"), format.Plural(n, "names", "name"),
+			format.Plural(n, "was", "were"), strings.Join(colliding, ", "),
+			format.Plural(n, "it", "one"), format.Plural(n, "file", "files"))
 	}
 }
 
@@ -365,7 +368,8 @@ func doctorCatalogue(reg *registry.Registry, add func(check, status, detail stri
 			external++
 		}
 	}
-	detail := fmt.Sprintf("%d plugins, %d capabilities", len(reg.Plugins()), len(caps))
+	detail := format.Count(len(reg.Plugins()), "plugin", "plugins") + ", " +
+		format.CountOf(len(caps), "capability")
 	if external > 0 {
 		detail += fmt.Sprintf(" (%d built in, %d from $PATH)", len(reg.Plugins())-external, external)
 	}
@@ -455,7 +459,7 @@ func doctorConfig(add func(check, status, detail string)) {
 		}
 		switch n := len(cfg.Dashboard.Tiles); {
 		case n > 0:
-			detail += fmt.Sprintf(", %d dashboard tiles", n)
+			detail += ", " + format.Count(n, "dashboard tile", "dashboard tiles")
 		default:
 			detail += ", automatic dashboard (one tile per plugin)"
 			if h := len(cfg.Dashboard.Hidden); h > 0 {
@@ -684,11 +688,7 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 		// is larger than the connection alone and the operator should know it
 		// from here rather than work it out.
 		if unlockable, _ := kv.Unlockable(); fromStore > 0 && unlockable {
-			add("profile", "info", fmt.Sprintf(
-				"%d profile credential(s) come from the store, which unlocks from this "+
-					"environment — an agent granted one of those profiles causes that entry to be "+
-					"read (it never receives the value, and reaches no entry a profile does not map)",
-				fromStore))
+			add("profile", "info", storeCredentialsNote(fromStore))
 		}
 		// R5 in the other direction: once a namespace has profiles, an MCP call
 		// naming none is refused, so the base section stops being agent-reachable.
@@ -718,6 +718,20 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 			}
 		}
 	}
+}
+
+// storeCredentialsNote is the widening sentence above, worded for the count
+// it carries. The count changes more than the noun: with one credential
+// there is one profile that maps it, and "one of those profiles" points at a
+// plural that is not there. The number is of credentials, not of profiles —
+// two can come from one profile — so the many form names "a profile", not
+// "one of those profiles", either.
+func storeCredentialsNote(n int) string {
+	return fmt.Sprintf("%s from the store, which unlocks from this environment — an agent "+
+		"granted %s causes that entry to be read (it never receives the value, and reaches no "+
+		"entry a profile does not map)",
+		format.Count(n, "profile credential comes", "profile credentials come"),
+		format.Plural(n, "the profile that maps it", "a profile that maps one"))
 }
 
 // Theme overrides that could not be honoured — an unknown field, a
@@ -763,23 +777,7 @@ func doctorPolicy(add func(check, status, detail string)) {
 	if ceiling, verr := grant.Ceiling(); verr != nil {
 		add("team policy", "error", verr.Message)
 	} else if !ceiling.Empty() {
-		limits := make([]string, 0, 4)
-		if ceiling.MaxTTL > 0 {
-			limits = append(limits, "no grant may last longer than "+format.Duration(ceiling.MaxTTL))
-		}
-		if n := len(ceiling.Never); n > 0 {
-			limits = append(limits, fmt.Sprintf("%d target(s) not grantable", n))
-		}
-		if n := len(ceiling.NeverProfile); n > 0 {
-			limits = append(limits, fmt.Sprintf("%d connection(s) not grantable", n))
-		}
-		if n := len(ceiling.RequireScope); n > 0 {
-			limits = append(limits, fmt.Sprintf("%d target(s) must name a record", n))
-		}
-		if ceiling.RequireRepo {
-			limits = append(limits, "a repository policy is required on this machine")
-		}
-		add("team policy", "info", strings.Join(limits, "; ")+" — "+ceiling.Where())
+		add("team policy", "info", ceilingLimits(ceiling)+" — "+ceiling.Where())
 	} else {
 		// **Said rather than omitted**, which is the whole point of the row.
 		//
@@ -793,6 +791,28 @@ func doctorPolicy(add func(check, status, detail string)) {
 			" found from "+ceiling.SearchedFrom+", and no policy beside your config. "+
 			"`rta policy require` makes a missing one an error instead of silence")
 	}
+}
+
+// ceilingLimits is what a policy in force limits, one clause per axis it
+// sets, each counted for the number it carries.
+func ceilingLimits(c policy.Ceiling) string {
+	limits := make([]string, 0, 5)
+	if c.MaxTTL > 0 {
+		limits = append(limits, "no grant may last longer than "+format.Duration(c.MaxTTL))
+	}
+	if n := len(c.Never); n > 0 {
+		limits = append(limits, format.Count(n, "target", "targets")+" not grantable")
+	}
+	if n := len(c.NeverProfile); n > 0 {
+		limits = append(limits, format.Count(n, "connection", "connections")+" not grantable")
+	}
+	if n := len(c.RequireScope); n > 0 {
+		limits = append(limits, format.Count(n, "target", "targets")+" must name a record")
+	}
+	if c.RequireRepo {
+		limits = append(limits, "a repository policy is required on this machine")
+	}
+	return strings.Join(limits, "; ")
 }
 
 // The roles `grant issue` can issue, whether every line of each one
@@ -917,12 +937,13 @@ func doctorGrants(reg *registry.Registry, add func(check, status, detail string)
 					"of those was you, `rta grant revoke --all`",
 				len(unwatched), strings.Join(unwatched, ", ")))
 		}
-		if len(stale) > 0 {
+		if n := len(stale); n > 0 {
 			add("agent grants", "warn", fmt.Sprintf(
-				"%d name a connection that has changed since it was issued, so they authorize "+
+				"%s a connection that has changed since %s issued, so %s "+
 					"nothing: %s — `rta grant allow` re-consents to the connection as it is now "+
 					"(`rta grant renew` moves the deadline and deliberately does not)",
-				len(stale), strings.Join(stale, ", ")))
+				format.Count(n, "grant names", "grants name"), format.Plural(n, "it was", "they were"),
+				format.Plural(n, "it authorizes", "they authorize"), strings.Join(stale, ", ")))
 		}
 		if n := len(replaced); n > 0 {
 			add("agent grants", "warn", fmt.Sprintf(
@@ -973,8 +994,9 @@ func doctorLocks(add func(check, status, detail string)) {
 			}
 			named = append(named, name)
 		}
-		add("locks", "info", fmt.Sprintf("%d standing: %s — every call from each is refused, "+
-			"whatever it holds (`rta lock list` says why)", len(locks), strings.Join(named, ", ")))
+		add("locks", "info", fmt.Sprintf("%d standing: %s — every call from %s is refused, "+
+			"whatever it holds (`rta lock list` says why)", len(locks), strings.Join(named, ", "),
+			format.Plural(len(locks), "it", "each")))
 	}
 }
 
@@ -1133,13 +1155,13 @@ func doctorRecord(add func(check, status, detail string)) {
 	// something else — it changes nothing about the record, because rta no
 	// longer counts it as part of one, and the thing worth acting on is
 	// whatever can write into rta's data directory.
-	if len(rep.Foreign) > 0 {
+	if n := len(rep.Foreign); n > 0 {
 		add("agent log", "warn", fmt.Sprintf(
 			"%s in the data directory %s named like part of the record and %s not written by rta, "+
 				"so %s excluded from it (%s)",
-			format.Count(len(rep.Foreign), "file is", "files are"),
-			pick(len(rep.Foreign), "is", "are"), pick(len(rep.Foreign), "was", "were"),
-			pick(len(rep.Foreign), "it is", "they are"), strings.Join(rep.Foreign, ", ")))
+			format.Count(n, "file", "files"), format.Plural(n, "is", "are"),
+			format.Plural(n, "was", "were"), format.Plural(n, "it is", "they are"),
+			strings.Join(rep.Foreign, ", ")))
 	}
 	if lerr != nil {
 		add("agent log", "warn", lerr.Error())
@@ -1150,14 +1172,6 @@ func doctorRecord(add func(check, status, detail string)) {
 			"the record of agent calls breaks at entry %d — %s; `rta agent log --detail` shows it",
 			rep.Broken, rep.Why))
 	} else if rep.Entries > 0 {
-		// Retention is reported rather than warned about: rotation is the
-		// answer to a growing file, and what an operator needs to know is
-		// how far back the record they are about to read actually goes.
-		note := fmt.Sprintf("%s recorded, chain intact",
-			format.Count(rep.Entries, "agent call", "agent calls"))
-		if rep.Files > 1 {
-			note += fmt.Sprintf(" across %d files (%s)", rep.Files, format.Bytes(rep.Size))
-		}
 		if rep.Missed > 0 {
 			// A record with a hole in it is a warn, not an ok, whatever else
 			// is right about it: this is the one number that says the answer
@@ -1166,12 +1180,24 @@ func doctorRecord(add func(check, status, detail string)) {
 				"%s could not be written to the record — `rta agent log --detail` shows where; "+
 					"the rest of it verifies", format.Count(int(rep.Missed), "agent call", "agent calls")))
 		}
-		if rep.Retired > 0 {
-			note += fmt.Sprintf("; the %s before it were retired %s",
-				format.Count(int(rep.Retired), "call", "calls"), rep.RetiredAt.Local().Format("2006-01-02"))
-		}
-		add("agent log", "ok", note+" — `rta agent log` reads it")
+		add("agent log", "ok", recordNote(rep)+" — `rta agent log` reads it")
 	}
+}
+
+// recordNote is how far back an intact record goes. Retention is reported
+// rather than warned about: rotation is the answer to a growing file, and
+// what an operator needs to know is how far back the record they are about
+// to read actually goes.
+func recordNote(rep agentlog.Report) string {
+	note := format.Count(rep.Entries, "agent call", "agent calls") + " recorded, chain intact"
+	if rep.Files > 1 {
+		note += fmt.Sprintf(" across %d files (%s)", rep.Files, format.Bytes(rep.Size))
+	}
+	if n := int(rep.Retired); n > 0 {
+		note += fmt.Sprintf("; the %s before it %s retired %s", format.Count(n, "call", "calls"),
+			format.Plural(n, "was", "were"), rep.RetiredAt.Local().Format("2006-01-02"))
+	}
+	return note
 }
 
 // And what is waiting on the operator right now. This is the one check
@@ -1186,9 +1212,7 @@ func doctorConsent(add func(check, status, detail string)) {
 					soonest = r
 				}
 			}
-			add("agent consent", "warn", fmt.Sprintf(
-				"%s waiting for you — the next expires in %s; `rta agent pending` lists them",
-				format.Count(len(waiting), "call is", "calls are"),
+			add("agent consent", "warn", waitingNote(len(waiting),
 				time.Until(soonest.Deadline).Truncate(time.Second)))
 		}
 		// Its own row, and the loudest sentence in this function. A request
@@ -1196,17 +1220,31 @@ func doctorConsent(add func(check, status, detail string)) {
 		// wrote it, by something with access to the data directory — which is
 		// an attempt to have the operator approve one call while reading
 		// another, and is worth saying plainly even though it did not work.
-		if n := len(q.Tampered); n > 0 {
-			verb := "does"
-			if n > 1 {
-				verb = "do"
-			}
-			add("agent consent", "warn", fmt.Sprintf(
-				"%s on the consent queue %s not describe the call it is bound to — something rewrote "+
-					"it after rta parked it, and it will not be offered or answered (%s)",
-				format.Count(n, "request", "requests"), verb, strings.Join(q.Tampered, ", ")))
+		if len(q.Tampered) > 0 {
+			add("agent consent", "warn", tamperedNote(q.Tampered))
 		}
 	}
+}
+
+// waitingNote is the queue's row, which names the soonest deadline — "the
+// next" of one call is that call.
+func waitingNote(n int, left time.Duration) string {
+	return fmt.Sprintf("%s waiting for you — %s in %s; `rta agent pending` lists %s",
+		format.Count(n, "call is", "calls are"), format.Plural(n, "it expires", "the next expires"),
+		left, format.Plural(n, "it", "them"))
+}
+
+// tamperedNote is the loudest sentence, and every word of it that follows
+// the count agrees with it: one request is bound to one call, several each
+// to their own.
+func tamperedNote(ids []string) string {
+	n := len(ids)
+	return fmt.Sprintf("%s on the consent queue %s not describe the %s bound to — something "+
+		"rewrote %s after rta parked %s, and %s not be offered or answered (%s)",
+		format.Count(n, "request", "requests"), format.Plural(n, "does", "do"),
+		format.Plural(n, "call it is", "calls they are"), format.Plural(n, "it", "them"),
+		format.Plural(n, "it", "them"), format.Plural(n, "it will", "they will"),
+		strings.Join(ids, ", "))
 }
 
 // Provenance for managed plugins: what rta.lock recorded
