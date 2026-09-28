@@ -101,8 +101,8 @@ func Plugin() plugin.Plugin {
 				Idempotent: true,
 				Description: "Returns a table, so that the example covers more than one view " +
 					"type. rta renders it as a bordered table in a terminal, as rows in the " +
-					"TUI, as CSV with -o csv, and as structured JSON to an agent — from this " +
-					"one value.",
+					"TUI, as CSV when that is the format asked for, and as structured JSON to an " +
+					"agent — from this one value.",
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					t := view.Table{Columns: []view.Column{
 						{Name: "Code"},
