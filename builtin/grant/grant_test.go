@@ -548,6 +548,31 @@ func TestRevokeDryRunAlsoWarnsAboutCoverage(t *testing.T) {
 	}
 }
 
+// A revoke naming no target, only who or where, that matches nothing says
+// what it looked for: it said "No active grant for ." — the sentence for a
+// target, with the target it did not have.
+func TestARevokeWithNoTargetThatMatchesNothingSaysWhatItNamed(t *testing.T) {
+	setup(t)
+	run(t, allowH, map[string]any{"target": "kv.get", "agent": "claude"})
+	for _, c := range []struct {
+		values map[string]any
+		want   string
+	}{
+		{map[string]any{"agent": "nobody"}, "No active grant for agent nobody."},
+		{map[string]any{"agent": "claude", "role": "dev"}, "No active grant for agent claude under role dev."},
+		{map[string]any{"all": true, "profile": "prod"}, "No active grant via profile prod."},
+	} {
+		// The first line: a revoke by role goes on to say what still stands.
+		body := run(t, runRevoke, c.values).(view.Text).Body
+		if first, _, _ := strings.Cut(body, "\n"); first != c.want {
+			t.Errorf("%v: said %q, want %q", c.values, body, c.want)
+		}
+	}
+	if grants, _ := core.Load(); len(grants) != 1 {
+		t.Errorf("a revoke matching nothing changed the store: %+v", grants)
+	}
+}
+
 func TestRevokeNeedsATarget(t *testing.T) {
 	setup(t)
 	if _, err := runRevoke(context.Background(), req(nil)); err == nil {

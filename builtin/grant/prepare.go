@@ -276,6 +276,26 @@ func (s selector) described() string {
 	return described
 }
 
+// narrowed is what a selector with no target narrows to, for a sentence
+// saying no grant matched it: "for agent claude via profile prod". Only the
+// parts given, since each one left out matched every grant.
+func (s selector) narrowed() string {
+	var parts []string
+	if s.agent != "" {
+		parts = append(parts, "for agent "+s.agent)
+	}
+	if s.scope != "" {
+		parts = append(parts, "on "+core.ShownRecord(s.scope, "any"))
+	}
+	if s.profile != "" {
+		parts = append(parts, "via profile "+s.profile)
+	}
+	if s.role != "" {
+		parts = append(parts, "under role "+s.role)
+	}
+	return strings.Join(parts, " ")
+}
+
 // stillArgs is the revoke that takes back still, the grant left covering
 // what spec took back: its target, as it always was, and after an exact
 // revoke that grant exactly. The target alone takes back every grant on
@@ -717,6 +737,13 @@ func revokeBody(sf plugin.Surface, spec operatorid.RevokeSpec, server string, ou
 			// none, and "no active grant for kv.get" beside a roster of
 			// kv.get grants read as a revoke that failed.
 			msg = "No active grant is exactly " + revokeSelector(spec).described() + "."
+		case target == "":
+			// A revoke by who or where alone — --agent, --profile, --role —
+			// said "No active grant for ." with the target it did not have.
+			msg = "No active grant matches."
+			if named := revokeSelector(spec).narrowed(); named != "" {
+				msg = "No active grant " + named + "."
+			}
 		case out.Still != nil:
 			// "No active grant" would be a flat lie here: nothing named this
 			// target exactly, but something else still authorizes it.
