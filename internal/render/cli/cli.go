@@ -453,14 +453,27 @@ func prettySections(w io.Writer, s view.Sections, st styles, opts Options) error
 	return prettyWarnings(w, s.Warnings, st)
 }
 
-// prettyWarnings lists what the page could not produce, under the sections
-// that did assemble.
+// prettyWarnings lists a page's warnings, under the sections that did
+// assemble.
 //
-// A dropped section leaves nothing behind: the heading is simply absent, so
-// six sections where there should be seven look exactly like a page that
-// only ever had six. The block is deliberately not given a heading rule of
-// its own — a warning is not a seventh section, it is the page telling the
-// reader that what is above is partial.
+// Most say what the page could not produce. A dropped section leaves nothing
+// behind: the heading is simply absent, so six sections where there should be
+// seven look exactly like a page that only ever had six. Some say something a
+// person should know about a page that is whole (view.Error.Advisory) — a
+// grant listed but bound to a plugin build that no longer answers. The block
+// is deliberately not given a heading rule of its own: a warning is not a
+// seventh section, it is the page speaking about what is above it.
+//
+// **The two kinds are drawn alike here, and apart in the TUI, on purpose.**
+// The TUI heads an answer with one line saying "partial" or not
+// (tui's warningsHead), because above the fold that line is all a person sees
+// of the warnings, and every one of them read "partial" there once, over a
+// roster missing nothing. Nothing here heads the block, partial or otherwise:
+// each warning is printed whole, and its message is what says whether
+// anything is missing. A mark of its own for the advisory kind would be a
+// second way of saying what the message already says, and one a reader has
+// to learn; json and yaml carry the distinction as a field, for whatever
+// reads them instead.
 func prettyWarnings(w io.Writer, warnings []view.Error, st styles) error {
 	for _, e := range warnings {
 		line := st.warn.Render("!") + " " + st.muted.Render(e.Code) + "  " + e.Message
@@ -788,7 +801,9 @@ func tableFooter(w io.Writer, t view.Table, st styles) error {
 	}
 	// Under the table, the way a page's warnings sit under its sections and
 	// for the same reason: a table missing rows it could not read leaves
-	// nothing behind, so what is above has to say it is partial.
+	// nothing behind, so what is above has to say it is partial — or, for
+	// an advisory warning, what a person should know about rows that are
+	// all there (prettyWarnings).
 	if len(t.Warnings) > 0 {
 		return prettyWarnings(w, t.Warnings, st)
 	}
