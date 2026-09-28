@@ -580,6 +580,17 @@ func CheckAgent(name string) *view.Error {
 	return nil
 }
 
+// BlankRecord reports whether scope is white space and nothing else: not
+// the empty record, which is every record, and not a record padded with
+// white space, which names that padded record exactly. Such a record names
+// nothing, so no grant is issued on it (CheckScope), no revoke or renew
+// takes one as given, and no refusal offers a command granting it.
+// strings.TrimSpace's white space, a no-break space included, which is what
+// the commands trimmed a record by before they took it as given.
+func BlankRecord(scope string) bool {
+	return scope != "" && strings.TrimSpace(scope) == ""
+}
+
 // CheckScope refuses a scope that cannot mean what it appears to mean.
 //
 // A grant is issued once and consulted many times, so a scope that reads like
@@ -587,7 +598,23 @@ func CheckAgent(name string) *view.Error {
 // rather than discovering later that it authorized more or less than it
 // looked like. "/" alone is refused because a grant over everything is what
 // omitting the scope already says, and spelling it as a folder hides that.
+//
+// A record that is only white space is refused here too, and here rather
+// than only where a person types one: builtin/grant refuses it on every
+// command that takes a record, worded for the argument, but not every
+// issuing path reads a record a person typed — an answer given with --ttl
+// issues the record the agent's call named, and the operator channel's
+// issue verb the one a submitted grant carries. Stored, it was a grant that
+// grant revoke and renew could never name, since they take a record as
+// given and refuse this one; only a revoke of every record on the target
+// took it back.
 func CheckScope(scope string) *view.Error {
+	if BlankRecord(scope) {
+		return view.Errorf("grant.scope.blank", "the record %s is only white space, which names no record",
+			textclean.Record(scope)).
+			WithHint("a grant names a record by what it says, and this one says nothing — allow such a call " +
+				"as it is asked, or grant every record of the target on purpose")
+	}
 	if scope == "/" {
 		return view.Errorf("grant.scope.root", "%q would cover every record", scope).
 			WithHint("omit the scope entirely to allow the whole target — a grant that " +
@@ -1843,6 +1870,19 @@ func (g Grant) Stale(pin string) bool {
 func refuseMissing(c plugin.Capability, missing []string, profile, agent string) *view.Error {
 	if len(missing) == 0 {
 		missing = []string{""}
+	}
+	// No command for a record that is only white space, because none would
+	// work: grant allow refuses the record (CheckScope), so the one the hint
+	// used to hand on — `grant allow kv.get ' ' --ttl 15m` — was a second
+	// refusal passed along as the fix. What does cover the call is said
+	// instead, neither of which is a command to relay: a grant on every
+	// record, which is a wider decision than the call asks for, and an
+	// answer to the call itself where the server parks calls for a person.
+	if BlankRecord(missing[0]) {
+		return view.Errorf("core.grant.required", "no active grant for %s", describe(c.ID, missing)).
+			WithHint("a person has to allow this, and no grant can name a record that is only white space — " +
+				"only one on every record of " + c.ID + " covers it, or a person allowing this call itself " +
+				"when it is parked for them")
 	}
 	// The hint has to name the profile, because a grant that does not name it
 	// authorizes nothing: covers() matches the profile exactly, so
