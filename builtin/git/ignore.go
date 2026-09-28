@@ -734,6 +734,12 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 	switch p, scope := excludesFile(configs, root); {
 	case cerr != nil:
 		out = append(out, excludeSource{shown: "core.excludesFile", why: "reading the config that sets it: " + cerr.Error()})
+	case filepath.Clean(p) == os.DevNull:
+		// `excludesFile = /dev/null` is how git is told to read no excludes
+		// file, and git reads the null device as a file with nothing in it.
+		// Told apart by its name, before the gate judges it: nothing is
+		// looked at for a path the gate has not judged, and this one holds no
+		// pattern to read.
 	case p != "":
 		s := excludeSource{shown: p}
 		if scope == "local" || scope == "worktree" {

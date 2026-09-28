@@ -478,3 +478,38 @@ func TestCoreHooksPathWithNoValueIsRefusedAsGitRefusesIt(t *testing.T) {
 		t.Errorf("git looks for the pre-commit at %q (runs: %v), not in .githooks", path, runs)
 	}
 }
+
+// GIT_CONFIG_GLOBAL=/dev/null and GIT_CONFIG_SYSTEM=/dev/null are how a CI job
+// or a test runs git with none of the machine's config, and git reads the
+// null device as a file that is empty. This refused it as not a regular
+// file: git.hooks and git.config failed, and git.status named the excludes
+// file as not applied, so git.diff showed no untracked file at all. And
+// `core.excludesFile = /dev/null` reads no excludes file, on every surface.
+func TestTheNullDeviceIsAnEmptyConfig(t *testing.T) {
+	machineConfig(t, "")
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeHook(t, dir, "pre-commit", true)
+	writeFile(t, dir, "new.txt", "new\n")
+
+	if row := rowFor(t, table(t, runHooks, req(t, dir, nil)), "Name", "pre-commit"); row[1] != "active" {
+		t.Errorf("pre-commit row = %v, want it active", row)
+	}
+	table(t, runConfig, req(t, dir, nil))
+	if tbl := table(t, runStatus, req(t, dir, nil)); len(tbl.Warnings) != 0 {
+		t.Errorf("status warnings = %+v, want none", tbl.Warnings)
+	}
+	if body := text(t, runDiff, req(t, dir, nil)); !strings.Contains(body, "+new") {
+		t.Errorf("the diff does not show the untracked file:\n%s", body)
+	}
+
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n\texcludesFile = "+os.DevNull+"\n")
+	for name, r := range map[string]plugin.Request{"terminal": req(t, dir, nil), "MCP": guarded(t, dir, dir)} {
+		if tbl := table(t, runStatus, r); len(tbl.Warnings) != 0 || len(tbl.Rows) != 1 {
+			t.Errorf("%s, with core.excludesFile = %s, rows %v, warnings %+v, want new.txt alone", name, os.DevNull,
+				tbl.Rows, tbl.Warnings)
+		}
+	}
+}

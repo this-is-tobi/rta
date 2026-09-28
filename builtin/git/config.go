@@ -383,9 +383,16 @@ func machineConfigs() ([]scopedConfig, error) {
 		// And held to the bound a repository's own config is held to, since
 		// go-git's reader takes the whole of it into memory first: a sparse
 		// file of gigabytes costs its writer no disk.
+		//
+		// The null device aside, which reads as a file with nothing in it:
+		// GIT_CONFIG_GLOBAL=/dev/null is how a CI job or a test runs git with
+		// none of the machine's config, and git reads it so. Refused as not a
+		// file, it failed git.hooks and git.config, and left git.status
+		// without the excludes file.
 		var content []byte
 		info, err := f.Stat()
 		switch {
+		case err == nil && isNullDevice(info):
 		case err == nil && !info.Mode().IsRegular():
 			err = errors.New("not a regular file")
 		case err == nil && info.Size() > maxConfigBytes:
@@ -404,6 +411,12 @@ func machineConfigs() ([]scopedConfig, error) {
 		out = append(out, s)
 	}
 	return out, nil
+}
+
+// isNullDevice reports whether info is the null device's, os.DevNull.
+func isNullDevice(info os.FileInfo) bool {
+	null, err := os.Stat(os.DevNull)
+	return err == nil && os.SameFile(info, null)
 }
 
 // commandConfig is the config git's environment sets for one command, the
