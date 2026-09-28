@@ -409,7 +409,13 @@ func resolveWords(req plugin.Request) (string, *view.Error) {
 		return piped, nil
 	}
 	if canPrompt(req) {
-		words, err := promptWords()
+		words, more, err := promptWords()
+		if more {
+			return "", view.Errorf("keys.restore.multiline", "the seed words pasted span lines, and the prompt reads one").
+				WithHint("nothing was restored, and the lines that arrived with the first were read and dropped " +
+					"rather than left for your shell — any that arrived later, from a paste slower than the " +
+					"prompt waits, went on to it; type the words on one line, or pipe them in")
+		}
 		if err == nil && words != "" {
 			return words, nil
 		}

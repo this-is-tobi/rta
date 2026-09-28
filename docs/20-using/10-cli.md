@@ -189,7 +189,7 @@ A few capabilities read a pipe when the argument naming their input is left out:
 kubectl get secret app -o jsonpath='{.data.token}' | base64 -d | rta codec jwt
 ```
 
-They read the pipe only on the CLI and only when stdin is not a terminal, so the pipe read never waits on a keyboard; `keys restore`, given no `--words` and no pipe, asks for the words at a masked prompt instead. Each reads up to a bound — a pipe holding more is refused rather than cut short. Nothing else infers an input from a pipe. What every `Path` input accepts is `/dev/stdin`:
+They read the pipe only on the CLI and only when stdin is not a terminal, so the pipe read never waits on a keyboard; `keys restore`, given no `--words` and no pipe, asks for the words at a masked prompt instead, on one line: words pasted one to a line are read off the terminal and refused, so none of them reaches your shell's history. Each reads up to a bound — a pipe holding more is refused rather than cut short. Nothing else infers an input from a pipe. What every `Path` input accepts is `/dev/stdin`:
 
 ```bash
 echo -n hello | rta fs hash /dev/stdin
