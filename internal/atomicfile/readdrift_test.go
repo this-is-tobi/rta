@@ -15,13 +15,13 @@ import (
 // perfectly correct almost everywhere else in rta — builtin/kv reads the
 // operator's own key files, internal/config reads a config the operator owns
 // in a directory nothing else writes — so a tree-wide ban would be a rule
-// nobody could keep. What these six share is the property that makes the
+// nobody could keep. What these seven share is the property that makes the
 // unbounded read a weapon: the file sits in a directory internal/consent's
 // own comment describes as one "whose whole threat model is that somebody
 // else can write there", and every one of them is read *before* its seal,
 // its MAC or its shape is checked, because the check is inside the bytes.
 //
-// A seventh package joining this list is a real decision — it means rta keeps
+// An eighth package joining this list is a real decision — it means rta keeps
 // state somewhere a lower-trust process can reach — so it is made here, in
 // one line, rather than discovered later as a finding.
 var stateReaders = []string{
@@ -31,6 +31,13 @@ var stateReaders = []string{
 	"internal/agentlog",
 	"internal/profile",
 	"internal/plugintrust",
+	// The declaration cache and the key that seals it: read on every run
+	// that has a plugin, shell completion's included, and every entry is
+	// read before its MAC is checked because the MAC is inside it. The
+	// entries were capped first and the key was missed — one package, two
+	// reads, and only a rule over the whole package would have caught the
+	// second.
+	"internal/pluginhost",
 	// atomicfile and filelock define this rule rather than merely follow
 	// it — Publish's own fallback read and filelock's lock-sentinel reads
 	// were exactly the gap (grants.lock, read once
