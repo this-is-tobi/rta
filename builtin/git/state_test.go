@@ -203,3 +203,31 @@ func overviewValue(t *testing.T, dir, key string) string {
 	}
 	return kvValue(t, v.(view.KeyValue), key)
 }
+
+// A branch can track another branch of the same repository: branch.<name>.remote
+// set to ".", the repository itself, as `git branch --track feature main`
+// sets it. git names the upstream as the local branch and counts against it;
+// this looked for a remote named "." and said "./main" was gone.
+func TestABranchTrackingALocalBranchIsCountedAgainstIt(t *testing.T) {
+	dir, repo := testRepo(t)
+	first := commitFile(t, repo, dir, "a.txt", "v1\n", "initial commit")
+	if err := repo.Storer.SetReference(plumbing.NewHashReference(plumbing.NewBranchReferenceName("base"), first)); err != nil {
+		t.Fatal(err)
+	}
+	commitFile(t, repo, dir, "b.txt", "v1\n", "second commit")
+	if err := repo.CreateBranch(&config.Branch{
+		Name: "master", Remote: ".", Merge: plumbing.NewBranchReferenceName("base"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := overviewValue(t, dir, "tracking"); got != "base (1 ahead)" {
+		t.Errorf("tracking = %q, want base 1 ahead", got)
+	}
+	if got := rowFor(t, table(t, runBranches, req(t, dir, nil)), "Name", "master"); got[2] != "base" || got[3] != "ahead 1" {
+		t.Errorf("git.branches master = %v, want it tracking base, ahead 1", got)
+	}
+	if upstream, ok := gitSays(t, dir, "rev-parse", "--abbrev-ref", "master@{upstream}"); ok && upstream != "base" {
+		t.Errorf("git reads master's upstream as %q", upstream)
+	}
+}
