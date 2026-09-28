@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -65,5 +66,38 @@ func TestAPlatformSpecIsReadOrRefused(t *testing.T) {
 	}
 	if !strings.Contains(verr.Hint, "https:// URL") {
 		t.Fatalf("hint = %q, want it to name the published case", verr.Hint)
+	}
+}
+
+// --checksums is read no further than a checksums file may be. It was read
+// whole before its size was looked at, so a path naming something else, a
+// release archive given in the wrong flag or a device, cost its whole size in
+// memory to be refused, and one that never ends was read until memory ran
+// out: /dev/zero took seven gigabytes in eight seconds and never finished.
+func TestAChecksumsFileIsRefusedPastTheCapWithoutBeingRead(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "checksums.txt")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(32 << 20); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, verr := readChecksumsFile(path)
+	runtime.ReadMemStats(&after)
+	if verr == nil || verr.Code != "plugin.manifest.checksums" {
+		t.Fatalf("a checksums file of 32 MiB = %v, want plugin.manifest.checksums", verr)
+	}
+	if taken := after.TotalAlloc - before.TotalAlloc; taken > 8<<20 {
+		t.Errorf("refusing a 32 MiB checksums file took %d bytes", taken)
+	}
+	if _, verr := readChecksumsFile(filepath.Join(t.TempDir(), "missing")); verr == nil ||
+		verr.Code != "plugin.manifest.checksums" {
+		t.Errorf("a missing checksums file = %v, want plugin.manifest.checksums", verr)
 	}
 }
