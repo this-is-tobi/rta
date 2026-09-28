@@ -676,8 +676,9 @@ func askValue(req plugin.Request, key string) ([]byte, *view.Error) {
 	}
 	typed, more, err := promptValue(key)
 	if err != nil {
-		// ^D, or a terminal that could not be read: nothing was typed, which
-		// is the empty answer's refusal rather than a read error of its own.
+		// A terminal that could not be read: nothing was typed, which is the
+		// empty answer's refusal rather than a read error of its own, as ^D
+		// on an empty line already is (stdio.ReadSecretLine).
 		typed = nil
 	}
 	file := req.Surface().InputName("file")

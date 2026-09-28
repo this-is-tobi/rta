@@ -27,20 +27,39 @@ import (
 // The line is read by rta rather than by the terminal's line discipline,
 // erase and kill keys included, since the discipline holds a line to a
 // fixed length — 1024 bytes on macOS, where a longer one never ends — and
-// ^D on an empty line is io.EOF. Where rta cannot set the terminal's mode
-// itself (not macOS or Linux) the line is read as ReadSecret reads it and
-// more is always false.
+// ^D on an empty line is nothing typed, as it is to ReadSecret. Where rta
+// cannot set the terminal's mode itself (not macOS or Linux) the line is
+// read as ReadSecret reads it and more is always false.
 func ReadSecretLine(prompt string) (line []byte, more bool, err error) {
 	defer shutdown.Prompting()()
 	fmt.Fprint(os.Stderr, prompt)
 	line, more, err = readSecretLine(int(Real().Fd()))
 	fmt.Fprintln(os.Stderr)
+	line, err = noAnswer(line, err)
 	return line, more, err
 }
 
 // readSecretLine is the platform's line reader, a var so a test can answer
 // the prompt without a terminal.
 var readSecretLine = readTerminalLine
+
+// noAnswer is what a prompt returns for what its reader read: an end of
+// input on an empty line — ^D, or a terminal that hung up — is nothing
+// typed, the empty answer every caller already refuses in its own words,
+// rather than an io.EOF a caller would pass on as "reading the passphrase:
+// EOF".
+func noAnswer(line []byte, err error) ([]byte, error) {
+	if len(line) == 0 && errors.Is(err, io.EOF) {
+		return nil, nil
+	}
+	return line, err
+}
+
+// byteReader reads at most one byte a call, so a line read through it ends
+// with nothing after its line ending taken off the terminal.
+type byteReader struct{ io.Reader }
+
+func (r byteReader) Read(b []byte) (int, error) { return r.Reader.Read(b[:min(len(b), 1)]) }
 
 // lineKeys are the characters that edit a line being typed, read off the
 // terminal's own settings so each does what the terminal's discipline did

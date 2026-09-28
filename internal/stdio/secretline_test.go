@@ -144,3 +144,48 @@ func TestASecretLineIsReadWithThePromptOpen(t *testing.T) {
 		t.Error("the prompt was still open once answered")
 	}
 }
+
+// A secret's line is read one byte at a time, so nothing after its line
+// ending is taken off the terminal: what was typed ahead of the prompt after
+// it stays there for that prompt.
+func TestASecretsLineLeavesWhatFollowsIt(t *testing.T) {
+	c := &chunks{parts: [][]byte{[]byte("first\nsecond\n")}}
+	line, rest, err := lineKeys{}.readLine(byteReader{c})
+	if err != nil || string(line) != "first" || len(rest) != 0 {
+		t.Fatalf("readLine = %q, rest %q, %v", line, rest, err)
+	}
+	if len(c.parts) != 1 || string(c.parts[0]) != "second\n" {
+		t.Errorf("the line took what followed it off the terminal, leaving %q", c.parts)
+	}
+}
+
+// ^D on an empty line, or a terminal that hung up, is nothing typed to both
+// prompts rather than an io.EOF each caller would pass on in the reader's
+// words; any other failure, and a line the input ended inside, is as it was.
+func TestTheEndOfInputOnAnEmptyLineIsNoAnswer(t *testing.T) {
+	origLine, origSecret := readSecretLine, readPassword
+	t.Cleanup(func() { readSecretLine, readPassword = origLine, origSecret })
+	failed := errors.New("input/output error")
+	for _, c := range []struct {
+		line     string
+		err      error
+		wantLine string
+		wantErr  error
+	}{
+		{"", io.EOF, "", nil},
+		{"half", io.EOF, "half", io.EOF},
+		{"", failed, "", failed},
+		{"typed", nil, "typed", nil},
+	} {
+		readSecretLine = func(int) ([]byte, bool, error) { return []byte(c.line), false, c.err }
+		readPassword = func(int) ([]byte, error) { return []byte(c.line), c.err }
+		line, _, err := ReadSecretLine("Value: ")
+		if string(line) != c.wantLine || !errors.Is(err, c.wantErr) || (c.wantErr == nil) != (err == nil) {
+			t.Errorf("ReadSecretLine over %q, %v = %q, %v", c.line, c.err, line, err)
+		}
+		secret, err := ReadSecret("Passphrase: ")
+		if string(secret) != c.wantLine || !errors.Is(err, c.wantErr) || (c.wantErr == nil) != (err == nil) {
+			t.Errorf("ReadSecret over %q, %v = %q, %v", c.line, c.err, secret, err)
+		}
+	}
+}
