@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.30.0](https://github.com/this-is-tobi/rta/compare/v0.29.0...v0.30.0) (2026-09-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **audit:** audit web refuses a host with white space around it, one holding a character that draws as nothing, or one that is not ASCII, with audit.web.badhost, and audit mail a domain with white space around it or inside what it names with audit.mail.baddomain, where each audited the value without it or the name IDNA mapped it to.
+* **tui:** n on a row of grant list --server opens nothing, where it opened a renew of this machine's grants matching the row.
+* **grant:** x on a row of grant list --server refuses with grant.remote.exact when the server runs an rta that does not know --exact, where it took back every grant on the row's target and agent the other cells matched.
+* **grant:** grant list --server shows an Artifact column after Capability when a grant's plugin build does not answer on the server, and on every roster read from a server that sends no verdict, as one older than this does.
+* **grant:** agent allow --ttl on a call naming a record that is only white space releases the call and issues no grant, and the operator channel's grant.issue refuses such a grant with grant.scope.blank.
+* **sdktest:** sdktest.Check fails a plugin whose declared text spells a flag, an rta command line in a code span, or one naming one of its capabilities or its namespace. Name an input as `limit` and a capability by its ID, word anything surface-specific at run time through req.Surface(), or waive the text with sdktest.Skip(sdktest.RuleSpelling, id, why).
+* **git:** the capabilities that read objects refuse a partial clone as git.objects.partial, including a blob-less one whose history git.log listed.
+* **git:** git.hooks refuses a repository whose last core.hooksPath has no value, and lists the top of the filesystem where it is set to nothing, where it listed another directory's hooks.
+* **git:** git.status, git.diff without --commit and git.overview are refused as git.status.timeout where reading the working tree takes more than two seconds; they answered however long it took.
+
+### Features
+
+* **grant:** a remote roster marks each grant's plugin build as the server judges it ([b70650d](https://github.com/this-is-tobi/rta/commit/b70650d3a121ed774cf8db0f267a072ce62623ca))
+* **grant:** grant revoke and renew take --exact, and x and n on a roster row act on its grant ([7a14caf](https://github.com/this-is-tobi/rta/commit/7a14caf5dedbfad4d78169a0d607a8ad6d1b5a58))
+* **sdktest:** the suite holds what a plugin declares to spell no flag or command line of its own ([c1eb3ce](https://github.com/this-is-tobi/rta/commit/c1eb3ce756dd4b4833833b09b3e113913735a0c6))
+* **sdk:** the spelling guard is exported as pkg/sdk/spelling, and rta's own tests run on it ([f65633f](https://github.com/this-is-tobi/rta/commit/f65633ff890c923165a5510cd6d3b64e5a6f8310))
+* **view:** a warning beside a whole answer is advisory, and the TUI heads partial only a gap ([bdedd8e](https://github.com/this-is-tobi/rta/commit/bdedd8e668dee1c446ad843a092e62b7becf028a))
+
+
+### Bug Fixes
+
+* **agent:** rta_grants_active leaves out a grant bound to a plugin build that no longer answers ([32c9b39](https://github.com/this-is-tobi/rta/commit/32c9b39267555949a372e3cf55dc2e88e4638231))
+* **audit:** audit web and audit mail refuse a host or domain with white space around it ([bb78472](https://github.com/this-is-tobi/rta/commit/bb7847234c8099ff365e0471c6f9159b2347ac19))
+* **git:** a core.excludesFile with no value is named as not applied, as git runs with none ([955438a](https://github.com/this-is-tobi/rta/commit/955438a3e89d5604e3fabe8cd81c5d91500fcbfd))
+* **git:** a file a status opened is read no further once the call's two seconds have run out ([37caaee](https://github.com/this-is-tobi/rta/commit/37caaee7f4c7ef7917de219c29ba7350c42b6427))
+* **git:** a partial clone is refused up front to the capabilities that read its objects ([19ac9ac](https://github.com/this-is-tobi/rta/commit/19ac9aca66054a98dc7e53effa19196bab1d0f0d))
+* **git:** a repository's format is decided as git decides it, and config and hooks read any ([2203338](https://github.com/this-is-tobi/rta/commit/2203338a6e9e1a7efc63d82901428313c131c400))
+* **git:** a status ignores what git ignores, matching each pattern with git's own matcher ([f655d1e](https://github.com/this-is-tobi/rta/commit/f655d1e92f2fbc70842f522dbe4dab91fbf44e78))
+* **git:** a working tree's status is read for two seconds a call, and refused past them ([4a5192c](https://github.com/this-is-tobi/rta/commit/4a5192c9f85477a9512962a0ee1df2936663f099))
+* **git:** config.worktree is read only where the config sets a format version, as git reads it ([6c39a6c](https://github.com/this-is-tobi/rta/commit/6c39a6cc37b026df46869ced8a11630ba50bd4d0))
+* **git:** git diff over MCP shows a link's text only when it names places under the roots ([0dafb1d](https://github.com/this-is-tobi/rta/commit/0dafb1d1be1714a238c2026837ccc988ccc8f8fe))
+* **git:** git.hooks judges a hook that is a symbolic link by what it leads to, as git does ([8e1815a](https://github.com/this-is-tobi/rta/commit/8e1815a54c7b9d5aeeadc1cb5c9a178c14c0d2d3))
+* **git:** git.hooks reads core.hooksPath set to nothing, or with no value, as git reads it ([4893e27](https://github.com/this-is-tobi/rta/commit/4893e27ffa8776d4fa453abc1c3ca21ff232143f))
+* **git:** the null device is read as an empty config and an empty excludes file, as git reads it ([d23af2a](https://github.com/this-is-tobi/rta/commit/d23af2af0a7ef70f5b015e8052ef4ef549695c0a))
+* **glyph:** the Khitan Small Script filler, which fonts that cover it draw as nothing, is unseen ([563d638](https://github.com/this-is-tobi/rta/commit/563d638a049157a3d1b3059bd6844d4fd90ca6c3))
+* **grant:** a remote revoke hands on the revoke of the grant still covering it with its server ([c562b7b](https://github.com/this-is-tobi/rta/commit/c562b7b58cd96dde1888e7301b1e1159c495f780))
+* **grant:** a revoke by agent, profile or role alone that matches nothing says what it named ([ec2f664](https://github.com/this-is-tobi/rta/commit/ec2f66478bfcc042e8270a91bd2c6f60eee006ac))
+* **grant:** after an exact revoke, the grant still covering its target is named exactly ([aa6f354](https://github.com/this-is-tobi/rta/commit/aa6f35480cf8145b1eb68df5e5872d112754af8a))
+* **grant:** no path issues a grant on a record of white space, and no refusal offers one ([df72510](https://github.com/this-is-tobi/rta/commit/df7251041720690a5b34dd677751c82a749659b9))
+* **grant:** the note on suppressed grants names a policy file only when it knows one ([2a6fd8b](https://github.com/this-is-tobi/rta/commit/2a6fd8bc9dd5361fdc0007d2a6afa62fa56bd204))
+* **grant:** the roster's warnings are advisory, so grant list is never headed partial for them ([280535a](https://github.com/this-is-tobi/rta/commit/280535ac539204613a8af9513d43647046934e5e))
+* **keys:** keys restore refuses seed words pasted one to a line, leaving none for the shell ([4a6edb0](https://github.com/this-is-tobi/rta/commit/4a6edb0f76fb5e6bf4ea9b29df40a5b720d656f1))
+* **kv:** a value pasted at kv set's prompt that spans lines is read whole, dropped and refused ([0fc50b9](https://github.com/this-is-tobi/rta/commit/0fc50b9a439b6cab7a564c1dc3351550c53bcd75))
+* **kv:** kv set's prompt reads a line of any length, and ^D on an empty one ends it ([fd2c56f](https://github.com/this-is-tobi/rta/commit/fd2c56f104b8a036373bd167747f3430a3df12b9))
+* **mcp:** an operator's grant issue or revoke keeps the record it named, exactly, in its row ([f132f47](https://github.com/this-is-tobi/rta/commit/f132f4749b5c0663dd0d9d62bca3f459873b14bd))
+* **pkg:** a forced exit during a release's checksums download removes the file it wrote ([723a35e](https://github.com/this-is-tobi/rta/commit/723a35e2abae354477d4ab10de496a640939dbce))
+* **pkg:** a forced exit during a tool's download removes the directory it staged ([d5f6cf3](https://github.com/this-is-tobi/rta/commit/d5f6cf30d940b70be1002e5e201b1fbdfa6a0d10))
+* **pkg:** a release's checksums file is read up to 1 MiB, the most one holds, and no further ([bff49e8](https://github.com/this-is-tobi/rta/commit/bff49e84227d7963dba02a63d0014b23e968e2a6))
+* **plugin:** a remove, and each version a prune takes out, lands whole past a forced exit ([c95c4f0](https://github.com/this-is-tobi/rta/commit/c95c4f0c40ca36df7d61cb9632d0543203a444f2))
+* **plugin:** an install fetches a signature into its staging directory, which a forced exit removes ([33c3dd7](https://github.com/this-is-tobi/rta/commit/33c3dd74ead768eed770774370b0a50405d8cfd8))
+* **pluginhost:** a forced exit ends the plugins of every host, not only the application's ([2470c0c](https://github.com/this-is-tobi/rta/commit/2470c0cb1cce27d6bdfc50c9d43e759e06b7f19e))
+* **pluginhost:** a plugin launch is held off a forced exit, and none starts once one has begun ([44d0c5e](https://github.com/this-is-tobi/rta/commit/44d0c5e549492081c892e44043230766a3b6247b))
+* **pluginhost:** the declaration cache's key is read up to 4 KiB, and one larger is no key ([a33abe3](https://github.com/this-is-tobi/rta/commit/a33abe3eaf59897184e8728f5979e291448a2936))
+* **plugin:** plugin manifest reads its checksums file no further than one may be ([801aa41](https://github.com/this-is-tobi/rta/commit/801aa41dfb7fb609c1962bbae26c5c4336520a55))
+* **plugin:** the TUI's spelling of a call names a character a reader does not see by code point ([c14a619](https://github.com/this-is-tobi/rta/commit/c14a6191979976aee3fef54cb242b4dac3eaa09f))
+* **policy:** policy show counts the grants its ceiling suppresses as a sentence counts them ([60e4818](https://github.com/this-is-tobi/rta/commit/60e4818d8628ae2301fcd692985d8c4df59cb4d1))
+* **stdio:** a passphrase prompt reads a line of any length, and ^D on an empty one is no answer ([22ae700](https://github.com/this-is-tobi/rta/commit/22ae7006a09a145c2213a364cfa3228216bacecb))
+* **tui:** a row action that cannot follow a remote roster to its server is not offered there ([26d4d39](https://github.com/this-is-tobi/rta/commit/26d4d39916fc279327fd09a5c49b168b7ead7ad1))
+* **tunnel:** a forward that never came up is reported as the timeout, not as the exit it caused ([be6ea1d](https://github.com/this-is-tobi/rta/commit/be6ea1d7ea319176640977ab0d38f4ac58e6d7e3))
+
 ## [0.29.0](https://github.com/this-is-tobi/rta/compare/v0.28.0...v0.29.0) (2026-09-28)
 
 
