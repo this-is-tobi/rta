@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/policy"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -45,6 +46,25 @@ func TestCompletionOffersOnlyWhatAGrantCanCover(t *testing.T) {
 		if strings.Contains(offered, refused) {
 			t.Errorf("completion offers %q, which a grant cannot cover:\n%s", refused, offered)
 		}
+	}
+}
+
+// The note on grants a ceiling holds back names the policy files after a
+// dash, and ends at the word policy when no file is known: it ended at the
+// dash, with nothing after it.
+func TestTheSuppressedNoteNamesThePolicyOnlyWhenItKnowsOne(t *testing.T) {
+	setup(t)
+	t.Chdir(t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("RTA_POLICY", "")
+	if got := suppressedNote(plugin.SurfaceCLI, 1); !strings.Contains(got, "suppressed by your team's policy\n") {
+		t.Errorf("with no policy file the note reads %q, want it to end at the word policy", got)
+	}
+	withPolicy(t, "maxTTL: 1h\n")
+	if got := suppressedNote(plugin.SurfaceCLI, 1); !strings.Contains(got, "your team's policy — ") ||
+		!strings.Contains(got, policy.RepoFile+"\n") {
+		t.Errorf("with a policy file the note reads %q, want the file named after the dash", got)
 	}
 }
 
