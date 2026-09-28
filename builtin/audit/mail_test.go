@@ -41,7 +41,6 @@ func TestMailDomainAcceptsWhatPeopleHaveToHand(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"example.com", "example.com"},
 		{"EXAMPLE.COM", "example.com"},
-		{"  example.com  ", "example.com"},
 		{"example.com.", "example.com"}, // a fully-qualified name, trailing dot and all
 		{"someone@example.com", "example.com"},
 		{"https://example.com/path", "example.com"},
@@ -780,5 +779,30 @@ func TestMailDetailIsASectionedPage(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// The domain audit.mail looks up is the record the gate judged, or derived
+// from it by URL order, never by trimming. It was trimmed first, so a call on
+// " example.com" - its own record to the gate, which a grant on example.com
+// does not cover - audited example.com, and white space after an address's @
+// was trimmed off the domain it named. Both are refused before any lookup.
+func TestADomainWithWhiteSpaceInItIsRefused(t *testing.T) {
+	nbsp := string(rune(0xa0))
+	for _, bad := range []string{
+		" example.com", "example.com ", "  example.com  ", "example.com\n", "example.com" + nbsp, "\texample.com",
+		"someone@ example.com", "someone@example.com :25", "https://example.com /path",
+	} {
+		got, verr := mailDomain(bad)
+		if verr == nil {
+			t.Errorf("mailDomain(%q) accepted it as %q", bad, got)
+			continue
+		}
+		if verr.Code != "audit.mail.baddomain" {
+			t.Errorf("mailDomain(%q) refused with %s, want audit.mail.baddomain", bad, verr.Code)
+		}
+	}
+	if _, verr := mailDomain(" example.com"); verr == nil || !strings.Contains(verr.Message, "white space") {
+		t.Errorf("a padded domain is refused without saying why: %v", verr)
 	}
 }

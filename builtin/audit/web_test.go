@@ -867,3 +867,96 @@ func TestParseableCookiesRaiseNoCaveat(t *testing.T) {
 		}
 	}
 }
+
+// The host audit.web requests is the record the gate judged. It was trimmed
+// first, so a call on " staging.example.com" - its own record to the gate,
+// which a grant on staging.example.com does not cover, and the one a person
+// approving it read - audited staging.example.com. It is refused before
+// anything is requested, as a kube audit refuses a padded namespace.
+func TestAHostWithWhiteSpaceAroundItIsRefusedBeforeAnythingIsRequested(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	nbsp := string(rune(0xa0))
+	for _, host := range []string{" " + srv.URL, srv.URL + " ", srv.URL + "\n", srv.URL + nbsp, "\t" + srv.URL, " ", "\t"} {
+		_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": 5}))
+		if ve := view.AsError(err, "x"); err == nil || ve.Code != "audit.web.badhost" {
+			t.Errorf("host %q: err = %v, want audit.web.badhost", host, err)
+		} else if !strings.Contains(ve.Message, "white space") {
+			t.Errorf("host %q is refused without saying why: %s", host, ve.Message)
+		}
+	}
+	if n := hits.Load(); n != 0 {
+		t.Errorf("%d requests reached the host", n)
+	}
+}
+
+// A host holding a character that draws as nothing is refused as well, and
+// for the same reason, since the request drops such a character before the
+// name resolves: net/http maps a host that is not ASCII through IDNA, which
+// removes a zero-width space, a soft hyphen, a word joiner or a byte order
+// mark. A call on this server's address with one of them in front of it, its
+// own record to the gate, reached the server.
+func TestAHostHoldingACharacterThatDrawsAsNothingIsRefused(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	addr := strings.TrimPrefix(srv.URL, "https://")
+	for _, cp := range []rune{0x200b, 0xad, 0x2060, 0xfeff, 0x180e} {
+		unseen := string(cp)
+		for _, host := range []string{"https://" + unseen + addr, unseen + addr,
+			"https://" + addr[:3] + unseen + addr[3:]} {
+			_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": 5}))
+			if ve := view.AsError(err, "x"); err == nil || ve.Code != "audit.web.badhost" {
+				t.Errorf("host %q: err = %v, want audit.web.badhost", host, err)
+			} else if !strings.Contains(ve.Message, "draws as nothing") {
+				t.Errorf("host %q is refused without saying why: %s", host, ve.Message)
+			}
+		}
+	}
+	if n := hits.Load(); n != 0 {
+		t.Errorf("%d requests reached the host", n)
+	}
+}
+
+// Nor does a host the request would map to another name get through spelled
+// some other way. IDNA drops what draws as nothing and folds a fullwidth
+// digit into its digit and an ideographic full stop into a dot, and url.Parse
+// decodes a percent-encoded host before any of it: a call on this server's
+// address spelled either way, its own record to the gate, reached the server.
+func TestAHostTheRequestWouldMapToAnotherNameIsRefused(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	addr := strings.TrimPrefix(srv.URL, "https://")
+	rest := strings.TrimPrefix(addr, "127")
+	wide := string([]rune{0xff11, 0xff12, 0xff17})
+	stop := string(rune(0x3002))
+	for _, host := range []string{
+		wide + rest,
+		"https://" + wide + rest,
+		"https://127" + stop + strings.TrimPrefix(rest, "."),
+		"https://%E2%80%8B" + addr,
+		"https://127%E3%80%82" + strings.TrimPrefix(rest, "."),
+		"https://%EF%BC%91%EF%BC%92%EF%BC%97" + rest,
+	} {
+		_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": 5}))
+		if ve := view.AsError(err, "x"); err == nil || ve.Code != "audit.web.badhost" {
+			t.Errorf("host %q: err = %v, want audit.web.badhost", host, err)
+		} else if !strings.Contains(ve.Message, "maps to others") || !strings.Contains(ve.Hint, "xn--") {
+			t.Errorf("host %q is refused without saying why: %s (%s)", host, ve.Message, ve.Hint)
+		}
+	}
+	if n := hits.Load(); n != 0 {
+		t.Errorf("%d requests reached the host", n)
+	}
+}
