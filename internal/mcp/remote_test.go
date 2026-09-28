@@ -165,7 +165,7 @@ func TestLoadTokenFile(t *testing.T) {
 		// but is refused by grant.CheckAgent for exactly that reason — two
 		// fields, so this exercises the charset check rather than the
 		// field-count one.
-		path := writeTokenFile(t, 0o600, "ali‑ce tok-a-0123456789abcdef\n")
+		path := writeTokenFile(t, 0o600, "ali"+string(rune(0x2011))+"ce tok-a-0123456789abcdef\n")
 		if _, _, err := LoadTokenFile(path); err == nil {
 			t.Fatal("a label with a non-breaking hyphen (U+2011) was accepted")
 		}
