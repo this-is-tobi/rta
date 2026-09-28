@@ -88,6 +88,12 @@ const (
 	// holds against the result it returns — Copy names a column or key the
 	// view has. The rest of that declaration is Validate's.
 	RuleActions Rule = "actions"
+	// RuleSpelling: what the plugin declares — its summary, and each
+	// capability's summary, description, inputs' help, and action and toggle
+	// labels — spells nothing only a terminal can act on, a flag or an `rta …`
+	// command line (see checkSpelling).
+	// Skipped by capability ID, or by the plugin's name for its own summary.
+	RuleSpelling Rule = "spelling"
 )
 
 // runTimeout bounds one capability. A handler that ignores ctx would
@@ -176,6 +182,7 @@ func Check(t *testing.T, p plugin.Plugin, opts ...Option) {
 		return
 	}
 	checkVerbs(t, p, cfg)
+	checkSpelling(t, p, cfg)
 
 	seen := drive(t, p, cfg, dir, inputs)
 	checkViews(t, seen, cfg)

@@ -58,6 +58,7 @@ func TestACorrectPluginPassesEveryRule(t *testing.T) {
 		t.Fatalf("a correct plugin failed to validate:\n%s", rec.errText())
 	}
 	checkVerbs(rec, p, noConfig())
+	checkSpelling(rec, p, noConfig())
 	seen := drive(rec, p, noConfig(), t.TempDir(), nil)
 	checkViews(rec, seen, noConfig())
 	checkRedaction(rec, seen, noConfig())
@@ -465,6 +466,72 @@ func TestNoVocabularyWordIsAlsoListedAsASynonym(t *testing.T) {
 		if !slices.Contains(vocabulary, std) {
 			t.Errorf("synonym points at %q, which is not vocabulary", std)
 		}
+	}
+}
+
+// What a plugin declares is shown on every surface at once, and an agent
+// told to raise --limit has a limit argument and no flags: a flag, or a
+// command line naming the plugin's own capability, anywhere in what it
+// declares is an error naming whose text it is and where.
+func TestDeclaredTextSpellingForATerminalIsRejected(t *testing.T) {
+	c := ok()
+	c.Inputs[0].Help = "raise --limit to see more"
+	c.Toggles = []plugin.Toggle{{Key: "A", Label: "as `demo item list --limit 1`", Input: "limit"}}
+	p := plugin.Plugin{Name: "demo", Summary: "start with `rta demo item list`", Capabilities: []plugin.Capability{c}}
+	rec := &recorder{}
+	checkSpelling(rec, p, noConfig())
+	for _, want := range []string{"demo summary", "demo.item.list help of limit", "demo.item.list toggle A"} {
+		if !strings.Contains(rec.errText(), string(RuleSpelling)+": "+want+" spells") {
+			t.Errorf("%s was not held:\n%s", want, rec.errText())
+		}
+	}
+	if len(rec.errs) != 3 {
+		t.Errorf("want three findings, got %d:\n%s", len(rec.errs), rec.errText())
+	}
+}
+
+// A HumanOnly capability is read at a terminal alone, where one of rta's own
+// commands has no other spelling; a capability's command line is still held,
+// the plugin's own or a built-in's the plugin's speller was never given,
+// since the TUI reads the same text.
+func TestHumanOnlyTextMayNameOneOfRtasOwnCommands(t *testing.T) {
+	c := ok()
+	c.HumanOnly = true
+	c.Description = "`rta doctor` says whether it is set up"
+	rec := &recorder{}
+	checkSpelling(rec, plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}, noConfig())
+	if len(rec.errs) > 0 {
+		t.Errorf("a command of rta's own was held against HumanOnly text:\n%s", rec.errText())
+	}
+	for _, text := range []string{"`rta demo item list --limit 5` lists five", "`rta net dns example.org` resolves it"} {
+		rec = &recorder{}
+		c.Description = text
+		checkSpelling(rec, plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}, noConfig())
+		if len(rec.errs) != 1 {
+			t.Errorf("%q in HumanOnly text: want one finding, got:\n%s", text, rec.errText())
+		}
+	}
+}
+
+// A text that must spell what the speller holds is waived through Skip, by
+// the capability, or by the plugin's name for its own summary, and nothing
+// else it declares goes with it.
+func TestASpellingSkipWaivesOnlyTheTextItNames(t *testing.T) {
+	c := ok()
+	c.Description = "the same as `pg_dump --jobs`, run with --jobs 4"
+	p := plugin.Plugin{Name: "demo", Summary: "try --verbose", Capabilities: []plugin.Capability{c}}
+	cfg := noConfig()
+	Skip(RuleSpelling, "demo.item.list", "quotes pg_dump's own usage")(&cfg)
+	rec := &recorder{}
+	checkSpelling(rec, p, cfg)
+	if len(rec.errs) != 1 || !strings.Contains(rec.errs[0], "demo summary") {
+		t.Errorf("want the summary alone held, got:\n%s", rec.errText())
+	}
+	Skip(RuleSpelling, "demo", "the summary names a flag on purpose")(&cfg)
+	rec = &recorder{}
+	checkSpelling(rec, p, cfg)
+	if len(rec.errs) > 0 {
+		t.Errorf("a waived text was held:\n%s", rec.errText())
 	}
 }
 

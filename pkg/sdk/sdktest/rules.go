@@ -10,6 +10,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/sdk/spelling"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -404,6 +405,48 @@ func checkActions(t reporter, seen []observed, cfg config) {
 		default:
 			t.Errorf("sdktest: %s: %s declares Copy %q, but returns a %s; c copies a Table's column or a KeyValue's key",
 				RuleActions, c.ID, c.Copy, view.TypeOf(v))
+		}
+	}
+}
+
+// --- (g) spelling ---------------------------------------------------------
+
+// checkSpelling holds what a plugin declares to spell nothing for one
+// surface: no flag, and no `rta …` command line — none in a code span, and
+// none naming one of its capabilities or its namespace wherever it stands
+// (spelling.Speller.Find).
+//
+// What a capability declares is shown on every surface at once — `rta
+// explain` and --help, the TUI's form and its footer, an agent's tool list —
+// and has no surface to ask which one is reading. An agent told "raise
+// --limit" has a schema with a limit argument and no flags at all, and the
+// TUI a box: the hint sends both looking for something that is not there. So
+// it names an input as `limit` and a capability by its ID, and text worded
+// at run time asks the request's surface (plugin.Surface) instead.
+//
+// A HumanOnly capability is read at a terminal alone, and may name one of
+// rta's own commands, which no capability is behind: `rta doctor` has no
+// other spelling. Not a built-in's, `rta net dns` in a code span, though the
+// speller knows only this plugin's capabilities: the TUI reads the same text
+// and names net.dns its own way.
+//
+// An error, not a log line: every official plugin carried this rule as a copy
+// of rta's own test before it was exported, and each of those copies was
+// written after hints had gone out naming flags to agents. A text that must
+// spell a flag — one quoting another program the speller mistakes for rta's —
+// is waived with Skip, and the reason is printed on every run.
+func checkSpelling(t reporter, p plugin.Plugin, cfg config) {
+	t.Helper()
+
+	sp := spelling.ForPlugin(p)
+	for _, d := range spelling.Declared(p) {
+		if cfg.skipped(RuleSpelling, d.ID) {
+			continue
+		}
+		for _, hit := range sp.Find(d.Text, d.TerminalOnly) {
+			t.Errorf("sdktest: %s: %s %s spells what only a terminal can act on: …%s…; name an input as "+
+				"`limit` and a capability by its ID, or word the text at run time through req.Surface()",
+				RuleSpelling, d.ID, d.Where, hit)
 		}
 	}
 }
