@@ -460,6 +460,38 @@ func TestATTLOnAFolderThatClimbsSaysSo(t *testing.T) {
 	}
 }
 
+// A call naming a record that is only white space is answered for itself,
+// and --ttl issues no grant on the record: grant allow refuses one, and
+// grant revoke and renew, which take a record as given, could never name
+// it. The answer said nothing of the sort and stored a grant on " " that
+// only a revoke of every record on the capability could take back.
+func TestATTLOnARecordOfWhiteSpaceIssuesNoGrant(t *testing.T) {
+	for _, blank := range []string{" ", "\t", string(rune(0xa0))} {
+		isolate(t)
+		r := park(t, "kv.get", blank)
+		v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "1h"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pairs := map[string]string{}
+		for _, p := range v.(view.KeyValue).Pairs {
+			pairs[p.Key] = p.Value
+		}
+		if pairs["allowed"] == "" || pairs["for"] != "this call only" {
+			t.Errorf("%q: the call itself was not allowed for itself alone: %+v", blank, pairs)
+		}
+		if !strings.Contains(pairs["grant"], "not issued") || !strings.Contains(pairs["grant"], "only white space") {
+			t.Errorf("%q: the answer did not say why no grant was issued: %+v", blank, pairs)
+		}
+		if strings.Contains(pairs["next"], "grant allow") {
+			t.Errorf("%q: next = %q, a grant.allow call that grant.allow refuses", blank, pairs["next"])
+		}
+		if grants, _ := grant.Load(); len(grants) != 0 {
+			t.Fatalf("%q: a grant on white space was issued: %+v", blank, grants)
+		}
+	}
+}
+
 func TestABadTTLDoesNotUndoTheAnswer(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.get", "db-password")

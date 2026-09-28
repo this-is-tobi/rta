@@ -167,7 +167,7 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 // padding, a stray pair of quotes — and neither reading is what was meant,
 // so the one answer that can neither widen a grant nor miss one is to ask.
 func givenRecord(sf plugin.Surface, scope string) *view.Error {
-	if scope == "" || strings.TrimSpace(scope) != "" {
+	if !core.BlankRecord(scope) {
 		return nil
 	}
 	return view.Errorf("grant.scope.blank", "%s is %q, only white space, which names no record",
