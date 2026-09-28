@@ -1025,7 +1025,7 @@
           "type": "string"
         },
         "header": {
-          "description": "request header, repeatable: -H 'Key: Value'",
+          "description": "request header as 'Key: Value', repeatable",
           "items": {
             "type": "string"
           },
@@ -1066,7 +1066,7 @@
           "type": "string"
         },
         "header": {
-          "description": "request header, repeatable: -H 'Key: Value'",
+          "description": "request header as 'Key: Value', repeatable",
           "items": {
             "type": "string"
           },
@@ -1107,7 +1107,7 @@
           "type": "string"
         },
         "header": {
-          "description": "request header, repeatable: -H 'Key: Value'",
+          "description": "request header as 'Key: Value', repeatable",
           "items": {
             "type": "string"
           },
@@ -1151,7 +1151,7 @@
           "type": "string"
         },
         "header": {
-          "description": "request header, repeatable: -H 'Key: Value'",
+          "description": "request header as 'Key: Value', repeatable",
           "items": {
             "type": "string"
           },
@@ -1196,7 +1196,7 @@
           "type": "string"
         },
         "header": {
-          "description": "request header, repeatable: -H 'Key: Value'",
+          "description": "request header as 'Key: Value', repeatable",
           "items": {
             "type": "string"
           },

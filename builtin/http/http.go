@@ -49,8 +49,12 @@ var client = &stdhttp.Client{
 func Plugin() plugin.Plugin {
 	common := []plugin.Field{
 		{Name: "url", Type: plugin.String, Positional: true, Required: true, Help: "request URL"},
+		// Worded for every surface it reaches. It said "-H 'Key: Value'",
+		// curl's flag, which rta never had (the CLI spells it --header), and
+		// a help string is also an agent's tool description and a form's
+		// label, where no flag is typed at all.
 		{Name: "header", Type: plugin.StringSlice, Suggest: suggestHeaders,
-			Help: "request header, repeatable: -H 'Key: Value'"},
+			Help: "request header as 'Key: Value', repeatable"},
 		// Secret, not String, and it always should have been: both are
 		// credentials, so both belong masked in a form rather than drawn in
 		// the clear, and neither is a value anything should keep. Declaring
