@@ -120,7 +120,9 @@ func worktreeStatus(repo *git.Repository, wt *git.Worktree, confine func(string)
 	if onDisk {
 		storer = submodulesOnDisk{store}
 	}
-	read := newIgnoresRead(rootExcludeSources(repo, wt.Filesystem.Root(), confine))
+	configs, cerr := gitConfigs(repo)
+	read := newIgnoresRead(rootExcludeSources(repo, configs, cerr, wt.Filesystem.Root(), confine),
+		cerr == nil && ignoreCase(configs))
 	reader, err := git.Open(storer, ignoreFiles{Filesystem: wt.Filesystem, read: read})
 	if err != nil {
 		return nil, nil, err
