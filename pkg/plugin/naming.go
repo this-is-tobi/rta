@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -123,16 +125,15 @@ func (s Surface) Call(id string, args ...Arg) string {
 		for _, a := range args {
 			values[a.Name] = a.Value
 		}
-		// A map of plain values always encodes, and its keys come out
-		// sorted, so one call is spelled the same way every time. Without
-		// the HTML escaping json.Marshal does: nothing here reaches a page,
-		// and a placeholder's angle brackets, each turned into a six-letter
-		// escape, handed an agent a value nobody wrote.
-		var encoded bytes.Buffer
-		enc := json.NewEncoder(&encoded)
-		enc.SetEscapeHTML(false)
-		_ = enc.Encode(values)
-		return ToolName(id) + " " + strings.TrimSuffix(encoded.String(), "\n")
+		// Sorted by name, so one call is spelled the same way every time,
+		// and each value encoded on its own (mcpValue), since one of them
+		// may have no JSON to be encoded as.
+		names := slices.Sorted(maps.Keys(values))
+		fields := make([]string, len(names))
+		for i, name := range names {
+			fields[i] = mcpValue(name) + ":" + mcpValue(values[name])
+		}
+		return ToolName(id) + " {" + strings.Join(fields, ",") + "}"
 	case SurfaceTUI:
 		parts := []string{id}
 		for _, a := range args {
@@ -162,6 +163,48 @@ func (s Surface) Call(id string, args ...Arg) string {
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// mcpValue is v as a tool's arguments carry it: JSON, without the HTML
+// escaping json.Marshal does — nothing here reaches a page, and a
+// placeholder's angle brackets, each turned into a six-letter escape, handed
+// an agent a value nobody wrote.
+//
+// **A string that is not UTF-8 has no JSON, and is not spelled as one.** A
+// tool's arguments are JSON, whose strings are Unicode, so no argument an
+// agent can send holds a byte that is not UTF-8. encoding/json writes U+FFFD
+// in such a byte's place, and the call it spelled was a call on another
+// record: `kv_get {"key":"db` and the replacement character, a key that is
+// not the one stored, and a grant on one is no grant on the other. Such a
+// value is spelled in its JSON's place as what it is, not UTF-8, with the
+// byte named as the TUI and textclean.Record name it (glyph.Quote) — a form
+// that is not JSON, so no agent can send it as it stands and take it for
+// the value. A list holding one is spelled element by element, so the
+// others still read as themselves.
+func mcpValue(v any) string {
+	switch t := v.(type) {
+	case string:
+		if !utf8.ValidString(t) {
+			return "<not UTF-8: " + glyph.Quote(t) + ">"
+		}
+	case []string:
+		if slices.ContainsFunc(t, func(s string) bool { return !utf8.ValidString(s) }) {
+			items := make([]string, len(t))
+			for i, s := range t {
+				items[i] = mcpValue(s)
+			}
+			return "[" + strings.Join(items, ",") + "]"
+		}
+	}
+	var encoded bytes.Buffer
+	enc := json.NewEncoder(&encoded)
+	enc.SetEscapeHTML(false)
+	// A plain value always encodes; one that does not is spelled as Go
+	// prints it rather than as nothing.
+	if err := enc.Encode(v); err != nil {
+		return fmt.Sprint(v)
+	}
+	return strings.TrimSuffix(encoded.String(), "\n")
 }
 
 // cliValue is v as a command line carries it: one shell word that reads back

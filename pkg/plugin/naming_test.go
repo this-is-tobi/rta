@@ -179,6 +179,31 @@ func TestASwitchTurnedOffIsSpelledAsTheCommandLineReadsIt(t *testing.T) {
 	}
 }
 
+// A value holding a byte that is not UTF-8 has no spelling in a tool's
+// arguments, which are JSON: encoding/json wrote U+FFFD in the byte's place,
+// so an agent handed `kv_get {"key":"db` and the replacement character made
+// the call on another key. It is spelled where its JSON would be as what it
+// is, with the byte named as the TUI and textclean.Record name it, in a form
+// no agent can send as it stands; every other value keeps its JSON.
+func TestAValueThatIsNotUTF8IsNotSpelledAsAnotherForAnAgent(t *testing.T) {
+	for _, c := range []struct {
+		value any
+		want  string
+	}{
+		{"db\xff", `kv_get {"key":<not UTF-8: "db\xff">,"out":"<file>"}`},
+		{[]string{"ok", "db\xfe"}, `kv_get {"key":["ok",<not UTF-8: "db\xfe">],"out":"<file>"}`},
+		{[]string{"ok", "db"}, `kv_get {"key":["ok","db"],"out":"<file>"}`},
+	} {
+		got := SurfaceMCP.Call("kv.get", Arg{Name: "key", Value: c.value}, Arg{Name: "out", Value: "<file>"})
+		if got != c.want {
+			t.Errorf("Call over MCP with %q = %s, want %s", c.value, got, c.want)
+		}
+		if strings.ContainsRune(got, 0xfffd) {
+			t.Errorf("%s names the replacement character, a key the call does not name", got)
+		}
+	}
+}
+
 // Leaving inputs out is said the way the caller does it: a TUI form keeps its
 // boxes, so there they are left empty rather than left off.
 func TestInputsLeftOutAreSaidTheWayTheSurfaceLeavesThemOut(t *testing.T) {
