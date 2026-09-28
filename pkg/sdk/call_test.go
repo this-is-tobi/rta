@@ -89,6 +89,92 @@ func TestAnErrorWrappingANilViewErrorIsItsWrappersFailure(t *testing.T) {
 	}
 }
 
+// A handler's failure with no code or no message in it leaves the process
+// coded and worded: with neither, it crossed as the Error an SDK older than
+// plugin.Failure sent for a call that worked, and the host blamed an old
+// build that was not there. What the handler did give is kept.
+func TestAFailureWithNothingInItCrossesCodedAndWorded(t *testing.T) {
+	for _, tc := range []struct {
+		returned            *view.Error
+		code, message, hint string
+	}{
+		{&view.Error{}, "demo.list.failed", "demo.list failed, and its handler gave no message", "a bug in the plugin"},
+		{&view.Error{Hint: "check the host"}, "demo.list.failed", "demo.list failed, and its handler gave no message",
+			"check the host"},
+		{&view.Error{Code: "demo.gone"}, "demo.gone", "demo.list failed, and its handler gave no message", "a bug in the plugin"},
+		{&view.Error{Message: "the server went away"}, "demo.list.failed", "the server went away", ""},
+		{&view.Error{Refusal: true}, "demo.list.failed", "demo.list failed, and its handler gave no message",
+			"a bug in the plugin"},
+	} {
+		returned := tc.returned
+		before := *returned
+		p := plugin.Plugin{
+			Name: "demo", Summary: "d",
+			Capabilities: []plugin.Capability{{
+				ID: "demo.list", Summary: "l", Safety: plugin.Read,
+				Run: func(context.Context, plugin.Request) (view.View, error) { return nil, returned },
+				Prefill: func(context.Context, plugin.Request) (map[string]any, error) {
+					return nil, returned
+				},
+			}},
+		}
+		s := newServer(p)
+		resp, err := s.Call(context.Background(), &rtav1.CallRequest{CapabilityId: "demo.list"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pre, err := s.Prefill(context.Background(), &rtav1.PrefillRequest{CapabilityId: "demo.list"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for what, e := range map[string]*rtav1.Error{
+			"call": roundTrip(t, resp).GetError(), "prefill": roundTrip(t, pre).GetError(),
+		} {
+			got := wire.ErrorFromProto(e)
+			code, message := tc.code, tc.message
+			if what == "prefill" {
+				code = strings.Replace(code, "demo.list.failed", "demo.list.prefill.failed", 1)
+				message = strings.Replace(message, "demo.list failed", "demo.list's prefill failed", 1)
+			}
+			switch {
+			case got == nil:
+				t.Errorf("%+v: the %s crossed as no failure", before, what)
+			case got.Code != code || !strings.HasPrefix(got.Message, message) ||
+				!strings.Contains(got.Hint, tc.hint) || got.Refusal != before.Refusal:
+				t.Errorf("%+v: the %s crossed as %+v, want code %s, a message opening %q and a hint holding %q",
+					before, what, *got, code, message, tc.hint)
+			}
+		}
+		if *returned != before {
+			t.Errorf("the handler's own error was changed to %+v", *returned)
+		}
+	}
+}
+
+// A handler that wrapped its empty Error in words of its own described the
+// failure, and those words are the message: view.AsError hands back the
+// Error inside, and read alone, a failure the handler said something about
+// was one it said nothing about.
+func TestAnEmptyFailureWrappedInWordsCrossesInThem(t *testing.T) {
+	p := plugin.Plugin{
+		Name: "demo", Summary: "d",
+		Capabilities: []plugin.Capability{{
+			ID: "demo.list", Summary: "l", Safety: plugin.Read,
+			Run: func(context.Context, plugin.Request) (view.View, error) {
+				return nil, fmt.Errorf("listing shop: %w", &view.Error{Code: "demo.gone"})
+			},
+		}},
+	}
+	resp, err := newServer(p).Call(context.Background(), &rtav1.CallRequest{CapabilityId: "demo.list"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := wire.ErrorFromProto(roundTrip(t, resp).GetError())
+	if got == nil || got.Code != "demo.gone" || got.Message != "listing shop" || got.Hint != "" {
+		t.Errorf("the wrapped failure crossed as %+v, want demo.gone, \"listing shop\" and no hint", got)
+	}
+}
+
 func roundTrip[M proto.Message](t *testing.T, m M) M {
 	t.Helper()
 	raw, err := proto.Marshal(m)
