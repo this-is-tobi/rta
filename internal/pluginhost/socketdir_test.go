@@ -4,14 +4,17 @@ package pluginhost
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/this-is-tobi/rta/internal/shutdown"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // socketTMPDIR points TMPDIR at a directory of the test's own, short enough
@@ -133,5 +136,85 @@ func TestAForcedExitLeavesNoSocketBehind(t *testing.T) {
 	resume()
 	if len(left) != 0 {
 		t.Errorf("a forced exit left %v in TMPDIR", left)
+	}
+}
+
+// A TMPDIR too long for a socket is refused before anything starts, by
+// name, with the limit and the fix — from the launch, and from a call that
+// finds the declaration cached and has a process to start. It used to reach
+// the operator as go-plugin's "Failed to read any lines from plugin's
+// stdout" and a list of causes that were not this one.
+func TestATMPDIRTooLongForASocketIsRefusedByName(t *testing.T) {
+	bin, tmp := socketTMPDIR(t)
+	long := filepath.Join(tmp, strings.Repeat("d", maxSocketPath))
+	refused := func(t *testing.T, err error) {
+		t.Helper()
+		var verr *view.Error
+		if !errors.As(err, &verr) || verr.Code != "plugin.tmpdir.toolong" {
+			t.Fatalf("got %v, want the plugin.tmpdir.toolong refusal", err)
+		}
+		for _, want := range []string{strconv.Itoa(maxSocketPath), strconv.Itoa(maxSocketPath - socketTail), long} {
+			if !strings.Contains(verr.Message, want) {
+				t.Errorf("the refusal does not say %q: %s", want, verr.Message)
+			}
+		}
+		if !strings.Contains(verr.Hint, "shorter directory") {
+			t.Errorf("the hint does not name the fix: %q", verr.Hint)
+		}
+	}
+
+	t.Run("launching", func(t *testing.T) {
+		t.Setenv("TMPDIR", long)
+		h := New(nil)
+		defer h.CloseAll()
+		_, err := h.Open(context.Background(), bin)
+		refused(t, err)
+	})
+
+	t.Run("calling with the declaration cached", func(t *testing.T) {
+		h := New(nil)
+		defer h.CloseAll()
+		if _, err := h.Open(context.Background(), bin); err != nil {
+			t.Fatal(err)
+		}
+		h.CloseAll()
+
+		t.Setenv("TMPDIR", long)
+		cached := New(nil)
+		defer cached.CloseAll()
+		c, err := cached.Open(context.Background(), bin)
+		if err != nil {
+			t.Fatalf("a cached declaration needs no process, and none should be refused: %v", err)
+		}
+		_, err = greetWith(t, c, "world")
+		refused(t, err)
+	})
+
+	if left := leftovers(t, tmp); len(left) != 0 {
+		t.Errorf("TMPDIR holds %v after the runs", left)
+	}
+}
+
+// A TMPDIR that cannot hold the socket's directory is refused by name too,
+// naming TMPDIR: left as os.MkdirTemp's error it read "stat …: no such file
+// or directory", as a plugin that had gone.
+func TestATMPDIRThatCannotHoldTheSocketIsRefusedByName(t *testing.T) {
+	bin, tmp := socketTMPDIR(t)
+	// One letter: the test's TMPDIR already takes most of what a socket's
+	// path may, and a longer name is refused as too long first.
+	missing := filepath.Join(tmp, "m")
+	t.Setenv("TMPDIR", missing)
+	h := New(nil)
+	defer h.CloseAll()
+	_, err := h.Open(context.Background(), bin)
+	var verr *view.Error
+	if !errors.As(err, &verr) || verr.Code != "plugin.tmpdir.unusable" {
+		t.Fatalf("got %v, want the plugin.tmpdir.unusable refusal", err)
+	}
+	if !strings.Contains(verr.Message, missing) || !strings.Contains(verr.Hint, "exists") {
+		t.Errorf("the refusal does not name TMPDIR and the fix: %s (%s)", verr.Message, verr.Hint)
+	}
+	if left := leftovers(t, tmp); len(left) != 0 {
+		t.Errorf("TMPDIR's parent holds %v after the refusal", left)
 	}
 }

@@ -2,6 +2,7 @@ package pluginhost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	goplugin "github.com/hashicorp/go-plugin"
@@ -48,7 +49,7 @@ func (noDispense) GRPCClient(context.Context, *goplugin.GRPCBroker, *grpc.Client
 func (c *Client) call(ctx context.Context, id string, req plugin.Request) (view.View, error) {
 	stub, err := c.live(ctx)
 	if err != nil {
-		return nil, view.Errorf("plugin.gone", "%s: %v", id, err)
+		return nil, liveError(id, err)
 	}
 	resp, err := stub.Call(ctx, callRequest(id, req))
 	if err != nil {
@@ -109,7 +110,7 @@ func callRequest(id string, req plugin.Request) *rtav1.CallRequest {
 func (c *Client) prefill(ctx context.Context, id string, req plugin.Request) (map[string]any, error) {
 	stub, err := c.live(ctx)
 	if err != nil {
-		return nil, view.Errorf("plugin.gone", "%s: %v", id, err)
+		return nil, liveError(id, err)
 	}
 	resp, err := stub.Prefill(ctx, &rtav1.PrefillRequest{
 		CapabilityId: id,
@@ -165,6 +166,22 @@ func (c *Client) suggest(ctx context.Context, id, field string, req plugin.Reque
 		return nil
 	}
 	return resp.GetValues()
+}
+
+// liveError is what a call says when no process could be had for it.
+//
+// A coded refusal from the launch is passed on as itself, its hint with it:
+// a TMPDIR too long for the plugin's socket (socketDir) was folded into
+// plugin.gone, which reads as a plugin that died, and the one line that said
+// what to change lost the hint that said how.
+func liveError(id string, err error) *view.Error {
+	var verr *view.Error
+	if errors.As(err, &verr) {
+		passed := *verr
+		passed.Message = id + ": " + verr.Message
+		return &passed
+	}
+	return view.Errorf("plugin.gone", "%s: %v", id, err)
 }
 
 // transportError turns a gRPC failure into something a person can read.
