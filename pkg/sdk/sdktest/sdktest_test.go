@@ -469,6 +469,19 @@ func TestDomainVerbsAreReportedOncePerPlugin(t *testing.T) {
 	if !strings.Contains(rec.logs[0], "dns, ping, trace") {
 		t.Errorf("aggregate does not name the words: %q", rec.logs[0])
 	}
+	// Counted as a sentence counts, one verb and three verbs, never "3
+	// verb(s)".
+	if !strings.Contains(rec.logs[0], "introduces 3 verbs the") || !strings.Contains(rec.logs[0], "if one of these means") {
+		t.Errorf("three verbs are not counted as three: %q", rec.logs[0])
+	}
+	one := &recorder{}
+	checkVerbs(one, plugin.Plugin{Name: "net", Capabilities: []plugin.Capability{
+		{ID: "net.ping", Summary: "s", Safety: plugin.Read},
+	}}, noConfig())
+	if len(one.logs) != 1 || !strings.Contains(one.logs[0], "introduces 1 verb the") ||
+		!strings.Contains(one.logs[0], "if it means") {
+		t.Errorf("one verb is not counted as one: %q", one.logText())
+	}
 }
 
 // A word cannot be both the catalogue's spelling and a mistake for another
