@@ -410,3 +410,44 @@ func TestAnExcludesFilePastTheBoundsIsNamedAndReachesEverything(t *testing.T) {
 		t.Errorf("the diff showed, or did not name, a file the excludes file may ignore:\n%s", body)
 	}
 }
+
+// go-git reads an ignore file's bytes as they are, where git skips a byte
+// order mark before them and ends a line at a NUL: a pattern after either
+// was one go-git never matched, so git.status listed a file git ignores and
+// git.diff showed it whole. Each is now read as git reads it, and a tracked
+// file read so is not modified by a touch. go-git's reader also stops at a
+// line longer than it takes, dropping every pattern after it where git reads
+// on: a file holding one is not applied, and named.
+func TestAnIgnoreFileIsReadAsGitReadsIt(t *testing.T) {
+	bom, nul := string(rune(0xFEFF)), string(rune(0))
+	for name, content := range map[string]string{
+		"a byte order mark": bom + "*.env\n",
+		"a NUL in a line":   "*.env" + nul + "junk\n",
+		"a long line":       "#" + strings.Repeat("x", 70000) + "\n*.env\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir, repo := testRepo(t)
+			commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+			commitFile(t, repo, dir, ".gitignore", content, "ignores")
+			writeFile(t, dir, "secret.env", "TOKEN=hunter2\n")
+			if body := text(t, runDiff, req(t, dir, nil)); strings.Contains(body, "hunter2") {
+				t.Errorf("the diff showed a file git ignores:\n%s", body)
+			}
+			later := time.Now().Add(time.Hour)
+			if err := os.Chtimes(filepath.Join(dir, ".gitignore"), later, later); err != nil {
+				t.Fatal(err)
+			}
+			tbl := table(t, runStatus, req(t, dir, nil))
+			if name == "a long line" {
+				if w := ignoreWarning(tbl); w == nil || !strings.Contains(w.Message, "a line longer than the 64.0 KiB") ||
+					len(tbl.Rows) != 1 || tbl.Rows[0][0] != "secret.env" {
+					t.Errorf("rows %v, warning %+v, want secret.env listed and .gitignore named as not applied", tbl.Rows, w)
+				}
+				return
+			}
+			if len(tbl.Rows) != 0 || ignoreWarning(tbl) != nil {
+				t.Errorf("rows %v, warnings %+v, want none: git ignores secret.env, and .gitignore was touched", tbl.Rows, tbl.Warnings)
+			}
+		})
+	}
+}

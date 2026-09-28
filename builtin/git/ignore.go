@@ -82,11 +82,13 @@ type ignoresRead struct {
 }
 
 // ignoreFile is one ignore file as a status decided on it: the content it
-// applies, or why it does not apply it; and the directory its patterns reach,
-// with its trailing slash, "" for the whole working tree.
+// applies, or why it does not apply it; whether that content is not the
+// file's own (asGitReads); and the directory its patterns reach, with its
+// trailing slash, "" for the whole working tree.
 type ignoreFile struct {
 	content []byte
 	why     string
+	altered bool
 	reach   string
 }
 
@@ -231,7 +233,13 @@ func (r *ignoresRead) decide(fs billy.Filesystem, name string) (ignoreFile, erro
 	if int64(len(content)) > r.bytes {
 		return ignoreFile{why: r.pastBytes(int64(len(content)))}, nil
 	}
-	n := patternCount(content)
+	read := len(content)
+	content, altered := asGitReads(content)
+	n, cut := patternCount(content)
+	if cut {
+		return ignoreFile{why: fmt.Sprintf("a line longer than the %s this reader takes of one, where it would "+
+			"stop reading the file and git reads on", format.Bytes(bufio.MaxScanTokenSize))}, nil
+	}
 	if n > r.patterns {
 		why := fmt.Sprintf("%s, past the %s one status applies", format.CountOf(n, "pattern"),
 			format.CountOf(maxIgnorePatterns, "pattern"))
@@ -241,9 +249,43 @@ func (r *ignoresRead) decide(fs billy.Filesystem, name string) (ignoreFile, erro
 		}
 		return ignoreFile{why: why}, nil
 	}
-	r.bytes -= int64(len(content))
+	r.bytes -= int64(read)
 	r.patterns -= n
-	return ignoreFile{content: content}, nil
+	return ignoreFile{content: content, altered: altered}, nil
+}
+
+// utf8BOM is the byte order mark an editor may write before UTF-8 text.
+var utf8BOM = []byte(string(rune(0xFEFF)))
+
+// asGitReads is content as git reads an ignore file, and whether that is not
+// content as it is: a UTF-8 byte order mark before it skipped, and each line
+// ended at a NUL byte in it.
+//
+// **go-git reads the bytes as they are, and git does not.** git skips a byte
+// order mark, which an editor on Windows writes before a .gitignore, and
+// reads each line as a C string, ending it at a NUL. go-git kept the mark as
+// part of the first pattern and the rest of the line as part of each, so
+// neither matched: `.env` as the first line after a mark, or `.env` followed
+// by a NUL, is a file git ignores, which git.status listed and git.diff
+// showed whole. Handed to go-git as git reads it, the patterns are git's.
+func asGitReads(content []byte) ([]byte, bool) {
+	out := bytes.TrimPrefix(content, utf8BOM)
+	if bytes.IndexByte(out, 0) < 0 {
+		return out, len(out) != len(content)
+	}
+	cut := make([]byte, 0, len(out))
+	for rest := out; len(rest) > 0; {
+		line, after, found := bytes.Cut(rest, []byte{'\n'})
+		if nul := bytes.IndexByte(line, 0); nul >= 0 {
+			line = line[:nul]
+		}
+		cut = append(cut, line...)
+		if found {
+			cut = append(cut, '\n')
+		}
+		rest = after
+	}
+	return cut, true
 }
 
 // pastBytes is why an ignore file of size bytes is not read.
@@ -256,17 +298,23 @@ func (r *ignoresRead) pastBytes(size int64) string {
 }
 
 // patternCount is how many patterns go-git keeps of content: a line that is
-// neither blank nor a # comment, read as its reader reads lines, which stops
-// at one longer than it takes.
-func patternCount(content []byte) int {
-	n := 0
+// neither blank nor a # comment, read as its reader reads lines. cut is
+// whether that reader would stop short of the end, at a line longer than it
+// takes.
+//
+// **A file it would stop in is not applied at all.** go-git's reader keeps
+// the patterns before such a line and drops every one after it without a
+// word, where git reads on: a 64 KiB comment above `.env` had git.status list
+// the .env and git.diff show it whole. No ignore file anybody writes holds
+// such a line, and one that does is named, as a file past the bounds is.
+func patternCount(content []byte) (n int, cut bool) {
 	lines := bufio.NewScanner(bytes.NewReader(content))
 	for lines.Scan() {
 		if line := lines.Text(); !strings.HasPrefix(line, "#") && strings.TrimSpace(line) != "" {
 			n++
 		}
 	}
-	return n
+	return n, lines.Err() != nil
 }
 
 // readIgnoreFile is an ignore file as go-git reads it, the content this read.
@@ -285,14 +333,15 @@ func (f *readIgnoreFile) Truncate(int64) error      { return errReadOnly }
 // restore marks unmodified each tracked ignore file this served otherwise
 // than it is that the status marked modified, where what is on disk is what
 // the index records: the status's comparison was refused the file's content,
-// or handed the root sources ahead of it (ignoreFiles), not shown a change.
-// fs is the working tree, read as the comparison reads it, and the file is
-// hashed only where its size is the index's.
+// handed it as git reads it (asGitReads), or handed the root sources ahead of
+// it (ignoreFiles), not shown a change. fs is the working tree, read as the
+// comparison reads it, and the file is hashed only where its size is the
+// index's.
 func (r *ignoresRead) restore(fs billy.Filesystem, idx *index.Index, status git.Status) {
 	entryOf := indexLookup(idx)
 	for name, file := range r.files {
 		fst, listed := status[name]
-		served := file.why != "" || name == rootIgnore && r.prefixed
+		served := file.why != "" || file.altered || name == rootIgnore && r.prefixed
 		if !served || !listed || fst.Worktree != git.Modified {
 			continue
 		}

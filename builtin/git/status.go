@@ -31,8 +31,9 @@ func statusCapability() plugin.Capability {
 			"be decoded by eye. It ignores what git ignores: each .gitignore, the repository's " +
 			"info/exclude, and the file core.excludesFile names, ~/.config/git/ignore by default; at " +
 			"most 1 MiB and 10000 patterns of them in all, in the order it reads them. One past that is " +
-			"not applied, as git applies no pattern file past 100 MB, so what it ignores is listed, and " +
-			"a warning names it.",
+			"not applied, as git applies no pattern file past 100 MB, and neither is one with a line " +
+			"longer than 64 KiB, where this reader would stop: what it ignores is listed, and a warning " +
+			"names it.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},
