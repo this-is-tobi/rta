@@ -253,7 +253,7 @@ func TestInvisibleInstructionsCannotBeSmuggledIntoADeclaration(t *testing.T) {
 // presentation.
 func TestTheInvisibleRuleDoesNotRejectRealText(t *testing.T) {
 	fine := map[string]string{
-		"emoji with variation selector": "mark it ❤️",
+		"emoji with variation selector": "mark it ❤" + string(rune(0xfe0f)),
 		"emoji zwj family":              "shared with 👨\u200d👩\u200d👧\u200d👦",
 		"devanagari with zwj":           "क्\u200dष is one letter",
 		"persian with zwnj":             "می\u200cروم",
