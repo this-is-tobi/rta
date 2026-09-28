@@ -383,8 +383,61 @@ func (m Model) interactive() bool {
 	if !m.atTop() {
 		return false
 	}
-	tbl, ok := m.result.view.(view.Table)
+	tbl, _, ok := rowTable(m.result.view)
 	return ok && len(tbl.Rows) > 0
+}
+
+// rowTable is the table whose rows v is walked and acted on by: v itself, or
+// the one table on a page (view.Sections) whose other sections are what is
+// said around it. at is the table's place among the page's sections, -1 for
+// v itself, which is what the pane scrolls a row into view by.
+//
+// **A page, because grant list answers one whenever a role stands.** The
+// roles in force lead the roster, and a note follows it when the team's
+// policy holds grants back; only a bare table was a list to walk, so the
+// roster lost x and n on its rows the moment somebody issued a role — on the
+// one screen the docs send people to before they walk away from a machine.
+//
+// One table and no other anywhere on the page, nested pages included: the
+// row under the cursor has to be a row of one table, and the highlight a
+// render draws (cli.Options.Highlight) reaches every table it renders.
+func rowTable(v view.View) (tbl view.Table, at int, ok bool) {
+	switch t := v.(type) {
+	case view.Table:
+		return t, -1, true
+	case view.Sections:
+		at = -1
+		for i, it := range t.Items {
+			switch inner := it.View.(type) {
+			case view.Table:
+				if at >= 0 {
+					return view.Table{}, -1, false
+				}
+				tbl, at = inner, i
+			case view.Sections:
+				if holdsTable(inner) {
+					return view.Table{}, -1, false
+				}
+			}
+		}
+		return tbl, at, at >= 0
+	}
+	return view.Table{}, -1, false
+}
+
+// holdsTable reports whether a page has a table anywhere on it.
+func holdsTable(s view.Sections) bool {
+	for _, it := range s.Items {
+		switch inner := it.View.(type) {
+		case view.Table:
+			return true
+		case view.Sections:
+			if holdsTable(inner) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // enterTrail records the result on screen when it is a view you can act
@@ -628,7 +681,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.result = msg
 		m.enterTrail(msg.cap, m.lastValues)
 		tail := false
-		if tbl, ok := msg.view.(view.Table); ok {
+		if tbl, _, ok := rowTable(msg.view); ok {
 			m.row = min(m.row, max(len(tbl.Rows)-1, 0))
 			// A log opens where things are now — its last row — and is
 			// walked back from there. On a refresh too: the newest row is

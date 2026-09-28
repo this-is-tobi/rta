@@ -90,8 +90,13 @@ func (m *Model) renderResult() {
 	}
 	m.viewport.SetContent(content)
 	if m.interactive() {
-		// Keep the selected row in view: meta(2) + table chrome(2) + row.
+		// Keep the selected row in view: meta(2) + table chrome(2) + row,
+		// below whatever a page draws above its table.
 		line := m.row + 4
+		if page, isPage := m.result.raw.(view.Sections); isPage {
+			_, at, _ := rowTable(page)
+			line += linesAbove(page, at, opts)
+		}
 		top, h := m.viewport.YOffset(), m.viewport.Height()
 		if line < top {
 			m.viewport.SetYOffset(line)
@@ -99,6 +104,22 @@ func (m *Model) renderResult() {
 			m.viewport.SetYOffset(line - h + 2)
 		}
 	}
+}
+
+// linesAbove is how many lines a page draws above its section at: the
+// sections before it, the blank line parting them from it, and its heading.
+// Drawn rather than counted, since a section's height is whatever its view
+// wraps to at this width.
+func linesAbove(page view.Sections, at int, opts cli.Options) int {
+	if at <= 0 {
+		return 1
+	}
+	var buf bytes.Buffer
+	opts.Highlight = 0
+	if err := cli.Render(&buf, view.Sections{Items: page.Items[:at]}, opts); err != nil {
+		return 1
+	}
+	return strings.Count(strings.TrimRight(buf.String(), "\n"), "\n") + 1 + 2
 }
 
 // resultMeta is the context line under the panel title: safety class in the
@@ -153,6 +174,11 @@ func (m Model) resultMeta() string {
 		// pointing at nothing.
 		if len(titles) > 0 {
 			parts = append(parts, theme.Subtle.Render(strings.Join(titles, " › ")))
+		}
+		// Which row the cursor is on, for a page walked by its table
+		// (rowTable), as a table's own line says.
+		if tbl, _, ok := rowTable(v); ok && m.interactive() {
+			parts = append(parts, theme.Subtle.Render(fmt.Sprintf("row %d/%d", m.row+1, len(tbl.Rows))))
 		}
 		// The title list is the page's table of contents, and a page that
 		// lost three of its sections lists the survivors exactly as
