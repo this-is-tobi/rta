@@ -45,6 +45,10 @@ func binaryName(name string) string { return pluginhost.BinaryName(name) }
 // Windows does without Developer Mode. See place.
 var symlink = os.Symlink
 
+// removeAll is os.RemoveAll, overridable so a test can stand between a
+// remove's or a prune's writes and see whether an exit can land there.
+var removeAll = os.RemoveAll
+
 // artifactName is what an index calls the same binary, and it is deliberately
 // not binaryName: a manifest describes six platforms from whichever one
 // generated it, so the host's own suffix has no business in any of them.
@@ -219,7 +223,7 @@ func removeStored(name string) *view.Error {
 	if err := os.Remove(link); err != nil && !os.IsNotExist(err) {
 		return view.Errorf("plugin.remove.store", "%v", err)
 	}
-	if err := os.RemoveAll(filepath.Join(StoreDir(), name)); err != nil {
+	if err := removeAll(filepath.Join(StoreDir(), name)); err != nil {
 		return view.Errorf("plugin.remove.store", "%v", err)
 	}
 	return nil

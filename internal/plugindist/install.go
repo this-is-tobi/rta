@@ -529,6 +529,14 @@ func remove(name string, dryRun bool) (Removed, *view.Error) {
 	if dryRun {
 		return Removed{Name: name, Digests: digests, Orphans: orphanedConfig(name)}, nil
 	}
+	// Three durable writes — trust withdrawn from every stored digest, the
+	// store and its bin/ link removed, the line in rta.lock dropped — held off
+	// a forced exit as one, as an install's are. An exit between them left a
+	// plugin rta.lock still records and nothing trusts, which install then
+	// refuses as present and upgrade as untrusted, or a lock entry naming a
+	// store that is gone: the exit lets all three finish, or, taken before the
+	// first, begins none.
+	defer shutdown.Hold()()
 	// By digest, never by name: untrusting by name would also revoke an
 	// unmanaged same-named binary the operator trusted deliberately.
 	for _, d := range digests {
