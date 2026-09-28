@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/mcp"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -80,7 +81,9 @@ func TestTheDocsNameEveryBuiltInPlugin(t *testing.T) {
 			}
 		}
 		if len(missing) > 0 {
-			t.Errorf("%s never names built-in plugin(s) %s", rel, strings.Join(missing, ", "))
+			t.Errorf("%s never names %s %s", rel,
+				format.Plural(len(missing), "the built-in plugin", "the built-in plugins"),
+				strings.Join(missing, ", "))
 		}
 	}
 }
