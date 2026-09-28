@@ -281,21 +281,30 @@ func (s selector) described() string {
 // revoke that grant exactly. The target alone takes back every grant on
 // it, for every agent and connection, which is a wider decision than the
 // one row an exact revoke was about — the x on a roster row.
-func stillArgs(spec operatorid.RevokeSpec, still core.Grant) []plugin.Arg {
+//
+// server is the remote server the revoke was sent to, empty for this
+// machine's own store, and the command names it: still is that server's
+// grant, and the revoke handed on without it took back a grant of the same
+// name on this machine, or none, while the one covering the target there
+// stood.
+func stillArgs(spec operatorid.RevokeSpec, server string, still core.Grant) []plugin.Arg {
 	args := []plugin.Arg{{Name: "target", Value: still.Target, Positional: true}}
-	if !spec.Exact {
-		return args
+	if spec.Exact {
+		if still.Scope != "" {
+			args = append(args, plugin.Arg{Name: "scope", Value: still.Scope, Positional: true})
+		}
+		if still.Profile != "" {
+			args = append(args, plugin.Arg{Name: "profile", Value: still.Profile})
+		}
+		if still.Agent != "" {
+			args = append(args, plugin.Arg{Name: "agent", Value: still.Agent})
+		}
+		args = append(args, plugin.Arg{Name: "exact", Value: true})
 	}
-	if still.Scope != "" {
-		args = append(args, plugin.Arg{Name: "scope", Value: still.Scope, Positional: true})
+	if server != "" {
+		args = append(args, plugin.Arg{Name: "server", Value: server})
 	}
-	if still.Profile != "" {
-		args = append(args, plugin.Arg{Name: "profile", Value: still.Profile})
-	}
-	if still.Agent != "" {
-		args = append(args, plugin.Arg{Name: "agent", Value: still.Agent})
-	}
-	return append(args, plugin.Arg{Name: "exact", Value: true})
+	return args
 }
 
 // revokeSelector is the selector a revoke's spec names.
@@ -683,8 +692,11 @@ func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOut
 // revokeBody words one outcome, for the local flow and the remote one
 // alike — the sentences an operator acts on must not depend on which
 // machine computed them. sf is the surface asking, which is this machine's
-// either way, for the call a leftover grant is named with.
-func revokeBody(sf plugin.Surface, spec operatorid.RevokeSpec, out operatorid.RevokeOutcome, dry bool) string {
+// either way, for the call a leftover grant is named with, and server the
+// remote server the outcome came from, empty for this machine's own.
+func revokeBody(sf plugin.Surface, spec operatorid.RevokeSpec, server string, out operatorid.RevokeOutcome,
+	dry bool,
+) string {
 	target := spec.Target
 	if out.NoneActive {
 		return "Nothing to revoke — no grant is active."
@@ -695,7 +707,7 @@ func revokeBody(sf plugin.Surface, spec operatorid.RevokeSpec, out operatorid.Re
 		}
 		record := core.ShownRecord(out.Still.Scope, "any")
 		return line + fmt.Sprintf("\nstill covered by an active grant on %s (record: %s) — revoke that too: `%s`",
-			out.Still.Target, record, sf.Call("grant.revoke", stillArgs(spec, *out.Still)...))
+			out.Still.Target, record, sf.Call("grant.revoke", stillArgs(spec, server, *out.Still)...))
 	}
 	if out.Revoked == 0 {
 		msg := fmt.Sprintf("No active grant for %s.", target)

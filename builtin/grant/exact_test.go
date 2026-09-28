@@ -152,6 +152,36 @@ func TestAnExactRevokeNamesTheGrantStillCoveringExactly(t *testing.T) {
 	}
 }
 
+// A remote revoke that leaves a wider grant standing hands on the revoke
+// that takes it with the server that holds it. The leftover is that
+// server's grant, and the command handed on without --server named a grant
+// on this machine: one of the same name, or none. Asked from the TUI, the
+// surface a remote revoke takes its passphrase on, and spelled as it names
+// a call.
+func TestARemoteRevokeNamesTheGrantStillCoveringOnItsServer(t *testing.T) {
+	setup(t)
+	remoteLab(t)
+	neighbours(t)
+	for _, c := range []struct {
+		exact bool
+		want  string
+	}{
+		{false, "revoke that too: `grant.revoke target=kv server=lab`"},
+		{true, "revoke that too: `grant.revoke target=kv agent=claude exact server=lab`"},
+	} {
+		values := map[string]any{"target": "kv.get", "agent": "claude", "exact": c.exact,
+			"server": "lab", "passphrase": "correct horse"}
+		v, err := guardCap(t, "grant.revoke").Run(context.Background(),
+			plugin.NewRequest(values, true, true).WithSurface(plugin.SurfaceTUI))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if body := v.(view.Text).Body; !strings.HasSuffix(body, c.want) {
+			t.Errorf("exact=%v: a remote revoke said %q, want it to end %q", c.exact, body, c.want)
+		}
+	}
+}
+
 // exact names one grant, so it needs a target, which every grant has, and
 // refuses --all, which names them all.
 func TestAnExactSelectorThatCanNameNoGrantIsRefused(t *testing.T) {
