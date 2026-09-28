@@ -362,6 +362,38 @@ func TestARepositoryWithWorktreeConfigOpensAndItsWorktreeScopeIsRead(t *testing.
 	}
 }
 
+// A repository whose config sets no format version is read by git as the one
+// it was before extensions, and git passes over every extension it sets,
+// worktreeConfig included: config.worktree is not read, and the hooks git
+// runs are the ones the repository's config names. It was read, so git.hooks
+// listed a directory git never runs a hook from.
+func TestAWorktreeConfigIsNotReadWhereTheConfigSetsNoFormatVersion(t *testing.T) {
+	machineConfig(t, "")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n\thooksPath = .local-hooks\n"+
+		"[extensions]\n\tworktreeConfig = true\n")
+	writeFile(t, dir, ".git/config.worktree", "[core]\n\tsparseCheckout = true\n\thooksPath = .git/wt-hooks\n")
+	writeExecutable(t, dir, ".git/wt-hooks/pre-commit")
+	writeExecutable(t, dir, ".local-hooks/pre-commit")
+
+	if row := rowFor(t, table(t, runHooks, req(t, dir, nil)), "Name", "pre-commit"); row[2] != ".local-hooks/pre-commit" {
+		t.Errorf("pre-commit row = %v, want the directory the repository's config names", row)
+	}
+	for _, row := range table(t, runConfig, req(t, dir, nil)).Rows {
+		if row[0] == "worktree" {
+			t.Errorf("config row %v, from a config.worktree git does not read", row)
+		}
+	}
+	if _, err := exec.LookPath("git"); err == nil {
+		cmd := exec.Command("git", "-C", dir, "rev-parse", "--git-path", "hooks")
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null")
+		if out, err := cmd.Output(); err != nil || strings.TrimSpace(string(out)) != ".local-hooks" {
+			t.Errorf("git runs hooks from %q (%v), where this test says .local-hooks", out, err)
+		}
+	}
+}
+
 // The config git's environment sets for one command is read after every
 // file, as git reads it: core.hooksPath set there, as `git -c` sets it for a
 // command git runs, is the directory git runs hooks from, over the

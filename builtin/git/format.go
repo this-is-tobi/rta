@@ -165,6 +165,9 @@ const unsetVersion = -1
 // formatVersion is the format version cfg sets, as written, unsetVersion
 // where it sets none; err where it is not a number.
 func formatVersion(cfg *gitconfig.Config) (version int, written string, err error) {
+	if !cfg.Raw.HasSection("core") {
+		return unsetVersion, "", nil
+	}
 	core := cfg.Raw.Section("core")
 	if !core.HasOption("repositoryformatversion") {
 		return unsetVersion, "", nil
@@ -172,6 +175,13 @@ func formatVersion(cfg *gitconfig.Config) (version int, written string, err erro
 	written = strings.TrimSpace(core.Option("repositoryformatversion"))
 	version, err = strconv.Atoi(written)
 	return version, written, err
+}
+
+// extensionsInEffect reports whether git reads the extensions cfg sets at
+// all: not where it sets no format version (unsetVersion).
+func extensionsInEffect(cfg *gitconfig.Config) bool {
+	version, _, err := formatVersion(cfg)
+	return err == nil && version != unsetVersion
 }
 
 // readable reports whether a capability that reads what can read a

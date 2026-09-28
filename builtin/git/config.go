@@ -322,9 +322,15 @@ func gitBool(value string) bool {
 // is the repository's, as its config is: read through the filesystem that
 // bounds a git directory's files (regularFiles), from the working tree's own
 // git directory, which for a linked worktree is not the common one.
+//
+// Only where the config sets a format version: git passes over every
+// extension a repository without one sets (unsetVersion), this one included,
+// and a core.hooksPath in a config.worktree git does not read was listed as
+// the directory it runs hooks from.
 func worktreeConfig(repo *git.Repository, local *gitconfig.Config) (*scopedConfig, error) {
 	store, ok := repo.Storer.(*filesystem.Storage)
-	if !ok || !local.Raw.HasSection("extensions") || !gitBool(local.Raw.Section("extensions").Option("worktreeConfig")) {
+	if !ok || !extensionsInEffect(local) || !local.Raw.HasSection("extensions") ||
+		!gitBool(local.Raw.Section("extensions").Option("worktreeConfig")) {
 		return nil, nil
 	}
 	content, err := readGitDirFile(store.Filesystem(), "config.worktree")
