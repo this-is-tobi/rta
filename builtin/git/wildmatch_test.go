@@ -207,7 +207,7 @@ func TestWildmatchPassesGitsOwnTests(t *testing.T) {
 	flags := []wmFlags{wmPathname, wmPathname | wmCasefold, 0, wmCasefold}
 	for _, c := range wildmatchCases {
 		for i, f := range flags {
-			if got, want := wildmatch(c.pattern, c.text, f), c.want[i] == '1'; got != want {
+			if got, want := wildmatch(c.pattern, c.text, f, nil), c.want[i] == '1'; got != want {
 				t.Errorf("wildmatch(%q, %q, %b) = %v, want %v", c.pattern, c.text, f, got, want)
 			}
 		}
@@ -218,7 +218,7 @@ func TestWildmatchPassesGitsOwnTests(t *testing.T) {
 // of many stars: it gives it two seconds, and this far less.
 func TestWildmatchIsNotExponential(t *testing.T) {
 	start := time.Now()
-	if wildmatch(strings.Repeat("*a", 16), strings.Repeat("a", 60)+"b", wmPathname) {
+	if wildmatch(strings.Repeat("*a", 16), strings.Repeat("a", 60)+"b", wmPathname, nil) {
 		t.Error("matched a text that ends in b")
 	}
 	if took := time.Since(start); took > 200*time.Millisecond {

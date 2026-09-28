@@ -2,11 +2,17 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-git/v5"
+
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func TestStatusReportsCleanRepoAsEmpty(t *testing.T) {
@@ -125,5 +131,110 @@ func TestStatusReportsAChangeOfKindAsGitDoes(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the status is waiting on a named pipe")
+	}
+}
+
+// lowerStatusTime holds one status to d.
+func lowerStatusTime(t *testing.T, d time.Duration) {
+	t.Helper()
+	saved := statusTime
+	statusTime = d
+	t.Cleanup(func() { statusTime = saved })
+}
+
+// go-git's status costs what the working tree holds, and nothing bounded it:
+// a hundred thousand rewritten files cost one git.status 7 s. Each call that
+// reads the working tree's status is refused once its time has run out,
+// naming what it had read, rather than answered with the part it had: that
+// would read as a cleaner tree than the one there. A commit's diff reads no
+// working tree, and is not held to it.
+func TestAStatusPastItsTimeIsRefused(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, "a.txt", "v2\n")
+	writeFile(t, dir, "new.txt", "new\n")
+	lowerStatusTime(t, -time.Second)
+	for name, run := range map[string]func() error{
+		"git.status": func() error { _, err := runStatus(context.Background(), req(t, dir, nil)); return err },
+		"git.diff":   func() error { _, err := runDiff(context.Background(), req(t, dir, nil)); return err },
+		"git.overview": func() error {
+			_, err := runOverview(context.Background(), req(t, dir, nil))
+			return err
+		},
+	} {
+		err := run()
+		var verr *view.Error
+		if !errors.As(err, &verr) || verr.Code != "git.status.timeout" {
+			t.Errorf("%s past its time = %v, want git.status.timeout", name, err)
+			continue
+		}
+		if !strings.Contains(verr.Message, dir) || !strings.Contains(verr.Message, "had listed 0 directories") ||
+			!strings.Contains(verr.Hint, "git status") {
+			t.Errorf("%s refusal = %+v, want the working tree, what it had read, and git status named", name, verr)
+		}
+	}
+	if body := text(t, runDiff, req(t, dir, map[string]any{"commit": "master"})); !strings.Contains(body, "+v1") {
+		t.Errorf("a commit's diff was held to the status's time:\n%s", body)
+	}
+}
+
+// A caller that has stopped waiting gets no status either.
+func TestAStatusTheCallerCancelledAnswersNothing(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, "a.txt", "v2\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := runStatus(ctx, req(t, dir, nil)); errCode(err) != "git.status.cancelled" {
+		t.Errorf("a cancelled status = %v, want git.status.cancelled", err)
+	}
+}
+
+// Once the time has run out, nothing of the working tree is read: each
+// listing, open, stat and link go-git asks for fails, which ends its walk.
+func TestTheStatusFilesReadNothingPastTheTime(t *testing.T) {
+	dir, _ := testRepo(t)
+	writeFile(t, dir, "a.txt", "a\n")
+	budget := &statusBudget{ctx: context.Background(), deadline: time.Now().Add(-time.Second)}
+	fs := statusFiles{Filesystem: osfs.New(dir), budget: budget}
+	_, openErr := fs.Open("a.txt")
+	_, dirErr := fs.ReadDir("")
+	_, lstatErr := fs.Lstat("a.txt")
+	_, statErr := fs.Stat("a.txt")
+	_, linkErr := fs.Readlink("a.txt")
+	for op, err := range map[string]error{
+		"open": openErr, "readdir": dirErr, "lstat": lstatErr, "stat": statErr, "readlink": linkErr,
+	} {
+		if !errors.Is(err, errStatusTime) {
+			t.Errorf("%s past the time = %v, want it refused", op, err)
+		}
+	}
+}
+
+// The matching of untracked files against ignore patterns costs the files
+// times the patterns, and ten thousand of each cost 30 s within the bounds:
+// it stops where the time runs out, and the refusal says how far it got.
+func TestTheIgnoreMatchingStopsAtTheTime(t *testing.T) {
+	dir, _ := testRepo(t)
+	writeFile(t, dir, ".gitignore", strings.Repeat("*a*a*a*a*a*a*a*b\n", 1000))
+	status := git.Status{}
+	for _, name := range []string{"x1", "x2", "x3"} {
+		status.File(name).Worktree = git.Untracked
+	}
+	budget := &statusBudget{ctx: context.Background(), deadline: time.Now().Add(time.Hour)}
+	read := newIgnoresRead(nil, false, osfs.New(dir), budget)
+	read.dir("")
+	budget.deadline = time.Now().Add(-time.Second)
+	read.dropIgnored(status)
+	if len(status) != 3 {
+		t.Errorf("status = %v, want every path left as it was", status)
+	}
+	verr := budget.refusal(dir)
+	if verr == nil || verr.Code != "git.status.timeout" ||
+		!strings.Contains(verr.Message, "matched 0 of its 3 untracked files against the ignore patterns") {
+		t.Errorf("refusal = %+v, want how far the matching got", verr)
+	}
+	if lastMatch([]ignoreFile{read.files[".gitignore"]}, "aaaaaaaab", "aaaaaaaab", false, false, budget) != nil {
+		t.Error("a pattern matched once the time had run out")
 	}
 }

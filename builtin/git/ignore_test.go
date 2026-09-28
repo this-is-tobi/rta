@@ -193,7 +193,8 @@ func TestTheStatusOfAnInMemoryCloneIsReadThroughTheSameBounds(t *testing.T) {
 		if err := util.WriteFile(wt.Filesystem, "x.log", []byte("log\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		status, ignored, err := worktreeStatus(clone, wt, pathGateOf(req(t, ".", nil)))
+		status, ignored, err := worktreeStatus(context.Background(), time.Now().Add(time.Minute), clone, wt,
+			pathGateOf(req(t, ".", nil)))
 		if err != nil {
 			t.Fatal(err)
 		}
