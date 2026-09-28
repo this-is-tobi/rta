@@ -232,16 +232,20 @@ func TestEveryCapabilityClosesThePacksItKeptOpen(t *testing.T) {
 // capabilities that read objects refuse one up front, naming the remote git
 // fetches from, whether git marked it as `git clone --filter` does now,
 // remote.<name>.promisor, true or with no value at all on any line, a later
-// false taking nothing away, or as older git did, extensions.partialClone,
-// which git reads only where the config sets a format version. The ones that
-// read no object answer.
+// false taking nothing away, or by a remote.<name>.partialCloneFilter alone,
+// which git makes a promisor of whatever the promisor line says; or as older
+// git did, extensions.partialClone, which git reads only where the config
+// sets a format version. The ones that read no object answer.
 func TestAPartialCloneIsRefusedToTheCapabilitiesThatReadObjects(t *testing.T) {
 	machineConfig(t, "")
 	const origin = "[remote \"origin\"]\n\turl = https://example.com/r.git\n"
 	for config, partial := range map[string]bool{
 		origin + "\tpromisor = true\n\tpartialclonefilter = blob:none\n": true,
-		origin + "\tpromisor\n":         true,
-		origin + "\tpromisor = false\n": false,
+		origin + "\tpromisor\n":                                                                true,
+		origin + "\tpromisor = false\n":                                                        false,
+		origin + "\tpartialCloneFilter = blob:none\n":                                          true,
+		origin + "\tpromisor = false\n\tpartialclonefilter = tree:0\n":                         true,
+		origin + "\tpartialclonefilter =\n":                                                    true,
 		origin + "\tpromisor = true\n[remote \"origin\"]\n\tpromisor = false\n":                true,
 		origin + "\tpromisor\n\tpromisor = false\n":                                            true,
 		"\trepositoryformatversion = 1\n" + origin + "[extensions]\n\tpartialClone = origin\n": true,
@@ -280,6 +284,7 @@ func TestAPromisorSetInAnyConfigGitReadsMakesAPartialClone(t *testing.T) {
 		"global":                   {global: "[remote \"origin\"]\n\tpromisor = true\n", want: "git.objects.partial", named: ".gitconfig"},
 		"global, with no value":    {global: "[remote \"origin\"]\n\tpromisor\n", want: "git.objects.partial", named: ".gitconfig"},
 		"global, false":            {global: "[remote \"origin\"]\n\tpromisor = false\n"},
+		"global filter":            {global: "[remote \"origin\"]\n\tpartialCloneFilter = blob:none\n", want: "git.objects.partial", named: ".gitconfig"},
 		"system":                   {system: "[remote \"origin\"]\n\tpromisor = yes\n", want: "git.objects.partial", named: "system"},
 		"git -c":                   {parameters: "'remote.origin.promisor'='true'", want: "git.objects.partial", named: "environment"},
 		"git -c, with no value":    {parameters: "'remote.origin.promisor'", want: "git.objects.partial", named: "environment"},
