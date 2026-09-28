@@ -301,11 +301,17 @@ func addIndex(ctx context.Context, name, url, ref string, dryRun bool) *view.Err
 	if err := os.MkdirAll(indexesDir(), 0o700); err != nil {
 		return view.Errorf("plugin.index.add", "%v", err)
 	}
-	cmd := gitCommand(ctx, "clone", "--quiet", "--", url, dir)
+	stage, verr := stageIndex()
+	if verr != nil {
+		return verr
+	}
+	defer stage.remove()
+	staged := filepath.Join(stage.dir, name)
+	cmd := gitCommand(ctx, "clone", "--quiet", "--", url, staged)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		// A failed clone leaves no half-attached index behind: absence is the
-		// one state every other command interprets correctly.
-		_ = os.RemoveAll(dir)
+		// one state every other command interprets correctly, and a clone
+		// that never reached the indexes directory was never attached.
 		// Masked, for OriginForDisplay's own reason one function down: an
 		// operator who put a token in a clone URL knows it is there, and rta
 		// echoing it into a refusal writes it to stderr twice — once in the
@@ -324,14 +330,12 @@ func addIndex(ctx context.Context, name, url, ref string, dryRun bool) *view.Err
 		// slipped past the pin check could not move it either: there is no
 		// upstream to pull. The ref is kept in the clone's own config, which
 		// travels with the directory and goes when it goes.
-		if out, err := gitCommand(ctx, "-C", dir, "checkout", "--quiet", "--detach", ref).CombinedOutput(); err != nil {
-			_ = os.RemoveAll(dir)
+		if out, err := gitCommand(ctx, "-C", staged, "checkout", "--quiet", "--detach", ref).CombinedOutput(); err != nil {
 			return view.Errorf("plugin.index.ref", "%s has no commit, tag or branch %q: %s",
 				OriginForDisplay(url), ref, firstLine(string(out), err.Error())).
 				WithHint("`git ls-remote " + OriginForDisplay(url) + "` lists what it has")
 		}
-		if out, err := gitCommand(ctx, "-C", dir, "config", "rta.pin", ref).CombinedOutput(); err != nil {
-			_ = os.RemoveAll(dir)
+		if out, err := gitCommand(ctx, "-C", staged, "config", "rta.pin", ref).CombinedOutput(); err != nil {
 			return view.Errorf("plugin.index.ref", "recording the pin: %s", firstLine(string(out), err.Error()))
 		}
 	}
@@ -343,11 +347,10 @@ func addIndex(ctx context.Context, name, url, ref string, dryRun bool) *view.Err
 	// at least one reason whenever it lists nothing, and the clone is undone
 	// for the same reason a failed one is: absence is the one state every
 	// other command interprets correctly.
-	if listed, bad := Manifests(Index{Name: name, Dir: dir}); len(listed) == 0 {
-		_ = os.RemoveAll(dir)
+	if listed, bad := Manifests(Index{Name: name, Dir: staged}); len(listed) == 0 {
 		return refuseAttach(name, bad)
 	}
-	return nil
+	return stage.attach(name, dir)
 }
 
 // refuseAttach turns the reason a clone is not a usable index into the refusal
@@ -363,6 +366,75 @@ func refuseAttach(name string, bad []*view.Error) *view.Error {
 		hint = verr.Hint + "; nothing was attached"
 	}
 	return verr.WithHint(hint)
+}
+
+// indexStage is the dot-directory an index is cloned into before it is
+// attached, and what removes it.
+//
+// **Cloned beside the clones and renamed in once checked, because what is
+// attached is whatever the indexes directory holds** (Indexes is a scan of
+// it). git cloned straight into indexes/<name>, so a clone under way was
+// listed as the attached index from its first file; and the removal a failed
+// attach ran is a call a forced exit skips, so an exit taken during the clone
+// or the check, or an rta killed outright with git still writing, left a
+// partial clone that search, install and update all read as the index. A
+// rename is one step, so the index is attached whole or not at all —
+// detachIndex's rule, the other way round, and beside the clones for its
+// reason: the rename never crosses a filesystem.
+//
+// The dot-directory is made and its removal registered with the exit under a
+// brief hold of their own, as detachIndex's are, so no exit falls between the
+// two. The clone is not held — it takes as long as the network does — and an
+// exit taken during it removes the dot-directory. The rename is held, so the
+// exit's removal cannot run into it halfway: an exit that begins first
+// removes the clone before it is attached, and one that begins after finds
+// it attached and the dot-directory empty.
+//
+// **Nothing sweeps a dot-directory left behind**, by an rta killed outright
+// or by a git that went on writing after the exit removed what it had
+// written. One cannot be told from another rta's attach still under way, and
+// removing that would cut its clone out from under it. Left, it is never
+// listed — no index name starts with a dot — and costs the disk it holds
+// until it is removed by hand.
+type indexStage struct {
+	dir        string
+	unregister func()
+}
+
+func stageIndex() (indexStage, *view.Error) {
+	release := shutdown.Hold()
+	defer release()
+	dir, err := os.MkdirTemp(indexesDir(), ".adding-*")
+	if err != nil {
+		return indexStage{}, view.Errorf("plugin.index.add", "%v", err)
+	}
+	return indexStage{dir: dir, unregister: shutdown.OnExit(func() { _ = removeAll(dir) })}, nil
+}
+
+// attach renames the checked clone into the indexes directory as name.
+func (s indexStage) attach(name, dir string) *view.Error {
+	release := shutdown.Hold()
+	err := os.Rename(filepath.Join(s.dir, name), dir)
+	release()
+	if err == nil {
+		return nil
+	}
+	// Another attach under the same name got there while this one cloned:
+	// the check at the top ran before either had anything to find.
+	if _, serr := os.Lstat(dir); serr == nil {
+		return view.Errorf("plugin.index.exists", "an index called %q was attached while this one "+
+			"was being cloned", name).
+			WithHint("`rta plugin index list` shows where it came from; " +
+				"`rta plugin index remove " + name + "` detaches it")
+	}
+	return view.Errorf("plugin.index.add", "attaching the clone: %v", err)
+}
+
+// remove takes the dot-directory away, with whatever is still in it, and
+// then the exit's claim on it.
+func (s indexStage) remove() {
+	_ = removeAll(s.dir)
+	s.unregister()
 }
 
 // gitURLKind is what git will make of a repository argument: a path on this
