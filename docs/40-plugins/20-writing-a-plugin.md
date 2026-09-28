@@ -49,6 +49,8 @@ A hint is read on the surface the call came through, and each spells a capabilit
 
 One error is not like the others: a **policy gate** — your handler declining a call over who is asking, not over what went wrong, like a capability that refuses the MCP surface outright. Build that one with `view.Refusef` instead of `view.Errorf`. The host's audit trail records refusals and failures as different outcomes, and only your handler knows which one it returned — an unmarked gate is recorded on the operator's machine as your plugin breaking.
 
+A table or a page that could not cover everything it was asked about says so with `Warnings`, one `view.Error` for each part it could not read — a directory it could not enter, a namespace the credential may not list — and every surface carries them, coded: under the rows, in the csv notes, in the JSON. The TUI heads such an answer partial. A warning about rows that are all there — something a person should know about them rather than a part that is missing — sets `Advisory: true`, and the answer is headed as warned about, never as partial.
+
 ## Declaring inputs
 
 ```go
