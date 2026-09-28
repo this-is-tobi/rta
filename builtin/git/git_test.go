@@ -4,8 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -177,6 +181,52 @@ func rowFor(t *testing.T, tbl view.Table, col, want string) []string {
 	}
 	t.Fatalf("no row with %s = %q in %v", col, want, tbl.Rows)
 	return nil
+}
+
+// gitSince is the first version of git with the behaviour a comparison with
+// the git on PATH pins, and what that behaviour is, as a skip names it.
+type gitSince struct{ version, does string }
+
+// skipGitOlderThan leaves out what follows, a comparison with the git on
+// PATH, where that git is older than since: this reader's own answer is
+// checked before it, and on every machine.
+//
+// **The comparisons pin the git this reader follows, and a machine may carry
+// an older one.** Debian's is 2.47.3, which reads no
+// extensions.relativeWorktrees and stops at a valueless core.hooksPath that a
+// later file sets again: two comparisons failed there on what git came to do
+// after it, with nothing wrong in the answers compared. Left out only where
+// that git is older than the one that does it, and saying so with both
+// versions, so that a comparison that fails on a git new enough still fails.
+func skipGitOlderThan(t *testing.T, since gitSince) {
+	t.Helper()
+	if have := gitOnPath(); have != "" && slices.Compare(versionNumbers(have), versionNumbers(since.version)) < 0 {
+		t.Skipf("the git on PATH is %s, older than %s, the first to %s: the comparison with it is left out",
+			have, since.version, since.does)
+	}
+}
+
+// gitOnPath is the version of the git on PATH as `git version` prints it,
+// 2.50.1 or 2.47.1.windows.1, "" where there is none to ask.
+var gitOnPath = sync.OnceValue(func() string {
+	out, err := exec.Command("git", "version").Output()
+	if fields := strings.Fields(string(out)); err == nil && len(fields) >= 3 {
+		return fields[2]
+	}
+	return ""
+})
+
+// versionNumbers is the first three numbers of a version as git prints one,
+// each the digits a part starts with: 2.47.1.windows.1 is 2, 47 and 1.
+func versionNumbers(version string) []int {
+	parts := strings.Split(version, ".")
+	out := make([]int, 0, 3)
+	for _, part := range parts[:min(len(parts), 3)] {
+		digits := len(part) - len(strings.TrimLeft(part, "0123456789"))
+		n, _ := strconv.Atoi(part[:digits])
+		out = append(out, n)
+	}
+	return out
 }
 
 // storeObject encodes one object into the repository and returns its hash.

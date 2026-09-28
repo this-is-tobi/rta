@@ -639,6 +639,9 @@ func TestCoreHooksPathWithNoValueIsRefusedAsGitRefusesIt(t *testing.T) {
 	writeExecutable(t, dir, ".githooks/pre-push")
 	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n\thooksPath = .githooks\n")
 	rowFor(t, table(t, runHooks, req(t, dir, nil)), "Name", "pre-push")
+	// A git before 2.49 read core.hooksPath as each file set it, and stopped at
+	// the global file's valueless line whatever the repository's set after it.
+	skipGitOlderThan(t, gitSince{"2.49.0", "read core.hooksPath by the last line that sets it alone"})
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, ".gitconfig"))
 	if path, runs, ok := hooksPathByGit(t, dir); ok && (!runs || path != ".githooks/pre-commit") {
 		t.Errorf("git looks for the pre-commit at %q (runs: %v), not in .githooks", path, runs)

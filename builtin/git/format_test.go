@@ -85,24 +85,30 @@ func TestTheLastLineOfAFormatExtensionIsTheOneJudged(t *testing.T) {
 		"objectFormat = sha1\n\tobjectFormat = sha256\n": {"git.log", "git.status"},
 		"refStorage = files\n\trefStorage = reftable\n":  {"git.log", "git.remotes", "git.status"},
 	} {
-		dir := withConfig(t, "\trepositoryformatversion = 1\n[extensions]\n\t"+config)
-		for name, code := range codes(t, dir) {
-			if want := slices.Contains(unsupported, name); want != (code == "git.repository.unsupported") ||
-				!want && code != "" {
-				t.Errorf("with %q, %s = %q, want it refused as unsupported: %v", config, name, code, want)
+		t.Run(config, func(t *testing.T) {
+			dir := withConfig(t, "\trepositoryformatversion = 1\n[extensions]\n\t"+config)
+			for name, code := range codes(t, dir) {
+				if want := slices.Contains(unsupported, name); want != (code == "git.repository.unsupported") ||
+					!want && code != "" {
+					t.Errorf("with %q, %s = %q, want it refused as unsupported: %v", config, name, code, want)
+				}
 			}
-		}
-		_, err := runStatus(context.Background(), req(t, dir, nil))
-		if first, _, _ := strings.Cut(config, "\n"); unsupported != nil && (err == nil || strings.Contains(err.Error(), first)) {
-			t.Errorf("with %q, the refusal %v names the line git does not read", config, err)
-		}
-		cmd := exec.Command("git", "-C", dir, "rev-parse", "HEAD")
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1")
-		if _, lookErr := exec.LookPath("git"); lookErr == nil && unsupported == nil {
+			_, err := runStatus(context.Background(), req(t, dir, nil))
+			if first, _, _ := strings.Cut(config, "\n"); unsupported != nil && (err == nil || strings.Contains(err.Error(), first)) {
+				t.Errorf("with %q, the refusal %v names the line git does not read", config, err)
+			}
+			if _, lookErr := exec.LookPath("git"); lookErr != nil || unsupported != nil {
+				return
+			}
+			if strings.HasPrefix(config, "refStorage") {
+				skipGitOlderThan(t, gitSince{"2.45.0", "take reftable as a ref storage"})
+			}
+			cmd := exec.Command("git", "-C", dir, "rev-parse", "HEAD")
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1")
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Errorf("with %q, git does not open it: %v: %s", config, err, out)
 			}
-		}
+		})
 	}
 }
 
@@ -163,6 +169,19 @@ func TestARepositorysFormatIsDecidedAsGitDecidesIt(t *testing.T) {
 	buildDecides := map[string]bool{
 		"\trepositoryformatversion = 1\n[extensions]\n\tcompatObjectFormat = sha256\n": true,
 	}
+	// And these on the version of that git: each is what git has decided
+	// since the version named, and a git before it reads no such extension, or
+	// no such value of one, and decides otherwise — Debian's 2.47.3 knows no
+	// relativeWorktrees, and opens a version 0 repository that sets it.
+	since := map[string]gitSince{
+		"\trepositoryformatversion = 0\n[extensions]\n\trelativeWorktrees = true\n": {"2.48.0", "read extensions.relativeWorktrees"},
+		"\trepositoryformatversion = 1\n[extensions]\n\trelativeWorktrees = true\n": {"2.48.0", "read extensions.relativeWorktrees"},
+		"[extensions]\n\trefStorage = reftable\n":                                   {"2.45.0", "take reftable as a ref storage"},
+		"[extensions]\n\trefStorage = bogus\n":                                      {"2.44.0", "read extensions.refStorage"},
+		"\trepositoryformatversion = 0\n[extensions]\n\trefStorage = files\n":       {"2.44.0", "read extensions.refStorage"},
+		"[extensions]\n\tcompatObjectFormat = sha256\n\tcompatObjectFormat = sha256\n": {"2.45.0",
+			"take extensions.compatObjectFormat once only"},
+	}
 	for config, want := range map[string]string{
 		"[extensions]\n\tobjectFormat = sha256\n":                                                                   "",
 		"[extensions]\n\trefStorage = reftable\n":                                                                   "",
@@ -198,20 +217,25 @@ func TestARepositorysFormatIsDecidedAsGitDecidesIt(t *testing.T) {
 		"\trepositoryformatversion = 2\n":                                                                           "git.repository.unsupported",
 		"\trepositoryformatversion = one\n":                                                                         "git.repository.invalid",
 	} {
-		dir := withConfig(t, config)
-		for name, code := range codes(t, dir) {
-			if code != want {
-				t.Errorf("with %q, %s = %q, want %q", config, name, code, want)
+		t.Run(config, func(t *testing.T) {
+			dir := withConfig(t, config)
+			for name, code := range codes(t, dir) {
+				if code != want {
+					t.Errorf("with %q, %s = %q, want %q", config, name, code, want)
+				}
 			}
-		}
-		if _, err := exec.LookPath("git"); err != nil || buildDecides[config] {
-			continue
-		}
-		cmd := exec.Command("git", "-C", dir, "rev-parse", "HEAD")
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1")
-		out, err := cmd.CombinedOutput()
-		if gitOpens := err == nil; gitOpens != (want == "") {
-			t.Errorf("with %q, git opens it: %v (%s), and this answers %q", config, gitOpens, out, want)
-		}
+			if _, err := exec.LookPath("git"); err != nil || buildDecides[config] {
+				return
+			}
+			if s, pinned := since[config]; pinned {
+				skipGitOlderThan(t, s)
+			}
+			cmd := exec.Command("git", "-C", dir, "rev-parse", "HEAD")
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1")
+			out, err := cmd.CombinedOutput()
+			if gitOpens := err == nil; gitOpens != (want == "") {
+				t.Errorf("with %q, git opens it: %v (%s), and this answers %q", config, gitOpens, out, want)
+			}
+		})
 	}
 }
