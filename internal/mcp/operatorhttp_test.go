@@ -160,6 +160,60 @@ func TestTheOperatorChannelAnswersASignedCall(t *testing.T) {
 	}
 }
 
+// The roster a server answers judges each grant's plugin build against the
+// server's own registry, position for position, because the operator
+// reading it is on a machine whose plugins say nothing about the server's.
+// Without the registry wired, it sends no verdict, as an older server does.
+func TestTheGrantListVerbJudgesEachBuildOnTheServer(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	signer, roster := enrolled(t, "tobi")
+	now := time.Now()
+	for _, g := range []grant.Grant{
+		{Target: "demo.item.reveal", Agent: "claude", Issued: now, Expires: now.Add(time.Hour)},
+		{Target: "hello.wipe", Agent: "claude", Digest: "5dae737f8845", Issued: now, Expires: now.Add(time.Hour)},
+	} {
+		if verr := grant.Issue(g, true); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	rebuilt := func(ns string) (string, bool) {
+		if ns == "hello" {
+			return "9f1c2e3d4b5a", true
+		}
+		return "", true
+	}
+	list := func(cfg OperatorConfig) operator.GrantList {
+		t.Helper()
+		cfg.Roster = roster
+		addr := startOperatorWith(t, cfg)
+		status, body := postEnvelope(t, addr, signer.Sign("http://"+addr, fetchChallenge(t, addr), operator.VerbGrantList, nil))
+		if status != http.StatusOK {
+			t.Fatalf("grant.list verb: %d — %s", status, body)
+		}
+		var gl operator.GrantList
+		if err := json.Unmarshal(body, &gl); err != nil {
+			t.Fatal(err)
+		}
+		return gl
+	}
+	gl := list(OperatorConfig{Artifact: rebuilt})
+	if len(gl.Artifacts) != len(gl.Grants) {
+		t.Fatalf("verdicts = %v for %d grants, want one each", gl.Artifacts, len(gl.Grants))
+	}
+	for i, g := range gl.Grants {
+		want := grant.ArtifactCurrent
+		if g.Target == "hello.wipe" {
+			want = grant.ArtifactReplaced
+		}
+		if gl.Artifacts[i] != want {
+			t.Errorf("%s judged %v, want %v", g.Target, gl.Artifacts[i], want)
+		}
+	}
+	if gl := list(OperatorConfig{}); gl.Artifacts != nil || len(gl.Grants) != 2 {
+		t.Errorf("with no registry wired the answer = %+v, want the grants and no verdict", gl)
+	}
+}
+
 func TestACapturedEnvelopeReplaysNowhere(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	signer, roster := enrolled(t, "tobi")

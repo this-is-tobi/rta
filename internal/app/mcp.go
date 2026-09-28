@@ -470,7 +470,11 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 						Revoke:  grantcap.RevokeRemote,
 						Pending: agentcap.PendingRemote(agentName),
 						Answer:  agentcap.AnswerRemote(agentName),
-						Consent: consentOn,
+						// The build each grant on the roster is bound to is
+						// judged against this server's plugins, since the
+						// operator reading it cannot see them.
+						Artifact: reg.Artifact,
+						Consent:  consentOn,
 					})
 					rows := make([]string, 0, len(roster.Operators()))
 					for _, o := range roster.Operators() {

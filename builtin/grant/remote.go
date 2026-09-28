@@ -20,7 +20,9 @@ import (
 // things about them — but everything judged against local state stays out:
 // staleness is the server's config's business, and the suppressed count and
 // empty-case hints arrive from the server's own store rather than being
-// recomputed against files that describe this machine.
+// recomputed against files that describe this machine. So does the verdict
+// on each grant's plugin build, which the server judges against its own
+// plugins (operator.GrantList.Artifacts) and this side only draws.
 func remoteList(ctx context.Context, req plugin.Request, server string) (view.View, error) {
 	if req.Bool("detail") {
 		sf := req.Surface()
@@ -53,16 +55,23 @@ func remoteList(ctx context.Context, req plugin.Request, server string) (view.Vi
 	// heldTable narrows the local one: the list verb carries no selector,
 	// and the whole roster under a request for one role's rows reads as if
 	// the role held all of them.
-	grants := gl.Grants
+	judged := remoteStates(gl)
+	grants, states := gl.Grants, judged
 	if role := strings.TrimSpace(req.String("role")); role != "" {
-		grants = nil
-		for _, g := range gl.Grants {
+		grants, states = nil, nil
+		for i, g := range gl.Grants {
 			if g.Role == role {
 				grants = append(grants, g)
+				states = append(states, judged[i])
 			}
 		}
 	}
-	t := grantsTable(grants, nil, nil, false)
+	// Each row's build as the server judged it, against its own plugins, and
+	// the warnings beside the marks worded for that server — the local
+	// roster's column and sentences, since the operator is deciding the same
+	// things about these rows.
+	t := grantsTable(grants, nil, states, false)
+	t.Warnings = append(t.Warnings, artifactWarnings(req.Surface(), grants, states, server)...)
 	// The table even when the server holds nothing, with the sentence beside
 	// it for a person (view.Table.Empty), as the local listing answers: the
 	// sentence alone was a text view `jq '.rows[]'` could not iterate.

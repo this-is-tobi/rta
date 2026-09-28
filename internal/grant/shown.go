@@ -141,7 +141,55 @@ const (
 	// ArtifactGone is nothing answering for the namespace now: the plugin
 	// was removed, or its bytes are not ones this machine trusts to run.
 	ArtifactGone
+	// ArtifactUnknown is a grant nobody judged: one a remote server listed
+	// without its verdict, as a server older than the verdict does. Never a
+	// state ArtifactNow gives; a listing shows it rather than guess, since
+	// the plugins that answer there are the server's.
+	ArtifactUnknown
 )
+
+// artifactWords are the states as the operator channel carries them
+// (operator.GrantList): words rather than numbers, so that a state a newer
+// server sends and this build has no word for reads as unknown instead of
+// as whichever state happens to share its number.
+var artifactWords = map[ArtifactState]string{
+	ArtifactCurrent:  "current",
+	ArtifactReplaced: "replaced",
+	ArtifactGone:     "gone",
+	ArtifactUnknown:  "unknown",
+}
+
+// MarshalText is the state's word on the wire.
+func (s ArtifactState) MarshalText() ([]byte, error) {
+	word, ok := artifactWords[s]
+	if !ok {
+		word = artifactWords[ArtifactUnknown]
+	}
+	return []byte(word), nil
+}
+
+// UnmarshalText reads a state's word, and any word it does not know as
+// ArtifactUnknown rather than as an error: one verdict this build cannot
+// read must not cost the roster every other one.
+func (s *ArtifactState) UnmarshalText(text []byte) error {
+	*s = ArtifactUnknown
+	for state, word := range artifactWords {
+		if word == string(text) {
+			*s = state
+		}
+	}
+	return nil
+}
+
+// ArtifactFrom is ArtifactNow asked of lookup, the registry's answer for a
+// namespace (registry.Artifact) — the one lookup the gate compares a
+// grant's Digest against, so every listing that judges a grant judges it
+// by the gate's rule: grant list, the metrics a dashboard reads, and a
+// server answering an operator's roster.
+func (g Grant) ArtifactFrom(lookup func(string) (string, bool)) ArtifactState {
+	current, known := lookup(Namespace(g.Target))
+	return g.ArtifactNow(current, known)
+}
 
 // ArtifactNow judges the grant against the artifact behind its namespace
 // now, as registry.Artifact answers: current is that artifact's digest,
@@ -179,7 +227,8 @@ func ShortDigest(digest string) string {
 // it was issued against, "built in" for one issued on a namespace the rta
 // binary answers for itself — it has no artifact apart from the rta the
 // operator chose to run, so its grants carry no digest — and a mark when
-// that is no longer what answers (ArtifactNow).
+// that is no longer what answers (ArtifactNow), or when nobody said
+// whether it is (ArtifactUnknown).
 func RosterArtifact(digest string, state ArtifactState) string {
 	shown := "built in"
 	if digest != "" {
@@ -190,6 +239,8 @@ func RosterArtifact(digest string, state ArtifactState) string {
 		shown += " (replaced)"
 	case ArtifactGone:
 		shown += " (not loaded)"
+	case ArtifactUnknown:
+		shown += " (unknown)"
 	}
 	return shown
 }

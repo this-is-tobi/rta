@@ -1,10 +1,36 @@
 package grant
 
 import (
+	"encoding/json"
 	"strconv"
 	"testing"
 	"time"
 )
+
+// A grant's artifact state crosses the operator channel as a word, and a
+// word this build has none for reads as unknown rather than failing the
+// roster it came in, or passing for whichever state shares its number.
+func TestAnArtifactStateCrossesTheWireAsAWord(t *testing.T) {
+	sent := []ArtifactState{ArtifactCurrent, ArtifactReplaced, ArtifactGone, ArtifactUnknown}
+	raw, err := json.Marshal(sent)
+	if err != nil || string(raw) != `["current","replaced","gone","unknown"]` {
+		t.Fatalf("marshalled %s (%v), want the words", raw, err)
+	}
+	var got []ArtifactState
+	if err := json.Unmarshal(raw, &got); err != nil || len(got) != len(sent) {
+		t.Fatalf("read back %v (%v)", got, err)
+	}
+	for i := range sent {
+		if got[i] != sent[i] {
+			t.Errorf("%d: read back %v, want %v", i, got[i], sent[i])
+		}
+	}
+	var newer []ArtifactState
+	if err := json.Unmarshal([]byte(`["quarantined","replaced"]`), &newer); err != nil ||
+		len(newer) != 2 || newer[0] != ArtifactUnknown || newer[1] != ArtifactReplaced {
+		t.Errorf("a word this build does not know read as %v (%v), want unknown beside the one it does", newer, err)
+	}
+}
 
 // A grant is named as the gate compares its record: the bare record as it
 // is, one that does not read as itself quoted, and none at all as the
