@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
-	"unicode"
+	"unicode/utf8"
 
 	"github.com/this-is-tobi/rta/internal/shellquote"
+	"github.com/this-is-tobi/rta/internal/textclean/glyph"
 )
 
 // Naming a capability or an input in a message, the way the caller reads it.
@@ -187,13 +187,22 @@ func cliValue(v any) string {
 // boxValue is v as a TUI form's box takes it: typed as it is, since a box is
 // not a shell and a quote in it is part of the value — quoted only where the
 // call's own spelling would misread it, a value with a space running into
-// the next box's, or one holding a quote or a character that does not print.
+// the next box's or one holding a quote, or where its reader would: one
+// holding a character a reader does not see as itself, or a byte that is not
+// UTF-8. Quoted, each such character is named by its code point
+// (glyph.Quote), as textclean.Record shows the same record beside it.
+//
+// By the rule the shell's spelling reads (shellquote.Arg), not
+// unicode.IsPrint: that counts a Hangul filler, a Braille blank and a
+// variation selector printable, so a value ending in one was left bare, and
+// strconv.Quote would have left it raw inside the quotes all the same — the
+// TUI's call on a padded record read as the call on the bare one.
 func boxValue(v any) string {
 	text := fmt.Sprint(v)
-	if text == "" || strings.ContainsFunc(text, func(r rune) bool {
-		return unicode.IsSpace(r) || r == '"' || r == '\'' || !unicode.IsPrint(r)
+	if text == "" || !utf8.ValidString(text) || strings.ContainsFunc(text, func(r rune) bool {
+		return r == ' ' || r == '"' || r == '\'' || !glyph.Seen(r)
 	}) {
-		return strconv.Quote(text)
+		return glyph.Quote(text)
 	}
 	return text
 }

@@ -19,7 +19,6 @@ package textclean
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -194,33 +193,15 @@ func Deceives(s string) bool {
 //
 // Not a cleaner, and not for values: a record shown this way is text for a
 // person, and what anybody acts on is the record itself.
+//
+// Quoted by glyph.Quote, which the TUI's spelling of a call quotes a box's
+// value with too, so the call and the record the gate names beside it are
+// one spelling rather than two copies kept alike.
 func Record(s string) string {
 	if readsAsItself(s) {
 		return s
 	}
-	var b strings.Builder
-	b.Grow(len(s) + 8)
-	b.WriteByte('"')
-	for i := 0; i < len(s); {
-		r, size := utf8.DecodeRuneInString(s[i:])
-		switch {
-		case r == utf8.RuneError && size == 1:
-			fmt.Fprintf(&b, `\x%02x`, s[i])
-		case r == '"' || r == '\\':
-			b.WriteByte('\\')
-			b.WriteByte(s[i])
-		case r == ' ' || glyph.Seen(r):
-			b.WriteString(s[i : i+size])
-		default:
-			// Go's own escape for it: \t, \n and their kin for the controls
-			// that have one, the code point for everything else.
-			q := strconv.QuoteRuneToASCII(r)
-			b.WriteString(q[1 : len(q)-1])
-		}
-		i += size
-	}
-	b.WriteByte('"')
-	return b.String()
+	return glyph.Quote(s)
 }
 
 // Records is the records one call names, each as Record shows it, one after

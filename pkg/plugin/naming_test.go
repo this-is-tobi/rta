@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -113,6 +114,38 @@ func TestAWholeCallIsSpelledTheWayItsSurfaceMakesIt(t *testing.T) {
 	}
 	if got, want := SurfaceMCP.Call("kv.get", Arg{Name: "key", Value: "<key>"}), `kv_get {"key":"<key>"}`; got != want {
 		t.Errorf("a placeholder over MCP = %s, want %s", got, want)
+	}
+}
+
+// A value in a TUI box holding a character a reader does not see as itself
+// is quoted with the character named by its code point, as textclean.Record
+// shows the same record, by the rule the shell's spelling reads (glyph.Seen).
+// Asked of unicode.IsPrint, a Hangul filler, a Braille blank and a
+// variation selector each counted printable, and strconv.Quote left them
+// raw: `kv.get key=prod/db` and a filler read as the call on the bare record.
+func TestABoxValueSpellsACharacterAReaderDoesNotSeeByItsCodePoint(t *testing.T) {
+	for _, r := range []rune{0x3164, 0x115f, 0xffa0, 0x2800, 0x1d159, 0x16fe4, 0xfe0f, 0xe0100, 0x034f, 0xad, 0xa0, 0x202e} {
+		got := SurfaceTUI.Call("kv.get", Arg{Name: "key", Value: "prod/db" + string(r)})
+		want := `kv.get key="prod/db` + strings.Trim(strconv.QuoteRuneToASCII(r), "'") + `"`
+		if got != want {
+			t.Errorf("a value ending in U+%04X in the TUI = %s, want %s", r, got, want)
+		}
+	}
+	// A byte that is not UTF-8 is named as a byte, and a quote or a backslash
+	// in a quoted value is escaped, so the spelling reads back as the value.
+	bad := SurfaceTUI.Call("kv.get", Arg{Name: "key", Value: "a b\xff\"\\"})
+	if want := `kv.get key="a b\xff\"\\"`; bad != want {
+		t.Errorf("a value with a byte that is not UTF-8 in the TUI = %s, want %s", bad, want)
+	}
+	if v, err := strconv.Unquote(strings.TrimPrefix(bad, "kv.get key=")); err != nil || v != "a b\xff\"\\" {
+		t.Errorf("the quoted value reads back as %q (%v)", v, err)
+	}
+	// A character a reader sees as itself stays as it is, however far from
+	// ASCII: an accented letter, an ideograph, an emoji.
+	for _, s := range []string{"café", "東京", string(rune(0x1f600))} {
+		if got, want := SurfaceTUI.Call("kv.get", Arg{Name: "key", Value: s}), "kv.get key="+s; got != want {
+			t.Errorf("a plain value in the TUI = %s, want %s", got, want)
+		}
 	}
 }
 
