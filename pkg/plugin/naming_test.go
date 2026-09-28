@@ -334,3 +334,65 @@ func TestAConnectionSettingIsNamedTheWayItsReaderChangesIt(t *testing.T) {
 		t.Errorf("a value with a space is spelled %q", got)
 	}
 }
+
+// An input the caller gives is spelled with its value the way Call gives it:
+// a flag and one shell word at a terminal, the argument and the JSON an agent
+// sends, the box and what is typed into it. A value built from what a server
+// holds runs nothing when the command line is pasted, and an agent reads a
+// number as a number and a string as a string.
+func TestAnInputIsGivenWithItsValueTheWayItsSurfaceGivesIt(t *testing.T) {
+	for _, tc := range []struct {
+		s                             Surface
+		format, jobs, on, off, spaced string
+	}{
+		{SurfaceCLI, "--format directory", "--jobs 1", "--online", "--online=false", "--label 'nightly shop'"},
+		{SurfaceUnknown, "--format directory", "--jobs 1", "--online", "--online=false", "--label 'nightly shop'"},
+		{SurfaceMCP, `the "format" argument set to "directory"`, `the "jobs" argument set to 1`,
+			`the "online" argument set to true`, `the "online" argument set to false`,
+			`the "label" argument set to "nightly shop"`},
+		{SurfaceTUI, "the format box set to directory", "the jobs box set to 1", "the online box set to true",
+			"the online box set to false", `the label box set to "nightly shop"`},
+	} {
+		for _, c := range []struct{ got, want string }{
+			{tc.s.InputTo("format", "directory"), tc.format},
+			{tc.s.InputTo("jobs", 1), tc.jobs},
+			{tc.s.InputTo("online", true), tc.on},
+			{tc.s.InputTo("online", false), tc.off},
+			{tc.s.InputTo("label", "nightly shop"), tc.spaced},
+		} {
+			if c.got != c.want {
+				t.Errorf("over %q: got %s, want %s", tc.s, c.got, c.want)
+			}
+		}
+	}
+
+	if got, want := SurfaceCLI.InputTo("method", "$(touch pwned)"), "--method '$(touch pwned)'"; got != want {
+		t.Errorf("a value holding a command substitution on the CLI = %s, want %s", got, want)
+	}
+	// The string "1" is not the number an int input takes, and an agent told
+	// the one is not told the other.
+	if got, want := SurfaceMCP.InputTo("jobs", "1"), `the "jobs" argument set to "1"`; got != want {
+		t.Errorf("a string over MCP = %s, want %s", got, want)
+	}
+	// A placeholder stands for what the reader types: bare on a command line,
+	// and a string in the JSON an agent sends.
+	if got, want := SurfaceCLI.InputTo("database", "<name>"), "--database <name>"; got != want {
+		t.Errorf("a placeholder on the CLI = %s, want %s", got, want)
+	}
+	if got, want := SurfaceMCP.InputTo("database", "<name>"), `the "database" argument set to "<name>"`; got != want {
+		t.Errorf("a placeholder over MCP = %s, want %s", got, want)
+	}
+
+	// The command line reads back as the values it spells.
+	flags := pflag.NewFlagSet("backup", pflag.ContinueOnError)
+	online := flags.Bool("online", true, "")
+	jobs := flags.Int("jobs", 4, "")
+	words := strings.Fields(SurfaceCLI.InputTo("online", false) + " " + SurfaceCLI.InputTo("jobs", 1))
+	if err := flags.Parse(words); err != nil {
+		t.Fatal(err)
+	}
+	if *online || *jobs != 1 || flags.NArg() != 0 {
+		t.Errorf("the spelled inputs read back as online=%v jobs=%d arguments %q, want false, 1 and none",
+			*online, *jobs, flags.Args())
+	}
+}
