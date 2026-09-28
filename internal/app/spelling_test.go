@@ -306,3 +306,31 @@ func TestDeclaredTextSpellsNothingForOneSurface(t *testing.T) {
 		}
 	}
 }
+
+// The SDK's connection helpers name one of rta's own capabilities for every
+// plugin that connects to something, and speak to agents: DNSHint's call is
+// one the registry answers, the host given where net.dns takes it, and
+// nothing they hand an agent spells a terminal's, read against the whole
+// registry where a plugin's speller knows its own words alone.
+func TestTheSDKsConnectionHelpersNameWhatRtaHas(t *testing.T) {
+	sp, reg := newSpeller(t)
+	dns, ok := reg.Capability("net.dns")
+	if !ok {
+		t.Fatal("DNSHint names net.dns, which rta does not register")
+	}
+	if i := slices.IndexFunc(dns.Inputs, func(f plugin.Field) bool { return f.Name == "name" }); i < 0 || !dns.Inputs[i].Positional {
+		t.Errorf("DNSHint gives net.dns a positional name, which it does not take: %+v", dns.Inputs)
+	}
+	if hits := sp.Find(plugin.SurfaceCLI.DNSHint("db.internal"), false); len(hits) != 1 {
+		t.Errorf("the CLI's DNSHint is not read as net.dns's command line: %q", hits)
+	}
+	mcp := plugin.SurfaceMCP
+	for _, text := range []string{
+		mcp.SettingName("host", "port"), mcp.SettingTo("sslmode", "disable"),
+		mcp.SettingsHint("net.dns"), mcp.DNSHint("db.internal"),
+	} {
+		if hits := sp.Find(text, false); len(hits) > 0 {
+			t.Errorf("%q spells a terminal's: %q", text, hits)
+		}
+	}
+}

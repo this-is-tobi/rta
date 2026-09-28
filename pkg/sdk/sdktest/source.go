@@ -19,8 +19,9 @@ import (
 // WithSource has Check read the plugin's Go source in dir as well as what it
 // declares — "." from a test file beside the plugin's own — and hold it to
 // RuleSpelling: no sentence the source spells out names a flag or an `rta …`
-// command line, and every call it names through a naming helper is one its
-// reader can make (see checkSource).
+// command line, every call it names through a naming helper is one its
+// reader can make, and every connection setting it names through SettingName
+// or SettingTo is an input it declares Local (see checkSource).
 //
 // An option rather than the default because Check is not always called from
 // the plugin's own directory: rta runs it over every built-in from the
@@ -36,8 +37,8 @@ func WithSource(dir string) Option {
 
 // checkSource holds the non-test Go files in dir to what checkSpelling holds
 // the declaration to, for the text a declaration does not hold: the
-// sentences a handler words at run time, and the calls it names through
-// Surface's naming helpers. Read from source rather than from the answers,
+// sentences a handler words at run time, and the calls and the settings it
+// names through Surface's naming helpers. Read from source rather than from the answers,
 // because most of what a handler says is worded about a connection that
 // failed or a server's answer, which no test can provoke without the server —
 // and "raise --limit" is wrong whichever surface reads it.
@@ -76,6 +77,11 @@ func checkSource(t reporter, p plugin.Plugin, dir string) {
 		for _, c := range namedCalls(f) {
 			for _, problem := range callProblems(p, c) {
 				t.Errorf("sdktest: %s: %s: %s", RuleSpelling, fset.Position(c.pos), problem)
+			}
+		}
+		for _, st := range namedSettings(f) {
+			if problem := settingProblem(p, st); problem != "" {
+				t.Errorf("sdktest: %s: %s: %s", RuleSpelling, fset.Position(st.pos), problem)
 			}
 		}
 	}
@@ -273,8 +279,11 @@ func importName(f *ast.File, path, fallback string) string {
 }
 
 // namingHelpers are the plugin.Surface methods that name a capability by the
-// ID they are given first.
-var namingHelpers = map[string]bool{"CapabilityName": true, "CapabilityWith": true, "Call": true}
+// ID they are given first. SettingsHint among them: the page it sends its
+// reader to is `rta explain` of that ID, which refuses one nothing declares.
+var namingHelpers = map[string]bool{
+	"CapabilityName": true, "CapabilityWith": true, "Call": true, "SettingsHint": true,
+}
 
 // namedCall is a capability a naming helper was given as a literal, with the
 // inputs named beside it: CapabilityWith's by name, and Call's as the
@@ -406,4 +415,75 @@ func callProblems(p plugin.Plugin, c namedCall) []string {
 		}
 	}
 	return out
+}
+
+// settingHelpers are the plugin.Surface methods that name a connection
+// setting by the literal names they are given: each of SettingName's, and
+// SettingTo's first.
+var settingHelpers = map[string]bool{"SettingName": true, "SettingTo": true}
+
+// namedSetting is one setting a setting helper was given as a literal.
+type namedSetting struct {
+	pos    token.Pos
+	helper string
+	name   string
+}
+
+// namedSettings returns every literal name given to a setting helper in f.
+// A name in a variable is left out rather than guessed at, as namedCalls
+// leaves out an ID in one.
+func namedSettings(f *ast.File) []namedSetting {
+	var out []namedSetting
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || !settingHelpers[sel.Sel.Name] {
+			return true
+		}
+		args := call.Args
+		if sel.Sel.Name == "SettingTo" && len(args) > 1 {
+			args = args[:1]
+		}
+		for _, a := range args {
+			if name, ok := stringLit(a); ok {
+				out = append(out, namedSetting{pos: call.Pos(), helper: sel.Sel.Name, name: name})
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// settingProblem returns what is wrong with s in p, or "": a name no
+// capability declares, or one a capability declares without Local.
+//
+// Both are a sentence sending its reader after something that is not there.
+// A name nothing declares is a flag the CLI refuses and a box no form has.
+// And a setting helper tells an agent the input is the operator's, where it
+// can only be reported: true of a Local input, which is in no tool's schema,
+// and false of any other, which the agent's tool takes as an argument it
+// would then never think to pass — InputName names that one. Every capability
+// declaring the name is asked, since the helper is handed no capability and
+// a hint is often shared between several.
+func settingProblem(p plugin.Plugin, s namedSetting) string {
+	declared := false
+	for _, c := range p.Capabilities {
+		for _, f := range c.Inputs {
+			if f.Name != s.name {
+				continue
+			}
+			if !f.Local {
+				return s.helper + " names " + strconv.Quote(s.name) + ", which " + c.ID +
+					" declares without Local: an agent gives it as an argument, and InputName names it"
+			}
+			declared = true
+		}
+	}
+	if !declared {
+		return s.helper + " names " + strconv.Quote(s.name) + ", an input this plugin does not declare"
+	}
+	return ""
 }

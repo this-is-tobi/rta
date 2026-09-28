@@ -282,3 +282,55 @@ func TestTheOverrideForAConfiguredValueIsNamedForItsSurface(t *testing.T) {
 		}
 	}
 }
+
+// A connection setting is named the way its reader changes it: a flag at a
+// terminal, a box in a form, and to an agent the operator's setting — never
+// an argument, which a Local input's tool does not have and the bridge
+// would drop. A caller inside the process, or a keystroke, reads the CLI's.
+func TestAConnectionSettingIsNamedTheWayItsReaderChangesIt(t *testing.T) {
+	for _, tc := range []struct {
+		s                  Surface
+		one, two, three    string
+		to, on, off, where string
+		dns                string
+	}{
+		{SurfaceCLI, "--ca-file", "--host and --port", "--user, --host and --port",
+			"--sslmode disable", "--tls", "--tls=false",
+			"`rta explain pg.status` lists every input and which of the command line, the rta config, a profile and the environment can set it",
+			"`rta net dns db.internal` shows what DNS returns"},
+		{SurfaceUnknown, "--ca-file", "--host and --port", "--user, --host and --port",
+			"--sslmode disable", "--tls", "--tls=false",
+			"`rta explain pg.status` lists every input and which of the command line, the rta config, a profile and the environment can set it",
+			"`rta net dns db.internal` shows what DNS returns"},
+		{SurfaceTUI, "the ca-file box", "the host and port boxes", "the user, host and port boxes",
+			"the sslmode box set to disable", "the tls box set to true", "the tls box set to false",
+			"`rta explain pg.status` lists every input and which of the command line, the rta config, a profile and the environment can set it",
+			"`net.dns name=db.internal` shows what DNS returns"},
+		{SurfaceMCP, "the operator's `ca-file` setting", "the operator's `host` and `port` settings",
+			"the operator's `user`, `host` and `port` settings",
+			"the operator's `sslmode` set to disable", "the operator's `tls` set to true", "the operator's `tls` set to false",
+			"ask the operator to run `rta explain pg.status`, which lists every setting and which of the rta config, " +
+				"a profile and the environment the operator can set it in",
+			"`net_dns {\"name\":\"db.internal\"}` shows what DNS returns"},
+	} {
+		for _, c := range []struct{ got, want string }{
+			{tc.s.SettingName("ca-file"), tc.one},
+			{tc.s.SettingName("host", "port"), tc.two},
+			{tc.s.SettingName("user", "host", "port"), tc.three},
+			{tc.s.SettingTo("sslmode", "disable"), tc.to},
+			{tc.s.SettingTo("tls", true), tc.on},
+			{tc.s.SettingTo("tls", false), tc.off},
+			{tc.s.SettingsHint("pg.status"), tc.where},
+			{tc.s.DNSHint("db.internal"), tc.dns},
+		} {
+			if c.got != c.want {
+				t.Errorf("over %q: got %q, want %q", tc.s, c.got, c.want)
+			}
+		}
+	}
+	// A value a shell would split or run is one word on the CLI, as Call
+	// spells it.
+	if got := SurfaceCLI.SettingTo("ca-file", "my certs/ca.pem"); got != "--ca-file 'my certs/ca.pem'" {
+		t.Errorf("a value with a space is spelled %q", got)
+	}
+}

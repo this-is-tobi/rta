@@ -11,6 +11,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/shellquote"
 	"github.com/this-is-tobi/rta/internal/textclean/glyph"
+	"github.com/this-is-tobi/rta/pkg/format"
 )
 
 // Naming a capability or an input in a message, the way the caller reads it.
@@ -301,6 +302,97 @@ func (s Surface) WithoutInputs(names ...string) string {
 		return "with " + strings.Join(spelled, " and ") + " left empty"
 	}
 	return "without " + strings.Join(spelled, " and ")
+}
+
+// SettingName names connection settings — inputs declared Local, the host
+// and the password and the CA file a plugin connects with — the way the
+// reader on s changes them: the flags on the CLI (--host and --port), the
+// boxes in a TUI form (the host and port boxes), and over MCP the operator's
+// settings by the names the declaration gives them (the operator's `host`
+// and `port` settings).
+//
+// Not InputName over MCP, which names an argument: a Local input is in no
+// tool's schema and the bridge drops one an agent sends, so an agent told to
+// check the "endpoint" argument passed one that was thrown away and read the
+// same refusal again. Named as the operator's, it is a setting the agent
+// can report and cannot change, and SettingsHint says where the operator
+// changes it. Every connection plugin wrote this helper for itself before it
+// was here.
+func (s Surface) SettingName(names ...string) string {
+	switch s {
+	case SurfaceMCP:
+		quoted := make([]string, len(names))
+		for i, n := range names {
+			quoted[i] = "`" + n + "`"
+		}
+		return "the operator's " + listed(quoted) + " " + format.Plural(len(names), "setting", "settings")
+	case SurfaceTUI:
+		return "the " + listed(names) + " " + format.Plural(len(names), "box", "boxes")
+	}
+	flags := make([]string, len(names))
+	for i, n := range names {
+		flags[i] = s.InputName(n)
+	}
+	return listed(flags)
+}
+
+// SettingTo is SettingName for one setting given value, the way the reader
+// gives it: `--sslmode disable` as a command line takes it, a switch as Call
+// spells one (--tls, --tls=false), and elsewhere the setting with the value
+// beside it — the operator's `sslmode` set to disable, the sslmode box set to
+// disable.
+func (s Surface) SettingTo(name string, value any) string {
+	switch s {
+	case SurfaceMCP:
+		return "the operator's `" + name + "` set to " + boxValue(value)
+	case SurfaceTUI:
+		return s.SettingName(name) + " set to " + boxValue(value)
+	}
+	switch value {
+	case true:
+		return s.InputName(name)
+	case false:
+		return s.InputName(name) + "=false"
+	}
+	return s.InputName(name) + " " + cliValue(value)
+}
+
+// SettingsHint sends the reader on s to where a connection's settings are
+// set: the page `rta explain id` prints, which lists every input and each
+// place it can come from — the command line, the operator's rta config, a
+// profile, the environment. A terminal's command with no capability behind
+// it, so over MCP it is the operator who is asked to read it, and the hint
+// says the settings are theirs.
+//
+// Which of those places, not all of them: a password has no config key and
+// a host no environment variable, each by its declaration, and a hint saying
+// every setting can be written anywhere would send the operator to put a
+// password in the config file, where nothing reads it.
+func (s Surface) SettingsHint(id string) string {
+	if s == SurfaceMCP {
+		return AskOperator("explain "+id) + ", which lists every setting and which of the rta config, a " +
+			"profile and the environment the operator can set it in"
+	}
+	return "`rta explain " + id + "` lists every input and which of the command line, the rta config, " +
+		"a profile and the environment can set it"
+}
+
+// DNSHint is the call that shows what DNS returns for host, spelled for the
+// reader on s, for a connection that failed on a name that did not resolve.
+// Here rather than in each plugin because it names one of rta's own
+// capabilities, net.dns, which rta's tests hold to its registry: written out
+// in every connection plugin, a rename of the built-in would have left each of
+// them naming a call nothing answers.
+func (s Surface) DNSHint(host string) string {
+	return "`" + s.Call("net.dns", Arg{Name: "name", Value: host, Positional: true}) + "` shows what DNS returns"
+}
+
+// listed joins words as a sentence lists them: a, a and b, a, b and c.
+func listed(words []string) string {
+	if len(words) < 2 {
+		return strings.Join(words, "")
+	}
+	return strings.Join(words[:len(words)-1], ", ") + " and " + words[len(words)-1]
 }
 
 // spellsForCLI reports whether s reads the CLI's spelling: the CLI itself,
