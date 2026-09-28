@@ -486,6 +486,32 @@ type Field struct {
 // Handler executes a capability. Implementations must honor ctx cancellation.
 type Handler func(ctx context.Context, req Request) (view.View, error)
 
+// Failure is what err, returned by a handler, says about its call: err
+// itself, or nil when err is a *view.Error that is nil.
+//
+// Go makes such a pointer a non-nil error the moment it is returned as one,
+// and a handler that hands on a helper's (view.Table, *view.Error) as its own
+// (view.View, error) returns one on every success. Every reader that asked
+// err != nil took that call for a failed one: the SDK sent the host an Error
+// with nothing in it and dropped the view beside it, the host printed
+// "ERROR" with no code and no message, and a Page left the section out
+// without a warning. qdrant.collection.list shipped that way. So the runtime
+// asks this wherever it reads a handler's error — the plugin process's
+// server, rta's registry, a Page, and sdktest, which runs what the host
+// would run — and an author does not have to know the trap is there to be
+// spared it.
+//
+// Only the error itself, never one it wraps: an error wrapping a nil
+// *view.Error was built by somebody on purpose, and says what they wrote —
+// which view.AsError reads it by, rather than by the nil pointer inside.
+func Failure(err error) error {
+	//nolint:errorlint // the error itself is the question, not anything it wraps
+	if ve, ok := err.(*view.Error); ok && ve == nil {
+		return nil
+	}
+	return err
+}
+
 // OnlyWith is f, read only beside the named sibling — see Field.With. A
 // method because the fields it is applied to are shared declarations, and
 // the dependency is the declaring capability's to state, not theirs.

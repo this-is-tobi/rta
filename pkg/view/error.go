@@ -76,9 +76,23 @@ func AsError(err error, fallbackCode string) *Error {
 	// Through wrapping: a handler that annotates a view.Error with %w on its
 	// way out still returned a coded error, and a caller branching on the
 	// code must see it rather than the fallback.
+	//
+	// Not through to a nil one: errors.As finds a *view.Error that is nil as
+	// readily as any other, and an error of the handler's own wrapping one —
+	// fmt.Errorf("listing: %w", err) around a helper's nil *view.Error — is a
+	// failure its wrapper's words describe. Handed on as the nil pointer it
+	// found, it reached every surface as a failure with no code and no
+	// message, the wrapper's words dropped. An err that is itself a nil
+	// *view.Error stays the nil it is, as it always has here.
 	var ve *Error
 	if errors.As(err, &ve) {
-		return ve
+		if ve != nil {
+			return ve
+		}
+		//nolint:errorlint // the error itself is the question, not anything it wraps
+		if self, ok := err.(*Error); ok && self == nil {
+			return nil
+		}
 	}
 	return &Error{Code: fallbackCode, Message: err.Error()}
 }

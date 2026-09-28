@@ -198,6 +198,24 @@ func TestAViewThatCannotEncodeIsRejected(t *testing.T) {
 	}
 }
 
+// A handler whose error is a nil *view.Error has answered, as the plugin's
+// server reads it, and its view is held to the rules like any other: read as
+// a failure, the view the host renders was the one the suite never looked at.
+func TestAViewBesideANilViewErrorIsStillChecked(t *testing.T) {
+	nan := func() float64 { var z float64; return z / z }()
+	var none *view.Error
+	c := ok()
+	c.Run = func(context.Context, plugin.Request) (view.View, error) {
+		return view.Chart{Kind: view.ChartBar, Series: []view.Series{{Name: "x", Points: []float64{nan}}}}, none
+	}
+	rec := &recorder{}
+	p := plugin.Plugin{Name: "demo", Capabilities: []plugin.Capability{c}}
+	checkViews(rec, drive(rec, p, noConfig(), t.TempDir(), nil), noConfig())
+	if !strings.Contains(rec.errText(), "does not encode") {
+		t.Errorf("the view beside a nil *view.Error was not checked: %q", rec.errText())
+	}
+}
+
 // Sections is the composability seam, so a rule that stopped at the top-level
 // view would stop applying the moment a capability grew a detail page out of
 // the views it already had.

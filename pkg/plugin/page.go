@@ -75,7 +75,7 @@ func (p *Page) AddAs(id, title string, run Handler, safety Safety, values map[st
 			"capability, so only Read handlers may be embedded", id, safety))
 	}
 	v, err := run(p.ctx, p.section(values))
-	if err != nil {
+	if err = Failure(err); err != nil {
 		// The section is still dropped — that is the whole point of a
 		// composed page surviving one bad sensor — but it stops being
 		// invisible. Coded, so a machine consumer can tell which part is
@@ -125,7 +125,8 @@ func (p *Page) Run(run Handler, safety Safety, values map[string]any) (view.View
 			"Page composes a call directly, with none of the checks the MCP bridge applies to a named "+
 			"capability, so only Read handlers may be embedded", safety))
 	}
-	return run(p.ctx, p.section(values))
+	v, err := run(p.ctx, p.section(values))
+	return v, Failure(err)
 }
 
 // section derives the request an embedded call runs with.

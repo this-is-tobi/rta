@@ -92,3 +92,40 @@ func TestARegisteredCapabilityHoldsItsOptions(t *testing.T) {
 		t.Errorf("the caller's own declaration was changed: %v", err)
 	}
 }
+
+// A built-in whose error is a *view.Error variable that stayed nil has
+// succeeded, on every surface that reaches it through the registry, with and
+// without inputs for the guard to hold: each of them read the non-nil error
+// interface as a failure, and the CLI turned it into a nil *view.Error to
+// render.
+func TestARegisteredHandlersNilViewErrorIsNoFailure(t *testing.T) {
+	var none *view.Error
+	p := testPlugin("delta")
+	p.Capabilities[0].Run = func(context.Context, plugin.Request) (view.View, error) {
+		return view.Text{Body: "ok"}, none
+	}
+	p.Capabilities[0].Prefill = func(context.Context, plugin.Request) (map[string]any, error) {
+		return map[string]any{"mode": "fast"}, none
+	}
+	guarded := p.Capabilities[0]
+	guarded.ID = "delta.thing.show"
+	guarded.Inputs = []plugin.Field{{Name: "mode", Type: plugin.String}}
+	p.Capabilities = append(p.Capabilities, guarded)
+	r := New()
+	if err := r.Register(p); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"delta.thing.list", "delta.thing.show"} {
+		c, _ := r.Capability(id)
+		v, err := c.Run(context.Background(), plugin.NewRequest(nil, false, false))
+		if err != nil {
+			t.Errorf("%s: a call that worked came back as a failure: %#v", id, err)
+		}
+		if text, ok := v.(view.Text); !ok || text.Body != "ok" {
+			t.Errorf("%s: the view did not come back: %#v", id, v)
+		}
+		if _, err := c.Prefill(context.Background(), plugin.NewRequest(nil, false, false)); err != nil {
+			t.Errorf("%s: a prefill that worked came back as a failure: %#v", id, err)
+		}
+	}
+}
