@@ -201,9 +201,10 @@ var promptKeyPassphrase = func(path string) (string, error) {
 // promptValue asks for the value kv set was given none of, naming the key it
 // is for as the gate shows a record (textclean.Record): a key holding a
 // control character or white space is spelled out rather than drawn, so the
-// person typing a secret sees which entry it goes into. Overridable in tests.
+// person typing a secret sees which entry it goes into. A line, of any
+// length (stdio.ReadSecretLine). Overridable in tests.
 var promptValue = func(key string) ([]byte, error) {
-	return stdio.ReadSecret("Value for " + textclean.Record(key) + ": ")
+	return stdio.ReadSecretLine("Value for " + textclean.Record(key) + ": ")
 }
 
 // canPrompt reports whether this request can reach a person at a terminal.
