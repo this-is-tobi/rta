@@ -890,11 +890,19 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 			// in it. A nested cobra execution rather than a bespoke dispatch,
 			// so the flags, completion, confirmation prompts and exit codes
 			// are the ones the author's users will get.
+			//
+			// With this command's context, which is the one a signal cancels
+			// (WatchSignals). Execute alone gave the nested command a
+			// background context nothing cancels, so a SIGTERM reached it
+			// only as the forced exit after the grace — and `mcp serve`,
+			// which owns its shutdown and so gets no grace, went on serving
+			// until its standard input closed, where `rta mcp serve` stops at
+			// once.
 			root := NewRoot(reg, version)
 			root.SetArgs(rest)
 			root.SetOut(cmd.OutOrStdout())
 			root.SetErr(cmd.ErrOrStderr())
-			return root.Execute()
+			return root.ExecuteContext(cmd.Context())
 		},
 	}
 	cmd.Flags().BoolVar(&keep, "keep", false, "leave the compiled binary in place and print where")
