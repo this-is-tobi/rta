@@ -8,6 +8,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/consent"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -74,10 +75,22 @@ func remotePending(ctx context.Context, req plugin.Request, server string) (view
 	return view.Sections{Items: []view.Section{
 		{ID: "waiting", Title: "Waiting on " + server, View: table},
 		{ID: "tampered", Title: "Kept off the queue", View: view.Text{
-			Body: fmt.Sprintf("%d request(s) on %s do not describe the calls they are bound to: %s — "+
-				"something on that machine rewrote them after rta parked them, and its %s reports it.",
-				len(cl.Tampered), server, strings.Join(cl.Tampered, ", "), sf.CapabilityName("audit.doctor"))}},
+			Body: tamperedNote(cl.Tampered, server, sf.CapabilityName("audit.doctor"))}},
 	}}, nil
+}
+
+// tamperedNote says which of a server's parked requests were kept off its
+// queue, worded for how many there are, as a count is everywhere else
+// (pkg/format): a single one read "1 request(s) on lab do not describe the
+// calls they are bound to".
+func tamperedNote(ids []string, server, doctor string) string {
+	n := len(ids)
+	them := format.Plural(n, "it", "them")
+	return fmt.Sprintf("%s on %s %s not describe the %s %s bound to: %s — something on that machine "+
+		"rewrote %s after rta parked %s, and its %s reports it.",
+		format.Count(n, "request", "requests"), server, format.Plural(n, "does", "do"),
+		format.Plural(n, "call", "calls"), format.Plural(n, "it is", "they are"),
+		strings.Join(ids, ", "), them, them, doctor)
 }
 
 // remoteShow is `agent show <id> --server <name>`: the request in full, so
