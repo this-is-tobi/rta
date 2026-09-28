@@ -656,32 +656,46 @@ func wouldSet(key, kind string, value []byte) view.View {
 // empty one.
 //
 // The prompt reads one line, and a value pasted at it that spans lines is cut
-// to its first: the rest goes on to whatever reads the terminal next — the
-// passphrase prompt after this one, which took a service account's JSON key's
-// second line as the passphrase and, for a store not yet made, locked it with
-// that, or the shell, which runs each line and keeps it in its history.
-// Nothing here can take those lines back. A first line that only opens a value
-// is never one on its own, though, so it is refused rather than stored as
-// though it were the whole, and the refusal says where the rest went.
+// to its first. The rest used to go on to whatever reads the terminal next —
+// the passphrase prompt after this one, which took a service account's JSON
+// key's second line as the passphrase and, for a store not yet made, locked
+// it with that, or the shell, which runs each line and keeps it in its
+// history. So the prompt reads on while the paste is still arriving and
+// drops it (stdio.ReadSecretLine), and a line that came with more is refused
+// whatever it holds: the first line of a kubeconfig is a value of its own to
+// look at, and not the one pasted.
+//
+// Where the prompt cannot read on — not macOS or Linux, or a paste slower
+// than the moment it waits — the rest still goes on, and nothing here can
+// take those lines back. A first line that only opens a value is never one on
+// its own, though, so it is refused rather than stored as though it were the
+// whole, and the refusal says where the rest may have gone.
 func askValue(req plugin.Request, key string) ([]byte, *view.Error) {
 	if !canPrompt(req) {
 		return nil, nil
 	}
-	typed, err := promptValue(key)
+	typed, more, err := promptValue(key)
 	if err != nil {
 		// ^D, or a terminal that could not be read: nothing was typed, which
 		// is the empty answer's refusal rather than a read error of its own.
 		typed = nil
 	}
-	if len(typed) == 0 {
+	file := req.Surface().InputName("file")
+	switch {
+	case more:
+		return nil, view.Errorf("kv.set.multiline",
+			"what was pasted for %q spans lines, and the prompt reads one", key).
+			WithHint("nothing was stored, and the lines that arrived with the first were read and dropped " +
+				"rather than left for your shell — any that arrived later, from a paste slower than the " +
+				"prompt waits, went on to it; give a value that spans lines with " + file)
+	case len(typed) == 0:
 		return nil, nil
-	}
-	if opensBlock(typed) {
+	case opensBlock(typed):
 		return nil, view.Errorf("kv.set.multiline",
 			"what was typed for %q opens a value that spans lines, and the prompt reads one", key).
-			WithHint("nothing was stored, and the value's other lines went on to your shell, whose " +
-				"history may now hold them; give a value that spans lines with " +
-				req.Surface().InputName("file"))
+			WithHint("nothing was stored, and any of the value's other lines the prompt did not read " +
+				"went on to your shell, whose history may now hold them; give a value that spans " +
+				"lines with " + file)
 	}
 	return typed, nil
 }

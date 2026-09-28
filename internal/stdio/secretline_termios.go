@@ -4,13 +4,33 @@ package stdio
 
 import "golang.org/x/sys/unix"
 
-// readTerminalLine reads one line from the terminal on fd with echo off and
-// the line discipline off, its editing done here rather than there
-// (lineKeys), and puts the terminal back as it was.
-func readTerminalLine(fd int) ([]byte, error) {
+// drainWindow is how long, in tenths of a second, the terminal is read after
+// the line for the rest of a paste before it counts as quiet: the terminal's
+// VTIME, which a read with VMIN at zero waits for a byte before it returns
+// none.
+//
+// Measured on a pseudo-terminal with a 64 KiB kubeconfig pasted after its
+// first line. Written whole, as a terminal emulator writes a paste, it
+// arrived within 6 ms, never more than 0.2 ms apart; written in paced
+// pieces, 1 KiB every 10 ms or 4 KiB every 50 ms, never more than 56 ms
+// apart, and every byte was read at a window of 100 ms. 200 ms leaves that
+// margin again over the slowest, and is the wait a value typed and ended
+// with the return key costs before the prompt returns.
+const drainWindow = 2
+
+// readTerminalLine reads one line from the terminal on fd with echo off, the
+// line discipline's editing done here rather than there (lineKeys), then
+// reads what is still arriving until the terminal is quiet for drainWindow,
+// and puts the terminal back as it was.
+//
+// Put back without flushing its input: a flush also waits for the output
+// already written to reach the terminal, and a terminal whose other end has
+// stopped reading would hold the prompt there. What arrives after the
+// window is the next thing typed, not the paste.
+func readTerminalLine(fd int) ([]byte, bool, error) {
 	old, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	t := *old
 	t.Lflag &^= unix.ECHO | unix.ICANON
@@ -18,11 +38,21 @@ func readTerminalLine(fd int) ([]byte, error) {
 	t.Iflag |= unix.ICRNL
 	t.Cc[unix.VMIN], t.Cc[unix.VTIME] = 1, 0
 	if err := unix.IoctlSetTermios(fd, ioctlSetTermios, &t); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer func() { _ = unix.IoctlSetTermios(fd, ioctlSetTermios, old) }()
 
-	return keysOf(old).readLine(terminalReader(fd))
+	line, rest, err := keysOf(old).readLine(terminalReader(fd))
+	if err != nil {
+		return line, false, err
+	}
+	t.Cc[unix.VMIN], t.Cc[unix.VTIME] = 0, drainWindow
+	if err := unix.IoctlSetTermios(fd, ioctlSetTermios, &t); err != nil {
+		return line, !blank(rest), nil
+	}
+	more := !blank(rest)
+	clear(rest)
+	return line, drain(terminalReader(fd)) || more, nil
 }
 
 // keysOf reads the line-editing keys off the terminal's settings t.

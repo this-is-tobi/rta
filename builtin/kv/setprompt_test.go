@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -15,11 +16,18 @@ import (
 // asked for.
 func stubValuePrompt(t *testing.T, answer string, err error) *[]string {
 	t.Helper()
+	return stubPaste(t, answer, false, err)
+}
+
+// stubPaste is stubValuePrompt for an answer the prompt reports more arrived
+// with, the rest of a paste that spanned lines.
+func stubPaste(t *testing.T, answer string, more bool, err error) *[]string {
+	t.Helper()
 	var asked []string
 	origPrompt, origCan := promptValue, canPrompt
-	promptValue = func(key string) ([]byte, error) {
+	promptValue = func(key string) ([]byte, bool, error) {
 		asked = append(asked, key)
-		return []byte(answer), err
+		return []byte(answer), more, err
 	}
 	canPrompt = func(req plugin.Request) bool { return req.Surface() == plugin.SurfaceCLI }
 	t.Cleanup(func() { promptValue, canPrompt = origPrompt, origCan })
@@ -146,9 +154,10 @@ func TestSetAsksForTheValueOfANewKeyGivenALabel(t *testing.T) {
 	}
 }
 
-// A pasted certificate, key or JSON credential reaches a prompt that reads one
-// line as its first line alone, which is never a value on its own: refused,
-// whether the prompt came before the store was opened or after, and nothing is
+// A pasted certificate, key or JSON credential the prompt could not read on
+// after — on Windows, or pasted slower than the prompt waits — reaches it as
+// its first line alone, which is never a value on its own: refused, whether
+// the prompt came before the store was opened or after, and nothing is
 // stored. A line that only starts like one is a value like any other.
 func TestSetRefusesTheFirstLineAPasteWasCutTo(t *testing.T) {
 	setup(t)
@@ -170,6 +179,43 @@ func TestSetRefusesTheFirstLineAPasteWasCutTo(t *testing.T) {
 	stubValuePrompt(t, `{"token":"t"}`, nil)
 	if _, err := runSet(ctx, cliReq(map[string]any{"key": "k", "passphrase": "correct horse battery staple"})); err != nil {
 		t.Errorf("a JSON value on one line: %v", err)
+	}
+}
+
+// A paste that spanned lines reaches the prompt as its first line, and the
+// rest as what the prompt read on after it and dropped: refused whatever the
+// first line holds, a kubeconfig's apiVersion line or nothing at all, since it
+// is not the value pasted, and nothing is stored. The refusal says the rest
+// that arrived with the line reached no shell, that a paste slower than the
+// prompt waits may still have sent some on to it, and where a value that
+// spans lines is given.
+func TestSetRefusesAPasteThatSpannedLines(t *testing.T) {
+	setup(t)
+	ctx := context.Background()
+	for _, first := range []string{"apiVersion: v1", "", "-----BEGIN CERTIFICATE-----"} {
+		stubPaste(t, first, true, nil)
+		for _, values := range []map[string]any{{"key": "k"}, {"key": "k", "description": "kubeconfig"}} {
+			values["passphrase"] = "correct horse battery staple"
+			_, err := runSet(ctx, cliReq(values))
+			var ve *view.Error
+			if !errors.As(err, &ve) || ve.Code != "kv.set.multiline" {
+				t.Errorf("%q with more for %v: want kv.set.multiline, got %v", first, values, err)
+				continue
+			}
+			if !strings.Contains(ve.Hint, "dropped") || !strings.Contains(ve.Hint, "slower") ||
+				!strings.Contains(ve.Hint, "--file") {
+				t.Errorf("the refusal's hint does not say what was dropped, what may not have been, "+
+					"and where to give it: %q", ve.Hint)
+			}
+		}
+	}
+	if rows := table(t, runList, nil).Rows; len(rows) != 0 {
+		t.Errorf("something was stored: %v", rows)
+	}
+	// A line with nothing after it is a value like any other.
+	stubPaste(t, "apiVersion: v1", false, nil)
+	if _, err := runSet(ctx, cliReq(map[string]any{"key": "k", "passphrase": "correct horse battery staple"})); err != nil {
+		t.Errorf("a line with nothing after it: %v", err)
 	}
 }
 
