@@ -107,7 +107,11 @@ func TestAHookThatIsALinkIsJudgedByWhatItLeadsTo(t *testing.T) {
 // ("cannot exec '.git/hooks/pre-commit': Permission denied"). This left the
 // directory out, the link too, and listed the pipe active. Each is listed as
 // fails, on every surface, and one access(2) refuses as disabled, as git
-// passes over it; the git on PATH is asked to commit with each in place.
+// passes over it; the git on PATH is asked to commit with each in place, a
+// script failing the commit where git runs it. access(2) is asked as git
+// asks it, by the owner's bits for the owner, by any for root, and on macOS
+// by an ACL too, which can let through a script exec(2) then refuses for
+// having no execute bit.
 func TestAnEntryGitCannotRunAtAHooksNameIsListedAsFailing(t *testing.T) {
 	machineConfig(t, "")
 	dir, repo := testRepo(t)
@@ -117,18 +121,35 @@ func TestAnEntryGitCannotRunAtAHooksNameIsListedAsFailing(t *testing.T) {
 		t.Fatal(err)
 	}
 	hook := filepath.Join(hooks, "pre-commit")
+	script := func(mode os.FileMode) error {
+		if err := os.WriteFile(hook, []byte("#!/bin/sh\nexit 1\n"), mode); err != nil {
+			return err
+		}
+		return os.Chmod(hook, mode)
+	}
+	asRoot := os.Geteuid() == 0
 	for what, c := range map[string]struct {
-		make func() error
-		want string
+		make         func() error
+		want, asRoot string
 	}{
-		"a directory":              {func() error { return os.MkdirAll(hook, 0o755) }, "fails"},
-		"a directory with no x":    {func() error { return os.MkdirAll(hook, 0o644) }, "disabled"},
-		"a link to a directory":    {func() error { return os.Symlink("../../scripts", hook) }, "fails"},
-		"a link leading nowhere":   {func() error { return os.Symlink("../../missing", hook) }, "disabled"},
-		"a named pipe with an x":   {func() error { return fifo(hook, 0o755) }, "fails"},
-		"a named pipe with no x":   {func() error { return fifo(hook, 0o644) }, "disabled"},
-		"a script, for comparison": {func() error { return os.WriteFile(hook, []byte("#!/bin/sh\n"), 0o755) }, "active"},
+		"a directory":                      {func() error { return os.MkdirAll(hook, 0o755) }, "fails", ""},
+		"a directory with no x":            {func() error { return os.MkdirAll(hook, 0o644) }, "disabled", "fails"},
+		"a link to a directory":            {func() error { return os.Symlink("../../scripts", hook) }, "fails", ""},
+		"a link leading nowhere":           {func() error { return os.Symlink("../../missing", hook) }, "disabled", ""},
+		"a named pipe with an x":           {func() error { return fifo(hook, 0o755) }, "fails", ""},
+		"a named pipe with no x":           {func() error { return fifo(hook, 0o644) }, "disabled", ""},
+		"a script, for comparison":         {func() error { return script(0o755) }, "active", ""},
+		"a script with no x for its owner": {func() error { return script(0o655) }, "disabled", "active"},
+		"a script with no x an ACL lets run": {func() error {
+			if err := script(0o644); err != nil {
+				return err
+			}
+			return exec.Command("chmod", "+a", "everyone allow execute", hook).Run()
+		}, "fails", ""},
 	} {
+		if asRoot && c.asRoot != "" {
+			c.want = c.asRoot
+		}
 		if err := os.RemoveAll(hook); err != nil {
 			t.Fatal(err)
 		}
@@ -144,10 +165,7 @@ func TestAnEntryGitCannotRunAtAHooksNameIsListedAsFailing(t *testing.T) {
 				t.Errorf("%s at pre-commit, %s row = %v, want it %s", what, surface, row, c.want)
 			}
 		}
-		// Root may search a directory with no execute bit, and git run as
-		// root fails on it (hookStatus).
-		asRoot := os.Geteuid() == 0 && what == "a directory with no x"
-		if commits, ok := commitsByGit(t, dir); ok && !asRoot && commits != (c.want != "fails") {
+		if commits, ok := commitsByGit(t, dir); ok && commits != (c.want == "disabled") {
 			t.Errorf("%s at pre-commit, git commits: %v, and this lists it %s", what, commits, c.want)
 		}
 	}
