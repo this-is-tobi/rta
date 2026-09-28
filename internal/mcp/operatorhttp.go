@@ -334,6 +334,12 @@ func mutationArgs(env operator.Envelope) (map[string]any, bool) {
 		if spec.All {
 			args["all"] = true
 		}
+		// Recorded, or the row reads as the wider revoke: a revoke naming
+		// no record takes back every record's grant, and the exact one only
+		// the grant naming none.
+		if spec.Exact {
+			args["exact"] = true
+		}
 		putArg(args, "target", spec.Target)
 		putArg(args, "scope", spec.Scope)
 		putArg(args, "profile", spec.Profile)
@@ -451,6 +457,7 @@ func statusFor(code string) int {
 	// server error until somebody notices.
 	if strings.HasPrefix(code, "core.operator.issue.") ||
 		strings.HasPrefix(code, "grant.agent.") ||
+		strings.HasPrefix(code, "grant.exact.") ||
 		strings.HasPrefix(code, "grant.scope.") {
 		return http.StatusBadRequest
 	}

@@ -273,9 +273,35 @@ func remoteRevoke(ctx context.Context, req plugin.Request, server string, spec o
 	if verr != nil {
 		return nil, verr
 	}
+	client := operatorid.Client{URL: base, Signer: signer}
+	// An exact revoke asks first, with write off, whether the server knows
+	// the switch. One older than it ignores the field and reads every
+	// selector left out as every grant: the x on a roster row, meant for
+	// the grant naming no record, would take back each grant on its target
+	// and agent. Its answer does not say Exact, and nothing is taken back.
+	if spec.Exact {
+		probe := spec
+		probe.DryRun = true
+		var seen operatorid.RevokeOutcome
+		if verr := client.Call(ctx, operatorid.VerbGrantRevoke, probe, &seen); verr != nil {
+			return nil, verr
+		}
+		if !seen.Exact {
+			sf := req.Surface()
+			return nil, view.Errorf("grant.remote.exact",
+				"%s does not know %s, and would take back every grant the other selectors match", server,
+				sf.InputName("exact")).
+				WithHint("`" + sf.Call("operator.status", plugin.Arg{Name: "server", Value: server}) +
+					"` says which rta it runs; `" + sf.Call("grant.list", plugin.Arg{Name: "server", Value: server}) +
+					"` shows what a revoke without it would match")
+		}
+		if spec.DryRun {
+			return view.Text{Body: revokeBody(req.Surface(), spec, seen, true)}, nil
+		}
+	}
 	var out operatorid.RevokeOutcome
-	if verr := (operatorid.Client{URL: base, Signer: signer}).Call(ctx, operatorid.VerbGrantRevoke, spec, &out); verr != nil {
+	if verr := client.Call(ctx, operatorid.VerbGrantRevoke, spec, &out); verr != nil {
 		return nil, verr
 	}
-	return view.Text{Body: revokeBody(req.Surface(), spec.Target, out, req.DryRun)}, nil
+	return view.Text{Body: revokeBody(req.Surface(), spec, out, req.DryRun)}, nil
 }

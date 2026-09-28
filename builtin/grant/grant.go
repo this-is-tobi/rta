@@ -181,7 +181,9 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"of first consent is not moved either, so a chain of renewals is still capped " +
 					"at 24h from when a person first said yes. With no arguments it renews every " +
 					"active grant, which is the common case: the work is still going, the clock is " +
-					"not.",
+					"not. Each selector narrows, and one left out matches every grant — `exact` makes " +
+					"them name one grant, a left-out record, profile or agent meaning the grant that " +
+					"names none.",
 				Inputs: []plugin.Field{
 					{Name: "target", Type: plugin.String, Positional: true, Suggest: suggestHeldTargets,
 						Help: "only grants on this capability or plugin"},
@@ -193,6 +195,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 						Help: "only grants for this named agent"},
 					{Name: "role", Type: plugin.String, Suggest: suggestStandingRoles,
 						Help: "only the grants `grant.issue` issued under this role — a whole role, one passphrase"},
+					exactField("renew"),
 					{Name: "ttl", Type: plugin.String, Suggest: suggestTTL,
 						Help: "how much longer — defaults to the window the grant was issued with"},
 					guard.PassphraseField,
@@ -214,7 +217,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"that would need one — because \"what did I allow\" is only half of \"what can it do\". " +
 					"With `server` (a name from remotes.yaml): the same roster read from a " +
 					"remote rta server as a signed operator call, each grant's plugin build judged by that " +
-					"server, your operator key's passphrase asked first. Can only be run by a person at a terminal, the same as grant.allow/renew/revoke: " +
+					"server, your operator key's passphrase asked first. Can only be run by a person at a " +
+					"terminal, the same as grant.allow/renew/revoke: " +
 					"the roster names every agent by name, which is exactly the cross-agent visibility an " +
 					"agent asking about itself must not get.",
 				Inputs: []plugin.Field{
@@ -244,7 +248,9 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				HumanOnly: true,
 				Description: "Can only be run by a person at a terminal, the same as grant.allow and " +
 					"for the same reason: consent state belongs to whoever is deciding it, not to " +
-					"whoever is currently being granted or denied.",
+					"whoever is currently being granted or denied. Each selector narrows, and one left " +
+					"out matches every grant — `exact` makes them name one grant, a left-out record, " +
+					"profile or agent meaning the grant that names none.",
 				Inputs: []plugin.Field{
 					{Name: "target", Type: plugin.String, Positional: true, Suggest: suggestHeldTargets,
 						Help: "capability or plugin to revoke"},
@@ -256,6 +262,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 						Help: "only the grant for this named agent"},
 					{Name: "role", Type: plugin.String, Suggest: suggestStandingRoles,
 						Help: "every grant `grant.issue` issued under this role — the whole bundle back"},
+					exactField("revoke"),
 					{Name: "all", Type: plugin.Bool, Help: "revoke every grant"},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "revoke on a remote server instead (a name from remotes.yaml), as a " +
@@ -867,9 +874,12 @@ func runRenew(_ context.Context, req plugin.Request, artifact func(string) (stri
 	if verr := givenRecord(req.Surface(), scope); verr != nil {
 		return nil, verr
 	}
-	profile := strings.TrimSpace(req.String("profile"))
-	agent := strings.TrimSpace(req.String("agent"))
-	role := strings.TrimSpace(req.String("role"))
+	sel := selector{target: target, scope: scope, profile: strings.TrimSpace(req.String("profile")),
+		agent: strings.TrimSpace(req.String("agent")), role: strings.TrimSpace(req.String("role")),
+		exact: req.Bool("exact")}
+	if verr := sel.check(req.Surface()); verr != nil {
+		return nil, verr
+	}
 	askedTTL := strings.TrimSpace(req.String("ttl"))
 
 	var ttl time.Duration
@@ -924,20 +934,10 @@ func runRenew(_ context.Context, req plugin.Request, artifact func(string) (stri
 			}
 			// The same selector as revoke: a plugin name takes every grant
 			// inside it. `renew kv` used to match nothing while `revoke kv`
-			// took them all.
-			if target != "" && g.Target != target && core.Namespace(g.Target) != target {
-				continue
-			}
-			if scope != "" && g.Scope != scope {
-				continue
-			}
-			if profile != "" && g.Profile != profile {
-				continue
-			}
-			if agent != "" && g.Agent != agent {
-				continue
-			}
-			if role != "" && g.Role != role {
+			// took them all. And exact names one grant, for renew most of
+			// all: a renewal is the widening direction, and the TUI's n on a
+			// row naming no record extended every grant on its target.
+			if !sel.matches(g) {
 				continue
 			}
 			window := ttl
@@ -1004,6 +1004,9 @@ func runRenew(_ context.Context, req plugin.Request, artifact func(string) (stri
 		return nil, verr
 	}
 	if len(renewed) == 0 {
+		if sel.exact {
+			return view.Text{Body: "Nothing to renew — no active grant is exactly " + sel.described() + "."}, nil
+		}
 		return view.Text{Body: "Nothing to renew — no matching grant is active."}, nil
 	}
 	verb := "renewed"
@@ -1636,9 +1639,13 @@ func runRevoke(ctx context.Context, req plugin.Request) (view.View, error) {
 		Profile: strings.TrimSpace(req.String("profile")),
 		Agent:   strings.TrimSpace(req.String("agent")),
 		Role:    strings.TrimSpace(req.String("role")),
+		Exact:   req.Bool("exact"),
 		DryRun:  req.DryRun,
 	}
 	if verr := givenRecord(req.Surface(), spec.Scope); verr != nil {
+		return nil, verr
+	}
+	if verr := revokeSelector(spec).check(req.Surface()); verr != nil {
 		return nil, verr
 	}
 	server := strings.TrimSpace(req.String("server"))
@@ -1662,7 +1669,7 @@ func runRevoke(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	body := revokeBody(req.Surface(), spec.Target, out, req.DryRun)
+	body := revokeBody(req.Surface(), spec, out, req.DryRun)
 	if spec.Role != "" && !req.DryRun {
 		body += "\n" + stillStanding(req.Surface(), spec.Agent)
 	}

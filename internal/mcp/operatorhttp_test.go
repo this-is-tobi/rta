@@ -466,6 +466,7 @@ func TestRefusalsAreClassifiedNotPaged(t *testing.T) {
 		"core.operator.issue.yet-unwritten": http.StatusBadRequest,
 		"grant.agent.charset":               http.StatusBadRequest,
 		"grant.scope.traversal":             http.StatusBadRequest,
+		"grant.exact.target":                http.StatusBadRequest,
 		"grant.notarget":                    http.StatusBadRequest,
 		"core.lock.note":                    http.StatusBadRequest,
 		"agent.request.unknown":             http.StatusBadRequest,

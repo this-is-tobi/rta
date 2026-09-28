@@ -375,6 +375,7 @@ func TestEveryVerbHasARecordingDecision(t *testing.T) {
 func TestARevokeRowNamesEverySelector(t *testing.T) {
 	payload, err := json.Marshal(operator.RevokeSpec{
 		All: true, Target: "kv", Scope: "prod/", Profile: "staging", Agent: "claude", Role: "dev",
+		Exact: true,
 	})
 	if err != nil {
 		t.Fatal(err)

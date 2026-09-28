@@ -108,8 +108,14 @@ type RevokeSpec struct {
 	// Role narrows to the grants one `grant issue` issued, the way the
 	// other selectors narrow: `--role dev` alone takes dev back from every
 	// agent, `--role dev --agent claude` from one.
-	Role   string `json:"role,omitempty"`
-	DryRun bool   `json:"dryRun,omitempty"`
+	Role string `json:"role,omitempty"`
+	// Exact makes the selectors name one grant, as `grant revoke --exact`
+	// does: a record, profile or agent left out is the grant naming none
+	// rather than every one, and a plugin name its grant on the whole
+	// plugin alone. It is what the TUI's x on a roster row sends, the row
+	// being one grant.
+	Exact  bool `json:"exact,omitempty"`
+	DryRun bool `json:"dryRun,omitempty"`
 }
 
 // RevokeOutcome is what one revocation decided, computed under the store's
@@ -120,6 +126,12 @@ type RevokeOutcome struct {
 	Revoked    int          `json:"revoked"`
 	NoneActive bool         `json:"noneActive,omitempty"`
 	Still      *grant.Grant `json:"still,omitempty"`
+	// Exact says the server matched RevokeSpec.Exact. A server older than
+	// the field ignores it, reading every selector left out as every grant
+	// — the widest revoke the request could mean — and sends this back
+	// false, which is how the client knows to refuse before anything is
+	// taken back (a dry run asks first).
+	Exact bool `json:"exact,omitempty"`
 }
 
 // Status is VerbStatus's result.
