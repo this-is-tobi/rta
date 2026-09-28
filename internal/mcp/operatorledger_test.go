@@ -351,12 +351,12 @@ func TestEveryVerbHasARecordingDecision(t *testing.T) {
 		operator.VerbConsentList, operator.VerbLockList,
 	}
 	for verb := range mutations {
-		if _, ok := mutationArgs(operator.Envelope{Verb: verb, Payload: []byte(`{}`)}); !ok {
+		if _, _, ok := mutationArgs(operator.Envelope{Verb: verb, Payload: []byte(`{}`)}); !ok {
 			t.Errorf("%s is a mutation and is not recorded", verb)
 		}
 	}
 	for _, verb := range reads {
-		if _, ok := mutationArgs(operator.Envelope{Verb: verb, Payload: []byte(`{}`)}); ok {
+		if _, _, ok := mutationArgs(operator.Envelope{Verb: verb, Payload: []byte(`{}`)}); ok {
 			t.Errorf("%s is a read and is recorded", verb)
 		}
 	}
@@ -380,7 +380,7 @@ func TestARevokeRowNamesEverySelector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	args, ok := mutationArgs(operator.Envelope{Verb: operator.VerbGrantRevoke, Payload: payload})
+	args, _, ok := mutationArgs(operator.Envelope{Verb: operator.VerbGrantRevoke, Payload: payload})
 	if !ok {
 		t.Fatal("a revoke was not recorded")
 	}
@@ -392,5 +392,58 @@ func TestARevokeRowNamesEverySelector(t *testing.T) {
 		if _, ok := args[field]; !ok {
 			t.Errorf("the revoke row leaves out %q: %+v", field, args)
 		}
+	}
+}
+
+// An operator's grant.issue and grant.revoke keep the record they named in
+// the row's records, exactly as it was spelled. The arguments are cleaned for
+// whoever reads them next, which drops a zero-width space, so an issue on
+// "prod/db" and one, its own record to the gate and granting nothing on the
+// bare key, was recorded as scope=prod/db: the one record it did not name.
+func TestAnOperatorGrantRowKeepsTheRecordItNamed(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	padded := "prod/db" + string(rune(0x200b))
+	h := &operatorHandler{}
+	issue, err := json.Marshal(grant.Grant{Target: "kv.get", Scope: padded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := h.mutationEntry(operator.Envelope{Verb: operator.VerbGrantIssue, Payload: issue}, "tobi")
+	if rec == nil || len(rec.Records) != 1 || rec.Records[0] != padded {
+		t.Fatalf("the issue row keeps %+v, want the padded scope exactly", rec)
+	}
+
+	signer, roster := enrolled(t, "tobi")
+	addr := startOperatorWith(t, OperatorConfig{
+		Roster: roster,
+		Revoke: func(spec operator.RevokeSpec, write bool) (operator.RevokeOutcome, *view.Error) {
+			return operator.RevokeOutcome{Revoked: 1}, nil
+		},
+	})
+	revoke, err := json.Marshal(operator.RevokeSpec{Target: "kv.get", Scope: padded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := "http://" + addr
+	if status, body := postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr),
+		operator.VerbGrantRevoke, revoke)); status != http.StatusOK {
+		t.Fatalf("grant.revoke: %d - %s", status, body)
+	}
+	entries := ledgerEntries(t)
+	if len(entries) != 1 {
+		t.Fatalf("wrote %d entries: %+v", len(entries), entries)
+	}
+	if got := entries[0].Records; len(got) != 1 || got[0] != padded {
+		t.Errorf("the revoke row keeps records %q, want the padded scope exactly", got)
+	}
+	if entries[0].Args["scope"] != "prod/db" {
+		t.Errorf("the revoke row's scope argument is %q, want it cleaned as every argument is", entries[0].Args["scope"])
+	}
+
+	// A revoke naming no record keeps none.
+	rec = h.mutationEntry(operator.Envelope{Verb: operator.VerbGrantRevoke,
+		Payload: []byte(`{"target":"kv.get"}`)}, "tobi")
+	if rec == nil || rec.Records != nil {
+		t.Errorf("a revoke by target alone keeps records %+v", rec)
 	}
 }

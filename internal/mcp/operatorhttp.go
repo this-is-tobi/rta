@@ -291,7 +291,7 @@ func (h *operatorHandler) answer(env operator.Envelope, id operator.Identity,
 // The zero outcome is the bridge's: Refused/Blocked, "refused before
 // anything could authorize it", flipped only by the paths that allow.
 func (h *operatorHandler) mutationEntry(env operator.Envelope, label string) *agentlog.Entry {
-	args, mutates := mutationArgs(env)
+	args, records, mutates := mutationArgs(env)
 	if !mutates {
 		return nil
 	}
@@ -301,12 +301,23 @@ func (h *operatorHandler) mutationEntry(env operator.Envelope, label string) *ag
 		Credential: grant.FromOperatorPrefix + label,
 		Outcome:    agentlog.Refused,
 		Auth:       agentlog.Blocked,
+		Records:    records,
 		Args:       args,
 	}
 }
 
 // mutationArgs decodes what a mutation verb asked for into the ledger's
 // args column, and answers whether the verb mutates at all.
+//
+// It also answers the records the verb names — a grant issued or revoked on
+// a scope — for the row's records (agentlog.Entry.Records), exactly as the
+// payload spelled them: not cleaned, unlike the scope argument beside them,
+// because a grant's scope is compared byte for byte, and cleaning drops the
+// zero-width, direction and tag characters. An issue on "prod/db" and a
+// zero-width space, which grants nothing on the bare key, was recorded as
+// scope=prod/db, the one record it did not name; the bridge keeps a call's
+// records the same way (judgedRecords). A scope is never a credential, so
+// there is nothing here to mask either.
 //
 // Decoded beside dispatch rather than threaded through it — a second
 // unmarshal of a small payload buys every case staying untouched. Only
@@ -320,16 +331,16 @@ func (h *operatorHandler) mutationEntry(env operator.Envelope, label string) *ag
 //
 // A dry-run revoke is the one mutation verb that changes nothing, and it
 // is skipped for the reads' reason: it is a preview.
-func mutationArgs(env operator.Envelope) (map[string]any, bool) {
-	args := map[string]any{}
+func mutationArgs(env operator.Envelope) (args map[string]any, records []string, mutates bool) {
+	args = map[string]any{}
 	switch env.Verb {
 	case operator.VerbGrantRevoke:
 		var spec operator.RevokeSpec
 		if err := json.Unmarshal(env.Payload, &spec); err != nil {
-			return nil, true
+			return nil, nil, true
 		}
 		if spec.DryRun {
-			return nil, false
+			return nil, nil, false
 		}
 		if spec.All {
 			args["all"] = true
@@ -342,29 +353,31 @@ func mutationArgs(env operator.Envelope) (map[string]any, bool) {
 		}
 		putArg(args, "target", spec.Target)
 		putArg(args, "scope", spec.Scope)
+		records = namedRecord(spec.Scope)
 		putArg(args, "profile", spec.Profile)
 		putArg(args, "agent", spec.Agent)
 		putArg(args, "role", spec.Role)
 	case operator.VerbGrantIssue:
 		var g grant.Grant
 		if err := json.Unmarshal(env.Payload, &g); err != nil {
-			return nil, true
+			return nil, nil, true
 		}
 		putArg(args, "target", g.Target)
 		putArg(args, "scope", g.Scope)
+		records = namedRecord(g.Scope)
 		putArg(args, "profile", g.Profile)
 		putArg(args, "agent", g.Agent)
 	case operator.VerbConsentAnswer:
 		var spec operator.AnswerSpec
 		if err := json.Unmarshal(env.Payload, &spec); err != nil {
-			return nil, true
+			return nil, nil, true
 		}
 		putArg(args, "id", spec.ID)
 		args["allow"] = spec.Allow
 	case operator.VerbLockAdd:
 		var spec operator.LockSpec
 		if err := json.Unmarshal(env.Payload, &spec); err != nil {
-			return nil, true
+			return nil, nil, true
 		}
 		putArg(args, "kind", spec.Kind)
 		putArg(args, "name", spec.Name)
@@ -373,17 +386,26 @@ func mutationArgs(env operator.Envelope) (map[string]any, bool) {
 	case operator.VerbLockRm:
 		var spec operator.LockRmSpec
 		if err := json.Unmarshal(env.Payload, &spec); err != nil {
-			return nil, true
+			return nil, nil, true
 		}
 		putArg(args, "kind", spec.Kind)
 		putArg(args, "name", spec.Name)
 	default:
-		return nil, false
+		return nil, nil, false
 	}
 	if len(args) == 0 {
 		args = nil
 	}
-	return args, true
+	return args, records, true
+}
+
+// namedRecord is the records a scope names: itself, exactly, or none for
+// the empty scope a grant on a whole capability carries.
+func namedRecord(scope string) []string {
+	if scope == "" {
+		return nil
+	}
+	return []string{scope}
 }
 
 // OperatorLedgerCaps is every capability ID the operator channel can
@@ -397,7 +419,7 @@ func mutationArgs(env operator.Envelope) (map[string]any, bool) {
 func OperatorLedgerCaps() []string {
 	var out []string
 	for _, v := range operator.Verbs() {
-		if _, mutates := mutationArgs(operator.Envelope{Verb: v, Payload: []byte("{}")}); mutates {
+		if _, _, mutates := mutationArgs(operator.Envelope{Verb: v, Payload: []byte("{}")}); mutates {
 			out = append(out, "operator."+v)
 		}
 	}
