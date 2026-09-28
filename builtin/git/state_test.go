@@ -87,6 +87,24 @@ func TestTrackingPrefersTheConfiguredUpstream(t *testing.T) {
 	}
 }
 
+// A configured upstream this repository has no ref for is gone, as git.branches
+// and `git status` say of it: what `git fetch --prune` leaves once the branch
+// was deleted on the remote, or a branch set to track one never fetched. The
+// overview named it "up to date", the one reading it is not, since nothing
+// was compared.
+func TestAnUpstreamWithNoRefIsGoneInTheOverview(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial commit")
+	trackRemote(t, repo, "master", "origin")
+
+	if got := overviewValue(t, dir, "tracking"); got != "origin/master (gone)" {
+		t.Errorf("tracking = %q, want origin/master gone", got)
+	}
+	if got := rowFor(t, table(t, runBranches, req(t, dir, nil)), "Name", "master"); got[3] != "gone" {
+		t.Errorf("git.branches master = %v, want it gone", got)
+	}
+}
+
 // A branch that tracks nothing says nothing. An empty line on a tile is worse
 // than a missing one — it reads as a fact that failed to load.
 func TestAnUntrackedBranchReportsNoTracking(t *testing.T) {

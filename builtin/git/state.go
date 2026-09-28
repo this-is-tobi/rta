@@ -40,14 +40,20 @@ type tracking struct {
 	// capped says the walk stopped at walkLimit, so the counts are floors
 	// rather than answers.
 	capped bool
+	// gone is an upstream configured for the branch that this repository has
+	// no remote-tracking ref for, so nothing was counted.
+	gone bool
 }
 
 // String renders the drift the way `git status` says it, and says nothing at
 // all when there is nothing to say — a branch level with its upstream is the
 // ordinary case and does not need a line about it.
 func (t tracking) String() string {
-	if t.upstream == "" {
+	switch {
+	case t.upstream == "":
 		return ""
+	case t.gone:
+		return t.upstream + " (gone)"
 	}
 	var parts []string
 	if t.ahead > 0 {
@@ -90,9 +96,12 @@ func trackingOf(repo *git.Repository, tracks map[string]upstream, head *plumbing
 	name := remote + "/" + merge
 	ref, err := repo.Reference(plumbing.NewRemoteReferenceName(remote, merge), true)
 	if err != nil {
-		// Configured but never fetched: naming it is still the useful answer,
-		// since "where would this push" is half the question.
-		return tracking{upstream: name}
+		// Configured but with no ref here, never fetched or pruned since:
+		// naming it is still the useful answer, since "where would this
+		// push" is half the question, and it is gone, as git.branches and
+		// `git status` say. Nothing was compared, and a tracking with no
+		// counts read as "up to date".
+		return tracking{upstream: name, gone: true}
 	}
 	ahead, aok := notIn(repo, head.Hash(), ref.Hash())
 	behind, bok := notIn(repo, ref.Hash(), head.Hash())
