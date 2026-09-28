@@ -17,6 +17,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/pathguard"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -207,7 +208,7 @@ func runGet(_ context.Context, req plugin.Request) (view.View, error) {
 		return view.Text{Body: string(e.Value)}, nil
 	}
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would write %q (%s) to %s", key, format.Bytes(len(e.Value)), out)}, nil
+		return view.Text{Body: fmt.Sprintf("would write %s (%s) to %s", textclean.Record(key), format.Bytes(len(e.Value)), out)}, nil
 	}
 	// A secret leaving the store for the filesystem lands readable by its
 	// owner and nobody else, whatever the umask says — and whatever mode the
@@ -221,7 +222,7 @@ func runGet(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr := writeOut(pathguard.ExpandTilde(out), e.Value); verr != nil {
 		return nil, verr
 	}
-	return view.Text{Body: fmt.Sprintf("wrote %q to %s (%s, mode 0600)", key, out, format.Bytes(len(e.Value)))}, nil
+	return view.Text{Body: fmt.Sprintf("wrote %s to %s (%s, mode 0600)", textclean.Record(key), out, format.Bytes(len(e.Value)))}, nil
 }
 
 // writeOut writes a secret to a caller-chosen path at exactly mode 0600,
@@ -324,7 +325,7 @@ func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
 				continue
 			}
 			sf := req.Surface()
-			return nil, view.Errorf("kv.env.collision", "%q and %q both become %s", other, k, name).
+			return nil, view.Errorf("kv.env.collision", "%s and %s both become %s", textclean.Record(other), textclean.Record(k), name).
 				WithHint("rename one — `" + sf.Call("kv.rename", keyArg(k),
 					plugin.Arg{Name: "new-name", Value: "<new-name>", Positional: true}) +
 					"` — or export them in separate calls, each with its own " + sf.InputName("prefix"))
@@ -422,14 +423,14 @@ func throughDescriptor(path string) bool {
 // a folder grant, which is the grant matcher's job rather than this one's.
 func checkKeyName(key string) *view.Error {
 	if key != strings.TrimSpace(key) {
-		return view.Errorf("kv.set.padded", "%q has white space around it, which a key name cannot", key).
+		return view.Errorf("kv.set.padded", "%s has white space around it, which a key name cannot", textclean.Record(key)).
 			WithHint("give the name without it — a key is written as the call names it, and one with " +
 				"white space around it reads as the name without")
 	}
 	if strings.HasSuffix(key, "/") {
-		return view.Errorf("kv.set.foldername", "%q ends in a slash, so it names a folder rather than an entry", key).
+		return view.Errorf("kv.set.foldername", "%s ends in a slash, so it names a folder rather than an entry", textclean.Record(key)).
 			WithHint("drop the trailing slash — a folder is not stored, it is what the names " +
-				"share, and a kv.get grant scoped to " + key + " already covers everything under it")
+				"share, and a kv.get grant scoped to " + textclean.Record(key) + " already covers everything under it")
 	}
 	return nil
 }
@@ -590,7 +591,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	if !given {
 		if !existed {
 			sf := req.Surface()
-			return nil, view.Errorf("kv.set.unknown", "%q is not in the store", key).
+			return nil, view.Errorf("kv.set.unknown", "%s is not in the store", textclean.Record(key)).
 				WithHint("give " + sf.ArgumentName("value") + " to create it — " + sf.InputName("description") +
 					" and " + sf.InputName("kind") + " change what an entry already holding a secret is " +
 					"labelled, and there is nothing to label yet")
@@ -608,7 +609,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 			e.Description = d
 		}
 		if req.DryRun {
-			return view.Text{Body: fmt.Sprintf("would relabel %q (%s)", key, e.Kind)}, nil
+			return view.Text{Body: fmt.Sprintf("would relabel %s (%s)", textclean.Record(key), e.Kind)}, nil
 		}
 	} else {
 		e = entry{
@@ -633,11 +634,11 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	var msg string
 	switch {
 	case !given:
-		msg = fmt.Sprintf("relabelled %q (%s) — the secret is unchanged", key, e.Kind)
+		msg = fmt.Sprintf("relabelled %s (%s) — the secret is unchanged", textclean.Record(key), e.Kind)
 	case existed:
-		msg = fmt.Sprintf("updated %q (%s, %s)", key, kind, format.Bytes(len(value)))
+		msg = fmt.Sprintf("updated %s (%s, %s)", textclean.Record(key), kind, format.Bytes(len(value)))
 	default:
-		msg = fmt.Sprintf("set %q (%s, %s)", key, kind, format.Bytes(len(value)))
+		msg = fmt.Sprintf("set %s (%s, %s)", textclean.Record(key), kind, format.Bytes(len(value)))
 	}
 	if specs := req.StringSlice("recipient"); len(specs) > 0 {
 		msg += "\nstore re-encrypted — " + req.Surface().CapabilityName("kv.recipients") + " lists who can read it"
@@ -647,7 +648,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 
 // wouldSet is a dry run's answer for a value it was given or was typed.
 func wouldSet(key, kind string, value []byte) view.View {
-	return view.Text{Body: fmt.Sprintf("would set %q (%s, %s)", key, kind, format.Bytes(len(value)))}
+	return view.Text{Body: fmt.Sprintf("would set %s (%s, %s)", textclean.Record(key), kind, format.Bytes(len(value)))}
 }
 
 // askValue is the value a person at the terminal types for key, or nil when
@@ -685,7 +686,7 @@ func askValue(req plugin.Request, key string) ([]byte, *view.Error) {
 	switch {
 	case more:
 		return nil, view.Errorf("kv.set.multiline",
-			"what was pasted for %q spans lines, and the prompt reads one", key).
+			"what was pasted for %s spans lines, and the prompt reads one", textclean.Record(key)).
 			WithHint("nothing was stored, and the lines that arrived with the first were read and dropped " +
 				"rather than left for your shell — any that arrived later, from a paste slower than the " +
 				"prompt waits, went on to it; give a value that spans lines with " + file)
@@ -693,7 +694,7 @@ func askValue(req plugin.Request, key string) ([]byte, *view.Error) {
 		return nil, nil
 	case opensBlock(typed):
 		return nil, view.Errorf("kv.set.multiline",
-			"what was typed for %q opens a value that spans lines, and the prompt reads one", key).
+			"what was typed for %s opens a value that spans lines, and the prompt reads one", textclean.Record(key)).
 			WithHint("nothing was stored, and any of the value's other lines the prompt did not read " +
 				"went on to your shell, whose history may now hold them; give a value that spans " +
 				"lines with " + file)
@@ -728,7 +729,7 @@ func runRename(_ context.Context, req plugin.Request) (view.View, error) {
 			WithHint("give " + req.Surface().ArgumentName("key") + " and " + req.Surface().ArgumentName("new-name"))
 	}
 	if from == to {
-		return nil, view.Errorf("kv.rename.samename", "%q is already its name", from)
+		return nil, view.Errorf("kv.rename.samename", "%s is already its name", textclean.Record(from))
 	}
 	// The same guard set has: a rename is the other way to arrive at a name.
 	if verr := checkKeyName(to); verr != nil {
@@ -755,21 +756,21 @@ func runRename(_ context.Context, req plugin.Request) (view.View, error) {
 	// kv.rm is Destructive for — and a grant scoped to the key being renamed
 	// says nothing at all about the one being clobbered.
 	if _, taken := s.Entries[to]; taken {
-		return nil, view.Errorf("kv.rename.taken", "%q already exists", to).
+		return nil, view.Errorf("kv.rename.taken", "%s already exists", textclean.Record(to)).
 			WithHint("renaming onto it would destroy the secret it holds — remove that first: `" +
 				req.Surface().Call("kv.rm", keyArg(to)) + "`")
 	}
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would rename %q to %q (%s, %s)",
-			from, to, e.Kind, format.Bytes(len(e.Value)))}, nil
+		return view.Text{Body: fmt.Sprintf("would rename %s to %s (%s, %s)",
+			textclean.Record(from), textclean.Record(to), e.Kind, format.Bytes(len(e.Value)))}, nil
 	}
 	delete(s.Entries, from)
 	s.Entries[to] = e
 	if verr := save(req, s); verr != nil {
 		return nil, verr
 	}
-	return view.Text{Body: fmt.Sprintf("renamed %q to %q — anything still asking for %q will not find it",
-		from, to, from)}, nil
+	return view.Text{Body: fmt.Sprintf("renamed %s to %s — anything still asking for %s will not find it",
+		textclean.Record(from), textclean.Record(to), textclean.Record(from))}, nil
 }
 
 func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
@@ -793,22 +794,22 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 		// one case a key can be absent from the listing and still be here.
 		if r, removed := s.Removed[key]; removed && purge {
 			if req.DryRun {
-				return view.Text{Body: fmt.Sprintf("would purge the removed %q (%s)", key, r.Kind)}, nil
+				return view.Text{Body: fmt.Sprintf("would purge the removed %s (%s)", textclean.Record(key), r.Kind)}, nil
 			}
 			delete(s.Removed, key)
 			if verr := save(req, s); verr != nil {
 				return nil, verr
 			}
-			return view.Text{Body: fmt.Sprintf("purged %q — it was removed %s, and is gone now", key,
+			return view.Text{Body: fmt.Sprintf("purged %s — it was removed %s, and is gone now", textclean.Record(key),
 				itemstore.Age(r.RemovedAt))}, nil
 		}
 		return nil, notFound(req.Surface(), key)
 	}
 	if req.DryRun {
 		if purge {
-			return view.Text{Body: fmt.Sprintf("would purge %q (%s) — no restore", key, e.Kind)}, nil
+			return view.Text{Body: fmt.Sprintf("would purge %s (%s) — no restore", textclean.Record(key), e.Kind)}, nil
 		}
-		return view.Text{Body: fmt.Sprintf("would remove %q (%s) — restorable with `%s`", key, e.Kind,
+		return view.Text{Body: fmt.Sprintf("would remove %s (%s) — restorable with `%s`", textclean.Record(key), e.Kind,
 			req.Surface().Call("kv.restore", keyArg(key)))}, nil
 	}
 	delete(s.Entries, key)
@@ -826,10 +827,10 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	if purge {
-		return view.Text{Body: fmt.Sprintf("purged %q — the value and its history are gone", key)}, nil
+		return view.Text{Body: fmt.Sprintf("purged %s — the value and its history are gone", textclean.Record(key))}, nil
 	}
 	sf := req.Surface()
-	return view.Text{Body: fmt.Sprintf("removed %q — `%s` brings it back; `%s` would not have", key,
+	return view.Text{Body: fmt.Sprintf("removed %s — `%s` brings it back; `%s` would not have", textclean.Record(key),
 		sf.Call("kv.restore", keyArg(key)), sf.Call("kv.rm", keyArg(key), plugin.Arg{Name: "purge", Value: true}))}, nil
 }
 

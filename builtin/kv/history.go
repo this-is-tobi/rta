@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -154,20 +155,20 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 		r, removed := s.Removed[key]
 		if !removed {
 			if _, live := s.Entries[key]; live {
-				return nil, view.Errorf("kv.restore.live", "%q is in the store, not removed", key).
+				return nil, view.Errorf("kv.restore.live", "%s is in the store, not removed", textclean.Record(key)).
 					WithHint("`" + sf.Call("kv.history", keyArg(key)) + "` lists its earlier values; " +
 						sf.InputName("revision") + " brings one back")
 			}
 			return nil, notFound(req.Surface(), key)
 		}
 		if _, live := s.Entries[key]; live {
-			return nil, view.Errorf("kv.restore.taken", "%q was removed and then set again", key).
+			return nil, view.Errorf("kv.restore.taken", "%s was removed and then set again", textclean.Record(key)).
 				WithHint("`" + sf.Call("kv.rename", keyArg(key), plugin.Arg{Name: "new-name", Value: "<other>", Positional: true}) +
 					"` frees the name, or `" + sf.Call("kv.rm", keyArg(key), plugin.Arg{Name: "purge", Value: true}) +
 					"` drops the removed one")
 		}
 		if req.DryRun {
-			return view.Text{Body: fmt.Sprintf("would restore %q (%s, removed %s)", key, r.Kind,
+			return view.Text{Body: fmt.Sprintf("would restore %s (%s, removed %s)", textclean.Record(key), r.Kind,
 				itemstore.Age(r.RemovedAt))}, nil
 		}
 		s.Entries[key] = r.entry
@@ -175,25 +176,25 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 		if verr := save(req, s); verr != nil {
 			return nil, verr
 		}
-		return view.Text{Body: fmt.Sprintf("restored %q (%s) — as it was when removed, history included", key, r.Kind)}, nil
+		return view.Text{Body: fmt.Sprintf("restored %s (%s) — as it was when removed, history included", textclean.Record(key), r.Kind)}, nil
 	}
 
 	e, live := s.Entries[key]
 	if !live {
 		if _, removed := s.Removed[key]; removed {
-			return nil, view.Errorf("kv.restore.removed", "%q is removed", key).
+			return nil, view.Errorf("kv.restore.removed", "%s is removed", textclean.Record(key)).
 				WithHint("`" + sf.Call("kv.restore", keyArg(key)) + "`, with no revision, brings it back first")
 		}
 		return nil, notFound(req.Surface(), key)
 	}
 	if n < 0 || n > len(e.Previous) {
-		return nil, view.Errorf("kv.restore.norevision", "%q has %s, not a revision %d", key,
+		return nil, view.Errorf("kv.restore.norevision", "%s has %s, not a revision %d", textclean.Record(key),
 			format.CountOf(len(e.Previous), "earlier value"), n).
 			WithHint("`" + sf.Call("kv.history", keyArg(key)) + "` numbers them")
 	}
 	r := e.Previous[n-1]
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would restore revision %d of %q (%s, set %s)", n, key, r.Kind,
+		return view.Text{Body: fmt.Sprintf("would restore revision %d of %s (%s, set %s)", n, textclean.Record(key), r.Kind,
 			itemstore.Age(r.Updated))}, nil
 	}
 	s.Entries[key] = entry{
@@ -204,8 +205,8 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr := save(req, s); verr != nil {
 		return nil, verr
 	}
-	return view.Text{Body: fmt.Sprintf("restored revision %d of %q (%s) — the value it replaced is revision 1 now",
-		n, key, r.Kind)}, nil
+	return view.Text{Body: fmt.Sprintf("restored revision %d of %s (%s) — the value it replaced is revision 1 now",
+		n, textclean.Record(key), r.Kind)}, nil
 }
 
 // removedTable lists what kv.rm set aside, for kv.list given removed. sf is
