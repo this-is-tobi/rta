@@ -103,6 +103,55 @@ func TestTheSourceScansCatchWhatTheyExistFor(t *testing.T) {
 	}
 }
 
+// A connection setting is named through SettingName or SettingTo only when
+// the plugin declares it Local: a name nothing declares is a flag the CLI
+// refuses, and a name an agent's tool takes as an argument is told to the
+// agent as the operator's to set. A SettingsHint names a capability like the
+// other naming helpers do, since the page it sends its reader to is that
+// capability's.
+func TestTheSettingsTheSourceNamesAreOnesItDeclaresLocal(t *testing.T) {
+	demo := sourceDemo()
+	demo.Capabilities[0].Inputs = append(demo.Capabilities[0].Inputs,
+		plugin.Field{Name: "endpoint", Type: plugin.String, Local: true},
+		plugin.Field{Name: "tls", Type: plugin.Bool, Local: true})
+
+	src := "package main\n" +
+		"\n" +
+		"func hints(sf plugin.Surface, v string) []string {\n" +
+		"\treturn []string{\n" +
+		"\t\tsf.SettingName(\"endpoint\", \"tls\"),\n" +
+		"\t\tsf.SettingTo(\"tls\", \"limit\"),\n" +
+		"\t\tsf.SettingsHint(\"demo.key.list\"),\n" +
+		"\t\tsf.SettingName(v),\n" +
+		"\t\tsf.SettingName(\"endpont\"),\n" +
+		"\t\tsf.SettingName(\"tls\", \"limit\"),\n" +
+		"\t\tsf.SettingTo(\"host\", v),\n" +
+		"\t\tsf.SettingsHint(\"demo.key.lsit\"),\n" +
+		"\t}\n" +
+		"}\n"
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "hints.go", src, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wrong []int
+	for _, st := range namedSettings(f) {
+		if settingProblem(demo, st) != "" {
+			wrong = append(wrong, fset.Position(st.pos).Line)
+		}
+	}
+	for _, c := range namedCalls(f) {
+		if len(callProblems(demo, c)) > 0 {
+			wrong = append(wrong, fset.Position(c.pos).Line)
+		}
+	}
+	// The value SettingTo is given is not a setting, and a name in a
+	// variable is not guessed at.
+	if want := []int{9, 10, 11, 12}; !slices.Equal(wrong, want) {
+		t.Errorf("settings held on lines %v, want %v", wrong, want)
+	}
+}
+
 // AskOperator is known by the name its file imports pkg/plugin under: an
 // author who renames the import hands the operator the same command, and it
 // is let through the same way.

@@ -158,3 +158,21 @@ func TestDeclaredIsEverythingAPluginSaysAboutItself(t *testing.T) {
 		t.Errorf("Declared =\n%q\nwant\n%q", got, want)
 	}
 }
+
+// What the SDK's connection helpers hand an agent spells nothing only a
+// terminal can act on, so a hint built from them passes the rule the
+// plugin's own text is held to; the one command line in them is the one
+// AskOperator hands the operator.
+func TestTheSDKsConnectionHelpersSpellNothingForATerminalOverMCP(t *testing.T) {
+	sp := ForPlugin(demo())
+	mcp := plugin.SurfaceMCP
+	for _, text := range []string{
+		mcp.SettingName("host"), mcp.SettingName("host", "jobs", "limit"),
+		mcp.SettingTo("limit", 5), mcp.SettingTo("host", false),
+		mcp.SettingsHint("demo.key.list"), mcp.DNSHint("db.internal"),
+	} {
+		if hits := sp.Find(text, false); len(hits) > 0 {
+			t.Errorf("%q spells a terminal's: %q", text, hits)
+		}
+	}
+}
