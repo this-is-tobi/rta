@@ -758,12 +758,9 @@ func doctorShadowedPlugins(add func(check, status, detail string)) {
 		if len(f.Shadowed) == 0 {
 			continue
 		}
-		copies := "copies"
-		if len(f.Shadowed) == 1 {
-			copies = "copy"
-		}
 		add("plugin "+f.Name, "info", fmt.Sprintf("using %s; %d further %s on $PATH not used: %s",
-			f.Path, len(f.Shadowed), copies, strings.Join(f.Shadowed, ", ")))
+			f.Path, len(f.Shadowed), format.Plural(len(f.Shadowed), "copy", "copies"),
+			strings.Join(f.Shadowed, ", ")))
 	}
 }
 
@@ -1326,13 +1323,4 @@ func doctorClients(add func(check, status, detail string)) {
 	for _, r := range clientRows(claudeInstalled == nil, agentsession.Self()) {
 		add(r[0], r[1], r[2])
 	}
-}
-
-// pick is plural without the count, for the second and third agreement in a
-// sentence that has already said the number once.
-func pick(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
 }

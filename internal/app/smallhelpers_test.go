@@ -59,9 +59,6 @@ func TestTheOneWordHelpersSayTheRightWord(t *testing.T) {
 	if yesNo(true) != "yes" || yesNo(false) != "no" {
 		t.Error("yesNo")
 	}
-	if pick(1, "entry", "entries") != "entry" || pick(2, "entry", "entries") != "entries" || pick(0, "entry", "entries") != "entries" {
-		t.Error("pick")
-	}
 	if !containsArg([]string{"--all", "-v"}, "--all") || containsArg([]string{"--all"}, "-v") {
 		t.Error("containsArg")
 	}
