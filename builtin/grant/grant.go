@@ -1507,9 +1507,13 @@ func artifactWarnings(sf plugin.Surface, grants []core.Grant, bound func(core.Gr
 
 // suppressedNote accounts for grants the ceiling is holding back, so that
 // "where did my grant go" has an answer on the screen where it is asked.
+//
+// The files are named after a dash when there are files to name, and the
+// sentence ends at "policy" when there are none: it ended at a dash with
+// nothing after it, which reads as a name the screen lost.
 func suppressedNote(sf plugin.Surface, n int) string {
 	where := ""
-	if c, verr := core.Ceiling(); verr == nil {
+	if c, verr := core.Ceiling(); verr == nil && c.Where() != "" {
 		where = " — " + c.Where()
 	}
 	return fmt.Sprintf("\n\n%s suppressed by your team's policy%s\n"+
