@@ -806,13 +806,36 @@ func (f scopedConfig) origin(base string) string {
 	return "memory"
 }
 
-// secretKey matches config keys whose value is a credential by convention.
+// secretName matches the name of a config key, its dashes taken out, whose
+// value is a credential by convention.
 //
 // A name test, and therefore a heuristic — which is why it is the *second*
 // line here rather than the only one. maskURLCredentials below is the
 // syntactically certain half, the kind net.info's masking relies on, and it
 // catches the shape that actually appears in the wild.
-var secretKey = regexp.MustCompile(`(?i)(^|\.)(token|password|passwd|secret|apikey|api-key|extraheader|bearer)$`)
+//
+// **Anywhere in the name, not the name alone.** github.token and
+// client.password were masked, and client.access-token, default.secret-key and
+// git send-email's own sendemail.smtpPass were not: a file of config names a
+// credential among other words, and a repository's config can include any
+// file of sections and keys on the machine. A key whose name only mentions
+// one, core.askPass naming the program that asks, is left alone; one that is
+// a switch, http.sslCertPasswordProtected, is masked for a name that is
+// nearly always a secret's.
+//
+// **And a name ending in pass, which is how git's own keys spell a
+// password**: imap.pass, git imap-send's, gitcvs.dbPass and
+// sendemail.smtpPass each hold one, and the first two were shown in the clear
+// where the name was read for the longer words alone. askPass is the one git
+// key ending so that names a program rather than a secret (secretKey).
+var secretName = regexp.MustCompile(`(?i)token|secret|passw(or)?d|apikey|accesskey|privatekey|bearer|extraheader`)
+
+// secretKey reports whether key, as git.config spells it, names a credential
+// (secretName, or a name ending in pass), by the name after its last dot.
+func secretKey(key string) bool {
+	name := strings.ToLower(strings.ReplaceAll(key[strings.LastIndexByte(key, '.')+1:], "-", ""))
+	return secretName.MatchString(name) || strings.HasSuffix(name, "pass") && !strings.HasSuffix(name, "askpass")
+}
 
 // maskConfigValue hides a value that carries a credential.
 //
@@ -824,7 +847,7 @@ func maskConfigValue(key, value string) string {
 	if value == "" {
 		return value
 	}
-	if secretKey.MatchString(key) {
+	if secretKey(key) {
 		return view.Mask
 	}
 	return maskURLCredentials(value)

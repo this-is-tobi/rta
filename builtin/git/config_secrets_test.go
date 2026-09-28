@@ -49,6 +49,47 @@ func TestCredentialsInConfigAreMasked(t *testing.T) {
 			wantGone: "hunter2",
 		},
 		{
+			// A key named for what it holds among other words, as an INI
+			// file's keys are, which a repository's config can include: the
+			// name was masked only where it was the word alone.
+			name:     "a token under a longer name",
+			key:      "client.access-token",
+			value:    "planted-access-token",
+			wantGone: "planted-access-token",
+		},
+		{
+			name:     "git send-email's SMTP password",
+			key:      "sendemail.smtpPass",
+			value:    "planted-smtp-password",
+			wantGone: "planted-smtp-password",
+		},
+		{
+			// git's own keys for a password end in pass: git imap-send's,
+			// and git cvsserver's for its database.
+			name:     "git imap-send's password",
+			key:      "imap.pass",
+			value:    "planted-imap-password",
+			wantGone: "planted-imap-password",
+		},
+		{
+			name:     "git cvsserver's database password",
+			key:      "gitcvs.dbPass",
+			value:    "planted-db-password",
+			wantGone: "planted-db-password",
+		},
+		{
+			name:     "a secret key",
+			key:      "default.secret-key",
+			value:    "planted-secret-key",
+			wantGone: "planted-secret-key",
+		},
+		{
+			name:     "an API key",
+			key:      "service.api-key-value",
+			value:    "planted-api-key",
+			wantGone: "planted-api-key",
+		},
+		{
 			// GitHub's own documented spelling: a PAT as bare userinfo, no
 			// colon — the shape urlUserinfo's colon requirement never
 			// matched, so this reached an MCP agent in the clear.
@@ -85,6 +126,9 @@ func TestMaskingLeavesOrdinaryConfigAlone(t *testing.T) {
 		{"remote.origin.url", "ssh://git@git.internal/team/repo.git"},
 		{"credential.helper", "osxkeychain"},
 		{"init.defaultbranch", "main"},
+		{"core.askPass", "/usr/libexec/ssh-askpass"},
+		{"user.signingKey", "3AA5C34371567BD2"},
+		{"http.sslKey", "/etc/ssl/client.key"},
 	} {
 		if got := maskConfigValue(tc.key, tc.value); got != tc.value {
 			t.Errorf("%s: %q became %q", tc.key, tc.value, got)
