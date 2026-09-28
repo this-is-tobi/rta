@@ -136,7 +136,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Idempotent: true,
 				NoPreview:  true, // a full pass over the record is not a tile
 				HumanOnly:  true,
-				Run:        runMetrics,
+				Run:        runMetrics(artifact),
 			},
 			{
 				ID:      "agent.pending",

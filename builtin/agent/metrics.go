@@ -35,12 +35,14 @@ import (
 // rather than a window: a counter computed from the last N entries is not a
 // counter. Retention bounds that at eight segments of eight megabytes, and
 // this is a command a timer runs rather than an endpoint anybody scrapes.
-func runMetrics(_ context.Context, _ plugin.Request) (view.View, error) {
-	body, err := Exposition()
-	if err != nil {
-		return nil, err
+func runMetrics(artifact func(string) (string, bool)) plugin.Handler {
+	return func(context.Context, plugin.Request) (view.View, error) {
+		body, err := Exposition(artifact)
+		if err != nil {
+			return nil, err
+		}
+		return view.Text{Body: body}, nil
 	}
-	return view.Text{Body: body}, nil
 }
 
 // Exposition renders the same text runMetrics prints, for a caller that needs
@@ -58,7 +60,11 @@ func runMetrics(_ context.Context, _ plugin.Request) (view.View, error) {
 // what and how often it was refused. The original sentence was about not
 // putting a scrape endpoint on the port that speaks to agents. It still is not
 // there.
-func Exposition() (string, error) {
+//
+// artifact is the registry's lookup of the plugin answering for a namespace
+// now (registry.Artifact), which a grant's Digest is judged against — see
+// grantSamples.
+func Exposition(artifact func(string) (string, bool)) (string, error) {
 	entries, err := agentlog.Read(0)
 	if err != nil {
 		return "", view.Errorf("agent.metrics.unreadable", "%v", err)
@@ -113,7 +119,7 @@ func Exposition() (string, error) {
 		[]sample{{value: pendingReadable}})
 
 	metric(&b, "rta_grants_active", "gauge",
-		"Grants in force right now, by capability and agent.", grantSamples())
+		"Grants in force right now, by capability and agent.", grantSamples(artifact))
 
 	// The one worth alerting on. A record that stops verifying is either a
 	// bug or somebody editing it, and both are things to find out about
@@ -213,7 +219,15 @@ func callSamples(entries []agentlog.Entry) []sample {
 // grantSamples counts what is in force now. Expired grants are not a series:
 // they authorize nothing, and a gauge that kept them would report reach that
 // does not exist.
-func grantSamples() []sample {
+//
+// Nor is a grant bound to a plugin build that no longer answers, for the
+// same reason: upgrading or removing a plugin leaves every grant standing on
+// it inside its window and covering no call, and the gauge went on counting
+// each one — a dashboard's reach flat across an upgrade that had taken all
+// of it away. Judged by Grant.ArtifactNow against artifact, the registry's
+// lookup, which is how grant list marks such a grant and how the gate
+// refuses its calls; nil judges nothing, as the listing's boundBy does.
+func grantSamples(artifact func(string) (string, bool)) []sample {
 	grants, verr := grant.Load()
 	if verr != nil {
 		return nil
@@ -224,6 +238,11 @@ func grantSamples() []sample {
 	for _, g := range grants {
 		if !g.Active(now) {
 			continue
+		}
+		if artifact != nil {
+			if current, known := artifact(grant.Namespace(g.Target)); g.ArtifactNow(current, known) != grant.ArtifactCurrent {
+				continue
+			}
 		}
 		counts[key{g.Target, g.Agent}]++
 	}

@@ -5,9 +5,11 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/consent"
+	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -162,6 +164,51 @@ func TestPendingReadableGoesToZeroWhenTheQueueCannotBeRead(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(consent.Dir(), 0o700) })
 	if !strings.Contains(metricsBody(t), "rta_agent_pending_readable 0") {
 		t.Errorf("an unreadable queue still reports readable:\n%s", metricsBody(t))
+	}
+}
+
+// A grant bound to a plugin build that no longer answers covers nothing, and
+// the gauge of grants in force counted it all the same: a plugin upgrade
+// left rta_grants_active where it was while every call those grants were
+// issued for was refused. It is judged as grant list judges it
+// (Grant.ArtifactNow), through the same registry lookup.
+func TestAGrantOnAReplacedPluginIsNotInForce(t *testing.T) {
+	roleSetup(t)
+	now := time.Now()
+	for _, g := range []grant.Grant{
+		{Target: "kv.get", Agent: "claude", Issued: now, Expires: now.Add(time.Hour)},
+		{Target: "hello.wipe", Agent: "claude", Digest: "5dae737f8845", Issued: now, Expires: now.Add(time.Hour)},
+	} {
+		if verr := grant.Issue(g, true); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	answering := func(hello string) func(string) (string, bool) {
+		return func(ns string) (string, bool) {
+			if ns != "hello" {
+				return "", true
+			}
+			return hello, hello != ""
+		}
+	}
+	for _, c := range []struct {
+		name, hello string
+		counted     bool
+	}{
+		{"the build it was issued against", "5dae737f8845", true},
+		{"a rebuilt plugin", "9f1c2e3d4b5a", false},
+		{"a plugin that does not load", "", false},
+	} {
+		body, err := Exposition(answering(c.hello))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(body, `rta_grants_active{capability="kv.get",agent="claude"} 1`) {
+			t.Errorf("with %s the built-in grant is not counted:\n%s", c.name, body)
+		}
+		if got := strings.Contains(body, `rta_grants_active{capability="hello.wipe",agent="claude"} 1`); got != c.counted {
+			t.Errorf("with %s the hello.wipe grant counted = %v, want %v:\n%s", c.name, got, c.counted, body)
+		}
 	}
 }
 

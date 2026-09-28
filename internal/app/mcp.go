@@ -613,7 +613,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					observeHandler = mcp.NewObserveHandler(mcp.ObserveConfig{
 						Verifier: verifier,
 						Ready:    recordWritable,
-						Metrics:  agentcap.Exposition,
+						Metrics:  func() (string, error) { return agentcap.Exposition(reg.Artifact) },
 					})
 					fmt.Fprintf(cmd.ErrOrStderr(),
 						"observing on %s: /livez /readyz /healthz open, /metrics behind the same bearer check\n",
