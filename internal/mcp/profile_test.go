@@ -881,7 +881,9 @@ func TestTheRecordSaysWhenARefusalWasARepointedConnection(t *testing.T) {
 // A profile's `set:` applies to an agent's call over an input that declares a
 // Default. The bridge filled the default in as the caller's own value, which
 // beats a profile, so `gen token --profile g32` gave a person base32 and an
-// agent granted exactly that profile hex — and the ledger said hex.
+// agent granted exactly that profile hex — and the ledger said hex. And the
+// handler is told which profile the call came through, as it is at a
+// terminal (plugin.Request.Profile).
 func TestAProfilesSetBeatsADeclaredDefaultOverMCP(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("RTA_DATA_DIR", dir)
@@ -907,7 +909,7 @@ profiles:
 		Inputs: []plugin.Field{{Name: "encoding", Type: plugin.String, Config: "encoding", Default: "hex",
 			Options: []string{"hex", "base32"}, Help: "encoding"}},
 		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
-			return view.Text{Body: "encoding=" + req.String("encoding")}, nil
+			return view.Text{Body: "encoding=" + req.String("encoding") + " profile=" + req.Profile()}, nil
 		},
 	}}}); err != nil {
 		t.Fatal(err)
@@ -922,8 +924,8 @@ profiles:
 		t.Fatal(verr)
 	}
 	res := callTool(t, s, "gen_token", map[string]any{"profile": "g32"})
-	if got := contentText(t, res); res.IsError || !strings.Contains(got, "encoding=base32") {
-		t.Fatalf("an agent's call through the profile: %s, want base32", got)
+	if got := contentText(t, res); res.IsError || !strings.Contains(got, "encoding=base32 profile=g32") {
+		t.Fatalf("an agent's call through the profile: %s, want base32 through g32", got)
 	}
 	entries, err := agentlog.Read(1)
 	if err != nil || len(entries) != 1 || entries[0].Args["encoding"] != "base32" {

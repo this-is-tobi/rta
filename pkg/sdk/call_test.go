@@ -101,3 +101,46 @@ func roundTrip[M proto.Message](t *testing.T, m M) M {
 	}
 	return out
 }
+
+// A handler in the plugin process is told the profile its call came through
+// and the kind of forward the host opened on it, as a built-in is; and a
+// host older than those fields, which sends neither, reads as a call no
+// profile touched.
+func TestAnExternalPluginsHandlerIsToldItsProfile(t *testing.T) {
+	var profile string
+	var tunnel plugin.Tunnel
+	p := plugin.Plugin{
+		Name: "demo", Summary: "d",
+		Capabilities: []plugin.Capability{{
+			ID: "demo.dump", Summary: "d", Safety: plugin.Read,
+			Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+				profile, tunnel = req.Profile(), req.Tunnel()
+				return view.Text{}, nil
+			},
+		}},
+	}
+	s := newServer(p)
+	for _, tc := range []struct {
+		sent        *rtav1.CallRequest
+		wantProfile string
+		wantTunnel  plugin.Tunnel
+	}{
+		{&rtav1.CallRequest{CapabilityId: "demo.dump"}, "", plugin.TunnelNone},
+		{&rtav1.CallRequest{CapabilityId: "demo.dump", Profile: "direct"}, "direct", plugin.TunnelNone},
+		{&rtav1.CallRequest{CapabilityId: "demo.dump", Profile: "homelab", Tunnel: rtav1.Tunnel_TUNNEL_KUBE},
+			"homelab", plugin.TunnelKube},
+		{&rtav1.CallRequest{CapabilityId: "demo.dump", Profile: "bastion", Tunnel: rtav1.Tunnel_TUNNEL_SSH},
+			"bastion", plugin.TunnelSSH},
+		// A tunnel without a profile is none: the host opens a forward only on
+		// a profile's connection.
+		{&rtav1.CallRequest{CapabilityId: "demo.dump", Tunnel: rtav1.Tunnel_TUNNEL_KUBE}, "", plugin.TunnelNone},
+	} {
+		profile, tunnel = "unset", "unset"
+		if _, err := s.Call(context.Background(), roundTrip(t, tc.sent)); err != nil {
+			t.Fatal(err)
+		}
+		if profile != tc.wantProfile || tunnel != tc.wantTunnel {
+			t.Errorf("sent %v: the handler saw profile %q, tunnel %q", tc.sent, profile, tunnel)
+		}
+	}
+}

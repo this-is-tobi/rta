@@ -19,6 +19,15 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
+// boundProfile is the profile resolveProfile settled on for one call: its
+// name, the values it fills, and the kind of forward opened for them — the
+// three plugin.Inputs fields that are the profile's, zero for none.
+type boundProfile struct {
+	name   string
+	filled map[string]any
+	tunnel plugin.Tunnel
+}
+
 // resolveProfile decides which environment this CLI invocation runs against,
 // and binds this capability's share of it.
 //
@@ -43,17 +52,17 @@ import (
 //
 // # The closer
 //
-// The third return tears down anything this opened — today, the port-forward a
-// `kube:` coordinate names. It is never nil, so `defer` it on the line after
+// The second return tears down anything this opened — today, the port-forward
+// a `kube:` coordinate names. It is never nil, so `defer` it on the line after
 // the call and before checking the error: a failure that happens after the
 // forward came up closes it here, and a connection that names no cluster
 // returns a no-op.
 func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	caller map[string]any,
-) (string, map[string]any, func(), *view.Error) {
+) (boundProfile, func(), *view.Error) {
 	noop := func() {}
 	if !plugin.Profilable(c) {
-		return "", nil, noop, nil
+		return boundProfile{}, noop, nil
 	}
 	explicit := ""
 	if f := cmd.Flags().Lookup("profile"); f != nil {
@@ -61,11 +70,11 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 	}
 	active := profile.Active()
 	if explicit == "" && active == "" {
-		return "", nil, noop, nil
+		return boundProfile{}, noop, nil
 	}
 	cfg, err := config.Load()
 	if err != nil {
-		return "", nil, noop, view.AsError(err, "core.profile.config")
+		return boundProfile{}, noop, view.AsError(err, "core.profile.config")
 	}
 
 	var (
@@ -80,10 +89,10 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 		name, conn, verr = profile.Ambient(cfg, c, active, installed)
 	}
 	if verr != nil {
-		return "", nil, noop, verr
+		return boundProfile{}, noop, verr
 	}
 	if name == "" {
-		return "", nil, noop, nil
+		return boundProfile{}, noop, nil
 	}
 	// Fill, not Bind: this is a real run with a person waiting, so a `secrets:`
 	// reference is fetched here. kv.Reveal is injected rather than imported by
@@ -96,20 +105,20 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 		// path an operator with a broken credential reference reaches. It took
 		// running the built binary to notice; TestResolveProfileNeverReturnsA
 		// NilTeardown walks every return out of this function now.
-		return "", nil, noop, verr
+		return boundProfile{}, noop, verr
 	}
 	// And the forward, if this connection names a cluster. Separate from Fill
 	// because their lifetimes are: what Fill produces is true for as long as
 	// the environment stands, and a forward is per call, by decision.
 	// closeTunnel is never nil, so the caller defers it unconditionally.
-	dialled, closeTunnel, verr := profile.Dial(ctx, name, conn, c, caller)
+	dialled, via, closeTunnel, verr := profile.Dial(ctx, name, conn, c, caller)
 	if verr != nil {
-		return "", nil, closeTunnel, verr
+		return boundProfile{}, closeTunnel, verr
 	}
 	for input, v := range dialled {
 		filled[input] = v
 	}
-	return name, filled, closeTunnel, nil
+	return boundProfile{name: name, filled: filled, tunnel: via}, closeTunnel, nil
 }
 
 // installed is what this machine has registered, for profile resolution.

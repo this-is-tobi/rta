@@ -610,7 +610,10 @@ func Fill(ctx context.Context, name string, conn config.Connection, c plugin.Cap
 }
 
 // Dial opens the forward this connection's `kube:` coordinate names and
-// returns the inputs it fills, together with the teardown that closes it.
+// returns the inputs it fills and the kind of tunnel it is, together with the
+// teardown that closes it. The kind is TunnelNone whenever no forward was
+// opened, and rides on the request with the profile's name (plugin.Inputs.
+// Tunnel), for a handler about to name the address it was handed.
 //
 // **close is never nil, and must be called on every path.** For the
 // overwhelmingly common connection — no `kube:` at all — this returns an empty
@@ -646,16 +649,20 @@ func Fill(ctx context.Context, name string, conn config.Connection, c plugin.Cap
 // about where the call goes and the forward is the one that exists.
 func Dial(ctx context.Context, name string, conn config.Connection, c plugin.Capability,
 	caller map[string]any,
-) (map[string]any, func(), *view.Error) {
+) (map[string]any, plugin.Tunnel, func(), *view.Error) {
 	noop := func() {}
 	if !conn.Tunnelled() || callerNamedEndpoint(c, caller) {
-		return nil, noop, nil
+		return nil, plugin.TunnelNone, noop, nil
 	}
 	tun, verr := tunnel.Open(ctx, name, target(conn))
 	if verr != nil {
-		return nil, noop, verr
+		return nil, plugin.TunnelNone, noop, verr
 	}
-	return endpointValues(c, tun.Endpoint, conn.TunnelTLS), tun.Close, nil
+	kind := plugin.TunnelKube
+	if conn.TunnelKey() == "ssh" {
+		kind = plugin.TunnelSSH
+	}
+	return endpointValues(c, tun.Endpoint, conn.TunnelTLS), kind, tun.Close, nil
 }
 
 // Problem is one thing wrong with a configured profile.

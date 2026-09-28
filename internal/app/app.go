@@ -1268,7 +1268,7 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	// needs no grant for any of this: the gate is on the MCP surface, because
 	// the operator writing the profile and the operator running the command
 	// are the same person, and consent to yourself is not a thing.
-	profileName, filled, closeTunnel, verr := resolveProfile(ctx, cmd, c, values)
+	bound, closeTunnel, verr := resolveProfile(ctx, cmd, c, values)
 	// Deferred before the error check on purpose: a `kube:` connection whose
 	// forward came up and whose next step then failed still has a port open,
 	// and closeTunnel is never nil.
@@ -1279,8 +1279,9 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	}
 	req := plugin.ResolveRequest(c, plugin.Inputs{
 		Caller:      values,
-		Profile:     filled,
-		ProfileName: profileName,
+		Profile:     bound.filled,
+		ProfileName: bound.name,
+		Tunnel:      bound.tunnel,
 		Config:      PluginConfig(c),
 		// The heading Config sits under, for a refusal to name the line.
 		ConfigSection: PluginConfigSection(c),

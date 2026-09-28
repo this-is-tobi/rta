@@ -48,11 +48,29 @@ const (
 	SurfaceCompletion Surface = "completion"
 )
 
+// Tunnel is the kind of forward a call reached its server through, which the
+// host opens on a profile's connection for that one call and closes when it
+// ends (Request.Tunnel).
+type Tunnel string
+
+const (
+	// TunnelNone is a call that reached its server directly: no profile, a
+	// profile naming no coordinate, or one whose endpoint the caller named
+	// themselves, which the host then connects to without a forward.
+	TunnelNone Tunnel = ""
+	// TunnelKube is a `kube:` coordinate's port-forward.
+	TunnelKube Tunnel = "kube"
+	// TunnelSSH is an `ssh:` coordinate's jump host.
+	TunnelSSH Tunnel = "ssh"
+)
+
 // Request carries resolved inputs and invocation context to a handler.
 type Request struct {
 	values  map[string]any
 	origins map[string]origin
 	surface Surface
+	profile string
+	tunnel  Tunnel
 	confine func(field, path string) (string, *view.Error)
 	links   map[string]link
 	targets func(dir, target string) string
@@ -79,6 +97,52 @@ func (r Request) Surface() Surface { return r.surface }
 // once, at the boundary; handlers only ever read it.
 func (r Request) WithSurface(s Surface) Request {
 	r.surface = s
+	return r
+}
+
+// Profile is the operator's connection profile this call came through — the
+// one --profile named, `rta use` switched on, or an agent's call carried —
+// or "" for none.
+//
+// For the answer that names the connection again once the call is over. A
+// dump taken through a `kube:` profile reached its server through a forward
+// on 127.0.0.1 that closed when the call did, and a restore line naming the
+// address it was handed named a port nothing listens on any more: the
+// profile is what reaches the same server again, as
+//
+//	sf.Call("pg.restore", plugin.Arg{Name: "file", Value: out, Positional: true},
+//		plugin.Arg{Name: "profile", Value: req.Profile()})
+//
+// with the profile given only when there is one. Given whenever there is,
+// through a forward or not, since the credentials the call used may be the
+// profile's and no other layer holds them; and the host and port beside it
+// only when Tunnel is TunnelNone, since then they are the address the call
+// reached — one the caller typed over the profile's, which a line naming the
+// profile alone would send through the profile's forward instead. The values
+// themselves are no guide to which case it is: a profile fills them the way
+// config does, and a handler cannot tell which layer answered, which is the
+// point (Resolve).
+//
+// A profile's name is the operator's configuration, not a secret, and it is
+// the whole of what the host says about one — never its coordinate, which of
+// the values it filled, or where its credentials come from.
+func (r Request) Profile() string { return r.profile }
+
+// Tunnel is the kind of forward the host opened on Profile's connection for
+// this call, TunnelNone when it opened none. A handler that is about to name
+// the address it connected to asks this first: through a tunnel that address
+// is the host's end of a forward, gone once the call ends.
+func (r Request) Tunnel() Tunnel { return r.tunnel }
+
+// WithProfile stamps the profile a call came through and the tunnel opened on
+// it. ResolveRequest stamps what its Inputs name, and the plugin process's
+// server what the host sent; a tunnel without a profile is none, since the
+// host opens a forward only on a profile's connection.
+func (r Request) WithProfile(name string, t Tunnel) Request {
+	if name == "" {
+		t = TunnelNone
+	}
+	r.profile, r.tunnel = name, t
 	return r
 }
 

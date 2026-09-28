@@ -490,6 +490,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// "no such profile" for a name that does not exist and "needs a grant"
 		// for one that does, which is the whole inventory one call at a time.
 		var filled map[string]any
+		via := plugin.TunnelNone
 		if profileName != "" {
 			conn, verr := profile.Lookup(opts.profiles(), c, profileName, reg)
 			if verr != nil {
@@ -539,7 +540,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// tears down the forward and must run always, which is why it is
 			// deferred and release is not. A forward left open is a hole in a
 			// cluster's network boundary with nobody watching.
-			dialled, closeTunnel, verr3 := profile.Dial(ctx, profileName, conn, c, nil)
+			dialled, opened, closeTunnel, verr3 := profile.Dial(ctx, profileName, conn, c, nil)
 			defer closeTunnel()
 			if verr3 != nil {
 				release()
@@ -555,11 +556,13 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			for input, v := range dialled {
 				filled[input] = v
 			}
+			via = opened
 		}
 		run := plugin.ResolveRequest(c, plugin.Inputs{
 			Caller:      values,
 			Profile:     filled,
 			ProfileName: profileName,
+			Tunnel:      via,
 			Config:      opts.pluginConfig(c),
 			// The heading Config sits under, for a refusal to name the line.
 			ConfigSection: opts.configSection(c),

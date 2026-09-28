@@ -50,13 +50,7 @@ func (c *Client) call(ctx context.Context, id string, req plugin.Request) (view.
 	if err != nil {
 		return nil, view.Errorf("plugin.gone", "%s: %v", id, err)
 	}
-	resp, err := stub.Call(ctx, &rtav1.CallRequest{
-		CapabilityId: id,
-		Values:       wire.ValuesToProto(req.Values()),
-		DryRun:       req.DryRun,
-		Yes:          req.Yes,
-		Surface:      wire.SurfaceToProto(req.Surface()),
-	})
+	resp, err := stub.Call(ctx, callRequest(id, req))
 	if err != nil {
 		return nil, c.transportError(ctx, id, err)
 	}
@@ -64,6 +58,23 @@ func (c *Client) call(ctx context.Context, id string, req plugin.Request) (view.
 		return nil, wire.ErrorFromProto(e)
 	}
 	return wire.ViewFromProto(resp.GetView()), nil
+}
+
+// callRequest is what the plugin is sent for one call of capability id.
+func callRequest(id string, req plugin.Request) *rtav1.CallRequest {
+	return &rtav1.CallRequest{
+		CapabilityId: id,
+		Values:       wire.ValuesToProto(req.Values()),
+		DryRun:       req.DryRun,
+		Yes:          req.Yes,
+		Surface:      wire.SurfaceToProto(req.Surface()),
+		// The profile's name and the kind of forward opened on it, so the
+		// plugin can name the connection again once the call is over; the
+		// name alone, which is the operator's configuration and not a
+		// secret, and nothing else about the profile (Request.Profile).
+		Profile: req.Profile(),
+		Tunnel:  wire.TunnelToProto(req.Tunnel()),
+	}
 }
 
 func (c *Client) prefill(ctx context.Context, id string, req plugin.Request) (map[string]any, error) {
