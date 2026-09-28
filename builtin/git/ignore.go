@@ -1,7 +1,6 @@
 package git
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -10,17 +9,16 @@ import (
 	"os"
 	pathpkg "path"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"syscall"
-	"unicode/utf8"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
@@ -32,80 +30,130 @@ import (
 // maxIgnoreBytes and maxIgnorePatterns are what one status reads of the
 // working tree's ignore files, and the patterns it applies from them, in all.
 //
-// **go-git reads every ignore file whole and keeps every pattern, and nothing
-// bounded either.** Its status reads the .gitignore of each directory it
-// does not already ignore, then matches each directory it walks, and each
-// change it found, against every pattern read so far: the cost is the tree
-// times the patterns, from files a caller can write or a commit carry. A planted .gitignore of a hundred thousand patterns that
-// match nothing cost a git.status of a thousand untracked directories 15 s
-// of CPU, where git takes 2.6 s, and one of a million 154 s and 200 MB; git's
-// own limit, 100 MB, is room for ten million.
+// **go-git read every ignore file whole and kept every pattern, and nothing
+// bounded either.** Its status read the .gitignore of each directory it did
+// not already ignore, then matched each directory it walked, and each change
+// it found, against every pattern read so far: the cost was the tree times
+// the patterns, from files a caller can write or a commit carry. A planted
+// .gitignore of a hundred thousand patterns that match nothing cost a
+// git.status of a thousand untracked directories 15 s of CPU, where git
+// takes 2.6 s, and one of a million 154 s and 200 MB; git's own limit, 100
+// MB, is room for ten million. The files are read here now (ignoresRead),
+// and held to the same bounds.
 //
 // Measured against large real repositories rather than guessed: Chromium's
 // 285 ignore files hold 2354 patterns in 54 KiB, the largest 9.7 KiB, and
 // Linux's 405 hold about 1800 in 38 KiB. One status reads 1 MiB and applies
-// 10000 patterns, about twenty and four times those, in the order go-git
-// reads the files. An ignore file that would take it past either is not
-// applied at all rather than in part, as git applies none of a pattern file
-// past 100 MB and warns, and the answer says so (unapplied): what the file
-// ignores is then listed as untracked, which git would not list. Variables so
-// a test can lower them.
+// 10000 patterns, about twenty and four times those, in the order it reads
+// the files: the excludes file and info/exclude first, then each directory's
+// .gitignore from the root down, as the untracked paths under it are
+// reached. An ignore file that would take it past either is not applied at
+// all rather than in part, as git applies none of a pattern file past 100 MB
+// and warns, and the answer says so (unapplied): what the file ignores is
+// then listed as untracked, which git would not list. Variables so a test
+// can lower them.
 var (
 	maxIgnoreBytes    int64 = 1 << 20
 	maxIgnorePatterns       = 10000
 )
 
-// ignoreFiles is a working tree as its status reads it, whose ignore files
-// are held to what one status reads and applies (maxIgnoreBytes,
-// maxIgnorePatterns). Each is read here once, and what go-git reads of it is
-// what this read and counted.
+// statusFiles is a working tree as go-git's status reads it, which is kept
+// from applying any ignore file: each untracked path it lists is put to
+// git's own rules afterwards (ignoresRead.ignored).
+//
+// **go-git's ignore matching is not git's.** It matches a pattern with
+// filepath.Match, which reads a bracket expression otherwise than git
+// (wildmatch), a ** otherwise, and a directory pattern as reaching the
+// directory itself where git's reaches what is in it; and it matches every
+// directory it walks and every change it finds against every pattern of
+// every file it read, in code this cannot hold to a bound or a deadline.
+// So its status is handed a working tree whose own .gitignore reads `*`,
+// which ignores each directory under the root before go-git has read any
+// ignore file in it, and a pattern after that one which keeps every path
+// (keepEverything): go-git reads that one file and ignores nothing. A
+// .git/info/exclude it looks for in the working tree is not there, as its
+// own working tree filesystem never let it be: the repository's own is read
+// from where git keeps it (rootExcludeSources).
 //
 // **One open serves go-git's patterns and its comparison.** The status reads
 // a tracked file again, to hash it, when its timestamp no longer matches the
-// index's, through the same filesystem: a file refused here is refused to
-// both, the comparison hashes nothing, and calls it modified. ignoresRead's
-// restore puts that right from the disk.
-type ignoreFiles struct {
+// index's, through the same filesystem: the .gitignore it is handed `*` for
+// is hashed as `*`, and called modified. restoreRootIgnore puts that right
+// from the disk.
+type statusFiles struct {
 	billy.Filesystem
-	read *ignoresRead
 }
 
-// ignoresRead is what one status has read of its ignore files: the bytes and
-// the patterns it has left, each file it has decided on, by its path in the
-// working tree or as the answer names it, the files it reads ahead of the
-// working tree's own .gitignore (excludeSource), whether it served that
-// .gitignore with anything ahead of it, and whether it matches patterns
-// without regard to case (ignoreCase).
+// rootIgnore is the working tree's own .gitignore, the first ignore file
+// go-git reads and the one it is handed `*` for.
+const rootIgnore = ".gitignore"
+
+// everything is the one pattern go-git's status is handed to read.
+var everything = []byte("*\n")
+
+func (f statusFiles) Open(name string) (billy.File, error) {
+	return f.OpenFile(name, os.O_RDONLY, 0)
+}
+
+func (f statusFiles) OpenFile(name string, flag int, perm os.FileMode) (billy.File, error) {
+	if flag == os.O_RDONLY {
+		switch filepath.ToSlash(filepath.Clean(name)) {
+		case rootIgnore:
+			return &readIgnoreFile{Reader: bytes.NewReader(everything), name: name}, nil
+		case ".git/info/exclude":
+			return nil, &iofs.PathError{Op: "open", Path: name, Err: iofs.ErrNotExist}
+		}
+	}
+	return f.Filesystem.OpenFile(name, flag, perm)
+}
+
+// keepEverything is a pattern that keeps every path, the one go-git's status
+// is handed after the `*` it reads (statusFiles): go-git consults its last
+// pattern first, and stops at the first that decides.
+type keepEverything struct{}
+
+func (keepEverything) Match([]string, bool) gitignore.MatchResult { return gitignore.Include }
+
+// ignoresRead is what one status has read of its ignore files, and how it
+// matches a path against them: the bytes and the patterns it has left, each
+// file it has decided on, by its path in the working tree or as the answer
+// names it, the files it reads ahead of any .gitignore (excludeSource),
+// whether it matches without regard to case (ignoreCase), the working tree
+// it reads each .gitignore from, and each directory it has decided on.
 type ignoresRead struct {
 	bytes    int64
 	patterns int
 	files    map[string]ignoreFile
 	root     []excludeSource
-	prefixed bool
 	fold     bool
+	tree     billy.Filesystem
+	dirs     map[string]*ignoreDir
 }
 
-// ignoreFile is one ignore file as a status decided on it: the content it
-// applies, or why it does not apply it; whether that content is not the
-// file's own (asGitReads); and the directory its patterns reach, with its
-// trailing slash, "" for the whole working tree.
+// ignoreFile is one ignore file as a status decided on it: the patterns it
+// applies, or why it does not apply it, and the directory its patterns
+// reach, with its trailing slash, "" for the whole working tree.
 type ignoreFile struct {
-	content []byte
-	why     string
-	altered bool
-	reach   string
+	patterns []ignorePattern
+	why      string
+	reach    string
 }
 
-func newIgnoresRead(root []excludeSource, fold bool) *ignoresRead {
+// ignoreDir is a directory of the working tree as git's rules decide it:
+// excluded, so that everything under it is, or else the ignore files whose
+// patterns reach a path in it, its own .gitignore last, which git consults
+// last first.
+type ignoreDir struct {
+	excluded bool
+	chain    []ignoreFile
+}
+
+func newIgnoresRead(root []excludeSource, fold bool, tree billy.Filesystem) *ignoresRead {
 	return &ignoresRead{
-		bytes: maxIgnoreBytes, patterns: maxIgnorePatterns, files: map[string]ignoreFile{}, root: root, fold: fold,
+		bytes: maxIgnoreBytes, patterns: maxIgnorePatterns, files: map[string]ignoreFile{}, root: root,
+		fold: fold, tree: tree, dirs: map[string]*ignoreDir{},
 	}
 }
-
-// rootIgnore is the working tree's own .gitignore, the first ignore file
-// go-git reads, whose patterns reach the whole working tree, and the one it
-// is handed the root sources ahead of.
-const rootIgnore = ".gitignore"
 
 // excludeSource is a file of patterns git applies to the whole working tree
 // before any .gitignore: the one core.excludesFile names, and the
@@ -118,9 +166,8 @@ const rootIgnore = ".gitignore"
 // git.diff showed the .env whole. And the .git/info/exclude it looks for is
 // refused by its own working tree filesystem, which opens no path through a
 // .git, so a repository's info/exclude was never applied either. Both are
-// read here, the excludes file first, and handed to go-git ahead of the
-// working tree's own .gitignore, the first ignore file it reads, where they
-// reach every path and everything read after them wins over them, as in git.
+// read here, the excludes file first, and consulted after every .gitignore,
+// the excludes file last, as git consults them.
 type excludeSource struct {
 	shown string
 	fs    billy.Filesystem
@@ -128,100 +175,72 @@ type excludeSource struct {
 	why   string
 }
 
-// decideRoot decides each root source this has not, one that is not there
-// as one that holds nothing.
+// decideRoot decides each root source, one that is not there as one that
+// holds nothing.
 //
-// **Before any ignore file, whichever go-git opens first.** git reads the
-// root sources first, and they are held to the bounds first: go-git opens
-// the working tree's .gitignore before it reads them, and deciding them only
-// then let a .gitignore of 10000 patterns take the whole bound and leave the
+// **Before any .gitignore.** git reads the root sources first, and they are
+// held to the bounds first: deciding them after the working tree's own
+// .gitignore let one of 10000 patterns take the whole bound and leave the
 // operator's own excludes file not applied.
-func (r *ignoresRead) decideRoot() {
+func (r *ignoresRead) decideRoot() []ignoreFile {
+	out := make([]ignoreFile, 0, len(r.root))
 	for _, s := range r.root {
-		if _, decided := r.files[s.shown]; decided {
-			continue
-		}
 		file := ignoreFile{why: s.why}
 		if s.why == "" {
 			var err error
-			if file, err = r.decide(s.fs, s.name); err != nil {
+			if file, err = r.decide(s.fs, s.name, "", true); err != nil {
 				file = ignoreFile{}
 			}
 		}
 		r.files[s.shown] = file
+		out = append(out, file)
 	}
+	return out
 }
 
-// rootExcludes is what the root sources this applies hold, one after the
-// other.
-func (r *ignoresRead) rootExcludes() []byte {
-	r.decideRoot()
-	var content []byte
-	for _, s := range r.root {
-		if file := r.files[s.shown]; file.why == "" && len(file.content) > 0 {
-			content = append(append(content, file.content...), '\n')
-		}
+// gitignore is the .gitignore of dir, a directory of the working tree with
+// its trailing slash, "" for the root, as the status decides it; ok is false
+// where there is none.
+func (r *ignoresRead) gitignore(dir string) (file ignoreFile, ok bool) {
+	name := dir + ".gitignore"
+	if file, decided := r.files[name]; decided {
+		return file, true
 	}
-	return content
-}
-
-// ignoreFileName reports whether go-git's status reads name, a path in the
-// working tree with forward slashes, for patterns: a .gitignore anywhere. It
-// looks for a .git/info/exclude in each directory too, and its own working
-// tree filesystem refuses the path, which goes through a .git.
-func ignoreFileName(name string) bool {
-	return pathpkg.Base(name) == ".gitignore"
-}
-
-func (f ignoreFiles) Open(name string) (billy.File, error) {
-	return f.OpenFile(name, os.O_RDONLY, 0)
-}
-
-func (f ignoreFiles) OpenFile(name string, flag int, perm os.FileMode) (billy.File, error) {
-	key := filepath.ToSlash(filepath.Clean(name))
-	if flag != os.O_RDONLY || !ignoreFileName(key) {
-		return f.Filesystem.OpenFile(name, flag, perm)
+	file, err := r.decide(r.tree, name, dir, false)
+	if err != nil {
+		return ignoreFile{}, false
 	}
-	f.read.decideRoot()
-	file, decided := f.read.files[key]
-	var missing error
-	if !decided {
-		file, missing = f.read.decide(f.Filesystem, name)
-		if missing == nil {
-			file.reach = strings.TrimSuffix(key, ".gitignore")
-			f.read.files[key] = file
-		}
-	}
-	var ahead []byte
-	if key == rootIgnore {
-		ahead = f.read.rootExcludes()
-		f.read.prefixed = f.read.prefixed || len(ahead) > 0
-	}
-	switch {
-	case len(ahead) == 0 && missing != nil:
-		return nil, missing
-	case len(ahead) == 0 && file.why != "":
-		return nil, &iofs.PathError{Op: "open", Path: name, Err: errors.New(file.why)}
-	case file.why == "":
-		ahead = append(ahead, file.content...)
-	}
-	return &readIgnoreFile{Reader: bytes.NewReader(ahead), name: name}, nil
+	file.reach = dir
+	r.files[name] = file
+	return file, true
 }
 
 // decide reads the ignore file at name, when what is left of the bounds holds
 // it, and counts its patterns against them; a file they do not hold is not
-// read. An error is for a file that is not there, which go-git passes over.
+// read. base is the directory its patterns are taken from, and follow says
+// whether a symbolic link is read through, as git reads the root sources and
+// never a .gitignore. An error is for a file that is not there, which git
+// passes over.
 //
 // One that is there and cannot be read is not applied, and named, as git
-// names one it cannot read; go-git passed over it without a word, and so did
-// this: a .gitignore that is a directory, or that the user may not read.
-func (r *ignoresRead) decide(fs billy.Filesystem, name string) (ignoreFile, error) {
-	info, err := fs.Stat(name)
+// names one it cannot read: a .gitignore that is a directory, one the user
+// may not read, and one that is a symbolic link, which git does not follow
+// and warns of.
+func (r *ignoresRead) decide(fs billy.Filesystem, name, base string, follow bool) (ignoreFile, error) {
+	var info os.FileInfo
+	var err error
+	if follow {
+		info, err = fs.Stat(name)
+	} else {
+		info, err = fs.Lstat(name)
+	}
 	switch {
 	case errors.Is(err, iofs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR):
 		return ignoreFile{}, err
 	case err != nil:
 		return ignoreFile{why: unreadable(err)}, nil
+	case info.Mode()&os.ModeSymlink != 0:
+		return ignoreFile{why: "a symbolic link, which git does not follow"}, nil
 	case !info.Mode().IsRegular():
 		return ignoreFile{why: "not a regular file"}, nil
 	case info.Size() > r.bytes:
@@ -239,19 +258,8 @@ func (r *ignoresRead) decide(fs billy.Filesystem, name string) (ignoreFile, erro
 	if int64(len(content)) > r.bytes {
 		return ignoreFile{why: r.pastBytes(int64(len(content)))}, nil
 	}
-	read := len(content)
-	content, altered := asGitReads(content)
-	if r.fold {
-		folded := foldCase(content)
-		altered = altered || !bytes.Equal(folded, content)
-		content = folded
-	}
-	n, cut := patternCount(content)
-	if cut {
-		return ignoreFile{why: fmt.Sprintf("a line longer than the %s this reader takes of one, where it would "+
-			"stop reading the file and git reads on", format.Bytes(bufio.MaxScanTokenSize))}, nil
-	}
-	if n > r.patterns {
+	patterns := parseIgnore(content)
+	if n := len(patterns); n > r.patterns {
 		why := fmt.Sprintf("%s, past the %s one status applies", format.CountOf(n, "pattern"),
 			format.CountOf(maxIgnorePatterns, "pattern"))
 		if n <= maxIgnorePatterns {
@@ -260,214 +268,267 @@ func (r *ignoresRead) decide(fs billy.Filesystem, name string) (ignoreFile, erro
 		}
 		return ignoreFile{why: why}, nil
 	}
-	r.bytes -= int64(read)
-	r.patterns -= n
-	return ignoreFile{content: content, altered: altered}, nil
+	r.bytes -= int64(len(content))
+	r.patterns -= len(patterns)
+	return ignoreFile{patterns: patterns, reach: base}, nil
+}
+
+// dir is dir, a directory of the working tree with its trailing slash, ""
+// for the root, as git's rules decide it, each decided once for the status.
+//
+// **As git's prep_exclude decides it.** A directory is matched, as a
+// directory, against the ignore files that reach it, and where one excludes
+// it, everything under it is excluded: its own .gitignore is never read, and
+// no pattern brings back a file in it, `!keep` included, as git's own
+// documentation says of a file under a directory it excludes. Otherwise its
+// .gitignore is read, and reaches what is in it.
+func (r *ignoresRead) dir(dir string) *ignoreDir {
+	if d, ok := r.dirs[dir]; ok {
+		return d
+	}
+	d := &ignoreDir{}
+	if dir == "" {
+		// In the order git reads them, and consulted last first: the
+		// .gitignore files, then info/exclude, then the excludes file.
+		d.chain = r.decideRoot()
+	} else {
+		path := strings.TrimSuffix(dir, "/")
+		parentDir, name := pathpkg.Split(path)
+		parent := r.dir(parentDir)
+		switch {
+		case parent.excluded, excludes(lastMatch(parent.chain, path, name, true, r.fold)):
+			d.excluded = true
+		default:
+			d.chain = parent.chain[:len(parent.chain):len(parent.chain)]
+		}
+	}
+	if !d.excluded {
+		if file, ok := r.gitignore(dir); ok && file.why == "" {
+			d.chain = append(d.chain, file)
+		}
+	}
+	r.dirs[dir] = d
+	return d
+}
+
+// ignored reports whether git ignores path, an untracked file of the working
+// tree with forward slashes: one under a directory git excludes, or one the
+// last pattern to match it in the files that reach it excludes.
+func (r *ignoresRead) ignored(path string) bool {
+	dir, name := pathpkg.Split(path)
+	d := r.dir(dir)
+	return d.excluded || excludes(lastMatch(d.chain, path, name, false, r.fold))
+}
+
+// dropIgnored takes out of status each untracked path git ignores, in path
+// order, so that the files read against the bounds are the same on every
+// call.
+func (r *ignoresRead) dropIgnored(status git.Status) {
+	var untracked []string
+	for path, fs := range status {
+		if fs.Worktree == git.Untracked {
+			untracked = append(untracked, path)
+		}
+	}
+	sort.Strings(untracked)
+	for _, path := range untracked {
+		if r.ignored(path) {
+			delete(status, path)
+		}
+	}
+}
+
+// excludes reports whether a pattern that matched, nil for none, excludes.
+func excludes(p *ignorePattern) bool { return p != nil && !p.negative }
+
+// lastMatch is the pattern that decides path, whose last part is name, in
+// chain, as git's last_matching_pattern_from_lists finds it: the files from
+// the last to the first, each file's patterns from its last to its first,
+// and the first to match; nil where none does.
+func lastMatch(chain []ignoreFile, path, name string, isDir, fold bool) *ignorePattern {
+	for i := len(chain) - 1; i >= 0; i-- {
+		file := chain[i]
+		for j := len(file.patterns) - 1; j >= 0; j-- {
+			p := &file.patterns[j]
+			if p.dirOnly && !isDir {
+				continue
+			}
+			if p.basename && p.matchesName(name, fold) || !p.basename && p.matchesPath(path, file.reach, fold) {
+				return p
+			}
+		}
+	}
+	return nil
+}
+
+// ignorePattern is one line of an ignore file, as git's parse_path_pattern
+// reads it: its ! and its trailing / taken off and said (negative, dirOnly),
+// whether it holds no slash, and so matches a name alone (basename), how
+// many bytes of it come before its first wildcard (literal), and whether it
+// is a * and then no wildcard (endsWith), which git matches by the tail.
+type ignorePattern struct {
+	text                                  string
+	literal                               int
+	negative, dirOnly, basename, endsWith bool
+}
+
+// parseIgnore is the patterns of content, an ignore file, as git's
+// add_patterns_from_buffer reads it: a UTF-8 byte order mark before it
+// skipped, a line empty or starting with # skipped, one CR before each line
+// feed taken off, each line ended at a NUL in it, as git reads it as a C
+// string, and the spaces after its last character taken off where no
+// backslash escapes the first. A line that leaves nothing to match matches
+// no path, and is not kept.
+//
+// **go-git read the bytes as they were, and git does not.** git skips the
+// byte order mark an editor on Windows writes, where go-git kept it as part
+// of the first pattern, and ends a line at a NUL, where go-git kept the rest
+// as part of the pattern, so neither matched: `.env` after either was a file
+// git ignores that git.status listed and git.diff showed whole. And go-git's
+// reader stopped at a line longer than 64 KiB and dropped every pattern after
+// it, where git reads on: this reads on too.
+func parseIgnore(content []byte) []ignorePattern {
+	content = bytes.TrimPrefix(content, utf8BOM)
+	var out []ignorePattern
+	for rest := content; len(rest) > 0; {
+		line, after, _ := bytes.Cut(rest, []byte{'\n'})
+		rest = after
+		if len(line) == 0 || line[0] == '#' {
+			continue
+		}
+		line = bytes.TrimSuffix(line, []byte{'\r'})
+		if nul := bytes.IndexByte(line, 0); nul >= 0 {
+			line = line[:nul]
+		}
+		if p := parsePattern(trimTrailingSpaces(string(line))); p.text != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // utf8BOM is the byte order mark an editor may write before UTF-8 text.
 var utf8BOM = []byte(string(rune(0xFEFF)))
 
-// asGitReads is content as git reads an ignore file, and whether that is not
-// content as it is: a UTF-8 byte order mark before it skipped, and each line
-// ended at a NUL byte in it.
-//
-// **go-git reads the bytes as they are, and git does not.** git skips a byte
-// order mark, which an editor on Windows writes before a .gitignore, and
-// reads each line as a C string, ending it at a NUL. go-git kept the mark as
-// part of the first pattern and the rest of the line as part of each, so
-// neither matched: `.env` as the first line after a mark, or `.env` followed
-// by a NUL, is a file git ignores, which git.status listed and git.diff
-// showed whole. Handed to go-git as git reads it, the patterns are git's.
-func asGitReads(content []byte) ([]byte, bool) {
-	out := bytes.TrimPrefix(content, utf8BOM)
-	if bytes.IndexByte(out, 0) < 0 {
-		return out, len(out) != len(content)
-	}
-	cut := make([]byte, 0, len(out))
-	for rest := out; len(rest) > 0; {
-		line, after, found := bytes.Cut(rest, []byte{'\n'})
-		if nul := bytes.IndexByte(line, 0); nul >= 0 {
-			line = line[:nul]
-		}
-		cut = append(cut, line...)
-		if found {
-			cut = append(cut, '\n')
-		}
-		rest = after
-	}
-	return cut, true
-}
-
-// foldCase is content as go-git has to be handed it to match what git
-// matches with core.ignorecase set, where a pattern's letters match a name's
-// in either case. A letter becomes a bracket expression of both, [xX], a
-// bracket expression gains the other case of each letter it holds, and a
-// comment is left as it is.
-//
-// **git matches ignore patterns without regard to case where core.ignorecase
-// is set, and go-git never does.** `git init` sets it in every repository it
-// makes on a filesystem that does not tell case apart, macOS's by default,
-// and there `.ENV` in a .gitignore ignores a .env: git.status listed the .env
-// and git.diff showed it whole.
-//
-// And where git's own matcher leaves case alone, this does too. git lowers
-// the name's letters and a pattern's, but not a letter written inside a
-// bracket expression or after a backslash: such a letter in upper case
-// matches no name at all, a bracket expression holding nothing else matches
-// no character, and one that negates nothing else matches any. So `[A]x` and
-// `\Qx` ignore nothing, and `[^A]x` ignores `ax`, as git has them.
-func foldCase(content []byte) []byte {
-	out := make([]byte, 0, len(content))
-	for rest := content; len(rest) > 0; {
-		line, after, found := bytes.Cut(rest, []byte{'\n'})
-		if bytes.HasPrefix(line, []byte("#")) {
-			out = append(out, line...)
-		} else if folded, matches := foldPattern(line); matches {
-			out = append(out, folded...)
-		}
-		if found {
-			out = append(out, '\n')
-		}
-		rest = after
-	}
-	return out
-}
-
-// escapes is whether filepath.Match, which go-git matches each part of a
-// pattern with, reads a backslash as escaping the byte after it: everywhere
-// but Windows, where it separates a path.
-var escapes = runtime.GOOS != "windows"
-
-// foldPattern is pattern with each letter matching either case (foldCase),
-// read as filepath.Match reads it: a backslash escapes the byte after it,
-// and a bracket expression runs from its [ to the first ] after a member.
-// One filepath.Match refuses is left as it is from there on, a pattern that
-// matches nothing either way. matches is false for a pattern that matches
-// no name in git, which is left out.
-func foldPattern(pattern []byte) (folded []byte, matches bool) {
-	out := make([]byte, 0, 4*len(pattern))
-	for i := 0; i < len(pattern); i++ {
-		c := pattern[i]
-		switch {
-		case c == '\\' && escapes && i+1 < len(pattern):
-			next := pattern[i+1]
-			switch {
-			case isUpper(next):
-				return nil, false
-			case isLetter(next):
-				out = append(out, '[', next, next&^0x20, ']')
-			default:
-				out = append(out, c, next)
+// trimTrailingSpaces is line without the spaces that end it, as git's
+// trim_trailing_spaces takes them off: spaces alone, not tabs, and from the
+// first of them that no backslash escapes, the escaped one kept.
+func trimTrailingSpaces(line string) string {
+	last := -1
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case ' ':
+			if last < 0 {
+				last = i
 			}
-			i++
-		case c == '[':
-			class, n, live := foldClass(pattern[i:])
-			if n < 0 {
-				return append(out, pattern[i:]...), true
+		case '\\':
+			if i++; i == len(line) {
+				return line
 			}
-			if !live {
-				return nil, false
-			}
-			out = append(out, class...)
-			i += n - 1
-		case isLetter(c):
-			out = append(out, '[', c|0x20, c&^0x20, ']')
+			last = -1
 		default:
-			out = append(out, c)
+			last = -1
 		}
 	}
-	return out, true
+	if last >= 0 {
+		return line[:last]
+	}
+	return line
 }
 
-// foldClass is the bracket expression class starts with, as git matches it
-// with core.ignorecase set, and how many bytes of class it took: -1 where
-// filepath.Match refuses it, never closed or malformed. live is false for
-// one that matches no character. A lower-case letter it holds gains its
-// upper case and a range the other case of each letter in it; an upper-case
-// letter alone matches nothing in git, and is left out.
-func foldClass(class []byte) (folded []byte, n int, live bool) {
-	j := 1
-	negated := j < len(class) && class[j] == '^'
-	if negated {
-		j++
+// parsePattern is line as git's parse_path_pattern reads a pattern.
+func parsePattern(line string) ignorePattern {
+	var p ignorePattern
+	if p.negative = strings.HasPrefix(line, "!"); p.negative {
+		line = line[1:]
 	}
-	var members []byte
-	for count := 0; ; count++ {
-		if j < len(class) && class[j] == ']' && count > 0 {
-			break
-		}
-		start := j
-		lo, size := classMember(class[j:])
-		if size == 0 {
-			return nil, -1, false
-		}
-		j += size
-		if j < len(class) && class[j] == '-' {
-			hi, size := classMember(class[j+1:])
-			if size == 0 {
-				return nil, -1, false
-			}
-			j += 1 + size
-			members = append(members, class[start:j]...)
-			for k := range len(asciiLetters) {
-				l := asciiLetters[k]
-				if other := rune(l ^ 0x20); rune(l) >= lo && rune(l) <= hi && (other < lo || other > hi) {
-					members = append(members, l^0x20)
-				}
-			}
-			continue
-		}
-		// A member below utf8.RuneSelf is its own last byte, escaped or not.
-		switch last := class[j-1]; {
-		case lo < utf8.RuneSelf && isUpper(last):
-		case lo < utf8.RuneSelf && isLetter(last):
-			members = append(members, last, last&^0x20)
-		default:
-			members = append(members, class[start:j]...)
+	literal := simpleLength(line)
+	p.endsWith = strings.HasPrefix(line, "*") && simpleLength(line[1:]) == len(line)-1
+	if p.dirOnly = strings.HasSuffix(line, "/"); p.dirOnly {
+		line = line[:len(line)-1]
+	}
+	p.text, p.literal, p.basename = line, min(literal, len(line)), !strings.Contains(line, "/")
+	return p
+}
+
+// simpleLength is how many bytes of s come before its first wildcard, git's
+// simple_length.
+func simpleLength(s string) int {
+	for i := 0; i < len(s); i++ {
+		if isGlobSpecial(s[i]) {
+			return i
 		}
 	}
-	// A ^ first would negate what it was a member of: it goes last, where it
-	// is one, and alone it is the character itself.
-	if !negated && len(members) > 0 && members[0] == '^' {
-		if len(members) == 1 {
-			return []byte("^"), j + 1, true
-		}
-		members = append(members[1:], '^')
-	}
+	return len(s)
+}
+
+// matchesName is git's match_basename: whether a pattern that holds no slash
+// matches name, the last part of a path.
+func (p *ignorePattern) matchesName(name string, fold bool) bool {
 	switch {
-	case len(members) > 0 && negated:
-		return append(append([]byte("[^"), members...), ']'), j + 1, true
-	case len(members) > 0:
-		return append(append([]byte("["), members...), ']'), j + 1, true
-	case negated:
-		return []byte("?"), j + 1, true
+	case p.literal == len(p.text):
+		return samePath(p.text, name, fold)
+	case p.endsWith:
+		tail := p.text[1:]
+		return len(tail) <= len(name) && samePath(tail, name[len(name)-len(tail):], fold)
 	}
-	return nil, j + 1, false
+	return wildmatch(p.text, name, foldFlag(fold))
 }
 
-// asciiLetters is every letter foldCase gives both cases.
-const asciiLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+// matchesPath is git's match_pathname: whether a pattern that holds a slash
+// matches path, taken from base, the directory of the file it is in with
+// its trailing slash, as a pattern holding a slash is.
+func (p *ignorePattern) matchesPath(path, base string, fold bool) bool {
+	pattern, literal := p.text, p.literal
+	if strings.HasPrefix(pattern, "/") {
+		pattern, literal = pattern[1:], max(literal-1, 0)
+	}
+	if !hasPathPrefix(path, base, fold) {
+		return false
+	}
+	name := path[len(base):]
+	if literal > 0 {
+		if literal > len(name) || !samePath(pattern[:literal], name[:literal], fold) {
+			return false
+		}
+		pattern, name = pattern[literal:], name[literal:]
+		if pattern == "" && name == "" {
+			return true
+		}
+	}
+	return wildmatch(pattern, name, wmPathname|foldFlag(fold))
+}
 
-// isUpper is an ASCII upper-case letter.
-func isUpper(c byte) bool { return c >= 'A' && c <= 'Z' }
+// hasPathPrefix reports whether path lies under base, a directory with its
+// trailing slash, "" for the root, which every path does.
+func hasPathPrefix(path, base string, fold bool) bool {
+	return len(path) > len(base) && samePath(path[:len(base)], base, fold)
+}
 
-// classMember is the member of a bracket expression s starts with, as
-// filepath.Match reads one, and how many bytes it takes; 0 where it refuses
-// it, as it refuses one that is a - or a ], or that nothing follows.
-func classMember(s []byte) (rune, int) {
-	if len(s) == 0 || s[0] == '-' || s[0] == ']' {
-		return 0, 0
+// samePath is git's fspathcmp: two paths equal, or, where fold is set, equal
+// but for the case of an ASCII letter, as strcasecmp compares them.
+func samePath(a, b string, fold bool) bool {
+	if !fold {
+		return a == b
 	}
-	skip := 0
-	if s[0] == '\\' && escapes {
-		skip = 1
+	if len(a) != len(b) {
+		return false
 	}
-	r, n := utf8.DecodeRune(s[skip:])
-	if n == 0 || r == utf8.RuneError && n == 1 || len(s) == skip+n {
-		return 0, 0
+	for i := 0; i < len(a); i++ {
+		if lowerASCII(a[i]) != lowerASCII(b[i]) {
+			return false
+		}
 	}
-	return r, skip + n
+	return true
+}
+
+// foldFlag is wmCasefold where fold is set, as git matches with
+// core.ignorecase.
+func foldFlag(fold bool) wmFlags {
+	if fold {
+		return wmCasefold
+	}
+	return 0
 }
 
 // pastBytes is why an ignore file of size bytes is not read.
@@ -479,27 +540,8 @@ func (r *ignoresRead) pastBytes(size int64) string {
 		format.Bytes(size), format.Bytes(maxIgnoreBytes))
 }
 
-// patternCount is how many patterns go-git keeps of content: a line that is
-// neither blank nor a # comment, read as its reader reads lines. cut is
-// whether that reader would stop short of the end, at a line longer than it
-// takes.
-//
-// **A file it would stop in is not applied at all.** go-git's reader keeps
-// the patterns before such a line and drops every one after it without a
-// word, where git reads on: a 64 KiB comment above `.env` had git.status list
-// the .env and git.diff show it whole. No ignore file anybody writes holds
-// such a line, and one that does is named, as a file past the bounds is.
-func patternCount(content []byte) (n int, cut bool) {
-	lines := bufio.NewScanner(bytes.NewReader(content))
-	for lines.Scan() {
-		if line := lines.Text(); !strings.HasPrefix(line, "#") && strings.TrimSpace(line) != "" {
-			n++
-		}
-	}
-	return n, lines.Err() != nil
-}
-
-// readIgnoreFile is an ignore file as go-git reads it, the content this read.
+// readIgnoreFile is an ignore file as go-git reads it, the content this hands
+// it (statusFiles).
 type readIgnoreFile struct {
 	*bytes.Reader
 	name string
@@ -512,26 +554,21 @@ func (f *readIgnoreFile) Unlock() error             { return nil }
 func (f *readIgnoreFile) Write([]byte) (int, error) { return 0, errReadOnly }
 func (f *readIgnoreFile) Truncate(int64) error      { return errReadOnly }
 
-// restore marks unmodified each tracked ignore file this served otherwise
-// than it is that the status marked modified, where what is on disk is what
-// the index records: the status's comparison was refused the file's content,
-// handed it as git reads it (asGitReads), or handed the root sources ahead of
-// it (ignoreFiles), not shown a change. fs is the working tree, read as the
+// restoreRootIgnore marks unmodified the working tree's own .gitignore where
+// the status marked it modified and what is on disk is what the index
+// records: the status's comparison was handed `*` in its place
+// (statusFiles), not shown a change. fs is the working tree, read as the
 // comparison reads it, and the file is hashed only where its size is the
 // index's.
-func (r *ignoresRead) restore(fs billy.Filesystem, idx *index.Index, status git.Status) {
-	entryOf := indexLookup(idx)
-	for name, file := range r.files {
-		fst, listed := status[name]
-		served := file.why != "" || file.altered || name == rootIgnore && r.prefixed
-		if !served || !listed || fst.Worktree != git.Modified {
-			continue
-		}
-		if entry := entryOf(name); entry != nil && sameAsIndexed(fs, name, entry) {
-			fst.Worktree = git.Unmodified
-			if fst.Staging == git.Unmodified {
-				delete(status, name)
-			}
+func restoreRootIgnore(fs billy.Filesystem, idx *index.Index, status git.Status) {
+	fst, listed := status[rootIgnore]
+	if !listed || fst.Worktree != git.Modified {
+		return
+	}
+	if entry := indexLookup(idx)(rootIgnore); entry != nil && sameAsIndexed(fs, rootIgnore, entry) {
+		fst.Worktree = git.Unmodified
+		if fst.Staging == git.Unmodified {
+			delete(status, rootIgnore)
 		}
 	}
 }
@@ -685,7 +722,15 @@ func excludesFile(configs []scopedConfig, root string) (path, scope string) {
 }
 
 // ignoreCase reports whether git matches ignore patterns without regard to
-// case: core.ignorecase, as the last of configs that sets it has it (foldCase).
+// case: core.ignorecase, as the last of configs that sets it has it.
+//
+// **go-git never did.** `git init` sets it in every repository it makes on a
+// filesystem that does not tell case apart, macOS's by default, and there
+// `.ENV` in a .gitignore ignores a .env: git.status listed the .env and
+// git.diff showed it whole. Where it is set, a name is matched as git's
+// matcher matches it with WM_CASEFOLD (wildmatch): a letter of the name in
+// either case, and a letter inside a bracket expression or after a backslash
+// as it is written, which in upper case matches no name at all.
 func ignoreCase(configs []scopedConfig) bool {
 	on := false
 	for _, f := range configs {

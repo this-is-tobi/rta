@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -28,12 +29,12 @@ func statusCapability() plugin.Capability {
 		Description: "The structured equivalent of `git status --porcelain`: every path with a " +
 			"staged change, an unstaged change, or neither yet — added, tracked at all — one row " +
 			"per path, both halves shown side by side rather than requiring the two-column code to " +
-			"be decoded by eye. It ignores what git ignores: each .gitignore, the repository's " +
-			"info/exclude, and the file core.excludesFile names, ~/.config/git/ignore by default; at " +
-			"most 1 MiB and 10000 patterns of them in all, in the order it reads them. One past that is " +
-			"not applied, as git applies no pattern file past 100 MB, and neither is one with a line " +
-			"longer than 64 KiB, where this reader would stop: what it ignores is listed, and a warning " +
-			"names it.",
+			"be decoded by eye. It ignores what git ignores, matching each pattern as git's own matcher " +
+			"does: each .gitignore, the repository's info/exclude, and the file core.excludesFile names, " +
+			"~/.config/git/ignore by default; at most 1 MiB and 10000 patterns of them in all, in the " +
+			"order it reads them. One past that is not applied, as git applies no pattern file past " +
+			"100 MB, and neither is a .gitignore that is a symbolic link, which git does not follow: " +
+			"what it ignores is listed, and a warning names it.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},
@@ -105,12 +106,14 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 }
 
 // worktreeStatus is wt's status, as go-git's Worktree.Status reads it but
-// through submodulesOnDisk, so that reading it writes nothing, with the
-// ignore files git applies at the root that go-git does not find
-// (rootExcludeSources), with every ignore file held to what one status
-// applies (ignoreFiles), and with a change of kind told apart from a change
-// of content (kindChanges); and the ignore files it did not apply. confine
-// is the host's path gate. Every capability that reports the working tree's
+// through submodulesOnDisk, so that reading it writes nothing, with no
+// ignore file of go-git's applying (statusFiles), and each untracked path it
+// lists put to git's own rules instead (ignoresRead), which read the ignore
+// files git applies at the root that go-git does not find
+// (rootExcludeSources) and hold every ignore file to what one status
+// applies; and with a change of kind told apart from a change of content
+// (kindChanges). The ignore files it did not apply come with it. confine is
+// the host's path gate. Every capability that reports the working tree's
 // state asks for it here.
 func worktreeStatus(repo *git.Repository, wt *git.Worktree, confine func(string) (string, *view.Error)) (
 	git.Status, unapplied, error,
@@ -122,8 +125,8 @@ func worktreeStatus(repo *git.Repository, wt *git.Worktree, confine func(string)
 	}
 	configs, cerr := gitConfigs(repo)
 	read := newIgnoresRead(rootExcludeSources(repo, configs, cerr, wt.Filesystem.Root(), confine),
-		cerr == nil && ignoreCase(configs))
-	reader, err := git.Open(storer, ignoreFiles{Filesystem: wt.Filesystem, read: read})
+		cerr == nil && ignoreCase(configs), wt.Filesystem)
+	reader, err := git.Open(storer, statusFiles{Filesystem: wt.Filesystem})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -131,12 +134,14 @@ func worktreeStatus(repo *git.Repository, wt *git.Worktree, confine func(string)
 	if err != nil {
 		return nil, nil, err
 	}
+	bounded.Excludes = []gitignore.Pattern{keepEverything{}}
 	status, err := bounded.Status()
 	if err != nil {
 		return nil, nil, err
 	}
+	read.dropIgnored(status)
 	if idx, err := repo.Storer.Index(); err == nil {
-		read.restore(wt.Filesystem, idx, status)
+		restoreRootIgnore(wt.Filesystem, idx, status)
 	}
 	if onDisk {
 		kindChanges(repo, wt.Filesystem.Root(), status)

@@ -3,7 +3,9 @@ package git
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -94,18 +96,23 @@ func TestTheIgnoreFilesPastThePatternsAStatusAppliesAreNotApplied(t *testing.T) 
 // A file the status would not apply is still a file: one that is tracked,
 // whose content has not changed since it was committed, is not listed as
 // modified because its timestamp has, which is what go-git reads it again
-// for.
+// for. And the working tree's own .gitignore, which go-git's status is handed
+// `*` for, is not either.
 func TestATrackedIgnoreFileNotAppliedIsNotModifiedByATouch(t *testing.T) {
 	lowerIgnoreBounds(t, 64, 100)
 	dir, repo := testRepo(t)
 	commitFile(t, repo, dir, ".gitignore", "*.log\n"+strings.Repeat("# padding\n", 20), "initial")
+	commitFile(t, repo, dir, "sub/.gitignore", "*.log\n", "second")
+	writeFile(t, dir, "x.log", "log\n")
 	later := time.Now().Add(time.Hour)
-	if err := os.Chtimes(filepath.Join(dir, ".gitignore"), later, later); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{".gitignore", "sub/.gitignore"} {
+		if err := os.Chtimes(filepath.Join(dir, name), later, later); err != nil {
+			t.Fatal(err)
+		}
 	}
 	tbl := table(t, runStatus, req(t, dir, nil))
-	if len(tbl.Rows) != 0 {
-		t.Errorf("rows = %v, want none: .gitignore was touched, not changed", tbl.Rows)
+	if len(tbl.Rows) != 1 || tbl.Rows[0][0] != "x.log" {
+		t.Errorf("rows = %v, want x.log alone: each .gitignore was touched, not changed", tbl.Rows)
 	}
 	if ignoreWarning(tbl) == nil {
 		t.Error("no warning naming the .gitignore that was not applied")
@@ -415,9 +422,9 @@ func TestAnExcludesFilePastTheBoundsIsNamedAndReachesEverything(t *testing.T) {
 // order mark before them and ends a line at a NUL: a pattern after either
 // was one go-git never matched, so git.status listed a file git ignores and
 // git.diff showed it whole. Each is now read as git reads it, and a tracked
-// file read so is not modified by a touch. go-git's reader also stops at a
-// line longer than it takes, dropping every pattern after it where git reads
-// on: a file holding one is not applied, and named.
+// file read so is not modified by a touch. go-git's reader also stopped at a
+// line longer than 64 KiB, dropping every pattern after it, where git reads
+// on, and so does this.
 func TestAnIgnoreFileIsReadAsGitReadsIt(t *testing.T) {
 	bom, nul := string(rune(0xFEFF)), string(rune(0))
 	for name, content := range map[string]string{
@@ -438,13 +445,6 @@ func TestAnIgnoreFileIsReadAsGitReadsIt(t *testing.T) {
 				t.Fatal(err)
 			}
 			tbl := table(t, runStatus, req(t, dir, nil))
-			if name == "a long line" {
-				if w := ignoreWarning(tbl); w == nil || !strings.Contains(w.Message, "a line longer than the 64.0 KiB") ||
-					len(tbl.Rows) != 1 || tbl.Rows[0][0] != "secret.env" {
-					t.Errorf("rows %v, warning %+v, want secret.env listed and .gitignore named as not applied", tbl.Rows, w)
-				}
-				return
-			}
 			if len(tbl.Rows) != 0 || ignoreWarning(tbl) != nil {
 				t.Errorf("rows %v, warnings %+v, want none: git ignores secret.env, and .gitignore was touched", tbl.Rows, tbl.Warnings)
 			}
@@ -482,32 +482,124 @@ func TestIgnoreCaseMatchesPatternsAsGitDoes(t *testing.T) {
 	}
 }
 
-// Each pattern is spelled for filepath.Match, which go-git matches with, to
-// match what git matches with core.ignorecase: a letter in either case, a
-// bracket expression with the other case of what it holds, an upper-case
-// letter git leaves alone matching nothing, and what filepath.Match refuses
-// left as it is.
-func TestFoldCaseSpellsAPatternAsGitMatchesIt(t *testing.T) {
-	for in, want := range map[string]string{
-		"# Keep": "# Keep",
-		"*.Log":  "*.[lL][oO][gG]",
-		"!Mine/": "![mM][iI][nN][eE]/",
-		"[a-c]":  "[a-cABC]",
-		"[B-b]":  "[B-bcdefghijklmnopqrstuvwxyzA]",
-		"[A]x":   "",
-		"[^A]x":  "?[xX]",
-		"[A^]h":  "^[hH]",
-		"[A^b]":  "[bB^]",
-		`\Qx`:    "",
-		`\qx`:    "[qQ][xX]",
-		`a\ `:    `[aA]\ `,
-		`\[a]`:   `\[[aA]]`,
-		"b[":     "[bB][",
-		"[]a]":   "[]a]",
-		"a/**/B": "[aA]/**/[bB]",
-	} {
-		if got := string(foldCase([]byte(in + "\n"))); got != want+"\n" {
-			t.Errorf("foldCase(%q) = %q, want %q", in, got, want+"\n")
+// gitMatchFixture is a working tree whose ignore files hold the patterns git
+// reads otherwise than go-git did, each untracked file named for what it
+// tests, and the untracked files git 2.50 lists of it with `git ls-files
+// --others --exclude-standard`: what git does not ignore.
+var gitMatchFixture = struct {
+	ignores map[string]string
+	files   []string
+	want    string
+}{
+	ignores: map[string]string{
+		".gitignore": strings.Join([]string{
+			"neg[!0-9].txt", "br[]a]", "dash[a-]", "[[:upper:]]*.key", "star**b", "build/", "!build/keep.txt",
+			"/rooted", "**/any", "a/**/z", `\!bang`, "trail.txt   ", "open[", "k[a-c-e]", "dir-only/",
+		}, "\n") + "\n",
+		"sub/.gitignore":    "*.log\ndeep/x.txt\n!neg1.txt\n",
+		".git/info/exclude": "*.tmp\n!keep.tmp\n",
+	},
+	files: []string{
+		"neg1.txt", "negA.txt", "br]", "bra", "brb", "dash-", "dasha", "dashb", "Prod.key", "dev.key",
+		"starXXb", "starb", "build/keep.txt", "build/out.o", "rooted", "sub/rooted", "any", "sub/deep/any",
+		"a/z", "a/m/n/z", "!bang", "trail.txt", "open[", "ka", "k-", "ke", "kd", "dir-only", "x.tmp", "keep.tmp",
+		"sub/a.log", "sub/deep/x.txt", "deep/x.txt", "sub/neg1.txt", "sub/negB.txt", "a.log",
+	},
+	want: "a.log brb dashb deep/x.txt dev.key dir-only kd keep.tmp neg1.txt open[ sub/neg1.txt sub/rooted",
+}
+
+// go-git matched ignore patterns with filepath.Match: `[!0-9]` held a !, `[]a]`
+// and `[a-]` matched nothing, `[[:upper:]]` was not a class, a ** beside
+// anything but a slash matched nothing, and `!build/keep.txt` brought back a
+// file under a directory git excludes, which git's own documentation says no
+// pattern does. Each untracked file is now one git ignores or lists, as git
+// 2.50 does, and where git is on PATH it is asked, so that the fixture's
+// answer cannot drift from git's.
+func TestIgnorePatternsMatchAsGitMatchesThem(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "tracked.txt", "v1\n", "initial")
+	for name, content := range gitMatchFixture.ignores {
+		writeFile(t, dir, name, content)
+	}
+	for _, name := range gitMatchFixture.files {
+		writeFile(t, dir, name, "x\n")
+	}
+	var got []string
+	for _, p := range untracked(t, req(t, dir, nil)) {
+		if !strings.HasSuffix(p, ".gitignore") {
+			got = append(got, p)
 		}
+	}
+	if strings.Join(got, " ") != gitMatchFixture.want {
+		t.Errorf("untracked = %q\nwant        %q", strings.Join(got, " "), gitMatchFixture.want)
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		return
+	}
+	cmd := exec.Command("git", "-C", dir, "ls-files", "--others", "--exclude-standard")
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var byGit []string
+	for _, p := range strings.Fields(string(out)) {
+		if !strings.HasSuffix(p, ".gitignore") {
+			byGit = append(byGit, p)
+		}
+	}
+	sort.Strings(byGit)
+	if strings.Join(byGit, " ") != gitMatchFixture.want {
+		t.Errorf("git lists %q\nthe fixture %q", strings.Join(byGit, " "), gitMatchFixture.want)
+	}
+}
+
+// git reads a line of an ignore file for its trailing spaces as its
+// trim_trailing_spaces does, and each pattern as parse_path_pattern does.
+func TestAnIgnoreLineIsParsedAsGitParsesIt(t *testing.T) {
+	for line, want := range map[string]ignorePattern{
+		"*.log":        {text: "*.log", endsWith: true, basename: true},
+		"!Build/":      {text: "Build", literal: 5, negative: true, dirOnly: true, basename: true},
+		"/a/b*":        {text: "/a/b*", literal: 4},
+		`a\ `:          {text: `a\ `, literal: 1, basename: true},
+		"a  ":          {text: "a", literal: 1, basename: true},
+		`a\\  `:        {text: `a\\`, literal: 1, basename: true},
+		"*.[ch]":       {text: "*.[ch]", basename: true},
+		"docs/**/*.md": {text: "docs/**/*.md", literal: 5},
+	} {
+		if got := parsePattern(trimTrailingSpaces(line)); got != want {
+			t.Errorf("%q = %+v, want %+v", line, got, want)
+		}
+	}
+	bom, nul := string(rune(0xFEFF)), string(rune(0))
+	got := parseIgnore([]byte(bom + "# c\n\n.env" + nul + "junk\r\n \n!\nx\r\n/\nlast"))
+	var texts []string
+	for _, p := range got {
+		texts = append(texts, p.text)
+	}
+	if strings.Join(texts, ",") != ".env,x,last" {
+		t.Errorf("patterns = %q, want .env, x and last", texts)
+	}
+}
+
+// git never follows a .gitignore that is a symbolic link, and warns of it:
+// its lines are whatever file the link names, anywhere on the machine. go-git
+// followed one inside the working tree. It is not applied, and named, and
+// what it would have ignored is named in the diff rather than shown.
+func TestASymlinkedGitignoreIsNotFollowed(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, "patterns", "*.env\n")
+	writeFile(t, dir, "sub/secret.env", "TOKEN=hunter2\n")
+	if err := os.Symlink("../patterns", filepath.Join(dir, "sub", ".gitignore")); err != nil {
+		t.Skip("no symbolic links here:", err)
+	}
+	tbl := table(t, runStatus, req(t, dir, nil))
+	rowFor(t, tbl, "Path", "sub/secret.env")
+	if w := ignoreWarning(tbl); w == nil || !strings.Contains(w.Message, "sub/.gitignore (a symbolic link, which git does not follow)") {
+		t.Errorf("warning = %+v, want sub/.gitignore named as a link git does not follow", w)
+	}
+	if body := text(t, runDiff, req(t, dir, nil)); strings.Contains(body, "hunter2") {
+		t.Errorf("the diff showed a file under a .gitignore it did not apply:\n%s", body)
 	}
 }
