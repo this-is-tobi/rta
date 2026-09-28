@@ -461,8 +461,12 @@ import (
 // rta's own external plugins each went green that way while six of their
 // handlers wrote to real systems under --dry-run. A mutating capability with
 // no value is now a failure, and this is where you answer it.
+//
+// WithSource(".") has it read this package's source too: a hint a handler
+// words at run time is in no declaration, and one naming a flag sends an
+// agent after an argument its tool does not have.
 func TestPlugin(t *testing.T) {
-	sdktest.Check(t, Plugin(), sdktest.WithInputs(conformanceInputs))
+	sdktest.Check(t, Plugin(), sdktest.WithInputs(conformanceInputs), sdktest.WithSource("."))
 }
 
 // conformanceInputs supplies values for capabilities the suite cannot drive
