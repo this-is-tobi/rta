@@ -944,12 +944,12 @@ func TestTheLogShowsWhichCredentialAuthenticatedEachCall(t *testing.T) {
 	}
 }
 
-// The records a call was judged on have a column of their own, beside the
+// The records a call named have a column of their own, beside the
 // arguments and after whoever called: the arguments are kept cleaned, and a
 // record padded with a zero-width space read there as the bare one. Each
 // record is shown as a record is everywhere else, and the column appears
 // only once a row can fill it.
-func TestTheLogShowsTheRecordsEachCallWasJudgedOn(t *testing.T) {
+func TestTheLogShowsTheRecordsEachCallNamed(t *testing.T) {
 	isolate(t)
 	padded := "prod/db" + string(rune(0x200b))
 	for _, e := range []agentlog.Entry{
