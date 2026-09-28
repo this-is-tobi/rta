@@ -10,7 +10,7 @@ import (
 // does not see as itself: what strconv.IsPrint leaves out — a control, a
 // format character, a space other than the ASCII one, a separator, a private
 // or an unassigned code point — and, among what it counts as printable, a
-// default-ignorable code point, a variation selector, and the blanks named by
+// default-ignorable code point, a variation selector, and the three named by
 // code point. Each fixture is built from its code point, since the
 // characters themselves are what no reviewer could see in this file.
 func TestACharacterAReaderDoesNotSeeIsNotSeen(t *testing.T) {
@@ -29,8 +29,8 @@ func TestACharacterAReaderDoesNotSeeIsNotSeen(t *testing.T) {
 		"a default-ignorable code point Unicode counts printable": {
 			0x034f, 0x115f, 0x1160, 0x17b4, 0x17b5, 0x3164, 0xffa0,
 		},
-		"a variation selector":            {0x180b, 0x180d, 0x180f, 0xfe00, 0xfe0f, 0xe0100, 0xe01ef},
-		"a blank named by its code point": {0x2800, 0x1d159},
+		"a variation selector":        {0x180b, 0x180d, 0x180f, 0xfe00, 0xfe0f, 0xe0100, 0xe01ef},
+		"one named by its code point": {0x2800, 0x1d159, 0x16fe4},
 	} {
 		for _, r := range runes {
 			if Seen(r) {
@@ -61,12 +61,12 @@ func TestEveryDefaultIgnorableAndVariationSelectorIsNotSeen(t *testing.T) {
 	}
 }
 
-// The blanks are named by code point because no property holds them: each is
-// a character strconv.IsPrint counts printable, in neither table the rule
-// reads. One a later Unicode moves into either would be caught by the rule
-// twice, and this says so, so the list stays the few no property covers.
-func TestTheBlanksNamedByCodePointAreOnesNoPropertyHolds(t *testing.T) {
-	for _, r := range []rune{0x2800, 0x1d159} {
+// The characters named by code point are named because no property holds
+// them: each is one strconv.IsPrint counts printable, in neither table the
+// rule reads. One a later Unicode moves into either would be caught by the
+// rule twice, and this says so, so the list stays the few no property covers.
+func TestTheCharactersNamedByCodePointAreOnesNoPropertyHolds(t *testing.T) {
+	for _, r := range []rune{0x2800, 0x1d159, 0x16fe4} {
 		if !strconv.IsPrint(r) || unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) ||
 			unicode.Is(unicode.Variation_Selector, r) {
 			t.Errorf("U+%04X is held by a property the rule already reads; name it no longer", r)
