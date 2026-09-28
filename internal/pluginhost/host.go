@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -176,6 +177,9 @@ type Client struct {
 	stub   rtav1.PluginServiceClient
 	cmd    *exec.Cmd
 	logger hclog.Logger
+	// sockDir is the directory this process made its socket in (socketDir),
+	// removed with the process.
+	sockDir string
 
 	// raw is the declaration exactly as it arrived, kept because attach needs
 	// the has_prefill/has_suggest flags that do not survive into
@@ -222,10 +226,11 @@ func (c *Client) live(ctx context.Context) (rtav1.PluginServiceClient, error) {
 		old       *goplugin.Client
 		oldCmd    *exec.Cmd
 		oldLogger hclog.Logger
+		oldSock   string
 	)
 	defer func() {
 		if old != nil {
-			teardown(old, oldCmd, oldLogger)
+			teardown(old, oldCmd, oldLogger, oldSock)
 		}
 	}()
 
@@ -263,8 +268,9 @@ func (c *Client) live(ctx context.Context) (rtav1.PluginServiceClient, error) {
 		fresh.Close()
 		return nil, fmt.Errorf("the plugin at %s declared a different catalogue on restart", c.Identity.Path)
 	}
-	old, oldCmd, oldLogger = c.client, c.cmd, c.logger
+	old, oldCmd, oldLogger, oldSock = c.client, c.cmd, c.logger, c.sockDir
 	c.client, c.stub, c.cmd, c.logger = fresh.client, fresh.stub, fresh.cmd, fresh.logger
+	c.sockDir = fresh.sockDir
 	return c.stub, nil
 }
 
@@ -306,10 +312,10 @@ func (c *Client) Close() {
 	// and holding c.mu through them would block every in-flight call's live()
 	// on a process that is going away regardless.
 	c.mu.Lock()
-	client, cmd, logger := c.client, c.cmd, c.logger
+	client, cmd, logger, sockDir := c.client, c.cmd, c.logger, c.sockDir
 	c.mu.Unlock()
 
-	teardown(client, cmd, logger)
+	teardown(client, cmd, logger, sockDir)
 }
 
 // teardown ends one plugin process and everything it started.
@@ -337,7 +343,12 @@ func (c *Client) Close() {
 // grandchild's full lifetime, with the reap that would free it sitting on
 // the next line, unreachable. Measured: a plugin whose whole body was
 // `sleep 300` hung rta for the full five minutes.
-func teardown(client *goplugin.Client, cmd *exec.Cmd, logger hclog.Logger) {
+//
+// The socket directory goes last, whichever way the wait ended: by then the
+// process group has been reaped, and the directory is rta's to remove
+// (socketDir) whatever the plugin did or did not clean up in it.
+func teardown(client *goplugin.Client, cmd *exec.Cmd, logger hclog.Logger, sockDir string) {
+	defer removeSocketDir(sockDir)
 	if logger != nil {
 		logger.SetLevel(hclog.Off)
 	}
@@ -363,6 +374,15 @@ func teardown(client *goplugin.Client, cmd *exec.Cmd, logger hclog.Logger) {
 			// goroutine for a hung command. The process group has had a
 			// SIGKILL; rta exiting is what collects the rest.
 		}
+	}
+}
+
+// removeSocketDir removes the directory socketDir made, and with it whatever
+// socket the plugin left in it. Nothing is said when it cannot: the process
+// is gone either way, and what is left is an empty directory at most.
+func removeSocketDir(dir string) {
+	if dir != "" {
+		_ = os.RemoveAll(dir)
 	}
 }
 
@@ -587,7 +607,17 @@ func buildCmd(id Identity, deny DenySet, args []string) *exec.Cmd {
 }
 
 func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []string) (*Client, error) {
+	sockDir, err := socketDir()
+	if err != nil {
+		return nil, err
+	}
 	cmd := buildCmd(id, deny, args)
+	// Here rather than in buildCmd, which makes nothing: the directory is
+	// this launch's, made just now, and a command built to be inspected
+	// would leave one behind every time.
+	if sockDir != "" {
+		cmd.Env = append(cmd.Env, goplugin.EnvUnixSocketDir+"="+sockDir)
+	}
 
 	logger := pluginLogger("plugin."+id.Short(), escapeActedOn(h.stderr()))
 	client := goplugin.NewClient(&goplugin.ClientConfig{
@@ -604,8 +634,11 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 		// go-plugin gives us for free; it is off by default and dialGRPCConn
 		// takes the insecure branch without it.
 		AutoMTLS: true,
-		// Puts the plugin socket in a private 0700 directory instead of bare
-		// $TMPDIR at mode srwxr-xr-x.
+		// Multiplexed: a broker stream, were rta to open one, rides the
+		// connection already made instead of a socket of its own. It was set
+		// believing it put the socket in a private 0700 directory, which it
+		// does not; socketDir does, and says why the multiplexer is also why
+		// the socket used to be left behind.
 		GRPCBrokerMultiplex: true,
 		// See the constant: the default is a minute, paid on every rta
 		// invocation by anything on $PATH that matches the prefix and is not
@@ -629,12 +662,13 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 	// is that there is nothing to preserve: a plugin that failed to hand over
 	// an address has no graceful shutdown to attempt, and Kill would block on
 	// pipes its own children are holding. Taking the group first closes those
-	// pipes, so the Kill that follows returns immediately and go-plugin still
-	// gets to clean up its socket directory.
+	// pipes, so the Kill that follows returns immediately, and the socket
+	// directory, which is rta's and not go-plugin's (socketDir), goes after it.
 	abandon := func(reason string, err error) (*Client, error) {
 		logger.SetLevel(hclog.Off)
 		reap(cmd)
 		client.Kill()
+		removeSocketDir(sockDir)
 		return nil, fmt.Errorf("%s %s: %w", reason, id.Path, err)
 	}
 
@@ -651,7 +685,7 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 	}
 
 	c := &Client{
-		Identity: id, client: client, cmd: cmd, logger: logger,
+		Identity: id, client: client, cmd: cmd, logger: logger, sockDir: sockDir,
 		host: h, deny: deny, args: args,
 		stub: rtav1.NewPluginServiceClient(grpcClient.Conn),
 	}
