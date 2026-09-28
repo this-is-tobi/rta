@@ -751,15 +751,18 @@ func mayIgnore(reach map[string]bool, path string) bool {
 // can name any file on the machine: its lines would be read as patterns, and
 // which files the status then lists would say whether one of them matched.
 // So it is judged as a path a caller sent, and read where the gate judged
-// it. One the operator's own config names, or git's default, is the
-// operator's choice and read wherever it is, as git.hooks reads their
-// core.hooksPath; nothing of it is shown but its name.
+// it; so is one a file the repository's config includes names, which is read
+// in the repository's scope. One the operator's own config names, or git's
+// default, is the operator's choice and read wherever it is, as git.hooks
+// reads their core.hooksPath; nothing of it is shown but its name, and not
+// even that where a file the caller is not shown sets it
+// (scopedConfig.hidden).
 func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error, root string,
 	confine func(string) (string, *view.Error),
 ) []excludeSource {
 	var out []excludeSource
 	noValue := valuelessIn(configs, "core", "excludesFile")
-	switch p, scope := excludesFile(configs, root); {
+	switch p, scope, hidden := excludesFile(configs, root); {
 	case cerr != nil:
 		out = append(out, excludeSource{shown: "core.excludesFile", why: "reading the config that sets it: " + cerr.Error()})
 	case noValue != "":
@@ -778,6 +781,9 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 		// pattern to read.
 	case p != "":
 		s := excludeSource{shown: p}
+		if hidden {
+			s.shown = "core.excludesFile"
+		}
 		if scope == "local" || scope == "worktree" {
 			judged, verr := confine(p)
 			if verr != nil {
@@ -801,27 +807,27 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 // sets it (gitConfigs), ~ expanded and a relative one taken from the working
 // tree's root; where none does, git's default, $XDG_CONFIG_HOME/git/ignore,
 // or ~/.config/git/ignore with that unset. "" where it is set to nothing,
-// which git reads as no file. A file one of the configs includes is not
-// followed, as git.config follows none, and could set it.
-func excludesFile(configs []scopedConfig, root string) (path, scope string) {
+// which git reads as no file. hidden is a value read from a file the caller
+// is not shown.
+func excludesFile(configs []scopedConfig, root string) (path, scope string, hidden bool) {
 	for _, f := range configs {
 		if core := f.config.Raw.Section("core"); core.HasOption("excludesFile") {
-			path, scope = core.Option("excludesFile"), f.scope
+			path, scope, hidden = core.Option("excludesFile"), f.scope, f.hidden
 		}
 	}
 	switch {
 	case scope != "" && path == "":
-		return "", scope
+		return "", scope, hidden
 	case scope != "":
-		return against(root, plugin.ExpandHome(path)), scope
+		return against(root, plugin.ExpandHome(path)), scope, hidden
 	case os.Getenv("XDG_CONFIG_HOME") != "":
-		return filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "git", "ignore"), "default"
+		return filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "git", "ignore"), "default", false
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", ""
+		return "", "", false
 	}
-	return filepath.Join(home, ".config", "git", "ignore"), "default"
+	return filepath.Join(home, ".config", "git", "ignore"), "default", false
 }
 
 // ignoreCase reports whether git matches ignore patterns without regard to

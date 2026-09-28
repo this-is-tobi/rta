@@ -81,7 +81,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("git.status.worktree", "no working tree here: %v", err).
 			WithHint("a bare repository has no working tree to report on")
 	}
-	status, ignored, err := worktreeStatus(ctx, statusDeadline(ctx), repo, wt, pathGateOf(req))
+	status, ignored, err := worktreeStatus(ctx, statusDeadline(ctx), repo, wt, req)
 	if err != nil {
 		return nil, statusFailed("git.status.failed", err)
 	}
@@ -118,15 +118,15 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 // files git applies at the root that go-git does not find
 // (rootExcludeSources) and hold every ignore file to what one status
 // applies; and with a change of kind told apart from a change of content
-// (kindChanges). The ignore files it did not apply come with it. confine is
-// the host's path gate. Every capability that reports the working tree's
-// state asks for it here.
+// (kindChanges). The ignore files it did not apply come with it. req is the
+// call, whose path gate a file the config names is put to. Every capability
+// that reports the working tree's state asks for it here.
 //
 // All of it is held to deadline, and to ctx, and refused past either
 // (statusBudget): the error is then the refusal, a *view.Error, which the
 // caller hands on as it is (statusFailed).
 func worktreeStatus(ctx context.Context, deadline time.Time, repo *git.Repository, wt *git.Worktree,
-	confine func(string) (string, *view.Error),
+	req plugin.Request,
 ) (git.Status, unapplied, error) {
 	storer := repo.Storer
 	store, onDisk := repo.Storer.(*filesystem.Storage)
@@ -135,8 +135,8 @@ func worktreeStatus(ctx context.Context, deadline time.Time, repo *git.Repositor
 	}
 	root := wt.Filesystem.Root()
 	budget := &statusBudget{ctx: ctx, deadline: deadline}
-	configs, cerr := gitConfigs(repo)
-	read := newIgnoresRead(rootExcludeSources(repo, configs, cerr, root, confine),
+	configs, cerr := gitConfigs(ctx, req, repo)
+	read := newIgnoresRead(rootExcludeSources(repo, configs, cerr, root, pathGateOf(req)),
 		cerr == nil && ignoreCase(configs), wt.Filesystem, budget)
 	reader, err := git.Open(storer, statusFiles{Filesystem: wt.Filesystem, budget: budget})
 	if err != nil {

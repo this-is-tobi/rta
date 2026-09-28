@@ -194,7 +194,7 @@ func TestTheStatusOfAnInMemoryCloneIsReadThroughTheSameBounds(t *testing.T) {
 			t.Fatal(err)
 		}
 		status, ignored, err := worktreeStatus(context.Background(), time.Now().Add(time.Minute), clone, wt,
-			pathGateOf(req(t, ".", nil)))
+			req(t, ".", nil))
 		if err != nil {
 			t.Fatal(err)
 		}

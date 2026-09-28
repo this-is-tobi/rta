@@ -163,7 +163,7 @@ func TestRowsBuiltFromAConfigCarryNoSecret(t *testing.T) {
 		SetOption("insteadOf", "https://gitlab.com/")
 
 	var tbl view.Table
-	addConfigRows(&tbl, "global", raw)
+	addConfigRows(&tbl, "global", "~/.gitconfig", raw)
 	all := ""
 	for _, r := range tbl.Rows {
 		all += strings.Join(r, " ") + "\n"
