@@ -1466,6 +1466,10 @@ func boundBy(artifact func(string) (string, bool)) func(core.Grant) core.Artifac
 // the grant again, against the plugin as it is now — has nowhere else to be
 // found. renew is named as what does not fix it: it moves a deadline and
 // never rebinds a grant, for the reason it never adopts a new connection.
+//
+// Advisory (view.Error.Advisory): the rows they are about are all on the
+// roster, marked, and a surface heads the roster as partial only for what
+// is missing from it.
 func artifactWarnings(sf plugin.Surface, grants []core.Grant, bound func(core.Grant) core.ArtifactState) []view.Error {
 	if bound == nil {
 		return nil
@@ -1490,6 +1494,7 @@ func artifactWarnings(sf plugin.Surface, grants []core.Grant, bound func(core.Gr
 				"rebuild is another build — issue %s again after the upgrade with %s; %s moves a deadline "+
 				"and does not rebind a grant", format.Plural(n, "it", "each"),
 				sf.CapabilityName("grant.allow"), sf.CapabilityName("grant.renew")),
+			Advisory: true,
 		})
 	}
 	if n := len(gone); n > 0 {
@@ -1500,6 +1505,7 @@ func artifactWarnings(sf plugin.Surface, grants []core.Grant, bound func(core.Gr
 				strings.Join(gone, ", ")),
 			Hint: "`rta plugin list` says which plugins load; once it does, a grant issued against " +
 				"another build of it has to be issued again",
+			Advisory: true,
 		})
 	}
 	return out

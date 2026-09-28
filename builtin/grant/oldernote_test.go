@@ -120,6 +120,11 @@ func TestTheRosterWarnsWhenAServerOnAnotherBuildWillDecide(t *testing.T) {
 	if w.Code != "core.grant.older.server" {
 		t.Errorf("code = %q, want core.grant.older.server", w.Code)
 	}
+	// Every row is still there, so the roster is headed as warned about and
+	// never as partial (view.Error.Advisory).
+	if !w.Advisory {
+		t.Error("the older-server warning is not advisory, so the roster above it is headed partial")
+	}
 	if !strings.Contains(w.Message, "1 server is open on another build") {
 		t.Errorf("message = %q, want the count in it", w.Message)
 	}
