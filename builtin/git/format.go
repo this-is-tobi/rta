@@ -279,6 +279,13 @@ func partialClone(repo *git.Repository, root string) *view.Error {
 // promisor set with no value at all, `promisor` alone on its line, is one git
 // reads as true, and go-git as nothing (valuelessKeys).
 //
+// **extensions.partialClone set to nothing names a remote too**, the one
+// named nothing: git takes the empty value as a name, reads the repository as
+// a partial clone, and fetches what it lacks by running git fetch with the
+// empty name, where this read it as none. The refusal names it as "". Set
+// with no value at all, it is a value git refuses to open the repository
+// with, and so is it here, before this is asked (repositoryFormat).
+//
 // **Any line that makes a remote a promisor makes it one.** git's
 // promisor_remote_config adds the remote at each such line and takes none
 // away, so `promisor = true` then `promisor = false` is a promisor git
@@ -315,8 +322,8 @@ func notPartial(files []scopedConfig, root string) *view.Error {
 	for _, f := range files {
 		cfg := f.config
 		if f.scope == "local" && extensionsInEffect(cfg) && cfg.Raw.HasSection("extensions") {
-			if name := cfg.Raw.Section("extensions").Option("partialClone"); name != "" {
-				mark(name)
+			if ext := cfg.Raw.Section("extensions"); ext.HasOption("partialClone") {
+				mark(ext.Option("partialClone"))
 			}
 		}
 		if !cfg.Raw.HasSection("remote") {
@@ -339,6 +346,9 @@ func notPartial(files []scopedConfig, root string) *view.Error {
 	sort.Strings(promisors)
 	for i, name := range promisors {
 		promisors[i] = maskURLCredentials(name)
+		if name == "" {
+			promisors[i] = `""`
+		}
 	}
 	hint := "git.config, git.hooks and git.remotes answer here; for history and files, run this on a clone made " +
 		"without --filter, which holds every object"
