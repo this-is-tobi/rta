@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -902,7 +903,7 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 }
 
 // buildPlugin compiles dir into a temporary binary.
-func buildPlugin(ctx context.Context, dir string, keep bool, stderr any) (string, func(), error) {
+func buildPlugin(ctx context.Context, dir string, keep bool, stderr io.Writer) (string, func(), error) {
 	noop := func() {}
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -951,7 +952,12 @@ func buildPlugin(ctx context.Context, dir string, keep bool, stderr any) (string
 		return "", noop, view.Errorf("plugin.dev.build", "building %s failed:\n%s", abs,
 			strings.TrimSpace(string(combined)))
 	}
+	// Said on standard error, whatever follows: with a command after `--`
+	// the only output is that command's, and --keep promised to say where
+	// the binary it keeps is. It said nothing, so the build was left in the
+	// temporary directory under a name nobody was told.
 	if keep {
+		fmt.Fprintln(stderr, "rta: --keep left the plugin build at", binary)
 		return binary, noop, nil
 	}
 	return binary, func() { remove(); unregister() }, nil
