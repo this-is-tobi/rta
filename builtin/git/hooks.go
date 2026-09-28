@@ -30,7 +30,9 @@ func hooksCapability() plugin.Capability {
 			"commit, push and the rest: named exactly (a `.sample` suffix never runs) and executable. " +
 			"The config is read from every file git reads and from the environment, as git.config " +
 			"reads them; a file one of them includes is not followed, and a warning says how many " +
-			"were not. " +
+			"were not. core.hooksPath set to nothing is the top of the filesystem, where git looks " +
+			"for /pre-commit and the rest, and a warning says so; set with no value at all, it is " +
+			"refused, as git refuses to run with it. " +
 			"A hook is an arbitrary script that runs on this machine, so this reports what would " +
 			"actually execute, and where each file is, not merely what a directory listing shows.",
 		Inputs: []plugin.Field{
@@ -125,30 +127,50 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 //
 // A relative value is taken from where git runs a hook, the working tree's
 // root, or the git directory itself in a bare repository; ~ is the
-// operator's home, as git expands it. Unset, it is the hooks directory of
-// the common git directory, which a linked worktree shares with its main
-// checkout. warnings are what the answer cannot vouch for (hooksPathSetting).
+// operator's home, as git expands it. Set to nothing, it is the top of the
+// filesystem, where git looks for each hook by its name (hooksPathSetting).
+// Unset, it is the hooks directory of the common git directory, which a
+// linked worktree shares with its main checkout. warnings are what the
+// answer cannot vouch for, and what it has to explain.
 func hooksDir(repo *git.Repository, fs billy.Filesystem) (dir, base string, warnings []view.Error, err error) {
 	base = fs.Root()
 	if wt, werr := repo.Worktree(); werr == nil {
 		base = wt.Filesystem.Root()
 	}
-	value, warnings, err := hooksPathSetting(repo)
-	if err != nil {
+	value, set, warnings, err := hooksPathSetting(repo)
+	switch {
+	case err != nil:
 		return "", "", nil, err
-	}
-	if value == "" {
+	case !set:
 		return filepath.Join(commonGitDir(fs), "hooks"), base, warnings, nil
+	case value == "":
+		return filesystemTop, base, warnings, nil
 	}
 	return against(base, plugin.ExpandHome(value)), base, warnings, nil
 }
 
-// hooksPathSetting is core.hooksPath as git resolves it, the value in the
+// filesystemTop is the directory a core.hooksPath set to nothing leaves git
+// looking in: git joins the value and a hook's name with a slash, and the
+// empty value makes /pre-commit of it.
+var filesystemTop = string(filepath.Separator)
+
+// hooksPathSetting is core.hooksPath as git resolves it: the value in the
 // last of the files git reads that sets it (machineConfigSources, then the
 // repository's own, then its worktree's), or in the environment, which git
-// reads after them all (commandConfig), "" where none does; and a warning
-// for each way the answer may not be the one the git that runs the hooks
-// reaches.
+// reads after them all (commandConfig); set is false where none does. And a
+// warning for each way the answer may not be the one the git that runs the
+// hooks reaches, or needs saying.
+//
+// **Set to nothing is set, and set with no value is an error.** `hooksPath
+// =` makes git look for each hook at /<name>: `git rev-parse --git-path
+// hooks/pre-commit` prints /pre-commit, and git runs one there. `hooksPath`
+// alone, or `git -c core.hooksPath` with no =, is a value git refuses ("missing
+// value for 'core.hookspath'"), and stops before it runs anything: no hook,
+// and no command. This skipped both, and listed the hooks of whatever an
+// earlier file named, or the repository's own, as the ones that run. A value
+// set to nothing is listed, and said; one set to none is refused, as git
+// refuses it. git reads the last setting alone, so one that a later file
+// sets again is no error.
 //
 // A file one of them includes is not read (includeCount), and could set it:
 // the ones that count are included by the file the value came from or by a
@@ -157,23 +179,23 @@ func hooksDir(repo *git.Repository, fs billy.Filesystem) (dir, base string, warn
 // directories, only one of which this lists: that is said, naming the files
 // and not the values, since over MCP the operator's own config is read for
 // this one key and a directory outside the root is not shown.
-func hooksPathSetting(repo *git.Repository) (string, []view.Error, error) {
+func hooksPathSetting(repo *git.Repository) (value string, set bool, _ []view.Error, _ error) {
 	files, err := gitConfigs(repo)
 	if err != nil {
-		return "", nil, err
+		return "", false, nil, err
 	}
 	from := -1
 	var systems []string
 	values := map[string]bool{}
 	for i, f := range files {
-		v := f.config.Raw.Section("core").Option("hooksPath")
-		if v == "" {
+		core := f.config.Raw.Section("core")
+		if !core.HasOption("hooksPath") {
 			continue
 		}
 		from = i
 		if f.scope == "system" {
 			systems = append(systems, f.path)
-			values[v] = true
+			values[core.Option("hooksPath")] = true
 		}
 	}
 	var warnings []view.Error
@@ -183,18 +205,32 @@ func hooksPathSetting(repo *git.Repository) (string, []view.Error, error) {
 		warnings = append(warnings, *w)
 	}
 	if from < 0 {
-		return "", warnings, nil
+		return "", false, warnings, nil
 	}
-	if files[from].scope == "system" && len(values) > 1 {
+	last := files[from]
+	if last.blank[configKey("core", "", "hooksPath")].last {
+		return "", true, nil, fmt.Errorf("%s sets core.hooksPath with no value, which git refuses to run with "+
+			"(missing value): no hook runs, and no git command either", last.place())
+	}
+	if last.scope == "system" && len(values) > 1 {
 		warnings = append(warnings, view.Error{
 			Code: "git.hooks.system",
 			Message: fmt.Sprintf("core.hooksPath is set differently in %s, which different builds of git "+
 				"read as their system config: this lists the directory %s names",
-				strings.Join(systems, ", "), files[from].path),
+				strings.Join(systems, ", "), last.path),
 			Hint: "`git config --show-origin core.hooksPath` names the one the git on your PATH reads",
 		})
 	}
-	return files[from].config.Raw.Section("core").Option("hooksPath"), warnings, nil
+	value = last.config.Raw.Section("core").Option("hooksPath")
+	if value == "" {
+		warnings = append(warnings, view.Error{
+			Code: "git.hooks.empty",
+			Message: fmt.Sprintf("%s sets core.hooksPath to nothing, so git looks for each hook at the top of "+
+				"the filesystem, /pre-commit and the rest: this lists that directory", last.place()),
+			Hint: "unset it there, and git runs the repository's own hooks",
+		})
+	}
+	return value, true, warnings, nil
 }
 
 // gitConfigs is every file of config git reads for repo, in the order it
@@ -206,14 +242,14 @@ func gitConfigs(repo *git.Repository) ([]scopedConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	if local, err := repo.Config(); err == nil {
-		files = append(files, scopedConfig{scope: "local", config: local})
-		perWorktree, err := worktreeConfig(repo, local)
+	if local, err := localConfig(repo); err == nil {
+		files = append(files, local)
+		perWorktree, err := worktreeConfig(repo, local.config)
 		if err != nil {
 			return nil, fmt.Errorf("config.worktree: %w", err)
 		}
 		if perWorktree != nil {
-			files = append(files, scopedConfig{scope: "worktree", config: perWorktree})
+			files = append(files, *perWorktree)
 		}
 	}
 	command, err := commandConfig()
@@ -221,7 +257,7 @@ func gitConfigs(repo *git.Repository) ([]scopedConfig, error) {
 		return nil, err
 	}
 	if command != nil {
-		files = append(files, scopedConfig{scope: "command", config: command})
+		files = append(files, *command)
 	}
 	return files, nil
 }

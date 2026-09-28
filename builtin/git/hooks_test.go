@@ -2,7 +2,9 @@ package git
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/this-is-tobi/rta/builtin/internal/gitclone"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func writeHook(t *testing.T, dir, name string, executable bool) {
@@ -378,5 +381,100 @@ func TestCoreHooksPathSetInGitsEnvironmentIsTheLastWord(t *testing.T) {
 	t.Setenv("GIT_CONFIG_COUNT", "x")
 	if _, err := runHooks(context.Background(), req(t, dir, nil)); errCode(err) != "git.hooks.failed" {
 		t.Errorf("git.hooks with a GIT_CONFIG_COUNT git refuses: %v, want git.hooks.failed", err)
+	}
+}
+
+// hooksPathByGit is where the git on PATH looks for a pre-commit in dir, and
+// whether it runs at all; ok is false where there is no git to ask.
+func hooksPathByGit(t *testing.T, dir string) (path string, runs, ok bool) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		return "", false, false
+	}
+	cmd := exec.Command("git", "-C", dir, "rev-parse", "--git-path", "hooks/pre-commit")
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1")
+	out, err := cmd.Output()
+	return strings.TrimSpace(string(out)), err == nil, true
+}
+
+// core.hooksPath set to nothing is set: git looks for each hook at the top of
+// the filesystem, /pre-commit, and runs one there. This skipped the empty
+// value and listed the directory an earlier file named as the one git runs
+// hooks from. It lists the top of the filesystem, and says why; over MCP that
+// is a directory outside the roots, and refused as one.
+func TestCoreHooksPathSetToNothingIsTheTopOfTheFilesystem(t *testing.T) {
+	home := machineConfig(t, "[core]\n\thooksPath = "+filepath.Join(t.TempDir(), "global-hooks")+"\n")
+	writeExecutable(t, home, "global-hooks/pre-commit")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n\thooksPath =\n")
+
+	tbl := table(t, runHooks, req(t, dir, nil))
+	for _, row := range tbl.Rows {
+		if !strings.HasPrefix(row[2], "/") || strings.Count(row[2], "/") != 1 {
+			t.Errorf("row %v is not a file at the top of the filesystem", row)
+		}
+	}
+	var empty *view.Error
+	for i, w := range tbl.Warnings {
+		if w.Code == "git.hooks.empty" {
+			empty = &tbl.Warnings[i]
+		}
+	}
+	if empty == nil || !strings.Contains(empty.Message, "the repository's config sets core.hooksPath to nothing") {
+		t.Errorf("warnings = %+v, want git.hooks.empty naming the repository's config", tbl.Warnings)
+	}
+	if _, err := runHooks(context.Background(), guarded(t, dir, dir)); errCode(err) != "core.mcp.path.outside" {
+		t.Errorf("over MCP, git.hooks = %v, want the top of the filesystem refused as outside the roots", err)
+	}
+	if path, runs, ok := hooksPathByGit(t, dir); ok && (!runs || path != "/pre-commit") {
+		t.Errorf("git looks for the pre-commit at %q (runs: %v), not /pre-commit", path, runs)
+	}
+
+	t.Setenv("GIT_CONFIG_PARAMETERS", "'core.hooksPath'=''")
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n\thooksPath = .githooks\n")
+	if tbl := table(t, runHooks, req(t, dir, nil)); len(tbl.Warnings) == 0 || tbl.Warnings[0].Code != "git.hooks.empty" ||
+		!strings.HasPrefix(tbl.Warnings[0].Message, "the config in git's environment sets core.hooksPath to nothing") {
+		t.Errorf("with `git -c core.hooksPath=`, warnings = %+v, want git.hooks.empty naming the environment", tbl.Warnings)
+	}
+}
+
+// core.hooksPath with no value at all, a name alone on its line or `git -c
+// core.hooksPath` with no =, is one git refuses: "missing value", and it runs
+// nothing, no hook and no command. go-git reads it as set to nothing, and
+// this read it as unset, listing the repository's own hooks as the ones that
+// run. It is refused, as git refuses it; a later file setting it again is the
+// value git reads, and no error.
+func TestCoreHooksPathWithNoValueIsRefusedAsGitRefusesIt(t *testing.T) {
+	machineConfig(t, "")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeHook(t, dir, "pre-commit", true)
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n\thooksPath\n")
+
+	_, err := runHooks(context.Background(), req(t, dir, nil))
+	var verr *view.Error
+	if !errors.As(err, &verr) || verr.Code != "git.hooks.failed" ||
+		!strings.Contains(verr.Message, "the repository's config sets core.hooksPath with no value") {
+		t.Errorf("git.hooks with a valueless core.hooksPath = %v, want it refused naming the file", err)
+	}
+	if _, runs, ok := hooksPathByGit(t, dir); ok && runs {
+		t.Error("git runs with a valueless core.hooksPath")
+	}
+
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n")
+	t.Setenv("GIT_CONFIG_PARAMETERS", "'core.hooksPath'=")
+	if _, err := runHooks(context.Background(), req(t, dir, nil)); errCode(err) != "git.hooks.failed" {
+		t.Errorf("with `git -c core.hooksPath`, git.hooks = %v, want git.hooks.failed", err)
+	}
+
+	unsetenv(t, "GIT_CONFIG_PARAMETERS")
+	home := machineConfig(t, "[core]\n\thooksPath\n")
+	writeExecutable(t, dir, ".githooks/pre-push")
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n\thooksPath = .githooks\n")
+	rowFor(t, table(t, runHooks, req(t, dir, nil)), "Name", "pre-push")
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, ".gitconfig"))
+	if path, runs, ok := hooksPathByGit(t, dir); ok && (!runs || path != ".githooks/pre-commit") {
+		t.Errorf("git looks for the pre-commit at %q (runs: %v), not in .githooks", path, runs)
 	}
 }
