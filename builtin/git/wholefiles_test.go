@@ -142,7 +142,8 @@ func TestAWorktreeConfigPastTheBoundFailsTheCallThatReadsIt(t *testing.T) {
 	if _, err := runConfig(context.Background(), req(t, dir, nil)); err != nil {
 		t.Fatalf("a config.worktree git does not read failed git.config: %v", err)
 	}
-	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n[extensions]\n\tworktreeConfig = true\n")
+	writeFile(t, dir, ".git/config", "[core]\n\trepositoryformatversion = 0\n\tbare = false\n"+
+		"[extensions]\n\tworktreeConfig = true\n")
 	_, err := runConfig(context.Background(), req(t, dir, nil))
 	if code := errCode(err); code != "git.config.failed" || !strings.Contains(err.Error(), "larger than") {
 		t.Errorf("git.config over a config.worktree past the bound: %v, want git.config.failed saying why", err)
