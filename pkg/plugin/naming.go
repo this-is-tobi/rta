@@ -340,7 +340,8 @@ func (s Surface) SettingName(names ...string) string {
 // gives it: `--sslmode disable` as a command line takes it, a switch as Call
 // spells one (--tls, --tls=false), and elsewhere the setting with the value
 // beside it — the operator's `sslmode` set to disable, the sslmode box set to
-// disable.
+// disable. Any Local input's, a path only the operator may name as much as a
+// connection's; an input an agent gives as an argument is InputTo's.
 func (s Surface) SettingTo(name string, value any) string {
 	switch s {
 	case SurfaceMCP:
@@ -348,13 +349,53 @@ func (s Surface) SettingTo(name string, value any) string {
 	case SurfaceTUI:
 		return s.SettingName(name) + " set to " + boxValue(value)
 	}
+	return flagTo(name, value)
+}
+
+// flagTo is flag name given value as a command line takes it, the way Call
+// spells an argument that is no Positional one: --sslmode disable, and a
+// switch bare when on and joined to its flag when off.
+func flagTo(name string, value any) string {
 	switch value {
 	case true:
-		return s.InputName(name)
+		return "--" + name
 	case false:
-		return s.InputName(name) + "=false"
+		return "--" + name + "=false"
 	}
-	return s.InputName(name) + " " + cliValue(value)
+	return "--" + name + " " + cliValue(value)
+}
+
+// InputTo is SettingTo for an input the caller gives on every surface — any
+// flag input not declared Local, --format or --method — with its value
+// spelled as Call spells that argument in a whole call: `--format directory`
+// on the CLI, a switch bare or joined (--online, --online=false), the
+// "format" argument set to "directory" over MCP, where the value is the JSON
+// the agent sends, and the format box set to directory in the TUI. For a
+// hint handing its reader one input to add to the call they made —
+// "`--jobs 1` runs it serially" — where Call would repeat the whole call.
+//
+// A Local input is SettingTo's, whether a connection's or a path only the
+// operator may name, as --out is: it is in no tool's schema, and an agent
+// told to set the argument passes one the bridge drops. The two spell the
+// same at a terminal and in a form; they differ over MCP, which is the
+// whole of why there are two.
+//
+// Spelled with Call's values, not pasted beside the name as each of nine
+// plugins did for both kinds in a helper of its own: there a value built
+// from what a server holds — a backup method a cluster names, a file named
+// after a database — went onto the command line bare, and a paste of
+// `--out ./$(id).sql` ran what the name held; and an agent was told to set
+// "jobs" to 1 with nothing to say whether that is the number or the string.
+// A Positional input is given by its place rather than as a flag, and Call
+// spells the call it is given in.
+func (s Surface) InputTo(name string, value any) string {
+	switch s {
+	case SurfaceMCP:
+		return s.InputName(name) + " set to " + mcpValue(value)
+	case SurfaceTUI:
+		return s.InputName(name) + " set to " + boxValue(value)
+	}
+	return flagTo(name, value)
 }
 
 // SettingsHint sends the reader on s to where a connection's settings are
