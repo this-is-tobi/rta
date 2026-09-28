@@ -75,9 +75,17 @@ var promptKeyPassphrase = func(path string) (string, error) {
 // passphrase: the words reconstruct the private key exactly, so they get the
 // same "never lands on the screen or in scrollback" treatment. Overridable in
 // tests.
-var promptWords = func() (string, error) {
-	secret, err := stdio.ReadSecret("Seed words: ")
-	return string(secret), err
+//
+// It reads one line, and reports whether more arrived with it. Seed words are
+// kept one to a line as often as on one, and a prompt that read the first
+// line and left the rest handed 23 of 24 words to the shell, which runs each
+// line and keeps it in its history. So the rest of such a paste is read off
+// the terminal and dropped (stdio.ReadSecretLine), and resolveWords refuses
+// it: 23 words dropped are not a phrase, and nothing should be restored from
+// the one word left.
+var promptWords = func() (string, bool, error) {
+	secret, more, err := stdio.ReadSecretLine("Seed words: ")
+	return string(secret), more, err
 }
 
 // readPipedWords returns the seed phrase piped to a CLI call, or "" when

@@ -901,7 +901,7 @@ func TestResolveWordsPromptsAtATerminalWhenNothingElseIsSupplied(t *testing.T) {
 	t.Cleanup(func() { canPrompt = old })
 	want := freshWords(t)
 	oldPrompt := promptWords
-	promptWords = func() (string, error) { return want, nil }
+	promptWords = func() (string, bool, error) { return want, false, nil }
 	t.Cleanup(func() { promptWords = oldPrompt })
 
 	got, verr := resolveWords(req(nil))
@@ -910,6 +910,24 @@ func TestResolveWordsPromptsAtATerminalWhenNothingElseIsSupplied(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// Words kept one to a line and pasted at the prompt: the first line is one
+// word, and the rest arrived with it. Restoring from the one word is never
+// right, and it used to be tried while the other 23 went on to the shell.
+func TestResolveWordsRefusesAPasteThatSpansLines(t *testing.T) {
+	old := canPrompt
+	canPrompt = func(plugin.Request) bool { return true }
+	t.Cleanup(func() { canPrompt = old })
+	first := strings.Fields(freshWords(t))[0]
+	oldPrompt := promptWords
+	promptWords = func() (string, bool, error) { return first, true, nil }
+	t.Cleanup(func() { promptWords = oldPrompt })
+
+	got, verr := resolveWords(req(nil))
+	if verr == nil || verr.Code != "keys.restore.multiline" {
+		t.Fatalf("got %q, %v; want keys.restore.multiline", got, verr)
 	}
 }
 
