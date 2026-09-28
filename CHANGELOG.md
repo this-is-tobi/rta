@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.31.0](https://github.com/this-is-tobi/rta/compare/v0.30.0...v0.31.0) (2026-09-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **git:** every git capability refuses a repository whose config sets extensions.compatObjectFormat more than once, where it answered.
+* **git:** every git capability refuses a repository whose extensions.compatObjectFormat names the format its objects are already named in, where it answered.
+* **git:** the capabilities that read objects refuse a repository whose config sets a format version and extensions.partialClone to nothing, where they answered from the objects it held.
+* **git:** the capabilities that read objects refuse a repository whose config sets remote.<name>.partialCloneFilter, where they answered from the objects it held.
+* **git:** git.log, git.diff, git.status and the other capabilities that read objects refuse a repository that a promisor set in the operator's config or in git's environment makes a partial clone, and refuse to answer with git.config.unreadable where a file of that config cannot be read, where they answered from the objects held.
+* **sdk:** sdktest.Check's spelling rule, and spelling.Find, now hold -o, -y and -h in declared text and sentences the way they hold --output, --yes and --help. A plugin whose text names one of them for rta's command line fails the rule until it is reworded or waived with sdktest.Skip.
+
+### Features
+
+* **sdk:** the speller holds the host's short switches, -o, -y and -h, as it holds their long ones ([f3b94c7](https://github.com/this-is-tobi/rta/commit/f3b94c7fd6e659422f8e61850d2163b2693c1d03))
+
+
+### Bug Fixes
+
+* **agent:** agent pending --server says how many requests it kept off the queue in words that agree ([9675d2c](https://github.com/this-is-tobi/rta/commit/9675d2c4880e8c844f18d1c8c2e94cd6e0fa96d2))
+* **examples:** hello.languages says how it renders without a flag only a terminal has ([a9c71dd](https://github.com/this-is-tobi/rta/commit/a9c71dd59ace98df57d751206b5e6ac8e9c22198))
+* **git:** a compatObjectFormat equal to the object format is refused, as git cannot open it ([e5a5442](https://github.com/this-is-tobi/rta/commit/e5a5442236429842d509669fb81dbe69ac11733a))
+* **git:** a format extension set on two lines is judged by its last line, as git reads it ([3e1cd00](https://github.com/this-is-tobi/rta/commit/3e1cd002e425bae263f5a7c7339caa83b704d9df))
+* **git:** a hook git cannot exec, a directory or a pipe at its name, is listed as fails ([8281d2d](https://github.com/this-is-tobi/rta/commit/8281d2d0a461d61445d663d401a6c99cf3695af2))
+* **git:** a hook's status is what access(2) answers, as git asks it, not its execute bits ([a354b4b](https://github.com/this-is-tobi/rta/commit/a354b4be77b07eac1b4e87751230af68cfd14fa7))
+* **git:** a partialCloneFilter set for a remote makes a partial clone, as git reads it ([8d1349a](https://github.com/this-is-tobi/rta/commit/8d1349a7dbde3bac685d9549f3e41e27f7d6bce0))
+* **git:** a promisor is read from every config git reads, not the repository's alone ([855ce11](https://github.com/this-is-tobi/rta/commit/855ce11afaa8414dd1f1e11ecfcf227979d1968f))
+* **git:** extensions.compatObjectFormat set more than once is refused, as git refuses it ([3923c5c](https://github.com/this-is-tobi/rta/commit/3923c5c7a0e1ab4e44c87dfa252487217a5de194))
+* **git:** extensions.partialClone set to nothing makes a partial clone, as git reads it ([160d9ff](https://github.com/this-is-tobi/rta/commit/160d9ff98307271660e5f27b1b36c024467eb3d2))
+* **kv:** what kv says of a key names it as the prompt does, with hidden characters spelled out ([eb8844a](https://github.com/this-is-tobi/rta/commit/eb8844a683c6ae8acc9f86bd01d5fee9eeaaf4cc))
+* **plugin:** a call handed to an agent never spells a value that is not UTF-8 as another value ([bc54458](https://github.com/this-is-tobi/rta/commit/bc544588a30a6c5b2e88f74cc168e7c58d312c16))
+* **plugin:** a forced exit during plugin dev removes the build it made, unless --keep asked for it ([ad8bd0c](https://github.com/this-is-tobi/rta/commit/ad8bd0c04836710c81a0e04f0b9eb2ae0be010e7))
+* **plugin:** an index remove detaches the clone in one rename before removing any of it ([b629d92](https://github.com/this-is-tobi/rta/commit/b629d92da51623d3a0cf5d6d246ac4f5eea3a9a5))
+* **plugin:** plugin dev --keep says on standard error where it left the build ([33e472b](https://github.com/this-is-tobi/rta/commit/33e472be4a8dcb648b4ab4dd3265245a2f8daeca))
+* **tui:** the row actions on grant list act on its table when roles in force lead the roster ([c562a55](https://github.com/this-is-tobi/rta/commit/c562a55db67bc70f358e89e1fc4053c6df9d555f))
+
+
+### Code Refactoring
+
+* **mcp:** the records a ledger row keeps are named as the ones its call names ([1ce9c8d](https://github.com/this-is-tobi/rta/commit/1ce9c8d92266a1ec7521b34d3386e93a47c4d00c))
+
 ## [0.30.0](https://github.com/this-is-tobi/rta/compare/v0.29.0...v0.30.0) (2026-09-28)
 
 
