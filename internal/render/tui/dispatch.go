@@ -494,7 +494,7 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	// its actions one key away either way — adding to an empty list
 	// must not require finding a non-empty one first.
 	if m.atTop() {
-		tbl, _ := m.result.raw.(view.Table)
+		tbl, _, _ := rowTable(m.result.raw)
 		if m.interactive() {
 			switch msg.String() {
 			case "up", "k":
