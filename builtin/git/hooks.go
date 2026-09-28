@@ -27,7 +27,9 @@ func hooksCapability() plugin.Capability {
 		Description: "Every entry in the directory git runs this repository's hooks from — " +
 			"core.hooksPath when any config git reads sets it, the repository's own hooks directory " +
 			"otherwise — judged by the same rule git itself uses to decide whether one fires on " +
-			"commit, push and the rest: named exactly (a `.sample` suffix never runs) and executable. " +
+			"commit, push and the rest: named exactly (a `.sample` suffix never runs) and executable, " +
+			"a symbolic link by what it leads to, as git follows one. Over MCP a link leading out of " +
+			"the roots is not followed, and is listed active, as git may run what it leads to. " +
 			"The config is read from every file git reads and from the environment, as git.config " +
 			"reads them; a file one of them includes is not followed, and a warning says how many " +
 			"were not. core.hooksPath set to nothing is the top of the filesystem, where git looks " +
@@ -91,11 +93,15 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 			continue
 		}
 		name := e.Name()
+		mode, unfollowed := hookMode(req, judged, name, info)
+		if mode.IsDir() {
+			continue
+		}
 		status := "disabled"
 		switch {
 		case strings.HasSuffix(name, ".sample"):
 			status = "sample"
-		case info.Mode()&0o111 != 0:
+		case unfollowed, mode&0o111 != 0:
 			status = "active"
 		}
 		t.Rows = append(t.Rows, []string{
@@ -104,6 +110,50 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	t.Total = len(t.Rows)
 	return t, nil
+}
+
+// hookMode is the mode git judges the entry name of the hooks directory dir
+// by, whose own is info's: for a symbolic link, the mode of what it leads to,
+// zero where it leads nowhere, which git runs nothing from. unfollowed is a
+// link the caller may not be told about the far end of, which is not looked
+// through (plugin.Request.LinkTarget).
+//
+// **git follows a link at a hook's name, and this judged the link itself.**
+// git runs a hook where access(2) finds it executable, which is a question
+// about what the link leads to: a link to a script is a hook git runs,
+// whatever the link's own mode, and a link to a directory is one it tries to
+// run and fails on, as it does a directory, and is left out as a directory
+// is. This read the link's own mode.
+// On Linux that is always rwx, so a link to a file git will not run was
+// listed active; on macOS a link's mode can be set apart from its target's
+// (`chmod -h 644`), and a link to a script git ran on every commit was
+// listed disabled, a hook hidden from the one answer an audit relies on.
+//
+// Over MCP, a link whose far end is outside the roots is not followed, as a
+// path argument's is not, since its mode would say what is there: it is
+// listed active, as what it leads to may be a script git runs, rather than
+// judged by a mode that is not the one git asks about.
+func hookMode(req plugin.Request, dir, name string, info os.FileInfo) (mode os.FileMode, unfollowed bool) {
+	if info.Mode()&os.ModeSymlink == 0 {
+		return info.Mode(), false
+	}
+	path := filepath.Join(dir, name)
+	target, err := os.Readlink(path)
+	if err != nil {
+		return 0, false
+	}
+	if req.LinkTarget(dir, target) != target {
+		return 0, true
+	}
+	judged, verr := req.Confine("path", path)
+	if verr != nil {
+		return 0, true
+	}
+	far, err := os.Stat(judged)
+	if err != nil {
+		return 0, false
+	}
+	return far.Mode(), false
 }
 
 // hooksDir is the directory git runs this repository's hooks from, and the
