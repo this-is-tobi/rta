@@ -50,7 +50,8 @@ func diffCapability() plugin.Capability {
 			"the ones it did not look at. An untracked file under an ignore file git.status did not " +
 			"apply is named, never shown: it may be one that ignore file keeps out of git. Without " +
 			"`commit`, the working tree is read as git.status reads it, and the diff is refused as " +
-			"git.status.timeout where that takes more than two seconds.",
+			"git.status.timeout where that takes more than two seconds. Over MCP a link in the working " +
+			"tree is diffed by its text only where that names a place under the roots, and named otherwise.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "commit", Type: plugin.String, Suggest: suggestCommits,
@@ -71,7 +72,7 @@ func runDiff(ctx context.Context, req plugin.Request) (view.View, error) {
 	if commit := req.String("commit"); commit != "" {
 		return diffCommit(ctx, repo, commit, gate)
 	}
-	return diffWorktree(ctx, repo, gate, pathGateOf(req))
+	return diffWorktree(ctx, repo, gate, pathGateOf(req), req.LinkTarget)
 }
 
 // interrupted is a diff the caller stopped waiting for, which answers nothing
@@ -836,7 +837,7 @@ func submoduleHeads(repo *git.Repository, wt *git.Worktree) map[string]plumbing.
 var maxDiffBytes int64 = 16 << 20
 
 func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *view.Error,
-	confine func(string) (string, *view.Error),
+	confine func(string) (string, *view.Error), tell func(dir, target string) string,
 ) (view.View, error) {
 	deadline := matchDeadline(ctx)
 	wt, err := repo.Worktree()
@@ -922,7 +923,7 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 		// still the answer: it returned on the first, so an untracked link to
 		// a directory — bazel-out, a `current` pointing at a release — left
 		// the caller with no patch at all, for a file git diffs as one line.
-		fp, coarsely, ferr := diffOneFile(root, head, path, disk, deadline)
+		fp, coarsely, ferr := diffOneFile(root, head, path, disk, deadline, tell)
 		if ferr != nil {
 			skipped = append(skipped, withheld{path, unreadable(ferr)})
 			continue
@@ -1042,10 +1043,11 @@ func sideSizes(repo *git.Repository, head *headFiles, path string, disk os.FileI
 // diffOneFile builds the patch for a single changed path: HEAD's committed
 // content (empty for a file HEAD never had) against what's on disk right
 // now (empty for a file the worktree deleted). coarsely says the deadline
-// cut the matching of its lines short.
-func diffOneFile(root string, head *headFiles, path string, disk os.FileInfo, deadline time.Time) (
-	fp diff.FilePatch, coarsely bool, err error,
-) {
+// cut the matching of its lines short. tell is what the caller may be told a
+// link holds (readWorktreeEntry).
+func diffOneFile(root string, head *headFiles, path string, disk os.FileInfo, deadline time.Time,
+	tell func(dir, target string) string,
+) (fp diff.FilePatch, coarsely bool, err error) {
 	var from *diffFile
 	oldContent := ""
 	if e, dir := head.entry(path); e != nil {
@@ -1062,7 +1064,7 @@ func diffOneFile(root string, head *headFiles, path string, disk os.FileInfo, de
 	var to *diffFile
 	newContent := ""
 	if disk != nil {
-		content, mode, err := readWorktreeEntry(root, path, disk)
+		content, mode, err := readWorktreeEntry(root, path, disk, tell)
 		if err != nil {
 			return nil, false, err
 		}
@@ -1087,12 +1089,29 @@ func diffOneFile(root string, head *headFiles, path string, disk os.FileInfo, de
 // mode it records it under. A symlink is its text, as git stores and diffs
 // one: read through it instead, a retargeted link showed the new target's
 // contents where git shows the new name.
-func readWorktreeEntry(root, path string, disk os.FileInfo) (string, filemode.FileMode, error) {
+//
+// **A link's text is a name, and the caller may not be told every name.**
+// Over MCP a link inside the root holding /outside/project told an agent
+// confined to the root a name outside it, which fs.tree lists such a link
+// without and a path argument's link is refused without. tell is the
+// surface's rule for it (plugin.Request.LinkTarget), the one fs.tree asks: a
+// target naming only places under the roots is diffed as the text it is,
+// and any other link is named, not diffed, by the phrase the surface gives
+// in its place, rather than diffed as though that phrase were its text. A
+// terminal, and every surface that confines nothing, tells every target.
+// The side HEAD records is the repository's content, which git.diff
+// --commit and git.blame show whole, and is not asked about.
+func readWorktreeEntry(root, path string, disk os.FileInfo, tell func(dir, target string) string) (
+	string, filemode.FileMode, error,
+) {
 	full := filepath.Join(root, filepath.FromSlash(path))
 	if disk.Mode()&os.ModeSymlink != 0 {
 		target, err := os.Readlink(full)
 		if err != nil {
 			return "", 0, err
+		}
+		if told := tell(filepath.Dir(full), target); told != target {
+			return "", 0, notDiffable("a symbolic link to " + told)
 		}
 		return target, filemode.Symlink, nil
 	}

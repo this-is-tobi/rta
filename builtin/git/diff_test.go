@@ -395,3 +395,64 @@ func TestDiffWorktreeNamesAMovedSubmoduleByItsCommits(t *testing.T) {
 		t.Errorf("the submodule is named as a file the diff could not read:\n%s", body)
 	}
 }
+
+// linksToldAsUnder is a confined request whose surface tells a link's target
+// as the MCP bridge tells it: as written where it names a place under root,
+// and as leading outside otherwise (plugin.Request.LinkTarget).
+func linksToldAsUnder(t *testing.T, root, path string) plugin.Request {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return guarded(t, root, path).WithSurface(plugin.SurfaceMCP).
+		WithLinkTargets(func(dir, target string) string {
+			if rel, err := filepath.Rel(resolved, against(dir, target)); err == nil && !climbsOut(rel) {
+				return target
+			}
+			return "a path outside this server's roots"
+		})
+}
+
+// A link's text is a name, and the worktree diff showed it whatever it named:
+// a link inside the root holding a path outside it told an agent confined to
+// the root a name outside it, which fs.tree withholds. Over MCP a link whose
+// target names a place outside the roots is named, not shown; one naming a
+// place under them is diffed by its text, as it is at a terminal.
+func TestDiffWorktreeShowsALinkByItsTextOnlyWhereTheCallerMayReadTheName(t *testing.T) {
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret-project-name")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "a\n", "initial")
+	symlink(t, dir, "a.txt", "tracked")
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add("tracked"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Commit("link", &git.CommitOptions{Author: signature()}); err != nil {
+		t.Fatal(err)
+	}
+	symlink(t, dir, secret, "tracked")
+	symlink(t, dir, secret, "untracked")
+	symlink(t, dir, "a.txt", "inside")
+
+	body := text(t, runDiff, linksToldAsUnder(t, dir, dir))
+	if strings.Contains(body, "secret-project-name") {
+		t.Errorf("the diff told a name outside the roots:\n%s", body)
+	}
+	for _, want := range []string{
+		"tracked changed, not diffed: a symbolic link to a path outside this server's roots",
+		"untracked changed, not diffed: a symbolic link to a path outside this server's roots",
+		"+a.txt",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the diff has no %q:\n%s", want, body)
+		}
+	}
+	if body := text(t, runDiff, req(t, dir, nil)); !strings.Contains(body, "+"+secret) {
+		t.Errorf("at a terminal, the diff does not show the link's text:\n%s", body)
+	}
+}
