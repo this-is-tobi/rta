@@ -89,6 +89,24 @@ func newTerminal(t *testing.T) *ptyTerminal {
 // the drain begin and typing fails here, as a paste that slow is cut there.
 func (p *ptyTerminal) read(typed string, later ...string) (line []byte, more bool, err error) {
 	p.t.Helper()
+	return p.readWith(readTerminalLine, typed, later...)
+}
+
+// secret runs the passphrase prompt's reader, ReadSecret's, on the terminal
+// and types into it, as read runs the line reader.
+func (p *ptyTerminal) secret(typed string) ([]byte, error) {
+	p.t.Helper()
+	line, _, err := p.readWith(func(fd int) ([]byte, bool, error) {
+		line, err := readTerminalSecret(fd)
+		return line, false, err
+	}, typed)
+	return line, err
+}
+
+func (p *ptyTerminal) readWith(reader func(fd int) ([]byte, bool, error), typed string, later ...string) (
+	line []byte, more bool, err error,
+) {
+	p.t.Helper()
 	before := p.settings()
 	type result struct {
 		line []byte
@@ -99,7 +117,7 @@ func (p *ptyTerminal) read(typed string, later ...string) (line []byte, more boo
 	p.reading = reading
 	go func() {
 		defer close(reading)
-		line, more, err := readTerminalLine(p.terminal)
+		line, more, err := reader(p.terminal)
 		done <- result{line, more, err}
 	}()
 	p.await("echo and the line discipline off", func(s *unix.Termios) bool {
@@ -142,10 +160,19 @@ func (p *ptyTerminal) settings() *unix.Termios {
 	return s
 }
 
-// await waits for the terminal's settings to be as the reader sets them.
+// await waits for the terminal's settings to be as the reader sets them, or
+// for the reader to have returned: one whose line was on the terminal before
+// it started, typed ahead of it, can set them and put them back between two
+// looks, and what it did to the terminal is then judged by what it read and
+// echoed, as it is for any other.
 func (p *ptyTerminal) await(what string, ready func(*unix.Termios) bool) {
 	p.t.Helper()
 	for deadline := time.Now().Add(10 * time.Second); !ready(p.settings()); {
+		select {
+		case <-p.reading:
+			return
+		default:
+		}
 		if time.Now().After(deadline) {
 			p.t.Fatalf("the line reader never set the terminal to %s", what)
 		}
@@ -251,5 +278,22 @@ func TestAPasteIsDrainedOffARealTerminalAndReportedAsMore(t *testing.T) {
 			t.Errorf("%s, the next line read %.40q, more %v, %v; want next, and nothing left of the paste",
 				what, line, more, err)
 		}
+	}
+}
+
+// The passphrase prompt's reader, ReadSecret's, takes its line off a real
+// terminal and nothing after it: a passphrase typed twice ahead of its two
+// prompts is still on the terminal for the second, "Once more:", with
+// nothing echoed, through the terminal put back to its line discipline and
+// taken over again between them. Read as the line reader reads, whatever
+// arrived with the first line would go with it, and the second prompt would
+// wait for a line already typed.
+func TestASecretIsReadOffARealTerminalLeavingWhatFollowsIt(t *testing.T) {
+	p := newTerminal(t)
+	if line, err := p.secret("pa55word\rpa55word\r"); err != nil || string(line) != "pa55word" {
+		t.Fatalf("the first prompt read %q, %v; want pa55word", line, err)
+	}
+	if line, err := p.secret(""); err != nil || string(line) != "pa55word" {
+		t.Errorf("the second prompt read %q, %v; want the pa55word typed ahead of it", line, err)
 	}
 }
