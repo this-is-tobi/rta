@@ -4,7 +4,6 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"os"
 	"path/filepath"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
@@ -48,7 +47,12 @@ const cacheKeyFile = "plugin-cache.key"
 func cacheKeyPath() string { return filepath.Join(paths.Data(), cacheKeyFile) }
 
 // maxCacheKeyFile bounds a read of the cache key: it is always exactly 32
-// bytes, generous room for a less careful past or future writer.
+// bytes, generous room for a less careful past or future writer. It bounds
+// both reads, Publish's fallback and sealKey's own on every run: the key sits
+// beside the entries it seals, where the same less-trusted writer can put a
+// file that never ends (atomicfile.ReadCapped), and a key read without the cap
+// was the one unbounded read left between that writer and every rta that has
+// a plugin.
 const maxCacheKeyFile = 4 << 10
 
 // sealKey loads the cache key, creating it on first use.
@@ -61,7 +65,7 @@ const maxCacheKeyFile = 4 << 10
 // produces the identical answer. There is nothing here a person needs to act
 // on, so there is no error surface to get wrong.
 func sealKey(create bool) []byte {
-	if raw, err := os.ReadFile(cacheKeyPath()); err == nil && len(raw) >= 32 {
+	if raw, err := atomicfile.ReadCapped(cacheKeyPath(), maxCacheKeyFile); err == nil && len(raw) >= 32 {
 		return raw
 	}
 	if !create {

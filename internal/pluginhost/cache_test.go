@@ -401,3 +401,34 @@ func TestTheCacheKeyIsCreatedOnce(t *testing.T) {
 		}
 	}
 }
+
+// The key is read up to the most rta writes there, as the entries it seals
+// are. It sits in the data directory beside them and is read on every run
+// that has a plugin, shell completion's included, so a key file that never
+// ends — a link to /dev/zero — kept every rta reading until memory ran out
+// before a single entry was looked at. One the read refuses is no key, and no
+// key is no cache: a launch per plugin, the answer every miss gets.
+func TestAKeyLargerThanRtaWritesIsNoKeyNotARead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no /dev/zero to link to")
+	}
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	if _, err := paths.EnsureData(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/dev/zero", cacheKeyPath()); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	for _, create := range []bool{false, true} {
+		read := make(chan []byte, 1)
+		go func() { read <- sealKey(create) }()
+		select {
+		case key := <-read:
+			if key != nil {
+				t.Errorf("sealKey(%v): an endless key file was read as a key", create)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("sealKey(%v): an endless key file was read without end", create)
+		}
+	}
+}
