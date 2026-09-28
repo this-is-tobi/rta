@@ -821,11 +821,7 @@ func newPluginManifestCommand(opts *globalOpts) *cobra.Command {
 				req.Platforms = append(req.Platforms, src)
 			}
 			if checksums != "" {
-				raw, err := os.ReadFile(checksums)
-				if err != nil {
-					return view.Errorf("plugin.manifest.checksums", "%v", err)
-				}
-				sums, verr := plugindist.ParseChecksums(raw)
+				sums, verr := readChecksumsFile(checksums)
 				if verr != nil {
 					return verr
 				}
@@ -880,6 +876,21 @@ func newPluginManifestCommand(opts *globalOpts) *cobra.Command {
 	cmd.Flags().StringVar(&indexDir, "index", "",
 		"index directory to write index/<name>.yaml into, instead of printing")
 	return cmd
+}
+
+// readChecksumsFile is --checksums, read no further than a checksums file may
+// be (plugindist.ReadChecksums). It was read whole before its size was looked
+// at, so a path naming something else — a release archive given in the wrong
+// flag, a device — cost its whole size in memory to be refused, and one that
+// never ends was read until memory ran out: /dev/zero took seven gigabytes in
+// eight seconds and was still reading.
+func readChecksumsFile(path string) (map[string]string, *view.Error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, view.Errorf("plugin.manifest.checksums", "%v", err)
+	}
+	defer func() { _ = f.Close() }()
+	return plugindist.ReadChecksums(f)
 }
 
 // parsePlatformSpec reads `<os>/<arch>=<url>`.
