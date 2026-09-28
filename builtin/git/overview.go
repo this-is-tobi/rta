@@ -69,7 +69,14 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	// at a repository's state is almost always to decide whether to push,
 	// pull, or carry on.
 	if herr == nil {
-		add("tracking", trackingOf(repo, head).String())
+		tracks, err := branchUpstreams(ctx, req, repo)
+		if verr := refusedByTheGate(err); verr != nil {
+			return nil, verr
+		}
+		if err != nil {
+			return nil, view.Errorf("git.overview.failed", "reading what the branch tracks: %v", err)
+		}
+		add("tracking", trackingOf(repo, tracks, head).String())
 	}
 	// And before anything about files, because it changes what a file list
 	// even means. An interrupted rebase is invisible in a branch name and in a

@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -8,6 +9,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // The facts a person actually opens `git status` for, and that a hash and a
@@ -75,12 +78,12 @@ func plus(n int, capped bool) string {
 // only answer available to something that must not open a socket to draw a
 // tile. A repository that has not fetched in a week reports against a week-old
 // picture, and that is the honest reading of a local repository's state.
-func trackingOf(repo *git.Repository, head *plumbing.Reference) tracking {
+func trackingOf(repo *git.Repository, tracks map[string]upstream, head *plumbing.Reference) tracking {
 	if head == nil || !head.Name().IsBranch() {
 		return tracking{}
 	}
 	branch := head.Name().Short()
-	remote, merge := upstreamOf(repo, branch)
+	remote, merge := upstreamOf(repo, tracks, branch)
 	if remote == "" {
 		return tracking{}
 	}
@@ -96,20 +99,17 @@ func trackingOf(repo *git.Repository, head *plumbing.Reference) tracking {
 	return tracking{upstream: name, ahead: ahead, behind: behind, capped: !aok || !bok}
 }
 
-// upstreamOf reads branch.<name>.remote and branch.<name>.merge, falling back
-// to a remote-tracking ref of the same name.
+// upstreamOf reads branch.<name>.remote and branch.<name>.merge, as tracks
+// holds them (configuredUpstreams), falling back to a remote-tracking ref of
+// the same name.
 //
 // The fallback is for the repository somebody cloned and never pushed from:
 // git writes the branch section on the first push, so before that `main` has
 // no configured upstream while `origin/main` sits right there. Reporting
 // nothing would be technically correct and useless.
-func upstreamOf(repo *git.Repository, branch string) (remote, merge string) {
-	if b, err := repo.Branch(branch); err == nil && b.Remote != "" {
-		name := branch
-		if b.Merge != "" {
-			name = b.Merge.Short()
-		}
-		return b.Remote, name
+func upstreamOf(repo *git.Repository, tracks map[string]upstream, branch string) (remote, merge string) {
+	if u := tracks[branch]; u.remote != "" {
+		return u.remote, u.branch(branch)
 	}
 	// From the remote-tracking refs themselves rather than from the configured
 	// remotes: what makes an upstream *reportable* is that this machine has
@@ -145,6 +145,61 @@ func upstreamOf(repo *git.Repository, branch string) (remote, merge string) {
 		return found[i] < found[j]
 	})
 	return found[0], branch
+}
+
+// upstream is what a branch is configured to track: the remote,
+// branch.<name>.remote, and the branch there, branch.<name>.merge.
+type upstream struct{ remote, merge string }
+
+// branch is the name of the branch u tracks on its remote, branch's own where
+// no merge is set.
+func (u upstream) branch(branch string) string {
+	if u.merge == "" {
+		return branch
+	}
+	return plumbing.ReferenceName(u.merge).Short()
+}
+
+// configuredUpstreams is what each branch tracks as pieces set it, read as
+// git's remote.c reads it: the last branch.<name>.remote, and the first
+// branch.<name>.merge, the one git names as the upstream of a branch that
+// merges several.
+//
+// **From every file git reads, not the repository's own.** go-git's Branch
+// reads .git/config alone, and the last merge in it, so an upstream set in a
+// file an include names, or in ~/.gitconfig, was missing from git.branches
+// and the overview, where git's status names it. The pieces are the ones the
+// caller may be shown (shownConfig), as git.remotes reads its remotes.
+func configuredUpstreams(pieces []scopedConfig) map[string]upstream {
+	out := map[string]upstream{}
+	for _, p := range pieces {
+		if !p.config.Raw.HasSection("branch") {
+			continue
+		}
+		for _, sub := range p.config.Raw.Section("branch").Subsections {
+			u := out[sub.Name]
+			for _, o := range sub.Options {
+				switch {
+				case o.IsKey("remote"):
+					u.remote = o.Value
+				case o.IsKey("merge") && u.merge == "":
+					u.merge = o.Value
+				}
+			}
+			out[sub.Name] = u
+		}
+	}
+	return out
+}
+
+// branchUpstreams is what each branch of repo tracks, as configuredUpstreams
+// reads it from the config req may be shown.
+func branchUpstreams(ctx context.Context, req plugin.Request, repo *git.Repository) (map[string]upstream, error) {
+	pieces, err := shownConfig(ctx, req, repo)
+	if err != nil {
+		return nil, err
+	}
+	return configuredUpstreams(pieces), nil
 }
 
 // notIn counts the commits reachable from `tip` and not from `other`, and
