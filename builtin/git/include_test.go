@@ -10,7 +10,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 
@@ -357,39 +359,173 @@ func TestAnIncludeGitCannotReadIsRefused(t *testing.T) {
 	}
 }
 
-// An include can name any file on the machine, and one of sections and keys
-// reads as config: ~/.my.cnf, a MySQL client's password among its keys, is
-// one, and a repository's .git/config, which a caller can write inside the
-// root, could have git.config show it. ~/.aws/credentials is one git refuses,
-// its keys holding underscores, and so is it refused here, without a word of
-// what the parser stopped at.
-// Over MCP a file the repository's config includes from outside the roots is
-// read, and counts for every answer, as git reads it: its core.hooksPath is
-// where git.hooks lists hooks from, and its promisor makes the repository a
-// partial clone. None of its keys or values is shown, nor what a file it
-// includes holds, since where that is is written in it; git.config names the
-// include as one outside the roots, a refusal says a remote is named there
-// without naming it, and a hooks directory it names outside the roots is
-// refused without its name. A file included from inside the roots is shown,
-// with where it is. At a terminal the operator's own files are all shown.
-func TestAFileIncludedFromOutsideTheRootsCountsAndIsNeverShownOverMCP(t *testing.T) {
+// answersOf is what each capability that reads the config answers r with, as
+// one string: its view or its refusal, in a fixed order.
+func answersOf(t *testing.T, r plugin.Request) string {
+	t.Helper()
+	var b strings.Builder
+	for _, c := range []struct {
+		name string
+		run  plugin.Handler
+	}{
+		{"git.config", runConfig}, {"git.hooks", runHooks}, {"git.status", runStatus}, {"git.log", runLog},
+		{"git.remotes", runRemotes}, {"git.branches", runBranches}, {"git.overview", runOverview},
+	} {
+		v, err := c.run(context.Background(), r)
+		fmt.Fprintf(&b, "%s: %+v %v\n", c.name, v, err)
+	}
+	return b.String()
+}
+
+// pipeOpened is a named pipe at path with a writer waiting on it, whose
+// open(2) returns only once something opens the pipe to read it: opened
+// reports whether anything did, then lets the writer go. nil where there are
+// no named pipes.
+func pipeOpened(t *testing.T, path string) (opened func() bool) {
+	t.Helper()
+	if mkfifo(path) != nil {
+		return nil
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if f, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
+			_ = f.Close()
+		}
+	}()
+	time.Sleep(20 * time.Millisecond)
+	return func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+		}
+		if f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0); err == nil {
+			<-done
+			_ = f.Close()
+		}
+		return false
+	}
+}
+
+// An include can name any file on the machine, and whether git reads the one
+// it names shows in every answer: a missing file is passed over, one that is
+// not config refuses the call, one that parses counts, and one past the 4 MiB
+// includes are read to refuses it, so a caller who can write the repository's
+// config inside the roots could learn, of a file outside them, whether it
+// exists, whether it is config, and how large it is, by bisection. Over MCP
+// such an include, in the repository's config or in a file it includes from
+// inside the roots, is not followed at all: the file is never opened, every
+// answer is the one a missing file gets, whatever is there, and git.config and
+// git.hooks name the include as one outside the roots. At a terminal each is
+// read as git reads it.
+func TestAnIncludeOfAFileOutsideTheRootsIsNeverLookedAtOverMCP(t *testing.T) {
 	home := machineConfig(t, "")
 	dir, repo := testRepo(t)
+	// Long ago, so that the overview's age of it is the same from one call to
+	// the next.
+	commitFileAt(t, repo, dir, "a.txt", "v1\n", "initial", time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
+	writeFile(t, dir, "new.txt", "new\n")
+	writeExecutable(t, dir, "planted-hooks/pre-commit")
+	writeFile(t, dir, "planted-ignores", "*.txt\n")
+	writeFile(t, dir, ".git/inner.cfg", "[include]\n\tpath = ~/probe.cfg\n")
+	probe := filepath.Join(home, "probe.cfg")
+	variants := []struct {
+		name  string
+		plant func()
+	}{
+		{"missing", func() {}},
+		{"config", func() {
+			writeFile(t, home, "probe.cfg", "[core]\n\thooksPath = "+filepath.Join(dir, "planted-hooks")+
+				"\n\texcludesFile = "+filepath.Join(dir, "planted-ignores")+"\n[x]\n\tafter = planted\n"+
+				"[remote \"planted\"]\n\tpromisor = true\n\turl = https://planted.example/r\n")
+		}},
+		{"not config", func() { writeFile(t, home, "probe.cfg", "this is not config\n") }},
+		{"a directory", func() {
+			if err := os.Mkdir(probe, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"past the cap", func() {
+			writeFile(t, home, "probe.cfg", "")
+			if err := os.Truncate(probe, maxIncludedBytes+1); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"unreadable", func() {
+			writeFile(t, home, "probe.cfg", "[x]\n\tafter = planted\n")
+			if err := os.Chmod(probe, 0); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, include := range []string{"path = ~/probe.cfg", "path = inner.cfg"} {
+		writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n[include]\n\t"+include+"\n[x]\n\tafter = local\n")
+		want, atTerminal := "", map[string]string{}
+		for _, v := range variants {
+			if err := os.RemoveAll(probe); err != nil {
+				t.Fatal(err)
+			}
+			v.plant()
+			got := answersOf(t, mcpReq(t, dir, dir))
+			if want == "" {
+				want = got
+			} else if got != want {
+				t.Errorf("over MCP, with %s, the file outside the roots %s:\n%s\nwhere a missing one gets:\n%s",
+					include, v.name, got, want)
+			}
+			atTerminal[v.name] = answersOf(t, req(t, dir, nil))
+			_ = os.Chmod(probe, 0o644)
+		}
+		for _, v := range variants[1:] {
+			if atTerminal[v.name] == atTerminal["missing"] {
+				t.Errorf("at a terminal, with %s, the file outside the roots %s is answered as a missing one", include,
+					v.name)
+			}
+		}
+		_ = os.RemoveAll(probe)
+		if opened := pipeOpened(t, probe); opened != nil {
+			got := answersOf(t, mcpReq(t, dir, dir))
+			if opened() {
+				t.Errorf("over MCP, with %s, the named pipe outside the roots was opened", include)
+			}
+			if got != want {
+				t.Errorf("over MCP, with %s, a named pipe outside the roots:\n%s\nwhere a missing one gets:\n%s",
+					include, got, want)
+			}
+		}
+		_ = os.RemoveAll(probe)
+	}
+}
+
+// Over MCP git.config names an include of a file outside the roots as one not
+// followed, among the rows of the files it does follow, a file included from
+// inside the roots with where it is; git.hooks names it where it could set
+// the directory git runs hooks from, since git follows it. The operator's own
+// config, and a file it includes from anywhere, is theirs, and read as before:
+// its core.hooksPath is the directory git.hooks lists. At a terminal the file
+// is read as git reads it, a credential in it masked.
+func TestAnIncludeOutsideTheRootsIsNamedOverMCPAndTheOperatorsIsFollowed(t *testing.T) {
+	home := machineConfig(t, "[include]\n\tpath = ~/operator.cfg\n")
+	dir, repo := testRepo(t)
 	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	// The operator's value names the checkout where its links lead, as the
+	// path the MCP call is given is judged, for the row to show it from there.
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, home, "operator.cfg", "[core]\n\thooksPath = "+filepath.Join(resolved, "operator-hooks")+"\n")
+	writeExecutable(t, dir, "operator-hooks/pre-commit")
 	writeFile(t, home, ".my.cnf", "[client]\n\tuser = planted-user\n\tpassword = planted-password\n"+
-		"\thost = planted-host.example\n\tapi-token = planted-api-token\n[core]\n\thooksPath = from-credentials\n"+
-		"[include]\n\tpath = "+filepath.Join(dir, "nested.cfg")+"\n\tpath = %(prefix)/planted-undecided\n")
-	writeFile(t, dir, "nested.cfg", "[x]\n\tnested = planted-nested-value\n")
+		"\thost = planted-host.example\n[core]\n\thooksPath = planted-hooks\n")
 	writeFile(t, dir, ".git/shared.cfg", "[x]\n\tshared = in-the-root\n")
-	writeExecutable(t, dir, "from-credentials/pre-commit")
 	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n[include]\n\tpath = ~/.my.cnf\n"+
 		"\tpath = shared.cfg\n")
-	planted := []string{"planted-user", "planted-password", "planted-host", "client.", "from-credentials",
-		"planted-nested-value", "nested.cfg"}
 
 	mcp := table(t, runConfig, mcpReq(t, dir, dir))
 	shown := fmt.Sprint(mcp.Rows, mcp.Warnings)
-	for _, p := range planted {
+	for _, p := range []string{"planted", "client.", "operator.cfg"} {
 		if strings.Contains(shown, p) {
 			t.Errorf("over MCP, %q reached git.config: %v", p, shown)
 		}
@@ -402,57 +538,42 @@ func TestAFileIncludedFromOutsideTheRootsCountsAndIsNeverShownOverMCP(t *testing
 		t.Errorf("over MCP, x.shared rows = %v, want the file included from inside the roots shown", got)
 	}
 	if len(mcp.Warnings) != 1 || mcp.Warnings[0].Code != "git.config.include.outside" ||
-		!strings.Contains(mcp.Warnings[0].Message, "~/.my.cnf") {
+		!strings.Contains(mcp.Warnings[0].Message, "~/.my.cnf, which is not followed") {
 		t.Errorf("over MCP, warnings = %+v, want git.config.include.outside naming the include", mcp.Warnings)
 	}
-	if row := rowFor(t, table(t, runHooks, mcpReq(t, dir, dir)), "Name", "pre-commit"); row[2] != "from-credentials/pre-commit" {
-		t.Errorf("over MCP, pre-commit row = %v, want the directory the file outside the roots names", row)
+	hooks := table(t, runHooks, mcpReq(t, dir, dir))
+	if row := rowFor(t, hooks, "Name", "pre-commit"); row[2] != "operator-hooks/pre-commit" {
+		t.Errorf("over MCP, pre-commit row = %v, want the directory the operator's included file names", row)
+	}
+	if len(hooks.Warnings) != 1 || hooks.Warnings[0].Code != "git.hooks.include.outside" ||
+		!strings.Contains(hooks.Warnings[0].Message, "~/.my.cnf") {
+		t.Errorf("over MCP, git.hooks warnings = %+v, want the include named as one not followed", hooks.Warnings)
+	}
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n[include]\n\tpath = ~/.my.cnf\n[core]\n"+
+		"\thooksPath = operator-hooks\n")
+	if hooks := table(t, runHooks, mcpReq(t, dir, dir)); len(hooks.Warnings) != 0 {
+		t.Errorf("over MCP, git.hooks warnings = %+v, with core.hooksPath set after the include", hooks.Warnings)
 	}
 
 	cli := table(t, runConfig, req(t, dir, nil))
-	for key, want := range map[string]string{
-		"client.host": "planted-host.example@" + filepath.Join(home, ".my.cnf"),
-		"x.nested":    "planted-nested-value@nested.cfg",
-	} {
-		if got := keyRows(cli, key); len(got) != 1 || !strings.HasSuffix(got[0], want) {
-			t.Errorf("at a terminal, %s rows = %v, want one ending %q", key, got, want)
-		}
+	if got := keyRows(cli, "client.host"); !slices.Equal(got, []string{"planted-host.example@" +
+		filepath.Join(home, ".my.cnf")}) {
+		t.Errorf("at a terminal, client.host rows = %v, want the included file's", got)
 	}
-	if len(cli.Warnings) != 1 || cli.Warnings[0].Code != "git.config.include" {
-		t.Errorf("at a terminal, warnings = %+v, want the include under git's install prefix said to be unread",
-			cli.Warnings)
+	if got := keyRows(cli, "client.password"); len(got) != 1 || !strings.HasPrefix(got[0], view.Mask+"@") {
+		t.Errorf("at a terminal, client.password rows = %v, want the value masked, as a credential is", got)
 	}
-	for _, key := range []string{"client.password", "client.api-token"} {
-		if got := keyRows(cli, key); len(got) != 1 || !strings.HasPrefix(got[0], view.Mask+"@") {
-			t.Errorf("at a terminal, %s rows = %v, want the value masked, as a credential is", key, got)
-		}
+	if len(cli.Warnings) != 0 {
+		t.Errorf("at a terminal, warnings = %+v, want none", cli.Warnings)
 	}
-
-	writeFile(t, home, ".my.cnf", "[core]\n\thooksPath = "+filepath.Join(home, "planted-hooks")+"\n")
-	if _, err := runHooks(context.Background(), mcpReq(t, dir, dir)); errCode(err) != "core.mcp.path.outside" ||
-		strings.Contains(err.Error(), "planted-hooks") {
-		t.Errorf("over MCP, git.hooks = %v, want the directory refused as outside the roots, and not named", err)
-	}
-
-	writeFile(t, home, ".my.cnf", "[remote \"planted-remote\"]\n\tpromisor = true\n")
-	_, err := runLog(context.Background(), mcpReq(t, dir, dir))
-	if errCode(err) != "git.objects.partial" || strings.Contains(err.Error(), "planted-remote") ||
-		!strings.Contains(err.Error(), "a remote named in a file included from outside the roots") {
-		t.Errorf("over MCP, git.log = %v, want a partial clone refused without the remote's name", err)
-	}
-	if _, err := runLog(context.Background(), req(t, dir, nil)); errCode(err) != "git.objects.partial" ||
-		!strings.Contains(err.Error(), "planted-remote") {
-		t.Errorf("at a terminal, git.log = %v, want a partial clone refused naming the remote", err)
+	if row := rowFor(t, table(t, runHooks, req(t, dir, nil)), "Name", "pre-commit"); row[2] != "operator-hooks/pre-commit" {
+		t.Errorf("at a terminal, pre-commit row = %v, want the directory the repository's config sets last", row)
 	}
 
 	writeFile(t, home, ".aws/credentials", "[default]\n\taws_access_key_id = AKIAPLANTEDKEYID\n")
 	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n[include]\n\tpath = ~/.aws/credentials\n")
-	for name, r := range map[string]plugin.Request{"over MCP": mcpReq(t, dir, dir), "at a terminal": req(t, dir, nil)} {
-		_, err := runConfig(context.Background(), r)
-		if errCode(err) != "git.config.failed" || name == "over MCP" && (strings.Contains(err.Error(), "AKIA") ||
-			strings.Contains(err.Error(), "aws_") || !strings.Contains(err.Error(), "no file of config git reads")) {
-			t.Errorf("%s, including ~/.aws/credentials, git.config = %v, want it refused saying nothing of it", name, err)
-		}
+	if _, err := runConfig(context.Background(), req(t, dir, nil)); errCode(err) != "git.config.failed" {
+		t.Errorf("at a terminal, including ~/.aws/credentials, git.config = %v, want it refused as git refuses it", err)
 	}
 	if _, _, runs, ok := gitGets(t, dir, "core.bare"); ok && runs {
 		t.Error("git runs including ~/.aws/credentials")
@@ -462,10 +583,10 @@ func TestAFileIncludedFromOutsideTheRootsCountsAndIsNeverShownOverMCP(t *testing
 // rta's own state is refused wherever it sits, and a file an include names is
 // no exception: a root drawn around the home directory holds
 // ~/.local/share/rta, and an include naming a file there was read, and
-// counted for every answer, as a file outside the roots is. Over MCP it
-// refuses the call as the gate refuses the path, where a file outside the
-// roots names it too, without naming what that file includes; at a terminal it
-// is read, as git reads it.
+// counted for every answer. Over MCP it refuses the call as the gate refuses
+// the path; a file outside the roots that names it is never opened, so what it
+// includes is never reached, and the answer is the one with no such include.
+// At a terminal each is read, as git reads it.
 func TestAnIncludeOfRtasOwnStateIsRefusedOverMCP(t *testing.T) {
 	home := machineConfig(t, "")
 	dir, repo := testRepo(t)
@@ -475,18 +596,15 @@ func TestAnIncludeOfRtasOwnStateIsRefusedOverMCP(t *testing.T) {
 	writeFile(t, state, "planted.cfg", "[core]\n\thooksPath = planted-hooks\n")
 	writeExecutable(t, dir, "planted-hooks/pre-commit")
 	writeFile(t, home, "outside.cfg", "[include]\n\tpath = "+filepath.Join(state, "planted.cfg")+"\n")
-	for name, include := range map[string]string{
-		"named in the repository's config":  filepath.Join(state, "planted.cfg"),
-		"named in a file outside the roots": "~/outside.cfg",
+	for name, c := range map[string]struct{ include, code string }{
+		"named in the repository's config":  {filepath.Join(state, "planted.cfg"), "core.mcp.path.protected"},
+		"named in a file outside the roots": {"~/outside.cfg", ""},
 	} {
-		writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n[include]\n\tpath = "+include+"\n")
+		writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n[include]\n\tpath = "+c.include+"\n")
 		for capability, run := range map[string]plugin.Handler{"git.config": runConfig, "git.hooks": runHooks, "git.log": runLog} {
-			_, err := run(context.Background(), mcpReq(t, dir, dir))
-			if errCode(err) != "core.mcp.path.protected" {
-				t.Errorf("%s, %s over MCP = %v, want the include refused as rta's own state", name, capability, err)
-			}
-			if include == "~/outside.cfg" && err != nil && strings.Contains(err.Error(), "planted") {
-				t.Errorf("%s, %s over MCP = %v, naming what a file it does not show includes", name, capability, err)
+			v, err := run(context.Background(), mcpReq(t, dir, dir))
+			if errCode(err) != c.code || strings.Contains(fmt.Sprint(v), "planted") {
+				t.Errorf("%s, %s over MCP = %v %v, want %q", name, capability, v, err, c.code)
 			}
 		}
 		if row := rowFor(t, table(t, runHooks, req(t, dir, nil)), "Name", "pre-commit"); row[2] != "planted-hooks/pre-commit" {
@@ -558,7 +676,8 @@ func TestARepositorysFormatIsNeverTakenFromAnInclude(t *testing.T) {
 // clone to git, whose objects this reader cannot all read, and it is refused
 // naming the file; a core.excludesFile a file the repository's config
 // includes names is put to the gate, as one the repository's own config names
-// is, and over MCP one set in a file outside the roots is not named.
+// is, and over MCP one set in a file outside the roots is not read, the
+// include not being followed.
 func TestAPromisorOrAnExcludesFileSetInAnIncludeCounts(t *testing.T) {
 	home := machineConfig(t, "[include]\n\tpath = partial.gitconfig\n")
 	writeFile(t, home, "partial.gitconfig", "[remote \"origin\"]\n\tpromisor = true\n")
@@ -580,7 +699,7 @@ func TestAPromisorOrAnExcludesFileSetInAnIncludeCounts(t *testing.T) {
 	writeFile(t, home, "ignores.gitconfig", "[core]\n\texcludesFile = "+filepath.Join(outside, "planted-ignores")+"\n")
 	writeFile(t, dir, "new.txt", "new\n")
 	for include, shown := range map[string]string{
-		"~/ignores.gitconfig": "core.excludesFile",
+		"~/ignores.gitconfig": "",
 		"ignores.cfg":         filepath.Join(outside, "planted-ignores"),
 	} {
 		writeFile(t, dir, ".git/ignores.cfg", "[core]\n\texcludesFile = "+filepath.Join(outside, "planted-ignores")+"\n")
@@ -590,8 +709,10 @@ func TestAPromisorOrAnExcludesFileSetInAnIncludeCounts(t *testing.T) {
 		}
 		tbl := table(t, runStatus, mcpReq(t, dir, dir))
 		w := ignoreWarning(tbl)
-		if w == nil || !strings.Contains(w.Message, shown) || !strings.Contains(w.Message, "path gate") ||
-			shown == "core.excludesFile" && strings.Contains(w.Message, "planted-ignores") {
+		switch {
+		case shown == "" && (w != nil || !slices.Contains(untracked(t, mcpReq(t, dir, dir)), "new.txt")):
+			t.Errorf("over MCP, including %s, the ignore warning is %+v, want no excludes file read", include, w)
+		case shown != "" && (w == nil || !strings.Contains(w.Message, shown) || !strings.Contains(w.Message, "path gate")):
 			t.Errorf("over MCP, including %s, the ignore warning is %+v, want the excludes file refused as %q", include,
 				w, shown)
 		}
