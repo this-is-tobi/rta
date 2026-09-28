@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
@@ -224,4 +225,59 @@ func TestEveryCapabilityClosesThePacksItKeptOpen(t *testing.T) {
 			t.Errorf("%s left %d descriptors open over five calls", c.name, after-before)
 		}
 	}
+}
+
+// A partial clone lacks objects on purpose, and git fetches each as it needs
+// it; this reader fetches nothing, and failed at the first it lacked. The
+// capabilities that read objects refuse one up front, naming the remote git
+// fetches from, whether git marked it as `git clone --filter` does now,
+// remote.<name>.promisor, true or with no value at all on any line, a later
+// false taking nothing away, or as older git did, extensions.partialClone,
+// which git reads only where the config sets a format version. The ones that
+// read no object answer.
+func TestAPartialCloneIsRefusedToTheCapabilitiesThatReadObjects(t *testing.T) {
+	const origin = "[remote \"origin\"]\n\turl = https://example.com/r.git\n"
+	for config, partial := range map[string]bool{
+		origin + "\tpromisor = true\n\tpartialclonefilter = blob:none\n": true,
+		origin + "\tpromisor\n":         true,
+		origin + "\tpromisor = false\n": false,
+		origin + "\tpromisor = true\n[remote \"origin\"]\n\tpromisor = false\n":                true,
+		origin + "\tpromisor\n\tpromisor = false\n":                                            true,
+		"\trepositoryformatversion = 1\n" + origin + "[extensions]\n\tpartialClone = origin\n": true,
+		origin + "[extensions]\n\tpartialClone = origin\n":                                     false,
+	} {
+		dir := withConfig(t, config)
+		for name, code := range codes(t, dir) {
+			want := ""
+			if partial && (name == "git.status" || name == "git.log") {
+				want = "git.objects.partial"
+			}
+			if code != want {
+				t.Errorf("with %q, %s = %q, want %q", config, name, code, want)
+			}
+		}
+		if _, err := runStatus(context.Background(), req(t, dir, nil)); partial && (err == nil || !strings.Contains(err.Error(), "from origin")) {
+			t.Errorf("the refusal %v does not name the remote", err)
+		}
+	}
+}
+
+// A partial clone git made is refused as one.
+func TestAPartialCloneGitMadeIsRefusedAsOne(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git to make one with")
+	}
+	src, repo := testRepo(t)
+	commitFile(t, repo, src, "a.txt", "v1\n", "initial")
+	clone := filepath.Join(t.TempDir(), "clone")
+	cmd := exec.Command("git", "-c", "uploadpack.allowFilter=true", "clone", "-q", "--no-local", "--filter=blob:none",
+		"file://"+src, clone)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("git made no partial clone: %v: %s", err, out)
+	}
+	if _, err := runLog(context.Background(), req(t, clone, nil)); errCode(err) != "git.objects.partial" {
+		t.Errorf("git.log of a partial clone = %v, want git.objects.partial", err)
+	}
+	rowFor(t, table(t, runRemotes, req(t, clone, nil)), "Remote", "origin")
 }
