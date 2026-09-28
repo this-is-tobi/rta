@@ -156,6 +156,8 @@ Your `Summary`, `Description`, `Help` and `Options` are published verbatim to AI
 
 Write the `Description` for somebody deciding whether to call it. It is the text a model reads before choosing.
 
+`sdktest` holds the same text to one more rule: it spells nothing only a terminal can act on. Your plugin's summary, and every capability's `Summary`, `Description`, input `Help` and action and toggle `Label`, is shown to an agent and in the TUI as well as at a terminal, so "raise `--limit` to see more" sends an agent looking for a flag its schema does not have. A flag anywhere in prose fails the rule, and so does an `rta …` command line: any in a code span, and one naming one of your capabilities or your namespace wherever it stands. In a code span a flag counts only when the span opens on one or follows your capability's words and is an input it declares or one of the host's own switches (`spelling.HostSwitches()`: `--detail`, `--dry-run`, `--help`, `--no-color`, `--output`, `--profile`, `--yes`) — `pg_restore --jobs` in a span is another program's usage and passes. Name the input as `limit` and the capability by its ID, and word anything surface-specific at run time through `req.Surface()`. A `HumanOnly` capability is read at a terminal alone, so its text may name one of rta's own commands, `rta doctor` or `rta mcp serve`, and still no capability's command line, yours or a built-in's such as `rta net dns`, since the TUI reads the same text. A text that has to spell what the rule holds is waived with `sdktest.Skip(sdktest.RuleSpelling, "<capability>", "<why>")`, or with your plugin's name for its own summary, and the reason is printed on every run. The speller itself is [`pkg/sdk/spelling`](../../pkg/sdk/spelling/), for any other text your tests read: `spelling.ForPlugin(Plugin()).Find(text, false)` holds text every surface reads to the same rule, and `Find(text, true)` holds a sentence only a person at a terminal reads — one a handler words in the branch where `req.Surface()` said CLI — to the `HumanOnly` rule. Built over your plugin alone, the speller knows no other plugin's words, so in prose it cannot tell "run rta net dns" from a sentence that happens to start with rta; in a code span it can, and holds it.
+
 ## Testing
 
 `rta plugin new` ships a `main_test.go` wired to `pkg/sdk/sdktest`, so `go test` passes from the first minute:
@@ -166,7 +168,7 @@ func TestPlugin(t *testing.T) {
 }
 ```
 
-It runs the catalogue-wide invariants rta holds its own built-ins to — the shared verb vocabulary, every declared view rendering in every format it claims, dry-run honesty on anything that writes. It found a built-in sending real bytes on `--dry-run` the first time it was pointed at rta's own catalogue.
+It runs the catalogue-wide invariants rta holds its own built-ins to — the shared verb vocabulary, every declared view rendering in every format it claims, dry-run honesty on anything that writes, declared text that spells no flag for an agent to look for ([above](#declared-text-is-checked)). It found a built-in sending real bytes on `--dry-run` the first time it was pointed at rta's own catalogue.
 
 **Fill in `conformanceInputs` as you add capabilities.** The suite cannot invent a bucket name or a record id, so a capability with a required input and no value here is one it cannot drive — and almost every capability that *changes* something has one. A `Write` or `Destructive` capability the suite could not drive is a failure, not a skip, and the message names both ways out: supply a value, or state why not with `sdktest.Skip`. This is not defensiveness. rta's own external plugins each called `Check`, each went green, and behind that six handlers wrote to real systems under `--dry-run` because not one of them was ever run.
 
@@ -335,3 +337,4 @@ Read them in this order and each one adds exactly one idea:
 - [`pkg/format`](../../pkg/format/) — byte counts, durations, plurals, and bytes that may not be text, said the way every other capability says them.
 - [`pkg/findings`](../../pkg/findings/) — the graded-check report an audit returns, rendered the way `rta audit` renders its own.
 - [`pkg/sdk/sdktest`](../../pkg/sdk/sdktest/) — the conformance suite your plugin should pass.
+- [`pkg/sdk/spelling`](../../pkg/sdk/spelling/) — the speller the suite holds your declared text to, for any other text your tests read.
