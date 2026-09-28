@@ -372,6 +372,25 @@ func awaitForwarding(ctx context.Context, stdout io.Reader, name, spec string,
 		}
 	}()
 
+	timedOut := func() (Endpoint, *view.Error) {
+		return Endpoint{}, view.Errorf("tunnel.open.timeout",
+			"profile %q did not come up in time", name).
+			WithHint("`kubectl --context … port-forward` by hand shows what it is waiting for")
+	}
+	// kubectl runs under the caller's context and ctx is derived from it, so
+	// the deadline that closes ctx.Done also kills kubectl, which closes
+	// stdout and exited a moment later. By the time this select runs, all
+	// three can be ready, and select picks among ready cases at random: a
+	// forward that never came up was reported, now and then, as "kubectl
+	// exited without forwarding" — the exit rta's own kill caused. So an exit
+	// seen once the context is done is the timeout it came from.
+	exitedEarly := func() (Endpoint, *view.Error) {
+		if ctx.Err() != nil {
+			return timedOut()
+		}
+		return Endpoint{}, kubectlFailed(name, spec, stderr.String())
+	}
+
 	select {
 	case line, ok := <-lines:
 		if !ok {
@@ -382,17 +401,15 @@ func awaitForwarding(ctx context.Context, stdout io.Reader, name, spec string,
 			case <-time.After(2 * time.Second):
 				gaveUp.Store(true)
 			}
-			return Endpoint{}, kubectlFailed(name, spec, stderr.String())
+			return exitedEarly()
 		}
 		host, portStr, _ := strings.Cut(line, " ")
 		p, _ := strconv.Atoi(portStr)
 		return Endpoint{Host: host, Port: p}, nil
 	case <-exited:
-		return Endpoint{}, kubectlFailed(name, spec, stderr.String())
+		return exitedEarly()
 	case <-ctx.Done():
-		return Endpoint{}, view.Errorf("tunnel.open.timeout",
-			"profile %q did not come up in time", name).
-			WithHint("`kubectl --context … port-forward` by hand shows what it is waiting for")
+		return timedOut()
 	}
 }
 

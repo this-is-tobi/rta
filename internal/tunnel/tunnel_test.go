@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -286,6 +287,25 @@ func TestAMissingKubectlSaysWhatToDo(t *testing.T) {
 	}
 	if !strings.Contains(verr.Hint, "client-go") {
 		t.Errorf("the hint does not explain why rta needs kubectl at all: %s", verr.Hint)
+	}
+}
+
+// The deadline that ends the wait also kills kubectl, so its exit and the
+// context are ready together, and select picks among ready cases at random.
+// Each arm is made ready here at once, many times over: the answer must be
+// the timeout every time, never the exit the kill caused.
+func TestAnExitTheDeadlineCausedIsTheTimeout(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		exited := make(chan struct{})
+		close(exited)
+		var gaveUp atomic.Bool
+		_, verr := awaitForwarding(ctx, strings.NewReader(""), "homelab-pg", homelab,
+			&syncBuffer{}, exited, &gaveUp)
+		if verr == nil || verr.Code != "tunnel.open.timeout" {
+			t.Fatalf("attempt %d: verr = %v, want tunnel.open.timeout", i, verr)
+		}
 	}
 }
 
