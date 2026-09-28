@@ -149,8 +149,8 @@ func branchRefs(repo *git.Repository) (locals, remotes []*plumbing.Reference, er
 func upstreamStatus(repo *git.Repository, tracks map[string]upstream, branch string, tip plumbing.Hash) (
 	upstream, status string,
 ) {
-	if u := tracks[branch]; u.remote != "" {
-		name, at := u.tracked(branch)
+	if u := tracks[branch]; u.configured() {
+		name, at := u.tracked()
 		ref, err := repo.Reference(at, true)
 		if err != nil {
 			return name, "gone"
