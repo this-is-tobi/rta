@@ -2,8 +2,12 @@
 // correct rta plugin. It is a public package, and one call:
 //
 //	func TestConformance(t *testing.T) {
-//		sdktest.Check(t, myplugin.Plugin())
+//		sdktest.Check(t, myplugin.Plugin(), sdktest.WithSource("."))
 //	}
+//
+// WithSource is the one option every plugin wants: it has the suite read the
+// plugin's own Go source too, for the hints a handler words at run time,
+// which no declaration holds.
 //
 // The rules it enforces are the ones the host silently assumes and no
 // renderer re-checks — an unreachable default, a view that cannot become
@@ -91,8 +95,11 @@ const (
 	// RuleSpelling: what the plugin declares — its summary, and each
 	// capability's summary, description, inputs' help, and action and toggle
 	// labels — spells nothing only a terminal can act on, a flag or an `rta …`
-	// command line (see checkSpelling).
-	// Skipped by capability ID, or by the plugin's name for its own summary.
+	// command line (see checkSpelling). Given WithSource, nor does a sentence
+	// its source spells out, and every call the source names through a naming
+	// helper is one its reader can make (see checkSource).
+	// Skipped by capability ID, or by the plugin's name for its own summary;
+	// the source has no waiver.
 	RuleSpelling Rule = "spelling"
 )
 
@@ -107,6 +114,7 @@ type Option func(*config)
 type config struct {
 	inputs func(dir string) map[string]map[string]any
 	skips  map[Rule]map[string]string
+	source string
 }
 
 // WithInputs supplies values for capabilities the suite cannot drive from
@@ -173,6 +181,15 @@ func Check(t *testing.T, p plugin.Plugin, opts ...Option) {
 	for _, line := range skipLines(cfg) {
 		t.Log(line)
 	}
+	checkAll(t, p, cfg, dir, inputs)
+}
+
+// checkAll is every rule, in the order Check runs them, once Check has set
+// up the directory they are run against: apart from Check so a test can hand
+// it a plugin that breaks one and read what it says, where a *testing.T that
+// failed would fail the test itself.
+func checkAll(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[string]map[string]any) {
+	t.Helper()
 
 	// A plugin that does not validate is not driven. Validate is what
 	// guarantees every capability has a handler at all, so running one anyway
@@ -183,6 +200,9 @@ func Check(t *testing.T, p plugin.Plugin, opts ...Option) {
 	}
 	checkVerbs(t, p, cfg)
 	checkSpelling(t, p, cfg)
+	if cfg.source != "" {
+		checkSource(t, p, cfg.source)
+	}
 
 	seen := drive(t, p, cfg, dir, inputs)
 	checkViews(t, seen, cfg)

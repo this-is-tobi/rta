@@ -10,8 +10,8 @@
 //
 // One speller for everybody who holds text to that: rta's own tests, over
 // the host's registry, read every tool list and refusal an agent is handed;
-// sdktest.Check reads what a plugin declares; and a plugin's own tests can
-// read the sentences its source spells out. Each plugin carried a copy of
+// sdktest.Check reads what a plugin declares, and with sdktest.WithSource the
+// sentences its source spells out. Each plugin carried a copy of
 // rta's speller before this was exported, because rta's lived in its
 // internal tests and read a registry a plugin cannot load — and the copies
 // had already fixed a rule rta's still missed, and grown a scan of their own.
@@ -85,11 +85,11 @@ var hostSwitches = func() []string {
 	return out
 }()
 
-// Operand stands in, in a sentence read out of source, for whatever a
-// literal is joined to — a name, a value, what a naming helper returned. A
-// flag joined to one is a flag all the same, and Find reads "--" followed by
-// it as one: "raise --" + name + " to see more" reads `--limit` to whoever
-// gets the message.
+// Operand stands in, in a sentence read out of source (sdktest.WithSource
+// reads them), for whatever a literal is joined to — a name, a value, what a
+// naming helper returned. A flag joined to one is a flag all the same, and
+// Find reads "--" followed by it as one: "raise --" + name + " to see more"
+// reads `--limit` to whoever gets the message.
 const Operand = "…"
 
 // commandLine is "rta" followed by words, wherever it stands — in a code
