@@ -731,9 +731,18 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 	confine func(string) (string, *view.Error),
 ) []excludeSource {
 	var out []excludeSource
+	noValue := valuelessIn(configs, "core", "excludesFile")
 	switch p, scope := excludesFile(configs, root); {
 	case cerr != nil:
 		out = append(out, excludeSource{shown: "core.excludesFile", why: "reading the config that sets it: " + cerr.Error()})
+	case noValue != "":
+		// git reads each setting of core.excludesFile as it comes, and one
+		// with no value at all stops it before it runs ("missing value"),
+		// whatever a later file sets. go-git reads it as set to nothing, no
+		// file, which ignored nothing it named: what it ignores is listed,
+		// and named, as a file past the bounds is.
+		out = append(out, excludeSource{shown: "core.excludesFile", why: noValue +
+			" sets it with no value, which git refuses to run with"})
 	case filepath.Clean(p) == os.DevNull:
 		// `excludesFile = /dev/null` is how git is told to read no excludes
 		// file, and git reads the null device as a file with nothing in it.

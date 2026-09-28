@@ -604,3 +604,34 @@ func TestASymlinkedGitignoreIsNotFollowed(t *testing.T) {
 		t.Errorf("the diff showed a file under a .gitignore it did not apply:\n%s", body)
 	}
 }
+
+// core.excludesFile with no value at all, anywhere git reads config, is one
+// git refuses to run with ("missing value"), whatever a later file sets.
+// go-git reads it as set to nothing, no excludes file, which ignored nothing
+// the file it meant to name ignores: it is named as not applied, so what it
+// may ignore is listed, and named rather than shown in a diff.
+func TestAnExcludesFileWithNoValueIsNotApplied(t *testing.T) {
+	home := machineConfig(t, "[core]\n\texcludesFile\n")
+	writeFile(t, home, ".config/git/ignore", "*.env\n")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n\texcludesFile = "+filepath.Join(home, ".config/git/ignore")+"\n")
+	writeFile(t, dir, "secret.env", "TOKEN=hunter2\n")
+
+	tbl := table(t, runStatus, req(t, dir, nil))
+	rowFor(t, tbl, "Path", "secret.env")
+	if w := ignoreWarning(tbl); w == nil ||
+		!strings.Contains(w.Message, "core.excludesFile ("+filepath.Join(home, ".gitconfig")+" sets it with no value") {
+		t.Errorf("warning = %+v, want core.excludesFile named as set with no value", w)
+	}
+	if body := text(t, runDiff, req(t, dir, nil)); strings.Contains(body, "hunter2") {
+		t.Errorf("the diff showed a file the excludes file may ignore:\n%s", body)
+	}
+	if _, err := exec.LookPath("git"); err == nil {
+		cmd := exec.Command("git", "-C", dir, "status", "--porcelain")
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1")
+		if out, err := cmd.CombinedOutput(); err == nil {
+			t.Errorf("git runs with a valueless core.excludesFile:\n%s", out)
+		}
+	}
+}

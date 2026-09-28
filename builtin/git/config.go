@@ -221,6 +221,17 @@ func valuelessKeys(content []byte) map[string]valueless {
 	return keys
 }
 
+// valuelessIn is where the first of files that sets section.name with no
+// value anywhere in it is (place), "" where none does.
+func valuelessIn(files []scopedConfig, section, name string) string {
+	for _, f := range files {
+		if f.blank[configKey(section, "", name)].any {
+			return f.place()
+		}
+	}
+	return ""
+}
+
 // place is where f is, as a warning or a refusal names it.
 func (f scopedConfig) place() string {
 	switch {
