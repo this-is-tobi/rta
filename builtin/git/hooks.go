@@ -92,9 +92,9 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 			continue
 		}
 		name := e.Name()
-		mode, unfollowed := hookMode(req, judged, name, info)
+		mode, at, unfollowed := hookMode(req, judged, name, info)
 		t.Rows = append(t.Rows, []string{
-			strings.TrimSuffix(name, ".sample"), hookStatus(name, mode, unfollowed),
+			strings.TrimSuffix(name, ".sample"), hookStatus(name, mode, unfollowed, at != "" && mayExecute(at, mode)),
 			shownFrom(base, filepath.Join(dir, name)),
 		})
 	}
@@ -103,11 +103,11 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 }
 
 // hookStatus is what git does with the entry name of a hooks directory, by
-// the mode it judges it by (hookMode): never runs a `.sample`, runs a file
-// access(2) finds executable (active), passes over one it does not
-// (disabled), and tries to run anything else access(2) lets through and
-// cannot (fails). A link not looked through is active, as git may run what it
-// leads to.
+// the mode it judges it by (hookMode) and whether access(2) finds it
+// executable (mayExecute): never runs a `.sample`, passes over what
+// access(2) refuses (disabled), runs a file with an execute bit (active),
+// and tries to run anything else access(2) lets through and cannot (fails).
+// A link not looked through is active, as git may run what it leads to.
 //
 // **git runs what it finds at a hook's name, not only a file.** It asks
 // access(2) whether the name is executable, and a directory that may be
@@ -122,19 +122,26 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 // refuses is passed over as a file git will not run is, with the hint git
 // prints for it, and is disabled.
 //
-// Any execute bit is read as access(2) saying yes, as it says to the entry's
-// owner, the usual case for a hook. Root is the exception: it may search a
-// directory that has none, so git run as root fails on one this lists as
-// disabled.
-func hookStatus(name string, mode os.FileMode, unfollowed bool) string {
+// **access(2) is asked, as git asks it, not read off the mode.** Any execute
+// bit was taken for access(2) saying yes, which it says by the bits of the
+// entry's owner to its owner alone: a hook whose owner's bits have none, or
+// another user's with an execute bit for its owner only, was listed active
+// where git passes over it with its hint. Root may search a directory with
+// no execute bit, and git run as root fails on one this listed disabled. And
+// on macOS an ACL granting execute makes access(2) say yes of a script whose
+// mode has no execute bit, which exec(2) then refuses: every commit failed,
+// "cannot exec", where this answered that git passed over the script. So
+// what access(2) lets through is run, and fails unless it is a file with an
+// execute bit.
+func hookStatus(name string, mode os.FileMode, unfollowed, executable bool) string {
 	switch {
 	case strings.HasSuffix(name, ".sample"):
 		return "sample"
 	case unfollowed:
 		return "active"
-	case mode&0o111 == 0:
+	case !executable:
 		return "disabled"
-	case mode.IsRegular():
+	case mode.IsRegular() && mode&0o111 != 0:
 		return "active"
 	}
 	return "fails"
@@ -142,9 +149,10 @@ func hookStatus(name string, mode os.FileMode, unfollowed bool) string {
 
 // hookMode is the mode git judges the entry name of the hooks directory dir
 // by, whose own is info's: for a symbolic link, the mode of what it leads to,
-// zero where it leads nowhere, which git runs nothing from. unfollowed is a
-// link the caller may not be told about the far end of, which is not looked
-// through (plugin.Request.LinkTarget).
+// zero where it leads nowhere, which git runs nothing from. at is where that
+// mode was read, the place access(2) is asked about (hookStatus), empty with
+// a zero mode. unfollowed is a link the caller may not be told about the far
+// end of, which is not looked through (plugin.Request.LinkTarget).
 //
 // **git follows a link at a hook's name, and this judged the link itself.**
 // git runs a hook where access(2) finds it executable, which is a question
@@ -161,27 +169,27 @@ func hookStatus(name string, mode os.FileMode, unfollowed bool) string {
 // path argument's is not, since its mode would say what is there: it is
 // listed active, as what it leads to may be a script git runs, rather than
 // judged by a mode that is not the one git asks about.
-func hookMode(req plugin.Request, dir, name string, info os.FileInfo) (mode os.FileMode, unfollowed bool) {
-	if info.Mode()&os.ModeSymlink == 0 {
-		return info.Mode(), false
-	}
+func hookMode(req plugin.Request, dir, name string, info os.FileInfo) (mode os.FileMode, at string, unfollowed bool) {
 	path := filepath.Join(dir, name)
+	if info.Mode()&os.ModeSymlink == 0 {
+		return info.Mode(), path, false
+	}
 	target, err := os.Readlink(path)
 	if err != nil {
-		return 0, false
+		return 0, "", false
 	}
 	if req.LinkTarget(dir, target) != target {
-		return 0, true
+		return 0, "", true
 	}
 	judged, verr := req.Confine("path", path)
 	if verr != nil {
-		return 0, true
+		return 0, "", true
 	}
 	far, err := os.Stat(judged)
 	if err != nil {
-		return 0, false
+		return 0, "", false
 	}
-	return far.Mode(), false
+	return far.Mode(), judged, false
 }
 
 // hooksDir is the directory git runs this repository's hooks from, and the
