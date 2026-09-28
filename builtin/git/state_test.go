@@ -231,3 +231,32 @@ func TestABranchTrackingALocalBranchIsCountedAgainstIt(t *testing.T) {
 		t.Errorf("git reads master's upstream as %q", upstream)
 	}
 }
+
+// A branch's section that names a remote and no branch there to merge
+// configures no upstream: git reads one only where both are set, and `git
+// rev-parse @{upstream}` says "no upstream configured". This took the
+// branch's own name for the one it merges, and said master tracked
+// origin/master, gone, or, with a remote of ".", itself, up to date.
+func TestABranchWithARemoteAndNoMergeTracksNothing(t *testing.T) {
+	for _, remote := range []string{"origin", "."} {
+		dir, repo := testRepo(t)
+		commitFile(t, repo, dir, "a.txt", "v1\n", "initial commit")
+		writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n[branch \"master\"]\n\tremote = "+remote+"\n")
+
+		v, err := runOverview(context.Background(), req(t, dir, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range v.(view.KeyValue).Pairs {
+			if p.Key == "tracking" {
+				t.Errorf("with remote %q, tracking = %q, want none", remote, p.Value)
+			}
+		}
+		if got := rowFor(t, table(t, runBranches, req(t, dir, nil)), "Name", "master"); got[2] != "" || got[3] != "" {
+			t.Errorf("with remote %q, git.branches master = %v, want no upstream", remote, got)
+		}
+		if upstream, ok := gitSays(t, dir, "rev-parse", "--abbrev-ref", "master@{upstream}"); ok {
+			t.Errorf("with remote %q, git reads master's upstream as %q", remote, upstream)
+		}
+	}
+}
