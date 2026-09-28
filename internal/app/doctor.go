@@ -1063,15 +1063,24 @@ func doctorConfinement(add func(check, status, detail string)) {
 		// assuming — a report that states a denial the launch then relaxes
 		// is the page-versus-run drift this codebase keeps finding, in the
 		// direction that overstates what is protected.
-		add("plugin confinement", "ok", fmt.Sprintf(
-			"sandbox-exec: %d paths denied read+write (rta's own state), %d denied read "+
-				"(credential locations), %d directories pinned in place so a rename cannot "+
-				"move either out of its rule; everything else is readable, and so is an "+
-				"installed plugin's own directory under the store — reads only, the one "+
-				"place inside rta's state that is, because a process that cannot read its "+
-				"own directory cannot verify a certificate",
-			len(deny.NoAccess), len(deny.NoRead), len(deny.NoMove)))
+		add("plugin confinement", "ok", sandboxDetail(deny))
 	}
+}
+
+// sandboxDetail is the confinement row for a machine that confines, over the
+// deny set it resolved.
+func sandboxDetail(deny pluginhost.DenySet) string {
+	noRead := len(deny.NoRead)
+	return fmt.Sprintf(
+		"sandbox-exec: %s denied read+write (rta's own state), %d denied read (%s), "+
+			"%s pinned in place so a rename cannot move either out of its rule; "+
+			"everything else is readable, and so is an installed plugin's own directory "+
+			"under the store — reads only, the one place inside rta's state that is, "+
+			"because a process that cannot read its own directory cannot verify a "+
+			"certificate",
+		format.Count(len(deny.NoAccess), "path", "paths"),
+		noRead, format.Plural(noRead, "a credential location", "credential locations"),
+		format.Count(len(deny.NoMove), "directory", "directories"))
 }
 
 // SDK plugins actually loaded, and anything about them worth knowing but
