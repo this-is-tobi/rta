@@ -108,7 +108,9 @@ var commandLine = regexp.MustCompile(`(?:^|[^a-z-])rta((?: [a-z][a-z0-9-]*)+)`)
 //
 // A flag in prose is held whichever program it belongs to: an agent reading
 // "run with --jobs 4" cannot tell pg_dump's option from rta's, and has
-// neither. A code span holding some other program's command line — `git
+// neither. A short one is held when it is one of the host's, -o, -y or -h,
+// and read as the switch it is short for (hostShorthands says why only
+// those). A code span holding some other program's command line — `git
 // status --porcelain`, `pg_restore --jobs` — is that program's spelling, and
 // says where an answer came from. A flag in one is held only when the span
 // opens on it, or when the words before it name a capability that takes it,
@@ -160,8 +162,9 @@ func (sp Speller) Find(text string, terminalOnly bool) []string {
 				}
 			} else {
 				c, named := sp.capabilityOf(span)
+				_, lead := flagAt(span, 0)
 				if slices.ContainsFunc(flagsIn(span), func(flag string) bool {
-					return strings.HasPrefix(span, "--") || named && declares(c, flag)
+					return strings.HasPrefix(span, "--") || lead > 0 || named && declares(c, flag)
 				}) {
 					found = append(found, quote(i, i+2+end))
 				}
@@ -169,9 +172,9 @@ func (sp Speller) Find(text string, terminalOnly bool) []string {
 			i += end + 1
 			continue
 		}
-		if flag := flagAt(text, i); flag != "" {
-			found = append(found, quote(i, i+2+len(flag)))
-			i += 1 + len(flag)
+		if flag, width := flagAt(text, i); flag != "" {
+			found = append(found, quote(i, i+width))
+			i += width - 1
 		}
 	}
 	for _, m := range sp.bareCommands(maskSpans(text)) {
@@ -339,37 +342,71 @@ func declares(c plugin.Capability, flag string) bool {
 		slices.ContainsFunc(c.Inputs, func(f plugin.Field) bool { return f.Name == flag })
 }
 
-// flagAt returns the name of the flag starting at text[i], or "".
+// hostShorthands are the letters the host's switches are also spelled by,
+// each with the switch it is short for: `-o csv` is --output csv, to the CLI
+// and to nobody else. No capability declares a short flag — an input is
+// spelled long or not at all — so these are every short flag a capability's
+// command takes, and rta's own tests hold them to its command tree.
+//
+// **The host's letters only, where a long flag in prose is held whichever
+// program it belongs to.** A long flag in a sentence is an instruction far
+// more often than not, and an agent reading "run with --jobs 4" cannot tell
+// pg_dump's option from rta's. A dash and a letter is as often another
+// program's option named as a thing — docker's `-e`, in a sentence about
+// where a container's credentials come from — and held by any letter, such
+// text would fail for naming what it describes. The host's letters are the
+// ones a sentence can mean for rta's command line: read over every
+// built-in's declared text and the official plugins', they stood only in
+// other programs' command lines in code spans, which a span already reads
+// as theirs, and in the one sentence that meant rta's -o.
+var hostShorthands = map[byte]string{'o': "output", 'y': "yes", 'h': "help"}
+
+// flagAt returns the flag starting at text[i], by its name, and how many
+// bytes of text spell it; or "" and 0.
 //
 // A flag source splices together is one all the same, and is named by what
 // stands in for its name: "--" joined to Operand, and "--%s" handed to
 // Sprintf. Either reads `--limit` to whoever gets the message, and read as a
 // letter after "--" or nothing, both went through.
-func flagAt(text string, i int) string {
-	if !strings.HasPrefix(text[i:], "--") || i > 0 && isFlagByte(text[i-1]) || i+2 >= len(text) {
-		return ""
+//
+// One of the host's short switches is named by the switch it is short for
+// (hostShorthands), so that a span reads `kv list -o json` as it reads `kv
+// list --output json`.
+func flagAt(text string, i int) (string, int) {
+	if i+1 >= len(text) || text[i] != '-' || i > 0 && isFlagByte(text[i-1]) {
+		return "", 0
+	}
+	if text[i+1] != '-' {
+		long, ok := hostShorthands[text[i+1]]
+		if !ok || i+2 < len(text) && isFlagByte(text[i+2]) {
+			return "", 0
+		}
+		return long, 2
+	}
+	if i+2 >= len(text) {
+		return "", 0
 	}
 	switch rest := text[i+2:]; {
 	case strings.HasPrefix(rest, Operand):
-		return Operand
+		return Operand, 2 + len(Operand)
 	case rest[0] == '%' && len(rest) > 1:
-		return rest[:2]
+		return rest[:2], 4
 	case rest[0] < 'a' || rest[0] > 'z':
-		return ""
+		return "", 0
 	}
 	j := i + 2
 	for j < len(text) && isFlagByte(text[j]) {
 		j++
 	}
-	return text[i+2 : j]
+	return text[i+2 : j], j - i
 }
 
 func flagsIn(span string) []string {
 	var out []string
 	for i := 0; i < len(span); i++ {
-		if flag := flagAt(span, i); flag != "" {
+		if flag, width := flagAt(span, i); flag != "" {
 			out = append(out, flag)
-			i += 1 + len(flag)
+			i += width - 1
 		}
 	}
 	return out
