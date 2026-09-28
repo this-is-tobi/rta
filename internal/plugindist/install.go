@@ -200,7 +200,7 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 		}
 	}
 
-	sig := checkSignature(ctx, m, staged, stderr)
+	sig := checkSignature(ctx, m, staging, staged, stderr)
 
 	if dryRun {
 		// Named the same way place would, without moving anything there —
@@ -451,20 +451,23 @@ var cosignBin = "cosign"
 // signature on a worse plugin verifies perfectly, so the mechanism that does
 // the work is the digest and the declaration check — this records provenance
 // for the operator who wants it. A failure is spelled loudly all the same.
-func checkSignature(ctx context.Context, m Manifest, binary string, stderr io.Writer) string {
+//
+// The signature and the key are fetched into the install's staging directory,
+// beside the binary they are checked against, and not into a temporary
+// directory of their own. Its removal was a deferred call, which a forced exit
+// skips, and the fetch is not held off one: a file:// signature that never
+// ends kept it under way past the grace, and the exit left the directory in
+// $TMPDIR for good. The staging directory is one the exit removes, with
+// whatever is in it (installFrom).
+func checkSignature(ctx context.Context, m Manifest, staging, binary string, stderr io.Writer) string {
 	if m.Signature == nil {
 		return "none stated"
 	}
 	if _, err := exec.LookPath(cosignBin); err != nil {
 		return "not checked (cosign not installed)"
 	}
-	dir, err := os.MkdirTemp("", "rta-sig-*")
-	if err != nil {
-		return "not checked (" + err.Error() + ")"
-	}
-	defer os.RemoveAll(dir)
 	fetchTo := func(name, url string) (string, bool) {
-		f, err := os.Create(filepath.Join(dir, name))
+		f, err := os.Create(filepath.Join(staging, name))
 		if err != nil {
 			return "", false
 		}
