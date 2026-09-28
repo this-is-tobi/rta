@@ -211,6 +211,62 @@ func TestTheStatusFilesReadNothingPastTheTime(t *testing.T) {
 	}
 }
 
+// A file opened before the time ran out is read no further once it has: go-git
+// hashes a file whose timestamp moved whole, and one sparse file of 8 GiB
+// held a status for 8.5 s with no listing or open between.
+func TestAFileTheStatusOpenedIsReadNoFurtherPastTheTime(t *testing.T) {
+	dir, _ := testRepo(t)
+	writeFile(t, dir, "a.txt", strings.Repeat("a", 64<<10))
+	budget := &statusBudget{ctx: context.Background(), deadline: time.Now().Add(time.Hour)}
+	f, err := statusFiles{Filesystem: osfs.New(dir), budget: budget}.Open("a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	buf := make([]byte, 32<<10)
+	if n, err := f.Read(buf); err != nil || n == 0 {
+		t.Fatalf("read within the time = %d, %v", n, err)
+	}
+	budget.deadline = time.Now().Add(-time.Second)
+	if _, err := f.Read(buf); !errors.Is(err, errStatusTime) {
+		t.Errorf("read past the time = %v, want it refused", err)
+	}
+	if verr := budget.refusal(dir); verr == nil || verr.Code != "git.status.timeout" {
+		t.Errorf("refusal = %+v, want git.status.timeout", verr)
+	}
+}
+
+// The working tree's own .gitignore, which go-git's comparison was handed `*`
+// for, is hashed again from the disk to put that right, and that read is held
+// to the time too: a tracked .gitignore of 4 GB, touched, held a status 2 s
+// past it. Past the time it is left modified, and the status refused.
+func TestTheRootIgnoreFileIsHashedNoFurtherPastTheTime(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, ".gitignore", "*.log\n", "initial")
+	idx, err := repo.Storer.Index()
+	if err != nil {
+		t.Fatal(err)
+	}
+	modified := func() git.Status {
+		status := git.Status{}
+		status.File(".gitignore").Staging, status.File(".gitignore").Worktree = git.Unmodified, git.Modified
+		return status
+	}
+	status := modified()
+	budget := &statusBudget{ctx: context.Background(), deadline: time.Now().Add(time.Hour)}
+	if restoreRootIgnore(osfs.New(dir), idx, status, budget); len(status) != 0 {
+		t.Errorf("within the time, status = %v, want the .gitignore git records put right", status)
+	}
+	status = modified()
+	budget.deadline = time.Now().Add(-time.Second)
+	if restoreRootIgnore(osfs.New(dir), idx, status, budget); status.File(".gitignore").Worktree != git.Modified {
+		t.Errorf("past the time, status = %v, want the .gitignore left as the comparison saw it", status)
+	}
+	if verr := budget.refusal(dir); verr == nil || verr.Code != "git.status.timeout" {
+		t.Errorf("refusal = %+v, want git.status.timeout", verr)
+	}
+}
+
 // The matching of untracked files against ignore patterns costs the files
 // times the patterns, and ten thousand of each cost 30 s within the bounds:
 // it stops where the time runs out, and the refusal says how far it got.
