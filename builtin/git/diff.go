@@ -72,7 +72,7 @@ func runDiff(ctx context.Context, req plugin.Request) (view.View, error) {
 	if commit := req.String("commit"); commit != "" {
 		return diffCommit(ctx, repo, commit, gate)
 	}
-	return diffWorktree(ctx, repo, gate, pathGateOf(req), req.LinkTarget)
+	return diffWorktree(ctx, repo, gate, req)
 }
 
 // interrupted is a diff the caller stopped waiting for, which answers nothing
@@ -837,7 +837,7 @@ func submoduleHeads(repo *git.Repository, wt *git.Worktree) map[string]plumbing.
 var maxDiffBytes int64 = 16 << 20
 
 func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *view.Error,
-	confine func(string) (string, *view.Error), tell func(dir, target string) string,
+	req plugin.Request,
 ) (view.View, error) {
 	deadline := matchDeadline(ctx)
 	wt, err := repo.Worktree()
@@ -845,7 +845,7 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 		return nil, view.Errorf("git.diff.worktree", "no working tree here: %v", err).
 			WithHint("a bare repository has no working tree to diff")
 	}
-	status, ignored, err := worktreeStatus(ctx, statusDeadline(ctx), repo, wt, confine)
+	status, ignored, err := worktreeStatus(ctx, statusDeadline(ctx), repo, wt, req)
 	switch {
 	case err != nil && ctx.Err() != nil:
 		return nil, interrupted("the working tree")
@@ -923,7 +923,7 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 		// still the answer: it returned on the first, so an untracked link to
 		// a directory — bazel-out, a `current` pointing at a release — left
 		// the caller with no patch at all, for a file git diffs as one line.
-		fp, coarsely, ferr := diffOneFile(root, head, path, disk, deadline, tell)
+		fp, coarsely, ferr := diffOneFile(root, head, path, disk, deadline, req.LinkTarget)
 		if ferr != nil {
 			skipped = append(skipped, withheld{path, unreadable(ferr)})
 			continue

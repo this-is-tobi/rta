@@ -24,10 +24,10 @@ func TestAddConfigRowsHandlesSectionsAndSubsections(t *testing.T) {
 	cfg.Raw.Section("user").AddOption("name", "Ada Lovelace")
 	cfg.Raw.Section("remote").Subsection("origin").AddOption("url", "https://example.com/repo.git")
 
-	tbl := view.Table{Columns: []view.Column{{Name: "Scope"}, {Name: "Key"}, {Name: "Value"}}}
-	addConfigRows(&tbl, "global", cfg)
+	tbl := view.Table{Columns: []view.Column{{Name: "Scope"}, {Name: "Key"}, {Name: "Value"}, {Name: "Origin"}}}
+	addConfigRows(&tbl, "global", "~/.gitconfig", cfg)
 
-	if got := rowFor(t, tbl, "Key", "user.name"); got[0] != "global" || got[2] != "Ada Lovelace" {
+	if got := rowFor(t, tbl, "Key", "user.name"); got[0] != "global" || got[2] != "Ada Lovelace" || got[3] != "~/.gitconfig" {
 		t.Errorf("user.name row = %v, want [global user.name \"Ada Lovelace\"]", got)
 	}
 	if got := rowFor(t, tbl, "Key", "remote.origin.url"); got[0] != "global" || got[2] != "https://example.com/repo.git" {
@@ -178,29 +178,6 @@ func TestConfigHonoursTheEnvironmentGitReadsItsFilesBy(t *testing.T) {
 		if got := rows("system"); (got != "") != reads {
 			t.Errorf("system rows = %q, with GIT_CONFIG_NOSYSTEM=%q", got, value)
 		}
-	}
-}
-
-// An include is read by git as though it were written in its place, and not
-// followed here: the rows name it as written, and a warning counts what they
-// do not show, on every surface.
-func TestConfigCountsTheIncludesItDoesNotFollow(t *testing.T) {
-	machineConfig(t, "[include]\n\tpath = ~/more.gitconfig\n")
-	dir, repo := testRepo(t)
-	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
-	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n[includeIf \"gitdir:~/work/\"]\n\tpath = ~/work.gitconfig\n")
-
-	tbl := table(t, runConfig, req(t, dir, nil))
-	if len(tbl.Warnings) != 1 || tbl.Warnings[0].Code != "git.config.include" ||
-		!strings.HasPrefix(tbl.Warnings[0].Message, "2 files the config includes are not read") {
-		t.Errorf("warnings = %+v, want git.config.include counting both includes", tbl.Warnings)
-	}
-	if got := rowFor(t, tbl, "Key", "includeIf.gitdir:~/work/.path"); got[2] != "~/work.gitconfig" {
-		t.Errorf("the includeIf row = %v, want it shown as written", got)
-	}
-	mcp := table(t, runConfig, guarded(t, dir, dir).WithSurface(plugin.SurfaceMCP))
-	if len(mcp.Warnings) != 1 || !strings.HasPrefix(mcp.Warnings[0].Message, "1 file the config includes is not read") {
-		t.Errorf("over MCP, warnings = %+v, want the repository's own include alone counted", mcp.Warnings)
 	}
 }
 

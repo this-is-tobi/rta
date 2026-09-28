@@ -79,7 +79,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 
 	if wt, err := repo.Worktree(); err == nil {
-		status, ignored, err := worktreeStatus(ctx, statusDeadline(ctx), repo, wt, pathGateOf(req))
+		status, ignored, err := worktreeStatus(ctx, statusDeadline(ctx), repo, wt, req)
 		var refused *view.Error
 		switch {
 		case errors.As(err, &refused):

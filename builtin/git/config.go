@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -43,10 +44,15 @@ func configCapability() plugin.Capability {
 			"(/etc/gitconfig, Homebrew's, Apple's developer tools'), and GIT_CONFIG_SYSTEM, " +
 			"GIT_CONFIG_GLOBAL and GIT_CONFIG_NOSYSTEM are honoured as git honours them. A key " +
 			"missing from a scope simply has no row there rather than one with an empty value. " +
-			"`[include]`/`[includeIf]` directives are shown as written, not followed into the file " +
-			"they point at, and a warning counts them. Over MCP only the repository's own config, " +
-			"local and worktree, is returned: the machine-wide scopes and the environment's are the " +
-			"operator's, not the repository's. Values that carry a credential are masked on every surface.",
+			"Each row names the file it comes from. An include is followed as git follows it, " +
+			"include.path and an includeIf whose gitdir:, gitdir/i:, onbranch: or " +
+			"hasconfig:remote.*.url: condition holds, its keys read in the including file's scope " +
+			"at the place of the include; one this cannot decide is not read, and a warning says so. " +
+			"Over MCP only the repository's own config, local and worktree, is returned: the " +
+			"machine-wide scopes and the environment's are the operator's, not the repository's, " +
+			"and a file the repository's config includes from outside the server's roots counts for " +
+			"git.hooks and the rest but none of its keys is shown, a warning naming the include. " +
+			"Values that carry a credential are masked on every surface.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},
@@ -65,7 +71,19 @@ func runConfig(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Scope"},
 		{Name: "Key"},
 		{Name: "Value"},
+		{Name: "Origin"},
 	}}
+
+	// Local scope for either kind of repository this plugin opens:
+	// filesystem storage's own .git/config on disk, or the config a remote
+	// clone synthesized in memory (its remote and branch tracking, at
+	// minimum), which repositoryConfigs reads alike.
+	_, repository, err := repositoryConfigs(repo)
+	if err != nil {
+		return nil, view.Errorf("git.config.failed", "reading repository config: %v", err)
+	}
+	r := newConfigReading(ctx, req, repo)
+	r.everything = everyConfig(repository)
 
 	// **The machine-wide scopes are the operator's, not the repository's.**
 	//
@@ -85,62 +103,102 @@ func runConfig(ctx context.Context, req plugin.Request) (view.View, error) {
 	// remotes and branch tracking, and no use at all for the operator's
 	// machine-wide identity. Local stays; a person at a terminal, on their own
 	// machine, still sees all three — the same rule Field.Local states for
-	// inputs, applied to scopes.
-	var shown []scopedConfig
-	if req.Surface() != plugin.SurfaceMCP {
-		// Every file git reads for these scopes, not go-git's LoadConfig,
-		// which reads the first global file that exists and stops: with both
-		// ~/.config/git/config and ~/.gitconfig present, git reads the two
-		// and this showed one, so a key set only in the other was missing
-		// from the answer to what git is configured with. A scope with no
-		// file on this machine is missing rows, never a failure.
-		machine, err := machineConfigs()
-		if err != nil {
-			return nil, view.Errorf("git.config.failed", "reading the machine-wide config: %v", err)
-		}
-		for _, m := range machine {
-			addConfigRows(&t, m.scope, m.config)
-		}
-		shown = machine
-	}
-
-	// repo.Config reads local scope for either kind of repository this
-	// plugin opens: filesystem storage's own .git/config on disk, or the
-	// config a remote clone synthesized in memory (its remote and branch
-	// tracking, at minimum) — both implement the same ConfigStorer.
-	local, err := repo.Config()
-	if err != nil {
-		return nil, view.Errorf("git.config.failed", "reading repository config: %v", err)
-	}
-	addConfigRows(&t, "local", local)
-	shown = append(shown, scopedConfig{scope: "local", config: local})
-	perWorktree, err := worktreeConfig(repo, local)
-	if err != nil {
-		return nil, view.Errorf("git.config.failed", "reading config.worktree: %v", err)
-	}
-	if perWorktree != nil {
-		addConfigRows(&t, "worktree", perWorktree.config)
-		shown = append(shown, *perWorktree)
-	}
-	// The environment's is the operator's too, and withheld from MCP with the
-	// machine-wide scopes: `git -c http.extraHeader=...` is how a CI system
+	// inputs, applied to scopes. The environment's is the operator's too, and
+	// withheld with them: `git -c http.extraHeader=...` is how a CI system
 	// hands git a token for one command.
+	//
+	// Every file git reads for these scopes, not go-git's LoadConfig, which
+	// reads the first global file that exists and stops: with both
+	// ~/.config/git/config and ~/.gitconfig present, git reads the two and
+	// this showed one, so a key set only in the other was missing from the
+	// answer to what git is configured with. A scope with no file on this
+	// machine is missing rows, never a failure. Over MCP they are still read
+	// where a hasconfig:remote.*.url condition asks for every remote's URL,
+	// for the answer to that alone (configReading.collect).
+	sources := repository
 	if req.Surface() != plugin.SurfaceMCP {
-		command, err := commandConfig()
-		if err != nil {
-			return nil, view.Errorf("git.config.failed", "reading the config git's environment sets: %v", err)
+		if sources, err = r.everything(); err != nil {
+			return nil, view.Errorf("git.config.failed", "%v", err)
 		}
-		if command != nil {
-			addConfigRows(&t, "command", command.config)
-			shown = append(shown, *command)
+	}
+	pieces, err := r.follow(sources)
+	if verr := refusedByTheGate(err); verr != nil {
+		return nil, verr
+	}
+	if err != nil {
+		return nil, view.Errorf("git.config.failed", "reading the files the config includes: %v", err)
+	}
+	base := ""
+	if store, onDisk := repo.Storer.(*filesystem.Storage); onDisk {
+		base = store.Filesystem().Root()
+		if wt, werr := repo.Worktree(); werr == nil {
+			base = wt.Filesystem.Root()
+		}
+	}
+	// What a file the caller is not shown includes is its content too: an
+	// include in one that this cannot decide is not counted either.
+	var shown []scopedConfig
+	for _, p := range pieces {
+		if !p.hidden {
+			addConfigRows(&t, p.scope, p.origin(base), p.config)
+			shown = append(shown, p)
 		}
 	}
 
 	t.Total = len(t.Rows)
-	if w := includesNotFollowed("git.config.include", "the keys set there are missing from this table", shown); w != nil {
+	if w := includesUndecided("git.config.include", "the keys set there are missing from this table", shown); w != nil {
 		t.Warnings = append(t.Warnings, *w)
 	}
+	if len(r.outside) > 0 {
+		t.Warnings = append(t.Warnings, view.Error{
+			Code: "git.config.include.outside",
+			Message: fmt.Sprintf("the repository's config includes %s outside this server's roots, %s: git reads "+
+				"%s, and git.hooks, git.status and the rest count what %s, but none of %s keys is shown",
+				format.Plural(len(r.outside), "a file", format.CountOf(len(r.outside), "file")), strings.Join(r.outside, ", "),
+				format.Plural(len(r.outside), "it", "them"), format.Plural(len(r.outside), "it sets", "they set"),
+				format.Plural(len(r.outside), "its", "their")),
+			Hint: "an include can name any file on the machine, and one of sections and keys, a credentials file " +
+				"among them, reads as config: `git config --list --show-origin` at a terminal shows it",
+		})
+	}
 	return t, nil
+}
+
+// everyConfig is every source of config git reads for a repository whose own
+// are repository, in the order git reads them, read once, when first asked:
+// the operator's own files, the repository's, and the environment's.
+func everyConfig(repository []configSource) func() ([]configSource, error) {
+	var (
+		all  []configSource
+		err  error
+		read bool
+	)
+	return func() ([]configSource, error) {
+		if read {
+			return all, err
+		}
+		read = true
+		machine, merr := machineConfigs()
+		if merr != nil {
+			err = fmt.Errorf("reading the machine-wide config: %w", merr)
+			return nil, err
+		}
+		command, cerr := commandConfig()
+		if cerr != nil {
+			err = fmt.Errorf("reading the config git's environment sets: %w", cerr)
+			return nil, err
+		}
+		all = append(append(machine, repository...), command.orNone()...)
+		return all, nil
+	}
+}
+
+// orNone is s alone, or nothing where there is no s.
+func (s *configSource) orNone() []configSource {
+	if s == nil {
+		return nil
+	}
+	return []configSource{*s}
 }
 
 // The files git's system scope is read from, which depend on how git was
@@ -175,13 +233,29 @@ var (
 	}
 )
 
-// scopedConfig is one file of git config, the scope git reads it as, where
-// it is ("" for the repository's own, which go-git reads), and each key it
-// sets with no value at all (valueless).
+// scopedConfig is a piece of git config, the whole of a file or the part of
+// one between the includes git follows in it (configReading.expand): the
+// scope git reads it as, which a file an include names takes from the file
+// naming it; where it is, as a message names it (place), "" for the
+// repository's own files; and each key it sets with no value at all
+// (valueless).
 type scopedConfig struct {
 	scope, path string
 	config      *gitconfig.Config
 	blank       map[string]valueless
+	// file is the file it was read from, as git names it: the one a relative
+	// include in it is taken from, and the origin its rows name. "" for the
+	// environment's, and for a clone in memory's, which have none.
+	file string
+	// included is a file git reads because another includes it.
+	included bool
+	// hidden is, over MCP, a file the repository's own config includes from
+	// outside the server's roots, or one such a file includes: it counts for
+	// every answer here, and none of its keys or values is shown.
+	hidden bool
+	// undecided is why the include this piece ends at was not followed, where
+	// whether or where git reads it turns on what this cannot tell.
+	undecided string
 }
 
 // valueless is how a file of config sets a key with no value at all, a name
@@ -326,11 +400,12 @@ func gitBool(value string) bool {
 // Only where the config sets a format version: git passes over every
 // extension a repository without one sets (unsetVersion), this one included,
 // and a core.hooksPath in a config.worktree git does not read was listed as
-// the directory it runs hooks from.
-func worktreeConfig(repo *git.Repository, local *gitconfig.Config) (*scopedConfig, error) {
-	store, ok := repo.Storer.(*filesystem.Storage)
-	if !ok || !extensionsInEffect(local) || !local.Raw.HasSection("extensions") ||
-		!gitBool(local.Raw.Section("extensions").Option("worktreeConfig")) {
+// the directory it runs hooks from. own is the whole of the repository's own
+// config, which git decides that from, as it decides the format, following
+// no include there.
+func worktreeConfig(store *filesystem.Storage, own *gitconfig.Config) (*configSource, error) {
+	if !extensionsInEffect(own) || !own.Raw.HasSection("extensions") ||
+		!gitBool(own.Raw.Section("extensions").Option("worktreeConfig")) {
 		return nil, nil
 	}
 	content, err := readGitDirFile(store.Filesystem(), "config.worktree")
@@ -340,28 +415,46 @@ func worktreeConfig(repo *git.Repository, local *gitconfig.Config) (*scopedConfi
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := gitconfig.ReadConfig(bytes.NewReader(content))
+	lines, err := fileLines(content)
 	if err != nil {
 		return nil, err
 	}
-	return &scopedConfig{scope: "worktree", config: cfg, blank: valuelessKeys(content)}, nil
+	return &configSource{from: scopedConfig{scope: "worktree", file: filepath.Join(store.Filesystem().Root(),
+		"config.worktree")}, lines: lines}, nil
 }
 
-// localConfig is the repository's own config, as go-git reads it, and the
-// keys it sets with no value, read from the file go-git read it from; a
-// repository cloned into memory has no such file, and none.
-func localConfig(repo *git.Repository) (scopedConfig, error) {
-	cfg, err := repo.Config()
+// repositoryConfigs is the repository's own config, and its working tree's
+// where git reads that (worktreeConfig), read into their lines; own is the
+// whole of the first as go-git reads it, which the repository's format is
+// decided from. A clone in memory has no file of config: its own is what
+// go-git made for it.
+func repositoryConfigs(repo *git.Repository) (own *gitconfig.Config, _ []configSource, _ error) {
+	own, err := repo.Config()
 	if err != nil {
-		return scopedConfig{}, err
+		return nil, nil, err
 	}
-	local := scopedConfig{scope: "local", config: cfg}
-	if store, ok := repo.Storer.(*filesystem.Storage); ok {
-		if content, err := readGitDirFile(store.Filesystem(), "config"); err == nil {
-			local.blank = valuelessKeys(content)
-		}
+	store, onDisk := repo.Storer.(*filesystem.Storage)
+	if !onDisk {
+		return own, []configSource{{from: scopedConfig{scope: "local"}, lines: rawLines(own)}}, nil
 	}
-	return local, nil
+	var lines []configLine
+	content, err := readGitDirFile(store.Filesystem(), "config")
+	if err == nil {
+		lines, err = fileLines(content)
+	}
+	if err != nil && !errors.Is(err, iofs.ErrNotExist) {
+		return nil, nil, err
+	}
+	sources := []configSource{{from: scopedConfig{scope: "local",
+		file: filepath.Join(commonGitDir(store.Filesystem()), "config")}, lines: lines}}
+	perWorktree, err := worktreeConfig(store, own)
+	if err != nil {
+		return nil, nil, fmt.Errorf("config.worktree: %w", err)
+	}
+	if perWorktree != nil {
+		sources = append(sources, *perWorktree)
+	}
+	return own, sources, nil
 }
 
 // readGitDirFile is the whole of name in a git directory, read through fs,
@@ -376,16 +469,11 @@ func readGitDirFile(fs billy.Filesystem, name string) ([]byte, error) {
 }
 
 // machineConfigs is the operator's own git config, every file of it that
-// exists (machineConfigSources), read.
-func machineConfigs() ([]scopedConfig, error) {
-	var out []scopedConfig
+// exists (machineConfigSources), read into its lines.
+func machineConfigs() ([]configSource, error) {
+	var out []configSource
 	for _, s := range machineConfigSources() {
-		// Opened without waiting, and read only when it is a file. git.hooks
-		// reads these over MCP too, and a named pipe in place of one — which
-		// unpacking an archive into a root that holds the home directory can
-		// leave — blocked open(2) until a writer came, which no context can
-		// interrupt, as the repository's own files did before openAt.
-		f, err := os.OpenFile(s.path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+		content, err := readConfigFile(s.path)
 		// Passed over where git passes over one: not there, under something
 		// that is not a directory, or not this user's to read. Most of the
 		// system files are another build's, and a Linuxbrew prefix this user
@@ -394,40 +482,61 @@ func machineConfigs() ([]scopedConfig, error) {
 		if errors.Is(err, iofs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, iofs.ErrPermission) {
 			continue
 		}
-		if err != nil {
-			return nil, err
-		}
-		// And held to the bound a repository's own config is held to, since
-		// go-git's reader takes the whole of it into memory first: a sparse
-		// file of gigabytes costs its writer no disk.
-		//
-		// The null device aside, which reads as a file with nothing in it:
-		// GIT_CONFIG_GLOBAL=/dev/null is how a CI job or a test runs git with
-		// none of the machine's config, and git reads it so. Refused as not a
-		// file, it failed git.hooks and git.config, and left git.status
-		// without the excludes file.
-		var content []byte
-		info, err := f.Stat()
-		switch {
-		case err == nil && isNullDevice(info):
-		case err == nil && !info.Mode().IsRegular():
-			err = errors.New("not a regular file")
-		case err == nil && info.Size() > maxConfigBytes:
-			err = tooLarge(maxConfigBytes)
-		case err == nil:
-			content, err = io.ReadAll(io.LimitReader(f, info.Size()))
-		}
-		_ = f.Close()
+		var lines []configLine
 		if err == nil {
-			s.config, err = gitconfig.ReadConfig(bytes.NewReader(content))
+			lines, err = fileLines(content)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", s.path, err)
 		}
-		s.blank = valuelessKeys(content)
-		out = append(out, s)
+		s.file = s.path
+		out = append(out, configSource{from: s, lines: lines})
 	}
 	return out, nil
+}
+
+// readConfigFile is the whole of path, a file of config git reads that is
+// not the repository's own.
+//
+// Opened without waiting, and read only when it is a file. git.hooks reads
+// these over MCP too, and a named pipe in place of one — which unpacking an
+// archive into a root that holds the home directory can leave, and which an
+// include can name anywhere — blocked open(2) until a writer came, which no
+// context can interrupt, as the repository's own files did before openAt.
+//
+// And held to the bound a repository's own config is held to, since it is
+// read into memory whole: a sparse file of gigabytes costs its writer no disk.
+//
+// The null device aside, which reads as a file with nothing in it:
+// GIT_CONFIG_GLOBAL=/dev/null is how a CI job or a test runs git with none of
+// the machine's config, and git reads it so. Refused as not a file, it failed
+// git.hooks and git.config, and left git.status without the excludes file.
+//
+// An error is the reason alone, without the file: the caller names it as a
+// message about it may, which for a file the caller is not shown is not by
+// where it is (configReading.include).
+func readConfigFile(path string) ([]byte, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		var opening *iofs.PathError
+		if errors.As(err, &opening) {
+			return nil, opening.Err
+		}
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	switch {
+	case err != nil:
+		return nil, err
+	case isNullDevice(info):
+		return nil, nil
+	case !info.Mode().IsRegular():
+		return nil, errors.New("not a regular file")
+	case info.Size() > maxConfigBytes:
+		return nil, tooLarge(maxConfigBytes)
+	}
+	return io.ReadAll(io.LimitReader(f, info.Size()))
 }
 
 // isNullDevice reports whether info is the null device's, os.DevNull.
@@ -441,7 +550,8 @@ func isNullDevice(info os.FileInfo) bool {
 // all of them: GIT_CONFIG_COUNT pairs of GIT_CONFIG_KEY_<n> and
 // GIT_CONFIG_VALUE_<n>, then GIT_CONFIG_PARAMETERS, which `git -c` and `git
 // --config-env` hand every command git runs, a hook or an alias among them.
-// nil where neither is set.
+// nil where neither is set. Read into lines as a file is, so that an
+// include set there is followed where it is set (configReading.expand).
 //
 // **Read as git reads it, since git runs a hook with the same environment.**
 // A core.hooksPath set there is where git runs hooks from, and git.hooks,
@@ -449,13 +559,13 @@ func isNullDevice(info os.FileInfo) bool {
 // pre-commit. And what git refuses to run with — a count that is not one, a
 // key or a value missing, a key with no section — fails here too: git runs
 // no hook at all with it, and an answer naming a directory would be wrong.
-func commandConfig() (*scopedConfig, error) {
+func commandConfig() (*configSource, error) {
 	count, counted := os.LookupEnv("GIT_CONFIG_COUNT")
 	parameters, given := os.LookupEnv("GIT_CONFIG_PARAMETERS")
 	if !counted && !given {
 		return nil, nil
 	}
-	cfg := &scopedConfig{scope: "command", config: gitconfig.NewConfig(), blank: map[string]valueless{}}
+	cfg := &configSource{from: scopedConfig{scope: "command"}}
 	if counted {
 		// Read as git reads it, with C's strtoul: white space before it and a
 		// sign are taken, and anything after it is not. `GIT_CONFIG_COUNT=" 1"`
@@ -506,7 +616,7 @@ func commandConfig() (*scopedConfig, error) {
 // rows show it: `url.https://oauth2:<token>@host/.insteadOf` carries the
 // token in the key, and the refusal reaches a terminal, and an MCP caller
 // through git.hooks, where the command scope's rows never do.
-func addCommandKey(cfg *scopedConfig, key, value string, none bool) error {
+func addCommandKey(cfg *configSource, key, value string, none bool) error {
 	first, last := strings.IndexByte(key, '.'), strings.LastIndexByte(key, '.')
 	switch {
 	case last <= 0:
@@ -517,15 +627,11 @@ func addCommandKey(cfg *scopedConfig, key, value string, none bool) error {
 		strings.IndexByte(key[first:last], '\n') >= 0:
 		return fmt.Errorf("%q is not a key git reads", maskURLCredentials(key))
 	}
-	section, name, subsection := cfg.config.Raw.Section(key[:first]), key[last+1:], ""
-	if first == last {
-		section.AddOption(name, value)
-	} else {
-		subsection = key[first+1 : last]
-		section.Subsection(subsection).AddOption(name, value)
+	line := configLine{section: key[:first], name: key[last+1:], value: value, none: none}
+	if first != last {
+		line.subsection, line.emptySubsection = key[first+1:last], first+1 == last
 	}
-	k := configKey(key[:first], subsection, name)
-	cfg.blank[k] = valueless{any: cfg.blank[k].any || none, last: none}
+	cfg.lines = append(cfg.lines, line)
 	return nil
 }
 
@@ -539,7 +645,7 @@ var errConfigParameters = errors.New("not in the shape git writes it")
 // value, and 'key=value' or 'key' as older git wrote it, separated by space.
 // 'key'= and 'key' set no value at all, and 'key=', or 'key'= and an empty
 // quoted word, the empty one, as `git -c key` and `git -c key=` set them.
-func parseConfigParameters(cfg *scopedConfig, env string) error {
+func parseConfigParameters(cfg *configSource, env string) error {
 	for rest := env; rest != ""; rest = strings.TrimLeft(rest, gitSpace) {
 		key, after, ok := sqDequote(rest)
 		if !ok {
@@ -625,56 +731,46 @@ func keyWord(s string) bool {
 // isLetter is an ASCII letter, as git's own isalpha takes one.
 func isLetter(c byte) bool { return c|0x20 >= 'a' && c|0x20 <= 'z' }
 
-// includeCount is how many files cfg includes, by an include.path or an
-// includeIf's path: files git reads as though they were written in place of
-// the directive, and which nothing here follows.
+// includesUndecided is the warning, as code, that pieces end at includes this
+// did not follow, since whether or where git reads them turns on what this
+// cannot tell (scopedConfig.undecided), and why; nil where none does.
+// missing says what the answer lacks for it.
 //
-// **Counted rather than followed.** An include names a path anywhere on the
-// machine, from a config a caller can write inside the root, and following
-// one would read a file the gate was never asked about; includeIf's
-// conditions — the repository's directory as git spells a glob, the branch,
-// a remote's URL — are git's to evaluate, and evaluating them nearly right is
-// how an audit reads the wrong file. So each is counted and said to be
-// unread, and the answer is never quietly missing what it names.
-func includeCount(cfg *gitconfig.Config) int {
-	n := 0
-	for _, s := range cfg.Raw.Sections {
-		switch {
-		case s.IsName("include"):
-			n += len(s.Options.GetAll("path"))
-		case s.IsName("includeIf"):
-			for _, sub := range s.Subsections {
-				n += len(sub.Options.GetAll("path"))
-			}
+// **Said rather than guessed at.** An include naming git's install prefix
+// names a directory only the git that reads it knows, and an onbranch:
+// condition in a repository whose refs are kept in a reftable turns on a
+// branch this does not read: following either as though it were known is how
+// an audit reads the wrong file, so each is said to be unread, and the answer
+// is never quietly missing what it names.
+func includesUndecided(code, missing string, pieces []scopedConfig) *view.Error {
+	n, why := 0, []string{}
+	for _, p := range pieces {
+		if p.undecided == "" {
+			continue
 		}
-	}
-	return n
-}
-
-// includesNotFollowed is the warning counting the files that files include
-// and this did not read, nil when they include none. missing says what the
-// answer lacks for it.
-func includesNotFollowed(code, missing string, files []scopedConfig) *view.Error {
-	n := 0
-	for _, f := range files {
-		n += includeCount(f.config)
+		if n++; !slices.Contains(why, p.undecided) {
+			why = append(why, p.undecided)
+		}
 	}
 	if n == 0 {
 		return nil
 	}
 	return &view.Error{
 		Code: code,
-		Message: fmt.Sprintf("%s the config includes %s not read, so %s", format.CountOf(n, "file"),
-			format.Plural(n, "is", "are"), missing),
+		Message: fmt.Sprintf("%s the config includes %s not read, since whether or where git reads %s turns on "+
+			"what this cannot tell (%s), so %s", format.CountOf(n, "file"), format.Plural(n, "is", "are"),
+			format.Plural(n, "it", "them"), strings.Join(why, "; "), missing),
 		Hint: "`git config --list --show-origin` follows includes, and names the file each key comes from",
 	}
 }
 
-func addConfigRows(t *view.Table, scope string, cfg *gitconfig.Config) {
+// addConfigRows adds a row to t for each key cfg sets, in scope, read from
+// origin.
+func addConfigRows(t *view.Table, scope, origin string, cfg *gitconfig.Config) {
 	for _, s := range cfg.Raw.Sections {
 		for _, o := range s.Options {
 			key := s.Name + "." + o.Key
-			t.Rows = append(t.Rows, []string{scope, key, maskConfigValue(key, o.Value)})
+			t.Rows = append(t.Rows, []string{scope, key, maskConfigValue(key, o.Value), origin})
 		}
 		for _, sub := range s.Subsections {
 			for _, o := range sub.Options {
@@ -682,10 +778,32 @@ func addConfigRows(t *view.Table, scope string, cfg *gitconfig.Config) {
 				// credential hides: `url.https://tok@host/.insteadOf` carries
 				// it in the *name*, not the value.
 				key := s.Name + "." + sub.Name + "." + o.Key
-				t.Rows = append(t.Rows, []string{scope, maskURLCredentials(key), maskConfigValue(key, o.Value)})
+				t.Rows = append(t.Rows, []string{scope, maskURLCredentials(key), maskConfigValue(key, o.Value), origin})
 			}
 		}
 	}
+}
+
+// origin is the file f was read from as a row names it: from base, the
+// repository's working tree, where it is inside, as git.hooks shows a path,
+// its links resolved where they lead there, and in full, as it is named,
+// where it is not.
+func (f scopedConfig) origin(base string) string {
+	switch {
+	case f.file != "":
+		if shown := shownFrom(base, f.file); !filepath.IsAbs(shown) {
+			return shown
+		}
+		if resolved, err := filepath.EvalSymlinks(f.file); err == nil {
+			if shown := shownFrom(base, resolved); !filepath.IsAbs(shown) {
+				return shown
+			}
+		}
+		return f.file
+	case f.scope == "command":
+		return "environment"
+	}
+	return "memory"
 }
 
 // secretKey matches config keys whose value is a credential by convention.

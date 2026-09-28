@@ -413,31 +413,6 @@ func TestCoreHooksPathIsReadFromEverySystemFileAndTheNamedGlobalOne(t *testing.T
 	}
 }
 
-// An include is not followed, and one that could set core.hooksPath is
-// counted rather than passed over: one in a file read at or after the file
-// the value came from, since what git reads later wins. The repository's own
-// value is read last, so an include of the operator's cannot move it.
-func TestHooksCountTheIncludesThatCouldMoveTheDirectory(t *testing.T) {
-	machineConfig(t, "[includeIf \"gitdir:~/work/\"]\n\tpath = ~/work.gitconfig\n")
-	dir, repo := testRepo(t)
-	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
-
-	tbl := table(t, runHooks, req(t, dir, nil))
-	if len(tbl.Warnings) != 1 || tbl.Warnings[0].Code != "git.hooks.include" ||
-		!strings.HasPrefix(tbl.Warnings[0].Message, "1 file the config includes is not read") {
-		t.Errorf("warnings = %+v, want git.hooks.include counting the operator's include", tbl.Warnings)
-	}
-	mcp := table(t, runHooks, guarded(t, dir, dir).WithSurface(plugin.SurfaceMCP))
-	if len(mcp.Warnings) != 1 || strings.Contains(mcp.Warnings[0].Message, "work") {
-		t.Errorf("over MCP, warnings = %+v, want the include counted and not named", mcp.Warnings)
-	}
-
-	setHooksPath(t, repo, ".githooks")
-	if tbl := table(t, runHooks, req(t, dir, nil)); len(tbl.Warnings) != 0 {
-		t.Errorf("warnings = %+v, with the value set in the repository's own config", tbl.Warnings)
-	}
-}
-
 // Two system files setting core.hooksPath differently are two builds of git
 // running hooks from two directories, and one is listed: it says so, naming
 // the files.
@@ -458,6 +433,21 @@ func TestHooksSayWhenSystemFilesOfTwoBuildsDisagree(t *testing.T) {
 	writeFile(t, home, "etc/gitconfig", "[core]\n\thooksPath = /brew-hooks\n")
 	if tbl := table(t, runHooks, req(t, dir, nil)); len(tbl.Warnings) != 0 {
 		t.Errorf("warnings = %+v, with both files naming one directory", tbl.Warnings)
+	}
+
+	// A file a system file includes is that build's too: one build reading
+	// two values, the second from its include, is no disagreement, and an
+	// include that makes two builds' values differ is one, naming the builds'
+	// own files.
+	writeFile(t, home, "etc/gitconfig", "[core]\n\thooksPath = /etc-hooks\n[include]\n\tpath = more\n")
+	writeFile(t, home, "etc/more", "[core]\n\thooksPath = /brew-hooks\n")
+	if tbl := table(t, runHooks, req(t, dir, nil)); len(tbl.Warnings) != 0 {
+		t.Errorf("warnings = %+v, with one build's include naming the other's directory", tbl.Warnings)
+	}
+	writeFile(t, home, "etc/more", "[core]\n\thooksPath = /more-hooks\n")
+	if tbl := table(t, runHooks, req(t, dir, nil)); len(tbl.Warnings) != 1 ||
+		!strings.Contains(tbl.Warnings[0].Message, etc+", "+brew) {
+		t.Errorf("warnings = %+v, want git.hooks.system naming both builds' files", tbl.Warnings)
 	}
 }
 

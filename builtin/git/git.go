@@ -140,7 +140,7 @@ func open(ctx context.Context, req plugin.Request, what reads) (*git.Repository,
 	if what == readsObjects {
 		verr := objectsAllReadable(repo, root)
 		if verr == nil {
-			verr = partialClone(repo, root)
+			verr = partialClone(ctx, req, repo, root)
 		}
 		if verr != nil {
 			done()
