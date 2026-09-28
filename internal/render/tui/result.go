@@ -290,6 +290,10 @@ func (m Model) selectedAction(key string) (capAction, bool) {
 // afterwards; anything still missing — edit content, a destructive
 // confirmation — opens a form first.
 func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
+	if where, ok := m.follows(a); !ok {
+		m.flash = a.cap.ID + " acts on this machine only, and these rows are " + where + "'s"
+		return m, nil
+	}
 	base, ok := m.actionSeed(a, tbl)
 	if !ok {
 		return m, nil
@@ -403,6 +407,24 @@ func (m Model) aimedElsewhere(cap plugin.Capability) map[string]any {
 		aim[f.Name] = v
 	}
 	return aim
+}
+
+// follows reports whether a can go where the view it is pressed in was
+// aimed, and names that place when it cannot: the aim travels to an action
+// only through an input of its own (aimedElsewhere), and one without that
+// input runs here. The rows of `grant list --server lab` are lab's, and n
+// on one opened grant.renew, which takes no server, on this machine's
+// grants of the same name — an extension, on a machine the row was never
+// about. Such an action is not offered on a view aimed elsewhere
+// (resultFooterItems), and pressed anyway it says why and opens nothing.
+func (m Model) follows(a capAction) (string, bool) {
+	carried := m.aimedElsewhere(a.cap)
+	for name, v := range m.aimedElsewhere(m.current) {
+		if _, ok := carried[name]; !ok {
+			return fmt.Sprint(v), false
+		}
+	}
+	return "", true
 }
 
 func hereOnly(fields []plugin.Field) []plugin.Field {
@@ -650,6 +672,9 @@ func (m Model) resultFooterItems() []hintItem {
 		}
 		for _, a := range capActions(m.reg, m.current.ID) {
 			if a.src == srcRow && !m.interactive() {
+				continue
+			}
+			if _, ok := m.follows(a); !ok {
 				continue
 			}
 			keys = append(keys, action(a.key, a.label))
