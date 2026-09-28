@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-git/go-git/v5"
 	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
@@ -247,8 +248,24 @@ func (s decidedFormat) Config() (*gitconfig.Config, error) {
 	return cfg, nil
 }
 
-// notPartial refuses a partial clone, which root holds and whose own config
-// is local, to a capability that reads its objects.
+// partialClone refuses the repository root holds to a capability that reads
+// its objects where git reads it as a partial clone (notPartial), by every
+// file of config git reads for it (gitConfigs). One of them that cannot be
+// read is refused too: whether the repository is a partial clone may be set
+// there, and git itself stops at a file of config it cannot parse, or that
+// is not a file.
+func partialClone(repo *git.Repository, root string) *view.Error {
+	files, err := gitConfigs(repo)
+	if err != nil {
+		return view.Errorf("git.config.unreadable", "%s: reading the config git reads for it, which says whether "+
+			"it is a partial clone: %v", root, err).
+			WithHint("git reads the same files for every repository; `git config --list --show-origin` names them")
+	}
+	return notPartial(files, root)
+}
+
+// notPartial refuses a partial clone, which root holds and files are the
+// config git reads for (gitConfigs), to a capability that reads its objects.
 //
 // **A partial clone lacks objects on purpose.** `git clone --filter=blob:none`
 // fetches the history and leaves each file's content on the server until git
@@ -267,20 +284,44 @@ func (s decidedFormat) Config() (*gitconfig.Config, error) {
 // away, so `promisor = true` then `promisor = false` is a promisor git
 // fetches from: reading the last value alone let such a clone through, to
 // fail at the first object it lacked.
-func notPartial(local scopedConfig, root string) *view.Error {
-	cfg := local.config
-	var promisors []string
-	if extensionsInEffect(cfg) && cfg.Raw.HasSection("extensions") {
-		if name := cfg.Raw.Section("extensions").Option("partialClone"); name != "" {
+//
+// **In every file git reads, not the repository's alone.** git reads
+// remote.<name>.promisor through repo_config, the system, global,
+// repository, worktree and command scopes at once, so a line in ~/.gitconfig
+// or `git -c remote.origin.promisor=true` makes git fetch what it lacks from
+// origin in a repository whose own config says nothing of it; this read the
+// repository's own config alone, and let such a clone through. What the
+// refusal names of the operator's files is the file, as git.hooks names one,
+// and the remote, masked as git.config masks a key. A file one of them
+// includes is not read, as git.config and git.hooks do not read one
+// (includeCount). extensions.partialClone is part of the repository's
+// format, which git reads from the repository's own config alone, as this
+// does.
+func notPartial(files []scopedConfig, root string) *view.Error {
+	var promisors, elsewhere []string
+	mark := func(name string) {
+		if !slices.Contains(promisors, name) {
 			promisors = append(promisors, name)
 		}
 	}
-	if cfg.Raw.HasSection("remote") {
+	for _, f := range files {
+		cfg := f.config
+		if f.scope == "local" && extensionsInEffect(cfg) && cfg.Raw.HasSection("extensions") {
+			if name := cfg.Raw.Section("extensions").Option("partialClone"); name != "" {
+				mark(name)
+			}
+		}
+		if !cfg.Raw.HasSection("remote") {
+			continue
+		}
 		for _, sub := range cfg.Raw.Section("remote").Subsections {
-			promisor := local.blank[configKey("remote", sub.Name, "promisor")].any ||
-				slices.ContainsFunc(sub.Options.GetAll("promisor"), gitBool)
-			if promisor && !slices.Contains(promisors, sub.Name) {
-				promisors = append(promisors, sub.Name)
+			if !f.blank[configKey("remote", sub.Name, "promisor")].any &&
+				!slices.ContainsFunc(sub.Options.GetAll("promisor"), gitBool) {
+				continue
+			}
+			mark(sub.Name)
+			if f.scope != "local" && f.scope != "worktree" && !slices.Contains(elsewhere, f.place()) {
+				elsewhere = append(elsewhere, f.place())
 			}
 		}
 	}
@@ -288,8 +329,16 @@ func notPartial(local scopedConfig, root string) *view.Error {
 		return nil
 	}
 	sort.Strings(promisors)
+	for i, name := range promisors {
+		promisors[i] = maskURLCredentials(name)
+	}
+	hint := "git.config, git.hooks and git.remotes answer here; for history and files, run this on a clone made " +
+		"without --filter, which holds every object"
+	if len(elsewhere) > 0 {
+		hint = "a remote is made a promisor in " + strings.Join(elsewhere, ", ") + ", which git reads for every " +
+			"repository: where this one is no partial clone, unset it there; git.config, git.hooks and " +
+			"git.remotes answer here either way"
+	}
 	return view.Errorf("git.objects.partial", "%s is a partial clone: git fetches the objects it lacks from %s as "+
-		"it needs them, and this reader fetches nothing", root, strings.Join(promisors, ", ")).
-		WithHint("git.config, git.hooks and git.remotes answer here; for history and files, run this on a " +
-			"clone made without --filter, which holds every object")
+		"it needs them, and this reader fetches nothing", root, strings.Join(promisors, ", ")).WithHint(hint)
 }

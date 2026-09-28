@@ -236,6 +236,7 @@ func TestEveryCapabilityClosesThePacksItKeptOpen(t *testing.T) {
 // which git reads only where the config sets a format version. The ones that
 // read no object answer.
 func TestAPartialCloneIsRefusedToTheCapabilitiesThatReadObjects(t *testing.T) {
+	machineConfig(t, "")
 	const origin = "[remote \"origin\"]\n\turl = https://example.com/r.git\n"
 	for config, partial := range map[string]bool{
 		origin + "\tpromisor = true\n\tpartialclonefilter = blob:none\n": true,
@@ -260,6 +261,80 @@ func TestAPartialCloneIsRefusedToTheCapabilitiesThatReadObjects(t *testing.T) {
 			t.Errorf("the refusal %v does not name the remote", err)
 		}
 	}
+}
+
+// git reads remote.<name>.promisor from every file of config it reads and
+// from its environment, as `git -c` sets it: a line in the operator's global
+// or system file makes git fetch what a repository lacks from that remote, as
+// the repository's own line would. This read the repository's config alone,
+// and let such a clone through. It is refused, the hint naming the file; the
+// format's extensions.partialClone is read from the repository's config
+// alone, as git reads it. A file git reads and this cannot is refused, as git
+// runs nothing with it. Where git is on PATH, it is asked whether it fetches.
+func TestAPromisorSetInAnyConfigGitReadsMakesAPartialClone(t *testing.T) {
+	origin := "[remote \"origin\"]\n\turl = " + filepath.Join(t.TempDir(), "gone") + "\n"
+	for what, c := range map[string]struct {
+		global, system, parameters string
+		want, named                string
+	}{
+		"global":                   {global: "[remote \"origin\"]\n\tpromisor = true\n", want: "git.objects.partial", named: ".gitconfig"},
+		"global, with no value":    {global: "[remote \"origin\"]\n\tpromisor\n", want: "git.objects.partial", named: ".gitconfig"},
+		"global, false":            {global: "[remote \"origin\"]\n\tpromisor = false\n"},
+		"system":                   {system: "[remote \"origin\"]\n\tpromisor = yes\n", want: "git.objects.partial", named: "system"},
+		"git -c":                   {parameters: "'remote.origin.promisor'='true'", want: "git.objects.partial", named: "environment"},
+		"git -c, with no value":    {parameters: "'remote.origin.promisor'", want: "git.objects.partial", named: "environment"},
+		"global partialClone":      {global: "[extensions]\n\tpartialClone = origin\n"},
+		"git -c partialClone":      {parameters: "'extensions.partialClone'='origin'"},
+		"a global git cannot read": {global: "[remote \"origin\"\n", want: "git.config.unreadable"},
+	} {
+		home := machineConfig(t, c.global)
+		if c.system != "" {
+			writeFile(t, home, "system-gitconfig", c.system)
+			t.Setenv("GIT_CONFIG_SYSTEM", filepath.Join(home, "system-gitconfig"))
+		} else {
+			t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+		}
+		if c.parameters != "" {
+			t.Setenv("GIT_CONFIG_PARAMETERS", c.parameters)
+		}
+		dir := withConfig(t, "\trepositoryformatversion = 1\n"+origin)
+		for name, code := range codes(t, dir) {
+			want := ""
+			switch {
+			case name == "git.status" || name == "git.log":
+				want = c.want
+			case c.want == "git.config.unreadable" && name != "git.remotes":
+				// git.config and git.hooks read the same files, and fail
+				// on it in their own words.
+				want = name + ".failed"
+			}
+			if code != want {
+				t.Errorf("%s, %s = %q, want %q", what, name, code, want)
+			}
+		}
+		_, err := runLog(context.Background(), req(t, dir, nil))
+		var verr *view.Error
+		if c.named != "" && (!errors.As(err, &verr) || !strings.Contains(verr.Message, "from origin") ||
+			!strings.Contains(verr.Hint, c.named)) {
+			t.Errorf("%s, the refusal %v does not name origin and %s", what, err, c.named)
+		}
+		if fetches, ok := fetchesByGit(t, dir); ok && c.want != "git.config.unreadable" && fetches != (c.want != "") {
+			t.Errorf("%s, git fetches what the repository lacks: %v, and this answers %q", what, fetches, c.want)
+		}
+	}
+}
+
+// fetchesByGit is whether the git on PATH, asked for an object dir does not
+// hold, fetches it from a promisor; ok is false where there is no git to ask.
+func fetchesByGit(t *testing.T, dir string) (fetches, ok bool) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		return false, false
+	}
+	cmd := exec.Command("git", "-C", dir, "cat-file", "-e", strings.Repeat("1", 40))
+	cmd.Env = append(os.Environ(), "GIT_TRACE=1")
+	out, _ := cmd.CombinedOutput()
+	return strings.Contains(string(out), "run_command: git") && strings.Contains(string(out), " fetch origin "), true
 }
 
 // A partial clone git made is refused as one.
