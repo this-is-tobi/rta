@@ -129,3 +129,38 @@ func TestAnExitDuringAToolsDownloadRemovesWhatItStaged(t *testing.T) {
 		t.Errorf("the working tool was replaced with %q", got)
 	}
 }
+
+// The same for the checksums file a release without an API digest is read
+// from: it is downloaded into the temporary directory, and removed there by a
+// call an exit taken during the download never reached.
+func TestAnExitDuringAChecksumsDownloadRemovesIt(t *testing.T) {
+	goos, arch := here(t)
+	name := "tool-" + goos + "-" + arch
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	c, started, unstall := stalledRelease(t, func(base string) string {
+		return `{"tag_name":"v1.0.0","assets":[` +
+			`{"name":"` + name + `","browser_download_url":"` + base + `/dl/` + name + `","size":64},` +
+			`{"name":"checksums.txt","browser_download_url":"` + base + `/dl/checksums.txt","size":64}]}`
+	})
+	placedAt(t, "tool")
+
+	upgraded := make(chan *view.Error, 1)
+	go func() {
+		_, verr := installTool(context.Background(), plugin.SurfaceCLI, c, tool{Bin: "tool", Owner: "o", Repo: "tool"}, false, false)
+		upgraded <- verr
+	}()
+	if got := <-started; got != "checksums.txt" {
+		t.Fatalf("the first download was %s, want the checksums file", got)
+	}
+	if staged := named(t, tmp, "rta-checksums-"); len(staged) != 1 {
+		t.Fatalf("checksums files during the download: %v, want one", staged)
+	}
+	if behind := forceExitDuring(t, func() []string { return named(t, tmp, "rta-checksums-") }); len(behind) != 0 {
+		t.Errorf("the exit left %v behind", behind)
+	}
+	close(unstall)
+	if verr := <-upgraded; verr == nil {
+		t.Error("a release whose checksums name nothing was installed")
+	}
+}
