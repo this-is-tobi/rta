@@ -49,7 +49,7 @@ func TestSetAtATerminalAsksForTheValue(t *testing.T) {
 	if len(*asked) != 1 || (*asked)[0] != "db-password" {
 		t.Fatalf("asked for %q, want db-password once", *asked)
 	}
-	if body := v.(view.Text).Body; body != `set "db-password" (string, 20 B)` {
+	if body := v.(view.Text).Body; body != `set db-password (string, 20 B)` {
 		t.Errorf("answer = %q", body)
 	}
 	got, err := runGet(context.Background(), req(map[string]any{"key": "db-password"}, false))
@@ -125,7 +125,7 @@ func TestSetAsksForTheValueOfANewKeyGivenALabel(t *testing.T) {
 	if len(*asked) != 1 || (*asked)[0] != "api-token" {
 		t.Fatalf("asked for %q, want api-token once", *asked)
 	}
-	if body := v.(view.Text).Body; body != `set "api-token" (string, 6 B)` {
+	if body := v.(view.Text).Body; body != `set api-token (string, 6 B)` {
 		t.Errorf("answer = %q", body)
 	}
 	tbl := table(t, runList, map[string]any{"detail": true})
@@ -137,7 +137,7 @@ func TestSetAsksForTheValueOfANewKeyGivenALabel(t *testing.T) {
 	dry := plugin.NewRequest(map[string]any{
 		"key": "other", "kind": "string", "passphrase": "correct horse battery staple",
 	}, true, false).WithSurface(plugin.SurfaceCLI)
-	if v, err := runSet(ctx, dry); err != nil || v.(view.Text).Body != `would set "other" (string, 6 B)` {
+	if v, err := runSet(ctx, dry); err != nil || v.(view.Text).Body != `would set other (string, 6 B)` {
 		t.Errorf("a dry run answered %v, %v", v, err)
 	}
 	if rows := table(t, runList, nil).Rows; len(rows) != 1 {

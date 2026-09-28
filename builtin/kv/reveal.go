@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -72,7 +73,7 @@ func Reveal(key string) (string, *view.Error) {
 		// call that may have come from an agent, and the entry names in an
 		// operator's store are exactly what an agent has no business
 		// enumerating. `rta kv list` answers it for the person who can.
-		return "", view.Errorf("kv.notfound", "no entry %q in the store", key).
+		return "", view.Errorf("kv.notfound", "no entry %s in the store", textclean.Record(key)).
 			WithHint("`rta kv list` shows what is there")
 	}
 	return string(e.Value), nil
@@ -147,7 +148,7 @@ func Store(name, value, description, origin string) *view.Error {
 	}
 	if _, exists := s.Entries[name]; exists {
 		// Worded for the TUI's credential action, Store's one caller.
-		return view.Errorf("kv.exists", "%q is already in the store", name).
+		return view.Errorf("kv.exists", "%s is already in the store", textclean.Record(name)).
 			WithHint("reference it instead, or pick another name — replacing a stored " +
 				"secret is " + plugin.SurfaceTUI.CapabilityName("kv.set") + ", where the intention is explicit")
 	}

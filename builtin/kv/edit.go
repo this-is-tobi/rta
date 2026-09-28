@@ -14,6 +14,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -171,15 +172,15 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	// from it by size. Refused rather than mangled, with the round trip that
 	// does preserve bytes named in the hint.
 	if !utf8.Valid(e.Value) {
-		return nil, view.Errorf("kv.edit.binary", "%q is not text (%s), and an editor would not give it back unchanged", key, e.Kind).
+		return nil, view.Errorf("kv.edit.binary", "%s is not text (%s), and an editor would not give it back unchanged", textclean.Record(key), e.Kind).
 			WithHint("`" + req.Surface().Call("kv.get", keyArg(key), plugin.Arg{Name: "out", Value: "<file>"}) +
 				"`, edit that, then `" + req.Surface().Call("kv.set", keyArg(key), plugin.Arg{Name: "file", Value: "<file>"}) + "`")
 	}
 
 	argv := editorCommand()
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would open %q (%s, %s) in %s",
-			key, e.Kind, format.Bytes(len(e.Value)), argv[0])}, nil
+		return view.Text{Body: fmt.Sprintf("would open %s (%s, %s) in %s",
+			textclean.Record(key), e.Kind, format.Bytes(len(e.Value)), argv[0])}, nil
 	}
 
 	// Held until the directory is gone — released after the removal below,
@@ -223,7 +224,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 		// store and move the entry's Updated stamp, so opening a value to
 		// look at it and quitting would age-reset the one column that says
 		// how long a token has been sitting there.
-		return view.Text{Body: fmt.Sprintf("%q is unchanged", key)}, nil
+		return view.Text{Body: fmt.Sprintf("%s is unchanged", textclean.Record(key))}, nil
 	}
 	// An editor exits 0 having written nothing far more often than anybody
 	// means to store an empty secret — `:q!` after a `ggdG`, a crash between
@@ -275,13 +276,13 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	switch {
 	case !ok:
 		return nil, view.Errorf("kv.edit.vanished",
-			"%q was removed while the editor was open", key).
+			"%s was removed while the editor was open", textclean.Record(key)).
 			WithHint("nothing was changed — store the edited value with `" + req.Surface().Call("kv.set", keyArg(key)) + "`")
 	case !bytes.Equal(current.Value, e.Value):
 		// Refuse rather than pick a winner: one of the two values is about to
 		// be lost either way, and only the person knows which.
 		return nil, view.Errorf("kv.edit.conflict",
-			"%q changed while the editor was open", key).
+			"%s changed while the editor was open", textclean.Record(key)).
 			WithHint("nothing was changed — run `" + req.Surface().Call("kv.edit", keyArg(key)) +
 				"` again to start from the current value")
 	}
@@ -302,6 +303,6 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	e = current
-	return view.Text{Body: fmt.Sprintf("updated %q (%s, %s)",
-		key, e.Kind, format.Bytes(len(edited)))}, nil
+	return view.Text{Body: fmt.Sprintf("updated %s (%s, %s)",
+		textclean.Record(key), e.Kind, format.Bytes(len(edited)))}, nil
 }

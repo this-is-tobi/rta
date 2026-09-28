@@ -390,7 +390,7 @@ func writeAtomic(data []byte) *view.Error {
 }
 
 func notFound(sf plugin.Surface, key string) *view.Error {
-	return view.Errorf("kv.notfound", "no key %q", key).
+	return view.Errorf("kv.notfound", "no key %s", textclean.Record(key)).
 		WithHint(sf.CapabilityName("kv.list") + " lists every key")
 }
 

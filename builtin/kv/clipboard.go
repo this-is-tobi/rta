@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/clipboard"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -54,7 +55,7 @@ func runCopy(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	size := format.Bytes(len(e.Value))
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would copy %q (%s, %s) to the clipboard", key, e.Kind, size)}, nil
+		return view.Text{Body: fmt.Sprintf("would copy %s (%s, %s) to the clipboard", textclean.Record(key), e.Kind, size)}, nil
 	}
 	// Exactly what is stored, all of it. `pass -c` copies the first line
 	// because its file format is "password, then notes"; a value here is the
@@ -64,7 +65,7 @@ func runCopy(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	return view.Text{Body: fmt.Sprintf(
-		"copied %q to the clipboard — %s, %s, not printed anywhere\n\n"+
+		"copied %s to the clipboard — %s, %s, not printed anywhere\n\n"+
 			"nothing clears it afterwards: it stays pastable until you copy something else.",
-		key, e.Kind, size)}, nil
+		textclean.Record(key), e.Kind, size)}, nil
 }
