@@ -323,15 +323,16 @@ func TestAPromisorSetInAnyConfigGitReadsMakesAPartialClone(t *testing.T) {
 			!strings.Contains(verr.Hint, c.named)) {
 			t.Errorf("%s, the refusal %v does not name origin and %s", what, err, c.named)
 		}
-		if fetches, ok := fetchesByGit(t, dir); ok && c.want != "git.config.unreadable" && fetches != (c.want != "") {
+		if fetches, ok := fetchesByGit(t, dir, "origin"); ok && c.want != "git.config.unreadable" && fetches != (c.want != "") {
 			t.Errorf("%s, git fetches what the repository lacks: %v, and this answers %q", what, fetches, c.want)
 		}
 	}
 }
 
 // fetchesByGit is whether the git on PATH, asked for an object dir does not
-// hold, fetches it from a promisor; ok is false where there is no git to ask.
-func fetchesByGit(t *testing.T, dir string) (fetches, ok bool) {
+// hold, fetches it from remote, as git's trace spells the name; ok is false
+// where there is no git to ask.
+func fetchesByGit(t *testing.T, dir, remote string) (fetches, ok bool) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		return false, false
@@ -339,7 +340,32 @@ func fetchesByGit(t *testing.T, dir string) (fetches, ok bool) {
 	cmd := exec.Command("git", "-C", dir, "cat-file", "-e", strings.Repeat("1", 40))
 	cmd.Env = append(os.Environ(), "GIT_TRACE=1")
 	out, _ := cmd.CombinedOutput()
-	return strings.Contains(string(out), "run_command: git") && strings.Contains(string(out), " fetch origin "), true
+	return strings.Contains(string(out), "run_command: git") && strings.Contains(string(out), " fetch "+remote+" "), true
+}
+
+// extensions.partialClone set to nothing names a remote, the one named
+// nothing: git reads the repository as a partial clone, and fetches what it
+// lacks by running git fetch with the empty name. This read the empty name as
+// none. Where the config sets no format version git passes over every
+// extension, and it is no partial clone; with no value at all it is one git
+// refuses to open (TestARepositorysFormatIsDecidedAsGitDecidesIt).
+func TestAPartialCloneExtensionSetToNothingIsAPartialClone(t *testing.T) {
+	machineConfig(t, "")
+	for config, partial := range map[string]bool{
+		"\trepositoryformatversion = 1\n[extensions]\n\tpartialClone =\n": true,
+		"\trepositoryformatversion = 0\n[extensions]\n\tpartialClone =\n": true,
+		"[extensions]\n\tpartialClone =\n":                                false,
+	} {
+		dir := withConfig(t, config)
+		_, err := runLog(context.Background(), req(t, dir, nil))
+		if got := errCode(err) == "git.objects.partial"; got != partial ||
+			partial && !strings.Contains(err.Error(), `lacks from "" as`) {
+			t.Errorf("with %q, git.log = %v, want it refused as a partial clone: %v", config, err, partial)
+		}
+		if fetches, ok := fetchesByGit(t, dir, "''"); ok && fetches != partial {
+			t.Errorf("with %q, git fetches what the repository lacks: %v", config, fetches)
+		}
+	}
 }
 
 // A partial clone git made is refused as one.
