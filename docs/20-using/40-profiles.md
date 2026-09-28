@@ -97,6 +97,7 @@ A call picks one with the same string everywhere — the flag, the MCP argument,
 rta pg query --profile staging "select 1"             # the default instance
 rta pg query --profile staging/analytics "select 1"   # the labeled one
 rta profile set staging --plugin pg/analytics --set host=…   # stating it from a script
+rta profile show staging/analytics                    # that one connection, inside its environment
 ```
 
 The resolution rules are small and fail closed:
