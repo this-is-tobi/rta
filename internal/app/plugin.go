@@ -20,6 +20,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/tui"
+	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -912,10 +913,27 @@ func buildPlugin(ctx context.Context, dir string, keep bool, stderr any) (string
 			WithHint("run this from a plugin directory, or `rta plugin new <name>` to make one")
 	}
 
+	// The build and the run that follows are not held off a forced exit —
+	// plugin dev may wait as long as it likes on a plugin that never reads
+	// its context — and os.Exit skips a deferred removal, so an exit taken
+	// during either left the directory and the binary in the temporary
+	// directory for good. The exit removes them instead, as install's does
+	// its staging: made, and the removal registered, under a brief hold of
+	// their own so that no exit falls between the two, and unregistered only
+	// after the command's own removal has run. Not with --keep, which asked
+	// for the binary to outlive the run.
+	release := shutdown.Hold()
 	out, err := os.MkdirTemp("", "rta-plugin-dev-*")
 	if err != nil {
+		release()
 		return "", noop, view.Errorf("plugin.dev.build", "%v", err)
 	}
+	remove := func() { _ = os.RemoveAll(out) }
+	unregister := noop
+	if !keep {
+		unregister = shutdown.OnExit(remove)
+	}
+	release()
 	// Named with the plugin prefix so anything reading the process list, or a
 	// crash report, says what it is — and with the platform's own executable
 	// suffix, because `go build -o` writes the name it is given and Windows
@@ -925,7 +943,8 @@ func buildPlugin(ctx context.Context, dir string, keep bool, stderr any) (string
 	build := exec.CommandContext(ctx, "go", "build", "-o", binary, ".")
 	build.Dir = abs
 	if combined, err := build.CombinedOutput(); err != nil {
-		_ = os.RemoveAll(out)
+		remove()
+		unregister()
 		// The compiler's own output, verbatim and unwrapped. An author
 		// looking at a build failure wants the file and line, not rta's
 		// opinion about it.
@@ -935,7 +954,7 @@ func buildPlugin(ctx context.Context, dir string, keep bool, stderr any) (string
 	if keep {
 		return binary, noop, nil
 	}
-	return binary, func() { _ = os.RemoveAll(out) }, nil
+	return binary, func() { remove(); unregister() }, nil
 }
 
 // devReport is what an author sees when they run `rta plugin dev` with no
