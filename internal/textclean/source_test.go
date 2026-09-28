@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"go/format"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -48,6 +50,23 @@ import (
 // acts on it. A name is not what makes a file text; its bytes are, so a file
 // is passed over as binary the way git decides it — a NUL in its first 8000
 // bytes — and nothing else is.
+//
+// **And no file may hold a character that reads as an ASCII one it is not**
+// (lookalike): a curly quote, a hyphen other than the ASCII one, a space
+// other than the ASCII one. A reviewer sees those, and sees the wrong thing.
+// gofmt makes the first without asking: its doc-comment printer rewrites two
+// backquotes as U+201C and two single quotes as U+201D, so a comment that
+// wrote the empty string the way a shell does landed as a closing double
+// quote nobody typed. In a string the cost is the operator's: a hint that
+// quotes a value in curly quotes, or spells a flag with a non-breaking
+// hyphen, is copied into a shell as characters the shell does not treat as
+// the ones it shows. And a fixture reads as what it imitates — the test of
+// an agent name holding U+2011 read, in its own source, as the test of the
+// ASCII name it is refused for resembling.
+//
+// Held by what they stand in for rather than for being typographic: the em
+// and en dashes, the ellipsis, the arrows and the box drawing the prose and
+// the renderers use stand in for nothing anybody types, and stay.
 func TestNoSourceFileHidesACharacter(t *testing.T) {
 	found, err := hiddenInTrackedSource(repoRoot(t))
 	if err != nil {
@@ -68,6 +87,7 @@ func TestTheSourceGuardReadsWhatGitTracks(t *testing.T) {
 	}
 	dir := t.TempDir()
 	rlo := string(rune(0x202e))
+	rdquo, nbsp, nbhy := string(rune(0x201d)), string(rune(0xa0)), string(rune(0x2011))
 	write := func(rel, content string) {
 		t.Helper()
 		p := filepath.Join(dir, filepath.FromSlash(rel))
@@ -94,11 +114,18 @@ func TestTheSourceGuardReadsWhatGitTracks(t *testing.T) {
 	write("mise.toml", "[tools]\ngo = \"1."+rlo+"\"\n")
 	write("go.mod", "module x"+rlo+"\n")
 	write(".gitignore", "bin/\n"+rlo+"\n")
+	// A character that reads as an ASCII one it is not, wherever it stands;
+	// and the prose's own typography, which stands in for nothing, passed over.
+	write("quote.go", "package main\n\n// the empty string, "+rdquo+" in a shell\n")
+	write("nbsp.md", "a"+nbsp+"b\n")
+	write("hyphen.yaml", "name: claude"+nbhy+"desktop\n")
+	write("prose.go", "package main\n\n// one "+string(rune(0x2014))+" and "+string(rune(0x2026))+" "+
+		string(rune(0x2192))+"\n")
 	// A binary file is read by nothing that reviews it as text: it is passed
 	// over, whatever its bytes happen to spell.
 	write("logo.png", "\x89PNG\r\n\x1a\n\x00\x00"+rlo)
 	tracked := []string{"docs/windows.md", "main.go", "charts/x/templates/_helpers.tpl",
-		"mise.toml", "go.mod", ".gitignore", "logo.png"}
+		"mise.toml", "go.mod", ".gitignore", "logo.png", "quote.go", "nbsp.md", "hyphen.yaml", "prose.go"}
 	if err := os.Symlink("nowhere.md", filepath.Join(dir, "gone.md")); err == nil {
 		tracked = append(tracked, "gone.md")
 	}
@@ -111,13 +138,43 @@ func TestTheSourceGuardReadsWhatGitTracks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{".gitignore:2", "charts/x/templates/_helpers.tpl:1", "go.mod:1", "main.go:3", "mise.toml:2"}
+	want := []string{
+		".gitignore:2 holds U+202E", "charts/x/templates/_helpers.tpl:1 holds U+202E", "go.mod:1 holds U+202E",
+		"hyphen.yaml:1 holds U+2011", "main.go:3 holds U+202E", "mise.toml:2 holds U+202E",
+		"nbsp.md:1 holds U+00A0", "quote.go:3 holds U+201D",
+	}
 	if len(found) != len(want) {
-		t.Fatalf("found %q, want an override reported in each of %q and nothing else", found, want)
+		t.Fatalf("found %q, want each of %q and nothing else", found, want)
 	}
 	for i, at := range want {
-		if !strings.HasPrefix(found[i], at+" holds U+202E") {
-			t.Errorf("found %q, want the override at %s", found[i], at)
+		if !strings.HasPrefix(found[i], at) {
+			t.Errorf("found %q, want %s", found[i], at)
+		}
+	}
+}
+
+// What gofmt writes into a doc comment is what the guard holds. Its printer
+// turns two single quotes into U+201D and two backquotes into U+201C, which
+// is how a curly quote reaches a file whose author typed none; a gofmt that
+// wrote some other character there would fail here first.
+func TestTheSourceGuardHoldsWhatGofmtWrites(t *testing.T) {
+	src := "package p\n\n// Empty is '', or `` in a shell.\nfunc Empty() string { return \"\" }\n"
+	out, err := format.Source([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wrote []rune
+	for _, r := range string(out) {
+		if r > unicode.MaxASCII {
+			wrote = append(wrote, r)
+		}
+	}
+	if len(wrote) != 2 || wrote[0] != 0x201d || wrote[1] != 0x201c {
+		t.Fatalf("gofmt wrote %q into the doc comment, want U+201D and U+201C", string(wrote))
+	}
+	for _, r := range wrote {
+		if lookalike(r) != '"' {
+			t.Errorf("U+%04X, which gofmt writes, is not held as the quote it reads as", r)
 		}
 	}
 }
@@ -161,10 +218,37 @@ func hiddenInTrackedSource(root string) ([]string, error) {
 			case Deceives(string(r)):
 				found = append(found, fmt.Sprintf("%s:%d holds U+%04X, which no reader of the file can see; "+
 					"build it at run time from its code point instead", rel, line, r))
+			case lookalike(r) != 0:
+				ascii := string(lookalike(r))
+				why := ""
+				if r == 0x201c || r == 0x201d {
+					why = " (gofmt writes one for two backquotes or two single quotes in a doc comment)"
+				}
+				found = append(found, fmt.Sprintf("%s:%d holds U+%04X, which reads as %q and is not it%s; "+
+					"write %q, or build it at run time from its code point where it is the point",
+					rel, line, r, ascii, why, ascii))
 			}
 		}
 	}
 	return found, nil
+}
+
+// lookalike is the ASCII character r reads as and is not, or 0 for a
+// character that reads as itself. The primes are here because most fonts
+// draw them as the straight quotes; every space but the ASCII one draws as
+// one.
+func lookalike(r rune) rune {
+	switch {
+	case r >= 0x2018 && r <= 0x201b, r == 0x2032:
+		return '\''
+	case r >= 0x201c && r <= 0x201f, r == 0x2033:
+		return '"'
+	case r >= 0x2010 && r <= 0x2012, r == 0x2212:
+		return '-'
+	case r != ' ' && unicode.Is(unicode.Zs, r):
+		return ' '
+	}
+	return 0
 }
 
 // gitIn is git run in dir, whatever repository the environment names: a hook

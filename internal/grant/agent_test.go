@@ -126,7 +126,7 @@ func TestAnAgentNameCannotBeMistakenForAnother(t *testing.T) {
 		}
 	}
 	for _, bad := range []struct{ name, why string }{
-		{"claude‑desktop", "a non-breaking hyphen renders as a hyphen"},
+		{"claude" + string(rune(0x2011)) + "desktop", "a non-breaking hyphen renders as a hyphen"},
 		{"clau\u0301de", "a combining character can hide anywhere"},
 		{"ci prod", "a space reads as two names"},
 		{"ci\nprod", "a newline breaks the row it is printed in"},

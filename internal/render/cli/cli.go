@@ -1181,7 +1181,7 @@ func wrap(s string, width int, cont string) string {
 // — one that names nothing when copied, and a lookalike shown as the name it
 // imitates. hyphenShield hands such text the identity instead, and that text
 // may break at a hyphen, which is the smaller wrong.
-const nonBreakingHyphen = "‑"
+const nonBreakingHyphen = string(rune(0x2011))
 
 func shieldHyphens(s string) string { return strings.ReplaceAll(s, "-", nonBreakingHyphen) }
 func restoreHyphens(s string) string {
