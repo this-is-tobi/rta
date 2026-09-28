@@ -405,24 +405,9 @@ func expectedDigest(ctx context.Context, c *registryClient, rel release, assetNa
 		if !ok {
 			continue
 		}
-		tmp, err := os.CreateTemp("", "rta-checksums-*")
-		if err != nil {
-			return "", view.Errorf("pkg.tool.fetch", "%v", err)
-		}
-		_, verr := plugindist.Fetch(ctx, u, tmp)
-		closeErr := tmp.Close()
+		raw, verr := fetchChecksums(ctx, u)
 		if verr != nil {
-			_ = os.Remove(tmp.Name())
-			return "", view.Errorf("pkg.tool.fetch", "%s", verr.Message)
-		}
-		if closeErr != nil {
-			_ = os.Remove(tmp.Name())
-			return "", view.Errorf("pkg.tool.fetch", "%v", closeErr)
-		}
-		raw, err := os.ReadFile(tmp.Name())
-		_ = os.Remove(tmp.Name())
-		if err != nil {
-			return "", view.Errorf("pkg.tool.fetch", "%v", err)
+			return "", verr
 		}
 		sums, verr := plugindist.ParseChecksums(raw)
 		if verr != nil {
@@ -439,6 +424,38 @@ func expectedDigest(ctx context.Context, c *registryClient, rel release, assetNa
 		}
 	}
 	return "", nil
+}
+
+// fetchChecksums downloads a release's checksums file through a temporary
+// file, and removes that file whichever way the download ends — a forced exit
+// taken during it included. The download is not held off such an exit, and
+// the removal it skips was the only one: the partial file stayed in the
+// temporary directory, where nothing of rta's looks again. Made, and its
+// removal registered, under a brief hold of their own, as the tool's staging
+// directory is (installTool).
+func fetchChecksums(ctx context.Context, u string) ([]byte, *view.Error) {
+	release := shutdown.Hold()
+	tmp, err := os.CreateTemp("", "rta-checksums-*")
+	if err != nil {
+		release()
+		return nil, view.Errorf("pkg.tool.fetch", "%v", err)
+	}
+	defer shutdown.OnExit(func() { _ = os.Remove(tmp.Name()) })()
+	defer os.Remove(tmp.Name())
+	release()
+	_, verr := plugindist.Fetch(ctx, u, tmp)
+	closeErr := tmp.Close()
+	if verr != nil {
+		return nil, view.Errorf("pkg.tool.fetch", "%s", verr.Message)
+	}
+	if closeErr != nil {
+		return nil, view.Errorf("pkg.tool.fetch", "%v", closeErr)
+	}
+	raw, err := os.ReadFile(tmp.Name())
+	if err != nil {
+		return nil, view.Errorf("pkg.tool.fetch", "%v", err)
+	}
+	return raw, nil
 }
 
 // installTool is the upgrade of one direct binary: claims first, evidence
