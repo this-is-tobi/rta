@@ -145,6 +145,11 @@ type Table struct {
 	// Not for a row that is merely absent — a filter matching nothing is an
 	// answer. This is for what the reader asked about and the writer could
 	// not see.
+	//
+	// Or, marked Advisory (Error.Advisory), for something a person should
+	// know about rows that are all there — a grant listed but bound to a
+	// plugin build that no longer answers. A surface heads a table carrying
+	// only those as warned about, never as partial.
 	Warnings []Error `json:"warnings,omitempty"`
 	// Empty is what a person is told in place of the table when it has no
 	// rows: that nothing is stored yet and how to add something, that nothing
@@ -274,6 +279,11 @@ type Sections struct {
 	// there. Neither a person nor a machine consumer could tell a complete
 	// page from a degraded one, and a degraded page that looks complete is
 	// how a monitoring check comes back green.
+	//
+	// A warning about a page that is whole — something a person should know
+	// about what it shows rather than a part it could not produce — is
+	// marked Advisory (Error.Advisory), and a surface heads the page as
+	// warned about rather than as partial.
 	Warnings []Error `json:"warnings,omitempty"`
 	// Empty is what a person is told in place of a page with no sections:
 	// that nothing on this machine has a fix to paste, where the page is the

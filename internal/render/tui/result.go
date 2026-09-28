@@ -127,6 +127,14 @@ func (m Model) resultMeta() string {
 		if m.interactive() && n > 0 {
 			parts = append(parts, theme.Subtle.Render(fmt.Sprintf("row %d/%d", m.row+1, n)))
 		}
+		// A table's own warnings, headed as a page's are below and for their
+		// reason: a table carries the field a page does (view.Table.Warnings),
+		// and a listing short of what it could not read was headed as whole
+		// on its own and as partial inside a page — the grant roster among
+		// them, flat until a role stood.
+		if head := warningsHead(v.Warnings); head != "" {
+			parts = append(parts, theme.WarnText.Render(head))
+		}
 	case view.KeyValue:
 		parts = append(parts, theme.Subtle.Render(format.CountOf(len(v.Pairs), "field")))
 	case view.Chart:
@@ -154,12 +162,35 @@ func (m Model) resultMeta() string {
 		// cli.Render, which already prints the warnings under the sections,
 		// and a second copy here drew every one of them twice — in a
 		// narrower block that truncated the messages the first copy wrapped.
-		if n := len(pageWarnings(v)); n > 0 {
-			parts = append(parts, theme.WarnText.Render(
-				fmt.Sprintf("⚠ partial (%d %s)", n, format.PluralOf(n, "warning"))))
+		if head := warningsHead(pageWarnings(v)); head != "" {
+			parts = append(parts, theme.WarnText.Render(head))
 		}
 	}
 	return " " + strings.Join(parts, sep)
+}
+
+// warningsHead is what the line above the fold says of the warnings under
+// an answer: "⚠ partial (2 warnings)" when any of them accounts for a part
+// that is missing, and "⚠ 2 warnings" when every one sits beside a whole
+// answer (view.Error.Advisory). Every warning headed "partial" once, and
+// the roster read partial above rows missing nothing whenever a grant was
+// bound to a replaced plugin build or a server ran another build of rta —
+// the heading a person reads as "you are not looking at all of it", over
+// the one screen that answers what an agent may do.
+//
+// Counted whole either way: the number is how many warnings are under the
+// answer, and partial is whether any of them says something is missing.
+func warningsHead(warnings []view.Error) string {
+	n := len(warnings)
+	if n == 0 {
+		return ""
+	}
+	for _, w := range warnings {
+		if !w.Advisory {
+			return fmt.Sprintf("⚠ partial (%s)", format.CountOf(n, "warning"))
+		}
+	}
+	return "⚠ " + format.CountOf(n, "warning")
 }
 
 // pageWarnings collects what a composite page could not produce, recursing

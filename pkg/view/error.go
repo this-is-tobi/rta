@@ -27,6 +27,19 @@ type Error struct {
 	// and an operator grepping the ledger for refusals is asking what their
 	// agent tried that policy would not let it do.
 	Refusal bool `json:"refusal,omitempty"`
+	// Advisory marks a warning that sits beside a complete answer rather than
+	// accounting for a missing part of it. Warnings exist so a partial answer
+	// says it is partial (Table.Warnings, Sections.Warnings), and a surface
+	// heads a page carrying one as partial — which a listing whose every row
+	// is there, carrying something a person should know about those rows,
+	// is not: grant list beside a grant bound to a replaced plugin build, or
+	// beside a server running another build of rta, read "partial" above a
+	// roster missing nothing.
+	//
+	// Only on a warning, and only by its author, who alone knows whether
+	// what it says is a gap. It changes how a surface heads the answer, not
+	// whether the warning is shown: every format still carries it, coded.
+	Advisory bool `json:"advisory,omitempty"`
 }
 
 func (e *Error) Error() string { return e.Message }

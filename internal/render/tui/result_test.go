@@ -27,6 +27,53 @@ func TestTheResultLineCountsInTheRightNumber(t *testing.T) {
 	}
 }
 
+// The line above the fold heads an answer partial only for a warning that
+// says something is missing from it. The roster's advisories — a grant bound
+// to a replaced plugin build, a server on another build of rta — sit beside
+// rows that are all there, and read "partial" once a role stood. A table's
+// own warnings are headed as a page's are: the flat roster said nothing.
+func TestOnlyAMissingPartHeadsAnAnswerPartial(t *testing.T) {
+	c := plugin.Capability{ID: "grant.list", Safety: plugin.Read}
+	missing := view.Error{Code: "fs.unreadable", Message: "a directory could not be read"}
+	replaced := view.Error{Code: "grant.artifact.replaced", Message: "1 grant was issued on a replaced plugin",
+		Advisory: true}
+	older := view.Error{Code: "core.grant.older.server", Message: "1 server is open on another build",
+		Advisory: true}
+	table := func(warnings ...view.Error) view.Table {
+		return view.Table{Columns: []view.Column{{Name: "Capability"}}, Rows: [][]string{{"hello.wipe"}},
+			Warnings: warnings}
+	}
+	page := func(warnings ...view.Error) view.Sections {
+		return view.Sections{Items: []view.Section{
+			{ID: "roles", Title: "Roles in force", View: view.Text{Body: "dev for claude"}},
+			{ID: "grants", Title: "Allowed", View: table(warnings...)},
+		}}
+	}
+	for _, tc := range []struct {
+		name string
+		v    view.View
+		want string
+	}{
+		{"a flat roster's advisory", table(replaced), "⚠ 1 warning"},
+		{"a flat table's missing part", table(missing), "⚠ partial (1 warning)"},
+		{"a page's advisories", page(replaced, older), "⚠ 2 warnings"},
+		{"a page with a missing part among them", page(replaced, missing), "⚠ partial (2 warnings)"},
+	} {
+		m := Model{current: c, result: resultMsg{cap: c, view: tc.v}}
+		got := plain(m.resultMeta())
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("%s: meta = %q, want %q", tc.name, got, tc.want)
+		}
+		if !strings.Contains(tc.want, "partial") && strings.Contains(got, "partial") {
+			t.Errorf("%s: meta = %q, heads a whole answer partial", tc.name, got)
+		}
+	}
+	m := Model{current: c, result: resultMsg{cap: c, view: table()}}
+	if got := plain(m.resultMeta()); strings.Contains(got, "⚠") {
+		t.Errorf("meta = %q, warns over a table with nothing to warn of", got)
+	}
+}
+
 // An empty listing's pane says what would fill it, and the line above it
 // does not count the nothing it replaces: "0 of 0 rows" over "nothing is
 // locked" said the same thing twice, the second time as a figure.
