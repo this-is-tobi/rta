@@ -117,6 +117,9 @@ func TestAnIndexIsAttachedUpdatedAndDetached(t *testing.T) {
 	if _, still := IndexByName("lab"); still {
 		t.Fatal("the index is still attached after remove")
 	}
+	if left, _ := os.ReadDir(indexesDir()); len(left) != 0 {
+		t.Errorf("remove left %s in the indexes directory", left[0].Name())
+	}
 }
 
 // D3: PreviewAddIndex runs the same name/URL/reserved-name checks AddIndex

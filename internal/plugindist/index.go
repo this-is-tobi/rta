@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -642,8 +643,44 @@ func removeIndex(name string, dryRun bool) *view.Error {
 	if dryRun {
 		return nil
 	}
-	if err := os.RemoveAll(ix.Dir); err != nil {
+	return detachIndex(ix)
+}
+
+// detachIndex takes a clone out of the indexes directory in one rename, and
+// then removes it.
+//
+// **Moved before it is removed, because what is attached is whatever that
+// directory holds** (Indexes is a scan of it). The clone was removed where it
+// stood, and a removal is many unlinks: an exit taken among them — the
+// removal is not held off one, and a clone can be large — or a crash left a
+// directory missing part of its files that search, install and update all
+// still read as the attached index, broken in whichever way the cut fell. A
+// rename is one step, so the index is attached whole or not at all, and what
+// remains to remove is under a dot-directory Indexes never lists. An exit
+// taken while it is removed finishes removing it: the directory is made and
+// that removal registered under a brief hold of their own, as install's
+// staging is, so that no exit falls between the two.
+//
+// Beside the clones rather than in the temporary directory, so the rename
+// never crosses a filesystem, which is what keeps it one step.
+func detachIndex(ix Index) *view.Error {
+	release := shutdown.Hold()
+	gone, err := os.MkdirTemp(indexesDir(), ".removing-*")
+	if err != nil {
+		release()
 		return view.Errorf("plugin.index.remove", "%v", err)
+	}
+	defer shutdown.OnExit(func() { _ = removeAll(gone) })()
+	if err := os.Rename(ix.Dir, filepath.Join(gone, ix.Name)); err != nil {
+		_ = os.Remove(gone)
+		release()
+		return view.Errorf("plugin.index.remove", "%v", err)
+	}
+	release()
+	if err := removeAll(gone); err != nil {
+		return view.Errorf("plugin.index.remove", "%s is detached, and removing its clone failed: %v",
+			ix.Name, err).
+			WithHint("what is left of it is at " + gone + ", which nothing reads; remove it by hand")
 	}
 	return nil
 }
