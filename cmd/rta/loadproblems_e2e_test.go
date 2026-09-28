@@ -92,3 +92,30 @@ func TestALoadProblemReachesTheTerminalAsText(t *testing.T) {
 		}
 	}
 }
+
+// A refusal every plugin meets alike is said once, and with its hint. The
+// TMPDIR refusals are the machine's and not any plugin's, and on a cold
+// declaration cache, which is the first run after an install, every plugin
+// met them at load: each was printed as rta: and its message, without the
+// hint that says what to change, as many times as there were plugins.
+func TestARefusalEveryPluginMeetsIsSaidOnceWithItsHint(t *testing.T) {
+	env := installed(t, map[string]string{"one": "exit 1", "two": "exit 2"})
+	// Too long for any socket's path, and there, so nothing fails on
+	// TMPDIR before a plugin's launch does.
+	long := filepath.Join(t.TempDir(), strings.Repeat("d", 110))
+	if err := os.Mkdir(long, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	r := runIn(t, append(env, "TMPDIR="+long), "--version")
+	if r.code != 0 {
+		t.Fatalf("exit %d, want 0 (stderr %q)", r.code, r.stderr)
+	}
+	if n := strings.Count(r.stderr, "TMPDIR is too long"); n != 1 {
+		t.Errorf("the refusal was said %d times, want once: %q", n, r.stderr)
+	}
+	for _, want := range []string{"plugin.tmpdir.toolong", "plugins one, two:", "HINT", "shorter directory"} {
+		if !strings.Contains(r.stderr, want) {
+			t.Errorf("stderr does not say %q: %q", want, r.stderr)
+		}
+	}
+}

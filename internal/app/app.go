@@ -350,6 +350,29 @@ func outputOnCommandLine(args []string) (string, bool) {
 	return value, found
 }
 
+// noColorOnCommandLine is outputOnCommandLine for --no-color, in the
+// spellings pflag accepts for a boolean: --no-color, and --no-color= with
+// anything strconv.ParseBool reads. The last one wins, a value it cannot read
+// changes nothing, and nothing after a bare -- is a flag.
+func noColorOnCommandLine(args []string) bool {
+	on := false
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		if a == "--no-color" {
+			on = true
+			continue
+		}
+		if v, ok := strings.CutPrefix(a, "--no-color="); ok {
+			if b, err := strconv.ParseBool(v); err == nil {
+				on = b
+			}
+		}
+	}
+	return on
+}
+
 // CodeConfirmRequired is returned when a destructive capability runs on the
 // CLI without --yes. There is no prompt on this surface, by design: a script
 // says it means it with the flag and exits 3 otherwise, which is a question
@@ -407,6 +430,118 @@ func NewRegistry() (*registry.Registry, error) { return all.RegistryWith(PluginC
 func LoadPlugins(ctx context.Context, reg *registry.Registry, stderr io.Writer) (*pluginhost.Host, []error) {
 	h := pluginhost.New(stderr)
 	return h, h.LoadInto(ctx, reg)
+}
+
+// ReportLoadProblems writes what LoadPlugins could not load: a coded refusal
+// drawn as the CLI draws any other, hint and all, and each cause once however
+// many plugins it stopped.
+//
+// **The hint.** The launch codes the refusals whose fix is the operator's —
+// a TMPDIR too long for a plugin's socket, or one that cannot hold the
+// socket's directory (pluginhost's socketDir) — and a call that finds the
+// declaration cached passes one on as itself (liveError). The load printed
+// the same refusal as "rta:" and its message, so whether the operator was
+// told what to change depended on whether a declaration happened to be
+// cached.
+//
+// **Once.** Most of what stops a plugin loading is the plugin's own — a
+// binary that will not start, a namespace already taken — in words no other
+// plugin's problem shares. What is the machine's — that TMPDIR, a macOS
+// without sandbox-exec, a deny set that cannot be built — stops every plugin
+// in the same words, and it was said once per plugin, so with a dozen
+// installed a command opened with a dozen copies of one sentence. A cause is
+// said once, naming every plugin it stopped.
+//
+// In pretty whatever -o asks for, as the lines it replaced were: this runs
+// before the command line is parsed, and on standard error, where a script
+// reads the refusal its own command ends with and not these. A --no-color in
+// args, the command line main was given, is honoured all the same, read off
+// it unparsed (noColorOnCommandLine): the lines this replaced were plain
+// text, and a coloured badge heading a run whose command line says
+// --no-color is the flag not doing what it says.
+func ReportLoadProblems(w io.Writer, problems []error, args []string) {
+	opts := renderOptions(nil, cli.Pretty, !stderrIsTerminal() || noColorOnCommandLine(args))
+	for _, p := range groupLoadProblems(problems) {
+		var verr *view.Error
+		if errors.As(p.cause, &verr) {
+			said := *verr
+			said.Message = p.about(verr.Message)
+			if cli.RenderError(w, &said, opts) == nil {
+				continue
+			}
+		}
+		// Through textclean, not as it came. A problem can quote what the
+		// plugin wrote — go-plugin puts the first line that is not a
+		// handshake in the error it returns — so a trusted plugin that wrote
+		// an OSC had it acted on by the operator's terminal, before every
+		// command. Its stderr already goes through escapeActedOn
+		// (pluginhost), and its answers and a coded refusal through the
+		// renderer; this is the same rule for what is said about it failing
+		// to load.
+		fmt.Fprintln(w, "rta:", textclean.Terminal(p.about(p.cause.Error())))
+	}
+}
+
+// loadProblem is one cause LoadPlugins reported, and whom it stopped, each
+// named as its problem named it: "plugin kv".
+type loadProblem struct {
+	subjects []string
+	cause    error
+}
+
+// about is text led by whom the problem stopped: "plugin kv: …" for one, and
+// "plugins kv, pg: …" for several.
+func (p loadProblem) about(text string) string {
+	switch len(p.subjects) {
+	case 0:
+		return text
+	case 1:
+		return p.subjects[0] + ": " + text
+	}
+	names := make([]string, len(p.subjects))
+	for i, s := range p.subjects {
+		name, ok := strings.CutPrefix(s, "plugin ")
+		if !ok {
+			return strings.Join(p.subjects, ", ") + ": " + text
+		}
+		names[i] = name
+	}
+	return "plugins " + strings.Join(names, ", ") + ": " + text
+}
+
+// groupLoadProblems splits each problem into whom it stopped and why, by the
+// wrapping LoadInto gives it — "plugin kv" before the error it wraps — and
+// gathers those whose causes are the same, in the order the first of each
+// was found. The same means the same words, and for a coded refusal the same
+// code and hint too: a cause can only be said once if what is said is true
+// of every plugin it names. A problem that wraps nothing, or whose text does
+// not end in what it wraps, is a cause of its own and is said as it is.
+func groupLoadProblems(problems []error) []loadProblem {
+	var out []loadProblem
+	at := map[string]int{}
+	for _, p := range problems {
+		cause := errors.Unwrap(p)
+		subject, wrapped := "", false
+		if cause != nil {
+			subject, wrapped = strings.CutSuffix(p.Error(), ": "+cause.Error())
+		}
+		if !wrapped || subject == "" {
+			out = append(out, loadProblem{cause: p})
+			continue
+		}
+		key := cause.Error()
+		var verr *view.Error
+		if errors.As(cause, &verr) {
+			key = verr.Code + "\n" + key + "\n" + verr.Hint
+		}
+		if i, ok := at[key]; ok {
+			out[i].subjects = append(out[i].subjects, subject)
+			continue
+		}
+		at[key] = len(out)
+		out = append(out, loadProblem{subjects: []string{subject}, cause: cause})
+	}
+	return out
 }
 
 type globalOpts struct {
