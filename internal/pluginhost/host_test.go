@@ -433,6 +433,34 @@ func TestACrashedPluginIsRestartedForTheNextCall(t *testing.T) {
 	}
 }
 
+// A forced exit ends the plugins of every host, not only the one main hands
+// it: install and upgrade verify a plugin, and plugin manifest, doc and dev
+// read one, through a host of their own, which the exit did not know. One
+// taken while such a host held a plugin left it running after rta had gone,
+// in a process group of its own.
+func TestAForcedExitEndsThePluginsOfEveryHost(t *testing.T) {
+	h := New(nil)
+	t.Cleanup(h.CloseAll)
+	c, err := h.Open(context.Background(), hello(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A declaration read from the cache starts no process, so start one.
+	if _, err := c.live(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	resume := shutdown.Settle()
+	shutdown.Exiting()
+	c.mu.Lock()
+	ended := c.client.Exited()
+	c.mu.Unlock()
+	resume()
+	if !ended {
+		t.Error("the plugin was still running once the exit had run")
+	}
+}
+
 // A restart is a launch, and it too waits once a forced exit has begun rather
 // than start a process the exit has already closed the host without: the
 // command runs on after the exit's close, and a call it made then restarted
