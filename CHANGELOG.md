@@ -1,5 +1,128 @@
 # Changelog
 
+## [0.29.0](https://github.com/this-is-tobi/rta/compare/v0.28.0...v0.29.0) (2026-09-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **git:** git.status lists what an ignore file holding a line longer than 64 KiB ignores, with a git.status.ignore warning naming it, and git.diff names rather than shows the untracked files under it.
+* **git:** in a working tree whose ignore files hold more than 1 MiB or 10000 patterns, git.status lists what the ones past that ignore, and git.diff names rather than shows the untracked files under them.
+* **git:** git.config and git.hooks fail, as git.config.failed and git.hooks.failed, in an environment whose GIT_CONFIG_KEY_n or GIT_CONFIG_PARAMETERS sets a key git refuses to read, or whose GIT_CONFIG_PARAMETERS separates two words by a vertical tab or a form feed.
+* **agent:** agent log shows a record column before the arguments, in every output format, once a row it shows holds a record, and a ledger line carries a records field and writes a character that draws as nothing as its JSON escape.
+* **audit:** the kube audits refuse a namespace with white space around it, or of white space alone, with audit.kube.namespace.invalid, where they audited the namespace without it or the whole cluster.
+* **grant:** grant list --detail rows carry an Artifact column after Capability, so in -o json, csv and yaml every later column moves one place along; the compact roster carries the column too while a grant is marked.
+* **grant:** grant allow, grant renew and grant revoke no longer trim the record they are given, so one with white space around it names that record; one that is only white space is refused as grant.scope.blank where it meant every record.
+* **git:** git.config and git.hooks fail, as git.config.failed and git.hooks.failed, in an environment whose GIT_CONFIG_COUNT or GIT_CONFIG_PARAMETERS git refuses to run with.
+* **git:** a repository whose working tree holds a .gitmodules over 4 MiB is refused as git.repository.toolarge on every git capability.
+* **git:** a repository whose index is over 128 MiB, packed-refs over 64 MiB, config over 4 MiB, or HEAD or a loose ref over 1 MiB is refused as git.repository.toolarge on every git capability, and an operator config file over 4 MiB fails git.config and git.hooks.
+* **git:** a line git blame has not traced within two seconds carries the commit its walk had reached, with a hash prefixed by ^ and a git.blame.partial warning, where the walk ran for as long as the history took.
+* **agent:** agent show, agent pending and agent log show an element of a list argument holding white space, or a character that draws as nothing, quoted with that character named by its code point, where they printed the list with the element as it is.
+* **grant:** grant list, grant issue and grant revoke show a record named "any", or "—" in the plan grant issue prints, in quotation marks.
+* **grant:** grant list, grant allow, grant issue, grant revoke and the core.grant.required refusal show a record holding white space, or a character that draws as nothing, quoted with that character named by its code point, where they showed it as it is.
+* **agent:** agent pending, agent show, agent allow, agent deny and agent log show a record or a string argument holding white space, or a character that draws as nothing, quoted with that character named by its code point, in every output format, where they showed it as it is.
+* **agent:** agent show, agent allow and agent deny refuse a request id with white space around it with agent.request.unknown, where they trimmed it and answered the request under the id without it.
+* **pkg:** pkg upgrade refuses a target with white space around it with pkg.upgrade.unknown, where it trimmed the white space and upgraded the manager or the tool named without it.
+* **net:** net dns refuses a name with white space around it with net.dns.badname, and net hosts toggle refuses a hostname holding white space, a control character or a "#" with net.hosts.badhostname, where both trimmed the white space and acted on the name without it.
+* **kv:** kv set and kv rename refuse a key name with white space around it, including a no-break space, with kv.set.padded, where they wrote the name with the white space trimmed. kv rename looks up the key to move as given, so a key given with white space around it is not found.
+* **plugin:** a plugin whose input declares Required beside an empty Default, "" or an empty list, fails to load; drop the Default.
+
+### Features
+
+* **doctor:** doctor warns of a grant bound to a plugin build that no longer answers ([4484d10](https://github.com/this-is-tobi/rta/commit/4484d107e2fdd7bae78d0fb37d0a24fc84355830))
+* **grant:** grant list names the plugin build each grant is bound to, and marks one replaced ([95e2731](https://github.com/this-is-tobi/rta/commit/95e27314700d77ddf8a1e44a364f00acfb8dba0e))
+* **kv:** kv set at a terminal asks for the value, without echoing it, when given none ([13af725](https://github.com/this-is-tobi/rta/commit/13af725182b082ff76e632fad0bb14532002b28c))
+
+
+### Bug Fixes
+
+* **agent:** a list argument shows each record in it as the gate compares it ([dd29380](https://github.com/this-is-tobi/rta/commit/dd2938022555d86bd426decd00a8f76c73cf8199))
+* **agent:** a parked call's record is shown as the gate compares it, quoted when it is padded ([a441c8e](https://github.com/this-is-tobi/rta/commit/a441c8eb0cf5ed975e2927028f7721365a633450))
+* **agent:** a role line naming a folder is offered for a parked call on a record under it ([709e6e7](https://github.com/this-is-tobi/rta/commit/709e6e767081004c8efd2a9df34e9472c51c0076))
+* **agent:** agent show, allow and deny take a request id exactly as given ([2a02ee7](https://github.com/this-is-tobi/rta/commit/2a02ee78154d63707d84f9983a68a7a58b812486))
+* **agentlog:** its errors name the agent log as a thing, never in the agent.log command's words ([50eeb0e](https://github.com/this-is-tobi/rta/commit/50eeb0eed0445f00e1f19e1db8f88a1201f214c7))
+* **agent:** the ledger keeps the records a call was judged on, and agent log shows them ([4c745db](https://github.com/this-is-tobi/rta/commit/4c745db054a2ecf9ac0c9fca48d881bdfe700742))
+* **atomicfile:** a streamed write holds off an exit for its rename, not while the stream arrives ([b992295](https://github.com/this-is-tobi/rta/commit/b99229542afc8e66f13700d52e825883268f4e26))
+* **audit:** a kube audit refuses a namespace with white space around it, and one of white space ([384384d](https://github.com/this-is-tobi/rta/commit/384384d2a21cb1ee3910e07ff47ca4a448379de8))
+* **audit:** audit clients --fix names a VS Code input first for a credential in its mcp.json ([f6ef14b](https://github.com/this-is-tobi/rta/commit/f6ef14b229a924795acbe75607db2c04f8c6c991))
+* **audit:** audit clients finds a Gemini CLI server declared with httpUrl, and grades it there ([e1b8a59](https://github.com/this-is-tobi/rta/commit/e1b8a59f3161b587f5992fb09c1c80f4f24cf2d3))
+* **audit:** audit clients grades a credential named by a reference its client expands as not held ([1661a15](https://github.com/this-is-tobi/rta/commit/1661a151993d5a4420f5b1f0617b57764ee8b733))
+* **audit:** audit clients grades a Gemini CLI %VAR% by the system its client runs on ([10d30b1](https://github.com/this-is-tobi/rta/commit/10d30b1ce361b5edffa3ab9c26368abf80b7c962))
+* **audit:** audit clients warns when a Claude Code remote server names a variable it reads as empty ([9344940](https://github.com/this-is-tobi/rta/commit/934494094ca94f8ae65ec14361c711861d70a664))
+* **cli:** a command that ignores SIGINT or SIGTERM is exited three seconds on, with 130 or 143 ([00f32a1](https://github.com/this-is-tobi/rta/commit/00f32a1f6f3b1be33d4d02ef7326fa1efb107283))
+* **cli:** a forced exit inside a prompt starts its error on a line of its own wherever stderr goes ([4c02c5d](https://github.com/this-is-tobi/rta/commit/4c02c5d5cfb2c8773333249db15339f537cf1191))
+* **doctor:** doctor names a grant's record as the gate compares it ([d4c6e71](https://github.com/this-is-tobi/rta/commit/d4c6e7176554a595e906f3c49c70eb7c069ee5a1))
+* **fs:** fs tree over MCP tells a link's target only when it names places under the roots ([554fad9](https://github.com/this-is-tobi/rta/commit/554fad92872b2409d4fc0d7902ff400c4bed7576))
+* **git:** a .gitmodules past 4 MiB is refused before go-git reads it whole ([48acefe](https://github.com/this-is-tobi/rta/commit/48acefe38b4aa589ec4981860f20b2ee0fa7c8dc))
+* **git:** a bare repository's commit diff withholds rta's own state where git checks it out ([34853ba](https://github.com/this-is-tobi/rta/commit/34853bac49cd1db52ce75fcb05d522bb48245fc6))
+* **git:** a blame stops comparing a commit's tree with its parents' at the walk's deadline ([a6d4c54](https://github.com/this-is-tobi/rta/commit/a6d4c54d149d89d170dc2fcf931efdc0a72dbb17))
+* **git:** a checkout whose core.worktree names another directory withholds rta's state there ([1b3006f](https://github.com/this-is-tobi/rta/commit/1b3006fe09803171564708ec2745f0d03fb83e2d))
+* **git:** a commit's diff reads at most 64 MiB looking for renames, and pairs the rest by hash ([43ce330](https://github.com/this-is-tobi/rta/commit/43ce330913b7cfc96d0bd0c04358596b628778a0))
+* **git:** a diff looks at no more than 10000 files, and counts the ones it did not ([62b0a1d](https://github.com/this-is-tobi/rta/commit/62b0a1d6fbe51508b9af11746ecc09dca1c6f03a))
+* **git:** a diff spends at most two seconds matching lines, and names each file it diffed coarsely ([76d527f](https://github.com/this-is-tobi/rta/commit/76d527f6bd6c117ee305559eca296ee832bb3274))
+* **git:** a log of no commits is empty, and an empty status, log, branch list or blame says why ([4285716](https://github.com/this-is-tobi/rta/commit/4285716ecf9560acd22184c6c5d3613a04e6bba6))
+* **git:** a repository file go-git reads whole is refused past a bound, before it is read ([830e741](https://github.com/this-is-tobi/rta/commit/830e74122bca3424ad49da9bf8ba9c576b221389))
+* **git:** a repository in a format go-git cannot read is refused as unsupported, naming why ([9607ddc](https://github.com/this-is-tobi/rta/commit/9607ddc8f94dc24e4ba7f6aa397b90c86afd9220))
+* **git:** a sparse checkout opens, and its config.worktree is read as the worktree scope ([b17ebbb](https://github.com/this-is-tobi/rta/commit/b17ebbbd4c89c5b975cae777e4eb67d6dd98eafa))
+* **git:** a status applies at most 1 MiB and 10000 patterns of ignore files, and names the rest ([c1e66da](https://github.com/this-is-tobi/rta/commit/c1e66da1050b2e900dc21966eacb99ed33107060))
+* **git:** a status ignores what core.excludesFile and info/exclude ignore, as git does ([8c3e46c](https://github.com/this-is-tobi/rta/commit/8c3e46c82598df5e188b5dcb78084efdaaecb3ea))
+* **git:** an ignore file is read as git reads it, and one with a line go-git stops at is named ([8e1b8de](https://github.com/this-is-tobi/rta/commit/8e1b8de9f7e02136eff0ebb7524b03fd4ae3b3de))
+* **git:** git blame in a bare repository puts its file to the gate where git checks it out ([285cea0](https://github.com/this-is-tobi/rta/commit/285cea0cce2477ae00571cb8b3a8f4fc317cf219))
+* **git:** git blame spends at most two seconds on a history, and marks the lines it did not trace ([d0f9451](https://github.com/this-is-tobi/rta/commit/d0f9451eed8e91b7de15635933c39d0a36cdbe19))
+* **git:** git.config and git.hooks read every system file git's builds read, as its environment says ([2e5189e](https://github.com/this-is-tobi/rta/commit/2e5189e84bfaa622f506c3fb07ec9b407069543d))
+* **git:** git.config and git.hooks read the config git's environment sets for one command ([bce00bd](https://github.com/this-is-tobi/rta/commit/bce00bd5503b62a353839c34bbf4bb99449f9e0d))
+* **git:** git.status marks a path whose kind changed T, as git status does ([65ad35a](https://github.com/this-is-tobi/rta/commit/65ad35a77954a4e03676eddcf6707dc4add23f1f))
+* **git:** rename detection stops at git's limit of files and at its share of the call's time ([905fd9e](https://github.com/this-is-tobi/rta/commit/905fd9eeace7f63c22eef4542c892cad5d3812bf))
+* **git:** the command scope is read as git reads it, its count, its white space and its keys ([3dca901](https://github.com/this-is-tobi/rta/commit/3dca901f5d914c9e83716381f908c70a425a13c6))
+* **git:** with core.ignorecase set, a status matches ignore patterns in either case, as git does ([aa2a690](https://github.com/this-is-tobi/rta/commit/aa2a69085f83f1970800c57dd2d07a1519ea3315))
+* **grant:** a held record holding a tab is not offered to revoke or renew as another record ([6a19790](https://github.com/this-is-tobi/rta/commit/6a1979052a7282441586941b7d7a8a09af2e0986))
+* **grant:** a held record offered to revoke or renew is described as the gate compares it ([62eddea](https://github.com/this-is-tobi/rta/commit/62eddea2f6d8db0215bc5d103754cfe7756d8926))
+* **grant:** a record spelled like the roster's word for none is shown quoted ([ffc8492](https://github.com/this-is-tobi/rta/commit/ffc8492c94e8cd0ca68c67a14f646b0d24b1ec60))
+* **grant:** grant allow, renew and revoke take a record as given, and refuse white space alone ([3d692c5](https://github.com/this-is-tobi/rta/commit/3d692c53ed03fc492885feefd6ef4438e9716a08))
+* **grant:** grant list and a grant refusal show a record as the gate compares it ([b20deed](https://github.com/this-is-tobi/rta/commit/b20deed7d468ae3f4c0fc9ef882511673a6d3ee6))
+* **grant:** one grant, and one operator key, is counted in the singular ([76a7651](https://github.com/this-is-tobi/rta/commit/76a7651efcd4e783fd65dc8239755fafd9888ec0))
+* **keys:** a key pair keys add or keys restore writes lands whole past a forced exit ([8cec1ae](https://github.com/this-is-tobi/rta/commit/8cec1aed63849b80856d2434eb5d66d6f3e6628b))
+* **kv:** a value piped through --file /dev/stdin is labelled by what it holds, as piped ([1fa8f89](https://github.com/this-is-tobi/rta/commit/1fa8f89648c941f2523d5a8bbf43ed2e6e2b0ef0))
+* **kv:** kv set and kv rename refuse a key name with white space around it ([f766f5b](https://github.com/this-is-tobi/rta/commit/f766f5b3b68cd0b3edc0d9959ac084c016cfa5e9))
+* **mcp:** a link the caller named is described only by names under the server's roots ([0c0a1dd](https://github.com/this-is-tobi/rta/commit/0c0a1dded521346eb5ded1e7aa87e01414a17042))
+* **mcp:** a tool's schema publishes no empty default ([65aff09](https://github.com/this-is-tobi/rta/commit/65aff09c161608f0ead8810c25add0a068ac9431))
+* **mcp:** a value of the wrong shape is refused naming the "x" argument, as the tool's schema has it ([3f389fd](https://github.com/this-is-tobi/rta/commit/3f389fd5545ae3aa2116fc2376a6180da9927421))
+* **mcp:** an option miss is hinted naming the "x" argument, as its refusal names it ([e310c19](https://github.com/this-is-tobi/rta/commit/e310c192bfc4a98d3f2e6fb627f290775bdd2e2d))
+* **mcp:** serve --help names what --http hides from the list the locality gate reads ([bfe73e4](https://github.com/this-is-tobi/rta/commit/bfe73e4046109bc32ce47d3ed3206e15baf0a219))
+* **net:** a hosts or resolver backup is held to the cap the read before it was ([7d5b01f](https://github.com/this-is-tobi/rta/commit/7d5b01f46cc71e226c315afd8ee8e753561e1e3b))
+* **net:** a proxy value is masked up to its last @, past a password's raw /, ? or # too ([00b74c9](https://github.com/this-is-tobi/rta/commit/00b74c9ac1f697e50d2c022f9cc6fdda9c069027))
+* **net:** net dns and net hosts toggle refuse a name with white space around it ([888dab3](https://github.com/this-is-tobi/rta/commit/888dab34c3ba4cc54fb2d358ec9d3765ebc799bf))
+* **net:** the overview reads resolv.conf as a file, to net.resolver.list's cap ([3d73289](https://github.com/this-is-tobi/rta/commit/3d732890c3f3e01355b6f577cde3ff0eb5f7eab8))
+* **pathguard:** a path the handler reached is refused without asking the caller for another ([c6c8fa5](https://github.com/this-is-tobi/rta/commit/c6c8fa5c71d9863d86cc7bc5e2c4c5515e4b8b92))
+* **pkg:** pkg upgrade takes its target as given, and one with white space around it is unknown ([87dc4c9](https://github.com/this-is-tobi/rta/commit/87dc4c9ca8b3d9f676d118565fefcb4b44d2f725))
+* **plugin:** a call spelled for the CLI joins a switch turned off to its flag, --tls=false ([10e161d](https://github.com/this-is-tobi/rta/commit/10e161dfee18373ee88819eb643ebb5d31914af6))
+* **plugin:** a forced exit during an install's fetch removes the download it staged ([ed345d6](https://github.com/this-is-tobi/rta/commit/ed345d6b2cbb83f1a021ed451d7e2c5f3ff85447))
+* **plugin:** a missing input names the call as the caller's surface spells it ([9ebe99e](https://github.com/this-is-tobi/rta/commit/9ebe99ea600260ed4925c85763e3b676c82be209))
+* **plugin:** a required input declares no default at all, an empty one included ([42e758d](https://github.com/this-is-tobi/rta/commit/42e758d1e85619444d3cf05d01eb9a8cffa9b6a6))
+* **plugin:** a shape, option or range refusal names the call as the caller's surface spells it ([d9c8f4c](https://github.com/this-is-tobi/rta/commit/d9c8f4c9b4d8d38883c3fa931eeb59c8858c3aa0))
+* **plugin:** an install's placement, trust and lock entry land together past a forced exit ([438b4b9](https://github.com/this-is-tobi/rta/commit/438b4b9676683d26a9fa230481162b6734958dd1))
+* **pluginhost:** a declaration cache entry is read up to 16 MiB, and one larger is a miss ([a64e36e](https://github.com/this-is-tobi/rta/commit/a64e36ec74af0f7a790baa538c768a9ba81e439c))
+* **pluginhost:** a declaration cache entry is written through atomicfile, held off a forced exit ([076612a](https://github.com/this-is-tobi/rta/commit/076612a0c3750d3b7ceec19c11c1b9c17c10a382))
+* **shellquote:** a character that draws as nothing is spelled by its bytes in a command shown ([2ad742e](https://github.com/this-is-tobi/rta/commit/2ad742e59ca703d183ab25685b67e06ffbc22182))
+* **textclean:** a record ending in a Braille blank or a null notehead is shown quoted ([838e7ee](https://github.com/this-is-tobi/rta/commit/838e7eecbb4cce7cc1fb4f7133676aa742a3f877))
+* **tui:** x and n on a grant row seed the record and connection the grant holds ([764d86a](https://github.com/this-is-tobi/rta/commit/764d86aadac83e0979bd59fd7448f4450f71309b))
+
+
+### Performance Improvements
+
+* **atomicfile:** a capped read takes the memory the file holds, not the memory its cap allows ([a963560](https://github.com/this-is-tobi/rta/commit/a9635607201bcd70cdb1b842192b6a537b2374cb))
+* **git:** a call keeps up to 50 packfiles open while it reads, and closes them when it returns ([4d5bf7c](https://github.com/this-is-tobi/rta/commit/4d5bf7c49131ddb90498085878290402431caf33))
+* **git:** a working tree's diff and status read each directory once, and the index by halves ([d5e471e](https://github.com/this-is-tobi/rta/commit/d5e471eb5d6079eab53e075a58f250fb2c2e53a7))
+
+
+### Code Refactoring
+
+* **shutdown:** store writes and an edit's plaintext hold off an exit, and an editor has the tty ([31cc758](https://github.com/this-is-tobi/rta/commit/31cc758f4988971415be72e08509300383e14f06))
+
+
+### Dependencies
+
+* the binary size ceiling is 50 MB, and AGENTS.md states it ([a38e708](https://github.com/this-is-tobi/rta/commit/a38e708c1e1c6a1619a50ab4e9567bc63ec412ef))
+
 ## [0.28.0](https://github.com/this-is-tobi/rta/compare/v0.27.0...v0.28.0) (2026-09-27)
 
 
