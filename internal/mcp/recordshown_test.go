@@ -119,11 +119,11 @@ func TestAPaddedRecordIsParkedAndQueuedApartFromTheBareOne(t *testing.T) {
 // The ledger's copy of a padded record. The arguments it keeps are cleaned
 // the way a model reads them, so a kv_get on "prod/db" and a zero-width
 // space was recorded as key=prod/db, and agent log showed a call on the bare
-// key, the one record it did not name. The records the gate judged are kept
+// key, the one record it did not name. The records the call named are kept
 // beside them, exactly, written to the file with the character escaped, and
 // agent log shows them quoted with the character named, apart from the call
 // on the bare key.
-func TestTheLedgerKeepsTheRecordACallWasJudgedOn(t *testing.T) {
+func TestTheLedgerKeepsTheRecordACallNamed(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 	reg, err := all.Registry(nil)

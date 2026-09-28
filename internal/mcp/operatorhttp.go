@@ -316,7 +316,7 @@ func (h *operatorHandler) mutationEntry(env operator.Envelope, label string) *ag
 // zero-width, direction and tag characters. An issue on "prod/db" and a
 // zero-width space, which grants nothing on the bare key, was recorded as
 // scope=prod/db, the one record it did not name; the bridge keeps a call's
-// records the same way (judgedRecords). A scope is never a credential, so
+// records the same way (namedRecords). A scope is never a credential, so
 // there is nothing here to mask either.
 //
 // Decoded beside dispatch rather than threaded through it — a second
