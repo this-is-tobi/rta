@@ -139,8 +139,8 @@ func open(ctx context.Context, req plugin.Request, what reads) (*git.Repository,
 	done := func() { release(repo) }
 	if what == readsObjects {
 		verr := objectsAllReadable(repo, root)
-		if local, err := localConfig(repo); verr == nil && err == nil {
-			verr = notPartial(local, root)
+		if verr == nil {
+			verr = partialClone(repo, root)
 		}
 		if verr != nil {
 			done()
