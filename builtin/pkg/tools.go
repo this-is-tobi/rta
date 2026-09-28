@@ -17,6 +17,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/plugindist"
+	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -479,11 +480,23 @@ func installTool(ctx context.Context, sf plugin.Surface, c *registryClient, t to
 		return view.Text{Body: fmt.Sprintf("would install %s %s (%s, %d bytes, %s) into %s", t.Bin, rel.Tag, assetName, size, how, dest)}, nil
 	}
 
+	// The download into staging is not held off a forced exit (the hold is
+	// atomicfile's, on the write that places the tool), and os.Exit skips a
+	// deferred removal, so an exit taken during it left the partial download
+	// beside the tool for good: a dot-directory in $PATH's own directory,
+	// which nothing lists and nothing ever removed. The exit removes it
+	// instead, as it does plugin install's. Made, and its removal registered,
+	// under a brief hold of their own so that no exit falls between the two,
+	// and unregistered only after the upgrade's own removal has run.
+	release := shutdown.Hold()
 	staging, err := os.MkdirTemp(filepath.Dir(dest), "."+t.Bin+"-*")
 	if err != nil {
+		release()
 		return nil, view.Errorf("pkg.tool.place", "%v", err)
 	}
+	defer shutdown.OnExit(func() { _ = os.RemoveAll(staging) })()
 	defer os.RemoveAll(staging)
+	release()
 	artifact, err := os.Create(filepath.Join(staging, "artifact"))
 	if err != nil {
 		return nil, view.Errorf("pkg.tool.place", "%v", err)
