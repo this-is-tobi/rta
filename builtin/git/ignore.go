@@ -10,9 +10,11 @@ import (
 	"os"
 	pathpkg "path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"syscall"
+	"unicode/utf8"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
@@ -71,14 +73,16 @@ type ignoreFiles struct {
 // ignoresRead is what one status has read of its ignore files: the bytes and
 // the patterns it has left, each file it has decided on, by its path in the
 // working tree or as the answer names it, the files it reads ahead of the
-// working tree's own .gitignore (excludeSource), and whether it served that
-// .gitignore with anything ahead of it.
+// working tree's own .gitignore (excludeSource), whether it served that
+// .gitignore with anything ahead of it, and whether it matches patterns
+// without regard to case (ignoreCase).
 type ignoresRead struct {
 	bytes    int64
 	patterns int
 	files    map[string]ignoreFile
 	root     []excludeSource
 	prefixed bool
+	fold     bool
 }
 
 // ignoreFile is one ignore file as a status decided on it: the content it
@@ -92,8 +96,10 @@ type ignoreFile struct {
 	reach   string
 }
 
-func newIgnoresRead(root []excludeSource) *ignoresRead {
-	return &ignoresRead{bytes: maxIgnoreBytes, patterns: maxIgnorePatterns, files: map[string]ignoreFile{}, root: root}
+func newIgnoresRead(root []excludeSource, fold bool) *ignoresRead {
+	return &ignoresRead{
+		bytes: maxIgnoreBytes, patterns: maxIgnorePatterns, files: map[string]ignoreFile{}, root: root, fold: fold,
+	}
 }
 
 // rootIgnore is the working tree's own .gitignore, the first ignore file
@@ -235,6 +241,11 @@ func (r *ignoresRead) decide(fs billy.Filesystem, name string) (ignoreFile, erro
 	}
 	read := len(content)
 	content, altered := asGitReads(content)
+	if r.fold {
+		folded := foldCase(content)
+		altered = altered || !bytes.Equal(folded, content)
+		content = folded
+	}
 	n, cut := patternCount(content)
 	if cut {
 		return ignoreFile{why: fmt.Sprintf("a line longer than the %s this reader takes of one, where it would "+
@@ -286,6 +297,177 @@ func asGitReads(content []byte) ([]byte, bool) {
 		rest = after
 	}
 	return cut, true
+}
+
+// foldCase is content as go-git has to be handed it to match what git
+// matches with core.ignorecase set, where a pattern's letters match a name's
+// in either case. A letter becomes a bracket expression of both, [xX], a
+// bracket expression gains the other case of each letter it holds, and a
+// comment is left as it is.
+//
+// **git matches ignore patterns without regard to case where core.ignorecase
+// is set, and go-git never does.** `git init` sets it in every repository it
+// makes on a filesystem that does not tell case apart, macOS's by default,
+// and there `.ENV` in a .gitignore ignores a .env: git.status listed the .env
+// and git.diff showed it whole.
+//
+// And where git's own matcher leaves case alone, this does too. git lowers
+// the name's letters and a pattern's, but not a letter written inside a
+// bracket expression or after a backslash: such a letter in upper case
+// matches no name at all, a bracket expression holding nothing else matches
+// no character, and one that negates nothing else matches any. So `[A]x` and
+// `\Qx` ignore nothing, and `[^A]x` ignores `ax`, as git has them.
+func foldCase(content []byte) []byte {
+	out := make([]byte, 0, len(content))
+	for rest := content; len(rest) > 0; {
+		line, after, found := bytes.Cut(rest, []byte{'\n'})
+		if bytes.HasPrefix(line, []byte("#")) {
+			out = append(out, line...)
+		} else if folded, matches := foldPattern(line); matches {
+			out = append(out, folded...)
+		}
+		if found {
+			out = append(out, '\n')
+		}
+		rest = after
+	}
+	return out
+}
+
+// escapes is whether filepath.Match, which go-git matches each part of a
+// pattern with, reads a backslash as escaping the byte after it: everywhere
+// but Windows, where it separates a path.
+var escapes = runtime.GOOS != "windows"
+
+// foldPattern is pattern with each letter matching either case (foldCase),
+// read as filepath.Match reads it: a backslash escapes the byte after it,
+// and a bracket expression runs from its [ to the first ] after a member.
+// One filepath.Match refuses is left as it is from there on, a pattern that
+// matches nothing either way. matches is false for a pattern that matches
+// no name in git, which is left out.
+func foldPattern(pattern []byte) (folded []byte, matches bool) {
+	out := make([]byte, 0, 4*len(pattern))
+	for i := 0; i < len(pattern); i++ {
+		c := pattern[i]
+		switch {
+		case c == '\\' && escapes && i+1 < len(pattern):
+			next := pattern[i+1]
+			switch {
+			case isUpper(next):
+				return nil, false
+			case isLetter(next):
+				out = append(out, '[', next, next&^0x20, ']')
+			default:
+				out = append(out, c, next)
+			}
+			i++
+		case c == '[':
+			class, n, live := foldClass(pattern[i:])
+			if n < 0 {
+				return append(out, pattern[i:]...), true
+			}
+			if !live {
+				return nil, false
+			}
+			out = append(out, class...)
+			i += n - 1
+		case isLetter(c):
+			out = append(out, '[', c|0x20, c&^0x20, ']')
+		default:
+			out = append(out, c)
+		}
+	}
+	return out, true
+}
+
+// foldClass is the bracket expression class starts with, as git matches it
+// with core.ignorecase set, and how many bytes of class it took: -1 where
+// filepath.Match refuses it, never closed or malformed. live is false for
+// one that matches no character. A lower-case letter it holds gains its
+// upper case and a range the other case of each letter in it; an upper-case
+// letter alone matches nothing in git, and is left out.
+func foldClass(class []byte) (folded []byte, n int, live bool) {
+	j := 1
+	negated := j < len(class) && class[j] == '^'
+	if negated {
+		j++
+	}
+	var members []byte
+	for count := 0; ; count++ {
+		if j < len(class) && class[j] == ']' && count > 0 {
+			break
+		}
+		start := j
+		lo, size := classMember(class[j:])
+		if size == 0 {
+			return nil, -1, false
+		}
+		j += size
+		if j < len(class) && class[j] == '-' {
+			hi, size := classMember(class[j+1:])
+			if size == 0 {
+				return nil, -1, false
+			}
+			j += 1 + size
+			members = append(members, class[start:j]...)
+			for k := range len(asciiLetters) {
+				l := asciiLetters[k]
+				if other := rune(l ^ 0x20); rune(l) >= lo && rune(l) <= hi && (other < lo || other > hi) {
+					members = append(members, l^0x20)
+				}
+			}
+			continue
+		}
+		// A member below utf8.RuneSelf is its own last byte, escaped or not.
+		switch last := class[j-1]; {
+		case lo < utf8.RuneSelf && isUpper(last):
+		case lo < utf8.RuneSelf && isLetter(last):
+			members = append(members, last, last&^0x20)
+		default:
+			members = append(members, class[start:j]...)
+		}
+	}
+	// A ^ first would negate what it was a member of: it goes last, where it
+	// is one, and alone it is the character itself.
+	if !negated && len(members) > 0 && members[0] == '^' {
+		if len(members) == 1 {
+			return []byte("^"), j + 1, true
+		}
+		members = append(members[1:], '^')
+	}
+	switch {
+	case len(members) > 0 && negated:
+		return append(append([]byte("[^"), members...), ']'), j + 1, true
+	case len(members) > 0:
+		return append(append([]byte("["), members...), ']'), j + 1, true
+	case negated:
+		return []byte("?"), j + 1, true
+	}
+	return nil, j + 1, false
+}
+
+// asciiLetters is every letter foldCase gives both cases.
+const asciiLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+// isUpper is an ASCII upper-case letter.
+func isUpper(c byte) bool { return c >= 'A' && c <= 'Z' }
+
+// classMember is the member of a bracket expression s starts with, as
+// filepath.Match reads one, and how many bytes it takes; 0 where it refuses
+// it, as it refuses one that is a - or a ], or that nothing follows.
+func classMember(s []byte) (rune, int) {
+	if len(s) == 0 || s[0] == '-' || s[0] == ']' {
+		return 0, 0
+	}
+	skip := 0
+	if s[0] == '\\' && escapes {
+		skip = 1
+	}
+	r, n := utf8.DecodeRune(s[skip:])
+	if n == 0 || r == utf8.RuneError && n == 1 || len(s) == skip+n {
+		return 0, 0
+	}
+	return r, skip + n
 }
 
 // pastBytes is why an ignore file of size bytes is not read.
@@ -436,7 +618,8 @@ func mayIgnore(reach map[string]bool, path string) bool {
 
 // rootExcludeSources is the files git applies to the whole of repo's working
 // tree, at root, before any .gitignore, in the order it reads them
-// (excludeSource). confine is the host's path gate.
+// (excludeSource). configs is the config git reads for repo (gitConfigs), or
+// cerr why it could not be read, and confine the host's path gate.
 //
 // **A core.excludesFile the repository's own config names is put to the gate
 // first.** The config is a file a caller can write inside the root, and it
@@ -446,11 +629,13 @@ func mayIgnore(reach map[string]bool, path string) bool {
 // it. One the operator's own config names, or git's default, is the
 // operator's choice and read wherever it is, as git.hooks reads their
 // core.hooksPath; nothing of it is shown but its name.
-func rootExcludeSources(repo *git.Repository, root string, confine func(string) (string, *view.Error)) []excludeSource {
+func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error, root string,
+	confine func(string) (string, *view.Error),
+) []excludeSource {
 	var out []excludeSource
-	switch p, scope, err := excludesFile(repo, root); {
-	case err != nil:
-		out = append(out, excludeSource{shown: "core.excludesFile", why: "reading the config that sets it: " + err.Error()})
+	switch p, scope := excludesFile(configs, root); {
+	case cerr != nil:
+		out = append(out, excludeSource{shown: "core.excludesFile", why: "reading the config that sets it: " + cerr.Error()})
 	case p != "":
 		s := excludeSource{shown: p}
 		if scope == "local" || scope == "worktree" {
@@ -478,27 +663,35 @@ func rootExcludeSources(repo *git.Repository, root string, confine func(string) 
 // or ~/.config/git/ignore with that unset. "" where it is set to nothing,
 // which git reads as no file. A file one of the configs includes is not
 // followed, as git.config follows none, and could set it.
-func excludesFile(repo *git.Repository, root string) (path, scope string, err error) {
-	files, err := gitConfigs(repo)
-	if err != nil {
-		return "", "", err
-	}
-	for _, f := range files {
+func excludesFile(configs []scopedConfig, root string) (path, scope string) {
+	for _, f := range configs {
 		if core := f.config.Raw.Section("core"); core.HasOption("excludesFile") {
 			path, scope = core.Option("excludesFile"), f.scope
 		}
 	}
 	switch {
 	case scope != "" && path == "":
-		return "", scope, nil
+		return "", scope
 	case scope != "":
-		return against(root, plugin.ExpandHome(path)), scope, nil
+		return against(root, plugin.ExpandHome(path)), scope
 	case os.Getenv("XDG_CONFIG_HOME") != "":
-		return filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "git", "ignore"), "default", nil
+		return filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "git", "ignore"), "default"
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", "", nil //nolint:nilerr // no home directory is no default file, as git finds none
+		return "", ""
 	}
-	return filepath.Join(home, ".config", "git", "ignore"), "default", nil
+	return filepath.Join(home, ".config", "git", "ignore"), "default"
+}
+
+// ignoreCase reports whether git matches ignore patterns without regard to
+// case: core.ignorecase, as the last of configs that sets it has it (foldCase).
+func ignoreCase(configs []scopedConfig) bool {
+	on := false
+	for _, f := range configs {
+		if core := f.config.Raw.Section("core"); core.HasOption("ignorecase") {
+			on = gitBool(core.Option("ignorecase"))
+		}
+	}
+	return on
 }

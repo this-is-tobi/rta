@@ -451,3 +451,63 @@ func TestAnIgnoreFileIsReadAsGitReadsIt(t *testing.T) {
 		})
 	}
 }
+
+// git matches ignore patterns without regard to case where core.ignorecase
+// is set, as `git init` sets it on macOS, and go-git never did: `*.ENV` in a
+// .gitignore ignores a secret.env there, which git.status listed and
+// git.diff showed whole. Where git's own matcher leaves a letter's case
+// alone, inside a bracket expression or after a backslash, this does too:
+// what is untracked here is what git 2.50 lists for the same files.
+func TestIgnoreCaseMatchesPatternsAsGitDoes(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	writeFile(t, dir, ".gitignore", strings.Join([]string{
+		"*.ENV", "Build/", "[A-C]x", "[a-c]y", "[A]z", `\Qw`, `\qu`, "[^A]v", "[^a]t", "*.kp", "!Mine.kp",
+	}, "\n")+"\n")
+	writeFile(t, dir, "secret.env", "TOKEN=hunter2\n")
+	for _, name := range []string{"build/out", "bx", "By", "az", "qw", "Qu", "av", "At", "other.kp", "mine.kp"} {
+		writeFile(t, dir, name, "x\n")
+	}
+	for setting, want := range map[string]string{
+		"true":  ".gitignore At az mine.kp qw",
+		"false": ".gitignore By Qu az build/out bx qw secret.env",
+	} {
+		writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n\tignorecase = "+setting+"\n")
+		if got := strings.Join(untracked(t, req(t, dir, nil)), " "); got != want {
+			t.Errorf("with core.ignorecase %s, untracked = %q, want %q", setting, got, want)
+		}
+		if body := text(t, runDiff, req(t, dir, nil)); setting == "true" && strings.Contains(body, "hunter2") {
+			t.Errorf("with core.ignorecase, the diff showed a file git ignores:\n%s", body)
+		}
+	}
+}
+
+// Each pattern is spelled for filepath.Match, which go-git matches with, to
+// match what git matches with core.ignorecase: a letter in either case, a
+// bracket expression with the other case of what it holds, an upper-case
+// letter git leaves alone matching nothing, and what filepath.Match refuses
+// left as it is.
+func TestFoldCaseSpellsAPatternAsGitMatchesIt(t *testing.T) {
+	for in, want := range map[string]string{
+		"# Keep": "# Keep",
+		"*.Log":  "*.[lL][oO][gG]",
+		"!Mine/": "![mM][iI][nN][eE]/",
+		"[a-c]":  "[a-cABC]",
+		"[B-b]":  "[B-bcdefghijklmnopqrstuvwxyzA]",
+		"[A]x":   "",
+		"[^A]x":  "?[xX]",
+		"[A^]h":  "^[hH]",
+		"[A^b]":  "[bB^]",
+		`\Qx`:    "",
+		`\qx`:    "[qQ][xX]",
+		`a\ `:    `[aA]\ `,
+		`\[a]`:   `\[[aA]]`,
+		"b[":     "[bB][",
+		"[]a]":   "[]a]",
+		"a/**/B": "[aA]/**/[bB]",
+	} {
+		if got := string(foldCase([]byte(in + "\n"))); got != want+"\n" {
+			t.Errorf("foldCase(%q) = %q, want %q", in, got, want+"\n")
+		}
+	}
+}
