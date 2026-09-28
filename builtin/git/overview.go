@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -26,7 +27,8 @@ func overviewCapability() plugin.Capability {
 			"checked out (or that HEAD is detached), whether the working tree is clean, and the " +
 			"latest commit. With `detail` (and on any full-page surface) it expands into the same " +
 			"status, log and branches views their own capabilities return — one shape, not a " +
-			"second implementation of each.",
+			"second implementation of each. The working tree is read as git.status reads it, and past its " +
+			"two seconds the overview is refused as git.status.timeout.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},
@@ -77,7 +79,14 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 
 	if wt, err := repo.Worktree(); err == nil {
-		if status, ignored, err := worktreeStatus(repo, wt, pathGateOf(req)); err == nil {
+		status, ignored, err := worktreeStatus(ctx, statusDeadline(ctx), repo, wt, pathGateOf(req))
+		var refused *view.Error
+		switch {
+		case errors.As(err, &refused):
+			// Refused as git.status refuses it, past the call's time: the
+			// part of the tree it had read would summarise as a cleaner one.
+			return nil, refused
+		case err == nil:
 			summary := worktreeSummary(status)
 			if len(ignored) > 0 {
 				summary += ", " + format.CountOf(len(ignored), "ignore file") + " not applied"

@@ -2,10 +2,14 @@ package git
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	iofs "io/fs"
 	"os"
 	pathpkg "path"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -34,7 +38,9 @@ func statusCapability() plugin.Capability {
 			"~/.config/git/ignore by default; at most 1 MiB and 10000 patterns of them in all, in the " +
 			"order it reads them. One past that is not applied, as git applies no pattern file past " +
 			"100 MB, and neither is a .gitignore that is a symbolic link, which git does not follow: " +
-			"what it ignores is listed, and a warning names it.",
+			"what it ignores is listed, and a warning names it. It reads the working tree for at most two " +
+			"seconds, and past them is refused as git.status.timeout rather than answered with the part " +
+			"it had read, which would read as a cleaner tree than the one there.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},
@@ -75,9 +81,9 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("git.status.worktree", "no working tree here: %v", err).
 			WithHint("a bare repository has no working tree to report on")
 	}
-	status, ignored, err := worktreeStatus(repo, wt, pathGateOf(req))
+	status, ignored, err := worktreeStatus(ctx, statusDeadline(ctx), repo, wt, pathGateOf(req))
 	if err != nil {
-		return nil, view.Errorf("git.status.failed", "reading status: %v", err)
+		return nil, statusFailed("git.status.failed", err)
 	}
 
 	t := view.Table{Columns: []view.Column{
@@ -115,18 +121,24 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 // (kindChanges). The ignore files it did not apply come with it. confine is
 // the host's path gate. Every capability that reports the working tree's
 // state asks for it here.
-func worktreeStatus(repo *git.Repository, wt *git.Worktree, confine func(string) (string, *view.Error)) (
-	git.Status, unapplied, error,
-) {
+//
+// All of it is held to deadline, and to ctx, and refused past either
+// (statusBudget): the error is then the refusal, a *view.Error, which the
+// caller hands on as it is (statusFailed).
+func worktreeStatus(ctx context.Context, deadline time.Time, repo *git.Repository, wt *git.Worktree,
+	confine func(string) (string, *view.Error),
+) (git.Status, unapplied, error) {
 	storer := repo.Storer
 	store, onDisk := repo.Storer.(*filesystem.Storage)
 	if onDisk {
 		storer = submodulesOnDisk{store}
 	}
+	root := wt.Filesystem.Root()
+	budget := &statusBudget{ctx: ctx, deadline: deadline}
 	configs, cerr := gitConfigs(repo)
-	read := newIgnoresRead(rootExcludeSources(repo, configs, cerr, wt.Filesystem.Root(), confine),
-		cerr == nil && ignoreCase(configs), wt.Filesystem)
-	reader, err := git.Open(storer, statusFiles{Filesystem: wt.Filesystem})
+	read := newIgnoresRead(rootExcludeSources(repo, configs, cerr, root, confine),
+		cerr == nil && ignoreCase(configs), wt.Filesystem, budget)
+	reader, err := git.Open(storer, statusFiles{Filesystem: wt.Filesystem, budget: budget})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -136,6 +148,13 @@ func worktreeStatus(repo *git.Repository, wt *git.Worktree, confine func(string)
 	}
 	bounded.Excludes = []gitignore.Pattern{keepEverything{}}
 	status, err := bounded.Status()
+	// Looked at before go-git's own error, which a read refused for the
+	// budget made, and after a status it answered, where go-git passed over a
+	// read refused so: a file it could not open to hash is one it calls
+	// modified.
+	if verr := budget.refusal(root); verr != nil {
+		return nil, nil, verr
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -144,9 +163,135 @@ func worktreeStatus(repo *git.Repository, wt *git.Worktree, confine func(string)
 		restoreRootIgnore(wt.Filesystem, idx, status)
 	}
 	if onDisk {
-		kindChanges(repo, wt.Filesystem.Root(), status)
+		kindChanges(repo, root, status, budget)
+	}
+	if verr := budget.refusal(root); verr != nil {
+		return nil, nil, verr
 	}
 	return status, read.unapplied(), nil
+}
+
+// statusFailed is why a status could not be read, as a capability reports it:
+// the refusal worktreeStatus made where it made one, and code with go-git's
+// reason otherwise.
+func statusFailed(code string, err error) *view.Error {
+	var verr *view.Error
+	if errors.As(err, &verr) {
+		return verr
+	}
+	return view.Errorf(code, "reading status: %v", err)
+}
+
+// statusBudget is the time one call spends reading the working tree's
+// status, and what it had read when the time ran out, for the refusal to
+// say.
+//
+// **go-git's status costs what the working tree holds, and nothing bounded
+// it.** It lists every directory, hashes every file whose timestamp no longer
+// matches the index's, and walks every untracked directory, ignored or not; a
+// hundred thousand rewritten files cost one git.status 7 s of CPU, where git
+// takes 1.4 s. And matching the untracked files against ignore patterns costs
+// the files times the patterns, within the bounds on either: ten thousand of
+// each, the patterns heavy with stars, cost 30 s (lastMatch).
+//
+// So a call reads the working tree for statusTime, or until the caller stops
+// waiting, and each read and each step of matching looks at the clock
+// (statusFiles, lastMatch, wildmatch). Past it nothing more is read, and the
+// call is refused rather than answered from what it had read: a status with
+// part of the tree unread is a cleaner tree than the one there, its unread
+// changes missing and the files it had not yet matched listed as untracked,
+// a secret among them for git.diff to show.
+type statusBudget struct {
+	ctx      context.Context
+	deadline time.Time
+	over     error
+	steps    int
+	// What the status had read when the time ran out: the directories it
+	// listed, the files it opened, and, once go-git had walked the tree, the
+	// untracked files it had to match and how many it had.
+	dirs, files, untracked, matched int
+}
+
+// statusTime is how long one call reads the working tree's status for: the
+// two seconds a call matches lines in (matchTime) and a blame walks its
+// history in, the one budget of time a call here has for work in proportion
+// to what a caller can write. It is a clean checkout of some two hundred
+// thousand files, twice the Linux kernel's; Chromium's half million is past
+// it, and `git status` reads that one. git.diff matches its lines in what the
+// status leaves of its own two seconds, as it did before the status was held
+// to them. A variable so a test can lower it.
+var statusTime = 2 * time.Second
+
+// statusDeadline is when a call stops reading the working tree's status:
+// statusTime from now, or the caller's own deadline when that comes first.
+func statusDeadline(ctx context.Context) time.Time {
+	deadline := time.Now().Add(statusTime)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		return d
+	}
+	return deadline
+}
+
+// errStatusTime is a read the status's budget no longer allows.
+var errStatusTime = errors.New("the status ran past its time")
+
+// past reports whether the call has run past its deadline, or its caller
+// stopped waiting for it, and remembers which the first time. A nil budget
+// never runs out.
+func (b *statusBudget) past() bool {
+	if b == nil {
+		return false
+	}
+	if b.over == nil {
+		switch {
+		case b.ctx.Err() != nil:
+			b.over = b.ctx.Err()
+		case !time.Now().Before(b.deadline):
+			b.over = errStatusTime
+		}
+	}
+	return b.over != nil
+}
+
+// tick is past for one step of matching, which costs so much less than
+// reading the clock that the clock is read at every 256th.
+func (b *statusBudget) tick() bool {
+	switch {
+	case b == nil:
+		return false
+	case b.over != nil:
+		return true
+	}
+	if b.steps++; b.steps%256 != 0 {
+		return false
+	}
+	return b.past()
+}
+
+// refuse is the error a read the budget no longer allows fails with.
+func (b *statusBudget) refuse(op, path string) error {
+	return &iofs.PathError{Op: op, Path: path, Err: b.over}
+}
+
+// refusal is the call refused for its budget, on the working tree at root,
+// saying what it had read by then; nil where the budget has not run out.
+func (b *statusBudget) refusal(root string) *view.Error {
+	switch {
+	case b.over == nil:
+		return nil
+	case !errors.Is(b.over, errStatusTime):
+		return view.Errorf("git.status.cancelled", "the status of the working tree at %s was interrupted", root)
+	}
+	read := fmt.Sprintf("it had listed %s and opened %s of it by then", format.CountOf(b.dirs, "directory"),
+		format.CountOf(b.files, "file"))
+	if b.matched < b.untracked {
+		read = fmt.Sprintf("it had matched %d of its %s against the ignore patterns by then", b.matched,
+			format.CountOf(b.untracked, "untracked file"))
+	}
+	return view.Errorf("git.status.timeout", "the status of the working tree at %s took longer than the %v one "+
+		"call spends reading it: %s", root, statusTime, read).
+		WithHint("`git status` reads it at a terminal; rta refuses rather than answer with the part it had " +
+			"read, which would show a cleaner tree than the one there")
 }
 
 // pathGateOf is the host's path gate as a status puts a file it derives to
@@ -176,8 +321,9 @@ const typeChanged git.StatusCode = 'T'
 // more; the index is read again for one that is not. And what is on disk is
 // read a directory at a time, the kind of each entry coming with its name,
 // where a lstat of each path doubled the cost of a status of a hundred
-// thousand rewritten files, 14 s on top of go-git's 5 s.
-func kindChanges(repo *git.Repository, root string, status git.Status) {
+// thousand rewritten files, 14 s on top of go-git's 5 s. Each listing is held to the
+// call's budget, as the status's own are (statusBudget).
+func kindChanges(repo *git.Repository, root string, status git.Status, budget *statusBudget) {
 	var modified []string
 	staged := false
 	for path, fs := range status {
@@ -211,7 +357,7 @@ func kindChanges(repo *git.Repository, root string, status git.Status) {
 			}
 		}
 		if fs.Worktree == git.Modified {
-			if kind, ok := entryKind(kinds, root, path); ok && !kind.IsDir() && diskKind(kind) != kindOf(entry.Mode) {
+			if kind, ok := entryKind(kinds, root, path, budget); ok && !kind.IsDir() && diskKind(kind) != kindOf(entry.Mode) {
 				fs.Worktree = typeChanged
 			}
 		}
@@ -223,10 +369,14 @@ func kindChanges(repo *git.Repository, root string, status git.Status) {
 // kinds holds each directory's listing, read once. The directories on the way
 // are real ones for a path go-git's status marked M, which does not walk
 // through a link.
-func entryKind(kinds map[string]map[string]os.FileMode, root, path string) (os.FileMode, bool) {
+func entryKind(kinds map[string]map[string]os.FileMode, root, path string, budget *statusBudget) (os.FileMode, bool) {
 	dir, name := pathpkg.Split(path)
 	listing, ok := kinds[dir]
 	if !ok {
+		if budget.past() {
+			return 0, false
+		}
+		budget.dirs++
 		listing = map[string]os.FileMode{}
 		if entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(dir))); err == nil {
 			for _, e := range entries {

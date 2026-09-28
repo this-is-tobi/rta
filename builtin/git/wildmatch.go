@@ -20,8 +20,12 @@ import "strings"
 // A byte past the end of either string reads as the NUL that ends a C string:
 // neither holds one, since a line of an ignore file ends at its first NUL
 // (parseIgnore) and a path never holds one.
-func wildmatch(pattern, text string, flags wmFlags) bool {
-	return dowild(pattern, text, flags) == wmMatch
+//
+// b is the status's budget, which each step of the matching counts against,
+// and which a pattern of many stars over a long path spends: the matching
+// stops where it runs out, and matches nothing from there (statusBudget).
+func wildmatch(pattern, text string, flags wmFlags, b *statusBudget) bool {
+	return dowild(pattern, text, flags, b) == wmMatch
 }
 
 // wmFlags are git's WM_ flags: wmPathname, where * and ? match no slash and
@@ -51,7 +55,10 @@ func at(s string, i int) byte {
 	return 0
 }
 
-func dowild(pattern, text string, flags wmFlags) int {
+func dowild(pattern, text string, flags wmFlags, b *statusBudget) int {
+	if b.tick() {
+		return wmAbortAll
+	}
 	fold := flags&wmCasefold != 0
 	p, t := 0, 0
 	for ; p < len(pattern); p, t = p+1, t+1 {
@@ -86,7 +93,7 @@ func dowild(pattern, text string, flags wmFlags) int {
 					(at(pattern, p) == 0 || at(pattern, p) == '/' || at(pattern, p) == '\\' && at(pattern, p+1) == '/'):
 					// A ** between slashes matches nothing too: foo/**/bar
 					// matches foo/bar.
-					if at(pattern, p) == '/' && dowild(pattern[p+1:], text[t:], flags) == wmMatch {
+					if at(pattern, p) == '/' && dowild(pattern[p+1:], text[t:], flags, b) == wmMatch {
 						return wmMatch
 					}
 					matchSlash = true
@@ -137,7 +144,7 @@ func dowild(pattern, text string, flags wmFlags) int {
 						return wmAbortToStarStar
 					}
 				}
-				if matched := dowild(pattern[p:], text[t:], flags); matched != wmNoMatch {
+				if matched := dowild(pattern[p:], text[t:], flags, b); matched != wmNoMatch {
 					if !matchSlash || matched != wmAbortToStarStar {
 						return matched
 					}

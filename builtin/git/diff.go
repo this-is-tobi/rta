@@ -48,7 +48,9 @@ func diffCapability() plugin.Capability {
 			"64 MiB in all, looks at no more than 10000 files, and spends at most two seconds matching " +
 			"lines; the lines after the patch name each file it left out or diffed coarsely, and count " +
 			"the ones it did not look at. An untracked file under an ignore file git.status did not " +
-			"apply is named, never shown: it may be one that ignore file keeps out of git.",
+			"apply is named, never shown: it may be one that ignore file keeps out of git. Without " +
+			"`commit`, the working tree is read as git.status reads it, and the diff is refused as " +
+			"git.status.timeout where that takes more than two seconds.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "commit", Type: plugin.String, Suggest: suggestCommits,
@@ -842,9 +844,12 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 		return nil, view.Errorf("git.diff.worktree", "no working tree here: %v", err).
 			WithHint("a bare repository has no working tree to diff")
 	}
-	status, ignored, err := worktreeStatus(repo, wt, confine)
-	if err != nil {
-		return nil, view.Errorf("git.diff.failed", "reading status: %v", err)
+	status, ignored, err := worktreeStatus(ctx, statusDeadline(ctx), repo, wt, confine)
+	switch {
+	case err != nil && ctx.Err() != nil:
+		return nil, interrupted("the working tree")
+	case err != nil:
+		return nil, statusFailed("git.diff.failed", err)
 	}
 	if status.IsClean() {
 		return textOrEmpty(""), nil

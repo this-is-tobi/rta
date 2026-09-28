@@ -80,8 +80,42 @@ var (
 // index's, through the same filesystem: the .gitignore it is handed `*` for
 // is hashed as `*`, and called modified. restoreRootIgnore puts that right
 // from the disk.
+//
+// **And nothing is read of it once the call's time has run out** (budget):
+// each listing, open, stat and link read go-git asks for fails from then on,
+// which ends its walk of the tree where it is, and the status is refused.
 type statusFiles struct {
 	billy.Filesystem
+	budget *statusBudget
+}
+
+func (f statusFiles) ReadDir(path string) ([]os.FileInfo, error) {
+	if f.budget.past() {
+		return nil, f.budget.refuse("readdir", path)
+	}
+	f.budget.dirs++
+	return f.Filesystem.ReadDir(path)
+}
+
+func (f statusFiles) Lstat(name string) (os.FileInfo, error) {
+	if f.budget.past() {
+		return nil, f.budget.refuse("lstat", name)
+	}
+	return f.Filesystem.Lstat(name)
+}
+
+func (f statusFiles) Stat(name string) (os.FileInfo, error) {
+	if f.budget.past() {
+		return nil, f.budget.refuse("stat", name)
+	}
+	return f.Filesystem.Stat(name)
+}
+
+func (f statusFiles) Readlink(name string) (string, error) {
+	if f.budget.past() {
+		return "", f.budget.refuse("readlink", name)
+	}
+	return f.Filesystem.Readlink(name)
 }
 
 // rootIgnore is the working tree's own .gitignore, the first ignore file
@@ -96,6 +130,9 @@ func (f statusFiles) Open(name string) (billy.File, error) {
 }
 
 func (f statusFiles) OpenFile(name string, flag int, perm os.FileMode) (billy.File, error) {
+	if f.budget.past() {
+		return nil, f.budget.refuse("open", name)
+	}
 	if flag == os.O_RDONLY {
 		switch filepath.ToSlash(filepath.Clean(name)) {
 		case rootIgnore:
@@ -104,6 +141,7 @@ func (f statusFiles) OpenFile(name string, flag int, perm os.FileMode) (billy.Fi
 			return nil, &iofs.PathError{Op: "open", Path: name, Err: iofs.ErrNotExist}
 		}
 	}
+	f.budget.files++
 	return f.Filesystem.OpenFile(name, flag, perm)
 }
 
@@ -119,7 +157,8 @@ func (keepEverything) Match([]string, bool) gitignore.MatchResult { return gitig
 // file it has decided on, by its path in the working tree or as the answer
 // names it, the files it reads ahead of any .gitignore (excludeSource),
 // whether it matches without regard to case (ignoreCase), the working tree
-// it reads each .gitignore from, and each directory it has decided on.
+// it reads each .gitignore from, each directory it has decided on, and the
+// call's budget, which the reading and the matching are held to.
 type ignoresRead struct {
 	bytes    int64
 	patterns int
@@ -128,6 +167,7 @@ type ignoresRead struct {
 	fold     bool
 	tree     billy.Filesystem
 	dirs     map[string]*ignoreDir
+	budget   *statusBudget
 }
 
 // ignoreFile is one ignore file as a status decided on it: the patterns it
@@ -148,10 +188,10 @@ type ignoreDir struct {
 	chain    []ignoreFile
 }
 
-func newIgnoresRead(root []excludeSource, fold bool, tree billy.Filesystem) *ignoresRead {
+func newIgnoresRead(root []excludeSource, fold bool, tree billy.Filesystem, budget *statusBudget) *ignoresRead {
 	return &ignoresRead{
 		bytes: maxIgnoreBytes, patterns: maxIgnorePatterns, files: map[string]ignoreFile{}, root: root,
-		fold: fold, tree: tree, dirs: map[string]*ignoreDir{},
+		fold: fold, tree: tree, dirs: map[string]*ignoreDir{}, budget: budget,
 	}
 }
 
@@ -206,6 +246,10 @@ func (r *ignoresRead) gitignore(dir string) (file ignoreFile, ok bool) {
 	if file, decided := r.files[name]; decided {
 		return file, true
 	}
+	if r.budget.past() {
+		return ignoreFile{}, false
+	}
+	r.budget.files++
 	file, err := r.decide(r.tree, name, dir, false)
 	if err != nil {
 		return ignoreFile{}, false
@@ -296,7 +340,7 @@ func (r *ignoresRead) dir(dir string) *ignoreDir {
 		parentDir, name := pathpkg.Split(path)
 		parent := r.dir(parentDir)
 		switch {
-		case parent.excluded, excludes(lastMatch(parent.chain, path, name, true, r.fold)):
+		case parent.excluded, excludes(lastMatch(parent.chain, path, name, true, r.fold, r.budget)):
 			d.excluded = true
 		default:
 			d.chain = parent.chain[:len(parent.chain):len(parent.chain)]
@@ -317,12 +361,13 @@ func (r *ignoresRead) dir(dir string) *ignoreDir {
 func (r *ignoresRead) ignored(path string) bool {
 	dir, name := pathpkg.Split(path)
 	d := r.dir(dir)
-	return d.excluded || excludes(lastMatch(d.chain, path, name, false, r.fold))
+	return d.excluded || excludes(lastMatch(d.chain, path, name, false, r.fold, r.budget))
 }
 
 // dropIgnored takes out of status each untracked path git ignores, in path
 // order, so that the files read against the bounds are the same on every
-// call.
+// call. It stops where the call's budget runs out, which the status is then
+// refused for.
 func (r *ignoresRead) dropIgnored(status git.Status) {
 	var untracked []string
 	for path, fs := range status {
@@ -331,8 +376,14 @@ func (r *ignoresRead) dropIgnored(status git.Status) {
 		}
 	}
 	sort.Strings(untracked)
+	r.budget.untracked = len(untracked)
 	for _, path := range untracked {
-		if r.ignored(path) {
+		ignored := r.ignored(path)
+		if r.budget.past() {
+			return
+		}
+		r.budget.matched++
+		if ignored {
 			delete(status, path)
 		}
 	}
@@ -344,16 +395,26 @@ func excludes(p *ignorePattern) bool { return p != nil && !p.negative }
 // lastMatch is the pattern that decides path, whose last part is name, in
 // chain, as git's last_matching_pattern_from_lists finds it: the files from
 // the last to the first, each file's patterns from its last to its first,
-// and the first to match; nil where none does.
-func lastMatch(chain []ignoreFile, path, name string, isDir, fold bool) *ignorePattern {
+// and the first to match; nil where none does, or where the call's budget
+// runs out first.
+//
+// **The cost is the paths times the patterns, and git's is too.** Ten
+// thousand patterns of twenty stars each, well within the bounds, over ten
+// thousand untracked files cost git 22 s and this 30 s of matching; each
+// pattern tried is counted against the budget, as each step of matching one
+// is (wildmatch), and the matching stops where it runs out.
+func lastMatch(chain []ignoreFile, path, name string, isDir, fold bool, b *statusBudget) *ignorePattern {
 	for i := len(chain) - 1; i >= 0; i-- {
 		file := chain[i]
 		for j := len(file.patterns) - 1; j >= 0; j-- {
+			if b.tick() {
+				return nil
+			}
 			p := &file.patterns[j]
 			if p.dirOnly && !isDir {
 				continue
 			}
-			if p.basename && p.matchesName(name, fold) || !p.basename && p.matchesPath(path, file.reach, fold) {
+			if p.basename && p.matchesName(name, fold, b) || !p.basename && p.matchesPath(path, file.reach, fold, b) {
 				return p
 			}
 		}
@@ -464,7 +525,7 @@ func simpleLength(s string) int {
 
 // matchesName is git's match_basename: whether a pattern that holds no slash
 // matches name, the last part of a path.
-func (p *ignorePattern) matchesName(name string, fold bool) bool {
+func (p *ignorePattern) matchesName(name string, fold bool, b *statusBudget) bool {
 	switch {
 	case p.literal == len(p.text):
 		return samePath(p.text, name, fold)
@@ -472,13 +533,13 @@ func (p *ignorePattern) matchesName(name string, fold bool) bool {
 		tail := p.text[1:]
 		return len(tail) <= len(name) && samePath(tail, name[len(name)-len(tail):], fold)
 	}
-	return wildmatch(p.text, name, foldFlag(fold))
+	return wildmatch(p.text, name, foldFlag(fold), b)
 }
 
 // matchesPath is git's match_pathname: whether a pattern that holds a slash
 // matches path, taken from base, the directory of the file it is in with
 // its trailing slash, as a pattern holding a slash is.
-func (p *ignorePattern) matchesPath(path, base string, fold bool) bool {
+func (p *ignorePattern) matchesPath(path, base string, fold bool, b *statusBudget) bool {
 	pattern, literal := p.text, p.literal
 	if strings.HasPrefix(pattern, "/") {
 		pattern, literal = pattern[1:], max(literal-1, 0)
@@ -496,7 +557,7 @@ func (p *ignorePattern) matchesPath(path, base string, fold bool) bool {
 			return true
 		}
 	}
-	return wildmatch(pattern, name, wmPathname|foldFlag(fold))
+	return wildmatch(pattern, name, wmPathname|foldFlag(fold), b)
 }
 
 // hasPathPrefix reports whether path lies under base, a directory with its
