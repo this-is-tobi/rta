@@ -176,3 +176,28 @@ func TestPagePutIgnoresNilViews(t *testing.T) {
 		t.Fatal("page still reports empty after a real section")
 	}
 }
+
+// A section whose handler returned a nil *view.Error as its error answered,
+// and the page shows it: read as a failure, it was left out, and the warning
+// a failed section leaves was dropped too, since the error it would carry is
+// nil — a section gone with no word about why.
+func TestAPageSectionsNilViewErrorIsNoFailure(t *testing.T) {
+	var none *view.Error
+	answered := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, none }
+
+	p := plugin.NewPage(t.Context(), plugin.NewRequest(nil, false, false))
+	p.Add("host", answered, plugin.Read, nil)
+	if got := titles(p.View()); len(got) != 1 || got[0] != "host" {
+		t.Errorf("a section that answered was left out: %v", got)
+	}
+	if _, err := p.Run(answered, plugin.Read, nil); err != nil {
+		t.Errorf("Page.Run handed on a failure for a call that worked: %#v", err)
+	}
+	// And an error that is not the nil pointer itself is the failure it says.
+	if plugin.Failure(view.Errorf("x.y", "broken")) == nil || plugin.Failure(errors.New("broken")) == nil {
+		t.Error("Failure dropped an error that was not a nil *view.Error")
+	}
+	if plugin.Failure(nil) != nil {
+		t.Error("Failure made an error out of none")
+	}
+}

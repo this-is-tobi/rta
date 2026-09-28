@@ -82,7 +82,7 @@ func (s *server) Call(ctx context.Context, req *rtav1.CallRequest) (resp *rtav1.
 		WithSurface(wire.SurfaceFromProto(req.GetSurface()))
 
 	v, runErr := c.Run(ctx, pr)
-	if runErr != nil {
+	if runErr = plugin.Failure(runErr); runErr != nil {
 		return &rtav1.CallResponse{Result: &rtav1.CallResponse_Error{
 			Error: wire.ErrorToProto(view.AsError(runErr, c.ID+".failed")),
 		}}, nil
@@ -113,7 +113,7 @@ func (s *server) Prefill(ctx context.Context, req *rtav1.PrefillRequest) (resp *
 	}()
 
 	values, prefillErr := c.Prefill(ctx, plugin.NewRequest(wire.ValuesFromProto(req.GetValues()), false, false))
-	if prefillErr != nil {
+	if prefillErr = plugin.Failure(prefillErr); prefillErr != nil {
 		return &rtav1.PrefillResponse{Error: wire.ErrorToProto(view.AsError(prefillErr, c.ID+".prefill.failed"))}, nil
 	}
 	return &rtav1.PrefillResponse{Values: wire.ValuesToProto(values)}, nil

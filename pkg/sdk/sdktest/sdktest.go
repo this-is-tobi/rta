@@ -311,8 +311,14 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 			}
 		}
 
+		// Read as the plugin's server reads it (plugin.Failure): a handler
+		// returning a nil *view.Error as its error has answered, and its view
+		// is what the host renders. Taken for a failure here, every rule on
+		// the view skipped the one capability whose view reaches every
+		// surface unchecked.
 		ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 		v, err := c.Run(ctx, req)
+		err = plugin.Failure(err)
 		cancel()
 		out = append(out, observed{cap: c, view: v, err: err})
 

@@ -3,6 +3,7 @@ package view
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -82,6 +83,17 @@ func TestAsError(t *testing.T) {
 	}
 	if got := AsError(errors.New("plain"), "sys.internal"); got.Code != "sys.internal" || got.Message != "plain" {
 		t.Errorf("foreign error not wrapped: %+v", got)
+	}
+	// An error wrapping a *view.Error that is nil is its wrapper's failure:
+	// errors.As finds the nil pointer, and handed on it was a failure with
+	// nothing in it, the wrapper's own words dropped with it.
+	var none *Error
+	if got := AsError(fmt.Errorf("listing: %w", none), "sys.internal"); got == nil ||
+		got.Code != "sys.internal" || !strings.HasPrefix(got.Message, "listing: ") {
+		t.Errorf("an error wrapping a nil *view.Error lost its wrapper: %#v", got)
+	}
+	if got := AsError(none, "sys.internal"); got != nil {
+		t.Errorf("a nil *view.Error became a failure: %#v", got)
 	}
 }
 

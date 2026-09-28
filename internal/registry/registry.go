@@ -4,10 +4,12 @@
 package registry
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Origin is where a plugin came from: the binary on disk and the digest of
@@ -96,9 +98,15 @@ func (r *Registry) RegisterFrom(p plugin.Plugin, origin Origin) error {
 	// declare — closed sets, numeric bounds — so no surface, nor a plugin's
 	// own handler, has to remember to make it.
 	// A copy of the slice, so the caller's declaration is left as it was.
+	//
+	// And each handler's error is read as the runtime reads it
+	// (plugin.Failure), so a built-in returning a nil *view.Error as its
+	// error has succeeded on every surface — each of them asks err != nil,
+	// and the CLI went on to render the nil pointer it unwrapped.
 	caps := make([]plugin.Capability, len(p.Capabilities))
 	for i, c := range p.Capabilities {
-		c.Run = plugin.GuardInputs(c)
+		c.Run = settled(plugin.GuardInputs(c))
+		c.Prefill = settledPrefill(c.Prefill)
 		caps[i] = c
 		r.caps[c.ID] = c
 	}
@@ -106,6 +114,29 @@ func (r *Registry) RegisterFrom(p plugin.Plugin, origin Origin) error {
 	r.plugins[p.Name] = p
 	r.origins[p.Name] = origin
 	return nil
+}
+
+// settled is run with its error read through plugin.Failure.
+func settled(run plugin.Handler) plugin.Handler {
+	if run == nil {
+		return nil
+	}
+	return func(ctx context.Context, req plugin.Request) (view.View, error) {
+		v, err := run(ctx, req)
+		return v, plugin.Failure(err)
+	}
+}
+
+// settledPrefill is settled for a Prefill.
+func settledPrefill(prefill func(context.Context, plugin.Request) (map[string]any, error),
+) func(context.Context, plugin.Request) (map[string]any, error) {
+	if prefill == nil {
+		return nil
+	}
+	return func(ctx context.Context, req plugin.Request) (map[string]any, error) {
+		values, err := prefill(ctx, req)
+		return values, plugin.Failure(err)
+	}
 }
 
 // Origin reports where the named plugin came from, and whether that namespace
