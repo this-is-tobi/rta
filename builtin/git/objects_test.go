@@ -308,9 +308,9 @@ func TestAPromisorSetInAnyConfigGitReadsMakesAPartialClone(t *testing.T) {
 			switch {
 			case name == "git.status" || name == "git.log":
 				want = c.want
-			case c.want == "git.config.unreadable" && name != "git.remotes":
-				// git.config and git.hooks read the same files, and fail
-				// on it in their own words.
+			case c.want == "git.config.unreadable":
+				// git.config, git.hooks and git.remotes read the same
+				// files, and fail on it in their own words.
 				want = name + ".failed"
 			}
 			if code != want {

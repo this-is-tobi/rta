@@ -76,67 +76,14 @@ func runConfig(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Origin"},
 	}}
 
-	// Local scope for either kind of repository this plugin opens:
-	// filesystem storage's own .git/config on disk, or the config a remote
-	// clone synthesized in memory (its remote and branch tracking, at
-	// minimum), which repositoryConfigs reads alike.
-	_, repository, err := repositoryConfigs(repo)
-	if err != nil {
-		return nil, view.Errorf("git.config.failed", "reading repository config: %v", err)
-	}
-	r := newConfigReading(ctx, req, repo, repository)
-
-	// **The machine-wide scopes are the operator's, not the repository's.**
-	//
-	// The package doc says every capability here is Read because "a
-	// repository's history and diffs are not credentials", and that is true
-	// of the other seven. It was never true of this one: system and global
-	// config are not the repository at all, and they are where git keeps
-	// credentials by convention — `url.https://oauth2:glpat-…@gitlab.com/
-	// .insteadOf` is GitLab's own documented rewrite, `http.<url>.extraHeader`
-	// carries an Authorization header for Azure DevOps, and `github.token` is
-	// a plain PAT. So a Read capability with no grant handed an MCP caller the
-	// operator's forge credentials, from outside the path root, on a default
-	// server.
-	//
-	// Withheld from MCP rather than gated, because a grant is the wrong
-	// instrument here: the agent has a real use for the repository's own
-	// remotes and branch tracking, and no use at all for the operator's
-	// machine-wide identity. Local stays; a person at a terminal, on their own
-	// machine, still sees all three — the same rule Field.Local states for
-	// inputs, applied to scopes. The environment's is the operator's too, and
-	// withheld with them: `git -c http.extraHeader=...` is how a CI system
-	// hands git a token for one command.
-	//
-	// Every file git reads for these scopes, not go-git's LoadConfig, which
-	// reads the first global file that exists and stops: with both
-	// ~/.config/git/config and ~/.gitconfig present, git reads the two and
-	// this showed one, so a key set only in the other was missing from the
-	// answer to what git is configured with. A scope with no file on this
-	// machine is missing rows, never a failure. Over MCP none of them is read,
-	// not even for a hasconfig:remote.*.url condition, which the repository's
-	// config is matched against the repository's own remotes for
-	// (configReading.hasRemoteURL).
-	sources := repository
-	if req.Surface() != plugin.SurfaceMCP {
-		if sources, err = r.everything(); err != nil {
-			return nil, view.Errorf("git.config.failed", "%v", err)
-		}
-	}
-	pieces, err := r.follow(sources)
+	pieces, err := shownConfig(ctx, req, repo)
 	if verr := refusedByTheGate(err); verr != nil {
 		return nil, verr
 	}
 	if err != nil {
-		return nil, view.Errorf("git.config.failed", "reading the files the config includes: %v", err)
+		return nil, view.Errorf("git.config.failed", "%v", err)
 	}
-	base := ""
-	if store, onDisk := repo.Storer.(*filesystem.Storage); onDisk {
-		base = store.Filesystem().Root()
-		if wt, werr := repo.Worktree(); werr == nil {
-			base = wt.Filesystem.Root()
-		}
-	}
+	base := configBase(repo)
 	for _, p := range pieces {
 		addConfigRows(&t, p.scope, p.origin(base), p.config)
 	}
@@ -150,6 +97,81 @@ func runConfig(ctx context.Context, req plugin.Request) (view.View, error) {
 		t.Warnings = append(t.Warnings, *w)
 	}
 	return t, nil
+}
+
+// shownConfig is every piece of config git reads for repo that req may be
+// shown, in git's order, each file followed into what it includes: at a
+// terminal every file git reads, and over MCP the repository's own, local and
+// worktree. git.config shows these, and git.remotes and git.branches read
+// the remotes and the upstreams git reads from them.
+//
+// Local scope for either kind of repository this plugin opens: filesystem
+// storage's own .git/config on disk, or the config a remote clone synthesized
+// in memory (its remote and branch tracking, at minimum), which
+// repositoryConfigs reads alike.
+//
+// **The machine-wide scopes are the operator's, not the repository's.**
+//
+// The package doc says every capability here is Read because "a repository's
+// history and diffs are not credentials", and that is true of the others. It
+// was never true of git.config: system and global config are not the
+// repository at all, and they are where git keeps credentials by convention —
+// `url.https://oauth2:glpat-…@gitlab.com/.insteadOf` is GitLab's own
+// documented rewrite, `http.<url>.extraHeader` carries an Authorization
+// header for Azure DevOps, and `github.token` is a plain PAT. So a Read
+// capability with no grant handed an MCP caller the operator's forge
+// credentials, from outside the path root, on a default server.
+//
+// Withheld from MCP rather than gated, because a grant is the wrong instrument
+// here: the agent has a real use for the repository's own remotes and branch
+// tracking, and no use at all for the operator's machine-wide identity. Local
+// stays; a person at a terminal, on their own machine, still sees all three —
+// the same rule Field.Local states for inputs, applied to scopes. The
+// environment's is the operator's too, and withheld with them: `git -c
+// http.extraHeader=...` is how a CI system hands git a token for one command.
+// A remote the operator's config sets, and the branch it tracks, are withheld
+// with the rest, a remote's URL being where such a token is kept as often as
+// not.
+//
+// Every file git reads for these scopes, not go-git's LoadConfig, which reads
+// the first global file that exists and stops: with both ~/.config/git/config
+// and ~/.gitconfig present, git reads the two and this showed one, so a key
+// set only in the other was missing from the answer to what git is configured
+// with. A scope with no file on this machine is missing rows, never a failure.
+// Over MCP none of them is read, not even for a hasconfig:remote.*.url
+// condition, which the repository's config is matched against the
+// repository's own remotes for (configReading.hasRemoteURL).
+func shownConfig(ctx context.Context, req plugin.Request, repo *git.Repository) ([]scopedConfig, error) {
+	_, repository, err := repositoryConfigs(repo)
+	if err != nil {
+		return nil, fmt.Errorf("reading repository config: %w", err)
+	}
+	r := newConfigReading(ctx, req, repo, repository)
+	sources := repository
+	if req.Surface() != plugin.SurfaceMCP {
+		if sources, err = r.everything(); err != nil {
+			return nil, err
+		}
+	}
+	pieces, err := r.follow(sources)
+	if err != nil {
+		return nil, fmt.Errorf("reading the files the config includes: %w", err)
+	}
+	return pieces, nil
+}
+
+// configBase is the directory a row names a file of repo's config from
+// (scopedConfig.origin): its working tree, or its git directory where it has
+// none, and "" for a clone in memory, which has no place on this disk.
+func configBase(repo *git.Repository) string {
+	store, onDisk := repo.Storer.(*filesystem.Storage)
+	if !onDisk {
+		return ""
+	}
+	if wt, err := repo.Worktree(); err == nil {
+		return wt.Filesystem.Root()
+	}
+	return store.Filesystem().Root()
 }
 
 // everyConfig is every source of config git reads for a repository whose own

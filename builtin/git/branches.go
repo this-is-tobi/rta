@@ -26,7 +26,9 @@ func branchesCapability() plugin.Capability {
 			"repository no longer has a ref for — what `git fetch --prune` leaves behind " +
 			"once the remote side was deleted, and the usual sign a merged branch can go. " +
 			"With `all`, the remote-tracking branches follow, spelled `remotes/<remote>/<name>` " +
-			"the way `git branch -a` spells them. Nothing here touches the network: a " +
+			"the way `git branch -a` spells them. What a branch tracks is read from every file of " +
+			"config git reads, over MCP from the repository's own, as git.remotes reads a remote. " +
+			"Nothing here touches the network: a " +
 			"remote is reported as it stood the last time this repository fetched it. A " +
 			"detached HEAD — checked out at a commit rather than a branch — is reported as its " +
 			"own row rather than left for the caller to notice no branch was marked.",
@@ -63,20 +65,29 @@ func runBranches(ctx context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("git.branches.failed", "listing branches: %v", err)
 	}
+	pieces, err := shownConfig(ctx, req, repo)
+	if verr := refusedByTheGate(err); verr != nil {
+		return nil, verr
+	}
+	if err != nil {
+		return nil, view.Errorf("git.branches.failed", "reading what each branch tracks: %v", err)
+	}
+	tracks := configuredUpstreams(pieces)
 
 	t := view.Table{Columns: []view.Column{
 		{Name: "Name"},
 		{Name: "Current"},
 		{Name: "Upstream"},
 		{Name: "Status"},
-	}, Empty: "no branches yet: a branch is made by its first commit"}
+	}, Empty: "no branches yet: a branch is made by its first commit",
+		Warnings: unfollowedIncludes("git.branches", "an upstream set there is missing from this table", pieces)}
 	for _, ref := range locals {
 		name := ref.Name().Short()
 		current := ""
 		if name == currentBranch {
 			current = "yes"
 		}
-		upstream, status := upstreamStatus(repo, name, ref.Hash())
+		upstream, status := upstreamStatus(repo, tracks, name, ref.Hash())
 		t.Rows = append(t.Rows, []string{name, current, upstream, status})
 	}
 	if detached {
@@ -125,7 +136,8 @@ func branchRefs(repo *git.Repository) (locals, remotes []*plumbing.Reference, er
 	return locals, remotes, nil
 }
 
-// upstreamStatus names what a branch tracks and how the two stand.
+// upstreamStatus names what a branch tracks, as tracks holds it
+// (configuredUpstreams), and how the two stand.
 //
 // A configured upstream whose remote-tracking ref is missing is `gone`, and
 // that is decided from the branch's own config section rather than through
@@ -134,20 +146,19 @@ func branchRefs(repo *git.Repository) (locals, remotes []*plumbing.Reference, er
 // deleted remote branch into "no upstream" — the one case this column exists
 // to make visible. The counts are what `git branch -vv` prints, from the same
 // bounded walks the overview tile uses.
-func upstreamStatus(repo *git.Repository, branch string, tip plumbing.Hash) (upstream, status string) {
-	if b, err := repo.Branch(branch); err == nil && b.Remote != "" {
-		merge := branch
-		if b.Merge != "" {
-			merge = b.Merge.Short()
-		}
-		name := b.Remote + "/" + merge
-		ref, err := repo.Reference(plumbing.NewRemoteReferenceName(b.Remote, merge), true)
+func upstreamStatus(repo *git.Repository, tracks map[string]upstream, branch string, tip plumbing.Hash) (
+	upstream, status string,
+) {
+	if u := tracks[branch]; u.remote != "" {
+		merge := u.branch(branch)
+		name := u.remote + "/" + merge
+		ref, err := repo.Reference(plumbing.NewRemoteReferenceName(u.remote, merge), true)
 		if err != nil {
 			return name, "gone"
 		}
 		return name, drift(repo, tip, ref.Hash())
 	}
-	remote, merge := upstreamOf(repo, branch)
+	remote, merge := upstreamOf(repo, tracks, branch)
 	if remote == "" {
 		return "", ""
 	}
