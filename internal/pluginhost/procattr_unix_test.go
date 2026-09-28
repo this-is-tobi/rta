@@ -3,13 +3,17 @@
 package pluginhost
 
 import (
+	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/this-is-tobi/rta/internal/shutdown"
 )
 
 // go-plugin kills the process it started and nothing else. A plugin that
@@ -111,4 +115,91 @@ func TestReapIsSafeOnAProcessThatIsGone(t *testing.T) {
 func alive(pid int) bool {
 	// Signal 0 tests for existence without delivering anything.
 	return syscall.Kill(pid, 0) == nil
+}
+
+// A launch under way holds off a forced exit until it ends, and the exit then
+// closes what it produced. A launch runs outside the host's lock and waits out
+// the handshake whatever its context says, so the process it is starting is in
+// no map CloseAll reads until it ends: an exit that closed the host meanwhile
+// closed everything but that one, which then outlived rta in a process group
+// of its own.
+func TestALaunchUnderWayHoldsOffAForcedExit(t *testing.T) {
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "pid")
+	p := filepath.Join(dir, "rta-plugin-silent")
+	if err := os.WriteFile(p, []byte("#!/bin/sh\necho $$ > "+pidFile+"\nexec sleep 60\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h := New(nil)
+	opened := make(chan error, 1)
+	go func() {
+		_, err := h.Open(context.Background(), p)
+		opened <- err
+	}()
+	pid := pidWritten(t, pidFile)
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+
+	// The exit's order: settle, close the host, run the hooks.
+	resume := shutdown.Settle()
+	h.CloseAll()
+	shutdown.Exiting()
+	// A killed process stays a zombie until the wait go-plugin runs on it
+	// collects it, and signal 0 reaches a zombie, so give that a moment.
+	for deadline := time.Now().Add(2 * time.Second); alive(pid); {
+		if time.Now().After(deadline) {
+			t.Errorf("pid %d, still starting when the exit began, was running once it had closed the host", pid)
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	resume()
+	if err := <-opened; err == nil {
+		t.Error("a plugin that never answered was opened")
+	}
+}
+
+// Nor does a launch start once a forced exit has begun: the command it is for
+// runs on after the exit has closed the host, and a process it started then
+// was on no list the exit reads. Its Hold waits instead, for good in a process
+// about to exit, and here until the settle is let go.
+func TestNoLaunchStartsOnceAForcedExitHasBegun(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "started")
+	p := filepath.Join(dir, "rta-plugin-late")
+	if err := os.WriteFile(p, []byte("#!/bin/sh\ntouch "+marker+"\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h := New(nil)
+	t.Cleanup(h.CloseAll)
+	resume := shutdown.Settle()
+	opened := make(chan error, 1)
+	go func() {
+		_, err := h.Open(context.Background(), p)
+		opened <- err
+	}()
+	time.Sleep(time.Second)
+	_, err := os.Stat(marker)
+	resume()
+	if err == nil {
+		t.Error("a plugin was launched once the exit had begun")
+	}
+	<-opened
+}
+
+func pidWritten(t *testing.T, path string) int {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		raw, err := os.ReadFile(path)
+		if err == nil && strings.HasSuffix(string(raw), "\n") {
+			pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+			if err != nil {
+				t.Fatalf("the plugin wrote %q for its pid", raw)
+			}
+			return pid
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the plugin never started")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
