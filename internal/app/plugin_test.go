@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -1138,4 +1139,38 @@ func TestPluginNewAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	readsOnATerminal(t, out, "created", "files", "module", "builds against", "next", "to install it")
+}
+
+// A refusal the launch already coded reaches the author as itself. plugin dev
+// re-coded every load failure as plugin.dev.load, with a hint about a panic
+// in Plugin() or a declaration rta refuses, so a TMPDIR too long for the
+// plugin's socket arrived under the wrong code and with a hint that sent the
+// author to their own code for a problem in their environment.
+func TestPluginDevPassesALaunchRefusalOnAsItself(t *testing.T) {
+	if testing.Short() {
+		t.Skip("compiles a binary")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("a plugin listens on loopback TCP on Windows, where TMPDIR sets no limit")
+	}
+	src := devModule(t)
+	// Too long for any socket's path, and there, so that the build, which
+	// makes its own directory in TMPDIR, gets as far as the launch.
+	long := filepath.Join(t.TempDir(), strings.Repeat("d", 110))
+	if err := os.Mkdir(long, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", long)
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = run(t, reg, "plugin", "dev", src)
+	var verr *view.Error
+	if !errors.As(err, &verr) || verr.Code != "plugin.tmpdir.toolong" {
+		t.Fatalf("got %v, want the launch's own plugin.tmpdir.toolong", err)
+	}
+	if strings.Contains(verr.Hint, "Plugin()") || !strings.Contains(verr.Hint, "TMPDIR") {
+		t.Errorf("the hint is not the launch's own: %q", verr.Hint)
+	}
 }
