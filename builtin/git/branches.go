@@ -150,23 +150,22 @@ func upstreamStatus(repo *git.Repository, tracks map[string]upstream, branch str
 	upstream, status string,
 ) {
 	if u := tracks[branch]; u.remote != "" {
-		merge := u.branch(branch)
-		name := u.remote + "/" + merge
-		ref, err := repo.Reference(plumbing.NewRemoteReferenceName(u.remote, merge), true)
+		name, at := u.tracked(branch)
+		ref, err := repo.Reference(at, true)
 		if err != nil {
 			return name, "gone"
 		}
 		return name, drift(repo, tip, ref.Hash())
 	}
-	remote, merge := upstreamOf(repo, tracks, branch)
-	if remote == "" {
+	name, at := upstreamOf(repo, tracks, branch)
+	if name == "" {
 		return "", ""
 	}
-	ref, err := repo.Reference(plumbing.NewRemoteReferenceName(remote, merge), true)
+	ref, err := repo.Reference(at, true)
 	if err != nil {
-		return remote + "/" + merge, ""
+		return name, ""
 	}
-	return remote + "/" + merge, drift(repo, tip, ref.Hash())
+	return name, drift(repo, tip, ref.Hash())
 }
 
 func drift(repo *git.Repository, tip, upstream plumbing.Hash) string {

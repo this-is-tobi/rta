@@ -88,13 +88,11 @@ func trackingOf(repo *git.Repository, tracks map[string]upstream, head *plumbing
 	if head == nil || !head.Name().IsBranch() {
 		return tracking{}
 	}
-	branch := head.Name().Short()
-	remote, merge := upstreamOf(repo, tracks, branch)
-	if remote == "" {
+	name, at := upstreamOf(repo, tracks, head.Name().Short())
+	if name == "" {
 		return tracking{}
 	}
-	name := remote + "/" + merge
-	ref, err := repo.Reference(plumbing.NewRemoteReferenceName(remote, merge), true)
+	ref, err := repo.Reference(at, true)
 	if err != nil {
 		// Configured but with no ref here, never fetched or pruned since:
 		// naming it is still the useful answer, since "where would this
@@ -110,15 +108,18 @@ func trackingOf(repo *git.Repository, tracks map[string]upstream, head *plumbing
 
 // upstreamOf reads branch.<name>.remote and branch.<name>.merge, as tracks
 // holds them (configuredUpstreams), falling back to a remote-tracking ref of
-// the same name.
+// the same name: the upstream as git names it, "" where there is none, and
+// the ref it is (upstream.tracked).
 //
 // The fallback is for the repository somebody cloned and never pushed from:
 // git writes the branch section on the first push, so before that `main` has
 // no configured upstream while `origin/main` sits right there. Reporting
 // nothing would be technically correct and useless.
-func upstreamOf(repo *git.Repository, tracks map[string]upstream, branch string) (remote, merge string) {
+func upstreamOf(repo *git.Repository, tracks map[string]upstream, branch string) (name string,
+	ref plumbing.ReferenceName,
+) {
 	if u := tracks[branch]; u.remote != "" {
-		return u.remote, u.branch(branch)
+		return u.tracked(branch)
 	}
 	// From the remote-tracking refs themselves rather than from the configured
 	// remotes: what makes an upstream *reportable* is that this machine has
@@ -153,7 +154,7 @@ func upstreamOf(repo *git.Repository, tracks map[string]upstream, branch string)
 		}
 		return found[i] < found[j]
 	})
-	return found[0], branch
+	return found[0] + "/" + branch, plumbing.NewRemoteReferenceName(found[0], branch)
 }
 
 // upstream is what a branch is configured to track: the remote,
@@ -167,6 +168,25 @@ func (u upstream) branch(branch string) string {
 		return branch
 	}
 	return plumbing.ReferenceName(u.merge).Short()
+}
+
+// tracked is the ref u, branch's upstream, is, and its name as git names it:
+// the remote-tracking ref of the branch it merges, remote/branch.
+//
+// **A remote of "." is the repository itself.** `git branch --track feature
+// main` sets it, and the branch then tracks the ref it merges here, named as
+// that ref's own short name: git counts feature against main. This looked for
+// a remote named "." and said "./main" was gone.
+func (u upstream) tracked(branch string) (name string, ref plumbing.ReferenceName) {
+	if u.remote != "." {
+		merge := u.branch(branch)
+		return u.remote + "/" + merge, plumbing.NewRemoteReferenceName(u.remote, merge)
+	}
+	ref = plumbing.ReferenceName(u.merge)
+	if !strings.HasPrefix(u.merge, "refs/") {
+		ref = plumbing.NewBranchReferenceName(u.branch(branch))
+	}
+	return ref.Short(), ref
 }
 
 // configuredUpstreams is what each branch tracks as pieces set it, read as
