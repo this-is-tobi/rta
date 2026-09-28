@@ -288,6 +288,13 @@ func RenderTopLevelError(w io.Writer, root *cobra.Command, err error) bool {
 
 // topLevelRenderOptions rebuilds what a command would have rendered with.
 func topLevelRenderOptions(root *cobra.Command) cli.Options {
+	return renderOptionsFor(root, os.Args[1:])
+}
+
+// renderOptionsFor is topLevelRenderOptions for a root that ran args, which
+// for the process's own root are its command line and for the one plugin dev
+// runs a command in are what followed `--` (see renderNested).
+func renderOptionsFor(root *cobra.Command, args []string) cli.Options {
 	flag := func(name string) string {
 		if root == nil {
 			return ""
@@ -304,7 +311,7 @@ func topLevelRenderOptions(root *cobra.Command) cli.Options {
 	// itself still says what was asked for.
 	if root != nil {
 		if f := root.PersistentFlags().Lookup("output"); f != nil && !f.Changed {
-			if asked, ok := outputOnCommandLine(os.Args[1:]); ok {
+			if asked, ok := outputOnCommandLine(args); ok {
 				output = asked
 			}
 		}
