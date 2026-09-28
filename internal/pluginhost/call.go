@@ -55,9 +55,38 @@ func (c *Client) call(ctx context.Context, id string, req plugin.Request) (view.
 		return nil, c.transportError(ctx, id, err)
 	}
 	if e := resp.GetError(); e != nil {
-		return nil, wire.ErrorFromProto(e)
+		return nil, failure(id, req.Surface(), e)
 	}
 	return wire.ViewFromProto(resp.GetView()), nil
+}
+
+// failure is the plugin's own failure of a call to capability id, as the
+// caller reads it.
+//
+// An Error with neither a code nor a message is how a plugin built on an
+// older SDK answers a call that worked, when its handler returned a nil
+// *view.Error as its error: the SDK read that as a failure and sent an Error
+// with nothing in it, and the view with it was dropped. Decoded as it stood,
+// it reached the caller as ERROR and not one word more, so it is named here
+// for what it is. The view is not on the wire and cannot be recovered; a
+// build on a current SDK reads such an error as none (plugin.Failure).
+//
+// The hint names the upgrade for the reader on sf: an agent is handed the
+// command as the operator's to run, since it has no terminal to run it in,
+// and at a terminal it is the plugin's own upgrade, since a bare `rta plugin
+// upgrade` is refused for naming neither a plugin nor --all.
+func failure(id string, sf plugin.Surface, e *rtav1.Error) *view.Error {
+	if e.GetCode() == "" && e.GetMessage() == "" {
+		upgrade := "plugin upgrade " + plugin.Namespace(id)
+		next := "`rta " + upgrade + "` moves it to the build its index now claims"
+		if sf == plugin.SurfaceMCP {
+			next = plugin.AskOperator(upgrade) + ", which moves it to the build its index now claims"
+		}
+		return view.Errorf("plugin.error.empty", "the plugin serving %s reported a failure and said nothing about it", id).
+			WithHint("a plugin built on an older rta SDK answers a call that worked this way, when its handler " +
+				"returns a nil *view.Error as its error — " + next + ", and its author can rebuild it on a current SDK")
+	}
+	return wire.ErrorFromProto(e)
 }
 
 // callRequest is what the plugin is sent for one call of capability id.
@@ -90,7 +119,7 @@ func (c *Client) prefill(ctx context.Context, id string, req plugin.Request) (ma
 		return nil, c.transportError(ctx, id, err)
 	}
 	if e := resp.GetError(); e != nil {
-		return nil, wire.ErrorFromProto(e)
+		return nil, failure(id, req.Surface(), e)
 	}
 	return wire.ValuesFromProto(resp.GetValues()), nil
 }
