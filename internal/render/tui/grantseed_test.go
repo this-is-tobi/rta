@@ -5,6 +5,7 @@ import (
 	"maps"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -247,6 +248,57 @@ func TestARowActionOnARowNamingNoRecordActsOnThatGrantAlone(t *testing.T) {
 					g.Target, g.Scope, g.Profile, extended)
 			}
 		}
+	}
+}
+
+// A roster read from a server is that server's, and an action off one of its
+// rows acts there or not at all. x carries the server, as grant.revoke takes
+// one. n cannot, since grant.renew takes no server: it opened a renew here,
+// on this machine's grants of the same name, off a row that was never one of
+// them — an extension, on the wrong machine. It is not offered on such a
+// roster, and pressed anyway it says why rather than opening anything.
+func TestARowActionThatCannotFollowARemoteRosterIsNotOffered(t *testing.T) {
+	m := storeModel(t)
+	m.reg = realRegistry(t)
+	list, _ := m.reg.Capability("grant.list")
+	tbl := view.Table{
+		Columns: []view.Column{{Name: "Capability"}, {Name: "Profile"}, {Name: "Agent"}, {Name: "Record"}},
+		Rows:    [][]string{{"kv.get", "—", "claude", "any"}},
+	}
+	m.current = list
+	m.trail = []runRef{{cap: list, values: map[string]any{"server": "lab"}}}
+	m.lastValues = map[string]any{"server": "lab"}
+	m.result = resultMsg{cap: list, view: tbl, raw: tbl}
+	offered := map[string]bool{}
+	for _, it := range m.resultFooterItems() {
+		offered[it.label] = true
+	}
+	if offered["renew"] || !offered["revoke"] {
+		t.Errorf("a remote roster offers %v, want revoke and not renew", offered)
+	}
+	for _, a := range grantRowActions(t, m) {
+		model, _ := m.runAction(a, tbl)
+		next := model.(Model)
+		switch a.cap.ID {
+		case "grant.renew":
+			if next.form != nil || !strings.Contains(next.flash, "lab") {
+				t.Errorf("n on lab's roster opened a form (%v) and said %q, want nothing opened and why",
+					next.form != nil, next.flash)
+			}
+		case "grant.revoke":
+			if next.form == nil || next.form.values()["server"] != "lab" {
+				t.Errorf("x on lab's roster did not open a revoke aimed at lab")
+			}
+		}
+	}
+	m.trail = []runRef{{cap: list, values: map[string]any{}}}
+	m.lastValues = map[string]any{}
+	offered = map[string]bool{}
+	for _, it := range m.resultFooterItems() {
+		offered[it.label] = true
+	}
+	if !offered["renew"] || !offered["revoke"] {
+		t.Errorf("this machine's roster offers %v, want renew and revoke", offered)
 	}
 }
 
