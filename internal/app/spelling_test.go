@@ -140,6 +140,49 @@ func TestTheHostSwitchesAreTheFlagsTheHostGivesACapability(t *testing.T) {
 	}
 }
 
+// The short flags the speller reads as rta's are the ones the command tree
+// gives a capability's command: a letter the tree starts giving one, or
+// stops, fails here before a sentence spelling it is let through or held for
+// nothing. Read through Find, over every letter a flag could be, since which
+// letters the speller knows is its own business.
+func TestTheShortSwitchesTheSpellerReadsAreTheOnesTheHostGives(t *testing.T) {
+	sp, reg := newSpeller(t)
+	root := NewRoot(reg, "test")
+	given := map[string]string{}
+	for _, c := range reg.Capabilities() {
+		cmd, _, err := root.Find(c.Words())
+		if err != nil || cmd == root {
+			t.Fatalf("cannot reach the command for %s: %v", c.ID, err)
+		}
+		cmd.InitDefaultHelpFlag()
+		cmd.Flags().VisitAll(func(f *pflag.Flag) {
+			if f.Shorthand != "" {
+				given[f.Shorthand] = f.Name
+			}
+		})
+	}
+	if len(given) == 0 {
+		t.Fatal("no capability command is given a short flag, so this tests nothing")
+	}
+	for _, r := range "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ" {
+		short := string(r)
+		name, ok := given[short]
+		held := len(sp.Find("pass -"+short+" to it", false)) > 0
+		switch {
+		case ok && !held:
+			t.Errorf("-%s in prose was let through, and the host gives it as short for --%s", short, name)
+		case !ok && held:
+			t.Errorf("-%s in prose was held, and the host gives no capability's command that letter", short)
+		}
+		if !ok {
+			continue
+		}
+		if held := len(sp.Find("`kv list -"+short+"` is the same", false)) > 0; !held {
+			t.Errorf("-%s after a capability's words was not read as --%s, which the host gives it", short, name)
+		}
+	}
+}
+
 // Everything a client is told about a tool — its description, rta's frame
 // around it, every string in its input schema — is read by an agent, which
 // has arguments and no flags, and tools and no terminal. Both transports'

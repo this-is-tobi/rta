@@ -58,6 +58,26 @@ func TestTheSpellerTellsATerminalsSpellingFromEveryoneElses(t *testing.T) {
 		// A flag a sentence read out of source splices together.
 		"raise --" + Operand + " to see more": true,
 		"raise --%s to see more":              true,
+		// The host's short switches, read as the ones they are short for:
+		// in prose, opening a span, and after a capability's words.
+		"as CSV with -o csv":                     true,
+		"pass -y to skip the question":           true,
+		"see -h for the rest":                    true,
+		"`-o json` is the same list":             true,
+		"`demo key list -o=json` is the same":    true,
+		"`demo key list -y` skips the prompt":    true,
+		"the same as `kubectl get pods -o wide`": false,
+		"what `du -sh * | sort -h` answers":      false,
+		// Any other letter is another program's option, named as a thing,
+		// and a dash inside a word or a number is no flag.
+		"every `-e` and every compose-file value": false,
+		"request header: -H 'Key: Value'":         false,
+		"a 24-h window, an e-mail, x-y":           false,
+		"-----BEGIN PUBLIC KEY----- -o":           true,
+		"":                                        false,
+		"-":                                       false,
+		"`-`":                                     false,
+		"``":                                      false,
 	} {
 		if got := len(sp.Find(text, false)) > 0; got != want {
 			t.Errorf("Find(%q) found a terminal's spelling: %v, want %v", text, got, want)
