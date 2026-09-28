@@ -377,7 +377,7 @@ func TestAFileIncludedFromOutsideTheRootsCountsAndIsNeverShownOverMCP(t *testing
 	dir, repo := testRepo(t)
 	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
 	writeFile(t, home, ".my.cnf", "[client]\n\tuser = planted-user\n\tpassword = planted-password\n"+
-		"\thost = planted-host.example\n[core]\n\thooksPath = from-credentials\n"+
+		"\thost = planted-host.example\n\tapi-token = planted-api-token\n[core]\n\thooksPath = from-credentials\n"+
 		"[include]\n\tpath = "+filepath.Join(dir, "nested.cfg")+"\n\tpath = %(prefix)/planted-undecided\n")
 	writeFile(t, dir, "nested.cfg", "[x]\n\tnested = planted-nested-value\n")
 	writeFile(t, dir, ".git/shared.cfg", "[x]\n\tshared = in-the-root\n")
@@ -421,6 +421,11 @@ func TestAFileIncludedFromOutsideTheRootsCountsAndIsNeverShownOverMCP(t *testing
 	if len(cli.Warnings) != 1 || cli.Warnings[0].Code != "git.config.include" {
 		t.Errorf("at a terminal, warnings = %+v, want the include under git's install prefix said to be unread",
 			cli.Warnings)
+	}
+	for _, key := range []string{"client.password", "client.api-token"} {
+		if got := keyRows(cli, key); len(got) != 1 || !strings.HasPrefix(got[0], view.Mask+"@") {
+			t.Errorf("at a terminal, %s rows = %v, want the value masked, as a credential is", key, got)
+		}
 	}
 
 	writeFile(t, home, ".my.cnf", "[core]\n\thooksPath = "+filepath.Join(home, "planted-hooks")+"\n")
