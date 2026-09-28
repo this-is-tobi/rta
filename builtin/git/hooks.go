@@ -57,7 +57,7 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	dir, base, hidden, warnings, err := hooksDir(ctx, req, repo, fs)
+	dir, base, warnings, err := hooksDir(ctx, req, repo, fs)
 	if verr := refusedByTheGate(err); verr != nil {
 		return nil, verr
 	}
@@ -70,13 +70,7 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 	// ~/.githooks from a root drawn around one project lists nothing outside
 	// it. And read at the place the host judged, symlinks resolved, so a
 	// hooks directory linked out of the root is refused rather than followed.
-	// A value read from a file the caller is not shown is not named in the
-	// refusal either, being one of its values.
 	judged, verr := req.Confine("path", dir)
-	if verr != nil && hidden {
-		return nil, view.Errorf(verr.Code, "path: core.hooksPath, set in a file the repository's config includes "+
-			"from outside this server's roots, names a directory outside them").WithHint(verr.Hint)
-	}
 	if verr != nil {
 		return nil, verr
 	}
@@ -216,9 +210,9 @@ func hookMode(req plugin.Request, dir, name string, info os.FileInfo) (mode os.F
 // included — git.config withholds those scopes there because they hold
 // credentials, and a directory is not one; leaving it unread would answer
 // wrongly instead, and the directory it names is put to the host like any
-// other. An include in any of those files is followed as git follows it, and
-// hidden is a value read from a file the caller is not shown
-// (scopedConfig.hidden).
+// other. An include in any of those files is followed as git follows it, but
+// for one the repository's config makes, over MCP, of a file outside the
+// roots, which is not (configReading.include).
 //
 // A relative value is taken from where git runs a hook, the working tree's
 // root, or the git directory itself in a bare repository; ~ is the
@@ -232,26 +226,26 @@ func hookMode(req plugin.Request, dir, name string, info os.FileInfo) (mode os.F
 // its main checkout. warnings are what the answer cannot vouch for, and what
 // it has to explain.
 func hooksDir(ctx context.Context, req plugin.Request, repo *git.Repository, fs billy.Filesystem) (dir, base string,
-	hidden bool, warnings []view.Error, err error,
+	warnings []view.Error, err error,
 ) {
 	base = fs.Root()
 	if wt, werr := repo.Worktree(); werr == nil {
 		base = wt.Filesystem.Root()
 	}
-	value, set, hidden, warnings, err := hooksPathSetting(ctx, req, repo)
+	value, set, warnings, err := hooksPathSetting(ctx, req, repo)
 	switch {
 	case err != nil:
-		return "", "", false, nil, err
+		return "", "", nil, err
 	case !set:
-		return filepath.Join(commonGitDir(fs), "hooks"), base, false, warnings, nil
+		return filepath.Join(commonGitDir(fs), "hooks"), base, warnings, nil
 	case value == "":
-		return filesystemTop, base, hidden, warnings, nil
+		return filesystemTop, base, warnings, nil
 	}
 	expanded, why := configPathname(value)
 	if why != "" {
-		return "", "", false, nil, fmt.Errorf("the directory it names is not one this can tell, since %s", why)
+		return "", "", nil, fmt.Errorf("the directory it names is not one this can tell, since %s", why)
 	}
-	return against(base, expanded), base, hidden, warnings, nil
+	return against(base, expanded), base, warnings, nil
 }
 
 // filesystemTop is the directory a core.hooksPath set to nothing leaves git
@@ -281,17 +275,18 @@ var filesystemTop = string(filepath.Separator)
 // (configReading.expand); one whose include this cannot decide is not, and
 // could set it: the ones that count are at or after the piece the value came
 // from, since what git reads later wins, which is all of them when none sets
-// it. hidden is a value read from a file the caller is not shown. And two system
-// files setting it differently are two builds of git running hooks from two
-// directories, only one of which this lists: that is said, naming the files
-// and not the values, since over MCP the operator's own config is read for
-// this one key and a directory outside the root is not shown.
-func hooksPathSetting(ctx context.Context, req plugin.Request, repo *git.Repository) (value string, set, hidden bool,
+// it; and so does an include not followed over MCP, of a file outside the
+// roots (includesOutside). And two system files setting it differently are
+// two builds of git running hooks from two directories, only one of which
+// this lists: that is said, naming the files and not the values, since over
+// MCP the operator's own config is read for this one key and a directory
+// outside the root is not shown.
+func hooksPathSetting(ctx context.Context, req plugin.Request, repo *git.Repository) (value string, set bool,
 	_ []view.Error, _ error,
 ) {
 	files, err := gitConfigs(ctx, req, repo)
 	if err != nil {
-		return "", false, false, nil, err
+		return "", false, nil, err
 	}
 	// Each system file with the value it leaves core.hooksPath at, what it
 	// includes read with it: a build of git reads its own system file and the
@@ -319,18 +314,14 @@ func hooksPathSetting(ctx context.Context, req plugin.Request, repo *git.Reposit
 	for _, v := range builds {
 		values[v] = true
 	}
-	var warnings []view.Error
-	if w := includesUndecided("git.hooks.include",
-		"core.hooksPath was not looked for there, and git may run hooks from another directory",
-		files[max(from, 0):]); w != nil {
-		warnings = append(warnings, *w)
-	}
+	warnings := unfollowedIncludes("git.hooks",
+		"core.hooksPath was not looked for there, and git may run hooks from another directory", files[max(from, 0):])
 	if from < 0 {
-		return "", false, false, warnings, nil
+		return "", false, warnings, nil
 	}
 	last := files[from]
 	if last.blank[configKey("core", "", "hooksPath")].last {
-		return "", true, false, nil, fmt.Errorf("%s sets core.hooksPath with no value, which git refuses to run with "+
+		return "", true, nil, fmt.Errorf("%s sets core.hooksPath with no value, which git refuses to run with "+
 			"(missing value): no hook runs, and no git command either", last.place())
 	}
 	if last.scope == "system" && len(values) > 1 {
@@ -351,7 +342,7 @@ func hooksPathSetting(ctx context.Context, req plugin.Request, repo *git.Reposit
 			Hint: "unset it there, and git runs the repository's own hooks",
 		})
 	}
-	return value, true, last.hidden, warnings, nil
+	return value, true, warnings, nil
 }
 
 // gitConfigs is every piece of config git reads for repo, for req, in the

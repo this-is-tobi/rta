@@ -51,11 +51,10 @@ import (
 // file of sections and keys git reads as config without a complaint (git
 // refuses ~/.aws/credentials, whose keys hold underscores), so a repository's
 // .git/config, which a caller can write inside the root, could have
-// git.config display another file's secrets. Over MCP a file the repository's
-// own config reaches outside the server's roots is read, and counts, for
-// every judgement here, as git would read it; none of its keys or values is
-// shown, and git.config names the include as one outside the roots
-// (configReading.include).
+// git.config display another file's secrets. Over MCP an include the
+// repository's own config makes of a file outside the server's roots is not
+// followed at all, and git.config and git.hooks name it as one outside the
+// roots (configReading.include).
 
 // maxIncludeDepth is how deep git follows an include of an include, its
 // MAX_INCLUDE_DEPTH: one more is an error git stops at ("exceeded maximum
@@ -134,7 +133,7 @@ type configSource struct {
 // continued is a piece of config that goes on where f leaves off, in the same
 // file, after an include: nothing read into it yet.
 func (f scopedConfig) continued() scopedConfig {
-	return scopedConfig{scope: f.scope, path: f.path, file: f.file, included: f.included, hidden: f.hidden,
+	return scopedConfig{scope: f.scope, path: f.path, file: f.file, included: f.included,
 		config: gitconfig.NewConfig(), blank: map[string]valueless{}}
 }
 
@@ -185,9 +184,6 @@ type configReading struct {
 	// many bytes it read of them, which maxIncludes and maxIncludedBytes bound.
 	followed int
 	read     int64
-	// outside is each include the repository's own config makes, over MCP,
-	// of a file outside the server's roots, as it is written.
-	outside []string
 }
 
 // newConfigReading is a reading of the config git reads for repo, for req,
@@ -244,8 +240,10 @@ const (
 // it includes, and one set before it loses, as git reads them in place. An
 // include this cannot decide ends a piece too, which records why
 // (scopedConfig.undecided), so that an answer knows whether what it read
-// could have been set there after it. forbid is a file git reads, looking
-// for remote URLs (remoteURLs), where one may not be set.
+// could have been set there after it, and so does an include not followed
+// over MCP, as a file outside the roots (scopedConfig.outside). forbid is a
+// file git reads, looking for remote URLs (remoteURLs), where one may not be
+// set.
 func (r *configReading) expand(from scopedConfig, lines []configLine, depth int, forbid bool) ([]scopedConfig, error) {
 	var out []scopedConfig
 	cur := from.continued()
@@ -273,11 +271,14 @@ func (r *configReading) expand(from scopedConfig, lines []configLine, depth int,
 			out, cur = append(out, cur), cur.continued()
 			continue
 		}
-		included, err := r.include(cur, value, l.value, depth+1, forbid || r.collecting && conditional)
-		if err != nil {
+		included, outside, err := r.include(cur, value, depth+1, forbid || r.collecting && conditional)
+		switch {
+		case err != nil:
 			return nil, err
-		}
-		if included != nil {
+		case outside:
+			cur.outside = l.value
+			out, cur = append(out, cur), cur.continued()
+		case included != nil:
 			out = append(append(out, cur), included...)
 			cur = cur.continued()
 		}
@@ -321,9 +322,6 @@ func (r *configReading) directive(f scopedConfig, l configLine) (value string, c
 		return "", false, "", passes, nil
 	}
 	if l.none {
-		if f.hidden {
-			key = "an include"
-		}
 		return "", conditional, "", passes, fmt.Errorf("%s sets %s with no value, which git refuses to run with "+
 			"(missing value for 'include.path')", f.place(), key)
 	}
@@ -522,8 +520,8 @@ func (r *configReading) remoteURLs() ([]string, error) {
 // remoteURLs; forbid is a file an includeIf names, where git refuses one.
 //
 // **Over MCP a URL the caller is not shown is matched with its credentials
-// masked**, as git.config would show it: the operator's own config's, the
-// environment's, and a file included from outside the roots. The condition is
+// masked**, as git.config would show it: the operator's own config's and the
+// environment's. The condition is
 // a glob the caller writes into the repository's config, and whether the file
 // it names was followed shows in the answer, so matching the URL as written
 // would let a caller spell out, one character after another, a token kept in
@@ -543,100 +541,90 @@ func (r *configReading) collect(f scopedConfig, l configLine, forbid bool) error
 		return nil
 	}
 	url := l.value
-	if r.req.Surface() == plugin.SurfaceMCP && (f.hidden || f.scope != "local" && f.scope != "worktree") {
+	if r.req.Surface() == plugin.SurfaceMCP && f.scope != "local" && f.scope != "worktree" {
 		url = maskURLCredentials(url)
 	}
 	r.urls = append(r.urls, url)
 	return nil
 }
 
-// include is the pieces of path, the file an include in the piece f names as
-// it was written, where git follows it at depth; nil where there is no such
-// file, which git passes over.
+// include is the pieces of path, the file an include in the piece f names,
+// where git follows it at depth; nil where there is no such file, which git
+// passes over. outside is an include not followed, over MCP, as one of a file
+// outside the roots.
 //
-// **Over MCP a file the repository's own config reaches outside the roots is
-// read and not shown.** git reads it, so every judgement here reads it; its
-// pieces are hidden, and so are the pieces of every file it includes, since
-// where those are is written in it. What a message may say of a hidden file
-// is where it is, when the include naming it is in a file the caller is shown,
-// and never what it holds: a file of config git cannot parse is said to be
-// one, without the parser's word on the line it stopped at. A file the
-// operator's own config or the environment includes is the operator's, and
-// read as they are, wherever it is.
+// **Over MCP an include the repository's own config makes of a file outside
+// the roots is not followed at all**, in the repository's config, its
+// worktree's, or a file either includes from inside the roots, which are the
+// files a caller can write. Whether git reads a file shows in every answer
+// here — one that is not there is passed over, one that is not config refuses
+// the call, one that parses counts, and one past the bytes one reading follows
+// refuses it — so following such an include, even without showing a key of
+// what it reads, told a caller of any file on the machine whether it exists,
+// whether it parses as config, and, by bisection against that bound, how large
+// it is. So the file is not opened, nor looked at: the gate's judgement of the
+// path, the one every path an MCP caller sends gets, is all that is asked, and
+// every answer is the one an include of a missing file gets, whatever is
+// there. git reads it, and may run with what it sets, so git.config and
+// git.hooks name the include (scopedConfig.outside). A file the operator's own
+// config or the environment includes is the operator's, and read as they are,
+// wherever it is.
 //
-// **Outside the roots is the one refusal of the gate that is read past.**
+// **Outside the roots is the one refusal of the gate that is passed over.**
 // Every other refuses the file whatever would read it, and so refuses the
 // call here: rta's own state or configuration, which nothing an agent reaches
 // may read however little of it an answer shows (an include naming the
 // secret store's identity from inside a root drawn around the home directory
 // was read, and counted), and on Windows a network share, whose opening is
-// the very connection the gate refuses it to prevent. Every file the
-// repository's config reaches is put to the gate, one a hidden file includes
-// among them, since a file outside the roots can name either as well.
-func (r *configReading) include(f scopedConfig, path, written string, depth int, forbid bool) ([]scopedConfig, error) {
-	named := path
-	if f.hidden {
-		named = "a file"
-	}
+// the very connection the gate refuses it to prevent.
+//
+// Counted among the includes one reading follows before the gate is asked,
+// since each judgement is a look at the filesystem, and a config of nothing
+// but includes costs as many.
+func (r *configReading) include(f scopedConfig, path string, depth int, forbid bool) (_ []scopedConfig,
+	outside bool, _ error,
+) {
 	if r.followed++; r.followed > maxIncludes {
-		return nil, fmt.Errorf("the config includes more than %d files in all, which this does not read: %s "+
-			"includes %s past them", maxIncludes, f.place(), named)
+		return nil, false, fmt.Errorf("the config includes more than %d files in all, which this does not read: %s "+
+			"includes %s past them", maxIncludes, f.place(), path)
 	}
-	hidden, read := f.hidden, path
+	read := path
 	if f.scope == "local" || f.scope == "worktree" {
 		judged, verr := r.req.Confine("path", path)
 		switch {
-		case verr == nil:
-			read = judged
-		case verr.Code != outsideTheRoots && f.hidden:
-			return nil, view.Errorf(verr.Code, "path: %s includes a file the path gate refuses (%s), which is not "+
-				"read", f.place(), verr.Code).WithHint(verr.Hint)
-		case verr.Code != outsideTheRoots:
-			return nil, verr
-		case !hidden:
-			hidden = true
-			if !r.collecting && !slices.Contains(r.outside, written) {
-				r.outside = append(r.outside, written)
-			}
+		case verr != nil && verr.Code == outsideTheRoots:
+			return nil, true, nil
+		case verr != nil:
+			return nil, false, verr
 		}
+		read = judged
 	}
 	content, err := readConfigFile(read)
 	if errors.Is(err, iofs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
-		return nil, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("%s includes %s, which git stops at: %w", f.place(), named, err)
+		return nil, false, fmt.Errorf("%s includes %s, which git stops at: %w", f.place(), path, err)
 	}
 	if depth > maxIncludeDepth {
-		return nil, fmt.Errorf("%s includes %s past the %d includes of includes git follows (exceeded maximum "+
-			"include depth), as a file that includes itself, or files that include each other, do", f.place(), named,
+		return nil, false, fmt.Errorf("%s includes %s past the %d includes of includes git follows (exceeded maximum "+
+			"include depth), as a file that includes itself, or files that include each other, do", f.place(), path,
 			maxIncludeDepth)
 	}
 	if r.read += int64(len(content)); r.read > maxIncludedBytes {
-		return nil, fmt.Errorf("%s includes %s, and the files the config includes are larger than the %s this "+
-			"reads of them in all", f.place(), named, format.Bytes(int64(maxIncludedBytes)))
+		return nil, false, fmt.Errorf("%s includes %s, and the files the config includes are larger than the %s this "+
+			"reads of them in all", f.place(), path, format.Bytes(int64(maxIncludedBytes)))
 	}
 	lines, err := fileLines(content)
-	switch {
-	case err != nil && hidden:
-		return nil, fmt.Errorf("%s includes %s, from outside the roots, which is no file of config git reads",
-			f.place(), named)
-	case err != nil:
-		return nil, fmt.Errorf("%s: %w", path, err)
+	if err != nil {
+		return nil, false, fmt.Errorf("%s: %w", path, err)
 	}
-	place := path
-	if f.hidden {
-		place = f.path
-		if f.path == f.file {
-			place = "a file " + f.path + " includes"
-		}
-	}
-	return r.expand(scopedConfig{scope: f.scope, path: place, file: path, included: true, hidden: hidden},
-		lines, depth, forbid)
+	pieces, err := r.expand(scopedConfig{scope: f.scope, path: path, file: path, included: true}, lines, depth, forbid)
+	return pieces, false, err
 }
 
 // outsideTheRoots is the path gate's refusal of a path outside the server's
-// roots, the one a file an include names is read past (configReading.include).
+// roots, the one an include is passed over for (configReading.include).
 const outsideTheRoots = "core.mcp.path.outside"
 
 // refusedByTheGate is err where it is the path gate's refusal of a file an
@@ -666,21 +654,17 @@ const (
 // relative path in its environment, which is no file ("relative config
 // includes must come from files").
 func includePath(f scopedConfig, value string) (path, why string, err error) {
-	shown := value
-	if f.hidden {
-		shown = "a file"
-	}
 	expanded, why := configPathname(value)
 	switch {
 	case why == homeUnset:
-		return "", "", fmt.Errorf("%s includes %s, and %s (could not expand include path)", f.place(), shown, why)
+		return "", "", fmt.Errorf("%s includes %s, and %s (could not expand include path)", f.place(), value, why)
 	case why != "":
 		return "", why, nil
 	case filepath.IsAbs(expanded):
 		return expanded, "", nil
 	case f.file == "":
 		return "", "", fmt.Errorf("%s includes %s, a relative path, which git takes from the file the include is "+
-			"written in and refuses here (relative config includes must come from files)", f.place(), shown)
+			"written in and refuses here (relative config includes must come from files)", f.place(), value)
 	}
 	// Joined as git joins them, without cleaning: the kernel resolves a link
 	// before the .. after it, and Clean would take the .. off the name first.

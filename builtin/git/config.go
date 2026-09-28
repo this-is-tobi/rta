@@ -50,8 +50,9 @@ func configCapability() plugin.Capability {
 			"at the place of the include; one this cannot decide is not read, and a warning says so. " +
 			"Over MCP only the repository's own config, local and worktree, is returned: the " +
 			"machine-wide scopes and the environment's are the operator's, not the repository's, " +
-			"and a file the repository's config includes from outside the server's roots counts for " +
-			"git.hooks and the rest but none of its keys is shown, a warning naming the include. " +
+			"and an include it makes of a file outside the server's roots is not followed, for " +
+			"git.hooks and the rest either, a warning naming it: the file is never opened, so nothing " +
+			"of it, even whether it exists, shows in an answer. " +
 			"Values that carry a credential are masked on every surface.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
@@ -135,31 +136,17 @@ func runConfig(ctx context.Context, req plugin.Request) (view.View, error) {
 			base = wt.Filesystem.Root()
 		}
 	}
-	// What a file the caller is not shown includes is its content too: an
-	// include in one that this cannot decide is not counted either.
-	var shown []scopedConfig
 	for _, p := range pieces {
-		if !p.hidden {
-			addConfigRows(&t, p.scope, p.origin(base), p.config)
-			shown = append(shown, p)
-		}
+		addConfigRows(&t, p.scope, p.origin(base), p.config)
 	}
 
 	t.Total = len(t.Rows)
-	if w := includesUndecided("git.config.include", "the keys set there are missing from this table", shown); w != nil {
+	if w := includesUndecided("git.config.include", "the keys set there are missing from this table", pieces); w != nil {
 		t.Warnings = append(t.Warnings, *w)
 	}
-	if len(r.outside) > 0 {
-		t.Warnings = append(t.Warnings, view.Error{
-			Code: "git.config.include.outside",
-			Message: fmt.Sprintf("the repository's config includes %s outside this server's roots, %s: git reads "+
-				"%s, and git.hooks, git.status and the rest count what %s, but none of %s keys is shown",
-				format.Plural(len(r.outside), "a file", format.CountOf(len(r.outside), "file")), strings.Join(r.outside, ", "),
-				format.Plural(len(r.outside), "it", "them"), format.Plural(len(r.outside), "it sets", "they set"),
-				format.Plural(len(r.outside), "its", "their")),
-			Hint: "an include can name any file on the machine, and one of sections and keys, a credentials file " +
-				"among them, reads as config: `git config --list --show-origin` at a terminal shows it",
-		})
+	if w := includesOutside("git.config.include.outside", "none of what is set there is in this table, or counts "+
+		"for git.hooks, git.status and the rest", pieces); w != nil {
+		t.Warnings = append(t.Warnings, *w)
 	}
 	return t, nil
 }
@@ -249,13 +236,13 @@ type scopedConfig struct {
 	file string
 	// included is a file git reads because another includes it.
 	included bool
-	// hidden is, over MCP, a file the repository's own config includes from
-	// outside the server's roots, or one such a file includes: it counts for
-	// every answer here, and none of its keys or values is shown.
-	hidden bool
 	// undecided is why the include this piece ends at was not followed, where
 	// whether or where git reads it turns on what this cannot tell.
 	undecided string
+	// outside is the include this piece ends at, as it is written, where over
+	// MCP it names a file outside the server's roots and is not followed
+	// (configReading.include).
+	outside string
 }
 
 // valueless is how a file of config sets a key with no value at all, a name
@@ -512,9 +499,8 @@ func machineConfigs() ([]configSource, error) {
 // the machine's config, and git reads it so. Refused as not a file, it failed
 // git.hooks and git.config, and left git.status without the excludes file.
 //
-// An error is the reason alone, without the file: the caller names it as a
-// message about it may, which for a file the caller is not shown is not by
-// where it is (configReading.include).
+// An error is the reason alone, without the file, which the caller names as
+// the message about it has it (configReading.include).
 func readConfigFile(path string) ([]byte, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
@@ -762,6 +748,53 @@ func includesUndecided(code, missing string, pieces []scopedConfig) *view.Error 
 			format.Plural(n, "it", "them"), strings.Join(why, "; "), missing),
 		Hint: "`git config --list --show-origin` follows includes, and names the file each key comes from",
 	}
+}
+
+// includesOutside is the warning, as code, that pieces end at includes of
+// files outside the server's roots, which over MCP are not followed
+// (scopedConfig.outside), naming each as it is written; nil where none does.
+// missing says what the answer lacks for it.
+//
+// **Named, since git follows them.** An answer read as though the include
+// were not there is the answer git gives with no such file, and the file may
+// be there: what git runs, or ignores, can be set in it. The include is in a
+// file the caller is shown, and nothing of what it names is looked at, so
+// naming it says nothing the caller could not read for itself.
+func includesOutside(code, missing string, pieces []scopedConfig) *view.Error {
+	var named []string
+	for _, p := range pieces {
+		if p.outside != "" && !slices.Contains(named, p.outside) {
+			named = append(named, p.outside)
+		}
+	}
+	n := len(named)
+	if n == 0 {
+		return nil
+	}
+	return &view.Error{
+		Code: code,
+		Message: fmt.Sprintf("the repository's config includes %s outside this server's roots, %s, which %s not "+
+			"followed over MCP: git reads %s, and %s", format.Plural(n, "a file", format.CountOf(n, "file")),
+			strings.Join(named, ", "), format.Plural(n, "is", "are"), format.Plural(n, "it", "them"), missing),
+		Hint: "whether a file outside the roots is there, what it holds and how large it is would each show in an " +
+			"answer, so none is looked at: `git config --list --show-origin` at a terminal follows the include, or " +
+			plugin.AskOperator("mcp serve --root <dir>") + " to serve a root that holds the file",
+	}
+}
+
+// unfollowedIncludes is the warnings, coded under capability, that pieces end
+// at includes not followed: one this cannot decide (includesUndecided), and
+// over MCP one of a file outside the roots (includesOutside). missing says
+// what the answer lacks for them.
+func unfollowedIncludes(capability, missing string, pieces []scopedConfig) []view.Error {
+	var out []view.Error
+	if w := includesUndecided(capability+".include", missing, pieces); w != nil {
+		out = append(out, *w)
+	}
+	if w := includesOutside(capability+".include.outside", missing, pieces); w != nil {
+		out = append(out, *w)
+	}
+	return out
 }
 
 // addConfigRows adds a row to t for each key cfg sets, in scope, read from

@@ -355,13 +355,11 @@ func partialClone(ctx context.Context, req plugin.Request, repo *git.Repository,
 // repository's own config alone, and let such a clone through. What the
 // refusal names of the operator's files is the file, as git.hooks names one,
 // and the remote, masked as git.config masks a key. A file one of them
-// includes is read where git reads it, and named as they are; a remote named
-// in one the caller is not shown (scopedConfig.hidden) is not named.
+// includes is read where git reads it, and named as they are.
 // extensions.partialClone is part of the repository's format, which git reads
 // from the repository's own config alone, following no include, as this does.
 func notPartial(files []scopedConfig, own *gitconfig.Config, root string) *view.Error {
 	var promisors, elsewhere []string
-	unnamed := false
 	mark := func(name string) {
 		if !slices.Contains(promisors, name) {
 			promisors = append(promisors, name)
@@ -382,17 +380,13 @@ func notPartial(files []scopedConfig, own *gitconfig.Config, root string) *view.
 				!slices.ContainsFunc(sub.Options.GetAll("promisor"), gitBool) && !sub.HasOption("partialCloneFilter") {
 				continue
 			}
-			if f.hidden {
-				unnamed = true
-			} else {
-				mark(sub.Name)
-			}
+			mark(sub.Name)
 			if (f.included || f.scope != "local" && f.scope != "worktree") && !slices.Contains(elsewhere, f.place()) {
 				elsewhere = append(elsewhere, f.place())
 			}
 		}
 	}
-	if len(promisors) == 0 && !unnamed {
+	if len(promisors) == 0 {
 		return nil
 	}
 	sort.Strings(promisors)
@@ -401,9 +395,6 @@ func notPartial(files []scopedConfig, own *gitconfig.Config, root string) *view.
 		if name == "" {
 			promisors[i] = `""`
 		}
-	}
-	if unnamed {
-		promisors = append(promisors, "a remote named in a file included from outside the roots")
 	}
 	hint := "git.config, git.hooks and git.remotes answer here; for history and files, run this on a clone made " +
 		"without --filter, which holds every object"
