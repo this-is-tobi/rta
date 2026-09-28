@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -277,19 +278,46 @@ func completeWindow(_ *cobra.Command, args []string, _ string) ([]cobra.Completi
 }
 
 func completeProfiles(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	return profileCompletions(false), cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeProfileRefs is completeProfiles with each labeled instance beside
+// its environment, staging/analytics after staging, for `rta profile show`,
+// which takes either. Not for `rta use`, which refuses an instance: offered
+// there, the completion would be a refusal one keystroke away.
+func completeProfileRefs(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	return profileCompletions(true), cobra.ShellCompDirectiveNoFileComp
+}
+
+// profileCompletions lists every configured profile, described by its note
+// or the plugins it names, and with instances each labeled instance in it,
+// described by where it points — the one line that tells two apart, where
+// the note is the environment's and the same for all of them.
+func profileCompletions(instances bool) []cobra.Completion {
 	cfg, err := config.Load()
 	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
+		return nil
 	}
 	var out []cobra.Completion
 	for _, name := range cfg.ProfileNames() {
-		desc := cfg.Profiles[name].Note
+		p := cfg.Profiles[name]
+		desc := p.Note
 		if desc == "" {
-			desc = strings.Join(cfg.Profiles[name].Namespaces(), ", ")
+			desc = strings.Join(p.Namespaces(), ", ")
 		}
 		out = append(out, cobra.CompletionWithDesc(name, desc))
+		if !instances {
+			continue
+		}
+		var seen []string
+		for _, key := range p.PluginKeys() {
+			if _, label, _ := config.SplitKey(key); label != "" && !slices.Contains(seen, label) {
+				seen = append(seen, label)
+				out = append(out, cobra.CompletionWithDesc(name+"/"+label, connAddress(p.Plugins[key], p.Note)))
+			}
+		}
 	}
-	return out, cobra.ShellCompDirectiveNoFileComp
+	return out
 }
 
 func runUse(cmd *cobra.Command, args []string, dryRun bool) (view.View, *view.Error) {
@@ -473,17 +501,14 @@ func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 		Use:               "show <profile>",
 		Short:             "What one environment sets, and where each value comes from",
 		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: completeProfiles,
+		ValidArgsFunction: completeProfileRefs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := config.Load()
 			if err != nil {
 				return render(cmd, nil, view.AsError(err, "core.profile.config"))
 			}
-			p, ok := cfg.Profiles[args[0]]
-			if !ok {
-				return render(cmd, nil, unknownProfile(cfg, args[0]))
-			}
-			return render(cmd, profileCard(args[0], p, reg), nil)
+			card, verr := showProfile(cfg, args[0], reg)
+			return render(cmd, card, verr)
 		},
 	}
 	cmd.AddCommand(list, show, profileSetCommand(reg, render, opts), profileRemoveCommand(reg, render, opts),
@@ -536,6 +561,60 @@ func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 	}
 	t.Total = len(t.Rows)
 	return t
+}
+
+// showProfile is the page `rta profile show ref` prints: the environment a
+// profile's name names, and for an instance reference, staging/analytics,
+// the one connection in it that --profile staging/analytics reaches.
+//
+// A reference and not only a name, because the rest of rta hands one out: a
+// value refused where an instance set it names `rta profile show
+// staging/analytics` as the page that shows its block, and the page refused
+// the reference as a profile nobody configured. Shown inside its environment
+// — the note, the colour and the ttl are the profile's, and bind a call
+// through the instance as much as one through the name — with every other
+// connection left out, since the question was about one of them, and with
+// the problems and warnings of the connection it shows alone.
+//
+// A name the config holds as it is written is shown as it is, whatever it
+// holds, as it always was: an invalid name is still one somebody wrote, and
+// this is where they read what it says.
+func showProfile(cfg config.Config, ref string, reg *registry.Registry) (view.View, *view.Error) {
+	if p, ok := cfg.Profiles[ref]; ok {
+		return profileCard(ref, p, reg), nil
+	}
+	name, instance := config.RefName(ref), config.RefInstance(ref)
+	if instance == "" {
+		return nil, unknownProfile(cfg, ref)
+	}
+	p, ok := cfg.Profiles[name]
+	if !ok {
+		return nil, unknownProfile(cfg, name)
+	}
+	only := p
+	only.Plugins = map[string]config.Connection{}
+	var held []string
+	for _, key := range p.PluginKeys() {
+		_, label, _ := config.SplitKey(key)
+		if label == instance {
+			only.Plugins[key] = p.Plugins[key]
+		}
+		if label != "" && !slices.Contains(held, name+"/"+label) {
+			held = append(held, name+"/"+label)
+		}
+	}
+	if len(only.Plugins) == 0 {
+		hint := "it holds no labeled instance — `rta profile show " + name + "` shows the whole of it"
+		if len(held) > 0 {
+			hint = "it has: " + strings.Join(held, ", ")
+		}
+		return nil, view.Errorf("core.profile.instance", "profile %q has no instance called %q", name, instance).
+			WithHint(hint)
+	}
+	card := profileCard(name, only, reg)
+	card.Pairs = slices.Insert(card.Pairs, 1, view.Pair{Key: "instance",
+		Value: instance + " — `rta profile show " + name + "` shows every connection in " + name})
+	return card, nil
 }
 
 func profileCard(name string, p config.Profile, reg *registry.Registry) view.KeyValue {

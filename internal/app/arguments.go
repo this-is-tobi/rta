@@ -148,7 +148,7 @@ func documentArguments(root *cobra.Command) {
 			"profile to repin — omit with --all for every profile holding an entry for the plugin"}},
 		"rta profile rm":   {{"profile", "environment to remove, or to remove one plugin from with --plugin"}},
 		"rta profile set":  {{"profile", "environment to create or update"}},
-		"rta profile show": {{"profile", "environment to describe"}},
+		"rta profile show": {{"profile", "environment to describe, or name/instance for one connection in it"}},
 		"rta dashboard add": {{"capability",
 			"capability to put on the landing screen, e.g. kube.overview — a read, since a tile runs unasked"}},
 		"rta dashboard rm": {{"capability",

@@ -1,9 +1,14 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // **A secret typed under `set:` must not be printed back.**
@@ -156,5 +161,118 @@ func TestAnEmptyProfileListIsATableToAParser(t *testing.T) {
 	out, _, err = runWith(t, connRegistry(t), empty, "profile", "list", "-o", "csv")
 	if err != nil || strings.TrimSpace(out) != "Profile,Plugins,Status,Note" {
 		t.Errorf("csv = %q, %v; want the header row alone", out, err)
+	}
+}
+
+const instancesConfig = `profiles:
+  staging:
+    note: the staging environment
+    plugins:
+      db:
+        set:
+          host: db.internal
+      db/analytics:
+        set:
+          host: analytics.internal
+      db/logs:
+        set:
+          host: logs.internal
+`
+
+// `rta profile show staging/analytics` shows the one connection the
+// reference names, inside the environment it belongs to: the hint for a
+// value an instance sets names it, and the page it named refused the
+// reference as a profile nobody configured.
+func TestProfileShowTakesAnInstanceReference(t *testing.T) {
+	out, stderr, err := runWith(t, connRegistry(t), instancesConfig, "profile", "show", "staging/analytics")
+	if err != nil {
+		t.Fatalf("show staging/analytics: %v\n%s", err, stderr)
+	}
+	for _, want := range []string{"staging", "analytics", "db/analytics", "analytics.internal", "the staging environment"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the instance's page lacks %q:\n%s", want, out)
+		}
+	}
+	for _, other := range []string{"db.internal", "logs.internal", "db/logs"} {
+		if strings.Contains(out, other) {
+			t.Errorf("the instance's page shows %q, another connection's:\n%s", other, out)
+		}
+	}
+
+	// The whole environment is still the bare name's page.
+	out, _, err = runWith(t, connRegistry(t), instancesConfig, "profile", "show", "staging")
+	if err != nil || !strings.Contains(out, "db.internal") || !strings.Contains(out, "logs.internal") {
+		t.Errorf("show staging = %v:\n%s", err, out)
+	}
+
+	// A label the environment does not hold is named as the label, with the
+	// ones it does; a profile nobody configured is named by its name.
+	_, stderr, err = runWith(t, connRegistry(t), instancesConfig, "profile", "show", "staging/analytcs")
+	if err == nil || !strings.Contains(stderr, "core.profile.instance") ||
+		!strings.Contains(stderr, "staging/analytics") || !strings.Contains(stderr, "staging/logs") {
+		t.Errorf("show staging/analytcs = %v:\n%s", err, stderr)
+	}
+	_, stderr, err = runWith(t, connRegistry(t), instancesConfig, "profile", "show", "prod/analytics")
+	if err == nil || !strings.Contains(stderr, "core.profile.unknown") || !strings.Contains(stderr, `"prod"`) {
+		t.Errorf("show prod/analytics = %v:\n%s", err, stderr)
+	}
+}
+
+// `rta profile show` completes an environment's instances beside it, each
+// described by where it points; `rta use`, which refuses one, does not.
+func TestProfileShowCompletesInstanceReferences(t *testing.T) {
+	out, _, err := runWith(t, connRegistry(t), instancesConfig, "__complete", "profile", "show", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"staging\tthe staging environment", "staging/analytics\t", "staging/logs\t"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("show completes without %q:\n%s", want, out)
+		}
+	}
+	out, _, err = runWith(t, connRegistry(t), instancesConfig, "__complete", "use", "")
+	if err != nil || !strings.Contains(out, "staging\t") || strings.Contains(out, "staging/") {
+		t.Errorf("use completes %v:\n%s", err, out)
+	}
+}
+
+// The command a refusal of an instance's value names runs, and shows the
+// block the value is set in. The value is one a profile may hold — another
+// capability reading the key takes it — and the one called refuses it.
+func TestTheBlockARefusedInstanceValueNamesIsOneProfileShowShows(t *testing.T) {
+	sslmode := func(options ...string) plugin.Field {
+		return plugin.Field{Name: "sslmode", Type: plugin.String, Default: "disable", Config: "sslmode",
+			Local: true, Options: options, Help: "TLS"}
+	}
+	ok := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{
+		Name: "db", Summary: "db plugin",
+		Capabilities: []plugin.Capability{
+			{ID: "db.status", Summary: "status", Safety: plugin.Read, Run: ok,
+				Inputs: []plugin.Field{sslmode("disable", "require")}},
+			{ID: "db.check", Summary: "check", Safety: plugin.Read, Run: ok,
+				Inputs: []plugin.Field{sslmode("disable", "require", "verify-full")}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	const cfg = `profiles:
+  staging:
+    plugins:
+      db:
+        set:
+          sslmode: require
+      db/analytics:
+        set:
+          sslmode: verify-full
+`
+	_, stderr, err := runWith(t, reg, cfg, "db", "status", "--profile", "staging/analytics")
+	if err == nil || !strings.Contains(stderr, "`rta profile show staging/analytics`") {
+		t.Fatalf("the refusal = %v, and does not name the page:\n%s", err, stderr)
+	}
+	out, stderr, err := runWith(t, reg, cfg, "profile", "show", "staging/analytics")
+	if err != nil || !strings.Contains(out, "verify-full") || strings.Contains(out, "require") {
+		t.Errorf("the page it names = %v, and does not show the block alone:\n%s%s", err, out, stderr)
 	}
 }
