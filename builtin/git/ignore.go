@@ -142,7 +142,32 @@ func (f statusFiles) OpenFile(name string, flag int, perm os.FileMode) (billy.Fi
 		}
 	}
 	f.budget.files++
-	return f.Filesystem.OpenFile(name, flag, perm)
+	file, err := f.Filesystem.OpenFile(name, flag, perm)
+	if err != nil || f.budget == nil {
+		return file, err
+	}
+	return budgetedFile{File: file, budget: f.budget}, nil
+}
+
+// budgetedFile is a file statusFiles opened, whose reads fail once the
+// call's time has run out, as its listings and opens do.
+//
+// **One file can hold the whole of a call's time.** go-git hashes a tracked
+// file whose timestamp moved from its first byte to its last, and no listing
+// or open comes between: a status of a tree holding one sparse file of 8 GiB
+// took 8.5 s, the budget running out a quarter of the way into it and noticed
+// only after. A read that fails leaves go-git a file it calls modified, which
+// the budget's refusal then stands in for (worktreeStatus).
+type budgetedFile struct {
+	billy.File
+	budget *statusBudget
+}
+
+func (f budgetedFile) Read(p []byte) (int, error) {
+	if f.budget.past() {
+		return 0, f.budget.refuse("read", f.Name())
+	}
+	return f.File.Read(p)
 }
 
 // keepEverything is a pattern that keeps every path, the one go-git's status
@@ -620,13 +645,15 @@ func (f *readIgnoreFile) Truncate(int64) error      { return errReadOnly }
 // records: the status's comparison was handed `*` in its place
 // (statusFiles), not shown a change. fs is the working tree, read as the
 // comparison reads it, and the file is hashed only where its size is the
-// index's.
-func restoreRootIgnore(fs billy.Filesystem, idx *index.Index, status git.Status) {
+// index's, and only for as long as budget lasts, as the comparison's own
+// reads are (budgetedFile): a tracked .gitignore of 4 GB, touched, held a
+// status 2 s past its time, hashing it here.
+func restoreRootIgnore(fs billy.Filesystem, idx *index.Index, status git.Status, budget *statusBudget) {
 	fst, listed := status[rootIgnore]
 	if !listed || fst.Worktree != git.Modified {
 		return
 	}
-	if entry := indexLookup(idx)(rootIgnore); entry != nil && sameAsIndexed(fs, rootIgnore, entry) {
+	if entry := indexLookup(idx)(rootIgnore); entry != nil && sameAsIndexed(fs, rootIgnore, entry, budget) {
 		fst.Worktree = git.Unmodified
 		if fst.Staging == git.Unmodified {
 			delete(status, rootIgnore)
@@ -635,8 +662,8 @@ func restoreRootIgnore(fs billy.Filesystem, idx *index.Index, status git.Status)
 }
 
 // sameAsIndexed reports whether the file at name is the content and the mode
-// entry records.
-func sameAsIndexed(fs billy.Filesystem, name string, entry *index.Entry) bool {
+// entry records, read for as long as budget lasts.
+func sameAsIndexed(fs billy.Filesystem, name string, entry *index.Entry, budget *statusBudget) bool {
 	info, err := fs.Lstat(name)
 	if err != nil || !info.Mode().IsRegular() || info.Size() != int64(entry.Size) {
 		return false
@@ -650,7 +677,7 @@ func sameAsIndexed(fs billy.Filesystem, name string, entry *index.Entry) bool {
 	}
 	defer func() { _ = f.Close() }()
 	h := plumbing.NewHasher(plumbing.BlobObject, info.Size())
-	if _, err := io.Copy(h, io.LimitReader(f, info.Size())); err != nil {
+	if _, err := io.Copy(h, io.LimitReader(budgetedFile{File: f, budget: budget}, info.Size())); err != nil {
 		return false
 	}
 	return h.Sum() == entry.Hash

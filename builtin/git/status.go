@@ -160,7 +160,7 @@ func worktreeStatus(ctx context.Context, deadline time.Time, repo *git.Repositor
 	}
 	read.dropIgnored(status)
 	if idx, err := repo.Storer.Index(); err == nil {
-		restoreRootIgnore(wt.Filesystem, idx, status)
+		restoreRootIgnore(wt.Filesystem, idx, status, budget)
 	}
 	if onDisk {
 		kindChanges(repo, root, status, budget)
