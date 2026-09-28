@@ -28,6 +28,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	goplugin "github.com/hashicorp/go-plugin"
 
+	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/sdk"
 	"github.com/this-is-tobi/rta/pkg/sdk/wire"
@@ -186,6 +187,14 @@ type Client struct {
 // call reports honestly and the *next* one gets a live process, which is what
 // the hint always claimed.
 func (c *Client) live(ctx context.Context) (rtav1.PluginServiceClient, error) {
+	// Held off a forced exit, as a first launch is (openIdentified), because
+	// this may be one: a process restarted here once the exit had closed the
+	// host outlived rta the same way. Taken before c.mu and never under it: a
+	// Hold asked for once the exit has begun waits for good, and waiting
+	// under c.mu would keep the exit's own Close, which takes c.mu, waiting
+	// with it. Every call passes here; a Hold is a lock and a counter.
+	defer shutdown.Hold()()
+
 	// Registered before the unlock and therefore run after it: defers are
 	// LIFO, so this is how the process being replaced gets torn down outside
 	// the lock it was read under. Synchronous rather than a goroutine so the
@@ -426,6 +435,21 @@ func (h *Host) openIdentified(ctx context.Context, id Identity, deny DenySet, ar
 	// RPC would mean one plugin that is slow to start blocks every other
 	// plugin's lookup — and, worse, blocks CloseAll, so the ctrl-c that was
 	// meant to escape a hanging startup could not clean up after it either.
+	//
+	// Held off a forced exit instead (internal/shutdown), until the process is
+	// in h.running for CloseAll to find. Outside the lock, the process being
+	// started is in no map CloseAll reads until the launch ends, and go-plugin
+	// waits out a plugin's handshake whatever the context says (startTimeout):
+	// an exit that closed the host meanwhile closed everything but that one,
+	// which outlived rta in a process group of its own — measured with a
+	// plugin that never answers its handshake, an install's verification
+	// launch. Held, the exit waits for the launch to end and then closes what
+	// it produced, and a launch asked for once the exit has begun never
+	// starts, since its Hold waits for good. The wait is bounded by
+	// startTimeout and by describeTimeout, which the cancelled context a
+	// forced exit follows cuts short, so it is the rest of one handshake at
+	// most: the trade shutdown.Settle already makes for a write under way.
+	defer shutdown.Hold()()
 	c, err := h.describeOnly(ctx, id, deny, args)
 	if err != nil {
 		return nil, err
@@ -510,7 +534,9 @@ func (h *Host) cached(key string) *Client {
 	return nil
 }
 
-// CloseAll kills every process this host started.
+// CloseAll kills every process this host started. One still starting is in
+// none of its maps yet; a forced exit, the close that can come while one
+// starts, waits for it first (openIdentified).
 func (h *Host) CloseAll() {
 	h.mu.Lock()
 	defer h.mu.Unlock()

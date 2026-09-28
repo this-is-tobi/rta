@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -429,6 +430,36 @@ func TestACrashedPluginIsRestartedForTheNextCall(t *testing.T) {
 	}
 	if c.cmd.Process.Pid == firstPid {
 		t.Error("the pid did not change, so nothing was actually restarted")
+	}
+}
+
+// A restart is a launch, and it too waits once a forced exit has begun rather
+// than start a process the exit has already closed the host without: the
+// command runs on after the exit's close, and a call it made then restarted
+// the plugin for rta to leave behind.
+func TestNoRestartStartsOnceAForcedExitHasBegun(t *testing.T) {
+	h := New(nil)
+	t.Cleanup(h.CloseAll)
+	c, err := h.Open(context.Background(), hello(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+
+	resume := shutdown.Settle()
+	restarted := make(chan struct{})
+	go func() {
+		_, _ = c.live(context.Background())
+		close(restarted)
+	}()
+	time.Sleep(time.Second)
+	c.mu.Lock()
+	started := c.client != nil && !c.client.Exited()
+	c.mu.Unlock()
+	resume()
+	<-restarted
+	if started {
+		t.Error("the plugin was restarted once the exit had begun")
 	}
 }
 
