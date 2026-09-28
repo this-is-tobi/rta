@@ -285,6 +285,14 @@ func partialClone(repo *git.Repository, root string) *view.Error {
 // fetches from: reading the last value alone let such a clone through, to
 // fail at the first object it lacked.
 //
+// **A filter makes a promisor too.** promisor_remote_config makes a promisor
+// of each remote a remote.<name>.partialCloneFilter line names, set to
+// anything, nothing included, whatever the remote's promisor line says or
+// where it has none: git fetches what the repository lacks from it. This
+// read the promisor line alone. A filter with no value at all is one git
+// refuses to fetch with ("missing value"), and a reader that fetches nothing
+// is refused it all the same.
+//
 // **In every file git reads, not the repository's alone.** git reads
 // remote.<name>.promisor through repo_config, the system, global,
 // repository, worktree and command scopes at once, so a line in ~/.gitconfig
@@ -316,7 +324,7 @@ func notPartial(files []scopedConfig, root string) *view.Error {
 		}
 		for _, sub := range cfg.Raw.Section("remote").Subsections {
 			if !f.blank[configKey("remote", sub.Name, "promisor")].any &&
-				!slices.ContainsFunc(sub.Options.GetAll("promisor"), gitBool) {
+				!slices.ContainsFunc(sub.Options.GetAll("promisor"), gitBool) && !sub.HasOption("partialCloneFilter") {
 				continue
 			}
 			mark(sub.Name)
