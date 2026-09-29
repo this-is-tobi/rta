@@ -174,9 +174,11 @@ func onlyADirectory(name, sep string) string { return name + sep + "." }
 //
 // p is taken a part at a time as it is spelled, not cleaned: the gate resolves
 // a .. after a link as the kernel does, where cleaning would take the .. off
-// the name first.
+// the name first. A relative one is taken from the working directory, as the
+// gate takes it.
 func rootAbove(req plugin.Request, p string) (_ string, verr *view.Error) {
 	sep := string(filepath.Separator)
+	p = fromWorkingDir(p)
 	vol := filepath.VolumeName(p)
 	cur := vol + sep
 	var parts []string
@@ -194,6 +196,20 @@ func rootAbove(req plugin.Request, p string) (_ string, verr *view.Error) {
 		}
 		cur = strings.TrimSuffix(cur, sep) + sep + parts[i]
 	}
+}
+
+// fromWorkingDir is p taken from the working directory where it is
+// relative, as the gate takes it, and not cleaned: a .. after a link means
+// what it means to the kernel (rootAbove).
+func fromWorkingDir(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return p
+	}
+	return cwd + string(filepath.Separator) + p
 }
 
 // beneathRoots looks at paths the gate judged for one call, each from the
@@ -405,6 +421,7 @@ const maxLinks = 40
 // point is the caller's to lead anywhere from there.
 func throughRoots(req plugin.Request, p string) bool {
 	sep := string(filepath.Separator)
+	p = fromWorkingDir(p)
 	vol := filepath.VolumeName(p)
 	cur := vol + sep
 	pending := strings.Split(p[len(vol):], sep)
