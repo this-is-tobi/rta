@@ -76,6 +76,10 @@ func TestTrackingPrefersTheConfiguredUpstream(t *testing.T) {
 	first := commitFile(t, repo, dir, "a.txt", "v1\n", "initial commit")
 	fetched(t, repo, "origin", "master", first)
 	fetched(t, repo, "fork", "trunk", first)
+	if _, err := repo.CreateRemote(&config.RemoteConfig{Name: "fork",
+		URLs: []string{"https://example.com/fork.git"}}); err != nil {
+		t.Fatal(err)
+	}
 	if err := repo.CreateBranch(&config.Branch{
 		Name: "master", Remote: "fork", Merge: plumbing.ReferenceName("refs/heads/trunk"),
 	}); err != nil {

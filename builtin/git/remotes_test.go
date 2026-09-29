@@ -160,7 +160,7 @@ func TestARemoteSetInAnyFileGitReadsIsListedWhereItsScopeIsShown(t *testing.T) {
 	first := commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
 	fetched(t, repo, "origin", "main", first)
 	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = https://slow.example/r.git\n"+
-		"[include]\n\tpath = shared.cfg\n")
+		"\tfetch = +refs/heads/*:refs/remotes/origin/*\n[include]\n\tpath = shared.cfg\n")
 	writeFile(t, dir, ".git/shared.cfg", "[remote \"inner\"]\n\turl = https://inner.example/r.git\n")
 
 	cli := table(t, runRemotes, req(t, dir, nil))

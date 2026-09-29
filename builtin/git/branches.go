@@ -151,6 +151,9 @@ func upstreamStatus(repo *git.Repository, tracks map[string]upstream, branch str
 ) {
 	if u := tracks[branch]; u.configured() {
 		name, at := u.tracked()
+		if name == "" {
+			return "", ""
+		}
 		ref, err := repo.Reference(at, true)
 		if err != nil {
 			return name, "gone"

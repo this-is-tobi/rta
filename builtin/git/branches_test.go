@@ -123,8 +123,18 @@ func TestBranchesAllAppendsRemoteTrackingBranches(t *testing.T) {
 	}
 }
 
+// trackRemote sets branch to track the branch of the same name at remote, a
+// remote configured as a clone configures one, fetched into
+// refs/remotes/<remote>/: git tracks nothing through a remote that fetches
+// nothing.
 func trackRemote(t *testing.T, repo *git.Repository, branch, remote string) {
 	t.Helper()
+	if _, err := repo.Remote(remote); err != nil {
+		if _, err := repo.CreateRemote(&config.RemoteConfig{Name: remote,
+			URLs: []string{"https://example.com/" + remote + ".git"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	err := repo.CreateBranch(&config.Branch{
 		Name:   branch,
 		Remote: remote,
