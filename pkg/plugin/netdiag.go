@@ -22,9 +22,7 @@ import (
 // untrusted only as an x509.UnknownAuthorityError, which is how Go's own
 // verifier says it — but on macOS, with no CA file given, the system's
 // verifier answers, and a private CA's chain ("certificate is not trusted")
-// or a self-signed certificate valid for longer than Apple's policy allows
-// ("not standards compliant") came back untyped, and the reader was told
-// everything but the CA.
+// came back untyped, and the reader was told everything but the CA.
 //
 // So the answers live here, once, as predicates rather than as one
 // classifier: each plugin reads its driver's own errors first — a server's
@@ -107,23 +105,40 @@ func dialFailed(err error, errnos []syscall.Errno) bool {
 //
 // Go's verifier says so as an x509.UnknownAuthorityError, and it is the one
 // that runs whenever a CA file is set, on every system, and on Linux always.
-// With none set, macOS and iOS ask the system's verifier instead, which
-// types only an expired certificate, a host the certificate is not for, and
-// one of its trust verdicts; every other answer — a private CA's chain, a
-// certificate valid for longer than Apple's policy allows — comes back as a
-// bare error inside the handshake's *tls.CertificateVerificationError, in
-// words the system localises. So there, a verification failure answered
-// untyped is read as untrusted, and the CA cures it: given one, Go's own
-// verifier runs in the system's place.
+// With none set, macOS and iOS ask the system's verifier instead, which Go
+// types for three of its verdicts — an expired certificate, a host it is not
+// for, a root nothing trusts (errSecNotTrusted, as UnknownAuthorityError) —
+// and passes on every other one as a bare error inside the handshake's
+// *tls.CertificateVerificationError, carrying the system's words and not its
+// code: "x509: ", the certificate's name in curly quotes, and "certificate is
+// revoked".
 //
-// Untyped, and not merely not UnknownAuthorityError: Go types every other
-// reason it rejects a certificate for — a host it is not for, a date or a
-// use it is not valid for, a signature algorithm it will not accept, a
-// critical extension it does not handle, a name its constraints exclude —
-// and each of those is a reason of its own, which no CA would cure. Read as
-// untrusted, a SHA-1 certificate was answered with the CA to name and the
-// reason itself unsaid. Elsewhere an untyped answer is one of Go's own
-// errors, never a verdict on trust, and is not read as one.
+// **Only the untyped verdict known to mean an issuer nothing vouches for is
+// read as untrusted: the system's "certificate is not trusted".** It is what
+// a leaf answers whose chain reaches no anchor the system holds — a
+// private CA's, sent without its CA (errSecCreateChainFailed) — and the
+// words the system gives errSecNotTrusted itself. Every other untyped
+// verdict is its own reason, and a CA file is no cure for it but a way
+// around it: naming one runs Go's verifier in the system's place, which
+// checks no revocation, no Certificate Transparency and none of Apple's
+// policy. Read as untrusted, a certificate the system answered "is revoked"
+// was answered with the CA to name, and the operator who named it connected
+// to a server with a revoked certificate, the check that caught it gone.
+// "Not standards compliant" is not read as untrusted either, though a
+// self-signed certificate valid for longer than Apple's policy allows is
+// answered with it: a trusted CA's certificate is too, for a critical
+// extension the system does not handle or a name its CA may not sign.
+//
+// By the words' ending, from the closing quote on, which the system's format
+// fixes and the certificate's own name, spelled inside the quotes, cannot
+// move: a revoked certificate whose name is a closing quote and "certificate
+// is not trusted" still ends "is revoked". In the system's English, which is
+// what a process with no language of its own is answered in, whatever
+// language the person at the Mac reads; a verdict localised into another is
+// not read as untrusted, and is left to be answered with the system's words,
+// as every verdict CertUntrusted does not read is. Elsewhere an untyped
+// answer is one of Go's own errors, never a verdict on trust, and is not
+// read as one.
 func CertUntrusted(err error) bool { return certUntrusted(runtime.GOOS, err) }
 
 // certUntrusted is CertUntrusted on goos, whose verifier answered err.
@@ -137,9 +152,10 @@ func certUntrusted(goos string, err error) bool {
 		return false
 	}
 	var verifyErr *tls.CertificateVerificationError
-	if !errors.As(err, &verifyErr) {
+	if !errors.As(err, &verifyErr) || verifyErr.Err == nil {
 		return false
 	}
+	// A reason Go types is that reason, whatever its words say.
 	for _, reason := range []any{new(x509.HostnameError), new(x509.CertificateInvalidError),
 		new(x509.InsecureAlgorithmError), new(x509.UnhandledCriticalExtension),
 		new(x509.ConstraintViolationError)} {
@@ -147,5 +163,10 @@ func certUntrusted(goos string, err error) bool {
 			return false
 		}
 	}
-	return true
+	// Go's darwin verifier spells an untyped verdict as "x509: " and the
+	// system's description, which opens on the certificate's name in curly
+	// quotes.
+	open, closing := string(rune(0x201c)), string(rune(0x201d))
+	text := verifyErr.Err.Error()
+	return strings.HasPrefix(text, "x509: "+open) && strings.HasSuffix(text, closing+" certificate is not trusted")
 }
