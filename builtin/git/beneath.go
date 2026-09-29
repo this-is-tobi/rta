@@ -6,6 +6,7 @@ import (
 	iofs "io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -251,7 +252,7 @@ func rootAbove(req plugin.Request, p string) (_ string, verr *view.Error) {
 	vol := filepath.VolumeName(p)
 	cur := vol + sep
 	var parts []string
-	for _, part := range strings.Split(p[len(vol):], sep) {
+	for _, part := range nameParts(runtime.GOOS, p[len(vol):]) {
 		if part != "" {
 			parts = append(parts, part)
 		}
@@ -493,7 +494,7 @@ func throughRoots(req plugin.Request, p string) bool {
 	p = fromWorkingDir(p)
 	vol := filepath.VolumeName(p)
 	cur := vol + sep
-	pending := strings.Split(p[len(vol):], sep)
+	pending := nameParts(runtime.GOOS, p[len(vol):])
 	for links := 0; len(pending) > 0; {
 		part := pending[0]
 		pending = pending[1:]
@@ -516,12 +517,40 @@ func throughRoots(req plugin.Request, p string) bool {
 		if links++; links > maxLinks {
 			return false
 		}
-		if tvol := filepath.VolumeName(target); filepath.IsAbs(target) {
+		switch tvol := filepath.VolumeName(target); {
+		case filepath.IsAbs(target):
 			cur, target = tvol+sep, target[len(tvol):]
+		case volumeRooted(runtime.GOOS, target):
+			cur = filepath.VolumeName(cur) + sep
 		}
-		pending = append(strings.Split(target, sep), pending...)
+		pending = append(nameParts(runtime.GOOS, target), pending...)
 	}
 	return false
+}
+
+// nameParts is p taken apart as goos's open takes it: at a forward slash, and
+// on Windows at a backslash as well, which takes either for a separator — a
+// link there may hold a target written with forward slashes, which mklink
+// makes and the kernel follows a part at a time. Split at the backslash
+// alone, such a target was one part: filepath.Join took its .. off the name
+// before anything asked where the link before it led, and the directories on
+// its way were never put to the gate. Empty parts are kept, for the walk to
+// pass over as it passes over ".".
+func nameParts(goos, p string) []string {
+	if goos == "windows" {
+		p = strings.ReplaceAll(p, "/", `\`)
+		return strings.Split(p, `\`)
+	}
+	return strings.Split(p, "/")
+}
+
+// volumeRooted reports whether target, a link's on goos that names no volume
+// (filepath.IsAbs is asked first), leads from the root of the volume the link
+// is on: one that opens on a separator, which only Windows has, as the gate
+// resolves one (internal/pathguard). Taken from the directory holding the
+// link, it was walked somewhere Windows does not open.
+func volumeRooted(goos, target string) bool {
+	return goos == "windows" && target != "" && (target[0] == '/' || target[0] == '\\')
 }
 
 // repoFiles opens the directories one call reads a repository from (openAt),
