@@ -123,7 +123,9 @@ func suggestCommits(_ context.Context, req plugin.Request) []string {
 	if verr != nil {
 		return nil
 	}
-	repo, verr := openAt(req, root, path, readsObjects)
+	files := &repoFiles{req: req}
+	defer files.close()
+	repo, verr := openAt(req, files, root, path, readsObjects)
 	if verr != nil {
 		return nil
 	}
