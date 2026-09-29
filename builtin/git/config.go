@@ -271,6 +271,10 @@ type scopedConfig struct {
 	// inRoots is a file read over MCP from inside the server's roots, which is
 	// not the repository's own (callerWrites).
 	inRoots bool
+	// judged is such a file as the gate judged it, its links resolved then:
+	// what a ./ condition written in it is taken from, which is not resolved
+	// again (configReading.gitDirMatches).
+	judged string
 }
 
 // callerWrites reports whether a caller over MCP can write f: the
@@ -549,6 +553,9 @@ func machineConfigs(req plugin.Request) ([]configSource, error) {
 			return nil, fmt.Errorf("%s: %w", s.path, err)
 		}
 		s.file, s.inRoots = s.path, where == readBeneath
+		if where == readBeneath {
+			s.judged = read
+		}
 		out = append(out, configSource{from: s, lines: lines})
 	}
 	return out, nil
