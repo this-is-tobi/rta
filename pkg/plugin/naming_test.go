@@ -1,6 +1,8 @@
 package plugin
 
 import (
+	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -200,6 +202,110 @@ func TestAValueThatIsNotUTF8IsNotSpelledAsAnotherForAnAgent(t *testing.T) {
 		}
 		if strings.ContainsRune(got, 0xfffd) {
 			t.Errorf("%s names the replacement character, a key the call does not name", got)
+		}
+	}
+}
+
+// A list is given the way each surface takes one: the flag once per element
+// on a command line, a word each by its place, a JSON array to an agent, and
+// the box's comma-separated text in the TUI. Go's own spelling of a slice,
+// `--tag '[ops a,b]'`, was a call on one element nobody stored.
+func TestAListIsGivenTheWayItsSurfaceTakesOne(t *testing.T) {
+	args := []Arg{{Name: "title", Value: "x", Positional: true}, {Name: "tag", Value: []string{"ops", "a,b"}}}
+	for s, want := range map[Surface]string{
+		SurfaceCLI:     `rta note add x --tag ops --tag '"a,b"'`,
+		SurfaceUnknown: `rta note add x --tag ops --tag '"a,b"'`,
+		SurfaceMCP:     `note_add {"tag":["ops","a,b"],"title":"x"}`,
+		SurfaceTUI:     `note.add title=x tag=<a list no box text holds: "ops", "a,b">`,
+	} {
+		if got := s.Call("note.add", args...); got != want {
+			t.Errorf("Call over %q = %s, want %s", s, got, want)
+		}
+	}
+	for _, c := range []struct {
+		s         Surface
+		got, want string
+	}{
+		{SurfaceCLI, SurfaceCLI.InputTo("tag", []string{"ops", "db"}), "--tag ops --tag db"},
+		{SurfaceMCP, SurfaceMCP.InputTo("tag", []string{"ops", "db"}), `the "tag" argument set to ["ops","db"]`},
+		{SurfaceTUI, SurfaceTUI.InputTo("tag", []string{"ops", "db"}), "the tag box set to ops,db"},
+		{SurfaceTUI, SurfaceTUI.InputTo("tag", []string{"ops", "night shift"}), `the tag box set to "ops,night shift"`},
+		{SurfaceCLI, SurfaceCLI.InputTo("tag", []string{}), "--tag ''"},
+		{SurfaceCLI, SurfaceCLI.InputTo("tag", []string{"<key>", "<a b>"}), "--tag <key> --tag '<a b>'"},
+		{SurfaceMCP, SurfaceMCP.InputTo("tag", []string{}), `the "tag" argument set to []`},
+		{SurfaceCLI, SurfaceCLI.SettingTo("recipient", []string{"age1a", "age1b"}), "--recipient age1a --recipient age1b"},
+		{SurfaceMCP, SurfaceMCP.SettingTo("recipient", []string{"age1a", "age1b"}), "the operator's `recipient` set to [\"age1a\",\"age1b\"]"},
+		{SurfaceMCP, SurfaceMCP.SettingTo("recipient", []string{"a,b", " c"}), "the operator's `recipient` set to [\"a,b\",\" c\"]"},
+		{SurfaceTUI, SurfaceTUI.SettingTo("recipient", []string{"age1a", "age1b"}), "the recipient box set to age1a,age1b"},
+		// A list given by its place is the rest of the command line, which
+		// the CLI does not split at commas.
+		{SurfaceCLI, SurfaceCLI.Call("net.hosts.rm", Arg{Name: "hostname", Value: []string{"a,b", "c d"}, Positional: true}),
+			"rta net hosts rm a,b 'c d'"},
+		// CSV's reader turns a CR LF into a LF, so no list flag carries one.
+		{SurfaceCLI, SurfaceCLI.InputTo("tag", []string{"ok", "a\r\nb"}), `--tag ok --tag <no list flag keeps its CR LF: "a\r\nb">`},
+		// A box trims the space around each element and leaves an empty box
+		// unanswered, so neither is a list any box text gives.
+		{SurfaceTUI, SurfaceTUI.InputTo("tag", []string{" ops"}), `the tag box set to <a list no box text holds: " ops">`},
+		{SurfaceTUI, SurfaceTUI.InputTo("tag", []string{""}), `the tag box set to <a list no box text holds: "">`},
+	} {
+		if c.got != c.want {
+			t.Errorf("over %q: got %s, want %s", c.s, c.got, c.want)
+		}
+	}
+}
+
+// Every list the CLI spells reads back through a shell and pflag's
+// StringSlice as the elements it was given — one holding a comma, a quote, a
+// line break or nothing at all among them — and every list the TUI spells as
+// box text reads back through the form's splitting.
+func TestASpelledListReadsBackAsItsElements(t *testing.T) {
+	lists := [][]string{
+		{"ops"}, {"ops", "a,b"}, {`say "hi"`, `"`}, {"", "x"}, {"line\nbreak", "a\rb"},
+		{" lead", "trail "}, {"a$(touch pwned)`id`", "<a b>"}, {},
+	}
+	var script strings.Builder
+	for _, list := range lists {
+		script.WriteString("set -- " + SurfaceCLI.InputTo("tag", list) + `; printf '%s\0' "$@"; printf '\1'` + "\n")
+	}
+	shell, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("no bash to read the command lines back")
+	}
+	// In a directory of its own: a spelling that let the shell run what an
+	// element holds would run it there, not in this package's source.
+	cmd := exec.Command(shell, "-c", script.String())
+	cmd.Dir = t.TempDir()
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("bash: %v", err)
+	}
+	runs := strings.Split(strings.TrimSuffix(string(out), "\x01"), "\x01")
+	for i, list := range lists {
+		words := strings.Split(strings.TrimSuffix(runs[i], "\x00"), "\x00")
+		flags := pflag.NewFlagSet("add", pflag.ContinueOnError)
+		tags := flags.StringSlice("tag", []string{"default"}, "")
+		if err := flags.Parse(words); err != nil {
+			t.Errorf("%s: %v", SurfaceCLI.InputTo("tag", list), err)
+			continue
+		}
+		if !slices.Equal(*tags, list) || flags.NArg() != 0 {
+			t.Errorf("%s reads back as %q and arguments %q, want %q",
+				SurfaceCLI.InputTo("tag", list), *tags, flags.Args(), list)
+		}
+	}
+
+	// The form's reading of a box: split at commas, each element trimmed.
+	for _, list := range [][]string{{"ops"}, {"ops", "db"}, {"night shift", "x"}, {"a", "", "b"}, {"café", "東京"}} {
+		text := strings.TrimPrefix(SurfaceTUI.InputTo("tag", list), "the tag box set to ")
+		if unquoted, err := strconv.Unquote(text); err == nil {
+			text = unquoted
+		}
+		elements := strings.Split(text, ",")
+		for i := range elements {
+			elements[i] = strings.TrimSpace(elements[i])
+		}
+		if !slices.Equal(elements, list) {
+			t.Errorf("the box text %q reads back as %q, want %q", text, elements, list)
 		}
 	}
 }

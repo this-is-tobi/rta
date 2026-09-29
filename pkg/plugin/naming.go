@@ -102,7 +102,10 @@ func (s Surface) CapabilityWith(id string, inputs ...string) string {
 // Arg is one input a call spelled by Surface.Call gives: its name, its value,
 // and whether the CLI takes it by its place on the command line rather than
 // as a flag. A Value of true is a switch turned on, spelled on the CLI as the
-// bare flag, and false one turned off, joined to its flag: --tls=false.
+// bare flag, and false one turned off, joined to its flag: --tls=false. A
+// []string is a StringSlice input's list: the flag once per element on the
+// CLI (--grant a --grant b), a word each when Positional, a JSON array over
+// MCP, and the box's comma-separated text in the TUI (grant=a,b).
 type Arg struct {
 	Name       string
 	Value      any
@@ -148,20 +151,20 @@ func (s Surface) Call(id string, args ...Arg) string {
 	}
 	parts := []string{commandLine(id)}
 	for _, a := range args {
-		switch {
-		case a.Positional:
-			parts = append(parts, cliValue(a.Value))
-		case a.Value == true:
-			parts = append(parts, s.InputName(a.Name))
-		case a.Value == false:
-			// Joined, never a word of its own: pflag gives a switch its value
-			// only after an equals sign, and reads the word after it as the
-			// command's own argument, so --tls false turned the switch on and
-			// handed the command a stray "false" — the opposite call.
-			parts = append(parts, s.InputName(a.Name)+"=false")
-		default:
-			parts = append(parts, s.InputName(a.Name), cliValue(a.Value))
+		if !a.Positional {
+			parts = append(parts, flagTo(a.Name, a.Value))
+			continue
 		}
+		// A list given by its place is the rest of the command line, a word
+		// per element, which the CLI hands the input as they come: no
+		// splitting at a comma there, unlike a list flag's value.
+		if list, ok := a.Value.([]string); ok {
+			for _, e := range list {
+				parts = append(parts, cliValue(e))
+			}
+			continue
+		}
+		parts = append(parts, cliValue(a.Value))
 	}
 	return strings.Join(parts, " ")
 }
@@ -242,6 +245,9 @@ func cliValue(v any) string {
 // strconv.Quote would have left it raw inside the quotes all the same — the
 // TUI's call on a padded record read as the call on the bare one.
 func boxValue(v any) string {
+	if list, ok := v.([]string); ok {
+		return boxList(list)
+	}
 	text := fmt.Sprint(v)
 	if text == "" || !utf8.ValidString(text) || strings.ContainsFunc(text, func(r rune) bool {
 		return r == ' ' || r == '"' || r == '\'' || !glyph.Seen(r)
@@ -249,6 +255,34 @@ func boxValue(v any) string {
 		return glyph.Quote(text)
 	}
 	return text
+}
+
+// boxList is a list as a TUI box takes it: the elements joined at commas,
+// the text the form splits back into them, each trimmed of the space around
+// it — spelled as boxValue spells any text, quoted where a reader would
+// misread it. fmt.Sprint spelled it as Go prints a slice, and `grant=[a b]`
+// typed into the box was the one element "[a b]".
+//
+// **A list the box cannot hold is not spelled as one it can.** An element
+// holding a comma is two once the box splits it, one with space at an end
+// loses that space, and a lone empty element leaves the box empty, which
+// answers nothing. No text typed into the box gives such a list, so it is
+// spelled with each element quoted (glyph.Quote) inside angle brackets, as
+// mcpValue spells a string that is not UTF-8: something the reader sees is
+// not text to type, where the joined text would have been a call on other
+// values.
+func boxList(list []string) string {
+	unheld := len(list) == 1 && list[0] == "" || slices.ContainsFunc(list, func(e string) bool {
+		return strings.Contains(e, ",") || e != strings.TrimSpace(e)
+	})
+	if !unheld {
+		return boxValue(strings.Join(list, ","))
+	}
+	quoted := make([]string, len(list))
+	for i, e := range list {
+		quoted[i] = glyph.Quote(e)
+	}
+	return "<a list no box text holds: " + strings.Join(quoted, ", ") + ">"
 }
 
 // placeholder reports whether text is one word in angle brackets, <file>.
@@ -342,9 +376,16 @@ func (s Surface) SettingName(names ...string) string {
 // beside it — the operator's `sslmode` set to disable, the sslmode box set to
 // disable. Any Local input's, a path only the operator may name as much as a
 // connection's; an input an agent gives as an argument is InputTo's.
+//
+// A list is the JSON array to an agent, as InputTo spells one there: the
+// operator sets it in no box, and a list a box cannot hold was spelled to
+// the agent as one "no box text holds", a box it has never seen.
 func (s Surface) SettingTo(name string, value any) string {
 	switch s {
 	case SurfaceMCP:
+		if list, ok := value.([]string); ok {
+			return "the operator's `" + name + "` set to " + mcpValue(list)
+		}
 		return "the operator's `" + name + "` set to " + boxValue(value)
 	case SurfaceTUI:
 		return s.SettingName(name) + " set to " + boxValue(value)
@@ -353,8 +394,20 @@ func (s Surface) SettingTo(name string, value any) string {
 }
 
 // flagTo is flag name given value as a command line takes it, the way Call
-// spells an argument that is no Positional one: --sslmode disable, and a
-// switch bare when on and joined to its flag when off.
+// spells an argument that is no Positional one: --sslmode disable, a switch
+// bare when on and joined to its flag when off, and a list as the flag once
+// per element.
+//
+// A switch turned off is joined, never a word of its own: pflag gives a
+// switch its value only after an equals sign, and reads the word after it as
+// the command's own argument, so --tls false turned the switch on and handed
+// the command a stray "false" — the opposite call.
+//
+// A list is the flag repeated, since pflag's StringSlice appends what each
+// occurrence gives; fmt.Sprint spelled it as Go prints a slice, and
+// `--grant '[a b]'` was a call on the one element "[a b]". Not the elements
+// joined at commas either: the same StringSlice splits every occurrence's
+// value at its commas, so an element holding one was two (listElement).
 func flagTo(name string, value any) string {
 	switch value {
 	case true:
@@ -362,7 +415,44 @@ func flagTo(name string, value any) string {
 	case false:
 		return "--" + name + "=false"
 	}
-	return "--" + name + " " + cliValue(value)
+	list, ok := value.([]string)
+	if !ok {
+		return "--" + name + " " + cliValue(value)
+	}
+	if len(list) == 0 {
+		// An empty value empties the list, where leaving the flag out would
+		// have left its default in place.
+		return "--" + name + " ''"
+	}
+	words := make([]string, len(list))
+	for i, e := range list {
+		words[i] = "--" + name + " " + listElement(e)
+	}
+	return strings.Join(words, " ")
+}
+
+// listElement is one element of a list flag's value as a command line carries
+// it: one shell word that pflag's StringSlice reads back as the element.
+// StringSlice reads each occurrence's value as a line of CSV, so an element
+// holding a comma, a double quote or a line break goes in CSV's double quotes
+// — `--grant '"a,b"'` is the one element a,b — and so does an empty one,
+// which bare is no element at all.
+//
+// **An element holding a carriage return before a line feed has no
+// spelling.** CSV's reader turns that pair into a line feed alone, quoted or
+// not, and the call spelled would be a call on another value, which for a
+// grant or a key is another record. Such an element is spelled as what it
+// is, named as the TUI names it (glyph.Quote), inside angle brackets as a
+// placeholder is: something the reader sees is not a value to paste, as
+// mcpValue spells a string that is not UTF-8.
+func listElement(e string) string {
+	switch {
+	case strings.Contains(e, "\r\n"):
+		return "<no list flag keeps its CR LF: " + glyph.Quote(e) + ">"
+	case e == "" || strings.ContainsAny(e, ",\"\r\n"):
+		return shellquote.Arg(`"` + strings.ReplaceAll(e, `"`, `""`) + `"`)
+	}
+	return cliValue(e)
 }
 
 // InputTo is SettingTo for an input the caller gives on every surface — any
