@@ -150,24 +150,46 @@ func (s Surface) Call(id string, args ...Arg) string {
 		return strings.Join(parts, " ")
 	}
 	parts := []string{commandLine(id)}
+	var flags, given []string
+	dashed := false
 	for _, a := range args {
 		if !a.Positional {
-			parts = append(parts, flagTo(a.Name, a.Value))
+			word := flagTo(a.Name, a.Value)
+			parts, flags = append(parts, word), append(flags, word)
 			continue
 		}
 		// A list given by its place is the rest of the command line, a word
 		// per element, which the CLI hands the input as they come: no
 		// splitting at a comma there, unlike a list flag's value.
+		values := []any{a.Value}
 		if list, ok := a.Value.([]string); ok {
+			values = values[:0]
 			for _, e := range list {
-				parts = append(parts, cliValue(e))
+				values = append(values, e)
 			}
-			continue
 		}
-		parts = append(parts, cliValue(a.Value))
+		for _, v := range values {
+			dashed = dashed || readsAsFlag(fmt.Sprint(v))
+			parts, given = append(parts, cliValue(v)), append(given, cliValue(v))
+		}
+	}
+	// **A value that opens on a dash follows `--`, after every flag.** The
+	// CLI reads such a word as a flag wherever it stands, so the call on a
+	// key named --help printed the command's help, and one on -x or on -5
+	// was refused as an unknown flag: a call on nothing, handed to a reader
+	// as the call to make. After `--` it reads no word as a flag, so the
+	// flags go first. Only then: every other call keeps the order it was
+	// given in, which is the order a reader expects.
+	if dashed {
+		parts = append(append(append([]string{commandLine(id)}, flags...), "--"), given...)
 	}
 	return strings.Join(parts, " ")
 }
+
+// readsAsFlag reports whether a command line reads word, given by its place,
+// as a flag: a dash and anything after it. A lone dash is a value, which is
+// how pflag reads it.
+func readsAsFlag(word string) bool { return len(word) > 1 && word[0] == '-' }
 
 // mcpValue is v as a tool's arguments carry it: JSON, without the HTML
 // escaping json.Marshal does — nothing here reaches a page, and a

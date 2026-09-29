@@ -310,6 +310,45 @@ func TestASpelledListReadsBackAsItsElements(t *testing.T) {
 	}
 }
 
+// A value given by its place that opens on a dash follows `--`, after every
+// flag: the CLI read it as a flag wherever it stood, so a call on a key named
+// --help printed the command's help and one on -x was refused as an unknown
+// flag. Only such a call is reordered, and only on the CLI.
+func TestAValueThatReadsAsAFlagFollowsTheEndOfFlags(t *testing.T) {
+	key := func(v any) Arg { return Arg{Name: "key", Value: v, Positional: true} }
+	for _, c := range []struct{ got, want string }{
+		{SurfaceCLI.Call("kv.get", key("--help")), "rta kv get -- --help"},
+		{SurfaceCLI.Call("kv.set", key("-x"), Arg{Name: "file", Value: "<file>"}, Arg{Name: "tls", Value: false}),
+			"rta kv set --file <file> --tls=false -- -x"},
+		{SurfaceCLI.Call("net.hosts.rm", Arg{Name: "hostname", Value: []string{"a", "-b"}, Positional: true},
+			Arg{Name: "tag", Value: []string{"x"}}), "rta net hosts rm --tag x -- a -b"},
+		{SurfaceCLI.Call("note.show", key(-5)), "rta note show -- -5"},
+		// A lone dash is a value to the CLI, and a value that does not open
+		// on one keeps its place.
+		{SurfaceCLI.Call("kv.get", key("-")), "rta kv get -"},
+		{SurfaceCLI.Call("kv.get", key("a-b"), Arg{Name: "file", Value: "f"}), "rta kv get a-b --file f"},
+		{SurfaceMCP.Call("kv.get", key("--help")), `kv_get {"key":"--help"}`},
+		{SurfaceTUI.Call("kv.get", key("--help")), "kv.get key=--help"},
+	} {
+		if c.got != c.want {
+			t.Errorf("got %s, want %s", c.got, c.want)
+		}
+	}
+
+	// Read back as the CLI reads it: every value by its place, every flag
+	// as a flag.
+	line := SurfaceCLI.Call("kv.set", key("--x"), Arg{Name: "file", Value: "-f"}, Arg{Name: "value", Value: "-v",
+		Positional: true})
+	flags := pflag.NewFlagSet("set", pflag.ContinueOnError)
+	file := flags.String("file", "", "")
+	if err := flags.Parse(strings.Fields(strings.TrimPrefix(line, "rta kv set "))); err != nil {
+		t.Fatalf("%s: %v", line, err)
+	}
+	if *file != "-f" || !slices.Equal(flags.Args(), []string{"--x", "-v"}) {
+		t.Errorf("%s reads back as --file %q and %q", line, *file, flags.Args())
+	}
+}
+
 // Leaving inputs out is said the way the caller does it: a TUI form keeps its
 // boxes, so there they are left empty rather than left off.
 func TestInputsLeftOutAreSaidTheWayTheSurfaceLeavesThemOut(t *testing.T) {
