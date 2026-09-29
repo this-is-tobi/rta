@@ -313,3 +313,41 @@ func TestAForcedExitIsReportedInTheFormatAskedFor(t *testing.T) {
 		t.Errorf("code = %v, want %s", env["code"], CodeSignal)
 	}
 }
+
+// Under plugin dev the report is the command plugin dev ran after `--`: named
+// as that command, and drawn in the format its own flags asked for, which only
+// the root it ran in parsed. Reported for main's root, it named `rta plugin
+// dev` and was drawn pretty for a command that had asked for json.
+func TestAForcedExitUnderPluginDevIsReportedForTheCommandItRan(t *testing.T) {
+	outer := NewRoot(registry.New(), "test")
+	nested := NewRoot(registry.New(), "test")
+	w := unattachedWatch(t, 10*time.Millisecond, never, never, nil)
+	var line atomic.Pointer[commandLine]
+	w.nested = line.Load
+	w.Attach(outer, nil)
+	line.Store(&commandLine{root: nested, args: []string{"doctor", "-o", "json"}})
+	w.signals <- syscall.SIGTERM
+	if _, ok := w.exited(time.Second); !ok {
+		t.Fatal("no exit")
+	}
+	var env map[string]any
+	if err := json.Unmarshal([]byte(w.stderr.String()), &env); err != nil {
+		t.Fatalf("stderr is not json: %v\n%s", err, w.stderr.String())
+	}
+	if msg, _ := env["message"].(string); env["code"] != CodeSignal || !strings.Contains(msg, "`rta doctor`") {
+		t.Errorf("report = %v, want %s naming `rta doctor`", env, CodeSignal)
+	}
+}
+
+// plugin dev marks the command line it runs for as long as it runs it.
+func TestRunningNestedMarksTheCommandLineUntilItReturns(t *testing.T) {
+	root := NewRoot(registry.New(), "test")
+	done := runningNested(root, []string{"doctor"})
+	if got := nestedLine.Load(); got == nil || got.root != root || len(got.args) != 1 {
+		t.Errorf("while it runs, the nested line is %v", got)
+	}
+	done()
+	if got := nestedLine.Load(); got != nil {
+		t.Errorf("once it has returned, the nested line is %v", got)
+	}
+}
