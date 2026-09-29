@@ -118,6 +118,51 @@ func TestTheCardDoesNotJudgeAPluginNobodyRegistered(t *testing.T) {
 	}
 }
 
+// A problem is said once however many entries it is about, naming them: an
+// unregistered plugin under two instance labels was two identical rows, and
+// neither said which entry of the page above it was meant.
+func TestProfileShowSaysAProblemOnceNamingItsEntries(t *testing.T) {
+	const cfg = `profiles:
+  staging:
+    plugins:
+      ghost/a@0123456789ab:
+        set:
+          host: a.internal
+      ghost/b@0123456789ab:
+        set:
+          host: b.internal
+      phantom@0123456789ab: {}
+`
+	out, _, err := runWith(t, connRegistry(t), cfg, "profile", "show", "staging", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var page struct {
+		Pairs []struct{ Key, Value string } `json:"pairs"`
+	}
+	if err := json.Unmarshal([]byte(out), &page); err != nil {
+		t.Fatalf("%v:\n%s", err, out)
+	}
+	var problems []string
+	for _, p := range page.Pairs {
+		if p.Key == "problem" {
+			problems = append(problems, p.Value)
+		}
+	}
+	want := []string{
+		`under ghost/a@0123456789ab, ghost/b@0123456789ab: profile names "ghost", which is not a registered plugin`,
+		`under phantom@0123456789ab: profile names "phantom", which is not a registered plugin`,
+	}
+	if len(problems) != len(want) {
+		t.Fatalf("problems = %q, want one for each of %q", problems, want)
+	}
+	for i, w := range want {
+		if !strings.HasPrefix(problems[i], w+" — ") {
+			t.Errorf("problem %d = %q, want it to open %q and go on to its hint", i, problems[i], w)
+		}
+	}
+}
+
 // An empty profile list is still a table to anything that parses it. The
 // sentence saying what would fill it is for a screen; in -o json it was a
 // text view, and the CLI page's own `jq '.rows[] | ...'` example failed with
