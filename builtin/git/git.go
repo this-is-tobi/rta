@@ -738,18 +738,27 @@ const gitDirName = ".git"
 // was refused as outside it, naming the root's parent. A walk that reaches
 // the top without finding anything still hands the path back unchanged, and
 // it fails as "not a git repository" where it always did.
-
+//
+// Over MCP each directory is looked at from the root it lies under, as a
+// directory is read there (beneathRoots): a .git, a HEAD or an objects
+// directory that is a link leading out of the roots is not one, whatever is
+// at its far end. Followed, it answered whether the path it named exists: a
+// directory whose .git led to something outside was taken for a checkout and
+// failed to open, and one whose .git led nowhere sent the walk on up to the
+// gate's refusal of the root's parent.
 func repoRoot(req plugin.Request, path string) (string, *view.Error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", view.Errorf("git.path.invalid", "%s: %v", path, err)
 	}
+	look := &beneathRoots{req: req}
+	defer look.close()
 	for cur := abs; ; {
 		checked, verr := req.Confine("path", cur)
 		if verr != nil {
 			return "", verr
 		}
-		if _, err := os.Stat(filepath.Join(checked, gitDirName)); err == nil || isGitDir(checked) {
+		if _, err := look.Stat(filepath.Join(checked, gitDirName)); err == nil || isGitDir(look, checked) {
 			return checked, nil
 		}
 		parent := filepath.Dir(checked)
@@ -763,17 +772,18 @@ func repoRoot(req plugin.Request, path string) (string, *view.Error) {
 // isGitDir reports whether dir is itself a git directory, by the signs git's
 // discovery reads: a HEAD, and the objects and refs directories, or a
 // commondir saying where those are kept. Nothing is opened to tell — a named
-// pipe for a HEAD would hold the walk, as openAt explains.
-func isGitDir(dir string) bool {
-	head, err := os.Lstat(filepath.Join(dir, "HEAD"))
+// pipe for a HEAD would hold the walk, as openAt explains. look is where each
+// is looked at from (repoRoot).
+func isGitDir(look *beneathRoots, dir string) bool {
+	head, err := look.Lstat(filepath.Join(dir, "HEAD"))
 	if err != nil || (!head.Mode().IsRegular() && head.Mode()&os.ModeSymlink == 0) {
 		return false
 	}
-	if common, err := os.Lstat(filepath.Join(dir, "commondir")); err == nil && common.Mode().IsRegular() {
+	if common, err := look.Lstat(filepath.Join(dir, "commondir")); err == nil && common.Mode().IsRegular() {
 		return true
 	}
 	for _, sub := range []string{"objects", "refs"} {
-		if info, err := os.Stat(filepath.Join(dir, sub)); err != nil || !info.IsDir() {
+		if info, err := look.Stat(filepath.Join(dir, sub)); err != nil || !info.IsDir() {
 			return false
 		}
 	}

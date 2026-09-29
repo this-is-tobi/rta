@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -682,4 +683,72 @@ func errCode(err error) string {
 		return ve.Code
 	}
 	return err.Error()
+}
+
+// The walk that looks for the repository asks of each directory whether it
+// holds a .git and whether it is a git directory itself, and a link there
+// leading out of the roots was followed to answer: a directory whose .git led
+// to a path outside that exists was taken for a checkout and failed to open,
+// and one whose .git led nowhere sent the walk on up to the root's parent,
+// which the gate refused. The two answers told a caller whether any path on
+// the machine exists. Looked at from the root, a link leading out of it is no
+// .git, whatever is at its far end.
+func TestTheWalkToTheRepositoryDoesNotLookThroughALinkOut(t *testing.T) {
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(outside, "there", "objects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(outside, "there", "refs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(outside, "there"), "HEAD", "ref: refs/heads/main\n")
+	answer := func(target, link string) string {
+		root := t.TempDir()
+		dir := filepath.Join(root, "p")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(outside, target), filepath.Join(dir, link)); err != nil {
+			t.Fatal(err)
+		}
+		g, err := pathguard.New(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = runLog(context.Background(), overMCP(t, dir, g.Derived, map[string]any{"limit": defaultLogLimit}))
+		return strings.ReplaceAll(strings.ReplaceAll(errCode(err)+": "+fmt.Sprint(err), realPath(root), "<root>"), root, "<root>")
+	}
+	for _, link := range []string{".git", "objects"} {
+		there, nowhere := answer("there", link), answer("nowhere", link)
+		if link == "objects" {
+			// A HEAD and refs of the directory's own, so that only the
+			// objects directory, behind the link, decides.
+			there, nowhere = answerGitDir(t, outside, "there"), answerGitDir(t, outside, "nowhere")
+		}
+		if there != nowhere {
+			t.Errorf("a %s leading out of the roots answers by what is at its far end:\n  there:   %s\n  nowhere: %s",
+				link, there, nowhere)
+		}
+	}
+}
+
+// answerGitDir is git.log's answer over MCP on a directory holding a HEAD and
+// refs of its own and objects linked to target under outside.
+func answerGitDir(t *testing.T, outside, target string) string {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, "p")
+	writeFile(t, dir, "HEAD", "ref: refs/heads/main\n")
+	if err := os.MkdirAll(filepath.Join(dir, "refs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, target, "objects"), filepath.Join(dir, "objects")); err != nil {
+		t.Fatal(err)
+	}
+	g, err := pathguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = runLog(context.Background(), overMCP(t, dir, g.Derived, map[string]any{"limit": defaultLogLimit}))
+	return strings.ReplaceAll(strings.ReplaceAll(errCode(err)+": "+fmt.Sprint(err), realPath(root), "<root>"), root, "<root>")
 }
