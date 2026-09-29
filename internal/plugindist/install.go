@@ -2,6 +2,7 @@ package plugindist
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -255,6 +256,9 @@ func Describe(ctx context.Context, path string, stderr io.Writer) (plugin.Plugin
 	host := pluginhost.New(stderr)
 	defer host.CloseAll()
 	client, err := host.Open(ctx, path)
+	if verr := launchRefusal(err); verr != nil {
+		return plugin.Plugin{}, verr
+	}
 	if err != nil {
 		// Neutrally coded, because this is reached from install and from
 		// `rta plugin manifest`, and a code naming the wrong one of those is
@@ -265,6 +269,24 @@ func Describe(ctx context.Context, path string, stderr io.Writer) (plugin.Plugin
 				"a binary that cannot answer is not one rta will use")
 	}
 	return client.Declared, nil
+}
+
+// launchRefusal is the refusal a failed launch already carries, coded by the
+// host (pluginhost), or nil when err carries none and the caller names it.
+//
+// A coded refusal names its own cause and its own fix — a TMPDIR too long for
+// the plugin's socket, or one that cannot hold the socket's directory
+// (pluginhost's socketDir) — and each caller here re-coded every failure as
+// its own, plugin.declaration.unreadable or plugin.upgrade.old, with a hint
+// of its own: an install was told the binary cannot answer, an upgrade to
+// remove and reinstall a plugin that was fine, and neither heard of TMPDIR.
+// plugin dev passes it on the same way (internal/app's devLoadError).
+func launchRefusal(err error) *view.Error {
+	var verr *view.Error
+	if errors.As(err, &verr) && verr != nil {
+		return verr
+	}
+	return nil
 }
 
 // hexDigest is what a lockfile digest must look like before it is allowed to
@@ -331,6 +353,9 @@ func describeStored(ctx context.Context, name, want string, stderr io.Writer) (p
 	host := pluginhost.New(stderr)
 	defer host.CloseAll()
 	client, err := host.OpenIdentified(ctx, id)
+	if verr := launchRefusal(err); verr != nil {
+		return plugin.Plugin{}, verr
+	}
 	if err != nil {
 		return plugin.Plugin{}, view.Errorf("plugin.upgrade.old",
 			"the installed %s cannot describe itself: %v", name, err).
