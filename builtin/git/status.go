@@ -7,7 +7,6 @@ import (
 	iofs "io/fs"
 	"os"
 	pathpkg "path"
-	"path/filepath"
 	"sort"
 	"time"
 
@@ -163,7 +162,11 @@ func worktreeStatus(ctx context.Context, deadline time.Time, repo *git.Repositor
 		restoreRootIgnore(wt.Filesystem, idx, status, budget)
 	}
 	if onDisk {
-		kindChanges(repo, root, status, budget)
+		tree, err := worktreeDir(req, wt)
+		if err != nil {
+			return nil, nil, err
+		}
+		kindChanges(repo, tree, status, budget)
 	}
 	if verr := budget.refusal(root); verr != nil {
 		return nil, nil, verr
@@ -323,7 +326,7 @@ const typeChanged git.StatusCode = 'T'
 // where a lstat of each path doubled the cost of a status of a hundred
 // thousand rewritten files, 14 s on top of go-git's 5 s. Each listing is held to the
 // call's budget, as the status's own are (statusBudget).
-func kindChanges(repo *git.Repository, root string, status git.Status, budget *statusBudget) {
+func kindChanges(repo *git.Repository, tree boundDir, status git.Status, budget *statusBudget) {
 	var modified []string
 	staged := false
 	for path, fs := range status {
@@ -357,7 +360,7 @@ func kindChanges(repo *git.Repository, root string, status git.Status, budget *s
 			}
 		}
 		if fs.Worktree == git.Modified {
-			if kind, ok := entryKind(kinds, root, path, budget); ok && !kind.IsDir() && diskKind(kind) != kindOf(entry.Mode) {
+			if kind, ok := entryKind(kinds, tree, path, budget); ok && !kind.IsDir() && diskKind(kind) != kindOf(entry.Mode) {
 				fs.Worktree = typeChanged
 			}
 		}
@@ -368,8 +371,12 @@ func kindChanges(repo *git.Repository, root string, status git.Status, budget *s
 // listing gives it without a lstat, and whether there is anything there;
 // kinds holds each directory's listing, read once. The directories on the way
 // are real ones for a path go-git's status marked M, which does not walk
-// through a link.
-func entryKind(kinds map[string]map[string]os.FileMode, root, path string, budget *statusBudget) (os.FileMode, bool) {
+// through a link; over MCP each listing is read from the directory the
+// working tree is held open by (worktreeDir), and a directory swapped for a
+// link out of it since the status is no listing at all.
+func entryKind(kinds map[string]map[string]os.FileMode, tree boundDir, path string, budget *statusBudget) (
+	os.FileMode, bool,
+) {
 	dir, name := pathpkg.Split(path)
 	listing, ok := kinds[dir]
 	if !ok {
@@ -378,7 +385,7 @@ func entryKind(kinds map[string]map[string]os.FileMode, root, path string, budge
 		}
 		budget.dirs++
 		listing = map[string]os.FileMode{}
-		if entries, err := os.ReadDir(filepath.Join(root, filepath.FromSlash(dir))); err == nil {
+		if entries, err := tree.ReadDir(dir); err == nil {
 			for _, e := range entries {
 				listing[e.Name()] = e.Type()
 			}

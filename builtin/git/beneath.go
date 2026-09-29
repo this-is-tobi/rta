@@ -2,6 +2,7 @@ package git
 
 import (
 	"errors"
+	"fmt"
 	iofs "io/fs"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-git/v5"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -71,7 +73,9 @@ func inRoot(name string) string {
 	return name
 }
 
-func (d boundDir) join(name string) string { return filepath.Join(d.path, name) }
+// join is name, as go-billy and a working tree's paths spell it, with a
+// forward slash, under d.
+func (d boundDir) join(name string) string { return filepath.Join(d.path, filepath.FromSlash(name)) }
 
 func (d boundDir) Stat(name string) (os.FileInfo, error) {
 	if d.root == nil {
@@ -402,3 +406,33 @@ type rootFile struct {
 func (f rootFile) Name() string  { return f.name }
 func (f rootFile) Lock() error   { return &iofs.PathError{Op: "lock", Path: f.name, Err: errReadOnly} }
 func (f rootFile) Unlock() error { return nil }
+
+// worktreeDir is the directory the working tree wt of a repository openAt
+// opened is read from, for this package's own reads of it beside go-git's:
+// the directory it is held open by over MCP, and its name anywhere else.
+//
+// go-git hands a working tree back wrapped in a filesystem of its own, which
+// passes on no method of the one it wraps but Chroot: the directory itself,
+// asked for through that, is the rootFiles openAt made, opened once more from
+// the directory it holds. Over MCP anything else is refused rather than read
+// by name, which is the read this exists to replace.
+func worktreeDir(req plugin.Request, wt *git.Worktree) (boundDir, error) {
+	if !bounded(req) {
+		return boundDir{path: wt.Filesystem.Root()}, nil
+	}
+	fs, err := wt.Filesystem.Chroot(".")
+	if err != nil {
+		return boundDir{}, err
+	}
+	for {
+		switch f := fs.(type) {
+		case regularFiles:
+			fs = f.Filesystem
+		case rootFiles:
+			return f.dir, nil
+		default:
+			return boundDir{}, fmt.Errorf("the working tree at %s is not read from the directory the gate judged",
+				wt.Filesystem.Root())
+		}
+	}
+}
