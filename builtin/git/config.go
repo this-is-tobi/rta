@@ -414,16 +414,15 @@ func machineConfigSources() []scopedConfig {
 func envBool(name string) bool { return gitBool(os.Getenv(name)) }
 
 // gitBool is a value read as git reads a boolean: true, yes, on or a number
-// other than zero; false when empty, and for anything else, which git
-// refuses to run with at all.
+// other than zero, as git reads a number (gitInt); false when empty, and for
+// anything else, which git refuses to run with at all (isGitBool).
 func gitBool(value string) bool {
-	switch v := strings.ToLower(strings.TrimSpace(value)); v {
+	switch strings.ToLower(value) {
 	case "true", "yes", "on":
 		return true
-	default:
-		n, err := strconv.Atoi(v)
-		return err == nil && n != 0
 	}
+	n, ok := gitInt(value)
+	return ok && n != 0
 }
 
 // worktreeConfig is config.worktree, the config of the working tree being
