@@ -364,7 +364,7 @@ func openAt(req plugin.Request, files *repoFiles, root, path string, what reads)
 	storage := filesystem.NewStorageWithOptions(dotgit.NewRepositoryFilesystem(dot, common), cache.NewObjectLRUDefault(),
 		filesystem.Options{MaxOpenDescriptors: keptPacks})
 	// A config that cannot be read is go-git's to refuse, as it refused it.
-	if cfg, err := storage.Config(); err == nil {
+	if cfg, err := ownConfig(storage); err == nil {
 		var blank map[string]valueless
 		if content, err := readGitDirFile(storage.Filesystem(), "config"); err == nil {
 			blank = valuelessKeys(content)

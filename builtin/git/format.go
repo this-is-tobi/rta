@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"slices"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	gitconfig "github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
+	format "github.com/go-git/go-git/v5/plumbing/format/config"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -277,13 +280,107 @@ func unsupportedFormat(path string, set []string, gitReads bool) *view.Error {
 type decidedFormat struct{ *filesystem.Storage }
 
 func (s decidedFormat) Config() (*gitconfig.Config, error) {
-	cfg, err := s.Storage.Config()
+	cfg, err := ownConfig(s.Storage)
 	if err != nil {
 		return nil, err
 	}
 	cfg.Raw.RemoveSection("extensions")
 	cfg.Core.RepositoryFormatVersion = ""
 	return cfg, nil
+}
+
+// ownConfig is the repository's own config file, store's, as go-git reads it
+// where it reads it, and read as git reads it (readableConfig) where go-git
+// refuses what git does not. repoConfig is the same for a repository opened
+// here, and go-git's own for a clone in memory, which it made.
+func ownConfig(store *filesystem.Storage) (*gitconfig.Config, error) {
+	cfg, err := store.Config()
+	if err == nil {
+		return cfg, nil
+	}
+	content, rerr := readGitDirFile(store.Filesystem(), "config")
+	if rerr != nil {
+		return nil, err
+	}
+	return readableConfig(content, err)
+}
+
+func repoConfig(repo *git.Repository) (*gitconfig.Config, error) {
+	if store, ok := repo.Storer.(*filesystem.Storage); ok {
+		return ownConfig(store)
+	}
+	return repo.Config()
+}
+
+// readableConfig is content, a repository's config file go-git refused, as
+// refused says, read as git reads it: go-git's reading of it made with what
+// it alone refuses passed over (passOverGoGitsRefusals), and its Raw the
+// whole of the file, which is what this package reads of it besides.
+//
+// **go-git refuses to open a repository git runs in.** Its reader validates
+// what it reads of each branch and remote as it reads them, and refused a
+// branch.<name>.merge of `main`, where it wants refs/heads/main, a
+// branch.<name>.rebase of merges, which `git pull --rebase=merges` sets, and a
+// fetch refspec outside its grammar, a negative one or one with no
+// destination: every capability refused such a repository as "not a git
+// repository". What a branch tracks and where a remote fetches are read from
+// the files themselves here (configuredUpstreams, configuredRemotes), as git
+// reads them, and go-git's reading of them is used for nothing, so what it
+// refuses of them is left out of that reading alone. Anything else it
+// refuses is refused, as it was.
+func readableConfig(content []byte, refused error) (*gitconfig.Config, error) {
+	whole, passed := format.New(), format.New()
+	for _, raw := range []*format.Config{whole, passed} {
+		if err := format.NewDecoder(bytes.NewReader(content)).Decode(raw); err != nil {
+			return nil, refused
+		}
+	}
+	passOverGoGitsRefusals(passed)
+	var b bytes.Buffer
+	if err := format.NewEncoder(&b).Encode(passed); err != nil {
+		return nil, refused
+	}
+	cfg := gitconfig.NewConfig()
+	if err := cfg.Unmarshal(b.Bytes()); err != nil {
+		return nil, refused
+	}
+	cfg.Raw = whole
+	return cfg, nil
+}
+
+// passOverGoGitsRefusals takes out of raw each branch and remote setting
+// go-git's reader refuses and git reads: a branch whose name go-git does not
+// take for one, a merge that does not name a branch in full, a rebase that is
+// not true, interactive or false, and a fetch refspec it cannot parse.
+func passOverGoGitsRefusals(raw *format.Config) {
+	for _, s := range raw.Sections {
+		switch {
+		case s.IsName("branch"):
+			kept := s.Subsections[:0]
+			for _, sub := range s.Subsections {
+				if plumbing.NewBranchReferenceName(sub.Name).Validate() != nil {
+					continue
+				}
+				sub.Options = slices.DeleteFunc(sub.Options, func(o *format.Option) bool {
+					switch {
+					case o.IsKey("merge"):
+						return !plumbing.ReferenceName(o.Value).IsBranch()
+					case o.IsKey("rebase"):
+						return !slices.Contains([]string{"", "true", "interactive", "false"}, o.Value)
+					}
+					return false
+				})
+				kept = append(kept, sub)
+			}
+			s.Subsections = kept
+		case s.IsName("remote"):
+			for _, sub := range s.Subsections {
+				sub.Options = slices.DeleteFunc(sub.Options, func(o *format.Option) bool {
+					return o.IsKey("fetch") && gitconfig.RefSpec(o.Value).Validate() != nil
+				})
+			}
+		}
+	}
 }
 
 // partialClone refuses the repository root holds to a capability that reads
@@ -293,7 +390,7 @@ func (s decidedFormat) Config() (*gitconfig.Config, error) {
 // there, and git itself stops at a file of config it cannot parse, or that
 // is not a file.
 func partialClone(ctx context.Context, req plugin.Request, repo *git.Repository, root string) *view.Error {
-	own, err := repo.Config()
+	own, err := repoConfig(repo)
 	var files []scopedConfig
 	if err == nil {
 		files, err = gitConfigs(ctx, req, repo)

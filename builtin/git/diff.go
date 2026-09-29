@@ -183,7 +183,7 @@ func configuredWorktree(repo *git.Repository) string {
 	if !ok {
 		return ""
 	}
-	cfg, err := repo.Config()
+	cfg, err := repoConfig(repo)
 	if err != nil || cfg.Core.Worktree == "" {
 		return ""
 	}

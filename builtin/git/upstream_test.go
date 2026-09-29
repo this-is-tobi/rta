@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -144,6 +145,50 @@ func TestWhatABranchTracksIsFoundThroughTheRemotesRefspec(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir := upstreamRepo(t, c.config)
+			branches, overview, byGit, asked := tracks(t, dir)
+			if branches != c.want || overview != c.want {
+				t.Errorf("master tracks %q in git.branches and %q in the overview, want %q", branches, overview, c.want)
+			}
+			if asked && byGit != c.want {
+				t.Errorf("git reads master's upstream as %q, want %q", byGit, c.want)
+			}
+		})
+	}
+}
+
+// **go-git refuses a branch section git reads.** It opens a repository only
+// where each branch.<name>.merge names a branch in full, refs/heads/<name>,
+// and a merge of `main`, as a hand or a script writes it, left every
+// capability refusing the repository as "not a git repository" ("branch
+// config: invalid merge"), where git runs. So does a fetch refspec go-git has
+// no grammar for, a negative one or one with no destination, and a
+// branch.<name>.rebase of merges, which `git pull --rebase=merges` sets. Each
+// is read as git reads it: the repository opens, and the upstream is the
+// one git finds, or none where git finds none.
+func TestABranchSectionGoGitRefusesOpensAsGitReadsIt(t *testing.T) {
+	remote := "[remote \"origin\"]\n\turl = https://example.com/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+	for _, c := range []struct {
+		name, config, want string
+	}{
+		{"a merge by short name, from a remote", remote + "[branch \"master\"]\n\tremote = origin\n\tmerge = master\n", ""},
+		{"a merge by short name, from the repository itself", "[branch \"base\"]\n[branch \"master\"]\n\tremote = .\n" +
+			"\tmerge = master\n", "master"},
+		{"a rebase of merges", remote + "[branch \"master\"]\n\tremote = origin\n\tmerge = refs/heads/master\n" +
+			"\trebase = merges\n", "origin/master"},
+		{"a negative refspec", remote + "\tfetch = ^refs/heads/wip/*\n[branch \"master\"]\n\tremote = origin\n" +
+			"\tmerge = refs/heads/master\n", "origin/master"},
+		{"a refspec with no destination", remote + "\tfetch = refs/tags/v1\n[branch \"master\"]\n\tremote = origin\n" +
+			"\tmerge = refs/heads/master\n", "origin/master"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := upstreamRepo(t, c.config)
+			for name, h := range map[string]plugin.Handler{
+				"log": runLog, "status": runStatus, "config": runConfig, "remotes": runRemotes, "hooks": runHooks,
+			} {
+				if _, err := h(context.Background(), req(t, dir, map[string]any{"limit": defaultLogLimit})); err != nil {
+					t.Errorf("%s: %v", name, err)
+				}
+			}
 			branches, overview, byGit, asked := tracks(t, dir)
 			if branches != c.want || overview != c.want {
 				t.Errorf("master tracks %q in git.branches and %q in the overview, want %q", branches, overview, c.want)

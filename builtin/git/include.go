@@ -447,7 +447,7 @@ func sameBytes(a, b string, fold bool) bool {
 func (r *configReading) onBranch(pattern string) (bool, string, error) {
 	if !r.headRead {
 		r.branch, r.noBranch, r.headRead = headBranch(r.repo), "", true
-		if own, err := r.repo.Config(); err == nil && refsInReftable(own) {
+		if own, err := repoConfig(r.repo); err == nil && refsInReftable(own) {
 			r.branch, r.noBranch = "", "the branch it turns on is kept in a reftable, which this does not read"
 		}
 	}
