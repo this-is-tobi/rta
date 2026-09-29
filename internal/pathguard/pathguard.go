@@ -159,12 +159,22 @@ func (g *Guard) check(field, raw string, derived bool) (string, *view.Error) {
 	}
 	abs, err := resolve(raw)
 	if err != nil {
-		return "",
-			// Unresolvable is refused rather than allowed. The realistic cause is
-			// a path so malformed that no handler could use it either, and the
-			// alternative is a value that failed the check sailing past it.
-			view.Errorf("core.mcp.path.unresolvable",
-				"%s: cannot resolve %q", field, raw)
+		// A loop comes with where the chain had got to, and one that lies
+		// outside the roots is refused as anything there is, below: refused
+		// as a loop, a link to a loop outside said what a link to a missing
+		// name there did not, which is that something is there.
+		reached := abs == ""
+		for _, r := range g.roots {
+			reached = reached || inside(r, abs)
+		}
+		if reached {
+			return "",
+				// Unresolvable is refused rather than allowed. The realistic cause is
+				// a path so malformed that no handler could use it either, and the
+				// alternative is a value that failed the check sailing past it.
+				view.Errorf("core.mcp.path.unresolvable",
+					"%s: cannot resolve %q", field, raw)
+		}
 	}
 	for _, d := range g.denied {
 		if inside(d, abs) {
@@ -310,9 +320,34 @@ func resolve(raw string) (string, error) {
 	// code was written for, that a path which does not exist yet still
 	// resolves: once a component is missing, the rest accumulates lexically,
 	// which is correct because a path that does not exist cannot be a symlink.
+	//
+	// A link is followed here, one hop at a time, rather than by
+	// filepath.EvalSymlinks, because of the links EvalSymlinks cannot follow
+	// to the end: one whose target is missing, or behind a directory this
+	// process may not search. Those failed EvalSymlinks and were judged as
+	// their own path, which is where the link sits — inside the root — while
+	// a link whose target was there was judged by the target and refused. So
+	// the answer said whether a file outside the roots exists, to a caller
+	// who could make a link to any name it wanted to ask about. A hop's target
+	// is spliced in as written, relative to the link's directory, and
+	// resolved on from there like the rest of the path, so a link is judged
+	// by where it points whether or not anything is there.
+	//
+	// What that leaves is a chain that leaves the roots and comes back: a
+	// link inside to a link outside that leads back in is judged where it
+	// ends, as the kernel opens it, so the answer turns on whether the outside
+	// link is there. Refusing every hop outside would refuse the ordinary
+	// case of that shape — a target spelled through /var or /tmp, links on
+	// macOS to the resolved roots under /private — and the outside link it
+	// would reveal is one pointing into the roots, which only somebody who
+	// could already write outside them can make.
 	vol := filepath.VolumeName(p)
 	out := vol + string(filepath.Separator)
-	for _, seg := range strings.Split(p[len(vol):], string(filepath.Separator)) {
+	rest := strings.Split(p[len(vol):], string(filepath.Separator))
+	hops := 0
+	for len(rest) > 0 {
+		seg := rest[0]
+		rest = rest[1:]
 		switch seg {
 		case "", ".":
 			continue
@@ -321,13 +356,44 @@ func resolve(raw string) (string, error) {
 			continue
 		}
 		next := filepath.Join(out, seg)
-		if resolved, err := filepath.EvalSymlinks(next); err == nil {
-			out = resolved
+		target, isLink := readLink(next)
+		if !isLink {
+			out = next
 			continue
 		}
-		out = next
+		// A loop never ends anywhere; the kernel refuses to open one past
+		// its own limit, and the number is EvalSymlinks'. Where the chain had
+		// got to comes back with the refusal, for the guard to judge as it
+		// judges any path (check).
+		if hops++; hops > 255 {
+			return out, fmt.Errorf("%s: too many levels of symbolic links", raw)
+		}
+		switch tv := filepath.VolumeName(target); {
+		case filepath.IsAbs(target):
+			out, target = tv+string(filepath.Separator), target[len(tv):]
+		case target != "" && os.IsPathSeparator(target[0]):
+			// Rooted but not absolute, which only Windows has: the root of
+			// the volume the link is on.
+			out = filepath.VolumeName(out) + string(filepath.Separator)
+		}
+		rest = append(strings.Split(target, string(filepath.Separator)), rest...)
 	}
 	return out, nil
+}
+
+// readLink reports whether path is a symbolic link, and what it holds. A
+// path that cannot be looked at is not one: the rest of it is then judged
+// lexically, as a path that does not exist is.
+func readLink(path string) (string, bool) {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return "", false
+	}
+	target, err := os.Readlink(path)
+	if err != nil {
+		return "", false
+	}
+	return target, true
 }
 
 // within reports whether p is root or lives under it.
