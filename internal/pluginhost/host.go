@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	goplugin "github.com/hashicorp/go-plugin"
 
 	"github.com/this-is-tobi/rta/internal/shutdown"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/sdk"
 	"github.com/this-is-tobi/rta/pkg/sdk/wire"
@@ -603,11 +605,18 @@ func buildCmd(id Identity, deny DenySet, args []string) *exec.Cmd {
 }
 
 func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []string) (*Client, error) {
+	return h.start(ctx, id, deny, args, buildCmd(id, deny, args))
+}
+
+// start launches cmd as the plugin id, the command buildCmd assembled for it
+// wherever a plugin is launched. Taken as an argument so a test can start a
+// plugin as it is on every platform, outside the macOS sandbox wrapper, and
+// read what is said about it beside what is said about it wrapped.
+func (h *Host) start(ctx context.Context, id Identity, deny DenySet, args []string, cmd *exec.Cmd) (*Client, error) {
 	sockDir, err := socketDir()
 	if err != nil {
 		return nil, err
 	}
-	cmd := buildCmd(id, deny, args)
 	// Here rather than in buildCmd, which makes nothing: the directory is
 	// this launch's, made just now, and a command built to be inspected
 	// would leave one behind every time.
@@ -669,11 +678,14 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 	// just after it reports the start failed.
 	abandon := func(reason string, err error) (*Client, error) {
 		exitedOnItsOwn(client)
-		said := words.told(exitStatus(client, cmd))
+		failure := fmt.Errorf("%s %s: %w%s", reason, id.Path, err, words.told(exitStatus(client, cmd)))
+		if exited, ok := exitedBeforeHandshake(client, cmd, err); ok {
+			failure = fmt.Errorf("%s exited before its handshake: %s%s", id.Path, exited, words.wrote(true))
+		}
 		reap(cmd)
 		client.Kill()
 		removeSocketDir(sockDir)
-		return nil, fmt.Errorf("%s %s: %w%s", reason, id.Path, err, said)
+		return nil, failure
 	}
 
 	if _, err := client.Start(); err != nil {
@@ -721,6 +733,76 @@ func exitStatus(client *goplugin.Client, cmd *exec.Cmd) string {
 		return state.String()
 	}
 	return ""
+}
+
+// exitedBeforeHandshake is how cmd's process exited, when it exited before
+// its handshake on its stdout, where go-plugin reads one, and the line it
+// printed there instead, if any: a binary that stopped at once, one that
+// printed why and gave up, and one the macOS sandbox wrapper could not run
+// at all.
+//
+// go-plugin reports that as "Unrecognized remote plugin message:", an empty
+// one, then "Failed to read any lines from plugin's stdout", its guesses at
+// a cause — the wrong architecture, a missing library, a file mode, the
+// handshake — and notes on the file it ran, its path, mode and owner. Every
+// one of those is about the file and none about what the process said, and
+// on macOS the file it ran is /usr/bin/sandbox-exec: the notes described the
+// wrapper as if it were the plugin, root-owned and executable, which sent
+// whoever read them looking at the one file that was fine. What the process
+// wrote on its way out was dropped unless it was at error, and sandbox-exec's
+// own line when it cannot run the plugin has no level.
+//
+// So this case is said in rta's words: the plugin, where it is, that it
+// exited before its handshake, how, and the last lines it wrote. Read off
+// go-plugin's error, which has no other shape to read: its two words for a
+// stdout that ended with no line on it, one when the stream closes first and
+// one when the process's exit is seen first. Pinned to the go-plugin in
+// go.mod by the tests that launch such a plugin, so a release that rewords
+// either fails them rather than quietly bringing its guesses back.
+//
+// A process that printed a line of its own where the handshake goes and
+// then exited — a binary answering with its usage, one of another tool
+// named like a plugin — exited before its handshake just as much, and got
+// the same guesses after "Unrecognized remote plugin message:" and its line.
+// The line is the clue, so it is said, after the status and bounded as the
+// plugin's other words are, in place of the guesses around it.
+//
+// Only once the process has exited, and by the state it left. go-plugin
+// kills the process as it reports either reading, so one that closed its
+// stdout and kept running is reported with the SIGKILL that ended it, as the
+// state says — fairly: a process that had closed the stream it answers on
+// had nothing more to do, and a SIGKILL is also what the kernel sends a
+// binary whose signature macOS refuses. One that printed its line and went
+// on running is not: that kill is go-plugin's answer to the line, so only a
+// process that exited of itself is said to have, and one killed over its
+// line keeps go-plugin's reading of it.
+func exitedBeforeHandshake(client *goplugin.Client, cmd *exec.Cmd, err error) (string, bool) {
+	const unrecognized = "Unrecognized remote plugin message: "
+	text := err.Error()
+	printed := ""
+	switch {
+	case text == "plugin exited before we could connect":
+	case strings.HasPrefix(text, unrecognized):
+		// go-plugin trims the line and puts its own words on the lines after
+		// it, "Failed to read any lines" first when there was none.
+		printed, _, _ = strings.Cut(strings.TrimPrefix(text, unrecognized), "\n")
+		printed, _ = format.Head(printed, wordLength)
+	default:
+		return "", false
+	}
+	if !client.Exited() || cmd.ProcessState == nil {
+		return "", false
+	}
+	if printed == "" {
+		return cmd.ProcessState.String(), true
+	}
+	// go-plugin kills the process as it reports the line, so a signal here
+	// is go-plugin's and not the plugin's way out: only one that exited of
+	// itself before the kill landed exited before its handshake.
+	if !cmd.ProcessState.Exited() {
+		return "", false
+	}
+	return cmd.ProcessState.String() + "\nit printed in place of its handshake: " + printed, true
 }
 
 // exitedOnItsOwn gives a plugin whose launch failed a moment to finish

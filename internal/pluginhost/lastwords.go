@@ -53,14 +53,22 @@ const (
 const lineLimit = 64 * 1024
 
 // lastWords is the writer a launch hands go-plugin as the plugin's stderr:
-// it keeps what the plugin said at error and writes nothing.
+// it keeps what the plugin said at error, and its last lines whatever they
+// said, and writes nothing.
 type lastWords struct {
 	mu sync.Mutex
 	// line is the line being written, up to lineLimit bytes of it: go-plugin
 	// writes a line and its end in two calls, and a long one in pieces.
-	line      []byte
-	said      []string
-	panicking bool
+	line []byte
+	// said is what the plugin said at error, and tail its last lines at any
+	// level, as written. A process that ran is judged by said: below error
+	// it talks to itself. One that exited before its handshake is judged by
+	// tail (exitedBeforeHandshake), since what it wrote on its way out is
+	// the whole of what anyone learns of why, and much of what says so has
+	// no level at all: a shell's "not found", a dynamic loader's missing
+	// library, and sandbox-exec's own line when it could not run the plugin.
+	said, tail []string
+	panicking  bool
 }
 
 // Write takes what the plugin wrote, a line or a piece of one.
@@ -90,20 +98,21 @@ func (w *lastWords) Write(p []byte) (int, error) {
 
 // heard reads one whole line, as go-plugin logs one at error: an hclog entry
 // at that level, its message; a line opening [ERROR]; and a panic from its
-// first line on. Anything else is a plugin talking to itself.
+// first line on. Anything else is a plugin talking to itself, kept only in
+// its last lines.
 func (w *lastWords) heard(line string) {
-	if message, entry := errorEntry(line); entry {
-		w.keep(message)
-		return
-	}
-	switch {
-	case strings.HasPrefix(line, "panic: ") || strings.HasPrefix(line, "fatal error: "):
+	if strings.HasPrefix(line, "panic: ") || strings.HasPrefix(line, "fatal error: ") {
 		// A panic's first line says what went wrong and the trace under it
 		// where, so it is kept from its start rather than from its end.
-		w.said, w.panicking = nil, true
-		w.keep(line)
-	case w.panicking || strings.HasPrefix(line, "[ERROR]"):
-		w.keep(line)
+		w.said, w.tail, w.panicking = nil, nil, true
+	}
+	w.tail = w.keep(w.tail, line)
+	if message, entry := errorEntry(line); entry {
+		w.said = w.keep(w.said, message)
+		return
+	}
+	if w.panicking || strings.HasPrefix(line, "[ERROR]") {
+		w.said = w.keep(w.said, line)
 	}
 }
 
@@ -127,40 +136,54 @@ func errorEntry(line string) (message string, entry bool) {
 	return message, true
 }
 
-// keep adds a line to what the plugin said: the last few, or a panic's
-// first few, each cut to a bounded piece of itself.
-func (w *lastWords) keep(line string) {
+// keep adds a line to lines, what the plugin said: the last few, or a
+// panic's first few, each cut to a bounded piece of itself.
+func (w *lastWords) keep(lines []string, line string) []string {
 	line, _ = format.Head(strings.TrimRight(line, " \t\r\n"), wordLength)
 	switch {
 	case line == "":
 	case w.panicking:
-		if len(w.said) < wordsKept {
-			w.said = append(w.said, line)
+		if len(lines) < wordsKept {
+			lines = append(lines, line)
 		}
 	default:
-		w.said = append(w.said, line)
-		if len(w.said) > wordsKept {
-			w.said = w.said[len(w.said)-wordsKept:]
+		lines = append(lines, line)
+		if len(lines) > wordsKept {
+			lines = lines[len(lines)-wordsKept:]
 		}
 	}
+	return lines
 }
 
 // told is how the plugin exited, when it did not exit cleanly (exitStatus),
-// and what it said, as the end of rta's own word on its failure — after
-// everything of rta's, so a sequence a renderer reads as running to the end
-// of the text takes nothing of rta's with it — or "" when there is neither.
+// and what it said at error, as the end of rta's own word on its failure —
+// after everything of rta's, so a sequence a renderer reads as running to
+// the end of the text takes nothing of rta's with it — or "" when there is
+// neither.
 func (w *lastWords) told(exited string) string {
 	var b strings.Builder
 	if exited != "" {
 		b.WriteString("\nthe plugin exited: " + exited)
 	}
+	b.WriteString(w.wrote(false))
+	return b.String()
+}
+
+// wrote is what the plugin said, placed as told places it: at error, or
+// with everything, its last lines whatever they said; "" when that is
+// nothing.
+func (w *lastWords) wrote(everything bool) string {
 	if w == nil {
-		return b.String()
+		return ""
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if len(w.said) > 0 {
-		b.WriteString("\nthe plugin wrote: " + strings.Join(w.said, "\n  "))
+	lines := w.said
+	if everything {
+		lines = w.tail
 	}
-	return b.String()
+	if len(lines) == 0 {
+		return ""
+	}
+	return "\nthe plugin wrote: " + strings.Join(lines, "\n  ")
 }
