@@ -50,11 +50,23 @@ import (
 // nothing read through it. The root is opened from the directory of the
 // server's roots the path lies under (rootAbove), which a caller cannot swap,
 // and the directory from that, so the opening is bounded as well.
+//
+// **And what is opened through one is held to rta's own state by identity.**
+// The gate refuses the state by name, and a hard link under a root to a file
+// of it, or the file itself moved onto a name the gate judged, is another
+// name for it: git.diff showed an untracked link to the age identity whole,
+// and an include of one was read as the repository's config. Each file
+// opened through a root is put to the call's bounds (plugin.Bounds.Refuse)
+// with its own Stat, taken from the open file, and refused as the gate
+// refuses the state's own name (withhold).
 type boundDir struct {
 	// path is the directory as it was judged, which messages name it by.
 	path string
 	// root reads it, nil where it is read by name.
 	root *os.Root
+	// refuse is the call's bounds' refusal of rta's own state, nil where
+	// the call has none.
+	refuse func(string, iofs.FileInfo) error
 }
 
 // bounded reports whether req's reads are bounded to the roots: over MCP,
@@ -103,7 +115,61 @@ func (d boundDir) OpenFile(name string, flag int) (*os.File, error) {
 	if d.root == nil {
 		return os.OpenFile(d.join(name), flag, 0)
 	}
-	return d.root.OpenFile(inRoot(name), flag, 0)
+	f, err := d.root.OpenFile(inRoot(name), flag, 0)
+	if err != nil || d.refuse == nil {
+		return f, err
+	}
+	if err := d.withhold(name, f); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+// withhold is the call's bounds' refusal of f, opened as name under d, or
+// nil: rta's own state, by the identity the open file's own Stat gives,
+// whatever name it was opened by. A file that cannot be described is refused
+// with the reason, as one that cannot be opened is.
+//
+// A directory is let through. What is refused is what rta's state holds, and
+// a listing is names: git.status and git.diff name the files of rta's state
+// inside a versioned home directory, the diff as the gate refuses them, and
+// go-git's walk of the working tree, refused the directory, failed the whole
+// status. Every file in it is refused when it is opened.
+func (d boundDir) withhold(name string, f *os.File) error {
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return nil
+	}
+	return d.refuse(d.join(name), info)
+}
+
+// elsewhere reports whether f, the directory name under d, is a directory
+// of rta's own state under a name that is not its own — rta's data directory
+// moved under a root by another name, or reached by a spelling of its name
+// in another case — whose listing is then empty: git sees nothing of it.
+//
+// Let through by withhold for the walk's sake, such a directory was listed,
+// and every file in it that rta had written since the server started was
+// diffed whole as a new file: the guard knows those by nothing but where the
+// directory was (internal/pathguard's ownState). Refused instead, it would
+// fail every status of the tree, as the data directory in its place did.
+// The data directory where rta keeps it is listed, as git.status and
+// git.diff name what it holds, each file refused as it is opened. What
+// cannot be described is not listed.
+func (d boundDir) elsewhere(name string, f *os.File) bool {
+	if d.refuse == nil {
+		return false
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return true
+	}
+	path := d.join(name)
+	return d.refuse(path, nil) == nil && d.refuse(path, info) != nil
 }
 
 // ReadDir is the entries of the directory name, sorted by name, as
@@ -122,6 +188,9 @@ func (d boundDir) ReadDir(name string) ([]os.DirEntry, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
+	if d.elsewhere(name, f) {
+		return nil, nil
+	}
 	entries, err := f.ReadDir(-1)
 	slices.SortFunc(entries, func(a, b os.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
 	return entries, err
@@ -137,7 +206,7 @@ func (d boundDir) sub(name string) (boundDir, error) {
 	if err != nil {
 		return boundDir{}, err
 	}
-	return boundDir{path: d.join(name), root: root}, nil
+	return boundDir{path: d.join(name), root: root, refuse: d.refuse}, nil
 }
 
 // Close lets go of the directory a root holds open.
@@ -252,7 +321,7 @@ func (b *beneathRoots) under(p string) (boundDir, string, error) {
 	if err != nil {
 		return boundDir{}, "", err
 	}
-	d := boundDir{path: top, root: root}
+	d := boundDir{path: top, root: root, refuse: b.req.Bounds().Refuse}
 	b.opened = append(b.opened, d)
 	rel, err := filepath.Rel(top, p)
 	return d, rel, err
