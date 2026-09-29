@@ -3,6 +3,7 @@ package plugin_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -199,5 +200,41 @@ func TestAPageSectionsNilViewErrorIsNoFailure(t *testing.T) {
 	}
 	if plugin.Failure(nil) != nil {
 		t.Error("Failure made an error out of none")
+	}
+}
+
+// A section whose handler failed with nothing in its error warns coded and
+// worded: an empty &view.Error{} was a warning with no code and no message,
+// which said a section was missing and nothing of why.
+func TestAPageSectionsEmptyFailureWarnsCodedAndWorded(t *testing.T) {
+	empty := func(context.Context, plugin.Request) (view.View, error) { return nil, &view.Error{} }
+	p := plugin.NewPage(t.Context(), plugin.NewRequest(nil, false, false))
+	p.Add("sensors", empty, plugin.Read, nil)
+	w := p.View().Warnings
+	if len(w) != 1 || w[0].Code != "page.section.failed" || w[0].Message == "" {
+		t.Errorf("the empty failure warned as %#v", w)
+	}
+}
+
+// HandlerFailure keeps what a handler said and fills in only what it left out.
+func TestHandlerFailureFillsInOnlyWhatTheHandlerLeftOut(t *testing.T) {
+	for _, tc := range []struct {
+		err                 error
+		code, message, hint string
+	}{
+		{&view.Error{}, "x.list.failed", "x.list failed, and its handler gave no message saying why", "a bug in the plugin"},
+		{&view.Error{Hint: "check the host"}, "x.list.failed", "x.list failed, and its handler gave no message saying why",
+			"check the host"},
+		{&view.Error{Code: "x.gone", Message: "gone"}, "x.gone", "gone", ""},
+		{errors.New("plain"), "x.list.failed", "plain", ""},
+	} {
+		got := plugin.HandlerFailure(tc.err, "x.list", "x.list.failed")
+		if got.Code != tc.code || got.Message != tc.message || tc.hint != "" && !strings.Contains(got.Hint, tc.hint) {
+			t.Errorf("%#v became %#v", tc.err, got)
+		}
+	}
+	var none *view.Error
+	if plugin.HandlerFailure(none, "x.list", "x.list.failed") != nil {
+		t.Error("a nil *view.Error became a failure")
 	}
 }

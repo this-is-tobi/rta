@@ -3,7 +3,6 @@ package sdk
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/sdk/wire"
@@ -86,51 +85,10 @@ func (s *server) Call(ctx context.Context, req *rtav1.CallRequest) (resp *rtav1.
 	v, runErr := c.Run(ctx, pr)
 	if runErr = plugin.Failure(runErr); runErr != nil {
 		return &rtav1.CallResponse{Result: &rtav1.CallResponse_Error{
-			Error: wire.ErrorToProto(handlerFailure(runErr, c.ID, c.ID+".failed")),
+			Error: wire.ErrorToProto(plugin.HandlerFailure(runErr, c.ID, c.ID+".failed")),
 		}}, nil
 	}
 	return &rtav1.CallResponse{Result: &rtav1.CallResponse_View{View: wire.ViewToProto(v)}}, nil
-}
-
-// handlerFailure is err, a handler's failure of what — a capability's ID, or
-// its prefill — as it leaves the process: coded under fallback where the
-// handler gave no code, and worded where it gave no message.
-//
-// An Error with neither is how an SDK older than plugin.Failure answered a
-// call that worked, and the host reads one as that: an old build to
-// upgrade, named as such (plugin.error.empty). A handler on this SDK that
-// returns a &view.Error{} it never filled in has failed, and sent as it
-// stood it was blamed on an SDK it was not built on, with an upgrade that
-// would change nothing. So it leaves coded and worded, as a failure of the
-// plugin's own — and one with a code and no message is worded too, since
-// every surface prints the message and would print nothing. What the handler
-// did give, a hint or a refusal, is kept, and its own Error is not changed:
-// the handler may hold it.
-//
-// Its words too, where it wrapped the empty Error in them: view.AsError
-// hands back the Error it finds inside, and fmt.Errorf("listing %s: %w",
-// ns, verr) was a failure the handler described, sent as one it said
-// nothing about.
-func handlerFailure(err error, what, fallback string) *view.Error {
-	verr := view.AsError(err, fallback)
-	if verr.Code != "" && verr.Message != "" {
-		return verr
-	}
-	out := *verr
-	if out.Code == "" {
-		out.Code = fallback
-	}
-	if out.Message == "" {
-		out.Message = strings.Trim(err.Error(), ": \n")
-	}
-	if out.Message == "" {
-		out.Message = what + " failed, and its handler gave no message saying why"
-		if out.Hint == "" {
-			out.Hint = "this is a bug in the plugin, not in what you asked for — its handler returned " +
-				"an error with no message in it"
-		}
-	}
-	return &out
 }
 
 // Prefill returns current values for editing in place.
@@ -157,7 +115,7 @@ func (s *server) Prefill(ctx context.Context, req *rtav1.PrefillRequest) (resp *
 
 	values, prefillErr := c.Prefill(ctx, plugin.NewRequest(wire.ValuesFromProto(req.GetValues()), false, false))
 	if prefillErr = plugin.Failure(prefillErr); prefillErr != nil {
-		return &rtav1.PrefillResponse{Error: wire.ErrorToProto(handlerFailure(prefillErr, c.ID+"'s prefill", c.ID+".prefill.failed"))}, nil
+		return &rtav1.PrefillResponse{Error: wire.ErrorToProto(plugin.HandlerFailure(prefillErr, c.ID+"'s prefill", c.ID+".prefill.failed"))}, nil
 	}
 	return &rtav1.PrefillResponse{Values: wire.ValuesToProto(values)}, nil
 }

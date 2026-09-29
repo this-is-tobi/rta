@@ -105,8 +105,8 @@ func (r *Registry) RegisterFrom(p plugin.Plugin, origin Origin) error {
 	// and the CLI went on to render the nil pointer it unwrapped.
 	caps := make([]plugin.Capability, len(p.Capabilities))
 	for i, c := range p.Capabilities {
-		c.Run = settled(plugin.GuardInputs(c))
-		c.Prefill = settledPrefill(c.Prefill)
+		c.Run = settled(c.ID, plugin.GuardInputs(c))
+		c.Prefill = settledPrefill(c.ID, c.Prefill)
 		caps[i] = c
 		r.caps[c.ID] = c
 	}
@@ -116,27 +116,49 @@ func (r *Registry) RegisterFrom(p plugin.Plugin, origin Origin) error {
 	return nil
 }
 
-// settled is run with its error read through plugin.Failure.
-func settled(run plugin.Handler) plugin.Handler {
+// settled is run, capability id's handler, with its error read through
+// plugin.Failure and handed on as a surface can say it (worded).
+func settled(id string, run plugin.Handler) plugin.Handler {
 	if run == nil {
 		return nil
 	}
 	return func(ctx context.Context, req plugin.Request) (view.View, error) {
 		v, err := run(ctx, req)
-		return v, plugin.Failure(err)
+		return v, worded(plugin.Failure(err), id, id+".failed")
 	}
 }
 
 // settledPrefill is settled for a Prefill.
-func settledPrefill(prefill func(context.Context, plugin.Request) (map[string]any, error),
+func settledPrefill(id string, prefill func(context.Context, plugin.Request) (map[string]any, error),
 ) func(context.Context, plugin.Request) (map[string]any, error) {
 	if prefill == nil {
 		return nil
 	}
 	return func(ctx context.Context, req plugin.Request) (map[string]any, error) {
 		values, err := prefill(ctx, req)
-		return values, plugin.Failure(err)
+		return values, worded(plugin.Failure(err), id+"'s prefill", id+".prefill.failed")
 	}
+}
+
+// worded is a handler's failure of what as every surface reads it: err as it
+// came when it has a code and words to say — a coded Error, or any other
+// error, which a surface codes under its own fallback and words by its text
+// — and otherwise coded under fallback and worded (plugin.HandlerFailure),
+// as the plugin process's server sends one.
+//
+// A built-in's &view.Error{} it never filled in reached the CLI, the TUI and
+// an agent as ERROR with no code and no message after it, where the same
+// handler in a plugin's process was coded and worded before it left. err is
+// kept as it came wherever it says something, so what a surface asks of it
+// — a cancellation, a refusal's code — is still there to ask.
+func worded(err error, what, fallback string) error {
+	if err == nil {
+		return nil
+	}
+	if verr := view.AsError(err, fallback); verr != nil && verr.Code != "" && verr.Message != "" {
+		return err
+	}
+	return plugin.HandlerFailure(err, what, fallback)
 }
 
 // Origin reports where the named plugin came from, and whether that namespace
