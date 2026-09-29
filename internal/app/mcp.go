@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
@@ -33,6 +35,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/registry"
 	agentsession "github.com/this-is-tobi/rta/internal/session"
+	"github.com/this-is-tobi/rta/internal/shellquote"
 	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -581,6 +584,9 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			// from an agent reporting that a file it can see does not exist.
 			fmt.Fprintf(cmd.ErrOrStderr(), "path arguments confined to: %s\n",
 				strings.Join(guard.Roots(), ", "))
+			for _, line := range unreadableRoots(guard.Roots()) {
+				fmt.Fprintln(cmd.ErrOrStderr(), "rta:", line)
+			}
 			// The record and the session, named at the start: a server
 			// writing to one data directory while the TUI reads another is
 			// the first thing to rule out when nothing shows up, and it is
@@ -713,4 +719,55 @@ func ceilingLine() string {
 		return "team policy: none in force (searched up from " + ceiling.SearchedFrom + ")"
 	}
 	return "team policy: " + ceiling.Where()
+}
+
+// unreadableRoots is what the startup banner says of each root this server
+// cannot open as the root a bounded read opens (pathguard's Bounds), with
+// the fix: nothing for a root it can.
+//
+// **A root is opened for reading, and search permission alone is not
+// enough.** os.Root opens a directory O_RDONLY, so a root whose mode is --x
+// — searchable, not readable, which a path walked by name through it never
+// needed — refuses every read bounded under it, which is every path a
+// built-in opens there: fs.tree and fs.hash answering permission denied, git
+// walking up past the root it could not look into and refused as outside,
+// call after call, to an agent that can only report it. A plugin opens its
+// paths by name in its own process and is not held to this, and a path
+// under a readable root inside this one is opened through that root, so the
+// line says what the built-ins cannot do rather than that every path under
+// it is refused. The operator starting the server is the one who can change
+// the mode, and this is where they are present. Said once, and the server
+// serves the rest: a root that cannot be read costs the paths under it, and
+// refusing to start would cost every capability that reads no path at all.
+// A directory under a root with the same mode is met only by a call that
+// walks through it, and is refused by that call.
+func unreadableRoots(roots []string) []string {
+	var lines []string
+	for _, r := range roots {
+		root, err := os.OpenRoot(r)
+		if err == nil {
+			_ = root.Close()
+			continue
+		}
+		fix := "name a directory this server can open with --root"
+		switch {
+		case errors.Is(err, syscall.EACCES):
+			fix = "make it readable to the user this server runs as — `chmod u+r " + shellquote.Arg(r) +
+				"` when it is theirs — or " + fix
+		case errors.Is(err, syscall.EPERM) && runtime.GOOS == "darwin":
+			// Not the mode: macOS refuses a protected folder, Documents or
+			// Desktop among them, to an app its privacy settings have not
+			// allowed, and chmod changes nothing there.
+			fix = "macOS refuses it to the app that started this server: allow that app the folder " +
+				"under Privacy & Security in System Settings, or " + fix
+		}
+		// The system's reason alone, the root being named already.
+		var pathErr *fs.PathError
+		if errors.As(err, &pathErr) {
+			err = pathErr.Err
+		}
+		lines = append(lines, fmt.Sprintf("the root %s cannot be read (%v), so no built-in can open a path "+
+			"through it; %s", r, err, fix))
+	}
+	return lines
 }

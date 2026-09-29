@@ -120,6 +120,8 @@ rta mcp server listening on stdio
 path arguments confined to: /Users/you/projects, /tmp/scratch
 ```
 
+A root the server cannot open for reading is named there too, once, with the fix — one whose mode lets it be searched and not listed (`--x`), or a folder macOS keeps from the app that started the server. The built-ins open a path from its root, so they refuse every path they would open through it, on every call, until it can be read; the server serves the other roots meanwhile.
+
 ### What an argument is held to
 
 Before any gate, every argument is checked against the tool's published schema and the capability's declaration. A value of the wrong shape, or an argument the tool does not have, is `core.mcp.badargs`. A value of the right shape the declaration does not take is refused with the code a person at the CLI gets for the same mistake — `core.input.option` for a value none of its options name, `core.input.range` for a number outside its range, `core.input.missing` for a required argument left out or sent empty — and, being refused first, it spends no grant and asks you nothing. An input the CLI reads from a pipe when it is left out, such as the token `codec jwt` decodes, is required here, because an agent has no pipe to give.
