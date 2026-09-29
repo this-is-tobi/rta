@@ -1,5 +1,94 @@
 # Changelog
 
+## [0.32.0](https://github.com/this-is-tobi/rta/compare/v0.31.0...v0.32.0) (2026-09-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **git:** a repository whose extensions.relativeWorktrees is a number git does not read, such as 08 or 3g, is refused as git refuses it.
+* **git:** git.remotes, git.branches and git.overview refuse a repository whose config sets a remote's url, pushurl, fetch or other string key, a branch's remote, pushRemote or merge, a url.<base>.insteadOf or remote.pushDefault with no value at all, a fetch or push refspec git cannot parse, or a remote's boolean to a value git does not take, as git refuses to run with it.
+* **git:** over MCP a file of git config inside the server's roots, the operator's own among them, is held to what the repository's config is held to, so an include there of a file outside the roots is not followed, a hasconfig condition there matches the repository's own remotes alone, and a core.excludesFile there naming a file outside the roots is not applied. A config file reached through a link inside the roots that leads out of them is not read over MCP.
+* **fs:** under an MCP root, fs.tree and fs.usage name rta's data directory and a configuration file of its as withheld, where they listed what the directory holds and sized both.
+* **mcp:** over MCP, audit.deps no longer reads a lockfile its scan reaches through a link that leads out of the roots, and a path under a directory the server may search but not list is refused as unreadable, since each directory on the way down from the root is opened.
+* **git:** git.remotes rows carry a fourth column, Origin, and git.remotes is refused where a file of config git reads cannot be read, as git refuses to run with one.
+* **pluginhost:** a plugin's socket sits one directory deeper in TMPDIR, so a TMPDIR longer than 66 bytes on macOS or 70 on Linux no longer leaves room for its path; up to 86 and 90 did before.
+* **git:** git.hooks refuses a core.hooksPath under git's install prefix or under the home of a user it cannot look up, where it listed the directory of that name in the working tree.
+* **git:** a config whose includes git refuses to run with (a cycle, an include past ten deep, a file that cannot be read or is not config, a relative include in the environment, or a remote URL in a file an includeIf includes beside a hasconfig condition) is now refused by every capability that reads the config, as git refuses it, and so over MCP is one including a file the path gate refuses other than as outside the roots. git.config rows carry a fourth column, Origin.
+
+### Features
+
+* **plugin:** a failed connection is read by the error the system gave, not the OpError around it ([5118446](https://github.com/this-is-tobi/rta/commit/5118446090d0cdde0d64fbbf4fc4f951d7eb1f3f))
+* **plugin:** a hint for an untrusted certificate names the CA file and says it replaces the checks ([ee16212](https://github.com/this-is-tobi/rta/commit/ee16212b7065a36332f9749c59f103de03c62a55))
+* **plugin:** a request says which profile it came through and the kind of forward opened on it ([6655156](https://github.com/this-is-tobi/rta/commit/6655156e7ce514711e7ae4b3e5c2b8d2a81504cc))
+* **plugin:** an input a caller gives is named with its value as Call spells that argument ([798905b](https://github.com/this-is-tobi/rta/commit/798905bab7d41c701e406f7b319bc1758d7fef67))
+* **plugin:** the SDK names a connection setting per surface, to an agent as the operator's ([f7e7bf6](https://github.com/this-is-tobi/rta/commit/f7e7bf602398dd1845b3efe4134fb78a422727db))
+* **profile:** profile show takes an instance reference and shows that one connection ([3456c90](https://github.com/this-is-tobi/rta/commit/3456c904a0835be3329d7ee321f8e69c81764a6e))
+* **sdktest:** an input the source gives through InputTo is one an agent gives as an argument ([1f17ac5](https://github.com/this-is-tobi/rta/commit/1f17ac515e86127902e88dfe9ce49c387cfefce2))
+* **sdktest:** the suite reads a plugin's own source with WithSource, as each plugin's copy did ([31bf406](https://github.com/this-is-tobi/rta/commit/31bf406672ff991d6c6f63d7b0074de59648cd8b))
+
+
+### Bug Fixes
+
+* **doctor:** each sentence doctor and the plugin notice build on a count agrees with it ([3d94aaf](https://github.com/this-is-tobi/rta/commit/3d94aafa7015ea50439784cdaeb02b89ba669cc3))
+* **doctor:** the sandbox row counts its paths and directories in the number they come in ([a0689a1](https://github.com/this-is-tobi/rta/commit/a0689a125ce30bbf9dbca4af3e1b1554258a4f91))
+* **fs:** tree and usage say what a path that is not a directory is, not that it is a file ([576fe42](https://github.com/this-is-tobi/rta/commit/576fe42dda8d759c9303859cc2519261bdffc3b3))
+* **fs:** tree and usage walk from the directory they opened, and stop at rta's own state ([c69196e](https://github.com/this-is-tobi/rta/commit/c69196e4243218de02f5be66939e47d2c9fffa75))
+* **git:** a boolean in git's config is read as git reads its number, in hex and octal too ([de425a9](https://github.com/this-is-tobi/rta/commit/de425a9e69d84611ae9fff1ff8bad5ccf538cdc4))
+* **git:** a branch that tracks another branch of the repository is counted against it ([12cd612](https://github.com/this-is-tobi/rta/commit/12cd6125142c2c7a03cb45b6e855681cbf4b810c))
+* **git:** a branch whose section names a remote and no merge tracks nothing, as git reads it ([4b59b52](https://github.com/this-is-tobi/rta/commit/4b59b52d84f03eed2430737ab24356ea6b7f5599))
+* **git:** a branch's upstream at a remote is found through its fetch refspec, as git finds it ([637ef77](https://github.com/this-is-tobi/rta/commit/637ef7781b8f687134dec7745a7dc68d0a4b7fc3))
+* **git:** a config key naming a credential anywhere in its name has its value masked ([e0fea47](https://github.com/this-is-tobi/rta/commit/e0fea479723ef453639fccb6fd25636b6778073d))
+* **git:** a core.hooksPath or core.excludesFile under ~user is that user's home, as git reads it ([905fd40](https://github.com/this-is-tobi/rta/commit/905fd40358667ccc54777244f73cf249206f94c0))
+* **git:** a file git's config includes is read as git reads it, and shown where it may be ([d312472](https://github.com/this-is-tobi/rta/commit/d312472dab817951b1c1eca2084c7988daa5d90b))
+* **git:** a remote and what a branch tracks are read from every file of config git reads ([2c3d180](https://github.com/this-is-tobi/rta/commit/2c3d1807be8f36ddcb9caab7df6cb06a1da61c04))
+* **git:** a remote or branch key git refuses to run with, set with no value, is refused ([7f3a48f](https://github.com/this-is-tobi/rta/commit/7f3a48f700bf4713c68d797937478a3ee10cfa6f))
+* **git:** a repository opens where go-git refuses its branch or remote config and git reads it ([4c1a4a5](https://github.com/this-is-tobi/rta/commit/4c1a4a566f99519b3846497dfa326e31adbcdd52))
+* **git:** an excludes file linked out of its directory is read through the link, as git reads it ([6f04cf8](https://github.com/this-is-tobi/rta/commit/6f04cf802629c02a93d5efd660456ce9e9e10333))
+* **git:** over MCP a directory is opened as a root only if it is one, never waited on ([1ea6556](https://github.com/this-is-tobi/rta/commit/1ea655672a9d489329d065c673463edf74eb1e4d))
+* **git:** over MCP a file of config inside the roots is held to what the repository's config is ([c382c9e](https://github.com/this-is-tobi/rta/commit/c382c9e3247c630c8d61e84dca1da030dc1a66d1))
+* **git:** over MCP a gitdir: condition is matched against what the gate judged ([ca6eb03](https://github.com/this-is-tobi/rta/commit/ca6eb037ac1a29fcdced9ee6c31235c616acb666))
+* **git:** over MCP a hasconfig condition in the repository matches the repository's remotes alone ([3794be6](https://github.com/this-is-tobi/rta/commit/3794be61ab43b19cd5c41c9cb79da157f9baf2a5))
+* **git:** over MCP a repository is read through its directories held open beneath the roots ([97dbb01](https://github.com/this-is-tobi/rta/commit/97dbb01275b89941b15f703d1817fa7cbdfa06d7))
+* **git:** over MCP an include and an excludes file the gate judged are read beneath the roots ([3c2338f](https://github.com/this-is-tobi/rta/commit/3c2338f39cec8f3fc75ad26467d12b04e3648a31))
+* **git:** over MCP an include the repository makes of a file outside the roots is never opened ([f81fe51](https://github.com/this-is-tobi/rta/commit/f81fe5170448f54b6398d661ba88af123da7c577))
+* **git:** over MCP git.hooks lists the hooks directory from the root it lies under, held open ([b773482](https://github.com/this-is-tobi/rta/commit/b773482daf84d60a152d0dffd181c4720626b3c3))
+* **git:** over MCP the diff and the status read the working tree from the directory held open ([0b10259](https://github.com/this-is-tobi/rta/commit/0b10259baa7df5da06e04ade85da9070b9e05a35))
+* **git:** over MCP the root a relative config path lies under is found from the working directory ([2c37c48](https://github.com/this-is-tobi/rta/commit/2c37c48c30dbc8bd50b222087ad431a5d87858c9))
+* **git:** over MCP the walk to a repository looks at each directory from the root it lies under ([b28e49c](https://github.com/this-is-tobi/rta/commit/b28e49c2fad24aed3df6567a965665cb0cb5a687))
+* **git:** the overview says an upstream this repository has no ref for is gone, not up to date ([5e29343](https://github.com/this-is-tobi/rta/commit/5e29343901365b7abb163175241bcc86ced3238a))
+* **http:** the header input's help reads 'Key: Value' on every surface, without curl's -H ([015d282](https://github.com/this-is-tobi/rta/commit/015d282094e397c8536121ba8eba130f6fde9b39))
+* **mcp:** a built-in opens a caller's path from its root, not by the name the gate judged ([e106507](https://github.com/this-is-tobi/rta/commit/e1065079edfd3ee390eff3e2339d376dca50c95c))
+* **pathguard:** a link it cannot follow is judged by where it points, not where it sits ([1cfd3ba](https://github.com/this-is-tobi/rta/commit/1cfd3ba2a591ad7321626000fb602586aae6eccb))
+* **pathin:** a named pipe put where a walk opens a directory is refused rather than waited on ([d43dceb](https://github.com/this-is-tobi/rta/commit/d43dceb21dc62ab181e62aef373959aacfa03699))
+* **plugin:** a built-in's failure with no code or message reaches every surface coded and worded ([a4da709](https://github.com/this-is-tobi/rta/commit/a4da70940595e4becb21dca8822f42c36d03c3ac))
+* **plugin:** a forced exit under plugin dev names the command it ran, in the format that asked ([efa5cc3](https://github.com/this-is-tobi/rta/commit/efa5cc3f5ea1fd444b0816b908fb0be00e1530b4))
+* **plugin:** a list a call gives is the flag once per element, and the box's comma-separated text ([cfe4c6a](https://github.com/this-is-tobi/rta/commit/cfe4c6aeab1ac68f3d525aa041a7fe61b5ffffa8))
+* **plugin:** a load problem keeps its hint, and one every plugin meets is said once ([d05ee97](https://github.com/this-is-tobi/rta/commit/d05ee9784af27c4725d83803ee44699590d22111))
+* **plugin:** a nil *view.Error returned as a handler's error is a success, not an empty failure ([cfe5ef9](https://github.com/this-is-tobi/rta/commit/cfe5ef94b9530290ea31ac7ee76fe24447a6b560))
+* **plugin:** a plugin failure with no code and no message is named, not shown as a bare ERROR ([43e2123](https://github.com/this-is-tobi/rta/commit/43e2123a8bbddb8273f31e5adc3287947b7d3435))
+* **plugin:** a plugin load problem reaches the terminal with what it acts on removed ([8b68582](https://github.com/this-is-tobi/rta/commit/8b68582fc87828afc062aa3b7d8f1c7a3a60ee66))
+* **plugin:** a value a call gives by its place that opens on a dash follows --, after every flag ([9121fde](https://github.com/this-is-tobi/rta/commit/9121fde05fdbe5d6f79060862d01980c624b33e8))
+* **plugin:** an index add clones beside the attached ones and renames the clone in once checked ([32226f3](https://github.com/this-is-tobi/rta/commit/32226f31771e5fe76845a5f34f17349549dd063b))
+* **pluginhost:** a plugin's socket is made in a private directory rta removes with the process ([f6e5433](https://github.com/this-is-tobi/rta/commit/f6e543386aebbda6333db6a73f99639488a91abf))
+* **pluginhost:** a plugin's stderr is read by rta and not by go-plugin, whose parser panicked on it ([972748e](https://github.com/this-is-tobi/rta/commit/972748e4f20f114774118f34384ba6b960804fff))
+* **pluginhost:** a plugin's stderr reaches no terminal, and its last words end rta's report ([dc0553a](https://github.com/this-is-tobi/rta/commit/dc0553ac2777b541505eb2003fa0dc49655fad8a))
+* **pluginhost:** a TMPDIR too long for a plugin's socket is refused by name, with the length to use ([2083ba4](https://github.com/this-is-tobi/rta/commit/2083ba440be9e60abd16d5258ab3d8c9174fefa1))
+* **plugin:** install, manifest and upgrade pass a launch's coded refusal on as itself, hint included ([09f4531](https://github.com/this-is-tobi/rta/commit/09f453139c639a5b88496a7363385f1f37503eb2))
+* **plugin:** only the system's "certificate is not trusted" is read as an untrusted certificate ([97c505a](https://github.com/this-is-tobi/rta/commit/97c505ac4a5736a164d050bda5049c77563dc1bf))
+* **plugin:** plugin dev draws a refusal from the command after -- in the format it asked for ([fba2964](https://github.com/this-is-tobi/rta/commit/fba2964e872ff02d21ecb9da1a8f5b4b92d6e90a))
+* **plugin:** plugin dev hands the command after -- the context a signal cancels ([31f129e](https://github.com/this-is-tobi/rta/commit/31f129ec3be111f01aedee7f544d1b70fc8ea40c))
+* **plugin:** plugin dev passes a launch's coded refusal on as itself, hint included ([bad6ade](https://github.com/this-is-tobi/rta/commit/bad6ade136a4869397daf20195a4f82027b5bf1b))
+* **plugin:** plugin dev's confinement line counts the paths its sandbox denies ([b4c4c56](https://github.com/this-is-tobi/rta/commit/b4c4c568c32bfaeeca7db4ea30e4ae712a8112fb))
+* **profile:** profile show says a problem once, under every entry it is about ([31202ab](https://github.com/this-is-tobi/rta/commit/31202ab327c2b5633cad05c9a8b6ef3796c95d14))
+* **sdk:** a handler's failure with no code or message leaves the plugin coded and worded ([52281d0](https://github.com/this-is-tobi/rta/commit/52281d08206e7e73016ba563986b0472b8cd809c))
+* **sdktest:** the verbs rule counts the words it names as a sentence does, one verb or two verbs ([4264d28](https://github.com/this-is-tobi/rta/commit/4264d28ae492b5124393f09587d714fc5eb7d103))
+
+
+### Code Refactoring
+
+* **app:** doctor and the index hint take their words from format.Plural, and pick is gone ([ce19719](https://github.com/this-is-tobi/rta/commit/ce19719a987a287c0b3f6e713b3d878c9d4feaea))
+* **pluginhost:** a host takes no standard error, since nothing of a plugin's is written there ([c6b3b49](https://github.com/this-is-tobi/rta/commit/c6b3b494a7a14fb805b0fbc8b77ff7902d3213de))
+
 ## [0.31.0](https://github.com/this-is-tobi/rta/compare/v0.30.0...v0.31.0) (2026-09-28)
 
 
