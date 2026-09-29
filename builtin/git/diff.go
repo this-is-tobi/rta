@@ -857,8 +857,11 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 	}
 
 	head := headFilesOf(repo)
-	root := wt.Filesystem.Root()
-	files := newWorkingFiles(root)
+	tree, err := worktreeDir(req, wt)
+	if err != nil {
+		return nil, view.Errorf("git.diff.failed", "%v", err)
+	}
+	files := newWorkingFiles(tree)
 	patches := make([]diff.FilePatch, 0, len(status))
 	var large []string
 	var skipped []withheld
@@ -923,7 +926,7 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 		// still the answer: it returned on the first, so an untracked link to
 		// a directory — bazel-out, a `current` pointing at a release — left
 		// the caller with no patch at all, for a file git diffs as one line.
-		fp, coarsely, ferr := diffOneFile(root, head, path, disk, deadline, req.LinkTarget)
+		fp, coarsely, ferr := diffOneFile(tree, head, path, disk, deadline, req.LinkTarget)
 		if ferr != nil {
 			skipped = append(skipped, withheld{path, unreadable(ferr)})
 			continue
@@ -978,10 +981,16 @@ func changedPaths(status git.Status) []string {
 // all, which a deleted file and one removed since the status was read both
 // are.
 //
-// The os package on the working tree's own root, and not the go-billy
-// filesystem go-git hands back: billy follows a symlink wherever it reads
-// one, and rewrites an absolute link's text relative to its chroot, where
-// git diffs a link as the text it holds.
+// The directory go-git reads the working tree from (worktreeDir), read with
+// the os package's own calls, through the *os.Root that holds it open over
+// MCP, and not through the go-billy filesystem go-git hands back: billy
+// follows a symlink wherever it reads one, and rewrites an absolute link's
+// text relative to its chroot, where git diffs a link as the text it holds.
+//
+// **Over MCP, from the directory it is held open by.** Read by name, a
+// directory of the working tree swapped for a link out of the roots between
+// this look and the read that follows had the diff read what the link led
+// to: another link's text, diffed as the text of the one looked at.
 //
 // Nothing, too, behind a directory that has become a link. git stops at a
 // symlink on the way to a path — a tracked notes/a.txt whose notes was
@@ -994,12 +1003,12 @@ func changedPaths(status git.Status) []string {
 // thousand files two directories deep looked at the same hundred directories
 // twenty thousand times.
 type workingFiles struct {
-	root string
+	tree boundDir
 	dirs map[string]bool
 }
 
-func newWorkingFiles(root string) *workingFiles {
-	return &workingFiles{root: root, dirs: map[string]bool{}}
+func newWorkingFiles(tree boundDir) *workingFiles {
+	return &workingFiles{tree: tree, dirs: map[string]bool{}}
 }
 
 func (w *workingFiles) at(path string) os.FileInfo {
@@ -1009,7 +1018,7 @@ func (w *workingFiles) at(path string) os.FileInfo {
 		dir = pathpkg.Join(dir, part)
 		real, seen := w.dirs[dir]
 		if !seen {
-			info, err := os.Lstat(filepath.Join(w.root, filepath.FromSlash(dir)))
+			info, err := w.tree.Lstat(dir)
 			real = err == nil && info.IsDir()
 			w.dirs[dir] = real
 		}
@@ -1017,7 +1026,7 @@ func (w *workingFiles) at(path string) os.FileInfo {
 			return nil
 		}
 	}
-	info, err := os.Lstat(filepath.Join(w.root, filepath.FromSlash(path)))
+	info, err := w.tree.Lstat(path)
 	if err != nil {
 		return nil
 	}
@@ -1045,7 +1054,7 @@ func sideSizes(repo *git.Repository, head *headFiles, path string, disk os.FileI
 // now (empty for a file the worktree deleted). coarsely says the deadline
 // cut the matching of its lines short. tell is what the caller may be told a
 // link holds (readWorktreeEntry).
-func diffOneFile(root string, head *headFiles, path string, disk os.FileInfo, deadline time.Time,
+func diffOneFile(tree boundDir, head *headFiles, path string, disk os.FileInfo, deadline time.Time,
 	tell func(dir, target string) string,
 ) (fp diff.FilePatch, coarsely bool, err error) {
 	var from *diffFile
@@ -1064,7 +1073,7 @@ func diffOneFile(root string, head *headFiles, path string, disk os.FileInfo, de
 	var to *diffFile
 	newContent := ""
 	if disk != nil {
-		content, mode, err := readWorktreeEntry(root, path, disk, tell)
+		content, mode, err := readWorktreeEntry(tree, path, disk, tell)
 		if err != nil {
 			return nil, false, err
 		}
@@ -1101,12 +1110,12 @@ func diffOneFile(root string, head *headFiles, path string, disk os.FileInfo, de
 // terminal, and every surface that confines nothing, tells every target.
 // The side HEAD records is the repository's content, which git.diff
 // --commit and git.blame show whole, and is not asked about.
-func readWorktreeEntry(root, path string, disk os.FileInfo, tell func(dir, target string) string) (
+func readWorktreeEntry(tree boundDir, path string, disk os.FileInfo, tell func(dir, target string) string) (
 	string, filemode.FileMode, error,
 ) {
-	full := filepath.Join(root, filepath.FromSlash(path))
+	full := tree.join(path)
 	if disk.Mode()&os.ModeSymlink != 0 {
-		target, err := os.Readlink(full)
+		target, err := tree.Readlink(path)
 		if err != nil {
 			return "", 0, err
 		}
@@ -1127,7 +1136,7 @@ func readWorktreeEntry(root, path string, disk os.FileInfo, tell func(dir, targe
 	if !disk.Mode().IsRegular() {
 		return "", 0, notAFile(disk.Mode())
 	}
-	f, err := os.OpenFile(full, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	f, err := tree.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK)
 	if err != nil {
 		return "", 0, err
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 
@@ -201,4 +202,94 @@ func TestACommonDirectorySwappedAfterItIsJudgedIsNotReadThroughTheLink(t *testin
 		writeFile(t, wt, ".git", "gitdir: "+own+"\n")
 		return swapped{path: wt, watch: sharedObjects(root), name: common, target: filepath.Join(outside, ".git")}
 	})
+}
+
+// workingTree opens proj, a checkout, as r's surface opens it, and hands back
+// the directory its working tree is read from, with what closes it.
+func workingTree(t *testing.T, r plugin.Request) boundDir {
+	t.Helper()
+	repo, done, verr := openRepo(context.Background(), r)
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	t.Cleanup(done)
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := worktreeDir(r, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tree
+}
+
+// A directory of the working tree, swapped for a link out of the roots after
+// the diff looked at what is in it and before it read it: a link there was
+// read through, its text diffed as the link's, and a file's content, where
+// the file behind the link was the one looked at. At a terminal the working
+// tree is read by name, as git reads it.
+func TestAWorkingTreeDirectorySwappedAfterTheDiffLookedIsNotReadThroughTheLink(t *testing.T) {
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(outside, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsideSecret, filepath.Join(outside, "notes", "l")); err != nil {
+		t.Fatal(err)
+	}
+	for _, surface := range []string{"MCP", "terminal"} {
+		root := t.TempDir()
+		proj := filepath.Join(root, "proj")
+		repoAt(t, root, proj)
+		if err := os.MkdirAll(filepath.Join(proj, "notes"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink("inside", filepath.Join(proj, "notes", "l")); err != nil {
+			t.Fatal(err)
+		}
+		r := req(t, proj, nil)
+		if surface == "MCP" {
+			g, err := pathguard.New(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r = overMCP(t, proj, g.Derived, nil)
+		}
+		tree := workingTree(t, r)
+		disk := newWorkingFiles(tree).at("notes/l")
+		if disk == nil {
+			t.Fatal("the link to diff is not there")
+		}
+		linkOut(t, filepath.Join(proj, "notes"), filepath.Join(outside, "notes"))()
+		content, _, err := readWorktreeEntry(tree, "notes/l", disk, r.LinkTarget)
+		read := strings.Contains(content, outsideSecret)
+		if surface == "MCP" && read {
+			t.Errorf("over MCP the diff read a link out of the roots: %q", content)
+		}
+		if surface == "terminal" && (!read || err != nil) {
+			t.Errorf("at a terminal the diff reads by name, as git does: %q, %v", content, err)
+		}
+	}
+}
+
+// And the status's look at what kind each changed path is on disk, which a
+// listing of its directory answers: swapped out, it listed the directory the
+// link led to, and a path's kind there made it T or M.
+func TestAWorkingTreeDirectorySwappedBeforeTheStatusListsItIsNotListedThroughTheLink(t *testing.T) {
+	outside := t.TempDir()
+	writeFile(t, filepath.Join(outside, "notes"), "a.txt", outsideSecret)
+	root := t.TempDir()
+	proj := filepath.Join(root, "proj")
+	repoAt(t, root, proj)
+	writeFile(t, filepath.Join(proj, "notes"), "a.txt", "inside")
+	g, err := pathguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := workingTree(t, overMCP(t, proj, g.Derived, nil))
+	linkOut(t, filepath.Join(proj, "notes"), filepath.Join(outside, "notes"))()
+	budget := &statusBudget{ctx: context.Background(), deadline: time.Now().Add(time.Minute)}
+	if kind, ok := entryKind(map[string]map[string]os.FileMode{}, tree, "notes/a.txt", budget); ok {
+		t.Errorf("over MCP the status listed a directory a link out of the roots leads to: %v", kind)
+	}
 }
