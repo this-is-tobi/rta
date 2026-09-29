@@ -25,7 +25,6 @@ import (
 	"syscall"
 
 	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
@@ -132,11 +131,16 @@ func open(ctx context.Context, req plugin.Request, what reads) (*git.Repository,
 	if verr != nil {
 		return nil, nil, verr
 	}
-	repo, verr := openAt(req, root, path, what)
+	files := &repoFiles{req: req}
+	repo, verr := openAt(req, files, root, path, what)
 	if verr != nil {
+		files.close()
 		return nil, nil, verr
 	}
-	done := func() { release(repo) }
+	done := func() {
+		release(repo)
+		files.close()
+	}
 	if what == readsObjects {
 		verr := objectsAllReadable(repo, root)
 		if verr == nil {
@@ -273,13 +277,25 @@ func objectsAllReadable(repo *git.Repository, root string) *view.Error {
 //
 // And its format is decided as git decides it, for what the capability
 // reads, before go-git is handed it (repositoryFormat).
-func openAt(req plugin.Request, root, path string, what reads) (*git.Repository, *view.Error) {
+//
+// Each directory is read through files (repoFiles): over MCP through an
+// *os.Root held open on the directory the gate judged, which a link swapped
+// in after the judgement cannot lead out of (boundDir), and anywhere else
+// through go-billy's osfs, as git reads it.
+func openAt(req plugin.Request, files *repoFiles, root, path string, what reads) (*git.Repository, *view.Error) {
 	notARepo := func(err error) *view.Error {
+		if verr := refusedByTheGate(err); verr != nil {
+			return verr
+		}
 		return view.Errorf("git.notarepo", "%s is not a git repository: %v", path, err).
 			WithHint("run this against a directory inside a git repository, a checkout's own root, or a bare repository's own directory")
 	}
-	var wt billy.Filesystem = regularFiles{Filesystem: osfs.New(root)}
-	var dot billy.Filesystem = regularFiles{Filesystem: osfs.New(root), gitDir: true}
+	top, err := files.at(root)
+	if err != nil {
+		return nil, notARepo(err)
+	}
+	var wt billy.Filesystem = regularFiles{Filesystem: top}
+	var dot billy.Filesystem = regularFiles{Filesystem: top, gitDir: true}
 	info, err := wt.Stat(gitDirName)
 	switch {
 	case err == nil && info.IsDir():
@@ -291,7 +307,15 @@ func openAt(req plugin.Request, root, path string, what reads) (*git.Repository,
 		if err != nil {
 			return nil, notARepo(err)
 		}
-		dot = regularFiles{Filesystem: osfs.New(against(root, gitDir)), gitDir: true}
+		judged, verr := req.Confine("path", against(root, gitDir))
+		if verr != nil {
+			return nil, verr
+		}
+		named, err := files.at(judged)
+		if err != nil {
+			return nil, notARepo(err)
+		}
+		dot = regularFiles{Filesystem: named, gitDir: true}
 	case errors.Is(err, iofs.ErrNotExist):
 		wt = nil
 	default:
@@ -313,11 +337,18 @@ func openAt(req plugin.Request, root, path string, what reads) (*git.Repository,
 		return nil, notARepo(err)
 	}
 	if named = strings.TrimSpace(named); named != "" {
-		dir := against(dot.Root(), named)
-		if _, verr := req.Confine("path", dir); verr != nil {
+		judged, verr := req.Confine("path", against(dot.Root(), named))
+		if verr != nil {
 			return nil, verr
 		}
-		common = regularFiles{Filesystem: osfs.New(dir), gitDir: true}
+		shared, err := files.at(judged)
+		if verr := refusedByTheGate(err); verr != nil {
+			return nil, verr
+		}
+		if err != nil {
+			return nil, notARepo(git.ErrRepositoryIncomplete)
+		}
+		common = regularFiles{Filesystem: shared, gitDir: true}
 		if _, err := common.Stat(""); err != nil {
 			return nil, notARepo(git.ErrRepositoryIncomplete)
 		}
@@ -707,6 +738,7 @@ const gitDirName = ".git"
 // was refused as outside it, naming the root's parent. A walk that reaches
 // the top without finding anything still hands the path back unchanged, and
 // it fails as "not a git repository" where it always did.
+
 func repoRoot(req plugin.Request, path string) (string, *view.Error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
