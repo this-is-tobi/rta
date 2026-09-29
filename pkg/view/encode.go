@@ -83,10 +83,11 @@ func MarshalIndent(v any, prefix, indent string) ([]byte, error) {
 // encoding inside another's. Only the three bytes that can begin one are
 // decoded, so text without them costs a byte comparison each.
 //
-// Exported for JSON that another encoder wrote on its way to a terminal: the
-// plugin host's stderr is a JSON log that hclog encodes with encoding/json,
-// and it has the same gap. data must hold whole characters — a character
-// split across two calls is passed through in halves, unescaped.
+// Exported for JSON that another encoder wrote on its way to a terminal,
+// which has the same gap: encoding/json escapes the C0 controls and writes
+// DEL, the C1 controls and the characters that reorder text as they come.
+// data must hold whole characters — a character split across two calls is
+// passed through in halves, unescaped.
 func EscapeActedOn(data []byte) []byte {
 	var out []byte
 	last := 0

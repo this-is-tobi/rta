@@ -177,6 +177,9 @@ type Client struct {
 	stub   rtav1.PluginServiceClient
 	cmd    *exec.Cmd
 	logger hclog.Logger
+	// words is what this process said through its logger (lastWords), for
+	// a call that loses it to report.
+	words *lastWords
 	// sockDir is the directory this process made its socket in (socketDir),
 	// removed with the process.
 	sockDir string
@@ -269,7 +272,7 @@ func (c *Client) live(ctx context.Context) (rtav1.PluginServiceClient, error) {
 		return nil, fmt.Errorf("the plugin at %s declared a different catalogue on restart", c.Identity.Path)
 	}
 	old, oldCmd, oldLogger, oldSock = c.client, c.cmd, c.logger, c.sockDir
-	c.client, c.stub, c.cmd, c.logger = fresh.client, fresh.stub, fresh.cmd, fresh.logger
+	c.client, c.stub, c.cmd, c.logger, c.words = fresh.client, fresh.stub, fresh.cmd, fresh.logger, fresh.words
 	c.sockDir = fresh.sockDir
 	return c.stub, nil
 }
@@ -619,7 +622,8 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 		cmd.Env = append(cmd.Env, goplugin.EnvUnixSocketDir+"="+sockDir)
 	}
 
-	logger := pluginLogger("plugin."+id.Short(), escapeActedOn(h.stderr()))
+	words := &lastWords{module: "plugin." + id.Short()}
+	logger := pluginLogger(words.module, words)
 	client := goplugin.NewClient(&goplugin.ClientConfig{
 		HandshakeConfig: sdk.Handshake,
 		Plugins:         goplugin.PluginSet{sdk.PluginSetName: noDispense{}},
@@ -650,9 +654,8 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 		// os.Stderr, logStderr passes each plugin stderr line as the log
 		// *message*, and hclog writes a message body unquoted — so a plugin's
 		// log.Printf put raw OSC 52 on the host's terminal, reproduced
-		// against v1.8.0. Routing it through a JSON logger makes the control
-		// bytes data — and escapeActedOn makes the rest of what a terminal
-		// acts on data too.
+		// against v1.8.0. This one writes nowhere: it keeps what the plugin
+		// said for rta's own word on a failure (lastWords).
 		Logger: logger,
 	})
 
@@ -664,12 +667,20 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 	// pipes its own children are holding. Taking the group first closes those
 	// pipes, so the Kill that follows returns immediately, and the socket
 	// directory, which is rta's and not go-plugin's (socketDir), goes after it.
+	//
+	// What the plugin said goes with the error, read before the reap, so the
+	// status it exited with is its own and not the kill's — once it has had
+	// a moment to exit (exitedOnItsOwn): a plugin that failed to start has
+	// usually gone, and go-plugin says so from a goroutine of its own, just
+	// after it reports the start failed.
 	abandon := func(reason string, err error) (*Client, error) {
+		exitedOnItsOwn(client)
+		said := words.told()
 		logger.SetLevel(hclog.Off)
 		reap(cmd)
 		client.Kill()
 		removeSocketDir(sockDir)
-		return nil, fmt.Errorf("%s %s: %w", reason, id.Path, err)
+		return nil, fmt.Errorf("%s %s: %w%s", reason, id.Path, err, said)
 	}
 
 	if _, err := client.Start(); err != nil {
@@ -685,7 +696,7 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 	}
 
 	c := &Client{
-		Identity: id, client: client, cmd: cmd, logger: logger, sockDir: sockDir,
+		Identity: id, client: client, cmd: cmd, logger: logger, words: words, sockDir: sockDir,
 		host: h, deny: deny, args: args,
 		stub: rtav1.NewPluginServiceClient(grpcClient.Conn),
 	}
@@ -696,8 +707,9 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 	return c, nil
 }
 
-// pluginLogger is the logger a plugin's stderr goes through: see Logger in
-// launch for why it is JSON.
+// pluginLogger is the logger a plugin's stderr goes through, into out: JSON,
+// so each entry reaches lastWords whole and its fields by name, and at Error,
+// the level go-plugin logs a plugin's failures at.
 func pluginLogger(name string, out io.Writer) hclog.Logger {
 	return hclog.New(&hclog.LoggerOptions{
 		Name:       name,
@@ -707,35 +719,19 @@ func pluginLogger(name string, out io.Writer) hclog.Logger {
 	})
 }
 
-// escapeActedOn writes the JSON log a plugin's stderr becomes with every
-// character a terminal acts on escaped, which JSON alone does not do: hclog
-// encodes with encoding/json, which escapes the C0 controls and writes DEL,
-// the C1 controls and the characters that reorder text as they came. That is
-// the gap view.Marshal closes for -o json, left open here — so a plugin that
-// logged "[ERROR] " and an 8-bit OSC, or a name a server supplied holding an
-// override, put it on the operator's terminal on every command that loaded
-// it. go-plugin logs such a line at Error, the level this logger lets
-// through.
-//
-// A Write at a time is safe because hclog writes each entry whole in one
-// call, and the escape never changes what a JSON parser reads back.
-func escapeActedOn(w io.Writer) io.Writer { return actedOnEscaper{w} }
-
-type actedOnEscaper struct{ w io.Writer }
-
-func (e actedOnEscaper) Write(p []byte) (int, error) {
-	if _, err := e.w.Write(view.EscapeActedOn(p)); err != nil {
-		return 0, err
+// exitedOnItsOwn gives a plugin whose launch failed a moment to finish
+// exiting, and go-plugin to say how, before the launch reaps it: long enough
+// for a process that has closed its output on the way out, and nothing a
+// person waits on beside a launch that failed.
+func exitedOnItsOwn(client *goplugin.Client) {
+	deadline := time.Now().Add(exitSettle)
+	for !client.Exited() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
 	}
-	return len(p), nil
 }
 
-func (h *Host) stderr() io.Writer {
-	if h.Stderr == nil {
-		return io.Discard
-	}
-	return h.Stderr
-}
+// exitSettle bounds exitedOnItsOwn.
+const exitSettle = 200 * time.Millisecond
 
 // describe fetches the declaration and attaches the handlers that call back
 // over the wire, then validates the result exactly as the built-in registry

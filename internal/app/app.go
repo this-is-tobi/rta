@@ -481,10 +481,10 @@ func ReportLoadProblems(w io.Writer, problems []error, args []string) {
 		// plugin wrote — go-plugin puts the first line that is not a
 		// handshake in the error it returns — so a trusted plugin that wrote
 		// an OSC had it acted on by the operator's terminal, before every
-		// command. Its stderr already goes through escapeActedOn
-		// (pluginhost), and its answers and a coded refusal through the
-		// renderer; this is the same rule for what is said about it failing
-		// to load.
+		// command. Its stderr reaches no terminal but as its last words at
+		// the end of a problem like this one (pluginhost's lastWords), and
+		// its answers and a coded refusal go through the renderer; this is
+		// the same rule for what is said about it failing to load.
 		fmt.Fprintln(w, "rta:", textclean.Terminal(p.about(p.cause.Error())))
 	}
 }
