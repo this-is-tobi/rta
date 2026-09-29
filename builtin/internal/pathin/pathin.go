@@ -1,6 +1,7 @@
-// Package pathin reads the file a built-in's path input names, for the
+// Package pathin opens what a built-in's path input names, for the
 // capabilities that open what their caller pointed them at: cert's PEM file,
-// fs.hash's file, and net's hosts and resolv.conf.
+// fs.hash's file, net's hosts and resolv.conf, the lockfile or the directory
+// of them an audit reads, and the directory fs.tree and fs.usage walk.
 //
 // Each of them had an os.ReadFile or an os.Open of its own, and between them
 // they had the two ways a caller-named path takes a server down. A file of
