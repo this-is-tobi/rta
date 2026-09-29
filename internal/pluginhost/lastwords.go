@@ -63,7 +63,7 @@ type lastWords struct {
 	// said is what the plugin said at error, and tail its last lines at any
 	// level, as written. A process that ran is judged by said: below error
 	// it talks to itself. One that exited before its handshake is judged by
-	// tail (exitedBeforeHandshake), since what it wrote on its way out is
+	// tail (beforeHandshake), since what it wrote on its way out is
 	// the whole of what anyone learns of why, and much of what says so has
 	// no level at all: a shell's "not found", a dynamic loader's missing
 	// library, and sandbox-exec's own line when it could not run the plugin.
