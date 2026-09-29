@@ -178,6 +178,41 @@ func goMod(module string, n int) []byte {
 	return []byte(b.String())
 }
 
+// A link out of the root is refused, and the refusal is the same whether
+// what it points at exists: a caller who may write inside a root and link to
+// a name outside must not learn from the answer whether anything is there —
+// through a link whose target is missing, through one behind a directory the
+// server may not search, or through one to a file that is plainly there.
+func TestALinkOutAnswersTheSameWhetherItsTargetExists(t *testing.T) {
+	for _, c := range fileCases(t) {
+		t.Run(c.tool, func(t *testing.T) {
+			root := t.TempDir()
+			s := swapServer(t, root)
+			outside := filepath.Join(t.TempDir(), c.name)
+			link := filepath.Join(root, c.name)
+			if err := os.Symlink(outside, link); err != nil {
+				t.Fatal(err)
+			}
+			args := map[string]any{c.input: link}
+			for k, v := range c.args {
+				args[k] = v
+			}
+			write(t, outside, c.outside)
+			there := swapCall(s, c.tool, args)
+			if err := os.Remove(outside); err != nil {
+				t.Fatal(err)
+			}
+			gone := swapCall(s, c.tool, args)
+			if there.Err == nil || gone.Err == nil {
+				t.Fatalf("a link out was answered:\n  present: %s\n  missing: %s", there.Out, gone.Out)
+			}
+			if there.Out != gone.Out {
+				t.Errorf("the answer tells whether the target exists:\n  present: %s\n  missing: %s", there.Out, gone.Out)
+			}
+		})
+	}
+}
+
 // walkCases are the capabilities that walk the directory their caller names:
 // a file in a directory beneath it, what the file holds inside the root and
 // what the one outside does, and the text that would say an answer came
