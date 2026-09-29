@@ -767,6 +767,20 @@ func TestTreeMarksADirectoryItCouldNotCountAtTheDepthBoundary(t *testing.T) {
 	}
 }
 
+// A directory the walk could not open says why beside its name, as one it
+// could not list always had: a bare "unreadable" read as though the reason
+// were not known.
+func TestTreeSaysWhyADirectoryCouldNotBeOpened(t *testing.T) {
+	root := blinded(t, map[string]int{"locked/deep/a.bin": 16}, "locked")
+
+	v := run(t, runTree, map[string]any{"path": root, "depth": 3})
+	for _, n := range v.(view.Tree).Roots[0].Children {
+		if strings.HasPrefix(n.Label, "locked") && n.Detail != "unreadable: permission denied" {
+			t.Errorf("detail = %q, want it to say why the directory could not be read", n.Detail)
+		}
+	}
+}
+
 // **A walk the deadline cut short is not a tree.** children returns nil on
 // cancellation with no marker of its own, so a timeout partway through
 // produced a normally-shaped, apparently complete view of a directory

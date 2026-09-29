@@ -27,7 +27,7 @@ func runTree(ctx context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, err
 	}
-	info, statErr := os.Stat(path)
+	info, statErr := pathin.Stat(req, path)
 	if statErr != nil {
 		return nil, pathError("fs.tree", path, statErr)
 	}
@@ -35,6 +35,15 @@ func runTree(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("fs.tree.notadir", "%s is a file, not a directory", path).
 			WithHint("pass the directory holding it")
 	}
+	// Walked through the directory held open rather than by path names
+	// (pathin.Dir): a name a walk looked at and then read by name is one a
+	// caller who can write in the tree swaps for a link out between the two,
+	// and under a root the walk listed whatever the link led to.
+	dir, openErr := pathin.OpenDir(req, path)
+	if openErr != nil {
+		return nil, pathError("fs.tree", path, openErr)
+	}
+	defer func() { _ = dir.Close() }()
 
 	depth := req.Int("depth")
 	if depth < 1 {
@@ -47,10 +56,10 @@ func runTree(ctx context.Context, req plugin.Request) (view.View, error) {
 		surface:  req.Surface(),
 		target:   req.LinkTarget,
 	}
-	if dev, ok := deviceOf(path); ok {
-		b.device = dev
+	if here, err := dir.Stat(); err == nil {
+		b.device, _ = deviceOfInfo(here)
 	}
-	children := b.children(ctx, path, 1)
+	children := b.children(ctx, dir, 1)
 	// **A walk the deadline cut short is not a tree.** children returns nil
 	// on cancellation with no marker of its own, and nothing looked again —
 	// so a timeout partway through produced a normally-shaped, apparently
@@ -106,6 +115,7 @@ type treeStats struct {
 	beyond             int // entries inside those
 	unreadable         int
 	otherFS            int
+	withheld           int // rta's own state, under a root
 }
 
 func (b *treeBuilder) sameDevice(info os.FileInfo) bool {
@@ -122,11 +132,11 @@ func (b *treeBuilder) sameDevice(info os.FileInfo) bool {
 // children lists one directory. A branch cut short by --depth or --limit says
 // so in its own label: a tree that quietly stopped listing looks exactly like
 // a directory that is empty, and that is a lie about the filesystem.
-func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []view.Node {
+func (b *treeBuilder) children(ctx context.Context, dir *pathin.Dir, depth int) []view.Node {
 	if err := ctx.Err(); err != nil {
 		return nil
 	}
-	items, err := os.ReadDir(dir)
+	items, err := dir.ReadDir()
 	if err != nil {
 		b.stats.unreadable++
 		return []view.Node{{Label: "…", Detail: "unreadable: " + reason(err)}}
@@ -162,8 +172,7 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 
 	nodes := make([]view.Node, 0, len(shown)+2)
 	for _, item := range shown {
-		full := filepath.Join(dir, item.Name())
-		info, err := os.Lstat(full)
+		info, err := dir.Lstat(item.Name())
 		if err != nil {
 			b.stats.unreadable++
 			nodes = append(nodes, view.Node{Label: item.Name(), Detail: "unreadable"})
@@ -172,11 +181,11 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 		switch {
 		case info.Mode()&os.ModeSymlink != 0:
 			b.stats.links++
-			target, err := os.Readlink(full)
+			target, err := dir.Readlink(item.Name())
 			if err != nil {
 				target = "?"
 			} else if b.target != nil {
-				target = b.target(dir, target)
+				target = b.target(dir.Path(), target)
 			}
 			nodes = append(nodes, view.Node{Label: item.Name(), Detail: "→ " + target})
 		case info.IsDir():
@@ -189,20 +198,31 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 			case depth >= b.maxDepth:
 				// Not descending is not the same as being empty, and the
 				// difference is the whole reason to say how many are down there.
-				switch n, counted := countEntries(full, b.hidden); {
-				case !counted:
-					b.stats.unreadable++
-					node.Detail = "unreadable"
+				switch n, err := countEntries(dir, item.Name(), b.hidden); {
+				case err != nil:
+					node.Detail = b.unopened(err)
 				case n > 0:
 					b.stats.notDescended++
 					b.stats.beyond += n
 					node.Detail = format.CountOf(n, "entry")
 				}
 			default:
-				node.Children = b.children(ctx, full, depth+1)
+				sub, err := dir.OpenDir(item.Name())
+				if err != nil {
+					node.Detail = b.unopened(err)
+					break
+				}
+				node.Children = b.children(ctx, sub, depth+1)
+				_ = sub.Close()
 			}
 			nodes = append(nodes, node)
 		default:
+			// Named, as the directory of rta's state is, and not sized: a
+			// file of its configuration under the root is refused by name.
+			if err := dir.Withheld(item.Name(), info); err != nil {
+				nodes = append(nodes, view.Node{Label: item.Name(), Detail: b.unopened(err)})
+				continue
+			}
 			b.stats.files++
 			nodes = append(nodes, view.Node{Label: item.Name(), Detail: humanBytes(info.Size())})
 		}
@@ -216,22 +236,27 @@ func (b *treeBuilder) children(ctx context.Context, dir string, depth int) []vie
 	return nodes
 }
 
-// countEntries says how many entries sit inside a directory the walk stopped
-// at, and whether it could find out at all.
+// countEntries says how many entries sit inside name, a directory in dir the
+// walk stopped at, or why it could not find out.
 //
-// **"I could not count these" is not "there are none".** The bool used to be
-// a 0, and a directory at the --depth boundary this user cannot read got no
+// **"I could not count these" is not "there are none".** The error used to
+// be a 0, and a directory at the --depth boundary this user cannot read got no
 // detail at all — rendering as a bare `name/`, which is exactly how an empty
 // directory renders. The whole reason the boundary reports a count is that
 // not descending is not the same as being empty; answering 0 for an
 // unreadable one handed back the confusion the count exists to remove.
-func countEntries(dir string, includeHidden bool) (int, bool) {
-	items, err := os.ReadDir(dir)
+func countEntries(dir *pathin.Dir, name string, includeHidden bool) (int, error) {
+	sub, err := dir.OpenDir(name)
 	if err != nil {
-		return 0, false
+		return 0, err
+	}
+	defer func() { _ = sub.Close() }()
+	items, err := sub.ReadDir()
+	if err != nil {
+		return 0, err
 	}
 	if includeHidden {
-		return len(items), true
+		return len(items), nil
 	}
 	n := 0
 	for _, item := range items {
@@ -239,12 +264,34 @@ func countEntries(dir string, includeHidden bool) (int, bool) {
 			n++
 		}
 	}
-	return n, true
+	return n, nil
 }
 
+// unopened is what a directory the walk could not open says in the tree,
+// counted where the detail page gathers what was left out: rta's own state,
+// which a walk under a root does not enter (pathin.WithheldError), or a
+// directory this user cannot read — or one swapped for something else while
+// the walk was looking.
+func (b *treeBuilder) unopened(err error) string {
+	var withheld *pathin.WithheldError
+	if errors.As(err, &withheld) {
+		b.stats.withheld++
+		return "withheld: rta's own state"
+	}
+	b.stats.unreadable++
+	return "unreadable: " + reason(err)
+}
+
+// reason is why a directory could not be read, said in the tree beside the
+// name it is about, which is why the path an error carries is left off: a
+// directory the walk could not open said "opendir" and its whole path again.
 func reason(err error) string {
 	if os.IsPermission(err) {
 		return "permission denied"
+	}
+	var pe *os.PathError
+	if errors.As(err, &pe) {
+		return pe.Err.Error()
 	}
 	return err.Error()
 }
@@ -474,6 +521,12 @@ func treeDetail(ctx context.Context, req plugin.Request, path string, tree view.
 		missing = append(missing, view.Pair{
 			Key:   "unreadable",
 			Value: format.CountOf(s.unreadable, "entry") + " this user cannot read",
+		})
+	}
+	if s.withheld > 0 {
+		missing = append(missing, view.Pair{
+			Key:   "withheld",
+			Value: format.CountOf(s.withheld, "entry") + " of rta's own state, which no agent may look into",
 		})
 	}
 
