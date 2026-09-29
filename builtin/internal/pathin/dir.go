@@ -112,9 +112,9 @@ func (d *Dir) OpenDir(name string) (*Dir, error) {
 	if !info.IsDir() {
 		return nil, &fs.PathError{Op: "opendir", Path: full, Err: syscall.ENOTDIR}
 	}
-	sub, err := d.root.OpenRoot(name)
+	sub, err := openSub(d.root, name)
 	if err != nil {
-		return nil, err
+		return nil, d.at("opendir", name, err)
 	}
 	if opened, err := sub.Stat("."); err != nil || !os.SameFile(info, opened) {
 		_ = sub.Close()
@@ -207,4 +207,16 @@ func (d *Dir) element(op, name string) error {
 		return &fs.PathError{Op: op, Path: filepath.Join(d.path, name), Err: fs.ErrInvalid}
 	}
 	return nil
+}
+
+// openSub opens the directory name in r as a Root of its own.
+//
+// Through name/. rather than name. os.Root opens the last name of a path
+// without O_DIRECTORY, so a named pipe put where the directory was, between
+// a walk looking at it and opening it, held the open until a writer came,
+// which none does — the call and its thread pinned for good. Every name
+// before the last is opened as a directory, which a pipe is refused as at
+// once, and the last, ".", is the directory itself.
+func openSub(r *os.Root, name string) (*os.Root, error) {
+	return r.OpenRoot(name + string(filepath.Separator) + ".")
 }

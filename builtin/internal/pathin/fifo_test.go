@@ -92,3 +92,51 @@ func TestReadFileRefusesAFIFOOnTheCLITooAtOnce(t *testing.T) {
 		t.Fatal("reading a FIFO nobody named did not return")
 	}
 }
+
+// A named pipe where a directory is opened held the open as surely as one
+// where a file is: os.OpenRoot, and os.Root.OpenRoot for the last name in
+// its path, open without O_DIRECTORY, and a FIFO put in a directory's place
+// between a walk looking at it and opening it held the walk, and its thread,
+// for good. Refused at once instead, as a pipe opened to read is.
+func TestAFIFOWhereADirectoryIsOpenedIsRefusedAtOnce(t *testing.T) {
+	dir := t.TempDir()
+	fifo := filepath.Join(dir, "pipe")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	for name, open := range map[string]func() error{
+		"a path": func() error {
+			d, err := OpenDir(on(plugin.SurfaceTUI), fifo)
+			if err == nil {
+				_ = d.Close()
+			}
+			return err
+		},
+		"a name in a directory": func() error {
+			sub, err := openSub(root, "pipe")
+			if err == nil {
+				_ = sub.Close()
+			}
+			return err
+		},
+	} {
+		done := make(chan error, 1)
+		go func() { done <- open() }()
+		select {
+		case err := <-done:
+			if err == nil {
+				t.Errorf("%s: a FIFO was opened as a directory", name)
+			}
+		case <-time.After(5 * time.Second):
+			if w, err := os.OpenFile(fifo, os.O_WRONLY, 0); err == nil {
+				_ = w.Close()
+			}
+			t.Fatalf("%s: opening a FIFO as a directory did not return", name)
+		}
+	}
+}

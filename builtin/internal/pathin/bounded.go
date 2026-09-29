@@ -19,7 +19,14 @@ import (
 func OpenDir(req plugin.Request, path string) (*Dir, error) {
 	b := req.Bounds()
 	if b.Root == nil {
-		root, err := os.OpenRoot(path)
+		// Through path/. for openSub's reason: a pipe named as the
+		// directory is refused rather than waited on. Not filepath.Join,
+		// which cleans, and "link/.." cleaned is not where the kernel goes.
+		within := path
+		if within == "" {
+			within = "."
+		}
+		root, err := os.OpenRoot(within + string(filepath.Separator) + ".")
 		if err != nil {
 			return nil, err
 		}
