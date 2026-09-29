@@ -690,15 +690,56 @@ func profileCard(name string, p config.Profile, reg *registry.Registry) view.Key
 	// does. The two are one command apart and the second is what a rebuild
 	// produces every time; `rta use` was taught the difference and the page
 	// beside it was not, which is this file's recorded failure mode.
-	for _, problem := range profile.Check(
-		config.Config{Profiles: map[string]config.Profile{name: p}}, withTrust{reg}) {
-		pairs = append(pairs, view.Pair{Key: "problem", Value: problem.Reason + " — " + problem.Hint})
-	}
-	for _, note := range profile.Notes(
-		config.Config{Profiles: map[string]config.Profile{name: p}}, withTrust{reg}) {
-		pairs = append(pairs, view.Pair{Key: "warning", Value: note.Reason + " — " + note.Hint})
-	}
+	pairs = append(pairs, saidOnce("problem", profile.Check(
+		config.Config{Profiles: map[string]config.Profile{name: p}}, withTrust{reg}))...)
+	pairs = append(pairs, saidOnce("warning", profile.Notes(
+		config.Config{Profiles: map[string]config.Profile{name: p}}, withTrust{reg}))...)
 	return view.KeyValue{Pairs: pairs}
+}
+
+// saidOnce is the problem rows of a profile's page, or its warning rows,
+// each keyed key: each said once, naming the entries it is about, and what
+// to do about it.
+//
+// Check reports a problem per entry, in words that name the plugin and not
+// the entry, since `rta use` refuses with the first of them alone. Printed a
+// row each, an unregistered plugin under two instance labels was two
+// identical rows, "profile names "ghost", which is not a registered plugin",
+// and neither said which of the entries the page lists above it was meant.
+// Rows in the same words are one row, under every entry they are about, in
+// the order the page lists them. A warning (profile.Notes) is worded the
+// same way and said the same way.
+func saidOnce(key string, problems []profile.Problem) []view.Pair {
+	type row struct {
+		reason, hint string
+		entries      []string
+	}
+	var rows []*row
+	byWords := map[[2]string]*row{}
+	for _, p := range problems {
+		words := [2]string{p.Reason, p.Hint}
+		r, seen := byWords[words]
+		if !seen {
+			r = &row{reason: p.Reason, hint: p.Hint}
+			byWords[words] = r
+			rows = append(rows, r)
+		}
+		if p.Plugin != "" && !slices.Contains(r.entries, p.Plugin) {
+			r.entries = append(r.entries, p.Plugin)
+		}
+	}
+	pairs := make([]view.Pair, 0, len(rows))
+	for _, r := range rows {
+		value := r.reason
+		if len(r.entries) > 0 {
+			value = "under " + strings.Join(r.entries, ", ") + ": " + value
+		}
+		if r.hint != "" {
+			value += " — " + r.hint
+		}
+		pairs = append(pairs, view.Pair{Key: key, Value: value})
+	}
+	return pairs
 }
 
 // credentialPairs lists every credential this plugin can take and where this
