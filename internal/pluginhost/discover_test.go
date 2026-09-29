@@ -154,7 +154,7 @@ func TestACollidingPluginIsRefusedWithoutTakingDownTheRegistry(t *testing.T) {
 	t.Setenv("PATH", dir)
 
 	trustHello(t)
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	problems := h.LoadInto(context.Background(), reg)
 	if len(problems) != 1 {
@@ -188,7 +188,7 @@ func TestADiscoveredPluginBecomesUsableCapabilities(t *testing.T) {
 
 	reg := registry.New()
 	trustHello(t)
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	if problems := h.LoadInto(context.Background(), reg); len(problems) != 0 {
 		t.Fatalf("loading: %v", problems)
@@ -249,7 +249,7 @@ func TestASecondNameForOneBinaryDoesNotUnregisterTheFirst(t *testing.T) {
 	t.Setenv("PATH", dir)
 	trustHello(t)
 
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	reg := registry.New()
 	problems := h.LoadInto(context.Background(), reg)
@@ -316,7 +316,7 @@ func TestAPluginMayOnlyDeclareTheNamespaceItIsInstalledUnder(t *testing.T) {
 	t.Setenv("PATH", dir)
 	trustHello(t)
 
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	reg := registry.New()
 	problems := h.LoadInto(context.Background(), reg)
@@ -362,7 +362,7 @@ func TestAPluginInstalledUnderItsOwnNamespaceLoads(t *testing.T) {
 	t.Setenv("PATH", dir)
 	trustHello(t)
 
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	reg := registry.New()
 	if problems := h.LoadInto(context.Background(), reg); len(problems) != 0 {
@@ -535,7 +535,7 @@ func TestAnAllowTheArtifactNeverDeclaredRelaxesNothing(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	if problems := h.LoadInto(context.Background(), registry.New()); len(problems) != 0 {
 		t.Fatalf("loading: %v", problems)

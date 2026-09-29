@@ -96,8 +96,6 @@ type Host struct {
 	// which is the whole failure mode a trust gate introduces, and the one it
 	// has to answer for.
 	untrusted []Untrusted
-	// Stderr receives plugin stderr. Nil means discard.
-	Stderr io.Writer
 }
 
 // Untrusted is a discovered plugin binary that nothing has approved, and that
@@ -150,8 +148,8 @@ func (h *Host) Untrusted() []Untrusted {
 // exists (shutdown.OnExit), and taken off once CloseAll has run, which makes
 // a host one to close once, at the end of what made it. The zero Host works
 // and is not registered: New is how a command gets one.
-func New(stderr io.Writer) *Host {
-	h := &Host{running: map[string]*Client{}, Stderr: stderr}
+func New() *Host {
+	h := &Host{running: map[string]*Client{}}
 	h.mu.Lock()
 	h.unregister = shutdown.OnExit(h.CloseAll)
 	h.mu.Unlock()

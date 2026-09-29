@@ -59,7 +59,7 @@ func hello(t *testing.T) string {
 
 func open(t *testing.T) (*Host, *Client) {
 	t.Helper()
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	c, err := h.Open(context.Background(), hello(t))
 	if err != nil {
@@ -175,7 +175,7 @@ func TestSuggestReachesThePluginProcess(t *testing.T) {
 // The dashboard runs a tile per plugin on a refresh timer, so a spawn per call
 // would be a process launch every few seconds for every plugin installed.
 func TestTheSameBinaryIsNotLaunchedTwice(t *testing.T) {
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	first, err := h.Open(context.Background(), hello(t))
 	if err != nil {
@@ -218,7 +218,7 @@ func greetWith(t *testing.T, c *Client, name string) (view.View, error) {
 
 // A killed plugin must not leave the host handing out a dead client forever.
 func TestADeadProcessIsReplacedOnTheNextOpen(t *testing.T) {
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	first, err := h.Open(context.Background(), hello(t))
 	if err != nil {
@@ -329,7 +329,7 @@ func TestABinaryThatIsNotAPluginFailsQuickly(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			h := New(nil)
+			h := New()
 			start := time.Now()
 			_, err := h.Open(context.Background(), p)
 			opened := time.Since(start)
@@ -391,7 +391,7 @@ func TestArgumentsAreProcessIdentity(t *testing.T) {
 // restarted on the next call. On the CLI that barely shows; in the TUI it is
 // a tile that stays dead until rta is restarted.
 func TestACrashedPluginIsRestartedForTheNextCall(t *testing.T) {
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	c, err := h.Open(context.Background(), hello(t))
 	if err != nil {
@@ -439,7 +439,7 @@ func TestACrashedPluginIsRestartedForTheNextCall(t *testing.T) {
 // taken while such a host held a plugin left it running after rta had gone,
 // in a process group of its own.
 func TestAForcedExitEndsThePluginsOfEveryHost(t *testing.T) {
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	c, err := h.Open(context.Background(), hello(t))
 	if err != nil {
@@ -466,7 +466,7 @@ func TestAForcedExitEndsThePluginsOfEveryHost(t *testing.T) {
 // command runs on after the exit's close, and a call it made then restarted
 // the plugin for rta to leave behind.
 func TestNoRestartStartsOnceAForcedExitHasBegun(t *testing.T) {
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	c, err := h.Open(context.Background(), hello(t))
 	if err != nil {
@@ -506,7 +506,7 @@ func TestAChangedBinaryIsNotSilentlyRestarted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	c, err := h.Open(context.Background(), path)
 	if err != nil {
@@ -561,7 +561,7 @@ func TestShutdownDuringRestartIsSafe(t *testing.T) {
 	if testing.Short() {
 		t.Skip("launches a binary")
 	}
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	c, err := h.Open(context.Background(), hello(t))
 	if err != nil {
@@ -610,7 +610,7 @@ func TestShutdownDuringRestartIsSafe(t *testing.T) {
 // the process itself is already dead by the time live() runs. The thing that
 // survives is the connection.
 func TestRestartingAPluginDoesNotLeakTheOneItReplaced(t *testing.T) {
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	c, err := h.Open(context.Background(), hello(t))
 	if err != nil {
@@ -692,7 +692,7 @@ func TestAManagedStoreSymlinkSpawns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	c, err := h.Open(context.Background(), link)
 	if err != nil {

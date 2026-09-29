@@ -39,7 +39,7 @@ func TestALaunchRefusalIsPassedOnAsItself(t *testing.T) {
 		t.Fatal(err)
 	}
 	longTMPDIR(t)
-	_, verr := Describe(context.Background(), script, io.Discard)
+	_, verr := Describe(context.Background(), script)
 	if verr == nil || verr.Code != "plugin.tmpdir.toolong" || !strings.Contains(verr.Hint, "TMPDIR") {
 		t.Fatalf("Describe = %v, want the launch's own plugin.tmpdir.toolong and its hint", verr)
 	}
@@ -62,7 +62,7 @@ func TestAnUpgradePassesALaunchRefusalOnAsItself(t *testing.T) {
 // Anything the launch did not code is still the caller's to name.
 func TestALaunchFailureWithNoCodeIsNamedByItsCaller(t *testing.T) {
 	testData(t)
-	_, verr := Describe(context.Background(), filepath.Join(t.TempDir(), "rta-plugin-absent"), io.Discard)
+	_, verr := Describe(context.Background(), filepath.Join(t.TempDir(), "rta-plugin-absent"))
 	if verr == nil || verr.Code != "plugin.declaration.unreadable" {
 		t.Fatalf("Describe = %v, want plugin.declaration.unreadable", verr)
 	}

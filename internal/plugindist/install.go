@@ -188,7 +188,7 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 		return Report{}, verr
 	}
 
-	declared, verr := Describe(ctx, staged, stderr)
+	declared, verr := Describe(ctx, staged)
 	if verr != nil {
 		return Report{}, verr
 	}
@@ -252,8 +252,8 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 // fresh download with fewer guards than the plugin it is vetting. The one way
 // rta learns anything about a plugin, whether to check an index's claims,
 // write a manifest, or document it.
-func Describe(ctx context.Context, path string, stderr io.Writer) (plugin.Plugin, *view.Error) {
-	host := pluginhost.New(stderr)
+func Describe(ctx context.Context, path string) (plugin.Plugin, *view.Error) {
+	host := pluginhost.New()
 	defer host.CloseAll()
 	client, err := host.Open(ctx, path)
 	if verr := launchRefusal(err); verr != nil {
@@ -322,7 +322,7 @@ var hexDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // The launch names the Identity that was checked, not the path — hashing once
 // to decide and again to run is two reads of a file that can change in
 // between, which is the window pluginhost's own split exists to close.
-func describeStored(ctx context.Context, name, want string, stderr io.Writer) (plugin.Plugin, *view.Error) {
+func describeStored(ctx context.Context, name, want string) (plugin.Plugin, *view.Error) {
 	if !hexDigest.MatchString(want) {
 		return plugin.Plugin{}, view.Errorf("plugin.upgrade.lock",
 			"rta.lock records %q as %s's digest, which is not a digest", want, name).
@@ -350,7 +350,7 @@ func describeStored(ctx context.Context, name, want string, stderr io.Writer) (p
 			WithHint("`rta plugin trust " + name + "` restores the approval, or `rta plugin remove " +
 				name + "` takes the artifact out")
 	}
-	host := pluginhost.New(stderr)
+	host := pluginhost.New()
 	defer host.CloseAll()
 	client, err := host.OpenIdentified(ctx, id)
 	if verr := launchRefusal(err); verr != nil {
@@ -651,7 +651,7 @@ func upgrade(ctx context.Context, name string, stderr io.Writer, dryRun, guard b
 	// Reading it means *running* it, and this is the only place in the tree
 	// that runs bytes out of the store. describeStored is what makes that a
 	// load rather than an exec.
-	oldDecl, verr := describeStored(ctx, name, locked.Digest, stderr)
+	oldDecl, verr := describeStored(ctx, name, locked.Digest)
 	if verr != nil {
 		return Upgraded{}, verr
 	}

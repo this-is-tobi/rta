@@ -41,7 +41,7 @@ func newPluginDocCommand(opts *globalOpts) *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			declared, verr := plugindist.Describe(cmd.Context(), args[0], cmd.ErrOrStderr())
+			declared, verr := plugindist.Describe(cmd.Context(), args[0])
 			if verr != nil {
 				return verr
 			}

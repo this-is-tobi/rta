@@ -3,7 +3,9 @@ package pluginhost
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -76,32 +78,50 @@ func TestAPanicIsKeptFromItsFirstLine(t *testing.T) {
 	}
 }
 
+// launchChild names the plugin the child process of
+// TestAPluginThatFailsToStartWritesNothingToTheTerminal launches.
+const launchChild = "RTA_PLUGINHOST_TEST_LAUNCH"
+
 // A plugin that fails to start writes nothing to rta's standard error: what
 // it wrote and how it exited are in the error the launch returns, which every
 // caller reports in rta's own words. go-plugin's logger wrote each as a raw
 // line of JSON on the operator's terminal, beside rta's line about the same
 // failure, before every command.
+//
+// The launch runs in a child process, and what is read is that process's own
+// standard error, the file descriptor and not the variable: handed no logger,
+// go-plugin writes to hclog's default output, which is the os.Stderr the
+// process started with, so a test that swapped os.Stderr for a pipe passed
+// with the logger taken out and every line on the terminal.
 func TestAPluginThatFailsToStartWritesNothingToTheTerminal(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a shell script is no plugin binary on Windows")
+	}
+	if p := os.Getenv(launchChild); p != "" {
+		h := New()
+		_, err := h.Open(context.Background(), p)
+		h.CloseAll()
+		fmt.Println(err)
+		return
 	}
 	p := filepath.Join(t.TempDir(), "rta-plugin-broken")
 	if err := os.WriteFile(p, []byte("#!/bin/sh\necho '[ERROR] no config at /etc/x' >&2\nexit 3\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	var stderr bytes.Buffer
-	h := New(&stderr)
-	defer h.CloseAll()
-	_, err := h.Open(context.Background(), p)
-	if err == nil {
-		t.Fatal("a script was accepted as a plugin")
+	child := exec.Command(os.Args[0], "-test.run=^TestAPluginThatFailsToStartWritesNothingToTheTerminal$",
+		"-test.count=1")
+	child.Env = append(os.Environ(), launchChild+"="+p)
+	var stdout, stderr bytes.Buffer
+	child.Stdout, child.Stderr = &stdout, &stderr
+	if err := child.Run(); err != nil {
+		t.Fatalf("the launching process: %v\n%s%s", err, stdout.String(), stderr.String())
 	}
 	if stderr.Len() != 0 {
 		t.Errorf("the launch wrote to standard error: %q", stderr.String())
 	}
 	for _, want := range []string{"the plugin exited: exit status 3", "the plugin wrote: [ERROR] no config at /etc/x"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the launch's error does not say %q: %v", want, err)
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("the launch's error does not say %q: %s", want, stdout.String())
 		}
 	}
 }

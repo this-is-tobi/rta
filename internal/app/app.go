@@ -434,8 +434,8 @@ func NewRegistry() (*registry.Registry, error) { return all.RegistryWith(PluginC
 //
 // The returned host must be closed when the process exits, or plugin
 // subprocesses outlive the rta that started them.
-func LoadPlugins(ctx context.Context, reg *registry.Registry, stderr io.Writer) (*pluginhost.Host, []error) {
-	h := pluginhost.New(stderr)
+func LoadPlugins(ctx context.Context, reg *registry.Registry) (*pluginhost.Host, []error) {
+	h := pluginhost.New()
 	return h, h.LoadInto(ctx, reg)
 }
 

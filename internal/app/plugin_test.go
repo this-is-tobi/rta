@@ -76,7 +76,7 @@ func TestTheScaffoldBuildsAndLoads(t *testing.T) {
 	}
 
 	// And it is a plugin rta accepts, not merely a program that builds.
-	h := pluginhost.New(nil)
+	h := pluginhost.New()
 	t.Cleanup(h.CloseAll)
 	c, err := h.Open(context.Background(), binary)
 	if err != nil {

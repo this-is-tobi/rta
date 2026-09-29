@@ -27,7 +27,7 @@ func TestACachedDeclarationCostsNoProcess(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 
 	// First open pays for the launch and records the answer.
-	warm := New(nil)
+	warm := New()
 	first, err := warm.Open(context.Background(), hello(t))
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +38,7 @@ func TestACachedDeclarationCostsNoProcess(t *testing.T) {
 	warm.CloseAll()
 
 	// Second, in a fresh host: same declaration, no process.
-	cold := New(nil)
+	cold := New()
 	t.Cleanup(cold.CloseAll)
 	second, err := cold.Open(context.Background(), hello(t))
 	if err != nil {
@@ -116,7 +116,7 @@ func TestADamagedCacheEntryIsAMissNotAFailure(t *testing.T) {
 		if _, ok := readCache(id.Digest); ok {
 			t.Errorf("%q was accepted as a declaration", junk)
 		}
-		h := New(nil)
+		h := New()
 		c, err := h.Open(context.Background(), hello(t))
 		if err != nil {
 			h.CloseAll()
@@ -160,14 +160,14 @@ func TestAnEntryLargerThanRtaWritesIsAMissNotARead(t *testing.T) {
 // miserable thing to debug.
 func TestTheCacheRoundTripsHandlerPresence(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
-	warm := New(nil)
+	warm := New()
 	live, err := warm.Open(context.Background(), hello(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	warm.CloseAll()
 
-	cold := New(nil)
+	cold := New()
 	t.Cleanup(cold.CloseAll)
 	cached, err := cold.Open(context.Background(), hello(t))
 	if err != nil {
@@ -275,7 +275,7 @@ func TestACacheWriteIsHeldOffAStoppingProcess(t *testing.T) {
 func TestAForgedCacheEntryIsRefused(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 
-	warm := New(nil)
+	warm := New()
 	honest, err := warm.Open(context.Background(), hello(t))
 	if err != nil {
 		t.Fatal(err)
@@ -310,7 +310,7 @@ func TestAForgedCacheEntryIsRefused(t *testing.T) {
 	}
 
 	// And end to end: rta serves what the plugin says, not what the file says.
-	cold := New(nil)
+	cold := New()
 	t.Cleanup(cold.CloseAll)
 	got, err := cold.Open(context.Background(), hello(t))
 	if err != nil {
@@ -340,7 +340,7 @@ func TestASealedEntryDoesNotTransferBetweenDigests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := New(nil)
+	h := New()
 	if _, err := h.Open(context.Background(), hello(t)); err != nil {
 		t.Fatal(err)
 	}
