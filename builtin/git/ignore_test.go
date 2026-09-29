@@ -289,6 +289,29 @@ func TestTheExcludesFileGitReadsIsApplied(t *testing.T) {
 			t.Errorf("rows = %v, want a.env and b.tmp alone: .gitignore was touched, not changed", rows)
 		}
 	})
+	// A dotfiles repository links ~/.config/git/ignore to the file it keeps,
+	// in a directory of its own, and git reads through the link. This read
+	// it from its directory alone, which refused a link leading out of it:
+	// the file was named as unreadable and never applied.
+	t.Run("a link out of its directory", func(t *testing.T) {
+		home := machineConfig(t, "")
+		writeFile(t, home, "dotfiles/git/ignore", "*.env\n")
+		if err := os.MkdirAll(filepath.Join(home, ".config", "git"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(home, "dotfiles", "git", "ignore"),
+			filepath.Join(home, ".config", "git", "ignore")); err != nil {
+			t.Fatal(err)
+		}
+		dir, repo := testRepo(t)
+		commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+		writeFile(t, dir, "secret.env", "TOKEN=hunter2\n")
+		tbl := table(t, runStatus, req(t, dir, nil))
+		if len(tbl.Rows) != 0 || len(tbl.Warnings) != 0 {
+			t.Errorf("status = %v %+v, want secret.env ignored by the file ~/.config/git/ignore links to",
+				tbl.Rows, tbl.Warnings)
+		}
+	})
 }
 
 // go-git looked for info/exclude through its own working tree filesystem,

@@ -790,7 +790,8 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 		case where == refused, where == notRead, refusal != nil && writes:
 			s.why = refusedBy(refusal)
 		case where == readByName:
-			s.fs, s.name = regularFiles{Filesystem: osfs.New(filepath.Dir(p))}, filepath.Base(p)
+			fs, name := byName(p)
+			s.fs, s.name = regularFiles{Filesystem: fs}, name
 		default:
 			s.fs, s.name, s.why = excludesBeneath(files, read)
 		}
@@ -802,6 +803,22 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 		out = append(out, excludeSource{shown: ".git/info/exclude", fs: store.Filesystem(), name: filepath.Join("info", "exclude")})
 	}
 	return out
+}
+
+// byName is the file p as git reads it, by name wherever its links lead: a
+// filesystem over the top of p's volume, and p's name in it.
+//
+// **Not over the directory holding it.** go-billy's osfs follows a link only
+// as far as the directory it was opened on, and refuses one leading out of
+// it: ~/.config/git/ignore linked to the copy a dotfiles repository keeps,
+// which git reads through the link, was named as unreadable and never
+// applied.
+func byName(p string) (billy.Filesystem, string) {
+	if abs, err := filepath.Abs(p); err == nil {
+		p = abs
+	}
+	top := filepath.VolumeName(p) + string(filepath.Separator)
+	return osfs.New(top), strings.TrimPrefix(p, top)
 }
 
 // excludesBeneath is judged, an excludes file inside the roots, as a status
