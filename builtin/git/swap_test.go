@@ -206,6 +206,67 @@ func TestACommonDirectorySwappedAfterItIsJudgedIsNotReadThroughTheLink(t *testin
 	})
 }
 
+// And a caller racing the calls rather than hitting the one moment: the git
+// directory, then a directory of the working tree, flipped between itself and
+// a link out of the roots for as long as calls keep coming, each call landing
+// wherever the flipping has got to. Whatever each answers, none holds what is
+// outside.
+func TestADirectoryFlippedForALinkOutDuringCallsIsNeverReadThroughIt(t *testing.T) {
+	outside := secretRepo(t)
+	writeFile(t, filepath.Join(outside, "notes"), "a.txt", outsideSecret+"\n")
+	for _, c := range []struct{ name, flipped, target string }{
+		{"the git directory", ".git", filepath.Join(outside, ".git")},
+		{"a directory of the working tree", "notes", filepath.Join(outside, "notes")},
+	} {
+		root := t.TempDir()
+		proj := filepath.Join(root, "proj")
+		repoAt(t, root, proj)
+		writeFile(t, filepath.Join(proj, "notes"), "a.txt", "inside\n")
+		g, err := pathguard.New(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name, aside := filepath.Join(proj, c.flipped), filepath.Join(proj, c.flipped+".aside")
+		stop, flipped := make(chan struct{}), make(chan int)
+		go func() {
+			n := 0
+			defer func() { flipped <- n }()
+			for {
+				select {
+				case <-stop:
+					_ = os.Remove(name)
+					_ = os.Rename(aside, name)
+					return
+				default:
+				}
+				// Each state held a moment, as a caller swapping deliberately
+				// would hold it, so that calls land in both.
+				if os.Rename(name, aside) == nil && os.Symlink(c.target, name) == nil {
+					n++
+					time.Sleep(200 * time.Microsecond)
+					_ = os.Remove(name)
+				}
+				_ = os.Rename(aside, name)
+				time.Sleep(200 * time.Microsecond)
+			}
+		}()
+		for i := 0; i < 60; i++ {
+			for capability, h := range map[string]plugin.Handler{
+				"log": runLog, "diff": runDiff, "status": runStatus, "config": runConfig,
+			} {
+				v, err := h(context.Background(), overMCP(t, proj, g.Derived, map[string]any{"limit": defaultLogLimit}))
+				if answered := fmt.Sprintf("%+v %v", v, err); strings.Contains(answered, outsideSecret) {
+					t.Errorf("%s flipped for a link out: %s read through it: %s", c.name, capability, answered)
+				}
+			}
+		}
+		close(stop)
+		if n := <-flipped; n == 0 {
+			t.Fatalf("%s was never flipped, so the test proves nothing", c.name)
+		}
+	}
+}
+
 // workingTree opens proj, a checkout, as r's surface opens it, and hands back
 // the directory its working tree is read from, with what closes it.
 func workingTree(t *testing.T, r plugin.Request) boundDir {
