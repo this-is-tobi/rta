@@ -485,3 +485,30 @@ func TestAFileTheConfigNamesSwappedAfterItIsJudgedIsNotReadThroughTheLink(t *tes
 		t.Errorf("an excludes file in a directory that is not there: %+v", tbl)
 	}
 }
+
+// The root a path lies under is found for a relative path too, taken from
+// the working directory as the gate takes it: a relative GIT_CONFIG_GLOBAL
+// names one. Walked from the top of the filesystem as spelled, it looked for
+// the root at /<its first part>.
+func TestTheRootARelativePathLiesUnderIsFoundFromTheWorkingDirectory(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	g, err := pathguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := overMCP(t, root, g.Derived, nil)
+	if top, verr := rootAbove(r, filepath.Join("sub", "x.cfg")); verr != nil || realPath(top) != realPath(root) {
+		t.Errorf("the root sub/x.cfg lies under = %q %v, want %s", top, verr, realPath(root))
+	}
+	// And a relative name that a link inside the roots leads out of them is
+	// one a caller can lead anywhere, not the operator's to read by name.
+	outside := t.TempDir()
+	writeFile(t, outside, "x.cfg", "[x]\n\ty = z\n")
+	if err := os.Symlink(filepath.Join(outside, "x.cfg"), filepath.Join(root, "linked.cfg")); err != nil {
+		t.Fatal(err)
+	}
+	if _, where, _ := placeOf(r, "linked.cfg"); where != notRead {
+		t.Errorf("linked.cfg, a link in the root to a file outside, is placed %d, want notRead (%d)", where, notRead)
+	}
+}
