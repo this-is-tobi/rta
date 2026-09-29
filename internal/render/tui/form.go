@@ -13,6 +13,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
 
+	"github.com/this-is-tobi/rta/internal/boxlist"
 	"github.com/this-is-tobi/rta/internal/recent"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/textclean"
@@ -379,7 +380,11 @@ func seedString(v any) string {
 	case string:
 		return strings.TrimSpace(t)
 	case []string:
-		return strings.Join(t, ", ")
+		// As the box writes it, so two lists are one answer only when they
+		// hold the same elements: joined at ", " alone, a seed of "a, b"
+		// and a box holding a and b compared the same.
+		text, _ := boxlist.Join(t, ", ")
+		return text
 	case nil:
 		return ""
 	default:
@@ -427,13 +432,12 @@ func (cf *capForm) asSeeded(f plugin.Field, v any) any {
 			return strings.TrimSpace(t)
 		}
 	case []string:
+		// Each element as it is, space at its ends and all: the box holds
+		// such an element quoted (boxlist), so the record's value is what
+		// an untouched box reads back, where a string box trims.
 		disp, _ := shown(t).([]string)
 		if !slices.Equal(disp, t) && seedString(disp) == seedString(v) {
-			out := make([]string, len(t))
-			for i, s := range t {
-				out[i] = strings.TrimSpace(s)
-			}
-			return out
+			return slices.Clone(t)
 		}
 	}
 	return v
@@ -671,10 +675,13 @@ func completionHint(f plugin.Field, desc string) string {
 	return browseHint(desc + " — tab completes")
 }
 
-// defaultString renders a field's default the way its widget shows it.
+// defaultString renders a field's default the way its widget shows it: a
+// list as the box's text for it (boxlist), which reads back as the list —
+// joined at ", " alone, an element holding a comma went back as two.
 func defaultString(f plugin.Field) string {
 	if def, ok := f.Default.([]string); ok {
-		return strings.Join(def, ", ")
+		text, _ := boxlist.Join(def, ", ")
+		return text
 	}
 	if f.Default == nil {
 		return ""
@@ -852,24 +859,28 @@ func (cf *capForm) snapshot() map[string]any {
 // extending keeps the suggestions that continue the last comma-separated item,
 // rewritten so each one extends the whole box — which is what bubbles matches
 // against.
+//
+// The head keeps exactly the spacing that was typed rather than imposing
+// ", ". bubbles matches by prefix against the whole box, so a rewritten
+// "recipe, italian" does not match somebody who typed "recipe,ita" — and
+// `a,b` with no space is the ordinary way people type a comma list.
+//
+// The item is found and each suggestion written by the box's own grammar
+// (boxlist): a comma inside quotes separates nothing, and a suggestion goes
+// in as an element the box reads back as itself — in quotes when it holds a
+// comma, and whenever the item being typed opened with one.
 func extending(typed string, declared []string) []string {
-	head, fragment := "", typed
-	if i := strings.LastIndexByte(typed, ','); i >= 0 {
-		// The head keeps exactly the spacing that was typed rather than
-		// imposing ", ". bubbles matches by prefix against the whole box, so a
-		// rewritten "recipe, italian" does not match somebody who typed
-		// "recipe,ita" — and `a,b` with no space is the ordinary way people
-		// type a comma list.
-		rest := typed[i+1:]
-		gap := rest[:len(rest)-len(strings.TrimLeft(rest, " \t"))]
-		head, fragment = typed[:i+1]+gap, strings.TrimSpace(rest)
-	}
+	head, fragment, quoted := boxlist.Last(typed)
 	out := make([]string, 0, len(declared))
 	for _, d := range declared {
 		if !strings.HasPrefix(strings.ToLower(d), strings.ToLower(fragment)) {
 			continue
 		}
-		out = append(out, head+d)
+		if quoted {
+			out = append(out, head+boxlist.Quote(d))
+			continue
+		}
+		out = append(out, head+boxlist.Element(d))
 	}
 	return out
 }
@@ -1086,6 +1097,14 @@ func validatorFor(f plugin.Field) func(string) error {
 			}
 			if want, ok := f.Range(x); !ok {
 				return fmt.Errorf("must be %s", strings.TrimPrefix(want, "of "))
+			}
+		case plugin.StringSlice, plugin.SecretSlice:
+			// What the list is cannot be told from text with a quote left
+			// open, so the footer says so rather than the run taking a
+			// reading of it nobody typed. Worded without the value, which
+			// in a SecretSlice is masked.
+			if _, err := boxlist.Split(s); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -1304,11 +1323,12 @@ func typedValue(f plugin.Field, raw string) any {
 		v, _ := strconv.ParseFloat(raw, 64)
 		return v
 	case plugin.StringSlice, plugin.SecretSlice:
-		parts := strings.Split(raw, ",")
-		for i := range parts {
-			parts[i] = strings.TrimSpace(parts[i])
-		}
-		return parts
+		// By the grammar the CLI's list flag reads (boxlist): split at every
+		// comma, no text typed here gave an element holding one, or space at
+		// an end. Its refusal is the validator's to say; here, which also
+		// feeds a suggestion while the box is half typed, the reading stands.
+		list, _ := boxlist.Split(raw)
+		return list
 	default:
 		return raw
 	}

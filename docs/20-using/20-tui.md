@@ -145,6 +145,8 @@ password for the role — staging fills it from kv:staging-db-password (secret)
 
 `↓` and `↑` browse the offer from an empty box: down puts the first candidate in the box, the next down its neighbour, up walks the other way, and both wrap. Type over what was placed and the box is yours again — the arrows then cycle the matches of what you typed, which is what they always did once a letter was in.
 
+**A list box reads what the list flag reads.** Its elements are separated by commas, and the space around each is dropped, so `recipe, italian` is two tags. An element holding a comma, a double quote or space at an end goes in double quotes, a quote inside it written twice — `"a,b", " padded", "say ""hi"""` — and a box that opens holding a list, a note's tags or a declared default, writes it the same way, so leaving it untouched gives back the list it showed. A quote left open is refused in the footer as you type.
+
 A destructive capability never runs from its form. What opens instead is its own dry run — what the call would do with the values you gave, the same preview an operator sees on a [parked agent call](../30-boundary/40-audit-trail.md#parked-calls) — and `enter` on that screen is the consent. `e` reopens the inputs, `esc` runs nothing. A plugin from outside the binary gets no dry run before you confirm, because rta does not run a plugin's own claim about itself before anyone has said yes; its screen shows the inputs the call will run with, and says so.
 
 ## The plugin inventory

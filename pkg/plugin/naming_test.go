@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/spf13/pflag"
+
+	"github.com/this-is-tobi/rta/internal/boxlist"
 )
 
 // One capability and one input, spelled the way each surface's reader finds
@@ -208,7 +210,8 @@ func TestAValueThatIsNotUTF8IsNotSpelledAsAnotherForAnAgent(t *testing.T) {
 
 // A list is given the way each surface takes one: the flag once per element
 // on a command line, a word each by its place, a JSON array to an agent, and
-// the box's comma-separated text in the TUI. Go's own spelling of a slice,
+// the box's comma-separated text in the TUI, an element holding a comma in
+// its double quotes as the list flag takes it. Go's own spelling of a slice,
 // `--tag '[ops a,b]'`, was a call on one element nobody stored.
 func TestAListIsGivenTheWayItsSurfaceTakesOne(t *testing.T) {
 	args := []Arg{{Name: "title", Value: "x", Positional: true}, {Name: "tag", Value: []string{"ops", "a,b"}}}
@@ -216,7 +219,7 @@ func TestAListIsGivenTheWayItsSurfaceTakesOne(t *testing.T) {
 		SurfaceCLI:     `rta note add x --tag ops --tag '"a,b"'`,
 		SurfaceUnknown: `rta note add x --tag ops --tag '"a,b"'`,
 		SurfaceMCP:     `note_add {"tag":["ops","a,b"],"title":"x"}`,
-		SurfaceTUI:     `note.add title=x tag=<a list no box text holds: "ops", "a,b">`,
+		SurfaceTUI:     `note.add title=x tag="ops,\"a,b\""`,
 	} {
 		if got := s.Call("note.add", args...); got != want {
 			t.Errorf("Call over %q = %s, want %s", s, got, want)
@@ -243,10 +246,16 @@ func TestAListIsGivenTheWayItsSurfaceTakesOne(t *testing.T) {
 			"rta net hosts rm a,b 'c d'"},
 		// CSV's reader turns a CR LF into a LF, so no list flag carries one.
 		{SurfaceCLI, SurfaceCLI.InputTo("tag", []string{"ok", "a\r\nb"}), `--tag ok --tag <no list flag keeps its CR LF: "a\r\nb">`},
-		// A box trims the space around each element and leaves an empty box
-		// unanswered, so neither is a list any box text gives.
-		{SurfaceTUI, SurfaceTUI.InputTo("tag", []string{" ops"}), `the tag box set to <a list no box text holds: " ops">`},
-		{SurfaceTUI, SurfaceTUI.InputTo("tag", []string{""}), `the tag box set to <a list no box text holds: "">`},
+		// A box keeps the space at an element's ends, and a lone empty one,
+		// inside the element's quotes.
+		{SurfaceTUI, SurfaceTUI.InputTo("tag", []string{" ops"}), `the tag box set to "\" ops\""`},
+		{SurfaceTUI, SurfaceTUI.InputTo("tag", []string{""}), `the tag box set to "\"\""`},
+		{SurfaceTUI, SurfaceTUI.InputTo("tag", []string{`say "hi"`, "a,b"}), `the tag box set to "\"say \"\"hi\"\"\",\"a,b\""`},
+		// An empty box answers nothing, and a box of one line keeps no line
+		// break, so neither is a list any box text gives.
+		{SurfaceTUI, SurfaceTUI.InputTo("tag", []string{}), `the tag box set to <an empty list, which no box text holds>`},
+		{SurfaceTUI, SurfaceTUI.InputTo("tag", []string{"ok", "a\nb"}), `the tag box set to <a list no box text holds: "ok", "a\nb">`},
+		{SurfaceTUI, SurfaceTUI.SettingTo("recipient", []string{"a,b", " c"}), `the recipient box set to "\"a,b\",\" c\""`},
 	} {
 		if c.got != c.want {
 			t.Errorf("over %q: got %s, want %s", c.s, c.got, c.want)
@@ -294,18 +303,20 @@ func TestASpelledListReadsBackAsItsElements(t *testing.T) {
 		}
 	}
 
-	// The form's reading of a box: split at commas, each element trimmed.
-	for _, list := range [][]string{{"ops"}, {"ops", "db"}, {"night shift", "x"}, {"a", "", "b"}, {"café", "東京"}} {
+	// The form's reading of a box, the grammar it and this spelling share
+	// (boxlist): a comma inside quotes separates nothing, and a quoted
+	// element keeps its space and its doubled quotes.
+	for _, list := range [][]string{
+		{"ops"}, {"ops", "db"}, {"night shift", "x"}, {"a", "", "b"}, {"café", "東京"},
+		{"ops", "a,b"}, {`say "hi"`, `"`}, {" lead", "trail "}, {""},
+	} {
 		text := strings.TrimPrefix(SurfaceTUI.InputTo("tag", list), "the tag box set to ")
 		if unquoted, err := strconv.Unquote(text); err == nil {
 			text = unquoted
 		}
-		elements := strings.Split(text, ",")
-		for i := range elements {
-			elements[i] = strings.TrimSpace(elements[i])
-		}
-		if !slices.Equal(elements, list) {
-			t.Errorf("the box text %q reads back as %q, want %q", text, elements, list)
+		elements, err := boxlist.Split(text)
+		if err != nil || !slices.Equal(elements, list) {
+			t.Errorf("the box text %q reads back as %q (%v), want %q", text, elements, err, list)
 		}
 	}
 }
