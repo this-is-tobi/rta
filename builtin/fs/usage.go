@@ -178,7 +178,7 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, pathError("fs.usage", path, statErr)
 	}
 	if !info.IsDir() {
-		return nil, view.Errorf("fs.usage.notadir", "%s is a file, not a directory", path).
+		return nil, view.Errorf("fs.usage.notadir", "%s is %s, not a directory", path, notADir(info.Mode())).
 			WithHint(req.Surface().CapabilityName("fs.hash") + " inspects one file — or pass the directory holding it")
 	}
 	dir, openErr := pathin.OpenDir(req, path)
@@ -392,6 +392,16 @@ func resolvePath(raw string) (string, *view.Error) {
 		return "", view.Errorf("fs.path", "resolving %q: %v", raw, err)
 	}
 	return abs, nil
+}
+
+// notADir names what a path that is not a directory is, for the refusal
+// that says so: a file, or what pathin calls anything else. "is a file" was
+// said of a named pipe and a socket as well, which are not.
+func notADir(m os.FileMode) string {
+	if m.IsRegular() {
+		return "a file"
+	}
+	return pathin.Kind(m)
 }
 
 func pathError(code, path string, err error) *view.Error {
