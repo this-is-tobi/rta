@@ -32,7 +32,7 @@ func runTree(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, pathError("fs.tree", path, statErr)
 	}
 	if !info.IsDir() {
-		return nil, view.Errorf("fs.tree.notadir", "%s is a file, not a directory", path).
+		return nil, view.Errorf("fs.tree.notadir", "%s is %s, not a directory", path, notADir(info.Mode())).
 			WithHint("pass the directory holding it")
 	}
 	// Walked through the directory held open rather than by path names

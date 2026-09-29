@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -41,5 +42,21 @@ func TestHashRefusesAFIFOOverMCPAtOnce(t *testing.T) {
 			_ = w.Close()
 		}
 		t.Fatal("fs.hash on a FIFO with no writer did not return")
+	}
+}
+
+// A tree or a scan of a named pipe is refused as one: "is a file" was said
+// of anything that was not a directory.
+func TestTreeAndUsageNameAPipeForWhatItIs(t *testing.T) {
+	fifo := filepath.Join(t.TempDir(), "pipe")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	for id, run := range map[string]plugin.Handler{"fs.tree": runTree, "fs.usage": runUsage} {
+		_, err := run(context.Background(), plugin.NewRequest(map[string]any{"path": fifo}, false, false))
+		verr, ok := err.(*view.Error)
+		if !ok || verr.Code != id+".notadir" || !strings.Contains(verr.Message, "is a named pipe, not a directory") {
+			t.Errorf("%s: %v, want it named a named pipe", id, err)
+		}
 	}
 }
