@@ -4,10 +4,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"net"
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // Reading why a connection failed, for the refusal a handler words about it.
@@ -158,19 +160,27 @@ func certUntrusted(goos string, err error) bool {
 	if errors.As(err, &unknown) || errors.As(err, &noRoots) {
 		return true
 	}
+	_, said := systemVerdict(goos, err, "certificate is not trusted")
+	return said
+}
+
+// systemVerdict is the handshake's error when err is the verdict of Apple's
+// own verifier, on goos, in words ending verdict — one Go passes on untyped
+// (CertUntrusted says which it types) — and whether it is.
+func systemVerdict(goos string, err error, verdict string) (*tls.CertificateVerificationError, bool) {
 	if goos != "darwin" && goos != "ios" {
-		return false
+		return nil, false
 	}
 	var verifyErr *tls.CertificateVerificationError
 	if !errors.As(err, &verifyErr) || verifyErr.Err == nil {
-		return false
+		return nil, false
 	}
 	// A reason Go types is that reason, whatever its words say.
 	for _, reason := range []any{new(x509.HostnameError), new(x509.CertificateInvalidError),
 		new(x509.InsecureAlgorithmError), new(x509.UnhandledCriticalExtension),
 		new(x509.ConstraintViolationError)} {
 		if errors.As(verifyErr.Err, reason) {
-			return false
+			return nil, false
 		}
 	}
 	// Go's darwin verifier spells an untyped verdict as "x509: " and the
@@ -178,7 +188,56 @@ func certUntrusted(goos string, err error) bool {
 	// quotes.
 	open, closing := string(rune(0x201c)), string(rune(0x201d))
 	text := verifyErr.Err.Error()
-	return strings.HasPrefix(text, "x509: "+open) && strings.HasSuffix(text, closing+" certificate is not trusted")
+	return verifyErr, strings.HasPrefix(text, "x509: "+open) && strings.HasSuffix(text, closing+" "+verdict)
+}
+
+// CertPolicyHint is the hint for a certificate Apple's verifier refused by a
+// rule of Apple's own, which the rule and its fix name, or "" when err is no
+// such refusal — to be given beside the refusal a handler words about it,
+// as CAHint is beside CertUntrusted.
+//
+// **One rule is read: the validity period.** macOS and iOS take a TLS server
+// certificate issued since 1 July 2019 only when it is valid for at most 825
+// days, whoever issued it, and refuse a longer one as "not standards
+// compliant" — the words a ten-year self-signed certificate, the usual shape
+// of one made for a lab or a cluster, is answered with, and all its reader
+// was told. The same words answer other rules — a critical extension the
+// system does not handle, a name its CA may not sign — so they are read as
+// this one only when the certificate the server sent breaks it, read from the
+// handshake's own copy of it, and are answered with the system's words alone
+// otherwise, as before.
+//
+// **The fix is the certificate, and the hint never names a CA file.** A CA
+// file would get past the refusal, since naming one runs Go's verifier in
+// the system's place, and it would do so by going around every check the
+// system makes (CAHint), for a certificate that is not untrusted at all.
+func CertPolicyHint(err error) string { return certPolicyHint(runtime.GOOS, err) }
+
+// Apple's limit on a TLS server certificate's validity period, and the date
+// from which a certificate is held to it.
+var (
+	appleValiditySince = time.Date(2019, time.July, 1, 0, 0, 0, 0, time.UTC)
+	appleValidityDays  = 825
+)
+
+// certPolicyHint is CertPolicyHint on goos, whose verifier answered err.
+func certPolicyHint(goos string, err error) string {
+	verifyErr, said := systemVerdict(goos, err, "certificate is not standards compliant")
+	if !said || len(verifyErr.UnverifiedCertificates) == 0 {
+		return ""
+	}
+	leaf := verifyErr.UnverifiedCertificates[0]
+	valid := leaf.NotAfter.Sub(leaf.NotBefore)
+	if leaf.NotBefore.Before(appleValiditySince) || valid <= time.Duration(appleValidityDays)*24*time.Hour {
+		return ""
+	}
+	system := "macOS"
+	if goos == "ios" {
+		system = "iOS"
+	}
+	return fmt.Sprintf("%s takes a TLS server certificate issued since July 2019 only when it is valid for "+
+		"at most %d days, and this one is valid for %d: reissue it valid for %d days or fewer, or 398 when "+
+		"a public certificate authority issues it", system, appleValidityDays, int(valid.Hours()/24), appleValidityDays)
 }
 
 // CAHint is the hint for a refusal CertUntrusted answered: the CA that
