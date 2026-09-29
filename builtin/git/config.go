@@ -525,7 +525,13 @@ func machineConfigs() ([]configSource, error) {
 // An error is the reason alone, without the file, which the caller names as
 // the message about it has it (configReading.include).
 func readConfigFile(path string) ([]byte, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	return readConfigFrom(os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0))
+}
+
+// readConfigFrom is the whole of f, a file of config just opened to read it
+// without waiting, as readConfigFile reads one; err is why it could not be
+// opened, where it could not.
+func readConfigFrom(f *os.File, err error) ([]byte, error) {
 	if err != nil {
 		var opening *iofs.PathError
 		if errors.As(err, &opening) {

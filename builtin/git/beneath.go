@@ -270,6 +270,15 @@ func (b *beneathRoots) dir(p string) (boundDir, error) {
 	return sub, err
 }
 
+// open opens the file p to read it, without waiting on a named pipe.
+func (b *beneathRoots) open(p string) (*os.File, error) {
+	d, name, err := b.under(p)
+	if err != nil {
+		return nil, err
+	}
+	return d.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK)
+}
+
 // close lets go of every directory the call opened.
 func (b *beneathRoots) close() {
 	for _, d := range b.opened {
@@ -285,6 +294,14 @@ func openBoundDir(req plugin.Request, judged string) (boundDir, error) {
 	b := beneathRoots{req: req}
 	defer b.close()
 	return b.dir(judged)
+}
+
+// openBoundFile opens judged, a file the gate put back for req, to read it,
+// as req's reads are bounded (bounded), without waiting on a named pipe.
+func openBoundFile(req plugin.Request, judged string) (*os.File, error) {
+	b := beneathRoots{req: req}
+	defer b.close()
+	return b.open(judged)
 }
 
 // repoFiles opens the directories one call reads a repository from (openAt),

@@ -135,7 +135,9 @@ func worktreeStatus(ctx context.Context, deadline time.Time, repo *git.Repositor
 	root := wt.Filesystem.Root()
 	budget := &statusBudget{ctx: ctx, deadline: deadline}
 	configs, cerr := gitConfigs(ctx, req, repo)
-	read := newIgnoresRead(rootExcludeSources(repo, configs, cerr, root, pathGateOf(req)),
+	files := &repoFiles{req: req}
+	defer files.close()
+	read := newIgnoresRead(rootExcludeSources(repo, configs, cerr, root, files),
 		cerr == nil && ignoreCase(configs), wt.Filesystem, budget)
 	reader, err := git.Open(storer, statusFiles{Filesystem: wt.Filesystem, budget: budget})
 	if err != nil {
@@ -295,12 +297,6 @@ func (b *statusBudget) refusal(root string) *view.Error {
 		"call spends reading it: %s", root, statusTime, read).
 		WithHint("`git status` reads it at a terminal; rta refuses rather than answer with the part it had " +
 			"read, which would show a cleaner tree than the one there")
-}
-
-// pathGateOf is the host's path gate as a status puts a file it derives to
-// it: the path the gate judged, or why it refuses it.
-func pathGateOf(req plugin.Request) func(string) (string, *view.Error) {
-	return func(p string) (string, *view.Error) { return req.Confine("path", p) }
 }
 
 // typeChanged is the code git gives a path whose kind changed, which go-git's

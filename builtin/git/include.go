@@ -620,6 +620,14 @@ func (r *configReading) collect(f scopedConfig, l configLine, forbid bool) error
 // Counted among the includes one reading follows before the gate is asked,
 // since each judgement is a look at the filesystem, and a config of nothing
 // but includes costs as many.
+//
+// **And read where the gate judged it, from the directory of the roots it
+// lies under** (openBoundFile). Read by name, the directory holding it
+// swapped for a link out of the roots the moment the gate had judged it,
+// git.config showed what the file of the same name at the link's far end
+// set. One that cannot be read there, and that the gate, asked again, finds
+// outside the roots now, is an include of a file outside them, and passed
+// over as one.
 func (r *configReading) include(f scopedConfig, path string, depth int, forbid bool) (_ []scopedConfig,
 	outside bool, _ error,
 ) {
@@ -627,7 +635,8 @@ func (r *configReading) include(f scopedConfig, path string, depth int, forbid b
 		return nil, false, fmt.Errorf("the config includes more than %d files in all, which this does not read: %s "+
 			"includes %s past them", maxIncludes, f.place(), path)
 	}
-	read := path
+	var content []byte
+	var err error
 	if f.scope == "local" || f.scope == "worktree" {
 		judged, verr := r.req.Confine("path", path)
 		switch {
@@ -636,9 +645,15 @@ func (r *configReading) include(f scopedConfig, path string, depth int, forbid b
 		case verr != nil:
 			return nil, false, verr
 		}
-		read = judged
+		content, err = readConfigFrom(openBoundFile(r.req, judged))
+		if err != nil && !errors.Is(err, iofs.ErrNotExist) {
+			if _, verr := r.req.Confine("path", path); verr != nil && verr.Code == outsideTheRoots {
+				return nil, true, nil
+			}
+		}
+	} else {
+		content, err = readConfigFile(path)
 	}
-	content, err := readConfigFile(read)
 	if errors.Is(err, iofs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		return nil, false, nil
 	}

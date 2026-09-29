@@ -23,7 +23,6 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/pkg/format"
-	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // maxIgnoreBytes and maxIgnorePatterns are what one status reads of the
@@ -750,12 +749,16 @@ func mayIgnore(reach map[string]bool, path string) bool {
 // can name any file on the machine: its lines would be read as patterns, and
 // which files the status then lists would say whether one of them matched.
 // So it is judged as a path a caller sent, and read where the gate judged
-// it; so is one a file the repository's config includes names, which is read
-// in the repository's scope. One the operator's own config names, or git's
-// default, is the operator's choice and read wherever it is, as git.hooks
-// reads their core.hooksPath; nothing of it is shown but its name.
+// it, over MCP from the directory of the roots it lies under (files): read by
+// name, the directory holding it swapped for a link out of the roots after
+// the judgement had the status apply the patterns of the file of the same
+// name at the link's far end. So is one a file the repository's config
+// includes names, which is read in the repository's scope. One the
+// operator's own config names, or git's default, is the operator's choice
+// and read wherever it is, as git.hooks reads their core.hooksPath; nothing
+// of it is shown but its name.
 func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error, root string,
-	confine func(string) (string, *view.Error),
+	files *repoFiles,
 ) []excludeSource {
 	var out []excludeSource
 	noValue := valuelessIn(configs, "core", "excludesFile")
@@ -781,17 +784,32 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 		// pattern to read.
 	case p != "":
 		s := excludeSource{shown: p}
-		if scope == "local" || scope == "worktree" {
-			judged, verr := confine(p)
-			if verr != nil {
-				s.why = refusedBy(verr)
-			}
-			p = judged
-		}
-		if s.why == "" {
+		if scope != "local" && scope != "worktree" {
 			s.fs, s.name = regularFiles{Filesystem: osfs.New(filepath.Dir(p))}, filepath.Base(p)
+			out = append(out, s)
+			break
 		}
-		out = append(out, s)
+		judged, verr := files.req.Confine("path", p)
+		if verr != nil {
+			s.why = refusedBy(verr)
+			out = append(out, s)
+			break
+		}
+		dir, err := files.at(filepath.Dir(judged))
+		switch verr := refusedByTheGate(err); {
+		case verr != nil:
+			s.why = refusedBy(verr)
+		case errors.Is(err, iofs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR):
+			// No directory to hold it, no file: git passes over one that is
+			// not there, as decide does.
+		case err != nil:
+			s.why = unreadable(err)
+		default:
+			s.fs, s.name = regularFiles{Filesystem: dir}, filepath.Base(judged)
+		}
+		if s.why != "" || s.fs != nil {
+			out = append(out, s)
+		}
 	}
 	if store, ok := repo.Storer.(*filesystem.Storage); ok {
 		out = append(out, excludeSource{shown: ".git/info/exclude", fs: store.Filesystem(), name: filepath.Join("info", "exclude")})

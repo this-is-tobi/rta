@@ -351,3 +351,74 @@ func TestAHookLinksFarEndSwappedAfterItIsJudgedIsNotLookedAtThroughTheLink(t *te
 			"%s where nothing is", dir, none)
 	}
 }
+
+// A file the repository's config includes, and the file its
+// core.excludesFile names, each judged by the gate and read by name: the
+// directory holding it swapped for a link out of the roots the moment the
+// gate had judged it, git.config showed what the file of the same name there
+// set, and the status applied its patterns, which of the files it lists
+// saying what they were.
+func TestAFileTheConfigNamesSwappedAfterItIsJudgedIsNotReadThroughTheLink(t *testing.T) {
+	machineConfig(t, "")
+	outside := t.TempDir()
+	writeFile(t, filepath.Join(outside, "cfg"), "inc.cfg", "[x]\n\tplanted = "+outsideSecret+"\n")
+	writeFile(t, filepath.Join(outside, "cfg"), "ignores", "*.txt\n")
+	for _, c := range []struct {
+		name, file, setting string
+		run                 plugin.Handler
+		leaked              func(v any) bool
+	}{
+		{"an include", "inc.cfg", "[include]\n\tpath = %s\n", runConfig,
+			func(v any) bool { return strings.Contains(fmt.Sprint(v), outsideSecret) }},
+		{"core.excludesFile", "ignores", "[core]\n\texcludesFile = %s\n", runStatus,
+			func(v any) bool { return !strings.Contains(fmt.Sprint(v), "new.txt") }},
+	} {
+		root := t.TempDir()
+		proj := filepath.Join(root, "proj")
+		repoAt(t, root, proj)
+		writeFile(t, proj, "new.txt", "untracked\n")
+		cfg := filepath.Join(root, "cfg")
+		writeFile(t, cfg, "inc.cfg", "[x]\n\tplanted = inside\n")
+		writeFile(t, cfg, "ignores", "nothing-here\n")
+		content, err := os.ReadFile(filepath.Join(proj, ".git", "config"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, proj, ".git/config", string(content)+fmt.Sprintf(c.setting, filepath.Join(cfg, c.file)))
+		gate := swapOnce(t, root, filepath.Join(cfg, c.file), linkOut(t, cfg, filepath.Join(outside, "cfg")))
+		v, err := c.run(context.Background(), overMCP(t, proj, gate, nil))
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if c.leaked(v) {
+			t.Errorf("%s was read through a link swapped in after the gate judged it: %+v", c.name, v)
+		}
+		if tbl, _ := v.(view.Table); len(tbl.Warnings) != 1 {
+			t.Errorf("%s: warnings = %+v, want the one file that was not read named", c.name, tbl.Warnings)
+		}
+		if _, err := os.Lstat(cfg + ".aside"); err != nil {
+			t.Fatalf("%s: the swap was never made, so the test proves nothing: %v", c.name, err)
+		}
+	}
+
+	// And an excludes file whose directory is not there is passed over, as
+	// git passes over one that is not there, and not named as unread.
+	root := t.TempDir()
+	proj := filepath.Join(root, "proj")
+	repoAt(t, root, proj)
+	writeFile(t, proj, "new.txt", "untracked\n")
+	content, err := os.ReadFile(filepath.Join(proj, ".git", "config"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, proj, ".git/config", string(content)+"[core]\n\texcludesFile = "+
+		filepath.Join(root, "nowhere", "ignores")+"\n")
+	g, err := pathguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tbl := table(t, runStatus, overMCP(t, proj, g.Derived, nil)); len(tbl.Warnings) != 0 ||
+		!strings.Contains(fmt.Sprint(tbl.Rows), "new.txt") {
+		t.Errorf("an excludes file in a directory that is not there: %+v", tbl)
+	}
+}
