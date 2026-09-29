@@ -69,6 +69,9 @@ func runBranches(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr := refusedByTheGate(err); verr != nil {
 		return nil, verr
 	}
+	if err == nil {
+		err = remoteConfigRefusal(pieces)
+	}
 	if err != nil {
 		return nil, view.Errorf("git.branches.failed", "reading what each branch tracks: %v", err)
 	}
