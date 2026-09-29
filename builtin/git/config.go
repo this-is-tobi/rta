@@ -462,7 +462,7 @@ func worktreeConfig(store *filesystem.Storage, own *gitconfig.Config) (*configSo
 // decided from. A clone in memory has no file of config: its own is what
 // go-git made for it.
 func repositoryConfigs(repo *git.Repository) (own *gitconfig.Config, _ []configSource, _ error) {
-	own, err := repo.Config()
+	own, err := repoConfig(repo)
 	if err != nil {
 		return nil, nil, err
 	}
