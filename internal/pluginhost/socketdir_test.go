@@ -63,7 +63,7 @@ func leftovers(t *testing.T, tmp string) []string {
 // 74,664 of them.
 func TestAPluginLeavesNoSocketBehind(t *testing.T) {
 	bin, tmp := socketTMPDIR(t)
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	c, err := h.Open(context.Background(), bin)
 	if err != nil {
@@ -117,7 +117,7 @@ func TestAPluginLeavesNoSocketBehind(t *testing.T) {
 // process there too: plugin dev ended by a SIGTERM left its socket behind.
 func TestAForcedExitLeavesNoSocketBehind(t *testing.T) {
 	bin, tmp := socketTMPDIR(t)
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	c, err := h.Open(context.Background(), bin)
 	if err != nil {
@@ -165,14 +165,14 @@ func TestATMPDIRTooLongForASocketIsRefusedByName(t *testing.T) {
 
 	t.Run("launching", func(t *testing.T) {
 		t.Setenv("TMPDIR", long)
-		h := New(nil)
+		h := New()
 		defer h.CloseAll()
 		_, err := h.Open(context.Background(), bin)
 		refused(t, err)
 	})
 
 	t.Run("calling with the declaration cached", func(t *testing.T) {
-		h := New(nil)
+		h := New()
 		defer h.CloseAll()
 		if _, err := h.Open(context.Background(), bin); err != nil {
 			t.Fatal(err)
@@ -180,7 +180,7 @@ func TestATMPDIRTooLongForASocketIsRefusedByName(t *testing.T) {
 		h.CloseAll()
 
 		t.Setenv("TMPDIR", long)
-		cached := New(nil)
+		cached := New()
 		defer cached.CloseAll()
 		c, err := cached.Open(context.Background(), bin)
 		if err != nil {
@@ -204,7 +204,7 @@ func TestATMPDIRThatCannotHoldTheSocketIsRefusedByName(t *testing.T) {
 	// path may, and a longer name is refused as too long first.
 	missing := filepath.Join(tmp, "m")
 	t.Setenv("TMPDIR", missing)
-	h := New(nil)
+	h := New()
 	defer h.CloseAll()
 	_, err := h.Open(context.Background(), bin)
 	var verr *view.Error

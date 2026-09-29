@@ -43,7 +43,7 @@ func fileURL(path string) string {
 
 func generate(t *testing.T, req GenerateRequest) ([]byte, Manifest) {
 	t.Helper()
-	doc, m, verr := Generate(context.Background(), req, io.Discard)
+	doc, m, verr := Generate(context.Background(), req)
 	if verr != nil {
 		t.Fatalf("generate: %v (hint: %s)", verr, verr.Hint)
 	}
@@ -240,7 +240,7 @@ func TestTheGeneratorRefusesWhatWouldFailAtSomebodyElsesInstall(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, _, verr := Generate(context.Background(), c.req, io.Discard)
+			_, _, verr := Generate(context.Background(), c.req)
 			if verr == nil {
 				t.Fatal("generated a manifest that could not be installed from")
 			}
@@ -261,7 +261,7 @@ func TestABinClaimIsProvedWhileTheArchiveIsInReach(t *testing.T) {
 	// The default guess is the plain binary name, which this archive does not
 	// hold — and saying so here is the whole point.
 	if _, _, verr := Generate(context.Background(), GenerateRequest{
-		Binary: bin, Platforms: hostPlatform(fileURL(archive))}, io.Discard); verr == nil {
+		Binary: bin, Platforms: hostPlatform(fileURL(archive))}); verr == nil {
 		t.Fatal("a bin: nothing checked was written down as a claim")
 	}
 	_, m := generate(t, GenerateRequest{Binary: bin, Platforms: []PlatformSource{
@@ -326,7 +326,7 @@ func TestAPluginThatCannotBePublishedSaysWhichPartIsMissing(t *testing.T) {
 		Binary:    bin,
 		Platforms: hostPlatform(fileURL(bin)),
 		Version:   strings.Repeat("v", 41),
-	}, io.Discard)
+	})
 	if verr == nil || verr.Code != "plugin.manifest.write" {
 		t.Fatalf("verr = %v, want the round-trip to catch an over-long version", verr)
 	}

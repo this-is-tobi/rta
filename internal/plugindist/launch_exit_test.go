@@ -4,7 +4,6 @@ package plugindist
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -38,7 +37,7 @@ func TestAnExitDuringAVerificationLaunchLeavesNoPluginRunning(t *testing.T) {
 	defer signalled()
 	described := make(chan *view.Error, 1)
 	go func() {
-		_, verr := Describe(ctx, script, io.Discard)
+		_, verr := Describe(ctx, script)
 		described <- verr
 	}()
 	pid := pidWritten(t, pidFile)

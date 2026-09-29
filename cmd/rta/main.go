@@ -131,7 +131,7 @@ func main() {
 	// would mean any third-party binary on $PATH can stop rta from starting,
 	// which is a thing a user experiences once and then stops installing
 	// plugins over.
-	host, problems := app.LoadPlugins(ctx, reg, os.Stderr)
+	host, problems := app.LoadPlugins(ctx, reg)
 	app.ReportLoadProblems(os.Stderr, problems, os.Args[1:])
 	// Everything else worth knowing about a loaded plugin goes to `rta
 	// doctor` instead of here: this runs before every command, and a fact

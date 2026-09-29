@@ -842,7 +842,7 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 			}
 			defer cleanup()
 
-			host := pluginhost.New(cmd.ErrOrStderr())
+			host := pluginhost.New()
 			defer host.CloseAll()
 			client, err := host.Open(cmd.Context(), binary)
 			if err != nil {

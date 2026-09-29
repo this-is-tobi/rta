@@ -67,13 +67,13 @@ type GenerateRequest struct {
 
 // Generate reads the binary's declaration and returns the manifest it implies,
 // as YAML ready to commit and as the parsed value.
-func Generate(ctx context.Context, req GenerateRequest, stderr io.Writer) ([]byte, Manifest, *view.Error) {
+func Generate(ctx context.Context, req GenerateRequest) ([]byte, Manifest, *view.Error) {
 	if len(req.Platforms) == 0 {
 		return nil, Manifest{}, view.Errorf("plugin.manifest.platforms",
 			"a manifest with no platform describes a plugin nobody can install").
 			WithHint("`--platform <os>/<arch>=<url>`, once per artifact you publish")
 	}
-	declared, verr := Describe(ctx, req.Binary, stderr)
+	declared, verr := Describe(ctx, req.Binary)
 	if verr != nil {
 		return nil, Manifest{}, verr
 	}

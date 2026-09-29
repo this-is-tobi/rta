@@ -116,7 +116,7 @@ func TestAnUntrustedPluginIsNeverExecuted(t *testing.T) {
 	t.Setenv("PATH", dir)
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	problems := h.LoadInto(context.Background(), registry.New())
 
@@ -148,7 +148,7 @@ func TestATrustedPluginIsExecuted(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	h.LoadInto(context.Background(), registry.New())
 
@@ -185,7 +185,7 @@ func TestTrustDoesNotSurviveTheArtifactChanging(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	h.LoadInto(context.Background(), registry.New())
 
@@ -233,7 +233,7 @@ func TestAnUnreadableTrustRecordTrustsNothing(t *testing.T) {
 			if plugintrust.Load().Trusts(digest) {
 				t.Fatal("an unreadable record trusted something")
 			}
-			h := New(nil)
+			h := New()
 			t.Cleanup(h.CloseAll)
 			h.LoadInto(context.Background(), registry.New())
 			if ran(t, trace) {

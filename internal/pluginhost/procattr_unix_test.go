@@ -130,7 +130,7 @@ func TestALaunchUnderWayHoldsOffAForcedExit(t *testing.T) {
 	if err := os.WriteFile(p, []byte("#!/bin/sh\necho $$ > "+pidFile+"\nexec sleep 60\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	h := New(nil)
+	h := New()
 	opened := make(chan error, 1)
 	go func() {
 		_, err := h.Open(context.Background(), p)
@@ -169,7 +169,7 @@ func TestNoLaunchStartsOnceAForcedExitHasBegun(t *testing.T) {
 	if err := os.WriteFile(p, []byte("#!/bin/sh\ntouch "+marker+"\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	h := New(nil)
+	h := New()
 	t.Cleanup(h.CloseAll)
 	resume := shutdown.Settle()
 	opened := make(chan error, 1)

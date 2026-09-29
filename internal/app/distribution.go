@@ -827,7 +827,7 @@ func newPluginManifestCommand(opts *globalOpts) *cobra.Command {
 				}
 				req.Checksums = sums
 			}
-			doc, m, verr := plugindist.Generate(cmd.Context(), req, cmd.ErrOrStderr())
+			doc, m, verr := plugindist.Generate(cmd.Context(), req)
 			if verr != nil {
 				return verr
 			}
