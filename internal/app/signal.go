@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -64,6 +65,30 @@ var shutdownOwned atomic.Bool
 // exits 0, and the TUI, which restores the terminal on the way out.
 func ownShutdown() { shutdownOwned.Store(true) }
 
+// commandLine is a command tree and the arguments it was given.
+type commandLine struct {
+	root *cobra.Command
+	args []string
+}
+
+// nestedLine is the command line `rta plugin dev` runs after `--`, in a root
+// of its own, while it runs (runningNested).
+var nestedLine atomic.Pointer[commandLine]
+
+// runningNested marks root, running args, as the command line a forced exit
+// reports for, until the func it returns is called.
+//
+// plugin dev runs the command after `--` in a root that has the plugin it
+// built in it, and that root, not the one main attached, parsed the command's
+// flags. Reported for main's, a forced exit named `rta plugin dev` rather
+// than the command that had not returned, and drew itself in the format of
+// plugin dev's flags, pretty for `rta plugin dev ./p -- probe greet -o json`,
+// whose every other refusal is drawn in json (renderNested).
+func runningNested(root *cobra.Command, args []string) (done func()) {
+	nestedLine.Store(&commandLine{root: root, args: args})
+	return func() { nestedLine.Store(nil) }
+}
+
 // Interrupts watches for SIGINT and SIGTERM on behalf of main.
 type Interrupts struct {
 	signals chan os.Signal
@@ -81,6 +106,9 @@ type Interrupts struct {
 	// its own (report).
 	onTTY     bool
 	prompting func() bool
+	// nested is the command line plugin dev is running, if it is running
+	// one (runningNested).
+	nested func() *commandLine
 
 	mu       sync.Mutex
 	root     *cobra.Command
@@ -112,6 +140,7 @@ func WatchSignals(parent context.Context) (context.Context, *Interrupts) {
 		stderr:    os.Stderr,
 		onTTY:     stderrIsTerminal(),
 		prompting: shutdown.PromptOpen,
+		nested:    nestedLine.Load,
 		done:      make(chan struct{}),
 		attached:  make(chan struct{}),
 	}
@@ -208,11 +237,16 @@ func (i *Interrupts) run() {
 			}
 			// Held from here to the exit, so a command returning now waits in
 			// Stop rather than exiting 0 underneath a report that it did not.
-			root, closeAll := i.root, i.closeAll
+			line, closeAll := commandLine{root: i.root, args: os.Args[1:]}, i.closeAll
+			if i.nested != nil {
+				if nested := i.nested(); nested != nil {
+					line = *nested
+				}
+			}
 			exited = make(chan struct{})
 			go func() {
 				defer close(exited)
-				i.report(root, first)
+				i.report(line, first)
 				if closeAll != nil {
 					closeAll()
 				}
@@ -226,12 +260,12 @@ func (i *Interrupts) run() {
 	}
 }
 
-// report writes the error a forced exit ends with, in the format the command
-// line asked for when there is a command line to ask.
-func (i *Interrupts) report(root *cobra.Command, sig os.Signal) {
+// report writes the error a forced exit ends with, naming the command line's
+// command, in the format it asked for when there is a command line to ask.
+func (i *Interrupts) report(line commandLine, sig os.Signal) {
 	what := "the command"
-	if root != nil {
-		if cmd, _, err := root.Find(os.Args[1:]); err == nil && cmd != nil {
+	if line.root != nil {
+		if cmd, _, err := line.root.Find(line.args); err == nil && cmd != nil {
 			what = "`" + cmd.CommandPath() + "`"
 		}
 	}
@@ -247,7 +281,7 @@ func (i *Interrupts) report(root *cobra.Command, sig os.Signal) {
 	if i.onTTY || i.prompting() {
 		fmt.Fprintln(i.stderr)
 	}
-	if root == nil || !RenderTopLevelError(i.stderr, root, verr) {
+	if line.root == nil || cli.RenderError(i.stderr, verr, renderOptionsFor(line.root, line.args)) != nil {
 		fmt.Fprintln(i.stderr, "rta:", verr.Message)
 	}
 }

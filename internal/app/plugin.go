@@ -902,7 +902,10 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 			root.SetArgs(rest)
 			root.SetOut(cmd.OutOrStdout())
 			root.SetErr(cmd.ErrOrStderr())
-			return renderNested(cmd.ErrOrStderr(), root, rest, root.ExecuteContext(cmd.Context()))
+			done := runningNested(root, rest)
+			err = root.ExecuteContext(cmd.Context())
+			done()
+			return renderNested(cmd.ErrOrStderr(), root, rest, err)
 		},
 	}
 	cmd.Flags().BoolVar(&keep, "keep", false, "leave the compiled binary in place and print where")
