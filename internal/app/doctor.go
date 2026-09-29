@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"time"
 
@@ -529,53 +528,43 @@ func doctorPluginConfig(reg *registry.Registry, add func(check, status, detail s
 // world-listable sat under thirty-four copies of a line about plugins.
 //
 // The TUI already grouped these. Doctor was the surface that did not.
+//
+// Grouped as a profile's page groups them (byWords), and naming the entries
+// as that page does: "2 entries in 1 profile (staging)" said how many and
+// not which, so the operator went through the profile's entries looking for
+// the two a sentence was about, where the page beside it named them.
 func groupedProblems(problems []profile.Problem) []string {
-	type group struct {
-		first    profile.Problem
-		profiles []string
-		places   int
-		// whole stays true while every member is about a profile rather than
-		// one of its entries, which is the difference between "2 profiles"
-		// and "2 entries" — and a group never mixes the two, since the
-		// reason a whole profile is refused is never a reason one entry is.
-		whole bool
-	}
-	var order []string
-	groups := map[string]*group{}
-	for _, p := range problems {
-		key := p.Reason + "\x00" + p.Hint
-		g, seen := groups[key]
-		if !seen {
-			g = &group{first: p, whole: true}
-			groups[key] = g
-			order = append(order, key)
-		}
-		g.places++
-		if p.Plugin != "" {
-			g.whole = false
-		}
-		if !slices.Contains(g.profiles, p.Name) {
-			g.profiles = append(g.profiles, p.Name)
-		}
-	}
-
-	lines := make([]string, 0, len(order))
-	for _, key := range order {
-		g := groups[key]
+	groups := byWords(problems)
+	lines := make([]string, 0, len(groups))
+	for _, g := range groups {
 		// One place keeps the sentence it always had, naming the exact entry.
 		// That is the case an operator can act on directly, and it is the
 		// common one.
-		if g.places == 1 {
-			lines = append(lines, g.first.String())
+		if one, ok := g.onePlace(); ok {
+			lines = append(lines, one.String())
 			continue
 		}
-		where := format.CountOf(g.places, "entry") + " in " + format.CountOf(len(g.profiles), "profile")
-		if g.whole {
-			where = format.CountOf(g.places, "profile")
+		// A profile refused whole is named alone, and an entry after its
+		// profile's name: a group never mixes the two, since the reason a
+		// whole profile is refused is never a reason one entry is.
+		named := make([]string, len(g.profiles))
+		entries := 0
+		for i, name := range g.profiles {
+			named[i] = name
+			if within := g.within[name]; len(within) > 0 {
+				named[i] += ": " + strings.Join(within, ", ")
+				entries += len(within)
+			}
 		}
-		line := fmt.Sprintf("%s (%s): %s", where, strings.Join(g.profiles, ", "), g.first.Reason)
-		if g.first.Hint != "" {
-			line += " (" + g.first.Hint + ")"
+		where, sep := format.CountOf(len(g.profiles), "profile"), ", "
+		if entries > 0 {
+			// A semicolon between profiles, since a comma already parts the
+			// entries within one.
+			where, sep = format.CountOf(entries, "entry")+" in "+where, "; "
+		}
+		line := where + " (" + strings.Join(named, sep) + "): " + g.reason
+		if g.hint != "" {
+			line += " (" + g.hint + ")"
 		}
 		lines = append(lines, line)
 	}

@@ -710,36 +710,91 @@ func profileCard(name string, p config.Profile, reg *registry.Registry) view.Key
 // the order the page lists them. A warning (profile.Notes) is worded the
 // same way and said the same way.
 func saidOnce(key string, problems []profile.Problem) []view.Pair {
-	type row struct {
-		reason, hint string
-		entries      []string
-	}
-	var rows []*row
-	byWords := map[[2]string]*row{}
-	for _, p := range problems {
-		words := [2]string{p.Reason, p.Hint}
-		r, seen := byWords[words]
-		if !seen {
-			r = &row{reason: p.Reason, hint: p.Hint}
-			byWords[words] = r
-			rows = append(rows, r)
+	groups := byWords(problems)
+	pairs := make([]view.Pair, 0, len(groups))
+	for _, g := range groups {
+		value := g.reason
+		if entries := g.entries(); len(entries) > 0 {
+			value = "under " + strings.Join(entries, ", ") + ": " + value
 		}
-		if p.Plugin != "" && !slices.Contains(r.entries, p.Plugin) {
-			r.entries = append(r.entries, p.Plugin)
-		}
-	}
-	pairs := make([]view.Pair, 0, len(rows))
-	for _, r := range rows {
-		value := r.reason
-		if len(r.entries) > 0 {
-			value = "under " + strings.Join(r.entries, ", ") + ": " + value
-		}
-		if r.hint != "" {
-			value += " — " + r.hint
+		if g.hint != "" {
+			value += " — " + g.hint
 		}
 		pairs = append(pairs, view.Pair{Key: key, Value: value})
 	}
 	return pairs
+}
+
+// sameWords is the problems said in the same words, a reason and its hint,
+// and the profiles and entries they are about, each once, in the order they
+// were found.
+type sameWords struct {
+	reason, hint string
+	// profiles are the profiles named, and within[p] p's entries named;
+	// whole a profile named by a problem about it rather than one entry.
+	profiles []string
+	within   map[string][]string
+	whole    map[string]bool
+}
+
+// byWords gathers problems into the sameWords each is one of, in the order
+// the first of each was found: the one grouping of a profile's page
+// (saidOnce) and doctor's rows (groupedProblems), which grouped by the same
+// words with a grouper each, one naming the entries and the other counting
+// them.
+func byWords(problems []profile.Problem) []*sameWords {
+	var groups []*sameWords
+	seen := map[[2]string]*sameWords{}
+	for _, p := range problems {
+		words := [2]string{p.Reason, p.Hint}
+		g, ok := seen[words]
+		if !ok {
+			g = &sameWords{reason: p.Reason, hint: p.Hint, within: map[string][]string{}, whole: map[string]bool{}}
+			seen[words] = g
+			groups = append(groups, g)
+		}
+		if !slices.Contains(g.profiles, p.Name) {
+			g.profiles = append(g.profiles, p.Name)
+		}
+		switch {
+		case p.Plugin == "":
+			g.whole[p.Name] = true
+		case !slices.Contains(g.within[p.Name], p.Plugin):
+			g.within[p.Name] = append(g.within[p.Name], p.Plugin)
+		}
+	}
+	return groups
+}
+
+// onePlace is the one problem g is, when it is about one profile, or one
+// entry of one, however many times it was found there.
+func (g *sameWords) onePlace() (profile.Problem, bool) {
+	if len(g.profiles) != 1 {
+		return profile.Problem{}, false
+	}
+	name := g.profiles[0]
+	one := profile.Problem{Name: name, Reason: g.reason, Hint: g.hint}
+	switch within := g.within[name]; {
+	case len(within) == 0:
+		return one, true
+	case len(within) == 1 && !g.whole[name]:
+		one.Plugin = within[0]
+		return one, true
+	}
+	return profile.Problem{}, false
+}
+
+// entries is every entry g names, across its profiles, each once.
+func (g *sameWords) entries() []string {
+	var out []string
+	for _, name := range g.profiles {
+		for _, e := range g.within[name] {
+			if !slices.Contains(out, e) {
+				out = append(out, e)
+			}
+		}
+	}
+	return out
 }
 
 // credentialPairs lists every credential this plugin can take and where this
