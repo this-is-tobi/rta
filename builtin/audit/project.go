@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -49,20 +48,25 @@ func openProject(ctx context.Context, req plugin.Request, target string) (*proje
 	if gitclone.IsRemote(target) {
 		return cloneProject(ctx, req, target)
 	}
-	info, err := os.Stat(target)
-	if err != nil {
-		if os.IsNotExist(err) {
+	info, err := pathin.Stat(req, target)
+	var refused *view.Error
+	switch {
+	case errors.As(err, &refused):
+		// The bounds' own refusal, which says what it is better than a
+		// sentence about reading could.
+		return nil, refused
+	case err != nil:
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, view.Errorf("audit.deps.nopath", "no such path: %s", target).
 				WithHint("pass the directory holding the lockfile or SBOM, the file itself, " +
 					"or a repository URL")
 		}
 		return nil, view.Errorf("audit.deps.path", "reading %s: %v", target, err)
-	}
-	if !info.IsDir() {
-		return namedProject(req.Surface(), target)
+	case !info.IsDir():
+		return namedProject(req, target)
 	}
 	return &project{
-		fsys: scanFS{dir: target, base: os.DirFS(target)},
+		fsys: pathin.FS(req, target),
 		// Rebuilt from the path that was typed, so a relative --path stays
 		// relative in the output and an absolute one stays absolute — what
 		// the reader sees is what they could paste back.
@@ -89,13 +93,13 @@ const maxManifestBytes = 64 << 20
 // is the call's answer, while a file that is there and could not be read — a
 // permission, say — is left to the scan, which names it as a manifest it
 // could not read, as it names one it found.
-func namedProject(sf plugin.Surface, target string) (*project, *view.Error) {
+func namedProject(req plugin.Request, target string) (*project, *view.Error) {
 	format := manifestFormat(target)
 	if format == "" {
 		return nil, notAManifest(target)
 	}
 	named := namedFile{name: filepath.Base(target)}
-	f, info, err := pathin.Open(sf, target)
+	f, info, err := pathin.Open(req, target)
 	if err == nil {
 		named.info = info
 		named.data, err = pathin.ReadAll(f, target, maxManifestBytes)
@@ -178,36 +182,6 @@ type openNamed struct {
 
 func (o openNamed) Stat() (fs.FileInfo, error) { return o.info, nil }
 func (openNamed) Close() error                 { return nil }
-
-// scanFS is os.DirFS for the directory an audit was pointed at, opening
-// nothing to read but a regular file, on every surface (pathin.OpenFile).
-//
-// A lockfile a scan finds is named by whoever wrote the directory — a cloned
-// repository, an unpacked archive — and not by the caller, so the CLI's
-// leave to read a pipe it was pointed at does not reach it: a named pipe
-// called package-lock.json held open(2) for good where no context reaches,
-// at a terminal as much as over MCP. Stat and ReadDir are os.DirFS's own,
-// which open nothing to read, so the walk and the look for each name never
-// touch a pipe either.
-type scanFS struct {
-	dir  string
-	base fs.FS
-}
-
-func (s scanFS) Open(name string) (fs.File, error) {
-	if !fs.ValidPath(name) {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
-	}
-	f, _, err := pathin.OpenFile(filepath.Join(s.dir, filepath.FromSlash(name)))
-	if err != nil {
-		return nil, err
-	}
-	return f, nil
-}
-
-func (s scanFS) Stat(name string) (fs.FileInfo, error) { return fs.Stat(s.base, name) }
-
-func (s scanFS) ReadDir(name string) ([]fs.DirEntry, error) { return fs.ReadDir(s.base, name) }
 
 // cloneProject reads a repository nobody checked out.
 //

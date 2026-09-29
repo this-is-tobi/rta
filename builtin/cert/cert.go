@@ -198,11 +198,13 @@ func dialTimeout(req plugin.Request) time.Duration {
 // therefore confined at the MCP boundary. Anything whose target is
 // a host must call dialCerts instead — see expiryRow.
 //
-// sf is the surface asking, which decides whether the file may be a stream
-// (pathin.Open).
-func loadCerts(ctx context.Context, sf plugin.Surface, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, error) {
-	if _, err := os.Stat(target); err == nil {
-		certs, err := readPEM(sf, target)
+// req is the call asking, whose surface decides whether the file may be a
+// stream and whose bounds where it may be opened from (pathin.Open) — the
+// stat that picks the branch included, which by name answered whether a file
+// a link out of the root led to existed.
+func loadCerts(ctx context.Context, req plugin.Request, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, error) {
+	if _, err := pathin.Stat(req, target); err == nil {
+		certs, err := readPEM(req, target)
 		return certs, nil, err
 	}
 	return dialCerts(ctx, target, timeout)
@@ -253,10 +255,10 @@ func dialCerts(ctx context.Context, target string, timeout time.Duration) ([]*x5
 // say-so (pathin).
 const maxPEMBytes = 16 << 20
 
-// readPEM reads a PEM file as one chain. sf is the surface asking, for
-// pathin.Read's line on what a path may name.
-func readPEM(sf plugin.Surface, path string) ([]*x509.Certificate, error) {
-	data, err := pathin.Read(sf, path, maxPEMBytes)
+// readPEM reads a PEM file as one chain. req is the call asking, for
+// pathin.Read's line on what a path may name and where it opens from.
+func readPEM(req plugin.Request, path string) ([]*x509.Certificate, error) {
+	data, err := pathin.Read(req, path, maxPEMBytes)
 	var notAFile *pathin.NotAFileError
 	var tooLarge *pathin.TooLargeError
 	switch {
@@ -440,8 +442,8 @@ func chainVerdict(reason string) string {
 	return reason
 }
 
-func hostOf(target string) string {
-	if _, err := os.Stat(target); err == nil {
+func hostOf(req plugin.Request, target string) string {
+	if _, err := pathin.Stat(req, target); err == nil {
 		return ""
 	}
 	host := target
@@ -453,7 +455,7 @@ func hostOf(target string) string {
 
 func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 	target := req.String("target")
-	certs, state, err := loadCerts(ctx, req.Surface(), target, dialTimeout(req))
+	certs, state, err := loadCerts(ctx, req, target, dialTimeout(req))
 	if err != nil {
 		return nil, err
 	}
@@ -468,7 +470,7 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Key: "expires-in", Value: humanUntil(leaf.NotAfter)},
 		{Key: "sha256", Value: hex.EncodeToString(sum[:])},
 		{Key: "sig-alg", Value: leaf.SignatureAlgorithm.String()},
-		{Key: "chain", Value: verify(certs, hostOf(target))},
+		{Key: "chain", Value: verify(certs, hostOf(req, target))},
 	}
 	if state != nil {
 		pairs = append(pairs, view.Pair{Key: "tls", Value: protocolOf(state.Version)})
@@ -480,7 +482,7 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runChain(ctx context.Context, req plugin.Request) (view.View, error) {
-	certs, _, err := loadCerts(ctx, req.Surface(), req.String("target"), dialTimeout(req))
+	certs, _, err := loadCerts(ctx, req, req.String("target"), dialTimeout(req))
 	if err != nil {
 		return nil, err
 	}
@@ -505,7 +507,7 @@ func runChain(ctx context.Context, req plugin.Request) (view.View, error) {
 // tool on the machine accepts one in.
 func runPEM(ctx context.Context, req plugin.Request) (view.View, error) {
 	target := req.String("target")
-	certs, _, err := loadCerts(ctx, req.Surface(), target, dialTimeout(req))
+	certs, _, err := loadCerts(ctx, req, target, dialTimeout(req))
 	if err != nil {
 		return nil, err
 	}
@@ -680,7 +682,7 @@ func expiryRow(ctx context.Context, target string, warnDays int, timeout time.Du
 
 func runTLS(ctx context.Context, req plugin.Request) (view.View, error) {
 	target := req.String("target")
-	_, state, err := loadCerts(ctx, req.Surface(), target, dialTimeout(req))
+	_, state, err := loadCerts(ctx, req, target, dialTimeout(req))
 	if err != nil {
 		return nil, err
 	}

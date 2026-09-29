@@ -28,6 +28,7 @@ package pathguard
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -178,11 +179,7 @@ func (g *Guard) check(field, raw string, derived bool) (string, *view.Error) {
 	}
 	for _, d := range g.denied {
 		if inside(d, abs) {
-			return "", view.Errorf("core.mcp.path.protected",
-				"%s: %s is rta's own state or configuration", field, named).
-				WithHint("the data directory holds the key to the secret store and the configuration " +
-					"names every environment and server; nothing reachable from an agent may name " +
-					"either, whatever the capability would have done with it")
+			return "", protected(field, named)
 		}
 	}
 	for _, r := range g.roots {
@@ -200,6 +197,79 @@ func (g *Guard) check(field, raw string, derived bool) (string, *view.Error) {
 		WithHint("an MCP server reads only under its roots, because there is no person here to " +
 			"judge the request — " + instead + plugin.AskOperator("mcp serve --root <dir>") +
 			" to serve another root")
+}
+
+// protected is the refusal of a path in rta's own state or configuration,
+// named as the refusal around it names it.
+func protected(field, named string) *view.Error {
+	return view.Errorf("core.mcp.path.protected",
+		"%s: %s is rta's own state or configuration", field, named).
+		WithHint("the data directory holds the key to the secret store and the configuration " +
+			"names every environment and server; nothing reachable from an agent may name " +
+			"either, whatever the capability would have done with it")
+}
+
+// Bounds is this guard's reach as a request carries it to a handler
+// (plugin.Bounds), and a nil guard's is the zero Bounds, which opens by name.
+//
+// Root judges a path as Derived does — every path a handler opens through it
+// was either judged already, at the boundary, or reached from one that was —
+// and hands back the root it lies under with the resolved path relative to
+// it. Judged again, not trusted from the boundary, because the path a handler
+// holds is a name, and the point is that a name can change between two looks
+// at it: this look is the one the open follows, from the root, through
+// nothing that has changed since.
+func (g *Guard) Bounds() plugin.Bounds {
+	if g == nil || len(g.roots) == 0 {
+		return plugin.Bounds{}
+	}
+	return plugin.Bounds{Root: g.openRoot, Refuse: g.refuser()}
+}
+
+func (g *Guard) openRoot(path string) (*os.Root, string, error) {
+	abs, verr := g.Derived("path", path)
+	if verr != nil {
+		return nil, "", verr
+	}
+	for _, r := range g.roots {
+		rel, ok := under(r, abs)
+		if !ok {
+			continue
+		}
+		root, err := os.OpenRoot(r)
+		if err != nil {
+			return nil, "", err
+		}
+		return root, rel, nil
+	}
+	// Derived allowed it, so it is under a root; a root that has moved since
+	// is the one way to get here, and the answer is the refusal.
+	return nil, "", view.Errorf("core.mcp.path.outside", "path: %q is outside what this server may read", path)
+}
+
+// refuser is Bounds' Refuse: what a walk may not enter or open under a root,
+// which is rta's own state and configuration, as Check refuses a path naming
+// them.
+//
+// By name, and by identity as well: a walk reaches paths through real
+// directories only, so the name it holds is where it is, but a
+// case-insensitive volume answers to a name in any case, which is what
+// inside's identity half is for. The denied paths are looked at once, when
+// the call is given its bounds, rather than at every entry of a walk that may
+// reach a million.
+func (g *Guard) refuser() func(string, fs.FileInfo) error {
+	infos := make([]fs.FileInfo, len(g.denied))
+	for i, d := range g.denied {
+		infos[i], _ = os.Stat(d)
+	}
+	return func(path string, info fs.FileInfo) error {
+		for i, d := range g.denied {
+			if within(d, path) || (infos[i] != nil && info != nil && os.SameFile(infos[i], info)) {
+				return protected("path", fmt.Sprintf("%q, which this call reached from the path it was given,", path))
+			}
+		}
+		return nil
+	}
 }
 
 // scpLike matches git's other address form, `user@host:path`, which has no
@@ -396,11 +466,6 @@ func readLink(path string) (string, bool) {
 	return target, true
 }
 
-// within reports whether p is root or lives under it.
-//
-// filepath.Rel rather than a string prefix, because "/home/user" is a prefix
-// of "/home/username" and a prefix test would hand one user's files to
-// another's root.
 // inside reports whether p is root or under it, by name and then by identity.
 //
 // The name test alone is wrong on any case-insensitive filesystem, which is
@@ -421,33 +486,52 @@ func readLink(path string) (string, bool) {
 // without a syscall, and it is the only thing that works when neither path
 // exists yet — `--out` naming a file to create is the ordinary case.
 func inside(root, p string) bool {
-	if within(root, p) {
-		return true
+	_, ok := under(root, p)
+	return ok
+}
+
+// under is inside, and where under root p lies: the path from root to it,
+// "." for root itself. By identity, that is the path from the ancestor that
+// is root, which on a case-insensitive volume may be spelled otherwise.
+func under(root, p string) (string, bool) {
+	if rel, ok := relWithin(root, p); ok {
+		return rel, true
 	}
 	rootInfo, err := os.Stat(root)
 	if err != nil {
 		// Nothing on disk to compare against. The string test above is all
 		// there is, and a root that does not exist protects nothing anyway.
-		return false
+		return "", false
 	}
 	for cur := p; ; {
 		if info, err := os.Stat(cur); err == nil && os.SameFile(info, rootInfo) {
-			return true
+			rel, err := filepath.Rel(cur, p)
+			return rel, err == nil
 		}
 		parent := filepath.Dir(cur)
 		if parent == cur {
-			return false
+			return "", false
 		}
 		cur = parent
 	}
 }
 
+// within reports whether p is root or lives under it, by name alone.
+//
+// filepath.Rel rather than a string prefix, because "/home/user" is a prefix
+// of "/home/username" and a prefix test would hand one user's files to
+// another's root.
 func within(root, p string) bool {
+	_, ok := relWithin(root, p)
+	return ok
+}
+
+func relWithin(root, p string) (string, bool) {
 	rel, err := filepath.Rel(root, p)
 	if err != nil {
-		return false
+		return "", false
 	}
-	return rel == "." || (!strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != "..")
+	return rel, rel == "." || (!strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != "..")
 }
 
 // ExpandTilde replaces a leading ~ with the user's home directory.

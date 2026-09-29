@@ -26,6 +26,16 @@
 // audit was pointed at, or the .mcp.json a cloned repository keeps. Nobody
 // started a writer for a pipe in its place, and at a terminal it held the
 // command for good as surely as it held a server.
+//
+// And under a root, where a call carries its surface's bounds
+// (plugin.Bounds), a path is opened from the root and never by name. The
+// guard judges a path once, at the boundary, and a caller who can write
+// inside the root can swap the file, or a directory above it, for a link out
+// before the handler's open follows the name: 6534 of 13883 fs.hash calls
+// read the file outside under such a swap, measured. So every open here, of a
+// path named or found, walks down from the root's own descriptor, one
+// directory at a time, and opens nothing that was not what it looked at a
+// moment before (Dir). What is read is what was judged, or nothing.
 package pathin
 
 import (
@@ -78,16 +88,32 @@ func Kind(m fs.FileMode) string {
 	return "something other than a regular file"
 }
 
-// Open opens path to read, and says what it opened.
+// Open opens path, which req's caller named, to read, and says what it
+// opened.
 //
-// On sf other than the CLI, only a regular file: the path is stat'ed before
-// anything opens it, so neither a pipe nor a device is ever opened — opening
-// some devices does something, a serial port's control lines among them — and
+// Off the CLI, only a regular file: the path is stat'ed before anything
+// opens it, so neither a pipe nor a device is ever opened — opening some
+// devices does something, a serial port's control lines among them — and
 // then opened non-blocking and stat'ed again, so a pipe put in the file's
 // place between the two cannot hold the open either. On the CLI it is
 // os.Open, whatever the path names, for the reason the package gives.
-func Open(sf plugin.Surface, path string) (*os.File, fs.FileInfo, error) {
-	if sf != plugin.SurfaceCLI {
+//
+// Under bounds (plugin.Bounds), from the root the path lies under and
+// through nothing that changed since it was judged (Dir), and only a
+// regular file, as off the CLI.
+func Open(req plugin.Request, path string) (*os.File, fs.FileInfo, error) {
+	if b := req.Bounds(); b.Root != nil {
+		d, name, err := bounded(b, path)
+		if err != nil {
+			return nil, nil, err
+		}
+		defer func() { _ = d.Close() }()
+		if name == "" {
+			return nil, nil, &NotAFileError{Path: path, Mode: fs.ModeDir}
+		}
+		return d.OpenFile(name)
+	}
+	if req.Surface() != plugin.SurfaceCLI {
 		return OpenFile(path)
 	}
 	f, err := os.Open(path)
@@ -136,8 +162,8 @@ func OpenFile(path string) (*os.File, fs.FileInfo, error) {
 // for the reason atomicfile.ReadCapped gives: a stat is not the read, and a
 // file can grow between the two. The buffer grows with what is read, since a
 // cap sized for the largest file somebody keeps is far above the usual one.
-func Read(sf plugin.Surface, path string, max int) ([]byte, error) {
-	f, _, err := Open(sf, path)
+func Read(req plugin.Request, path string, max int) ([]byte, error) {
+	f, _, err := Open(req, path)
 	if err != nil {
 		return nil, err
 	}

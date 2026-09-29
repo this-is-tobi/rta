@@ -58,7 +58,7 @@ func TestPEMRoundTripsThroughTheStandardDecoder(t *testing.T) {
 		t.Fatalf("nothing was encoded:\n%s", body)
 	}
 	// The same bytes the host presented, not a re-serialization of a parse.
-	live, _, err := loadCerts(context.Background(), plugin.SurfaceCLI, addr, dialTimeout(req(nil)))
+	live, _, err := loadCerts(context.Background(), req(nil).WithSurface(plugin.SurfaceCLI), addr, dialTimeout(req(nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestABundleTruncatedMidBlockIsRefusedRatherThanShortened(t *testing.T) {
 	if err := os.WriteFile(path, cut, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := readPEM(plugin.SurfaceCLI, path)
+	_, err := readPEM(req(nil).WithSurface(plugin.SurfaceCLI), path)
 	if err == nil {
 		t.Fatal("a bundle ending inside a PEM block was read as a complete one")
 	}
@@ -274,7 +274,7 @@ func TestABundleTruncatedMidBlockIsRefusedRatherThanShortened(t *testing.T) {
 	if err := os.WriteFile(good, whole, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	certs, err := readPEM(plugin.SurfaceCLI, good)
+	certs, err := readPEM(req(nil).WithSurface(plugin.SurfaceCLI), good)
 	if err != nil {
 		t.Fatalf("an intact bundle was refused: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestAnUnreadableCertificateIsPlacedInItsFile(t *testing.T) {
 	if err := os.WriteFile(path, bundle, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := readPEM(plugin.SurfaceCLI, path)
+	_, err := readPEM(req(nil).WithSurface(plugin.SurfaceCLI), path)
 	verr := view.AsError(err, "")
 	if err == nil || verr.Code != "cert.parse.failed" || !strings.Contains(verr.Message, "certificate 2 of 3") {
 		t.Errorf("err = %v, want cert.parse.failed placing it as certificate 2 of 3", err)
@@ -347,7 +347,7 @@ func TestADamagedBlockIsRefusedWhereverItSits(t *testing.T) {
 	if err := os.WriteFile(path, bytes.Join([][]byte{selfSigned(t, "leaf"), key, selfSigned(t, "root")}, nil), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if certs, err := readPEM(plugin.SurfaceCLI, path); err != nil || len(certs) != 2 {
+	if certs, err := readPEM(req(nil).WithSurface(plugin.SurfaceCLI), path); err != nil || len(certs) != 2 {
 		t.Errorf("a bundle beside a damaged key = %d certificates, %v; want both certificates", len(certs), err)
 	}
 }
@@ -366,7 +366,7 @@ func TestATruncatedBundleSaysSoBeforeABadCertificateInIt(t *testing.T) {
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := readPEM(plugin.SurfaceCLI, path)
+	_, err := readPEM(req(nil).WithSurface(plugin.SurfaceCLI), path)
 	if verr := view.AsError(err, ""); err == nil || verr.Code != "cert.file.truncated" {
 		t.Errorf("err = %v, want cert.file.truncated", err)
 	}
@@ -411,7 +411,7 @@ func TestANegativeSerialIsAnsweredForWhereItSits(t *testing.T) {
 		if err := os.WriteFile(path, []byte(tc.content), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		_, err := readPEM(plugin.SurfaceCLI, path)
+		_, err := readPEM(req(nil).WithSurface(plugin.SurfaceCLI), path)
 		verr := view.AsError(err, "")
 		if err == nil || verr.Code != "cert.parse.failed" || !strings.Contains(verr.Message, tc.where) {
 			t.Fatalf("%s: err = %v, want cert.parse.failed placing it as %q", tc.name, err, tc.where)

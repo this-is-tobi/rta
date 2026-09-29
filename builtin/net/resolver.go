@@ -59,7 +59,7 @@ func parseResolv(lines []string) resolverConfig {
 
 func runResolverList(_ context.Context, req plugin.Request) (view.View, error) {
 	path := resolverPath(req)
-	lines, verr := readLines(req.Surface(), path, maxResolvBytes)
+	lines, verr := readLines(req, path, maxResolvBytes)
 	if verr != nil {
 		return nil, verr
 	}
@@ -75,7 +75,7 @@ func runResolverList(_ context.Context, req plugin.Request) (view.View, error) {
 	pairs := []view.Pair{{Key: "file", Value: named}}
 	// Who owns the file comes first: it decides whether anything else here
 	// is worth changing.
-	if what, _ := managedBy(req.Surface(), path, link, ""); what != "" {
+	if what, _ := managedBy(req, path, link, ""); what != "" {
 		pairs = append(pairs, view.Pair{Key: "managed by", Value: what + " — edits here get overwritten"})
 	} else {
 		pairs = append(pairs, view.Pair{Key: "managed by", Value: "nothing — safe to edit"})
@@ -113,10 +113,10 @@ func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 	}
 	path := resolverPath(req)
-	if verr := guardManaged(req.Surface(), path, req.Bool("force")); verr != nil {
+	if verr := guardManaged(req, path, req.Bool("force")); verr != nil {
 		return nil, verr
 	}
-	lines, verr := readLines(req.Surface(), path, maxResolvBytes)
+	lines, verr := readLines(req, path, maxResolvBytes)
 	if verr != nil {
 		return nil, verr
 	}
@@ -148,7 +148,7 @@ func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
 		return view.Text{Body: "would " + summary + " in " + path}, nil
 	}
 	// "set" is its own past tense, so one string serves both here.
-	saved, verr := backup(req.Surface(), path, maxResolvBytes)
+	saved, verr := backup(req, path, maxResolvBytes)
 	if verr != nil {
 		return nil, verr
 	}
@@ -156,7 +156,7 @@ func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	body := fmt.Sprintf("%s in %s\nprevious version saved to %s", summary, path, saved)
-	if what, _ := managedBy(req.Surface(), path, "", ""); what != "" {
+	if what, _ := managedBy(req, path, "", ""); what != "" {
 		body += fmt.Sprintf("\n\nwarning: %s is %s — this change will be overwritten", path, what)
 	}
 	return view.Text{Body: body}, nil
@@ -175,7 +175,7 @@ func suggestResolvers(_ context.Context, req plugin.Request) []string {
 		seen[addr] = true
 		out = append(out, addr+"\t"+note)
 	}
-	if lines, verr := readLines(req.Surface(), resolverPath(req), maxResolvBytes); verr == nil {
+	if lines, verr := readLines(req, resolverPath(req), maxResolvBytes); verr == nil {
 		for _, ns := range parseResolv(lines).nameservers {
 			add(ns, "configured here")
 		}

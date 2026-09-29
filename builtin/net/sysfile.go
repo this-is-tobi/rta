@@ -50,11 +50,31 @@ const (
 	maxResolvBytes = 1 << 20
 )
 
+// opening is req as the file a net capability works on is opened under,
+// which is always the one its file input names or, when it names none, the
+// system's own (hostsPath, resolverPath).
+//
+// A file the caller named is a caller's path, and under a root it opens from
+// the root like any other (pathin). The system's file is not: no caller chose
+// it, nothing a caller may write lies on the way to it, and reading it is
+// what the capability is for. Opened under the call's bounds it was judged as
+// a path the call had reached and refused as outside the roots, so over MCP
+// net.hosts.list and net.resolver.list could not read /etc/hosts or
+// /etc/resolv.conf at all, nor net.info list the hosts file. It opens by
+// name, as it did before calls carried bounds, and as the resolver line of
+// net.info reads it (pathin.ReadFile).
+func opening(req plugin.Request) plugin.Request {
+	if strings.TrimSpace(req.String("file")) != "" {
+		return req
+	}
+	return req.WithBounds(plugin.Bounds{})
+}
+
 // readLines reads a configuration file as lines, keeping them exactly as
-// written. sf is the surface asking, for pathin's line on what a path may
-// name, and max the file's cap.
-func readLines(sf plugin.Surface, path string, max int) ([]string, *view.Error) {
-	data, err := pathin.Read(sf, path, max)
+// written. req is the call asking, for pathin's line on what a path may name
+// and where it opens from (opening), and max the file's cap.
+func readLines(req plugin.Request, path string, max int) ([]string, *view.Error) {
+	data, err := pathin.Read(opening(req), path, max)
 	if err != nil {
 		return nil, unreadable(path, err)
 	}
@@ -76,21 +96,24 @@ func readLines(sf plugin.Surface, path string, max int) ([]string, *view.Error) 
 // is the override as the caller gives it (plugin.Surface.InputName), which
 // the advice names.
 //
-// sf is the surface asking, for the file pathin opens to read the header.
-// link is what the path the caller named held, when it was a symbolic link
-// the surface resolved before the handler saw it (plugin.Request.Link) —
-// path is then the file at its far end, which cannot say it was linked to —
-// and "" to ask the filesystem about path itself.
-func managedBy(sf plugin.Surface, path, link, force string) (what, advice string) {
+// req is the call asking, for the file pathin opens to read the header, and
+// the link it reads (opening). link is what the path the caller named held, when it was
+// a symbolic link the surface resolved before the handler saw it
+// (plugin.Request.Link) — path is then the file at its far end, which cannot
+// say it was linked to — and "" to ask the filesystem about path itself,
+// through pathin, which under a root never reads back a link put in the
+// file's place since: what that one holds is a name the caller chose.
+func managedBy(req plugin.Request, path, link, force string) (what, advice string) {
+	req = opening(req)
 	if link == "" {
-		link, _ = os.Readlink(path)
+		link, _ = pathin.Readlink(req, path)
 	}
 	if link != "" {
 		return "a symlink to " + link,
 			"edit " + link + " instead, or configure whatever writes it — " + force + " would " +
 				"replace the symlink with a regular file, which usually breaks more than it fixes"
 	}
-	f, _, err := pathin.Open(sf, path)
+	f, _, err := pathin.Open(req, path)
 	if err != nil {
 		return "", ""
 	}
@@ -117,8 +140,8 @@ func managedBy(sf plugin.Surface, path, link, force string) (what, advice string
 }
 
 // backup copies path into rta's own state directory before it is changed,
-// and returns where it went so the message can say. sf is the surface asking,
-// for the file pathin opens.
+// and returns where it went so the message can say. req is the call asking,
+// for the file pathin opens (opening).
 //
 // Every backup gets its own file. Two edits in the same second are ordinary
 // — `hosts add` then `hosts toggle` takes about that long — and a timestamp
@@ -139,8 +162,8 @@ func managedBy(sf plugin.Surface, path, link, force string) (what, advice string
 // the CLI, where pathin opens whatever the path names, a copy of anything at
 // all. A copy past it is refused as the read would be, and removed: half a
 // file among the backups reads as a saved state that never existed.
-func backup(sf plugin.Surface, path string, max int) (string, *view.Error) {
-	src, _, err := pathin.Open(sf, path)
+func backup(req plugin.Request, path string, max int) (string, *view.Error) {
+	src, _, err := pathin.Open(opening(req), path)
 	if err != nil {
 		return "", unreadable(path, err)
 	}
@@ -292,8 +315,8 @@ func callOf(req plugin.Request, id string, positional []string, switches ...stri
 // caller says they know. Silently editing a generated file is worse than
 // refusing: the change works, then disappears at the next reboot or lease
 // renewal, and nothing points at why.
-func guardManaged(sf plugin.Surface, path string, force bool) *view.Error {
-	what, advice := managedBy(sf, path, "", sf.InputName("force"))
+func guardManaged(req plugin.Request, path string, force bool) *view.Error {
+	what, advice := managedBy(req, path, "", req.Surface().InputName("force"))
 	if what == "" || force {
 		return nil
 	}

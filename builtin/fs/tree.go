@@ -298,8 +298,10 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 	// Stat'ed first for the refusal a directory gets, which names the
 	// capability that measures one. What is opened is judged again by
 	// pathin, which opens only a regular file off the CLI: a named pipe
-	// opened blocking held this call, and an OS thread, for good.
-	info, err := os.Stat(path)
+	// opened blocking held this call, and an OS thread, for good. Both
+	// through pathin, which under a root opens from the root rather than
+	// by the name a caller could have swapped for a link out since.
+	info, err := pathin.Stat(req, path)
 	if err != nil {
 		return nil, pathError("fs.hash", path, err)
 	}
@@ -308,7 +310,7 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 			WithHint("hash a file; " + req.Surface().CapabilityName("fs.usage") + " measures a directory")
 	}
 
-	f, info, err := pathin.Open(req.Surface(), path)
+	f, info, err := pathin.Open(req, path)
 	var notAFile *pathin.NotAFileError
 	switch {
 	case errors.As(err, &notAFile):

@@ -111,7 +111,7 @@ func formatHostLine(e hostEntry, original string) string {
 
 func runHostsList(_ context.Context, req plugin.Request) (view.View, error) {
 	path := hostsPath(req)
-	lines, verr := readLines(req.Surface(), path, maxHostsBytes)
+	lines, verr := readLines(req, path, maxHostsBytes)
 	if verr != nil {
 		return nil, verr
 	}
@@ -156,7 +156,7 @@ func applyHosts(req plugin.Request, call rootCall, lines []string, action, done 
 	if req.DryRun {
 		return view.Text{Body: "would " + action + " in " + path}, nil
 	}
-	saved, verr := backup(req.Surface(), path, maxHostsBytes)
+	saved, verr := backup(req, path, maxHostsBytes)
 	if verr != nil {
 		return nil, verr
 	}
@@ -259,7 +259,7 @@ func runHostsAdd(_ context.Context, req plugin.Request) (view.View, error) {
 			return nil, verr
 		}
 	}
-	lines, verr := readLines(req.Surface(), hostsPath(req), maxHostsBytes)
+	lines, verr := readLines(req, hostsPath(req), maxHostsBytes)
 	if verr != nil {
 		return nil, verr
 	}
@@ -318,7 +318,7 @@ func runHostsRemove(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("net.hosts.nohostname", "no hostname given").
 			WithHint(req.Surface().CapabilityName("net.hosts.list") + " lists every entry")
 	}
-	lines, verr := readLines(req.Surface(), hostsPath(req), maxHostsBytes)
+	lines, verr := readLines(req, hostsPath(req), maxHostsBytes)
 	if verr != nil {
 		return nil, verr
 	}
@@ -358,7 +358,7 @@ func runHostsToggle(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr := checkHostname(req.Surface(), name); verr != nil {
 		return nil, verr
 	}
-	lines, verr := readLines(req.Surface(), hostsPath(req), maxHostsBytes)
+	lines, verr := readLines(req, hostsPath(req), maxHostsBytes)
 	if verr != nil {
 		return nil, verr
 	}
@@ -539,7 +539,7 @@ func suggestAddresses(_ context.Context, req plugin.Request) []string {
 		"::1\tthis machine, IPv6",
 	}
 	seen := map[string]bool{"127.0.0.1": true, "::1": true}
-	lines, verr := readLines(req.Surface(), hostsPath(req), maxHostsBytes)
+	lines, verr := readLines(req, hostsPath(req), maxHostsBytes)
 	if verr != nil {
 		return out
 	}
@@ -554,7 +554,7 @@ func suggestAddresses(_ context.Context, req plugin.Request) []string {
 }
 
 func suggestHostnames(_ context.Context, req plugin.Request) []string {
-	lines, verr := readLines(req.Surface(), hostsPath(req), maxHostsBytes)
+	lines, verr := readLines(req, hostsPath(req), maxHostsBytes)
 	if verr != nil {
 		return nil
 	}

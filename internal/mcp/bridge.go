@@ -574,6 +574,15 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// was never an argument — which is also why its refusal is
 			// Derived's, and does not tell the agent to send another path.
 			WithConfinement(opts.Paths.Derived).
+			// And the roots themselves, for the handler's open. checkPaths
+			// judged each path and substituted what it judged, but the
+			// handler opens a name, and a caller who can write inside a root
+			// owns the moment between the judging and the open: the file, or
+			// a directory above it, swapped for a link out, and the open
+			// followed it. Opened from the root instead (plugin.Bounds),
+			// through nothing that changed since, it reads what was judged
+			// or nothing.
+			WithBounds(opts.Paths.Bounds()).
 			// And the rule a named link is told by (finalLink), for the links
 			// a handler comes across rather than receives: fs.tree lists a
 			// directory's, each with what it holds.
