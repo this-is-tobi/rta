@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/this-is-tobi/rta/internal/boxlist"
 	"github.com/this-is-tobi/rta/internal/shellquote"
 	"github.com/this-is-tobi/rta/internal/textclean/glyph"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -279,26 +280,26 @@ func boxValue(v any) string {
 	return text
 }
 
-// boxList is a list as a TUI box takes it: the elements joined at commas,
-// the text the form splits back into them, each trimmed of the space around
-// it — spelled as boxValue spells any text, quoted where a reader would
-// misread it. fmt.Sprint spelled it as Go prints a slice, and `grant=[a b]`
-// typed into the box was the one element "[a b]".
+// boxList is a list as a TUI box takes it: the text the form reads back as
+// its elements, by the grammar the CLI's list flag reads too (boxlist) —
+// joined at commas, an element holding one, a double quote or space at an
+// end in the box's double quotes — spelled as boxValue spells any text,
+// quoted where a reader would misread it. fmt.Sprint spelled it as Go prints
+// a slice, and `grant=[a b]` typed into the box was the one element "[a b]".
 //
-// **A list the box cannot hold is not spelled as one it can.** An element
-// holding a comma is two once the box splits it, one with space at an end
-// loses that space, and a lone empty element leaves the box empty, which
-// answers nothing. No text typed into the box gives such a list, so it is
-// spelled with each element quoted (glyph.Quote) inside angle brackets, as
-// mcpValue spells a string that is not UTF-8: something the reader sees is
-// not text to type, where the joined text would have been a call on other
-// values.
+// **A list the box cannot hold is not spelled as one it can.** An empty one
+// leaves the box empty, which answers nothing, and a box of one line keeps
+// no element's line break. No text typed into the box gives such a list, so
+// it is spelled with each element quoted (glyph.Quote) inside angle
+// brackets, as mcpValue spells a string that is not UTF-8: something the
+// reader sees is not text to type, where the box's text would have been a
+// call on other values.
 func boxList(list []string) string {
-	unheld := len(list) == 1 && list[0] == "" || slices.ContainsFunc(list, func(e string) bool {
-		return strings.Contains(e, ",") || e != strings.TrimSpace(e)
-	})
-	if !unheld {
-		return boxValue(strings.Join(list, ","))
+	if text, held := boxlist.Join(list, ","); held {
+		return boxValue(text)
+	}
+	if len(list) == 0 {
+		return "<an empty list, which no box text holds>"
 	}
 	quoted := make([]string, len(list))
 	for i, e := range list {
