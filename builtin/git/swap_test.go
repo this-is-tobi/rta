@@ -293,3 +293,61 @@ func TestAWorkingTreeDirectorySwappedBeforeTheStatusListsItIsNotListedThroughThe
 		t.Errorf("over MCP the status listed a directory a link out of the roots leads to: %v", kind)
 	}
 }
+
+// The hooks directory, swapped for a link out of the roots the moment the gate
+// has judged it: the listing named every hook in the directory the link led
+// to.
+func TestAHooksDirectorySwappedAfterItIsJudgedIsNotListedThroughTheLink(t *testing.T) {
+	outside := t.TempDir()
+	writeExecutable(t, outside, "pre-commit-"+outsideSecret)
+	root := t.TempDir()
+	proj := filepath.Join(root, "proj")
+	repoAt(t, root, proj)
+	hooks := filepath.Join(proj, ".git", "hooks")
+	writeExecutable(t, hooks, "pre-commit")
+	gate := swapOnce(t, root, hooks, linkOut(t, hooks, outside))
+	v, err := runHooks(context.Background(), overMCP(t, proj, gate, nil))
+	if answered := fmt.Sprintf("%+v %v", v, err); strings.Contains(answered, outsideSecret) {
+		t.Errorf("git.hooks listed a directory a link swapped in after the gate judged it leads to: %s", answered)
+	}
+	if _, err := os.Lstat(hooks + ".aside"); err != nil {
+		t.Fatalf("the swap was never made, so the test proves nothing: %v", err)
+	}
+}
+
+// A hook that is a link is judged by what it leads to, and the directory that
+// is in, swapped for a link out of the roots the moment the gate has judged
+// the hook's far end, was looked through: the status said what kind of thing
+// was at the same name outside, a directory git fails on or nothing at all.
+func TestAHookLinksFarEndSwappedAfterItIsJudgedIsNotLookedAtThroughTheLink(t *testing.T) {
+	status := func(outsideKind string) string {
+		outside := t.TempDir()
+		if outsideKind == "directory" {
+			if err := os.MkdirAll(filepath.Join(outside, "pc"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		root := t.TempDir()
+		proj := filepath.Join(root, "proj")
+		repoAt(t, root, proj)
+		scripts := filepath.Join(root, "scripts")
+		writeExecutable(t, scripts, "pc")
+		hooks := filepath.Join(proj, ".git", "hooks")
+		if err := os.MkdirAll(hooks, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(scripts, "pc"), filepath.Join(hooks, "pre-commit")); err != nil {
+			t.Fatal(err)
+		}
+		gate := swapOnce(t, root, filepath.Join(scripts, "pc"), linkOut(t, scripts, outside))
+		tbl := table(t, runHooks, overMCP(t, proj, gate, nil))
+		if _, err := os.Lstat(scripts + ".aside"); err != nil {
+			t.Fatalf("the swap was never made, so the test proves nothing: %v", err)
+		}
+		return rowFor(t, tbl, "Name", "pre-commit")[1]
+	}
+	if dir, none := status("directory"), status("nothing"); dir != none {
+		t.Errorf("a hook's far end swapped out of the roots answers by what is there: %s where a directory is, "+
+			"%s where nothing is", dir, none)
+	}
+}

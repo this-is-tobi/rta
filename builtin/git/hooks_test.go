@@ -388,6 +388,38 @@ func TestAPipeInPlaceOfTheOperatorsGitConfigIsRefusedRatherThanWaitedOn(t *testi
 	}
 }
 
+// A core.hooksPath naming a named pipe, which the repository's own config can
+// do, is a directory git cannot list and runs no hook from, and is refused on
+// every surface rather than waited on: os.ReadDir opens a directory as one,
+// which a pipe refuses at once, and an *os.Root opens it as whatever it is,
+// which for a pipe waits in open(2) for a writer that never comes.
+func TestAPipeInPlaceOfTheHooksDirectoryIsRefusedRatherThanWaitedOn(t *testing.T) {
+	machineConfig(t, "")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	if err := mkfifo(filepath.Join(dir, "hookspipe")); err != nil {
+		t.Skipf("no named pipes here: %v", err)
+	}
+	setHooksPath(t, repo, "hookspipe")
+	for name, r := range map[string]plugin.Request{
+		"terminal": req(t, dir, nil), "MCP": guarded(t, dir, dir).WithSurface(plugin.SurfaceMCP),
+	} {
+		done := make(chan error, 1)
+		go func() {
+			_, err := runHooks(context.Background(), r)
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if code := errCode(err); code != "git.hooks.failed" {
+				t.Errorf("%s: a pipe in place of the hooks directory: %q, want git.hooks.failed", name, code)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%s: git.hooks is waiting on a pipe in place of the hooks directory", name)
+		}
+	}
+}
+
 // core.hooksPath set in any file git reads is the directory git runs hooks
 // from: a Homebrew build's system file, or the global file GIT_CONFIG_GLOBAL
 // names, both of which this missed, listing .git/hooks while git ran another
