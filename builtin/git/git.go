@@ -614,11 +614,7 @@ func (f regularFiles) OpenFile(name string, flag int, perm os.FileMode) (billy.F
 	if err != nil {
 		return nil, err
 	}
-	// Judged by the name, as the open found it: a billy file has no Stat of
-	// its own. The window between the two is what this leaves open — a pipe
-	// swapped in there is read non-blocking, and holds a call only while
-	// something else holds its other end open.
-	info, err := f.Stat(name)
+	info, err := f.statOf(file, name)
 	if err != nil || !info.Mode().IsRegular() {
 		_ = file.Close()
 		if err == nil {
@@ -634,9 +630,30 @@ func (f regularFiles) OpenFile(name string, flag int, perm os.FileMode) (billy.F
 		_ = file.Close()
 		return nil, &iofs.PathError{Op: "open", Path: name, Err: tooLarge(limit)}
 	}
-	// And read no further than the bound, whatever the name leads to by the
-	// time it is read: the size above is the name's, not the open file's.
+	// And read no further than the bound, whatever the file has grown to by
+	// the time it is read: the size above is what it was when it was opened
+	// (statOf), and at a terminal what its name said just after.
 	return &boundedFile{File: file, limit: limit}, nil
+}
+
+// statOf is what file, just opened as name, is.
+//
+// From the open file itself wherever it can say, and every file read under a
+// root can (rootFile), as can an in-memory clone's. A look at the name after
+// the open left a window between the two: a pipe opened in a file's place,
+// the file put back before the look, was read as the file, non-blocking,
+// holding the call for as long as anything held the pipe's other end — and
+// the size the bound was judged by was the name's, not the open file's.
+//
+// By name only where the file cannot say, which is go-billy's osfs at a
+// terminal: its chroot wraps each file in a type that keeps the os.File's
+// own Stat to itself. There, a person reads their own repository, and nobody
+// is racing the read.
+func (f regularFiles) statOf(file billy.File, name string) (os.FileInfo, error) {
+	if s, ok := file.(interface{ Stat() (os.FileInfo, error) }); ok {
+		return s.Stat()
+	}
+	return f.Stat(name)
 }
 
 // tooLarge is why a file in a git directory past its bound is not read.

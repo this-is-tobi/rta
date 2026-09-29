@@ -2,12 +2,14 @@ package git
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -147,5 +149,49 @@ func TestAWorktreeConfigPastTheBoundFailsTheCallThatReadsIt(t *testing.T) {
 	_, err := runConfig(context.Background(), req(t, dir, nil))
 	if code := errCode(err); code != "git.config.failed" || !strings.Contains(err.Error(), "larger than") {
 		t.Errorf("git.config over a config.worktree past the bound: %v, want git.config.failed saying why", err)
+	}
+}
+
+// nameSwappedBack is a filesystem whose look at any name finds regular, a
+// regular file: what a caller who swapped a pipe in for the open, and the
+// file back straight after it, leaves the name saying to a look that follows
+// the open.
+type nameSwappedBack struct {
+	billy.Filesystem
+	regular os.FileInfo
+}
+
+func (n nameSwappedBack) Stat(string) (os.FileInfo, error) { return n.regular, nil }
+
+// What the repository's filesystem opened is judged by the open file's own
+// Stat, not by a look at its name after the open: a pipe opened in HEAD's
+// place, with the file put back before the look, was read as the file —
+// non-blocking, and holding the call for as long as anything held the pipe's
+// other end. Under a root the open file can say what it is (rootFile), and
+// it is asked.
+func TestWhatTheRepositorysFilesystemOpenedIsJudgedByTheOpenFile(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "real", "ref: refs/heads/main\n")
+	if err := mkfifo(filepath.Join(dir, "HEAD")); err != nil {
+		t.Skipf("no named pipes here: %v", err)
+	}
+	regular, err := os.Stat(filepath.Join(dir, "real"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	under := rootFiles{dir: boundDir{path: dir, root: root}, files: &repoFiles{}}
+	gitDir := regularFiles{Filesystem: nameSwappedBack{Filesystem: under, regular: regular}, gitDir: true}
+	f, err := gitDir.Open("HEAD")
+	if err == nil {
+		_ = f.Close()
+		t.Fatal("a pipe was opened as the regular file its name said it was after the open")
+	}
+	if !errors.Is(err, errNotAFile) {
+		t.Errorf("err = %v, want errNotAFile", err)
 	}
 }
