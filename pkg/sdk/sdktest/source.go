@@ -20,9 +20,10 @@ import (
 // declares — "." from a test file beside the plugin's own — and hold it to
 // RuleSpelling: no sentence the source spells out names a flag or an `rta …`
 // command line, every call it names through a naming helper is one its
-// reader can make, every connection setting it names through SettingName or
-// SettingTo is an input it declares Local, and every input it gives through
-// InputTo is one an agent gives as an argument (see checkSource).
+// reader can make, every connection setting it names through SettingName,
+// SettingTo or CAHint is an input it declares Local, and every input it
+// gives through InputTo is one an agent gives as an argument (see
+// checkSource).
 //
 // An option rather than the default because Check is not always called from
 // the plugin's own directory: rta runs it over every built-in from the
@@ -419,11 +420,12 @@ func callProblems(p plugin.Plugin, c namedCall) []string {
 }
 
 // settingHelpers are the plugin.Surface methods that name an input by the
-// literal names they are given — each of SettingName's, SettingTo's and
-// InputTo's first — with what each holds the name to: a connection setting
-// for the first two, an input an agent gives as an argument for InputTo.
+// literal names they are given — each of SettingName's, SettingTo's,
+// CAHint's and InputTo's first — with what each holds the name to: a
+// connection setting for the first three, CAHint naming its CA file as
+// SettingName does, and an input an agent gives as an argument for InputTo.
 var settingHelpers = map[string]func(plugin.Plugin, namedSetting) string{
-	"SettingName": settingProblem, "SettingTo": settingProblem, "InputTo": givenProblem,
+	"SettingName": settingProblem, "SettingTo": settingProblem, "CAHint": settingProblem, "InputTo": givenProblem,
 }
 
 // valuedHelpers are the setting helpers given a value after the name, which

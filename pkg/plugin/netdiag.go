@@ -139,6 +139,16 @@ func dialFailed(err error, errnos []syscall.Errno) bool {
 // as every verdict CertUntrusted does not read is. Elsewhere an untyped
 // answer is one of Go's own errors, never a verdict on trust, and is not
 // read as one.
+//
+// **Windows is the one system whose verdict Go does not tell apart.** With
+// no CA file given it asks the system's verifier too, and types every chain
+// the system refuses for a reason other than a date or a use as
+// UnknownAuthorityError, with nothing else in it: a certificate Windows
+// distrusts reads as one from an unknown CA. It is read as untrusted all the
+// same, since a private CA is by far the likelier reason and nothing in the
+// error tells the two apart — which is why CAHint says what naming a CA
+// file goes around there too: Windows' own checks, its list of distrusted
+// certificates among them.
 func CertUntrusted(err error) bool { return certUntrusted(runtime.GOOS, err) }
 
 // certUntrusted is CertUntrusted on goos, whose verifier answered err.
@@ -169,4 +179,35 @@ func certUntrusted(goos string, err error) bool {
 	open, closing := string(rune(0x201c)), string(rune(0x201d))
 	text := verifyErr.Err.Error()
 	return strings.HasPrefix(text, "x509: "+open) && strings.HasSuffix(text, closing+" certificate is not trusted")
+}
+
+// CAHint is the hint for a refusal CertUntrusted answered: the CA that
+// issued the certificate belongs in setting, the plugin's CA file, named the
+// way the reader on s changes it (SettingName) — and what giving one does.
+//
+// It says the cost, since the cure is the one that runs another check: a CA
+// file replaces the system's checks with Go's verifier and that CA alone. On
+// macOS and iOS that is the system's revocation, Certificate Transparency and
+// policy checks no longer run, which an operator told only "name the CA"
+// learned from nothing — and one who named it to get past a verdict that was
+// no untrusted issuer's went around the check that gave it. On Windows it is
+// the system's checks as well, not only its roots: Go asks the system's
+// verifier there too when no CA file is set, and a certificate Windows
+// distrusts reaches CertUntrusted as an unknown authority, which only this
+// hint's words can warn about.
+func (s Surface) CAHint(setting string) string { return s.caHint(runtime.GOOS, setting) }
+
+// caHint is CAHint on goos.
+func (s Surface) caHint(goos, setting string) string {
+	hint := "the CA that issued it belongs in " + s.SettingName(setting) +
+		" (a self-signed certificate is its own CA), and a CA file replaces the system's "
+	switch goos {
+	case "darwin", "ios":
+		return hint + "checks: the certificate is then checked against that CA alone, with none of the revocation " +
+			"and policy checks macOS makes"
+	case "windows":
+		return hint + "checks: the certificate is then checked against that CA alone, with none of the checks " +
+			"Windows makes, its list of distrusted certificates among them"
+	}
+	return hint + "roots: the certificate is then checked against that CA alone"
 }

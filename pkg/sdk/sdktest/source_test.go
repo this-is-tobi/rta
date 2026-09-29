@@ -127,6 +127,8 @@ func TestTheSettingsTheSourceNamesAreOnesItDeclaresLocal(t *testing.T) {
 		"\t\tsf.SettingName(\"tls\", \"limit\"),\n" +
 		"\t\tsf.SettingTo(\"host\", v),\n" +
 		"\t\tsf.SettingsHint(\"demo.key.lsit\"),\n" +
+		"\t\tsf.CAHint(\"tls\"),\n" +
+		"\t\tsf.CAHint(\"limit\"),\n" +
 		"\t}\n" +
 		"}\n"
 	fset := token.NewFileSet()
@@ -146,8 +148,10 @@ func TestTheSettingsTheSourceNamesAreOnesItDeclaresLocal(t *testing.T) {
 		}
 	}
 	// The value SettingTo is given is not a setting, and a name in a
-	// variable is not guessed at.
-	if want := []int{9, 10, 11, 12}; !slices.Equal(wrong, want) {
+	// variable is not guessed at. CAHint names a CA file the way
+	// SettingName names it, and is held the same way.
+	slices.Sort(wrong)
+	if want := []int{9, 10, 11, 12, 14}; !slices.Equal(wrong, want) {
 		t.Errorf("settings held on lines %v, want %v", wrong, want)
 	}
 }

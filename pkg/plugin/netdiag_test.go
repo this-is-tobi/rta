@@ -256,6 +256,9 @@ func TestOnlyTheSystemsNotTrustedVerdictIsReadAsUntrusted(t *testing.T) {
 		{"darwin", errors.New("x509: " + open + "db.internal" + closing + " certificate is not trusted"), false},
 		{"linux", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, true},
 		{"darwin", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, true},
+		// What Go's Windows verifier answers for every chain it refuses for
+		// a reason other than a date or a use; CAHint says what it costs.
+		{"windows", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, true},
 		{"linux", x509.SystemRootsError{}, true},
 		{"darwin", &tls.CertificateVerificationError{Err: x509.CertificateInvalidError{Reason: x509.Expired}}, false},
 		{"darwin", &tls.CertificateVerificationError{Err: x509.InsecureAlgorithmError(x509.SHA1WithRSA)}, false},
@@ -266,6 +269,36 @@ func TestOnlyTheSystemsNotTrustedVerdictIsReadAsUntrusted(t *testing.T) {
 	} {
 		if got := certUntrusted(c.goos, c.err); got != c.want {
 			t.Errorf("on %s, %v: untrusted %v, want %v", c.goos, c.err, got, c.want)
+		}
+	}
+}
+
+// The hint for an untrusted certificate names the CA file the way its reader
+// sets it, and says what setting one does: it replaces the system's checks,
+// which on macOS are revocation and policy as well as trust.
+func TestTheCAHintSaysACAFileReplacesTheSystemsChecks(t *testing.T) {
+	for _, c := range []struct {
+		s          Surface
+		goos, want string
+	}{
+		{SurfaceCLI, "darwin", "the CA that issued it belongs in --ca-file (a self-signed certificate is its own CA), " +
+			"and a CA file replaces the system's checks: the certificate is then checked against that CA alone, " +
+			"with none of the revocation and policy checks macOS makes"},
+		{SurfaceMCP, "linux", "the CA that issued it belongs in the operator's `ca-file` setting (a self-signed " +
+			"certificate is its own CA), and a CA file replaces the system's roots: the certificate is then checked " +
+			"against that CA alone"},
+		{SurfaceTUI, "ios", "the CA that issued it belongs in the ca-file box (a self-signed certificate is its own " +
+			"CA), and a CA file replaces the system's checks: the certificate is then checked against that CA alone, " +
+			"with none of the revocation and policy checks macOS makes"},
+		// Go asks Windows' verifier too when no CA file is set, and a
+		// certificate Windows distrusts reaches CertUntrusted as an unknown
+		// authority: the hint is all that says what a CA file goes around.
+		{SurfaceCLI, "windows", "the CA that issued it belongs in --ca-file (a self-signed certificate is its own " +
+			"CA), and a CA file replaces the system's checks: the certificate is then checked against that CA alone, " +
+			"with none of the checks Windows makes, its list of distrusted certificates among them"},
+	} {
+		if got := c.s.caHint(c.goos, "ca-file"); got != c.want {
+			t.Errorf("over %q on %s: %s\nwant %s", c.s, c.goos, got, c.want)
 		}
 	}
 }
