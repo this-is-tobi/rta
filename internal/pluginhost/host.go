@@ -174,9 +174,8 @@ type Client struct {
 	client *goplugin.Client
 	stub   rtav1.PluginServiceClient
 	cmd    *exec.Cmd
-	logger hclog.Logger
-	// words is what this process said through its logger (lastWords), for
-	// a call that loses it to report.
+	// words is what this process said on its stderr (lastWords), for a call
+	// that loses it to report.
 	words *lastWords
 	// sockDir is the directory this process made its socket in (socketDir),
 	// removed with the process.
@@ -224,14 +223,13 @@ func (c *Client) live(ctx context.Context) (rtav1.PluginServiceClient, error) {
 	// rather than eventually gone — and it is bounded by teardown's own
 	// killTimeout, which is the wait Close already accepts.
 	var (
-		old       *goplugin.Client
-		oldCmd    *exec.Cmd
-		oldLogger hclog.Logger
-		oldSock   string
+		old     *goplugin.Client
+		oldCmd  *exec.Cmd
+		oldSock string
 	)
 	defer func() {
 		if old != nil {
-			teardown(old, oldCmd, oldLogger, oldSock)
+			teardown(old, oldCmd, oldSock)
 		}
 	}()
 
@@ -269,8 +267,8 @@ func (c *Client) live(ctx context.Context) (rtav1.PluginServiceClient, error) {
 		fresh.Close()
 		return nil, fmt.Errorf("the plugin at %s declared a different catalogue on restart", c.Identity.Path)
 	}
-	old, oldCmd, oldLogger, oldSock = c.client, c.cmd, c.logger, c.sockDir
-	c.client, c.stub, c.cmd, c.logger, c.words = fresh.client, fresh.stub, fresh.cmd, fresh.logger, fresh.words
+	old, oldCmd, oldSock = c.client, c.cmd, c.sockDir
+	c.client, c.stub, c.cmd, c.words = fresh.client, fresh.stub, fresh.cmd, fresh.words
 	c.sockDir = fresh.sockDir
 	return c.stub, nil
 }
@@ -303,7 +301,7 @@ func (c *Client) Close() {
 	// printed at a user for something rta did on purpose. Nothing after this
 	// point can report a fault worth acting on, because from here the fault
 	// is the intended outcome.
-	// Snapshotted under the lock, because live() replaces all four of these
+	// Snapshotted under the lock, because live() replaces each of these
 	// in place — that is what lets a restarted plugin keep serving handlers
 	// registered against the dead one — and Close read them without holding
 	// it. Concurrent shutdown-while-restarting was therefore an unsynchronised
@@ -313,10 +311,10 @@ func (c *Client) Close() {
 	// and holding c.mu through them would block every in-flight call's live()
 	// on a process that is going away regardless.
 	c.mu.Lock()
-	client, cmd, logger, sockDir := c.client, c.cmd, c.logger, c.sockDir
+	client, cmd, sockDir := c.client, c.cmd, c.sockDir
 	c.mu.Unlock()
 
-	teardown(client, cmd, logger, sockDir)
+	teardown(client, cmd, sockDir)
 }
 
 // teardown ends one plugin process and everything it started.
@@ -348,11 +346,8 @@ func (c *Client) Close() {
 // The socket directory goes last, whichever way the wait ended: by then the
 // process group has been reaped, and the directory is rta's to remove
 // (socketDir) whatever the plugin did or did not clean up in it.
-func teardown(client *goplugin.Client, cmd *exec.Cmd, logger hclog.Logger, sockDir string) {
+func teardown(client *goplugin.Client, cmd *exec.Cmd, sockDir string) {
 	defer removeSocketDir(sockDir)
-	if logger != nil {
-		logger.SetLevel(hclog.Off)
-	}
 	killed := make(chan struct{})
 	go func() {
 		defer close(killed)
@@ -620,8 +615,7 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 		cmd.Env = append(cmd.Env, goplugin.EnvUnixSocketDir+"="+sockDir)
 	}
 
-	words := &lastWords{module: "plugin." + id.Short()}
-	logger := pluginLogger(words.module, words)
+	words := &lastWords{}
 	client := goplugin.NewClient(&goplugin.ClientConfig{
 		HandshakeConfig: sdk.Handshake,
 		Plugins:         goplugin.PluginSet{sdk.PluginSetName: noDispense{}},
@@ -652,9 +646,11 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 		// os.Stderr, logStderr passes each plugin stderr line as the log
 		// *message*, and hclog writes a message body unquoted — so a plugin's
 		// log.Printf put raw OSC 52 on the host's terminal, reproduced
-		// against v1.8.0. This one writes nowhere: it keeps what the plugin
-		// said for rta's own word on a failure (lastWords).
-		Logger: logger,
+		// against v1.8.0. This one logs nothing (silentLogger), and the
+		// plugin's stderr goes to Stderr, which keeps what it said for rta's
+		// own word on a failure and writes nowhere (lastWords).
+		Logger: silentLogger(),
+		Stderr: words,
 	})
 
 	// abandon tears down a process that never became usable.
@@ -669,12 +665,11 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 	// What the plugin said goes with the error, read before the reap, so the
 	// status it exited with is its own and not the kill's — once it has had
 	// a moment to exit (exitedOnItsOwn): a plugin that failed to start has
-	// usually gone, and go-plugin says so from a goroutine of its own, just
-	// after it reports the start failed.
+	// usually gone, and go-plugin waits for it from a goroutine of its own,
+	// just after it reports the start failed.
 	abandon := func(reason string, err error) (*Client, error) {
 		exitedOnItsOwn(client)
-		said := words.told()
-		logger.SetLevel(hclog.Off)
+		said := words.told(exitStatus(client, cmd))
 		reap(cmd)
 		client.Kill()
 		removeSocketDir(sockDir)
@@ -694,7 +689,7 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 	}
 
 	c := &Client{
-		Identity: id, client: client, cmd: cmd, logger: logger, words: words, sockDir: sockDir,
+		Identity: id, client: client, cmd: cmd, words: words, sockDir: sockDir,
 		host: h, deny: deny, args: args,
 		stub: rtav1.NewPluginServiceClient(grpcClient.Conn),
 	}
@@ -705,16 +700,27 @@ func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []str
 	return c, nil
 }
 
-// pluginLogger is the logger a plugin's stderr goes through, into out: JSON,
-// so each entry reaches lastWords whole and its fields by name, and at Error,
-// the level go-plugin logs a plugin's failures at.
-func pluginLogger(name string, out io.Writer) hclog.Logger {
-	return hclog.New(&hclog.LoggerOptions{
-		Name:       name,
-		Output:     out,
-		Level:      hclog.Error,
-		JSONFormat: true,
-	})
+// silentLogger is the logger go-plugin is handed: one that logs nothing.
+// Not none: handed none, go-plugin makes one that writes everything to
+// rta's standard error. And off rather than merely writing nowhere, since
+// off is what stops go-plugin parsing a plugin's stderr at all, a parse
+// that panics on an entry a plugin shapes (lastWords).
+func silentLogger() hclog.Logger {
+	return hclog.New(&hclog.LoggerOptions{Output: io.Discard, Level: hclog.Off})
+}
+
+// exitStatus is how cmd's process exited, once client says it has, or ""
+// while it runs and when it exited cleanly, which is nothing to report.
+// Read after Exited, which go-plugin sets only once its Wait on cmd has
+// returned, so the state it reads is the one that Wait left.
+func exitStatus(client *goplugin.Client, cmd *exec.Cmd) string {
+	if client == nil || cmd == nil || !client.Exited() {
+		return ""
+	}
+	if state := cmd.ProcessState; state != nil && !state.Success() {
+		return state.String()
+	}
+	return ""
 }
 
 // exitedOnItsOwn gives a plugin whose launch failed a moment to finish

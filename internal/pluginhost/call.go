@@ -196,14 +196,14 @@ func (c *Client) transportError(ctx context.Context, id string, err error) *view
 	}
 	c.mu.Lock()
 	exited := c.client != nil && c.client.Exited()
-	words := c.words
+	words, status := c.words, exitStatus(c.client, c.cmd)
 	c.mu.Unlock()
 	if exited {
 		// With what it said on its way out, a panic's first lines among it:
 		// its stderr reaches no terminal (lastWords), so this is the one
 		// place its author reads why.
 		return view.Errorf("plugin.gone", "the plugin serving %s stopped while it was running: %v%s",
-			id, err, words.told()).
+			id, err, words.told(status)).
 			WithHint("it is restarted on the next call; this one is reported rather than retried, " +
 				"because a call that died part-way may already have done what it was asked")
 	}
