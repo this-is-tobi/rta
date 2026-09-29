@@ -305,7 +305,14 @@ type refspec struct {
 // cannot.** A * on one side alone, or two on one, was taken for a pattern,
 // and refs/heads/*:refs/remotes/o/** tracked main at o/main*, where git
 // refuses the repository.
-func parseRefspec(s string) (r refspec, valid bool) {
+func parseRefspec(s string) (refspec, bool) { return readRefspec(s, true) }
+
+// readRefspec is s read as git's parse_refspec reads a refspec to fetch with,
+// where fetch is set (parseRefspec), and to push with where it is not: there
+// ":" alone pushes the branches both sides have, a source may be any
+// revision where it is no pattern and names a destination, a destination
+// written empty is refused, and one with none names its source as a ref.
+func readRefspec(s string, fetch bool) (r refspec, valid bool) {
 	switch {
 	case strings.HasPrefix(s, "+"):
 		s = s[1:]
@@ -322,9 +329,12 @@ func parseRefspec(s string) (r refspec, valid bool) {
 	if r.negative && r.stores {
 		return refspec{}, false
 	}
+	if !fetch && s == ":" {
+		return r, true
+	}
 	r.pattern = strings.Contains(r.dst, "*")
 	if strings.Contains(r.src, "*") {
-		if (r.stores && !r.pattern) || (!r.stores && !r.negative) {
+		if (r.stores && !r.pattern) || (!r.stores && !r.negative && fetch) {
 			return refspec{}, false
 		}
 		r.pattern = true
@@ -337,7 +347,17 @@ func parseRefspec(s string) (r refspec, valid bool) {
 	if r.src == "@" {
 		r.src = "HEAD"
 	}
-	return r, (r.src == "" || refnameInRefspec(r.src, r.pattern)) && (r.dst == "" || refnameInRefspec(r.dst, r.pattern))
+	if fetch {
+		return r, (r.src == "" || refnameInRefspec(r.src, r.pattern)) &&
+			(r.dst == "" || refnameInRefspec(r.dst, r.pattern))
+	}
+	switch {
+	case r.src != "" && r.pattern && !refnameInRefspec(r.src, true):
+		return r, false
+	case !r.stores:
+		return r, refnameInRefspec(r.src, r.pattern)
+	}
+	return r, r.dst != "" && refnameInRefspec(r.dst, r.pattern)
 }
 
 // isObjectName reports whether s is an object's name in full, as a refspec
@@ -449,9 +469,13 @@ func configuredUpstreams(pieces []scopedConfig) map[string]upstream {
 }
 
 // branchUpstreams is what each branch of repo tracks, as configuredUpstreams
-// reads it from the config req may be shown.
+// reads it from the config req may be shown, or why git refuses to run with
+// that config (remoteConfigRefusal).
 func branchUpstreams(ctx context.Context, req plugin.Request, repo *git.Repository) (map[string]upstream, error) {
 	pieces, err := shownConfig(ctx, req, repo)
+	if err == nil {
+		err = remoteConfigRefusal(pieces)
+	}
 	if err != nil {
 		return nil, err
 	}

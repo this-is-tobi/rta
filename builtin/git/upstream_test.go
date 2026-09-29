@@ -199,3 +199,94 @@ func TestABranchSectionGoGitRefusesOpensAsGitReadsIt(t *testing.T) {
 		})
 	}
 }
+
+// **A remote or a branch set with no value is one git refuses to run with.**
+// git reads a remote's url, pushurl, fetch and the rest, and a branch's
+// remote and merge, as strings, and a key with no value at all, a name alone
+// on its line, stops it before it runs ("missing value for 'remote.x.url'"):
+// `git remote -v`, `git branch -vv` and `git status` say so and nothing
+// else. So does a fetch or push refspec it cannot parse ("invalid refspec"),
+// and a remote's boolean it cannot read ("bad boolean config value"). This read
+// such a url as the empty one, which clears a remote's URLs, and such a remote
+// as unset, which sent the branch to the remote-tracking ref of its own name:
+// git.remotes listed a remote with no URL, and git.branches and the overview
+// named an upstream git never reads. Each is refused, as git refuses it, over
+// MCP as at a terminal.
+func TestARemoteOrABranchGitRefusesToRunWithIsRefused(t *testing.T) {
+	remote := "[remote \"origin\"]\n\turl = https://example.com/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n"
+	branch := "[branch \"master\"]\n\tremote = origin\n\tmerge = refs/heads/master\n"
+	for _, c := range []struct{ name, config, words string }{
+		{"a url with no value", "[remote \"origin\"]\n\turl\n" + branch, "remote.origin.url"},
+		{"a branch's remote with no value", remote + "[branch \"master\"]\n\tremote\n\tmerge = refs/heads/master\n",
+			"branch.master.remote"},
+		{"a branch's merge with no value", remote + "[branch \"master\"]\n\tremote = origin\n\tmerge\n",
+			"branch.master.merge"},
+		{"a fetch refspec with no value", "[remote \"origin\"]\n\turl = https://example.com/r.git\n\tfetch\n" + branch,
+			"remote.origin.fetch"},
+		{"an insteadOf with no value", remote + branch + "[url \"https://mirror.example/\"]\n\tinsteadOf\n",
+			"url.https://mirror.example/.insteadof"},
+		{"a refspec git cannot parse", remote + "\tfetch = refs/heads/*:refs/remotes/origin/main\n" + branch,
+			"invalid refspec"},
+		{"a push refspec git cannot parse", remote + "\tpush = refs/heads/*:refs/for/main\n" + branch,
+			"invalid refspec"},
+		{"a remote's prune that is no boolean", remote + "\tprune = maybe\n" + branch, "bad boolean"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := upstreamRepo(t, c.config)
+			for name, r := range map[string]plugin.Request{"terminal": req(t, dir, nil), "MCP": mcpReq(t, dir, dir)} {
+				for capability, h := range map[string]plugin.Handler{
+					"git.remotes": runRemotes, "git.branches": runBranches, "git.overview": runOverview,
+				} {
+					v, err := h(context.Background(), r)
+					if err == nil || !strings.Contains(err.Error(), c.words) ||
+						!strings.Contains(err.Error(), "git refuses to run with") {
+						t.Errorf("%s, %s = %v %v, want it refused naming %s", name, capability, v, err, c.words)
+					}
+				}
+			}
+			if _, runs := gitSays(t, dir, "remote", "-v"); runs {
+				t.Error("git runs `git remote -v`")
+			}
+			if _, err := runLog(context.Background(), req(t, dir, map[string]any{"limit": defaultLogLimit})); err != nil {
+				t.Errorf("git.log, which reads no remote, = %v", err)
+			}
+		})
+	}
+}
+
+// A push refspec is read as git reads one to push with, where it reads the
+// remotes, each case one git was asked: ":" alone, a source of any revision
+// where it names a destination, and a negative one run; a destination
+// written empty, a * on one side alone, and a source with no destination
+// that is no ref name stop git, and each is refused here as git refuses it.
+func TestAPushRefspecIsReadAsGitReadsIt(t *testing.T) {
+	_, hasGit := gitSays(t, t.TempDir(), "--version")
+	for _, c := range []struct {
+		spec  string
+		valid bool
+	}{
+		{":", true},
+		{"+:", true},
+		{"HEAD~1:refs/heads/x", true},
+		{"main", true},
+		{"refs/heads/*:refs/for/*", true},
+		{"^refs/heads/wip", true},
+		{"refs/heads/main:", false},
+		{"refs/heads/*:refs/for/main", false},
+		{"refs/heads/*", true},
+		{"HEAD~1", false},
+		{"refs/heads/ma in:refs/x", true},
+		{"refs/heads/main:refs/ma in", false},
+	} {
+		if _, valid := readRefspec(c.spec, false); valid != c.valid {
+			t.Errorf("%q read as valid %v, want %v", c.spec, valid, c.valid)
+		}
+		if !hasGit {
+			continue
+		}
+		dir := upstreamRepo(t, "[remote \"origin\"]\n\turl = https://example.com/r.git\n\tpush = "+c.spec+"\n")
+		if _, runs := gitSays(t, dir, "remote", "-v"); runs != c.valid {
+			t.Errorf("git runs with push = %q: %v, want %v", c.spec, runs, c.valid)
+		}
+	}
+}

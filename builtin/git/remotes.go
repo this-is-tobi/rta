@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sort"
 	"strconv"
@@ -52,6 +53,9 @@ func runRemotes(ctx context.Context, req plugin.Request) (view.View, error) {
 	pieces, err := shownConfig(ctx, req, repo)
 	if verr := refusedByTheGate(err); verr != nil {
 		return nil, verr
+	}
+	if err == nil {
+		err = remoteConfigRefusal(pieces)
 	}
 	if err != nil {
 		return nil, view.Errorf("git.remotes.failed", "reading remotes: %v", err)
@@ -226,6 +230,90 @@ func urlRewrites(pieces []scopedConfig) urlRules {
 		}
 	}
 	return out
+}
+
+// remoteStrings is each key of the remotes and the branches git reads as a
+// string, by section, and by name within it, lower case: set with no value at
+// all, a name alone on its line, each is one git refuses to run with where it
+// reads the remotes ("missing value for 'remote.x.url'"). "" is the section
+// with no subsection. Asked of git 2.50 key by key: its remote.c reads these,
+// and passes a remote's prune, mirror or skipDefaultUpdate with no value as
+// true, as it does a boolean.
+var remoteStrings = map[string]map[string][]string{
+	"remote": {
+		"*": {"url", "pushurl", "push", "fetch", "tagopt", "receivepack", "uploadpack", "proxy", "vcs",
+			"serveroption", "followremotehead", "proxyauthmethod"},
+		"": {"pushdefault"},
+	},
+	"branch": {"*": {"remote", "pushremote", "merge"}},
+	"url":    {"*": {"insteadof", "pushinsteadof"}},
+}
+
+// remoteConfigRefusal is why git refuses to run where it reads the remotes and
+// what each branch tracks from pieces, nil where it does not: a key of theirs
+// git reads as a string set with no value at all (remoteStrings), a fetch or
+// push refspec git cannot parse (readRefspec), or a remote's boolean git does
+// not take (remoteBooleans), the first of them in the order git reads them. git.remotes, git.branches and the overview answer from
+// that config, and refuse where git refuses: `git remote -v`, `git branch
+// -vv` and `git status` say nothing but that.
+//
+// **Read as set to nothing, it answered otherwise.** A url with no value is
+// the empty url, which clears a remote's URLs, so git.remotes listed a remote
+// with none; a branch's remote with no value is none, which sent the branch
+// to the remote-tracking ref of its own name, an upstream git never reads.
+func remoteConfigRefusal(pieces []scopedConfig) error {
+	for _, p := range pieces {
+		keys := make([]string, 0, len(p.blank))
+		for key, v := range p.blank {
+			if v.any && gitReadsAsAString(key) {
+				keys = append(keys, key)
+			}
+		}
+		if len(keys) > 0 {
+			slices.Sort(keys)
+			return fmt.Errorf("%s sets %s with no value, which git refuses to run with (missing value for '%s')",
+				p.place(), keys[0], keys[0])
+		}
+		if !p.config.Raw.HasSection("remote") {
+			continue
+		}
+		for _, sub := range p.config.Raw.Section("remote").Subsections {
+			for _, o := range sub.Options {
+				key := "remote." + sub.Name + "." + strings.ToLower(o.Key)
+				if _, valid := readRefspec(o.Value, o.IsKey("fetch")); (o.IsKey("fetch") || o.IsKey("push")) &&
+					!valid {
+					return fmt.Errorf("%s sets %s to %q, which git refuses to run with (invalid refspec)",
+						p.place(), key, o.Value)
+				}
+				if slices.Contains(remoteBooleans, strings.ToLower(o.Key)) && !isGitBool(o.Value) {
+					return fmt.Errorf("%s sets %s to %q, which git refuses to run with (bad boolean config value)",
+						p.place(), key, o.Value)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// remoteBooleans is each key of a remote's git reads as a boolean where it
+// reads the remotes, lower case: a value git's git_config_bool does not take
+// (isGitBool) stops it ("bad boolean config value"), as a string key set with
+// no value does, and one set with no value is true.
+var remoteBooleans = []string{"mirror", "skipdefaultupdate", "skipfetchall", "prune", "prunetags"}
+
+// gitReadsAsAString reports whether key, as configKey spells it, is one of
+// remoteStrings.
+func gitReadsAsAString(key string) bool {
+	section, rest, _ := strings.Cut(key, ".")
+	subsection, name := "", rest
+	if i := strings.LastIndex(rest, "."); i >= 0 {
+		subsection, name = rest[:i], rest[i+1:]
+	}
+	names := remoteStrings[section]
+	if subsection != "" {
+		return slices.Contains(names["*"], name)
+	}
+	return slices.Contains(names[""], name)
 }
 
 // knownBranches counts the remote-tracking refs each remote has left behind.
