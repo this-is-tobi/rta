@@ -536,10 +536,10 @@ func relWithin(root, p string) (string, bool) {
 
 // ExpandTilde replaces a leading ~ with the user's home directory.
 //
-// Only a leading "~" or "~/": "~user" is deliberately not supported, because
-// resolving another account's home is not something any input here means, and
-// a file literally named "~something" in the current directory should keep
-// working.
+// Only a leading "~" or "~/", and "~\" on Windows, its own separator: "~user"
+// is deliberately not supported, because resolving another account's home is
+// not something any input here means, and a file literally named "~something"
+// in the current directory should keep working.
 //
 // The rule itself lives in pkg/plugin, exported so a plugin can apply the
 // same one to its own Local path inputs; this is the host's name for it.
