@@ -415,6 +415,74 @@ func TestAHookLinksFarEndSwappedAfterItIsJudgedIsNotLookedAtThroughTheLink(t *te
 	}
 }
 
+// A gitdir: condition is matched against the git directory as the gate
+// judged it, its links resolved then, and a ./ one taken from the directory
+// of the file it is written in as the gate judged that. Resolved again for
+// the match, the git directory, or the file, swapped for a link out of the
+// roots once it had been read, led the match to the link's far end where
+// that is there and not where it is not, and the include the condition
+// guarded told a caller whether any file on the machine exists.
+func TestAGitdirConditionIsMatchedAgainstWhatTheGateJudged(t *testing.T) {
+	far := filepath.Join(realPath(t.TempDir()), "far")
+	for _, c := range []struct {
+		name string
+		// layout writes the condition into the repository at proj, under
+		// root, and says what is swapped for a link to far, when, and what
+		// far is to hold where it is there.
+		layout func(t *testing.T, root, proj string) (watch, name, target, planted string)
+	}{
+		{"gitdir: and the git directory", func(t *testing.T, root, proj string) (string, string, string, string) {
+			appendConfig(t, proj, "[includeIf \"gitdir:"+far+"/\"]\n\tpath = "+filepath.Join(root, "marker.cfg")+"\n")
+			return sharedObjects(root), filepath.Join(proj, ".git"), filepath.Join(far, ".git"),
+				filepath.Join(far, ".git", "config")
+		}},
+		{"gitdir:./ and the file it is written in", func(t *testing.T, root, proj string) (string, string, string,
+			string,
+		) {
+			writeFile(t, root, "trigger.cfg", "")
+			writeFile(t, root, "inc.cfg", "[include]\n\tpath = "+filepath.Join(root, "trigger.cfg")+
+				"\n[includeIf \"gitdir:./\"]\n\tpath = "+filepath.Join(root, "marker.cfg")+"\n")
+			appendConfig(t, proj, "[include]\n\tpath = "+filepath.Join(root, "inc.cfg")+"\n")
+			return filepath.Join(root, "trigger.cfg"), filepath.Join(root, "inc.cfg"), filepath.Join(far, "inc.cfg"),
+				filepath.Join(far, "inc.cfg")
+		}},
+	} {
+		matched := map[bool]bool{}
+		for _, there := range []bool{true, false} {
+			_ = os.RemoveAll(far)
+			root := realPath(t.TempDir())
+			proj := filepath.Join(root, "proj")
+			repoAt(t, root, proj)
+			writeFile(t, root, "marker.cfg", "[x]\n\tmarker = matched\n")
+			watch, name, target, planted := c.layout(t, root, proj)
+			if there {
+				writeFile(t, filepath.Dir(planted), filepath.Base(planted), "")
+			}
+			gate := swapOnce(t, root, watch, linkOut(t, name, target))
+			v, err := runConfig(context.Background(), overMCP(t, proj, gate, nil))
+			if _, err := os.Lstat(name + ".aside"); err != nil {
+				t.Fatalf("%s: the swap was never made, so the test proves nothing: %v", c.name, err)
+			}
+			matched[there] = strings.Contains(fmt.Sprintf("%+v %v", v, err), "matched")
+		}
+		if matched[true] != matched[false] {
+			t.Errorf("%s: the condition held %v where the far end of the link swapped in is there, and %v where "+
+				"it is not", c.name, matched[true], matched[false])
+		}
+	}
+}
+
+// appendConfig adds text to the end of the config of the repository at dir.
+func appendConfig(t *testing.T, dir, text string) {
+	t.Helper()
+	config := filepath.Join(dir, ".git", "config")
+	own, err := os.ReadFile(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Dir(config), "config", string(own)+text)
+}
+
 // A file the repository's config includes, and the file its
 // core.excludesFile names, each judged by the gate and read by name: the
 // directory holding it swapped for a link out of the roots the moment the

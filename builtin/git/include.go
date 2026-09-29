@@ -135,7 +135,7 @@ type configSource struct {
 // file, after an include: nothing read into it yet.
 func (f scopedConfig) continued() scopedConfig {
 	return scopedConfig{scope: f.scope, path: f.path, file: f.file, included: f.included, inRoots: f.inRoots,
-		config: gitconfig.NewConfig(), blank: map[string]valueless{}}
+		judged: f.judged, config: gitconfig.NewConfig(), blank: map[string]valueless{}}
 }
 
 // add reads l into f, as go-git's decoder adds a line to the config it reads.
@@ -166,7 +166,9 @@ type configReading struct {
 	// gitDir is the repository's git directory as a gitdir: condition is
 	// matched against it, symbolic links resolved, and gitDirFound as this
 	// found it: git tries the one, then the other. "" where the repository
-	// has none on disk, as a clone in memory has none.
+	// has none on disk, as a clone in memory has none. Over MCP the two are
+	// the one the gate judged, its links resolved when it judged it
+	// (newConfigReading).
 	gitDir, gitDirFound string
 	// branch is the branch HEAD names, as an onbranch: condition is matched
 	// against it, "" where it names none; noBranch is why this cannot tell,
@@ -208,8 +210,18 @@ func newConfigReading(ctx context.Context, req plugin.Request, repo *git.Reposit
 	if store, ok := repo.Storer.(*filesystem.Storage); ok {
 		r.gitDirFound = store.Filesystem().Root()
 		r.gitDir = r.gitDirFound
-		if resolved, err := filepath.EvalSymlinks(r.gitDirFound); err == nil {
-			r.gitDir = resolved
+		// **Over MCP the git directory's links are the gate's to resolve, and
+		// resolved once.** It is the directory the gate judged, its links
+		// resolved then, and held open from there (boundDir); resolved again
+		// by name here, swapped for a link out of the roots once it was
+		// opened, it was the link's far end where that is there and itself
+		// where it is not, and a gitdir: condition naming the far end told a
+		// caller, by the include it guarded, whether any directory on the
+		// machine exists.
+		if !bounded(req) {
+			if resolved, err := filepath.EvalSymlinks(r.gitDirFound); err == nil {
+				r.gitDir = resolved
+			}
 		}
 	}
 	return r
@@ -401,9 +413,22 @@ func (r *configReading) gitDirMatches(f scopedConfig, pattern string, fold bool)
 		if f.file == "" {
 			return false, "", nil
 		}
+		// Over MCP a file the caller can write is taken as the gate judged
+		// it, and not resolved again, as the git directory is not
+		// (newConfigReading): the repository's own is in the git directory
+		// the gate judged, and one inside the roots was judged itself
+		// (scopedConfig.judged). Resolved again, swapped for a link out once
+		// it was read, it was taken from the directory of the link's far end
+		// where that is there, and from its own where it is not.
 		dir := filepath.Dir(f.file)
-		if resolved, err := filepath.EvalSymlinks(f.file); err == nil {
-			dir = filepath.Dir(resolved)
+		switch {
+		case f.judged != "":
+			dir = filepath.Dir(f.judged)
+		case bounded(r.req) && f.callerWrites():
+		default:
+			if resolved, err := filepath.EvalSymlinks(f.file); err == nil {
+				dir = filepath.Dir(resolved)
+			}
 		}
 		pattern, prefix = dir+pattern[1:], len(dir)+1
 	case !filepath.IsAbs(pattern):
@@ -688,8 +713,11 @@ func (r *configReading) include(f scopedConfig, path string, depth int, forbid b
 	if err != nil {
 		return nil, false, fmt.Errorf("%s: %w", path, err)
 	}
-	pieces, err := r.expand(scopedConfig{scope: f.scope, path: path, file: path, included: true,
-		inRoots: where == readBeneath}, lines, depth, forbid)
+	piece := scopedConfig{scope: f.scope, path: path, file: path, included: true, inRoots: where == readBeneath}
+	if where == readBeneath {
+		piece.judged = read
+	}
+	pieces, err := r.expand(piece, lines, depth, forbid)
 	return pieces, false, err
 }
 
