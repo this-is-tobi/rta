@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"sort"
 	"strconv"
@@ -65,19 +66,68 @@ func oneOf(values ...string) func(string) bool {
 }
 
 // isGitBool reports whether git reads value as a boolean at all (gitBool
-// reads it): true, yes, on, false, no, off in any case, nothing, or a number,
-// which git reads with a k, m or g after it too. Anything else stops git
-// before it runs.
+// reads it): true, yes, on, false, no, off in any case, nothing, or a number
+// as git reads one (gitInt). Anything else stops git before it runs.
 func isGitBool(value string) bool {
 	switch strings.ToLower(value) {
 	case "", "true", "yes", "on", "false", "no", "off":
 		return true
 	}
-	if n := len(value); n > 1 && strings.ContainsRune("kKmMgG", rune(value[n-1])) {
-		value = value[:n-1]
+	_, ok := gitInt(value)
+	return ok
+}
+
+// gitInt is value read as git's git_parse_int reads an int: C's strtoimax in
+// base 0 — space before it, a sign, 0x for hex and a leading 0 for octal —
+// then nothing, or k, m or g in any case, which it is multiplied by; ok is
+// false for anything else, and where the whole is past an int, which git
+// refuses to run with.
+//
+// **Read as C reads it, and not as strconv does.** `0x10` and ` 1` are
+// numbers to git and were refused here, and `08`, octal with an 8 in it, and
+// 3g, past an int, stop git and were taken.
+func gitInt(value string) (_ int64, ok bool) {
+	s := strings.TrimLeft(value, cSpace)
+	sign := ""
+	if s != "" && (s[0] == '+' || s[0] == '-') {
+		sign, s = s[:1], s[1:]
 	}
-	_, err := strconv.Atoi(value)
-	return err == nil
+	const hex = "0123456789abcdefABCDEF"
+	base, digits := 10, hex[:10]
+	switch {
+	case len(s) > 2 && strings.EqualFold(s[:2], "0x") && strings.IndexByte(hex, s[2]) >= 0:
+		base, digits, s = 16, hex, s[2:]
+	case strings.HasPrefix(s, "0"):
+		base, digits = 8, hex[:8]
+	}
+	n := 0
+	for n < len(s) && strings.IndexByte(digits, s[n]) >= 0 {
+		n++
+	}
+	if n == 0 {
+		return 0, false
+	}
+	v, err := strconv.ParseInt(sign+s[:n], base, 64)
+	if err != nil {
+		return 0, false
+	}
+	var factor int64
+	switch strings.ToLower(s[n:]) {
+	case "":
+		factor = 1
+	case "k":
+		factor = 1 << 10
+	case "m":
+		factor = 1 << 20
+	case "g":
+		factor = 1 << 30
+	default:
+		return 0, false
+	}
+	if v < math.MinInt32/factor || v > math.MaxInt32/factor {
+		return 0, false
+	}
+	return v * factor, true
 }
 
 // repositoryFormat is the refusal of a repository, which path names, whose

@@ -239,3 +239,33 @@ func TestARepositorysFormatIsDecidedAsGitDecidesIt(t *testing.T) {
 		})
 	}
 }
+
+// A boolean is read as git's git_config_bool reads one, each value one git
+// was asked: a number as C's strtoimax reads it, in hex and octal too, with
+// space before it and a k, m or g after it, within an int once multiplied.
+// ' 1' and 0x10 were refused, where git reads them, and 08 and 3g taken,
+// where git stops.
+func TestABooleanIsReadAsGitReadsIt(t *testing.T) {
+	for value, want := range map[string]bool{
+		"true": true, "TRUE": true, "": true, "1": true, " 1": true, "+1": true, "010": true, "0x10": true,
+		"0X1f": true, "1k": true, "1K": true, "2097151k": true, "2147483647": true, "-2147483648": true,
+		"08": false, "3g": false, "2097152k": false, "2147483648": false, "tru": false, "-": false, "1kb": false,
+		"0x": false, " true": false, "1 ": false,
+	} {
+		if got := isGitBool(value); got != want {
+			t.Errorf("%q read as a boolean: %v, want %v", value, got, want)
+		}
+		if _, err := exec.LookPath("git"); err != nil {
+			continue
+		}
+		cmd := exec.Command("git", "-c", "x.y="+value, "config", "--type=bool", "x.y")
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1")
+		out, err := cmd.Output()
+		if (err == nil) != want {
+			t.Errorf("git reads %q as a boolean: %v, want %v", value, err == nil, want)
+		}
+		if on := strings.TrimSpace(string(out)) == "true"; err == nil && gitBool(value) != on {
+			t.Errorf("%q read as %v, where git reads it as %v", value, gitBool(value), on)
+		}
+	}
+}
