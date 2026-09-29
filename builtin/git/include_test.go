@@ -951,7 +951,7 @@ func excludesOutsideIsNeverApplied(t *testing.T, root, dir, written string) {
 				"%s where it is, %s where it is not", named, answers[true], answers[false])
 		}
 		writeFile(t, outside, "planted-ignores", "*.txt\n")
-		if got := untracked(t, req(t, dir, nil)); named == planted && slices.Contains(got, "new.txt") {
+		if got := untracked(t, req(t, dir, nil)); slices.Contains(got, "new.txt") {
 			t.Errorf("at a terminal, through %s, untracked = %v, want new.txt ignored", named, got)
 		}
 	}
