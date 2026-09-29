@@ -50,10 +50,11 @@ func configCapability() plugin.Capability {
 			"at the place of the include; one this cannot decide is not read, and a warning says so. " +
 			"Over MCP only the repository's own config, local and worktree, is returned: the " +
 			"machine-wide scopes and the environment's are the operator's, not the repository's, " +
-			"and an include it makes of a file outside the server's roots is not followed, for " +
+			"and an include of a file outside the server's roots made in any file of config inside " +
+			"them, the repository's own or an operator file that lives there, is not followed, for " +
 			"git.hooks and the rest either, a warning naming it: the file is never opened, so nothing " +
 			"of it, even whether it exists, shows in an answer; a hasconfig:remote.*.url: condition " +
-			"there is matched against the remotes the repository's own config sets alone. " +
+			"in such a file is matched against the remotes the repository's own config sets alone. " +
 			"Values that carry a credential are masked on every surface.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
