@@ -15,6 +15,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -270,6 +271,77 @@ func TestOnlyTheSystemsNotTrustedVerdictIsReadAsUntrusted(t *testing.T) {
 		if got := certUntrusted(c.goos, c.err); got != c.want {
 			t.Errorf("on %s, %v: untrusted %v, want %v", c.goos, c.err, got, c.want)
 		}
+	}
+}
+
+// A certificate valid for longer than Apple's policy allows is answered by
+// macOS as "not standards compliant", and that was all its reader was told:
+// the hint names the validity period, the limit and the fix, reissuing it,
+// and never a CA file, which would get past the refusal by going around the
+// system's checks. The same words about a certificate within the limit, or
+// one issued before the rule, are some other rule's, and get no hint.
+// Each error is the shape Go's darwin verifier builds, the handshake's copy
+// of what the server sent in it.
+func TestAPolicyHintNamesTheValidityPeriodAndNeverACAFile(t *testing.T) {
+	open, closing := string(rune(0x201c)), string(rune(0x201d))
+	sent := func(issued time.Time, valid time.Duration, verdict string) error {
+		leaf := &x509.Certificate{NotBefore: issued, NotAfter: issued.Add(valid)}
+		return &tls.CertificateVerificationError{UnverifiedCertificates: []*x509.Certificate{leaf},
+			Err: fmt.Errorf("x509: %s", open+"db.internal"+closing+" "+verdict)}
+	}
+	day := 24 * time.Hour
+	issued := time.Date(2025, time.March, 1, 0, 0, 0, 0, time.UTC)
+	tenYears := sent(issued, 3650*day, "certificate is not standards compliant")
+	want := "macOS takes a TLS server certificate issued since July 2019 only when it is valid for at most " +
+		"825 days, and this one is valid for 3650: reissue it valid for 825 days or fewer, or 398 when a " +
+		"public certificate authority issues it"
+	for _, c := range []struct {
+		goos string
+		err  error
+		want string
+	}{
+		{"darwin", tenYears, want},
+		{"darwin", fmt.Errorf("pg: %w", tenYears), want},
+		{"ios", tenYears, strings.Replace(want, "macOS", "iOS", 1)},
+		{"darwin", sent(issued, 826*day, "certificate is not standards compliant"), strings.Replace(want, "3650", "826", 1)},
+		{"darwin", sent(issued, 825*day, "certificate is not standards compliant"), ""},
+		{"darwin", sent(time.Date(2018, time.June, 1, 0, 0, 0, 0, time.UTC), 3650*day,
+			"certificate is not standards compliant"), ""},
+		{"darwin", sent(issued, 3650*day, "certificate is not trusted"), ""},
+		{"darwin", sent(issued, 3650*day, "certificate is revoked"), ""},
+		{"linux", tenYears, ""},
+		{"windows", tenYears, ""},
+		{"darwin", &tls.CertificateVerificationError{Err: fmt.Errorf("x509: %s",
+			open+"db.internal"+closing+" certificate is not standards compliant")}, ""},
+		{"darwin", &tls.CertificateVerificationError{Err: x509.CertificateInvalidError{Reason: x509.Expired}}, ""},
+		{"darwin", nil, ""},
+	} {
+		got := certPolicyHint(c.goos, c.err)
+		if got != c.want {
+			t.Errorf("on %s, %v: hint %q, want %q", c.goos, c.err, got, c.want)
+		}
+		if strings.Contains(strings.ToLower(got), "ca file") || strings.Contains(got, "ca-file") {
+			t.Errorf("the hint points to a CA file: %q", got)
+		}
+	}
+	if certUntrusted("darwin", tenYears) {
+		t.Error("a certificate too long for Apple's policy is read as untrusted")
+	}
+
+	// And as macOS answers it, where it does: a ten-year self-signed
+	// certificate against the system's own verifier.
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	longSelf, longKey := issue(t, nil, nil, 10*365*24*time.Hour, false)
+	err := handshake(t, longSelf, longKey, &tls.Config{ServerName: "db.internal"})
+	var verifyErr *tls.CertificateVerificationError
+	if errors.As(err, &verifyErr) && strings.HasSuffix(verifyErr.Err.Error(), "certificate is not standards compliant") {
+		if hint := CertPolicyHint(err); !strings.Contains(hint, "825 days") {
+			t.Errorf("macOS's own verdict on a ten-year certificate (%v) got the hint %q", err, hint)
+		}
+	} else {
+		t.Logf("macOS answered a ten-year self-signed certificate with %v", err)
 	}
 }
 
