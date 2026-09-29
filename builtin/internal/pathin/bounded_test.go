@@ -230,3 +230,33 @@ func TestALinkPutInPlaceAnswersTheSameWhetherItsTargetExists(t *testing.T) {
 		})
 	}
 }
+
+// On a volume that ignores case, a path spelled in another case than its
+// root is under it, as the guard judges by identity, and it opens from the
+// root by where it lies there: a walk names what it finds under the root's
+// own spelling, which is what a link's target is told against.
+func TestABoundedPathSpelledInAnotherCaseOpensFromItsRoot(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "proj")
+	put(t, filepath.Join(root, "sub", "in.txt"), "inside")
+	upper := filepath.Join(base, "PROJ")
+	if _, err := os.Stat(upper); err != nil {
+		t.Skip("this volume tells case apart")
+	}
+	req := under(t, root)
+	if got, err := Read(req, filepath.Join(upper, "sub", "in.txt"), 64); err != nil || string(got) != "inside" {
+		t.Fatalf("a case variant under the root: %q, %v", got, err)
+	}
+	d, err := OpenDir(req, filepath.Join(upper, "sub"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = d.Close() }()
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(resolved, "sub"); d.Path() != want {
+		t.Errorf("Path() = %q, want it under the root's spelling, %q", d.Path(), want)
+	}
+}
