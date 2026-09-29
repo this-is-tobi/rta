@@ -137,7 +137,9 @@ func repoAt(t *testing.T, root, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commitFile(t, repo, dir, "a.txt", "inside\n", "inside the roots")
+	// Long ago, so that the overview's age of it is the same from one call
+	// to the next.
+	commitFileAt(t, repo, dir, "a.txt", "inside\n", "inside the roots", time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))
 	if err := os.MkdirAll(sharedObjects(root), 0o755); err != nil {
 		t.Fatal(err)
 	}

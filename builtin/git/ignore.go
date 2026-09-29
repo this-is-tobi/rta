@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // maxIgnoreBytes and maxIgnorePatterns are what one status reads of the
@@ -762,7 +763,7 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 ) []excludeSource {
 	var out []excludeSource
 	noValue := valuelessIn(configs, "core", "excludesFile")
-	switch p, scope, why := excludesFile(configs, root); {
+	switch p, writes, why := excludesFile(configs, root); {
 	case cerr != nil:
 		out = append(out, excludeSource{shown: "core.excludesFile", why: "reading the config that sets it: " + cerr.Error()})
 	case noValue != "":
@@ -784,28 +785,14 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 		// pattern to read.
 	case p != "":
 		s := excludeSource{shown: p}
-		if scope != "local" && scope != "worktree" {
+		read, where, refusal := placeOf(files.req, p)
+		switch {
+		case where == refused, where == notRead, refusal != nil && writes:
+			s.why = refusedBy(refusal)
+		case where == readByName:
 			s.fs, s.name = regularFiles{Filesystem: osfs.New(filepath.Dir(p))}, filepath.Base(p)
-			out = append(out, s)
-			break
-		}
-		judged, verr := files.req.Confine("path", p)
-		if verr != nil {
-			s.why = refusedBy(verr)
-			out = append(out, s)
-			break
-		}
-		dir, err := files.at(filepath.Dir(judged))
-		switch verr := refusedByTheGate(err); {
-		case verr != nil:
-			s.why = refusedBy(verr)
-		case errors.Is(err, iofs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR):
-			// No directory to hold it, no file: git passes over one that is
-			// not there, as decide does.
-		case err != nil:
-			s.why = unreadable(err)
 		default:
-			s.fs, s.name = regularFiles{Filesystem: dir}, filepath.Base(judged)
+			s.fs, s.name, s.why = excludesBeneath(files, read)
 		}
 		if s.why != "" || s.fs != nil {
 			out = append(out, s)
@@ -817,36 +804,69 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 	return out
 }
 
+// excludesBeneath is judged, an excludes file inside the roots, as a status
+// reads it: from the directory of the roots it lies under (files), or why it
+// is not; and nothing at all where it is not there, which git passes over
+// (decide). A name that leads out of the roots is refused as one outside
+// them is, whether or not its far end is there (openBeneath), and opened here
+// to tell, since the status reads it later only to count and apply it.
+func excludesBeneath(files *repoFiles, judged string) (_ billy.Filesystem, name, why string) {
+	f, ledOut, err := openBeneath(files.req, judged)
+	if f != nil {
+		_ = f.Close()
+	}
+	switch verr := refusedByTheGate(err); {
+	case ledOut:
+		return nil, "", refusedBy(&view.Error{Code: outsideTheRoots})
+	case verr != nil:
+		return nil, "", refusedBy(verr)
+	case errors.Is(err, iofs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR):
+		return nil, "", ""
+	}
+	dir, err := files.at(filepath.Dir(judged))
+	switch verr := refusedByTheGate(err); {
+	case verr != nil:
+		return nil, "", refusedBy(verr)
+	case errors.Is(err, iofs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR):
+		return nil, "", ""
+	case err != nil:
+		return nil, "", unreadable(err)
+	}
+	return regularFiles{Filesystem: dir}, filepath.Base(judged), ""
+}
+
 // excludesFile is the file core.excludesFile names, as git resolves it, and
-// the scope it is set in: the value in the last of the files git reads that
+// whether a caller over MCP can write the file of config that sets it
+// (scopedConfig.callerWrites): the value in the last of the files git reads that
 // sets it (gitConfigs), ~ and ~user expanded and a relative one taken from
 // the working tree's root; where none does, git's default,
 // $XDG_CONFIG_HOME/git/ignore, or ~/.config/git/ignore with that unset. ""
 // where it is set to nothing, which git reads as no file. why is what keeps
 // this from telling which file the value names (configPathname).
-func excludesFile(configs []scopedConfig, root string) (path, scope, why string) {
+func excludesFile(configs []scopedConfig, root string) (path string, writes bool, why string) {
+	set := false
 	for _, f := range configs {
 		if core := f.config.Raw.Section("core"); core.HasOption("excludesFile") {
-			path, scope = core.Option("excludesFile"), f.scope
+			path, writes, set = core.Option("excludesFile"), f.callerWrites(), true
 		}
 	}
 	switch {
-	case scope != "" && path == "":
-		return "", scope, ""
-	case scope != "":
+	case set && path == "":
+		return "", writes, ""
+	case set:
 		expanded, why := configPathname(path)
 		if why != "" {
-			return "", scope, why
+			return "", writes, why
 		}
-		return against(root, expanded), scope, ""
+		return against(root, expanded), writes, ""
 	case os.Getenv("XDG_CONFIG_HOME") != "":
-		return filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "git", "ignore"), "default", ""
+		return filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "git", "ignore"), false, ""
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", "", ""
+		return "", false, ""
 	}
-	return filepath.Join(home, ".config", "git", "ignore"), "default", ""
+	return filepath.Join(home, ".config", "git", "ignore"), false, ""
 }
 
 // ignoreCase reports whether git matches ignore patterns without regard to
