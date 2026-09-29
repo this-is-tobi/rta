@@ -169,6 +169,23 @@ func (d *Dir) look(op, name string) (fs.FileInfo, string, error) {
 	return info, full, nil
 }
 
+// Withheld reports why the bounds withhold name, which info describes, as a
+// *WithheldError, or nil. For the walk that lists what it does not open: a
+// file of rta's own configuration that lies under a root — RTA_CONFIG or the
+// ./.rta.yaml beside a project, and the remotes.yaml next to it — is refused
+// by name and was listed with its size, where the directory holding the
+// data was listed as withheld.
+func (d *Dir) Withheld(name string, info fs.FileInfo) error {
+	if d.refuse == nil {
+		return nil
+	}
+	full := filepath.Join(d.path, name)
+	if err := d.refuse(full, info); err != nil {
+		return &WithheldError{Path: full, Err: err}
+	}
+	return nil
+}
+
 // at is err, from os.Root, as the path it was about is named everywhere
 // else: by the operation a caller asked for and the whole path. os.Root names
 // the system call it made and the name in the directory, so a missing file

@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -182,7 +183,14 @@ func goMod(module string, n int) []byte {
 // what the one outside does, and the text that would say an answer came
 // from outside.
 func walkCases() []fileCase {
+	// Every file inside is a few bytes and the one outside is kilobytes, so a
+	// size in KiB anywhere in a listing is one that counted it.
+	small, large := []byte("a note"), bytes.Repeat([]byte("x"), 4096)
 	return []fileCase{
+		{tool: "fs_tree", input: "path", name: "notes.txt", args: map[string]any{"depth": 3},
+			inside: small, outside: large, leaks: says("KiB")},
+		{tool: "fs_usage", input: "path", name: "notes.txt", args: map[string]any{"detail": true},
+			inside: small, outside: large, leaks: says("KiB")},
 		{tool: "audit_deps", input: "path", name: "go.mod", args: map[string]any{"offline": true, "recursive": true},
 			inside: goMod("inside", 3), outside: goMod("outside", outsideDeps), leaks: declared},
 	}
@@ -191,6 +199,13 @@ func walkCases() []fileCase {
 // A walk goes down through directories it finds, not ones it was given, and
 // each is a name a caller can swap between the walk looking at it and going
 // into it; and the directory it was given can be swapped as well.
+//
+// The second is the wide window, and a walk by path names leaks through it
+// in every run of this length. The first is a few microseconds between two
+// system calls, which a walk by names leaked through about once in ten
+// thousand calls that met the swap, measured — past what a test run affords,
+// so pathin's own tests pin it without a race: a Dir refuses a link where it
+// looked, and anything that is not what it looked at.
 func TestNoWalkReadsThroughADirectorySwappedForALinkOut(t *testing.T) {
 	for _, c := range walkCases() {
 		for _, swapped := range []string{"the directory given", "a directory beneath it"} {

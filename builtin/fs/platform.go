@@ -19,14 +19,6 @@ import (
 // assertion, this package did not compile for windows/amd64 at all, and the
 // degradation the comment promised could never happen.
 
-func deviceOf(path string) (uint64, bool) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return 0, false
-	}
-	return deviceOfInfo(info)
-}
-
 // sameDevice reports whether an entry lives on the filesystem the scan
 // started on. A scanner that could not determine its own device does not
 // exclude anything — refusing to descend on a platform where the answer is

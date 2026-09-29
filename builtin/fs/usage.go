@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -41,13 +42,18 @@ type entry struct {
 // scan: a permission error three levels down should not cost the answer, but
 // a total that quietly excluded half a tree is worse than no total at all.
 type scanner struct {
-	root     string
 	device   uint64
 	maxDepth int
 	skipped  int
+	// withheld counts rta's own state, which a scan under a root neither
+	// enters nor sizes (pathin.WithheldError): left out of the total as skipped
+	// entries are, and said apart from them, since it is neither unreadable
+	// nor elsewhere.
+	withheld int
 	largest  []fileSize
 }
 
+// fileSize is a file the scan found, by its path from the directory scanned.
 type fileSize struct {
 	path string
 	size int64
@@ -58,20 +64,51 @@ type fileSize struct {
 // ranking is — one forgotten core dump beats twenty evenly-sized folders.
 const keepLargest = 15
 
-func newScanner(root string, maxDepth int) *scanner {
-	s := &scanner{root: root, maxDepth: maxDepth}
-	if dev, ok := deviceOf(root); ok {
-		s.device = dev
+func newScanner(root *pathin.Dir, maxDepth int) *scanner {
+	s := &scanner{maxDepth: maxDepth}
+	if here, err := root.Stat(); err == nil {
+		s.device, _ = deviceOfInfo(here)
 	}
 	return s
 }
 
-// walk totals one directory subtree, returning its size and file count.
-func (s *scanner) walk(ctx context.Context, dir string, depth int) (int64, int) {
+// descend opens name in dir to scan, counting it as left out when it cannot
+// be: rta's own state apart from the rest.
+func (s *scanner) descend(dir *pathin.Dir, name string) (*pathin.Dir, bool) {
+	sub, err := dir.OpenDir(name)
+	var withheld *pathin.WithheldError
+	switch {
+	case errors.As(err, &withheld):
+		s.withheld++
+	case err != nil:
+		s.skipped++
+	}
+	return sub, err == nil
+}
+
+// withholds reports whether the bounds withhold name, a file in dir that
+// info describes, counting it when they do: a file of rta's configuration
+// under a root is left out of the total as the directory of its state is.
+func (s *scanner) withholds(dir *pathin.Dir, name string, info os.FileInfo) bool {
+	if dir.Withheld(name, info) == nil {
+		return false
+	}
+	s.withheld++
+	return true
+}
+
+// walk totals one directory subtree, returning its size and file count. rel
+// is its path from the directory scanned, for the files it remembers.
+//
+// Through the directory held open (pathin.Dir) rather than by path names: a
+// scan that looked at a name and then read the directory by it listed
+// whatever a caller who can write in the tree had put at the name since,
+// which under a root was a link out.
+func (s *scanner) walk(ctx context.Context, dir *pathin.Dir, rel string, depth int) (int64, int) {
 	if err := ctx.Err(); err != nil {
 		return 0, 0
 	}
-	items, err := os.ReadDir(dir)
+	items, err := dir.ReadDir()
 	if err != nil {
 		s.skipped++
 		return 0, 0
@@ -79,9 +116,9 @@ func (s *scanner) walk(ctx context.Context, dir string, depth int) (int64, int) 
 	var total int64
 	var count int
 	for _, item := range items {
-		full := filepath.Join(dir, item.Name())
+		full := filepath.Join(rel, item.Name())
 		// Lstat, not Stat: a symlink's own size, never its target's.
-		info, err := os.Lstat(full)
+		info, err := dir.Lstat(item.Name())
 		if err != nil {
 			s.skipped++
 			continue
@@ -98,10 +135,18 @@ func (s *scanner) walk(ctx context.Context, dir string, depth int) (int64, int) 
 			if s.maxDepth > 0 && depth >= s.maxDepth {
 				continue
 			}
-			sub, subCount := s.walk(ctx, full, depth+1)
-			total += sub
+			sub, ok := s.descend(dir, item.Name())
+			if !ok {
+				continue
+			}
+			size, subCount := s.walk(ctx, sub, full, depth+1)
+			_ = sub.Close()
+			total += size
 			count += subCount
 		case info.Mode().IsRegular():
+			if s.withholds(dir, item.Name(), info) {
+				continue
+			}
 			total += info.Size()
 			count++
 			s.remember(full, info.Size())
@@ -128,7 +173,7 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, err
 	}
-	info, statErr := os.Stat(path)
+	info, statErr := pathin.Stat(req, path)
 	if statErr != nil {
 		return nil, pathError("fs.usage", path, statErr)
 	}
@@ -136,9 +181,14 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("fs.usage.notadir", "%s is a file, not a directory", path).
 			WithHint(req.Surface().CapabilityName("fs.hash") + " inspects one file — or pass the directory holding it")
 	}
+	dir, openErr := pathin.OpenDir(req, path)
+	if openErr != nil {
+		return nil, pathError("fs.usage", path, openErr)
+	}
+	defer func() { _ = dir.Close() }()
 
-	s := newScanner(path, req.Int("depth"))
-	items, readErr := os.ReadDir(path)
+	s := newScanner(dir, req.Int("depth"))
+	items, readErr := dir.ReadDir()
 	if readErr != nil {
 		return nil, pathError("fs.usage", path, readErr)
 	}
@@ -146,8 +196,7 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 	entries := make([]entry, 0, len(items))
 	var total int64
 	for _, item := range items {
-		full := filepath.Join(path, item.Name())
-		fi, err := os.Lstat(full)
+		fi, err := dir.Lstat(item.Name())
 		if err != nil {
 			s.skipped++
 			continue
@@ -159,11 +208,19 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 				s.skipped++
 				continue
 			}
-			e.size, e.files = s.walk(ctx, full, 1)
+			sub, ok := s.descend(dir, item.Name())
+			if !ok {
+				continue
+			}
+			e.size, e.files = s.walk(ctx, sub, item.Name(), 1)
+			_ = sub.Close()
 		default:
+			if s.withholds(dir, item.Name(), fi) {
+				continue
+			}
 			e.size, e.files = fi.Size(), 1
 			if fi.Mode().IsRegular() {
-				s.remember(full, fi.Size())
+				s.remember(item.Name(), fi.Size())
 			}
 		}
 		total += e.size
@@ -192,19 +249,23 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 	// something unexpected, where the empty table prints its header and
 	// exits 0. The sentence rides beside the table instead, for a person
 	// alone: see usageTable.
-	t := usageTable(path, entries, total, req.Int("limit"), s.skipped)
+	t := usageTable(path, entries, total, req.Int("limit"), s.skipped+s.withheld)
 	// **The ranking and the total are built from what could be read, and the
 	// compact form never said so.** The detail page has reported `skipped`
 	// all along; the table somebody actually looks at presented a share of a
 	// total that silently excluded every unreadable or cross-filesystem
 	// subtree — so "this directory is 95% of the tree" was a percentage of a
 	// smaller tree than the one on screen.
-	if s.skipped > 0 {
+	if left := s.skipped + s.withheld; left > 0 {
+		why := "unreadable, or on another filesystem"
+		if s.withheld > 0 {
+			why = "unreadable, on another filesystem, or rta's own state"
+		}
 		t.Warnings = append(t.Warnings, view.Error{
 			Code: "fs.usage.partial",
-			Message: format.CountOf(s.skipped, "entry") +
+			Message: format.CountOf(left, "entry") +
 				" could not be counted, so the sizes and shares here are of what was read",
-			Hint: "unreadable, or on another filesystem — " + req.Surface().InputName("detail") + " breaks the scan down",
+			Hint: why + " — " + req.Surface().InputName("detail") + " breaks the scan down",
 		})
 	}
 	return t, nil
@@ -272,19 +333,21 @@ func usageDetail(ctx context.Context, req plugin.Request, path string,
 			Value: format.CountOf(s.skipped, "entry") + " — unreadable, or on another filesystem",
 		})
 	}
+	if s.withheld > 0 {
+		summary = append(summary, view.Pair{
+			Key:   "withheld",
+			Value: format.CountOf(s.withheld, "entry") + " of rta's own state, which no agent may look into",
+		})
+	}
 
 	p := plugin.NewPage(ctx, req)
 	p.PutAs("summary", "summary", view.KeyValue{Pairs: summary})
-	p.PutAs("entries", "biggest entries", usageTable(path, entries, total, req.Int("limit"), s.skipped))
+	p.PutAs("entries", "biggest entries", usageTable(path, entries, total, req.Int("limit"), s.skipped+s.withheld))
 
 	if len(s.largest) > 0 {
 		lt := view.Table{Columns: []view.Column{{Name: "File"}, {Name: "Size", Kind: view.KindBytes}}}
 		for _, f := range s.largest {
-			rel, err := filepath.Rel(path, f.path)
-			if err != nil {
-				rel = f.path
-			}
-			lt.Rows = append(lt.Rows, []string{rel, humanBytes(f.size)})
+			lt.Rows = append(lt.Rows, []string{f.path, humanBytes(f.size)})
 		}
 		lt.Total = len(lt.Rows)
 		p.PutAs("largest-files", "largest files anywhere beneath", lt)
