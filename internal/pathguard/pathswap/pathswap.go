@@ -65,6 +65,35 @@ func Dir(t testing.TB, dir, outside string) {
 	})
 }
 
+// Rename keeps moving protected, a file the guard refuses by name, onto
+// path, a regular file it allows, and back again, until the test ends; path
+// is written anew each time the file is moved back, and both are where they
+// were when the test ends.
+//
+// The swap a rule by name cannot see: no link is made and the name judged is
+// the name opened, and what is at it is, for a while, the other file. It
+// needs a directory both names are on the same filesystem as, which one
+// caller-writable root holding rta's own state is — a home directory served
+// whole.
+func Rename(t testing.TB, protected, path string) {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spare := path + ".swap-file"
+	swap(t, func() {
+		if os.Rename(protected, path) == nil {
+			hold()
+			_ = os.Rename(path, protected)
+		}
+		if os.WriteFile(spare, body, 0o600) == nil {
+			_ = os.Rename(spare, path)
+		}
+		hold()
+	})
+}
+
 // hold keeps the state just made for a moment of varying length, so that a
 // swap lands at every point of a call rather than the same few — and now and
 // then for long enough that a whole call fits in one state, however slow the

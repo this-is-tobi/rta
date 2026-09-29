@@ -33,6 +33,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/paths"
@@ -48,6 +49,13 @@ import (
 type Guard struct {
 	roots  []string
 	denied []string
+	// public is the directories under denied that hold public content rta
+	// can fetch again, refused by name and left out of what the state is
+	// known by by identity (ownState): the plugin index clones.
+	public []string
+	// seen is what denied held when the guard was made, by identity, for
+	// the file of it a caller moves out before a call looks (ownState).
+	seen *idSet
 }
 
 // New builds a guard rooted at each of roots.
@@ -88,6 +96,10 @@ func New(roots ...string) (*Guard, error) {
 			g.denied = append(g.denied, d)
 		}
 	}
+	if d, err := resolve(paths.Indexes()); err == nil {
+		g.public = append(g.public, d)
+	}
+	g.seen = readState(g.denied, g.public)
 	return g, nil
 }
 
@@ -202,8 +214,12 @@ func (g *Guard) check(field, raw string, derived bool) (string, *view.Error) {
 // protected is the refusal of a path in rta's own state or configuration,
 // named as the refusal around it names it.
 func protected(field, named string) *view.Error {
-	return view.Errorf("core.mcp.path.protected",
-		"%s: %s is rta's own state or configuration", field, named).
+	return protectedAs(fmt.Sprintf("%s: %s is rta's own state or configuration", field, named))
+}
+
+// protectedAs is that refusal, saying what message says.
+func protectedAs(message string) *view.Error {
+	return view.Errorf("core.mcp.path.protected", "%s", message).
 		WithHint("the data directory holds the key to the secret store and the configuration " +
 			"names every environment and server; nothing reachable from an agent may name " +
 			"either, whatever the capability would have done with it")
@@ -248,25 +264,30 @@ func (g *Guard) openRoot(path string) (*os.Root, string, error) {
 }
 
 // refuser is Bounds' Refuse: what a walk may not enter or open under a root,
-// which is rta's own state and configuration, as Check refuses a path naming
-// them.
+// and what an opener may not have opened there, which is rta's own state and
+// configuration, as Check refuses a path naming them.
 //
-// By name, and by identity as well: a walk reaches paths through real
-// directories only, so the name it holds is where it is, but a
-// case-insensitive volume answers to a name in any case, which is what
-// inside's identity half is for. The denied paths are looked at once, when
-// the call is given its bounds, rather than at every entry of a walk that may
-// reach a million.
+// By name, and by identity as well (ownState): a walk reaches paths through
+// real directories only, so the name it holds is where it is, but a
+// case-insensitive volume answers to a name in any case, a hard link is a
+// name anywhere for the same file, and a file moved onto a judged name is at
+// that name. One call's bounds share one reading of the denied paths, taken
+// when the call first asks, rather than one at every entry of a walk that
+// may reach a million.
+//
+// Refused by identity, a path is said to be another name for the state
+// rather than one reached from the path given, which it may not be — fs.hash
+// asked of a hard link is refused of the very path the caller sent — and the
+// words are the ones an operator needs: a file of a project refused as rta's
+// state is a hard link to one, or one moved there.
 func (g *Guard) refuser() func(string, fs.FileInfo) error {
-	infos := make([]fs.FileInfo, len(g.denied))
-	for i, d := range g.denied {
-		infos[i], _ = os.Stat(d)
-	}
+	own := &ownState{denied: g.denied, public: g.public, seen: g.seen}
 	return func(path string, info fs.FileInfo) error {
-		for i, d := range g.denied {
-			if within(d, path) || (infos[i] != nil && info != nil && os.SameFile(infos[i], info)) {
-				return protected("path", fmt.Sprintf("%q, which this call reached from the path it was given,", path))
-			}
+		if slices.ContainsFunc(g.denied, func(d string) bool { return within(d, path) }) {
+			return protected("path", fmt.Sprintf("%q, which this call reached from the path it was given,", path))
+		}
+		if info != nil && own.holds(info) {
+			return protectedAs(fmt.Sprintf("path: %q is another name for rta's own state or configuration", path))
 		}
 		return nil
 	}
