@@ -545,7 +545,7 @@ func TestAChangedBinaryIsNotSilentlyRestarted(t *testing.T) {
 
 // Shutting down while a call is restarting the process must be safe.
 //
-// live() replaces c.client, c.stub, c.cmd and c.logger in place — that is
+// live() replaces c.client, c.stub, c.cmd and c.words in place — that is
 // what lets a restarted plugin keep serving handlers registered against the
 // dead one — and Close read three of those without holding the lock that
 // guards them. Host.cached and Host.Open read c.client under h.mu, which is a
