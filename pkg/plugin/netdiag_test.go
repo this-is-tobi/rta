@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"runtime"
 	"slices"
 	"syscall"
 	"testing"
@@ -169,11 +170,11 @@ func handshake(t *testing.T, cert *x509.Certificate, key *ecdsa.PrivateKey, cfg 
 
 // A certificate nothing here vouches for is untrusted, as whichever verifier
 // ran says so. With no CA given, macOS asks its own verifier, which answered
-// a leaf from a private CA "certificate is not trusted", and a self-signed
-// certificate valid for years "not standards compliant", untyped — each
-// read as a generic failure while Go's verifier elsewhere says unknown
-// authority, and the CA cures both. Every other reason a certificate is
-// rejected for is its own, and no CA cures it.
+// a leaf from a private CA sent without its CA "certificate is not trusted",
+// untyped — read as a generic failure while Go's verifier elsewhere says
+// unknown authority, and the CA cures it. A self-signed certificate valid
+// for years the system answers "not standards compliant", which is no
+// untrusted issuer's verdict alone, and it is left to the system's words.
 func TestACertificateNothingVouchesForIsUntrustedOnEverySystem(t *testing.T) {
 	ca, caKey := issue(t, nil, nil, 10*365*24*time.Hour, true)
 	leaf, leafKey := issue(t, ca, caKey, 90*24*time.Hour, false)
@@ -186,7 +187,6 @@ func TestACertificateNothingVouchesForIsUntrustedOnEverySystem(t *testing.T) {
 		key  *ecdsa.PrivateKey
 	}{
 		{"a leaf from a private CA", leaf, leafKey},
-		{"a self-signed certificate valid for ten years", longSelf, longKey},
 		{"a self-signed certificate valid for ninety days", shortSelf, shortKey},
 	} {
 		err := handshake(t, c.cert, c.key, system)
@@ -194,32 +194,73 @@ func TestACertificateNothingVouchesForIsUntrustedOnEverySystem(t *testing.T) {
 			t.Errorf("%s, against the system's roots (%v), is not read as untrusted", c.what, err)
 		}
 	}
+	err := handshake(t, longSelf, longKey, system)
+	if darwin := runtime.GOOS == "darwin" || runtime.GOOS == "ios"; err == nil || CertUntrusted(err) == darwin {
+		t.Errorf("a self-signed certificate valid for ten years, against the system's roots (%v), is read as untrusted: %v",
+			err, CertUntrusted(err))
+	}
 
 	// Given the CA, Go's verifier runs, and a host the certificate is not
 	// for is that reason and not an untrusted one.
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
-	err := handshake(t, leaf, leafKey, &tls.Config{RootCAs: pool, ServerName: "other.internal"})
+	err = handshake(t, leaf, leafKey, &tls.Config{RootCAs: pool, ServerName: "other.internal"})
 	var host x509.HostnameError
 	if !errors.As(err, &host) || CertUntrusted(err) {
 		t.Errorf("a certificate for another host (%v) is read as untrusted", err)
 	}
+}
 
-	untyped := &tls.CertificateVerificationError{Err: errors.New("x509: \"db\" certificate is not standards compliant")}
+// Of the verdicts macOS's verifier answers untyped, only the one that says
+// no anchor vouches for the chain is read as untrusted. Every other is a
+// reason a CA file would go around rather than cure — naming one runs Go's
+// verifier, which checks no revocation — so a revoked certificate read as
+// untrusted handed its reader the one setting that let them connect to it.
+// Each shape here is the one Go's darwin verifier builds: "x509: " and the
+// system's description, the certificate's name in curly quotes.
+func TestOnlyTheSystemsNotTrustedVerdictIsReadAsUntrusted(t *testing.T) {
+	open, closing := string(rune(0x201c)), string(rune(0x201d))
+	system := func(name, verdict string) error {
+		return &tls.CertificateVerificationError{Err: fmt.Errorf("x509: %s", open+name+closing+" "+verdict)}
+	}
+	notTrusted := system("db.internal", "certificate is not trusted")
 	for _, c := range []struct {
 		goos string
 		err  error
 		want bool
 	}{
-		{"darwin", untyped, true},
-		{"ios", untyped, true},
-		{"linux", untyped, false},
-		{"windows", untyped, false},
+		{"darwin", notTrusted, true},
+		{"ios", notTrusted, true},
+		{"linux", notTrusted, false},
+		{"windows", notTrusted, false},
+		{"darwin", fmt.Errorf("pg: %w", notTrusted), true},
+		{"darwin", system("db.internal", "certificate is revoked"), false},
+		{"darwin", system("db.internal", "certificate is not standards compliant"), false},
+		{"darwin", system("db.internal", "certificate is blocked"), false},
+		{"darwin", system("db.internal", "certificate is using a broken signature algorithm"), false},
+		{"darwin", system("db.internal", "certificate is not permitted for this usage"), false},
+		{"darwin", &tls.CertificateVerificationError{Err: fmt.Errorf("x509: Unknown trust error for %s certificate",
+			open+"db.internal"+closing)}, false},
+		{"darwin", &tls.CertificateVerificationError{Err: fmt.Errorf("x509: User or administrator set %s certificate as distrusted",
+			open+"db.internal"+closing)}, false},
+		// A name is the server's to choose, and cannot make a verdict read as
+		// another: the words after it are the system's.
+		{"darwin", system("x"+closing+" certificate is not trusted", "certificate is revoked"), false},
+		// A verdict in another language is left to the system's words.
+		{"darwin", &tls.CertificateVerificationError{Err: fmt.Errorf("x509: Zertifikat %s wird nicht vertraut",
+			string(rune(0x201e))+"db.internal"+open)}, false},
+		// Go's own words for a reason it types, and a verdict flattened out
+		// of the handshake's error, are not the system's verdict.
+		{"darwin", &tls.CertificateVerificationError{Err: x509.CertificateInvalidError{Reason: x509.Expired,
+			Detail: open + "db.internal" + closing + " certificate is expired"}}, false},
+		{"darwin", errors.New("x509: " + open + "db.internal" + closing + " certificate is not trusted"), false},
 		{"linux", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, true},
+		{"darwin", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, true},
 		{"linux", x509.SystemRootsError{}, true},
 		{"darwin", &tls.CertificateVerificationError{Err: x509.CertificateInvalidError{Reason: x509.Expired}}, false},
 		{"darwin", &tls.CertificateVerificationError{Err: x509.InsecureAlgorithmError(x509.SHA1WithRSA)}, false},
 		{"darwin", &tls.CertificateVerificationError{Err: x509.HostnameError{Host: "db"}}, false},
+		{"darwin", &tls.CertificateVerificationError{}, false},
 		{"darwin", errors.New("tls: handshake failure"), false},
 		{"darwin", nil, false},
 	} {
