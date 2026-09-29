@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
+	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -230,11 +232,39 @@ func TestDoctorSaysARepeatedProfileProblemOnce(t *testing.T) {
 		t.Fatalf("one missing plugin, three entries naming it, %d rows:\n%s",
 			len(profileRows), strings.Join(profileRows, "\n"))
 	}
+	// Naming the entries, as `rta profile show` names them: "3 entries in 2
+	// profiles (one, two)" said how many and not which.
 	row := profileRows[0]
-	for _, want := range []string{`"nosuch"`, "3 entries", "one", "two"} {
+	for _, want := range []string{`"nosuch"`, "3 entries in 2 profiles (one: nosuch, nosuch/second; two: nosuch/third): "} {
 		if !strings.Contains(row, want) {
 			t.Errorf("the row does not carry %q: %s", want, row)
 		}
+	}
+}
+
+// Doctor's rows and a profile's page group problems by the same words, one
+// grouper serving both: said once each, naming every profile and entry.
+func TestDoctorAndAProfilesPageGroupProblemsAlike(t *testing.T) {
+	problems := []profile.Problem{
+		{Name: "staging", Plugin: "ghost/a", Reason: "names ghost", Hint: "install it"},
+		{Name: "staging", Plugin: "ghost/b", Reason: "names ghost", Hint: "install it"},
+		{Name: "prod", Plugin: "ghost", Reason: "names ghost", Hint: "install it"},
+		{Name: "old", Reason: "is empty"},
+		{Name: "older", Reason: "is empty"},
+		{Name: "solo", Plugin: "x", Reason: "names x", Hint: "trust it"},
+		{Name: "solo", Plugin: "x", Reason: "names x", Hint: "trust it"},
+	}
+	want := []string{
+		"3 entries in 2 profiles (staging: ghost/a, ghost/b; prod: ghost): names ghost (install it)",
+		"2 profiles (old, older): is empty",
+		"profiles.solo.x: names x (trust it)",
+	}
+	if got := groupedProblems(problems); !slices.Equal(got, want) {
+		t.Errorf("doctor said\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	page := saidOnce("problem", problems[:3])
+	if len(page) != 1 || page[0].Value != "under ghost/a, ghost/b, ghost: names ghost — install it" {
+		t.Errorf("the page said %v", page)
 	}
 }
 
