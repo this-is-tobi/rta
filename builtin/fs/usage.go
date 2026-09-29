@@ -2,6 +2,7 @@ package fs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -331,6 +332,12 @@ func resolvePath(raw string) (string, *view.Error) {
 }
 
 func pathError(code, path string, err error) *view.Error {
+	// A refusal of the call's bounds (pathin) says what it is, and which
+	// root it is about, better than a sentence about reading could.
+	var refused *view.Error
+	if errors.As(err, &refused) {
+		return refused
+	}
 	switch {
 	case os.IsNotExist(err):
 		return view.Errorf(code+".notfound", "no such path: %s", path)

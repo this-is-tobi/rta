@@ -244,7 +244,7 @@ func parseManifest(fsys fs.FS, name, shown string) ([]component, graph, error) {
 
 // readManifest reads name from fsys, refusing a file past maxManifestBytes by
 // the name a finding calls it, shown. Through the filesystem's Open and not
-// fs.ReadFile, so a directory on this machine opens it as scanFS does, and a
+// fs.ReadFile, so a directory on this machine opens it as pathin.FS does, and a
 // clone's file is held to the same bound as one on disk.
 func readManifest(fsys fs.FS, name, shown string) ([]byte, error) {
 	f, err := fsys.Open(name)

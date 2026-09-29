@@ -2,6 +2,8 @@ package plugin
 
 import (
 	"fmt"
+	"io/fs"
+	"os"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -74,6 +76,7 @@ type Request struct {
 	confine func(field, path string) (string, *view.Error)
 	links   map[string]link
 	targets func(dir, target string) string
+	bounds  Bounds
 	DryRun  bool
 	Yes     bool
 }
@@ -247,6 +250,48 @@ func (r Request) LinkTarget(dir, target string) string {
 	}
 	return r.targets(dir, target)
 }
+
+// Bounds is the reach a surface that confines paths gives a call, for
+// opening what a path names inside it rather than by name.
+//
+// Judging a path and then opening it by name are two steps, and a caller
+// who can write inside a root owns the moment between them: the file judged,
+// or any directory above it, can be swapped for a symbolic link out before
+// the open follows the name. No amount of judging closes that, because the
+// judgement is over before the open begins. What closes it is opening from
+// the root itself — each component reached from a directory already open
+// (os.Root), nothing followed that was not there when the path was judged —
+// so what is read is what was judged, or nothing. builtin/internal/pathin is
+// that open for the built-ins, and the only reader of this.
+//
+// The zero Bounds is every surface with a person behind it and every direct
+// in-process caller: nothing to confine, and a path opens by name. Not
+// carried across the plugin-host wire, like Confine: an external plugin opens
+// its paths in its own process, where an *os.Root of the host's is not.
+type Bounds struct {
+	// Root judges path as the surface judges any path it is given, and
+	// returns the root it lies under, opened, and where it lies in it,
+	// symbolic links resolved: a relative path through real directories,
+	// "." for the root itself. The caller closes the root.
+	Root func(path string) (*os.Root, string, error)
+	// Refuse reports why a walk may not enter or open what info describes,
+	// at path, though it lies under a root — rta's own state — or nil. The
+	// walk asks it at every directory and file it reaches, since a walk
+	// reaches paths nobody judged.
+	Refuse func(path string, info fs.FileInfo) error
+}
+
+// WithBounds stamps the reach a surface that confines paths gives this call.
+// Called once, at the boundary, beside WithConfinement.
+func (r Request) WithBounds(b Bounds) Request {
+	r.bounds = b
+	return r
+}
+
+// Bounds is the reach this call was given, the zero Bounds when it was given
+// none. For the package that opens what a path names (Bounds says which);
+// a handler opens through that, not through this.
+func (r Request) Bounds() Bounds { return r.bounds }
 
 // With returns a copy of r carrying values overlaid on the inputs it already
 // holds. It is how a composed detail page hands its own inputs down to the

@@ -26,7 +26,7 @@ func TestAFIFOIsRefusedAtOnceOffTheCLI(t *testing.T) {
 	for _, sf := range []plugin.Surface{plugin.SurfaceMCP, plugin.SurfaceTUI, plugin.SurfaceCompletion} {
 		done := make(chan error, 1)
 		go func() {
-			_, err := Read(sf, fifo, 64)
+			_, err := Read(on(sf), fifo, 64)
 			done <- err
 		}()
 		select {
@@ -60,7 +60,7 @@ func TestTheCLIReadsAPipeItsWriterFeeds(t *testing.T) {
 		_, _ = w.WriteString("piped")
 		_ = w.Close()
 	}()
-	got, err := Read(plugin.SurfaceCLI, fifo, 64)
+	got, err := Read(on(plugin.SurfaceCLI), fifo, 64)
 	if err != nil || string(got) != "piped" {
 		t.Errorf("got %q, %v", got, err)
 	}

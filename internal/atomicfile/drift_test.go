@@ -21,6 +21,9 @@ var allowed = map[string]string{
 		"on the way out — scratch by construction, and atomicity would protect nothing",
 	"internal/app/scaffold.go": "brand-new files in a brand-new plugin directory: " +
 		"nothing exists to be replaced and no reader is watching",
+	"internal/pathguard/pathswap/pathswap.go": "a test harness's fixtures in a test's temp " +
+		"directory, rewritten on purpose while a call races them: nothing persists, and a " +
+		"torn write is one of the states the race is there to show",
 }
 
 // Six places in rta grew their own copy of temp-file-plus-rename, and the

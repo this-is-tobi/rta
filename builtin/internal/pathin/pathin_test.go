@@ -16,7 +16,7 @@ func TestReadReturnsAFileWhole(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, sf := range []plugin.Surface{plugin.SurfaceCLI, plugin.SurfaceMCP, plugin.SurfaceTUI} {
-		got, err := Read(sf, path, 64)
+		got, err := Read(on(sf), path, 64)
 		if err != nil || string(got) != "127.0.0.1 localhost\n" {
 			t.Errorf("%s: got %q, %v", sf, got, err)
 		}
@@ -36,10 +36,10 @@ func TestReadRefusesAFileOverTheCapAndNamesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, sf := range []plugin.Surface{plugin.SurfaceCLI, plugin.SurfaceMCP} {
-		if got, err := Read(sf, at, 4); err != nil || string(got) != "abcd" {
+		if got, err := Read(on(sf), at, 4); err != nil || string(got) != "abcd" {
 			t.Errorf("%s at the cap: got %q, %v", sf, got, err)
 		}
-		_, err := Read(sf, over, 4)
+		_, err := Read(on(sf), over, 4)
 		var tooLarge *TooLargeError
 		if !errors.As(err, &tooLarge) || !strings.Contains(err.Error(), over) {
 			t.Errorf("%s over the cap: err = %v, want a TooLargeError naming the file", sf, err)
@@ -50,10 +50,16 @@ func TestReadRefusesAFileOverTheCapAndNamesIt(t *testing.T) {
 func TestOpenRefusesADirectoryOffTheCLI(t *testing.T) {
 	dir := t.TempDir()
 	for _, sf := range []plugin.Surface{plugin.SurfaceMCP, plugin.SurfaceTUI, plugin.SurfaceCompletion} {
-		_, _, err := Open(sf, dir)
+		_, _, err := Open(on(sf), dir)
 		var notAFile *NotAFileError
 		if !errors.As(err, &notAFile) || !strings.Contains(err.Error(), "a directory") {
 			t.Errorf("%s: err = %v, want a NotAFileError saying it is a directory", sf, err)
 		}
 	}
+}
+
+// on is a request from sf, with no bounds: the request a CLI or a TUI hands
+// a handler.
+func on(sf plugin.Surface) plugin.Request {
+	return plugin.NewRequest(nil, false, false).WithSurface(sf)
 }
