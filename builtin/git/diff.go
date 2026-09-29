@@ -927,6 +927,14 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 		// a directory — bazel-out, a `current` pointing at a release — left
 		// the caller with no patch at all, for a file git diffs as one line.
 		fp, coarsely, ferr := diffOneFile(tree, head, path, disk, deadline, req.LinkTarget)
+		// The gate's refusal at the open is named as the gate's refusal by
+		// name above is: rta's own state reached by another name — a hard
+		// link, or the file moved onto this one — is refused by the file's
+		// identity there (boundDir).
+		if verr := refusedByTheGate(ferr); verr != nil {
+			skipped = append(skipped, withheld{path, refusedBy(verr)})
+			continue
+		}
 		if ferr != nil {
 			skipped = append(skipped, withheld{path, unreadable(ferr)})
 			continue
