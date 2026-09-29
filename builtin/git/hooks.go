@@ -69,13 +69,25 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 	// host as repoRoot puts back the repository: a core.hooksPath naming
 	// ~/.githooks from a root drawn around one project lists nothing outside
 	// it. And read at the place the host judged, symlinks resolved, so a
-	// hooks directory linked out of the root is refused rather than followed.
+	// hooks directory linked out of the root is refused rather than followed;
+	// over MCP from the directory of the roots it lies under, held open, so
+	// that one swapped for a link out after the judgement is not listed
+	// through it either (boundDir).
 	judged, verr := req.Confine("path", dir)
 	if verr != nil {
 		return nil, verr
 	}
-	// os.ReadDir returns entries already sorted by name.
-	entries, err := os.ReadDir(judged)
+	look := &beneathRoots{req: req}
+	defer look.close()
+	hooks, err := look.dir(judged)
+	var entries []os.DirEntry
+	if err == nil {
+		defer hooks.Close()
+		entries, err = hooks.ReadDir(".")
+	}
+	if verr := refusedByTheGate(err); verr != nil {
+		return nil, verr
+	}
 	if err != nil && !errors.Is(err, iofs.ErrNotExist) {
 		return nil, view.Errorf("git.hooks.failed", "reading hooks in %s: %v", shownFrom(base, dir), err)
 	}
@@ -95,9 +107,10 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 			continue
 		}
 		name := e.Name()
-		mode, at, unfollowed := hookMode(req, judged, name, info)
+		mode, at, unfollowed := hookMode(req, look, hooks, name, info)
 		t.Rows = append(t.Rows, []string{
-			strings.TrimSuffix(name, ".sample"), hookStatus(name, mode, unfollowed, at != "" && mayExecute(at, mode)),
+			strings.TrimSuffix(name, ".sample"),
+			hookStatus(name, mode, unfollowed, at.name != "" && mayExecute(at.dir, at.name, mode)),
 			shownFrom(base, filepath.Join(dir, name)),
 		})
 	}
@@ -153,9 +166,10 @@ func hookStatus(name string, mode os.FileMode, unfollowed, executable bool) stri
 // hookMode is the mode git judges the entry name of the hooks directory dir
 // by, whose own is info's: for a symbolic link, the mode of what it leads to,
 // zero where it leads nowhere, which git runs nothing from. at is where that
-// mode was read, the place access(2) is asked about (hookStatus), empty with
+// mode was read, the place access(2) is asked about (hookStatus), none with
 // a zero mode. unfollowed is a link the caller may not be told about the far
-// end of, which is not looked through (plugin.Request.LinkTarget).
+// end of, which is not looked through (plugin.Request.LinkTarget). look is
+// where a link's far end is looked at from (beneathRoots).
 //
 // **git follows a link at a hook's name, and this judged the link itself.**
 // git runs a hook where access(2) finds it executable, which is a question
@@ -171,28 +185,43 @@ func hookStatus(name string, mode os.FileMode, unfollowed, executable bool) stri
 // Over MCP, a link whose far end is outside the roots is not followed, as a
 // path argument's is not, since its mode would say what is there: it is
 // listed active, as what it leads to may be a script git runs, rather than
-// judged by a mode that is not the one git asks about.
-func hookMode(req plugin.Request, dir, name string, info os.FileInfo) (mode os.FileMode, at string, unfollowed bool) {
-	path := filepath.Join(dir, name)
+// judged by a mode that is not the one git asks about. And the far end the
+// gate judged is looked at from the root it lies under: a directory on the
+// way to it swapped for a link out after the judgement answered with the mode
+// of what was at the same name outside.
+func hookMode(req plugin.Request, look *beneathRoots, dir boundDir, name string, info os.FileInfo) (
+	mode os.FileMode, at hookPlace, unfollowed bool,
+) {
 	if info.Mode()&os.ModeSymlink == 0 {
-		return info.Mode(), path, false
+		return info.Mode(), hookPlace{dir, name}, false
 	}
-	target, err := os.Readlink(path)
+	target, err := dir.Readlink(name)
 	if err != nil {
-		return 0, "", false
+		return 0, hookPlace{}, false
 	}
-	if req.LinkTarget(dir, target) != target {
-		return 0, "", true
+	if req.LinkTarget(dir.path, target) != target {
+		return 0, hookPlace{}, true
 	}
-	judged, verr := req.Confine("path", path)
+	judged, verr := req.Confine("path", dir.join(name))
 	if verr != nil {
-		return 0, "", true
+		return 0, hookPlace{}, true
 	}
-	far, err := os.Stat(judged)
+	far, err := look.Stat(judged)
 	if err != nil {
-		return 0, "", false
+		return 0, hookPlace{}, false
 	}
-	return far.Mode(), judged, false
+	top, rel, err := look.under(judged)
+	if err != nil {
+		return 0, hookPlace{}, false
+	}
+	return far.Mode(), hookPlace{top, rel}, false
+}
+
+// hookPlace is where access(2) is asked about a hook (mayExecute): name, in
+// dir. A name of nothing is nowhere.
+type hookPlace struct {
+	dir  boundDir
+	name string
 }
 
 // hooksDir is the directory git runs this repository's hooks from, and the
