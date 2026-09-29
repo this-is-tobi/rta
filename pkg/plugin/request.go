@@ -277,7 +277,12 @@ type Bounds struct {
 	// Refuse reports why a walk may not enter or open what info describes,
 	// at path, though it lies under a root — rta's own state — or nil. The
 	// walk asks it at every directory and file it reaches, since a walk
-	// reaches paths nobody judged.
+	// reaches paths nobody judged, and every opener asks it again of what it
+	// opened, with the open file's own Stat: rta's state is known by its
+	// files' identity as well as their names, and a hard link under a root,
+	// or a file of it moved onto a name already judged, is a name the rule by
+	// name never sees. A call's bounds read what that identity covers once,
+	// when first asked, so asking at every entry costs a lookup.
 	Refuse func(path string, info fs.FileInfo) error
 }
 

@@ -113,7 +113,7 @@ type Index struct {
 	Dir  string
 }
 
-func indexesDir() string { return filepath.Join(paths.Data(), "indexes") }
+func indexesDir() string { return paths.Indexes() }
 
 // Indexes lists what is attached, sorted by name.
 func Indexes() []Index {

@@ -74,6 +74,16 @@ func EnsureData() (string, error) {
 	return dir, os.MkdirAll(dir, 0o700)
 }
 
+// Indexes is the directory under the data directory the plugin indexes are
+// cloned into, one directory each.
+//
+// Here rather than in internal/plugindist, which clones into it, for
+// ConfigFile's reason: the MCP path gate needs the same answer, to know the
+// clones for the public content they are (internal/pathguard's readState),
+// and a leaf every built-in imports has no business importing the plugin
+// installer to learn one directory's name.
+func Indexes() string { return filepath.Join(Data(), "indexes") }
+
 // ConfigFile resolves the config file: RTA_CONFIG overrides (tests, portable
 // setups), otherwise config.yaml in rta's own directory under the user's
 // config directory, otherwise ./.rta.yaml for a machine with no such

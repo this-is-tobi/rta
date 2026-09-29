@@ -116,9 +116,14 @@ func (d *Dir) OpenDir(name string) (*Dir, error) {
 	if err != nil {
 		return nil, d.at("opendir", name, err)
 	}
-	if opened, err := sub.Stat("."); err != nil || !os.SameFile(info, opened) {
+	opened, err := sub.Stat(".")
+	if err != nil || !os.SameFile(info, opened) {
 		_ = sub.Close()
 		return nil, &fs.PathError{Op: "opendir", Path: full, Err: ErrChanged}
+	}
+	if err := d.withhold(full, opened); err != nil {
+		_ = sub.Close()
+		return nil, err
 	}
 	return &Dir{root: sub, path: full, refuse: d.refuse}, nil
 }
@@ -143,6 +148,10 @@ func (d *Dir) OpenFile(name string) (*os.File, fs.FileInfo, error) {
 		_ = f.Close()
 		return nil, nil, &fs.PathError{Op: "open", Path: full, Err: ErrChanged}
 	}
+	if err := d.withhold(full, opened); err != nil {
+		_ = f.Close()
+		return nil, nil, err
+	}
 	return f, opened, nil
 }
 
@@ -161,10 +170,8 @@ func (d *Dir) look(op, name string) (fs.FileInfo, string, error) {
 	if info.Mode()&fs.ModeSymlink != 0 {
 		return nil, "", &fs.PathError{Op: op, Path: full, Err: ErrChanged}
 	}
-	if d.refuse != nil {
-		if err := d.refuse(full, info); err != nil {
-			return nil, "", &WithheldError{Path: full, Err: err}
-		}
+	if err := d.withhold(full, info); err != nil {
+		return nil, "", err
 	}
 	return info, full, nil
 }
@@ -176,10 +183,24 @@ func (d *Dir) look(op, name string) (fs.FileInfo, string, error) {
 // by name and was listed with its size, where the directory holding the
 // data was listed as withheld.
 func (d *Dir) Withheld(name string, info fs.FileInfo) error {
+	return d.withhold(filepath.Join(d.path, name), info)
+}
+
+// withhold is the bounds' refusal of what info describes, at full, as a
+// *WithheldError, or nil.
+//
+// Asked of what is looked at before it is opened, for the refusal that
+// names it without opening anything, and asked again of what was opened,
+// from the open file's own Stat: the bounds know rta's state by identity as
+// well as by name (plugin.Bounds.Refuse), and the identity that counts is
+// the one of the file being read. The first look's is a name's — a Windows
+// FileInfo from a look by name reads its identity by that name when it is
+// first compared, which may be after the open — and the second is the
+// file's, whatever has been done to the name since.
+func (d *Dir) withhold(full string, info fs.FileInfo) error {
 	if d.refuse == nil {
 		return nil
 	}
-	full := filepath.Join(d.path, name)
 	if err := d.refuse(full, info); err != nil {
 		return &WithheldError{Path: full, Err: err}
 	}
