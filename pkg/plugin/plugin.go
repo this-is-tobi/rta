@@ -512,6 +512,47 @@ func Failure(err error) error {
 	return err
 }
 
+// HandlerFailure is err, a handler's failure of what — a capability's ID, or
+// its prefill — as the runtime hands it on: coded under fallback where the
+// handler gave no code, and worded where it gave no message. The plugin
+// process's server sends it so, and rta's registry hands it so to every
+// surface a built-in's call reaches.
+//
+// A handler that returns a &view.Error{} it never filled in has failed, and
+// handed on as it stood, it reached every surface as ERROR with nothing
+// after it — out of process, as the Error an SDK older than Failure sent
+// for a call that worked, which the host blamed on an old build. So it is
+// coded and worded as a failure of the handler's own, and one with a code
+// and no message is worded too, since every surface prints the message and
+// would print nothing. What the handler did give, a hint or a refusal, is
+// kept, and its own Error is not changed: the handler may hold it.
+//
+// Its words too, where it wrapped the empty Error in them: view.AsError
+// hands back the Error it finds inside, and fmt.Errorf("listing %s: %w",
+// ns, verr) was a failure the handler described, handed on as one it said
+// nothing about.
+func HandlerFailure(err error, what, fallback string) *view.Error {
+	verr := view.AsError(err, fallback)
+	if verr == nil || verr.Code != "" && verr.Message != "" {
+		return verr
+	}
+	out := *verr
+	if out.Code == "" {
+		out.Code = fallback
+	}
+	if out.Message == "" {
+		out.Message = strings.Trim(err.Error(), ": \n")
+	}
+	if out.Message == "" {
+		out.Message = what + " failed, and its handler gave no message saying why"
+		if out.Hint == "" {
+			out.Hint = "this is a bug in the plugin, not in what you asked for — its handler returned " +
+				"an error with no message in it"
+		}
+	}
+	return &out
+}
+
 // OnlyWith is f, read only beside the named sibling — see Field.With. A
 // method because the fields it is applied to are shared declarations, and
 // the dependency is the declaring capability's to state, not theirs.

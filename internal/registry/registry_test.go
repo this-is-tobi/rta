@@ -2,6 +2,9 @@ package registry
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -127,5 +130,56 @@ func TestARegisteredHandlersNilViewErrorIsNoFailure(t *testing.T) {
 		if _, err := c.Prefill(context.Background(), plugin.NewRequest(nil, false, false)); err != nil {
 			t.Errorf("%s: a prefill that worked came back as a failure: %#v", id, err)
 		}
+	}
+}
+
+// A built-in's failure with no code or no message in it reaches every
+// surface coded and worded, as the plugin process's server sends one: an
+// empty &view.Error{} was drawn on the CLI, in the TUI and to an agent as
+// ERROR with nothing after it. What the handler did say is kept as it came.
+func TestARegisteredHandlersEmptyFailureIsCodedAndWorded(t *testing.T) {
+	for _, tc := range []struct {
+		returned              error
+		code, message, prefix string
+	}{
+		{&view.Error{}, "echo.thing.list.failed", "", "echo.thing.list failed, and its handler gave no message"},
+		{&view.Error{Code: "echo.gone"}, "echo.gone", "", "echo.thing.list failed"},
+		{&view.Error{Message: "the server went away"}, "echo.thing.list.failed", "the server went away", ""},
+		{fmt.Errorf("listing shop: %w", &view.Error{}), "echo.thing.list.failed", "listing shop", ""},
+	} {
+		p := testPlugin("echo")
+		p.Capabilities[0].Run = func(context.Context, plugin.Request) (view.View, error) { return nil, tc.returned }
+		p.Capabilities[0].Prefill = func(context.Context, plugin.Request) (map[string]any, error) {
+			return nil, tc.returned
+		}
+		r := New()
+		if err := r.Register(p); err != nil {
+			t.Fatal(err)
+		}
+		c, _ := r.Capability("echo.thing.list")
+		_, err := c.Run(context.Background(), plugin.NewRequest(nil, false, false))
+		var got *view.Error
+		if !errors.As(err, &got) || got.Code != tc.code || tc.message != "" && got.Message != tc.message ||
+			!strings.HasPrefix(got.Message, tc.prefix) {
+			t.Errorf("%#v: the call failed as %#v, want code %s and a message %q", tc.returned, err, tc.code,
+				tc.message+tc.prefix)
+		}
+		_, err = c.Prefill(context.Background(), plugin.NewRequest(nil, false, false))
+		if !errors.As(err, &got) || got.Code == "" || got.Message == "" {
+			t.Errorf("%#v: the prefill failed as %#v, with no code or no message", tc.returned, err)
+		}
+	}
+
+	// A failure that says something is handed on as it came, so what a
+	// surface asks of it is still there to ask.
+	p := testPlugin("echo")
+	p.Capabilities[0].Run = func(context.Context, plugin.Request) (view.View, error) { return nil, context.Canceled }
+	r := New()
+	if err := r.Register(p); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := r.Capability("echo.thing.list")
+	if _, err := c.Run(context.Background(), plugin.NewRequest(nil, false, false)); !errors.Is(err, context.Canceled) {
+		t.Errorf("a cancellation came back as %#v", err)
 	}
 }

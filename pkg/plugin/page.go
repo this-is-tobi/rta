@@ -79,8 +79,14 @@ func (p *Page) AddAs(id, title string, run Handler, safety Safety, values map[st
 		// The section is still dropped — that is the whole point of a
 		// composed page surviving one bad sensor — but it stops being
 		// invisible. Coded, so a machine consumer can tell which part is
-		// missing and why without parsing the prose.
-		p.Warn(view.AsError(err, "page.section.failed"))
+		// missing and why without parsing the prose — and worded, since a
+		// section handed a sibling's &view.Error{} warned with nothing to
+		// say (HandlerFailure).
+		what := id
+		if what == "" {
+			what = title
+		}
+		p.Warn(HandlerFailure(err, "the "+what+" section", "page.section.failed"))
 		return p
 	}
 	return p.PutAs(id, title, v)
