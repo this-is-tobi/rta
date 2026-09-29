@@ -109,11 +109,13 @@ func (d boundDir) OpenFile(name string, flag int) (*os.File, error) {
 // ReadDir is the entries of the directory name, sorted by name, as
 // os.ReadDir gives them.
 //
-// Opened without waiting, as every file here is: a named pipe where a
-// directory was named — a core.hooksPath naming one — held open(2) until a
-// writer came, which no context can interrupt. It is refused as not a
-// directory instead. Each entry's own information is read from the directory
-// the listing opened, not by name, where it is read through a root.
+// Opened without waiting, as every file here is. os.ReadDir opens a
+// directory as one, which a named pipe refuses at once, and an *os.Root
+// opens a name as whatever is there: a pipe where a directory was named — a
+// core.hooksPath naming one — held open(2) until a writer came, which no
+// context can interrupt. It is refused as not a directory instead. Each
+// entry's own information is read from the directory the listing opened, not
+// by name, where it is read through a root.
 func (d boundDir) ReadDir(name string) ([]os.DirEntry, error) {
 	f, err := d.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK)
 	if err != nil {
@@ -131,7 +133,7 @@ func (d boundDir) sub(name string) (boundDir, error) {
 	if d.root == nil {
 		return boundDir{path: d.join(name)}, nil
 	}
-	root, err := d.root.OpenRoot(inRoot(name))
+	root, err := d.root.OpenRoot(onlyADirectory(inRoot(name), "/"))
 	if err != nil {
 		return boundDir{}, err
 	}
@@ -144,6 +146,18 @@ func (d boundDir) Close() {
 		_ = d.root.Close()
 	}
 }
+
+// onlyADirectory is name, a directory to open as a root, spelled so that it
+// opens only if it is one: with the directory itself, ".", after it, sep
+// between them.
+//
+// **os.OpenRoot and Root.OpenRoot open the last part of a name as whatever
+// is there**, and a named pipe waits in open(2) for a writer that never
+// comes, which no context can interrupt: a .git file naming a pipe as its
+// git directory, or a directory swapped for one as it was opened, held the
+// call for good. Every part of a name but the last is opened as a directory,
+// which a pipe refuses at once, and "." after it makes it one of those.
+func onlyADirectory(name, sep string) string { return name + sep + "." }
 
 // rootAbove is the directory of the server's roots p lies under: the first
 // of the directories on p's way, from the top of the filesystem down, that
@@ -215,7 +229,7 @@ func (b *beneathRoots) under(p string) (boundDir, string, error) {
 	if verr != nil {
 		return boundDir{}, "", verr
 	}
-	root, err := os.OpenRoot(top)
+	root, err := os.OpenRoot(onlyADirectory(top, string(filepath.Separator)))
 	if errors.Is(err, syscall.ENOTDIR) && top == p {
 		return boundDir{}, p, nil
 	}

@@ -347,37 +347,53 @@ func TestAheadCountIsMarkedCappedAtAShallowBoundary(t *testing.T) {
 // open(2) on a pipe with no writer blocks until one comes, which no context
 // can interrupt: every git capability on such a repository never answered,
 // and each call held an OS thread for good. Anything that unpacks an archive
-// into the root can leave one there.
+// into the root can leave one there. And a pipe where a .git file names the
+// git directory is one over MCP too, where a directory is opened as a root,
+// which opens the last part of its name as whatever is there.
 func TestAPipeInTheRepositoryIsRefusedRatherThanWaitedOn(t *testing.T) {
-	for _, name := range []string{".git", ".git/HEAD", ".git/config", ".git/index", ".git/commondir"} {
-		t.Run(name, func(t *testing.T) {
-			dir, repo := testRepo(t)
-			commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
-			target := filepath.Join(dir, filepath.FromSlash(name))
-			if name == ".git" {
-				if err := os.RemoveAll(target); err != nil {
-					t.Fatal(err)
+	for _, name := range []string{".git", ".git/HEAD", ".git/config", ".git/index", ".git/commondir", "gitdir"} {
+		for _, surface := range []string{"terminal", "MCP"} {
+			t.Run(name+" "+surface, func(t *testing.T) {
+				dir, repo := testRepo(t)
+				commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+				target := filepath.Join(dir, filepath.FromSlash(name))
+				switch name {
+				case ".git":
+					if err := os.RemoveAll(target); err != nil {
+						t.Fatal(err)
+					}
+				case "gitdir":
+					if err := os.RemoveAll(filepath.Join(dir, ".git")); err != nil {
+						t.Fatal(err)
+					}
+					writeFile(t, dir, ".git", "gitdir: "+target+"\n")
+				default:
+					if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+						t.Fatal(err)
+					}
 				}
-			} else if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
-				t.Fatal(err)
-			}
-			if err := mkfifo(target); err != nil {
-				t.Skipf("no named pipes here: %v", err)
-			}
+				if err := mkfifo(target); err != nil {
+					t.Skipf("no named pipes here: %v", err)
+				}
+				r := req(t, dir, nil)
+				if surface == "MCP" {
+					r = guarded(t, dir, dir).WithSurface(plugin.SurfaceMCP)
+				}
 
-			done := make(chan error, 1)
-			go func() {
-				_, err := runStatus(context.Background(), req(t, dir, nil))
-				done <- err
-			}()
-			select {
-			case err := <-done:
-				if err == nil {
-					t.Error("a repository with a pipe in place of a file answered as though it were whole")
+				done := make(chan error, 1)
+				go func() {
+					_, err := runStatus(context.Background(), r)
+					done <- err
+				}()
+				select {
+				case err := <-done:
+					if err == nil {
+						t.Error("a repository with a pipe in place of a file answered as though it were whole")
+					}
+				case <-time.After(10 * time.Second):
+					t.Fatal("git.status is waiting on a pipe in the repository")
 				}
-			case <-time.After(10 * time.Second):
-				t.Fatal("git.status is waiting on a pipe in the repository")
-			}
-		})
+			})
+		}
 	}
 }
