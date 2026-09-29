@@ -51,10 +51,11 @@ import (
 // file of sections and keys git reads as config without a complaint (git
 // refuses ~/.aws/credentials, whose keys hold underscores), so a repository's
 // .git/config, which a caller can write inside the root, could have
-// git.config display another file's secrets. Over MCP an include the
-// repository's own config makes of a file outside the server's roots is not
-// followed at all, and git.config and git.hooks name it as one outside the
-// roots (configReading.include).
+// git.config display another file's secrets. Over MCP an include of a file
+// outside the server's roots made in a file a caller can write — the
+// repository's own config, or any file of config inside the roots
+// (scopedConfig.callerWrites) — is not followed at all, and git.config and
+// git.hooks name it as one outside the roots (configReading.include).
 
 // maxIncludeDepth is how deep git follows an include of an include, its
 // MAX_INCLUDE_DEPTH: one more is an error git stops at ("exceeded maximum
@@ -133,7 +134,7 @@ type configSource struct {
 // continued is a piece of config that goes on where f leaves off, in the same
 // file, after an include: nothing read into it yet.
 func (f scopedConfig) continued() scopedConfig {
-	return scopedConfig{scope: f.scope, path: f.path, file: f.file, included: f.included,
+	return scopedConfig{scope: f.scope, path: f.path, file: f.file, included: f.included, inRoots: f.inRoots,
 		config: gitconfig.NewConfig(), blank: map[string]valueless{}}
 }
 
@@ -203,7 +204,7 @@ func newConfigReading(ctx context.Context, req plugin.Request, repo *git.Reposit
 	repository []configSource,
 ) *configReading {
 	r := &configReading{req: req, repo: repo, budget: &statusBudget{ctx: ctx, deadline: statusDeadline(ctx)},
-		repository: repository, everything: everyConfig(repository)}
+		repository: repository, everything: everyConfig(req, repository)}
 	if store, ok := repo.Storer.(*filesystem.Storage); ok {
 		r.gitDirFound = store.Filesystem().Root()
 		r.gitDir = r.gitDirFound
@@ -220,6 +221,14 @@ func newConfigReading(ctx context.Context, req plugin.Request, repo *git.Reposit
 func (r *configReading) follow(sources []configSource) ([]scopedConfig, error) {
 	var out []scopedConfig
 	for _, s := range sources {
+		if s.from.outside != "" {
+			// A file not read (machineConfigs): one piece of nothing, which
+			// says so.
+			piece := s.from.continued()
+			piece.outside = s.from.outside
+			out = append(out, piece)
+			continue
+		}
 		pieces, err := r.expand(s.from, s.lines, 0, false)
 		if err != nil {
 			return nil, err
@@ -490,10 +499,12 @@ func refsInReftable(cfg *gitconfig.Config) bool {
 // slash. While the URLs themselves are being read, every such condition holds,
 // as it does for git (remoteURLs).
 //
-// **Over MCP one the repository's own config writes is matched against the
+// **Over MCP one written in a file a caller can write is matched against the
 // URLs the repository's own config sets alone**, in the files of it inside the
-// roots, the ones git.config shows. The pattern is a glob a caller can write
-// there, and whether the file it names is read shows in the answer: matched
+// roots, the ones git.config shows: one the repository's config writes, and
+// one any other file of config inside the roots writes, the operator's own
+// among them (scopedConfig.callerWrites). The pattern is a glob a caller can
+// write there, and whether the file it names is read shows in the answer: matched
 // against every URL git reads, as it was, it let a caller try pattern after
 // pattern against the URLs of the operator's own config, of git's
 // environment, and of a file the repository's config included from outside
@@ -501,13 +512,13 @@ func refsInReftable(cfg *gitconfig.Config) bool {
 // URL's credentials in it shortened by the token and no more. So a URL the
 // caller is not shown is not one such a pattern is matched against at all,
 // and matching one answers as matching nothing does. A condition the
-// operator's own config writes is theirs, and matched against every URL, as
-// git matches it; at a terminal every one is.
+// operator's own config outside the roots writes is theirs, and matched
+// against every URL, as git matches it; at a terminal every one is.
 func (r *configReading) hasRemoteURL(f scopedConfig, pattern string) (bool, string, error) {
 	if r.collecting {
 		return true, "", nil
 	}
-	own := r.req.Surface() == plugin.SurfaceMCP && (f.scope == "local" || f.scope == "worktree")
+	own := r.req.Surface() == plugin.SurfaceMCP && f.callerWrites()
 	urls, err := r.remoteURLs(own)
 	if err != nil {
 		return false, "", err
@@ -560,12 +571,11 @@ func (r *configReading) remoteURLs(own bool) ([]string, error) {
 //
 // **Over MCP a URL the caller is not shown is matched with its credentials
 // masked**, as git.config would show it: the operator's own config's and the
-// environment's, which only a condition of the operator's own config is
-// matched against (hasRemoteURL). Such a condition is in a file the caller
-// cannot write, most of the time: a root drawn around the home directory holds
-// ~/.gitconfig, and a pattern written there would spell out a token kept in a
-// URL the caller never reads. A pattern that is not after a credential
-// matches the masked URL as it matches the URL.
+// environment's, which only a condition of the operator's own config outside
+// the roots is matched against (hasRemoteURL). Such a condition is in a file
+// the caller cannot write, and masked, a token kept in a URL the caller never
+// reads is not one a pattern there could spell out even so. A pattern that is
+// not after a credential matches the masked URL as it matches the URL.
 func (r *configReading) collect(f scopedConfig, l configLine, forbid bool) error {
 	if l.name == "" || !strings.EqualFold(l.section, "remote") || l.subsection == "" && !l.emptySubsection ||
 		!strings.EqualFold(l.name, "url") {
@@ -592,13 +602,14 @@ func (r *configReading) collect(f scopedConfig, l configLine, forbid bool) error
 // passes over. outside is an include not followed, over MCP, as one of a file
 // outside the roots.
 //
-// **Over MCP an include the repository's own config makes of a file outside
-// the roots is not followed at all**, in the repository's config, its
-// worktree's, or a file either includes from inside the roots, which are the
-// files a caller can write. Whether git reads a file shows in every answer
-// here — one that is not there is passed over, one that is not config refuses
-// the call, one that parses counts, and one past the bytes one reading follows
-// refuses it — so following such an include, even without showing a key of
+// **Over MCP an include of a file outside the roots made in a file a caller
+// can write is not followed at all**: in the repository's config, its
+// worktree's, and any other file of config inside the roots, whoever includes
+// it, the operator's own ~/.gitconfig under a root drawn around the home
+// directory among them (scopedConfig.callerWrites). Whether git reads a file
+// shows in every answer here — one that is not there is passed over, one that
+// is not config refuses the call, one that parses counts, and one past the
+// bytes one reading follows refuses it — so following such an include, even without showing a key of
 // what it reads, told a caller of any file on the machine whether it exists,
 // whether it parses as config, and, by bisection against that bound, how large
 // it is. So the file is not opened, nor looked at: the gate's judgement of the
@@ -606,8 +617,13 @@ func (r *configReading) collect(f scopedConfig, l configLine, forbid bool) error
 // every answer is the one an include of a missing file gets, whatever is
 // there. git reads it, and may run with what it sets, so git.config and
 // git.hooks name the include (scopedConfig.outside). A file the operator's own
-// config or the environment includes is the operator's, and read as they are,
-// wherever it is.
+// config outside the roots or the environment includes is the operator's, and
+// read as they are, wherever it is — but for one whose name passes through
+// the roots on its way, as it is spelled or where a link of the operator's
+// leads, which a link a caller made there could have led anywhere, and which
+// is not read either (placeOf, throughRoots). A file
+// inside the roots is read where the gate judged it, and counts as the
+// caller's to write, whoever includes it.
 //
 // **Outside the roots is the one refusal of the gate that is passed over.**
 // Every other refuses the file whatever would read it, and so refuses the
@@ -625,9 +641,9 @@ func (r *configReading) collect(f scopedConfig, l configLine, forbid bool) error
 // lies under** (openBoundFile). Read by name, the directory holding it
 // swapped for a link out of the roots the moment the gate had judged it,
 // git.config showed what the file of the same name at the link's far end
-// set. One that cannot be read there, and that the gate, asked again, finds
-// outside the roots now, is an include of a file outside them, and passed
-// over as one.
+// set. One whose name leads out of the roots by the time it is opened there,
+// a link to nothing outside them included (openBeneath), is an include of a
+// file outside them, and passed over as one.
 func (r *configReading) include(f scopedConfig, path string, depth int, forbid bool) (_ []scopedConfig,
 	outside bool, _ error,
 ) {
@@ -635,24 +651,23 @@ func (r *configReading) include(f scopedConfig, path string, depth int, forbid b
 		return nil, false, fmt.Errorf("the config includes more than %d files in all, which this does not read: %s "+
 			"includes %s past them", maxIncludes, f.place(), path)
 	}
+	read, where, refusal := placeOf(r.req, path)
+	switch {
+	case where == refused:
+		return nil, false, refusal
+	case where == notRead, refusal != nil && f.callerWrites():
+		return nil, true, nil
+	}
 	var content []byte
 	var err error
-	if f.scope == "local" || f.scope == "worktree" {
-		judged, verr := r.req.Confine("path", path)
-		switch {
-		case verr != nil && verr.Code == outsideTheRoots:
+	if where == readBeneath {
+		f, ledOut, oerr := openBeneath(r.req, read)
+		if ledOut {
 			return nil, true, nil
-		case verr != nil:
-			return nil, false, verr
 		}
-		content, err = readConfigFrom(openBoundFile(r.req, judged))
-		if err != nil && !errors.Is(err, iofs.ErrNotExist) {
-			if _, verr := r.req.Confine("path", path); verr != nil && verr.Code == outsideTheRoots {
-				return nil, true, nil
-			}
-		}
+		content, err = readConfigFrom(f, oerr)
 	} else {
-		content, err = readConfigFile(path)
+		content, err = readConfigFile(read)
 	}
 	if errors.Is(err, iofs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		return nil, false, nil
@@ -673,7 +688,8 @@ func (r *configReading) include(f scopedConfig, path string, depth int, forbid b
 	if err != nil {
 		return nil, false, fmt.Errorf("%s: %w", path, err)
 	}
-	pieces, err := r.expand(scopedConfig{scope: f.scope, path: path, file: path, included: true}, lines, depth, forbid)
+	pieces, err := r.expand(scopedConfig{scope: f.scope, path: path, file: path, included: true,
+		inRoots: where == readBeneath}, lines, depth, forbid)
 	return pieces, false, err
 }
 

@@ -177,7 +177,7 @@ func configBase(repo *git.Repository) string {
 // everyConfig is every source of config git reads for a repository whose own
 // are repository, in the order git reads them, read once, when first asked:
 // the operator's own files, the repository's, and the environment's.
-func everyConfig(repository []configSource) func() ([]configSource, error) {
+func everyConfig(req plugin.Request, repository []configSource) func() ([]configSource, error) {
 	var (
 		all  []configSource
 		err  error
@@ -188,7 +188,7 @@ func everyConfig(repository []configSource) func() ([]configSource, error) {
 			return all, err
 		}
 		read = true
-		machine, merr := machineConfigs()
+		machine, merr := machineConfigs(req)
 		if merr != nil {
 			err = fmt.Errorf("reading the machine-wide config: %w", merr)
 			return nil, err
@@ -264,8 +264,31 @@ type scopedConfig struct {
 	undecided string
 	// outside is the include this piece ends at, as it is written, where over
 	// MCP it names a file outside the server's roots and is not followed
-	// (configReading.include).
+	// (configReading.include); or the file itself, a machine-wide one reached
+	// through a path inside the roots that leads out of them, which is not
+	// read (machineConfigs).
 	outside string
+	// inRoots is a file read over MCP from inside the server's roots, which is
+	// not the repository's own (callerWrites).
+	inRoots bool
+}
+
+// callerWrites reports whether a caller over MCP can write f: the
+// repository's own config, local and worktree, and every file of config
+// inside the server's roots, whoever includes it.
+//
+// **Inside the roots is the caller's, whoever reads it.** The operator's own
+// config is theirs, and read as git reads it; but ~/.gitconfig under a root
+// drawn around the home directory, or ~/work/.gitconfig, which ~/.gitconfig
+// includes, served with a root of ~/work, is a file the caller can write, and
+// read as the operator's it reopened both of what the repository's config is
+// held to: an include there of a file outside the roots told whether that
+// file exists and parses as config, and a hasconfig:remote.*.url pattern
+// there spelled out a URL the caller is never shown. Written in such a file,
+// both are held to what they are held to in the repository's config
+// (configReading.include, configReading.hasRemoteURL).
+func (f scopedConfig) callerWrites() bool {
+	return f.scope == "local" || f.scope == "worktree" || f.inRoots
 }
 
 // valueless is how a file of config sets a key with no value at all, a name
@@ -479,11 +502,37 @@ func readGitDirFile(fs billy.Filesystem, name string) ([]byte, error) {
 }
 
 // machineConfigs is the operator's own git config, every file of it that
-// exists (machineConfigSources), read into its lines.
-func machineConfigs() ([]configSource, error) {
+// exists (machineConfigSources), read into its lines, as req reads a file of
+// config (placeOf): over MCP one inside the server's roots is the caller's to
+// write, read where the gate judged it and held to what the repository's own
+// config is held to (callerWrites), and one reached through a path inside
+// them that leads out of them is not read, and named where the answer says
+// what it lacks (scopedConfig.outside).
+func machineConfigs(req plugin.Request) ([]configSource, error) {
 	var out []configSource
 	for _, s := range machineConfigSources() {
-		content, err := readConfigFile(s.path)
+		read, where, refusal := placeOf(req, s.path)
+		switch where {
+		case refused:
+			return nil, refusal
+		case notRead:
+			s.file, s.outside = s.path, s.path
+			out = append(out, configSource{from: s})
+			continue
+		}
+		var content []byte
+		var err error
+		if where == readBeneath {
+			f, ledOut, oerr := openBeneath(req, read)
+			if ledOut {
+				s.file, s.outside = s.path, s.path
+				out = append(out, configSource{from: s})
+				continue
+			}
+			content, err = readConfigFrom(f, oerr)
+		} else {
+			content, err = readConfigFile(read)
+		}
 		// Passed over where git passes over one: not there, under something
 		// that is not a directory, or not this user's to read. Most of the
 		// system files are another build's, and a Linuxbrew prefix this user
@@ -499,7 +548,7 @@ func machineConfigs() ([]configSource, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", s.path, err)
 		}
-		s.file = s.path
+		s.file, s.inRoots = s.path, where == readBeneath
 		out = append(out, configSource{from: s, lines: lines})
 	}
 	return out, nil
@@ -787,8 +836,10 @@ func includesUndecided(code, missing string, pieces []scopedConfig) *view.Error 
 // **Named, since git follows them.** An answer read as though the include
 // were not there is the answer git gives with no such file, and the file may
 // be there: what git runs, or ignores, can be set in it. The include is in a
-// file the caller is shown, and nothing of what it names is looked at, so
-// naming it says nothing the caller could not read for itself.
+// file the caller can write, or its name, like a machine-wide file's that is
+// not read, runs through a directory the caller can write, and nothing of
+// what it names is looked at, so naming it says nothing the caller could not
+// read for itself.
 func includesOutside(code, missing string, pieces []scopedConfig) *view.Error {
 	var named []string
 	for _, p := range pieces {
@@ -802,7 +853,7 @@ func includesOutside(code, missing string, pieces []scopedConfig) *view.Error {
 	}
 	return &view.Error{
 		Code: code,
-		Message: fmt.Sprintf("the repository's config includes %s outside this server's roots, %s, which %s not "+
+		Message: fmt.Sprintf("the config names %s outside this server's roots, %s, which %s not "+
 			"followed over MCP: git reads %s, and %s", format.Plural(n, "a file", format.CountOf(n, "file")),
 			strings.Join(named, ", "), format.Plural(n, "is", "are"), format.Plural(n, "it", "them"), missing),
 		Hint: "whether a file outside the roots is there, what it holds and how large it is would each show in an " +

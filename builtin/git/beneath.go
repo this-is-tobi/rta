@@ -304,6 +304,140 @@ func openBoundFile(req plugin.Request, judged string) (*os.File, error) {
 	return b.open(judged)
 }
 
+// openBeneath opens judged, a file inside the roots (readBeneath), as
+// openBoundFile does; ledOut is an open refused because the name leads out of
+// the roots, which says nothing of the file but that the caller's name is not
+// one to read (notRead). err is why it could not be opened otherwise: not
+// there, under something that is not a directory, not this user's to read,
+// or the gate's refusal for anything but lying outside the roots.
+//
+// **A link out of the roots to nothing is judged inside them.** The gate
+// resolves the links on a name as far as they lead somewhere, and one leading
+// nowhere leaves the name as it is spelled, inside the roots; the open,
+// following it, is refused for leading out. Where it leads somewhere the gate
+// finds the file outside, and it is not read (placeOf): the two had better
+// answer alike, or which of them a link names tells whether its far end
+// exists.
+func openBeneath(req plugin.Request, judged string) (_ *os.File, ledOut bool, _ error) {
+	f, err := openBoundFile(req, judged)
+	switch verr := refusedByTheGate(err); {
+	case err == nil, errors.Is(err, iofs.ErrNotExist), errors.Is(err, syscall.ENOTDIR),
+		errors.Is(err, iofs.ErrPermission):
+		return f, false, err
+	case verr != nil && verr.Code != outsideTheRoots:
+		return nil, false, verr
+	}
+	return nil, true, err
+}
+
+// filePlace is where a file of config, or a file config names, lies for one
+// call, which decides whether it is read, and how (placeOf).
+type filePlace int
+
+const (
+	// readByName is every file at a terminal, and over MCP a file outside the
+	// roots whose name, and every link on its way, stays outside them all the
+	// way to it (throughRoots): the operator's, read by name, as git reads it.
+	readByName filePlace = iota
+	// readBeneath is a file inside the roots over MCP, by whatever name it
+	// was reached: one a caller can write, read where the gate judged it,
+	// from the directory of the roots it lies under (openBoundFile).
+	readBeneath
+	// notRead is a file outside the roots over MCP named through a directory
+	// inside them, as it is spelled or where a link on the way leads, a link
+	// there among them: a name the caller can make lead anywhere, so what it
+	// leads to is not looked at.
+	notRead
+	// refused is a file the gate refuses for anything but lying outside the
+	// roots — rta's own state or configuration among them — which refuses
+	// the call, as the gate refuses the path however little of the file an
+	// answer would show.
+	refused
+)
+
+// placeOf is where the file p lies for req, and the name to read it by: the
+// gate's judgement of p, its links resolved, for a file inside the roots, and
+// p as it is named otherwise. refusal is the gate's refusal of p, over MCP,
+// for every place but readBeneath.
+//
+// **Where the name lies counts as much as where the file does.** A file
+// outside the roots reached through a directory inside them, ~/.gitconfig
+// a link to elsewhere under a root drawn around the home directory, is at
+// the far end of a link the caller can remake to lead anywhere, and reading
+// what it leads to told whether any file on the machine exists and parses as
+// config, as an include of that file did.
+func placeOf(req plugin.Request, p string) (read string, where filePlace, refusal *view.Error) {
+	if !bounded(req) {
+		return p, readByName, nil
+	}
+	judged, verr := req.Confine("path", p)
+	switch {
+	case verr == nil:
+		return judged, readBeneath, nil
+	case verr.Code != outsideTheRoots:
+		return p, refused, verr
+	}
+	if throughRoots(req, p) {
+		return p, notRead, verr
+	}
+	return p, readByName, verr
+}
+
+// maxLinks is how many links a name is followed through before throughRoots
+// stops following it, as Linux's open(2) stops (MAXSYMLINKS): past them the
+// open fails anyway, and a loop is not followed for good.
+const maxLinks = 40
+
+// throughRoots reports whether the name p, followed as open(2) follows it,
+// passes through a directory inside the server's roots on its way: a part of
+// p itself, or of what a link on the way says.
+//
+// **The directories on p's own spelling are not all of it.** ~/.gitconfig a
+// link to the copy a dotfiles repository keeps under ~/work, served with a
+// root of ~/work, is outside the roots all the way as it is spelled, and led
+// into them by the operator's own link: the copy there, which the caller can
+// write, swapped for a link to any file on the machine, had the gate find
+// ~/.gitconfig outside the roots, and it was read by name as the operator's,
+// wherever the caller's link led, a file that did not parse as config
+// refusing every call. What the operator's links say, and every directory
+// outside the roots, no caller can change, so a name that stays outside them
+// all the way now stays so when it is opened; one that enters them at any
+// point is the caller's to lead anywhere from there.
+func throughRoots(req plugin.Request, p string) bool {
+	sep := string(filepath.Separator)
+	vol := filepath.VolumeName(p)
+	cur := vol + sep
+	pending := strings.Split(p[len(vol):], sep)
+	for links := 0; len(pending) > 0; {
+		part := pending[0]
+		pending = pending[1:]
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			cur = filepath.Dir(cur)
+			continue
+		}
+		if _, verr := req.Confine("path", cur); verr == nil {
+			return true
+		}
+		next := filepath.Join(cur, part)
+		target, err := os.Readlink(next)
+		if err != nil {
+			cur = next
+			continue
+		}
+		if links++; links > maxLinks {
+			return false
+		}
+		if tvol := filepath.VolumeName(target); filepath.IsAbs(target) {
+			cur, target = tvol+sep, target[len(tvol):]
+		}
+		pending = append(strings.Split(target, sep), pending...)
+	}
+	return false
+}
+
 // repoFiles opens the directories one call reads a repository from (openAt),
 // as the call's reads are bounded (bounded), and closes those it holds open
 // when the call is done.

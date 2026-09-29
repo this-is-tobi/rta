@@ -697,6 +697,300 @@ func TestAHasconfigConditionInTheRepositoryMatchesItsOwnRemotesOverMCP(t *testin
 	}
 }
 
+// **A file of the operator's config inside the roots is one the caller can
+// write, and it counts as the repository's over MCP, whoever includes it.**
+// The two oracles closed for the repository's own config — whether a file
+// outside the roots exists and parses, told by following an include of it,
+// and a URL the caller is never shown, spelled out by a hasconfig:remote.*.url
+// pattern — reopened through it: ~/.gitconfig itself under a root drawn
+// around the home directory, and ~/work/.gitconfig, which ~/.gitconfig
+// includes, served with a root of ~/work. Written there, an include of a file
+// outside the roots is not followed, a hasconfig condition is matched against
+// the repository's own URLs alone, and a core.excludesFile outside the roots
+// is not applied, as they are in the repository's config. At a terminal each
+// is read as git reads it.
+func TestAnOperatorsConfigInsideTheRootsCountsAsTheRepositorysOverMCP(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		// layout is the root, the repository and the file of config inside
+		// the root the caller writes, under home.
+		layout func(t *testing.T, home string) (root, dir, written string)
+	}{
+		{"~/.gitconfig under a root of the home directory", func(t *testing.T, home string) (string, string, string) {
+			dir := filepath.Join(home, "proj")
+			repoAt(t, home, dir)
+			return home, dir, filepath.Join(home, ".gitconfig")
+		}},
+		{"~/work/.gitconfig included by ~/.gitconfig under a root of ~/work",
+			func(t *testing.T, home string) (string, string, string) {
+				work := filepath.Join(home, "work")
+				dir := filepath.Join(work, "proj")
+				repoAt(t, work, dir)
+				writeFile(t, home, ".gitconfig", "[include]\n\tpath = ~/work/.gitconfig\n")
+				return work, dir, filepath.Join(work, ".gitconfig")
+			}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			home := machineConfig(t, "")
+			root, dir, written := c.layout(t, home)
+			includeOutsideIsNeverLookedAt(t, root, dir, written)
+			hasconfigMatchesTheRepositorysOwn(t, root, dir, written)
+			excludesOutsideIsNeverApplied(t, root, dir, written)
+		})
+	}
+}
+
+// includeOutsideIsNeverLookedAt fails where, over MCP confined to root, an
+// include written in written, a file of config inside root, of a file outside
+// it answers by what is there; and where a terminal does not. The include
+// names the file itself, then a link inside root leading to it, which the
+// gate judges inside the roots where it leads nowhere.
+func includeOutsideIsNeverLookedAt(t *testing.T, root, dir, written string) {
+	t.Helper()
+	outside := t.TempDir()
+	probe := filepath.Join(outside, "probe.cfg")
+	link := filepath.Join(root, "probe-link.cfg")
+	if err := os.Symlink(probe, link); err != nil {
+		t.Fatal(err)
+	}
+	for _, named := range []string{probe, link} {
+		includeNamedIsNeverLookedAt(t, root, dir, written, named, probe)
+	}
+}
+
+// includeNamedIsNeverLookedAt is includeOutsideIsNeverLookedAt with the
+// include naming named, which leads to probe.
+func includeNamedIsNeverLookedAt(t *testing.T, root, dir, written, named, probe string) {
+	t.Helper()
+	outside := filepath.Dir(probe)
+	writeFile(t, filepath.Dir(written), filepath.Base(written), "[include]\n\tpath = "+named+"\n")
+	plants := map[string]func(){
+		"missing":    func() {},
+		"config":     func() { writeFile(t, outside, "probe.cfg", "[core]\n\thooksPath = /planted\n") },
+		"not config": func() { writeFile(t, outside, "probe.cfg", "this is not config\n") },
+		"a directory": func() {
+			if err := os.Mkdir(probe, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		},
+	}
+	mcp, terminal := map[string]string{}, map[string]string{}
+	for name, plant := range plants {
+		if err := os.RemoveAll(probe); err != nil {
+			t.Fatal(err)
+		}
+		plant()
+		mcp[name] = answersOf(t, mcpReq(t, root, dir))
+		terminal[name] = answersOf(t, req(t, dir, nil))
+	}
+	_ = os.RemoveAll(probe)
+	for name := range plants {
+		if mcp[name] != mcp["missing"] {
+			t.Errorf("over MCP, through %s, the file outside the roots %s:\n%s\nwhere a missing one gets:\n%s",
+				named, name, mcp[name], mcp["missing"])
+		}
+		if name != "missing" && terminal[name] == terminal["missing"] {
+			t.Errorf("at a terminal, through %s, the file outside the roots %s is answered as a missing one", named,
+				name)
+		}
+	}
+	if w := table(t, runHooks, mcpReq(t, root, dir)).Warnings; len(w) != 1 ||
+		w[0].Code != "git.hooks.include.outside" || !strings.Contains(w[0].Message, named) {
+		t.Errorf("over MCP, git.hooks warnings = %+v, want the include named as one not followed", w)
+	}
+}
+
+// And ~/.gitconfig itself, under a root drawn around the home directory, a
+// link to a file outside it: a caller can make that link lead anywhere, and
+// reading what it led to told whether that file exists and parses as config.
+// Over MCP it is not read, whatever is at the far end, and git.hooks names it;
+// at a terminal it is read, as git reads it.
+func TestAMachineWideConfigLinkedOutOfTheRootsIsNotReadOverMCP(t *testing.T) {
+	home := machineConfig(t, "")
+	dir := filepath.Join(home, "proj")
+	repoAt(t, home, dir)
+	writeExecutable(t, dir, "planted-hooks/pre-commit")
+	outside := t.TempDir()
+	far := filepath.Join(outside, "gitconfig")
+	if err := os.Symlink(far, filepath.Join(home, ".gitconfig")); err != nil {
+		t.Fatal(err)
+	}
+	mcp := map[string]string{}
+	for name, plant := range map[string]func(){
+		"missing": func() {},
+		"config": func() {
+			writeFile(t, outside, "gitconfig", "[core]\n\thooksPath = "+filepath.Join(realPath(dir), "planted-hooks")+
+				"\n")
+		},
+		"not config": func() { writeFile(t, outside, "gitconfig", "this is not config\n") },
+	} {
+		_ = os.RemoveAll(far)
+		plant()
+		mcp[name] = answersOf(t, mcpReq(t, home, dir))
+		if name == "config" {
+			if row := rowFor(t, table(t, runHooks, req(t, dir, nil)), "Name", "pre-commit"); row[2] != "planted-hooks/pre-commit" {
+				t.Errorf("at a terminal, pre-commit row = %v, want the directory the linked file names", row)
+			}
+		}
+	}
+	for name, got := range mcp {
+		if got != mcp["missing"] {
+			t.Errorf("over MCP, the file ~/.gitconfig leads to %s:\n%s\nwhere a missing one gets:\n%s", name, got,
+				mcp["missing"])
+		}
+	}
+	if w := table(t, runHooks, mcpReq(t, home, dir)).Warnings; len(w) != 1 || w[0].Code != "git.hooks.include.outside" ||
+		!strings.Contains(w[0].Message, filepath.Join(home, ".gitconfig")+", which is not followed") {
+		t.Errorf("over MCP, git.hooks warnings = %+v, want ~/.gitconfig named as a file not read", w)
+	}
+}
+
+// And a file of the operator's config outside the roots, as it is spelled,
+// that a link of the operator's leads into them: ~/.gitconfig, or a file it
+// includes, a link to the copy a dotfiles repository under ~/work keeps,
+// served with a root of ~/work. The copy is the caller's to swap for a link
+// to any file on the machine, and the gate, resolving every link, finds the
+// name outside the roots: read by name as the operator's, it told whether
+// the file the caller's link led to exists and parses as config. Over MCP it
+// is not read, whatever is at the far end; at a terminal it is, as git reads
+// it.
+func TestAConfigLinkedIntoTheRootsAndOutIsNotReadOverMCP(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		// link is the name of the operator's link into the roots, made under
+		// home, and the ~/.gitconfig that reaches it.
+		link, gitconfig string
+	}{
+		{"~/.gitconfig", ".gitconfig", ""},
+		{"a file ~/.gitconfig includes", "more.gitconfig", "[include]\n\tpath = ~/more.gitconfig\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			home := machineConfig(t, c.gitconfig)
+			work := filepath.Join(home, "work")
+			dir := filepath.Join(work, "proj")
+			repoAt(t, work, dir)
+			writeExecutable(t, dir, "planted-hooks/pre-commit")
+			copied := filepath.Join(work, "dotfiles", "gitconfig")
+			if err := os.MkdirAll(filepath.Dir(copied), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			outside := t.TempDir()
+			far := filepath.Join(outside, "gitconfig")
+			if err := os.Symlink(far, copied); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(copied, filepath.Join(home, c.link)); err != nil {
+				t.Fatal(err)
+			}
+			mcp := map[string]string{}
+			for name, plant := range map[string]func(){
+				"missing": func() {},
+				"config": func() {
+					writeFile(t, outside, "gitconfig", "[core]\n\thooksPath = "+
+						filepath.Join(realPath(dir), "planted-hooks")+"\n")
+				},
+				"not config": func() { writeFile(t, outside, "gitconfig", "this is not config\n") },
+			} {
+				_ = os.RemoveAll(far)
+				plant()
+				mcp[name] = answersOf(t, mcpReq(t, work, dir))
+				if name == "config" {
+					row := rowFor(t, table(t, runHooks, req(t, dir, nil)), "Name", "pre-commit")
+					if row[2] != "planted-hooks/pre-commit" {
+						t.Errorf("at a terminal, pre-commit row = %v, want the directory the linked file names", row)
+					}
+				}
+			}
+			for name, got := range mcp {
+				if got != mcp["missing"] {
+					t.Errorf("over MCP, the file %s leads to %s:\n%s\nwhere a missing one gets:\n%s", c.link, name,
+						got, mcp["missing"])
+				}
+			}
+			w := table(t, runHooks, mcpReq(t, work, dir)).Warnings
+			if len(w) != 1 || w[0].Code != "git.hooks.include.outside" ||
+				!strings.Contains(w[0].Message, c.link+", which is not followed") {
+				t.Errorf("over MCP, git.hooks warnings = %+v, want %s named as a file not read", w, c.link)
+			}
+		})
+	}
+}
+
+// excludesOutsideIsNeverApplied fails where, over MCP confined to root, a
+// core.excludesFile written in written, a file of config inside root, naming
+// a file outside it is applied, or answers by whether that file is there; and
+// where a terminal does not apply it. It names the file itself, then a link
+// inside root leading to it.
+func excludesOutsideIsNeverApplied(t *testing.T, root, dir, written string) {
+	t.Helper()
+	outside := t.TempDir()
+	planted := filepath.Join(outside, "planted-ignores")
+	link := filepath.Join(root, "ignores-link")
+	if err := os.Symlink(planted, link); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "new.txt", "new\n")
+	for _, named := range []string{planted, link} {
+		writeFile(t, filepath.Dir(written), filepath.Base(written), "[core]\n\texcludesFile = "+named+"\n")
+		answers := map[bool]string{}
+		for _, there := range []bool{true, false} {
+			_ = os.Remove(planted)
+			if there {
+				writeFile(t, outside, "planted-ignores", "*.txt\n")
+			}
+			w := ignoreWarning(table(t, runStatus, mcpReq(t, root, dir)))
+			if !slices.Contains(untracked(t, mcpReq(t, root, dir)), "new.txt") || w == nil ||
+				!strings.Contains(w.Message, "path gate") {
+				t.Errorf("over MCP, through %s, an excludes file outside the roots was applied, or not named as "+
+					"refused: %+v", named, w)
+			}
+			answers[there] = fmt.Sprint(w)
+		}
+		if answers[true] != answers[false] {
+			t.Errorf("over MCP, through %s, the excludes file outside the roots answers by whether it is there: "+
+				"%s where it is, %s where it is not", named, answers[true], answers[false])
+		}
+		writeFile(t, outside, "planted-ignores", "*.txt\n")
+		if got := untracked(t, req(t, dir, nil)); named == planted && slices.Contains(got, "new.txt") {
+			t.Errorf("at a terminal, through %s, untracked = %v, want new.txt ignored", named, got)
+		}
+	}
+	_ = os.Remove(filepath.Join(dir, "new.txt"))
+}
+
+// hasconfigMatchesTheRepositorysOwn fails where, over MCP confined to root, a
+// hasconfig:remote.*.url condition written in written, a file of config inside
+// root, is matched against a URL the caller is never shown; and where a
+// terminal does not match it.
+func hasconfigMatchesTheRepositorysOwn(t *testing.T, root, dir, written string) {
+	t.Helper()
+	t.Setenv("GIT_CONFIG_PARAMETERS", "'remote.env.url'='https://env.example/planted/r.git'")
+	writeFile(t, dir, "probe.cfg", "[core]\n\thooksPath = probe-hooks\n")
+	writeExecutable(t, dir, "probe-hooks/pre-push")
+	pre := "[remote \"own\"]\n\turl = https://own.example/r.git\n"
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n"+pre)
+	hooks := func(r plugin.Request, pattern string) string {
+		writeFile(t, filepath.Dir(written), filepath.Base(written), "[includeIf \"hasconfig:remote.*.url:"+pattern+
+			"\"]\n\tpath = "+filepath.Join(dir, "probe.cfg")+"\n")
+		return strings.ReplaceAll(fmt.Sprint(table(t, runHooks, r).Rows), pattern, "<pattern>")
+	}
+	for _, pattern := range []string{"https://env.example/**", "https://env.example/planted/**"} {
+		if got, none := hooks(mcpReq(t, root, dir), pattern), hooks(mcpReq(t, root, dir),
+			"https://nowhere.example/**"); got != none {
+			t.Errorf("over MCP, %s, which matches a URL the caller is not shown, answers %s where one matching "+
+				"nothing answers %s", pattern, got, none)
+		}
+		if got, none := hooks(req(t, dir, nil), pattern), hooks(req(t, dir, nil),
+			"https://nowhere.example/**"); got == none {
+			t.Errorf("at a terminal, %s is answered as a pattern matching nothing: %s", pattern, got)
+		}
+	}
+	if got := hooks(mcpReq(t, root, dir), "https://own.example/**"); !strings.Contains(got, "pre-push") {
+		t.Errorf("over MCP, a pattern matching the repository's own URL is not matched: %s", got)
+	}
+	unsetenv(t, "GIT_CONFIG_PARAMETERS")
+}
+
 // git decides a repository's format from its own config file alone, and
 // follows no include there: an include setting a format version and
 // extensions.objectFormat = sha256 leaves the repository the SHA-1 one git
