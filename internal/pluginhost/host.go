@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -678,9 +679,10 @@ func (h *Host) start(ctx context.Context, id Identity, deny DenySet, args []stri
 	// just after it reports the start failed.
 	abandon := func(reason string, err error) (*Client, error) {
 		exitedOnItsOwn(client)
-		failure := fmt.Errorf("%s %s: %w%s", reason, id.Path, err, words.told(exitStatus(client, cmd)))
-		if exited, ok := exitedBeforeHandshake(client, cmd, err); ok {
-			failure = fmt.Errorf("%s exited before its handshake: %s%s", id.Path, exited, words.wrote(true))
+		failure := fmt.Errorf("%s %s: %w%s", reason, id.Path, withoutWrapperNotes(cmd, id, err),
+			words.told(exitStatus(client, cmd)))
+		if said, ok := beforeHandshake(client, cmd, err); ok {
+			failure = fmt.Errorf("%s %s%s", id.Path, said, words.wrote(true))
 		}
 		reap(cmd)
 		client.Kill()
@@ -735,11 +737,11 @@ func exitStatus(client *goplugin.Client, cmd *exec.Cmd) string {
 	return ""
 }
 
-// exitedBeforeHandshake is how cmd's process exited, when it exited before
-// its handshake on its stdout, where go-plugin reads one, and the line it
-// printed there instead, if any: a binary that stopped at once, one that
-// printed why and gave up, and one the macOS sandbox wrapper could not run
-// at all.
+// beforeHandshake is rta's account of a process that gave no handshake on
+// its stdout, where go-plugin reads one — how it exited, when it exited
+// before one, and the line it printed there instead, if any: a binary that
+// stopped at once, one that printed why and gave up, one the macOS sandbox
+// wrapper could not run at all — said after the plugin's path.
 //
 // go-plugin reports that as "Unrecognized remote plugin message:", an empty
 // one, then "Failed to read any lines from plugin's stdout", its guesses at
@@ -767,16 +769,26 @@ func exitStatus(client *goplugin.Client, cmd *exec.Cmd) string {
 // The line is the clue, so it is said, after the status and bounded as the
 // plugin's other words are, in place of the guesses around it.
 //
-// Only once the process has exited, and by the state it left. go-plugin
-// kills the process as it reports either reading, so one that closed its
-// stdout and kept running is reported with the SIGKILL that ended it, as the
-// state says — fairly: a process that had closed the stream it answers on
-// had nothing more to do, and a SIGKILL is also what the kernel sends a
-// binary whose signature macOS refuses. One that printed its line and went
-// on running is not: that kill is go-plugin's answer to the line, so only a
-// process that exited of itself is said to have, and one killed over its
-// line keeps go-plugin's reading of it.
-func exitedBeforeHandshake(client *goplugin.Client, cmd *exec.Cmd, err error) (string, bool) {
+// How it exited only once the process has, and by the state it left.
+// go-plugin kills the process as it reports either reading, so one that
+// closed its stdout and kept running is reported with the SIGKILL that ended
+// it, as the state says — fairly: a process that had closed the stream it
+// answers on had nothing more to do, and a SIGKILL is also what the kernel
+// sends a binary whose signature macOS refuses.
+//
+// **A process that printed a line is said to have printed it, however it
+// ended.** Once the line is out, go-plugin's kill and the process's own exit
+// race, and which lands first says nothing about the plugin: the same binary
+// answering with its usage exited of itself on one run and was killed over
+// its line on the next, a loaded runner's scheduling deciding between rta's
+// account and go-plugin's guesses. So a process that exited of itself is
+// said to have, with its status and the line, and any other — killed over
+// it, or still running when the launch stops waiting — is said to have
+// printed the line, with nothing claimed about its end. go-plugin's guesses
+// go either way: a process that printed a line ran, so the architecture, a
+// library and the file's mode were never why, and its notes on the file
+// describe one that was fine.
+func beforeHandshake(client *goplugin.Client, cmd *exec.Cmd, err error) (string, bool) {
 	const unrecognized = "Unrecognized remote plugin message: "
 	text := err.Error()
 	printed := ""
@@ -790,19 +802,43 @@ func exitedBeforeHandshake(client *goplugin.Client, cmd *exec.Cmd, err error) (s
 	default:
 		return "", false
 	}
-	if !client.Exited() || cmd.ProcessState == nil {
-		return "", false
-	}
+	ended := client.Exited() && cmd.ProcessState != nil
 	if printed == "" {
-		return cmd.ProcessState.String(), true
+		if !ended {
+			return "", false
+		}
+		return "exited before its handshake: " + cmd.ProcessState.String(), true
 	}
 	// go-plugin kills the process as it reports the line, so a signal here
 	// is go-plugin's and not the plugin's way out: only one that exited of
 	// itself before the kill landed exited before its handshake.
-	if !cmd.ProcessState.Exited() {
-		return "", false
+	if ended && cmd.ProcessState.Exited() {
+		return "exited before its handshake: " + cmd.ProcessState.String() +
+			"\nit printed in place of its handshake: " + printed, true
 	}
-	return cmd.ProcessState.String() + "\nit printed in place of its handshake: " + printed, true
+	return "printed in place of its handshake: " + printed, true
+}
+
+// withoutWrapperNotes is err, go-plugin's, without the notes it adds on the
+// file it ran when that file is the sandbox wrapper and not the plugin.
+//
+// go-plugin describes the file it started — its path, mode, owner and
+// architecture — under every handshake it could not read, a line on stdout
+// that was not one among them. On macOS that file is /usr/bin/sandbox-exec,
+// so a plugin that printed something else was reported beside a root-owned
+// system binary's details as if they were its own, which sent whoever read
+// them looking at the one file that was fine. Unwrapped, the file is the
+// plugin and the notes are true of it, and they stay.
+func withoutWrapperNotes(cmd *exec.Cmd, id Identity, err error) error {
+	if cmd.Path == id.Path {
+		return err
+	}
+	text := err.Error()
+	notes := strings.Index(text, "\nAdditional notes about plugin:\n")
+	if notes < 0 {
+		return err
+	}
+	return errors.New(strings.TrimRight(text[:notes], "\n"))
 }
 
 // exitedOnItsOwn gives a plugin whose launch failed a moment to finish

@@ -224,20 +224,27 @@ func TestAPluginsLastLinesAreKeptWhateverTheySay(t *testing.T) {
 // its own where the handshake goes had that line said before the same
 // guesses, and is said to have exited too, with the line.
 //
+// Or, for that one, to have printed it: go-plugin kills the process as it
+// reads the line, and on a loaded runner that kill can land before the
+// script's own exit — which of the two accounts a run gives is that race,
+// and both are rta's, never go-plugin's guesses. Its stderr line is written
+// before its stdout line, so the line is there to be said whichever wins.
+//
 // Each case is launched as rta launches it, under the sandbox on macOS, and
 // unwrapped, as it runs everywhere else.
 func TestAPluginThatExitsBeforeItsHandshakeIsSaidToHave(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a shell script is no plugin binary on Windows")
 	}
-	for _, tc := range []struct{ name, script, want string }{
-		{"exits at once", "exit 1", " exited before its handshake: exit status 1"},
+	for _, tc := range []struct{ name, script, want, or string }{
+		{"exits at once", "exit 1", " exited before its handshake: exit status 1", ""},
 		{"prints, then exits", "echo 'no config at /etc/x' >&2\necho '[DEBUG] looked in /etc' >&2\nexit 3",
 			" exited before its handshake: exit status 3" +
-				"\nthe plugin wrote: no config at /etc/x\n  [DEBUG] looked in /etc"},
-		{"prints on stdout, then exits", "echo 'usage: x [flags]'\necho 'unknown flag' >&2\nexit 2",
+				"\nthe plugin wrote: no config at /etc/x\n  [DEBUG] looked in /etc", ""},
+		{"prints on stdout, then exits", "echo 'unknown flag' >&2\necho 'usage: x [flags]'\nexit 2",
 			" exited before its handshake: exit status 2" +
-				"\nit printed in place of its handshake: usage: x [flags]\nthe plugin wrote: unknown flag"},
+				"\nit printed in place of its handshake: usage: x [flags]\nthe plugin wrote: unknown flag",
+			" printed in place of its handshake: usage: x [flags]\nthe plugin wrote: unknown flag"},
 	} {
 		p := filepath.Join(t.TempDir(), "rta-plugin-exits")
 		if err := os.WriteFile(p, []byte("#!/bin/sh\n"+tc.script+"\n"), 0o755); err != nil {
@@ -252,8 +259,9 @@ func TestAPluginThatExitsBeforeItsHandshakeIsSaidToHave(t *testing.T) {
 			if err == nil {
 				t.Fatal("a script was accepted as a plugin")
 			}
-			if got, want := err.Error(), id.Path+tc.want; got != want {
-				t.Errorf("the launch said\n%s\nwant\n%s", got, want)
+			got := err.Error()
+			if got != id.Path+tc.want && (tc.or == "" || got != id.Path+tc.or) {
+				t.Errorf("the launch said\n%s\nwant\n%s", got, id.Path+tc.want)
 			}
 		}
 		t.Run(tc.name+", launched", func(t *testing.T) {
@@ -272,6 +280,52 @@ func TestAPluginThatExitsBeforeItsHandshakeIsSaidToHave(t *testing.T) {
 			saidAbout(t, err)
 		})
 	}
+}
+
+// A plugin that answers its handshake with something else and goes on
+// running is said to have printed it, in rta's words, launched or not.
+// go-plugin's notes on the file it ran named /usr/bin/sandbox-exec,
+// root-owned, as if it were the plugin, and its guesses — the architecture,
+// a library, the file's mode — were never why: a process that printed a line
+// ran.
+func TestAPluginThatSaysSomethingElseIsNotDescribedAsTheWrapper(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a shell script is no plugin binary on Windows")
+	}
+	p := filepath.Join(t.TempDir(), "rta-plugin-talks")
+	if err := os.WriteFile(p, []byte("#!/bin/sh\necho not a handshake\nsleep 5\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	id, err := Identify(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saidAbout := func(t *testing.T, err error) {
+		t.Helper()
+		if err == nil || !strings.HasPrefix(err.Error(), id.Path+" printed in place of its handshake: not a handshake") {
+			t.Fatalf("the launch said %v", err)
+		}
+		for _, guess := range []string{"sandbox-exec", "This usually means", "Additional notes"} {
+			if strings.Contains(err.Error(), guess) {
+				t.Errorf("the launch said %q, as go-plugin guessed: %v", guess, err)
+			}
+		}
+	}
+	t.Run("launched", func(t *testing.T) {
+		h := New()
+		defer h.CloseAll()
+		_, err := h.Open(context.Background(), p)
+		saidAbout(t, err)
+	})
+	t.Run("unwrapped", func(t *testing.T) {
+		h := New()
+		defer h.CloseAll()
+		cmd := exec.Command(id.Path)
+		cmd.Env = Environ()
+		harden(cmd)
+		_, err := h.start(context.Background(), id, DenySet{}, nil, cmd)
+		saidAbout(t, err)
+	})
 }
 
 // sandbox-exec's own line, when it cannot run the plugin, is what says why,
@@ -308,8 +362,9 @@ func TestTheSandboxsOwnWordOnAPluginItCannotRunIsKept(t *testing.T) {
 // A plugin that printed a line in place of its handshake and went on running
 // did not exit before it: go-plugin kills it as it reports the line, and its
 // SIGKILL is go-plugin's, not the plugin's way out. Said to have exited, it
-// read as a plugin something outside had killed, where go-plugin's reading
-// of the line it printed is the one that fits.
+// read as a plugin something outside had killed; it is said to have printed
+// the line, which is all that is known, in rta's words and not go-plugin's
+// guesses.
 func TestAPluginKilledOverTheLineItPrintedIsNotSaidToHaveExited(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a shell script is no plugin binary on Windows")
@@ -326,11 +381,14 @@ func TestAPluginKilledOverTheLineItPrintedIsNotSaidToHaveExited(t *testing.T) {
 	}
 	saidAbout := func(t *testing.T, err error) {
 		t.Helper()
-		if err == nil || !strings.Contains(err.Error(), "Unrecognized remote plugin message: debug: starting") {
+		if err == nil || !strings.HasPrefix(err.Error(), id.Path+" printed in place of its handshake: debug: starting") {
 			t.Fatalf("the launch said %v", err)
 		}
 		if strings.Contains(err.Error(), "exited before its handshake") {
 			t.Errorf("a plugin go-plugin killed was said to have exited: %v", err)
+		}
+		if strings.Contains(err.Error(), "This usually means") {
+			t.Errorf("go-plugin's guesses are back: %v", err)
 		}
 	}
 	t.Run("launched", func(t *testing.T) {
