@@ -1254,8 +1254,8 @@ func callerNamedEndpoint(c plugin.Capability, caller map[string]any) bool {
 
 // forwardTLSRefusal refuses a caller's TLS-role input given as anything but
 // the value the forward fills it with, which is its off value
-// (plugin.EndpointTLS). nil when the capability has no such input, the
-// caller gave none, or gave exactly that value.
+// (plugin.EndpointTLS), and a TLSAdjacent input given at all. nil when the
+// capability has no TLS-role input, or the caller gave neither.
 //
 // **Refused, not overridden, and not let through.** The forward's value
 // cannot simply win: the caller asked for TLS, and running the call without
@@ -1298,6 +1298,31 @@ func forwardTLSRefusal(name string, conn config.Connection, c plugin.Capability,
 			"%s cannot go through the forward profile %q opens with `%s:`, which turns %s's TLS off",
 			asked, name, conn.TunnelKey(), plugin.Namespace(c.ID)).
 			WithHint(forwardWayOn(conn, c, sf, through, asked))
+	}
+	// And a TLSAdjacent input — a CA the plugin reads only once that mode
+	// negotiates — given at all, which checkSet refuses beside a coordinate
+	// when `set:` states it. Given on the call it was accepted and went
+	// unread: a check the caller named, which nothing then ran. Only where
+	// this capability has a TLS mode a forward turns off, as the plugin's
+	// declaration of the field says it depends on.
+	if !slices.ContainsFunc(c.Inputs, func(f plugin.Field) bool {
+		return f.Endpoint == plugin.EndpointTLS && plugin.ProfileFillable(c, f)
+	}) {
+		return nil
+	}
+	for _, f := range c.Inputs {
+		if !f.TLSAdjacent {
+			continue
+		}
+		v, given := caller[f.Name]
+		if !given || v == nil || v == false || strings.TrimSpace(fmt.Sprint(v)) == "" {
+			continue
+		}
+		stated := sf.SettingTo(f.Name, v)
+		return view.Errorf("core.profile.tls.forward",
+			"%s cannot go through the forward profile %q opens with `%s:`, which turns off the TLS %s reads it for",
+			stated, name, conn.TunnelKey(), plugin.Namespace(c.ID)).
+			WithHint(forwardWayOn(conn, c, sf, sf.WithoutInputs(f.Name), stated))
 	}
 	return nil
 }
