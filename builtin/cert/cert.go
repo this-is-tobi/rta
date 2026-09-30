@@ -202,10 +202,20 @@ func dialTimeout(req plugin.Request) time.Duration {
 // stream and whose bounds where it may be opened from (pathin.Open) — the
 // stat that picks the branch included, which by name answered whether a file
 // a link out of the root led to existed.
+//
+// A target the bounds refuse is refused as they refuse it, and not dialled:
+// taken for "not a file" like any other failed stat, rta's own state under a
+// root was dialled as a host, and the answer was a DNS lookup of the path.
+// The state is nil exactly when the certificates came from a file.
 func loadCerts(ctx context.Context, req plugin.Request, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, error) {
-	if _, err := pathin.Stat(req, target); err == nil {
+	_, err := pathin.Stat(req, target)
+	var refused *view.Error
+	switch {
+	case err == nil:
 		certs, err := readPEM(req, target)
 		return certs, nil, err
+	case errors.As(err, &refused):
+		return nil, nil, refused
 	}
 	return dialCerts(ctx, target, timeout)
 }
@@ -442,8 +452,12 @@ func chainVerdict(reason string) string {
 	return reason
 }
 
-func hostOf(req plugin.Request, target string) string {
-	if _, err := pathin.Stat(req, target); err == nil {
+// hostOf is the name a chain from target is verified for: its host, where
+// loadCerts dialled one (state), and none for a file. Told by the state and
+// not by a second look at the path, which a file swapped or withheld since the
+// first would have answered as a host.
+func hostOf(state *tls.ConnectionState, target string) string {
+	if state == nil {
 		return ""
 	}
 	host := target
@@ -470,7 +484,7 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Key: "expires-in", Value: humanUntil(leaf.NotAfter)},
 		{Key: "sha256", Value: hex.EncodeToString(sum[:])},
 		{Key: "sig-alg", Value: leaf.SignatureAlgorithm.String()},
-		{Key: "chain", Value: verify(certs, hostOf(req, target))},
+		{Key: "chain", Value: verify(certs, hostOf(state, target))},
 	}
 	if state != nil {
 		pairs = append(pairs, view.Pair{Key: "tls", Value: protocolOf(state.Version)})

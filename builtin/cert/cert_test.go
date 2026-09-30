@@ -238,6 +238,46 @@ func TestLiveHostTargetIsUndialableOnceRoutedThroughThePathGate(t *testing.T) {
 	}
 }
 
+// A target the call's bounds refuse — rta's own state under a root, by its
+// name or by another name for one of its files — is refused as the bounds
+// refuse it, by every capability that reads a PEM file. The refusal was taken
+// for "not a file", and the path was dialled as a host: cert.dial.failed,
+// with a DNS lookup of the path for a reason.
+func TestABoundsRefusalOfTheTargetIsTheAnswer(t *testing.T) {
+	root := t.TempDir()
+	data := filepath.Join(root, "data")
+	t.Setenv("RTA_DATA_DIR", data)
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	if err := os.MkdirAll(data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	key := filepath.Join(data, "grants.key")
+	if err := os.WriteFile(key, []byte("seal"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	targets := []string{key}
+	if link := filepath.Join(root, "notes.txt"); os.Link(key, link) == nil {
+		targets = append(targets, link)
+	}
+	g, err := pathguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs := map[string]func(context.Context, plugin.Request) (view.View, error){
+		"cert.inspect": runInspect, "cert.chain": runChain, "cert.pem": runPEM, "cert.tls": runTLS,
+	}
+	for _, target := range targets {
+		r := req(map[string]any{"target": target, "timeout": 2}).WithSurface(plugin.SurfaceMCP).
+			WithConfinement(g.Derived).WithBounds(g.Bounds())
+		for id, run := range runs {
+			_, err := run(context.Background(), r)
+			if verr := view.AsError(err, "x"); verr.Code != "core.mcp.path.protected" {
+				t.Errorf("%s of %s: %v, want the bounds' refusal", id, filepath.Base(target), err)
+			}
+		}
+	}
+}
+
 func TestDialFailureIsCodedWithHint(t *testing.T) {
 	_, err := runInspect(context.Background(), req(map[string]any{"target": "closed.invalid:1"}))
 	ve := view.AsError(err, "x")
