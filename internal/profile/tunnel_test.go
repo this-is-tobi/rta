@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -342,7 +343,7 @@ func TestDialFillsFromAForwardThatAnswers(t *testing.T) {
 		"echo 'Forwarding from 127.0.0.1:%d -> 5432'\nwhile true; do sleep 1; done\n", port))
 
 	conn := config.Connection{Kube: kubeCoord}
-	got, via, closeTunnel, verr := Dial(context.Background(), "homelab", conn, tunnelCap(), nil)
+	got, via, closeTunnel, verr := Dial(context.Background(), "homelab", conn, tunnelCap(), nil, plugin.SurfaceCLI)
 	if verr != nil {
 		t.Fatalf("dial: %v", verr)
 	}
@@ -371,7 +372,7 @@ func TestDialFillsFromAForwardThatAnswers(t *testing.T) {
 func TestDialWithoutACoordinateOpensNothingAndStillReturnsACloser(t *testing.T) {
 	fakeKubectl(t, "echo 'a kubectl that must never be run' >&2\nexit 1\n")
 
-	got, via, closeTunnel, verr := Dial(context.Background(), "base", config.Connection{}, tunnelCap(), nil)
+	got, via, closeTunnel, verr := Dial(context.Background(), "base", config.Connection{}, tunnelCap(), nil, plugin.SurfaceCLI)
 	if via != plugin.TunnelNone {
 		t.Errorf("a connection with no coordinate reports tunnel %q", via)
 	}
@@ -397,7 +398,7 @@ func TestDialWithoutACoordinateOpensNothingAndStillReturnsACloser(t *testing.T) 
 func TestAForwardThatCannotBeOpenedRefusesRatherThanFallingBack(t *testing.T) {
 	fakeKubectl(t, "echo 'Error from server (NotFound): services \"postgres\" not found' >&2\nexit 1\n")
 
-	got, via, closeTunnel, verr := Dial(context.Background(), "homelab", config.Connection{Kube: kubeCoord}, tunnelCap(), nil)
+	got, via, closeTunnel, verr := Dial(context.Background(), "homelab", config.Connection{Kube: kubeCoord}, tunnelCap(), nil, plugin.SurfaceCLI)
 	if via != plugin.TunnelNone {
 		t.Errorf("a forward that never opened reports tunnel %q", via)
 	}
@@ -502,7 +503,7 @@ profiles:
 // opened: the coordinate may be wrong, and typing a host is the way past it.
 func TestDialSkipsTheForwardWhenTheCallerNamedTheEndpoint(t *testing.T) {
 	conn := config.Connection{Kube: "homelab/databases/svc/postgres:5432"}
-	got, via, closeTunnel, verr := Dial(context.Background(), "homelab", conn, tunnelCap(), map[string]any{"host": "db.direct.internal"})
+	got, via, closeTunnel, verr := Dial(context.Background(), "homelab", conn, tunnelCap(), map[string]any{"host": "db.direct.internal"}, plugin.SurfaceCLI)
 	if via != plugin.TunnelNone {
 		t.Errorf("a caller-named endpoint reports tunnel %q, and no forward was opened", via)
 	}
@@ -512,5 +513,164 @@ func TestDialSkipsTheForwardWhenTheCallerNamedTheEndpoint(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("Dial filled %v under a caller-named endpoint; it must fill nothing", got)
+	}
+}
+
+// tlsShaped is a connection plugin's declaration in the shape of a real one:
+// the endpoint inputs it names its server with, and its TLS-role input as that
+// plugin spells it.
+type tlsShaped struct {
+	name  string
+	cap   plugin.Capability
+	tls   string // the TLS-role input
+	off   any    // what the forward fills it with
+	where string // the endpoint inputs, as the CLI names them
+}
+
+func tlsShapes() []tlsShaped {
+	hostPort := []plugin.Field{
+		{Name: "host", Type: plugin.String, Default: "localhost", Config: "host", Local: true,
+			Endpoint: plugin.EndpointHost},
+		{Name: "port", Type: plugin.Int, Default: 5432, Config: "port", Local: true,
+			Endpoint: plugin.EndpointPort},
+	}
+	pg := plugin.Capability{ID: "pg.status", Summary: "status", Safety: plugin.Read, Run: run,
+		Inputs: append(slices.Clone(hostPort), plugin.Field{Name: "sslmode", Type: plugin.String,
+			Default: "prefer", Config: "sslmode", Local: true, Endpoint: plugin.EndpointTLS,
+			Options: []string{"disable", "prefer", "require", "verify-ca", "verify-full"}})}
+	mysql := plugin.Capability{ID: "mysql.status", Summary: "status", Safety: plugin.Read, Run: run,
+		Inputs: append(slices.Clone(hostPort), plugin.Field{Name: "tls", Type: plugin.String,
+			Default: "preferred", Config: "tls", Local: true, Endpoint: plugin.EndpointTLS,
+			Options: []string{"false", "preferred", "true", "skip-verify", "verify-ca"}})}
+	redis := plugin.Capability{ID: "redis.overview", Summary: "overview", Safety: plugin.Read, Run: run,
+		Inputs: []plugin.Field{
+			{Name: "address", Type: plugin.String, Default: "127.0.0.1:6379", Config: "address",
+				Local: true, Endpoint: plugin.EndpointAddress},
+			{Name: "tls", Type: plugin.Bool, Default: false, Config: "tls", Local: true,
+				Endpoint: plugin.EndpointTLS},
+		}}
+	return []tlsShaped{
+		{"pg", pg, "sslmode", "disable", "--host and --port"},
+		{"mysql", mysql, "tls", "false", "--host and --port"},
+		{"redis", redis, "tls", false, "--address"},
+	}
+}
+
+// A TLS switch names no destination: given as the value the forward fills it
+// with, the call still goes through the forward, where it used to open none
+// and go with the profile's credential to the config's host or localhost.
+func TestATLSSwitchTheForwardAgreesWithStillGoesThroughIt(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+	fakeKubectl(t, fmt.Sprintf(
+		"echo 'Forwarding from 127.0.0.1:%d -> 5432'\nwhile true; do sleep 1; done\n", port))
+
+	for _, sh := range tlsShapes() {
+		given := []any{sh.off}
+		if s, ok := sh.off.(string); ok {
+			// Resolve takes an option in any case, so the forward does too.
+			given = append(given, strings.ToUpper(s))
+		}
+		for _, v := range given {
+			got, via, closeTunnel, verr := Dial(context.Background(), "homelab",
+				config.Connection{Kube: kubeCoord}, sh.cap, map[string]any{sh.tls: v}, plugin.SurfaceCLI)
+			closeTunnel()
+			if verr != nil {
+				t.Errorf("%s --%s %v: refused: %s", sh.name, sh.tls, v, verr.Message)
+				continue
+			}
+			if via != plugin.TunnelKube {
+				t.Errorf("%s --%s %v: tunnel %q, want the forward", sh.name, sh.tls, v, via)
+			}
+			if got["host"] != "127.0.0.1" && got["address"] != fmt.Sprintf("127.0.0.1:%d", port) {
+				t.Errorf("%s --%s %v: filled %v, want the forward's address", sh.name, sh.tls, v, got)
+			}
+		}
+	}
+}
+
+// A TLS switch asking for what a forward does not carry is refused, before
+// any forward is opened, and never taken as the way to somewhere else — it
+// used to open none and go with the profile's password to localhost, where
+// under a mode that verifies nothing whatever listens receives it. Nor is it
+// dropped: turning off TLS somebody asked for is the downgrade the input is
+// Local to prevent. The refusal names the forward and both ways on.
+func TestATLSSwitchTheForwardCannotCarryIsRefusedBeforeItOpens(t *testing.T) {
+	asked := map[string][]any{
+		"pg":    {"require", "prefer", "verify-full", ""},
+		"mysql": {"true", "preferred", "skip-verify"},
+		"redis": {true},
+	}
+	for _, sh := range tlsShapes() {
+		for _, v := range asked[sh.name] {
+			for _, conn := range []config.Connection{{Kube: kubeCoord}, {SSH: sshTarget}} {
+				calls := fakeKubectl(t, "echo 'a forward that must not be opened' >&2\nexit 1\n")
+				got, via, closeTunnel, verr := Dial(context.Background(), "homelab", conn, sh.cap,
+					map[string]any{sh.tls: v}, plugin.SurfaceCLI)
+				closeTunnel()
+				label := fmt.Sprintf("%s %s: %s=%v", sh.name, conn.TunnelKey(), sh.tls, v)
+				if verr == nil {
+					t.Errorf("%s: resolved (tunnel %q, filled %v), want a refusal", label, via, got)
+					continue
+				}
+				if verr.Code != "core.profile.tls.forward" {
+					t.Errorf("%s: code %s, want core.profile.tls.forward (%s)", label, verr.Code, verr.Message)
+				}
+				if len(got) != 0 || via != plugin.TunnelNone {
+					t.Errorf("%s: a refused call filled %v through tunnel %q", label, got, via)
+				}
+				if c := calls(); len(c) != 0 {
+					t.Errorf("%s: kubectl ran before the refusal: %v", label, c)
+				}
+				if !strings.Contains(verr.Message, "`"+conn.TunnelKey()+":`") ||
+					!strings.Contains(verr.Message, `"homelab"`) {
+					t.Errorf("%s: message %q does not name the forward", label, verr.Message)
+				}
+				if !strings.Contains(verr.Hint, sh.where+" as well to connect directly") {
+					t.Errorf("%s: hint %q does not give %s as the way to the server itself",
+						label, verr.Hint, sh.where)
+				}
+				if !strings.Contains(verr.Hint, "without --"+sh.tls+" goes through the forward") {
+					t.Errorf("%s: hint %q does not give the way through the forward", label, verr.Hint)
+				}
+			}
+		}
+	}
+}
+
+// The refusal is spelled for the surface the call came from: a TUI picker
+// always holds a choice, so its way through is the value the forward sets,
+// and its way to the server is boxes, not flags.
+func TestATLSSwitchRefusalIsSpelledForItsSurface(t *testing.T) {
+	fakeKubectl(t, "exit 1\n")
+	for _, sh := range tlsShapes() {
+		v := any("require")
+		if sh.name != "pg" {
+			v = true
+		}
+		_, _, closeTunnel, verr := Dial(context.Background(), "homelab", config.Connection{Kube: kubeCoord},
+			sh.cap, map[string]any{sh.tls: v}, plugin.SurfaceTUI)
+		closeTunnel()
+		if verr == nil {
+			t.Fatalf("%s: resolved, want a refusal", sh.name)
+		}
+		box := "the " + sh.tls + " box set to "
+		if !strings.HasPrefix(verr.Message, box) {
+			t.Errorf("%s: message %q does not name the box", sh.name, verr.Message)
+		}
+		if !strings.Contains(verr.Hint, "a call with "+box+fmt.Sprint(sh.off)+" goes through the forward") {
+			t.Errorf("%s: hint %q does not give the picker's value the forward takes", sh.name, verr.Hint)
+		}
+		boxes := "the host and port boxes"
+		if sh.name == "redis" {
+			boxes = "the address box"
+		}
+		if !strings.Contains(verr.Hint, "fill "+boxes+" as well to connect directly") || strings.Contains(verr.Hint, "--") {
+			t.Errorf("%s: hint %q is not spelled for a form", sh.name, verr.Hint)
+		}
 	}
 }
