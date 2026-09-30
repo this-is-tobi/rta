@@ -170,8 +170,12 @@ const (
 	// to somebody who changed nothing.
 	//
 	// The value is rendered per input type: "disable" for a String whose
-	// Options say so, false for a Bool. A caller who disagrees still wins,
-	// because a caller-supplied value beats a tunnel.
+	// Options say so, false for a Bool. A caller who gives this input names
+	// no destination by it — the call still goes through the forward — and
+	// one who gives anything but that value is refused before the forward
+	// opens rather than overruled either way: the TLS they asked for is
+	// negotiated only straight to the server, which they name with the other
+	// endpoint inputs (internal/profile's Dial).
 	EndpointTLS EndpointRole = "tls"
 )
 

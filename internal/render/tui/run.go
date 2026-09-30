@@ -277,7 +277,7 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 	// and the environment over it.
 	collected := values
 	return func() tea.Msg {
-		dialled, via, closeTunnel, verr := profile.Dial(ctx, profileName, conn, c, collected)
+		dialled, via, closeTunnel, verr := profile.Dial(ctx, profileName, conn, c, collected, plugin.SurfaceTUI)
 		defer closeTunnel()
 		if verr != nil {
 			if dryRun {

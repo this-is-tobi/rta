@@ -640,19 +640,35 @@ func Fill(ctx context.Context, name string, conn config.Connection, c plugin.Cap
 // and then ignored is a hole in a cluster's network boundary that nothing
 // uses, and the operator who typed a host under a misconfigured coordinate
 // wanted exactly not to go through it. So the override is decided here, on
-// the capability's own endpoint-role inputs: any of them present among the
-// caller's values means "this once, straight to where I said". Over MCP the
+// the capability's own endpoint-role inputs: any of those naming a place —
+// host, port, address, URL — present among the caller's values means "this
+// once, straight to where I said". Over MCP the
 // endpoint inputs are Local and never arrive from a caller, so an agent
 // cannot take this exit. What the forward's values do override, when it is
 // opened, is the plugin's own default and the operator's `set:` — which is
 // right, because a `set:` host beside a `kube:` coordinate is two statements
 // about where the call goes and the forward is the one that exists.
+//
+// **A TLS switch names no destination.** It was counted as one, among the
+// inputs a forward fills, so `--profile homelab --sslmode require` opened no
+// forward and went with the profile's user and password to whatever the
+// config or the plugin's default named — localhost:5432, which on a
+// developer's machine is somebody's own PostgreSQL, and under a mode that
+// verifies nothing, whatever listens there. So with no host, port, address
+// or URL from the caller the call goes through the forward, and a TLS
+// statement the forward cannot carry is refused before it opens
+// (forwardTLSRefusal): never dropped, which would downgrade a mode somebody
+// asked for, and never a reason to go elsewhere. sf spells that refusal for
+// the surface the call came from.
 func Dial(ctx context.Context, name string, conn config.Connection, c plugin.Capability,
-	caller map[string]any,
+	caller map[string]any, sf plugin.Surface,
 ) (map[string]any, plugin.Tunnel, func(), *view.Error) {
 	noop := func() {}
 	if !conn.Tunnelled() || callerNamedEndpoint(c, caller) {
 		return nil, plugin.TunnelNone, noop, nil
+	}
+	if verr := forwardTLSRefusal(name, conn, c, caller, sf); verr != nil {
+		return nil, plugin.TunnelNone, noop, verr
 	}
 	tun, verr := tunnel.Open(ctx, name, target(conn))
 	if verr != nil {
@@ -1220,11 +1236,13 @@ func checkSecretRefs(name, key string, conn config.Connection, ns string, inst I
 	return problems
 }
 
-// callerNamedEndpoint reports whether the caller supplied any of the inputs a
-// forward would fill — the host, the port, the address or the TLS switch.
+// callerNamedEndpoint reports whether the caller supplied any of the inputs
+// that say where a forward goes — the host, the port, the address or the URL.
+// Not the TLS switch, which a forward also fills and which says how to talk,
+// never where: see Dial.
 func callerNamedEndpoint(c plugin.Capability, caller map[string]any) bool {
 	for _, f := range c.Inputs {
-		if f.Endpoint == plugin.EndpointNone {
+		if f.Endpoint == plugin.EndpointNone || f.Endpoint == plugin.EndpointTLS {
 			continue
 		}
 		if _, given := caller[f.Name]; given {
@@ -1232,4 +1250,84 @@ func callerNamedEndpoint(c plugin.Capability, caller map[string]any) bool {
 		}
 	}
 	return false
+}
+
+// forwardTLSRefusal refuses a caller's TLS-role input given as anything but
+// the value the forward fills it with, which is its off value
+// (plugin.EndpointTLS). nil when the capability has no such input, the
+// caller gave none, or gave exactly that value.
+//
+// **Refused, not overridden, and not let through.** The forward's value
+// cannot simply win: the caller asked for TLS, and running the call without
+// it on that person's behalf is the downgrade `sslmode` is Local to keep an
+// agent from making. Nor can the caller's value simply win, the way it
+// beats every other layer: the host turns TLS off through a forward because
+// the hop off this machine already runs inside the API server's TLS or the
+// SSH connection, and because TLS inside the forward is checked against its
+// local end, 127.0.0.1, which a server's certificate names only by luck — a
+// verifying mode fails, and one that does not verify buys nothing the hop
+// did not already give. What remains is to say so and give both ways on:
+// the forward with the switch left alone, or the server itself, named.
+//
+// Before the open, so a refusal costs no forward.
+func forwardTLSRefusal(name string, conn config.Connection, c plugin.Capability, caller map[string]any,
+	sf plugin.Surface,
+) *view.Error {
+	for _, f := range c.Inputs {
+		// ProfileFillable because that is endpointValues' own gate: an input
+		// the forward does not fill is not one it turns off.
+		if f.Endpoint != plugin.EndpointTLS || !plugin.ProfileFillable(c, f) {
+			continue
+		}
+		v, given := caller[f.Name]
+		off := plugin.TLSOffValue(f)
+		if !given || v == nil || off == nil ||
+			strings.EqualFold(strings.TrimSpace(fmt.Sprint(v)), fmt.Sprint(off)) {
+			continue
+		}
+		asked := sf.SettingTo(f.Name, v)
+		// On a command line the way through is the flag left out. A TUI
+		// picker always holds a choice, so there it is the one the forward
+		// makes; an agent never reaches here, since every TLS-role input is
+		// Local and the bridge passes no caller values.
+		through := sf.WithoutInputs(f.Name)
+		if sf == plugin.SurfaceTUI || sf == plugin.SurfaceMCP {
+			through = "with " + sf.SettingTo(f.Name, off)
+		}
+		return view.Errorf("core.profile.tls.forward",
+			"%s cannot go through the forward profile %q opens with `%s:`, which turns %s's TLS off",
+			asked, name, conn.TunnelKey(), plugin.Namespace(c.ID)).
+			WithHint(forwardWayOn(conn, c, sf, through, asked))
+	}
+	return nil
+}
+
+// forwardWayOn is the hint forwardTLSRefusal gives: the call through the
+// forward, and the call straight to the server, which is the only place TLS
+// the caller asked for can be negotiated end to end. through is how the
+// reader leaves the TLS statement out; asked is that statement, kept for the
+// direct call.
+func forwardWayOn(conn config.Connection, c plugin.Capability, sf plugin.Surface, through, asked string) string {
+	carrier := "the API server's TLS"
+	if conn.TunnelKey() == "ssh" {
+		carrier = "the SSH connection"
+	}
+	hint := "a call " + through + " goes through the forward, its hop off this machine inside " + carrier
+	var where []string
+	for _, f := range c.Inputs {
+		switch f.Endpoint {
+		case plugin.EndpointHost, plugin.EndpointPort, plugin.EndpointAddress, plugin.EndpointURL:
+			if plugin.ProfileFillable(c, f) {
+				where = append(where, f.Name)
+			}
+		}
+	}
+	if len(where) == 0 {
+		return hint
+	}
+	give := "give "
+	if sf == plugin.SurfaceTUI {
+		give = "fill "
+	}
+	return hint + "; " + give + sf.SettingName(where...) + " as well to connect directly with " + asked
 }

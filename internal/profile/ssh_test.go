@@ -46,7 +46,7 @@ func TestAnSSHTargetFillsEndpointsFromAForwardThatAnswers(t *testing.T) {
 	fakeSSHOnPath(t, "exec cat\n")
 
 	conn := config.Connection{SSH: sshTarget}
-	got, via, closeTunnel, verr := Dial(context.Background(), "bastion", conn, tunnelCap(), nil)
+	got, via, closeTunnel, verr := Dial(context.Background(), "bastion", conn, tunnelCap(), nil, plugin.SurfaceCLI)
 	if verr != nil {
 		t.Fatalf("dial: %v", verr)
 	}

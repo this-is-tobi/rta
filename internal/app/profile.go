@@ -112,7 +112,7 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 	// because their lifetimes are: what Fill produces is true for as long as
 	// the environment stands, and a forward is per call, by decision.
 	// closeTunnel is never nil, so the caller defers it unconditionally.
-	dialled, via, closeTunnel, verr := profile.Dial(ctx, name, conn, c, caller)
+	dialled, via, closeTunnel, verr := profile.Dial(ctx, name, conn, c, caller, plugin.SurfaceCLI)
 	if verr != nil {
 		return boundProfile{}, closeTunnel, verr
 	}

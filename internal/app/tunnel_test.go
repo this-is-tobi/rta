@@ -279,3 +279,66 @@ profiles:
 		}
 	}
 }
+
+// On the command line a TLS flag beside a cluster profile names no server:
+// the value the forward sets goes through it, and one asking for TLS is
+// refused before a handler runs. Both used to open no forward and hand the
+// handler the plugin's own default, localhost, with the profile's password.
+func TestATLSFlagBesideAClusterProfileNeverReachesAnotherServer(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	bin := t.TempDir()
+	script := fmt.Sprintf("#!/bin/sh\necho 'Forwarding from 127.0.0.1:%d -> 5432'\nwhile true; do sleep 1; done\n",
+		ln.Addr().(*net.TCPAddr).Port)
+	if err := os.WriteFile(filepath.Join(bin, "kubectl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{Name: "db", Summary: "db plugin", Capabilities: []plugin.Capability{{
+		ID: "db.status", Summary: "status", Safety: plugin.Read,
+		Inputs: []plugin.Field{
+			{Name: "host", Type: plugin.String, Default: "localhost", Config: "host",
+				Local: true, Endpoint: plugin.EndpointHost, Help: "host"},
+			{Name: "port", Type: plugin.Int, Default: 5432, Config: "port",
+				Local: true, Endpoint: plugin.EndpointPort, Min: 1, Max: 65535, Help: "port"},
+			{Name: "sslmode", Type: plugin.String, Default: "prefer", Config: "sslmode", Local: true,
+				Endpoint: plugin.EndpointTLS, Options: []string{"disable", "prefer", "require"}, Help: "tls"},
+		},
+		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+			return view.Text{Body: fmt.Sprintf("reached %s tunnel=%q sslmode=%s",
+				req.String("host"), req.Tunnel(), req.String("sslmode"))}, nil
+		},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	yaml := `
+profiles:
+  homelab:
+    plugins:
+      db:
+        kube: homelab/databases/svc/postgres:5432
+`
+	out, errOut, err := runWith(t, reg, yaml, "db", "status", "--profile", "homelab", "--sslmode", "disable")
+	if err != nil || !strings.Contains(out, `reached 127.0.0.1 tunnel="kube" sslmode=disable`) {
+		t.Errorf("--sslmode disable: %q %v\n%s", strings.TrimSpace(out), err, errOut)
+	}
+	out, errOut, err = runWith(t, reg, yaml, "db", "status", "--profile", "homelab", "--sslmode", "require")
+	if err == nil || strings.Contains(out, "reached") {
+		t.Errorf("--sslmode require ran: %q", strings.TrimSpace(out))
+	}
+	if !strings.Contains(errOut, "core.profile.tls.forward") ||
+		!strings.Contains(errOut, "--host and --port as well to connect directly with --sslmode require") {
+		t.Errorf("--sslmode require: stderr does not carry the refusal and its way on: %q", errOut)
+	}
+	// And naming the server is still the way to TLS: straight there, no forward.
+	out, errOut, err = runWith(t, reg, yaml, "db", "status", "--profile", "homelab", "--sslmode", "require",
+		"--host", "db.internal")
+	if err != nil || !strings.Contains(out, `reached db.internal tunnel="" sslmode=require`) {
+		t.Errorf("--host with --sslmode require: %q %v\n%s", strings.TrimSpace(out), err, errOut)
+	}
+}
