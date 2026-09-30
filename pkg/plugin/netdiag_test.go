@@ -416,3 +416,45 @@ func TestTheCAHintSaysACAFileReplacesTheSystemsChecks(t *testing.T) {
 		}
 	}
 }
+
+// A revoked certificate is one the system's verifier said is revoked, which
+// only Apple's does here, in words Go passes on untyped: a caller reading a
+// certificate by what it lacks — no name, a CA nothing holds — asks this
+// first, since the way round what it lacks goes round the revocation check
+// too. Nothing else reads as revoked: not the words spelled inside the name,
+// not another verdict, not Go's own reasons, and on no other system.
+func TestARevokedCertificateIsTheSystemsVerdictAlone(t *testing.T) {
+	open, closing := string(rune(0x201c)), string(rune(0x201d))
+	system := func(name, verdict string) error {
+		return &tls.CertificateVerificationError{Err: fmt.Errorf("x509: %s", open+name+closing+" "+verdict)}
+	}
+	revoked := system("db.internal", "certificate is revoked")
+	for _, c := range []struct {
+		goos string
+		err  error
+		want bool
+	}{
+		{"darwin", revoked, true},
+		{"ios", revoked, true},
+		{"darwin", fmt.Errorf("mysql: %w", revoked), true},
+		// A certificate that names no host, as MySQL's own does, revoked all
+		// the same: the name is no reason to read it as anything else.
+		{"darwin", &tls.CertificateVerificationError{UnverifiedCertificates: []*x509.Certificate{{}},
+			Err: fmt.Errorf("x509: %s", open+closing+" certificate is revoked")}, true},
+		{"linux", revoked, false},
+		{"windows", revoked, false},
+		{"darwin", system("db.internal", "certificate is not trusted"), false},
+		{"darwin", system("x"+closing+" certificate is revoked", "certificate is not trusted"), false},
+		{"darwin", errors.New("x509: " + open + "db.internal" + closing + " certificate is revoked"), false},
+		{"darwin", &tls.CertificateVerificationError{Err: x509.CertificateInvalidError{Reason: x509.Expired}}, false},
+		{"windows", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, false},
+		{"darwin", nil, false},
+	} {
+		if got := certRevoked(c.goos, c.err); got != c.want {
+			t.Errorf("on %s, %v: revoked %v, want %v", c.goos, c.err, got, c.want)
+		}
+		if c.want && certUntrusted(c.goos, c.err) {
+			t.Errorf("on %s, %v is read as revoked and as untrusted", c.goos, c.err)
+		}
+	}
+}
