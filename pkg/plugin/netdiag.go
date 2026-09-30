@@ -225,6 +225,36 @@ func certUntrusted(goos string, err error) bool {
 	return said
 }
 
+// CertRevoked reports whether err is a certificate its issuer revoked, as the
+// system's verifier said so: macOS's and iOS's, whose "certificate is
+// revoked" Go passes on untyped (CertUntrusted says how that verdict is
+// spelled, and how it is read by its ending, whatever the certificate's name
+// holds).
+//
+// **For a caller that reads a certificate by what it lacks, to leave
+// revocation out explicitly.** A certificate that names no host, or one from
+// a CA nothing holds, has a way round it — a mode that checks the chain
+// without a name, a CA file — and every way round runs Go's verifier in the
+// system's place, which checks no revocation. A plugin that read "no name"
+// off a certificate the system had refused for any reason answered a revoked
+// one with the mode that connected to it; asked first, this keeps that
+// verdict the system's own, to be answered in its words and with no way
+// round. CertUntrusted never reads a revoked certificate as untrusted, so the
+// CA-file hint needs no such guard.
+//
+// **Only where a verifier says so.** Go's own verifier, which runs on Linux
+// and wherever a CA file is set, checks no revocation at all, and Windows'
+// revocation verdict reaches Go as an unknown authority with nothing to tell
+// it apart (CertUntrusted): on those, a revoked certificate is not known as
+// one, and this answers false.
+func CertRevoked(err error) bool { return certRevoked(runtime.GOOS, err) }
+
+// certRevoked is CertRevoked on goos, whose verifier answered err.
+func certRevoked(goos string, err error) bool {
+	_, said := systemVerdict(goos, err, "certificate is revoked")
+	return said
+}
+
 // systemVerdict is the handshake's error when err is the verdict of Apple's
 // own verifier, on goos, in words ending verdict — one Go passes on untyped
 // (CertUntrusted says which it types) — and whether it is.
