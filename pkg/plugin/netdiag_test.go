@@ -112,6 +112,48 @@ func TestADialIsReadWhoeverElseAnsweredBesideIt(t *testing.T) {
 	}
 }
 
+// A server that was reached answered, and no answer of one is a dial that
+// failed, whatever words it holds: the dial's questions read an error's
+// words when its chain holds no errno, and a certificate's names and the
+// system's verdict on one are the server's to choose. A certificate named
+// for "connect: connection refused" was nothing listening, on a port that
+// had answered with a certificate, to any plugin that asked the dial's
+// questions before the certificate's — gRPC's status among the errors,
+// which carries a handshake's words with nothing typed under them. And
+// words are a dial's only as a dial spells them, after the call that
+// failed: a server's own "connection refused", relayed untyped, is no
+// refusal here.
+func TestADialPredicateAnswersNothingAServerThatWasReachedGave(t *testing.T) {
+	open, closing := string(rune(0x201c)), string(rune(0x201d))
+	for _, errno := range []syscall.Errno{refusedErrnos[0], unroutableErrnos[0]} {
+		dialWords := "connect: " + errno.Error()
+		named := &x509.Certificate{DNSNames: []string{dialWords}}
+		verdict := &tls.CertificateVerificationError{Err: x509.HostnameError{Certificate: named, Host: "db.internal"}}
+		for _, answered := range []error{
+			verdict,
+			fmt.Errorf("pg: %w", verdict),
+			x509.HostnameError{Certificate: named, Host: "db.internal"},
+			fmt.Errorf("rpc error: code = Unavailable desc = connection error: desc = %q",
+				"transport: authentication handshake failed: "+verdict.Error()),
+			// macOS's verdict, untyped, on a certificate named with the words.
+			&tls.CertificateVerificationError{Err: fmt.Errorf("x509: %s", open+dialWords+closing+" certificate is revoked")},
+			fmt.Errorf("rpc error: code = Unavailable desc = %q", "transport: authentication handshake failed: "+
+				(&tls.CertificateVerificationError{Err: fmt.Errorf("x509: %s", open+dialWords+closing+
+					" certificate is revoked")}).Error()),
+			tls.RecordHeaderError{Msg: dialWords},
+			// A handshake the server refused with an alert, spelled as Go's
+			// TLS client spells a remote one.
+			fmt.Errorf("%s: remote error: tls: bad certificate", dialWords),
+			errors.Join(dialErr(unroutableErrnos[0]), verdict),
+			errors.New("the server said " + errno.Error()),
+		} {
+			if DialRefused(answered) || DialUnroutable(answered) {
+				t.Errorf("%v: refused %v, unroutable %v, want neither", answered, DialRefused(answered), DialUnroutable(answered))
+			}
+		}
+	}
+}
+
 // issue is a certificate for db.internal and 127.0.0.1, valid from an hour
 // ago for valid, signed by parent's key — or by its own when parent is nil,
 // and then a CA of its own, as a self-signed server certificate is.
