@@ -426,7 +426,9 @@ type Field struct {
 	// said is the opposite fact — that a tunnel silently strips its effect,
 	// because EndpointTLS is forced to its off value unconditionally
 	// whenever a forward is open (see EndpointTLS), and a value that only
-	// mattered once TLS was negotiated does nothing once TLS is not.
+	// mattered once TLS was negotiated does nothing once TLS is not. So the
+	// host refuses one beside a forward, whether a profile's `set:` states it
+	// or the caller gives it, rather than open the forward and leave it unread.
 	//
 	// **Not the same claim `checkSet` already makes about an Endpoint-role
 	// input.** Those are overridden because the host writes into them

@@ -674,3 +674,76 @@ func TestATLSSwitchRefusalIsSpelledForItsSurface(t *testing.T) {
 		}
 	}
 }
+
+// A CA given on the call beside a forward is refused as the same line under
+// `set:` is (checkSet): a TLSAdjacent input is read only once the TLS mode a
+// forward turns off negotiates, so through the forward it was accepted and
+// went unread — a check the caller named and nothing ran. Empty is no CA,
+// and a plugin with no TLS mode for a forward to turn off is untouched.
+func TestACAGivenBesideAForwardIsRefusedRatherThanLeftUnread(t *testing.T) {
+	withCA := func(c plugin.Capability, ca string) plugin.Capability {
+		c.Inputs = append(slices.Clone(c.Inputs), plugin.Field{Name: ca, Type: plugin.String,
+			Config: ca, Local: true, TLSAdjacent: true})
+		return c
+	}
+	shapes := tlsShapes()
+	pg := withCA(shapes[0].cap, "sslrootcert")
+	mysql := withCA(shapes[1].cap, "ca-file")
+	for _, tc := range []struct {
+		name string
+		cap  plugin.Capability
+		ca   string
+	}{{"pg", pg, "sslrootcert"}, {"mysql", mysql, "ca-file"}} {
+		for _, extra := range []map[string]any{nil, {shapes[0].tls: "disable"}, {"tls": "false"}} {
+			calls := fakeKubectl(t, "echo 'a forward that must not be opened' >&2\nexit 1\n")
+			caller := map[string]any{tc.ca: "/etc/ssl/db-ca.pem"}
+			for k, v := range extra {
+				caller[k] = v
+			}
+			_, via, closeTunnel, verr := Dial(context.Background(), "homelab", config.Connection{Kube: kubeCoord},
+				tc.cap, caller, plugin.SurfaceCLI)
+			closeTunnel()
+			if verr == nil || verr.Code != "core.profile.tls.forward" {
+				t.Errorf("%s %v: tunnel %q, err %v — a CA the forward leaves unread was accepted",
+					tc.name, caller, via, verr)
+				continue
+			}
+			if c := calls(); len(c) != 0 {
+				t.Errorf("%s: kubectl ran before the refusal: %v", tc.name, c)
+			}
+			if !strings.Contains(verr.Message, "--"+tc.ca+" /etc/ssl/db-ca.pem") ||
+				!strings.Contains(verr.Hint, "without --"+tc.ca+" goes through the forward") ||
+				!strings.Contains(verr.Hint, "--host and --port as well to connect directly") {
+				t.Errorf("%s: %s (%s)", tc.name, verr.Message, verr.Hint)
+			}
+		}
+	}
+
+	// No CA, and a CA-shaped input on a plugin whose TLS no forward turns off.
+	fakeForwardAt := func() {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = ln.Close() })
+		fakeKubectl(t, fmt.Sprintf("echo 'Forwarding from 127.0.0.1:%d -> 5432'\nwhile true; do sleep 1; done\n",
+			ln.Addr().(*net.TCPAddr).Port))
+	}
+	fakeForwardAt()
+	noMode := withCA(plugin.Capability{ID: "db.status", Summary: "status", Safety: plugin.Read, Run: run,
+		Inputs: slices.Clone(pg.Inputs[:2])}, "ca")
+	for _, tc := range []struct {
+		cap    plugin.Capability
+		caller map[string]any
+	}{
+		{pg, map[string]any{"sslrootcert": ""}},
+		{noMode, map[string]any{"ca": "/etc/ssl/db-ca.pem"}},
+	} {
+		_, via, closeTunnel, verr := Dial(context.Background(), "homelab", config.Connection{Kube: kubeCoord},
+			tc.cap, tc.caller, plugin.SurfaceCLI)
+		closeTunnel()
+		if verr != nil || via != plugin.TunnelKube {
+			t.Errorf("%s %v: tunnel %q, err %v, want the forward", tc.cap.ID, tc.caller, via, verr)
+		}
+	}
+}
