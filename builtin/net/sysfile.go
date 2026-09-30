@@ -205,10 +205,19 @@ func backup(req plugin.Request, path string, max int) (string, *view.Error) {
 
 // unreadable is the refusal of a file readLines or backup could not read,
 // saying which of pathin's refusals it met when it was one of them.
+//
+// The call's bounds' own refusal is the answer as it is — rta's own state
+// under a root, by its name or by another name for one of its files — which
+// says what the path is better than "reading it" could: wrapped as
+// net.sysfile.unreadable, a file that may not be read was said to be one that
+// could not.
 func unreadable(path string, err error) *view.Error {
 	var notAFile *pathin.NotAFileError
 	var tooLarge *pathin.TooLargeError
+	var refused *view.Error
 	switch {
+	case errors.As(err, &refused):
+		return refused
 	case errors.As(err, &notAFile):
 		return view.Errorf("net.sysfile.notafile", "%v", err).
 			WithHint("name the file itself — a hosts file or a resolv.conf is a regular file")

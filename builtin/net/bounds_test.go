@@ -90,3 +90,40 @@ func TestTheSystemFileIsReadUnderARootAndANamedOneIsHeldToIt(t *testing.T) {
 		}
 	}
 }
+
+// A file the caller names that the call's bounds refuse, rta's own state
+// under a root by its name or by another name for one of its files, is
+// refused as the bounds refuse it. It was wrapped as net.sysfile.unreadable,
+// "reading <path>: <the refusal>", which said the file could not be read
+// where the answer was that it may not be.
+func TestANamedFileTheBoundsRefuseIsRefusedAsTheyRefuseIt(t *testing.T) {
+	root := t.TempDir()
+	data := filepath.Join(root, "data")
+	t.Setenv("RTA_DATA_DIR", data)
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	if err := os.MkdirAll(data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	key := filepath.Join(data, "grants.key")
+	if err := os.WriteFile(key, []byte("127.0.0.1 seal\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files := []string{key}
+	if link := filepath.Join(root, "hosts"); os.Link(key, link) == nil {
+		files = append(files, link)
+	}
+	g, err := pathguard.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		r := plugin.NewRequest(map[string]any{"file": file}, false, true).WithSurface(plugin.SurfaceMCP).
+			WithConfinement(g.Derived).WithBounds(g.Bounds())
+		for id, run := range map[string]plugin.Handler{"net.hosts.list": runHostsList, "net.resolver.list": runResolverList} {
+			_, err := run(context.Background(), r)
+			if verr := view.AsError(err, "x"); verr.Code != "core.mcp.path.protected" {
+				t.Errorf("%s of %s: %v, want the bounds' refusal", id, filepath.Base(file), err)
+			}
+		}
+	}
+}
