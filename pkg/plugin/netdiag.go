@@ -27,14 +27,26 @@ import (
 // came back untyped, and the reader was told everything but the CA.
 //
 // So the answers live here, once, as predicates rather than as one
-// classifier: each plugin reads its driver's own errors first — a server's
-// coded answer, a gRPC status, a handshake its protocol names — and asks
-// these in the order its failures need, and each question answers only for
-// what it names, so no order among them is needed to keep one from taking
-// another's failure. A DNS failure is none of the three: a dial that could
-// not resolve its host arrives as a *net.OpError too, and it is read as the
-// *net.DNSError it wraps — which these leave to the plugin, whatever words
-// the resolver's own failed exchange put in it.
+// classifier, each answering only for what it names. That is a property the
+// dial's two have to work for, and they did not always have it: they read an
+// error's words when its chain holds no errno, as a driver that flattened
+// its dial leaves it, and a server that was reached answers in words it
+// chose — a certificate's names, the system's verdict quoting one. A
+// certificate named for "connect: connection refused" was nothing listening
+// to any plugin that asked the dial's questions before the certificate's,
+// on a port that had answered with a certificate. They now answer no error
+// that holds a handshake's or a certificate's failure (dialFailed), and so
+// none of these takes another's.
+//
+// **One order is still the plugin's to keep: its driver's own errors
+// first.** A server's coded answer, a gRPC status a server gave, a reply a
+// driver quotes when it cannot parse it — whatever a server said, read by
+// what it is before any of these is asked, since a server's words relayed
+// with nothing typed under them can spell a dial's failure as a dial does,
+// and no reading of words can tell the two apart. A DNS failure is none of
+// these: a dial that could not resolve its host arrives as a *net.OpError
+// too, and it is read as the *net.DNSError it wraps — which these leave to
+// the plugin, whatever words the resolver's own failed exchange put in it.
 
 // DialRefused reports whether err is a connection the host refused: an
 // address that answered, with nothing listening on the port. The port is
@@ -43,11 +55,13 @@ import (
 // By the operating system's own error, not by the *net.OpError around it,
 // which every failed dial is. A driver that flattens the dial's error into a
 // message of its own — gRPC's status carries the text alone — is read by the
-// words that error has on this machine, "connection refused" on Linux and
-// macOS, since the dial it flattened ran here; but only when nothing in the
-// chain names an error of its own, which is the one read then. A server's
-// own answer is read before this, since a message relaying a dial of the
-// server's that failed reads the same.
+// words that error has on this machine as a dial spells them, "connect:
+// connection refused" on Linux and macOS, since the dial it flattened ran
+// here; but only when nothing in the chain names an error of its own, which
+// is the one read then, and never when the chain holds a handshake's or a
+// certificate's failure, which only a server that was reached gives
+// (dialFailed). A server's own answer is read before this, since a message
+// relaying a dial of the server's that failed reads the same.
 func DialRefused(err error) bool { return dialFailed(err, refusedErrnos) }
 
 // DialUnroutable reports whether err is a dial that found no way to the
@@ -69,7 +83,8 @@ func DialUnroutable(err error) bool {
 }
 
 // dialFailed reports whether err is one of errnos: in its chain, or, when
-// the chain names no error of the operating system's at all, in its text.
+// the chain names no error of the operating system's at all, in its text as
+// a dial spells it.
 //
 // Never for a name that did not resolve. Go's resolver keeps the words of
 // its own failed exchange with the DNS server and no error under them — a
@@ -77,9 +92,28 @@ func DialUnroutable(err error) bool {
 // address, or "connection refused" from a port nothing answers DNS on — and
 // read by them, a name nothing resolved was a host there was no way to, or a
 // port refused on an address the name never had.
+//
+// **Never for an error a server that was reached gave (handshook).** A
+// certificate's names are the server's to choose, and so is the name the
+// system's verdict quotes, and read for the dial's words a certificate named
+// "connect: connection refused" was a port nothing listens on — asked before
+// CertUntrusted, as a plugin was free to ask them. Typed or flattened: gRPC's
+// status keeps a handshake's words and nothing under them. So too when the
+// chain holds a failed dial beside the handshake, as a driver dialling each of
+// a name's addresses joins them: the host was reached on one of them, and the
+// certificate is what to say.
+//
+// **And words are read only as a dial spells them, the call that failed
+// before them** (dialCalls): "connect: connection refused", never
+// "connection refused" alone. A server's own message, relayed untyped by a
+// driver, said "connection refused" about something of its own — a backend
+// it could not reach — and was read as a port nothing listened on, where the
+// server had just answered. No reading of words closes that for good: a
+// server can spell a dial's words too, which is why a plugin reads whatever
+// its driver says a server said before asking this.
 func dialFailed(err error, errnos []syscall.Errno) bool {
 	var dnsErr *net.DNSError
-	if err == nil || errors.As(err, &dnsErr) {
+	if err == nil || errors.As(err, &dnsErr) || handshook(err) {
 		return false
 	}
 	for _, e := range errnos {
@@ -93,11 +127,38 @@ func dialFailed(err error, errnos []syscall.Errno) bool {
 	}
 	text := err.Error()
 	for _, e := range errnos {
-		if strings.Contains(text, e.Error()) {
-			return true
+		for _, call := range dialCalls {
+			if strings.Contains(text, call+": "+e.Error()) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// dialCalls are the calls a failed TCP dial names before the operating
+// system's error, as Go's *os.SyscallError spells it: connect on a Unix, and
+// connectex, the overlapped connect, on Windows.
+var dialCalls = []string{"connect", "connectex"}
+
+// handshook reports whether err holds a TLS handshake's failure or a verdict
+// on a certificate: something only a server that was reached gives. By type,
+// for a chain that kept them, and by the words Go's TLS and x509 errors
+// open with, "tls: " and "x509: ", for one a driver flattened into text —
+// gRPC's status. A received alert is among them: Go spells it "remote
+// error: tls: " and the alert's name.
+func handshook(err error) bool {
+	for _, target := range []any{new(*tls.CertificateVerificationError), new(tls.RecordHeaderError),
+		new(tls.AlertError), new(*tls.ECHRejectionError), new(x509.HostnameError),
+		new(x509.UnknownAuthorityError), new(x509.CertificateInvalidError), new(x509.SystemRootsError),
+		new(x509.ConstraintViolationError), new(x509.UnhandledCriticalExtension),
+		new(x509.InsecureAlgorithmError)} {
+		if errors.As(err, target) {
+			return true
+		}
+	}
+	text := err.Error()
+	return strings.Contains(text, "tls: ") || strings.Contains(text, "x509: ")
 }
 
 // CertUntrusted reports whether err is a certificate nothing here vouches
