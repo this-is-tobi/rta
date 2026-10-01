@@ -285,7 +285,13 @@ func openInstrumented(ctx context.Context, name string, t Target) (*Tunnel, *vie
 	// API server the forward is over, and leaves a credential helper it
 	// spawned running under nobody. The call whose context this is has
 	// nothing to do with a forward its caller gave up on.
+	//
+	// It also records that it ran (killed), before the signal goes: an exit
+	// it caused is the deadline's, and only that record says so without a
+	// race (awaitForwarding).
+	killed := new(atomic.Bool)
 	cmd.Cancel = func() error {
+		killed.Store(true)
 		reap(cmd)
 		return nil
 	}
@@ -327,7 +333,7 @@ func openInstrumented(ctx context.Context, name string, t Target) (*Tunnel, *vie
 	// not kill a kubectl that only just started forwarding successfully.
 	waitCtx, cancel := context.WithTimeout(ctx, openCeiling)
 	defer cancel()
-	ep, verr := awaitForwarding(waitCtx, stdout, name, t.Kube, stderr, tun.exited, &tun.gaveUp)
+	ep, verr := awaitForwarding(waitCtx, stdout, name, t.Kube, stderr, tun.exited, &tun.gaveUp, killed)
 	if verr != nil {
 		tun.Close()
 		// The Tunnel travels back with the error so a test can ask how the
@@ -342,7 +348,7 @@ func openInstrumented(ctx context.Context, name string, t Target) (*Tunnel, *vie
 // awaitForwarding waits for the listener line, kubectl exiting, or the
 // context. Whichever happens first is the answer.
 func awaitForwarding(ctx context.Context, stdout io.Reader, name, spec string,
-	stderr *syncBuffer, exited <-chan struct{}, gaveUp *atomic.Bool) (Endpoint, *view.Error) {
+	stderr *syncBuffer, exited <-chan struct{}, gaveUp, killed *atomic.Bool) (Endpoint, *view.Error) {
 	lines := make(chan string, 1)
 	go func() {
 		sc := bufio.NewScanner(stdout)
@@ -384,8 +390,17 @@ func awaitForwarding(ctx context.Context, stdout io.Reader, name, spec string,
 	// forward that never came up was reported, now and then, as "kubectl
 	// exited without forwarding" — the exit rta's own kill caused. So an exit
 	// seen once the context is done is the timeout it came from.
+	//
+	// **And one rta's kill caused (killed), whether ctx has heard yet or
+	// not.** ctx is the wait's own context, derived from the one kubectl runs
+	// under, and a deadline reaches the two in turn: the parent's Done closes
+	// first and its children are cancelled after, so exec could take the
+	// parent's word, kill kubectl and see it exit while ctx.Err() was still
+	// nil — on a loaded runner, now and then, "kubectl exited without
+	// forwarding" again. cmd.Cancel records that it ran before it signals, so
+	// an exit it caused is always seen as the deadline's.
 	exitedEarly := func() (Endpoint, *view.Error) {
-		if ctx.Err() != nil {
+		if killed.Load() || ctx.Err() != nil {
 			return timedOut()
 		}
 		return Endpoint{}, kubectlFailed(name, spec, stderr.String())
