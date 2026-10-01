@@ -247,16 +247,33 @@ func (g *Guard) openRoot(path string) (*os.Root, string, error) {
 	if verr != nil {
 		return nil, "", verr
 	}
+	// From the deepest root the path lies under, and from the next one out
+	// only where that one cannot be opened. A root drawn inside another is the
+	// one the operator meant for what is under it, and it may be readable
+	// where the one around it is not: os.Root goes down a directory by
+	// opening it, so one the server may search but not list (mode --x) fails
+	// every path under it, and the first root in --root order that held the
+	// path was the one opened — the outer one, whenever it came first.
+	type holding struct{ root, rel string }
+	var holds []holding
 	for _, r := range g.roots {
-		rel, ok := under(r, abs)
-		if !ok {
-			continue
+		if rel, ok := under(r, abs); ok {
+			holds = append(holds, holding{r, rel})
 		}
-		root, err := os.OpenRoot(r)
-		if err != nil {
-			return nil, "", err
+	}
+	slices.SortStableFunc(holds, func(a, b holding) int { return len(b.root) - len(a.root) })
+	var deepest error
+	for _, h := range holds {
+		root, err := os.OpenRoot(h.root)
+		if err == nil {
+			return root, h.rel, nil
 		}
-		return root, rel, nil
+		if deepest == nil {
+			deepest = err
+		}
+	}
+	if deepest != nil {
+		return nil, "", deepest
 	}
 	// Derived allowed it, so it is under a root; a root that has moved since
 	// is the one way to get here, and the answer is the refusal.
