@@ -1230,21 +1230,35 @@ func TestAnEdgeIsRecordedOnce(t *testing.T) {
 // 6.1 s for 100,000 — meaning the bound itself permitted around twenty-five
 // seconds of pure map-walking on the happy path of a large pnpm monorepo.
 //
-// A wall clock in a -race -shuffle suite measures the machine as much as the
-// code, so the ceiling here is deliberately enormous: the linear version does
-// this in about fifteen milliseconds, and the quadratic one could not have met
-// two seconds on any machine.
+// The graph is held against the same edges appended to a plain map, rather
+// than against a clock. A ceiling of two seconds, sized against the fifteen
+// milliseconds the linear construction takes uninstrumented, was missed by
+// the linear construction itself under -race and coverage, as CI runs it, on
+// a slow and loaded runner: every edge is an instrumented map write there,
+// and a Linux runner held to a fraction of a CPU spent 2.1-3 s on them. A
+// plain map pays the same instrumentation and the same load, and the linear
+// construction costs one to four times what it does, where the quadratic
+// one costs hundreds of times as much, and over a thousand under -race and
+// coverage. Twenty times the plain map tells the two apart either way, and
+// the second on top is for one stall of a machine that builds both in
+// milliseconds.
 func TestBuildingTheGraphIsNotQuadratic(t *testing.T) {
-	g := newGraph()
-	start := time.Now()
-	for i := 0; i < 20000; i++ {
-		from := ref("npm", "p"+strconv.Itoa(i))
-		for j := 0; j < 5; j++ {
-			g.require(from, ref("npm", "d"+strconv.Itoa(i)+"-"+strconv.Itoa(j)))
+	insert := func(add func(from, to string)) time.Duration {
+		start := time.Now()
+		for i := 0; i < 20000; i++ {
+			from := ref("npm", "p"+strconv.Itoa(i))
+			for j := 0; j < 5; j++ {
+				add(from, ref("npm", "d"+strconv.Itoa(i)+"-"+strconv.Itoa(j)))
+			}
 		}
+		return time.Since(start)
 	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
-		t.Errorf("100,000 edges took %v — the count is being recomputed per insert", elapsed)
+	plain := map[string][]string{}
+	listed := insert(func(from, to string) { plain[from] = append(plain[from], to) })
+	g := newGraph()
+	if built := insert(g.require); built > 20*listed+time.Second {
+		t.Errorf("100,000 edges took %v, against %v in a plain map — the count is being recomputed per insert",
+			built, listed)
 	}
 	if g.edges() != 100000 {
 		t.Errorf("edges = %d, want 100000", g.edges())
