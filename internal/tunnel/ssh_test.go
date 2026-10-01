@@ -451,9 +451,7 @@ func startSSHD(t *testing.T, sshd, dir, hostKey, authorized string) (int, func()
 		}
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
-			c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 200*time.Millisecond)
-			if err == nil {
-				_ = c.Close()
+			if speaksSSH(port) {
 				return port, stop
 			}
 			time.Sleep(50 * time.Millisecond)
@@ -463,6 +461,23 @@ func startSSHD(t *testing.T, sshd, dir, hostKey, authorized string) (int, func()
 	log, _ := os.ReadFile(logPath)
 	t.Skipf("sshd never came up on a loopback port; its log: %s", log)
 	return 0, nil
+}
+
+// speaksSSH reports whether an SSH server answers on port: its banner, not a
+// connection alone. A listener something else opened on the released port
+// before sshd could bind it answers a dial just as well — sshd then exits on
+// the bind it lost, and the test went on against a server that never speaks,
+// failing at the open's 30 s deadline rather than trying another port.
+func speaksSSH(port int) bool {
+	c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 200*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	defer c.Close()
+	_ = c.SetReadDeadline(time.Now().Add(time.Second))
+	banner := make([]byte, 4)
+	_, err = io.ReadFull(c, banner)
+	return err == nil && string(banner) == "SSH-"
 }
 
 // The completion candidates for an ssh target's head: real aliases only —
