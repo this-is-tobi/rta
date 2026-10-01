@@ -208,12 +208,6 @@ func probeSSH(ctx context.Context, name string, spec sshSpec, tun *Tunnel) *view
 	}
 	stderr := &syncBuffer{}
 	cmd.Stderr = stderr
-	if err := cmd.Start(); err != nil {
-		return view.Errorf("tunnel.open.failed", "could not start ssh: %v", err)
-	}
-	exited := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(exited) }()
-
 	timedOut := func() *view.Error {
 		return view.Errorf("tunnel.open.timeout",
 			"profile %q did not come up in time", name).
@@ -221,6 +215,17 @@ func probeSSH(ctx context.Context, name string, spec sshSpec, tun *Tunnel) *view
 				"a destination that never closes an idle connection can also park this probe",
 				spec.dest, spec.host))
 	}
+	if err := cmd.Start(); err != nil {
+		// A context already ended is refused by os/exec in its own words, and
+		// it is the deadline's, not ssh's — see openInstrumented.
+		if ctx.Err() != nil {
+			return timedOut()
+		}
+		return view.Errorf("tunnel.open.failed", "could not start ssh: %v", err)
+	}
+	exited := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(exited) }()
+
 	waitCtx, cancel := context.WithTimeout(ctx, openCeiling)
 	defer cancel()
 	select {
