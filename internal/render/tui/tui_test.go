@@ -1720,12 +1720,16 @@ func TestBrowseEscapeClearsTheFilterBeforeLeaving(t *testing.T) {
 // batched ones, feeding each result back in. It is the smallest stand-in for
 // the runtime that makes asynchronous list filtering observable in a test.
 //
-// Commands are given a short deadline and abandoned if they miss it. That is
-// not impatience: a cursor blink is a command that sleeps half a second and
-// then schedules another one exactly like it, so draining honestly never
-// terminates and draining synchronously makes every test that types a
-// character take seconds. The commands this needs — the list's filter — are
-// immediate.
+// Each command goes through resolveCmd, which leaves a clock alone — a
+// cursor blink is a command that sleeps half a second and then schedules
+// another one exactly like it, so draining honestly never terminates — and
+// runs every other command to its answer, however long a busy machine
+// takes over it. pump used to give each one 25ms on a goroutine of its own
+// and abandon what missed it as a timer; the list's filter is immediate,
+// but its goroutine is not scheduled immediately on a loaded machine, and
+// held back 30ms it was abandoned with the blinks: the test then read the
+// list the keystroke before had left, all three capabilities where a filter
+// for "boom" leaves one.
 func pump(t *testing.T, m Model, msg tea.Msg) Model {
 	t.Helper()
 	o, cmd := m.Update(msg)
@@ -1740,13 +1744,9 @@ func pump(t *testing.T, m Model, msg tea.Msg) Model {
 		if c == nil {
 			continue
 		}
-		done := make(chan tea.Msg, 1)
-		go func() { done <- c() }()
-		var out tea.Msg
-		select {
-		case out = <-done:
-		case <-time.After(25 * time.Millisecond):
-			continue // a timer; nothing this test observes depends on it
+		out, ok := resolveCmd(c)
+		if !ok {
+			continue // a clock; nothing this test observes depends on it
 		}
 		switch v := out.(type) {
 		case nil:
