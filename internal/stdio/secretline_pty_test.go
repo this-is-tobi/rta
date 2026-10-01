@@ -4,6 +4,7 @@ package stdio
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -81,15 +82,36 @@ func newTerminal(t *testing.T) *ptyTerminal {
 // paste arrives after its first line. It checks that nothing typed was
 // echoed and that the terminal is put back as it was.
 //
-// Each wait is on the terminal's settings, not on a clock: a byte typed
-// before the reader switches the discipline off is edited, and echoed, by
-// the discipline, and the test would be of the terminal instead. The later
-// pieces still have to arrive within drainWindow of the reader's last read,
-// as a paste's lines do, so a test stalled longer than that between seeing
-// the drain begin and typing fails here, as a paste that slow is cut there.
+// The first wait is on the terminal's settings, not on a clock: a byte
+// typed before the reader switches the discipline off is edited, and
+// echoed, by the discipline, and the test would be of the terminal instead.
+// The later pieces are typed from the reader's own goroutine, through
+// readTerminal's draining, once the terminal is set to drain and before the
+// drain reads it. Typed from here on seeing that setting, as they were,
+// they had to arrive within drainWindow of the drain's first read: a test
+// held back longer than that by a busy machine typed them into a terminal
+// the reader had finished with, and the case read a paste cut short and
+// then its second line as the next one typed. Small, so the terminal holds
+// them while nothing reads it.
 func (p *ptyTerminal) read(typed string, later ...string) (line []byte, more bool, err error) {
 	p.t.Helper()
-	return p.readWith(readTerminalLine, typed, later...)
+	if len(later) == 0 {
+		return p.readWith(readTerminalLine, typed)
+	}
+	var typing error
+	line, more, err = p.readWith(func(fd int) ([]byte, bool, error) {
+		return readTerminal(fd, true, func() {
+			for _, s := range later {
+				if typing = p.typeIn(s); typing != nil {
+					return
+				}
+			}
+		})
+	}, typed)
+	if typing != nil {
+		p.t.Errorf("typing the rest of the paste: %v", typing)
+	}
+	return line, more, err
 }
 
 // secret runs the passphrase prompt's reader, ReadSecret's, on the terminal
@@ -103,7 +125,7 @@ func (p *ptyTerminal) secret(typed string) ([]byte, error) {
 	return line, err
 }
 
-func (p *ptyTerminal) readWith(reader func(fd int) ([]byte, bool, error), typed string, later ...string) (
+func (p *ptyTerminal) readWith(reader func(fd int) ([]byte, bool, error), typed string) (
 	line []byte, more bool, err error,
 ) {
 	p.t.Helper()
@@ -124,14 +146,6 @@ func (p *ptyTerminal) readWith(reader func(fd int) ([]byte, bool, error), typed 
 		return s.Lflag&(unix.ICANON|unix.ECHO) == 0
 	})
 	p.write(typed)
-	if len(later) > 0 {
-		p.await("draining", func(s *unix.Termios) bool {
-			return s.Lflag&unix.ICANON == 0 && s.Cc[unix.VMIN] == 0
-		})
-		for _, s := range later {
-			p.write(s)
-		}
-	}
 	var r result
 	select {
 	case r = <-done:
@@ -186,6 +200,15 @@ func (p *ptyTerminal) await(what string, ready func(*unix.Termios) bool) {
 // echoes has filled the side nobody reads until the reader returns.
 func (p *ptyTerminal) write(s string) {
 	p.t.Helper()
+	if err := p.typeIn(s); err != nil {
+		p.t.Fatal(err)
+	}
+}
+
+// typeIn is write's typing with its failure handed back rather than ended
+// on, for the reader's own goroutine: only the goroutine running the test
+// may end it.
+func (p *ptyTerminal) typeIn(s string) error {
 	deadline := time.Now().Add(10 * time.Second)
 	for b := []byte(s); len(b) > 0; {
 		n, err := unix.Write(p.master, b)
@@ -194,10 +217,11 @@ func (p *ptyTerminal) write(s string) {
 			time.Sleep(time.Millisecond)
 			continue
 		case err != nil:
-			p.t.Fatalf("typing, with %d of %d bytes still to go: %v", len(b), len(s), err)
+			return fmt.Errorf("typing, with %d of %d bytes still to go: %w", len(b), len(s), err)
 		}
 		b, deadline = b[n:], time.Now().Add(10*time.Second)
 	}
+	return nil
 }
 
 // echoed is what the terminal has written back to the emulator's side and
