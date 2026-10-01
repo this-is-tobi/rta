@@ -250,6 +250,13 @@ type Connection struct {
 	// with the same `*.tls.untrusted` a direct connection would get; a plugin
 	// that reads a CA bundle of its own (vault's `ca-file`, following etcd's)
 	// is how that gets resolved, not this flag.
+	//
+	// The name is verified as well, and through a forward the address dialled
+	// is 127.0.0.1, which a certificate issued for the service does not name:
+	// it is refused for its name, as the forward's doing. The plugins that
+	// speak TLS through a forward take a `tls-server-name` setting, the name
+	// to check the certificate for instead (docs/20-using/40-profiles.md), so
+	// the check stays whole rather than being given up for the hop.
 	TunnelTLS bool `yaml:"tunnelTLS,omitempty" json:"tunnelTLS,omitempty"`
 
 	// unknown is every key in this connection no field above claims. Same
