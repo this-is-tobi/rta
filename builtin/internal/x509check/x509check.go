@@ -9,8 +9,11 @@
 package x509check
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"time"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // DefaultWarnDays is how close to expiry a certificate has to be before
@@ -40,9 +43,24 @@ func Chain(certs []*x509.Certificate, host string) string {
 	// two spellings are the same check.
 	opts := x509.VerifyOptions{Intermediates: intermediates, DNSName: host}
 	if _, err := certs[0].Verify(opts); err != nil {
-		return "INVALID: " + err.Error()
+		return invalid(certs, err)
 	}
 	return ""
+}
+
+// invalid is the reason Chain gives for a chain the system refused, with the
+// fix beside it where the refusal is one of Apple's own rules the
+// certificate breaks (plugin.CertPolicyHint): a ten-year self-signed
+// certificate, the usual one for a lab or a cluster, was "not standards
+// compliant" and nothing more. Verify's error is handed over as a handshake
+// carries it, since the hint reads the certificate the server sent.
+func invalid(certs []*x509.Certificate, err error) string {
+	reason := "INVALID: " + err.Error()
+	sent := &tls.CertificateVerificationError{UnverifiedCertificates: certs, Err: err}
+	if hint := plugin.CertPolicyHint(sent); hint != "" {
+		reason += " — " + hint
+	}
+	return reason
 }
 
 // Expiring reports whether notAfter falls inside the last warnDays of a
