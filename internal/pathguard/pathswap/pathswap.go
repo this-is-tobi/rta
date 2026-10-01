@@ -99,22 +99,51 @@ func Rename(t testing.TB, protected, path string) {
 // then for long enough that a whole call fits in one state, however slow the
 // call is running (the race detector's, a loaded machine's).
 //
-// That long hold follows the slowest call Run has seen, twice over, rather
-// than a fixed length: a fixed 5 ms was shorter than one audit_deps call on a
-// CI runner (about 23 ms), so no call there ever fit in one state, every one
-// met the swap, and the run could not show it had seen both sides.
+// That long hold follows the slowest call Run has seen lately, twice over,
+// rather than a fixed length: a fixed 5 ms was shorter than one audit_deps
+// call on a CI runner (about 23 ms), so no call there ever fit in one state,
+// every one met the swap, and the run could not show it had seen both sides.
+// It never lasts longer than longestHold, whatever one call did.
 func hold() {
 	d := time.Duration(rand.IntN(100)) * time.Microsecond //nolint:gosec // a test's timing jitter, never a secret
 	if rand.IntN(4) == 0 {                                //nolint:gosec // the same
-		d = max(5*time.Millisecond, 2*time.Duration(slowestCall.Load()))
+		d = min(longestHold, max(5*time.Millisecond, 2*time.Duration(slowestCall.Load())))
 	}
 	time.Sleep(d)
 }
 
-// slowestCall is the longest call Run has timed, in nanoseconds, shared by
-// every swap running: a longer hold only makes a swap flip less often, which
-// harms no other test's race.
+// slowestCall is about the longest of the calls Run has timed lately, in
+// nanoseconds, shared by every swap running.
+//
+// **Lately, not ever.** It was the longest call ever timed, so one call that
+// stalled — a collection under the race detector, a runner that gave the CPU
+// to something else for a second — set the length of every long hold after it
+// in the process. A swap does not flip during a long hold, and some calls
+// meet it only through a flip: a walk meets a directory swapped beneath it
+// only when one lands between the walk listing the directory above and going
+// into it. With one earlier call at two seconds the long holds lasted four, a
+// run's ten seconds held two or three of them, and one such run met the swap
+// in none of its 404 calls — a race it was racing, reported as one it had not
+// seen. note lets a stall go over the few dozen calls after it, and
+// longestHold bounds a hold that began inside one.
 var slowestCall atomic.Int64
+
+// longestHold is the most a long hold lasts: a tenth of a run's longest
+// window, so a hold that began just after a stall costs a run a second of its
+// ten rather than all of them.
+const longestHold = time.Second
+
+// note times one call into slowestCall: the longer of the call and what
+// slowestCall held, less a sixteenth of it. A stall is forgotten over the few
+// dozen calls after it, and calls that are all slow keep it where they are.
+func note(d time.Duration) {
+	for {
+		was := slowestCall.Load()
+		if slowestCall.CompareAndSwap(was, max(int64(d), was-was/16)) {
+			return
+		}
+	}
+}
 
 // swap runs step until the test ends.
 func swap(t testing.TB, step func()) {
@@ -169,9 +198,7 @@ func Run(t testing.TB, before string, call func() Outcome, leaked func(Outcome) 
 		}
 		began := time.Now()
 		o := call()
-		if d := int64(time.Since(began)); d > slowestCall.Load() {
-			slowestCall.Store(d)
-		}
+		note(time.Since(began))
 		if leaked(o) {
 			leaks++
 			if leaks <= 3 {
