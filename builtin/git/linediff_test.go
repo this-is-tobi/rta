@@ -128,6 +128,21 @@ func TestLineDiffPastItsDeadlineIsCoarseButCorrect(t *testing.T) {
 // deadline did not hold on repeated lines: its containment check and its
 // half-match run before the deadline is looked at, and a megabyte of them
 // held one diff a minute under a two-second deadline.
+//
+// What the call takes is held against what diffing each text with itself
+// takes, rather than against a clock. Every diff numbers the lines of both
+// texts and puts its runs back together whatever its deadline: work in
+// proportion to the texts, which no deadline bounds and which is most of this
+// call. Under -race and coverage on a slow, loaded core the repeated lines
+// spent 2.1 s on it, past the two seconds the whole call used to be allowed,
+// while their matching was one common prefix found at once. A text diffed
+// with itself is matched whole by that prefix, so it never reaches the
+// deadline this tests, and the two of them number each text twice: half
+// their time is this call's share of that work. A loaded machine slows it
+// and the matching alike, so the call is allowed twice its share, for a load
+// that changes between the two, the 200ms its matching has, and a second for
+// one stall. A matching that ignored its deadline took half a minute on the
+// lines in a random order, uninstrumented.
 func TestLineDiffHoldsItsDeadlineOnAnyText(t *testing.T) {
 	if testing.Short() {
 		t.Skip("measures time")
@@ -141,9 +156,14 @@ func TestLineDiffHoldsItsDeadlineOnAnyText(t *testing.T) {
 	shapes["two lines in a random order"] = [2]string{x, y}
 	for name, texts := range shapes {
 		start := time.Now()
+		diffLines(texts[0], texts[0], start.Add(time.Hour))
+		diffLines(texts[1], texts[1], start.Add(time.Hour))
+		unbounded := time.Since(start) / 2
+		start = time.Now()
 		c := diffLines(texts[0], texts[1], start.Add(200*time.Millisecond))
-		if took := time.Since(start); took > 2*time.Second {
-			t.Errorf("%s: %v under a 200ms deadline", name, took)
+		if took := time.Since(start); took > 2*unbounded+200*time.Millisecond+time.Second {
+			t.Errorf("%s: %v under a 200ms deadline, where numbering and joining their lines took %v",
+				name, took, unbounded)
 		}
 		if old, new, _ := applied(t, c); old != texts[0] || new != texts[1] {
 			t.Errorf("%s: the diff does not rebuild its texts", name)
