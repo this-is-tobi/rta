@@ -20,6 +20,14 @@ func fresh(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 }
 
+// stopClock holds the package's clock at at until the test ends.
+func stopClock(t *testing.T, at time.Time) {
+	t.Helper()
+	saved := now
+	now = func() time.Time { return at }
+	t.Cleanup(func() { now = saved })
+}
+
 func mustAdd(t *testing.T, kind, name, note, ttl string) Lock {
 	t.Helper()
 	l, verr := Build(kind, name, note, ttl, "terminal")
@@ -423,13 +431,18 @@ func TestAddRefusesAKindItWasHandedDirectly(t *testing.T) {
 // verified set — because the file vanished — never reads again, so match()
 // has to re-check expiry on the set it holds. Only that second check keeps
 // a TTL'd lock in a held set from outliving its window.
+//
+// The window is passed by moving the clock, not by sleeping through it. An
+// 80 ms window was one a loaded runner could spend on the sealed Add and the
+// pin's first read, and the lock had lifted before the pin ever held it.
 func TestAnExpiredLockInAHeldSetIsNotALock(t *testing.T) {
 	fresh(t)
-	l, verr := Build("agent", "claude", "", "1h", "terminal")
+	at := time.Now()
+	stopClock(t, at)
+	l, verr := Build("agent", "claude", "", "1m", "terminal")
 	if verr != nil {
 		t.Fatal(verr)
 	}
-	l.Expires = time.Now().Add(80 * time.Millisecond)
 	if verr := Add(l); verr != nil {
 		t.Fatal(verr)
 	}
@@ -440,7 +453,7 @@ func TestAnExpiredLockInAHeldSetIsNotALock(t *testing.T) {
 	if err := os.Remove(Path()); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(150 * time.Millisecond)
+	stopClock(t, at.Add(2*time.Minute))
 	if held, _ := p.Frozen(KindAgent, "claude"); held != nil {
 		t.Fatal("an expired lock in the held set still freezes")
 	}
