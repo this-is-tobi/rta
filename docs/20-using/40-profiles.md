@@ -178,11 +178,14 @@ plugins:
     tunnelTLS: true
     set:
       ca-file: ~/.config/rta/vault-ca.crt
+      tls-server-name: vault.vault-operator-system.svc
 ```
 
 `kubectl port-forward` and `ssh -L` are both a raw byte pipe from `127.0.0.1` straight into whatever the destination socket speaks — neither terminates a request the way a proxy would. So the plain `http://` a forward fills in by default is correct for the ordinary case (a plaintext service behind a TLS-secured cluster or bastion hop) and silently wrong for a service whose own listener speaks TLS, Vault's being the common example: the forward carries the TLS bytes through unchanged, and a plain HTTP client sending a request into them gets a connection that closes with nothing readable back.
 
 `tunnelTLS: true` says the far end terminates TLS itself, so the forward should be addressed as `https://` — refused if the connection states neither `kube:` nor `ssh:`, since there is then no forward for it to describe. It changes *scheme only*. Certificate verification still runs as normal, against whatever this machine already trusts: a self-signed or cluster-internal CA (an operator-generated root, a private issuer) still refuses, exactly as it would over a direct connection, and `tunnelTLS: true` does not become `--insecure` under any configuration.
+
+The name is checked too, and through a forward the address the plugin dials is `127.0.0.1`, which a server's certificate names only when it was issued to answer probes on loopback as well. A certificate made for the service — `vault.vault-operator-system.svc` above — is refused for its name, and the refusal says the forward is why. `tls-server-name` is the name to check it for instead, the one the service's certificate was issued under: `etcd`, `keycloak`, `qdrant`, `redis`, `s3` and `vault` take it, as a setting only an operator states, and an agent cannot change it. The chain is still checked in full, against the CA the profile names.
 
 **Named apart from any plugin's own `tls` or `sslmode`.** etcd, qdrant and s3 each read `set: {tls: ...}`; pg reads `set: {sslmode: ...}` — that is the plugin's *own* on/off toggle, in its own client library's vocabulary, and the host forces it off over a tunnel (see [Types are part of the declaration](#types-are-part-of-the-declaration) below for that mechanism). `tunnelTLS` is a different fact at a different layer: not a plugin's setting, but what the host must know about the coordinate itself to address it correctly, before any plugin config is even read. The two can sit beside each other in the same entry without conflict — they answer different questions — but they would not if they shared a word.
 
