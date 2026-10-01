@@ -111,10 +111,11 @@ func (r Request) WithSurface(s Surface) Request {
 // dump taken through a `kube:` profile reached its server through a forward
 // on 127.0.0.1 that closed when the call did, and a restore line naming the
 // address it was handed named a port nothing listens on any more: the
-// profile is what reaches the same server again, as
+// profile is what reaches the same server again, as ReachArgs spells it:
 //
-//	sf.Call("pg.restore", plugin.Arg{Name: "file", Value: out, Positional: true},
-//		plugin.Arg{Name: "profile", Value: req.Profile()})
+//	args := append([]plugin.Arg{{Name: "file", Value: out, Positional: true}},
+//		req.ReachArgs(plugin.Arg{Name: "host", Value: req.String("host")})...)
+//	sf.Call("pg.restore", args...)
 //
 // with the profile given only when there is one. Given whenever there is,
 // through a forward or not, since the credentials the call used may be the

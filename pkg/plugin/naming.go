@@ -254,6 +254,25 @@ func cliValue(v any) string {
 	return shellquote.Arg(text)
 }
 
+// ShellWord is s as one word of a command line a person pastes into a
+// shell, for a line naming a command that is not rta's — the createdb that
+// makes a restore's missing database — which Call does not spell. Joined
+// bare, a name holding a space was two words, and one holding $(…) ran on
+// paste. Bare when nothing in s is special to a shell, in single quotes
+// otherwise, and in $'…' with each character a terminal does not draw as
+// itself spelled as the octal escapes of its bytes, which the shell turns
+// back into it: the line is printed before it is pasted, and a character the
+// renderer cleaned would not survive the trip. An empty s is a pair of
+// single quotes, a word the line gives. Not cliValue, which leaves a usage
+// line's <file> bare: here s is somebody's data, and a database named <x> is
+// a redirect unquoted.
+func ShellWord(s string) string {
+	if s == "" {
+		return "''"
+	}
+	return shellquote.Arg(s)
+}
+
 // boxValue is v as a TUI form's box takes it: typed as it is, since a box is
 // not a shell and a quote in it is part of the value — quoted only where the
 // call's own spelling would misread it, a value with a space running into
