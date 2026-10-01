@@ -57,7 +57,11 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 	if len(names) == 0 {
 		// "Nothing is declared here" and "nothing could be read here" are
 		// different answers with different next steps, and a scan that saw
-		// none of the tree must not give the first one.
+		// none of the tree must not give the first one. Nor one the bounds
+		// refused a manifest to: their refusal says which path, and why.
+		if len(cov.withheld) > 0 {
+			return nil, cov.withheld[0].err
+		}
 		if len(cov.unreadable) > 0 {
 			return nil, view.Errorf("audit.deps.unreadable",
 				"nothing could be read under %s: %s", remoteLabel(path), strings.Join(cov.unreadable, ", ")).

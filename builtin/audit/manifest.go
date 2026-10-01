@@ -2,6 +2,7 @@ package audit
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Reading what a project already declares, rather than resolving it.
@@ -89,13 +91,35 @@ const (
 )
 
 // coverage is what a scan could not cover, carried back to the caller so
-// the report can say so beside the findings. Both fields are caveats on the
+// the report can say so beside the findings. Every field is a caveat on the
 // same claim — "this is what the project declares" — and a report that
 // states it without them is stating it about part of a tree as though it
 // were the whole.
 type coverage struct {
 	truncated  bool     // maxManifests or maxScanDepth stopped the walk
 	unreadable []string // directories the walk could not list
+	// withheld is the manifests the call's bounds refused: a file of rta's
+	// own state or configuration under a root, by another name for it. Taken
+	// for "not there" like any other failed stat, a directory holding only
+	// that was answered "no lockfile or SBOM", which is not why nothing was
+	// read.
+	withheld []withheldManifest
+}
+
+// withheldManifest is a manifest the bounds refused, by its fs path, and
+// their refusal of it.
+type withheldManifest struct {
+	name string
+	err  *view.Error
+}
+
+// withheldNames is the manifests the bounds refused, as a report lists them.
+func (c coverage) withheldNames() string {
+	names := make([]string, len(c.withheld))
+	for i, w := range c.withheld {
+		names[i] = w.name
+	}
+	return strings.Join(names, ", ")
 }
 
 // addCoverage turns those caveats into findings. Shared so `audit deps` and
@@ -105,6 +129,12 @@ func addCoverage(r *findings.Report, cov coverage) {
 		r.Add(grpInventory, "scan", findings.Warn,
 			"stopped at "+strconv.Itoa(maxManifests)+" manifests or "+strconv.Itoa(maxScanDepth)+
 				" directory levels, so this covers part of the tree — narrow the path to audit the rest",
+			refVulnerableDep)
+	}
+	if len(cov.withheld) > 0 {
+		r.Add(grpInventory, "scan", findings.Warn,
+			"withheld as another name for rta's own state or configuration, and missing from this audit: "+
+				cov.withheldNames(),
 			refVulnerableDep)
 	}
 	if len(cov.unreadable) > 0 {
@@ -147,7 +177,8 @@ func addCoverage(r *findings.Report, cov coverage) {
 // clone means nothing to them and the URL means nothing to fs.FS.
 func findManifests(fsys fs.FS, recursive bool) (found []string, cov coverage, err error) {
 	if !recursive {
-		return manifestsIn(fsys, "."), coverage{}, nil
+		found, withheld := manifestsIn(fsys, ".")
+		return found, coverage{withheld: withheld}, nil
 	}
 	err = fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -176,7 +207,9 @@ func findManifests(fsys fs.FS, recursive bool) (found []string, cov coverage, er
 			cov.truncated = true
 			return fs.SkipAll
 		}
-		found = append(found, manifestsIn(fsys, p)...)
+		here, withheld := manifestsIn(fsys, p)
+		found = append(found, here...)
+		cov.withheld = append(cov.withheld, withheld...)
 		return nil
 	})
 	if len(found) > maxManifests {
@@ -186,16 +219,22 @@ func findManifests(fsys fs.FS, recursive bool) (found []string, cov coverage, er
 }
 
 // manifestsIn lists the manifests directly in one directory, in the order
-// manifestNames declares.
-func manifestsIn(fsys fs.FS, dir string) []string {
-	var found []string
+// manifestNames declares, and those the call's bounds refused. A refusal
+// from the bounds is the one *view.Error a stat here gives: the filesystem
+// on this machine and a clone's answer with the platform's own errors.
+func manifestsIn(fsys fs.FS, dir string) (found []string, withheld []withheldManifest) {
 	for _, name := range manifestNames {
 		full := path.Join(dir, name)
-		if st, err := fs.Stat(fsys, full); err == nil && !st.IsDir() {
+		st, err := fs.Stat(fsys, full)
+		var refused *view.Error
+		switch {
+		case err == nil && !st.IsDir():
 			found = append(found, full)
+		case errors.As(err, &refused):
+			withheld = append(withheld, withheldManifest{name: full, err: refused})
 		}
 	}
-	return found
+	return found, withheld
 }
 
 // depthOf counts directory levels below the root. fs paths are already

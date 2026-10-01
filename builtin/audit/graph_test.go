@@ -965,7 +965,7 @@ func TestProvenanceReachesTheFinding(t *testing.T) {
 	write("go.mod", "module example.com/x\n\ngo 1.24\n\nrequire (\n\tgithub.com/a/b v1.0.0\n\tgithub.com/c/d v2.0.0 // indirect\n)\n")
 
 	fsys := os.DirFS(dir)
-	names := manifestsIn(fsys, ".")
+	names, _ := manifestsIn(fsys, ".")
 	inv := read(fsys, names, names)
 	if len(inv.all) != 4 {
 		t.Fatalf("read %d components, want 4: %+v", len(inv.all), inv.all)
