@@ -434,7 +434,7 @@ func resolve(raw string) (string, error) {
 	// could already write outside them can make.
 	vol := filepath.VolumeName(p)
 	out := vol + string(filepath.Separator)
-	rest := strings.Split(p[len(vol):], string(filepath.Separator))
+	rest := NameParts(runtime.GOOS, p[len(vol):])
 	hops := 0
 	for len(rest) > 0 {
 		seg := rest[0]
@@ -462,12 +462,16 @@ func resolve(raw string) (string, error) {
 		switch tv := filepath.VolumeName(target); {
 		case filepath.IsAbs(target):
 			out, target = tv+string(filepath.Separator), target[len(tv):]
-		case target != "" && os.IsPathSeparator(target[0]):
+		case VolumeRooted(runtime.GOOS, target):
 			// Rooted but not absolute, which only Windows has: the root of
 			// the volume the link is on.
 			out = filepath.VolumeName(out) + string(filepath.Separator)
 		}
-		rest = append(strings.Split(target, string(filepath.Separator)), rest...)
+		// Taken apart at every separator the system reads: split at the
+		// backslash alone, a Windows link written with forward slashes was
+		// one part, whose .. filepath.Join took off before the link ahead of
+		// it was asked where it led — judging a path the kernel never opens.
+		rest = append(NameParts(runtime.GOOS, target), rest...)
 	}
 	return out, nil
 }
