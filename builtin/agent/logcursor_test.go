@@ -108,11 +108,11 @@ func TestTheDateAppearsOnlyWhenTheRowsAreNotAllFromToday(t *testing.T) {
 	// yesterday for the hour after midnight — the first draft of this test
 	// failed at 00:41 with the code behaving correctly.
 	earlierToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 1, 0, time.Local)
-	if got := stampFormat([]agentlog.Entry{{At: now}, {At: earlierToday}}); got != "15:04:05" {
+	if got := stampFormat([]agentlog.Entry{{At: now}, {At: earlierToday}}, now); got != "15:04:05" {
 		t.Errorf("all from today: format = %q, want the time alone", got)
 	}
 	old := []agentlog.Entry{{At: now}, {At: now.AddDate(0, 0, -2)}}
-	if got := stampFormat(old); got != "2006-01-02 15:04:05" {
+	if got := stampFormat(old, now); got != "2006-01-02 15:04:05" {
 		t.Errorf("spanning days: format = %q, want the date too", got)
 	}
 }
