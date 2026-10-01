@@ -824,9 +824,25 @@ func TestTheUpwardIndexIsSharedUntilAnEdgeChangesIt(t *testing.T) {
 // scanned the whole list for every entry added, around twenty seconds of
 // comparisons before any walk. And a duplicate is still one edge past the
 // point where the scan gives way to a set.
+//
+// The time the list is given is twenty times what the same names take to be
+// listed and kept in a set of their own, and a second for one stall, rather
+// than a clock's ten seconds, for the reason TestBuildingTheGraphIsNotQuadratic
+// gives: under -race and coverage, on a Linux runner held to a tenth of a CPU,
+// the linear reading itself ran past ten seconds. It costs one to three times
+// what the set does, and a scan per entry hundreds of times as much.
 func TestOneWidePackageIsReadInLinearTime(t *testing.T) {
-	g := newGraph()
 	root := ref("npm", "root")
+	start := time.Now()
+	listed, seen := []string(nil), map[string]bool{}
+	for i := 0; i < maxEdges; i++ {
+		if to := ref("npm", "d"+itoa(i)); !seen[to] {
+			seen[to] = true
+			listed = append(listed, to)
+		}
+	}
+	budget := 20*time.Since(start) + time.Second
+	g := newGraph()
 	done := make(chan struct{})
 	go func() {
 		for i := 0; i < maxEdges; i++ {
@@ -836,8 +852,9 @@ func TestOneWidePackageIsReadInLinearTime(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("reading one package's list did not finish")
+	case <-time.After(budget):
+		t.Fatalf("reading one package's list did not finish in %v, twenty times what %d names took in a plain set",
+			budget, len(listed))
 	}
 	g = newGraph()
 	for i := 0; i < 2*wideList; i++ {
