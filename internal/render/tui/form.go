@@ -3,12 +3,14 @@ package tui
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"charm.land/bubbles/v2/cursor"
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
@@ -1211,46 +1213,65 @@ func settleForm(f *huh.Form, msg tea.Msg) *huh.Form {
 	return f
 }
 
-// resolveCmdBudget bounds how long settleForm waits for one Cmd to
-// produce its message.
+// resolveCmd runs cmd where the caller runs and returns the message it
+// answers with — unless cmd is a clock, a command whose only answer is a
+// timer firing, which is not run at all: ok is false.
 //
-// Generous for anything huh's own field-to-field or group-to-group
-// advance actually does — validating a string, moving a selector index,
-// building a view — which is pure, in-memory and measured in
-// microseconds (confirmed against this exact form construction while
-// diagnosing the timeout this const exists to apply). Nowhere near the
-// interval a cursor's own blink Cmd blocks for — Focus starts one, by
-// design perpetual, that a real session leaves running for as long as
-// the field stays focused. settleForm has no way to recognize that Cmd
-// before calling it: cursor.Blink returns a fresh closure over a new
-// context each call, not a stable, comparable function value, so identity
-// cannot be checked in advance. Racing it against this budget is what
-// stands in for that recognition — it does not care what the slow Cmd
-// was, only that it was not part of the cascade this function exists to
-// drain, so it is fine to guess wrong for a Cmd this app never happens to
-// build; the risk runs the other way, toward a real (if unlikely) 20ms
-// validation step being mistaken for a timer, which is why the margin
-// here is wide relative to what has actually been measured.
-const resolveCmdBudget = 20 * time.Millisecond
-
-// resolveCmd runs cmd and reports whether it produced its message within
-// resolveCmdBudget. ok is false for a Cmd that is still running past that
-// point — assumed to be a timer or animation command rather than part of
-// the cascade settleForm is draining. The goroutine it started is not
-// killed; it finishes on its own, sends into a channel large enough that
-// the send never blocks whether or not anyone is still receiving, and is
-// then collected — exactly as inert as it would be if a real session had
-// moved on before a cursor's next blink fired.
+// **Every other command is waited for, however long it takes.** This used
+// to race each command against a 20ms budget and drop whatever missed it,
+// on the reasoning that only a timer is that slow. Nothing in the cascade
+// is, but each command ran on a goroutine of its own, and a loaded machine
+// can leave a goroutine waiting longer than that for a CPU to run on:
+// under four busy loops and -race, a huh Input's suggestion reload missed
+// the budget and was dropped. Whatever misses is lost, not late — a
+// NextField cost the walk a step, a suggestion reload left tab completing
+// from the box as it was a keystroke earlier — and every test that drives
+// a form through settleForm then reported the machine rather than the
+// form. Run here, nothing can miss anything. A command that really is slow
+// — a Suggest, which suggestTimeout bounds — holds the update loop for as
+// long as it runs, which a settle that wants its answer was always going
+// to wait out; and no goroutine is left running against a form the caller
+// has already moved on from.
+//
+// A clock must not be waited for: a cursor's blink waits half a second and
+// then asks for another, so a settle that waited would never finish. It is
+// told apart by the code it runs rather than by how long it takes, which is
+// what clockCode holds.
 func resolveCmd(cmd tea.Cmd) (tea.Msg, bool) {
-	done := make(chan tea.Msg, 1)
-	go func() { done <- cmd() }()
-	select {
-	case msg := <-done:
-		return msg, true
-	case <-time.After(resolveCmdBudget):
+	if clockCode()[reflect.ValueOf(cmd).Pointer()] {
 		return nil, false
 	}
+	return cmd(), true
 }
+
+// clockCode is the code of the commands resolveCmd leaves alone, as the
+// address reflect reports for a func value: a text box's cursor blink —
+// Focus starts one, perpetual by design, and every keystroke restarts it —
+// and bubbletea's Tick, which a Select's loading spinner runs on.
+//
+// A blink is a fresh closure every time, so the value itself compares to
+// nothing; but a closure's address is the code of the function literal that
+// built it, and every blink is built by the one literal in cursor's Blink,
+// every tick by the one in bubbletea's Tick. One each only because neither
+// function is small enough to inline: Go 1.26, which this module builds
+// with, compiles a copy of a literal into every call site it inlines the
+// function holding it at, and each copy has an address of its own (1.27
+// shares one). Taken by asking the two libraries for one of each rather than
+// by naming them, so a release that moves or renames either literal still
+// lands here. TestAClockIsToldApartByTheCodeItRuns holds it to a blink a
+// real text box builds and a tick built in the test, call sites of their
+// own, so a release that makes either function inlinable fails there rather
+// than leaving every settle waiting out a clock. Taken on first use and not
+// when the package loads, because asking a cursor for a blink starts that
+// blink's own half-second timer, and every rta process loads this package
+// whether or not it ever opens a form.
+var clockCode = sync.OnceValue(func() map[uintptr]bool {
+	blinking := cursor.New()
+	return map[uintptr]bool{
+		reflect.ValueOf(blinking.Blink()).Pointer(): true,
+		reflect.ValueOf(tea.Tick(0, nil)).Pointer(): true,
+	}
+})
 
 // values converts the collected bindings into a typed request value map,
 // including anything an earlier stage already collected.

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"testing"
+	"time"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
 	teatest "github.com/charmbracelet/x/exp/teatest/v2"
@@ -159,34 +161,65 @@ func TestSettleFormAdvancesPastOneFieldOnASingleCall(t *testing.T) {
 	}
 }
 
-// resolveCmd: the timing contract advanceFormBySyntheticEnter's whole
-// approach rests on.
+// resolveCmd: which commands a settle runs to their answer, and which it
+// leaves alone — the contract advanceFormBySyntheticEnter's whole approach
+// rests on.
 
 func TestResolveCmdReturnsAQuicklyResolvingMessage(t *testing.T) {
 	msg, ok := resolveCmd(func() tea.Msg { return tea.WindowSizeMsg{Width: 1} })
 	if !ok {
-		t.Fatal("resolveCmd reported timeout for a Cmd that returns immediately")
+		t.Fatal("resolveCmd left alone a Cmd that is no clock")
 	}
 	if _, is := msg.(tea.WindowSizeMsg); !is {
 		t.Errorf("resolveCmd returned %T, want the Cmd's own message unchanged", msg)
 	}
 }
 
-// The property that makes the whole approach safe against a real cursor
-// blink Cmd: a Cmd slower than the budget is reported as timed out, not
-// waited on — and the goroutine it started must not block this call
-// forever once its own timer eventually fires.
-func TestResolveCmdTimesOutOnASlowCommand(t *testing.T) {
-	release := make(chan struct{})
-	t.Cleanup(func() { close(release) })
-
-	_, ok := resolveCmd(func() tea.Msg {
-		<-release
-		return tea.WindowSizeMsg{}
+// A slow command that is no clock is waited for, not dropped. Raced on a
+// goroutine against a 20ms budget, one that a busy machine kept from a CPU
+// for that long was lost — a NextField, a suggestion reload — and the
+// settle went on as if the form had never answered. Three times that
+// budget here, so the old contract would fail this every time rather than
+// on a loaded machine only.
+func TestASlowCommandIsWaitedForRatherThanDropped(t *testing.T) {
+	msg, ok := resolveCmd(func() tea.Msg {
+		time.Sleep(60 * time.Millisecond)
+		return tea.WindowSizeMsg{Width: 7}
 	})
+	if !ok {
+		t.Fatal("a slow command was dropped as if it were a clock")
+	}
+	if size, is := msg.(tea.WindowSizeMsg); !is || size.Width != 7 {
+		t.Errorf("resolveCmd returned %#v, want the slow command's own message", msg)
+	}
+}
 
-	if ok {
-		t.Error("resolveCmd waited out a Cmd slower than its budget instead of timing out")
+// What makes waiting safe: a clock is told apart by the code it runs, not
+// by how long it takes, and is never run — a blink waits half a second and
+// asks for another, so a settle that waited on one would never finish. The
+// blink is the one a real text box starts on a keystroke, the way every
+// huh Input and Text starts one, not one built for the test. The tick is
+// built here, a call site apart from clockCode's as a spinner's is, so a
+// Tick a release made inlinable would be a copy this fails to recognise; and
+// it is short, so that a clock this failed to recognise answers, and fails
+// the test, rather than hanging it.
+func TestAClockIsToldApartByTheCodeItRuns(t *testing.T) {
+	box := textinput.New()
+	_ = box.Focus()
+	_, blink := box.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
+	if blink == nil {
+		t.Fatal("a focused text box started no blink on a keystroke")
+	}
+	for what, clock := range map[string]tea.Cmd{
+		"a text box's blink": blink,
+		"bubbletea's Tick":   tea.Tick(10*time.Millisecond, func(time.Time) tea.Msg { return nil }),
+	} {
+		if msg, ok := resolveCmd(clock); ok {
+			t.Errorf("%s was run, answering %T — a settle waiting on it would never finish", what, msg)
+		}
+	}
+	if msg, ok := resolveCmd(huh.NextField); !ok || msg == nil {
+		t.Errorf("NextField resolved to %v, %v; want the message it answers with", msg, ok)
 	}
 }
 
