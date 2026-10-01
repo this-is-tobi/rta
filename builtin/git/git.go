@@ -775,8 +775,16 @@ func repoRoot(req plugin.Request, path string) (string, *view.Error) {
 		if verr != nil {
 			return "", verr
 		}
-		if _, err := look.Stat(filepath.Join(checked, gitDirName)); err == nil || isGitDir(look, checked) {
+		_, err := look.Stat(filepath.Join(checked, gitDirName))
+		if err == nil || isGitDir(look, checked) {
 			return checked, nil
+		}
+		// A refusal is the answer, not "no repository here": walked on up, a
+		// root that could not be read was passed, and the refusal met above it
+		// named that directory as outside the roots.
+		var refused *view.Error
+		if errors.As(err, &refused) {
+			return "", refused
 		}
 		parent := filepath.Dir(checked)
 		if parent == checked {

@@ -320,6 +320,9 @@ func (b *beneathRoots) under(p string) (boundDir, string, error) {
 	if errors.Is(err, syscall.ENOTDIR) && top == p {
 		return boundDir{}, p, nil
 	}
+	if errors.Is(err, iofs.ErrPermission) {
+		return b.inner(p, top, err)
+	}
 	if err != nil {
 		return boundDir{}, "", err
 	}
@@ -327,6 +330,42 @@ func (b *beneathRoots) under(p string) (boundDir, string, error) {
 	b.opened = append(b.opened, d)
 	rel, err := filepath.Rel(top, p)
 	return d, rel, err
+}
+
+// inner is where p is looked at from when top, the outermost root on its
+// way, cannot be opened: os.Root goes down a directory by opening it, so a
+// root the server may search but not list (mode --x) opens nothing under it.
+// A root the operator drew inside that one may still open, and the gate opens
+// a path from the deepest root it lies under (plugin.Bounds.Root), so p is
+// looked at from that one — only a root the operator named, never a
+// directory under the unreadable one that a caller might swap. Where none
+// opens, the answer names the root that would not: taken for "no repository
+// here", the walk went on up past the root, and the refusal it met named the
+// directory above it as outside, which sent the reader the wrong way.
+func (b *beneathRoots) inner(p, top string, opening error) (boundDir, string, error) {
+	root, _, err := b.req.Bounds().Root(p)
+	var refused *view.Error
+	if errors.As(err, &refused) {
+		return boundDir{}, "", refused
+	}
+	if err == nil {
+		rel, rerr := filepath.Rel(root.Name(), p)
+		if rerr == nil && !climbsOut(rel) {
+			d := boundDir{path: root.Name(), root: root, refuse: b.req.Bounds().Refuse}
+			b.opened = append(b.opened, d)
+			return d, rel, nil
+		}
+		_ = root.Close()
+	}
+	reason := opening
+	var pathErr *iofs.PathError
+	if errors.As(opening, &pathErr) {
+		reason = pathErr.Err
+	}
+	return boundDir{}, "", view.Errorf("git.root.unreadable",
+		"the root %s cannot be read (%v), so no repository under it can be opened", top, reason).
+		WithHint("make it readable to the user this server runs as, or serve a directory it can open " +
+			"with --root")
 }
 
 func (b *beneathRoots) Stat(p string) (os.FileInfo, error) {
