@@ -372,6 +372,23 @@ func TestAForwardThatNeverComesUpTimesOut(t *testing.T) {
 	}
 }
 
+// A deadline spent before kubectl or ssh has even started is the same timeout
+// as one that ends while the forward comes up. os/exec will not start a
+// command whose context has ended and answers in the context's words, which
+// read as the program failing to start — and the test above failed that way
+// whenever a stall before the start used up its 300 ms.
+func TestADeadlineSpentBeforeTheStartIsTheTimeout(t *testing.T) {
+	fakeKubectl(t, "while true; do sleep 1; done\n")
+	fakeSSH(t, "while true; do sleep 1; done\n")
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	for _, tgt := range []Target{{Kube: homelab}, {SSH: bastion}} {
+		if _, verr := Open(ctx, "homelab-pg", tgt); verr == nil || verr.Code != "tunnel.open.timeout" {
+			t.Errorf("%+v: verr = %v, want tunnel.open.timeout", tgt, verr)
+		}
+	}
+}
+
 // A regression test for a real bug: Open had
 // no fallback ceiling of its own, so a caller passing a context with no
 // deadline — context.Background(), which every call site in this package's

@@ -315,6 +315,15 @@ func openInstrumented(ctx context.Context, name string, t Target) (*Tunnel, *vie
 	stderr := &syncBuffer{}
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
+		// os/exec will not start a command whose context has already ended,
+		// and answers with the context's own error — which read as kubectl
+		// failing to start: "could not start kubectl: context deadline
+		// exceeded", for a call whose deadline a loaded machine spent before
+		// it got this far. That is the same timeout awaitForwarding reports
+		// for a deadline that ends a moment later.
+		if ctx.Err() != nil {
+			return nil, forwardTimedOut(name)
+		}
 		return nil, view.Errorf("tunnel.open.failed", "could not start kubectl: %v", err)
 	}
 
@@ -378,11 +387,7 @@ func awaitForwarding(ctx context.Context, stdout io.Reader, name, spec string,
 		}
 	}()
 
-	timedOut := func() (Endpoint, *view.Error) {
-		return Endpoint{}, view.Errorf("tunnel.open.timeout",
-			"profile %q did not come up in time", name).
-			WithHint("`kubectl --context … port-forward` by hand shows what it is waiting for")
-	}
+	timedOut := func() (Endpoint, *view.Error) { return Endpoint{}, forwardTimedOut(name) }
 	// kubectl runs under the caller's context and ctx is derived from it, so
 	// the deadline that closes ctx.Done also kills kubectl, which closes
 	// stdout and exited a moment later. By the time this select runs, all
@@ -426,6 +431,13 @@ func awaitForwarding(ctx context.Context, stdout io.Reader, name, spec string,
 	case <-ctx.Done():
 		return timedOut()
 	}
+}
+
+// forwardTimedOut is a kube forward whose caller's context ended before the
+// listener line arrived, or before kubectl had even started.
+func forwardTimedOut(name string) *view.Error {
+	return view.Errorf("tunnel.open.timeout", "profile %q did not come up in time", name).
+		WithHint("`kubectl --context … port-forward` by hand shows what it is waiting for")
 }
 
 // kubectlFailed turns kubectl's stderr into something actionable. Its messages
