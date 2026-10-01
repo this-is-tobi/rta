@@ -614,15 +614,30 @@ func TestConcurrentReserveDoesNotOverspendAOneTimeGrant(t *testing.T) {
 // The real gap is a handful of microseconds, too narrow to land reliably by
 // launching two goroutines and hoping. This widens it without touching what
 // is being raced: Load's own cost (read, unseal, parse, filter, sort) scales
-// with how many grants are in the file, so padding the file with thousands of
-// unrelated ones stretches the gap between Reserve's own Load and a
+// with how many grants are in the file, so padding the file with over a
+// thousand unrelated ones stretches the gap between Reserve's own Load and a
 // hypothetical second one from microseconds to low milliseconds — comfortably
 // past ordinary goroutine start jitter — while every grant that actually
 // matters to the assertion is unaffected by how many others sit beside it.
+//
+// **The padding has to fit under maxGrantFile.** It was 4000 grants, about
+// 600 KiB sealed, from the day reads of grants.json were capped: every
+// Reserve here failed reading the file and was refused, and every trial
+// passed without racing anything. A refusal is now held to the one a missing
+// grant gets, so padding that stops loading fails the test instead of
+// emptying it.
+//
+// **And a call the race authorized keeps its spend.** Reserve's release gives
+// the use back for a call that then failed, and calling it before the check
+// put Uses back to 0: a goroutine scheduled after the grant landed — on a
+// loaded runner, an ordinary outcome — failed the test against a correct
+// Reserve. Nothing here fails the call, so nothing releases it.
 func TestReserveFastPathIsNotFooledByAGrantThatArrivesMidCheck(t *testing.T) {
 	setup(t)
 
-	const noise = 4000
+	// About 150 bytes a grant sealed, so 1200 is about 180 KiB: under
+	// maxGrantFile with room to spare for the grant the race adds.
+	const noise = 1200
 	future := time.Now().Add(time.Hour)
 	padding := make([]Grant, noise)
 	for i := range padding {
@@ -638,16 +653,10 @@ func TestReserveFastPathIsNotFooledByAGrantThatArrivesMidCheck(t *testing.T) {
 			t.Fatalf("trial %d: seed: %v", trial, verr)
 		}
 
-		done := make(chan struct {
-			release func()
-			verr    *view.Error
-		}, 1)
+		done := make(chan *view.Error, 1)
 		go func() {
-			release, verr := Reserve(c, values, Caller{})
-			done <- struct {
-				release func()
-				verr    *view.Error
-			}{release, verr}
+			_, verr := Reserve(c, values, Caller{})
+			done <- verr
 		}()
 
 		// No synchronization with the goroutine above on purpose — the point
@@ -662,24 +671,27 @@ func TestReserveFastPathIsNotFooledByAGrantThatArrivesMidCheck(t *testing.T) {
 			t.Fatalf("trial %d: inject: %v", trial, verr)
 		}
 
-		result := <-done
-		if result.release != nil {
-			result.release()
-		}
-
-		if result.verr == nil {
-			// Authorized — the only thing in the file that could ever cover
-			// this call is the one-use grant just injected, so it must show
-			// the spend. Uses still 0 means the call ran for free.
-			after, lverr := loadAll()
-			if lverr != nil {
-				t.Fatalf("trial %d: reload: %v", trial, lverr)
+		if verr := <-done; verr != nil {
+			// Refused: Reserve read the file before the grant landed. Only
+			// that refusal — any other means Reserve never read a file it
+			// could have been fooled by.
+			if verr.Code != "core.grant.required" {
+				t.Fatalf("trial %d: refused for another reason than the missing grant, "+
+					"so nothing was raced: %v", trial, verr)
 			}
-			for _, g := range after {
-				if g.Target == "kv.get" && g.Scope == "k" && g.Uses != 1 {
-					t.Fatalf("trial %d: authorized against a MaxUses=1 grant without spending it (Uses=%d)",
-						trial, g.Uses)
-				}
+			continue
+		}
+		// Authorized — the only thing in the file that could ever cover
+		// this call is the one-use grant just injected, so it must show
+		// the spend. Uses still 0 means the call ran for free.
+		after, lverr := loadAll()
+		if lverr != nil {
+			t.Fatalf("trial %d: reload: %v", trial, lverr)
+		}
+		for _, g := range after {
+			if g.Target == "kv.get" && g.Scope == "k" && g.Uses != 1 {
+				t.Fatalf("trial %d: authorized against a MaxUses=1 grant without spending it (Uses=%d)",
+					trial, g.Uses)
 			}
 		}
 	}
