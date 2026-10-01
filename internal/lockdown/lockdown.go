@@ -101,9 +101,16 @@ type Lock struct {
 	Expires time.Time `json:"expires,omitempty"`
 }
 
-func (l Lock) expired(now time.Time) bool {
-	return !l.Expires.IsZero() && !l.Expires.After(now)
+func (l Lock) expired(at time.Time) bool {
+	return !l.Expires.IsZero() && !l.Expires.After(at)
 }
+
+// now is overridable in tests, which move it past a lock's window rather than
+// wait for it. A window short enough to wait out is one a loaded runner can
+// spend writing the lock and reading it back: a sealed Add and a pin's first
+// read took up to 176 ms under -race on a busy machine, and a lock given 80 ms
+// had lifted before anything looked at it.
+var now = time.Now
 
 const (
 	fileName = "lockdown.json"
@@ -278,10 +285,10 @@ func load() (locks []Lock, present bool, verr *view.Error) {
 			"%s does not carry rta's own seal, so something else wrote it", Path()).
 			WithHint(recoveryHint)
 	}
-	now := time.Now()
+	at := now()
 	live := doc.Locks[:0]
 	for _, l := range doc.Locks {
-		if !l.expired(now) {
+		if !l.expired(at) {
 			live = append(live, l)
 		}
 	}
@@ -364,7 +371,7 @@ func Build(kind, name, note, ttl, by string) (Lock, *view.Error) {
 			"the note is what the locked party reads on every refusal — %d bytes is a document, not a sentence (%d is the most)",
 			len(trimmed), maxNote)
 	}
-	l := Lock{Kind: k, Name: name, Note: trimmed, By: by, At: time.Now()}
+	l := Lock{Kind: k, Name: name, Note: trimmed, By: by, At: now()}
 	if s := strings.TrimSpace(ttl); s != "" {
 		d, err := time.ParseDuration(s)
 		if err != nil || d <= 0 {
@@ -493,9 +500,9 @@ func match(locks []Lock, kind Kind, name string) *Lock {
 	if name == "" {
 		return nil
 	}
-	now := time.Now()
+	at := now()
 	for i := range locks {
-		if locks[i].Kind == kind && locks[i].Name == name && !locks[i].expired(now) {
+		if locks[i].Kind == kind && locks[i].Name == name && !locks[i].expired(at) {
 			return &locks[i]
 		}
 	}
