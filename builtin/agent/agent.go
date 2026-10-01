@@ -672,7 +672,7 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 	}
 	slices.Reverse(shown)
-	stamp := stampFormat(shown)
+	stamp := stampFormat(shown, time.Now())
 	rows := make([][]string, 0, len(shown))
 	for _, e := range shown {
 		row := []string{
@@ -1564,9 +1564,13 @@ func parseSince(raw string) (time.Time, *view.Error) {
 //
 // The same shape as the agent column above it, which appears only once a row
 // can fill it — a column that says nothing is a column people learn to skip.
-func stampFormat(entries []agentlog.Entry) string {
+//
+// Today is now's, passed in rather than read here: a test that makes its rows
+// "from today" and this reading the clock again a moment later disagreed on
+// which day it was whenever midnight fell between the two readings.
+func stampFormat(entries []agentlog.Entry, now time.Time) string {
 	const timeOnly, dated = "15:04:05", "2006-01-02 15:04:05"
-	today := time.Now().Local().Format("2006-01-02")
+	today := now.Local().Format("2006-01-02")
 	for _, e := range entries {
 		if e.At.Local().Format("2006-01-02") != today {
 			return dated
