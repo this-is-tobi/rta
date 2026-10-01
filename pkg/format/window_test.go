@@ -25,8 +25,14 @@ func TestDurationReadsLikeSomethingAPersonWouldType(t *testing.T) {
 	}
 }
 
+// The days are in mid-July because clockAt reads them in the machine's own
+// zone, and the table steps in whole days of 24 hours: across a change of
+// the clocks one of those lands an hour off the time it was written for.
+// Early September put Chile's spring forward inside the table, and under
+// TZ=America/Santiago the day before read 05:20; no zone in the tz database
+// moves its clocks between the days named here.
 func TestClockSaysWhichDayOnceItIsNotToday(t *testing.T) {
-	now := time.Date(2026, time.September, 6, 6, 20, 32, 0, time.Local)
+	now := time.Date(2026, time.July, 12, 6, 20, 32, 0, time.Local)
 	cases := []struct {
 		at   time.Time
 		want string
@@ -34,8 +40,8 @@ func TestClockSaysWhichDayOnceItIsNotToday(t *testing.T) {
 		{now.Add(15 * time.Minute), "06:35:32"},
 		{now.Add(24 * time.Hour), "Mon 06:20:32"},
 		{now.Add(5 * 24 * time.Hour), "Fri 06:20:32"},
-		{now.Add(10 * 24 * time.Hour), "2026-09-16 06:20"},
-		{now.Add(-24 * time.Hour), "2026-09-05 06:20"},
+		{now.Add(10 * 24 * time.Hour), "2026-07-22 06:20"},
+		{now.Add(-24 * time.Hour), "2026-07-11 06:20"},
 	}
 	for _, c := range cases {
 		if got := clockAt(c.at, now); got != c.want {
