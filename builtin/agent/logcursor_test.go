@@ -58,10 +58,14 @@ func TestTheLogCanBeShippedWithoutDuplicatingWhatWasAlreadyShipped(t *testing.T)
 func TestSinceReadsADurationADayAndAnInstant(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("RTA_DATA_DIR", dir)
+	// The day is read before the row is written, never after: a row written
+	// at 23:59:59 is not from a day read once midnight has passed, and a test
+	// that read it after failed whenever midnight fell between the two.
+	today := time.Now().Local().Format("2006-01-02")
 	if err := agentlog.Append(agentlog.Entry{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open}); err != nil {
 		t.Fatal(err)
 	}
-	for _, spec := range []string{"1h", "24h", time.Now().Local().Format("2006-01-02")} {
+	for _, spec := range []string{"1h", "24h", today} {
 		if rows := logRows(t, map[string]any{"since": spec}); len(rows) != 1 {
 			t.Errorf("--since %q returned %d rows, want the one just written", spec, len(rows))
 		}
