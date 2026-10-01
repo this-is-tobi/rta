@@ -69,9 +69,15 @@ func TestCompleteKubeWalksTheGrammarSegmentBySegment(t *testing.T) {
 	} {
 		t.Run("«"+tc.partial+"»", func(t *testing.T) {
 			log := clusterFake(t)
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			c, verr := CompleteKube(ctx, tc.partial)
+			// No deadline of its own, as none of the tests beside it has one:
+			// what this asks is which argv each segment spawns and what it
+			// offers, and neither answer has a time in it. It had five seconds,
+			// and a machine running the whole suite under -race spent them
+			// before the fake printed a line — "listing kube contexts did not
+			// answer in time", about a listing nothing had made slow. A listing
+			// that never answers is TestAHangingListingIsBoundedByTheCallersContext's
+			// question, and a hang here still ends at go test's own -timeout.
+			c, verr := CompleteKube(context.Background(), tc.partial)
 			if verr != nil {
 				t.Fatalf("completing %q: %s", tc.partial, verr.Message)
 			}
