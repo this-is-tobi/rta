@@ -27,18 +27,28 @@ const drainWindow = 2
 // already written to reach the terminal, and a terminal whose other end has
 // stopped reading would hold the prompt there. What arrives after the
 // window is the next thing typed, not the paste.
-func readTerminalLine(fd int) ([]byte, bool, error) { return readTerminal(fd, true) }
+func readTerminalLine(fd int) ([]byte, bool, error) { return readTerminal(fd, true, nil) }
 
 // readTerminalSecret reads one line as readTerminalLine does and nothing
 // after it: one byte at a time, so what was typed ahead of the prompt that
 // follows — a passphrase's "Once more:" — stays on the terminal for it, as
 // it did when the discipline read the line.
 func readTerminalSecret(fd int) ([]byte, error) {
-	line, _, err := readTerminal(fd, false)
+	line, _, err := readTerminal(fd, false, nil)
 	return line, err
 }
 
-func readTerminal(fd int, drainPaste bool) ([]byte, bool, error) {
+// readTerminal reads one line off the terminal on fd and, with drainPaste,
+// whatever is still arriving after it.
+//
+// draining, where it is not nil, runs once the terminal is set to drain and
+// before the drain first reads it: the moment a test types the rest of a
+// paste at. Watching the terminal's settings from outside cannot reach that
+// moment reliably — the drain's first read gives up drainWindow after it
+// starts, and a test goroutine a busy machine holds back that long types
+// into a terminal the reader has already finished with, a paste cut short
+// for no reason the code under test had any part in.
+func readTerminal(fd int, drainPaste bool, draining func()) ([]byte, bool, error) {
 	old, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
 	if err != nil {
 		return nil, false, err
@@ -67,6 +77,9 @@ func readTerminal(fd int, drainPaste bool) ([]byte, bool, error) {
 	}
 	more := !blank(rest)
 	clear(rest)
+	if draining != nil {
+		draining()
+	}
 	return line, drain(terminalReader(fd)) || more, nil
 }
 
