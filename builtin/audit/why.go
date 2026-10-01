@@ -63,6 +63,9 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("audit.why.path", "reading %s: %v", path, err)
 	}
 	if len(names) == 0 {
+		if len(cov.withheld) > 0 {
+			return nil, cov.withheld[0].err
+		}
 		if len(cov.unreadable) > 0 {
 			return nil, view.Errorf("audit.why.unreadable",
 				"nothing could be read under %s: %s", remoteLabel(path), strings.Join(cov.unreadable, ", ")).
@@ -85,6 +88,11 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 				name, format.CountOf(len(cov.unreadable), "directory"), strings.Join(cov.unreadable, ", ")).
 				WithHint("run as a user that can list those directories before concluding it is absent")
 		}
+		if len(cov.withheld) > 0 {
+			return nil, view.Errorf("audit.why.withheld",
+				"%s is not declared in what could be read; withheld as another name for rta's own state "+
+					"or configuration: %s", name, cov.withheldNames())
+		}
 		return nil, notInstalled(req.Surface(), name, inv)
 	}
 
@@ -101,6 +109,11 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 		p.Warn(view.Errorf("audit.why.unreadable",
 			"%s could not be read, so a route through what they declare is not in this answer: %s",
 			format.CountOf(len(cov.unreadable), "directory"), strings.Join(cov.unreadable, ", ")))
+	}
+	if len(cov.withheld) > 0 {
+		p.Warn(view.Errorf("audit.why.withheld",
+			"withheld as another name for rta's own state or configuration, so a route through what "+
+				"they declare is not in this answer: %s", cov.withheldNames()))
 	}
 	return p.View(), nil
 }

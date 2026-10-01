@@ -225,6 +225,9 @@ func (p *project) manifests(recursive bool) (names []string, shown []string, cov
 	for i, u := range cov.unreadable {
 		cov.unreadable[i] = p.shown(u)
 	}
+	for i, w := range cov.withheld {
+		cov.withheld[i].name = p.shown(w.name)
+	}
 	return names, shown, cov, err
 }
 
