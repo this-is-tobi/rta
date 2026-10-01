@@ -218,14 +218,6 @@ func legacy(data []byte) bool {
 	return false
 }
 
-// Legacy reports whether a pre-seal grant file is sitting on disk, so the
-// human-facing surfaces can explain the grants that vanished instead of
-// leaving somebody to wonder.
-//
-// It re-reads the file rather than threading a flag out of loadAll: the two
-// callers are `grant list` and `rta doctor`, both of which a person is
-// waiting on, and neither is worth a second return value on the path every
-// MCP call takes.
 // maxGrantFile bounds every read of grants.json.
 //
 // The file is written by rta and read by rta, and in between it sits in a
@@ -241,6 +233,14 @@ func legacy(data []byte) bool {
 // number the consent queue already chose for a file in the same directory.
 const maxGrantFile = 256 << 10
 
+// Legacy reports whether a pre-seal grant file is sitting on disk, so the
+// human-facing surfaces can explain the grants that vanished instead of
+// leaving somebody to wonder.
+//
+// It re-reads the file rather than threading a flag out of loadAll: the two
+// callers are `grant list` and `rta doctor`, both of which a person is
+// waiting on, and neither is worth a second return value on the path every
+// MCP call takes.
 func Legacy() bool {
 	data, err := atomicfile.ReadCapped(Path(), maxGrantFile)
 	return err == nil && legacy(data)
