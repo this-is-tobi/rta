@@ -163,6 +163,20 @@ func Plugin() plugin.Plugin {
 	}
 }
 
+// requestFailed is the refusal for a request that failed for any other
+// reason than the address guard. A certificate Apple's verifier refused by a
+// rule of its own gets that rule and its fix for a hint (plugin.
+// CertPolicyHint): a ten-year certificate, the usual one for a lab, was
+// "not standards compliant", and the reader was told to check the URL was
+// reachable, which it was.
+func requestFailed(sf plugin.Surface, method, url string, err error) *view.Error {
+	verr := view.Errorf("http.request.failed", "%s %s: %v", method, url, err)
+	if hint := plugin.CertPolicyHint(err); hint != "" {
+		return verr.WithHint(hint)
+	}
+	return verr.WithHint("check the URL is reachable; " + sf.InputName("timeout") + " extends the deadline")
+}
+
 // blockedRefusal is the refusal for a request err says was stopped by the
 // address guard in ssrf.go, or nil when err is some other failure. One
 // place for it, since the destination is checked before a route is picked
@@ -236,8 +250,7 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 		if verr := blockedRefusal(req.Surface(), method, url, err); verr != nil {
 			return nil, verr
 		}
-		return nil, view.Errorf("http.request.failed", "%s %s: %v", method, url, err).
-			WithHint("check the URL is reachable; " + req.Surface().InputName("timeout") + " extends the deadline")
+		return nil, requestFailed(req.Surface(), method, url, err)
 	}
 	httpReq = withTrustedProxy(httpReq)
 
@@ -264,8 +277,7 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 		if verr := blockedRefusal(req.Surface(), method, url, err); verr != nil {
 			return nil, verr
 		}
-		return nil, view.Errorf("http.request.failed", "%s %s: %v", method, url, err).
-			WithHint("check the URL is reachable; " + req.Surface().InputName("timeout") + " extends the deadline")
+		return nil, requestFailed(req.Surface(), method, url, err)
 	}
 	defer resp.Body.Close()
 	// One byte past the cap, so that a body of exactly maxBody bytes is told
