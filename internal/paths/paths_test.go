@@ -126,8 +126,12 @@ func TestSystemIsTheOverrideAndSetEmptyMeansNone(t *testing.T) {
 // Unset, the root exists on Linux only: that is where images and packages
 // put things, and a default on every platform would have discovery reading a
 // directory nothing on a Mac or Windows machine fills.
+//
+// t.Setenv first, for what it records: the value the process came with,
+// which it puts back when the test ends. An Unsetenv ahead of it had it
+// record "unset", so a process started with RTA_SYSTEM_DIR — the full image
+// sets one — lost it for every test after this one.
 func TestSystemDefaultsOnLinuxOnly(t *testing.T) {
-	os.Unsetenv("RTA_SYSTEM_DIR")
 	t.Setenv("RTA_SYSTEM_DIR", "x")
 	os.Unsetenv("RTA_SYSTEM_DIR")
 	got := System()
