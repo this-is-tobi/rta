@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -194,6 +195,17 @@ func probeSSH(ctx context.Context, name string, spec sshSpec, tun *Tunnel) *view
 	// openCeiling and gaveUp, so what this bounds is the Wait goroutine
 	// below, which would otherwise leak one per timed-out probe.
 	cmd.WaitDelay = waitDelay
+	// The kill os/exec makes when ctx ends, recorded before it is made: the
+	// probe waits on waitCtx, derived from ctx, and a deadline closes ctx's
+	// Done before it cancels waitCtx, so ssh could be killed and seen to exit
+	// while waitCtx still held — read as ssh failing, in the words of its
+	// stderr, where the deadline had ended it (awaitForwarding has the same
+	// account for kubectl).
+	var killed atomic.Bool
+	cmd.Cancel = func() error {
+		killed.Store(true)
+		return cmd.Process.Kill()
+	}
 	stderr := &syncBuffer{}
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
@@ -202,10 +214,20 @@ func probeSSH(ctx context.Context, name string, spec sshSpec, tun *Tunnel) *view
 	exited := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(exited) }()
 
+	timedOut := func() *view.Error {
+		return view.Errorf("tunnel.open.timeout",
+			"profile %q did not come up in time", name).
+			WithHint(fmt.Sprintf("`ssh -W %s %s` by hand shows what it is waiting for — "+
+				"a destination that never closes an idle connection can also park this probe",
+				spec.dest, spec.host))
+	}
 	waitCtx, cancel := context.WithTimeout(ctx, openCeiling)
 	defer cancel()
 	select {
 	case <-exited:
+		if killed.Load() {
+			return timedOut()
+		}
 		if cmd.ProcessState.ExitCode() == 0 {
 			return nil
 		}
@@ -217,11 +239,7 @@ func probeSSH(ctx context.Context, name string, spec sshSpec, tun *Tunnel) *view
 		case <-time.After(2 * time.Second):
 			tun.gaveUp.Store(true)
 		}
-		return view.Errorf("tunnel.open.timeout",
-			"profile %q did not come up in time", name).
-			WithHint(fmt.Sprintf("`ssh -W %s %s` by hand shows what it is waiting for — "+
-				"a destination that never closes an idle connection can also park this probe",
-				spec.dest, spec.host))
+		return timedOut()
 	}
 }
 

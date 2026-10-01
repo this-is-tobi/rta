@@ -300,11 +300,36 @@ func TestAnExitTheDeadlineCausedIsTheTimeout(t *testing.T) {
 		cancel()
 		exited := make(chan struct{})
 		close(exited)
-		var gaveUp atomic.Bool
+		var gaveUp, killed atomic.Bool
 		_, verr := awaitForwarding(ctx, strings.NewReader(""), "homelab-pg", homelab,
-			&syncBuffer{}, exited, &gaveUp)
+			&syncBuffer{}, exited, &gaveUp, &killed)
 		if verr == nil || verr.Code != "tunnel.open.timeout" {
 			t.Fatalf("attempt %d: verr = %v, want tunnel.open.timeout", i, verr)
+		}
+	}
+}
+
+// A deadline reaches the context kubectl runs under before the wait's own,
+// which is derived from it: exec can kill kubectl and its exit be seen while
+// the wait's context has not heard yet. The exit is still the deadline's,
+// because the kill recorded itself first; an exit nobody caused is kubectl's
+// own failure, worded from its stderr.
+func TestAnExitTheKillCausedIsTheTimeoutBeforeTheWaitHearsOfIt(t *testing.T) {
+	for _, c := range []struct {
+		killed bool
+		want   string
+	}{
+		{true, "tunnel.open.timeout"},
+		{false, "tunnel.open.failed"},
+	} {
+		exited := make(chan struct{})
+		close(exited)
+		var gaveUp, killed atomic.Bool
+		killed.Store(c.killed)
+		_, verr := awaitForwarding(context.Background(), strings.NewReader(""), "homelab-pg", homelab,
+			&syncBuffer{}, exited, &gaveUp, &killed)
+		if verr == nil || verr.Code != c.want {
+			t.Errorf("killed %v: verr = %v, want %s", c.killed, verr, c.want)
 		}
 	}
 }
