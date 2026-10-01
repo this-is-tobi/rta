@@ -25,8 +25,16 @@ func TestBytes(t *testing.T) {
 
 // Ago answers "is this recent?" in one unit, which is the only question a
 // timestamp on a dashboard is read for.
+//
+// The table is read from one instant the test holds, through relativeTo,
+// and not against Ago's own clock: an instant taken here and Ago's reading
+// of the clock are two moments, and "12 seconds ago" stays that only while
+// they are under half a second apart — a test a busy machine held back
+// between the two read "13 seconds ago". What is Ago's own, the zero time
+// and reading the clock at all, is asked of an instant hours away, which
+// no stall a test survives moves to another answer.
 func TestAgo(t *testing.T) {
-	now := time.Now()
+	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
 	for _, c := range []struct {
 		at   time.Time
 		want string
@@ -41,12 +49,16 @@ func TestAgo(t *testing.T) {
 		{now.Add(-13 * 24 * time.Hour), "2 weeks ago"},
 		{now.Add(-800 * 24 * time.Hour), "2 years ago"},
 		{now.Add(3 * time.Minute), "in 3 minutes"},
-		{time.Time{}, "never"},
 	} {
-		got := Ago(c.at)
-		if got != c.want {
-			t.Errorf("Ago(%v) = %q, want %q", c.at, got, c.want)
+		if got := relativeTo(c.at, now); got != c.want {
+			t.Errorf("%v from %v = %q, want %q", c.at, now, got, c.want)
 		}
+	}
+	if got := Ago(time.Time{}); got != "never" {
+		t.Errorf("Ago(zero) = %q, want never", got)
+	}
+	if at := time.Now().Add(-3 * time.Hour); Ago(at) != "3 hours ago" {
+		t.Errorf("Ago(%v) = %q, want 3 hours ago", at, Ago(at))
 	}
 }
 
