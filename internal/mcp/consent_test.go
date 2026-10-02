@@ -336,21 +336,17 @@ func TestAnExternalPluginIsNeverRunToProduceAPreview(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	s := connectWith(t, reg, Options{
 		// The digest pin an external destructive capability requires.
-		Origin:      reg.Origin,
-		Consent:     true,
-		ConsentWait: 600 * time.Millisecond,
+		Origin:  reg.Origin,
+		Consent: true,
+		// Long, and ended by declining the request once it is seen. A short
+		// wait leaves the poller only what remains of it to find the request
+		// in, and that is less than the wait says: the deadline is cut down to
+		// its second and a parked call looks for its answer every 200ms, so
+		// 600ms could be 200ms, and a poller a loaded runner had not run in
+		// that long saw nothing parked at all.
+		ConsentWait: 20 * time.Second,
 	})
-	seen := make(chan consent.Request, 1)
-	go func() {
-		deadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(deadline) {
-			if pending, err := consent.Pending(); err == nil && len(pending) > 0 {
-				seen <- pending[0]
-				return
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
-	}()
+	seen := answerWhenAsked(t, false)
 	callTool(t, s, "hello_wipe", map[string]any{"name": "everything"})
 
 	select {
@@ -411,19 +407,9 @@ func TestAProfiledCallIsNotPreviewedAgainstTheWrongPlace(t *testing.T) {
 		Reload:      func() config.Config { return cfg },
 		Active:      func() string { return "" },
 		Consent:     true,
-		ConsentWait: 600 * time.Millisecond,
+		ConsentWait: 20 * time.Second,
 	})
-	seen := make(chan consent.Request, 1)
-	go func() {
-		deadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(deadline) {
-			if pending, err := consent.Pending(); err == nil && len(pending) > 0 {
-				seen <- pending[0]
-				return
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
-	}()
+	seen := answerWhenAsked(t, false)
 	callTool(t, s, "pg_drop", map[string]any{"table": "invoices", "profile": "prod"})
 
 	select {
