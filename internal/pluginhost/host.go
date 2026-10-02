@@ -686,7 +686,8 @@ func (h *Host) start(ctx context.Context, id Identity, deny DenySet, args []stri
 	// have, in rta's words, when go-plugin heard of it inside the 200ms, and
 	// in go-plugin's guesses when a loaded runner took longer. So the group
 	// goes first, which ends whatever else held those pipes open, and the
-	// account waits for the process to be collected (collected).
+	// account waits for go-plugin to have collected the process, which its
+	// Kill returns after (stopped).
 	//
 	// One that started and then failed to connect may still be running, and
 	// how it exited is its own only if it stops before the reap: it gets a
@@ -695,7 +696,7 @@ func (h *Host) start(ctx context.Context, id Identity, deny DenySet, args []stri
 	abandon := func(reason string, err error, ended bool) (*Client, error) {
 		if ended {
 			reap(cmd)
-			collected(client, cmd)
+			stopped(client)
 		} else {
 			exitedOnItsOwn(client)
 		}
@@ -706,8 +707,8 @@ func (h *Host) start(ctx context.Context, id Identity, deny DenySet, args []stri
 		}
 		if !ended {
 			reap(cmd)
+			stopped(client)
 		}
-		client.Kill()
 		removeSocketDir(sockDir)
 		return nil, failure
 	}
@@ -869,7 +870,7 @@ func withoutWrapperNotes(cmd *exec.Cmd, id Identity, err error) error {
 // and nothing a person waits on beside a launch that failed. A courtesy and
 // not a guarantee, which is why a start that failed does not use it: nothing
 // says a process that answered its handshake is about to stop, so how long
-// to wait for one that is can only be a guess (collected).
+// to wait for one that is can only be a guess (stopped).
 func exitedOnItsOwn(client *goplugin.Client) {
 	deadline := time.Now().Add(exitSettle)
 	for !client.Exited() && time.Now().Before(deadline) {
@@ -880,25 +881,33 @@ func exitedOnItsOwn(client *goplugin.Client) {
 // exitSettle bounds exitedOnItsOwn.
 const exitSettle = 200 * time.Millisecond
 
-// collected waits for go-plugin to collect a process that has been ended —
-// killed by go-plugin as its start failed, its group reaped by rta — which it
-// does once the process's stdout and stderr have been read to their end: from
-// then on the status exitStatus reads and the last lines lastWords keeps are
-// both there, whatever the machine's scheduling made of the time between.
+// stopped has go-plugin's Kill run for a launch that is over. Kill ends the
+// process if it is still running and then returns once go-plugin has collected
+// it, which it does when the process's stdout and stderr have been read to
+// their end: from then on the status exitStatus reads and the last lines
+// lastWords keeps are both there, whatever the machine's scheduling made of
+// the time between.
 //
 // Bounded, by the wait Close already accepts (killTimeout), for the one thing
 // the reap cannot end: a descendant that left the plugin's process group
-// (setsid) and holds its stderr open, which the account is not kept waiting
-// on. Anything else this waits for is gone or going, and how long go-plugin
-// takes to hear so is how long a loaded machine takes to schedule it — past
-// 200ms on a busy runner, nowhere near this.
-func collected(client *goplugin.Client, cmd *exec.Cmd) {
-	if cmd.Process == nil {
-		return // never started, so there is nothing to collect
-	}
-	deadline := time.Now().Add(killTimeout)
-	for !client.Exited() && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
+// (setsid) and holds the plugin's output open, which Kill waits on for as long
+// as it lives, so an unbounded call kept a launch that had failed from
+// reporting it for the descendant's whole life. Given up on, the goroutine
+// stays until the descendant lets go, the trade teardown makes for a hung
+// command; the account is read without the status it would have had, which is
+// go-plugin's guesses and not a wait for what may never come. Anything else
+// Kill waits for is gone or going, and how long go-plugin takes to hear so is
+// how long a loaded machine takes to schedule it: past 200ms on a busy
+// runner, nowhere near this.
+func stopped(client *goplugin.Client) {
+	killed := make(chan struct{})
+	go func() {
+		defer close(killed)
+		client.Kill()
+	}()
+	select {
+	case <-killed:
+	case <-time.After(killTimeout):
 	}
 }
 
