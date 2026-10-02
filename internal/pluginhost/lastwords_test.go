@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // saying is a launch's stderr as go-plugin writes it to lastWords: each line
@@ -141,6 +143,43 @@ func TestAPluginThatStopsUnderACallSaysHowAndWhy(t *testing.T) {
 	for _, want := range []string{"\nthe plugin exited: ", "\nthe plugin wrote: [ERROR] dying words"} {
 		if !strings.Contains(verr.Message, want) {
 			t.Errorf("plugin.gone does not say %q: %s", want, verr.Message)
+		}
+	}
+}
+
+// A call that races its plugin's death is reported as that death, whichever
+// comes first: the connection closing under the call, or go-plugin hearing
+// that the process has exited. The call that read the closed connection first
+// was said to have failed in talking to a plugin, which names no exit, none of
+// what the plugin said and no restart, about one in eight of the calls made
+// just after a kill. Each is either served by the restart a process
+// go-plugin had already heard of gets, or ends in plugin.gone.
+func TestACallThatRacesAPluginsDeathIsReportedAsItsDeath(t *testing.T) {
+	_, c := open(t)
+	for i := range 30 {
+		var up error
+		for range 50 {
+			if _, up = greetWith(t, c, "x"); up == nil {
+				break
+			}
+		}
+		if up != nil {
+			t.Fatalf("run %d: the plugin did not come back up: %v", i, up)
+		}
+		c.mu.Lock()
+		_ = c.cmd.Process.Kill()
+		c.mu.Unlock()
+
+		_, err := greetWith(t, c, "y")
+		if err == nil {
+			continue
+		}
+		var verr *view.Error
+		if !errors.As(err, &verr) || verr.Code != "plugin.gone" {
+			t.Fatalf("run %d: a call just after a kill ended in %v, want plugin.gone", i, err)
+		}
+		if !strings.Contains(verr.Message, "\nthe plugin exited: ") {
+			t.Errorf("run %d: plugin.gone does not say how the plugin exited: %s", i, verr.Message)
 		}
 	}
 }
