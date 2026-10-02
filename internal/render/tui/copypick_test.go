@@ -403,6 +403,15 @@ func TestPressingCOnTheRealGenTileEndToEnd(t *testing.T) {
 	for range back {
 		tm.Send(tea.KeyPressMsg{Code: tea.KeyLeft})
 	}
+	// **The tile's own answer is what `c` copies from, and it is a command of
+	// its own, answered when it is.** The title this test first waited on is
+	// on the first frame, ahead of the run that fills the tile, and the keys
+	// above are all in the queue by then: a `c` ahead of the tile's answer
+	// finds nothing to copy, copies nothing, and the picker never opens. The
+	// footer offers the copy only once the selected tile holds an answer to
+	// copy from, so this waits for exactly what `c` needs, and costs nothing
+	// when the tile answered first.
+	waitFor(t, tm, "copy which value?")
 	tm.Send(tea.KeyPressMsg{Code: 'c', Text: "c"})
 	waitFor(t, tm, "copy which value?")
 
