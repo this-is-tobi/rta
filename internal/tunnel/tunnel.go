@@ -565,13 +565,20 @@ func loginHint(spec string) string {
 		"` is the same question without rta in the way"
 }
 
+// helperCeiling bounds credentialHelper's question to kubectl. A variable
+// rather than a constant for the reason openCeiling is one, the other way
+// round: the test that reads the hint this question composes raises it,
+// because what that test asks is the hint's wording, and a machine running the
+// whole suite under -race has spent five seconds on a single fake kubectl.
+var helperCeiling = 5 * time.Second
+
 // credentialHelper is the exec plugin a context authenticates with, and its
 // arguments — empty when the context uses none, or when kubectl cannot say.
 func credentialHelper(kctx string) (string, []string) {
 	// Bounded on its own: this runs while composing a hint about a failure,
 	// and a kubectl that hangs reading a broken kubeconfig would otherwise
 	// hang the message about it.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), helperCeiling)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, kubectl, "config", "view", "--minify",
 		"--context="+kctx, "-o", "jsonpath={.users[0].user.exec.command} {.users[0].user.exec.args}").Output()
