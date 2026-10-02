@@ -7,6 +7,8 @@ import (
 
 	goplugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/sdk/wire"
@@ -195,15 +197,27 @@ func (c *Client) transportError(ctx context.Context, id string, err error) *view
 		return view.Errorf("plugin.canceled", "%s was stopped before it finished", id)
 	}
 	c.mu.Lock()
-	exited := c.client != nil && c.client.Exited()
-	words, status := c.words, exitStatus(c.client, c.cmd)
+	client, cmd, words := c.client, c.cmd, c.words
 	c.mu.Unlock()
-	if exited {
+	// A process that died under the call closed the connection the call was on
+	// before go-plugin could hear that it had: it learns of an exit once the
+	// process's output has been read to its end and the process collected, a
+	// few scheduler turns after the connection broke, and a call that read its
+	// error in between was reported as a plugin that could not be talked to,
+	// with none of how it ended or what it said, for about one call in eight
+	// of those that raced a kill. Unavailable is what a closed connection is,
+	// so that, and only that, waits for go-plugin to hear, as long as a close
+	// waits on it (killTimeout): it ends the moment it has, and a plugin that is
+	// alive and answered Unavailable is the one that pays the whole of it.
+	if client != nil && status.Code(err) == codes.Unavailable {
+		waitForExit(client, killTimeout)
+	}
+	if client != nil && client.Exited() {
 		// With what it said on its way out, a panic's first lines among it:
 		// its stderr reaches no terminal (lastWords), so this is the one
 		// place its author reads why.
 		return view.Errorf("plugin.gone", "the plugin serving %s stopped while it was running: %v%s",
-			id, err, words.told(status)).
+			id, err, words.told(exitStatus(client, cmd))).
 			WithHint("it is restarted on the next call; this one is reported rather than retried, " +
 				"because a call that died part-way may already have done what it was asked")
 	}

@@ -872,7 +872,16 @@ func withoutWrapperNotes(cmd *exec.Cmd, id Identity, err error) error {
 // says a process that answered its handshake is about to stop, so how long
 // to wait for one that is can only be a guess (stopped).
 func exitedOnItsOwn(client *goplugin.Client) {
-	deadline := time.Now().Add(exitSettle)
+	waitForExit(client, exitSettle)
+}
+
+// waitForExit returns once go-plugin has heard that client's process exited,
+// or after within, whichever is first. What go-plugin hears is that its wait
+// on the process returned, which is after the process's output was read to its
+// end, so once the client says it exited, the status its command holds is the
+// one the process left and the last lines lastWords keeps are all in.
+func waitForExit(client *goplugin.Client, within time.Duration) {
+	deadline := time.Now().Add(within)
 	for !client.Exited() && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
