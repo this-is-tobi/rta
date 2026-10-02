@@ -414,20 +414,22 @@ func (m Model) applyCompletion(msg completeMsg) (tea.Model, tea.Cmd) {
 		m.flash = "no " + msg.c.What
 		return m, nil
 	}
-	if in, ok := m.form.inputs[msg.field]; ok {
+	// A field with a suggestion function is told through the form, not through
+	// the widget: Input.Suggestions clears that function, and a reload already
+	// queued by a keystroke reads it on another goroutine when it runs — a
+	// race, and a call of nil when the clearing came first. The fetch lands in
+	// the store the function merges from (capForm.fetched), and the form is
+	// sent a message so huh sees what it watches has changed. A field with no
+	// function has no reload to race, and takes the list directly.
+	_, wired := m.form.offers[msg.field]
+	if in, ok := m.form.inputs[msg.field]; ok && !wired {
 		in.Suggestions(msg.c.Items)
 	}
 	// Remembered so the next tab can tell accept from fetch (needsFetch): the
 	// widget cannot be asked what it is offering, but this is what it was told.
 	m.form.suggested[msg.field] = msg.c.Items
-	// A live field's keystroke channel re-evaluates its suggestions as the
-	// form changes and would clobber this landing off the widget — so the
-	// fetch also lands in the locked store that channel merges from
-	// (capForm.liveGot).
-	for _, f := range m.form.fields {
-		if f.Name == msg.field && f.Live {
-			m.form.setLiveItems(msg.field, msg.c.Items)
-		}
+	if wired {
+		m.form.setFetched(msg.field, msg.c.Items)
 	}
 	// Two sentences for two states. bubbles matches suggestions only against
 	// a non-empty value, so on an empty box there is no ghost yet and the
@@ -438,5 +440,13 @@ func (m Model) applyCompletion(msg completeMsg) (tea.Model, tea.Cmd) {
 	} else {
 		m.flash = fmt.Sprintf("%d %s — ↓ cycles, tab completes", len(msg.c.Items), msg.c.What)
 	}
+	if wired {
+		return m.updateForm(refetchedMsg{})
+	}
 	return m, nil
 }
+
+// refetchedMsg reaches the form after a fetch landed in it, and means nothing
+// to any field: every message a form is given ends in huh asking its fields
+// whether what they watch has changed, which is all this is sent for.
+type refetchedMsg struct{}
