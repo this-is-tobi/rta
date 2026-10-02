@@ -59,7 +59,13 @@ func TestSSHOpenServesAnEndpointThatSplices(t *testing.T) {
 	if _, err := conn.Write([]byte("ping\n")); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	// Twenty seconds, awaitMarker's patience. The echo comes back once rta has
+	// started a splice child for this connection, and that start is a spawn,
+	// which a machine running the whole suite under -race has stretched to
+	// seconds (giveUpWithin has the case); the two this had were not enough to
+	// count on. A splice that carries nothing never answers at all, so the
+	// wait decides only how long that failure takes to say so.
+	_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
 	buf := make([]byte, 5)
 	if _, err := io.ReadFull(conn, buf); err != nil || string(buf) != "ping\n" {
 		t.Fatalf("read back %q, %v — the splice did not carry the bytes", buf, err)
@@ -390,7 +396,13 @@ func TestSSHAgainstARealSSHD(t *testing.T) {
 		t.Fatalf("dial through the forward: %v", err)
 	}
 	defer conn.Close()
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	// The open's own thirty seconds, for the same work done again: the banner
+	// arrives once rta has started an ssh child for this connection and that
+	// child has logged in — a spawn and a handshake, on a machine that may be
+	// running the whole suite under -race, where five seconds are not a bound
+	// to count on (giveUpWithin has the case). A forward that carries nothing
+	// never answers at all, so the wait decides only how long that takes.
+	_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	banner := make([]byte, 4)
 	if _, err := io.ReadFull(conn, banner); err != nil || string(banner) != "SSH-" {
 		t.Fatalf("read %q, %v through the forward, want the sshd banner", banner, err)
