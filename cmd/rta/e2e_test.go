@@ -29,6 +29,14 @@ import (
 
 var binary string
 
+// startsWithin is how long a server just started from the freshly built binary
+// is given to say its first words. The first run of a binary the machine has not
+// seen can take seconds to start on macOS, which checks it before it runs, and a
+// runner loaded with other jobs adds its own: this is the longest of the few
+// waits that stand for a process starting, and a wait that succeeds costs nothing
+// however long it is allowed.
+const startsWithin = 30 * time.Second
+
 func TestMain(m *testing.M) {
 	// Flags are not parsed yet at this point, so -short cannot be consulted
 	// here; the individual tests skip on it after Parse has run.
@@ -354,8 +362,8 @@ func TestMCPServeKeepsStdoutForTheProtocol(t *testing.T) {
 		if msg["jsonrpc"] != "2.0" {
 			t.Errorf("first line on stdout is not a JSON-RPC message: %q", line)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatalf("no answer in 10s (stderr %q)", errBuf.String())
+	case <-time.After(startsWithin):
+		t.Fatalf("no answer in %s (stderr %q)", startsWithin, errBuf.String())
 	}
 
 	// …and the human-facing banner belongs on stderr, where it cannot corrupt

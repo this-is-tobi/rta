@@ -48,7 +48,7 @@ func blocked(t *testing.T) (*exec.Cmd, *lockedBuffer) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill() })
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(startsWithin)
 	for {
 		// A writer's non-blocking open fails until a reader has the pipe
 		// open. Held, and never written to, for as long as the test runs.
@@ -166,7 +166,7 @@ func TestMCPServeStillStopsCleanlyOnSIGTERM(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill() })
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(startsWithin)
 	for !strings.Contains(stderr.String(), "listening") {
 		if time.Now().After(deadline) {
 			t.Fatalf("the server never said it was listening: %q", stderr.String())
