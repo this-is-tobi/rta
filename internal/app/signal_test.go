@@ -39,6 +39,14 @@ func newWatch(t *testing.T, grace time.Duration, owned, lent func() bool, settle
 // Attach.
 func unattachedWatch(t *testing.T, grace time.Duration, owned, lent func() bool, settle func() func()) *watch {
 	t.Helper()
+	return clockedWatch(t, grace, time.After, owned, lent, settle)
+}
+
+// clockedWatch is an unattached watch whose grace runs out when after's
+// channel says so.
+func clockedWatch(t *testing.T, grace time.Duration, after func(time.Duration) <-chan time.Time,
+	owned, lent func() bool, settle func() func()) *watch {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	w := &watch{ctx: ctx, codes: make(chan int, 1), stderr: &lockedBuffer{}}
 	if settle == nil {
@@ -48,6 +56,7 @@ func unattachedWatch(t *testing.T, grace time.Duration, owned, lent func() bool,
 		signals: make(chan os.Signal, 2),
 		cancel:  cancel,
 		grace:   grace,
+		after:   after,
 		owned:   owned,
 		lent:    lent,
 		settle:  settle,
@@ -151,12 +160,22 @@ func TestASignalWhileThePluginsLoadWaitsForTheCommand(t *testing.T) {
 }
 
 // A command that returns inside the grace exits with its own status: the
-// watch stops, and nothing it would have done happens.
+// watch stops, and nothing it would have done happens, the grace running out
+// after it included.
+//
+// The grace runs out when this says, once Stop has returned. On a real clock
+// Stop had the grace's 100ms from the signal to get there, and a loaded
+// runner that took longer to come back to this goroutine saw the exit the
+// test exists to rule out, for a command that had in fact returned in time.
 func TestACommandThatReturnsInTimeKeepsItsOwnStatus(t *testing.T) {
-	w := newWatch(t, 100*time.Millisecond, never, never, nil)
+	expire := make(chan time.Time, 1)
+	w := clockedWatch(t, 100*time.Millisecond, func(time.Duration) <-chan time.Time { return expire },
+		never, never, nil)
+	w.Attach(nil, func() { w.closed.Add(1) })
 	w.signals <- os.Interrupt
 	<-w.ctx.Done()
 	w.Stop()
+	expire <- time.Now()
 	if code, ok := w.exited(300 * time.Millisecond); ok {
 		t.Fatalf("exited %d after the command returned on its own", code)
 	}

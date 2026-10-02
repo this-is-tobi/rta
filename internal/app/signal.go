@@ -94,6 +94,9 @@ type Interrupts struct {
 	signals chan os.Signal
 	cancel  context.CancelFunc
 	grace   time.Duration
+	// after starts the grace's clock: time.After, except under a test that
+	// has to say when the grace ran out rather than race it.
+	after   func(time.Duration) <-chan time.Time
 	owned   func() bool
 	lent    func() bool
 	settle  func() (resume func())
@@ -131,6 +134,7 @@ func WatchSignals(parent context.Context) (context.Context, *Interrupts) {
 		signals:   make(chan os.Signal, 2),
 		cancel:    cancel,
 		grace:     signalGrace,
+		after:     time.After,
 		owned:     shutdownOwned.Load,
 		lent:      shutdown.TerminalLent,
 		settle:    shutdown.Settle,
@@ -191,7 +195,7 @@ func (i *Interrupts) run() {
 	// it to (Attach) and one that has not taken its shutdown on itself.
 	graceFrom := func() {
 		if first != nil && attached == nil && !i.owned() {
-			expired = time.After(i.grace)
+			expired = i.after(i.grace)
 		}
 	}
 	for {
