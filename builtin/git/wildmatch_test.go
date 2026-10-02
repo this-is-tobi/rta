@@ -215,13 +215,19 @@ func TestWildmatchPassesGitsOwnTests(t *testing.T) {
 }
 
 // git's test that its matcher does not take exponential time over a pattern
-// of many stars: it gives it two seconds, and this far less.
+// of many stars, which gives it two seconds and is given as long here.
+//
+// The matching takes microseconds, and an exponential one would not finish in
+// any time anybody waits, so the bound has to be longer than a stall of the
+// machine and nothing more: the 200ms it was first given, sized against the
+// microseconds, was short enough for a runner that deschedules the test for a
+// moment to fail it with the matching unchanged.
 func TestWildmatchIsNotExponential(t *testing.T) {
 	start := time.Now()
 	if wildmatch(strings.Repeat("*a", 16), strings.Repeat("a", 60)+"b", wmPathname, nil) {
 		t.Error("matched a text that ends in b")
 	}
-	if took := time.Since(start); took > 200*time.Millisecond {
+	if took := time.Since(start); took > 2*time.Second {
 		t.Errorf("took %v", took)
 	}
 }
