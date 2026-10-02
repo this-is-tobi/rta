@@ -308,7 +308,7 @@ func TestASSHProbeThatHangsTimesOut(t *testing.T) {
 	if verr == nil || verr.Code != "tunnel.open.timeout" {
 		t.Fatalf("verr = %v, want tunnel.open.timeout", verr)
 	}
-	if time.Since(start) > 3*time.Second {
+	if time.Since(start) > giveUpWithin {
 		t.Errorf("took %v to give up", time.Since(start))
 	}
 }
