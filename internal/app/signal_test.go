@@ -269,23 +269,36 @@ func TestTheExitWaitsForHeldWork(t *testing.T) {
 
 	// A command returning while the work settles is not exited under: the
 	// settling is undone and the command's own status stands.
+	//
+	// Stop comes once the watch is settling, which settle itself says, and
+	// not after a pause long enough for the grace to have run out: a runner
+	// that had not got the watch to its timer 50ms into a 10ms grace saw
+	// Stop first, a watch that never settled, and nothing to resume.
 	release = make(chan struct{})
-	w = newWatch(t, 10*time.Millisecond, never, never, settle)
+	settling := make(chan struct{})
+	resumes := make(chan struct{}, 2)
+	w = newWatch(t, 10*time.Millisecond, never, never, func() func() {
+		close(settling)
+		<-release
+		return func() {
+			resumed.Add(1)
+			resumes <- struct{}{}
+		}
+	})
 	w.signals <- syscall.SIGTERM
-	time.Sleep(50 * time.Millisecond)
-	stopped := make(chan struct{})
-	go func() { w.Stop(); close(stopped) }()
-	<-stopped
+	<-settling
+	w.Stop()
 	close(release)
 	if code, ok := w.exited(200 * time.Millisecond); ok {
 		t.Fatalf("exited %d after the command returned", code)
 	}
-	deadline := time.Now().Add(time.Second)
-	for resumed.Load() != 1 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
+	select {
+	case <-resumes:
+	case <-time.After(10 * time.Second):
+		t.Fatal("settling was never resumed for the command that returned")
 	}
-	if resumed.Load() != 1 {
-		t.Errorf("settling was resumed %d times, want once, for the command that returned", resumed.Load())
+	if n := resumed.Load(); n != 1 {
+		t.Errorf("settling was resumed %d times, want once, for the command that returned", n)
 	}
 }
 
