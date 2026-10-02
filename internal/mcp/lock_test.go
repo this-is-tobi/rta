@@ -175,9 +175,10 @@ func TestALockPlacedWhileParkedPoisonsTheApproval(t *testing.T) {
 		ConsentWait: 20 * time.Second,
 		Agent:       "claude",
 	})
+	over := t.Context()
 	go func() {
 		deadline := time.Now().Add(15 * time.Second)
-		for time.Now().Before(deadline) {
+		for time.Now().Before(deadline) && over.Err() == nil {
 			pending, err := consent.Pending()
 			if err == nil && len(pending) > 0 {
 				l, _ := lockdown.Build("agent", "claude", "locked mid-park", "", "terminal")
@@ -191,7 +192,9 @@ func TestALockPlacedWhileParkedPoisonsTheApproval(t *testing.T) {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		t.Error("no request was ever parked")
+		if over.Err() == nil {
+			t.Error("no request was ever parked")
+		}
 	}()
 	res := callTool(t, s, "demo_item_reveal", map[string]any{"key": "db-password"})
 	if !res.IsError {

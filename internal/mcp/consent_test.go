@@ -26,12 +26,17 @@ import (
 
 // answerWhenAsked plays the operator in another process: it waits for a
 // request to appear and decides it.
+//
+// It stops looking when its test is over: a test that fails before the call
+// parks has ended long before the 20s run out, and reporting on t after that
+// panics the whole test binary rather than failing the one test.
 func answerWhenAsked(t *testing.T, allow bool) chan consent.Request {
 	t.Helper()
 	seen := make(chan consent.Request, 1)
+	over := t.Context()
 	go func() {
 		deadline := time.Now().Add(20 * time.Second)
-		for time.Now().Before(deadline) {
+		for time.Now().Before(deadline) && over.Err() == nil {
 			pending, err := consent.Pending()
 			if err == nil && len(pending) > 0 {
 				select {
@@ -45,7 +50,9 @@ func answerWhenAsked(t *testing.T, allow bool) chan consent.Request {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		t.Error("no request was ever parked")
+		if over.Err() == nil {
+			t.Error("no request was ever parked")
+		}
 	}()
 	return seen
 }
