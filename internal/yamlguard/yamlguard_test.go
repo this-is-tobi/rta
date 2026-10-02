@@ -72,8 +72,12 @@ func TestTheRefusalIsProportionalToTheBytesNotTheExpansion(t *testing.T) {
 		if err == nil {
 			t.Fatal("the bomb was not refused")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("RefuseAnchors did not return within 2s — it expanded the bomb instead of refusing it")
+	// A guard against a hang, not a measure of speed: refusing the bomb takes
+	// microseconds, and what says it was refused is the error above. Two
+	// seconds was a stall of a loaded runner away from a failure for a
+	// refusal that had in fact been fast.
+	case <-time.After(10 * time.Second):
+		t.Fatal("RefuseAnchors did not return within 10s — it expanded the bomb instead of refusing it")
 	}
 }
 

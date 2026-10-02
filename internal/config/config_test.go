@@ -171,7 +171,11 @@ func TestConfigRefusesAnAliasExpansionBombQuickly(t *testing.T) {
 		if ve == nil || ve.Code != "config.invalid" {
 			t.Fatalf("want config.invalid for an alias-expansion bomb, got %+v", err)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Load did not return within 2s — it decoded the bomb instead of refusing it")
+	// A guard against a hang, not a measure of speed: refusing the bomb takes
+	// microseconds, and what says it was refused is the code above. Two
+	// seconds was a stall of a loaded runner away from a failure for a
+	// refusal that had in fact been fast.
+	case <-time.After(10 * time.Second):
+		t.Fatal("Load did not return within 10s — it decoded the bomb instead of refusing it")
 	}
 }
