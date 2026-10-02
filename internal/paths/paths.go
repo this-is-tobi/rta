@@ -8,26 +8,91 @@
 package paths
 
 import (
+	"fmt"
+	"io"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
+	"sync"
 )
 
 // Data resolves where local state lives: RTA_DATA_DIR overrides (tests,
 // portable setups), otherwise XDG data conventions.
+//
+// A machine whose environment names no home — a service started without HOME,
+// a container run as a uid with no environment — is asked its account database
+// before anything else, and when that has no home either the state is kept in
+// a private directory under the temporary one, with a notice saying so (see
+// stranded). It used to be "." here, which put the grant file, its seal key and
+// the stores in whatever directory rta happened to run in: inside a project an
+// agent was working on, readable by it, and one `git add .` from a commit.
 func Data() string {
+	dir, _ := resolveData()
+	return dir
+}
+
+// resolveData is Data and whether the answer is the stranded directory, which
+// is the one EnsureData has to look at before it is used.
+func resolveData() (dir string, isStranded bool) {
 	if d := os.Getenv("RTA_DATA_DIR"); d != "" {
-		return d
+		return d, false
 	}
 	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
-		return filepath.Join(x, "rta")
+		return filepath.Join(x, "rta"), false
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "."
+	if home := homeDir(); home != "" {
+		return filepath.Join(home, ".local", "share", "rta"), false
 	}
-	return filepath.Join(home, ".local", "share", "rta")
+	return stranded(), true
 }
+
+// homeDir is the account's home: $HOME, then the account database, and ""
+// when neither names one.
+func homeDir() string {
+	if home, err := os.UserHomeDir(); err == nil {
+		return home
+	}
+	return passwdHome()
+}
+
+// passwdHome is the home the account database gives this uid, overridable so a
+// test can be a machine whose database has none.
+var passwdHome = func() string {
+	u, err := user.Current()
+	if err != nil || !filepath.IsAbs(u.HomeDir) {
+		return ""
+	}
+	return u.HomeDir
+}
+
+// stranded is where state goes on a machine with no home at all: a directory
+// of the account's own under the temporary one, which survives neither a
+// reboot nor a container, and which EnsureData only uses when it is
+// the account's own and owner-only (see ownedPrivately), since a name in a
+// shared directory is one anybody can create first.
+//
+// Said once per process, on stderr, and in words that end in what to do: a
+// grant that vanishes at the next reboot is fail-closed, but an audit trail
+// that does is a surprise, and the person who is told on the first run has
+// the whole run to fix it in. Not refused: a bare container that only reads
+// the machine (rta sys, rta net) has no use for state and no reason to be
+// turned away for lacking a place to put it.
+func stranded() string {
+	dir := filepath.Join(os.TempDir(), fmt.Sprintf("rta-%d", os.Getuid()))
+	strandedNotice.Do(func() {
+		fmt.Fprintf(noticeTo, "rta: no home directory is set, so its state (grants, the record, stores) is "+
+			"kept in %s, which does not outlast a reboot or a container — set HOME or RTA_DATA_DIR to keep it\n", dir)
+	})
+	return dir
+}
+
+// strandedNotice and noticeTo are the once and the writer stranded says it
+// with, overridable so a test can see it.
+var (
+	strandedNotice sync.Once
+	noticeTo       io.Writer = os.Stderr
+)
 
 // System resolves the read-only plugin root: what a container image or a
 // package filled at build time and rta only ever reads. RTA_SYSTEM_DIR
@@ -69,9 +134,26 @@ func System() string {
 //
 // An existing directory is left exactly as found: a mode the operator chose
 // is theirs to change, and the doctor row is where they are told.
+//
+// The one directory not left as found is the stranded one: it is named by
+// nothing but the uid, in a directory every account can write to, so one that
+// is not the account's own or lets others in is refused rather than used.
 func EnsureData() (string, error) {
-	dir := Data()
-	return dir, os.MkdirAll(dir, 0o700)
+	dir, isStranded := resolveData()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return dir, err
+	}
+	if isStranded {
+		info, err := os.Lstat(dir)
+		if err != nil {
+			return dir, err
+		}
+		if !info.IsDir() || info.Mode().Perm()&0o077 != 0 || !ownedByUs(info) {
+			return dir, fmt.Errorf("%s exists and is not a private directory of this account, so rta will "+
+				"not keep its state there — set HOME or RTA_DATA_DIR", dir)
+		}
+	}
+	return dir, nil
 }
 
 // Indexes is the directory under the data directory the plugin indexes are
