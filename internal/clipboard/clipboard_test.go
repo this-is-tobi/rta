@@ -123,6 +123,67 @@ func TestCopyTriesTheNextProgramWhenTheFirstInstalledOneFails(t *testing.T) {
 	}
 }
 
+// everyProgramFails puts a stand-in that exits with status 3 on PATH for every
+// program Copy would try, so the value goes to no real clipboard on the
+// machine running the test.
+func everyProgramFails(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in is a shell script")
+	}
+	dir := t.TempDir()
+	for _, c := range Commands() {
+		if err := os.WriteFile(filepath.Join(dir, c.Name), []byte("#!/bin/sh\nexit 3\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// A program that fails is reported in its own words, not as one that hung:
+// xclip with no $DISPLAY exits at once, and "xclip (timed out)" sends
+// whoever reads it after a wedged compositor connection that is not there.
+func TestAProgramThatFailsIsReportedInItsOwnWordsNotAsTimedOut(t *testing.T) {
+	everyProgramFails(t)
+
+	ok, failed, _ := Copy([]byte("s3cr3t"))
+
+	if ok || len(failed) == 0 {
+		t.Fatalf("ok = %v, failed = %v; want every stand-in's failure recorded", ok, failed)
+	}
+	for _, f := range failed {
+		if strings.Contains(f, "timed out") || !strings.Contains(f, "exit status 3") {
+			t.Errorf("failed = %v, want each program's own exit status and no timeout", failed)
+			break
+		}
+	}
+}
+
+// A deadline that has passed before the program could be started is as much a
+// timeout as one that kills it. Start refuses with the context's own error and
+// no kill is made, so what a kill leaves behind says nothing of it, and
+// "xclip (context deadline exceeded)" would be what a machine too loaded to
+// fork a program within its deadline reports. A deadline already gone is that
+// case without the wait.
+func TestAProgramNeverStartedBeforeItsDeadlineIsReportedAsTimedOut(t *testing.T) {
+	everyProgramFails(t)
+	old := timeout
+	timeout = time.Nanosecond
+	t.Cleanup(func() { timeout = old })
+
+	ok, failed, _ := Copy([]byte("s3cr3t"))
+
+	if ok || len(failed) == 0 {
+		t.Fatalf("ok = %v, failed = %v; want every program's attempt recorded", ok, failed)
+	}
+	for _, f := range failed {
+		if !strings.Contains(f, "timed out") {
+			t.Errorf("failed = %v, want a program that never started in time reported as timed out", failed)
+			break
+		}
+	}
+}
+
 // A machine with no clipboard program at all: ok is false and failed is
 // empty, which is what tells a caller to suggest installing one rather than
 // report a program failure that never happened.
