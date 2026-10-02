@@ -725,7 +725,11 @@ func watchPending(t *testing.T) (saw func() consent.Request, stop func()) {
 func TestConsentDoesNotCrossTheSessionFence(t *testing.T) {
 	f := newProfileFixture(t, twoProfiles, func(o *Options) {
 		o.Consent = true
-		o.ConsentWait = 3 * time.Second
+		// Long, so that the poller below has the whole of it to find the
+		// request in: the deadline is cut down to its second, so a wait of 3s
+		// was as little as 2s, and a poller a stalled runner did not run in
+		// that long saw nothing parked for a call that had been asked.
+		o.ConsentWait = 20 * time.Second
 	})
 	if verr := profile.SaveSelection(profile.Selection{Active: "staging"}); verr != nil {
 		t.Fatal(verr)
@@ -742,7 +746,10 @@ func TestConsentDoesNotCrossTheSessionFence(t *testing.T) {
 	if req := saw(); req.ID != "" {
 		t.Fatalf("the operator was asked to approve a call across the fence: %+v", req)
 	}
-	if elapsed > 2*time.Second {
+	// A call that parked would be there for the consent wait, 20s less what
+	// its second was cut down by; a refusal takes milliseconds, so the bound
+	// sits between them rather than on the refusal.
+	if elapsed > 10*time.Second {
 		t.Fatalf("the call parked for %s, so it was asked about after all", elapsed)
 	}
 
@@ -766,7 +773,7 @@ func TestConsentDoesNotCrossTheSessionFence(t *testing.T) {
 	// one that reports it, and there is no second reader to race.
 	seen := make(chan consent.Request, 1)
 	go func() {
-		deadline := time.Now().Add(3 * time.Second)
+		deadline := time.Now().Add(15 * time.Second)
 		for time.Now().Before(deadline) {
 			if p, err := consent.Pending(); err == nil && len(p) > 0 {
 				seen <- p[0]
