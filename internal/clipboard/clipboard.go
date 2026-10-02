@@ -98,13 +98,21 @@ func Commands() []Command {
 // same way, is never reached. tried names every program considered at all,
 // installed or not, for a caller that wants to say what to go install.
 func Copy(value []byte) (ok bool, failed, tried []string) {
+	return copyUnder(context.Background(), value)
+}
+
+// copyUnder is Copy with a parent context, whose end gives up on a program as
+// the deadline does. Only a test passes one: it ends a program it has seen set
+// itself up, where the deadline ends it a fixed time after it was started,
+// whatever a machine too busy to run it had managed by then.
+func copyUnder(parent context.Context, value []byte) (ok bool, failed, tried []string) {
 	for _, c := range Commands() {
 		tried = append(tried, c.Name)
 		path, err := exec.LookPath(c.Name)
 		if err != nil {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		ctx, cancel := context.WithTimeout(parent, timeout)
 		cmd := exec.CommandContext(ctx, path, c.args...)
 		cmd.Stdin = bytes.NewReader(value)
 		harden(cmd)
