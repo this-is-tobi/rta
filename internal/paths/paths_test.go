@@ -96,6 +96,12 @@ func TestEnsureDataLeavesAnExistingDirectoryAlone(t *testing.T) {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Mkdir's mode goes through the umask, and a shell whose umask is 077 made
+	// this 0700 before EnsureData was asked anything, so the check below
+	// reported a change nobody had made. Chmod is not masked.
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("RTA_DATA_DIR", dir)
 	if _, err := EnsureData(); err != nil {
 		t.Fatal(err)
