@@ -20,10 +20,12 @@ package clipboard
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
+	"sync/atomic"
 	"time"
 )
 
@@ -108,11 +110,26 @@ func Copy(value []byte) (ok bool, failed, tried []string) {
 		cmd := exec.CommandContext(ctx, path, c.args...)
 		cmd.Stdin = bytes.NewReader(value)
 		harden(cmd)
-		cmd.Cancel = func() error { reap(cmd); return ctx.Err() }
+		// The kill os/exec makes when the deadline passes, recorded before
+		// it is made: that record, and not ctx, is what says the program
+		// hung. ctx was asked after cancel() below, which leaves every
+		// context cancelled, so a program that failed at once — xclip with
+		// no $DISPLAY, exiting nonzero — was reported as timed out; and
+		// asked before it, a program that failed on its own a moment before
+		// the deadline would be. A deadline that had passed before the
+		// program could be started makes no kill, since there is nothing to
+		// kill: Run refuses with the context's own error, DeadlineExceeded —
+		// on a machine too loaded to fork within it, as much a timeout.
+		var killed atomic.Bool
+		cmd.Cancel = func() error {
+			killed.Store(true)
+			reap(cmd)
+			return ctx.Err()
+		}
 		err = cmd.Run()
 		cancel()
 		if err != nil {
-			if ctx.Err() != nil {
+			if killed.Load() || errors.Is(err, context.DeadlineExceeded) {
 				failed = append(failed, fmt.Sprintf("%s (timed out)", c.Name))
 			} else {
 				failed = append(failed, fmt.Sprintf("%s (%v)", c.Name, err))
