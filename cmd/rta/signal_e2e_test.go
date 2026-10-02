@@ -117,20 +117,31 @@ func TestASignalStopsACommandThatNeverReadsItsContext(t *testing.T) {
 	}
 }
 
-// A second signal is somebody insisting, and exits at once.
+// A second signal is somebody insisting, and exits at once, in the status of
+// the signal that did it.
+//
+// SIGINT goes first and SIGTERM second, because the order is what holds the
+// verdict when the pause between them is not enough. Two signals pending
+// together are handed over lowest number first, by the kernel and again by
+// the Go runtime, whatever order they were sent in. This sent SIGTERM and
+// then SIGINT, with only the pause to let the first be read: a process that
+// had not run by the time the second arrived read SIGINT first and exited
+// 143 for the 130 asked for, as SIGTERM and SIGINT sent back to back do
+// every time. Sent in ascending order, the order they are read in is the
+// order they were sent in, read apart or together.
 func TestASecondSignalExitsAtOnce(t *testing.T) {
 	cmd, stderr := blocked(t)
 	sent := time.Now()
-	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(200 * time.Millisecond)
 	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
 		t.Fatal(err)
 	}
+	time.Sleep(200 * time.Millisecond)
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
 	code, took := exit(t, cmd, sent)
-	if code != 130 || took > 2500*time.Millisecond {
-		t.Errorf("exit %d %s after the first signal, want 130 well inside the grace (stderr %q)",
+	if code != 143 || took > 2500*time.Millisecond {
+		t.Errorf("exit %d %s after the first signal, want 143 well inside the grace (stderr %q)",
 			code, took, stderr.String())
 	}
 }
