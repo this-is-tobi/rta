@@ -316,6 +316,7 @@ func TestIdentityIsContentAddressed(t *testing.T) {
 // child. A plugin whose entire body was `sleep 300` hung rta for the whole
 // three hundred seconds with the reap that would free it one line further on.
 func TestABinaryThatIsNotAPluginFailsQuickly(t *testing.T) {
+	giveUpSoon(t)
 	for _, tc := range []struct{ name, script string }{
 		{"prints nonsense", "#!/bin/sh\necho not a plugin\n"},
 		{"prints nothing and hangs", "#!/bin/sh\nsleep 300\n"},
@@ -354,6 +355,21 @@ func TestABinaryThatIsNotAPluginFailsQuickly(t *testing.T) {
 			}
 		})
 	}
+}
+
+// giveUpSoon shortens how long a plugin that never answers is waited for, for
+// a test whose plugin never will. Under -race the bound is twenty seconds
+// (slow_race.go), because a real plugin built with -race can be that slow to
+// start on a loaded machine; a script that sleeps is not one, and each such
+// test paid the whole bound, a minute of the suite between three of them.
+// Nothing here is about how long a handshake may take: the tests that are
+// keep the bound the build chose.
+func giveUpSoon(t *testing.T) {
+	t.Helper()
+	const soon = 5 * time.Second
+	startWas, describeWas := startTimeout, describeTimeout
+	startTimeout, describeTimeout = min(startTimeout, soon), min(describeTimeout, soon)
+	t.Cleanup(func() { startTimeout, describeTimeout = startWas, describeWas })
 }
 
 // argv is one of the three launch levers this package exposes, so it has to
