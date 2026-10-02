@@ -44,6 +44,49 @@ func mtime(t *testing.T, path string) time.Time {
 	return info.ModTime()
 }
 
+// patience is how long a test waits for the holder to renew a lock before it
+// says the holder never will. A bound on hanging, not a measure of speed: a
+// renewal that has stopped does not arrive however long this waits.
+const patience = 20 * time.Second
+
+// awaitRenewed waits until the sentinel carries a stamp later than after and
+// no older than within, and returns that stamp and its age; once patience has
+// run out it returns whatever the sentinel carries, for the caller to report.
+//
+// **What these tests ask is whether the holder goes on saying it is alive, not
+// whether the machine let it say so by the instant a test looked.** The beats
+// are timers in the process under test, and a process the machine has held off
+// the CPU for a lease's worth of a test's own sleep — a shared runner's steal
+// time, a starved vCPU — has beats owed that run the moment it is back. A stamp
+// sampled in that gap is the last one from before it, older than the lease, and
+// read as a holder gone quiet: a lock judged abandoned, from a process that
+// was never anything but slow. Freezing the test binary for 600 ms, a lease and
+// a little, failed all three tests that sampled once. Waited for, the stamp
+// lands within a beat of the process coming back; a holder that has stopped
+// renewing never produces one.
+func awaitRenewed(t *testing.T, path string, after time.Time, within time.Duration) (stamp time.Time, age time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(patience)
+	for {
+		// Not mtime, which ends the test at the first look that fails: a look
+		// that fails costs a look here, as a refused beat costs a beat, and a
+		// file a beat has open can refuse a reader on Windows.
+		if info, err := os.Stat(path); err == nil {
+			stamp, age = info.ModTime(), time.Since(info.ModTime())
+			if stamp.After(after) && age <= within {
+				return stamp, age
+			}
+		}
+		if time.Now().After(deadline) {
+			if stamp.IsZero() {
+				t.Fatalf("the lock is gone: %s cannot be read", path)
+			}
+			return stamp, age
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // The invariant, directly: while somebody holds the lock, the sentinel keeps
 // saying so.
 func TestAHeldLockKeepsSayingItIsAlive(t *testing.T) {
@@ -58,12 +101,12 @@ func TestAHeldLockKeepsSayingItIsAlive(t *testing.T) {
 	// Well past the point at which a waiter would judge this lock abandoned.
 	time.Sleep(testLease + testLease/2)
 
-	last := mtime(t, path)
+	last, age := awaitRenewed(t, path, first, testLease)
 	if !last.After(first) {
 		t.Fatalf("the lock's timestamp never moved while it was held (%v): a waiter reads "+
 			"the moment it was created as the moment its holder was last alive", last)
 	}
-	if age := time.Since(last); age > testLease {
+	if age > testLease {
 		t.Fatalf("a live holder's lock is %v old against a %v lease — it looks abandoned", age, testLease)
 	}
 }
@@ -81,7 +124,17 @@ func TestALiveHoldersLockIsNotBrokenAsStale(t *testing.T) {
 	// The holder is still inside its critical section — it is slow, not dead.
 	time.Sleep(testLease + testLease/2)
 
-	second, err := Acquire(path, testLease, DefaultRetry, testLease/2)
+	// A waiter judges the holder by the sentinel's age at the moment it looks,
+	// so the holder is first given the chance to have said it is alive lately
+	// (awaitRenewed has the case). A holder that never renews gets none, and
+	// the waiter below breaks its lock, as it would have without the wait.
+	awaitRenewed(t, path, time.Time{}, testLease/2)
+
+	// Short: the waiter judges on its first look at the sentinel, and every
+	// further millisecond is one in which a stall long enough to age the stamp
+	// past the lease would make a live holder look dead — the same stall the
+	// wait above exists to wait out.
+	second, err := Acquire(path, testLease, DefaultRetry, testLease/10)
 	if err == nil {
 		second()
 		t.Fatal("two callers hold the same lock at once: the second judged a live holder " +
@@ -165,13 +218,14 @@ func TestAMissedBeatCostsABeatNotTheLease(t *testing.T) {
 	defer release()
 
 	created := mtime(t, path)
-	// Long enough for the refused beat and several after it.
-	time.Sleep(testLease + testLease/2)
+	// Until a beat after the refused one lands, which the lease is long
+	// enough for several of.
+	last, _ := awaitRenewed(t, path, created, testLease)
 
 	if refused.Load() == 0 {
 		t.Fatal("no beat was refused, so this proves nothing about a missed one")
 	}
-	if last := mtime(t, path); !last.After(created) {
+	if !last.After(created) {
 		t.Fatalf("the lock's timestamp never moved after one refused beat (%v): the first "+
 			"missed beat ended the lease, and a waiter may now break a live holder's lock", last)
 	}
