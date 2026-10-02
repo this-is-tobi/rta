@@ -95,6 +95,17 @@ func Secrets(ctx context.Context, name string, t Target) (map[string]string, *vi
 	// self-delimiting, so Unmarshal below is a better judge of which than a
 	// blanket refusal that throws away a complete answer.
 	if err != nil && !errors.Is(err, exec.ErrWaitDelay) {
+		// The caller's own clock, before what kubectl said: a kubectl killed
+		// for running out of it says nothing, and the empty-stderr branch of
+		// secretFailed would name a failure to read a secret that was never
+		// given the time to be read. Open, probeSSH and kubeLines already
+		// report their deadlines as deadlines.
+		if ctx.Err() != nil {
+			return nil, view.Errorf("tunnel.secret.timeout",
+				"profile %q: kubectl did not return secret %q in time", name, t.Secret).
+				WithHint("`kubectl --context " + kctx + " -n " + ns + " get secret " + t.Secret +
+					"` by hand shows what it is waiting for")
+		}
 		return nil, secretFailed(name, ns, t.Secret, stderr.String())
 	}
 

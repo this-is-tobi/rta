@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 // b64 is what a Secret's `data` holds. Written out so the fixtures read like
@@ -168,5 +169,20 @@ func TestNoFailureMessageCarriesTheCredential(t *testing.T) {
 	}
 	if strings.Contains(verr.Message+verr.Hint, password) {
 		t.Errorf("the credential appears in the error: %s / %s", verr.Message, verr.Hint)
+	}
+}
+
+// A deadline that ends the read is the deadline, and not a failure to read a
+// secret: kubectl killed for running out of time says nothing, which the
+// generic branch would turn into "could not read secret" and send somebody to
+// the secret's permissions.
+func TestASecretReadThatRunsOutOfTimeIsTheTimeout(t *testing.T) {
+	fakeKubectl(t, "sleep 30\n")
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	_, verr := Secrets(ctx, "homelab-pg", creds(t))
+	if verr == nil || verr.Code != "tunnel.secret.timeout" {
+		t.Fatalf("Secrets under a spent deadline = %v, want tunnel.secret.timeout", verr)
 	}
 }
