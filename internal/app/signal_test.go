@@ -98,6 +98,17 @@ func (l *lockedBuffer) String() string {
 
 func never() bool { return false }
 
+// owed is how long the test waits for what the watch owes it: an exit, a
+// cancelled context. The watch does its part in milliseconds, so this is for
+// a runner that stalls and not for the work. A stall of a second or two,
+// which a runner sharing its machine can have, ran out the test's own
+// one-second timer and the watch's 10ms one together on its resume, and the
+// select then chose between them: half the time the test reported an exit
+// that was still a few microseconds off. Waiting longer costs nothing when
+// the answer comes, and the windows in which nothing may happen are kept
+// short, since a stall can only make those stricter.
+const owed = 10 * time.Second
+
 func (w *watch) exited(within time.Duration) (int, bool) {
 	select {
 	case code := <-w.codes:
@@ -117,10 +128,10 @@ func TestACommandThatIgnoresTheSignalIsExitedAfterTheGrace(t *testing.T) {
 		w.signals <- sig
 		select {
 		case <-w.ctx.Done():
-		case <-time.After(time.Second):
+		case <-time.After(owed):
 			t.Fatalf("%v did not cancel the command's context", sig)
 		}
-		code, ok := w.exited(2 * time.Second)
+		code, ok := w.exited(owed)
 		if !ok || code != want {
 			t.Fatalf("%v: exited %v with %d, want %d", sig, ok, code, want)
 		}
@@ -144,14 +155,14 @@ func TestASignalWhileThePluginsLoadWaitsForTheCommand(t *testing.T) {
 	w.signals <- syscall.SIGTERM
 	select {
 	case <-w.ctx.Done():
-	case <-time.After(time.Second):
+	case <-time.After(owed):
 		t.Fatal("the signal did not cancel the load's context")
 	}
 	if code, ok := w.exited(200 * time.Millisecond); ok {
 		t.Fatalf("exited %d before the command tree and the plugins were attached", code)
 	}
 	w.Attach(nil, func() { w.closed.Add(1) })
-	if code, ok := w.exited(2 * time.Second); !ok || code != 143 {
+	if code, ok := w.exited(owed); !ok || code != 143 {
 		t.Fatalf("after Attach: exited %v with %d, want 143 once the grace ran out", ok, code)
 	}
 	if w.closed.Load() != 1 {
@@ -191,7 +202,7 @@ func TestASecondSignalExitsAtOnce(t *testing.T) {
 	w.signals <- syscall.SIGTERM
 	<-w.ctx.Done()
 	w.signals <- os.Interrupt
-	code, ok := w.exited(time.Second)
+	code, ok := w.exited(owed)
 	if !ok || code != 130 {
 		t.Fatalf("exited %v with %d, want 130 at once", ok, code)
 	}
@@ -210,7 +221,7 @@ func TestACommandThatOwnsItsShutdownGetsNoDeadline(t *testing.T) {
 		t.Fatalf("exited %d under a command that owns its shutdown", code)
 	}
 	w.signals <- syscall.SIGTERM
-	if code, ok := w.exited(time.Second); !ok || code != 143 {
+	if code, ok := w.exited(owed); !ok || code != 143 {
 		t.Fatalf("a second signal: exited %v with %d, want 143", ok, code)
 	}
 }
@@ -232,7 +243,7 @@ func TestASIGINTWhileTheTerminalIsLentIsTheChilds(t *testing.T) {
 	w.signals <- syscall.SIGTERM
 	select {
 	case <-w.ctx.Done():
-	case <-time.After(time.Second):
+	case <-time.After(owed):
 		t.Fatal("SIGTERM did not cancel the command while an editor ran")
 	}
 }
@@ -252,7 +263,7 @@ func TestTheExitWaitsForHeldWork(t *testing.T) {
 		t.Fatalf("exited %d with work still held", code)
 	}
 	close(release)
-	if code, ok := w.exited(time.Second); !ok || code != 143 {
+	if code, ok := w.exited(owed); !ok || code != 143 {
 		t.Fatalf("exited %v with %d once the work was done, want 143", ok, code)
 	}
 
@@ -263,7 +274,7 @@ func TestTheExitWaitsForHeldWork(t *testing.T) {
 		t.Fatalf("exited %d with work still held", code)
 	}
 	w.signals <- syscall.SIGTERM
-	if code, ok := w.exited(time.Second); !ok || code != 143 {
+	if code, ok := w.exited(owed); !ok || code != 143 {
 		t.Fatalf("a second signal while waiting: exited %v with %d, want 143", ok, code)
 	}
 
@@ -294,7 +305,7 @@ func TestTheExitWaitsForHeldWork(t *testing.T) {
 	}
 	select {
 	case <-resumes:
-	case <-time.After(10 * time.Second):
+	case <-time.After(owed):
 		t.Fatal("settling was never resumed for the command that returned")
 	}
 	if n := resumed.Load(); n != 1 {
@@ -314,7 +325,7 @@ func TestAForcedExitOnATerminalIsReportedOnALineOfItsOwn(t *testing.T) {
 		w.prompting = func() bool { return tc.prompting }
 		w.Attach(nil, nil)
 		w.signals <- syscall.SIGTERM
-		if _, ok := w.exited(time.Second); !ok {
+		if _, ok := w.exited(owed); !ok {
 			t.Fatal("no exit")
 		}
 		fresh := tc.tty || tc.prompting
@@ -334,7 +345,7 @@ func TestAForcedExitIsReportedInTheFormatAskedFor(t *testing.T) {
 	w := newWatch(t, 10*time.Millisecond, never, never, nil)
 	w.Attach(root, nil)
 	w.signals <- syscall.SIGTERM
-	if _, ok := w.exited(time.Second); !ok {
+	if _, ok := w.exited(owed); !ok {
 		t.Fatal("no exit")
 	}
 	var env map[string]any
@@ -359,7 +370,7 @@ func TestAForcedExitUnderPluginDevIsReportedForTheCommandItRan(t *testing.T) {
 	w.Attach(outer, nil)
 	line.Store(&commandLine{root: nested, args: []string{"doctor", "-o", "json"}})
 	w.signals <- syscall.SIGTERM
-	if _, ok := w.exited(time.Second); !ok {
+	if _, ok := w.exited(owed); !ok {
 		t.Fatal("no exit")
 	}
 	var env map[string]any
