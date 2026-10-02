@@ -53,7 +53,7 @@ func TestMCPServeSaysOnceWhichRootItCannotRead(t *testing.T) {
 	defer func() { _ = stdin.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 
 	said := "rta: the root " + searchOnly + " cannot be read"
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(startsWithin)
 	for !strings.Contains(errBuf.String(), "team policy") && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
