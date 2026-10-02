@@ -334,6 +334,20 @@ func TestAnExitTheKillCausedIsTheTimeoutBeforeTheWaitHearsOfIt(t *testing.T) {
 	}
 }
 
+// giveUpWithin bounds how long a call that has to give up may take to do it,
+// and it is a bound on hanging, not a measure of speed. Each test that uses it
+// holds a call to a deadline or a ceiling of a few hundred milliseconds, and
+// what it rules out is the call outliving that by openCeiling's minute, by the
+// minute a stuck listing sleeps, or for good.
+//
+// It was three seconds, which also ruled out a machine running the whole suite
+// under -race spending three seconds starting one process — and such a machine
+// has spent five on a single fake kubectl (TestCompleteKubeWalksTheGrammar-
+// SegmentBySegment's old deadline). A stall of three seconds where the spawn is
+// paid failed all four of these tests. Twenty is awaitMarker's patience, and
+// still a third of the shortest hang any of them is there to catch.
+const giveUpWithin = 20 * time.Second
+
 // A kubectl that starts and never forwards must not hang the call forever.
 func TestAForwardThatNeverComesUpTimesOut(t *testing.T) {
 	fakeKubectl(t, "while true; do sleep 1; done\n")
@@ -345,7 +359,7 @@ func TestAForwardThatNeverComesUpTimesOut(t *testing.T) {
 	if verr == nil || verr.Code != "tunnel.open.timeout" {
 		t.Fatalf("verr = %v, want tunnel.open.timeout", verr)
 	}
-	if time.Since(start) > 3*time.Second {
+	if time.Since(start) > giveUpWithin {
 		t.Errorf("took %v to give up", time.Since(start))
 	}
 }
@@ -369,7 +383,7 @@ func TestOpenNeverHangsForeverWithNoCallerDeadline(t *testing.T) {
 	if verr == nil || verr.Code != "tunnel.open.timeout" {
 		t.Fatalf("verr = %v, want tunnel.open.timeout", verr)
 	}
-	if time.Since(start) > 3*time.Second {
+	if time.Since(start) > giveUpWithin {
 		t.Errorf("took %v to give up despite no caller deadline", time.Since(start))
 	}
 }

@@ -247,7 +247,9 @@ func TestARefusedListingFailsOpenInKubectlsWords(t *testing.T) {
 // A listing that hangs is bounded by the caller's context and classified as a
 // timeout, not as whatever half-written stderr the kill left behind.
 func TestAHangingListingIsBoundedByTheCallersContext(t *testing.T) {
-	fakeKubectl(t, "exec sleep 5\n")
+	// A minute, not five seconds: past giveUpWithin, so a listing left to run
+	// out its own sleep is a wait this test still sees.
+	fakeKubectl(t, "exec sleep 60\n")
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	start := time.Now()
@@ -258,7 +260,7 @@ func TestAHangingListingIsBoundedByTheCallersContext(t *testing.T) {
 	if verr.Code != "tunnel.list.timeout" {
 		t.Errorf("code = %s, want tunnel.list.timeout", verr.Code)
 	}
-	if took := time.Since(start); took > 3*time.Second {
+	if took := time.Since(start); took > giveUpWithin {
 		t.Errorf("the caller waited %s on a 100ms deadline", took)
 	}
 }
