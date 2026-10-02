@@ -124,6 +124,7 @@ func alive(pid int) bool {
 // closed everything but that one, which then outlived rta in a process group
 // of its own.
 func TestALaunchUnderWayHoldsOffAForcedExit(t *testing.T) {
+	giveUpSoon(t)
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "pid")
 	p := filepath.Join(dir, "rta-plugin-silent")
