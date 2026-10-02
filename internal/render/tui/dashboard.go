@@ -798,12 +798,22 @@ type tickMsg struct{ gen int }
 func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 	filled map[string]any, conn config.Connection) tea.Cmd {
 	key := t.key()
+	// Read here, where the update loop builds the command, and not in the
+	// closure. The closure runs on a goroutine of its own that nothing waits
+	// for once the program has quit, so a tile still in flight when its
+	// dashboard closed had read this with nothing ordering the read against
+	// anything after it. The tests that lower the deadline write it from the
+	// test goroutine, and under -race -shuffle a tile left over from an
+	// earlier test's dashboard — one a loaded machine had not yet run when
+	// that test quit — was a race reported against whichever test lowered it
+	// next. Taken once, it is also the deadline the sentence below names.
+	deadline := refreshTimeout
 	return func() tea.Msg {
 		if t.search || t.cap.Run == nil {
 			// Static tiles keep their content.
 			return tileMsg{key: key, idx: idx, v: t.view}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), deadline)
 		defer cancel()
 		// Checked on the context rather than on the error, and before it:
 		// a handler that returns ctx.Err() verbatim (builtin/net/trace.go
@@ -818,7 +828,7 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 				return nil
 			}
 			return view.Errorf("tui.refresh.timeout",
-				"%s did not answer within %s", t.cap.ID, refreshTimeout).
+				"%s did not answer within %s", t.cap.ID, deadline).
 				WithHint("enter opens it on its own screen, where a run is not on the dashboard's clock")
 		}
 		dialled, via, closeTunnel, verr := profile.Dial(ctx, profileName, conn, t.cap, t.values, plugin.SurfaceTUI)
