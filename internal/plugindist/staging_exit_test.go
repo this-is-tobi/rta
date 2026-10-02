@@ -4,6 +4,7 @@ package plugindist
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -50,10 +51,7 @@ capabilities:
 		installed <- verr
 	}()
 	// Opened once the install opens it to read, which it does after staging.
-	feed, err := os.OpenFile(fifo, os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	feed := openFeed(t, fifo, installed)
 	defer func() { _ = feed.Close() }()
 	if _, err := feed.Write([]byte("the first bytes of an artifact")); err != nil {
 		t.Fatal(err)
@@ -81,6 +79,37 @@ capabilities:
 	_ = feed.Close()
 	if verr := <-installed; verr == nil {
 		t.Error("an artifact whose checksum nobody claimed was installed")
+	}
+}
+
+// openFeed opens the write end of fifo as soon as the install under way opens
+// its read end, and fails the test, saying how the install ended, if it ends
+// without ever having.
+//
+// A write open on a named pipe blocks until something opens the other end, so
+// a plain os.OpenFile here waits for as long as the install never will: an
+// install that failed before it reached the pipe, a verification launch that
+// outlasted its handshake bound on a machine too busy to start the plugin in
+// time, left the test blocked until the package's timeout killed the whole
+// run, ten minutes on with a stack that names the open and not the install
+// that failed. Opened without blocking, the open fails with ENXIO while
+// nothing reads, which turns the wait into a poll that can also hear the
+// install end.
+func openFeed(t *testing.T, fifo string, installed <-chan *view.Error) *os.File {
+	t.Helper()
+	for {
+		feed, err := os.OpenFile(fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0)
+		if err == nil {
+			return feed
+		}
+		if !errors.Is(err, syscall.ENXIO) {
+			t.Fatal(err)
+		}
+		select {
+		case verr := <-installed:
+			t.Fatalf("the install ended before it read %s: %v", filepath.Base(fifo), verr)
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
 }
 
@@ -133,10 +162,7 @@ func TestAnExitDuringASignaturesFetchLeavesNothingBehind(t *testing.T) {
 	}()
 	// Opened once the install opens it to read, which it does once the
 	// plugin it signs has been verified.
-	feed, err := os.OpenFile(fifo, os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	feed := openFeed(t, fifo, installed)
 	defer func() { _ = feed.Close() }()
 	if _, err := feed.Write([]byte("the first bytes of a signature")); err != nil {
 		t.Fatal(err)
