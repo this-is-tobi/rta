@@ -3,6 +3,7 @@ package grant
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -435,5 +436,78 @@ func TestKnownFieldsTrackTheStruct(t *testing.T) {
 	}
 	if extra := unknown([]byte(`{"seal":"x","grants":` + string(canon) + `}`)); len(extra) > 0 {
 		t.Errorf("this build's own grants report unknown fields: %v", extra)
+	}
+}
+
+// A grant whose time has passed is never read again, and the file it sits in
+// has a ceiling that is enforced on every gated call, so writing it back only
+// moves the day the whole file stops being read.
+func TestAnExpiredGrantIsNotWrittenBack(t *testing.T) {
+	setup(t)
+	now := time.Now()
+	live := Grant{Target: "kv.get", Scope: "a", Issued: now, Expires: now.Add(time.Hour)}
+	over := Grant{Target: "kv.get", Scope: "b", Issued: now.Add(-time.Hour), Expires: now.Add(-time.Second)}
+	tooOld := Grant{Target: "kv.get", Scope: "c", Issued: now.Add(-2 * MaxTTL), Expires: now.Add(time.Hour)}
+	if verr := Save([]Grant{over, live, tooOld}); verr != nil {
+		t.Fatal(verr)
+	}
+	stored, verr := loadAll()
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if len(stored) != 1 || stored[0].Scope != "a" {
+		t.Errorf("stored %+v, want only the grant that still stands", stored)
+	}
+}
+
+// refund gives a use back to the row the call spent from, which is the row
+// Load hides once its last use is gone, so a writer that lands while that call
+// is in flight must leave it where it is.
+func TestAGrantSpentToItsLastUseIsKeptUntilItExpires(t *testing.T) {
+	setup(t)
+	now := time.Now()
+	spent := Grant{Target: "kv.get", Scope: "a", MaxUses: 1, Uses: 1, Issued: now, Expires: now.Add(time.Hour)}
+	if verr := Save([]Grant{spent}); verr != nil {
+		t.Fatal(verr)
+	}
+	stored, verr := loadAll()
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if len(stored) != 1 || stored[0].Uses != 1 {
+		t.Errorf("stored %+v, want the spent grant kept for a refund", stored)
+	}
+}
+
+// A file that is written is a file that reads: loadAll refuses one over
+// maxGrantFile on every gated call, so a Save that would make one is refused
+// where a person is standing, and the file as it was keeps answering.
+func TestASaveThatWouldPassWhatIsReadBackIsRefusedAndChangesNothing(t *testing.T) {
+	setup(t)
+	issue(t, Grant{Target: "kv.get", Scope: "k"})
+	before, err := os.ReadFile(Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	var many []Grant
+	for i := 0; len(many) < 2*maxGrantFile/200; i++ {
+		many = append(many, Grant{Target: "kv.get", Scope: fmt.Sprintf("record-%d", i),
+			Note: strings.Repeat("n", 100), Issued: now, Expires: now.Add(time.Hour)})
+	}
+	verr := Save(many)
+	if verr == nil || verr.Code != "core.grant.full" {
+		t.Fatalf("Save of %d grants = %v, want core.grant.full", len(many), verr)
+	}
+	after, err := os.ReadFile(Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("a refused Save changed the grant file")
+	}
+	if verr := gate(t, declare("kv.get", plugin.Write, "key", true), map[string]any{"key": "k"}, "", ""); verr != nil {
+		t.Errorf("the grant that was there before the refused Save no longer authorizes: %v", verr)
 	}
 }
