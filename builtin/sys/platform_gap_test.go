@@ -173,7 +173,12 @@ func TestSampleCPUWaitsForTheCountersToMoveThenGivesUp(t *testing.T) {
 		}
 		return moved, nil
 	}
-	s, err := sampleCPUWith(context.Background(), thawsOnThirdRead, time.Millisecond, time.Second)
+	// The reads are scripted, so how many it takes is fixed whatever the
+	// clock does; an hour of patience keeps a runner that stalls this test
+	// for the second it was once given from reporting counters that thawed
+	// as unreadable. The giving up is the call below, which is bounded the
+	// other way: it ends at its first read taken past 20ms.
+	s, err := sampleCPUWith(context.Background(), thawsOnThirdRead, time.Millisecond, time.Hour)
 	if err != nil {
 		t.Fatalf("counters that thawed within patience were reported unreadable: %v", err)
 	}
