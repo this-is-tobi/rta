@@ -72,14 +72,25 @@ type capForm struct {
 	fetchedFor map[string]string
 	// browsed is the candidate the arrows last placed in each box (browse.go).
 	browsed map[string]browsed
-	// liveGot is what a live fetch last brought back per field, behind its
-	// own lock: applyCompletion writes it on the event loop, and suggestion
+	// fetched is what a fetch last brought back per field, behind its own
+	// lock: applyCompletion writes it on the event loop, and suggestion
 	// functions read it off the loop — the same split syncs exists for, on
-	// data no binding holds. Without it the keystroke channel's re-evaluation
-	// (recents only, Candidates gates live) would clobber a landed fetch off
-	// the widget at the next keystroke.
-	liveMu  sync.Mutex
-	liveGot map[string][]string
+	// data no binding holds. It is how a landed fetch reaches a field that
+	// has a suggestion function, and the one way that is safe: huh's
+	// Input.Suggestions clears the function, and a reload a keystroke had
+	// already queued reads that function when it runs, on another goroutine —
+	// a data race, and a call of nil when the clearing came first. A fetch
+	// that is merged by the function itself, and announced by fetchGen
+	// changing, never touches the widget's own fields. It also keeps the
+	// keystroke channel's re-evaluation from clobbering a landed fetch off the
+	// widget at the next keystroke.
+	fetchMu sync.Mutex
+	fetched map[string][]string
+	// fetchGen is a string in watched: huh re-evaluates a suggestion function
+	// when what it watches changes, and a fetch landing changes nothing the
+	// operator typed.
+	fetchGen string
+	fetchN   int
 	// offered is the field list this run form was asked to collect, before
 	// forwardDisplays showed a forward's coordinate in what it answers — what a
 	// rebuild on the environment the picker now names must start from, since
@@ -768,12 +779,13 @@ func (cf *capForm) completing(in *huh.Input, f plugin.Field, typed *syncString, 
 }
 
 // watched is what huh hashes to decide a suggestion is stale: every string the
-// form currently holds.
+// form currently holds, and the generation of the last fetch.
 //
 // Read on the event loop by huh itself, so the pointers rather than the locked
 // accessors — the lock is for the suggestion function, which runs elsewhere.
 func (cf *capForm) watched() []*string {
-	out := make([]*string, 0, len(cf.fields))
+	out := make([]*string, 0, len(cf.fields)+1)
+	out = append(out, &cf.fetchGen)
 	for _, f := range cf.fields {
 		if b, ok := cf.bindings[f.Name]; ok {
 			out = append(out, b)
@@ -799,13 +811,11 @@ func (cf *capForm) candidates(f plugin.Field) []string {
 	// visible moment must be able to tell the difference.
 	req := plugin.CompletionRequest(cf.cap, cf.snapshot())
 	out := candidateValues(f, ctx, req)
-	// A live field's listing arrives on the deliberate channel and lands in
-	// liveGot (applyCompletion); this merge is what keeps it on the widget
-	// when the keystroke channel re-evaluates. In front of the recents,
-	// because it is what the service said exists right now.
-	if f.Live {
-		out = append(out, cf.liveItems(f.Name)...)
-	}
+	// A listing arrives on the deliberate channel and lands in fetched
+	// (applyCompletion); this merge is what puts it on the widget, and keeps
+	// it there when the keystroke channel re-evaluates. In front of the
+	// recents, because it is what the service said exists right now.
+	out = append(out, cf.fetchedItems(f.Name)...)
 	seen := make(map[string]bool, len(out))
 	for _, v := range out {
 		seen[v] = true
@@ -818,20 +828,25 @@ func (cf *capForm) candidates(f plugin.Field) []string {
 	return out
 }
 
-// liveItems and setLiveItems are liveGot behind its lock — see the field.
-func (cf *capForm) liveItems(name string) []string {
-	cf.liveMu.Lock()
-	defer cf.liveMu.Unlock()
-	return append([]string(nil), cf.liveGot[name]...)
+// fetchedItems and setFetched are fetched behind its lock — see the field.
+func (cf *capForm) fetchedItems(name string) []string {
+	cf.fetchMu.Lock()
+	defer cf.fetchMu.Unlock()
+	return append([]string(nil), cf.fetched[name]...)
 }
 
-func (cf *capForm) setLiveItems(name string, items []string) {
-	cf.liveMu.Lock()
-	defer cf.liveMu.Unlock()
-	if cf.liveGot == nil {
-		cf.liveGot = map[string][]string{}
+// setFetched lands a fetch and says so to every suggestion function: the
+// generation changes, and what huh watches changes with it. Event loop only,
+// like every write to a binding.
+func (cf *capForm) setFetched(name string, items []string) {
+	cf.fetchMu.Lock()
+	if cf.fetched == nil {
+		cf.fetched = map[string][]string{}
 	}
-	cf.liveGot[name] = append([]string(nil), items...)
+	cf.fetched[name] = append([]string(nil), items...)
+	cf.fetchMu.Unlock()
+	cf.fetchN++
+	cf.fetchGen = strconv.Itoa(cf.fetchN)
 }
 
 // snapshot is what the form holds right now, safe to read off the event loop.

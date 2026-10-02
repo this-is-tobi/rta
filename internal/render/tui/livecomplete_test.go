@@ -143,7 +143,7 @@ func TestTabAsksTheServiceAndTypingNeverDoes(t *testing.T) {
 	}
 
 	// The fetch survives the keystroke channel's re-evaluation: without the
-	// liveGot merge, the next keystroke in any box wipes the landed list off
+	// fetched merge, the next keystroke in any box wipes the landed list off
 	// the widget.
 	if got := nm.form.candidates(bucket); len(got) != 2 || got[0] != "backups" {
 		t.Errorf("the keystroke channel offers %v after the fetch, want the fetched list kept", got)
