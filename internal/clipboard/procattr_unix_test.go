@@ -3,6 +3,7 @@
 package clipboard
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,6 +20,12 @@ func alive(pid int) bool {
 	return syscall.Kill(pid, 0) == nil
 }
 
+// patience is how long this file's waits give a machine to do what they wait
+// for. Every wait here returns the moment its condition holds, so it bounds
+// only the failure, and a bound a loaded machine can pass is one that reports
+// the machine.
+const patience = 60 * time.Second
+
 // The regression procattr_unix.go exists to close: a wedged program that
 // had already forked a child of its own — the same shape xclip's own
 // successful path takes, backgrounding a helper to keep serving the
@@ -30,13 +37,20 @@ func alive(pid int) bool {
 // before blocking, and never itself becomes that process — sh does not
 // exec-optimize a backgrounded command, so this does not depend on that
 // being true the way calling the long-running program directly would.
+//
+// **Copy is given up on once the script has set itself up, not a fixed time
+// after it was started.** Left to its deadline, the program is killed five
+// seconds in whatever it had managed by then: a script that a very busy
+// machine had not yet got as far as its pid file is killed before it has
+// recorded the child this test is about, and the test reports the machine.
+// The deadline is moved out of the way and the context copyUnder is given
+// ends the program at the moment the test has seen what it needs to — through
+// the same Cancel the deadline reaches, so it is the kill under test. A
+// stand-in that takes six seconds to start does not fail it.
 func TestCopyKillsWhateverTheWedgedProgramForked(t *testing.T) {
-	// The real default, deliberately not shrunk: unlike the "does not hang"
-	// test, this one is not measuring how fast Copy returns, and shrinking
-	// the deadline only narrows the window the script's own setup (fork,
-	// then write a pid file) has to complete before it can be killed
-	// prematurely — which is exactly the race an earlier version of this
-	// test lost under `make ci`'s coverage pass on a loaded machine.
+	old := timeout
+	timeout = time.Hour
+	t.Cleanup(func() { timeout = old })
 
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "child.pid")
@@ -50,29 +64,35 @@ func TestCopyKillsWhateverTheWedgedProgramForked(t *testing.T) {
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
+	ctx, giveUp := context.WithCancel(context.Background())
+	defer giveUp()
 	done := make(chan struct{})
 	go func() {
-		Copy([]byte("s3cr3t"))
+		copyUnder(ctx, []byte("s3cr3t"))
 		close(done)
 	}()
-	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
-		t.Fatal("Copy did not return within 30s")
-	}
 
-	raw, err := os.ReadFile(pidFile)
-	if err != nil {
-		t.Fatalf("the stub never recorded its child's pid: %v", err)
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
-	if err != nil {
-		t.Fatalf("pid file held %q, not a pid: %v", raw, err)
+	// A pid file that is there but not yet holding its pid is not ready: the
+	// shell makes the file before it writes it.
+	var pid int
+	for deadline := time.Now().Add(patience); pid == 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the stub never recorded its child's pid")
+		}
+		if raw, err := os.ReadFile(pidFile); err == nil {
+			pid, _ = strconv.Atoi(strings.TrimSpace(string(raw)))
+		}
 	}
 	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
 
-	deadline := time.Now().Add(2 * time.Second)
-	for alive(pid) && time.Now().Before(deadline) {
+	giveUp()
+	select {
+	case <-done:
+	case <-time.After(patience):
+		t.Fatal("Copy did not return after it was given up on")
+	}
+
+	for deadline := time.Now().Add(patience); alive(pid) && time.Now().Before(deadline); {
 		time.Sleep(20 * time.Millisecond)
 	}
 	if alive(pid) {
