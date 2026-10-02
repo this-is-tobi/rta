@@ -389,6 +389,13 @@ func (t *Tunnel) stopSSH() {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.gaveUp.Store(true)
+		for c := range kids {
+			force(c)
+		}
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+		}
 	}
 }
 

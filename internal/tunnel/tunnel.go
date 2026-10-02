@@ -643,6 +643,14 @@ func (t *Tunnel) stopKube() {
 	case <-t.exited:
 	case <-time.After(2 * time.Second):
 		t.gaveUp.Store(true)
+		// SIGTERM is a request. A kubectl that traps it went on forwarding
+		// after Close returned, on a port the caller believed closed, so what
+		// was asked politely is now made.
+		force(t.cmd)
+		select {
+		case <-t.exited:
+		case <-time.After(2 * time.Second):
+		}
 	}
 }
 

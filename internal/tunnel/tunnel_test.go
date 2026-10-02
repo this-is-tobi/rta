@@ -120,6 +120,34 @@ func TestCloseEndsTheForward(t *testing.T) {
 	}
 }
 
+// SIGTERM is a request, and a kubectl that traps it is still forwarding after
+// Close returns unless Close goes on to make the demand: a port the caller
+// believes closed would stay open with nobody watching it.
+func TestCloseEndsAForwardThatIgnoresSIGTERM(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "alive")
+	fakeKubectl(t, fmt.Sprintf(
+		"echo 'Forwarding from 127.0.0.1:1 -> 5432'\ntrap '' TERM\ntouch %s\nwhile true; do sleep 0.05; done\n",
+		marker))
+
+	tun, verr := Open(context.Background(), "homelab-pg", Target{Kube: homelab})
+	if verr != nil {
+		t.Fatalf("open: %v", verr)
+	}
+	if !awaitMarker(marker, true) {
+		t.Fatal("the forward never started, so this proves nothing about Close")
+	}
+	tun.Close()
+
+	select {
+	case <-tun.exited:
+	default:
+		t.Error("the forward was still running after Close: a trapped SIGTERM left it forwarding")
+	}
+	if !tun.TimedOut() {
+		t.Error("Close that had to kill the forward did not say it gave up waiting")
+	}
+}
+
 // awaitMarker waits for the marker to exist, or to be gone.
 func awaitMarker(path string, want bool) bool {
 	deadline := time.Now().Add(20 * time.Second)
