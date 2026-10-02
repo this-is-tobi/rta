@@ -217,6 +217,14 @@ func TestAnExpiredLoginIsToldWhichCommandRenewsIt(t *testing.T) {
   *) echo 'error: You must be logged in to the server (Unauthorized)' >&2; exit 1 ;;
 esac
 `)
+	// The hint is read off a second kubectl that the package bounds at five
+	// seconds, and a loaded machine can spend that long starting one, after
+	// which the hint is the general sentence and this fails about wording it
+	// never got to read. The wording is the question, so the bound is a minute.
+	saved := helperCeiling
+	helperCeiling = time.Minute
+	t.Cleanup(func() { helperCeiling = saved })
+
 	_, verr := Open(context.Background(), "homelab-pg", Target{Kube: homelab})
 	if verr == nil {
 		t.Fatal("a failing kubectl produced no error")
