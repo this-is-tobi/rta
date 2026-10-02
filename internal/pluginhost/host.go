@@ -672,34 +672,56 @@ func (h *Host) start(ctx context.Context, id Identity, deny DenySet, args []stri
 	// pipes, so the Kill that follows returns immediately, and the socket
 	// directory, which is rta's and not go-plugin's (socketDir), goes after it.
 	//
-	// What the plugin said goes with the error, read before the reap, so the
-	// status it exited with is its own and not the kill's — once it has had
-	// a moment to exit (exitedOnItsOwn): a plugin that failed to start has
-	// usually gone, and go-plugin waits for it from a goroutine of its own,
-	// just after it reports the start failed.
-	abandon := func(reason string, err error) (*Client, error) {
-		exitedOnItsOwn(client)
+	// What the plugin said goes with the error, with how it exited, and when
+	// that is known depends on how far the launch got.
+	//
+	// **A start that failed has already ended the process** (ended): go-plugin
+	// kills the process it started as Start reports the failure, so how it
+	// ended is decided — by itself, or by that kill — and no reap can change
+	// it. What is not decided yet is go-plugin hearing of it, which waits for
+	// the process's stdout and stderr to be read to their end, so before then
+	// the status is not there to read and its last lines may not all be in.
+	// That was a 200ms wait before the reap, which is a guess at how a
+	// machine schedules: a script that had exited with status 1 was said to
+	// have, in rta's words, when go-plugin heard of it inside the 200ms, and
+	// in go-plugin's guesses when a loaded runner took longer. So the group
+	// goes first, which ends whatever else held those pipes open, and the
+	// account waits for the process to be collected (collected).
+	//
+	// One that started and then failed to connect may still be running, and
+	// how it exited is its own only if it stops before the reap: it gets a
+	// moment to (exitedOnItsOwn), and is read before the reap, so a status
+	// rta's kill decided is never reported as the plugin's.
+	abandon := func(reason string, err error, ended bool) (*Client, error) {
+		if ended {
+			reap(cmd)
+			collected(client, cmd)
+		} else {
+			exitedOnItsOwn(client)
+		}
 		failure := fmt.Errorf("%s %s: %w%s", reason, id.Path, withoutWrapperNotes(cmd, id, err),
 			words.told(exitStatus(client, cmd)))
 		if said, ok := beforeHandshake(client, cmd, err); ok {
 			failure = fmt.Errorf("%s %s%s", id.Path, said, words.wrote(true))
 		}
-		reap(cmd)
+		if !ended {
+			reap(cmd)
+		}
 		client.Kill()
 		removeSocketDir(sockDir)
 		return nil, failure
 	}
 
 	if _, err := client.Start(); err != nil {
-		return abandon("starting plugin", err)
+		return abandon("starting plugin", err, true)
 	}
 	proto, err := client.Client()
 	if err != nil {
-		return abandon("connecting to plugin", err)
+		return abandon("connecting to plugin", err, false)
 	}
 	grpcClient, ok := proto.(*goplugin.GRPCClient)
 	if !ok {
-		return abandon("plugin", fmt.Errorf("did not speak gRPC"))
+		return abandon("plugin", fmt.Errorf("did not speak gRPC"), false)
 	}
 
 	c := &Client{
@@ -841,10 +863,13 @@ func withoutWrapperNotes(cmd *exec.Cmd, id Identity, err error) error {
 	return errors.New(strings.TrimRight(text[:notes], "\n"))
 }
 
-// exitedOnItsOwn gives a plugin whose launch failed a moment to finish
-// exiting, and go-plugin to say how, before the launch reaps it: long enough
-// for a process that has closed its output on the way out, and nothing a
-// person waits on beside a launch that failed.
+// exitedOnItsOwn gives a plugin that started and then failed to connect a
+// moment to finish exiting, and go-plugin to say how, before the launch reaps
+// it: long enough for a process that has closed its output on the way out,
+// and nothing a person waits on beside a launch that failed. A courtesy and
+// not a guarantee, which is why a start that failed does not use it: nothing
+// says a process that answered its handshake is about to stop, so how long
+// to wait for one that is can only be a guess (collected).
 func exitedOnItsOwn(client *goplugin.Client) {
 	deadline := time.Now().Add(exitSettle)
 	for !client.Exited() && time.Now().Before(deadline) {
@@ -854,6 +879,28 @@ func exitedOnItsOwn(client *goplugin.Client) {
 
 // exitSettle bounds exitedOnItsOwn.
 const exitSettle = 200 * time.Millisecond
+
+// collected waits for go-plugin to collect a process that has been ended —
+// killed by go-plugin as its start failed, its group reaped by rta — which it
+// does once the process's stdout and stderr have been read to their end: from
+// then on the status exitStatus reads and the last lines lastWords keeps are
+// both there, whatever the machine's scheduling made of the time between.
+//
+// Bounded, by the wait Close already accepts (killTimeout), for the one thing
+// the reap cannot end: a descendant that left the plugin's process group
+// (setsid) and holds its stderr open, which the account is not kept waiting
+// on. Anything else this waits for is gone or going, and how long go-plugin
+// takes to hear so is how long a loaded machine takes to schedule it — past
+// 200ms on a busy runner, nowhere near this.
+func collected(client *goplugin.Client, cmd *exec.Cmd) {
+	if cmd.Process == nil {
+		return // never started, so there is nothing to collect
+	}
+	deadline := time.Now().Add(killTimeout)
+	for !client.Exited() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+}
 
 // describe fetches the declaration and attaches the handlers that call back
 // over the wire, then validates the result exactly as the built-in registry
