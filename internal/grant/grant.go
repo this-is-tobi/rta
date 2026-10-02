@@ -1156,11 +1156,25 @@ func loadAll() ([]Grant, *view.Error) {
 // against a plain os.WriteFile, which truncates before it writes.
 // A reader that races a torn file sees valid JSON either way: the old
 // complete grants, or the new ones, never a half-written one.
+//
+// A grant whose time has passed is not written back. Nothing reads one again —
+// Load hides it, renew and refund skip it — so keeping it only grew the file,
+// and the file has a ceiling: loadAll refuses anything over maxGrantFile, and
+// refuses it on every gated call, not just on the one that grew it. Before
+// this, a store that took many short grants over many weeks was written past
+// that ceiling by an issue that succeeded, and then no call was honoured until
+// somebody found out why and removed the file. A spent grant stays until it
+// expires: the call that spent its last use may still be in flight, and refund
+// needs the row.
+//
+// What cannot be made to fit is refused here, where a person is standing, and
+// not discovered on the next call: a file that is written is a file that reads.
 func Save(grants []Grant) *view.Error {
 	dir, err := paths.EnsureData()
 	if err != nil {
 		return view.Errorf("core.grant.write", "creating %s: %v", dir, err)
 	}
+	grants = withoutExpired(grants, time.Now())
 	canon, err := canonical(grants)
 	if err != nil {
 		return view.Errorf("core.grant.write", "encoding grants: %v", err)
@@ -1173,6 +1187,13 @@ func Save(grants []Grant) *view.Error {
 	if err != nil {
 		return view.Errorf("core.grant.write", "encoding grants: %v", err)
 	}
+	if len(data) > maxGrantFile {
+		return view.Errorf("core.grant.full",
+			"%d grants stand, and %s would be %d KiB with them, more than the %d KiB rta reads back",
+			len(grants), Path(), (len(data)+1023)>>10, maxGrantFile>>10).
+			WithHint("`rta grant list` shows what stands and `rta grant revoke` takes some back; " +
+				"the grants in the file are unchanged")
+	}
 	// 0600 enforced, not requested: this file is what an agent's authority
 	// is read from, so it must not become readable — or writable — because
 	// of a permissive umask.
@@ -1180,6 +1201,19 @@ func Save(grants []Grant) *view.Error {
 		return view.Errorf("core.grant.write", "writing %s: %v", Path(), err)
 	}
 	return nil
+}
+
+// withoutExpired is grants less the ones whose time has passed, by the same
+// two clocks Active reads — the deadline and MaxTTL from issue — and not by
+// its use count.
+func withoutExpired(grants []Grant, now time.Time) []Grant {
+	kept := make([]Grant, 0, len(grants))
+	for _, g := range grants {
+		if now.Before(g.Expires) && now.Before(g.Issued.Add(MaxTTL)) {
+			kept = append(kept, g)
+		}
+	}
+	return kept
 }
 
 // Issue stores g, replacing any grant it is equivalent to.
