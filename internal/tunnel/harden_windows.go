@@ -7,3 +7,5 @@ import "os/exec"
 func harden(*exec.Cmd) {}
 
 func reap(cmd *exec.Cmd) { _ = cmd.Process.Kill() }
+
+func force(cmd *exec.Cmd) { _ = cmd.Process.Kill() }

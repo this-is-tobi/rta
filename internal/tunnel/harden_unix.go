@@ -52,3 +52,21 @@ func reap(cmd *exec.Cmd) {
 		_ = cmd.Process.Kill()
 	}
 }
+
+// force is reap without the grace: SIGKILL to the whole group, for a kubectl
+// or ssh that was asked to end and did not. A forward that ignores SIGTERM
+// keeps listening on a port the caller believes is closed, and nothing is
+// watching it.
+func force(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	pid := cmd.Process.Pid
+	if pid <= 1 || cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
+		_ = cmd.Process.Kill()
+		return
+	}
+	if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
+		_ = cmd.Process.Kill()
+	}
+}
