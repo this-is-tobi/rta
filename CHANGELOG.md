@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.33.0](https://github.com/this-is-tobi/rta/compare/v0.32.0...v0.33.0) (2026-10-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **profile:** beside a profile's kube: or ssh: forward, a CA input the forward leaves unread, such as --sslrootcert or mysql's --ca-file, is refused rather than accepted and ignored.
+* **profile:** beside a profile's kube: or ssh: forward, a TLS input asking for TLS, such as --sslmode require or --tls, is refused rather than connecting directly to the configured or default host; give the host and port as well to connect directly.
+* **tui:** a TUI list box reads a double quote that opens an element as CSV does. Text with such a quote left open, or with text after its closing quote, is refused, and "x" is the element x rather than the text with its quotes.
+
+### Features
+
+* **plugin:** a certificate macOS refuses for its validity period has a hint naming Apple's limit ([f3f0be1](https://github.com/this-is-tobi/rta/commit/f3f0be1700721d0aa19dbf67de8fdf97a4ee0629))
+* **plugin:** the SDK names where a call reached and reads a certificate's names and plain HTTP ([073c450](https://github.com/this-is-tobi/rta/commit/073c45051aef2a0921b886bc3c096b1f4f34f429))
+* **plugin:** the system's verdict that a certificate is revoked is read by CertRevoked ([2260e4b](https://github.com/this-is-tobi/rta/commit/2260e4b04f49a8a1b6619d144ee5055b1e02c935))
+
+
+### Bug Fixes
+
+* **audit:** a lockfile the bounds withhold is named as withheld, not taken for one not there ([9dab5f3](https://github.com/this-is-tobi/rta/commit/9dab5f34b832b7f74b23b682780beed4dc87035d))
+* **cert:** a chain macOS refuses for its validity period says the rule and its fix ([154d913](https://github.com/this-is-tobi/rta/commit/154d913f73e7af8065e5d77bb9b8165e4b7cec9d))
+* **cert:** a target the bounds refuse is refused as they refuse it, and not dialled as a host ([f66f965](https://github.com/this-is-tobi/rta/commit/f66f96514dca783fa1706b77b0ec4aa8fcd8fdc0))
+* **clipboard:** a program that fails is reported by its own error, not as timed out ([ab7a37a](https://github.com/this-is-tobi/rta/commit/ab7a37a7b2e4d18339df796f2ec76389288f8449))
+* **doctor:** a profile problem said once names the entries it is about, as the profile's page does ([6d5b62c](https://github.com/this-is-tobi/rta/commit/6d5b62ca7e33069c165752198a5851d52d8469c6))
+* **git:** a file git opens under a root is refused as rta's own state by its identity ([0df4974](https://github.com/this-is-tobi/rta/commit/0df49743603b48b04ea58f0ff962d95df1c5d52f))
+* **git:** a file the repository's filesystem opened is judged by its own Stat, not its name ([ffe4542](https://github.com/this-is-tobi/rta/commit/ffe4542328378fe0ff29847db072aec50679850f))
+* **git:** a name git walks on Windows is taken apart at either slash, as Windows opens it ([b020fd2](https://github.com/this-is-tobi/rta/commit/b020fd262043165c135db9153877878dc95b22d4))
+* **git:** a root that cannot be listed is named, and a repository under a root inside it is served ([ad25b8a](https://github.com/this-is-tobi/rta/commit/ad25b8aea01a134bc07e77a4cd0b7816c76457fc))
+* **grant:** an expired grant is not written back, and a store too big to read is refused ([1169443](https://github.com/this-is-tobi/rta/commit/116944332a87dc871d2c59beed28db75bf133845))
+* **http:** a request macOS refuses for its certificate's validity period says the rule ([71a020a](https://github.com/this-is-tobi/rta/commit/71a020a3a93499b6f9db7500c238e3cede8e4a48))
+* **mcp:** a server says once at start which root it cannot read, and how to make it readable ([76d3b7e](https://github.com/this-is-tobi/rta/commit/76d3b7e3528ae830599aeef66890cad75b3e743b))
+* **net:** a hosts file or resolv.conf the bounds refuse is refused as they refuse it ([627bb2e](https://github.com/this-is-tobi/rta/commit/627bb2e7f0de3c8c772c56676ecf1e26d9110dd5))
+* **pathguard:** a link's target on Windows is taken apart at either slash, as git's walk takes it ([2a5ad4a](https://github.com/this-is-tobi/rta/commit/2a5ad4a7e457ba4efff82841cede2b468e9d678a))
+* **pathguard:** a path is opened from the deepest root holding it, an outer one only if that fails ([af72247](https://github.com/this-is-tobi/rta/commit/af72247fc214e214325f84586b28cdd8313f118e))
+* **pathguard:** rta's own state is refused by its files' identity as well as by their names ([4ef4e16](https://github.com/this-is-tobi/rta/commit/4ef4e16c6eda1839f8c7d6cea4f41a3dab9e99af))
+* **paths:** a machine with no home keeps its state in a private directory, not the current one ([3ee1914](https://github.com/this-is-tobi/rta/commit/3ee1914d4c9144a83972aae427fca08c484bead2))
+* **plugin:** a dial's questions answer no error a server that was reached gave, whatever its words ([6e57edd](https://github.com/this-is-tobi/rta/commit/6e57edd35d39f92d380b089c177a87c8c23df090))
+* **pluginhost:** a call that raced its plugin's death reports the death, not a transport failure ([d559a8b](https://github.com/this-is-tobi/rta/commit/d559a8b9015ad9f5f3b4be35948f2cf542450409))
+* **pluginhost:** a failed launch stops waiting on a descendant that holds the plugin's output ([78b6d5d](https://github.com/this-is-tobi/rta/commit/78b6d5dd3eb6df82d88f3c342c1d5fc0979e9781))
+* **pluginhost:** a plugin that exits before its handshake is said to have, with its last lines ([7b9df54](https://github.com/this-is-tobi/rta/commit/7b9df541c7e326ba6b7a1670dc8500a582f12075))
+* **pluginhost:** a plugin that prints in place of its handshake is said to have, in rta's words ([addec73](https://github.com/this-is-tobi/rta/commit/addec73ce48b4ea49a9001c2c95c8788a0576357))
+* **pluginhost:** a start that failed is reaped and collected before rta says how the plugin ended ([d2c0928](https://github.com/this-is-tobi/rta/commit/d2c09285e85c9aae0504f5bd22af8f0613f81ab2))
+* **plugin:** on Windows ExpandHome reads ~\ as the home directory, as it reads ~/ ([43087c8](https://github.com/this-is-tobi/rta/commit/43087c80fbdb69e943f5c8145a20a918fe17ac43))
+* **profile:** a CA given on a call that goes through a forward is refused, not left unread ([1a54a89](https://github.com/this-is-tobi/rta/commit/1a54a89f336e946936dbc90620be45c3970e0782))
+* **profile:** a TLS switch beside a forward names no server, and one asking for TLS is refused ([307a9ea](https://github.com/this-is-tobi/rta/commit/307a9ea5b67f2b9e81621ba0f37b5b3528aa236a))
+* **tui:** a fetch lands in a completing field through the form, never by clearing its function ([a53166a](https://github.com/this-is-tobi/rta/commit/a53166a9fe593d14c102a161dc6ae6e7c95ca9ca))
+* **tui:** a form settles every command to its answer and leaves alone only a clock ([163a9a1](https://github.com/this-is-tobi/rta/commit/163a9a1a9d618be93d50dd5943210a4f0e491519))
+* **tui:** a list box reads the list flag's grammar, so an element may hold a comma or edge spaces ([b648e19](https://github.com/this-is-tobi/rta/commit/b648e19fb485550081b0f3d14e9e454be804c4b6))
+* **tunnel:** a deadline spent before kubectl or ssh starts is the timeout, not a failure to start ([6693482](https://github.com/this-is-tobi/rta/commit/66934821fb4f43485ff2492492ed7645547e8301))
+* **tunnel:** a forward or ssh child that ignores SIGTERM is killed when Close gives up waiting ([0b28ac5](https://github.com/this-is-tobi/rta/commit/0b28ac5f640e85600ebc57acc73fb1ef62f9acfb))
+* **tunnel:** a secret read that outlasts its deadline is the timeout, not an unreadable secret ([7884663](https://github.com/this-is-tobi/rta/commit/7884663006f1f9eeeaa1425a23051973256c1ddf))
+* **tunnel:** an exit rta's own kill caused is the timeout, before the wait's context hears of it ([716838f](https://github.com/this-is-tobi/rta/commit/716838f351b509177f4a0cc99e35b2273e7a17fd))
+
 ## [0.32.0](https://github.com/this-is-tobi/rta/compare/v0.31.0...v0.32.0) (2026-09-29)
 
 
