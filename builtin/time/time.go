@@ -17,6 +17,7 @@ package time
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	stdtime "time"
@@ -129,6 +130,9 @@ func resolve(raw string, now stdtime.Time) (stdtime.Time, timefmt.Unit, *view.Er
 		return t, unit, nil
 	}
 	if t, ok := timefmt.ParseInstant(raw, stdtime.Local); ok {
+		if wall, skipped := timefmt.SkippedWallClock(raw, stdtime.Local); skipped {
+			return stdtime.Time{}, "", skippedClock(raw, wall, t)
+		}
 		return t, "", nil
 	}
 	// A length of time is not an instant, and guessing which end of now it
@@ -148,6 +152,22 @@ func resolve(raw string, now stdtime.Time) (stdtime.Time, timefmt.Unit, *view.Er
 		"%q is not an instant this understands", raw).
 		WithHint("`now`, an epoch number (1516242622), a relative duration (`90m ago`, `in 2h`), " +
 			"or an exact time (" + strings.Join(timefmt.Examples(now), ", ") + ")")
+}
+
+// skippedClock refuses a reading of the clock that this machine's zone never
+// showed, because the clocks went forward over it. moved is where Go put it, an
+// hour or so on; the offset in force before the change is what lets the person
+// name the instant they meant, and is read from half a day before it.
+func skippedClock(raw string, wall, moved stdtime.Time) *view.Error {
+	_, offset := moved.Add(-12 * stdtime.Hour).Zone()
+	sign := "+"
+	if offset < 0 {
+		sign, offset = "-", -offset
+	}
+	example := fmt.Sprintf("%s%s%02d:%02d", wall.Format("2006-01-02T15:04:05"), sign, offset/3600, offset%3600/60)
+	return view.Errorf("time.at.skipped",
+		"%q never showed on this machine's clock — the clocks went forward over it", raw).
+		WithHint("name the instant with an offset (" + example + "), or write a time the clock did show")
 }
 
 // relativeDuration reads the spellings that carry their own direction: `-90m`,

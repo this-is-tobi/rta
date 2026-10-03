@@ -92,6 +92,36 @@ func ParseInstant(raw string, loc *time.Location) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// SkippedWallClock reports whether raw, which ParseInstant read in loc without an
+// offset of its own, names a reading of the clock that loc never showed: 02:30
+// on the night the clocks went from 02:00 to 03:00. It returns the reading as
+// typed, taken as if it were UTC, for a message to quote.
+//
+// Go does not refuse such a time. It moves it past the gap, so `2026-03-29
+// 02:30` in Paris came back as 03:30 CEST with every row correct for an instant
+// the person did not name, and nothing to say it had been moved. An instant read
+// in the wrong hour is the failure this package's other refusals exist to
+// prevent. An RFC3339 stamp carries its own offset and cannot be skipped.
+func SkippedWallClock(raw string, loc *time.Location) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	for _, l := range layouts {
+		if l == time.RFC3339 {
+			continue
+		}
+		read, err := time.ParseInLocation(l, raw, loc)
+		if err != nil {
+			continue
+		}
+		typed, err := time.Parse(l, raw)
+		if err != nil {
+			continue
+		}
+		const wall = "2006-01-02 15:04:05"
+		return typed, typed.Format(wall) != read.Format(wall)
+	}
+	return time.Time{}, false
+}
+
 // offsetOutOfRange names the part of an RFC3339 offset no zone has: an hour
 // of 24 or more, or a minute of 60 or more. raw must already have parsed as
 // RFC3339, which leaves it ending in `Z` or in `±hh:mm`.
