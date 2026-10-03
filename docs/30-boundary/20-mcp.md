@@ -136,6 +136,10 @@ A result is held whole while it is handled, and measured at about sixteen times 
 
 `rta mcp serve --max-result <MiB>` sets the ceiling, between 1 and 256. It is the operator's: an agent has no argument that raises it. The CLI and the TUI are not bounded by it, since the person at them chose to ask. Size the server's memory for what it allows: the default is about 128 MiB at its peak for one answer that large, several at once add up, and a pod's limit is the place the ceiling is really set — [the chart](./80-kubernetes.md) passes `--max-result` through `serverDefaults.extraArgs`.
 
+### What an error tells an agent
+
+An error is written for a person at a terminal and says where: `reading /home/you/.local/share/rta/kv.age: permission denied`. Over MCP that would hand an agent the layout of the place rta keeps what it must not read or move, so every error an agent is handed names rta's data directory as `<data dir>`, its config directory as `<config dir>` and the file `RTA_KV_IDENTITY` names as `<identity file>`, wherever in the message or the hint it appeared, the operating system's own text included. A path the agent sent is its own and is left as it was. The record keeps the error as it was written, since it is yours. `kv_status` still reports where the store is, since that is what it is for: a result is the data a call was made to get, and only an error is repeated for being a message. The URL userinfo, token parameters and credential headers an error would repeat are masked the same way as in the record.
+
 ### One gate
 
 [Grants](./30-grants.md) are the whole of it: consent for one capability or one plugin, optionally one record, narrowed to one agent and one connection, expiring on its own. `rta grant allow note --ttl 8h` is the shape for "this agent works on notes today"; `rta grant allow kv.get deploy-key --ttl 5m --max-uses 1` is the shape for "this once".
