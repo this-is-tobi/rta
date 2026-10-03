@@ -2,11 +2,13 @@ package grant
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/config"
 	core "github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
@@ -390,8 +392,18 @@ func resolveAgent(sf plugin.Surface, asked string) (string, *view.Error) {
 	case 1:
 		return known[0], nil
 	case 0:
+		// Not "no agent has connected": the log shows the ones that did, and
+		// told they never had, an operator whose agent called an hour ago and
+		// whose grant has since expired was sent looking for a name they had
+		// already used. The guess above stops at what is connected or holds a
+		// grant, since a name from an old session may be a client long gone;
+		// the person asking can be shown them.
+		hint := "no agent is connected right now and none holds a grant"
+		if seen := loggedAgents(); len(seen) > 0 {
+			hint += " — the log has seen " + strings.Join(seen, ", ")
+		}
 		return "", view.Errorf("grant.noagent", "name the agent this is for, with %s", sf.InputName("agent")).
-			WithHint("no agent has connected or holds a grant yet — the name is the one from " +
+			WithHint(hint + "; the name is the one from " +
 				"`rta mcp serve --as`, which `rta mcp install <client>` sets to the client's name")
 	default:
 		return "", view.Errorf("grant.whichagent",
@@ -400,6 +412,21 @@ func resolveAgent(sf plugin.Surface, asked string) (string, *view.Error) {
 			WithHint("a grant matches one agent exactly, so issuing it to the wrong one " +
 				"is a grant that silently authorizes nothing")
 	}
+}
+
+// loggedAgents is the agent names in the last stretch of the log, sorted.
+func loggedAgents() []string {
+	entries, err := agentlog.Read(500)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, e := range entries {
+		if e.Agent != "" {
+			seen[e.Agent] = true
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // knownAgents is every agent name this machine has seen: connected now, or

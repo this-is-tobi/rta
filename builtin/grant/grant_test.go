@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/agentlog"
 	core "github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -994,5 +995,33 @@ func TestAllowIsQuietWhenTheOpenServerIsThisBuild(t *testing.T) {
 	body := run(t, allowH, map[string]any{"target": "kv.get"}).(view.Text).Body
 	if strings.Contains(body, "reconnect") {
 		t.Errorf("warned about a server on this very build: %q", body)
+	}
+}
+
+// With no agent connected and no grant standing, the refusal to guess whom a
+// grant is for says so truthfully, and names the agents the log has seen. It
+// said "no agent has connected" to an operator whose agent had called an hour
+// ago, and left them hunting for a name they had already used.
+func TestTheRefusalToGuessTheAgentNamesThoseTheLogHasSeen(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	_, verr := resolveAgent(plugin.SurfaceCLI, "")
+	if verr == nil || verr.Code != "grant.noagent" || strings.Contains(verr.Hint, "has seen") {
+		t.Fatalf("on a machine that has seen no agent: %+v", verr)
+	}
+
+	for _, agent := range []string{"zed", "claude", "claude", ""} {
+		if err := agentlog.Append(agentlog.Entry{Cap: "sys.cpu", Agent: agent, Outcome: agentlog.Ran, Auth: agentlog.Open}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, verr = resolveAgent(plugin.SurfaceCLI, "")
+	if verr == nil || verr.Code != "grant.noagent" {
+		t.Fatalf("an agent that is not connected was guessed at: %+v", verr)
+	}
+	if !strings.Contains(verr.Hint, "the log has seen claude, zed") || strings.Contains(verr.Hint, "has connected") {
+		t.Errorf("hint = %q, want it to name the agents the log has seen and not claim none connected", verr.Hint)
+	}
+	if got, verr := resolveAgent(plugin.SurfaceCLI, " claude "); verr != nil || got != "claude" {
+		t.Errorf("a named agent = %q, %v", got, verr)
 	}
 }
