@@ -6,6 +6,9 @@ package cert
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -485,12 +488,30 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Key: "expires-in", Value: humanUntil(leaf.NotAfter)},
 		{Key: "sha256", Value: hex.EncodeToString(sum[:])},
 		{Key: "sig-alg", Value: leaf.SignatureAlgorithm.String()},
+		{Key: "public-key", Value: publicKeyOf(leaf)},
 		{Key: "chain", Value: verify(certs, hostOf(state, target))},
 	}
 	if state != nil {
 		pairs = append(pairs, view.Pair{Key: "tls", Value: protocolOf(state.Version)})
 	}
 	return view.KeyValue{Pairs: append(pairs, namePairs(leaf)...)}, nil
+}
+
+// publicKeyOf is the key a certificate certifies, by type and size: "RSA
+// 2048", "ECDSA P-256", "Ed25519". The signature algorithm beside it is the
+// issuer's, so a 1024-bit RSA key under a SHA-256 signature read as sound; the
+// size is what a policy that bars short keys, or a client that refuses one, is
+// about, and it was not on the page.
+func publicKeyOf(c *x509.Certificate) string {
+	switch k := c.PublicKey.(type) {
+	case *rsa.PublicKey:
+		return fmt.Sprintf("RSA %d", k.N.BitLen())
+	case *ecdsa.PublicKey:
+		return "ECDSA " + k.Curve.Params().Name
+	case ed25519.PublicKey:
+		return "Ed25519"
+	}
+	return c.PublicKeyAlgorithm.String()
 }
 
 // serialHex is a certificate serial as every tool that names one spells it:
