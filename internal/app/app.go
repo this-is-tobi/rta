@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -95,11 +96,75 @@ func usageError(cmd *cobra.Command, err error) error {
 // remembered here.
 func codeUsageErrors(cmd *cobra.Command) {
 	if check := cmd.Args; check != nil {
-		cmd.Args = func(c *cobra.Command, args []string) error { return usageError(c, check(c, args)) }
+		cmd.Args = func(c *cobra.Command, args []string) error {
+			err := check(c, args)
+			if err != nil && isCobraArity(c, err) {
+				if named := namedArity(c, args); named != nil {
+					err = named
+				}
+			}
+			return usageError(c, err)
+		}
 	}
 	for _, sub := range cmd.Commands() {
 		codeUsageErrors(sub)
 	}
+}
+
+// isCobraArity says whether an argument check failed with cobra's own count
+// sentence — "accepts 1 arg(s), received 0" — as opposed to a validator that
+// already knows what it is refusing.
+//
+// NoArgs is one of them, and says it differently: on a command that takes
+// nothing, cobra's refusal of `rta doctor x` is `unknown command "x" for "rta
+// doctor"`, which calls an argument a command. Only on a command with no
+// subcommands, where nothing could have been mistaken for one — a group's
+// unknown command is exactly that (unknownCommand).
+func isCobraArity(cmd *cobra.Command, err error) bool {
+	msg := err.Error()
+	if strings.HasPrefix(msg, "unknown command ") {
+		return !cmd.HasSubCommands()
+	}
+	return strings.HasPrefix(msg, "accepts ") || strings.HasPrefix(msg, "requires at least ")
+}
+
+// useArgument matches the argument placeholders in a command's Use line:
+// <required> and [optional], the way every command here spells them. A bracket
+// that opens on a dash is a flag group (`[-- command args...]`), not an
+// argument.
+var useArgument = regexp.MustCompile(`<[^<>]+>|\[[^\[\]-][^\[\]]*\]`)
+
+// namedArity restates a count refusal in the words the capability commands
+// use — "missing <client> — usage: …", "unexpected argument "x" — usage: …" —
+// read from the command's own Use line. cobra's validators (ExactArgs,
+// MaximumNArgs, RangeArgs) know how many arguments a command takes and not
+// what they are called, so `rta plugin install` said "accepts 1 arg(s),
+// received 0" while `rta kv rm` said which argument it wanted: the
+// capability commands got the better sentence when
+// positionalArgsValidator was written, and the commands written by hand
+// never did.
+//
+// nil when the Use line does not account for the refusal — more arguments
+// refused than it has places for, or fewer than every placeholder it marks
+// required — so a command whose Use line is shorthand keeps cobra's sentence
+// rather than getting a wrong one.
+func namedArity(cmd *cobra.Command, args []string) error {
+	places := useArgument.FindAllString(cmd.Use, -1)
+	for i := len(args); i < len(places); i++ {
+		if strings.HasPrefix(places[i], "<") {
+			return fmt.Errorf("missing %s — usage: %s", places[i], cmd.UseLine())
+		}
+	}
+	if len(args) > len(places) && !strings.Contains(cmd.Use, "...") {
+		extra := args[len(places):]
+		quoted := make([]string, len(extra))
+		for i, a := range extra {
+			quoted[i] = strconv.Quote(a)
+		}
+		return fmt.Errorf("unexpected %s %s — usage: %s",
+			format.PluralOf(len(extra), "argument"), strings.Join(quoted, ", "), cmd.UseLine())
+	}
+	return nil
 }
 
 // checkCommandLine refuses, as CodeUsage, what cobra would otherwise refuse as
