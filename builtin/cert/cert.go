@@ -13,6 +13,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"os"
 	"path/filepath"
@@ -478,7 +479,7 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 	pairs := []view.Pair{
 		{Key: "subject", Value: leaf.Subject.String()},
 		{Key: "issuer", Value: leaf.Issuer.String()},
-		{Key: "serial", Value: leaf.SerialNumber.String()},
+		{Key: "serial", Value: serialHex(leaf.SerialNumber)},
 		{Key: "not-before", Value: leaf.NotBefore.Format(time.RFC3339)},
 		{Key: "not-after", Value: leaf.NotAfter.Format(time.RFC3339)},
 		{Key: "expires-in", Value: humanUntil(leaf.NotAfter)},
@@ -490,6 +491,19 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 		pairs = append(pairs, view.Pair{Key: "tls", Value: protocolOf(state.Version)})
 	}
 	return view.KeyValue{Pairs: append(pairs, namePairs(leaf)...)}, nil
+}
+
+// serialHex is a certificate serial as every tool that names one spells it:
+// hexadecimal, a whole number of bytes. A revocation list, a CT log, `openssl
+// x509 -serial` and a browser's certificate viewer all write it that way, and
+// a serial printed in decimal, 48 digits for a 160-bit one, matches none of
+// them, so it could not be looked up or compared by eye.
+func serialHex(n *big.Int) string {
+	b := n.Bytes()
+	if len(b) == 0 {
+		return "00"
+	}
+	return hex.EncodeToString(b)
 }
 
 // namePairs is every name a certificate answers to, one row per kind that has
