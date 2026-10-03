@@ -37,7 +37,6 @@ package recent
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -92,7 +91,7 @@ func Path() string { return filepath.Join(paths.Data(), "recent.json") }
 // cannot be read should cost somebody a suggestion, not a command.
 func Load() Values {
 	var f file
-	data, err := os.ReadFile(Path())
+	data, err := atomicfile.ReadFile(Path())
 	if err != nil {
 		return Values{}
 	}
@@ -137,7 +136,7 @@ func Record(surface plugin.Surface, c plugin.Capability, values map[string]any) 
 	defer mu.Unlock()
 
 	var f file
-	if data, err := os.ReadFile(Path()); err == nil {
+	if data, err := atomicfile.ReadFile(Path()); err == nil {
 		_ = json.Unmarshal(data, &f)
 	}
 	if f.Inputs == nil {

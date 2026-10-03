@@ -52,7 +52,7 @@ func recipientsPath() string { return filepath.Join(itemstore.DataDir(), recipie
 
 // loadRecipients returns the configured recipient specs, in file order.
 func loadRecipients() ([]string, *view.Error) {
-	data, err := os.ReadFile(recipientsPath())
+	data, err := atomicfile.ReadFile(recipientsPath())
 	if os.IsNotExist(err) {
 		return nil, nil
 	}

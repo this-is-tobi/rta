@@ -83,7 +83,7 @@ func ReadSystemLock() []LockEntry {
 func ReadLock() []LockEntry { return readLockAt(LockPath()) }
 
 func readLockAt(path string) []LockEntry {
-	raw, err := os.ReadFile(path)
+	raw, err := atomicfile.ReadFile(path)
 	if err != nil {
 		return nil
 	}

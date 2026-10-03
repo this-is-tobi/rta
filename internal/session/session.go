@@ -237,7 +237,7 @@ func List() ([]Record, error) {
 			_ = os.Remove(p)
 			continue
 		}
-		body, err := os.ReadFile(p)
+		body, err := atomicfile.ReadFile(p)
 		if err != nil {
 			continue
 		}
