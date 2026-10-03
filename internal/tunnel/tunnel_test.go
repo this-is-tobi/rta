@@ -190,6 +190,45 @@ func TestAMissingKubeContextIsNamed(t *testing.T) {
 	}
 }
 
+// A cluster that did not answer is told as that, in the words the ssh side
+// has used for its bastion since it was written. kubectl's own line for it is
+// klog's — `E1003 14:46:33.515018 94197 memcache.go:265] "Unhandled Error"
+// err="couldn't get current server API group list: Get \"https://…\": dial tcp
+// …: connect: connection refused"` — and that went to the person as it was,
+// beside a hint saying only that the message was kubectl's.
+func TestAClusterThatDidNotAnswerIsToldAsThat(t *testing.T) {
+	for name, c := range map[string]struct{ stderr, server string }{
+		"klog": {`E1003 14:46:33.515018   94197 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: ` +
+			`Get \"https://10.0.0.1:6443/api?timeout=32s\": dial tcp 10.0.0.1:6443: connect: connection refused"`,
+			"https://10.0.0.1:6443"},
+		"old": {`Unable to connect to the server: dial tcp 10.0.0.1:6443: i/o timeout`, "10.0.0.1:6443"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			verr := kubectlFailed("fwd", homelab, c.stderr)
+			if verr.Code != "tunnel.cluster.unreachable" {
+				t.Fatalf("code = %q, want tunnel.cluster.unreachable: %s", verr.Code, verr.Message)
+			}
+			if !strings.Contains(verr.Message, c.server) ||
+				strings.Contains(verr.Message, "memcache") || strings.Contains(verr.Message, "E1003") {
+				t.Errorf("%q does not name the server, or still carries klog's line", verr.Message)
+			}
+			if !strings.Contains(verr.Hint, "--context homelab") {
+				t.Errorf("hint %q does not name the context to try by hand", verr.Hint)
+			}
+		})
+	}
+	// The read of a Secret meets the same cluster and says the same thing,
+	// with the command that reads secrets by hand.
+	secret := secretFailed("fwd", "databases", "pg-creds", `Unable to connect to the server: dial tcp 10.0.0.1:6443: i/o timeout`)
+	if secret.Code != "tunnel.cluster.unreachable" || !strings.Contains(secret.Hint, "kubectl -n databases get secrets") {
+		t.Errorf("a secret read against a cluster that did not answer: %s / %s", secret.Code, secret.Hint)
+	}
+	// A login that failed before any dial is still about the login.
+	if got := kubectlFailed("fwd", homelab, `Unable to connect to the server: getting credentials: exec: executable tsh failed`); got.Code != "tunnel.unauthenticated" {
+		t.Errorf("a credential plugin failure became %q", got.Code)
+	}
+}
+
 // kubectl's failures are stable and specific, which is most of why shelling
 // out is tolerable: the message an operator sees is one they already know how
 // to read. Each still needs a code and a next step.

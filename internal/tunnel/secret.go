@@ -178,6 +178,8 @@ func secretFailed(name, ns, secret, stderr string) *view.Error {
 			WithHint("nothing was refused — the request never got that far. " +
 				"`kubectl -n " + ns + " get secrets` fails the same way, and succeeds " +
 				"once you have authenticated again")
+	case clusterUnreachable(s) != "":
+		return clusterUnreachableError(name, s, "kubectl -n "+ns+" get secrets")
 	case strings.Contains(s, "forbidden"):
 		return view.Errorf("tunnel.secret.denied",
 			"profile %q: not allowed to read secret %q in namespace %q", name, secret, ns).
