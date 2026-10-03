@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/internal/textclean"
@@ -920,7 +921,7 @@ func readManifestAt(path string) ([]byte, *view.Error) {
 			"not a regular file — a manifest is a file, and rta does not follow "+
 				"what an index points at")
 	}
-	f, err := os.Open(path)
+	f, err := atomicfile.Open(path)
 	if err != nil {
 		return nil, view.Errorf("plugin.index.manifest", "%v", err)
 	}

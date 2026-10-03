@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/grant"
 )
 
@@ -297,7 +297,7 @@ func StaticTokenVerifier(tokens map[string]string) auth.TokenVerifier {
 const minTokenLen = 16
 
 func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, err error) {
-	f, err := os.Open(path)
+	f, err := atomicfile.Open(path)
 	if err != nil {
 		return nil, false, err
 	}

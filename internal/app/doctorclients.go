@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	agentcap "github.com/this-is-tobi/rta/builtin/agent"
+	"github.com/this-is-tobi/rta/internal/atomicfile"
 	agentsession "github.com/this-is-tobi/rta/internal/session"
 )
 
@@ -103,7 +104,7 @@ func olderBuilds(version string) string {
 // at a fixture.
 func claudeRegistrations(home, dir string) []claudeRegistration {
 	var out []claudeRegistration
-	if body, err := os.ReadFile(filepath.Join(dir, ".mcp.json")); err == nil {
+	if body, err := atomicfile.ReadFile(filepath.Join(dir, ".mcp.json")); err == nil {
 		var doc struct {
 			Servers any `json:"mcpServers"`
 		}
@@ -113,7 +114,7 @@ func claudeRegistrations(home, dir string) []claudeRegistration {
 			}
 		}
 	}
-	body, err := os.ReadFile(filepath.Join(home, ".claude.json"))
+	body, err := atomicfile.ReadFile(filepath.Join(home, ".claude.json"))
 	if err != nil {
 		return out
 	}

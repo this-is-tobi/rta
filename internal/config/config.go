@@ -297,6 +297,10 @@ func parseHint(err error) string {
 	return "fix the file or re-create it with `rta init`"
 }
 
+// maxConfigBytes is far beyond any configuration an operator writes by hand and
+// short of what a file put there to exhaust memory would be.
+const maxConfigBytes = 8 << 20
+
 // LoadFile reads the config file alone (missing file = defaults), without
 // applying environment overrides. Anything that reads the config in order to
 // write it back must start here: Load would fold this session's RTA_* into
@@ -304,7 +308,10 @@ func parseHint(err error) string {
 // file for every future run.
 func LoadFile() (Config, error) {
 	var cfg Config
-	data, err := os.ReadFile(Path())
+	// Capped and opened without waiting: the file is the operator's, but the
+	// working-directory fallback is whatever a directory somebody else filled
+	// holds, and a named pipe there held every command for good.
+	data, err := atomicfile.ReadCapped(Path(), maxConfigBytes)
 	switch {
 	case os.IsNotExist(err):
 		// Zero-config mode.
