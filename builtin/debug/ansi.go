@@ -582,7 +582,7 @@ func extendedColor(params []int, i, n int) (consumed int, desc string, ok bool) 
 	}
 }
 
-// --- OSC: the three that matter for debugging what a program sent you ---
+// --- OSC: the ones that matter for debugging what a program sent you ---
 
 // explainOSC shows a title and a link target through visualize, like the
 // sequence carrying them: the payload is whatever the decoder collected up to
@@ -602,10 +602,18 @@ func explainOSC(p *ansi.Parser) string {
 	case 0, 1, 2:
 		return "set window/icon title: " + visualize(payload)
 	case 8:
-		return "hyperlink: " + visualize(hyperlinkURI(payload))
+		// An empty target is how a link is closed: "hyperlink: " with nothing
+		// after it read as a link to nowhere.
+		if uri := hyperlinkURI(payload); uri != "" {
+			return "hyperlink: " + visualize(uri)
+		}
+		return "end of hyperlink"
 	case 52:
 		return explainClipboard(payload)
 	default:
+		if text, named := namedOSC(cmd, payload); named {
+			return text
+		}
 		return fmt.Sprintf("OSC %d", cmd)
 	}
 }
