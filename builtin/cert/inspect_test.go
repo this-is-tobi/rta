@@ -231,6 +231,47 @@ func TestChainNamesACertificateThatHasNoCommonName(t *testing.T) {
 	}
 }
 
+// A DER file is a certificate file: what a Windows export names .cer, what an
+// AIA caIssuers URL serves, and what Java and most appliances write. It holds
+// no PEM block, so it was "no CERTIFICATE blocks found", the words for a file
+// that is not a certificate at all.
+func TestADERCertificateIsRead(t *testing.T) {
+	a, _ := selfIssued(t, &x509.Certificate{Subject: pkix.Name{CommonName: "first"}})
+	b, _ := selfIssued(t, &x509.Certificate{Subject: pkix.Name{CommonName: "second"}})
+	dir := t.TempDir()
+	one, two := filepath.Join(dir, "one.cer"), filepath.Join(dir, "two.cer")
+	if err := os.WriteFile(one, a, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(two, append(append([]byte{}, a...), b...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := runInspect(context.Background(), req(map[string]any{"target": one}))
+	if err != nil {
+		t.Fatalf("a DER certificate: %v", err)
+	}
+	if got := v.(view.KeyValue).Pairs[0].Value; got != "CN=first" {
+		t.Errorf("subject = %q, want CN=first", got)
+	}
+	chain, err := runChain(context.Background(), req(map[string]any{"target": two}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root := chain.(view.Tree).Roots[0]; root.Label != "first" || len(root.Children) != 1 || root.Children[0].Label != "second" {
+		t.Errorf("concatenated DER read as %+v, want a chain of first then second", root)
+	}
+
+	junk := filepath.Join(dir, "junk.cer")
+	if err := os.WriteFile(junk, []byte{0x30, 0x03, 0x02, 0x01, 0x01}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = runInspect(context.Background(), req(map[string]any{"target": junk}))
+	if verr := view.AsError(err, "test"); err == nil || verr.Code != "cert.file.empty" || !strings.Contains(verr.Hint, "DER") {
+		t.Errorf("DER that is no certificate: %v, want cert.file.empty saying what is read", err)
+	}
+}
+
 // The key is named by type and size. The signature algorithm beside it is the
 // issuer's, so a certificate on a 1024-bit RSA key read as sound.
 func TestInspectNamesTheKeyByTypeAndSize(t *testing.T) {

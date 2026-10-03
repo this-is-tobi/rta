@@ -407,8 +407,21 @@ func readPEM(req plugin.Request, path string) ([]*x509.Certificate, error) {
 		}
 		return nil, verr
 	}
+	if len(certs) == 0 && blocks == 0 {
+		// **A DER file is a certificate file too.** It is what a Windows
+		// export names .cer, what an AIA caIssuers URL serves when the issuing
+		// certificate is fetched to see why a chain does not build, and what
+		// Java and most appliances write by default. It holds no PEM block, so
+		// it was "no CERTIFICATE blocks found" — the same words as for a file
+		// that is not a certificate at all. Concatenated DER is read as a chain.
+		if der, err := x509.ParseCertificates(data); err == nil && len(der) > 0 {
+			return der, nil
+		}
+	}
 	if len(certs) == 0 {
-		return nil, view.Errorf("cert.file.empty", "no CERTIFICATE blocks found in %s", path)
+		return nil, view.Errorf("cert.file.empty", "no CERTIFICATE blocks found in %s", path).
+			WithHint("a PEM file with BEGIN CERTIFICATE blocks and a DER certificate are read; " +
+				"a private key, a PKCS#12 bundle or a keystore is not a certificate file")
 	}
 	return certs, nil
 }
