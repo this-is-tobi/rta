@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -29,6 +30,32 @@ import (
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+// checkOutDir refuses a key path whose directory is missing, before anything
+// is asked or generated.
+//
+// Found at the write otherwise, which is the last step: `keys restore` had
+// read twenty-four words from a masked prompt by then, and the error that came
+// back named a temporary file in a directory that is not there. Not created
+// here. A ~/.ssh that does not exist is made by the person with the mode ssh
+// wants, and a path with a typo in its middle must not grow a new directory
+// tree beside the one meant; the hint is the command that makes the first.
+//
+// A directory that merely cannot be read is left to the write, which says what
+// the operating system says about it.
+func checkOutDir(verb, out string) *view.Error {
+	dir := filepath.Dir(out)
+	info, err := os.Stat(dir)
+	switch {
+	case err == nil && !info.IsDir():
+		return view.Errorf("keys."+verb+".nodir", "%s is not a directory, so %s cannot be written in it", dir, out).
+			WithHint("name a path inside a directory")
+	case errors.Is(err, fs.ErrNotExist):
+		return view.Errorf("keys."+verb+".nodir", "the directory %s does not exist", dir).
+			WithHint("make it first, readable by you alone — `mkdir -m 700 " + plugin.ShellWord(dir) + "` — or name another path")
+	}
+	return nil
 }
 
 // checkComment refuses a comment that would not stay on the key's own line.

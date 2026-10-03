@@ -312,6 +312,9 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr := checkComment(req.String("comment")); verr != nil {
 		return nil, verr
 	}
+	if verr := checkOutDir("add", out); verr != nil {
+		return nil, verr
+	}
 	// Both checked before anything is generated, and the message says what is
 	// at stake: unlike a restore, there is nothing to recover an overwritten
 	// key from.
@@ -348,6 +351,9 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 	out := pathguard.ExpandTilde(req.String("out"))
 	pub := out + ".pub"
 	if verr := checkComment(req.String("comment")); verr != nil {
+		return nil, verr
+	}
+	if verr := checkOutDir("restore", out); verr != nil {
 		return nil, verr
 	}
 	if fileExists(out) {

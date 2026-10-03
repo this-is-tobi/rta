@@ -486,6 +486,53 @@ func TestBackupOfAMissingFileErrorsClearly(t *testing.T) {
 	}
 }
 
+// --- a directory that is not there ----------------------------------------
+
+// **The directory is checked before the words are asked for.** `keys restore
+// ~/.ssh/id_ed25519` on a machine with no ~/.ssh read twenty-four words from a
+// masked prompt and then failed at the write, with a temporary file's name in
+// the message and the code of the other verb on a keys.add; the words had to
+// be typed again after the directory was made. Both verbs now say that the
+// directory is missing, and what to type, before they ask or generate.
+func TestAKeyIsNotWrittenToADirectoryThatIsNotThere(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), ".ssh")
+	out := filepath.Join(missing, "id_ed25519")
+
+	for verb, run := range map[string]plugin.Handler{"add": runAdd, "restore": runRestore} {
+		// No words: if the check came after the prompt this would fail on the
+		// words instead of the directory.
+		_, err := run(context.Background(), req(map[string]any{"out": out}))
+		if errCode(err) != "keys."+verb+".nodir" {
+			t.Fatalf("keys.%s: code = %q, want keys.%s.nodir: %v", verb, errCode(err), verb, err)
+		}
+		verr := view.AsError(err, "x")
+		if !strings.Contains(verr.Message, missing) || !strings.Contains(verr.Hint, "mkdir -m 700 "+missing) {
+			t.Errorf("keys.%s: %q / %q do not name the directory and the command that makes it", verb, verr.Message, verr.Hint)
+		}
+		if _, statErr := os.Stat(missing); statErr == nil {
+			t.Errorf("keys.%s made the directory it was told is missing", verb)
+		}
+	}
+
+	// The command in the hint is pasted into a shell, so a directory with a
+	// space in its name is one word of it.
+	spaced := filepath.Join(t.TempDir(), "my keys")
+	_, err := runAdd(context.Background(), req(map[string]any{"out": filepath.Join(spaced, "id")}))
+	if hint := view.AsError(err, "x").Hint; !strings.Contains(hint, "mkdir -m 700 '"+spaced+"'") {
+		t.Errorf("hint %q does not quote the directory it asks to make", hint)
+	}
+
+	// A file where the directory should be is a different mistake.
+	file := filepath.Join(t.TempDir(), "plain")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = runAdd(context.Background(), req(map[string]any{"out": filepath.Join(file, "id")}))
+	if errCode(err) != "keys.add.nodir" || !strings.Contains(view.AsError(err, "x").Message, "not a directory") {
+		t.Errorf("a file in the directory's place: %v", err)
+	}
+}
+
 // --- keys.restore: refuses to clobber ------------------------------------
 
 func TestRestoreRefusesToOverwriteAnExistingPrivateKey(t *testing.T) {
@@ -1203,8 +1250,8 @@ func TestRestoreWithAMissingParentDirectoryErrorsCleanly(t *testing.T) {
 	words := freshWords(t)
 
 	_, err := runRestore(context.Background(), req(map[string]any{"out": out, "words": words}))
-	if errCode(err) != "keys.restore.write" {
-		t.Errorf("code = %q, want keys.restore.write", errCode(err))
+	if errCode(err) != "keys.restore.nodir" {
+		t.Errorf("code = %q, want keys.restore.nodir", errCode(err))
 	}
 }
 
