@@ -8,6 +8,8 @@ import (
 	"os"
 	pathpkg "path"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -252,7 +254,47 @@ func statusFailed(code string, err error) *view.Error {
 	if errors.As(err, &verr) {
 		return verr
 	}
-	return view.Errorf(code, "reading status: %v", err)
+	return readFailed(code, "reading status", err)
+}
+
+// readFailed is why a read of the repository's files failed, as a capability
+// reports it: code, and what was being done, with go-git's reason, or the
+// reason in words for the one go-git states as a path it will not read.
+//
+// **A name git accepts stopped a status, and said so in go-git's words.** Git
+// takes any byte but NUL and / in a file name, an escape character included,
+// and go-git's tree reader refuses a path holding a control character, on the
+// ground that checking one out would write it into a terminal or a file name
+// as it is. One such file committed anywhere in a repository made git.status
+// and git.diff fail whole, with "from: invalid path "a\x1b[31mb": contains
+// control character": which side of the comparison "from" was, and what to do
+// about it, left for the reader to work out. The path is named, escaped, and
+// so is the way out: git lists it and git renames it.
+func readFailed(code, what string, err error) *view.Error {
+	const phrase = "contains control character"
+	if msg := err.Error(); strings.Contains(msg, phrase) {
+		name := ""
+		if _, after, found := strings.Cut(msg, "invalid path "); found {
+			if quoted, _, ok := quotedPrefixOf(after); ok {
+				name = " " + strconv.Quote(quoted)
+			}
+		}
+		return view.Errorf("git.path.control", "%s: a path in this repository holds a control character:%s", what, name).
+			WithHint("rta reads repositories with go-git, which refuses such a name; `git ls-files` shows it and " +
+				"`git mv` renames it, after which this reads")
+	}
+	return view.Errorf(code, "%s: %v", what, err)
+}
+
+// quotedPrefixOf is the Go-quoted string s opens with, unquoted, and what
+// follows it.
+func quotedPrefixOf(s string) (value, rest string, ok bool) {
+	prefix, err := strconv.QuotedPrefix(s)
+	if err != nil {
+		return "", "", false
+	}
+	value, err = strconv.Unquote(prefix)
+	return value, s[len(prefix):], err == nil
 }
 
 // statusBudget is the time one call spends reading the working tree's
