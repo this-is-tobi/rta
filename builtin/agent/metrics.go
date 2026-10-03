@@ -65,7 +65,10 @@ func runMetrics(artifact func(string) (string, bool)) plugin.Handler {
 // now (registry.Artifact), which a grant's Digest is judged against — see
 // grantSamples.
 func Exposition(artifact func(string) (string, bool)) (string, error) {
-	entries, err := agentlog.Read(0)
+	counts := map[callKey]int{}
+	recorded, err := agentlog.Calls(func(c agentlog.Call) {
+		counts[callKey{c.Cap, c.Agent, string(c.Outcome), string(c.Auth)}]++
+	})
 	if err != nil {
 		return "", view.Errorf("agent.metrics.unreadable", "%v", err)
 	}
@@ -82,7 +85,7 @@ func Exposition(artifact func(string) (string, bool)) (string, error) {
 		// No verdict on the record means no retired count either, so the best
 		// available answer is what is in front of us — an undercount, and one
 		// that only happens when the record is already broken.
-		total = float64(len(entries))
+		total = float64(recorded)
 	}
 	metric(&b, "rta_agent_calls_total", "counter",
 		"Calls that arrived over MCP, including any the record has since retired.",
@@ -97,7 +100,7 @@ func Exposition(artifact func(string) (string, bool)) (string, error) {
 	// reason these are counters rather than gauges.
 	metric(&b, "rta_agent_calls_recorded_total", "counter",
 		"Calls still in the record, by capability, agent, outcome and how it was authorized.",
-		callSamples(entries))
+		callSamples(counts))
 
 	waiting, pendingErr := consent.Pending()
 	metric(&b, "rta_agent_pending", "gauge",
@@ -181,15 +184,12 @@ func escapeLabel(v string) string {
 	return r.Replace(v)
 }
 
+type callKey struct{ cap, agent, outcome, auth string }
+
 // callSamples counts the retained record by the four labels worth splitting
 // on, in a stable order so two runs a second apart produce the same file.
-func callSamples(entries []agentlog.Entry) []sample {
-	type key struct{ cap, agent, outcome, auth string }
-	counts := map[key]int{}
-	for _, e := range entries {
-		counts[key{e.Cap, e.Agent, string(e.Outcome), string(e.Auth)}]++
-	}
-	keys := make([]key, 0, len(counts))
+func callSamples(counts map[callKey]int) []sample {
+	keys := make([]callKey, 0, len(counts))
 	for k := range counts {
 		keys = append(keys, k)
 	}

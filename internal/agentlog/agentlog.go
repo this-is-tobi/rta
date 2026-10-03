@@ -1227,32 +1227,81 @@ func tailLines(path string, want int) ([]string, error) {
 	}
 }
 
-// entriesIn parses one whole file.
-func entriesIn(path string) ([]Entry, error) {
-	f, err := atomicfile.Open(path)
+// eachLine hands f every non-blank line of one file, trimmed, and is the one
+// place a whole segment is walked line by line. A file that is not there has
+// no lines.
+func eachLine(path string, f func(line string)) error {
+	file, err := atomicfile.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil
 	}
 	if err != nil {
-		return nil, err
+		return err
 	}
-	defer func() { _ = f.Close() }()
-	var out []Entry
-	sc := newLineReader(f)
+	defer func() { _ = file.Close() }()
+	sc := newLineReader(file)
 	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
-			continue
+		if line := strings.TrimSpace(sc.Text()); line != "" {
+			f(line)
 		}
+	}
+	return sc.Err()
+}
+
+// entriesIn parses one whole file.
+func entriesIn(path string) ([]Entry, error) {
+	var out []Entry
+	err := eachLine(path, func(line string) {
 		var e Entry
 		if err := json.Unmarshal([]byte(line), &e); err != nil {
 			// A corrupt line is not a reason to lose the rest of the file;
 			// Verify is what reports it.
-			continue
+			return
 		}
 		out = append(out, e)
+	})
+	return out, err
+}
+
+// Call is the part of an entry a count splits on: what ran, for whom, how it
+// ended and how it was authorized.
+type Call struct {
+	Cap     string        `json:"capability"`
+	Agent   string        `json:"agent,omitempty"`
+	Outcome Outcome       `json:"outcome"`
+	Auth    Authorization `json:"auth"`
+}
+
+// Calls hands each the labels of every entry of the retained record, oldest
+// first, and returns how many there were. Corrupt lines are skipped as Read
+// skips them; Verify is what reports them.
+//
+// For a caller that counts, which Read(0) served by holding the whole record
+// in memory at once: sixty thousand entries are about 300 MiB of structs
+// and argument maps, in a process that idles at 40, for every scrape of
+// `mcp serve --observe` and every run of `agent metrics`. Here each line is
+// decoded into the four fields and let go, so memory does not grow with the
+// record, and the arguments, which are most of an entry, are skipped rather
+// than built.
+func Calls(each func(Call)) (int, error) {
+	files, err := Segments()
+	if err != nil {
+		return 0, err
 	}
-	return out, sc.Err()
+	n := 0
+	for _, p := range files {
+		if err := eachLine(p, func(line string) {
+			var c Call
+			if json.Unmarshal([]byte(line), &c) != nil {
+				return
+			}
+			n++
+			each(c)
+		}); err != nil {
+			return n, err
+		}
+	}
+	return n, nil
 }
 
 // Report is what Verify found.
