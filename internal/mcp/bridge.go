@@ -1080,11 +1080,18 @@ func nameUnder(root, p string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// viewResult encodes a view as both text (JSON envelope) and structured
-// content. Redacted fields are masked here too — an MCP caller reaches this
-// path without a human present, so it gets the same masking guarantee as
-// every other renderer (pkg/view.Redact).
 // viewResult encodes a result for a model.
+//
+// One copy, in the text content. The result also used to carry the same
+// map as structuredContent, and a client that hands a model both fields —
+// several do, since the specification asks a server to send the text for
+// the clients that read no structure — paid for every row twice: a 500-row
+// git.log was 140 KB of text and 140 KB of structure. No output schema is
+// published, so nothing a client could validate the structure against was
+// promised, and a program that wants the object parses the text, which is
+// the JSON envelope the structure was built from. The masking and cleaning
+// below happen before the encoding, so there is exactly one place a value
+// could escape them rather than two.
 //
 // textclean.Model, not only Redact. Redact answers "may the caller see this
 // value"; it says nothing about what the value does when a model reads it. A
@@ -1111,10 +1118,7 @@ func viewResult(v view.View) (*sdk.CallToolResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &sdk.CallToolResult{
-		Content:           []sdk.Content{&sdk.TextContent{Text: string(raw)}},
-		StructuredContent: m,
-	}, nil
+	return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: string(raw)}}}, nil
 }
 
 func errResult(e *view.Error) *sdk.CallToolResult {

@@ -862,18 +862,33 @@ func TestCallToolRedactsSecretFields(t *testing.T) {
 	if !strings.Contains(text, "tobi") || !strings.Contains(text, view.Mask) {
 		t.Errorf("expected masked envelope, got: %s", text)
 	}
-	// StructuredContent must be masked too — it's a second, parallel encoding
-	// of the same view, easy to forget when fixing the text path.
-	m, ok := res.StructuredContent.(map[string]any)
-	if !ok {
-		t.Fatalf("structured content = %T", res.StructuredContent)
+	var m map[string]any
+	if err := json.Unmarshal([]byte(text), &m); err != nil {
+		t.Fatalf("the text is not the JSON envelope: %v", err)
 	}
 	pairs, _ := m["pairs"].([]any)
 	for _, p := range pairs {
 		pair := p.(map[string]any)
 		if pair["key"] == "token" && pair["value"] != view.Mask {
-			t.Errorf("structured content leaked token: %v", pair)
+			t.Errorf("the token is not masked: %v", pair)
 		}
+	}
+}
+
+// A result is sent once. The same view as structuredContent as well made a
+// client that forwards both fields to its model pay for every row twice, and
+// no output schema is published for the structure to be checked against.
+func TestAResultIsNotSentTwice(t *testing.T) {
+	s := connect(t, Options{})
+	res, err := s.CallTool(context.Background(), &sdk.CallToolParams{Name: "demo_item_secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StructuredContent != nil {
+		t.Errorf("the result repeats itself as structured content: %v", res.StructuredContent)
+	}
+	if len(res.Content) != 1 {
+		t.Errorf("content blocks = %d, want the one JSON envelope", len(res.Content))
 	}
 }
 
@@ -1458,13 +1473,6 @@ func TestAResultCannotSmuggleIntoAModelsContext(t *testing.T) {
 	// The data itself must still arrive, or the control is data loss.
 	if !strings.Contains(got, "total 3") {
 		t.Errorf("the value was dropped along with the smuggling: %q", got)
-	}
-	// StructuredContent is a second copy of the same result and is what a
-	// schema-aware client reads; cleaning one and not the other would be a
-	// control that depends on which field the client happens to use.
-	structured, _ := json.Marshal(res.StructuredContent)
-	if strings.Contains(string(structured), "\u200b") || strings.Contains(string(structured), "\x1b") {
-		t.Errorf("the structured copy is uncleaned: %s", structured)
 	}
 }
 
