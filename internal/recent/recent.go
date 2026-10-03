@@ -259,17 +259,37 @@ func credentialName(name string) bool {
 	return false
 }
 
-// authorizationHeader reports whether a value is an Authorization header,
-// whatever field it arrived on.
+// authorizationHeader reports whether a value is a header that carries a
+// credential, whatever field it arrived on.
 //
-// The one shape that is a credential no matter what the input is called:
+// The shape that is a credential no matter what the input is called:
 // `http -H 'Authorization: Bearer …'` goes on a header list whose name says
-// nothing, beside header names that are worth remembering. Narrow on purpose —
-// this is not an attempt to recognise a secret by looking at it, which is not
-// a thing that works.
+// nothing, beside header names that are worth remembering. It began as
+// Authorization alone, which left `X-Api-Key: …`, a Cookie and every other
+// header an API takes its key in written to recent.json in clear, to come back
+// on a completion list; they are named by what the header is *called*, with
+// the separators gone so `X-Api-Key`, `x_api_key` and `XApiKey` are one word.
+// Not an attempt to recognise a secret by looking at it, which is not a thing
+// that works: the value is never read. Wrong in this direction costs a
+// suggestion nobody sees.
 func authorizationHeader(v string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(v)), "authorization:")
+	name, _, isHeader := strings.Cut(strings.TrimSpace(v), ":")
+	if !isHeader || strings.ContainsAny(name, " \t") {
+		return false
+	}
+	name = strings.NewReplacer("-", "", "_", "").Replace(strings.ToLower(name))
+	for _, w := range credentialHeaderWords {
+		if strings.Contains(name, w) {
+			return true
+		}
+	}
+	return false
 }
+
+// credentialHeaderWords are what a header that carries a credential has in
+// its name, hyphens removed: the credential words fields use, plus the ones
+// particular to headers — the key, the cookie, the session, the signature.
+var credentialHeaderWords = append([]string{"cookie", "session", "signature", "key"}, credentialWords...)
 
 // entries renders one supplied value as the strings to remember.
 func entries(v any) []string {
