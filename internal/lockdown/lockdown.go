@@ -31,8 +31,10 @@
 // documented detection regime as every other same-uid rollback, and the
 // boundary chapter owns what remains — though a deletion is not quite
 // traceless, because it leaves the seal key behind, and `rta doctor` names
-// that (KeyWithoutFile). The seal's own bound applies here
-// too and is worth restating: a writer who can also *read* this directory
+// that (KeyWithoutFile). A file that is there and does not verify is not a
+// deletion: a process with no verified set to hold in its place refuses
+// every principal until it does (Pin.snapshot). The seal's own bound applies
+// here too and is worth restating: a writer who can also *read* this directory
 // reads the key, re-seals an empty file, and unlocks silently — the same
 // attacker the grant seal concedes, and the reason the honest sentence is
 // "deletion is not an unlock", never "tampering is impossible".
@@ -52,6 +54,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/seal"
 	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -447,6 +450,10 @@ type Pin struct {
 	lastGood []Lock
 	seen     bool
 	alarmed  bool
+	// holding is that the file is there and does not verify, and this process
+	// has no verified set to hold in its place: it refuses every principal
+	// (heldFor) until the file verifies again.
+	holding bool
 }
 
 // NewPin builds a pin for one serving process.
@@ -456,15 +463,36 @@ func NewPin() *Pin { return &Pin{} }
 // process, plus an alarm sentence the first time the file goes missing or
 // stops verifying while locks were in effect — for the server's stderr,
 // once per incident, not per call.
-func (p *Pin) snapshot() ([]Lock, string) {
+//
+// **A file that is there and does not verify, read by a process that has never
+// verified one, holds everybody.** The alarm was all it did: the corrupt bytes
+// were not built upon, which is right, and nothing was in their place, so a
+// server started after a lock file had been blind-written over served the very
+// agent the lock was aimed at, with a line on a stderr nobody reads. That is
+// the unlock the pin exists to refuse, reached across a restart by an edit
+// instead of a deletion, and a restart is what a client does at every session.
+// An edit can be told from an absence: the file is there, and it is not
+// rta's. Who it was meant to hold cannot be read from it, so none is let
+// through, as the grant store lets nothing through on a file it cannot trust.
+// Absence stays the clean machine, which is the regime this package states.
+func (p *Pin) snapshot() ([]Lock, string, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	locks, present, verr := load()
+	p.holding = false
 	switch {
 	case verr == nil && present:
 		p.lastGood, p.seen, p.alarmed = locks, true, false
 	case verr == nil && !present && !p.seen:
 		// Never had locks, still none: the clean machine.
+	case verr != nil && !p.seen:
+		p.holding = true
+		if !p.alarmed {
+			p.alarmed = true
+			return nil, fmt.Sprintf("%s is there and does not verify, and this process has no verified set to "+
+				"hold in its place — refusing every principal until it does; whatever rewrote it is the "+
+				"thing to look at", Path()), true
+		}
 	default:
 		// Vanished after being seen, or no longer verifying: hold the last
 		// verified set and say so once.
@@ -472,28 +500,55 @@ func (p *Pin) snapshot() ([]Lock, string) {
 		if !p.alarmed {
 			p.alarmed = true
 			return locks, fmt.Sprintf("%s no longer verifies or is gone while locks were in effect — "+
-				"holding the last verified set for this process; whatever rewrote it is the thing to look at", Path())
+				"holding the last verified set for this process; whatever rewrote it is the thing to look at", Path()), false
 		}
 	}
-	return locks, ""
+	return locks, "", p.holding
 }
+
+// heldFor is the lock a process with nothing verified holds a principal to
+// (Pin.snapshot): not one anybody placed, so it carries no name of an
+// operator and a note the refusal does not print (Refusal).
+func heldFor(kind Kind, name string) *Lock {
+	return &Lock{Kind: kind, Name: name, By: heldBy}
+}
+
+// heldBy marks the lock heldFor makes.
+const heldBy = "rta: lock file unverified"
+
+// Held reports that l is the lock a process with nothing verified holds a
+// principal to (Pin.snapshot), which no operator placed and none can lift:
+// the sentence for a lock that was placed does not fit it (Refusal).
+func (l Lock) Held() bool { return l.By == heldBy }
 
 // Frozen reports the lock covering (kind, name), if any, and snapshot's
 // alarm.
 func (p *Pin) Frozen(kind Kind, name string) (*Lock, string) {
-	locks, alarm := p.snapshot()
-	return match(locks, kind, name), alarm
+	locks, alarm, holding := p.snapshot()
+	if l := match(locks, kind, name); l != nil {
+		return l, alarm
+	}
+	if holding {
+		return heldFor(kind, name), alarm
+	}
+	return nil, alarm
 }
 
 // Check is Frozen for the MCP surface's two identities in one read: the
 // agent name the server runs --as, and the credential the bearer wall or
 // OIDC verifier proved for this caller.
 func (p *Pin) Check(agent, credential string) (*Lock, string) {
-	locks, alarm := p.snapshot()
+	locks, alarm, holding := p.snapshot()
 	if l := match(locks, KindAgent, agent); l != nil {
 		return l, alarm
 	}
-	return match(locks, KindCredential, credential), alarm
+	if l := match(locks, KindCredential, credential); l != nil {
+		return l, alarm
+	}
+	if holding {
+		return heldFor(KindAgent, agent), alarm
+	}
+	return nil, alarm
 }
 
 func match(locks []Lock, kind Kind, name string) *Lock {
@@ -512,6 +567,12 @@ func match(locks []Lock, kind Kind, name string) *Lock {
 // Refusal is the sentence a frozen principal reads, with the note the
 // locker wrote for exactly this moment.
 func Refusal(l *Lock) *view.Error {
+	if l.Held() {
+		return view.Errorf("core.lock.unverified",
+			"the locks rta keeps cannot be read or do not verify, so no %s is let through "+
+				"until the operator has looked at them", l.Kind).
+			WithHint(plugin.AskOperator("lock list"))
+	}
 	msg := fmt.Sprintf("this %s is locked", l.Kind)
 	if l.Note != "" {
 		msg += ": " + l.Note
