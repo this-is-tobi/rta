@@ -23,26 +23,27 @@ rta mcp install cursor
 ```
 client  Cursor
 add to  ~/.cursor/mcp.json (or .cursor/mcp.json for one project)
-block   {
-          "mcpServers": {
-            "rta": {
-              "command": "/usr/local/bin/rta",
-              "args": [
-                "mcp",
-                "serve",
-                "--as",
-                "cursor"
-              ]
-            }
-          }
-        }
 as      cursor
-next    add the block to that file yourself — rta writes nothing there. The
-        `--as cursor` in it is what keeps this agent's grants its own: without a
-        name, every MCP client on this machine shares one set of permissions
+next    add the block to that file yourself — rta writes nothing there. The `--as cursor` in it
+        is what keeps this agent's grants its own: without a name, every MCP client on this
+        machine shares one set of permissions
+
+{
+  "mcpServers": {
+    "rta": {
+      "command": "/usr/local/bin/rta",
+      "args": [
+        "mcp",
+        "serve",
+        "--as",
+        "cursor"
+      ]
+    }
+  }
+}
 ```
 
-The answer is the same pairs in every format, so `-o json` hands a script provisioning a machine the block as one value to lift out whole. A client that registered itself answers with `registered`, `as` and the command line it `ran`; whatever that client printed of its own goes to stderr, beside the answer rather than inside it.
+In `pretty` the block is drawn last, under the pairs, so it can be copied whole. The answer is the same pairs in every format, with the block as one of them — `block`, between `add to` and `as` — so `-o json` hands a script provisioning a machine the block as one value to lift out whole. A client that registered itself answers with `registered`, `as` and the command line it `ran`; whatever that client printed of its own goes to stderr, beside the answer rather than inside it.
 
 ### rta does not write another tool's config file
 
@@ -118,9 +119,10 @@ rta says its roots out loud at startup rather than leaving them to be discovered
 ```
 rta mcp server listening on stdio
 path arguments confined to: /Users/you/projects, /tmp/scratch
+record: /Users/you/.local/share/rta/agent-log.jsonl (session 4a030411)
 ```
 
-A root the server cannot open for reading is named there too, once, with the fix — one whose mode lets it be searched and not listed (`--x`), or a folder macOS keeps from the app that started the server. The built-ins open a path from its root, so they refuse every path they would open through it, on every call, until it can be read; the server serves the other roots meanwhile.
+The `record:` line names the file this server's calls are written to and the id of its session, which is what `rta agent log --session` takes; when the record looks empty, it is the path to compare with the one `rta agent overview --detail` reads. A root the server cannot open for reading is named there too, once, with the fix — one whose mode lets it be searched and not listed (`--x`), or a folder macOS keeps from the app that started the server. The built-ins open a path from its root, so they refuse every path they would open through it, on every call, until it can be read; the server serves the other roots meanwhile.
 
 ### What an argument is held to
 
@@ -197,6 +199,7 @@ So a committed `.rta-policy.yaml` bounds this agent only if the client happened 
 ```
 rta mcp server listening on stdio
 path arguments confined to: /Users/you/projects
+record: /Users/you/.local/share/rta/agent-log.jsonl (session 4a030411)
 rta: team policy: /Users/you/projects/.rta-policy.yaml
 ```
 
@@ -450,6 +453,8 @@ Locking an operator freezes the key, not what it already signed — pair it with
 ```
 rta mcp server listening on http://127.0.0.1:8443
 rta: every request needs a bearer token; TLS is not this process's job — put a reverse proxy, ingress or service mesh in front of it
+path arguments confined to: /Users/you/projects
+record: /Users/you/.local/share/rta/agent-log.jsonl (session 4e289252)
 rta: remote transport hides 32 capabilities that describe this machine: audit.deps, audit.why, fs.hash, fs.tree, fs.usage, git.blame, …
 ```
 
