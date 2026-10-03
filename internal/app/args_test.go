@@ -326,6 +326,7 @@ func TestARequiredFlagIsSaidToBeRequiredWhereItIsDescribed(t *testing.T) {
 			Inputs: []plugin.Field{
 				{Name: "by", Type: plugin.String, Required: true, Help: "which way"},
 				{Name: "host", Type: plugin.String, Required: true, Config: "host", Help: "where"},
+				{Name: "token", Type: plugin.Secret, Required: true, Local: true, EnvFallback: true, Help: "who you are"},
 				{Name: "loud", Type: plugin.Bool, Help: "shout"},
 			},
 			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
@@ -337,7 +338,7 @@ func TestARequiredFlagIsSaidToBeRequiredWhereItIsDescribed(t *testing.T) {
 	if !ok {
 		t.Fatal("knob.turn is not registered")
 	}
-	if got, want := cliForm(capability), "rta knob turn --by <string> [--host <string>] [--loud <bool>]"; got != want {
+	if got, want := cliForm(capability), "rta knob turn --by <string> [--host <string>] [--token <secret>] [--loud <bool>]"; got != want {
 		t.Errorf("the explain card shows %q, want %q", got, want)
 	}
 	out, _, err := run(t, reg, "knob", "turn", "--help")
@@ -349,7 +350,41 @@ func TestARequiredFlagIsSaidToBeRequiredWhereItIsDescribed(t *testing.T) {
 			t.Errorf("--help does not say %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "where (required)") {
-		t.Errorf("--help calls a flag config can fill required on the command line:\n%s", out)
+	for _, notRequired := range []string{"where (required)", "who you are (required)"} {
+		if strings.Contains(out, notRequired) {
+			t.Errorf("--help calls a flag something other than the line can fill required on it: %q\n%s", notRequired, out)
+		}
+	}
+}
+
+// The environment is the other thing besides config that can fill an input the
+// line leaves off: a credential declared Local and EnvFallback is read from
+// RTA_<PLUGIN>_<INPUT>, and a profile's `secrets:` fills it too. Marking it
+// required for cobra refused the call before either was looked at, so the
+// hint that says "or export $RTA_KNOB_TOKEN" sent a person to a variable that
+// did nothing.
+func TestARequiredCredentialTheEnvironmentFillsNeedsNoFlag(t *testing.T) {
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{
+		Name: "knob", Summary: "has a credential",
+		Capabilities: []plugin.Capability{{
+			ID: "knob.turn", Summary: "turn it", Safety: plugin.Read,
+			Inputs: []plugin.Field{
+				{Name: "token", Type: plugin.Secret, Required: true, Local: true, EnvFallback: true, Help: "who you are"},
+			},
+			Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+				return view.Text{Body: "turned with " + req.String("token")}, nil
+			},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(plugin.LocalEnvVar("knob.turn", "token"), "from-env")
+	out, _, err := run(t, reg, "knob", "turn")
+	if err != nil {
+		t.Fatalf("the credential is exported and the call was refused: %v", err)
+	}
+	if !strings.Contains(out, "turned with from-env") {
+		t.Errorf("the handler did not read the exported credential:\n%s", out)
 	}
 }

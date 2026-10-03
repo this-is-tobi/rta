@@ -1668,13 +1668,16 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 }
 
 // requiredOnCommandLine is whether the line itself has to carry the input as a
-// flag: a required input that config can fill is checked after config is
-// applied instead, so it may be left off, and a positional one is required by
-// its place, which the usage line already draws. What the usage line and --help
-// promise has to follow the same rule as what cobra enforces, or a flag that
-// cannot be left out reads as optional until the refusal says otherwise.
+// flag: a required input that config can fill, or that the environment fills
+// (a Local credential with EnvFallback, which a profile's secrets fill too), is
+// checked after those are applied instead, so it may be left off, and a
+// positional one is required by its place, which the usage line already draws.
+// What the usage line and --help promise has to follow the same rule as what
+// cobra enforces, or a flag that cannot be left out reads as optional until the
+// refusal says otherwise, and one that can be left out is refused before the
+// variable the hint names is read.
 func requiredOnCommandLine(f plugin.Field) bool {
-	return f.Required && f.Config == "" && !f.Positional
+	return f.Required && f.Config == "" && (!f.Local || !f.EnvFallback) && !f.Positional
 }
 
 // flagUsage renders a field's help for `--help`, appending what the host adds
