@@ -102,6 +102,13 @@ type Lock struct {
 	At time.Time `json:"at"`
 	// Expires zero means until removed — incident locks usually are.
 	Expires time.Time `json:"expires,omitempty"`
+
+	// held marks the lock a process with nothing verified holds a principal
+	// to (heldFor). A field of its own and not a recognised By, which is the
+	// operator's word: a label spelled as the marker's old text made a lock
+	// somebody placed read as one nobody could lift. Unexported, so a lock
+	// read from the file can never be one.
+	held bool
 }
 
 func (l Lock) expired(at time.Time) bool {
@@ -510,16 +517,17 @@ func (p *Pin) snapshot() ([]Lock, string, bool) {
 // (Pin.snapshot): not one anybody placed, so it carries no name of an
 // operator and a note the refusal does not print (Refusal).
 func heldFor(kind Kind, name string) *Lock {
-	return &Lock{Kind: kind, Name: name, By: heldBy}
+	return &Lock{Kind: kind, Name: name, By: heldBy, held: true}
 }
 
-// heldBy marks the lock heldFor makes.
+// heldBy is the By a lock heldFor shows, in the lock list and over the
+// operator channel; what makes it one is the field beside it.
 const heldBy = "rta: lock file unverified"
 
 // Held reports that l is the lock a process with nothing verified holds a
 // principal to (Pin.snapshot), which no operator placed and none can lift:
 // the sentence for a lock that was placed does not fit it (Refusal).
-func (l Lock) Held() bool { return l.By == heldBy }
+func (l Lock) Held() bool { return l.held }
 
 // Frozen reports the lock covering (kind, name), if any, and snapshot's
 // alarm.
