@@ -1,9 +1,64 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
+
+// A value a flag cannot hold was refused with the name of a standard-library
+// function: `invalid argument "abc" for "--count" flag: strconv.ParseInt:
+// parsing "abc": invalid syntax`. It is now the sentence the same mistake gets
+// from a capability's input check, with the declared bounds when there are
+// any, and a switch says that it takes no value.
+func TestAFlagValueTheParserRefusesIsRefusedInTheWordsOfAnInputCheck(t *testing.T) {
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{
+		Name: "knob", Summary: "has flags",
+		Capabilities: []plugin.Capability{{
+			ID: "knob.turn", Summary: "turn it", Safety: plugin.Read,
+			Inputs: []plugin.Field{
+				{Name: "count", Type: plugin.Int, Min: 1, Max: 100, Default: 4, Help: "how many"},
+				{Name: "ratio", Type: plugin.Float, Help: "how much"},
+				{Name: "loud", Type: plugin.Bool, Help: "shout"},
+			},
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		args        []string
+		want, hint  string
+		notContains string
+	}{
+		{[]string{"knob", "turn", "--count", "abc"},
+			"`rta knob turn` takes a whole number from 1 to 100 for --count, not \"abc\"", "", "strconv"},
+		{[]string{"knob", "turn", "--count=1.5"},
+			"takes a whole number from 1 to 100 for --count, not \"1.5\"", "", "strconv"},
+		{[]string{"knob", "turn", "--ratio", "x"},
+			"takes a number for --ratio, not \"x\"", "", "strconv"},
+		{[]string{"knob", "turn", "--loud=yes"},
+			"takes true or false for --loud, not \"yes\"", "`--loud` alone turns it on", "strconv"},
+		{[]string{"dashboard", "add", "sys.cpu", "--span", "abc"},
+			"`rta dashboard add` takes a whole number for --span, not \"abc\"", "", "strconv"},
+	} {
+		_, _, err := run(t, reg, c.args...)
+		if err == nil || !strings.Contains(err.Error(), c.want) || strings.Contains(err.Error(), c.notContains) {
+			t.Errorf("rta %s: err = %v, want it to say %q", strings.Join(c.args, " "), err, c.want)
+			continue
+		}
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != CodeUsage || !strings.Contains(ve.Hint, c.hint) {
+			t.Errorf("rta %s: %+v, want a %s with a hint holding %q", strings.Join(c.args, " "), err, CodeUsage, c.hint)
+		}
+	}
+}
 
 // cobra's "requires at least 1 arg(s), only received 0" named neither the
 // thing missing nor the command to type.

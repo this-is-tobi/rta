@@ -824,7 +824,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	// Last, over the whole tree: see CodeUsage. A capability command sets a
 	// flag-error function of its own (positionalFlagError), which codes its
 	// answer itself; every other command inherits this one.
-	root.SetFlagErrorFunc(usageError)
+	root.SetFlagErrorFunc(flagError)
 	// cobra's own help and completion commands, which it would otherwise add
 	// inside Execute, after this point: a command the walk below never saw
 	// refused `rta completion zsh extra` as a plain error fang styled, under
@@ -1053,7 +1053,7 @@ func positionalFlagError(c plugin.Capability, positionals []plugin.Field) func(*
 	return func(cmd *cobra.Command, err error) error {
 		name, ok := unknownFlagName(err)
 		if !ok {
-			return usageError(cmd, err)
+			return flagValueError(cmd, err, &c)
 		}
 		for _, f := range positionals {
 			if f.Name == name {
@@ -1062,6 +1062,78 @@ func positionalFlagError(c plugin.Capability, positionals []plugin.Field) func(*
 		}
 		return usageError(cmd, err)
 	}
+}
+
+// refusedFlagValue is pflag's sentence for a value its flag cannot hold:
+// `invalid argument "abc" for "--count" flag: strconv.ParseInt: parsing "abc":
+// invalid syntax`, with the shorthand in front of the name when there is one.
+var refusedFlagValue = regexp.MustCompile(`^invalid argument ("(?:[^"\\]|\\.)*") for "(?:-\w, )?--([^"]+)" flag: `)
+
+// flagError is the flag-error function of every command that is not a
+// capability: the value refusal below, and everything else as the usage
+// mistake it is.
+func flagError(cmd *cobra.Command, err error) error { return flagValueError(cmd, err, nil) }
+
+// flagValueError is flagError for a command that may know its inputs' bounds.
+func flagValueError(cmd *cobra.Command, err error, c *plugin.Capability) error {
+	if refused := refuseFlagValue(cmd, err, c); refused != nil {
+		return refused
+	}
+	return usageError(cmd, err)
+}
+
+// refuseFlagValue restates pflag's refusal of a value in the words the same
+// mistake gets from a capability's input check — "`rta net ping` takes a whole
+// number from 1 to 100 for --count, not "abc"" — instead of the Go parser's own
+// report, which names strconv.ParseInt and says the syntax is invalid.
+//
+// The comment in plugin.checkNumber has the flag parser refusing text before
+// that check runs, and this is what it refused with: every number, switch and
+// duration flag in the tree answered a typo with the name of a function in the
+// standard library. A capability's declared bounds are named when there are
+// any, as they are for the same value arriving by any other route.
+//
+// nil for a refusal this does not recognise, or a flag of a kind it has no
+// noun for, which keeps pflag's sentence.
+func refuseFlagValue(cmd *cobra.Command, err error, c *plugin.Capability) *view.Error {
+	m := refusedFlagValue.FindStringSubmatch(err.Error())
+	if m == nil {
+		return nil
+	}
+	quoted, name := m[1], m[2]
+	flag := cmd.Flags().Lookup(name)
+	if flag == nil {
+		return nil
+	}
+	var want string
+	switch flag.Value.Type() {
+	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "count":
+		want = "a whole number"
+	case "float32", "float64":
+		want = "a number"
+	case "bool":
+		want = "true or false"
+	case "duration":
+		want = "a duration such as 30s, 15m or 2h"
+	default:
+		return nil
+	}
+	if c != nil {
+		for _, f := range c.Inputs {
+			if f.Name == name && f.Bounds() != "" {
+				want += " " + f.Bounds()
+			}
+		}
+	}
+	hint := "`" + cmd.CommandPath() + " --help` says what it takes"
+	if flag.Value.Type() == "bool" {
+		// The one mistake a switch invites: `--cores yes`, or `--cores=yes`, as
+		// though it were a setting with a value to choose.
+		hint = "a switch needs no value: `--" + name + "` alone turns it on, `--" + name + "=false` off"
+	}
+	return &view.Error{Code: CodeUsage,
+		Message: fmt.Sprintf("`%s` takes %s for --%s, not %s", cmd.CommandPath(), want, name, quoted),
+		Hint:    hint}
 }
 
 // unknownFlagName pulls the flag out of pflag's unknown-flag error. Matching
