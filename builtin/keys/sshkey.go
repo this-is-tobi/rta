@@ -163,6 +163,14 @@ func unlockKey(req plugin.Request, path string, data []byte) (any, *view.Error) 
 	}
 	var locked *ssh.PassphraseMissingError
 	if !errors.As(err, &locked) {
+		// The file next to the one wanted, and the one a tab completion offers
+		// first: `id_ed25519.pub` sorts after `id_ed25519` and shares its
+		// prefix. "no key found" told whoever picked it that the file was
+		// empty or damaged, when it is the other half, and fine.
+		if _, _, _, _, perr := ssh.ParseAuthorizedKey(data); perr == nil {
+			return nil, view.Errorf("keys.key.public", "%s holds a public key, and a backup needs the private one", path).
+				WithHint("the private key is the file of the same name without .pub — a public key can be shared, and has nothing to back up")
+		}
 		return nil, view.Errorf("keys.key.invalid", "parsing %s: %v", path, err).
 			WithHint("expected an SSH private key, e.g. ~/.ssh/id_ed25519")
 	}
