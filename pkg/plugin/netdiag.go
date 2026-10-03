@@ -8,6 +8,7 @@ import (
 	"net"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -161,6 +162,38 @@ func handshook(err error) bool {
 	return strings.Contains(text, "tls: ") || strings.Contains(text, "x509: ")
 }
 
+// verifiedAs is the system whose verifier the diagnostics below read a
+// handshake's error as having come from, where a test has chosen one; nil is
+// the machine's own (runtime.GOOS). Atomic, so a test that sets it beside
+// others running in parallel is a race of values and not a data race.
+var verifiedAs atomic.Pointer[string]
+
+func verifierSystem() string {
+	if goos := verifiedAs.Load(); goos != nil {
+		return *goos
+	}
+	return runtime.GOOS
+}
+
+// UseVerifierSystem makes CertUntrusted, CertRevoked, CertPolicyHint and
+// CAHint read a handshake's error as the verifier of goos ("darwin", "ios",
+// "windows", "linux") would have worded it, and returns what puts the
+// machine's own back.
+//
+// **For a plugin's tests, through sdktest.VerifierSystem.** Those four answer
+// differently by system, and the one whose verdicts they read is Apple's: a
+// revoked certificate, or one too long-lived for Apple's policy, is a refusal
+// only the system's own verifier words, so a plugin's handling of either —
+// the answer it gives, the way round it must not offer — could be exercised
+// on a Mac alone, and CI runs on Linux. The system's verdict is injected
+// instead, in the words it comes in (sdktest.SystemVerdict). Nothing else in
+// a plugin has a reason to call it: a plugin that picked the system it
+// believed in at run time would diagnose a handshake by what it was not.
+func UseVerifierSystem(goos string) (restore func()) {
+	previous := verifiedAs.Swap(&goos)
+	return func() { verifiedAs.Store(previous) }
+}
+
 // CertUntrusted reports whether err is a certificate nothing here vouches
 // for: its issuer is in no pool the check read, or there was no pool to
 // read. The CA that issued it — a self-signed certificate is its own — is
@@ -212,7 +245,7 @@ func handshook(err error) bool {
 // error tells the two apart — which is why CAHint says what naming a CA
 // file goes around there too: Windows' own checks, its list of distrusted
 // certificates among them.
-func CertUntrusted(err error) bool { return certUntrusted(runtime.GOOS, err) }
+func CertUntrusted(err error) bool { return certUntrusted(verifierSystem(), err) }
 
 // certUntrusted is CertUntrusted on goos, whose verifier answered err.
 func certUntrusted(goos string, err error) bool {
@@ -247,7 +280,7 @@ func certUntrusted(goos string, err error) bool {
 // revocation verdict reaches Go as an unknown authority with nothing to tell
 // it apart (CertUntrusted): on those, a revoked certificate is not known as
 // one, and this answers false.
-func CertRevoked(err error) bool { return certRevoked(runtime.GOOS, err) }
+func CertRevoked(err error) bool { return certRevoked(verifierSystem(), err) }
 
 // certRevoked is CertRevoked on goos, whose verifier answered err.
 func certRevoked(goos string, err error) bool {
@@ -302,7 +335,7 @@ func systemVerdict(goos string, err error, verdict string) (*tls.CertificateVeri
 // file would get past the refusal, since naming one runs Go's verifier in
 // the system's place, and it would do so by going around every check the
 // system makes (CAHint), for a certificate that is not untrusted at all.
-func CertPolicyHint(err error) string { return certPolicyHint(runtime.GOOS, err) }
+func CertPolicyHint(err error) string { return certPolicyHint(verifierSystem(), err) }
 
 // Apple's limit on a TLS server certificate's validity period, and the date
 // from which a certificate is held to it.
@@ -345,7 +378,7 @@ func certPolicyHint(goos string, err error) string {
 // verifier there too when no CA file is set, and a certificate Windows
 // distrusts reaches CertUntrusted as an unknown authority, which only this
 // hint's words can warn about.
-func (s Surface) CAHint(setting string) string { return s.caHint(runtime.GOOS, setting) }
+func (s Surface) CAHint(setting string) string { return s.caHint(verifierSystem(), setting) }
 
 // caHint is CAHint on goos.
 func (s Surface) caHint(goos, setting string) string {
