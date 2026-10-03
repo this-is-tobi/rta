@@ -139,6 +139,15 @@ func TestABlockedAddressSaysWhyItIsRefused(t *testing.T) {
 	}
 }
 
+// An address typed as the host is refused as itself. "127.0.0.1 resolves to
+// 127.0.0.1" described a lookup that never happened.
+func TestABlockedAddressTypedAsTheHostIsNotSaidToResolve(t *testing.T) {
+	msg := (&blockedAddrError{host: "127.0.0.1", ip: stdnet.ParseIP("127.0.0.1")}).Error()
+	if strings.Contains(msg, "resolves") || !strings.Contains(msg, "127.0.0.1 is a loopback address") {
+		t.Errorf("refusing a literal address said %q", msg)
+	}
+}
+
 // A grant authorizes the URL a caller named, checked once before Run
 // starts. Without dialGuarded, that authorization silently covers whatever
 // the name resolves to at connection time — loopback included, since
