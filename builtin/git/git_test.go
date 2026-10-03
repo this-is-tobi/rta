@@ -56,6 +56,28 @@ func TestPluginIsValid(t *testing.T) {
 	}
 }
 
+// A directory outside every repository is named whole and said to be outside
+// one, once; a directory that is not there is not "not a repository", which
+// sent a mistyped path to git init. It was ". is not a git repository:
+// repository does not exist", and "/srv/app is not a git repository: stat
+// /srv/app: no such file or directory".
+func TestAPathThatIsNoRepositoryIsNamedForWhatItIs(t *testing.T) {
+	dir := t.TempDir()
+
+	_, err := runStatus(context.Background(), req(t, dir, nil))
+	verr := view.AsError(err, "x")
+	if err == nil || verr.Code != "git.notarepo" || verr.Message != dir+" is not inside a git repository" {
+		t.Errorf("a directory outside any repository: %v, want git.notarepo naming it once", err)
+	}
+
+	missing := filepath.Join(dir, "missing")
+	_, err = runStatus(context.Background(), req(t, missing, nil))
+	verr = view.AsError(err, "x")
+	if err == nil || verr.Code != "git.path.notfound" || verr.Message != "no such directory: "+missing {
+		t.Errorf("a directory that is not there: %v, want git.path.notfound", err)
+	}
+}
+
 // When is set on every commit these fixtures make: go-git leaves a zero
 // Signature.When alone, so a fixture without one produces commits dated 1970 —
 // which reads as "57 years ago" in any view that reports an age, and as a bug
