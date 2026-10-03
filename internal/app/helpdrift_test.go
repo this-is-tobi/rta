@@ -1,11 +1,65 @@
 package app
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
+
+// capabilityName is a backticked token spelled like a capability or a group of
+// them: dotted lower-case words, with `a.b.c/d` as the shorthand for two.
+var capabilityName = regexp.MustCompile("`([a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+(?:/[a-z][a-z0-9-]*)*)`")
+
+// TestNoDescriptionNamesACapabilityThatDoesNotExist walks the built-in
+// catalogue and refuses a backticked capability name that nothing declares.
+//
+// keys.backup told every reader of `rta explain keys.backup` that it was
+// classified as it was "for the same reason `share.secret.set/get` will" — two
+// capabilities of a plugin that was planned, never written, and never
+// shipped. A description is read as a statement about the tool in front of
+// you; one that cites a neighbour that is not there sends the reader to look
+// for it, and nothing but a walk of the whole catalogue notices when a name in
+// a sentence stops being true. A name is accepted as a capability, or as the
+// start of one (`net.hosts` holds four).
+func TestNoDescriptionNamesACapabilityThatDoesNotExist(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	known := map[string]bool{}
+	for _, c := range reg.Capabilities() {
+		known[c.ID] = true
+		parts := strings.Split(c.ID, ".")
+		for i := 1; i < len(parts); i++ {
+			known[strings.Join(parts[:i], ".")] = true
+		}
+	}
+	for _, c := range reg.Capabilities() {
+		texts := []string{c.Summary, c.Description}
+		for _, f := range c.Inputs {
+			texts = append(texts, f.Help)
+		}
+		for _, text := range texts {
+			for _, m := range capabilityName.FindAllStringSubmatch(text, -1) {
+				head, alternatives, _ := strings.Cut(m[1], "/")
+				names := []string{head}
+				if alternatives != "" {
+					stem := head[:strings.LastIndex(head, ".")+1]
+					for _, alt := range strings.Split(alternatives, "/") {
+						names = append(names, stem+alt)
+					}
+				}
+				for _, name := range names {
+					if !known[name] {
+						t.Errorf("%s names `%s`, which no capability declares", c.ID, name)
+					}
+				}
+			}
+		}
+	}
+}
 
 // TestNoInputHelpRepeatsWhatTheHostAlreadyPrints walks the built-in
 // catalogue and refuses a Help string that names its own environment
