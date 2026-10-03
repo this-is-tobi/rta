@@ -407,3 +407,32 @@ func TestChainVerdictNamesThePassingCase(t *testing.T) {
 		t.Errorf("chainVerdict rewrote a reason to %q", got)
 	}
 }
+
+// The time left is counted down to the second. A certificate with 30 minutes
+// left read "0h" and one that expired this morning "expired 0d ago": the
+// two rows a table of expiries exists to flag, said in a unit too coarse to
+// tell them from a certificate with all day.
+func TestTimeLeftIsCountedInTheUnitThatAnswers(t *testing.T) {
+	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		at   time.Duration
+		want string
+	}{
+		{89*24*time.Hour + 5*time.Hour, "89d"},
+		{24 * time.Hour, "1d"},
+		{23*time.Hour + 59*time.Minute, "23h"},
+		{30 * time.Minute, "30m"},
+		{90 * time.Second, "1m"},
+		{45 * time.Second, "45s"},
+		{500 * time.Millisecond, "0s"},
+		{-300 * time.Millisecond, "expired just now"},
+		{-30 * time.Second, "expired 30s ago"},
+		{-30 * time.Minute, "expired 30m ago"},
+		{-3 * time.Hour, "expired 3h ago"},
+		{-3 * 24 * time.Hour, "expired 3d ago"},
+	} {
+		if got := untilAt(now.Add(c.at), now); got != c.want {
+			t.Errorf("%v from now = %q, want %q", c.at, got, c.want)
+		}
+	}
+}
