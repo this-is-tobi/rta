@@ -126,3 +126,27 @@ func TestAnEmptyProfilesPaneOffersOnlyWhatCanBeDone(t *testing.T) {
 		}
 	}
 }
+
+// An environment that holds no plugin offers the same: make one, leave.
+func TestAnEnvironmentWithNoPluginOffersOnlyWhatCanBeDone(t *testing.T) {
+	m := profileModel(t, twoProfileConfig())
+	m.profileOpen = m.profiles[0].name
+	row, _ := m.openProfile()
+	row.conns = nil
+	for i := range m.profiles {
+		if m.profiles[i].name == m.profileOpen {
+			m.profiles[i] = row
+		}
+	}
+	bar := plain(fitHintBar(120, footerMaxLines, m.footerItems(modeProfilePlugins)...))
+	for _, want := range []string{"n new", "esc back", "q quit"} {
+		if !strings.Contains(bar, want) {
+			t.Errorf("the bar lacks %q:\n%s", want, bar)
+		}
+	}
+	for _, gone := range []string{"configure", "credential", "delete"} {
+		if strings.Contains(bar, gone) {
+			t.Errorf("the bar offers %q over nothing:\n%s", gone, bar)
+		}
+	}
+}
