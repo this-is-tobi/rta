@@ -247,8 +247,8 @@ Nothing in the config grants anything. It holds connection profiles, dashboard p
 | Grants | `grants.json`, with its seal key `grants.key` | Sealed against tampering |
 | Agent record | `agent-log.jsonl`, with its seal key `agent-log.key` | Hash-chained; [The record](../30-boundary/40-audit-trail.md) |
 | Locks | `lockdown.json`, with `lockdown.key` | Sealed like the grants; [Locks](../30-boundary/20-mcp.md#locks-the-instant-no) |
-| Switched-on profile | `profile.json`, with `profile.key` | Sealed like the grants: one that does not verify holds every profile shut to agents until `rta use` writes it again; [Profiles](../20-using/40-profiles.md) |
-| Plugins | `trusted.json` (what you approved), `plugins/store/` (what an index installed), `plugins/run/` (a private copy a `$PATH` plugin runs from), `indexes/` (the clones) | [Using plugins](../40-plugins/10-plugins.md) |
+| Switched-on profile | `profile.json` | Which profile `rta use` switched on, and until when. Not sealed, because all it can do is remove a bound: a file that goes missing leaves the grants alone deciding, which the sealed grants are the answer to; [Profiles](../20-using/40-profiles.md) |
+| Plugins | `trusted.json` (what you approved), `plugins/store/` and `plugins/bin/` (what an index installed, and the links that find it), `plugin-cache/` with `plugin-cache.key` (what each plugin build declared, sealed, so a run does not start every plugin to ask), `indexes/` (the clones) | [Using plugins](../40-plugins/10-plugins.md) |
 | Notebook and shortlists | `notes.json`, `recent.json` | [The CLI](../20-using/10-cli.md) |
 | Team policy | `.rta-policy.yaml`, walking up from the working directory | [Team policy](../30-boundary/50-team-policy.md) |
 
