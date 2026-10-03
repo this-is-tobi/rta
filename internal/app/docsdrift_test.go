@@ -332,3 +332,22 @@ func TestThePluginChaptersNameEveryFieldAPluginDeclares(t *testing.T) {
 		}
 	}
 }
+
+// What an agent's calls are written into is the record, and `rta agent log`
+// is how it is read; the boundary chapters were rewritten to say so after
+// "ledger" had been the word in the source for as long as the feature
+// existed. A word only the source uses is a word a reader cannot search for
+// in the product, and two of them survived that rewrite — one in the grants
+// chapter and one in the name of the alert the recipes tell an operator to
+// create, which is the one string somebody copies out whole.
+func TestTheDocsNameWhatAgentsCallsAreWrittenIntoTheRecord(t *testing.T) {
+	root := repoRoot(t)
+	ledger := regexp.MustCompile(`(?i)ledger`)
+	for _, page := range markdownPages(t, root) {
+		for i, line := range strings.Split(readDoc(t, root, page), "\n") {
+			if ledger.MatchString(line) {
+				t.Errorf("%s:%d says ledger; the docs call it the record, read with `rta agent log`", page, i+1)
+			}
+		}
+	}
+}
