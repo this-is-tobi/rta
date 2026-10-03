@@ -162,6 +162,22 @@ func TestTheUnreadableHintOffersOnlySpellingsThatParse(t *testing.T) {
 	}
 }
 
+// ISO 8601's short spelling, with the T and without seconds, is the same minute
+// as the space form that was already read.
+func TestTheShortISOSpellingIsTheSameMinuteAsTheSpaceForm(t *testing.T) {
+	loc := stdtime.FixedZone("test", 2*3600)
+	t.Cleanup(func(prev *stdtime.Location) func() { return func() { stdtime.Local = prev } }(stdtime.Local))
+	stdtime.Local = loc
+	short, _, err := resolve("2026-09-04T12:30", reference)
+	if err != nil {
+		t.Fatalf("the T form without seconds was refused: %v", err)
+	}
+	spaced, _, err := resolve("2026-09-04 12:30", reference)
+	if err != nil || !short.Equal(spaced) {
+		t.Errorf("T form = %s, space form = %s (%v)", short, spaced, err)
+	}
+}
+
 // Empty and absent both mean now, because `when` has a default and a form can
 // still submit a blank one.
 func TestNothingAtAllMeansNow(t *testing.T) {
