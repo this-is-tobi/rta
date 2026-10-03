@@ -32,7 +32,7 @@ func logCapability() plugin.Capability {
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "limit", Type: plugin.Int, Config: "log.limit", Default: defaultLogLimit, Min: 1, Max: 500,
 				Help: "how many of the most recent commits to show"},
-			{Name: "file", Type: plugin.Path, Help: fileHelp("limit to commits that touched this file or anything in this directory")},
+			{Name: "file", Type: plugin.Path, Help: fileHelp("commits touching this file or directory")},
 		},
 		Run: runLog,
 	}

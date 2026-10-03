@@ -22,23 +22,13 @@ func remotesCapability() plugin.Capability {
 		Safety:       plugin.Read,
 		HostSpecific: true,
 		Idempotent:   true,
-		Description: "The other half of \"which branch am I on\": which server that branch reaches, " +
-			"and whether this machine has ever heard from it. Three remotes with confusingly " +
-			"similar URLs is how somebody pushes a fix to their fork and waits for a review " +
-			"nobody can see. A remote with a pushurl is two rows, and Use says which does what: " +
-			"git fetches from the first url and pushes to every pushurl where one is set, and to " +
-			"every url where none is.\n\n" +
-			"Branches counts what this repository knows about that remote — the refs a fetch " +
-			"left behind — so a remote that has never been fetched reads as 0 rather than as " +
-			"missing.\n\n" +
-			"A remote is read from every file of config git reads, as git reads it — one set in " +
-			"~/.gitconfig or in a file an include names, a pushurl, a url.<base>.insteadOf " +
-			"rewriting the repository's own URL — and each row names the file its URL is set in. " +
-			"Over MCP only the repository's own config is read, as git.config shows it there: a " +
-			"remote the operator's config sets is theirs, not the repository's.\n\n" +
-			"A credential embedded in a remote URL is masked, the same rule `git config` " +
-			"follows: `https://user:token@host/repo.git` is a password in a file people paste " +
-			"into issues, and it is not what anybody is asking this for.",
+		Description: "Each remote with its URL, the file of config that sets it, and how many of its branches " +
+			"this repository knows from the last fetch (0 for a remote never fetched, not missing). A " +
+			"remote with a pushurl is two rows, and Use says which does what: git fetches from the " +
+			"first url and pushes to every pushurl where one is set, and to every url where none is. " +
+			"Read from every file of config git reads, as git reads it, including a " +
+			"url.<base>.insteadOf rewrite; over MCP only the repository's own config is read, as " +
+			"git.config shows it there. A credential embedded in a URL is masked.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},

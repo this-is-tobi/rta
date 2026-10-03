@@ -33,29 +33,15 @@ func configCapability() plugin.Capability {
 		Safety:       plugin.Read,
 		HostSpecific: true,
 		Idempotent:   true,
-		Description: "Every key set in system, global, local or worktree config, one row per file it's " +
-			"set in — the files `git config --list --show-origin` reads, both global ones " +
-			"included, before any of them override each other: worktree wins over local, local wins " +
-			"over global, global wins over system, and the command scope, which GIT_CONFIG_COUNT and " +
-			"GIT_CONFIG_PARAMETERS set as `git -c` sets it, wins over them all. The worktree scope " +
-			"is config.worktree, which git reads where extensions.worktreeConfig is set, as " +
-			"`git sparse-checkout` sets it. The " +
-			"system scope is every system file git's usual builds read " +
-			"(/etc/gitconfig, Homebrew's, Apple's developer tools'), and GIT_CONFIG_SYSTEM, " +
-			"GIT_CONFIG_GLOBAL and GIT_CONFIG_NOSYSTEM are honoured as git honours them. A key " +
-			"missing from a scope simply has no row there rather than one with an empty value. " +
-			"Each row names the file it comes from. An include is followed as git follows it, " +
-			"include.path and an includeIf whose gitdir:, gitdir/i:, onbranch: or " +
-			"hasconfig:remote.*.url: condition holds, its keys read in the including file's scope " +
-			"at the place of the include; one this cannot decide is not read, and a warning says so. " +
-			"Over MCP only the repository's own config, local and worktree, is returned: the " +
-			"machine-wide scopes and the environment's are the operator's, not the repository's, " +
-			"and an include of a file outside the server's roots made in any file of config inside " +
-			"them, the repository's own or an operator file that lives there, is not followed, for " +
-			"git.hooks and the rest either, a warning naming it: the file is never opened, so nothing " +
-			"of it, even whether it exists, shows in an answer; a hasconfig:remote.*.url: condition " +
-			"in such a file is matched against the remotes the repository's own config sets alone. " +
-			"Values that carry a credential are masked on every surface.",
+		Description: "Every key set in system, global, local or worktree config, one row per file it is set in " +
+			"with its scope, before any of them override another: worktree wins over local, local " +
+			"over global, global over system, and the command scope (GIT_CONFIG_COUNT, " +
+			"GIT_CONFIG_PARAMETERS) over all. Includes are followed as git follows them " +
+			"(include.path, and includeIf on gitdir:, gitdir/i:, onbranch: or " +
+			"hasconfig:remote.*.url:); one this cannot decide is not read, and a warning says so. " +
+			"Over MCP only the repository's own config, local and worktree, is returned, and an " +
+			"include of a file outside the server's roots is not followed: a warning names it and the " +
+			"file is never opened. Values that carry a credential are masked.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},
