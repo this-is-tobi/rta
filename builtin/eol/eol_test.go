@@ -95,6 +95,27 @@ func TestHumanUntilFormatsAPastDateWithoutTheWordExpired(t *testing.T) {
 	}
 }
 
+// A date is read as midnight UTC, so the day it falls on is "today" for all of
+// its 24 hours, beside a status that already says EOL, and the hour before it
+// is counted in minutes: both read "0d ago" and "0h".
+func TestHumanUntilSaysTodayForTheDayItself(t *testing.T) {
+	midnight := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		now  time.Time
+		want string
+	}{
+		{midnight.Add(3 * time.Hour), "today"},
+		{midnight.Add(23*time.Hour + 59*time.Minute), "today"},
+		{midnight.Add(24 * time.Hour), "1d ago"},
+		{midnight.Add(-30 * time.Minute), "30m"},
+		{midnight.Add(-5 * time.Hour), "5h"},
+	} {
+		if got := humanUntil(midnight, c.now); got != c.want {
+			t.Errorf("a date at midnight, seen at %v: %q, want %q", c.now.Format("15:04"), got, c.want)
+		}
+	}
+}
+
 func TestHumanUntilFormatsASameDayFutureInHours(t *testing.T) {
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	if got := humanUntil(now.Add(6*time.Hour), now); got != "6h" {

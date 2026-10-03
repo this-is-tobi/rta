@@ -298,13 +298,25 @@ func eolStatus(r eolapi.Release, warnDays int, now time.Time) string {
 // out, exactly today) is a fixed input a test can hit instead of a race
 // against the clock. Status already says EOL, so unlike cert's version this
 // never prefixes the past case with the word "expired".
+//
+// An end-of-life date is a date, which this reads as midnight UTC: the whole
+// of the day it falls on is "today" rather than "0d ago", beside a status that
+// already says EOL, and the last hour before it counts in minutes rather than
+// reading "0h".
 func humanUntil(t, now time.Time) string {
 	d := t.Sub(now)
 	if d < 0 {
-		return fmt.Sprintf("%dd ago", int(-d.Hours())/24)
+		days := int(-d.Hours()) / 24
+		if days == 0 {
+			return "today"
+		}
+		return fmt.Sprintf("%dd ago", days)
 	}
 	if days := int(d.Hours()) / 24; days > 0 {
 		return fmt.Sprintf("%dd", days)
 	}
-	return fmt.Sprintf("%dh", int(d.Hours()))
+	if hours := int(d.Hours()); hours > 0 {
+		return fmt.Sprintf("%dh", hours)
+	}
+	return fmt.Sprintf("%dm", int(d.Minutes()))
 }
