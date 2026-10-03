@@ -258,6 +258,17 @@ func connectWith(t *testing.T, reg *registry.Registry, opts Options) *sdk.Client
 	return session
 }
 
+// The title a client shows for the server is the project's name, the way the
+// README and the docs title it. It said "Rule Them All" — the acronym RTA
+// stands for, which the README explains once — in a client's server list, where
+// nothing explains it.
+func TestTheServerIsTitledWithTheProjectsName(t *testing.T) {
+	info := connect(t, Options{}).InitializeResult().ServerInfo
+	if info.Name != "rta" || info.Title != "RTA" {
+		t.Errorf("server info = %q titled %q, want rta titled RTA", info.Name, info.Title)
+	}
+}
+
 func listTools(t *testing.T, s *sdk.ClientSession) map[string]*sdk.Tool {
 	t.Helper()
 	res, err := s.ListTools(context.Background(), &sdk.ListToolsParams{})
