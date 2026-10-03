@@ -581,7 +581,7 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	onlyRefused := req.Bool("refused")
 	after := int64(req.Int("after"))
-	since, sinceErr := parseSince(req.String("since"))
+	since, sinceNote, sinceErr := parseSince(req.String("since"))
 	if sinceErr != nil {
 		return nil, sinceErr
 	}
@@ -758,6 +758,9 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		total = len(shown)
 	}
 	table := view.Table{Columns: cols, Rows: rows, Total: total, Tail: true}
+	if sinceNote != "" {
+		table.Warnings = append(table.Warnings, view.Error{Code: "agent.log.since", Message: sinceNote})
+	}
 	// A sentence for a screen, as `agent pending` has: the record's columns
 	// with nothing under them read as a listing that failed, and what a filter
 	// matched nothing of is not the same news as a record with nothing in it.
@@ -1548,25 +1551,44 @@ func clip(line string) string {
 // timestamp when joining this record against another system's. Refused rather
 // than guessed at when it is none of them: a filter that silently matched
 // everything would report an empty record as a quiet one.
-func parseSince(raw string) (time.Time, *view.Error) {
+//
+// **A time of day the clock showed twice or never is said, not picked.** One
+// it never showed (the night the clocks went forward) is refused, as `time at`
+// refuses it: Go moves it an hour on, which drops the calls of the first half
+// hour from an audit filter without a word. One it showed twice (the night they
+// went back) is read as the earlier of the two, the reading that keeps every
+// call the person could have meant, and the second return is the sentence the
+// listing carries to say so and to name the other.
+func parseSince(raw string) (time.Time, string, *view.Error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return time.Time{}, nil
+		return time.Time{}, "", nil
 	}
 	if d, err := time.ParseDuration(raw); err == nil {
 		if d < 0 {
 			d = -d
 		}
-		return time.Now().Add(-d), nil
+		return time.Now().Add(-d), "", nil
 	}
 	if t, ok := timefmt.ParseInstant(raw, time.Local); ok {
-		return t, nil
+		if wall, skipped := timefmt.SkippedWallClock(raw, time.Local); skipped {
+			return time.Time{}, "", view.Errorf("agent.log.since",
+				"%q never showed on this machine's clock — the clocks went forward over it", raw).
+				WithHint("name the instant with an offset (" + timefmt.SkippedExample(wall, t) +
+					"), or write a time the clock did show")
+		}
+		if first, second, twice := timefmt.AmbiguousWallClock(raw, time.Local); twice {
+			return first, fmt.Sprintf("%q is a time the clock showed twice that day: listing from the earlier, %s, "+
+				"and the later one is %s — add an offset to name the one meant",
+				raw, first.Format(time.RFC3339), second.Format(time.RFC3339)), nil
+		}
+		return t, "", nil
 	}
 	if field := timefmt.OutOfRange(raw, time.Local); field != "" {
-		return time.Time{}, view.Errorf("agent.log.since",
+		return time.Time{}, "", view.Errorf("agent.log.since",
 			"%q is written as a date, but its %s is out of range", raw, field).WithHint(timefmt.RangeHint)
 	}
-	return time.Time{}, view.Errorf("agent.log.since",
+	return time.Time{}, "", view.Errorf("agent.log.since",
 		"%q is not a time this understands", raw).
 		WithHint("a duration back from now (`2h`, `15m`), a day (`2026-08-30`), " +
 			"or an exact instant (`2026-08-30T14:00:00Z`)")

@@ -16,6 +16,7 @@ package timefmt
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -120,6 +121,20 @@ func SkippedWallClock(raw string, loc *time.Location) (time.Time, bool) {
 		return typed, typed.Format(wall) != read.Format(wall)
 	}
 	return time.Time{}, false
+}
+
+// SkippedExample is the spelling that names an instant a skipped reading was
+// meant to: the reading as typed (wall, from SkippedWallClock), at the offset
+// in force before the clocks went forward, which is read from half a day
+// before moved, where Go put it. A message offers it so the person can say
+// the instant they meant instead of a time of day that never happened.
+func SkippedExample(wall, moved time.Time) string {
+	_, offset := moved.Add(-12 * time.Hour).Zone()
+	sign := "+"
+	if offset < 0 {
+		sign, offset = "-", -offset
+	}
+	return fmt.Sprintf("%s%s%02d:%02d", wall.Format("2006-01-02T15:04:05"), sign, offset/3600, offset%3600/60)
 }
 
 // AmbiguousWallClock reports whether raw, which ParseInstant read in loc
