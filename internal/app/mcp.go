@@ -552,6 +552,9 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				Untrusted: untrustedNames(),
 				Paths:     guard,
 				Remote:    httpAddr != "",
+				// A signal cancels the calls in flight, which the SDK leaves
+				// running (Options.Shutdown).
+				Shutdown: cmd.Context(),
 			}
 			// A machine that requires a repository policy and finds none
 			// refuses grants already (grant.Ceiling fails closed); the read
@@ -640,10 +643,10 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// taken it away from anything this process launches — it had
 				// to, since plugins are spawned during startup, long before
 				// this runs — so what is left to do is ask for it back.
-				err = server.Run(cmd.Context(), &sdk.IOTransport{
+				err = mcp.Run(cmd.Context(), server, &sdk.IOTransport{
 					Reader: stdio.Real(),
 					Writer: stdio.Writer(cmd.OutOrStdout()),
-				})
+				}, 0, cmd.ErrOrStderr())
 			}
 			// Client hang-up and ctrl-c are clean shutdowns, not failures.
 			// The SDK does not expose a sentinel for the session-closing error

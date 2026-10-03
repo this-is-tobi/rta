@@ -136,6 +136,12 @@ func recordUnknownTools(known map[string]bool, opts Options) sdk.Middleware {
 // can leave nil and lose a check with.
 func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.ToolHandler {
 	return func(ctx context.Context, req *sdk.CallToolRequest) (res *sdk.CallToolResult, err error) {
+		if opts.Shutdown != nil {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithCancel(ctx)
+			defer cancel()
+			defer context.AfterFunc(opts.Shutdown, cancel)()
+		}
 		// Every call is recorded, whatever becomes of it: the
 		// refusals are the half an operator most wants back. The zero
 		// values say "refused before anything could authorize it", which
