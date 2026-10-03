@@ -746,6 +746,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case modeBrowse:
 		before := m.list.Index()
 		m.list, cmd = m.list.Update(msg)
+		// New matches mean a new list: the cursor starts at its top, because
+		// the index it was left at belonged to the catalogue with its section
+		// headers in, and in a filtered list that index is the second match.
+		if _, matched := msg.(list.FilterMatchesMsg); matched {
+			m.list.Select(0)
+			before = 0
+		}
 		// Put the cursor somewhere enter can act on: not a section label, and
 		// not past the end of a list a filter just shortened.
 		m.settleCursor(m.list.Index() >= before)
