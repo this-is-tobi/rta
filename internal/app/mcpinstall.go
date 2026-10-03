@@ -1,8 +1,10 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -305,8 +307,25 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 					// for, and `claude mcp add` printing its own sentence
 					// into it put prose ahead of the json a script had asked
 					// for. A person at a terminal still reads both.
-					run.Stdout, run.Stderr = cmd.ErrOrStderr(), cmd.ErrOrStderr()
+					var clientSaid bytes.Buffer
+					// One writer for both streams, the same value: exec copies
+					// them on a single goroutine only then, and two writing into
+					// the same destination at once is a race.
+					said := io.MultiWriter(cmd.ErrOrStderr(), &clientSaid)
+					run.Stdout, run.Stderr = said, said
 					if err := run.Run(); err != nil {
+						// A refusal because rta is already registered is not a
+						// command that moved on, and the block it was answered
+						// with is the one thing to add twice: the server is
+						// there, and what is left to decide is whether the path
+						// or the name in it is the one wanted.
+						if strings.Contains(strings.ToLower(clientSaid.String()), "already exists") {
+							return renderView(cmd, opts, view.KeyValue{Pairs: []view.Pair{
+								{Key: "already registered", Value: client.label},
+								{Key: "next", Value: "it keeps the path and the name it was registered with — to change either, " +
+									"take it out with " + client.bin + "'s own `mcp remove`, then run this again"},
+							}})
+						}
 						// Not fatal. A client whose command moved on is
 						// exactly when somebody needs the block instead, and
 						// failing here would leave them with nothing.

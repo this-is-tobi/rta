@@ -297,6 +297,31 @@ func TestInstallGlobalPassesClaudesScopeFlag(t *testing.T) {
 	}
 }
 
+// A second install is refused by the client because rta is already there, and
+// was answered "could not register it — here is what to add instead" with a
+// block to paste: a duplicate of the server the client had just said it holds.
+// The client's own words are read, and the answer is that rta is registered and
+// how to change what it was registered with.
+func TestAnAlreadyRegisteredServerIsNotAnsweredWithABlockToAddAgain(t *testing.T) {
+	dir := t.TempDir()
+	script := "#!/bin/sh\necho 'MCP server rta already exists in local config' >&2\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	out, errOut, err := run(t, testRegistry(t), "mcp", "install", "claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "already registered") || !strings.Contains(out, "mcp remove") {
+		t.Errorf("answer = %q, want it to say rta is already registered and how to change it", out)
+	}
+	if strings.Contains(out+errOut, "here is what to add instead") || strings.Contains(out, `"mcpServers"`) {
+		t.Errorf("a server that is already there was answered with a block to add:\n%s\n%s", out, errOut)
+	}
+}
+
 func TestInstallGlobalDryRunPreviewsTheScopeFlag(t *testing.T) {
 	fakeClient(t, "claude", 0)
 	out, _, err := run(t, testRegistry(t), "mcp", "install", "claude", "--global", "--dry-run")
