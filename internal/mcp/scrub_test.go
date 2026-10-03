@@ -60,6 +60,36 @@ func TestAnErrorDoesNotTellAnAgentWhereRtaKeepsItsState(t *testing.T) {
 	}
 }
 
+// A result that says where the store is — kv.status does, for the person who
+// runs it — is named the same way over MCP, since it is the same layout.
+func TestAResultDoesNotTellAnAgentWhereRtaKeepsItsState(t *testing.T) {
+	reg := registry.New()
+	err := reg.Register(plugin.Plugin{
+		Name: "vault", Summary: "vault", Capabilities: []plugin.Capability{{
+			ID: "vault.status", Summary: "where the store is", Safety: plugin.Read,
+			Run: func(context.Context, plugin.Request) (view.View, error) {
+				return view.KeyValue{Pairs: []view.Pair{
+					{Key: "store", Value: filepath.Join(paths.Data(), "kv.age")},
+					{Key: "elsewhere", Value: "/srv/project/kv.age"},
+				}}, nil
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := connectWithData(t, reg, Options{})
+
+	res := callTool(t, s, "vault_status", map[string]any{})
+	text := res.Content[0].(*sdk.TextContent).Text
+	if res.IsError || strings.Contains(text, paths.Data()) {
+		t.Errorf("the result an agent reads names %s: %s", paths.Data(), text)
+	}
+	if !strings.Contains(text, "<data dir>/kv.age") || !strings.Contains(text, "/srv/project/kv.age") {
+		t.Errorf("the store is not named by what it is, or another path was rewritten: %s", text)
+	}
+}
+
 // A place is replaced where it is a path of its own. A data directory called
 // /data is an ordinary choice, and a bare substring would turn /database into
 // <data dir>base and /srv/data/x into /srv<data dir>/x.

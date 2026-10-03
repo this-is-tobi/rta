@@ -1099,7 +1099,11 @@ func nameUnder(root, p string) bool {
 // because the encoder escapes the byte. It was never true against a model,
 // which reads the decoded string.
 func viewResult(v view.View) (*sdk.CallToolResult, error) {
-	m, err := view.ToMap(view.Redact(view.MapStrings(v, textclean.Model)))
+	// The operator's own places are named by what they are in a result as they
+	// are in an error (operatorPaths): kv.status says where the store is, and
+	// that is for the person who runs it.
+	names := operatorNames()
+	m, err := view.ToMap(view.Redact(view.MapStrings(v, func(s string) string { return names(textclean.Model(s)) })))
 	if err != nil {
 		return nil, err
 	}
