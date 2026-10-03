@@ -998,6 +998,28 @@ func TestAllowIsQuietWhenTheOpenServerIsThisBuild(t *testing.T) {
 	}
 }
 
+// A ttl that is no duration is refused in the tool's own words. `--ttl 1d` was
+// `"1d" is not a duration: time: unknown unit "d" in duration "1d"`, Go's own
+// sentence, for the spelling people reach for first, and a day is what a grant
+// lasts at most.
+func TestABadTTLIsRefusedWithoutGoSentenceAndSaysWhatToWrite(t *testing.T) {
+	for _, c := range []struct{ raw, hint string }{
+		{"1d", "write 24h"},
+		{"3d", "write 24h"},
+		{"0.5d", "write 24h"},
+		{"abc", "write it with a unit"},
+		{"90", "write it with a unit"},
+		{"2 hours", "write it with a unit"},
+		{"dd", "write it with a unit"},
+	} {
+		_, _, _, _, verr := parseTTL(plugin.SurfaceCLI, c.raw, "cert.expiry")
+		if verr == nil || verr.Code != "grant.badttl" || strings.Contains(verr.Message, "time:") ||
+			!strings.Contains(verr.Hint, c.hint) {
+			t.Errorf("%q: %+v, want grant.badttl with no Go sentence and a hint saying %q", c.raw, verr, c.hint)
+		}
+	}
+}
+
 // With no agent connected and no grant standing, the refusal to guess whom a
 // grant is for says so truthfully, and names the agents the log has seen. It
 // said "no agent has connected" to an operator whose agent had called an hour

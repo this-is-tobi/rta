@@ -782,8 +782,17 @@ func parseTTL(sf plugin.Surface, raw, target string) (ttl, asked time.Duration, 
 	}
 	parsed, err := time.ParseDuration(raw)
 	if err != nil {
-		return 0, 0, false, "", view.Errorf("grant.badttl", "%q is not a duration: %v", raw, err).
-			WithHint("use a Go duration: 30s, 15m, 2h")
+		// Not Go's own sentence, "time: unknown unit "d" in duration "1d"", and
+		// a hint for the one spelling people reach for first: a day is what a
+		// grant lasts at most, and has no unit of its own here.
+		hint := "write it with a unit: 30s, 15m, 2h"
+		if n, isDays := strings.CutSuffix(raw, "d"); isDays {
+			if _, numErr := strconv.ParseFloat(n, 64); numErr == nil {
+				longest := format.Duration(core.MaxTTL)
+				hint = "there is no day unit, and a grant lasts " + longest + " at most, which is a day: write " + longest
+			}
+		}
+		return 0, 0, false, "", view.Errorf("grant.badttl", "%q is not a duration", raw).WithHint(hint)
 	}
 	if parsed <= 0 {
 		return 0, 0, false, "", view.Errorf("grant.badttl", "a grant must last longer than zero").
