@@ -175,8 +175,8 @@ func codeOf(err error) string {
 func TestAPathThatNamesNoFileIsNotDialledAsAHost(t *testing.T) {
 	for _, target := range []string{"certs/tls.crt", "./nope.pem", "leaf.pem", `C:\certs\a.cer`} {
 		_, err := runInspect(context.Background(), req(map[string]any{"target": target, "timeout": 2}))
-		if code := codeOf(err); code != "cert.target.notahost" || !strings.Contains(err.Error(), "file path") {
-			t.Errorf("%s: %v, want it refused as a file path, not dialled", target, err)
+		if code := codeOf(err); code != "cert.file.notfound" || !strings.Contains(err.Error(), "no certificate file at "+target) {
+			t.Errorf("%s: %v, want it said that there is no such file, and not dialled", target, err)
 		}
 	}
 
