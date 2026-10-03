@@ -1579,7 +1579,7 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 			cmd.Flags().Float64(f.Name, def, usage)
 		case plugin.StringSlice:
 			def, _ := f.Default.([]string)
-			cmd.Flags().StringSlice(f.Name, def, usage)
+			cmd.Flags().Var(newListFlag(def), f.Name, usage)
 		case plugin.SecretSlice:
 			// StringArray, never StringSlice, and this is the same ruling
 			// profileset.go's `--set` already made: StringSlice splits its
@@ -1798,11 +1798,11 @@ func collectValues(cmd *cobra.Command, c plugin.Capability, args []string) (map[
 			}
 			values[f.Name] = v
 		case plugin.StringSlice:
-			v, err := cmd.Flags().GetStringSlice(f.Name)
-			if err != nil {
-				return nil, err
+			list, ok := cmd.Flags().Lookup(f.Name).Value.(*listFlag)
+			if !ok {
+				return nil, fmt.Errorf("flag --%s is not a list", f.Name)
 			}
-			values[f.Name] = v
+			values[f.Name] = list.GetSlice()
 		case plugin.SecretSlice:
 			// Declared as a StringArray above, so it must be read back as
 			// one: GetStringSlice on an array flag returns an error rather
