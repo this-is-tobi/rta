@@ -1070,3 +1070,19 @@ func TestTheProfilePanesDrawWhatTheFileSaysClean(t *testing.T) {
 		t.Errorf("a form box's note quoted the reference raw: %q", note)
 	}
 }
+
+// A profile just made is the one the cursor is on. The list is sorted, so a
+// new name lands wherever it falls and the cursor stayed on the row it was on:
+// enter, the next step of making an environment useful, then opened another.
+func TestTheCursorFollowsAProfileJustSaved(t *testing.T) {
+	m := profileModel(t, twoProfileConfig())
+	m.profileSel = 0
+	next, _ := m.startProfileForm("")
+	nm := next.(Model)
+	*nm.form.bindings[profileNameField] = "zeta"
+	saved, _ := nm.saveProfileForm()
+	sm := saved.(Model)
+	if sm.profileSel >= len(sm.profiles) || sm.profiles[sm.profileSel].name != "zeta" {
+		t.Errorf("the cursor is on row %d of %d, not on zeta", sm.profileSel, len(sm.profiles))
+	}
+}
