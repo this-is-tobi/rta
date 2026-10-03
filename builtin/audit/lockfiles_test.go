@@ -417,7 +417,7 @@ func TestBinaryBunLockfileIsAFindingNotASilence(t *testing.T) {
 	// An empty filesystem on purpose: the refusal has to happen before the
 	// read, since nothing here can parse a binary lockfile and pulling one
 	// into memory only makes the failure slower.
-	_, _, err := parseManifest(fstest.MapFS{}, "bun.lockb", "bun.lockb")
+	_, _, _, err := parseManifest(fstest.MapFS{}, "bun.lockb", "bun.lockb")
 	if err == nil {
 		t.Fatal("bun.lockb must not read as an empty dependency list")
 	}
