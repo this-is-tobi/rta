@@ -320,6 +320,33 @@ func profileCompletions(instances bool) []cobra.Completion {
 	return out
 }
 
+// checkUseWindow refuses a --for that would be dropped. The flag was read only
+// in the branch that switches a profile on, and as "unset" whenever it was not
+// positive, so `rta use --for 2h` printed what was on and said nothing of the
+// two hours, and `rta use staging --for -5m` — or `--for 0` — switched staging
+// on with no deadline at all, the one answer a person typing a deadline did not
+// ask for. A deadline that is not applied is worse than one that is refused.
+func checkUseWindow(cmd *cobra.Command, args []string, off bool, window time.Duration) *view.Error {
+	if !cmd.Flags().Changed("for") {
+		return nil
+	}
+	switch {
+	case off:
+		return &view.Error{Code: CodeUsage, Message: "--off and --for say two different things",
+			Hint: "--off ends a switch and --for sets the end of one; drop either"}
+	case len(args) == 0:
+		return &view.Error{Code: CodeUsage,
+			Message: "--for gives a switch its deadline, and no profile was named to switch to",
+			Hint:    "`rta use <profile> --for 2h` switches it on until then"}
+	case window <= 0:
+		return &view.Error{Code: CodeUsage,
+			Message: "--for " + window.String() + " would end the switch before it began",
+			Hint: "give a length of time — `30m`, `2h` — or leave --for off for the profile's own " +
+				"ttl, or none"}
+	}
+	return nil
+}
+
 func runUse(cmd *cobra.Command, args []string, dryRun bool) (view.View, *view.Error) {
 	cfg, err := config.Load()
 	if err != nil {
@@ -327,6 +354,9 @@ func runUse(cmd *cobra.Command, args []string, dryRun bool) (view.View, *view.Er
 	}
 	off, _ := cmd.Flags().GetBool("off")
 	window, _ := cmd.Flags().GetDuration("for")
+	if verr := checkUseWindow(cmd, args, off, window); verr != nil {
+		return nil, verr
+	}
 	now := time.Now()
 
 	switch {
