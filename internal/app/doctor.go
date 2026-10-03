@@ -341,6 +341,7 @@ func doctorReport(reg *registry.Registry) view.View {
 	doctorLoadedPlugins(add)
 	doctorUntrustedPlugins(add)
 	doctorRecord(add)
+	doctorSelection(add)
 	doctorConsent(add)
 	doctorManagedPlugins(add)
 	doctorSystemPlugins(add)
@@ -1191,6 +1192,17 @@ func doctorRecord(add func(check, status, detail string)) {
 			add("agent log", "error", fmt.Sprintf(
 				"the record of agent calls cannot be written: %v — a call that needs a grant is refused until it can, and the rest are not recorded", err))
 		}
+	}
+}
+
+// doctorSelection says when the file that records which environment is switched
+// on cannot be believed. The agents' fence is held shut while it is (every
+// grant naming a profile stops covering a call), which looks, from an agent,
+// like grants that stopped working; here it is named, with the way out.
+func doctorSelection(add func(check, status, detail string)) {
+	if _, err := profile.ReadSelection(); err != nil {
+		add("profile selection", "error", err.Error()+" — every profile is refused to agents until it is "+
+			"written again: `rta use <profile>` to switch one on, `rta use --off` for none")
 	}
 }
 
