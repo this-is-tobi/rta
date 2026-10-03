@@ -16,6 +16,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math/big"
 	"net"
 	"os"
@@ -229,8 +230,19 @@ func loadCerts(ctx context.Context, req plugin.Request, target string, timeout t
 	// is cert.expiry's, which needs a grant.
 	if req.Surface() == plugin.SurfaceMCP {
 		return nil, nil, view.Errorf("cert.file.notfound", "no certificate file at %s", target).
-			WithHint("over MCP this reads a PEM file under the server's roots and dials no host; " +
+			WithHint("over MCP this reads a PEM or DER file under the server's roots and dials no host; " +
 				"cert.expiry checks a live host, with a grant")
+	}
+	// A target that can only be a path, and is not a file: said so, as what
+	// the reader typed it as. The dial would refuse it as a path, which is
+	// right for cert.expiry, that reads no file, and no help to somebody who
+	// mistyped one: "is a file path, not a host" to a person who knows it is.
+	if looksLikeFile(target) {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil, view.Errorf("cert.file.notfound", "no certificate file at %s", target).
+				WithHint("name a PEM or DER file that exists, or a host[:port] to connect to")
+		}
+		return nil, nil, view.Errorf("cert.file.unreadable", "reading %s: %v", target, err)
 	}
 	return dialCerts(ctx, target, timeout)
 }
