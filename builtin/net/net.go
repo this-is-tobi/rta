@@ -707,8 +707,14 @@ func parsePorts(spec string) ([]int, error) {
 				return nil, fmt.Errorf("invalid range %q", part)
 			}
 		}
-		if start < 1 || end > 65535 || end < start {
-			return nil, fmt.Errorf("port range %q out of bounds", part)
+		// Two different mistakes, two sentences. "Out of bounds" for a range
+		// typed high to low (`8010-8000`) sent the reader to check numbers
+		// that are all valid ports.
+		switch {
+		case end < start:
+			return nil, fmt.Errorf("port range %q runs backwards — write it low-high", part)
+		case start < 1 || end > 65535:
+			return nil, fmt.Errorf("%q is not within the ports 1 to 65535", part)
 		}
 		expanded += end - start + 1
 		if expanded > maxScanPorts {

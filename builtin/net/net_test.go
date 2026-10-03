@@ -106,6 +106,23 @@ func TestEveryCallerChosenDestinationNeedsAGrantScopedToItself(t *testing.T) {
 	}
 }
 
+// A reversed range is a different mistake from a port that does not exist, and
+// both used to be "out of bounds": `8010-8000` is two valid ports in the wrong
+// order, and the sentence sent the reader to check the numbers.
+func TestParsePortsSaysWhichWayAnInvalidRangeIsWrong(t *testing.T) {
+	for spec, want := range map[string]string{
+		"8010-8000": "runs backwards",
+		"0":         "not within the ports 1 to 65535",
+		"70000":     "not within the ports 1 to 65535",
+		"1-70000":   "not within the ports 1 to 65535",
+	} {
+		_, err := parsePorts(spec)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("parsePorts(%q) = %v, want an error saying %q", spec, err, want)
+		}
+	}
+}
+
 func TestParsePorts(t *testing.T) {
 	tests := []struct {
 		spec    string
