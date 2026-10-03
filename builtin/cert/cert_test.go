@@ -206,6 +206,22 @@ func TestTLSRejectsFileTarget(t *testing.T) {
 	}
 }
 
+// Over MCP a host is never dialled, so "pass host[:port] instead" sends an
+// agent from one refusal to the next: it is told what does report a host's
+// handshake there.
+func TestTLSOfAFileOverMCPSendsAnAgentToTheProbe(t *testing.T) {
+	_, pemPath := startTLS(t)
+	_, err := runTLS(context.Background(), req(map[string]any{"target": pemPath}).WithSurface(plugin.SurfaceMCP))
+	ve := view.AsError(err, "x")
+	if want := "the `net_probe` tool with `tls`"; ve.Code != "cert.tls.filetarget" || !strings.Contains(ve.Hint, want) {
+		t.Errorf("over MCP: %s %q, want a hint naming %s", ve.Code, ve.Hint, want)
+	}
+	_, err = runTLS(context.Background(), req(map[string]any{"target": pemPath}).WithSurface(plugin.SurfaceCLI))
+	if ve := view.AsError(err, "x"); ve.Hint != "pass host[:port] instead" {
+		t.Errorf("at a terminal: %q, want the host to be passed instead", ve.Hint)
+	}
+}
+
 // cert.inspect/chain/pem/tls carry no NeedsGrant, unlike cert.expiry and
 // net.probe/net.port, because today they do not need it: targetField's
 // pathguard.Check step (see Plugin()'s comment on targetField) rewrites a
