@@ -232,8 +232,9 @@ func TestCSVNeutralizesFormulaTriggerCells(t *testing.T) {
 		Columns: []view.Column{{Name: "=cmd"}, {Name: "note"}},
 		Rows: [][]string{
 			{"=cmd|' /C calc'!A0", "ok"},
-			{"+1+1", "ok"},
-			{"-1+1", "ok"},
+			{"+HYPERLINK(\"http://x\",\"y\")", "ok"},
+			{"-2+cmd|' /C calc'!A0", "ok"},
+			{"\t=1+1", "ok"},
 			{"@SUM(A1:A2)", "ok"},
 			{"alpha", "hello, world"},
 		},
@@ -246,8 +247,9 @@ func TestCSVNeutralizesFormulaTriggerCells(t *testing.T) {
 	want := [][]string{
 		{"'=cmd", "note"},
 		{"'=cmd|' /C calc'!A0", "ok"},
-		{"'+1+1", "ok"},
-		{"'-1+1", "ok"},
+		{"'+HYPERLINK(\"http://x\",\"y\")", "ok"},
+		{"'-2+cmd|' /C calc'!A0", "ok"},
+		{"'\t=1+1", "ok"},
 		{"'@SUM(A1:A2)", "ok"},
 		// An ordinary cell, including one whose standard CSV quoting (the
 		// comma) has nothing to do with formula triggers, must round-trip
@@ -262,6 +264,31 @@ func TestCSVNeutralizesFormulaTriggerCells(t *testing.T) {
 			if rows[i][j] != want[i][j] {
 				t.Errorf("row %d col %d = %q, want %q", i, j, rows[i][j], want[i][j])
 			}
+		}
+	}
+}
+
+// The guard stops at what can run. A lone "-" placeholder, a negative number
+// and a force-update refspec cannot call a function, reach another file or
+// run a command, so a prefix on them only turned a value a script reads into
+// text it had to strip.
+func TestCSVLeavesInertSignedCellsAlone(t *testing.T) {
+	for cell, want := range map[string]string{
+		"-":                                   "-",
+		"-12":                                 "-12",
+		"+3.5":                                "+3.5",
+		"-1.5e-3":                             "-1.5e-3",
+		"+refs/heads/*:refs/remotes/origin/*": "+refs/heads/*:refs/remotes/origin/*",
+		"-5 MB":                               "'-5 MB",
+		"-SUM(A1:A2)":                         "'-SUM(A1:A2)",
+		"+A1|B1":                              "'+A1|B1",
+		"+'x.xlsx'!A1":                        "'+'x.xlsx'!A1",
+		"=1":                                  "'=1",
+		"=-":                                  "'=-",
+		"@A1":                                 "'@A1",
+	} {
+		if got := csvSafeCell(cell); got != want {
+			t.Errorf("csvSafeCell(%q) = %q, want %q", cell, got, want)
 		}
 	}
 }
