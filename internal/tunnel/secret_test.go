@@ -101,8 +101,13 @@ func TestSecretFailuresAreClassified(t *testing.T) {
 		{"kubectl said nothing",
 			`exit 1`,
 			"tunnel.secret.unreadable"},
-		{"something else entirely",
+		// A cluster that did not answer is not an unreadable secret; it is
+		// the cluster, and says so (TestAClusterThatDidNotAnswerIsToldAsThat).
+		{"the cluster did not answer",
 			`echo 'Unable to connect to the server: dial tcp: i/o timeout' >&2; exit 1`,
+			"tunnel.cluster.unreachable"},
+		{"something else entirely",
+			`echo 'error: something nobody has seen before' >&2; exit 1`,
 			"tunnel.secret.unreadable"},
 		{"not json",
 			`echo 'not json at all'`,

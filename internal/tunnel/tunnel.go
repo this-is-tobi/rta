@@ -476,6 +476,9 @@ func kubectlFailed(name, spec, stderr string) *view.Error {
 		return view.Errorf("tunnel.unauthenticated",
 			"profile %q: this cluster does not know who you are", name).
 			WithHint(loginHint(spec))
+	case clusterUnreachable(s) != "":
+		kubeContext, _, _ := strings.Cut(spec, "/")
+		return clusterUnreachableError(name, s, "kubectl --context "+kubeContext+" get namespaces")
 	case strings.Contains(s, "forbidden"):
 		return view.Errorf("tunnel.denied", "%s: not allowed to port-forward there", name).
 			WithHint("this is the cluster refusing, not rta — you are authenticated, and the " +
@@ -525,6 +528,60 @@ func credentialMissing(subject, exe string) *view.Error {
 	return view.Errorf("tunnel.credential.missing",
 		"%s: %s, the context's credential plugin, is not installed", subject, exe).
 		WithHint("the kubeconfig's exec block for this context names it — install it, or put it on PATH")
+}
+
+var (
+	// apiServerURL is the API server in the current spelling of a kubectl
+	// failure: the scheme and the host, up to the first path or query.
+	apiServerURL = regexp.MustCompile(`https?://[^\s"\\/?]+`)
+	// dialedAddress is the same server in the old one, which names only the
+	// address the dial went to.
+	dialedAddress = regexp.MustCompile(`dial tcp (\S+?):\s`)
+)
+
+// clusterUnreachableError is the refusal for a cluster that did not answer, for
+// the forward and the secret read alike. byHand is the command that fails the
+// same way outside rta.
+//
+// The ssh side has said this since it was written (tunnel.bastion.unreachable).
+// A cluster that did not answer reached the person as a klog line instead — a
+// timestamp, a process id and a source file around the one clause that matters.
+func clusterUnreachableError(name, stderr, byHand string) *view.Error {
+	at := ""
+	if server := apiServerAddress(stderr); server != "" {
+		at = " at " + server
+	}
+	return view.Errorf("tunnel.cluster.unreachable", "profile %q: the cluster%s cannot be reached — %s",
+		name, at, clusterUnreachable(stderr)).
+		WithHint("the network, a VPN or the cluster itself, not rta — `" + byHand + "` fails the same way by hand")
+}
+
+// apiServerAddress is where kubectl was dialling when it failed, or "".
+func apiServerAddress(stderr string) string {
+	if url := apiServerURL.FindString(stderr); url != "" {
+		return url
+	}
+	if m := dialedAddress.FindStringSubmatch(stderr); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// unreachableWhy is how a dial that never connected says so, in the words
+// Go's net package and kubectl's own transport use for it.
+var unreachableWhy = regexp.MustCompile(
+	`connection refused|i/o timeout|no such host|no route to host|network is unreachable|TLS handshake timeout|context deadline exceeded`)
+
+// clusterUnreachable is why kubectl could not reach the API server, in the
+// words it used, or "" when its stderr is not about that. The two spellings of
+// it are the old one, "Unable to connect to the server: …", and the current
+// one, a klog line about failing to discover the API groups with the dial
+// error inside it; both carry the reason itself.
+func clusterUnreachable(stderr string) string {
+	if !strings.Contains(stderr, "dial tcp") && !strings.Contains(stderr, "Unable to connect to the server") {
+		return ""
+	}
+	return unreachableWhy.FindString(stderr)
 }
 
 // notAuthenticated reports whether kubectl's stderr is about identity rather
