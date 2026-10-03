@@ -4,7 +4,7 @@
 rta
 ```
 
-Bare `rta` on a terminal opens the interactive shell. In a pipe it prints help instead, so a script never hangs on an interface nobody can see.
+Bare `rta` on a terminal opens the interactive shell. In a pipe it prints help instead, so a script never hangs on an interface nobody can see, and so does a terminal that says `TERM=dumb`, which cannot redraw a screen in place.
 
 It is the same capabilities as the CLI — the same declarations, the same safety classes, the same results. What changes is that you can browse them, fill inputs in a form, and see a table you can walk through.
 

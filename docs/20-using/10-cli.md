@@ -203,7 +203,7 @@ The second line is the one that matters: it is how a credential another command 
 - **Be explicit about format.** `-o json` or `RTA_OUTPUT=json`.
 - **Match error codes, not messages.**
 - **`3` is not a failure.** It is a question you did not answer.
-- **Bare `rta` in a pipe prints help** rather than opening the TUI, so a script never hangs on an invisible interface.
+- **Bare `rta` in a pipe, or on a `TERM=dumb` terminal, prints help** rather than opening the TUI, so a script never hangs on an invisible interface and a terminal that cannot move the cursor is never handed one.
 - **`--no-color` is honoured**, and colour is already suppressed when stdout is not a terminal.
 - **Pretty output takes `COLUMNS` when it is set**, over the terminal's own width and through a pipe too: `COLUMNS=100 rta doctor | less`. Without it a pipe gets every table at its natural width, which does not depend on whose window ran the command. With it a pipe is shaped as a terminal that wide would be, so a value longer than the width — a token, a hash — is broken across lines there too; a script reads values from `-o json`, never from the pretty layout.
 - **Setup itself is scriptable.** `rta profile set` and `rta policy` state an environment and a ceiling from flags, and `rta dashboard add` puts a tile on the TUI's landing screen, all idempotent, so provisioning does not have to fall back to writing YAML by hand — see [Profiles](./40-profiles.md#writing-one-from-a-script) and [The TUI](./20-tui.md#stating-the-dashboard-yourself).
