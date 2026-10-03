@@ -973,7 +973,7 @@
   },
   {
     "name": "git_overview",
-    "description": "── the text below is written by the plugin, not by rta ──\nBranch, working-tree state and the latest commit, at a glance\n\nA one-line answer to \"what state is this repository in\": which branch is checked out (or that HEAD is detached), whether the working tree is clean, and the latest commit. With `detail` (and on any full-page surface) it expands into the same status, log and branches views their own capabilities return — one shape, not a second implementation of each. The working tree is read as git_status reads it, and past its two seconds the overview is refused as git.status.timeout.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "── the text below is written by the plugin, not by rta ──\nBranch, working-tree state and the latest commit, at a glance\n\nA one-line answer to \"what state is this repository in\": which branch is checked out (or that HEAD is detached), whether the working tree is clean, and the latest commit. With `detail` it expands into the same status, log and branches views their own capabilities return — one shape, not a second implementation of each. The working tree is read as git_status reads it, and past its two seconds the overview is refused as git.status.timeout.\n── end of plugin-written text ──\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1529,7 +1529,7 @@
   },
   {
     "name": "kv_show",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow everything about one entry except its value\n\nThe detail page for a stored key: what kind of thing it is, what it is for, how big it is, where it came from and when it changed. Deliberately not the value — that is `kv_get` (prints it) or `kv.copy` (does not), both writes for exactly that reason. This stays Read because everything on it is metadata you can safely put on a screen.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow everything about one entry except its value\n\nThe detail page for a stored key: what kind of thing it is, what it is for, how big it is, where it came from and when it changed. Deliberately not the value — that is `kv_get`, a write for exactly that reason. This stays Read because everything on it is metadata.\n── end of plugin-written text ──\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2298,7 +2298,7 @@
   },
   {
     "name": "sys_overview",
-    "description": "── the text below is written by the plugin, not by rta ──\nOne-screen host health: cpu, memory, load, disk, uptime\n\nA dense one-line-per-subsystem summary. With `detail` (and on any full-page surface) it expands into a full report: identity, per-core usage, memory and swap breakdown, every filesystem, sensors and top processes. Lines a platform cannot provide are omitted rather than failing the view.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "── the text below is written by the plugin, not by rta ──\nOne-screen host health: cpu, memory, load, disk, uptime\n\nA dense one-line-per-subsystem summary. With `detail` it expands into a full report: identity, per-core usage, memory and swap breakdown, every filesystem, sensors and top processes. Lines a platform cannot provide are omitted rather than failing the view.\n── end of plugin-written text ──\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {

@@ -31,7 +31,8 @@ const (
 // what happens from a terminal. Where a capability behaves differently over
 // MCP the text says that, and says it once.
 var terminalWording = regexp.MustCompile("(?i)\\bfrom a terminal\\b|\\b(?:at|on) (?:a|the) terminal\\b|" +
-	"\\bon the CLI\\b|\\bread from a pipe\\b|\\bpiping\\b|\\bshell history\\b|`rta ")
+	"\\bon the CLI\\b|\\bread from a pipe\\b|\\bpiping\\b|\\bshell history\\b|`rta |" +
+	"\\bfull-page surface\\b|\\bdashboard\\b|\\btile\\b")
 
 func TestNoToolSpeaksToAPersonAtACommandLine(t *testing.T) {
 	for _, tl := range surface(t, mcp.Options{}) {

@@ -331,9 +331,8 @@ func Plugin() plugin.Plugin {
 				Safety: plugin.Read, Idempotent: true,
 				Description: "The detail page for a stored key: what kind of thing it is, what it is " +
 					"for, how big it is, where it came from and when it changed. Deliberately not the " +
-					"value — that is `kv.get` (prints it) or `kv.copy` (does not), both writes for " +
-					"exactly that reason. This stays Read because everything on it is metadata you " +
-					"can safely put on a screen.",
+					"value — that is `kv.get`, a write for exactly that reason. This stays Read " +
+					"because everything on it is metadata.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to describe",
 						Suggest: suggestKeys},
