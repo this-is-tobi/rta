@@ -673,7 +673,7 @@ func TestABadRateIsRefusedWithTheFormatItWanted(t *testing.T) {
 		{"-1/1h", "positive"},
 		{"10/soon", "the window has to be a duration"},
 		{"10/0s", "the window has to be a duration"},
-		{"10/48h", "--max-uses 10 in disguise"},
+		{"10/48h", "longer than the 24h a grant can live is --max-uses 10 in disguise"},
 		{"100000/1h", "the most rta will pace"},
 		{"10 per hour/1h", "the number of calls has to be a positive whole number"},
 	} {
@@ -687,8 +687,8 @@ func TestABadRateIsRefusedWithTheFormatItWanted(t *testing.T) {
 			t.Errorf("--rate %q refused with %v", tc.in, err)
 			continue
 		}
-		if !strings.Contains(ve.Message, tc.says) {
-			t.Errorf("--rate %q said %q, want it to name %q", tc.in, ve.Message, tc.says)
+		if !strings.Contains(ve.Message, tc.says) || strings.Contains(ve.Message, "0m0s") {
+			t.Errorf("--rate %q said %q, want it to name %q, a duration as it is typed", tc.in, ve.Message, tc.says)
 		}
 		if !strings.Contains(ve.Hint, "calls/window") {
 			t.Errorf("--rate %q did not say the format: %q", tc.in, ve.Hint)
