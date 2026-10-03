@@ -71,3 +71,27 @@ func TestABarThatDroppedKeysStillOffersHelp(t *testing.T) {
 		}
 	}
 }
+
+// While the filter box holds the keyboard the bar names what the box answers.
+// It went on offering "q quit", "/ filter" and "esc back" over a box where q
+// and / are letters of the query and esc clears it instead of leaving.
+func TestTheCatalogueBarNamesWhatTheFilterBoxAnswers(t *testing.T) {
+	m, _ := realModel(t, 100, 30)
+	m.mode = modeBrowse
+	m = press(t, m, "/")
+	bar := footerOf(m.browseView(), footerMaxLines)
+	for _, want := range []string{"esc clear", "enter apply", "ctrl+c quit"} {
+		if !strings.Contains(bar, want) {
+			t.Errorf("the bar over the filter box lacks %q:\n%s", want, bar)
+		}
+	}
+	for _, gone := range []string{"q quit", "/ filter", "esc back", "? help"} {
+		if strings.Contains(bar, gone) {
+			t.Errorf("the bar over the filter box still offers %q:\n%s", gone, bar)
+		}
+	}
+
+	if m = press(t, m, "q"); m.mode != modeBrowse || m.list.FilterValue() != "q" {
+		t.Errorf("q while filtering did not type into the box: mode %v, query %q", m.mode, m.list.FilterValue())
+	}
+}
