@@ -2,7 +2,7 @@
 
 rta is an MCP server over stdio, so anything that speaks MCP can use it. This chapter is the per-client detail: where each one keeps its configuration, what `rta mcp install` will and will not do for it, and how to check afterwards that it actually worked.
 
-If you only read one thing, read this: **the `--as` name is the whole point.** Without it every MCP client on your machine is one principal, so consent you give while talking to one follows all the others. `rta mcp install` always passes it, and the default is the client's own name.
+If you only read one thing, read this: **the `--as` name is the whole point.** Grants are issued to it and a lock freezes it, so consent you give while talking to one client does not follow the others, and `rta mcp serve` refuses to start without one — a server with no name would be a principal nothing could be issued to or frozen by. `rta mcp install` always passes it, and the default is the client's own name.
 
 ## The short version
 

@@ -25,8 +25,8 @@ client  Cursor
 add to  ~/.cursor/mcp.json (or .cursor/mcp.json for one project)
 as      cursor
 next    add the block to that file yourself — rta writes nothing there. The `--as cursor` in it
-        is what keeps this agent's grants its own: without a name, every MCP client on this
-        machine shares one set of permissions
+        names this agent: grants are issued to that name, so one issued for another client
+        does not reach it, and `rta lock add cursor` freezes it
 
 {
   "mcpServers": {
@@ -80,8 +80,8 @@ You will see both in the record: the agent name plainly, the client's self-repor
 | `destructive` | a grant a person issued |
 
 ```bash
-rta grant allow note --ttl 30m           # every write in the note plugin, for half an hour
-rta grant allow note.rm --ttl 5m         # one destructive capability, for five minutes
+rta grant allow note --agent claude --ttl 30m   # every write in the note plugin, for half an hour
+rta grant allow note.rm --agent claude --ttl 5m # one destructive capability, for five minutes
 ```
 
 **One gate, and a grant is it.** There used to be a second: `--allow-write` and `--allow-destructive` switches on `rta mcp serve`, decided once at startup for every call the server would ever make. Two vocabularies competing to answer one question is what made the quickstart's own grant do nothing — the grant was issued, correctly, for a capability the server had never exposed, and the agent was told the tool did not exist. Whichever gate you had learned about, the other one was the one refusing you.

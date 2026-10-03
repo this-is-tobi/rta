@@ -441,6 +441,6 @@ func describeClient(c mcpClient, self, as string, global bool) view.KeyValue {
 	}
 	return view.KeyValue{Pairs: append(pairs, view.Pair{Key: "next",
 		Value: "add the block to that file yourself — rta writes nothing there. The `--as " + as +
-			"` in it is what keeps this agent's grants its own: without a name, every MCP client " +
-			"on this machine shares one set of permissions"})}
+			"` in it names this agent: grants are issued to that name, so one issued for another " +
+			"client does not reach it, and `rta lock add " + as + "` freezes it"})}
 }
