@@ -1121,9 +1121,13 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// "allowed" on the operator's screen and "refused" on the agent's is
 	// the one disagreement between the two that nothing else explains.
 	if l, _ := lockdown.NewPin().Frozen(lockdown.KindAgent, r.Agent); l != nil {
-		pairs = append(pairs, view.Pair{Key: "but", Value: fmt.Sprintf(
-			"agent %s is locked, so the call is refused anyway until `%s`", r.Agent,
-			req.Surface().Call("lock.rm", plugin.Arg{Name: "name", Value: r.Agent, Positional: true}))})
+		but := fmt.Sprintf("agent %s is locked, so the call is refused anyway until `%s`", r.Agent,
+			req.Surface().Call("lock.rm", plugin.Arg{Name: "name", Value: r.Agent, Positional: true}))
+		if l.Held() {
+			but = fmt.Sprintf("the locks rta keeps cannot be read or do not verify, so the call is refused anyway until `%s` "+
+				"has been looked at", req.Surface().Call("lock.list"))
+		}
+		pairs = append(pairs, view.Pair{Key: "but", Value: but})
 	}
 	if ttl != "" {
 		note, verr := "", unissued

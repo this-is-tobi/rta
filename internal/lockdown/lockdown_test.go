@@ -181,12 +181,86 @@ func TestATamperedFileFailsClosedAndIsNotBuiltUpon(t *testing.T) {
 	if verr := Add(Lock{Kind: KindAgent, Name: "other", At: time.Now()}); verr == nil || verr.Code != "core.lock.forged" {
 		t.Fatalf("Add built on a tampered file: %v", verr)
 	}
-	// A fresh process that never saw the good file: nothing to hold — the
-	// corrupt bytes must not become locks — but the corruption is still an
-	// alarm, because a rewritten trust file is worth a stderr line whoever
-	// restarts on top of it.
-	if l, alarm := NewPin().Frozen(KindAgent, "claude"); l != nil || alarm == "" {
-		t.Fatalf("a fresh pin over a corrupt file: lock=%+v alarm=%q — want no lock, an alarm", l, alarm)
+	// A fresh process that never saw the good file has nothing to hold, and
+	// the corrupt bytes must not become locks; the corruption is an alarm,
+	// and it holds everybody (TestAProcessWithNothingVerifiedHoldsEveryone).
+	if l, alarm := NewPin().Frozen(KindAgent, "claude"); !held(l) || alarm == "" {
+		t.Fatalf("a fresh pin over a corrupt file: lock=%+v alarm=%q — want it held, with an alarm", l, alarm)
+	}
+}
+
+// held reports that l is what a process with nothing verified holds a
+// principal to, which is a refusal of its own (core.lock.unverified).
+func held(l *Lock) bool { return l != nil && Refusal(l).Code == "core.lock.unverified" }
+
+// A server started after the lock file had been written over served the very
+// agent the lock was aimed at, with a line on a stderr nobody reads: a
+// restart is what a client does at every session, so an edit undid the lock
+// as a deletion cannot (TestDeletingTheFileIsNotAnUnlock). The file is there
+// and is not rta's, so a process with no verified set to hold lets no
+// principal through, as the grant store lets nothing through on a file it
+// cannot trust; who the lock was for cannot be read from it.
+func TestAProcessWithNothingVerifiedHoldsEveryone(t *testing.T) {
+	fresh(t)
+	mustAdd(t, "agent", "claude", "runaway loop", "")
+	if err := os.WriteFile(Path(), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := NewPin()
+	for _, who := range []string{"claude", "somebody-else"} {
+		l, alarm := p.Check(who, "")
+		if l == nil {
+			t.Fatalf("%s was let through by a process that cannot verify its locks", who)
+		}
+		if who == "claude" && alarm == "" {
+			t.Error("the corrupt file raised no alarm")
+		}
+		verr := Refusal(l)
+		if verr.Code != "core.lock.unverified" {
+			t.Errorf("the refusal is %q, want core.lock.unverified: %s", verr.Code, verr.Message)
+		}
+		if strings.Contains(verr.Message, "locked") && !strings.Contains(verr.Message, "locks rta keeps") {
+			t.Errorf("%q says a lock was placed, and none was", verr.Message)
+		}
+	}
+	if l, _ := p.Frozen(KindOperator, "dash"); !held(l) {
+		t.Errorf("an operator was let through: %+v", l)
+	}
+	if l, _ := p.Check("claude", "some-token"); l == nil {
+		t.Error("a credential was let through")
+	}
+
+	// It is the file that decides, every call: put right, nobody is held.
+	if err := os.Remove(Path()); err != nil {
+		t.Fatal(err)
+	}
+	mustAdd(t, "agent", "claude", "", "")
+	if l, _ := p.Check("somebody-else", ""); l != nil {
+		t.Errorf("a file that verifies again still holds everybody: %+v", l)
+	}
+	if l, _ := p.Check("claude", ""); l == nil || held(l) {
+		t.Errorf("claude's own lock did not take over: %+v", l)
+	}
+}
+
+// What a process verified is held in the file's place, as before, and holds
+// only those it was verified for: a process that saw the locks has nothing to
+// guess at.
+func TestAProcessThatSawTheLocksHoldsThoseAndNobodyElse(t *testing.T) {
+	fresh(t)
+	mustAdd(t, "agent", "claude", "", "")
+	p := NewPin()
+	if l, _ := p.Check("claude", ""); l == nil {
+		t.Fatal("the lock did not take")
+	}
+	if err := os.WriteFile(Path(), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := p.Check("claude", ""); l == nil || held(l) {
+		t.Errorf("the verified lock was not held over a corrupt file: %+v", l)
+	}
+	if l, _ := p.Check("somebody-else", ""); l != nil {
+		t.Errorf("a process that saw the locks held somebody it never saw locked: %+v", l)
 	}
 }
 

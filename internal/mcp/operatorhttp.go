@@ -206,13 +206,19 @@ func (h *operatorHandler) answer(env operator.Envelope, id operator.Identity,
 			h.logf("%s", alarm)
 		}
 		if l != nil {
-			msg := "this operator key is locked on this server"
-			if l.Note != "" {
-				msg += ": " + l.Note
+			// A lock nobody placed (Lock.Held) is not one another operator can
+			// lift: it is the lock file that does not verify, which only
+			// the person at the machine can look at.
+			verr := lockdown.Refusal(l)
+			if !l.Held() {
+				msg := "this operator key is locked on this server"
+				if l.Note != "" {
+					msg += ": " + l.Note
+				}
+				verr = view.Errorf("core.lock.operator", "%s", msg).
+					WithHint("another full operator lifts it with `rta lock rm operator " + label +
+						" --server <this server>`, or a person at the machine runs it directly")
 			}
-			verr := view.Errorf("core.lock.operator", "%s", msg).
-				WithHint("another full operator lifts it with `rta lock rm operator " + label +
-					" --server <this server>`, or a person at the machine runs it directly")
 			refusedBy(rec, verr)
 			return http.StatusForbidden, errorBody{Error: verr}
 		}

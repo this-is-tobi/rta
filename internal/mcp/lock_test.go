@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -45,6 +46,33 @@ func TestALockedAgentIsRefusedEverythingUntilLifted(t *testing.T) {
 	}
 	if res := callTool(t, s, "demo_item_list", map[string]any{"name": "x"}); res.IsError {
 		t.Fatalf("the lifted lock still refuses: %s", res.Content[0].(*sdk.TextContent).Text)
+	}
+}
+
+// A client starts a fresh server at every session, so a lock file written
+// over after the lock was placed was an unlock for the next one: the pin had
+// no verified set to hold and served the agent it was aimed at, with a line on
+// a stderr nobody reads. Nothing is let through until the file verifies.
+func TestAServerStartedOverACorruptLockFileRefusesEveryCall(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	l, verr := lockdown.Build("agent", "claude", "runaway loop", "", "terminal")
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := lockdown.Add(l); verr != nil {
+		t.Fatal(verr)
+	}
+	if err := os.WriteFile(lockdown.Path(), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := connectWith(t, testRegistry(t), Options{Agent: "claude"})
+
+	res := callTool(t, s, "demo_item_list", map[string]any{"name": "x"})
+	if !res.IsError {
+		t.Fatal("an agent was served by a server that could not verify the lock on it")
+	}
+	if text := res.Content[0].(*sdk.TextContent).Text; !strings.Contains(text, "core.lock.unverified") {
+		t.Fatalf("the refusal does not say the locks are what do not verify: %s", text)
 	}
 }
 
