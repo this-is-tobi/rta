@@ -249,6 +249,28 @@ func TestHexDecodeNamesTheGroupAndTheCharacterItRefused(t *testing.T) {
 	}
 }
 
+// A refused base64 value says what is wrong with it. The error returned was
+// the last dialect's, at an offset into a string it was not about: byte 7 of
+// aGVsbG8== is the first padding character, byte 0 of a lone a is a length
+// problem, and the same words stood for a character no alphabet has.
+func TestB64DecodeSaysWhyAValueIsRefused(t *testing.T) {
+	for in, want := range map[string]string{
+		"@@@":        `character 1, "@", is not one base64 uses`,
+		"aGVsbG8!":   `character 8, "!"`,
+		"a":          "holds a single character",
+		"aGVsbG8==":  "7 characters of data and 2 padding characters",
+		"ab+_":       "mixes the standard alphabet",
+		"aGVs=bG8":   "sits inside the value",
+		"aGVsbG8===": "3 padding characters",
+	} {
+		_, err := runB64(context.Background(), req(map[string]any{"value": in, "decode": true}))
+		verr := view.AsError(err, "test")
+		if err == nil || !strings.Contains(verr.Message, want) || strings.Contains(verr.Message, "input byte") {
+			t.Errorf("%q: %v, want it to say %s and no offset into another dialect's reading", in, err, want)
+		}
+	}
+}
+
 // A path is not a query: a space is %20, and + is a plus. Decoding a path as
 // a query turned c++.txt into "c  .txt".
 func TestURLPathModeKeepsAPlusAPlus(t *testing.T) {
