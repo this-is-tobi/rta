@@ -20,6 +20,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -491,6 +492,12 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Key: "public-key", Value: publicKeyOf(leaf)},
 		{Key: "chain", Value: verify(certs, hostOf(state, target))},
 	}
+	// Beside the date it is about. expires-in counts down to an end that a
+	// certificate not yet valid is a long way from, which read as a sound one.
+	if now := time.Now(); now.Before(leaf.NotBefore) {
+		pairs = slices.Insert(pairs, 4, view.Pair{Key: "validity",
+			Value: "not yet valid — begins in " + compactSpan(leaf.NotBefore.Sub(now))})
+	}
 	if state != nil {
 		pairs = append(pairs, view.Pair{Key: "tls", Value: protocolOf(state.Version)})
 	}
@@ -733,8 +740,15 @@ func expiryRow(ctx context.Context, target string, warnDays int, timeout time.Du
 	}
 	leaf := certs[0]
 	status := "ok"
+	now := time.Now()
 	switch {
-	case time.Now().After(leaf.NotAfter):
+	// First, and not ok: a certificate that is not valid yet fails every
+	// client's check as surely as an expired one, and read ok here for as
+	// long as its end date was far off. INVALID is a word the table colours
+	// as the failure it is.
+	case now.Before(leaf.NotBefore):
+		status = "INVALID — not valid until " + leaf.NotBefore.Format("2006-01-02")
+	case now.After(leaf.NotAfter):
 		status = "EXPIRED"
 	case x509check.Expiring(leaf.NotAfter, warnDays):
 		status = fmt.Sprintf("WARN <%dd", warnDays)

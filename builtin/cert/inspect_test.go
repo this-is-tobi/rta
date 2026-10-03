@@ -8,6 +8,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -16,15 +17,16 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// inspectFile writes a certificate built from tmpl to a PEM file, runs
-// cert.inspect on it, and returns the rows by key.
-func inspectFile(t *testing.T, tmpl *x509.Certificate) map[string]string {
+// selfIssued builds a certificate from tmpl, signed by its own fresh key, with
+// the serial and the validity window a test did not care to choose.
+func selfIssued(t *testing.T, tmpl *x509.Certificate) (der []byte, key *ecdsa.PrivateKey) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -36,10 +38,18 @@ func inspectFile(t *testing.T, tmpl *x509.Certificate) map[string]string {
 	if tmpl.NotAfter.IsZero() {
 		tmpl.NotBefore, tmpl.NotAfter = time.Now().Add(-time.Hour), time.Now().Add(48*time.Hour)
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	der, err = x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return der, key
+}
+
+// inspectFile writes a certificate built from tmpl to a PEM file, runs
+// cert.inspect on it, and returns the rows by key.
+func inspectFile(t *testing.T, tmpl *x509.Certificate) map[string]string {
+	t.Helper()
+	der, _ := selfIssued(t, tmpl)
 	path := filepath.Join(t.TempDir(), "cert.pem")
 	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
 		t.Fatal(err)
@@ -82,6 +92,69 @@ func TestInspectListsEveryNameACertificateAnswersTo(t *testing.T) {
 		if v, ok := rows[key]; ok {
 			t.Errorf("a certificate with no %s has a row for them: %q", key, v)
 		}
+	}
+}
+
+// serveCert answers TLS on a loopback port with tmpl's certificate and returns
+// the address.
+func serveCert(t *testing.T, tmpl *x509.Certificate) string {
+	t.Helper()
+	der, key := selfIssued(t, tmpl)
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
+		Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				_ = conn.(*tls.Conn).Handshake()
+				_ = conn.Close()
+			}()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+// A certificate that is not valid yet fails every client's check as surely as
+// an expired one, and read as a sound one for as long as its end date was far
+// off: expires-in counted down to an end it was nowhere near, and the table
+// said ok.
+func TestACertificateNotValidYetIsSaidSo(t *testing.T) {
+	future := &x509.Certificate{
+		Subject:   pkix.Name{CommonName: "soon"},
+		NotBefore: time.Now().Add(48 * time.Hour), NotAfter: time.Now().Add(100 * 24 * time.Hour),
+	}
+	rows := inspectFile(t, future)
+	if got := rows["validity"]; !strings.HasPrefix(got, "not yet valid") || !strings.Contains(got, "begins in 1d") {
+		t.Errorf("validity = %q, want it to say the certificate is not valid yet and for how long", got)
+	}
+	if v, ok := inspectFile(t, &x509.Certificate{Subject: pkix.Name{CommonName: "now"}})["validity"]; ok {
+		t.Errorf("a certificate valid now has a validity row: %q", v)
+	}
+
+	v, err := runExpiry(context.Background(), req(map[string]any{
+		"targets": []string{serveCert(t, future), serveCert(t, &x509.Certificate{
+			Subject:   pkix.Name{CommonName: "ok"},
+			NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(200 * 24 * time.Hour),
+		})},
+		"warn-days": 30, "timeout": 5,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rowsOut := v.(view.Table).Rows
+	if got := rowsOut[0][3]; !strings.HasPrefix(got, "INVALID") {
+		t.Errorf("status of a certificate not valid yet = %q, want INVALID", got)
+	}
+	if got := rowsOut[1][3]; got != "ok" {
+		t.Errorf("status of a sound certificate = %q, want ok", got)
 	}
 }
 
