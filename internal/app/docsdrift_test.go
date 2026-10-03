@@ -600,7 +600,7 @@ func TestTheFilesTheInstallationPageSaysRtaKeepsAreNamesRtaUses(t *testing.T) {
 	checked := 0
 	for _, m := range regexp.MustCompile("`([^`\n]+)`").FindAllStringSubmatch(section, -1) {
 		name := m[1]
-		if strings.ContainsAny(name, "~$< ") || !(strings.Contains(name, ".") || strings.HasSuffix(name, "/")) {
+		if strings.ContainsAny(name, "~$< ") || (!strings.Contains(name, ".") && !strings.HasSuffix(name, "/")) {
 			continue
 		}
 		segments := strings.Split(strings.Trim(name, "/"), "/")
