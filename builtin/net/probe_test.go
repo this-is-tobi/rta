@@ -217,6 +217,31 @@ func TestProbeClosedPortIsCoded(t *testing.T) {
 	}
 }
 
+// A name that does not resolve never reached a port, and the hint said the
+// port might be closed or filtered and offered to scan the ports of the host
+// that does not exist. The hint follows how far the dial got: past the
+// resolver, it is the port; short of it, it is the name — and ping, which
+// resolves first, had no hint at all.
+func TestAHostThatDoesNotResolveIsNotBlamedOnItsPort(t *testing.T) {
+	const host = "no-such-name-rta-test.invalid"
+	_, err := runProbe(context.Background(), req(map[string]any{
+		"host": host, "port": 80, "timeout": 2, "wait": 1,
+	}))
+	ve := view.AsError(err, "x")
+	if ve.Code != "net.probe.unreachable" {
+		t.Fatalf("code = %q, want net.probe.unreachable: %+v", ve.Code, ve)
+	}
+	if strings.Contains(ve.Hint, "closed or filtered") || !strings.Contains(ve.Hint, "rta net dns") {
+		t.Errorf("probe of a name that does not resolve points at the port: %q", ve.Hint)
+	}
+
+	_, err = runPing(context.Background(), req(map[string]any{"host": host, "count": 1, "timeout": 2}))
+	ve = view.AsError(err, "x")
+	if ve.Code != "net.ping.resolve" || !strings.Contains(ve.Hint, "rta net dns") {
+		t.Errorf("ping of a name that does not resolve names no next step: %+v", ve)
+	}
+}
+
 // A regression test for a real bug: the TLS
 // handshake was never bounded by the documented timeout field — only the
 // TCP dial was — so a peer that accepts the connection and then never sends

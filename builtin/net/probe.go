@@ -140,6 +140,24 @@ func runSend(ctx context.Context, req plugin.Request) (view.View, error) {
 	return probe(ctx, req, data)
 }
 
+// dialHint is what to check after a dial that failed, which depends on how far
+// it got. A name the resolver could not answer for never reached a port, and
+// "the port may be closed or filtered" sent whoever typed a mistyped hostname
+// off to scan the ports of a host that does not exist.
+func dialHint(sf plugin.Surface, host string, err error) string {
+	if isResolveFailure(err) {
+		return "the name did not resolve, so no port was tried — " + sf.CapabilityName("net.dns") +
+			" asks the resolver for " + host + " directly"
+	}
+	return "the port may be closed or filtered — " + sf.CapabilityName("net.port") +
+		" scans a range of " + host + "'s ports"
+}
+
+func isResolveFailure(err error) bool {
+	var dnsErr *stdnet.DNSError
+	return errors.As(err, &dnsErr)
+}
+
 func probe(ctx context.Context, req plugin.Request, send string) (view.View, error) {
 	host := req.String("host")
 	port := req.Int("port")
@@ -155,8 +173,7 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 	conn, err := (&stdnet.Dialer{Timeout: timeout}).DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, view.Errorf("net.probe.unreachable", "connecting to %s: %v", address, err).
-			WithHint("the port may be closed or filtered — " + req.Surface().CapabilityName("net.port") +
-				" scans a range of " + host + "'s ports")
+			WithHint(dialHint(req.Surface(), host, err))
 	}
 	defer func() { _ = conn.Close() }()
 	connected := time.Since(start)
