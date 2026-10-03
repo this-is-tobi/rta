@@ -607,6 +607,9 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 // dashFooterItems is the dashboard's hint bar: the selected tile's own actions
 // lead, then navigation, all from the one vocabulary in keys.go.
 func (m Model) dashFooterItems() []hintItem {
+	if m.searchEditing {
+		return searchEditingItems()
+	}
 	items := []hintItem{}
 	own := dashOwnItems()
 	if m.selected > 0 && m.selected < len(m.tiles) {
@@ -626,6 +629,22 @@ func (m Model) dashFooterItems() []hintItem {
 		}
 	}
 	return append(items, own...)
+}
+
+// searchEditingItems is the bar while the search box holds the keyboard, which
+// is a different vocabulary from the dashboard's: `q`, `f`, `p`, `t`, `H`, `b`
+// and the brackets are letters of a query there, so advertising them told
+// somebody mid-search that `q quit` and `p plugins` work when they only type.
+// What the box answers is what updateSearch handles, and nothing else.
+func searchEditingItems() []hintItem {
+	return []hintItem{
+		{
+			display: "↑↓", label: "pick", rank: rankPrimary,
+			keys: []string{"up", "down", "ctrl+p", "ctrl+n", "tab", "pgup", "pgdown"},
+		},
+		labelled(bindOpen, "run"), item(bindAdd), labelled(bindBack, "clear"),
+		{display: "ctrl+c", label: "quit", rank: rankExit, keys: []string{"ctrl+c"}},
+	}
 }
 
 // dashOwnItems are the keys the dashboard answers to whatever is selected:
