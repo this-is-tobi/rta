@@ -80,6 +80,7 @@ func TestLogFileTakesADirectoryAsGitDoes(t *testing.T) {
 		"deploy/sub":         "add extra",
 		"deploy/values.yaml": "set replicas",
 		"deployment.md":      "a sibling that shares the prefix",
+		".":                  "elsewhere, a sibling that shares the prefix, add extra, set replicas",
 	} {
 		tbl := table(t, runLog, req(t, dir, map[string]any{"file": file, "limit": defaultLogLimit}))
 		var got []string
