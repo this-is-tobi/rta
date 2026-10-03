@@ -862,7 +862,7 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 	}
 	root := &cobra.Command{
 		Use:   "rta",
-		Short: "One capability model to rule them all",
+		Short: "RTA: one capability model, rendered as a CLI, a TUI and an MCP server",
 		// The startup notice, here rather than in main, because this is the
 		// first point at which the *format* is known. It used to print from
 		// main on every run where stderr was a terminal, which put a sentence
