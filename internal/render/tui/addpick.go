@@ -71,7 +71,7 @@ func newAddPickForm(c plugin.Capability, active string, choices []pinChoice, ret
 // at once when it takes no connection, and otherwise asked which one.
 func (m Model) offerAdd(c plugin.Capability, returnTo mode) (tea.Model, tea.Cmd) {
 	if why := addRefusal(c, plugin.Profilable(c)); why != "" {
-		m.flash = why
+		m.refuse(why)
 		return m, nil
 	}
 	choices := m.pinChoices(c)
@@ -157,17 +157,20 @@ func (m Model) addTile(c plugin.Capability, ref string) (tea.Model, tea.Cmd) {
 	// that tile's place (joinTiles) and change nothing on screen, since
 	// the key carries no width or input the stated entry lacks.
 	case slices.ContainsFunc(m.dash.Add, onDashboard) || slices.ContainsFunc(m.dash.Tiles, onDashboard):
-		m.flash, changed = key+" is already on the dashboard", false
+		m.refuse(key + " is already on the dashboard")
+		changed = false
 	case ref == "" && m.automaticKey(key):
 		if slices.Contains(m.dash.Hidden, c.ID) {
 			m.dash.Hidden = withoutID(m.dash.Hidden, c.ID)
 			m.flash = "showing " + c.ID + " again"
 		} else {
-			m.flash, changed = c.ID+" is already on the automatic dashboard", false
+			m.refuse(c.ID + " is already on the automatic dashboard")
+			changed = false
 		}
 	default:
 		if why := addRefusal(c, ref != ""); why != "" {
-			m.flash, changed = why, false
+			m.refuse(why)
+			changed = false
 			break
 		}
 		m.dash.Add = append(m.dash.Add, entry)

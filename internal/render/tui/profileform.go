@@ -73,7 +73,7 @@ var profileTTLOptions = []string{profileTTLNone, "15m", "1h", "4h", "8h", "12h",
 func (m Model) startProfileForm(name string) (tea.Model, tea.Cmd) {
 	cfg, err := config.LoadFile()
 	if err != nil {
-		m.flash = "config not read: " + err.Error()
+		m.refuse("config not read: " + err.Error())
 		return m, nil
 	}
 	p := cfg.Profiles[name]
@@ -150,7 +150,7 @@ func (m Model) saveProfileForm() (tea.Model, tea.Cmd) {
 
 	name := strings.TrimSpace(str(values[profileNameField]))
 	if !config.ValidName(name) {
-		m.flash = "not a valid profile name: lowercase letters, digits and dashes"
+		m.refuse("not a valid profile name: lowercase letters, digits and dashes")
 		return m.closeToOrigin()
 	}
 	badColor := ""
@@ -188,11 +188,11 @@ func (m Model) saveProfileForm() (tea.Model, tea.Cmd) {
 		cfg.Profiles[name] = p
 		return cfg, true
 	}); err != nil {
-		m.flash = "config not saved: " + err.Error()
+		m.refuse("config not saved: " + err.Error())
 		return m.closeToOrigin()
 	}
 	if badColor != "" {
-		m.flash = "not saved: " + badColor + " is not a colour — write it as #rrggbb, or leave it empty"
+		m.refuse("not saved: " + badColor + " is not a colour — write it as #rrggbb, or leave it empty")
 		return m.closeToOrigin()
 	}
 	m.profiles = m.profileRows()
@@ -525,15 +525,15 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 
 	key := strings.TrimSpace(str(values[profilePluginField]))
 	if key == "" {
-		m.flash = "nothing saved: no plugin named"
+		m.refuse("nothing saved: no plugin named")
 		return m.closeToOrigin()
 	}
 	// The label box wins over one typed into the plugin box, and recomposes
 	// the key the file will hold: `pg@pin` + `analytics` = `pg/analytics@pin`.
 	if instance := strings.TrimSpace(str(values[profileInstanceField])); instance != "" {
 		if !config.ValidInstance(instance) {
-			m.flash = "nothing saved: " + instance + " is not a valid instance label — " +
-				"lowercase letters, digits and dashes, starting with a letter"
+			m.refuse("nothing saved: " + instance + " is not a valid instance label — " +
+				"lowercase letters, digits and dashes, starting with a letter")
 			return m.closeToOrigin()
 		}
 		ns, _, pin := config.SplitKey(key)
@@ -725,17 +725,17 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 		cfg.Profiles[m.profileOpen] = p
 		return cfg, true
 	}); err != nil {
-		m.flash = "config not saved: " + err.Error()
+		m.refuse("config not saved: " + err.Error())
 		return m.closeToOrigin()
 	}
 	if gone {
-		m.flash = "profile " + m.profileOpen + " is gone"
+		m.refuse("profile " + m.profileOpen + " is gone")
 		return m.closeToOrigin()
 	}
 	if refusal != "" {
 		// Stays on the form, as it did before: the operator has a coordinate
 		// to correct and the boxes are still in front of them.
-		m.flash = refusal
+		m.refuse(refusal)
 		return m, nil
 	}
 	m.profiles = m.profileRows()
@@ -1015,7 +1015,7 @@ func (m Model) startCredentialForm() (tea.Model, tea.Cmd) {
 	}
 	conn := row.conns[m.connSel]
 	if len(conn.credentials) == 0 {
-		m.flash = conn.key + " needs no credential"
+		m.refuse(conn.key + " needs no credential")
 		return m, nil
 	}
 
@@ -1026,7 +1026,7 @@ func (m Model) startCredentialForm() (tea.Model, tea.Cmd) {
 	// hides their `set.*` boxes there: the forward fills them.
 	inputs := m.fillableInputs(conn.key, conn.conn.Tunnelled())
 	if len(inputs) == 0 {
-		m.flash = conn.key + " has no input a connection can fill"
+		m.refuse(conn.key + " has no input a connection can fill")
 		return m, nil
 	}
 	sources := []string{credSourceRef, credSourceStore, credSourceEnv}
@@ -1149,7 +1149,7 @@ func (m Model) saveCredentialForm() (tea.Model, tea.Cmd) {
 		// at the keystroke instead of at the call.
 		name, k, ok := strings.Cut(kubeRef, "/")
 		if !ok || strings.TrimSpace(name) == "" || strings.TrimSpace(k) == "" {
-			m.flash = "write it as <secret>/<key>, e.g. pg-creds/password"
+			m.refuse("write it as <secret>/<key>, e.g. pg-creds/password")
 			return m, nil
 		}
 		ref = "kube:" + kubeRef
@@ -1164,7 +1164,7 @@ func (m Model) saveCredentialForm() (tea.Model, tea.Cmd) {
 
 	if source == credSourceStore {
 		if secret == "" {
-			m.flash = "nothing stored: no value given"
+			m.refuse("nothing stored: no value given")
 			return m.closeToOrigin()
 		}
 		// The entry is named after the environment, the plugin and the input
@@ -1172,13 +1172,13 @@ func (m Model) saveCredentialForm() (tea.Model, tea.Cmd) {
 		// wherever it is later seen in `rta kv list`.
 		entry = name + "-" + config.PluginNamespace(key) + "-" + input
 		if verr := kv.Store(entry, secret, "credential for profile "+name, "profile:"+name); verr != nil {
-			m.flash = "not stored: " + verr.Message
+			m.refuse("not stored: " + verr.Message)
 			return m.closeToOrigin()
 		}
 	}
 	if ref == "" {
 		if entry == "" {
-			m.flash = "nothing changed: no entry chosen"
+			m.refuse("nothing changed: no entry chosen")
 			return m.closeToOrigin()
 		}
 		ref = "kv:" + entry
@@ -1204,7 +1204,7 @@ func (m Model) saveCredentialForm() (tea.Model, tea.Cmd) {
 		cfg.Profiles[name] = p
 		return cfg, true
 	}); err != nil {
-		m.flash = "config not saved: " + err.Error()
+		m.refuse("config not saved: " + err.Error())
 		return m.closeToOrigin()
 	}
 	if missing != "" {
@@ -1212,7 +1212,7 @@ func (m Model) saveCredentialForm() (tea.Model, tea.Cmd) {
 		// real credential under a name `rta kv list` shows, and deleting it
 		// because the profile moved would be destroying the thing the
 		// operator just typed.
-		m.flash = missing
+		m.refuse(missing)
 		return m.closeToOrigin()
 	}
 	m.profiles = m.profileRows()

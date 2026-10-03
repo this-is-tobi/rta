@@ -147,7 +147,7 @@ func copyHint(c plugin.Capability, v view.View) (hintItem, bool) {
 func (m Model) copyOrPick(spec copySpec, cap plugin.Capability, v view.View, returnTo mode) (tea.Model, tea.Cmd) {
 	if val, ok := copyValue(spec, v); ok {
 		if verr := copyValueToClipboard(val); verr != nil {
-			m.flash = "not copied: " + verr.Error()
+			m.refuse("not copied: " + verr.Error())
 		} else {
 			m.flash = "copied value"
 		}
