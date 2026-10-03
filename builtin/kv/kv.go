@@ -154,19 +154,10 @@ func Plugin() plugin.Plugin {
 			{
 				ID: "kv.get", Summary: "Reveal a stored value", Safety: plugin.Write, Idempotent: true,
 				NeedsGrant: true, Scope: "key",
-				Description: "Writes the value to stdout with no quoting and no framing, so piping " +
-					"it on — into `gh auth login --with-token`, say — hands over the value and not a " +
-					"transformation of it. The pretty renderer terminates the line, so a value stored " +
-					"without a trailing newline gains one on the way out; for the byte-exact copy " +
-					"use `out`, which writes the stored bytes to a file with 0600 instead, and is " +
-					"how a certificate or key goes back to disk without passing through your " +
-					"scrollback. To use a secret without seeing it at all, `kv.copy` puts it on the " +
-					"clipboard and prints nothing.\n\n" +
-					"Classified as a write because revealing a secret is the sensitive act. An MCP " +
-					"agent therefore needs a grant, and one that names the key it may read, issued " +
-					"by a person (`grant.allow`, for `kv.get` and that key). `out` is a person's input " +
-					"only, since a grant authorizes revealing a value, not choosing where on this " +
-					"machine it gets written; an MCP caller always gets the value back in the response.",
+				Description: "Reveals a stored value. Classified as a write, because revealing a secret is the " +
+					"sensitive act: an agent needs a grant naming the key it may read, issued by a person. A " +
+					"grant authorizes revealing a value, not choosing where on this machine it gets written, " +
+					"so the value comes back in the response.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to reveal",
 						Suggest: suggestKeys},
@@ -231,22 +222,15 @@ func Plugin() plugin.Plugin {
 				ID: "kv.set", Summary: "Set (or overwrite) a stored value", Safety: plugin.Write, Idempotent: true,
 				Flash:      true,
 				NeedsGrant: true, Scope: "key",
-				Description: "The value comes from `value` or from `file`. A call giving neither asks a " +
-					"person at a terminal for it without echoing what they type, and is refused anywhere " +
-					"else, unless its `description` or `kind` relabel an entry that already exists. The " +
-					"kind (certificate, private key, json, file, string) is detected from the content " +
-					"unless `kind` says otherwise. Writing an entry never changes who can read the " +
-					"store: that is `kv.rekey`, which is destructive for the reason this is not.\n\n" +
-					"With no value at all, `description` and `kind` relabel an entry that already " +
-					"exists, leaving the secret and both timestamps untouched — so correcting what " +
-					"something is for does not mean fetching and re-typing the secret itself, and " +
-					"does not reset the age `kv.list` reports for it.\n\n" +
-					"Setting a key that already exists replaces the secret in it and keeps the old " +
-					"one — the last " + strconv.Itoa(maxRevisions) + " values stay behind the key, " +
-					"listed by `kv.history` and brought back by `kv.restore` with a `revision`. So a paste " +
-					"over the wrong key is a mistake you undo, not one you re-type from memory. Over " +
-					"MCP it still needs a per-key grant: an agent that can overwrite a secret can " +
-					"still break what reads it, undo or not.",
+				Description: "Sets or overwrites a stored value, given as `value`; a call with none is refused unless " +
+					"its `description` or `kind` relabel an entry that already exists, which leaves the " +
+					"secret and both timestamps untouched, so correcting what something is for does not reset " +
+					"the age kv.list reports. The kind (certificate, private key, json, file, string) is " +
+					"detected from the content unless `kind` says otherwise. Writing never changes who can " +
+					"read the store: that is `kv.rekey`. Setting a key that already exists replaces the " +
+					"secret and keeps the old one, the last " + strconv.Itoa(maxRevisions) + " values listed by `kv.history` and brought back " +
+					"by `kv.restore` with a `revision`. It still needs a per-key grant: an agent that can " +
+					"overwrite a secret can break what reads it, undo or not.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to set",
 						Suggest: suggestKeys},
@@ -302,17 +286,14 @@ func Plugin() plugin.Plugin {
 				// under another — a rename grant for one prod key plus a
 				// read grant for scratch/ read that prod key.
 				ScopeAlso: []string{"new-name"},
-				Description: "Renaming used to mean `kv.get` piped into `kv.set` and then `kv.rm`: two " +
-					"grants for an operation that reveals nothing, and the secret itself sitting in " +
-					"shell history at the join. This moves the entry inside the store — the value is " +
-					"never decrypted into anything but memory, and its description, kind, source and " +
-					"timestamps travel with it.\n\n" +
-					"A name that is already taken is refused rather than overwritten: renaming onto " +
-					"an existing key would destroy the secret in it, which is `kv.rm`'s question and " +
-					"is asked with `kv.rm`'s answer.\n\n" +
-					"A grant for it has to cover both names, `key` and `new-name`: a key's name is what " +
-					"decides which grants can read it, so a move is a question about where it lands " +
-					"as much as about what moves. A folder grant covers a move inside the folder.",
+				Description: "Renames a key, keeping its value and its history. The entry moves inside the store, the " +
+					"value is never decrypted into anything but memory, and its description, kind, source and " +
+					"timestamps travel with it: the one way to rename that reveals nothing, where kv.get, " +
+					"kv.set and kv.rm took two grants and put the secret in the open. A name already taken is " +
+					"refused rather than overwritten, since that would destroy the secret in it, which is " +
+					"`kv.rm`'s question. A grant has to cover both names, `key` and `new-name`, because a " +
+					"key's name decides which grants can read it; a folder grant covers a move inside the " +
+					"folder.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to rename",
 						Suggest: suggestKeys},
@@ -379,12 +360,11 @@ func Plugin() plugin.Plugin {
 			{
 				ID: "kv.init", Summary: "Set up how the store is encrypted", Safety: plugin.Write,
 				Idempotent: true,
-				Description: "Chooses the lock once, so nothing has to be repeated afterwards. " +
-					"`generate` makes a dedicated age key for this store and uses it: no passphrase " +
-					"to type, nothing to remember, and — unlike your SSH login key — a key whose " +
-					"loss costs you this store and nothing else. `identity` locks it to a key you " +
-					"already have (age or SSH). `recipient` adds other readers.\n\n" +
-					"A passphrase store needs no init: that is what you get by default.",
+				Description: "Chooses how the store is encrypted, once. `generate` makes a dedicated age key for this " +
+					"store and uses it: no passphrase to type, and unlike an SSH login key, one whose loss " +
+					"costs this store and nothing else. A passphrase store needs no init, which is what the " +
+					"store is by default. Locking it to a key that already exists, or adding readers, is the " +
+					"operator's to do.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "generate", Type: plugin.Bool,
 						Help: "create a dedicated age key for this store and lock it to that"},
@@ -407,23 +387,14 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "kv.rekey", Summary: "Change which keys can open the store", Safety: plugin.Destructive,
-				Description: "The store is decrypted and written back under a new set of keys, so this " +
-					"is the one command that changes who can read what you already stored.\n\n" +
-					"Adding is the default: `generate` makes a dedicated age key and leaves the " +
-					"existing readers alone, which is how a store locked to your SSH key gains a key " +
-					"that needs no passphrase — after which both open it and the new one is found " +
-					"without being named. `only` makes the set exclusive instead: `generate` with `only` " +
-					"switches the lock from one key to the other, and naming the readers you keep is " +
-					"how a reader is removed.\n\n" +
-					"`identity` never changes the set: it says which private key is here, which is " +
-					"what opens the store and the only way to prove a key is yours — a public key on " +
-					"its own shows nothing of the sort.\n\n" +
-					"Two things are refused rather than confirmed. Reading comes first, so a store you " +
-					"cannot open is a store you cannot re-key. And a key you hold has to survive the " +
-					"change: handing the store to somebody else and locking yourself out of it in the " +
-					"same keystroke is not a thing to be sure about.\n\n" +
-					"Old copies of the file stay readable by the old keys — re-keying changes the lock, " +
-					"it does not reach into backups.",
+				Description: "Changes which keys can open the store: it is decrypted and written back under a new set, " +
+					"the one operation that changes who can read what is already stored. Adding is the " +
+					"default: `generate` makes a dedicated age key and leaves the existing readers alone, so " +
+					"a store locked to an SSH key gains one that needs no passphrase. `only` makes the set " +
+					"exclusive instead, and with `generate` switches the lock from one key to the other. Two " +
+					"things are refused rather than confirmed: a store that cannot be opened, and a change " +
+					"that locks out every key the operator holds. Old copies of the file stay readable by the " +
+					"old keys; re-keying does not reach into backups.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "generate", Type: plugin.Bool,
 						Help: "create a dedicated age key for this store and add it"},

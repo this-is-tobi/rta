@@ -45,26 +45,14 @@ func Plugin() plugin.Plugin {
 			{
 				ID: "keys.list", Summary: "List the SSH private keys in ~/.ssh, how protected each is, and whether it can be backed up",
 				Safety: plugin.Read, HostSpecific: true, Idempotent: true,
-				Description: "Finds keys by their PEM preamble rather than by an id_* name, so a key " +
-					"called work_ed25519 — or symlinked in from a dotfiles repository under any name at " +
-					"all — is listed, and a stray file that was never a key is not. Reads only public " +
-					"data: a key's .pub sibling for its type, fingerprint and " +
-					"comment, and whether the private key itself is passphrase-protected — the same check " +
-					"`audit.doctor` uses, which parses far enough to see a key is locked without ever supplying " +
-					"a passphrase. Never decrypts anything. Backup-eligible means ed25519: `keys.backup` has " +
-					"nothing to encode as words for an RSA or ECDSA key, which carries no single seed. An " +
-					"Exposed column appears only when some key's permissions let another account on this " +
-					"machine read it, which is both a credential exposure and the reason ssh has stopped " +
-					"accepting that key.",
-				// Not NoPreview for either of pkg/plugin's own two reasons —
-				// this reaches nothing off the box and ~/.ssh is not a
-				// recursive scan — but for a third: an unencrypted key's
-				// bytes are read into memory to answer "what type is this"
-				// when no .pub sibling exists (describeKey, sshkey.go), and
-				// doing that on every five-second dashboard tick widens a
-				// private key's exposure window for a tile nobody is
-				// necessarily looking at. A person naming this capability
-				// explicitly, or opening it from search, still gets it.
+				Description: "Keys are found by their PEM preamble rather than an id_* name, so a key called " +
+					"work_ed25519 or symlinked in under any name is listed, and a stray file that was never a " +
+					"key is not. Only public data is read: a key's .pub sibling for its type, fingerprint and " +
+					"comment, and whether the private key is passphrase-protected, checked without supplying " +
+					"a passphrase. Nothing is decrypted. Backup-eligible means ed25519, the one type with a " +
+					"single seed to encode as words. An Exposed column appears only when some key's " +
+					"permissions let another account on this machine read it, which is a credential exposure " +
+					"and the reason ssh stops accepting that key.",
 				NoPreview: true,
 				Run:       runList,
 			},
