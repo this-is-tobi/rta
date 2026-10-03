@@ -212,6 +212,11 @@ type Options struct {
 	// never the machine). False for stdio, which is every server this field
 	// existed before and changes nothing for.
 	Remote bool
+	// MaxResult is the most a result may be, in bytes, before it is withheld
+	// as core.result.toolarge. Zero is plugin.DefaultResultLimit: a result is
+	// always bounded, since what an unbounded one costs is not the caller's to
+	// choose (rta mcp serve --max-result is the operator's).
+	MaxResult int
 	// Shutdown ends when the server is asked to stop (a signal), and every call
 	// in flight is cancelled with it. nil means a call is cancelled only by its
 	// client.
@@ -227,6 +232,15 @@ type Options struct {
 	// a plugin's is a gRPC call that returns whatever the plugin does
 	// (pluginhost's call).
 	Shutdown context.Context
+}
+
+// resultLimit is the most a result may be: what the operator set, and the
+// default where they set nothing.
+func (o Options) resultLimit() int {
+	if o.MaxResult > 0 {
+		return o.MaxResult
+	}
+	return plugin.DefaultResultLimit
 }
 
 // active is the profile switched on right now, or "".
