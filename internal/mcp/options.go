@@ -37,6 +37,9 @@ type Options struct {
 	// refusals slows a caller that keeps being refused — see backoff. Set
 	// by NewServer unless a test supplied one; unexported for locks' reason.
 	refusals *backoff
+	// pace holds a caller whose calls keep succeeding to a rate the record can
+	// keep up with — see pacer. Set by NewServer unless a test supplied one.
+	pace *pacer
 
 	// Session is the id this process stamps on every ledger entry, and
 	// Connected is told the client's announced name once the MCP handshake
