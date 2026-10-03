@@ -886,7 +886,13 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 				return cmd.Help()
 			}
 			if cfgErr != nil {
-				return cfgErr
+				// Not the file's own error again: main has just written it to
+				// stderr, parse excerpt and all, and repeating that for ten
+				// lines said one thing twice. What is new here is the
+				// consequence, and where the fix is.
+				verr := view.AsError(cfgErr, "config.invalid")
+				return view.Errorf(verr.Code, "the dashboard does not open over a config file it cannot read; "+
+					"the message above names the fault").WithHint(verr.Hint)
 			}
 			// bubbletea stops on the cancelled context itself and hands the
 			// terminal back on the way out; a deadline cutting that short
