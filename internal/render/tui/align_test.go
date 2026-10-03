@@ -142,3 +142,22 @@ func TestALongFlashDoesNotBreakTheLayout(t *testing.T) {
 		}
 	}
 }
+
+// A confirmation that makes the footer two lines cannot push a screen past the
+// terminal. The catalogue sized its list from the footer the window had when it
+// was resized, so the add flow, which opens with a flash, drew one row more
+// than the terminal has and the bar's second line, esc and q, was cut off.
+func TestAFlashDoesNotPushAScreenPastTheTerminal(t *testing.T) {
+	const long = "saved profile proj1-staging — covers pg, s3 and vault, and the switch lapses in 8h"
+	for _, size := range layoutSizes {
+		for _, screen := range []mode{modeDashboard, modeBrowse, modePlugins, modeProfiles} {
+			m, _ := realModel(t, size.w, size.h)
+			m.mode = screen
+			m.flash = long
+			rows := strings.Count(strings.TrimRight(frame(t, m), "\n"), "\n") + 1
+			if rows > size.h {
+				t.Errorf("%s at %dx%d draws %d rows with a flash", screenName(screen), size.w, size.h, rows)
+			}
+		}
+	}
+}
