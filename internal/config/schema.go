@@ -36,6 +36,11 @@ var (
 	schemaColor      = `^#[0-9a-fA-F]{6}$`
 )
 
+// themeKeys are the palette slots a theme: block may name, in the order the
+// palette lists them. The package that owns them is the render tree's theme,
+// which this leaf does not import, so a test holds the two lists to one answer.
+var themeKeys = []string{"primary", "accent", "muted", "faint", "label", "good", "warn", "bad", "inverse", "ink"}
+
 // schemaProfileRef is what a tile's profile: may say — a profile name, or
 // name/instance — built from the loader's own name pattern rather than
 // restated, so the two cannot drift, with the instance half spelled the way
@@ -119,9 +124,11 @@ func Schema() map[string]any {
 				"additionalProperties": map[string]any{"$ref": "#/$defs/profile"},
 			},
 			"theme": map[string]any{
-				"description": "Overrides the built-in palette. Keys are the names `rta theme` " +
-					"lists (primary, good, label, …), each a #rrggbb string.",
+				"description": "Overrides the built-in palette: " + strings.Join(themeKeys, ", ") +
+					", each a #rrggbb string. A name or colour rta cannot use is left out and " +
+					"reported by `rta doctor`; the rest apply.",
 				"type":                 "object",
+				"propertyNames":        map[string]any{"enum": themeKeys},
 				"additionalProperties": map[string]any{"type": "string", "pattern": schemaColor},
 			},
 			"roles": map[string]any{
