@@ -130,6 +130,12 @@ An agent's call runs with your config and a profile's `set:` exactly as yours do
 
 A config that does not read when the server starts does not stop it, and does not leave the base connection open either. With no record of which plugins have profiles, a call that names none cannot be told from one that must, so every capability a profile could change is refused as `core.profile.unreadable` — with `rta doctor` as the hint and no path in the message — while the rest keep working, and the server says why on its stderr. The first read of the file that succeeds lifts it, without a restart. A file that read at startup and fails later is answered from what was read.
 
+### How large a result may be
+
+A result is held whole while it is handled, and measured at about sixteen times its size: a plugin that answered with 100 MB took the server to 1.68 GB. So a result is bounded, by default at 8 MiB, which is more than anything the catalogue answers honestly (an HTTP body is cut at 1 MiB, a listing runs to hundreds of kilobytes, a table dump of a few thousand rows to a few megabytes) and more than a model can use. A plugin's answer is refused while it is received, from the length its message declares, before any of it is held; a built-in's is measured as it is sent. Either way the call ran, what it changed is changed, and the agent is told it as `core.result.toolarge` with the size, the limit and how to ask for less — a smaller limit, a tighter filter, a narrower path. The record keeps the call as one that ran, with that code beside it.
+
+`rta mcp serve --max-result <MiB>` sets the ceiling, between 1 and 256. It is the operator's: an agent has no argument that raises it. The CLI and the TUI are not bounded by it, since the person at them chose to ask. Size the server's memory for what it allows: the default is about 128 MiB at its peak for one answer that large, several at once add up, and a pod's limit is the place the ceiling is really set — [the chart](./80-kubernetes.md) passes `--max-result` through `serverDefaults.extraArgs`.
+
 ### One gate
 
 [Grants](./30-grants.md) are the whole of it: consent for one capability or one plugin, optionally one record, narrowed to one agent and one connection, expiring on its own. `rta grant allow note --ttl 8h` is the shape for "this agent works on notes today"; `rta grant allow kv.get deploy-key --ttl 5m --max-uses 1` is the shape for "this once".
