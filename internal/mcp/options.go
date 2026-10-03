@@ -113,6 +113,19 @@ type Options struct {
 	// It is the *schema's* answer, and only that. What a call resolves through
 	// comes from Reload — see there.
 	Profiles config.Config
+	// ProfilesErr is why Profiles is empty when the config did not read at
+	// startup, and nil when it did.
+	//
+	// **Empty is not the same as unknown.** A server that started over a file
+	// that would not parse had no snapshot to fall back on, and a call that
+	// names no profile then ran on the base connection: the rule that keeps it
+	// off that connection once profiles exist (takeProfile) had nothing to hold
+	// until the file read again, and a typo an editor left behind could be left
+	// alone for as long as nobody looked at stderr. While the file still does
+	// not read, a call to a plugin that profiles may govern is refused, and the
+	// server keeps serving every capability a profile has no say over; the
+	// first read that succeeds ends it, with no restart.
+	ProfilesErr error
 	// Reload answers the operator's connections as the config file has them
 	// now. nil falls back to the startup snapshot.
 	//
@@ -243,14 +256,21 @@ func (o Options) connStamp(name, namespace string) string {
 // profiles is the connection set a call resolves through: the file as it is
 // now, or the startup snapshot when no reader was wired.
 func (o Options) profiles() config.Config {
-	if o.Reload == nil {
-		return o.Profiles
+	cfg, _ := o.profileSet()
+	return cfg
+}
+
+// profileSet is profiles with whether the operator's connections are known at
+// all: false only when the file has not read since the server started and did
+// not read at startup either, which is the one state with no snapshot to
+// answer from.
+func (o Options) profileSet() (config.Config, bool) {
+	if o.Reload != nil {
+		if live, err := o.Reload(); err == nil {
+			return live, true
+		}
 	}
-	live, err := o.Reload()
-	if err != nil {
-		return o.Profiles
-	}
-	return live
+	return o.Profiles, o.ProfilesErr == nil
 }
 
 // origin resolves a namespace, treating an unwired lookup as "nothing is
