@@ -646,6 +646,8 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	// Where the slack goes when there is room to spare. Computed once, from
 	// the same headers and rows lipgloss is about to measure.
 	grown := grownColumns(t, headers, st)
+	// And how the columns are arranged when there is not. See squeezedWidths.
+	squeezed := squeezedWidths(t, headers, st)
 
 	// A hyphen is not a place to break a line, inside a table cell either.
 	//
@@ -689,6 +691,9 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 				if w, ok := grown[col]; ok && width == 0 {
 					s = s.Width(w)
 				}
+				if width > 0 && squeezed != nil {
+					s = s.Width(squeezed[col])
+				}
 				// Before the header short-circuit, so a numeric column's
 				// heading sits over its own digits. It used to return first,
 				// which left "BYTES" flush left above a column of
@@ -715,12 +720,27 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 				}
 				return s
 			})
-		if width > 0 {
+		// Every column told its width is every column fixed, and a table asked
+		// for a width on top of that would be stretched to it by the one thing
+		// that is not.
+		if width > 0 && squeezed == nil {
 			tbl = tbl.Width(width)
 		}
 		return tbl.Render()
 	}
 	rendered := build(0)
+	if squeezed != nil {
+		// Made to measure: the widths add up to the terminal's, and there is
+		// no second attempt at a few cells less to look for.
+		rendered = build(st.width)
+		if !drawnWhole(rendered, st.width) {
+			return asRecords()
+		}
+		if _, err := fmt.Fprintln(w, restore(rendered)); err != nil {
+			return err
+		}
+		return tableFooter(w, t, st)
+	}
 	// Constrain only when the natural width overflows: narrow tables keep
 	// their tight fit, wide ones shrink columns instead of wrapping raggedly.
 	// The shrink iterates because lipgloss tables can exceed the requested
@@ -883,6 +903,69 @@ func grownColumns(t view.Table, headers []string, st styles) map[int]int {
 		}
 	}
 	return grown
+}
+
+// minSqueezed is the least a column is squeezed to when a table has to give
+// something up, content and heading both, before the columns that still want
+// room share what is left.
+const minSqueezed = 12
+
+// squeezedWidths decides the width of every column of a table drawn narrower
+// than it is, one per column and padding included, or nil when the table fits
+// or no arrangement keeps every column at its floor.
+//
+// lipgloss shrinks a table by the gap between each column's width and the
+// median of its cells. The first victim is a short column under a long
+// heading — LOCKED over "no" and "yes" is six cells wide with a median of two,
+// so `rta keys list` at a hundred cells drew "LO…" and "BA…" and cut
+// "ssh-ed25519" in two while the path beside them kept every cell — and a
+// column with one long outlier, a pseudo-version or a URL, ends up narrower
+// than its own heading and than the ordinary value beside the outlier:
+// `rta pkg outdated go` drew INSTALLED as "INSTA…" over "v2.18." and "0". So
+// the arrangement is made here and handed over finished.
+//
+// A column no wider than minSqueezed, or than its heading, keeps its natural
+// width. A wider one starts at that floor, and the room left over is shared in
+// equal cells among the columns that still want more, until each has what it
+// asked for or the room is gone. Equal, not proportional: neither the column
+// with a forty-character outlier nor the one with a sentence has a better claim
+// to the last cell.
+func squeezedWidths(t view.Table, headers []string, st styles) []int {
+	if st.width <= 0 || len(t.Columns) == 0 {
+		return nil
+	}
+	natural := naturalWidths(t, headers)
+	// One border cell per column plus one to close the table.
+	budget := st.width - (len(natural) + 1)
+	if sum(natural) <= budget {
+		return nil
+	}
+	widths := make([]int, len(natural))
+	for i, n := range natural {
+		heading := 0
+		if i < len(headers) {
+			heading = lipgloss.Width(headers[i])
+		}
+		widths[i] = min(n, max(heading, minSqueezed)+2)
+	}
+	left := budget - sum(widths)
+	if left < 0 {
+		return nil
+	}
+	for left > 0 {
+		grew := false
+		for i := range widths {
+			if left > 0 && widths[i] < natural[i] {
+				widths[i]++
+				left--
+				grew = true
+			}
+		}
+		if !grew {
+			break
+		}
+	}
+	return widths
 }
 
 func sum(ns []int) int {
