@@ -158,6 +158,28 @@ func TestSaveThemeReportsWhatApplyCouldNotHonour(t *testing.T) {
 	}
 }
 
+// The box being typed into is never what a short window cuts off. The swatch
+// strip took three lines at sixty columns, so under fourteen rows the first
+// field's box fell below the panel and the editor showed a palette and nothing
+// to type into.
+func TestTheThemeBoxIsVisibleOnAShortTerminal(t *testing.T) {
+	resetTheme(t)
+	for _, height := range []int{20, 14, 13, 12, 10, 9} {
+		m := New(registry.New(), config.Dashboard{}, nil)
+		m.width, m.height = 60, height
+		m.themeForm, m.mode = newThemeForm(nil), modeTheme
+		m.themeForm.form.Init()
+		m.fitThemeForm()
+		out := plain(m.themeView())
+		if !strings.Contains(out, "┃ >") {
+			t.Errorf("height %d: the focused box is not on screen:\n%s", height, out)
+		}
+		if got := strings.Count(out, "\n") + 1; got > height {
+			t.Errorf("height %d: the editor is %d lines tall", height, got)
+		}
+	}
+}
+
 // A swatch and its name are one unit however narrow the terminal: a plain
 // soft wrap broke the strip between "████" and the word beside it, leaving a
 // line that began with a name and read as the swatch of the line above.
