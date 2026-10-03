@@ -198,6 +198,11 @@ func (e *blockedAddrError) Error() string {
 		// Only a test's relaxed or tightened isBlockedIP gets here.
 		why = "an address"
 	}
+	// An address typed as the host resolved to nothing: "127.0.0.1 resolves to
+	// 127.0.0.1" sent a reader looking for the DNS record that was not there.
+	if e.host == e.ip.String() {
+		return fmt.Sprintf("%s is %s — rta refuses to connect there", e.host, why)
+	}
 	return fmt.Sprintf("%s resolves to %s, %s — rta refuses to connect there", e.host, e.ip, why)
 }
 
