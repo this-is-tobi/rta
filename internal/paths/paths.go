@@ -8,8 +8,10 @@
 package paths
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -32,19 +34,28 @@ func Data() string {
 	return dir
 }
 
-// resolveData is Data and whether the answer is the stranded directory, which
-// is the one EnsureData has to look at before it is used.
-func resolveData() (dir string, isStranded bool) {
+// Refused is why the state has no usable directory, or nil: the stranded
+// directory exists and is not a private directory of this account (stranded).
+// Data answers a path nothing can be opened under in that case, so a reader
+// of it finds an error; this is the sentence to give the person who has to
+// act on it.
+func Refused() error {
+	_, problem := resolveData()
+	return problem
+}
+
+// resolveData is Data and, for the stranded directory, why it cannot be used.
+func resolveData() (dir string, problem error) {
 	if d := os.Getenv("RTA_DATA_DIR"); d != "" {
-		return d, false
+		return d, nil
 	}
 	if x := os.Getenv("XDG_DATA_HOME"); x != "" {
-		return filepath.Join(x, "rta"), false
+		return filepath.Join(x, "rta"), nil
 	}
 	if home := homeDir(); home != "" {
-		return filepath.Join(home, ".local", "share", "rta"), false
+		return filepath.Join(home, ".local", "share", "rta"), nil
 	}
-	return stranded(), true
+	return stranded()
 }
 
 // homeDir is the account's home: $HOME, then the account database, and ""
@@ -68,23 +79,72 @@ var passwdHome = func() string {
 
 // stranded is where state goes on a machine with no home at all: a directory
 // of the account's own under the temporary one, which survives neither a
-// reboot nor a container, and which EnsureData only uses when it is
-// the account's own and owner-only (see ownedPrivately), since a name in a
-// shared directory is one anybody can create first.
+// reboot nor a container, and which is used only when it is the account's own
+// and owner-only, since a name in a shared directory is one anybody can create
+// first.
+//
+// **Judged here, on every way in, and not only where the directory is made.**
+// The check lived in EnsureData alone, and a reader never goes through that:
+// the grant gate reads grants.json and the key that seals it from wherever
+// Data says, so a directory another account had made at this name, holding a
+// grant file and a key that agree with each other, was read as the account's
+// own grants. A directory that is not private is answered as a path nothing
+// opens under (refusedState), so the read is an error, which the gate takes
+// for a grant file it cannot trust, and problem says why.
+//
+// Made here too, if it is not there, so that what is returned is a directory
+// this account made: with the check apart from the creation, an account could
+// rename a prepared directory into the name between the two. The sticky bit of
+// the temporary directory keeps anyone else from removing or renaming ours.
 //
 // Said once per process, on stderr, and in words that end in what to do: a
 // grant that vanishes at the next reboot is fail-closed, but an audit trail
 // that does is a surprise, and the person who is told on the first run has
-// the whole run to fix it in. Not refused: a bare container that only reads
-// the machine (rta sys, rta net) has no use for state and no reason to be
-// turned away for lacking a place to put it.
-func stranded() string {
+// the whole run to fix it in. Not refused for want of a place: a bare
+// container that only reads the machine (rta sys, rta net) has no use for
+// state and no reason to be turned away for lacking somewhere to put it, so a
+// directory that cannot be made is left to the writer that needs it to say so.
+func stranded() (string, error) {
 	dir := filepath.Join(os.TempDir(), fmt.Sprintf("rta-%d", os.Getuid()))
+	problem := privateStranded(dir)
 	strandedNotice.Do(func() {
+		if problem != nil {
+			fmt.Fprintf(noticeTo, "rta: no home directory is set, and %v\n", problem)
+			return
+		}
 		fmt.Fprintf(noticeTo, "rta: no home directory is set, so its state (grants, the record, stores) is "+
 			"kept in %s, which does not outlast a reboot or a container — set HOME or RTA_DATA_DIR to keep it\n", dir)
 	})
-	return dir
+	if problem != nil {
+		return refusedState, problem
+	}
+	return dir, nil
+}
+
+// refusedState is the path Data answers when the stranded directory is not
+// one rta may use: below a file that is not a directory, so nothing can be
+// read from it or made in it, whatever an account may have put at the name it
+// stands in for.
+var refusedState = filepath.Join(os.DevNull, "rta-state-refused")
+
+// privateStranded makes dir if nobody has and reports why it is not a
+// directory of this account that no other account can enter.
+func privateStranded(dir string) error {
+	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+		return nil
+	}
+	info, err := os.Lstat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("%s cannot be looked at (%w), so rta will not keep its state there — set HOME or RTA_DATA_DIR", dir, err)
+	}
+	if !info.IsDir() || (runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) || !ownedByUs(info) {
+		return fmt.Errorf("%s exists and is not a private directory of this account, so rta will "+
+			"not keep its state there — set HOME or RTA_DATA_DIR", dir)
+	}
+	return nil
 }
 
 // strandedNotice and noticeTo are the once and the writer stranded says it
@@ -137,23 +197,18 @@ func System() string {
 //
 // The one directory not left as found is the stranded one: it is named by
 // nothing but the uid, in a directory every account can write to, so one that
-// is not the account's own or lets others in is refused rather than used.
+// is not the account's own or lets others in is refused rather than used
+// (stranded), here and for every reader of Data. It is also the one made
+// before this runs, by whichever reader resolves it first, with the same
+// owner-only mode: the refusal has to be made where it is read, and a check
+// apart from the creation leaves room to rename another account's directory
+// into the name between the two.
 func EnsureData() (string, error) {
-	dir, isStranded := resolveData()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return dir, err
+	dir, problem := resolveData()
+	if problem != nil {
+		return dir, problem
 	}
-	if isStranded {
-		info, err := os.Lstat(dir)
-		if err != nil {
-			return dir, err
-		}
-		if !info.IsDir() || info.Mode().Perm()&0o077 != 0 || !ownedByUs(info) {
-			return dir, fmt.Errorf("%s exists and is not a private directory of this account, so rta will "+
-				"not keep its state there — set HOME or RTA_DATA_DIR", dir)
-		}
-	}
-	return dir, nil
+	return dir, os.MkdirAll(dir, 0o700)
 }
 
 // Indexes is the directory under the data directory the plugin indexes are
