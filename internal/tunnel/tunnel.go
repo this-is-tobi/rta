@@ -454,7 +454,12 @@ func kubectlFailed(name, spec, stderr string) *view.Error {
 	}
 	switch {
 	case strings.Contains(s, "context") && strings.Contains(s, "does not exist"):
-		return view.Errorf("tunnel.context.unknown", "profile %q names a kube context that does not exist", name).
+		// Which context, not only whose: the profile is the person's name for
+		// the connection, and the coordinate's first segment is the word that
+		// has to match a line of `kubectl config get-contexts`.
+		kubeContext, _, _ := strings.Cut(spec, "/")
+		return view.Errorf("tunnel.context.unknown", "profile %q names the kube context %q, which does not exist",
+			name, kubeContext).
 			WithHint("`kubectl config get-contexts` lists them")
 	case strings.Contains(s, "not found"):
 		return view.Errorf("tunnel.service.missing", "%s: %s", name, one).

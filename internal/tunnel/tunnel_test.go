@@ -174,6 +174,22 @@ func TestCloseIsIdempotent(t *testing.T) {
 	(*Tunnel)(nil).Close()
 }
 
+// The refusal of a context names the context. "profile "fwd" names a kube
+// context that does not exist" left the reader to open the config and find
+// which of the profile's segments kubectl had refused; the first segment of
+// the coordinate is the word that has to be a line of `kubectl config
+// get-contexts`.
+func TestAMissingKubeContextIsNamed(t *testing.T) {
+	fakeKubectl(t, "echo 'error: context \"homelab\" does not exist' >&2\nexit 1\n")
+	_, verr := Open(context.Background(), "fwd", Target{Kube: homelab})
+	if verr == nil || verr.Code != "tunnel.context.unknown" {
+		t.Fatalf("err = %v, want tunnel.context.unknown", verr)
+	}
+	if !strings.Contains(verr.Message, `"homelab"`) || !strings.Contains(verr.Message, `"fwd"`) {
+		t.Errorf("%q names the profile or the context but not both", verr.Message)
+	}
+}
+
 // kubectl's failures are stable and specific, which is most of why shelling
 // out is tolerable: the message an operator sees is one they already know how
 // to read. Each still needs a code and a next step.
