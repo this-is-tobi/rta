@@ -167,6 +167,8 @@ The same fact, spelled for a service behind a jump host rather than in a cluster
 
 One forward per call, torn down afterwards. A cached port-forward outlives the pod it points at, and a stale tunnel to a rescheduled pod fails in a way nobody can read.
 
+A forward is also torn down when the server that opened it is killed outright: on Linux the kernel ends it with its parent, and on macOS, which has no such signal, the next `rta mcp serve` finds what a killed one left in `forwards/` under the data directory and stops it — only when the process that started it is gone and the pid still has the start time that was written down, so a pid the kernel has reused is never signalled. Until then a forward left by a `kill -9` is a loopback listener into the cluster; `rta mcp serve` says on its stderr how many it stopped. Windows has neither, and a forward left there runs until it is stopped.
+
 A connection states **at most one** of `kube` and `ssh`; both at once is refused.
 
 ### When the far side speaks TLS on its own
@@ -396,6 +398,8 @@ rta use staging        # agents can now reach staging and nothing else
 ```
 
 — and it can only ever take away, never give. An agent still needs a grant to reach `staging` itself; switching just guarantees it cannot reach `production` while you are working in staging, without you auditing a single grant.
+
+The selection is sealed like the grants are, with a key beside it in the data directory, so a file that was edited, truncated, replaced or removed is one rta does not believe. A selection it does not believe is not "nothing is on": it is held shut, and every profile is refused to agents until `rta use <profile>` or `rta use --off` writes it again. `rta doctor` reports it as `profile selection`, and the record notes it on each refused call. The seal is a tamper alarm and not a lock — whatever reads the key can seal a selection of its own, as it could for the grants — which is why the answer to that threat stays the grants and the [guard](../30-boundary/30-grants.md#the-guard-a-passphrase-in-front-of-issuance).
 
 ## Grants and profiles together
 

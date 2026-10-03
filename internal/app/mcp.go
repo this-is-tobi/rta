@@ -37,6 +37,9 @@ import (
 	agentsession "github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/internal/shellquote"
 	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/internal/tunnel"
+	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -50,6 +53,22 @@ func newMCPCommand(reg *registry.Registry, version string, opts *globalOpts) *co
 	root.AddCommand(newMCPServeCommand(reg, version))
 	root.AddCommand(newMCPInstallCommand(opts))
 	return root
+}
+
+// serverReady is what readiness asks: that the config reads, and that the
+// record can be written.
+//
+// A config that does not parse does not stop the server, and the capabilities a
+// profile could change are refused while it does not (mcp.Options.ProfilesErr).
+// That is a server that looks up and answers every agent with a refusal, so it
+// is not one to send traffic to: the probe says so, with the file's own reason,
+// to whoever describes the pod, and the first read that succeeds (a ConfigMap
+// put right) ends it without a restart.
+func serverReady() error {
+	if _, err := config.Load(); err != nil {
+		return fmt.Errorf("the config does not read, so a call to a capability a profile could change is refused: %w", err)
+	}
+	return recordWritable()
 }
 
 // recordWritable is the readiness question, and it is deliberately a write.
@@ -85,6 +104,18 @@ func recordWritable() error {
 	}
 	_ = f.Close()
 	_ = os.Remove(probe)
+	// A directory that takes a file is not yet a record that takes an append:
+	// something sitting where the record goes, a key gone from beside it. A
+	// call that needs a grant is refused in that state (core.record.unwritable),
+	// so a server in it is not one to send traffic to either. Only where there
+	// is a record to ask about, which keeps a fresh data directory what this
+	// probe found it: the first call creates the record, and asking before it
+	// would create one here.
+	if agentlog.Started() {
+		if err := agentlog.Writable(); err != nil {
+			return fmt.Errorf("the record of agent calls cannot be written, so a call that needs a grant is refused: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -156,11 +187,18 @@ func localityGated(reg *registry.Registry) string {
 	return strings.Join(names, ", ")
 }
 
+// maxResultCeilingMiB is the most --max-result takes. A result is held several
+// times over while it is handled (measured at about sixteen: 100 MB took the
+// server to 1.68 GB), so the number an operator may set is bounded by what the
+// machine can hold of it.
+const maxResultCeilingMiB = 256
+
 func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	var (
 		consentOn     bool
 		consentWait   time.Duration
 		consentNotify bool
+		maxResultMiB  int
 		agentName     string
 		roots         []string
 		httpAddr      string
@@ -229,6 +267,12 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"rta: no desktop notifier here, so parked calls will only appear in `rta agent pending`")
 			}
+			if maxResultMiB < 1 || maxResultMiB > maxResultCeilingMiB {
+				return serveUsage(fmt.Sprintf("--max-result is %d MiB, which is not between 1 and %d",
+					maxResultMiB, maxResultCeilingMiB),
+					"it is the most a result may be before it is withheld: what the server holds of an answer is "+
+						"several times its size, so a ceiling is a memory limit, not only a courtesy to the model")
+			}
 			if consentWait > consent.MaxWait {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"rta: --consent-wait is above the ten-minute maximum, so a parked call waits ten minutes and not longer")
@@ -257,20 +301,19 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			// is sent once, so this is a snapshot; what a call actually
 			// resolves through is Reload, below.
 			//
-			// A config that will not parse is not fatal here. It costs the
-			// agent every profile: the server still serves the base
-			// connection, and `rta doctor` is where the operator finds out why
-			// nothing else worked. **It is not the fail-closed direction for a
-			// call that names no profile**: with none to name, that call runs
-			// on the base connection, and the rule that keeps it off that
-			// connection once profiles exist has no snapshot to hold until
-			// the file reads again (mcp.Options.Reload). Refusing those
-			// calls, or refusing to start, would turn a typo in the config
-			// into a server that offers nothing, which is the operator's call
-			// to make and not one made quietly here.
+			// A config that will not parse is not fatal here: the server
+			// starts, serves every capability a profile has no say over, and
+			// `rta doctor` is where the operator finds out why the rest
+			// refuse. Refusing to start would turn a typo in the config into a
+			// server that offers nothing, and an agent attached to it into one
+			// that reports the whole thing missing. A call to a plugin that
+			// profiles may govern is refused while the file is unreadable
+			// (mcp.Options.ProfilesErr), because with no snapshot the rule
+			// that keeps an unprofiled call off the base connection has
+			// nothing to hold; the first read that succeeds lifts it.
 			profileCfg, cfgErr := config.Load()
 			if cfgErr != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), "rta: no profiles are available:", cfgErr)
+				fmt.Fprintln(cmd.ErrOrStderr(), "rta: the config did not read, so a call to a plugin that profiles govern is refused until it does:", cfgErr)
 				profileCfg = config.Config{}
 			}
 			// Refused here, by the same function `rta grant allow --agent`
@@ -533,10 +576,12 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				Consent:       consentOn,
 				ConsentWait:   consentWait,
 				ConsentNotify: consentNotify,
+				MaxResult:     maxResultMiB << 20,
 				Origin:        reg.Origin,
 				Config:        pluginConfig.For,
 				ConfigSection: pluginConfig.Section,
 				Profiles:      profileCfg,
+				ProfilesErr:   cfgErr,
 				// The schema above is a snapshot; what a call resolves through
 				// is the file as it is now, so an environment the operator
 				// edits takes effect without a restart — and the grant they
@@ -596,6 +641,14 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			// the first thing to rule out when nothing shows up, and it is
 			// only visible if both sides say which file they mean.
 			fmt.Fprintf(cmd.ErrOrStderr(), "record: %s (session %s)\n", agentlog.Path(), sessionID)
+			// A server killed outright leaves its port-forwards running where
+			// the platform has no parent-death signal for them (macOS), and a
+			// listener into the cluster nobody watches is found here, by the
+			// next server to start, and stopped.
+			if n := tunnel.ReapOrphans(); n > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(), "rta: stopped %s a previous server was killed without closing\n",
+					format.Count(n, "port-forward", "port-forwards"))
+			}
 			// What Remote hides, named rather than left for an agent to notice
 			// as a shorter tool list: see plugin.Capability.HostSpecific.
 			if blocked := opts.RemoteBlocked(reg); len(blocked) > 0 {
@@ -626,7 +679,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				if observeLn != nil {
 					observeHandler = mcp.NewObserveHandler(mcp.ObserveConfig{
 						Verifier: verifier,
-						Ready:    recordWritable,
+						Ready:    serverReady,
 						Metrics:  func() (string, error) { return agentcap.Exposition(reg.Artifact) },
 					})
 					fmt.Fprintf(cmd.ErrOrStderr(),
@@ -645,7 +698,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// to, since plugins are spawned during startup, long before
 				// this runs — so what is left to do is ask for it back.
 				err = mcp.Run(cmd.Context(), server, &sdk.IOTransport{
-					Reader: stdio.Real(),
+					Reader: mcp.LimitRequests(stdio.Real()),
 					Writer: stdio.Writer(cmd.OutOrStdout()),
 				}, 0, cmd.ErrOrStderr())
 			}
@@ -701,6 +754,8 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		"how long a parked call waits for your answer before it is refused")
 	cmd.Flags().BoolVar(&consentNotify, "consent-notify", false,
 		"also ring this machine's desktop notification when a call is parked")
+	cmd.Flags().IntVar(&maxResultMiB, "max-result", plugin.DefaultResultLimit>>20,
+		"the most a result may be, in MiB, before it is withheld and the caller told how to ask for less")
 	// A root is a directory, and the shell has the list.
 	completeFlag(cmd, "root",
 		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {

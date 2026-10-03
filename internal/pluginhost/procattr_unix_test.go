@@ -25,7 +25,7 @@ import (
 // the plugin itself exit, so a test that only checked the plugin would pass
 // against the broken version.
 func TestReapTakesTheWholeProcessTree(t *testing.T) {
-	id, err := Identify("/bin/sh")
+	id, err := Identify(scriptRunning(t, "/bin/sh"))
 	if err != nil {
 		t.Skipf("no /bin/sh: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestReapTakesTheWholeProcessTree(t *testing.T) {
 	// sleep even though the child it started has long exited — which is the
 	// same reason a real plugin's orphan can wedge a host that waits on
 	// output rather than on the process.
-	cmd := buildCmd(id, deny, []string{"-c", "sleep 60 >/dev/null 2>&1 & echo $!; exit 0"})
+	cmd := stagedCmd(t, id, deny, []string{"-c", "sleep 60 >/dev/null 2>&1 & echo $!; exit 0"})
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("spawning: %v", err)

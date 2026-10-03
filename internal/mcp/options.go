@@ -37,6 +37,9 @@ type Options struct {
 	// refusals slows a caller that keeps being refused — see backoff. Set
 	// by NewServer unless a test supplied one; unexported for locks' reason.
 	refusals *backoff
+	// pace holds a caller whose calls keep succeeding to a rate the record can
+	// keep up with — see pacer. Set by NewServer unless a test supplied one.
+	pace *pacer
 
 	// Session is the id this process stamps on every ledger entry, and
 	// Connected is told the client's announced name once the MCP handshake
@@ -113,6 +116,19 @@ type Options struct {
 	// It is the *schema's* answer, and only that. What a call resolves through
 	// comes from Reload — see there.
 	Profiles config.Config
+	// ProfilesErr is why Profiles is empty when the config did not read at
+	// startup, and nil when it did.
+	//
+	// **Empty is not the same as unknown.** A server that started over a file
+	// that would not parse had no snapshot to fall back on, and a call that
+	// names no profile then ran on the base connection: the rule that keeps it
+	// off that connection once profiles exist (takeProfile) had nothing to hold
+	// until the file read again, and a typo an editor left behind could be left
+	// alone for as long as nobody looked at stderr. While the file still does
+	// not read, a call to a plugin that profiles may govern is refused, and the
+	// server keeps serving every capability a profile has no say over; the
+	// first read that succeeds ends it, with no restart.
+	ProfilesErr error
 	// Reload answers the operator's connections as the config file has them
 	// now. nil falls back to the startup snapshot.
 	//
@@ -196,6 +212,11 @@ type Options struct {
 	// never the machine). False for stdio, which is every server this field
 	// existed before and changes nothing for.
 	Remote bool
+	// MaxResult is the most a result may be, in bytes, before it is withheld
+	// as core.result.toolarge. Zero is plugin.DefaultResultLimit: a result is
+	// always bounded, since what an unbounded one costs is not the caller's to
+	// choose (rta mcp serve --max-result is the operator's).
+	MaxResult int
 	// Shutdown ends when the server is asked to stop (a signal), and every call
 	// in flight is cancelled with it. nil means a call is cancelled only by its
 	// client.
@@ -213,10 +234,22 @@ type Options struct {
 	Shutdown context.Context
 }
 
-// active is the profile switched on right now, or "".
+// resultLimit is the most a result may be: what the operator set, and the
+// default where they set nothing.
+func (o Options) resultLimit() int {
+	if o.MaxResult > 0 {
+		return o.MaxResult
+	}
+	return plugin.DefaultResultLimit
+}
+
+// active is the profile switched on right now, or "" — or profile.Unverified
+// where the selection file is there and cannot be believed, which no profile
+// is, so that every grant naming one stops covering a call until `rta use`
+// writes the file again: a fence that cannot be read is held shut, not lifted.
 func (o Options) active() string {
 	if o.Active == nil {
-		return profile.Active()
+		return profile.Fence()
 	}
 	return o.Active()
 }
@@ -243,14 +276,21 @@ func (o Options) connStamp(name, namespace string) string {
 // profiles is the connection set a call resolves through: the file as it is
 // now, or the startup snapshot when no reader was wired.
 func (o Options) profiles() config.Config {
-	if o.Reload == nil {
-		return o.Profiles
+	cfg, _ := o.profileSet()
+	return cfg
+}
+
+// profileSet is profiles with whether the operator's connections are known at
+// all: false only when the file has not read since the server started and did
+// not read at startup either, which is the one state with no snapshot to
+// answer from.
+func (o Options) profileSet() (config.Config, bool) {
+	if o.Reload != nil {
+		if live, err := o.Reload(); err == nil {
+			return live, true
+		}
 	}
-	live, err := o.Reload()
-	if err != nil {
-		return o.Profiles
-	}
-	return live
+	return o.Profiles, o.ProfilesErr == nil
 }
 
 // origin resolves a namespace, treating an unwired lookup as "nothing is

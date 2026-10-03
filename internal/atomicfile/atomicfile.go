@@ -286,6 +286,14 @@ func Replace(from, to string) error {
 		if err = rename(from, to); err == nil {
 			return nil
 		}
+		// A directory where the file goes is no handle that will be closed in a
+		// moment: nothing resolves it by waiting, on any platform. It cost the
+		// whole of the waits above on every replace, and the record's end mark
+		// is replaced after every call an agent makes, so a directory left at
+		// its name cost each call nearly a second.
+		if info, statErr := os.Lstat(to); statErr == nil && info.IsDir() {
+			return err
+		}
 	}
 	return err
 }

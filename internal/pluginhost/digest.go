@@ -5,10 +5,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 
+	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/registry"
 )
 
@@ -44,11 +44,12 @@ func (i Identity) Short() string {
 // a distance: a green checkmark over an unverified artifact is worse than no
 // checkmark, because somebody will build a policy on it.
 //
-// This is TOFU at best and rta does not claim more: a
-// $PATH binary can be replaced between this hash and the exec that follows it,
-// and go-plugin's own SecureConfig has exactly the same TOCTOU shape. The
-// digest's value is that it names *an artifact* for the cache key and for any
-// later authorisation — not that it proves origin, which nothing here can do.
+// The digest names *an artifact* for the cache key and for any later
+// authorisation — it does not prove origin, which nothing here can do. Nor is
+// hashing a path enough to say what a launch will run: the bytes are checked
+// again, and run, from a private copy (stage) for anything outside rta's own
+// directories, because go-plugin's SecureConfig has the same hash-then-exec
+// shape and the same gap between the two.
 func Identify(name string) (Identity, error) {
 	resolved, err := exec.LookPath(name)
 	if err != nil {
@@ -71,7 +72,11 @@ func Identify(name string) (Identity, error) {
 	if err != nil {
 		return Identity{}, fmt.Errorf("resolving %q: %w", resolved, err)
 	}
-	f, err := os.Open(abs)
+	// Without waiting: a named pipe with the execute bit, planted in a $PATH
+	// directory or the store, held this open for good, and with it every
+	// start of rta that discovers plugins. atomicfile.Open refuses anything
+	// that is not a regular file and never blocks on one that is not.
+	f, err := atomicfile.Open(abs)
 	if err != nil {
 		return Identity{}, fmt.Errorf("reading plugin %q: %w", abs, err)
 	}

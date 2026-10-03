@@ -3,6 +3,8 @@ package mcp
 import (
 	"fmt"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/auth"
 )
@@ -64,16 +66,24 @@ func NewObserveHandler(cfg ObserveConfig) http.Handler {
 		fmt.Fprintln(w, "ok")
 	})
 
+	check := keptFor(cfg.Ready, readyHold)
 	ready := func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if cfg.Ready != nil {
-			if err := cfg.Ready(); err != nil {
+			if err := check(); err != nil {
 				w.WriteHeader(http.StatusServiceUnavailable)
 				// The reason, in the body, because this one is read by a
 				// person looking at `kubectl describe` after the pod stopped
 				// taking traffic — and because it says what is wrong with this
 				// server's own storage, not anything about a caller.
-				fmt.Fprintln(w, err.Error())
+				//
+				// With the places named by what they are (operatorPaths): the
+				// probe answers whoever can reach the address without a token,
+				// and "the data directory <path> is not writable" is the layout
+				// of the server's state for any of them. `<data dir> is not
+				// writable` says the same to the person describing the pod,
+				// who knows where it is.
+				fmt.Fprintln(w, withoutOperatorPaths(err.Error()))
 				return
 			}
 		}
@@ -112,4 +122,32 @@ func NewObserveHandler(cfg ObserveConfig) http.Handler {
 	// drive it on its holder's behalf, and that argument does not weaken
 	// because the paths are smaller.
 	return http.NewCrossOriginProtection().Handler(mux)
+}
+
+// readyHold is how long a readiness verdict is kept. An orchestrator asks every
+// few seconds; whoever else can reach the open address asks as often as they
+// like, and the question writes a file and takes the record's lock, which a
+// call being recorded is waiting for.
+const readyHold = time.Second
+
+// keptFor answers ready, and repeats the answer for hold after it was given
+// rather than asking again.
+func keptFor(ready func() error, hold time.Duration) func() error {
+	if ready == nil {
+		return func() error { return nil }
+	}
+	var (
+		mu   sync.Mutex
+		at   time.Time
+		last error
+	)
+	return func() error {
+		mu.Lock()
+		defer mu.Unlock()
+		if !at.IsZero() && time.Since(at) < hold {
+			return last
+		}
+		last, at = ready(), time.Now()
+		return last
+	}
 }

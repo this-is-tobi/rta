@@ -63,6 +63,9 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 	if opts.refusals == nil {
 		opts.refusals = newBackoff(refusalFree, refusalWindow, refusalStep, refusalMax)
 	}
+	if opts.pace == nil {
+		opts.pace = newPacer(openBurst, openRate, openQueue)
+	}
 	server := sdk.NewServer(&sdk.Implementation{
 		Name:    "rta",
 		Title:   "Rule Them All",
@@ -435,6 +438,28 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			refusedBy(rec, verr)
 			return errResult(storeRefusal(verr)), nil
 		}
+		// A call that needs authority is not run if it cannot be recorded.
+		//
+		// Asked here, before Reserve, so a refusal spends no use and parks no
+		// consent question: asking the operator to approve a call that would
+		// then run with no trace would have them consent to something nobody
+		// can look back on.
+		//
+		// Only for a call that needs a grant. A free read spends nothing, and
+		// refusing every one of them while the record cannot be written would
+		// take sys.disk, the tool that finds the full disk, down with the rest:
+		// it runs, the failed append goes to stderr (record), and the count of
+		// what was lost rides on the next row that is written.
+		if grant.Required(c, profileName) {
+			if err := agentlog.Writable(); err != nil {
+				fmt.Fprintf(os.Stderr, "rta: refusing %s, the record of agent calls cannot be written: %v\n", c.ID, err)
+				verr := view.Errorf("core.record.unwritable",
+					"%s was not run: a call that needs a grant is not run while the record of agent calls cannot be written", c.ID).
+					WithHint(plugin.AskOperator("doctor"))
+				refusedBy(rec, verr)
+				return errResult(verr), nil
+			}
+		}
 		by := grant.Caller{
 			Agent:   opts.Agent,
 			Profile: profileName,
@@ -465,6 +490,14 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 						rec.Note = "a grant covers this call but names a connection " +
 							"that is not the one it now resolves to — `rta doctor`"
 					}
+					// Or the selection file that fences the environments does
+					// not verify, which closes every profile (profile.Fence):
+					// the agent hears an ungranted call's sentence, and the
+					// operator is told whose the fix is.
+					if profileName != "" && by.Active == profile.Unverified {
+						rec.Note = "the file that says which environment is on does not verify, " +
+							"so no profile is usable — `rta doctor`, then `rta use`"
+					}
 					return errResult(storeRefusal(verr)), nil
 				}
 				return errResult(decided), nil
@@ -487,6 +520,17 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			rec.Auth = agentlog.Standing
 			rec.Role, rec.RoleIssued = roleOf(covering)
 		} else {
+			// What no grant, no question and no refusal covers: the one kind
+			// of call a loop can make for as long as it likes, and each is a
+			// row. Held before it runs and not after its row, so that a caller
+			// sending its calls without waiting for the replies is held to the
+			// same rate as one that waits (pacer).
+			if err := opts.pace.wait(ctx, refusalKey(ctx, opts)); err != nil {
+				verr := view.Errorf("core.mcp.cancelled",
+					"%s was not run: the caller went away while it waited its turn", c.ID)
+				refusedBy(rec, verr)
+				return errResult(verr), nil
+			}
 			rec.Auth = agentlog.Open
 		}
 		// Only now, with consent in hand, is the profile resolved. The order
@@ -592,7 +636,11 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// And the rule a named link is told by (finalLink), for the links
 			// a handler comes across rather than receives: fs.tree lists a
 			// directory's, each with what it holds.
-			WithLinkTargets(func(dir, target string) string { return tellTarget(opts.Paths, dir, target) })
+			WithLinkTargets(func(dir, target string) string { return tellTarget(opts.Paths, dir, target) }).
+			// And how much of an answer the host takes: a plugin's is held whole
+			// as it arrives, and an answer an agent cannot read is not worth the
+			// memory it costs (plugin.DefaultResultLimit).
+			WithResultLimit(opts.resultLimit())
 		for field, l := range links {
 			run = run.WithLink(field, l.path, l.target)
 		}
@@ -654,16 +702,55 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// the authority gate, open or grant means authority allowed it
 			// and the handler's own policy still said no — the pair tells a
 			// reader where in the stack the refusal happened.
-			if ve.Refusal {
+			switch {
+			case ve.Code == "core.result.toolarge":
+				// A plugin's answer the host would not receive (pluginhost's
+				// overLimit): the call ran, what it changed is changed, and the
+				// row says so beside the reason the answer was withheld.
+				withheld(rec, ve)
+			case ve.Refusal:
 				refusedBy(rec, ve)
-			} else {
+			default:
 				failedBy(rec, ve)
 			}
 			return errResult(ve), nil
 		}
 		rec.Outcome = agentlog.Ran
-		return viewResult(v)
+		res, err := viewResult(v)
+		if err != nil {
+			return nil, err
+		}
+		// A built-in's answer is measured as it is sent: it is already in
+		// memory, so what this saves the agent is the answer, which a model
+		// cannot read at that size and an SDK would encode a second time for the
+		// structured copy.
+		if limit := opts.resultLimit(); limit > 0 {
+			if size := resultSize(res); size > limit {
+				ve := plugin.ResultTooLarge(c.ID, size, limit)
+				withheld(rec, ve)
+				return errResult(ve), nil
+			}
+		}
+		return res, nil
 	}
+}
+
+// withheld records a call that ran and whose result was not handed over: the
+// outcome is the call's, ran, and the code and the reason say what happened to
+// the answer.
+func withheld(e *agentlog.Entry, verr *view.Error) {
+	e.Outcome, e.Code, e.Reason = agentlog.Ran, cut(verr.Code, maxCode), cut(textclean.Credentials(verr.Message), maxReason)
+}
+
+// resultSize is what a result is as the client receives it: its text.
+func resultSize(res *sdk.CallToolResult) int {
+	n := 0
+	for _, c := range res.Content {
+		if t, ok := c.(*sdk.TextContent); ok {
+			n += len(t.Text)
+		}
+	}
+	return n
 }
 
 // takeProfile removes the host-owned "profile" argument from what the caller
@@ -706,7 +793,18 @@ func takeProfile(c plugin.Capability, values map[string]any, opts Options) (stri
 		// rule switched on at the next restart, with nothing anywhere saying
 		// so — the same defect as the connection stamp above, one field along.
 		// Every other input to this decision is already read per call.
-		if named := opts.profiles().ProfilesFor(plugin.Namespace(c.ID)); len(named) > 0 && plugin.Profilable(c) {
+		cfg, known := opts.profileSet()
+		if !known {
+			// Not "no profiles": the file that says which plugins have
+			// them has not read since before this server started, so a call
+			// that names none cannot be told from one that must. Said as the
+			// operator's to fix, in the words every other unreadable store
+			// uses, and not with the file's own error, which names a path.
+			return "", view.Errorf("core.profile.unreadable",
+				"%s cannot be judged: the connections this server was configured with could not be read", c.ID).
+				WithHint(plugin.AskOperator("doctor"))
+		}
+		if named := cfg.ProfilesFor(plugin.Namespace(c.ID)); len(named) > 0 && plugin.Profilable(c) {
 			return "", view.Errorf("core.profile.required",
 				"%s has configured connections, so a call must name which one", c.ID).
 				WithHint("ask the operator which profile to use and for a grant naming it")
@@ -748,12 +846,36 @@ func takeProfile(c plugin.Capability, values map[string]any, opts Options) (stri
 // (plugin.AskOperator).
 func storeRefusal(verr *view.Error) *view.Error {
 	switch verr.Code {
-	case "core.grant.required", "core.grant.rate":
+	case "core.grant.required":
+		return withoutCredentialedCommand(verr)
+	case "core.grant.rate":
 		return verr
 	}
 	out := *verr
 	out.Hint = "this is about the grants rta keeps rather than this call, and only the operator " +
 		"can fix it — " + plugin.AskOperator("doctor")
+	return &out
+}
+
+// withoutCredentialedCommand is a refusal for a call that needs a grant, with
+// the command that would issue it left out when it names a credential.
+//
+// The record a grant names is compared byte for byte, so the command for a URL
+// that carries a token is the one with the token in it, and the agent is handed
+// every error with such shapes masked (errResult): the command it came out with
+// was one that issues a grant for a URL nobody sent, and authorizes nothing. A
+// command that does not fix the problem is worse than none. A standing grant
+// would also have to keep the credential in the clear in the grants file, which
+// is the reason to keep it out of the URL, so that is what the agent is told.
+func withoutCredentialedCommand(verr *view.Error) *view.Error {
+	if textclean.Credentials(verr.Hint) == verr.Hint {
+		return verr
+	}
+	out := *verr
+	out.Hint = "a person has to allow this first, but the record it names carries what looks like a credential, " +
+		"which a grant would have to keep in the clear and a command would show — send the credential in an input " +
+		"made for one (a bearer, a basic login, a header), not in the record, and ask again with the record " +
+		"without it"
 	return &out
 }
 
@@ -977,7 +1099,11 @@ func nameUnder(root, p string) bool {
 // because the encoder escapes the byte. It was never true against a model,
 // which reads the decoded string.
 func viewResult(v view.View) (*sdk.CallToolResult, error) {
-	m, err := view.ToMap(view.Redact(view.MapStrings(v, textclean.Model)))
+	// The operator's own places are named by what they are in a result as they
+	// are in an error (operatorPaths): kv.status says where the store is, and
+	// that is for the person who runs it.
+	names := operatorNames()
+	m, err := view.ToMap(view.Redact(view.MapStrings(v, func(s string) string { return names(textclean.Model(s)) })))
 	if err != nil {
 		return nil, err
 	}
@@ -993,8 +1119,13 @@ func viewResult(v view.View) (*sdk.CallToolResult, error) {
 
 func errResult(e *view.Error) *sdk.CallToolResult {
 	// AsError puts a foreign error's own text into Message, so an error is as
-	// much a channel from elsewhere as a result body is.
-	raw, _ := view.Marshal(view.Envelope{View: view.MapErrorStrings(e, textclean.Model)})
+	// much a channel from elsewhere as a result body is. It is also written
+	// for the person at a terminal, who is told where things are: what an agent
+	// is told of the operator's own places is their names (operatorPaths), and
+	// what it sent in a URL or a header is not repeated to it with its secrets.
+	raw, _ := view.Marshal(view.Envelope{View: view.MapErrorStrings(e, func(s string) string {
+		return withoutOperatorPaths(textclean.Credentials(textclean.Model(s)))
+	})})
 	return &sdk.CallToolResult{
 		IsError: true,
 		Content: []sdk.Content{&sdk.TextContent{Text: string(raw)}},

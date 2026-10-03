@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -59,7 +59,7 @@ type remotesFile struct {
 // the signature binding then refuses the relay, but the misdirection alone
 // is worth refusing at the source.
 func ServerURL(name string) (string, *view.Error) {
-	f, err := os.Open(RemotesPath())
+	f, err := atomicfile.Open(RemotesPath())
 	if err != nil {
 		return "", view.Errorf("core.operator.remotes",
 			"no server list at %s", RemotesPath()).

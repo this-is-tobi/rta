@@ -382,30 +382,27 @@ func TestAPluginThatSaysSomethingElseIsNotDescribedAsTheWrapper(t *testing.T) {
 }
 
 // sandbox-exec's own line, when it cannot run the plugin, is what says why,
-// and it has no level: the plugin gone between its hash and its launch.
+// and it has no level: a plugin whose interpreter is not there.
 func TestTheSandboxsOwnWordOnAPluginItCannotRunIsKept(t *testing.T) {
 	if err := available(); err != nil || !Confined() {
 		t.Skip("no sandbox wrapper here")
 	}
 	p := filepath.Join(t.TempDir(), "rta-plugin-gone")
-	if err := os.WriteFile(p, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(p, []byte("#!/nonexistent/interpreter\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	id, err := Identify(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(p); err != nil {
-		t.Fatal(err)
-	}
 	h := New()
 	defer h.CloseAll()
 	_, err = h.launch(context.Background(), id, DenySet{}, nil)
 	if err == nil {
-		t.Fatal("a plugin that is not there was launched")
+		t.Fatal("a plugin that cannot run was launched")
 	}
 	for _, want := range []string{id.Path + " exited before its handshake: exit status 71",
-		"\nthe plugin wrote: sandbox-exec: execvp() of '" + id.Path + "' failed"} {
+		"\nthe plugin wrote: sandbox-exec: execvp() of '" + id.execPath() + "' failed"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the launch does not say %q: %v", want, err)
 		}

@@ -30,16 +30,25 @@ import (
 // reason, on a security property, which is worse than a skip — a skip at
 // least says so.
 //
-// It writes beside its own executable rather than to a path baked in at build
-// time, so one build serves every test: each copies it into a directory of its
-// own and reads back its own trace.
+// It writes its trace under a name made from the digest of its own bytes
+// rather than to a path baked in at build time, so one build serves every
+// test, and not beside its own executable, because what runs is rta's private
+// copy of the file in a directory a confined process cannot write to.
 const canarySource = `package main
 
-import "os"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"path/filepath"
+)
 
 func main() {
 	if exe, err := os.Executable(); err == nil {
-		_ = os.WriteFile(exe+".ran", nil, 0o644)
+		if body, err := os.ReadFile(exe); err == nil {
+			sum := sha256.Sum256(body)
+			_ = os.WriteFile(filepath.Join(os.TempDir(), "rta-canary-"+hex.EncodeToString(sum[:])+".ran"), nil, 0o644)
+		}
 	}
 	os.Exit(1)
 }
@@ -98,7 +107,10 @@ func canary(t *testing.T) (dir, trace string, digest string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return dir, path + ".ran", id.Digest
+	trace = filepath.Join(os.TempDir(), "rta-canary-"+id.Digest+".ran")
+	_ = os.Remove(trace)
+	t.Cleanup(func() { _ = os.Remove(trace) })
+	return dir, trace, id.Digest
 }
 
 func ran(t *testing.T, trace string) bool {
