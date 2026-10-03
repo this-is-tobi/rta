@@ -1023,6 +1023,20 @@ func TestBackupOfAnUnparseableFileErrorsAsInvalidRatherThanLocked(t *testing.T) 
 	}
 }
 
+// The public half beside the key is the file a tab completion offers second and
+// a person picks by mistake. "no key found" read as a damaged file; it is the
+// other half, and the answer says so.
+func TestBackupOfAPublicKeyFileSaysItIsThePublicHalf(t *testing.T) {
+	_, public := writeEd25519Keypair(t, t.TempDir(), "id_ed25519", "")
+	_, err := runBackup(context.Background(), req(map[string]any{"key": public}))
+	if errCode(err) != "keys.key.public" {
+		t.Fatalf("code = %q, want keys.key.public: %v", errCode(err), err)
+	}
+	if ve := view.AsError(err, "x"); !strings.Contains(ve.Hint, "without .pub") {
+		t.Errorf("hint %q does not point at the private file", ve.Hint)
+	}
+}
+
 func TestListReportsAnUnparseableKeyFileAsUnknownRatherThanCrashing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
