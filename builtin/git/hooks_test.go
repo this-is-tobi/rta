@@ -338,8 +338,22 @@ func TestCoreHooksPathIsReadFromEveryScopeGitReads(t *testing.T) {
 		t.Errorf("commit-msg row = %v, want active, at %s", row, want)
 	}
 
-	if _, err := runHooks(context.Background(), guarded(t, dir, dir)); errCode(err) != "core.mcp.path.outside" {
+	_, err := runHooks(context.Background(), guarded(t, dir, dir))
+	if errCode(err) != "core.mcp.path.outside" {
 		t.Errorf("a hooks directory outside the root, over MCP: %q, want core.mcp.path.outside", errCode(err))
+	}
+	// The directory is the operator's own setting, in a file a caller cannot
+	// read and outside what it may: refused, and not told where it is.
+	if err != nil && strings.Contains(err.Error(), "org-hooks") {
+		t.Errorf("the refusal tells an MCP caller where the operator keeps their hooks: %v", err)
+	}
+
+	// One the repository's own config sets is text the caller wrote, and is
+	// quoted as it always was.
+	elsewhere := t.TempDir()
+	setHooksPath(t, repo, elsewhere)
+	if _, err := runHooks(context.Background(), guarded(t, dir, dir)); err == nil || !strings.Contains(err.Error(), elsewhere) {
+		t.Errorf("a hooks directory the repository names, outside the root: %v, want it quoted", err)
 	}
 
 	setHooksPath(t, repo, ".githooks")
