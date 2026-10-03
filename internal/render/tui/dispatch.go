@@ -559,8 +559,20 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			raw, err := view.MarshalIndent(
 				view.Envelope{View: view.Redact(m.result.raw)}, "", "  ")
 			if err == nil {
-				m.flash = "copied as JSON"
-				return m, tea.SetClipboard(string(raw)), true
+				// Both ways at once. OSC 52 alone is silent when the
+				// terminal does not take it — Terminal.app never does, and
+				// iTerm2 and tmux only when told to — while saying "copied"
+				// regardless, so the first paste found nothing. The system
+				// clipboard is the one that cannot fail quietly, and OSC 52
+				// is the only one that reaches the local machine over ssh, so
+				// the value goes to both and the flash says which is certain.
+				text := string(raw)
+				if copyValueToClipboard(text) == nil {
+					m.flash = "copied as JSON"
+				} else {
+					m.flash = "sent to the terminal as JSON — it pastes only where the terminal accepts that"
+				}
+				return m, tea.SetClipboard(text), true
 			}
 		}
 	case "c":
