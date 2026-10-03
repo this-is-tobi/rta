@@ -11,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/pem"
 	"math/big"
 	"net"
@@ -329,6 +330,51 @@ func TestInspectSpellsTheSerialInHex(t *testing.T) {
 		rows := inspectFile(t, &x509.Certificate{Subject: pkix.Name{CommonName: "s"}, SerialNumber: c.serial})
 		if rows["serial"] != c.want {
 			t.Errorf("serial %v = %q, want %q", c.serial, rows["serial"], c.want)
+		}
+	}
+}
+
+// What a certificate is for is listed: whether it is a CA and how far below it
+// may go, and the uses its key usage and extended key usage allow. A client
+// that answers "unsupported certificate purpose" is refusing a leaf with no
+// server auth, and nothing in the output said which uses it had.
+func TestInspectSaysWhatACertificateIsFor(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		tmpl x509.Certificate
+		want map[string]string
+	}{
+		{"a server leaf", x509.Certificate{
+			KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+			ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+		}, map[string]string{
+			"key-usage": "digital signature, key encipherment", "ext-key-usage": "server auth, client auth",
+		}},
+		{"an issuing CA with a path length of zero", x509.Certificate{
+			IsCA: true, BasicConstraintsValid: true, MaxPathLen: 0, MaxPathLenZero: true,
+			KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		}, map[string]string{
+			"ca": "yes, path length 0: no intermediate below it", "key-usage": "certificate signing, CRL signing",
+		}},
+		{"a root with no path length", x509.Certificate{
+			IsCA: true, BasicConstraintsValid: true, MaxPathLen: -1,
+		}, map[string]string{"ca": "yes"}},
+		{"a CA with a path length of two", x509.Certificate{
+			IsCA: true, BasicConstraintsValid: true, MaxPathLen: 2,
+		}, map[string]string{"ca": "yes, path length 2"}},
+		{"a vendor use no table names", x509.Certificate{
+			UnknownExtKeyUsage: []asn1.ObjectIdentifier{{1, 3, 6, 1, 4, 1, 311, 10, 3, 4}},
+			ExtKeyUsage:        []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning},
+		}, map[string]string{"ext-key-usage": "code signing, 1.3.6.1.4.1.311.10.3.4"}},
+		{"a certificate that sets none", x509.Certificate{}, map[string]string{}},
+	} {
+		tmpl := c.tmpl
+		tmpl.Subject = pkix.Name{CommonName: "u"}
+		rows := inspectFile(t, &tmpl)
+		for _, key := range []string{"ca", "key-usage", "ext-key-usage"} {
+			if rows[key] != c.want[key] {
+				t.Errorf("%s: %s = %q, want %q", c.name, key, rows[key], c.want[key])
+			}
 		}
 	}
 }

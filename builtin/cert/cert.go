@@ -553,8 +553,9 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Key: "sha256", Value: hex.EncodeToString(sum[:])},
 		{Key: "sig-alg", Value: leaf.SignatureAlgorithm.String()},
 		{Key: "public-key", Value: publicKeyOf(leaf)},
-		{Key: "chain", Value: verify(certs, hostOf(state, target))},
 	}
+	pairs = append(pairs, usagePairs(leaf)...)
+	pairs = append(pairs, view.Pair{Key: "chain", Value: verify(certs, hostOf(state, target))})
 	// Beside the date it is about. expires-in counts down to an end that a
 	// certificate not yet valid is a long way from, which read as a sound one.
 	if now := time.Now(); now.Before(leaf.NotBefore) {
@@ -565,6 +566,87 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 		pairs = append(pairs, view.Pair{Key: "tls", Value: protocolOf(state.Version)})
 	}
 	return view.KeyValue{Pairs: append(pairs, namePairs(leaf)...)}, nil
+}
+
+// keyUsageNames and extKeyUsageNames spell the bits a certificate's key usage
+// and extended key usage extensions set, in the order openssl lists them.
+var keyUsageNames = []struct {
+	bit  x509.KeyUsage
+	name string
+}{
+	{x509.KeyUsageDigitalSignature, "digital signature"},
+	{x509.KeyUsageContentCommitment, "non-repudiation"},
+	{x509.KeyUsageKeyEncipherment, "key encipherment"},
+	{x509.KeyUsageDataEncipherment, "data encipherment"},
+	{x509.KeyUsageKeyAgreement, "key agreement"},
+	{x509.KeyUsageCertSign, "certificate signing"},
+	{x509.KeyUsageCRLSign, "CRL signing"},
+	{x509.KeyUsageEncipherOnly, "encipher only"},
+	{x509.KeyUsageDecipherOnly, "decipher only"},
+}
+
+var extKeyUsageNames = map[x509.ExtKeyUsage]string{
+	x509.ExtKeyUsageAny:                            "any",
+	x509.ExtKeyUsageServerAuth:                     "server auth",
+	x509.ExtKeyUsageClientAuth:                     "client auth",
+	x509.ExtKeyUsageCodeSigning:                    "code signing",
+	x509.ExtKeyUsageEmailProtection:                "email protection",
+	x509.ExtKeyUsageIPSECEndSystem:                 "IPsec end system",
+	x509.ExtKeyUsageIPSECTunnel:                    "IPsec tunnel",
+	x509.ExtKeyUsageIPSECUser:                      "IPsec user",
+	x509.ExtKeyUsageTimeStamping:                   "time stamping",
+	x509.ExtKeyUsageOCSPSigning:                    "OCSP signing",
+	x509.ExtKeyUsageMicrosoftServerGatedCrypto:     "Microsoft server gated crypto",
+	x509.ExtKeyUsageNetscapeServerGatedCrypto:      "Netscape server gated crypto",
+	x509.ExtKeyUsageMicrosoftCommercialCodeSigning: "Microsoft commercial code signing",
+	x509.ExtKeyUsageMicrosoftKernelCodeSigning:     "Microsoft kernel code signing",
+}
+
+// usagePairs says what a certificate is for: whether it may issue others, and
+// the uses its key usage and extended key usage extensions allow.
+//
+// **The certificate's purpose was nowhere in the output.** A client that
+// answers "unsupported certificate purpose" or "certificate unknown" is
+// refusing a leaf that lacks server auth (or client auth, for a peer
+// presenting it to an mTLS server), or a CA certificate with no
+// certificate-signing bit, or a path length that forbids the intermediate
+// under it. The key a certificate certifies and the names it answers to were
+// listed; the one row that settles those was not, and `openssl x509 -text`
+// was the way to find it. A certificate that sets none of them gets no row.
+func usagePairs(c *x509.Certificate) []view.Pair {
+	var pairs []view.Pair
+	if c.BasicConstraintsValid && c.IsCA {
+		ca := "yes"
+		switch {
+		case c.MaxPathLen > 0:
+			ca += fmt.Sprintf(", path length %d", c.MaxPathLen)
+		case c.MaxPathLen == 0 && c.MaxPathLenZero:
+			ca += ", path length 0: no intermediate below it"
+		}
+		pairs = append(pairs, view.Pair{Key: "ca", Value: ca})
+	}
+	var uses []string
+	for _, u := range keyUsageNames {
+		if c.KeyUsage&u.bit != 0 {
+			uses = append(uses, u.name)
+		}
+	}
+	if len(uses) > 0 {
+		pairs = append(pairs, view.Pair{Key: "key-usage", Value: strings.Join(uses, ", ")})
+	}
+	uses = uses[:0]
+	for _, e := range c.ExtKeyUsage {
+		if name, ok := extKeyUsageNames[e]; ok {
+			uses = append(uses, name)
+		}
+	}
+	for _, oid := range c.UnknownExtKeyUsage {
+		uses = append(uses, oid.String())
+	}
+	if len(uses) > 0 {
+		pairs = append(pairs, view.Pair{Key: "ext-key-usage", Value: strings.Join(uses, ", ")})
+	}
+	return pairs
 }
 
 // nameOf is what a certificate is called in a tree or a sentence: its common
