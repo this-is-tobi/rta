@@ -167,6 +167,7 @@ func worktreeStatus(ctx context.Context, deadline time.Time, repo *git.Repositor
 	if idx, err := repo.Storer.Index(); err == nil {
 		restoreRootIgnore(wt.Filesystem, idx, status, budget)
 		markUnmerged(idx, status)
+		markIntentToAdd(idx, status)
 	}
 	if onDisk {
 		tree, err := worktreeDir(req, wt)
