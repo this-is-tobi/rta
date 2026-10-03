@@ -619,6 +619,18 @@ func TestNullMXIsGradedAsHardening(t *testing.T) {
 	}
 }
 
+// No MX records is not a statement that a domain takes no mail: RFC 5321
+// section 5.1 delivers to the name's address record instead, so a web host
+// with an A record is a mail destination to every sender that tries. What says
+// a domain takes none is the null MX.
+func TestNoMXRecordsIsNotSaidToMeanNoMail(t *testing.T) {
+	f := mustFind(t, gradeMail(mailFacts{domain: "d.test", apexTXT: []string{"v=spf1 -all"}}), "mx")
+	if f.Status != findings.Info || strings.Contains(f.Detail, "does not receive mail") ||
+		!strings.Contains(f.Detail, "address record") || !strings.Contains(f.Detail, "null MX") {
+		t.Errorf("mx with none published: %+v, want the fallback to the address record named, and the null MX", f)
+	}
+}
+
 // A domain that publishes a null MX accepts no mail, and MTA-STS and TLS-RPT
 // protect the delivery of mail to a domain. It was warned that nothing told
 // senders to require TLS, in the report that graded the same domain's null MX
