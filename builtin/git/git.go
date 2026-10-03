@@ -287,10 +287,28 @@ func openAt(req plugin.Request, files *repoFiles, root, path string, what reads)
 		if verr := refusedByTheGate(err); verr != nil {
 			return verr
 		}
-		return view.Errorf("git.notarepo", "%s is not a git repository: %v", path, err).
-			WithHint("run this against a directory inside a git repository, a checkout's own root, or a bare repository's own directory")
+		hint := "run this against a directory inside a git repository, a checkout's own root, or a bare repository's own directory"
+		// Go-git's "repository does not exist" after "is not a git repository"
+		// said the same thing twice, and named the argument as it was typed:
+		// "." for the directory the shell was in. The walk upward found no
+		// repository at any level, so the directory is named whole, and as
+		// being outside one.
+		if errors.Is(err, git.ErrRepositoryNotExists) {
+			return view.Errorf("git.notarepo", "%s is not inside a git repository", root).WithHint(hint)
+		}
+		return view.Errorf("git.notarepo", "%s is not a git repository: %v", path, err).WithHint(hint)
+	}
+	// A directory that is not there is not a repository that is absent:
+	// "/srv/app is not a git repository: stat /srv/app: no such file or
+	// directory" sent a mistyped path to git init.
+	noSuchDirectory := func() *view.Error {
+		return view.Errorf("git.path.notfound", "no such directory: %s", root).
+			WithHint("name a directory inside a git repository")
 	}
 	top, err := files.at(root)
+	if errors.Is(err, iofs.ErrNotExist) {
+		return nil, noSuchDirectory()
+	}
 	if err != nil {
 		return nil, notARepo(err)
 	}
@@ -325,6 +343,11 @@ func openAt(req plugin.Request, files *repoFiles, root, path string, what reads)
 		return nil, verr
 	}
 	if _, err := dot.Stat(""); err != nil {
+		// With no .git in it the directory is its own git directory, so a
+		// missing one is the directory that is missing.
+		if wt == nil && errors.Is(err, iofs.ErrNotExist) {
+			return nil, noSuchDirectory()
+		}
 		return nil, notARepo(err)
 	}
 
