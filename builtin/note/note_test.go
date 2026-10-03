@@ -540,6 +540,46 @@ func TestTagsCaptureFilterAndList(t *testing.T) {
 	}
 }
 
+// A tag given twice, or in two cases, is one tag. `--tag ops --tag ops --tag
+// OPS` stored three of them, so the note listed "ops, ops, ops" and `note tags`
+// counted it three times: five notes carried the tag, three of them being
+// distinct, and the table said five. An empty tag (`--tag '#'`) was stored too,
+// and counted as a tag with no name.
+func TestATagIsStoredAndCountedOncePerNote(t *testing.T) {
+	setup(t)
+	text(t, runAdd, map[string]any{"title": "dupes", "tag": []string{"ops", "ops", "OPS", "#Ops", "", "#"}}, false)
+	text(t, runAdd, map[string]any{"title": "one", "tag": []string{"ops"}}, false)
+
+	got, _ := prefillEdit(context.Background(), req(map[string]any{"id": 1}, false))
+	if tags, _ := got["tag"].([]string); len(tags) != 1 || tags[0] != "ops" {
+		t.Errorf("stored tags = %v, want just ops", got["tag"])
+	}
+
+	tags := table(t, runTags, nil)
+	if len(tags.Rows) != 1 || tags.Rows[0][0] != "ops" || tags.Rows[0][1] != "2" {
+		t.Errorf("tag counts = %v, want ops on 2 notes", tags.Rows)
+	}
+
+	// A store written before this carries the repeats already; counting reads
+	// them once.
+	s, err := load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Items[0].Tags = []string{"ops", "ops", ""}
+	if err := save(s); err != nil {
+		t.Fatal(err)
+	}
+	tags = table(t, runTags, nil)
+	if len(tags.Rows) != 1 || tags.Rows[0][1] != "2" {
+		t.Errorf("tag counts over a store with repeats = %v, want ops on 2 notes", tags.Rows)
+	}
+	found := table(t, runSearch, map[string]any{"query": "dupes"})
+	if len(found.Rows) != 1 || found.Rows[0][col(t, found, "Tags")] != "ops" {
+		t.Errorf("tags shown for a store with repeats = %v, want ops once", found.Rows)
+	}
+}
+
 func TestTagClearAndReplace(t *testing.T) {
 	setup(t)
 	text(t, runAdd, map[string]any{"title": "x", "tag": []string{"a", "b"}}, false)

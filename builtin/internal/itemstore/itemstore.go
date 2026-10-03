@@ -169,6 +169,27 @@ func NormalizeTag(tag string) string {
 	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(tag), "#"))
 }
 
+// CleanTags normalizes each tag and drops the empty ones and the repeats,
+// keeping the order they were first given in.
+//
+// Normalizing alone left `--tag ops --tag OPS` as two entries that were one
+// tag: the note listed it twice and every count that walked its tags counted
+// the note twice. It is the one place a list of tags becomes the tags of a
+// note, and what a counter reads from a store written before it existed.
+func CleanTags(raw []string) []string {
+	seen := make(map[string]bool, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, t := range raw {
+		n := NormalizeTag(t)
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		out = append(out, n)
+	}
+	return out
+}
+
 // refRe matches a cross-reference to another item: "#12". Deliberately plain
 // digits only — no namespace — since every item in a store shares one ID
 // space and a reference is always "the other item with this number".
@@ -350,8 +371,8 @@ func SuggestTags(file, ns string) []string {
 	}
 	count := map[string]int{}
 	for _, it := range s.Items {
-		for _, t := range it.Tags {
-			count[NormalizeTag(t)]++
+		for _, t := range CleanTags(it.Tags) {
+			count[t]++
 		}
 	}
 	tags := make([]string, 0, len(count))

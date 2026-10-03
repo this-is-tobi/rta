@@ -410,7 +410,7 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 			itemstore.Age(it.Created), titleCell(s, it, detail),
 		}
 		if detail {
-			row = append(row, strings.Join(it.Tags, ", "), it.Created.Format("2006-01-02 15:04"), itemstore.Preview(it.Body))
+			row = append(row, strings.Join(itemstore.CleanTags(it.Tags), ", "), it.Created.Format("2006-01-02 15:04"), itemstore.Preview(it.Body))
 		}
 		t.Rows = append(t.Rows, row)
 	}
@@ -449,7 +449,7 @@ func runSearch(_ context.Context, req plugin.Request) (view.View, error) {
 			title = "↳ " + title // a quiet nod that this is a sub-note
 		}
 		t.Rows = append(t.Rows, []string{
-			strconv.Itoa(it.ID), statusOf(it), title, strings.Join(it.Tags, ", "),
+			strconv.Itoa(it.ID), statusOf(it), title, strings.Join(itemstore.CleanTags(it.Tags), ", "),
 		})
 	}
 	t.Total = len(t.Rows)
@@ -466,8 +466,8 @@ func runTags(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	counts := map[string]int{}
 	for _, it := range s.Items {
-		for _, tag := range it.Tags {
-			counts[itemstore.NormalizeTag(tag)]++
+		for _, tag := range itemstore.CleanTags(it.Tags) {
+			counts[tag]++
 		}
 	}
 	names := make([]string, 0, len(counts))
@@ -526,10 +526,10 @@ func metaPairs(s itemstore.Store, it itemstore.Item) view.KeyValue {
 		kv.Pairs = append(kv.Pairs, view.Pair{Key: "due", Value: fmt.Sprintf("%s (%s)",
 			it.Due.Format("2006-01-02"), itemstore.DueStatus(it.Due, it.Done, time.Now()))})
 	}
-	if len(it.Tags) > 0 {
-		tags := make([]string, len(it.Tags))
-		for i, tg := range it.Tags {
-			tags[i] = "#" + itemstore.NormalizeTag(tg)
+	if own := itemstore.CleanTags(it.Tags); len(own) > 0 {
+		tags := make([]string, len(own))
+		for i, tg := range own {
+			tags[i] = "#" + tg
 		}
 		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tags", Value: strings.Join(tags, " ")})
 	}
@@ -620,11 +620,7 @@ func applyTags(raw []string) []string {
 	if len(raw) == 1 && raw[0] == "-" {
 		return nil
 	}
-	out := make([]string, len(raw))
-	for i, t := range raw {
-		out[i] = itemstore.NormalizeTag(t)
-	}
-	return out
+	return itemstore.CleanTags(raw)
 }
 
 func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
