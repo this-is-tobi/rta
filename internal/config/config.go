@@ -481,8 +481,17 @@ func write(cfg Config) error {
 	if err != nil {
 		return view.Errorf("config.encode", "encoding config: %v", err)
 	}
-	header := "# rta configuration — created by `rta init`.\n" +
-		"# Everything here is optional: rta works with no config at all.\n"
+	// Written by rta, not by `rta init`: a profile set from a script, a tile
+	// added from a shell and a tile moved in the TUI all create this file, and
+	// the line named the wizard on every one of them.
+	//
+	// And the cost of that, said where the person editing it will read it: the
+	// whole file is marshalled again on every write, and a comment typed by
+	// hand has nowhere to go in that. It was dropped without a word.
+	header := "# rta configuration — written by rta.\n" +
+		"# Everything here is optional: rta works with no config at all.\n" +
+		"# rta writes this whole file again when it changes something (`rta profile set`,\n" +
+		"# `rta dashboard add`, the TUI), and a comment added by hand does not survive that.\n"
 	// A rewrite must not change a file's permissions, so an existing config
 	// keeps whatever mode it has; a new one gets the mode rta has always
 	// asked for.
