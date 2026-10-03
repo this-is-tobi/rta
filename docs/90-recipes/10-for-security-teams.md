@@ -47,7 +47,7 @@ rta grant roles                      # every role this machine can issue, and th
 rta grant issue dev --agent claude   # a person issues it, every line at once
 ```
 
-A role grants nothing by being in the file. A person issues it at a terminal, where its lines are printed before the guard's passphrase is asked for — with the guard off, `--yes` stands in once `rta grant roles dev` has been read — and the ceiling beside it caps every line. [Roles](../30-boundary/30-grants.md#roles-a-days-grants-under-one-word).
+A role grants nothing by being in the file. A person issues it at a terminal, where its lines are printed before the guard's passphrase is asked for — with the guard off, `--yes` stands in once `rta grant roles dev` has been read — and the ceiling beside it caps every line. [Roles](../30-boundary/30-grants.md#roles-a-day-of-grants-under-one-word).
 
 ## Put a passphrase in front of issuance
 

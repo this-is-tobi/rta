@@ -68,7 +68,7 @@ Each selector narrows, and one left out matches every grant: `grant revoke kv.ge
 
 Revoking takes back what grants gave — it does not touch the ungated read tools an agent's token still opens. When the need is "this agent makes no call of any kind until I say so", that is a [lock](./20-mcp.md#locks-the-instant-no): `rta lock add <name>`, effective on its next call, no restart.
 
-## Roles: a day's grants under one word
+## Roles: a day of grants under one word
 
 A grant is one target. A day of work is a dozen, and with the guard on that was a dozen passphrases. A **role** is the list, written once, and `grant issue` is that list issued to one agent under one prompt:
 
