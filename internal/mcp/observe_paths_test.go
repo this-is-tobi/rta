@@ -10,6 +10,23 @@ import (
 	"github.com/this-is-tobi/rta/internal/paths"
 )
 
+// The probes are open and the question behind readiness writes a file and takes
+// the record's lock, which a call being recorded waits for: asked as often as
+// the open address is, it would hold the record's writers up. A verdict is
+// kept for a moment instead.
+func TestReadinessIsNotAskedAgainBeforeTheLastAnswerHasAged(t *testing.T) {
+	asked := 0
+	h := observe(t, ObserveConfig{Ready: func() error { asked++; return nil }})
+	for range 20 {
+		if got := get(t, h, "/readyz", "").StatusCode; got != http.StatusOK {
+			t.Fatalf("/readyz = %d, want 200", got)
+		}
+	}
+	if asked != 1 {
+		t.Errorf("readiness was asked %d times for 20 probes in the same moment, want once", asked)
+	}
+}
+
 // The probes are open, so whoever can reach the address reads the reason
 // readiness fails with, and a reason that names the data directory is the
 // layout of the server's state for every one of them. It says what is wrong
