@@ -318,7 +318,7 @@ Install is where claims meet evidence: rta fetches the artifact, hashes it, laun
 
 ## Worked examples, in the order worth reading them
 
-Ten first-party plugins live in [rta-plugins](https://github.com/this-is-tobi/rta-plugins), and they are not a showcase — they are the proof the contract works, written against the same public SDK you have, from the same released rta. Every one is a separate module that cannot reach into rta's internals, so anything they do, you can do.
+Twelve first-party plugins live in [rta-plugins](https://github.com/this-is-tobi/rta-plugins), and they are not a showcase — they are the proof the contract works, written against the same public SDK you have, from the same released rta. Every one is a separate module that cannot reach into rta's internals, so anything they do, you can do.
 
 Read them in this order and each one adds exactly one idea:
 
