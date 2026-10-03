@@ -182,6 +182,34 @@ func TestStatusReportsUnmergedPathsAsGitDoes(t *testing.T) {
 	}
 }
 
+// Git takes an escape character in a file name, and go-git's tree reader
+// refuses it, so one such file anywhere in HEAD stopped git.status and git.diff
+// whole, with "from: invalid path ...: contains control character": which side
+// "from" was, and what to do about it, left for the reader. The path is named,
+// escaped, and so is the way out.
+func TestAPathWithAControlCharacterIsNamedAndTheWayOutSaid(t *testing.T) {
+	dir := controlNamedRepo(t)
+	for name, run := range map[string]func() error{
+		"status": func() error { _, err := runStatus(context.Background(), req(t, dir, nil)); return err },
+		"diff":   func() error { _, err := runDiff(context.Background(), req(t, dir, nil)); return err },
+		"commit": func() error {
+			_, err := runDiff(context.Background(), req(t, dir, map[string]any{"commit": "HEAD"}))
+			return err
+		},
+	} {
+		err := run()
+		if err == nil {
+			t.Errorf("%s: read a repository its reader refuses", name)
+			continue
+		}
+		verr := view.AsError(err, "test")
+		if verr.Code != "git.path.control" || !strings.Contains(verr.Message, `"bad\x1b[31mred.txt"`) ||
+			strings.Contains(verr.Message, "from:") || !strings.Contains(verr.Hint, "git mv") {
+			t.Errorf("%s: %q (hint %q), want the path named, escaped, and the way out said", name, verr.Message, verr.Hint)
+		}
+	}
+}
+
 // lowerStatusTime holds one status to d.
 func lowerStatusTime(t *testing.T, d time.Duration) {
 	t.Helper()

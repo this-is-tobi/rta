@@ -262,7 +262,7 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	case ctx.Err() != nil:
 		return nil, interrupted(shortHash(commit.Hash))
 	case err != nil:
-		return nil, view.Errorf("git.diff.failed", "diffing %s: %v", spec, err)
+		return nil, readFailed("git.diff.failed", "diffing "+spec, err)
 	}
 	changes, large, refused, cut, unseen := boundChanges(repo, changes, gate)
 	body, coarse, err := commitPatch(ctx, repo, changes, deadline)
@@ -270,7 +270,7 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 	case ctx.Err() != nil:
 		return nil, interrupted(shortHash(commit.Hash))
 	case err != nil:
-		return nil, view.Errorf("git.diff.failed", "diffing %s: %v", spec, err)
+		return nil, readFailed("git.diff.failed", "diffing "+spec, err)
 	}
 	// **go-git renders nothing at all for a submodule pointer change.**
 	// Measured, not assumed: for a commit that only bumps a submodule, the
