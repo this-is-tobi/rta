@@ -860,7 +860,13 @@ func auditMailRouting(r *findings.Report, f mailFacts) {
 		return
 	}
 	if len(mx) == 0 {
-		r.Add(grpRouting, "mx", findings.Info, "no MX records — this domain does not receive mail", refSpoofing)
+		// Not "does not receive mail": RFC 5321 section 5.1 sends mail for a
+		// name with no MX to its address record, if it has one, so a web
+		// host with an A record and no MX is a mail destination to every
+		// sender that tries. What states that a domain takes none is the null
+		// MX the case below grades as hardening.
+		r.Add(grpRouting, "mx", findings.Info, "no MX records — a sender falls back to the domain's address "+
+			"record, if it has one (RFC 5321); a domain that takes no mail says so with a null MX (RFC 7505)", refSpoofing)
 		return
 	}
 	// RFC 7505: a single "." host is the explicit statement that a domain
