@@ -342,6 +342,26 @@ func TestResolveRefusesAmbiguityAndHonoursQualification(t *testing.T) {
 
 // Search answers from claims alone — nothing is fetched — and labels each row
 // with the index making the claim.
+// What is refused as a plugin name is named as it was typed, with the next
+// step. `rta plugin install /tmp/x` was answered `"tmp/x" is not a plugin
+// name` — the half left after the first slash, a word nobody wrote — and
+// `hello@v1` with no word on what an install does take.
+func TestAnInstallSpecThatIsNoNameIsNamedAsTypedAndSaysWhatToDo(t *testing.T) {
+	testData(t)
+	for _, spec := range []string{"/tmp/x", "hello@v1", "lab/Bad_Name"} {
+		_, verr := Resolve(spec)
+		if verr == nil || verr.Code != "plugin.install.spec" {
+			t.Fatalf("Resolve(%q) = %v, want plugin.install.spec", spec, verr)
+		}
+		if !strings.Contains(verr.Message, `"`+spec+`"`) {
+			t.Errorf("Resolve(%q): %q does not say what was typed", spec, verr.Message)
+		}
+		if !strings.Contains(verr.Hint, "rta plugin search") || !strings.Contains(verr.Hint, "rta plugin dev") {
+			t.Errorf("Resolve(%q): hint %q names no next step", spec, verr.Hint)
+		}
+	}
+}
+
 func TestSearchAnswersFromClaims(t *testing.T) {
 	testData(t)
 	repo := gitFixture(t, map[string]string{
