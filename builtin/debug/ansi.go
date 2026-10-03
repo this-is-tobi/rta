@@ -278,21 +278,26 @@ func explainSeq(seq string, p *ansi.Parser) (kind, meaning string) {
 // the parameters up to its limit and drops the rest, another ignores the
 // whole sequence.
 func explainCSI(p *ansi.Parser) string {
-	params := collectParams(p.Params())
-	meaning := csiCommand(ansi.Cmd(p.Command()), params)
-	if len(params) > parser.MaxParamsSize {
+	groups := collectGroups(p.Params())
+	meaning := csiCommand(ansi.Cmd(p.Command()), groups)
+	if n := countParams(groups); n > parser.MaxParamsSize {
 		meaning += fmt.Sprintf(" — %d parameters, more than many terminals keep: "+
-			"one drops those past its limit, another ignores the whole sequence", len(params))
+			"one drops those past its limit, another ignores the whole sequence", n)
 	}
 	return meaning
 }
 
-func csiCommand(cmd ansi.Cmd, params []int) string {
-	switch cmd.Final() {
-	case 0:
+func csiCommand(cmd ansi.Cmd, groups [][]int) string {
+	if cmd.Final() == 0 {
 		return cutShort("CSI")
+	}
+	if cmd.Prefix() != 0 || cmd.Intermediate() != 0 {
+		return markedCSI(cmd, groups)
+	}
+	params := firstOfEach(groups)
+	switch cmd.Final() {
 	case 'm':
-		return explainSGR(params)
+		return explainSGR(groups)
 	case 'A':
 		return "cursor up " + countOrOne(params)
 	case 'B':
@@ -301,12 +306,44 @@ func csiCommand(cmd ansi.Cmd, params []int) string {
 		return "cursor forward " + countOrOne(params)
 	case 'D':
 		return "cursor back " + countOrOne(params)
+	case 'E':
+		return "cursor to the start of the line " + countOrOne(params) + " down"
+	case 'F':
+		return "cursor to the start of the line " + countOrOne(params) + " up"
+	case 'G':
+		return "cursor to column " + countOrOne(params)
+	case 'd':
+		return "cursor to row " + countOrOne(params)
 	case 'H', 'f':
 		return "cursor position: " + cursorPos(params)
 	case 'J':
 		return eraseDisplay(params)
 	case 'K':
 		return eraseLine(params)
+	case 'S':
+		return "scroll up " + countOrOne(params)
+	case 'T':
+		return "scroll down " + countOrOne(params)
+	case 'L':
+		return "insert " + countOrOne(params) + " blank lines"
+	case 'M':
+		return "delete " + countOrOne(params) + " lines"
+	case '@':
+		return "insert " + countOrOne(params) + " blank characters"
+	case 'P':
+		return "delete " + countOrOne(params) + " characters"
+	case 'X':
+		return "erase " + countOrOne(params) + " characters"
+	case 'r':
+		return scrollRegion(params)
+	case 'h', 'l':
+		return modeChange(ansiModes, "", params, cmd.Final() == 'h')
+	case 'n':
+		return deviceStatus(params)
+	case 'c':
+		return "device attributes request — the terminal answers with what it is, as if typed"
+	case 't':
+		return windowOperation(params)
 	case 's':
 		return "save cursor position"
 	case 'u':
@@ -316,12 +353,38 @@ func csiCommand(cmd ansi.Cmd, params []int) string {
 	}
 }
 
-func collectParams(pp ansi.Params) []int {
-	var out []int
-	pp.ForEach(0, func(_, param int, _ bool) {
-		out = append(out, param)
-	})
-	return out
+// scrollRegion is CSI t ; b r (DECSTBM). With nothing it is the whole screen
+// again, which is how a program gives the region back.
+func scrollRegion(params []int) string {
+	if len(params) == 0 {
+		return "reset the scrolling region to the whole screen"
+	}
+	if len(params) == 1 || params[1] == 0 {
+		return fmt.Sprintf("scrolling region from row %d to the bottom", max(params[0], 1))
+	}
+	return fmt.Sprintf("scrolling region from row %d to row %d", max(params[0], 1), params[1])
+}
+
+// deviceStatus is CSI Ps n: 5 asks whether the terminal is working and 6 where
+// its cursor is. Either is a question the terminal answers into the program's
+// input, as typed text — which is why one printed into a file or a log ends up
+// as characters on somebody's command line.
+func deviceStatus(params []int) string {
+	switch firstOrZero(params) {
+	case 5:
+		return "device status request — the terminal answers that it is working, as if typed"
+	case 6:
+		return "cursor position request — the terminal answers with the row and column, as if typed"
+	}
+	return fmt.Sprintf("device status request %d — the terminal answers into the input, as if typed", firstOrZero(params))
+}
+
+// windowOperation is CSI Ps t.
+func windowOperation(params []int) string {
+	if name, ok := windowOps[firstOrZero(params)]; ok {
+		return "window operation: " + name
+	}
+	return fmt.Sprintf("window operation %d", firstOrZero(params))
 }
 
 func countOrOne(params []int) string {
@@ -449,19 +512,24 @@ func init() {
 // explainSGR walks every parameter in order. 38/48/58 (extended
 // foreground/background/underline color) are not one code, they are a
 // prefix followed by either "5;N" (256-color) or "2;R;G;B" (truecolor) —
-// scanned by value, the way real terminals resolve it, rather than by the
-// parser's sub-parameter bit: a colon-joined "38:2:R:G:B" would set that
-// bit, but a semicolon-joined one (what almost everything in the wild
-// actually emits) does not, and the value-based scan reads both the same
-// way.
-func explainSGR(params []int) string {
-	if len(params) == 0 {
-		params = []int{ansi.AttrReset}
+// scanned by value, the way real terminals resolve it, for the
+// semicolon-joined form almost everything in the wild emits. A parameter that
+// carries colon-separated sub-parameters (4:3, 38:2::R:G:B) is one parameter
+// and is read as one (colonSGR), so its sub-parameters are never taken for
+// codes of their own.
+func explainSGR(groups [][]int) string {
+	if len(groups) == 0 {
+		groups = [][]int{{ansi.AttrReset}}
 	}
+	params := firstOfEach(groups)
 	var parts []string
-	for i := 0; i < len(params); i++ {
+	for i := 0; i < len(groups); i++ {
+		if len(groups[i]) > 1 {
+			parts = append(parts, colonSGR(groups[i]))
+			continue
+		}
 		n := params[i]
-		if consumed, desc, ok := extendedColor(params, i, n); ok {
+		if consumed, desc, ok := extendedColor(params, i, n); ok && onlySingles(groups[i:i+1+consumed]) {
 			parts = append(parts, desc)
 			i += consumed
 			continue
@@ -473,6 +541,18 @@ func explainSGR(params []int) string {
 		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+// onlySingles reports whether none of groups has sub-parameters: a
+// semicolon-joined colour is only that when every value of it is its own
+// parameter.
+func onlySingles(groups [][]int) bool {
+	for _, g := range groups {
+		if len(g) != 1 {
+			return false
+		}
+	}
+	return true
 }
 
 // extendedColor recognizes 38/48/58 followed by a 256-color or truecolor
@@ -642,17 +722,35 @@ func explainAPC(data string) string {
 
 func explainEsc(p *ansi.Parser) string {
 	cmd := ansi.Cmd(p.Command())
-	switch cmd.Final() {
-	case 0:
+	if cmd.Final() == 0 {
 		return cutShort("ESC")
+	}
+	if inter := cmd.Intermediate(); inter != 0 {
+		return explainEscIntermediate(inter, cmd.Final())
+	}
+	switch cmd.Final() {
 	case '7':
 		return "save cursor position"
 	case '8':
 		return "restore cursor position"
 	case 'c':
 		return "full reset (RIS)"
+	case 'D':
+		return "index (move down one line, scrolling at the bottom)"
+	case 'E':
+		return "next line"
+	case 'H':
+		return "set a tab stop at the cursor"
 	case 'M':
 		return "reverse index (scroll back one line)"
+	case 'N':
+		return "single shift 2 — the next character from the G2 set"
+	case 'O':
+		return "single shift 3 — the next character from the G3 set"
+	case 'Z':
+		return "identify terminal (DECID) — the terminal answers into the input, as if typed"
+	case '\\':
+		return "string terminator"
 	case '=':
 		return "enable keypad application mode"
 	case '>':
@@ -660,6 +758,46 @@ func explainEsc(p *ansi.Parser) string {
 	default:
 		return fmt.Sprintf("ESC sequence (final %q)", string(cmd.Final()))
 	}
+}
+
+// charsets are the sets ESC ( ) * + designate into G0 to G3. The one worth
+// knowing on sight is DEC special graphics: a program that leaves it selected
+// makes a terminal draw lowercase letters as line-drawing characters, so text
+// comes out as lqqqk and x, and `reset` is the answer.
+var charsets = map[byte]string{
+	'0': "DEC special graphics (line drawing) — letters are drawn as box characters until a set is chosen again",
+	'B': "US ASCII",
+	'A': "UK",
+	'1': "DEC alternate character ROM",
+	'2': "DEC alternate character ROM, special graphics",
+}
+
+// explainEscIntermediate names the escape sequences that carry an
+// intermediate byte, which the final alone cannot: ESC # 8 fills the screen
+// with E, and ESC 8 restores the cursor.
+func explainEscIntermediate(inter, final byte) string {
+	switch inter {
+	case '#':
+		switch final {
+		case '3':
+			return "double-height line, top half"
+		case '4':
+			return "double-height line, bottom half"
+		case '5':
+			return "single-width line"
+		case '6':
+			return "double-width line"
+		case '8':
+			return "screen alignment test (DECALN) — fills the whole screen with E"
+		}
+	case '(', ')', '*', '+':
+		g := map[byte]string{'(': "G0", ')': "G1", '*': "G2", '+': "G3"}[inter]
+		if name, ok := charsets[final]; ok {
+			return "designate " + g + " as " + name
+		}
+		return fmt.Sprintf("designate %s as character set %q", g, string(final))
+	}
+	return fmt.Sprintf("ESC sequence (intermediate %q, final %q)", string(inter), string(final))
 }
 
 // --- control characters and safe visualization ---
@@ -670,6 +808,7 @@ func explainEsc(p *ansi.Parser) string {
 type ctrlInfo struct{ short, meaning string }
 
 var controlChars = map[byte]ctrlInfo{
+	0x05: {"ENQ", "enquiry — some terminals answer with their answerback string, as if typed"},
 	0x07: {"BEL", "bell"},
 	0x08: {"BS", "backspace"},
 	0x09: {"TAB", "horizontal tab"},
@@ -677,6 +816,8 @@ var controlChars = map[byte]ctrlInfo{
 	0x0b: {"VT", "vertical tab"},
 	0x0c: {"FF", "form feed"},
 	0x0d: {"CR", "carriage return — overwrites the current line unless followed by LF"},
+	0x0e: {"SO", "shift out — switch to the G1 character set, which a program leaves on DEC line drawing when it garbles a terminal; SI switches back"},
+	0x0f: {"SI", "shift in — switch back to the G0 character set"},
 	0x1b: {"ESC", "escape"},
 }
 
