@@ -58,16 +58,29 @@ func TestValidateAcceptsTheHostInjectedDetailAndProfileFields(t *testing.T) {
 	}
 }
 
-func TestValidateSkipsLocalFieldsEntirely(t *testing.T) {
+// A Local field is not in the schema, so a value under its name is a guess at
+// an input the tool hides. It was accepted and dropped, which is what told a
+// model the input was there: a name the tool has not got is refused. Refused
+// as one now, in the same words and with the same list of what it does take,
+// so the two cannot be told apart, and its value is not type-checked either.
+func TestValidateRefusesALocalFieldAsAnyNameTheToolDoesNotHave(t *testing.T) {
 	c := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{
 		{Name: "identity", Type: plugin.Path, Local: true},
+		{Name: "limit", Type: plugin.Int},
 	}}
-	// A Local field is never declared to the caller, so a value under its
-	// name is a guess, not a typo — Validate must not even type-check it,
-	// let alone refuse it as unknown (that would confirm to a model that a
-	// hidden input exists).
-	if verr := Validate(c, map[string]any{"identity": 12345}); verr != nil {
-		t.Fatalf("a Local field's value was type-checked: %v", verr)
+	local := Validate(c, map[string]any{"identity": 12345})
+	typo := Validate(c, map[string]any{"idenity": 12345})
+	if local == nil || typo == nil {
+		t.Fatalf("a name the tool does not take was accepted: local=%v typo=%v", local, typo)
+	}
+	if local.Code != "core.mcp.badargs" || local.Hint != typo.Hint {
+		t.Errorf("a Local name is told from a typo: %q %q against %q %q", local.Code, local.Hint, typo.Code, typo.Hint)
+	}
+	if strings.Contains(local.Hint, "identity") {
+		t.Errorf("the list of what the tool takes names its hidden input: %q", local.Hint)
+	}
+	if strings.ReplaceAll(local.Message, "identity", "idenity") != typo.Message {
+		t.Errorf("the refusals differ beyond the name: %q against %q", local.Message, typo.Message)
 	}
 }
 

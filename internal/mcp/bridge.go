@@ -271,9 +271,9 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// Local fields are dropped whatever the caller sent: they are absent
 		// from the schema, so anything arriving under that name was guessed,
 		// and a guessed credential is the one case worth discarding rather
-		// than acting on. Dropped, not refused the way an undeclared name is:
-		// an error naming the field would confirm to the model that the
-		// credential input exists, which is the disclosure Local is for.
+		// than acting on. Validate has refused such a name already, as any
+		// name the tool does not have, so this is what is left if that ever
+		// stops being so: a value that reaches no handler.
 		//
 		// What is left is what the agent sent, and it is all that goes to
 		// Resolve as the caller's layer below. Declared defaults used to be
