@@ -728,14 +728,35 @@ func orDash(s string) string {
 	return s
 }
 
-func humanUntil(t time.Time) string {
-	d := time.Until(t)
-	if d < 0 {
-		return fmt.Sprintf("expired %dd ago", int(-d.Hours())/24)
+func humanUntil(t time.Time) string { return untilAt(t, time.Now()) }
+
+// untilAt is how long t is from now, in the one unit that answers "how long
+// has this got": "89d", "5h", "30m", "45s", and "expired 3h ago" past it.
+//
+// Counted down to the second, where it stopped at the hour. A certificate
+// with 30 minutes left read "0h", the table's alarm for the one that is about
+// to take a service down, and one that had expired this morning read "expired
+// 0d ago". Truncated in each unit, as it always was: an expiry is read for how
+// soon it is, and 89 days left is not 90.
+func untilAt(t, now time.Time) string {
+	d := t.Sub(now)
+	if d >= 0 {
+		return compactSpan(d)
 	}
-	days := int(d.Hours()) / 24
-	if days > 0 {
-		return fmt.Sprintf("%dd", days)
+	if d > -time.Second {
+		return "expired just now"
 	}
-	return fmt.Sprintf("%dh", int(d.Hours()))
+	return "expired " + compactSpan(-d) + " ago"
+}
+
+func compactSpan(d time.Duration) string {
+	switch {
+	case d >= 24*time.Hour:
+		return fmt.Sprintf("%dd", d/(24*time.Hour))
+	case d >= time.Hour:
+		return fmt.Sprintf("%dh", d/time.Hour)
+	case d >= time.Minute:
+		return fmt.Sprintf("%dm", d/time.Minute)
+	}
+	return fmt.Sprintf("%ds", d/time.Second)
 }
