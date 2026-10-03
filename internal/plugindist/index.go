@@ -1017,7 +1017,14 @@ func Resolve(spec string) (Listed, *view.Error) {
 		name, indexPart = spec, ""
 	}
 	if !plugin.ValidName(name) {
-		return Listed{}, view.Errorf("plugin.install.spec", "%q is not a plugin name", name)
+		// The whole of what was typed, not the half left after the first slash:
+		// `/tmp/x` — a path, from a person who thinks install takes a file —
+		// was answered as `"tmp/x" is not a plugin name`, a word they never
+		// wrote. And a hint, since the next step is not in the sentence.
+		return Listed{}, view.Errorf("plugin.install.spec", "%q is not a plugin name", spec).
+			WithHint("`rta plugin search` lists the names an index offers, and `index/name` picks the index; " +
+				"the version is the index's claim, pinned by attaching the index with `--ref`. A plugin you " +
+				"built is run with `rta plugin dev`, or put on $PATH and approved with `rta plugin trust`")
 	}
 
 	search := Indexes()
