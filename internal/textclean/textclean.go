@@ -222,13 +222,7 @@ func Record(s string) string {
 // at either end draws as nothing and is quoted, as is a name opening with a
 // quotation mark, so a name shown as it is can never be mistaken for one
 // shown quoted.
-func Name(s string) string {
-	if s != "" && s[0] != '"' && utf8.ValidString(s) && strings.TrimSpace(s) == s &&
-		!strings.ContainsFunc(s, func(r rune) bool { return r != ' ' && !glyph.Seen(r) }) {
-		return s
-	}
-	return glyph.Quote(s)
-}
+func Name(s string) string { return glyph.Name(s) }
 
 // Records is the records one call names, each as Record shows it, one after
 // another as a call lists them.

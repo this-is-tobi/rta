@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/this-is-tobi/rta/internal/textclean/glyph"
 )
 
 // Caps on declared text, in runes.
@@ -296,6 +298,20 @@ func checkText(what, s string, max int) error {
 	}
 	return nil
 }
+
+// ListedName is a name your plugin lists — an object's key, a file, a store's
+// entry — as a person reads it in a list of them: as it is when it reads as
+// itself, spaces and accents included, and otherwise in double quotes with each
+// character they would not see written out (`"esc\x1b[31mred"`, `"line\nbreak"`).
+//
+// **A name cannot be cleaned, only shown.** A renderer strips the control
+// characters from a cell on the way to a terminal, which is right of a body and
+// wrong of a name: an escape sequence in a key came out as another, ordinary
+// name, a newline split a row, and nothing told the reader the name was odd.
+// Hand every name a bucket or a store lets a stranger choose through this
+// before it goes in a row or a tree label, in every format. The built-in `fs`
+// capabilities do.
+func ListedName(s string) string { return glyph.Name(s) }
 
 // checkLine is checkText for text with nowhere to put a second line.
 func checkLine(what, s string, max int) error {
