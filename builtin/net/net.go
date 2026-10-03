@@ -169,7 +169,7 @@ func Plugin() plugin.Plugin {
 				Description: "Proves the port accepts a connection, times the handshake, and shows the " +
 					"banner the service volunteers. " +
 					"`tls` completes a TLS handshake first and reports the negotiated version and " +
-					"cipher. It only ever listens; to speak first — the protocols that expect the " +
+					"cipher. It sends nothing and only waits for the banner; to speak first — the protocols that expect the " +
 					"client to open — use `net.send`, which is a write. Both need a grant: the " +
 					"destination is the caller's choice either way, and whatever it says back is " +
 					"read as tool output.",
