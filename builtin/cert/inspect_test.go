@@ -2,9 +2,12 @@ package cert
 
 import (
 	"context"
+	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -79,6 +82,46 @@ func TestInspectListsEveryNameACertificateAnswersTo(t *testing.T) {
 		if v, ok := rows[key]; ok {
 			t.Errorf("a certificate with no %s has a row for them: %q", key, v)
 		}
+	}
+}
+
+// The key is named by type and size. The signature algorithm beside it is the
+// issuer's, so a certificate on a 1024-bit RSA key read as sound.
+func TestInspectNamesTheKeyByTypeAndSize(t *testing.T) {
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, edKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p384, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		key  crypto.Signer
+		want string
+	}{{rsaKey, "RSA 2048"}, {edKey, "Ed25519"}, {p384, "ECDSA P-384"}} {
+		tmpl := &x509.Certificate{
+			SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "k"},
+			NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		}
+		der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, c.key.Public(), c.key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := x509.ParseCertificate(der)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := publicKeyOf(parsed); got != c.want {
+			t.Errorf("publicKeyOf = %q, want %q", got, c.want)
+		}
+	}
+	if got := inspectFile(t, &x509.Certificate{Subject: pkix.Name{CommonName: "k"}})["public-key"]; got != "ECDSA P-256" {
+		t.Errorf("public-key row = %q, want ECDSA P-256", got)
 	}
 }
 
