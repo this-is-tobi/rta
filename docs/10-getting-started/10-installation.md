@@ -150,14 +150,15 @@ rta doctor
 ```
 CHECK                STATUS  DETAIL
 capabilities         ok      20 plugins, 128 capabilities
+data                 ok      ~/.local/share/rta
 config               ok      ~/.config/rta/config.yaml
 kv store             info    unlocks from this environment — an MCP server
                              started here can read secrets, bounded only by grants
 plugin confinement   ok      sandbox-exec: 2 paths denied read+write (rta's own
-                             state), 10 denied read (credential locations), 8
+                             state), 10 denied read (credential locations), 15
                              directories pinned in place so a rename cannot move
-                             either out of its rule
-agent log            ok      the record is intact
+                             either out of its rule; …
+agent log            ok      12 agent calls recorded, chain intact — `rta agent log` reads it
 ```
 
 Those `info` rows are not noise. "The store unlocks from this environment" is a real statement about what an agent started from this shell inherits, and it is the kind of thing worth knowing before you connect one.

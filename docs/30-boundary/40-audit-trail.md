@@ -47,13 +47,22 @@ The record is **hash-chained**: each entry commits to the one before it, so an e
 rta agent log --detail
 ```
 
+The calls come first, and under them a section about the record itself, which is where an edited line shows:
+
 ```
-agent log   warn   the record breaks at entry 24 — nothing records where this
-                   record is supposed to end, so entries could have been removed
-                   without trace
+THE RECORD ITSELF
+file     /home/you/.local/share/rta/agent-log.jsonl
+entries  323
+size     223.1 KiB
+chain    BROKEN at entry 323 — its contents do not match its seal
 ```
 
-`rta doctor` surfaces the same finding without you asking.
+A whole record says `chain  whole — every entry follows the one before it, matches its seal, and the record ends where rta last left it`. `rta doctor` surfaces a break without you asking:
+
+```
+agent log   warn   the record of agent calls breaks at entry 323 — its contents do not match its
+                   seal; `rta agent log --detail` shows it
+```
 
 **What this does and does not buy you.** It makes tampering *visible*, not impossible. The seals are checked against `agent-log.key` beside the record, so anything that can read that file — any process running as you — can rewrite the whole chain and reseal it, and deleting every file leaves nothing to notice with. What it prevents is the quiet edit — removing one embarrassing line and leaving the rest intact — which is the realistic threat for a local file, and it is exactly the sort of thing an agent with filesystem access might attempt. A mark records where the record ends, so a truncation shows; if the mark itself goes, the next call writes a sealed admission into the chain (`end mark was missing before entry N` under `--detail`) rather than healing it in silence. The only defence against deletion is a copy elsewhere: see [Ship the record somewhere durable](../90-recipes/01-readme.md#ship-the-record-somewhere-durable).
 
