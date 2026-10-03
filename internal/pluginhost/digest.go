@@ -44,11 +44,12 @@ func (i Identity) Short() string {
 // a distance: a green checkmark over an unverified artifact is worse than no
 // checkmark, because somebody will build a policy on it.
 //
-// This is TOFU at best and rta does not claim more: a
-// $PATH binary can be replaced between this hash and the exec that follows it,
-// and go-plugin's own SecureConfig has exactly the same TOCTOU shape. The
-// digest's value is that it names *an artifact* for the cache key and for any
-// later authorisation — not that it proves origin, which nothing here can do.
+// The digest names *an artifact* for the cache key and for any later
+// authorisation — it does not prove origin, which nothing here can do. Nor is
+// hashing a path enough to say what a launch will run: the bytes are checked
+// again, and run, from a private copy (stage) for anything outside rta's own
+// directories, because go-plugin's SecureConfig has the same hash-then-exec
+// shape and the same gap between the two.
 func Identify(name string) (Identity, error) {
 	resolved, err := exec.LookPath(name)
 	if err != nil {

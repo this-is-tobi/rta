@@ -457,7 +457,7 @@ func (h *Host) OpenAllowing(ctx context.Context, name string, allowed []plugin.N
 func (h *Host) openIdentified(ctx context.Context, id Identity, deny DenySet, args []string) (*Client, error) {
 	// Here and not in buildCmd, so the cache key, the launch and the restart
 	// (which relaunches under c.deny) all see the same policy.
-	deny, err := deny.Launching(id.Path)
+	deny, err := deny.Launching(id.execPath())
 	if err != nil {
 		return nil, err
 	}
@@ -595,17 +595,26 @@ func (h *Host) CloseAll() {
 // asserted about a ClientConfig it cannot read back would be asserting about
 // its own copy of the code rather than about what runs.
 func buildCmd(id Identity, deny DenySet, args []string) *exec.Cmd {
-	name, argv := wrap(deny, id.Path, args)
-	cmd := exec.Command(name, argv...) //nolint:noctx // see below: the process outlives any one call
+	name, argv := wrap(deny, id.execPath(), args)
+	cmd := exec.Command(name, argv...) //nolint:noctx,gosec // see below: the process outlives any one call; the path is a plugin whose digest was checked
 	// Not exec.CommandContext: the process outlives one call by design, and
 	// binding its lifetime to the ctx of whichever call happened to spawn it
 	// would kill it the moment that call returned.
+	//
+	// Not a command built from input either, whatever a taint analysis makes of
+	// a path that came from a file: the name is the executable Identify hashed
+	// against the digest the operator trusted (id.execPath is the private copy
+	// of that very file for a plugin outside the stores), and the arguments are
+	// the host's own.
 	cmd.Env = Environ()
 	harden(cmd)
 	return cmd
 }
 
 func (h *Host) launch(ctx context.Context, id Identity, deny DenySet, args []string) (*Client, error) {
+	if _, err := stage(id); err != nil {
+		return nil, err
+	}
 	return h.start(ctx, id, deny, args, buildCmd(id, deny, args))
 }
 
@@ -853,7 +862,7 @@ func beforeHandshake(client *goplugin.Client, cmd *exec.Cmd, err error) (string,
 // them looking at the one file that was fine. Unwrapped, the file is the
 // plugin and the notes are true of it, and they stay.
 func withoutWrapperNotes(cmd *exec.Cmd, id Identity, err error) error {
-	if cmd.Path == id.Path {
+	if cmd.Path == id.execPath() {
 		return err
 	}
 	text := err.Error()
