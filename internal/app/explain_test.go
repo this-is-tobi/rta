@@ -41,6 +41,24 @@ func TestExplainCard(t *testing.T) {
 	}
 }
 
+// A grant narrows to one record, and for a call that lists several hosts the
+// record is one of them: the card read "optionally naming one targets".
+func TestExplainCardSaysWhatAGrantNarrowsAListInputTo(t *testing.T) {
+	reg, _ := NewRegistry()
+	for id, want := range map[string]string{
+		"cert.expiry": "optionally naming one of the targets",
+		"kv.get":      "optionally naming one key",
+	} {
+		out, _, err := run(t, reg, "explain", id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out, want) || strings.Contains(out, "one targets") {
+			t.Errorf("%s: card does not say %q:\n%s", id, want, out)
+		}
+	}
+}
+
 // A range refusal sends the reader here — "`rta explain net.listen` names it
 // beside the input" — and the card printed every other declared fact about
 // the input but not its bounds.
