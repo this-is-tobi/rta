@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -155,6 +156,45 @@ func TestACertificateNotValidYetIsSaidSo(t *testing.T) {
 	}
 	if got := rowsOut[1][3]; got != "ok" {
 		t.Errorf("status of a sound certificate = %q, want ok", got)
+	}
+}
+
+// codeOf is the code of err, or "" for no error.
+func codeOf(err error) string {
+	if err == nil {
+		return ""
+	}
+	return view.AsError(err, "test").Code
+}
+
+// A path that names no file is refused as a path. It was dialled as a host,
+// and a mistyped certificate path was answered "dial tcp: lookup certs/tls.crt:
+// no such host", which sends the reader to their network. Over MCP the target
+// reaches the handler rewritten to an absolute path by the path gate, and the
+// agent was handed that path inside a failed DNS lookup of it.
+func TestAPathThatNamesNoFileIsNotDialledAsAHost(t *testing.T) {
+	for _, target := range []string{"certs/tls.crt", "./nope.pem", "leaf.pem", `C:\certs\a.cer`} {
+		_, err := runInspect(context.Background(), req(map[string]any{"target": target, "timeout": 2}))
+		if code := codeOf(err); code != "cert.target.notahost" || !strings.Contains(err.Error(), "file path") {
+			t.Errorf("%s: %v, want it refused as a file path, not dialled", target, err)
+		}
+	}
+
+	v, err := runExpiry(context.Background(), req(map[string]any{
+		"targets": []string{"/etc/ssl/leaf.pem"}, "warn-days": 30, "timeout": 2,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status := v.(view.Table).Rows[0][3]; !strings.Contains(status, "file path") || strings.Contains(status, "lookup") {
+		t.Errorf("status = %q, want the file path named as what it is", status)
+	}
+
+	addr, _ := startTLS(t)
+	mcp := req(map[string]any{"target": addr, "timeout": 2}).WithSurface(plugin.SurfaceMCP)
+	_, err = runInspect(context.Background(), mcp)
+	if codeOf(err) != "cert.file.notfound" {
+		t.Errorf("over MCP, a target that is no file: %v, want cert.file.notfound and no dial", err)
 	}
 }
 

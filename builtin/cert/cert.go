@@ -222,7 +222,33 @@ func loadCerts(ctx context.Context, req plugin.Request, target string, timeout t
 	case errors.As(err, &refused):
 		return nil, nil, refused
 	}
+	// Over MCP the target is a path, judged and made absolute by the path gate
+	// before this ran (targetField), so a name that is not a file is not a host
+	// either: it was dialled as "<root>/host:443" and the answer was a failed
+	// DNS lookup of that path, in the middle of an agent's error. A live host
+	// is cert.expiry's, which needs a grant.
+	if req.Surface() == plugin.SurfaceMCP {
+		return nil, nil, view.Errorf("cert.file.notfound", "no certificate file at %s", target).
+			WithHint("over MCP this reads a PEM file under the server's roots and dials no host; " +
+				"cert.expiry checks a live host, with a grant")
+	}
 	return dialCerts(ctx, target, timeout)
+}
+
+// looksLikeFile reports whether a target can only be a path: no host name
+// holds a slash, and none ends in the extensions a certificate or a key is
+// kept under, which are no top-level domain either. A guess, used for the one
+// thing a wrong guess costs, the wording of a refusal that was a failed
+// lookup anyway.
+func looksLikeFile(target string) bool {
+	if strings.ContainsAny(target, "/\\") {
+		return true
+	}
+	switch strings.ToLower(filepath.Ext(target)) {
+	case ".pem", ".crt", ".cer", ".der", ".key", ".p12", ".pfx":
+		return true
+	}
+	return false
 }
 
 // dialCerts fetches the peer chain from a live host, and never touches the
@@ -236,6 +262,10 @@ func dialCerts(ctx context.Context, target string, timeout time.Duration) ([]*x5
 	if err != nil {
 		return nil, nil, view.Errorf("cert.target.invalid", "invalid target %q: %v", target, err).
 			WithHint("use host, host:port, or a PEM file path")
+	}
+	if looksLikeFile(target) || looksLikeFile(host) {
+		return nil, nil, view.Errorf("cert.target.notahost", "%q is a file path, not a host[:port]", target).
+			WithHint("cert.expiry checks hosts; cert.inspect, cert.chain and cert.pem read a certificate file that exists")
 	}
 	// We are inspecting, not trusting: report what the host presents even if
 	// the chain is invalid, since verification status is part of the output,
