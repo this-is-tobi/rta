@@ -51,6 +51,37 @@ type scanner struct {
 	// nor elsewhere.
 	withheld int
 	largest  []fileSize
+	// apparent counts each file by its length, as `du --apparent-size` does;
+	// without it a file is the disk it takes (sizeOf).
+	apparent bool
+	// linked holds the files already counted that have other names, so that a
+	// second name for one adds nothing.
+	linked map[fileID]struct{}
+}
+
+// sizeOf is what a regular file adds to the total.
+//
+// **The disk the file takes, and each file once.** The question is what is
+// using space, and the length of a file is not the answer for the two kinds
+// that are usually the answer: a sparse file, a VM image or a database with
+// holes, whose length is the whole of the address space it could grow into
+// and whose disk use is what was written, and a file with several names
+// (pnpm's node_modules, an overlay's lower layers, a backup tool's snapshots),
+// each of which was counted in full. A scan that reported a 100 GiB image the
+// size of a few megabytes, or a tree three times the disk it fills, ranked
+// the wrong things first, which `du`, the tool this stands for, does not.
+func (s *scanner) sizeOf(info os.FileInfo) int64 {
+	if s.apparent {
+		return info.Size()
+	}
+	size, id, shared := diskUsage(info)
+	if shared {
+		if _, counted := s.linked[id]; counted {
+			return 0
+		}
+		s.linked[id] = struct{}{}
+	}
+	return size
 }
 
 // fileSize is a file the scan found, by its path from the directory scanned.
@@ -64,8 +95,8 @@ type fileSize struct {
 // ranking is — one forgotten core dump beats twenty evenly-sized folders.
 const keepLargest = 15
 
-func newScanner(root *pathin.Dir, maxDepth int) *scanner {
-	s := &scanner{maxDepth: maxDepth}
+func newScanner(root *pathin.Dir, maxDepth int, apparent bool) *scanner {
+	s := &scanner{maxDepth: maxDepth, apparent: apparent, linked: map[fileID]struct{}{}}
 	if here, err := root.Stat(); err == nil {
 		s.device, _ = deviceOfInfo(here)
 	}
@@ -147,9 +178,10 @@ func (s *scanner) walk(ctx context.Context, dir *pathin.Dir, rel string, depth i
 			if s.withholds(dir, item.Name(), info) {
 				continue
 			}
-			total += info.Size()
+			size := s.sizeOf(info)
+			total += size
 			count++
-			s.remember(full, info.Size())
+			s.remember(full, size)
 		}
 	}
 	return total, count
@@ -187,7 +219,7 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	defer func() { _ = dir.Close() }()
 
-	s := newScanner(dir, req.Int("depth"))
+	s := newScanner(dir, req.Int("depth"), req.Bool("apparent"))
 	items, readErr := dir.ReadDir()
 	if readErr != nil {
 		return nil, pathError("fs.usage", path, readErr)
@@ -220,7 +252,8 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 			}
 			e.size, e.files = fi.Size(), 1
 			if fi.Mode().IsRegular() {
-				s.remember(item.Name(), fi.Size())
+				e.size = s.sizeOf(fi)
+				s.remember(item.Name(), e.size)
 			}
 		}
 		total += e.size
