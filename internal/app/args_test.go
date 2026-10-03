@@ -13,6 +13,28 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
+// `rta help nope` printed the root's help and exited 0, so a script asking for
+// the help of a command that does not exist was told it had one. It is a usage
+// error like `rta nope`, with the same neighbours, and a topic that exists is
+// still its help.
+func TestHelpForACommandThatDoesNotExistIsAUsageError(t *testing.T) {
+	reg := testRegistry(t)
+	_, _, err := run(t, reg, "help", "dem")
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != CodeUsage || !strings.Contains(ve.Message, `unknown command "dem"`) ||
+		!strings.Contains(ve.Message, `"demo"`) {
+		t.Errorf("rta help dem: %v, want a usage error offering demo", err)
+	}
+	_, _, err = run(t, reg, "help", "demo", "nope")
+	if !errors.As(err, &ve) || ve.Code != CodeUsage || !strings.Contains(ve.Message, `for "rta demo"`) {
+		t.Errorf("rta help demo nope: %v, want the unknown command named under demo", err)
+	}
+	out, _, err := run(t, reg, "help", "demo", "item", "list")
+	if err != nil || !strings.Contains(out, "rta demo item list") {
+		t.Errorf("rta help demo item list = %q (%v), want that command's help", out, err)
+	}
+}
+
 // A negative number or a signed duration given as a value is read as flags:
 // `rta time at -90m` answered `unknown shorthand flag: '9' in -90m` under a hint
 // to read --help, and nothing in it says that a `--` before the value is what

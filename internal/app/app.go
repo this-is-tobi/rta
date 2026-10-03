@@ -693,6 +693,19 @@ func unknownCommand(cmd *cobra.Command, arg string) error {
 	return errors.New(msg)
 }
 
+// helpRunE is `rta help <command…>`: the help of the command named, and a usage
+// error for a name that is none. cobra's own prints the root's help and exits 0
+// for a topic it does not know — `rta help nope` was an answer in a script — so
+// this takes the same road a mistyped command does everywhere else in the tree,
+// suggestions and pointers included.
+func helpRunE(cmd *cobra.Command, args []string) error {
+	target, rest, _ := cmd.Root().Find(args)
+	if len(rest) > 0 {
+		return usageError(target, unknownCommand(target, rest[0]))
+	}
+	return target.Help()
+}
+
 // plausibleSuggestions drops the near matches that are not near.
 //
 // cobra offers anything within two edits, and two edits are the whole of a
@@ -934,6 +947,9 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	for _, sub := range root.Commands() {
 		if sub.Name() == "completion" && sub.Run == nil && sub.RunE == nil {
 			sub.RunE = groupRunE
+		}
+		if sub.Name() == "help" {
+			sub.Run, sub.RunE = nil, helpRunE
 		}
 	}
 	codeUsageErrors(root)
