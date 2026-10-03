@@ -11,6 +11,8 @@ import (
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/format/index"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -131,6 +133,52 @@ func TestStatusReportsAChangeOfKindAsGitDoes(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the status is waiting on a named pipe")
+	}
+}
+
+// A merge that stopped on conflicts leaves the paths it could not decide with
+// up to three entries in the index, one per side, and git lists them under
+// "Unmerged paths" by which sides exist: UU, AA, UD, DU. go-git has no such
+// state and reported every one as an edit on both sides, so a repository in
+// the middle of a failed merge read as a few modified files.
+func TestStatusReportsUnmergedPathsAsGitDoes(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "plain.txt", "v1\n", "initial")
+	idx, err := repo.Storer.Index()
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob := plumbing.NewHash(strings.Repeat("ab", 20))
+	for name, stages := range map[string][]index.Stage{
+		"both-modified.txt":   {index.AncestorMode, index.OurMode, index.TheirMode},
+		"both-added.txt":      {index.OurMode, index.TheirMode},
+		"deleted-by-them.txt": {index.AncestorMode, index.OurMode},
+		"deleted-by-us.txt":   {index.AncestorMode, index.TheirMode},
+	} {
+		writeFile(t, dir, name, "<<<<<<<\n")
+		for _, stage := range stages {
+			idx.Entries = append(idx.Entries, &index.Entry{Name: name, Hash: blob, Mode: 0o100644, Stage: stage})
+		}
+	}
+	if err := repo.Storer.SetIndex(idx); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	for _, r := range table(t, runStatus, req(t, dir, nil)).Rows {
+		got = append(got, r[1]+r[2]+" "+r[0])
+	}
+	want := []string{"AA both-added.txt", "UU both-modified.txt", "UD deleted-by-them.txt", "DU deleted-by-us.txt"}
+	if strings.Join(got, "; ") != strings.Join(want, "; ") {
+		t.Errorf("status = %q, want %q, as git status --porcelain reports it", got, want)
+	}
+
+	v, err := runOverview(context.Background(), req(t, dir, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := kvValue(t, v.(view.KeyValue), "working tree"); got != "4 unmerged" {
+		t.Errorf("working tree = %q, want the four unmerged paths counted once and as what they are", got)
 	}
 }
 

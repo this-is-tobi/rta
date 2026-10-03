@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
+	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -32,7 +33,8 @@ func statusCapability() plugin.Capability {
 		Description: "The structured equivalent of `git status --porcelain`: every path with a " +
 			"staged change, an unstaged change, or neither yet — added, tracked at all — one row " +
 			"per path, both halves shown side by side rather than requiring the two-column code to " +
-			"be decoded by eye. It ignores what git ignores, matching each pattern as git's own matcher " +
+			"be decoded by eye. A path a merge stopped on is listed as git lists it — UU, AA, UD or DU — " +
+			"and not as an edit. It ignores what git ignores, matching each pattern as git's own matcher " +
 			"does: each .gitignore, the repository's info/exclude, and the file core.excludesFile names, " +
 			"~/.config/git/ignore by default; at most 1 MiB and 10000 patterns of them in all, in the " +
 			"order it reads them. One past that is not applied, as git applies no pattern file past " +
@@ -162,6 +164,7 @@ func worktreeStatus(ctx context.Context, deadline time.Time, repo *git.Repositor
 	read.dropIgnored(status)
 	if idx, err := repo.Storer.Index(); err == nil {
 		restoreRootIgnore(wt.Filesystem, idx, status, budget)
+		markUnmerged(idx, status)
 	}
 	if onDisk {
 		tree, err := worktreeDir(req, wt)
@@ -174,6 +177,71 @@ func worktreeStatus(ctx context.Context, deadline time.Time, repo *git.Repositor
 		return nil, nil, verr
 	}
 	return status, read.unapplied(), nil
+}
+
+// Which stages an index holds for a path, as bits: the common ancestor's,
+// ours, and theirs.
+const (
+	stageAncestor = 1 << iota
+	stageOurs
+	stageTheirs
+)
+
+// unmergedByStages is the porcelain pair git lists a path under in "Unmerged
+// paths", by which of its three stages the index holds. X is what the
+// ancestor's side did to the path and Y what the other's did; a pair no other
+// state go-git reports is ever one of (a path is never both added and
+// deleted, or unmerged, anywhere else).
+var unmergedByStages = map[int][2]git.StatusCode{
+	stageAncestor | stageOurs | stageTheirs: {git.UpdatedButUnmerged, git.UpdatedButUnmerged},
+	stageOurs | stageTheirs:                 {git.Added, git.Added},
+	stageAncestor | stageOurs:               {git.UpdatedButUnmerged, git.Deleted},
+	stageAncestor | stageTheirs:             {git.Deleted, git.UpdatedButUnmerged},
+	stageOurs:                               {git.Added, git.UpdatedButUnmerged},
+	stageTheirs:                             {git.UpdatedButUnmerged, git.Added},
+	stageAncestor:                           {git.Deleted, git.Deleted},
+}
+
+// markUnmerged tells a path a merge left unresolved as git tells it, UU and
+// the rest of the seven, where go-git has no such state and reports the path
+// as an ordinary change.
+//
+// **A conflicted merge listed its conflicts as edits.** An index holds one
+// entry per path, at stage 0, until a merge cannot decide one: then it holds
+// up to three, the common ancestor's (stage 1), ours (2) and theirs (3), and
+// which of them exist is what git reads the kind of conflict from. go-git's
+// status compares the index to HEAD and to the disk by path, so a path with
+// stages and no stage 0 came out as modified on both sides, M and M, and one
+// deleted on a side as an add or an edit, none of which says the file still
+// needs a decision. `git.status` showed a repository in the middle of a
+// failed merge as a few modified files, and nothing in the table separated
+// the ones to resolve from the ones the merge brought in cleanly.
+func markUnmerged(idx *index.Index, status git.Status) {
+	held := map[string]int{}
+	for _, e := range idx.Entries {
+		switch e.Stage {
+		case index.AncestorMode:
+			held[e.Name] |= stageAncestor
+		case index.OurMode:
+			held[e.Name] |= stageOurs
+		case index.TheirMode:
+			held[e.Name] |= stageTheirs
+		}
+	}
+	for path, stages := range held {
+		pair := unmergedByStages[stages]
+		status[path] = &git.FileStatus{Staging: pair[0], Worktree: pair[1]}
+	}
+}
+
+// isUnmerged reports whether s is one of the seven pairs markUnmerged writes.
+func isUnmerged(s *git.FileStatus) bool {
+	for _, pair := range unmergedByStages {
+		if s.Staging == pair[0] && s.Worktree == pair[1] {
+			return true
+		}
+	}
+	return false
 }
 
 // statusFailed is why a status could not be read, as a capability reports it:
