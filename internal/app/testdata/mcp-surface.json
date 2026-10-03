@@ -930,14 +930,14 @@
   },
   {
     "name": "git_log",
-    "description": "── the text below is written by the plugin, not by rta ──\nRecent commit history\n\nThe most recent commits reaching HEAD, newest first — hash, author, date and the message's own first line, each a table row rather than text to parse. `file` narrows it to commits that touched one path, the structured equivalent of `git log -- \u003cpath\u003e`.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nRecent commit history\n\nThe most recent commits reaching HEAD, newest first — hash, author, date and the message's own first line, each a table row rather than text to parse. `file` narrows it to commits that touched one path — a file, or anything beneath a directory — the structured equivalent of `git log -- \u003cpath\u003e`.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "file": {
-          "description": "limit to commits that touched this file, relative to the current directory as git takes it — or, in a repository with no checkout here (a URL, a bare repository), to the repository's root (a path on the machine running rta)",
+          "description": "limit to commits that touched this file or anything in this directory, relative to the current directory as git takes it — or, in a repository with no checkout here (a URL, a bare repository), to the repository's root (a path on the machine running rta)",
           "type": "string"
         },
         "limit": {

@@ -61,6 +61,37 @@ func TestLogFileNarrowsToCommitsThatTouchedIt(t *testing.T) {
 	}
 }
 
+// `git log -- deploy` lists the commits that touched anything under deploy/.
+// The file input compared a changed path with its name for equality, so a
+// directory matched nothing and the log said "no commit reaching HEAD touched
+// deploy" of a directory most of the commits had: the sentence that exists so
+// an empty table is not read as a failure, saying a thing that is false.
+func TestLogFileTakesADirectoryAsGitDoes(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "deploy/values.yaml", "replicas: 2\n", "set replicas")
+	commitFile(t, repo, dir, "deploy/sub/extra.yaml", "x: 1\n", "add extra")
+	commitFile(t, repo, dir, "deployment.md", "not under deploy/\n", "a sibling that shares the prefix")
+	commitFile(t, repo, dir, "src/main.go", "package main\n", "elsewhere")
+	t.Chdir(dir)
+
+	for file, want := range map[string]string{
+		"deploy":             "add extra, set replicas",
+		"deploy/":            "add extra, set replicas",
+		"deploy/sub":         "add extra",
+		"deploy/values.yaml": "set replicas",
+		"deployment.md":      "a sibling that shares the prefix",
+	} {
+		tbl := table(t, runLog, req(t, dir, map[string]any{"file": file, "limit": defaultLogLimit}))
+		var got []string
+		for _, row := range tbl.Rows {
+			got = append(got, row[3])
+		}
+		if strings.Join(got, ", ") != want {
+			t.Errorf("--file %s: commits %q, want %q", file, got, want)
+		}
+	}
+}
+
 // A repository with no commits yet has an empty history, as git.branches
 // already answers it has no branches: the log is an empty table, where it
 // failed with go-git's "reference not found". And each empty answer says

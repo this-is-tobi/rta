@@ -26,13 +26,13 @@ func logCapability() plugin.Capability {
 		Idempotent:   true,
 		Description: "The most recent commits reaching HEAD, newest first — hash, author, date and " +
 			"the message's own first line, each a table row rather than text to parse. `file` " +
-			"narrows it to commits that touched one path, the structured equivalent of " +
-			"`git log -- <path>`.",
+			"narrows it to commits that touched one path — a file, or anything beneath a " +
+			"directory — the structured equivalent of `git log -- <path>`.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "limit", Type: plugin.Int, Config: "log.limit", Default: defaultLogLimit, Min: 1, Max: 500,
 				Help: "how many of the most recent commits to show"},
-			{Name: "file", Type: plugin.Path, Help: fileHelp("limit to commits that touched this file")},
+			{Name: "file", Type: plugin.Path, Help: fileHelp("limit to commits that touched this file or anything in this directory")},
 		},
 		Run: runLog,
 	}
@@ -57,7 +57,7 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 		if verr != nil {
 			return nil, verr
 		}
-		opts.FileName = &rel
+		opts.PathFilter = within(rel)
 		t.Empty = "no commit reaching HEAD touched " + rel
 	}
 	// A repository with no commits yet has an empty history, as git.branches
@@ -90,6 +90,20 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	t.Total = len(t.Rows)
 	return t, nil
+}
+
+// within is the filter `git log -- <path>` applies to the paths a commit
+// changed: the path itself, or anything beneath it when it names a directory.
+//
+// **A directory matched nothing.** LogOptions.FileName compares a changed
+// path with the name for equality, so `--file deploy` answered "no commit
+// reaching HEAD touched deploy" in a repository where most of the commits
+// had: a plain falsehood, in the sentence that exists so an empty table is
+// not read as a failure. The description promised `git log -- <path>`, and
+// git takes a directory there.
+func within(rel string) func(string) bool {
+	below := rel + "/"
+	return func(changed string) bool { return changed == rel || strings.HasPrefix(changed, below) }
 }
 
 // suggestCommitLimit is how far back a completion looks. A commit anybody is
