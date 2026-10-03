@@ -59,6 +59,23 @@ func TestAnUpgradePassesALaunchRefusalOnAsItself(t *testing.T) {
 	}
 }
 
+// A name where a program was wanted is told apart from a program that ran and
+// could not answer. `rta plugin doc pg` is the mistake of anyone who has
+// installed pg, and its refusal explained how rta learns a declaration — true,
+// and about a binary that ran — instead of saying what the argument is.
+func TestANameWhereAProgramIsWantedSaysWhatIsWanted(t *testing.T) {
+	testData(t)
+	for _, path := range []string{"hello", filepath.Join(t.TempDir(), "rta-plugin-absent")} {
+		_, verr := Describe(context.Background(), path)
+		if verr == nil || verr.Code != "plugin.declaration.unreadable" {
+			t.Fatalf("Describe(%q) = %v, want plugin.declaration.unreadable", path, verr)
+		}
+		if !strings.Contains(verr.Hint, "executable itself") || !strings.Contains(verr.Hint, "rta-plugin-<name>") {
+			t.Errorf("Describe(%q) hint %q does not say what the argument is", path, verr.Hint)
+		}
+	}
+}
+
 // Anything the launch did not code is still the caller's to name.
 func TestALaunchFailureWithNoCodeIsNamedByItsCaller(t *testing.T) {
 	testData(t)
