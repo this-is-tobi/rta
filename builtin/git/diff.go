@@ -531,10 +531,10 @@ const binarySniff = 8000
 
 // changePatch is one change of a commit, as go-git's patch showed it: nothing
 // for a side that is a submodule, which submoduleBumps names instead;
-// "Binary files differ" for a side with a NUL where git looks for one, and
-// for two sides with no lines at all (an empty file added or removed, which
-// go-git renders that way and which a patch of lines has no hunk for); the
-// lines otherwise. cut says the lines were matched coarsely.
+// "Binary files differ" for a side with a NUL where git looks for one; the
+// header alone for two sides with no lines at all (an empty file added or
+// removed: filePatch.bare); the lines otherwise. cut says the lines were
+// matched coarsely.
 func changePatch(repo *git.Repository, ch *object.Change, deadline time.Time) (diff.FilePatch, bool, error) {
 	var (
 		files    [2]*diffFile
@@ -568,7 +568,7 @@ func changePatch(repo *git.Repository, ch *object.Change, deadline time.Time) (d
 	}
 	lines := diffLines(contents[0], contents[1], deadline)
 	chunks := lines.chunks()
-	return &filePatch{from: files[0], to: files[1], chunks: chunks, binary: len(chunks) == 0}, lines.cut, nil
+	return &filePatch{from: files[0], to: files[1], chunks: chunks, bare: len(chunks) == 0}, lines.cut, nil
 }
 
 // blobContent is a blob's content, read whole: boundChanges has held its size
@@ -1159,7 +1159,7 @@ func diffOneFile(tree boundDir, head *headFiles, path string, disk os.FileInfo, 
 			// mode lines and nothing else, as git does for a mode-only change.
 			to.hash = from.hash
 		}
-		return &filePatch{from: from, to: to}, false, nil
+		return &filePatch{from: from, to: to, bare: true}, false, nil
 	}
 	if isBinary(oldContent) || isBinary(newContent) {
 		return &filePatch{from: from, to: to, binary: true}, false, nil
@@ -1306,16 +1306,58 @@ type filePatches struct {
 func (p *filePatches) FilePatches() []diff.FilePatch { return p.patches }
 func (p *filePatches) Message() string               { return "" }
 
+// String encodes each file's patch on its own, which is the same text as
+// encoding them together (the encoder writes one after another and adds no
+// separator), so that a patch with no lines can be told apart afterwards.
 func (p *filePatches) String() string {
-	var buf bytes.Buffer
-	_ = diff.NewUnifiedEncoder(&buf, diff.DefaultContextLines).Encode(p)
-	return buf.String()
+	var out strings.Builder
+	for _, fp := range p.patches {
+		var buf bytes.Buffer
+		_ = diff.NewUnifiedEncoder(&buf, diff.DefaultContextLines).Encode(&filePatches{patches: []diff.FilePatch{fp}})
+		if own, ok := fp.(*filePatch); ok && own.bare {
+			out.WriteString(withoutPathLines(buf.String()))
+			continue
+		}
+		out.Write(buf.Bytes())
+	}
+	return out.String()
+}
+
+// withoutPathLines is a file patch's header with the `--- a` and `+++ b` lines
+// that end it taken off, where they are there.
+//
+// **A file with no lines has a header and nothing after it.** `git diff` of
+// an empty file added or removed prints `diff --git`, the mode and the index
+// line, and stops: `--- /dev/null` and `+++ b/x` name the two sides of a hunk
+// there is none of. go-git's encoder writes them all the same, and for a patch
+// marked binary a `Binary files differ` line instead, which is false of a file
+// with no content and which `git apply` refuses (missing binary patch data).
+func withoutPathLines(encoded string) string {
+	body := strings.TrimSuffix(encoded, "\n")
+	rest, plus, _ := cutLastLine(body)
+	rest, minus, ok := cutLastLine(rest)
+	if !ok || !strings.HasPrefix(plus, "+++ ") || !strings.HasPrefix(minus, "--- ") {
+		return encoded
+	}
+	return rest + "\n"
+}
+
+// cutLastLine is s without its last line, and that line.
+func cutLastLine(s string) (rest, last string, ok bool) {
+	i := strings.LastIndexByte(s, '\n')
+	if i < 0 {
+		return "", s, false
+	}
+	return s[:i], s[i+1:], true
 }
 
 type filePatch struct {
 	from, to *diffFile
 	chunks   []diff.Chunk
 	binary   bool
+	// bare is a patch of two sides with no lines: an empty file added or
+	// removed, or a mode change, which is a header and nothing else.
+	bare bool
 }
 
 func (fp *filePatch) IsBinary() bool { return fp.binary }

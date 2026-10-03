@@ -236,8 +236,12 @@ func TestACommitPatchIsGoGitsPatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != want.String() || len(coarse) != 0 {
-		t.Errorf("patch:\n%s\nwant go-git's:\n%s", got, want.String())
+	// go-git writes `Binary files /dev/null and b/empty.txt differ` for the
+	// empty file, which is false of it and which git leaves out: an empty file
+	// added is a header and no more.
+	wanted := strings.Replace(want.String(), "Binary files /dev/null and b/empty.txt differ\n", "", 1)
+	if got != wanted || len(coarse) != 0 {
+		t.Errorf("patch:\n%s\nwant go-git's:\n%s", got, wanted)
 	}
 	for _, part := range []string{"rename from moved.txt", "new mode 100755", "Binary files", "+nine", "deleted file mode"} {
 		if !strings.Contains(got, part) {
