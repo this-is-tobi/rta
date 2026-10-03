@@ -12,7 +12,7 @@ import (
 func TestTheHandshakeCarriesWhatIsTrueOfEveryTool(t *testing.T) {
 	s := connect(t, Options{})
 	got := s.InitializeResult().Instructions
-	for _, want := range []string{`"type"`, `"hint"`, "operator", "grant", "roots"} {
+	for _, want := range []string{`"type"`, `"hint"`, `"total"`, "operator", "grant", "roots"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the instructions never say %s:\n%s", want, got)
 		}
