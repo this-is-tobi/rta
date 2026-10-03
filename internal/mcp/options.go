@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"time"
 
 	"fmt"
@@ -185,6 +186,21 @@ type Options struct {
 	// never the machine). False for stdio, which is every server this field
 	// existed before and changes nothing for.
 	Remote bool
+	// Shutdown ends when the server is asked to stop (a signal), and every call
+	// in flight is cancelled with it. nil means a call is cancelled only by its
+	// client.
+	//
+	// **The SDK does not do this.** A handler's context is deliberately cut
+	// loose from the one the server runs under (its jsonrpc2 layer wraps it
+	// so that cancelling the connection's context does not reach a request),
+	// so a SIGTERM stopped the server taking new calls and then waited for the
+	// ones in flight to end on their own: a plugin call of thirty seconds was
+	// thirty seconds of a server that had been told to stop, still doing what
+	// an agent had asked, and one that never returned held it until a second
+	// signal. Cancelled here, a call that honours its context ends at once, and
+	// a plugin's is a gRPC call that returns whatever the plugin does
+	// (pluginhost's call).
+	Shutdown context.Context
 }
 
 // active is the profile switched on right now, or "".
