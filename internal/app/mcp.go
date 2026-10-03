@@ -258,9 +258,16 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			// resolves through is Reload, below.
 			//
 			// A config that will not parse is not fatal here. It costs the
-			// agent every profile, which is the fail-closed direction: the
-			// server still serves the base connection, and `rta doctor` is
-			// where the operator finds out why nothing else worked.
+			// agent every profile: the server still serves the base
+			// connection, and `rta doctor` is where the operator finds out why
+			// nothing else worked. **It is not the fail-closed direction for a
+			// call that names no profile**: with none to name, that call runs
+			// on the base connection, and the rule that keeps it off that
+			// connection once profiles exist has no snapshot to hold until
+			// the file reads again (mcp.Options.Reload). Refusing those
+			// calls, or refusing to start, would turn a typo in the config
+			// into a server that offers nothing, which is the operator's call
+			// to make and not one made quietly here.
 			profileCfg, cfgErr := config.Load()
 			if cfgErr != nil {
 				fmt.Fprintln(cmd.ErrOrStderr(), "rta: no profiles are available:", cfgErr)
@@ -534,16 +541,10 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// is the file as it is now, so an environment the operator
 				// edits takes effect without a restart — and the grant they
 				// issue against it is compared to the same connection it will
-				// reach. A read that fails costs the agent every profile,
-				// which is the fail-closed direction and the same call the
-				// snapshot above makes.
-				Reload: func() config.Config {
-					live, err := config.Load()
-					if err != nil {
-						return config.Config{}
-					}
-					return live
-				},
+				// reach. A read that fails answers the snapshot above, not no
+				// profiles: an empty set lifted the rule that keeps a call
+				// that names none off the base connection (mcp.Options.Reload).
+				Reload: config.Load,
 				// The store, opened from this server's own environment and
 				// never by prompting. Wired here and not inside internal/mcp so
 				// that "this server may read the operator's store" is a line

@@ -115,13 +115,7 @@ func newProfileFixtureIn(t *testing.T, yaml, dir string, tweaks ...func(*Options
 		Origin: reg.Origin, Config: resolver.For, Profiles: cfg,
 		// Wired the way internal/app wires it, so these tests exercise what a
 		// real server does rather than the zero value's fallback.
-		Reload: func() config.Config {
-			live, err := config.Load()
-			if err != nil {
-				return config.Config{}
-			}
-			return live
-		},
+		Reload: config.Load,
 	}
 	for _, tweak := range tweaks {
 		tweak(&opts)
@@ -487,6 +481,41 @@ func TestOnceAProfileExistsAnUnprofiledAgentCallIsRefused(t *testing.T) {
 	assertCode(t, f.call(t, map[string]any{"sql": "select 1"}), "core.profile.required")
 	if *f.sawHost != "" {
 		t.Errorf("the handler ran against the base connection %q", *f.sawHost)
+	}
+}
+
+// A config that will not read is not a config with no profiles. It answered
+// an empty set, and with none configured an unprofiled call is let through: an
+// editor's half-typed edit, or a mode changed under the server, lifted the
+// rule above for as long as the file stayed broken, on reads that need no
+// grant. The server holds what it knew of the connections until the file
+// reads again.
+func TestAConfigThatWillNotReadDoesNotLiftTheRuleThatKeepsAnUnprofiledCallOffTheBase(t *testing.T) {
+	f := newProfileFixture(t, twoProfiles)
+	assertCode(t, f.call(t, map[string]any{"sql": "select 1"}), "core.profile.required")
+
+	if err := writeFile(f.dir+"/config.yaml", "profiles: [not: valid\n  - {{"); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		*f.sawHost = ""
+		res := f.call(t, map[string]any{"sql": "select 1"})
+		if !res.IsError {
+			t.Fatalf("an unprofiled call ran against the base connection %q while the config would not read", *f.sawHost)
+		}
+		assertCode(t, res, "core.profile.required")
+		if *f.sawHost != "" {
+			t.Errorf("the handler ran against %q", *f.sawHost)
+		}
+	}
+
+	// And it is the file that decides again once it reads: a config that now
+	// says there are no profiles is one, whatever the server started with.
+	if err := writeFile(f.dir+"/config.yaml", "plugins:\n  pg:\n    host: base.internal\n"); err != nil {
+		t.Fatal(err)
+	}
+	if res := f.call(t, map[string]any{"sql": "select 1"}); res.IsError {
+		t.Fatalf("a config that reads and has no profiles still refused: %s", contentText(t, res))
 	}
 }
 

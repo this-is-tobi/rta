@@ -133,7 +133,17 @@ type Options struct {
 	// The schema stays a snapshot because it is sent once, so a profile added
 	// after startup is not advertised until a restart — and a call naming it
 	// is refused rather than mis-resolved, which is the right direction.
-	Reload func() config.Config
+	//
+	// **A file that will not read is not a file with no profiles in it.** It
+	// answered an empty set, and with no profile configured for a plugin a
+	// call that names none is let through (takeProfile): a typo an editor left
+	// in the config, a mode changed under the server, lifted the rule that
+	// keeps an unprofiled call off the base connection and the ambient kubectl
+	// context for as long as the file stayed broken, on reads that need no
+	// grant. The error is Reload's to return, and profiles answers the
+	// snapshot the server started with: what it knew of the operator's
+	// connections is what holds until the file reads again.
+	Reload func() (config.Config, error)
 	// Active answers which environment the operator has switched on, read per
 	// call so that switching takes effect in a server that has been running for
 	// hours. nil means the real selection (internal/profile.Active) — the
@@ -236,7 +246,11 @@ func (o Options) profiles() config.Config {
 	if o.Reload == nil {
 		return o.Profiles
 	}
-	return o.Reload()
+	live, err := o.Reload()
+	if err != nil {
+		return o.Profiles
+	}
+	return live
 }
 
 // origin resolves a namespace, treating an unwired lookup as "nothing is
