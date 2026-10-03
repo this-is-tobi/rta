@@ -1181,6 +1181,17 @@ func doctorRecord(add func(check, status, detail string)) {
 		}
 		add("agent log", "ok", recordNote(rep)+" — `rta agent log` reads it")
 	}
+	// Last, so that a record with other things to say is still reported as one
+	// that cannot be written. An error rather than a warning: a call that needs
+	// a grant is refused while it cannot (core.record.unwritable) and every
+	// other one runs with nothing written down, a state the operator should
+	// meet here and not first as an agent's refusal.
+	if agentlog.Started() {
+		if err := agentlog.Writable(); err != nil {
+			add("agent log", "error", fmt.Sprintf(
+				"the record of agent calls cannot be written: %v — a call that needs a grant is refused until it can, and the rest are not recorded", err))
+		}
+	}
 }
 
 // recordNote is how far back an intact record goes. Retention is reported
