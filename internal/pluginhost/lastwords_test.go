@@ -77,6 +77,20 @@ func TestAPanicIsKeptFromItsFirstLine(t *testing.T) {
 	}
 }
 
+// A line kept cut says it was cut. The refusal a plugin gives for a declaration
+// the host will not load is one long sentence, and kept to wordLength bytes it
+// ended in the middle of itself — "…at a machine it" — as though that were all
+// it had said.
+func TestALineKeptCutSaysSo(t *testing.T) {
+	words, say := saying(t)
+	say("[ERROR] "+strings.Repeat("word ", 100), "[ERROR] short")
+	got := words.told("")
+	lines := strings.Split(got, "\n  ")
+	if len(lines) != 2 || !strings.HasSuffix(lines[0], "…") || strings.HasSuffix(lines[1], "…") {
+		t.Errorf("told %q: want the long line marked cut and the short one left alone", got)
+	}
+}
+
 // What a plugin writes to its stderr is read by nothing that panics on it.
 // go-plugin parsed every line as a JSON log entry and asserted its "@message",
 // "@level" and "@timestamp" were strings: a plugin that wrote {"@message":1}
