@@ -66,8 +66,9 @@ import (
 
 const stateFile = "guard.json"
 
-// maxStateFile bounds a read of the guard's state: a key and the roster of an
-// operators file are a few kilobytes, and what is read here is a file a process
+// maxStateFile bounds a read of the guard's state, and a write of it
+// (EnableRemote): a key is a fraction of a kilobyte and a roster of some
+// thousand operators fills this, and what is read here is a file a process
 // that cannot read the directory can still write to.
 const maxStateFile = 256 << 10
 
@@ -547,6 +548,17 @@ func EnableRemote(ops []OperatorKey, server string) *view.Error {
 	}, "", "  ")
 	if err != nil {
 		return view.Errorf("core.guard.write", "encoding guard state: %v", err)
+	}
+	// The bound load reads under applies to what is written: a roster the
+	// guard cannot read back would be a state file every later load refuses as
+	// corrupt, and that refuses every grant the machine holds, so it is turned
+	// away here, before anything is on disk, where the operator who enrolled
+	// it is still looking at the command.
+	if len(data) > maxStateFile {
+		return view.Errorf("core.guard.remote.size",
+			"%d operator keys come to %d KiB of guard state, and the guard reads at most %d KiB of it — "+
+				"it would find a file that large corrupt, and refuse every grant", len(ops), len(data)>>10, maxStateFile>>10).
+			WithHint("enroll the people who issue grants, not every machine or agent")
 	}
 	if err := atomicfile.Write(Path(), data, 0o600); err != nil {
 		return view.Errorf("core.guard.write", "writing %s: %v", Path(), err)
