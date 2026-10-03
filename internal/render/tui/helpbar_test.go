@@ -108,3 +108,21 @@ func TestTheProfilePanesCallTheArrowsSelect(t *testing.T) {
 		}
 	}
 }
+
+// With no environment configured the profiles pane offers what can be done:
+// make one, leave. It offered to select, use, configure and delete nothing.
+func TestAnEmptyProfilesPaneOffersOnlyWhatCanBeDone(t *testing.T) {
+	m, _ := realModel(t, 100, 30)
+	m.profiles = nil
+	bar := plain(fitHintBar(m.width, footerMaxLines, m.footerItems(modeProfiles)...))
+	for _, want := range []string{"n new", "esc back", "q quit"} {
+		if !strings.Contains(bar, want) {
+			t.Errorf("the bar lacks %q:\n%s", want, bar)
+		}
+	}
+	for _, gone := range []string{"use", "configure", "delete", "select"} {
+		if strings.Contains(bar, gone) {
+			t.Errorf("the bar offers %q over nothing:\n%s", gone, bar)
+		}
+	}
+}

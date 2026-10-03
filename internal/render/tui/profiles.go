@@ -648,6 +648,11 @@ func (m Model) profileFooter() string { return m.footerFor(modeProfiles) }
 // copy, its presence is the news — and it lands directly under the band that
 // has just said "2 credentials · 1 not set".
 func (m Model) profileFooterItems() []hintItem {
+	// With nothing configured the pane says "Press n to make one", and the bar
+	// offered to select, use, configure and delete what is not there.
+	if len(m.profiles) == 0 {
+		return []hintItem{item(bindNew), alias(item(bindBack), "f"), item(bindQuit)}
+	}
 	items := []hintItem{
 		item(bindColumn), item(bindUse), alias(labelled(bindOpen, "plugins"), "right", "l"),
 		alias(item(bindConfig), "e"), item(bindNew), item(bindRemove),
