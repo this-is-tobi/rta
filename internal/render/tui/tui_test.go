@@ -377,6 +377,7 @@ func TestResultFooterOffersRerunAndCopy(t *testing.T) {
 }
 
 func TestCopyShowsFlash(t *testing.T) {
+	fakeClipboard(t) // y reaches the system clipboard too: never the real one
 	tm := newTest(t)
 	waitFor(t, tm, "demo.hello")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyDown})
