@@ -6,7 +6,36 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/internal/plugindist"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
+
+// The install report's last line told the person where the plugin's settings
+// go as "plugins.pg@abc123: — `rta explain pg.query` lists its keys": a key
+// with a dash after it, which reads as a line of config that stopped.
+func TestTheInstallReportSaysWhereTheKeysGoInASentence(t *testing.T) {
+	rep := plugindist.Report{
+		Name: "hello", Version: "v0.1.0", Index: "local", URL: "file:///x",
+		Digest: "6db7eaeebf84" + strings.Repeat("0", 52), Signature: "none stated", Path: "/store/hello",
+		Declared: plugin.Plugin{Name: "hello", Capabilities: []plugin.Capability{{ID: "hello.greet", Safety: plugin.Read}}},
+	}
+	kv, ok := installView(rep, false).(view.KeyValue)
+	if !ok {
+		t.Fatal("the install report is not a key/value page")
+	}
+	var note string
+	for _, p := range kv.Pairs {
+		if p.Key == "to configure it" {
+			note = p.Value
+		}
+	}
+	if note == "" || strings.Contains(note, ":` —") || strings.Contains(note, ": —") ||
+		!strings.Contains(note, "go under `plugins.hello@6db7eaeebf84:`") || !strings.Contains(note, "`rta explain hello.greet`") {
+		t.Errorf("to configure it: %q", note)
+	}
+}
 
 // An upgrade says what it did to the config that pinned the old build, and only
 // that. It said "your pin plugins.pg@abc no longer applies" on every upgrade,

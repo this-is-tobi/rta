@@ -126,7 +126,10 @@ func installView(rep plugindist.Report, dryRun bool) view.View {
 				"`rta plugin allow " + rep.Name + "` decides"})
 	}
 	installedLabel, configureLabel := "installed", "to configure it"
-	configureNote := "plugins." + pin + ": — `rta explain " + firstCapability(rep.Declared) + "` lists its keys"
+	// A sentence, not a YAML key with a dash after it: "plugins.pg@abc: — `rta
+	// explain pg.query` lists its keys" read as a line of config that stopped.
+	configureNote := "its keys go under `plugins." + pin + ":` in the config, or in a profile — `rta explain " +
+		firstCapability(rep.Declared) + "` lists them"
 	if dryRun {
 		installedLabel = "would install to"
 		configureLabel = "once installed"
