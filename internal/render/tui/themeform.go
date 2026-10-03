@@ -359,6 +359,10 @@ func (m Model) fastSubmitThemeForm() (tea.Model, tea.Cmd) {
 	return m.afterThemeFormUpdate(nil)
 }
 
+// themeBoxRows is what the focused field needs on screen to be usable: its
+// title, its description and the box itself.
+const themeBoxRows = 5
+
 // themeView frames the editor beside its live preview.
 func (m Model) themeView() string {
 	if m.themeForm == nil {
@@ -372,6 +376,13 @@ func (m Model) themeView() string {
 	// wrap broke between the two.
 	strip := m.themeForm.preview(max(m.width-4, 0))
 	body := strip + "\n\n" + m.themeForm.form.View()
+	// The strip is the preview of what is being typed, and the box is the
+	// thing typed into: on a window too short for both, the strip goes, so the
+	// focused box is never the part cut off.
+	if inner := m.height - lipgloss.Height(footer) - 2; m.height > 0 &&
+		inner-lipgloss.Height(strip)-2 < themeBoxRows {
+		body = m.themeForm.form.View()
+	}
 	head := panelHead{Title: "theme", Note: "#rrggbb, or blank for the built-in"}
 	return panel(head, "\n"+body, m.width, m.height-lipgloss.Height(footer), true) + "\n" + footer
 }
