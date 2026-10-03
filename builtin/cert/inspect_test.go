@@ -198,6 +198,39 @@ func TestAPathThatNamesNoFileIsNotDialledAsAHost(t *testing.T) {
 	}
 }
 
+// The common name is optional, and a chain drew a certificate without one as a
+// branch with no name: an intermediate known by its organisation, a leaf with
+// an empty subject and its names in the SAN.
+func TestChainNamesACertificateThatHasNoCommonName(t *testing.T) {
+	for _, c := range []struct {
+		tmpl *x509.Certificate
+		want string
+	}{
+		{&x509.Certificate{Subject: pkix.Name{CommonName: "plain"}}, "plain"},
+		{&x509.Certificate{Subject: pkix.Name{Organization: []string{"NoCN Inc"}, OrganizationalUnit: []string{"Unit"}}}, "OU=Unit,O=NoCN Inc"},
+		{&x509.Certificate{DNSNames: []string{"only-san.example", "b.example"}}, "only-san.example"},
+		{&x509.Certificate{IPAddresses: []net.IP{net.ParseIP("10.0.0.5")}}, "10.0.0.5"},
+		{&x509.Certificate{EmailAddresses: []string{"ops@example.org"}}, "ops@example.org"},
+		{&x509.Certificate{SerialNumber: big.NewInt(0x1234)}, "serial 1234"},
+	} {
+		der, _ := selfIssued(t, c.tmpl)
+		path := filepath.Join(t.TempDir(), "c.pem")
+		if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		v, err := runChain(context.Background(), req(map[string]any{"target": path}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := v.(view.Tree).Roots[0].Label; got != c.want {
+			t.Errorf("label = %q, want %q", got, c.want)
+		}
+	}
+	if got := inspectFile(t, &x509.Certificate{DNSNames: []string{"x.example"}})["subject"]; got != "(empty)" {
+		t.Errorf("subject of a certificate with none = %q, want (empty)", got)
+	}
+}
+
 // The key is named by type and size. The signature algorithm beside it is the
 // issuer's, so a certificate on a 1024-bit RSA key read as sound.
 func TestInspectNamesTheKeyByTypeAndSize(t *testing.T) {
