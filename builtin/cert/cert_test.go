@@ -302,6 +302,20 @@ func TestDialFailureIsCodedWithHint(t *testing.T) {
 	}
 }
 
+// The summaries of the four that take a host or a file name a host, and over
+// MCP none of them dials one: an agent picks a tool by its first line, sends a
+// host, and is refused. What differs there is said in each one's text.
+func TestEveryCapabilityThatTakesAHostOrAFileSaysWhatItDoesOverMCP(t *testing.T) {
+	for _, c := range Plugin().Capabilities {
+		switch c.ID {
+		case "cert.inspect", "cert.chain", "cert.pem", "cert.tls":
+			if !strings.Contains(c.Description, "Over MCP") {
+				t.Errorf("%s: the description does not say what it does over MCP: %q", c.ID, c.Description)
+			}
+		}
+	}
+}
+
 // A hint that sends the reader to another capability spells it the way the
 // reader's surface does: over MCP the way to check a live host is the
 // cert_expiry tool, and "cert.expiry" is a name that tool list does not hold.
