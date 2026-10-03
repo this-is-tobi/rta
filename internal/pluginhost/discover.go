@@ -235,7 +235,13 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 	// confinement hole — wrap() still prepends the sandbox and the exec still
 	// fails — but a diagnostic worth keeping.
 	availErr := available()
-	deny, denyErr := Resolve()
+	// Resolved at the first plugin that is about to be launched, not before
+	// the sweep: the deny set is every credential location on the machine
+	// resolved through its symlinks, a thousand allocations or more and 0.7 ms
+	// measured, and a machine with no plugin installed, or none trusted, never
+	// launches anything for it to confine. The answer is the same once asked,
+	// so a failure is still reported against each plugin that needed it.
+	resolveDeny := sync.OnceValues(Resolve)
 
 	found := Discover()
 	// Hashed here rather than inside Open, so the digest the operator
@@ -298,6 +304,7 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 			problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, availErr))
 			continue
 		}
+		deny, denyErr := resolveDeny()
 		if denyErr != nil {
 			problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, denyErr))
 			continue
