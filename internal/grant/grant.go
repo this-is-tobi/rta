@@ -1935,22 +1935,42 @@ func refuseMissing(c plugin.Capability, missing []string, profile, agent string)
 	// looks like — a shell splits it into an extra argument. Quoting only
 	// the scopes that need it keeps the common case (a bare word) reading
 	// exactly as it always has.
-	scope := shellquote.Arg(missing[0])
-	what := strings.TrimSpace(c.ID + " " + scope)
-	if profile != "" {
-		what = strings.TrimSpace(Namespace(c.ID)+" "+scope) + " --profile " + profile
+	command := func(record string) string {
+		scope := shellquote.Arg(record)
+		what := strings.TrimSpace(c.ID + " " + scope)
+		if profile != "" {
+			what = strings.TrimSpace(Namespace(c.ID)+" "+scope) + " --profile " + profile
+		}
+		// And the agent, for the same reason as the profile: covers() matches
+		// it exactly, so on a server started `--as claude` the command without
+		// `--agent claude` issues a row that authorizes nothing.
+		if agent != "" {
+			what += " --agent " + shellquote.Arg(agent)
+		}
+		return "grant allow " + what + " --ttl 15m"
 	}
-	// And the agent, for the same reason as the profile: covers() matches
-	// it exactly, so on a server started `--as claude` the command without
-	// `--agent claude` issues a row that authorizes nothing.
-	if agent != "" {
-		what += " --agent " + shellquote.Arg(agent)
+	// One command for each record the call names that nothing covers, because
+	// a grant covers one record: handed only the first of a rename's two keys
+	// or of three certificate hosts, the operator ran it, the agent retried and
+	// was refused again for the next, one round trip per record. Bounded, since
+	// a call may name hundreds; the rest are counted, and the message above
+	// has named every one.
+	commands := make([]string, 0, min(len(missing), maxHintCommands))
+	for _, record := range missing[:min(len(missing), maxHintCommands)] {
+		commands = append(commands, plugin.AskOperator(command(record)))
+	}
+	hint := "a person has to allow this first — " + strings.Join(commands, ", and ")
+	if rest := len(missing) - len(commands); rest > 0 {
+		hint += fmt.Sprintf(", and the same for the other %d %s the call names", rest, format.Plural(rest, "record", "records"))
 	}
 	// The one command line an agent is handed, and in the one form that
 	// hands it on (plugin.AskOperator): only a person issues a grant.
-	return view.Errorf("core.grant.required", "no active grant for %s", describe(c.ID, missing)).
-		WithHint("a person has to allow this first — " + plugin.AskOperator("grant allow "+what+" --ttl 15m"))
+	return view.Errorf("core.grant.required", "no active grant for %s", describe(c.ID, missing)).WithHint(hint)
 }
+
+// maxHintCommands is how many grant commands a refusal spells out before it
+// counts the rest.
+const maxHintCommands = 4
 
 // refuseThrottled is the answer for a call a grant covers and a budget will
 // not let through yet.
