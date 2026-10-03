@@ -199,6 +199,45 @@ func TestAPathThatNamesNoFileIsNotDialledAsAHost(t *testing.T) {
 	}
 }
 
+// The address of a site, pasted, is the host it names. `cert inspect
+// https://host:port` was refused as a missing certificate file for its
+// slashes, and `cert expiry` called it "too many colons in address". A URL of
+// another scheme is not a TLS host, and is refused as what it is.
+func TestAnHTTPSURLIsReadAsTheHostItNames(t *testing.T) {
+	addr, _ := startTLS(t)
+	for _, target := range []string{"https://" + addr, "https://" + addr + "/", "HTTPS://" + addr + "/a/b?c=d"} {
+		v, err := runInspect(context.Background(), req(map[string]any{"target": target, "timeout": 5}))
+		if err != nil {
+			t.Errorf("inspect %s: %v, want the certificate of %s", target, err, addr)
+			continue
+		}
+		if kv := v.(view.KeyValue); len(kv.Pairs) == 0 {
+			t.Errorf("inspect %s answered no rows", target)
+		}
+		if _, err := runChain(context.Background(), req(map[string]any{"target": target, "timeout": 5})); err != nil {
+			t.Errorf("chain %s: %v", target, err)
+		}
+	}
+
+	v, err := runExpiry(context.Background(), req(map[string]any{
+		"targets": []string{"https://" + addr}, "warn-days": 30, "timeout": 5,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := v.(view.Table).Rows[0]
+	if row[0] != "https://"+addr || row[3] != "ok" {
+		t.Errorf("expiry row = %q, want the target as typed and the host's status", row)
+	}
+
+	for _, target := range []string{"ftp://" + addr, "http://" + addr, "https://", "ssh://"} {
+		_, err := runInspect(context.Background(), req(map[string]any{"target": target, "timeout": 2}))
+		if codeOf(err) != "cert.target.invalid" {
+			t.Errorf("%s: %v, want cert.target.invalid", target, err)
+		}
+	}
+}
+
 // The common name is optional, and a chain drew a certificate without one as a
 // branch with no name: an intermediate known by its organisation, a leaf with
 // an empty subject and its names in the SAN.

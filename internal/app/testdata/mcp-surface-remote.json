@@ -184,7 +184,7 @@
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "a PEM or DER file, or — from a terminal — a host[:port] to connect to; not over MCP (a path on the machine running rta)",
+          "description": "a PEM or DER file, or — from a terminal — a host[:port] or https:// URL to connect to; not over MCP (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {
@@ -210,7 +210,7 @@
       "additionalProperties": false,
       "properties": {
         "targets": {
-          "description": "hosts to check (host[:port])",
+          "description": "hosts to check (host[:port], or an https:// URL)",
           "items": {
             "type": "string"
           },
@@ -244,7 +244,7 @@
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "a PEM or DER file, or — from a terminal — a host[:port] to connect to; not over MCP (a path on the machine running rta)",
+          "description": "a PEM or DER file, or — from a terminal — a host[:port] or https:// URL to connect to; not over MCP (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {
@@ -280,7 +280,7 @@
           "type": "string"
         },
         "target": {
-          "description": "a PEM or DER file, or — from a terminal — a host[:port] to connect to; not over MCP (a path on the machine running rta)",
+          "description": "a PEM or DER file, or — from a terminal — a host[:port] or https:// URL to connect to; not over MCP (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {
@@ -306,7 +306,7 @@
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "a PEM or DER file, or — from a terminal — a host[:port] to connect to; not over MCP (a path on the machine running rta)",
+          "description": "a PEM or DER file, or — from a terminal — a host[:port] or https:// URL to connect to; not over MCP (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {
