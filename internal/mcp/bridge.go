@@ -706,7 +706,18 @@ func takeProfile(c plugin.Capability, values map[string]any, opts Options) (stri
 		// rule switched on at the next restart, with nothing anywhere saying
 		// so — the same defect as the connection stamp above, one field along.
 		// Every other input to this decision is already read per call.
-		if named := opts.profiles().ProfilesFor(plugin.Namespace(c.ID)); len(named) > 0 && plugin.Profilable(c) {
+		cfg, known := opts.profileSet()
+		if !known {
+			// Not "no profiles": the file that says which plugins have
+			// them has not read since before this server started, so a call
+			// that names none cannot be told from one that must. Said as the
+			// operator's to fix, in the words every other unreadable store
+			// uses, and not with the file's own error, which names a path.
+			return "", view.Errorf("core.profile.unreadable",
+				"%s cannot be judged: the connections this server was configured with could not be read", c.ID).
+				WithHint(plugin.AskOperator("doctor"))
+		}
+		if named := cfg.ProfilesFor(plugin.Namespace(c.ID)); len(named) > 0 && plugin.Profilable(c) {
 			return "", view.Errorf("core.profile.required",
 				"%s has configured connections, so a call must name which one", c.ID).
 				WithHint("ask the operator which profile to use and for a grant naming it")
