@@ -374,6 +374,34 @@ func TestHostsAddRefusesAHostnameTheFileWouldReadAsStructure(t *testing.T) {
 	}
 }
 
+// Structure was the only thing add checked of a name, so a quote, a slash, a
+// wildcard or a look-alike letter went into the file and then never resolved
+// as typed. A name is the shape DNS gives one, and rm can still take out an
+// entry the file already holds in any shape.
+func TestHostsAddRefusesWhatIsNotAHostname(t *testing.T) {
+	cyrillicA := string(rune(0x430))
+	for _, hostname := range []string{`"api"`, "api/local", "*.local", "b" + cyrillicA + "nk.com", "-api.local",
+		"api-.local", "a..local", ".local", strings.Repeat("a", 64) + ".local", "api(1)"} {
+		path := hostsFixture(t, "127.0.0.1 localhost\n")
+		before := hostsContent(t, path)
+		_, err := runHostsAdd(context.Background(), plugin.NewRequest(
+			map[string]any{"ip": "127.0.0.1", "hostname": []string{hostname}}, false, true))
+		if ve := view.AsError(err, "x"); err == nil || ve.Code != "net.hosts.badhostname" {
+			t.Errorf("add %q: err = %v, want net.hosts.badhostname", hostname, err)
+		}
+		if got := hostsContent(t, path); got != before {
+			t.Errorf("add %q wrote the file:\n%s", hostname, got)
+		}
+	}
+	for _, hostname := range []string{"api.local", "API.Local.", "my_host", "xn--bnk-sqa.com", "a1-b2.c3"} {
+		hostsFixture(t, "127.0.0.1 localhost\n")
+		if _, err := runHostsAdd(context.Background(), plugin.NewRequest(
+			map[string]any{"ip": "127.0.0.1", "hostname": []string{hostname}}, false, true)); err != nil {
+			t.Errorf("add %q refused: %v", hostname, err)
+		}
+	}
+}
+
 // The hostname toggle acts on is the one the gate judged. It was trimmed
 // first, so a call on " api.local" — its own record to the gate, which a
 // grant on api.local does not cover — flipped api.local, the entry nobody
