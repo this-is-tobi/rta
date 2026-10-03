@@ -51,8 +51,10 @@ func Plugin() plugin.Plugin {
 					"characters and runs of variation selectors, decoded to what they invisibly " +
 					"carry — the way a prompt injection hides in an innocent sentence. Never " +
 					"prints a raw control byte back at the terminal it is running in — the " +
-					"whole point is seeing what a sequence does without it happening. On the " +
-					"CLI, text left out is read from a pipe.",
+					"whole point is seeing what a sequence does without it happening. The escape " +
+					"character written out as a log shows it — \\033, \\x1b, \\e, \\u001b or ^[ ahead of [ " +
+					"or ] — is read as the character, and said to be. On the CLI, text left out is " +
+					"read from a pipe.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				// input is Positional but not Required — stdin can supply
@@ -99,7 +101,12 @@ func runAnsi(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 		return nil, view.Errorf("debug.ansi.noinput", "no text to explain").WithHint(hint)
 	}
-	return explainAnsi(input), nil
+	input, spelled := unspell(input)
+	t := explainAnsi(input)
+	if len(spelled) > 0 {
+		t.Warnings = append(t.Warnings, spelledWarning(spelled))
+	}
+	return t, nil
 }
 
 func stdinError(err error) *view.Error {
