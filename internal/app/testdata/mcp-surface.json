@@ -249,7 +249,7 @@
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "host[:port] to connect to, or a path to a PEM file (a path on the machine running rta)",
+          "description": "a PEM or DER file, or — from a terminal — a host[:port] to connect to; not over MCP (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {
@@ -309,7 +309,7 @@
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "host[:port] to connect to, or a path to a PEM file (a path on the machine running rta)",
+          "description": "a PEM or DER file, or — from a terminal — a host[:port] to connect to; not over MCP (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {
@@ -345,7 +345,7 @@
           "type": "string"
         },
         "target": {
-          "description": "host[:port] to connect to, or a path to a PEM file (a path on the machine running rta)",
+          "description": "a PEM or DER file, or — from a terminal — a host[:port] to connect to; not over MCP (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {
@@ -371,7 +371,7 @@
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "host[:port] to connect to, or a path to a PEM file (a path on the machine running rta)",
+          "description": "a PEM or DER file, or — from a terminal — a host[:port] to connect to; not over MCP (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {

@@ -56,31 +56,32 @@ func Plugin() plugin.Plugin {
 	// exists, which made this a file existence oracle over MCP: the type is
 	// the hook the host confines path arguments by (internal/pathguard), so a
 	// field that can be a path and does not say Path is a field nothing
-	// guards. A host:port still works — it resolves under the root like any
-	// relative value — and file completion is an improvement for the PEM case
-	// rather than a cost.
+	// guards. A host:port still works at a terminal, where no root resolves
+	// it, and file completion is an improvement for the PEM case rather than
+	// a cost.
 	//
-	// That resolution is also, today, the only thing standing between an MCP
-	// caller and an ungated live-host dial through this field: a bare
-	// "host:port" is not a filesystem path, so nothing here refuses it, and
+	// Over MCP the same resolution is what used to stand, alone, between an
+	// agent and an ungated live-host dial through this field: a bare
+	// "host:port" is not a filesystem path, so nothing here refused it, and
 	// pathguard's own resolve() treats it exactly like a relative path — it
 	// gets the server's working directory prepended before the bounds check
 	// runs (internal/mcp/bridge.go's checkPaths substitutes that judged value
 	// back into the request). "<cwd>/host:port" can never split back into a
 	// dialable host:port — SplitHostPort takes everything before the last
-	// colon as the host, slashes included, which no resolver accepts — so the
-	// live-host branch of cert.inspect/chain/pem/tls is not reachable over
-	// MCP in practice. TestLiveHostTargetIsUndialableOnceRoutedThroughThePathGate
-	// (cert_test.go) pins that rather than leaving it assumed. It is not a
-	// deliberate gate, though: it is a side effect of a check built for
-	// filesystem paths landing on a field that is sometimes something else. If
-	// pathguard's handling of a non-path value ever changes, these four need
-	// the same NeedsGrant + Scope cert.expiry already carries, for the same
-	// reason net.probe and net.port do — see their declarations below and in
-	// builtin/net/net.go.
+	// colon as the host, slashes included, which no resolver accepts.
+	// TestLiveHostTargetIsUndialableOnceRoutedThroughThePathGate
+	// (cert_test.go) pins that. It was a side effect of a check built for
+	// filesystem paths landing on a field that is sometimes something else,
+	// and is no longer all there is: loadCerts refuses a target that is no
+	// file outright over MCP, so the dial is out of reach by decision, and the
+	// agent is told so instead of being handed a failed lookup of its own
+	// working directory. If pathguard's handling of a non-path value ever
+	// changes, that refusal still holds; a live host over MCP is cert.expiry's,
+	// with the NeedsGrant + Scope it carries for the reason net.probe and
+	// net.port do — see their declarations below and in builtin/net/net.go.
 	targetField := plugin.Field{
 		Name: "target", Type: plugin.Path, Positional: true, Required: true,
-		Help: "host[:port] to connect to, or a path to a PEM file",
+		Help: "a PEM or DER file, or — from a terminal — a host[:port] to connect to; not over MCP",
 	}
 	timeoutField := plugin.Field{
 		Name: "timeout", Type: plugin.Int, Default: defaultTimeoutSeconds, Min: 1, Max: 120,
