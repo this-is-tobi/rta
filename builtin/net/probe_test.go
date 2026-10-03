@@ -249,6 +249,19 @@ func TestAHostThatDoesNotResolveIsNotBlamedOnItsPort(t *testing.T) {
 	}
 }
 
+// A scan of a name that does not resolve answered "closed" for every port on a
+// host that does not exist, which reads as a firewall and sends the person to
+// the wrong place. The name is the finding, as it is for probe and ping.
+func TestAScanOfAHostThatDoesNotResolveIsNotAColumnOfClosed(t *testing.T) {
+	_, err := runPort(context.Background(), req(map[string]any{
+		"host": "no-such-name-rta-test.invalid", "ports": "80,443", "timeout": 2,
+	}))
+	ve := view.AsError(err, "x")
+	if ve.Code != "net.port.resolve" || !strings.Contains(ve.Hint, "rta net dns") {
+		t.Errorf("scan of a name that does not resolve = %+v, want net.port.resolve pointing at net dns", ve)
+	}
+}
+
 // A regression test for a real bug: the TLS
 // handshake was never bounded by the documented timeout field — only the
 // TCP dial was — so a peer that accepts the connection and then never sends

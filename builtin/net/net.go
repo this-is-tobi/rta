@@ -747,6 +747,7 @@ func runPort(ctx context.Context, req plugin.Request) (view.View, error) {
 	type result struct {
 		port int
 		open bool
+		err  error
 	}
 	results := make([]result, len(ports))
 	// A worker pool, not a goroutine per port that then queues on a semaphore.
@@ -775,7 +776,7 @@ func runPort(ctx context.Context, req plugin.Request) (view.View, error) {
 				}
 				// Written by index, so the rows keep the caller's port order
 				// without a sort and without a lock.
-				results[i] = result{port: ports[i], open: err == nil}
+				results[i] = result{port: ports[i], open: err == nil, err: err}
 			}
 		}()
 	}
@@ -791,6 +792,23 @@ feed:
 	wg.Wait()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+	// A name the resolver could not answer for reached no port, so a table of
+	// "closed" would tell whoever mistyped the host that every port on it is
+	// shut. Every port failing in the resolver is that case; one port that did
+	// resolve makes the failures of the rest the host's answer after all.
+	var unresolved error
+	for _, r := range results {
+		if !isResolveFailure(r.err) {
+			unresolved = nil
+			break
+		}
+		unresolved = r.err
+	}
+	if unresolved != nil {
+		var dnsErr *stdnet.DNSError
+		errors.As(unresolved, &dnsErr)
+		return nil, resolveFailed("net.port.resolve", req.Surface(), host, dnsErr)
 	}
 
 	t := view.Table{Columns: []view.Column{
