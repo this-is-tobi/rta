@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -196,6 +197,33 @@ func TestAPathThatNamesNoFileIsNotDialledAsAHost(t *testing.T) {
 	_, err = runInspect(context.Background(), mcp)
 	if codeOf(err) != "cert.file.notfound" {
 		t.Errorf("over MCP, a target that is no file: %v, want cert.file.notfound and no dial", err)
+	}
+}
+
+// A certificate file the server may not open is not a missing one: over MCP
+// both were "no certificate file at" the path, and the caller went looking for
+// a mistake in a path that was right.
+func TestOverMCPAnUnreadableCertificateFileIsNotSaidToBeMissing(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a directory this user cannot search")
+	}
+	dir := t.TempDir()
+	sealed := filepath.Join(dir, "sealed")
+	if err := os.Mkdir(sealed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(sealed, "leaf.pem")
+	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sealed, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(sealed, 0o755) })
+
+	_, err := runInspect(context.Background(), req(map[string]any{"target": target}).WithSurface(plugin.SurfaceMCP))
+	if code := codeOf(err); code != "cert.file.unreadable" {
+		t.Errorf("over MCP, a certificate file in a directory that cannot be searched: %v, want cert.file.unreadable", err)
 	}
 }
 
