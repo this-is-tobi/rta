@@ -238,6 +238,29 @@ func (m Model) catalogueCount() string {
 	return fmt.Sprintf("%d capabilities ", total)
 }
 
+// catalogueFilter is the catalogue's filter box: the dashboard search's rule,
+// over the list's own targets, which capItem.FilterValue writes as the ID, a
+// space and the summary. A section header's target is empty and matches
+// nothing, which is what drops it from a filtered list.
+func catalogueFilter(term string, targets []string) []list.Rank {
+	q := strings.ToLower(strings.TrimSpace(term))
+	if q == "" {
+		return nil
+	}
+	var lead, rest []list.Rank
+	for i, target := range targets {
+		id, summary, _ := strings.Cut(target, " ")
+		switch tier, ok := matchCapability(id, summary, q); {
+		case !ok:
+		case tier == matchPrefix:
+			lead = append(lead, list.Rank{Index: i})
+		default:
+			rest = append(rest, list.Rank{Index: i})
+		}
+	}
+	return append(lead, rest...)
+}
+
 // browseView frames the catalogue: column headings, the list, and the same
 // hint bar every other screen uses. The list's own help line is switched off
 // in New — it speaks a different vocabulary ("↑/k up", "/ filter") from the

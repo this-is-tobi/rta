@@ -302,6 +302,7 @@ func New(reg *registry.Registry, dash config.Dashboard,
 	// first row. browseView draws all three in the app's own terms.
 	// Filtering is untouched — the filter input renders on its own row
 	// whether or not the title does (bubbles list.titleView).
+	l.Filter = catalogueFilter
 	l.SetShowHelp(false)
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
