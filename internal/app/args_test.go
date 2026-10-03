@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,6 +12,77 @@ import (
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
+
+// The first things a person types at an rta they have just installed are
+// `rta version` and the name of a service. Neither is a command: the first is
+// `--version`, the second is a plugin. `rta pg query` was told that the
+// closest matches were "fs", "kv" and "pkg" — two edits away from a two-letter
+// word, which is the whole word — under a hint that said only to read --help.
+func TestAnUnknownWordAtTheRootPointsAtWhereItMayLive(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	dataDir := t.TempDir()
+	t.Setenv("RTA_DATA_DIR", dataDir)
+	root := NewRoot(reg, "test")
+	hintOf := func(word string) (message, hint string) {
+		t.Helper()
+		var ve *view.Error
+		if !errors.As(unknownCommand(root, word), &ve) {
+			return "", ""
+		}
+		return ve.Message, ve.Hint
+	}
+
+	if _, hint := hintOf("version"); !strings.Contains(hint, "`rta --version`") {
+		t.Errorf("`rta version` was sent to %q", hint)
+	}
+
+	// A service, with no index attached: how to get the one it lives in.
+	msg, hint := hintOf("vault")
+	if !strings.Contains(hint, "`rta plugin index add official`") || !strings.Contains(hint, "`rta plugin install vault`") {
+		t.Errorf("`rta vault` was sent to %q", hint)
+	}
+	if strings.Contains(msg, "closest") {
+		t.Errorf("`rta vault` was offered neighbours: %q", msg)
+	}
+
+	// The word is no neighbour of fs, kv or pkg, and is not told it is.
+	if err := unknownCommand(root, "pg"); strings.Contains(err.Error(), `"fs"`) || strings.Contains(err.Error(), `"kv"`) {
+		t.Errorf("`rta pg` was offered unrelated names: %v", err)
+	}
+	// A four-letter service is not "use" with two letters changed.
+	if msg, hint := hintOf("kube"); strings.Contains(msg, "closest") || !strings.Contains(hint, "`rta plugin install kube`") {
+		t.Errorf("`rta kube` was offered %q and sent to %q", msg, hint)
+	}
+
+	// With an index attached that carries it, the exact command.
+	manifest := "name: pg\nversion: 0.1.0\nsummary: PostgreSQL\nplatforms:\n  - os: linux\n    arch: amd64\n" +
+		"    url: https://example.com/pg\n    sha256: " + strings.Repeat("a", 64) + "\ncapabilities:\n  - id: pg.status\n    safety: read\n"
+	indexDir := filepath.Join(dataDir, "indexes", "lab", "index")
+	if err := os.MkdirAll(indexDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(indexDir, "pg.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, hint := hintOf("pg"); !strings.Contains(hint, "plugin in the lab index") || !strings.Contains(hint, "`rta plugin install pg`") {
+		t.Errorf("`rta pg` with an index that carries it was sent to %q", hint)
+	}
+	// An index that does not carry it has nothing better to say than the help.
+	if _, hint := hintOf("vault"); hint != "" {
+		t.Errorf("a word no attached index carries was sent to %q", hint)
+	}
+
+	// And a typo keeps its neighbour, a swapped pair of letters included.
+	for word, want := range map[string]string{"sy": `"sys"`, "sysy": `"sys"`, "nte": `"note"`, "lcok": `"lock"`, "kvv": `"kv"`} {
+		if err := unknownCommand(root, word); !strings.Contains(err.Error(), want) {
+			t.Errorf("`rta %s` lost its suggestion %s: %v", word, want, err)
+		}
+	}
+}
 
 // A value a flag cannot hold was refused with the name of a standard-library
 // function: `invalid argument "abc" for "--count" flag: strconv.ParseInt:

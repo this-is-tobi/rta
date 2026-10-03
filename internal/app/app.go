@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/this-is-tobi/rta/builtin/all"
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/recent"
@@ -676,16 +678,112 @@ func unknownCommand(cmd *cobra.Command, arg string) error {
 	// The suggestion is what turns a typo into a one-keystroke fix instead of
 	// a trip through --help: `rta sy cpu` suggested `sys` while `rta sys
 	// cpuu` only said unknown, until every group came through here.
-	near := cmd.SuggestionsFor(arg)
-	if len(near) == 0 {
-		return errors.New(msg)
+	near := plausibleSuggestions(arg, cmd.SuggestionsFor(arg))
+	if len(near) > 0 {
+		quoted := make([]string, len(near))
+		for i, n := range near {
+			quoted[i] = strconv.Quote(n)
+		}
+		msg = fmt.Sprintf("%s — the closest %s %s", msg,
+			format.Plural(len(near), "match is", "matches are"), strings.Join(quoted, ", "))
 	}
-	quoted := make([]string, len(near))
-	for i, n := range near {
-		quoted[i] = strconv.Quote(n)
+	if hint := notACommandHint(cmd, arg, near); hint != "" {
+		return &view.Error{Code: CodeUsage, Message: msg, Hint: hint}
 	}
-	return fmt.Errorf("%s — the closest %s %s", msg,
-		format.Plural(len(near), "match is", "matches are"), strings.Join(quoted, ", "))
+	return errors.New(msg)
+}
+
+// plausibleSuggestions drops the near matches that are not near.
+//
+// cobra offers anything within two edits, and two edits are the whole of a
+// two-letter name and half of a four-letter one: `rta pg query` was told the
+// closest matches were "fs", "kv" and "pkg", and `rta kube` that it meant
+// "use" — words that share nothing with the one typed except by chance. A typo
+// is a small fraction of the word, so a suggestion is kept when it is one edit
+// away, or two for a word of six letters or more; a prefix is kept whatever its
+// length, which is how `rta sy` finds `sys`. A swap of two neighbouring
+// letters is one edit, since that is the typo (`lsit`).
+func plausibleSuggestions(arg string, near []string) []string {
+	arg = strings.ToLower(arg)
+	allowed := max(1, len([]rune(arg))/3)
+	var kept []string
+	for _, n := range near {
+		if strings.HasPrefix(strings.ToLower(n), arg) || editDistance(arg, strings.ToLower(n)) <= allowed {
+			kept = append(kept, n)
+		}
+	}
+	return kept
+}
+
+// editDistance is the optimal-string-alignment distance between two words:
+// Levenshtein's insertions, deletions and substitutions, and a swap of two
+// neighbouring letters as one edit.
+func editDistance(a, b string) int {
+	ra, rb := []rune(a), []rune(b)
+	d := make([][]int, len(ra)+1)
+	for i := range d {
+		d[i] = make([]int, len(rb)+1)
+		d[i][0] = i
+	}
+	for j := range d[0] {
+		d[0][j] = j
+	}
+	for i := 1; i <= len(ra); i++ {
+		for j := 1; j <= len(rb); j++ {
+			cost := 1
+			if ra[i-1] == rb[j-1] {
+				cost = 0
+			}
+			d[i][j] = min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
+			if i > 1 && j > 1 && ra[i-1] == rb[j-2] && ra[i-2] == rb[j-1] {
+				d[i][j] = min(d[i][j], d[i-2][j-2]+1)
+			}
+		}
+	}
+	return d[len(ra)][len(rb)]
+}
+
+// notACommandHint says where a word typed at the root may live when it is no
+// command and resembles none: the next step for the two things a person at a
+// first prompt types that rta does not have as a command.
+//
+// `rta version`, which every tool they have used before this one answers, and
+// the name of a service — `rta pg`, `rta vault` — which is a plugin and is
+// installed, not built in. The plugin case reads only what is already on the
+// machine: an attached index's manifests, which are local files. With none
+// attached the hint is how to get one, since the first-party index is where
+// that service lives and the person has not been told yet.
+//
+// A word that is plainly a half-typed command (`rta sy`, near is [sys]) keeps
+// to the suggestion; so does a longer one with a neighbour. A short word with
+// only a distant neighbour does not, since the service names are the short
+// ones — pg, s3 — and a neighbour two letters from a two-letter word is chance.
+//
+// "" for a word that is neither, and for any group below the root, where the
+// word can only be a verb that is not there.
+func notACommandHint(cmd *cobra.Command, arg string, near []string) string {
+	if cmd.HasParent() {
+		return ""
+	}
+	if arg == "version" {
+		return "`rta --version` prints the version"
+	}
+	if !plugin.ValidName(arg) {
+		return ""
+	}
+	if len(near) > 0 && (len([]rune(arg)) > 3 || slices.ContainsFunc(near, func(n string) bool {
+		return strings.HasPrefix(strings.ToLower(n), strings.ToLower(arg))
+	})) {
+		return ""
+	}
+	if len(plugindist.Indexes()) == 0 {
+		return "if " + arg + " is a service rather than a typo, it comes from a plugin — " +
+			"`rta plugin index add official` attaches the first-party index, then `rta plugin install " + arg + "`"
+	}
+	if listed, verr := plugindist.Resolve(arg); verr == nil {
+		return arg + " is a plugin in the " + listed.Index + " index — `rta plugin install " + arg + "` installs it"
+	}
+	return ""
 }
 
 // NewRoot builds the root cobra command over the given registry.
