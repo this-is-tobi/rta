@@ -68,6 +68,20 @@ return view.Table{
 
 Cells are strings and a column's `Kind` (`view.KindStatus`, `view.KindDuration`, …) is a hint the renderers style by, never styling itself. `Total` is how many rows the answer holds when the page shows fewer.
 
+The other views are built the same way:
+
+```go
+view.Text{Body: "# Tides\n…", Markdown: true}
+view.KeyValue{Pairs: []view.Pair{{Key: "host", Value: "tides.example"}, {Key: "token", Value: token}}, Redacted: []string{"token"}}
+view.Tree{Roots: []view.Node{{Label: "north", Detail: "2 stations", Children: []view.Node{{Label: "alpha"}, {Label: "gamma"}}}}}
+view.Chart{Kind: view.ChartBar, Series: []view.Series{{Name: "alpha", Points: []float64{3.2}}}, Unit: "m", Max: 5}
+view.Sections{Items: []view.Section{{ID: "summary", Title: "At a glance", View: summary}}}
+```
+
+A `KeyValue` is one thing's facts, a `Tree` is labelled structure whose labels are names a person reads (paths, hosts, subjects), and a `Sections` page holds any of the others under titles. A `ChartBar` series is one labelled value, its first point, and a `ChartLine` series is a sequence; `Max` fixes the top of the scale (`100` for a percentage) so an idle series is not drawn at full height, and `Unit` annotates the values. An error you built with `view.Errorf` has a `Retryable` field to set when the same call may succeed if it is repeated — a lost connection rather than a bad argument — and an agent reads it in the JSON.
+
+**A secret in an answer is a field, and you name it.** A `view.KeyValue` lists the keys, and a `view.Table` the columns, whose values must not be shown in `Redacted` — `Redacted: []string{"token"}` — and the host masks them on every surface: the terminal, the TUI, every `-o` format and an agent's result alike, and still once the view is embedded in a page. Spell the name as the view has it: a name the view does not contain protects nothing, and `sdktest` fails it. `view.Text`, `view.Tree` and `view.Chart` cannot carry the declaration, so a secret never goes in one — it is a field of a `KeyValue` or a `Table`, or it is not returned. `sdktest` also asks, once, of a capability that takes a `Secret` or needs a grant and returns a `KeyValue` or `Table` with nothing marked; the answer is to mark the field, or to say it shows no secret with `sdktest.Skip(sdktest.RuleRedaction, "acme.thing.list", "names only")`.
+
 The same applies to failure. Return a `view.Error` rather than a bare error where you can:
 
 ```go
@@ -230,6 +244,10 @@ func TestPlugin(t *testing.T) {
 ```
 
 It runs the catalogue-wide invariants rta holds its own built-ins to — the shared verb vocabulary, every declared view rendering in every format it claims, dry-run honesty on anything that writes, declared text, and the hints your source words at run time, that spell no flag for an agent to look for ([above](#declared-text-is-checked)). It found a built-in sending real bytes on `--dry-run` the first time it was pointed at rta's own catalogue.
+
+What it runs is worth knowing before you point it at a connection. Each `Read` capability is run once, for real, with its declared defaults — whatever it reads, it reads — except one that declares `NoPreview`, which it skips and says so. A `Write` or `Destructive` capability is never run for real: it is run once with `DryRun` set, against a temporary `RTA_DATA_DIR`, and the suite fails if the directory changed. It cannot see what leaves the machine, so a dry run that sends a request is still yours to get right; that is what pointing a connection input at `127.0.0.1:1` below is for. The test sets `RTA_DATA_DIR` for its duration, so it must not be parallel.
+
+`sdktest.Skip(rule, capabilityID, why)` opts one capability out of one rule, and the reason is printed on every run so a rule never quietly stops applying: `sdktest.RuleDryRun` (the dry run leaves the data directory as it was), `RuleViews` (every view survives the JSON encoding), `RuleVerbs` (the last ID segment is a verb the catalogue uses, a warning only), `RuleRedaction` (a secret in an answer is marked), `RuleActions` (what the TUI may do with a result holds against the result), and `RuleSpelling` (the declared text spells nothing only a terminal can act on, by capability ID, or by the plugin's name for its own summary). The declaration check, the one registration makes, has no waiver, and neither has the source check `WithSource` adds.
 
 **Fill in `conformanceInputs` as you add capabilities.** The suite cannot invent a bucket name or a record id, so a capability with a required input and no value here is one it cannot drive — and almost every capability that *changes* something has one. A `Write` or `Destructive` capability the suite could not drive is a failure, not a skip, and the message names both ways out: supply a value, or state why not with `sdktest.Skip`. This is not defensiveness. rta's own external plugins each called `Check`, each went green, and behind that six handlers wrote to real systems under `--dry-run` because not one of them was ever run.
 
