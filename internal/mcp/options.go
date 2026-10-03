@@ -243,10 +243,13 @@ func (o Options) resultLimit() int {
 	return plugin.DefaultResultLimit
 }
 
-// active is the profile switched on right now, or "".
+// active is the profile switched on right now, or "" — or profile.Unverified
+// where the selection file is there and cannot be believed, which no profile
+// is, so that every grant naming one stops covering a call until `rta use`
+// writes the file again: a fence that cannot be read is held shut, not lifted.
 func (o Options) active() string {
 	if o.Active == nil {
-		return profile.Active()
+		return profile.Fence()
 	}
 	return o.Active()
 }
