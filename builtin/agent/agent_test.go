@@ -1016,10 +1016,22 @@ func TestOverviewCountsWhatMatters(t *testing.T) {
 	for _, p := range v.(view.KeyValue).Pairs {
 		got[p.Key] = p.Value
 	}
-	// The count, and what to press — the tile is where somebody finds out
-	// there is a queue at all.
-	if got["waiting on you"] != "1 — press w to answer" {
+	// The count, and where to go — the tile is where somebody finds out there
+	// is a queue at all. A key to press is the TUI's; a command line is told
+	// the command, which is what it can type.
+	if got["waiting on you"] != "1 — see `rta agent pending`" {
 		t.Fatalf("waiting = %q", got["waiting on you"])
+	}
+	c := capability(t, "agent.overview")
+	tui, err := c.Run(context.Background(), plugin.NewRequest(
+		plugin.Resolve(c, plugin.Inputs{Caller: nil}), false, false).WithSurface(plugin.SurfaceTUI))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range tui.(view.KeyValue).Pairs {
+		if p.Key == "waiting on you" && p.Value != "1 — press w to answer" {
+			t.Fatalf("in the TUI, waiting = %q", p.Value)
+		}
 	}
 	if got["calls in the last hour"] != "3" {
 		t.Fatalf("recent = %q", got["calls in the last hour"])

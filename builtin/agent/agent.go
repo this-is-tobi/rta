@@ -440,8 +440,13 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	switch {
 	case pendingErr != nil:
 		nowWaiting = "unreadable — " + pendingErr.Error()
-	case len(waiting) > 0:
+	case len(waiting) > 0 && req.Surface() == plugin.SurfaceTUI:
 		nowWaiting += " — press w to answer"
+	case len(waiting) > 0:
+		// A key is the TUI's, and a terminal command line has none: the same
+		// line printed there told somebody to press a key their shell does not
+		// bind, in the one place that should name the command that answers.
+		nowWaiting += " — see " + req.Surface().CapabilityName("agent.pending")
 	}
 	// Presence before activity: "is anything attached" is the question
 	// every zero below raises, and it is the one the ledger cannot answer.
