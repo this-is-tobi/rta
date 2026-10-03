@@ -259,6 +259,18 @@ rta net ping example.com --graph
 
 Markdown bodies — notes, `audit` findings, anything returning prose — are rendered rather than dumped.
 
+## Colours
+
+`t` opens the theme editor, a form with one box per colour and a preview beside it, and saves what you changed into the config file. The same block can be written by hand, and the CLI draws with it too:
+
+```yaml
+theme:
+  primary: "#D97757"     # identity: keys, titles, the selection
+  good: "#3ED598"        # a status that is fine
+```
+
+There are ten colours to name — `primary`, `accent`, `muted`, `faint`, `label`, `good`, `warn`, `bad`, `inverse` and `ink` — each as `#rrggbb`, and one you leave out keeps the built-in. `faint` is structure (borders, chart fills), `muted` is secondary text, `label` is the name of a pane, `good`, `warn` and `bad` are the three status colours, and `inverse` and `ink` are the text on a coloured badge. Anything else, or a colour that is not that form, is left out and costs only its own line: the rest apply and `rta doctor` reports the entry. `rta config schema` describes the block to an editor, so a name or colour that will not apply is marked as you type it.
+
 ## Untrusted plugins
 
 If rta found an `rta-plugin-*` binary it has not been told to run, the TUI says so in a pane rather than a startup line. The line would be written to the primary buffer, and the TUI opens on the alternate one — so it would be covered before anyone could read it. The pane is the only place a person inside the TUI can learn a decision is pending.
