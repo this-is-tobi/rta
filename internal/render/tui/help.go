@@ -91,6 +91,12 @@ func screenName(screen mode) string {
 func hiddenKeys(it hintItem) []string {
 	var out []string
 	for _, k := range it.keys {
+		// A key that is only whitespace is the space bar under the name a
+		// terminal reports it by, and its own entry is "space": listed bare it
+		// drew as a gap, "also   x".
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
 		if k != it.display && !strings.Contains(it.display, k) {
 			out = append(out, k)
 		}

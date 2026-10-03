@@ -76,3 +76,16 @@ func TestHelpIsOfferedWhereAKeyIsACommand(t *testing.T) {
 		t.Error("? reached the overlay while the search bar had the keyboard")
 	}
 }
+
+// An alias that is only whitespace is not listed. The space bar answers to
+// " " as well as to "space", and the overlay printed the first of them as a
+// gap: "space  show/hide  also   x".
+func TestTheOverlayDoesNotListTheSpaceBarAsABlank(t *testing.T) {
+	m, _ := realModel(t, 80, 30)
+	m.mode = modePlugins
+	m = press(t, m, "?")
+	got := plain(m.View().Content)
+	if !strings.Contains(got, "show/hide  also x") {
+		t.Errorf("the overlay does not read \"also x\":\n%s", got)
+	}
+}
