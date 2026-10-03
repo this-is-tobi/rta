@@ -38,3 +38,16 @@ func TestARequestRefusedForItsCertificatesValidityPeriodSaysTheRule(t *testing.T
 		t.Errorf("any other failure: hint %q, want the reachability hint", other.Hint)
 	}
 }
+
+// A scheme the client does not speak is the URL's fault and not the network's.
+// `http get ftp://host` was told to check the URL was reachable and that
+// --timeout extends the deadline, neither of which has anything to do with a
+// request that was never sent.
+func TestARequestForASchemeItDoesNotSpeakSaysSo(t *testing.T) {
+	err := &url.Error{Op: "Get", URL: "ftp://example.com", Err: errors.New(`unsupported protocol scheme "ftp"`)}
+	verr := requestFailed(plugin.SurfaceCLI, "GET", "ftp://example.com", err)
+	if strings.Contains(verr.Hint, "reachable") || strings.Contains(verr.Hint, "timeout") ||
+		!strings.Contains(verr.Hint, "http and https") {
+		t.Errorf("hint %q for a scheme the client does not speak", verr.Hint)
+	}
+}

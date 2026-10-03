@@ -174,6 +174,11 @@ func requestFailed(sf plugin.Surface, method, url string, err error) *view.Error
 	if hint := plugin.CertPolicyHint(err); hint != "" {
 		return verr.WithHint(hint)
 	}
+	// Nothing was sent: the transport refused the URL's scheme before it
+	// dialled, which reachability and a longer deadline cannot change.
+	if strings.Contains(err.Error(), "unsupported protocol scheme") {
+		return verr.WithHint("this client speaks http and https; write the URL with one of them")
+	}
 	return verr.WithHint("check the URL is reachable; " + sf.InputName("timeout") + " extends the deadline")
 }
 
