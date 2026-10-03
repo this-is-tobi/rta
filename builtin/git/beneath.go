@@ -364,8 +364,8 @@ func (b *beneathRoots) inner(p, top string, opening error) (boundDir, string, er
 	}
 	return boundDir{}, "", view.Errorf("git.root.unreadable",
 		"the root %s cannot be read (%v), so no repository under it can be opened", top, reason).
-		WithHint("make it readable to the user this server runs as, or serve a directory it can open " +
-			"with --root")
+		WithHint("make it readable to the user this server runs as, or " +
+			plugin.AskOperator("mcp serve --root <dir>") + " to serve a directory it can open")
 }
 
 func (b *beneathRoots) Stat(p string) (os.FileInfo, error) {

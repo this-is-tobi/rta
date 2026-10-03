@@ -67,5 +67,7 @@ func TestARootThatCannotBeListedIsNamedAndARootInsideItServes(t *testing.T) {
 		!strings.Contains(err.Error(), filepath.Base(outer)) {
 		t.Errorf("git.status of a repository under a root that cannot be listed: %v, "+
 			"want git.root.unreadable naming the root", err)
+	} else if !strings.Contains(verr.Hint, plugin.AskOperator("mcp serve --root <dir>")) {
+		t.Errorf("the hint to a server's root that cannot be read does not hand the command to the operator: %q", verr.Hint)
 	}
 }
