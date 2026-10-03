@@ -2,6 +2,9 @@ package paths
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -94,12 +97,84 @@ func TestAStrandedDirectoryThatIsNotPrivateIsRefused(t *testing.T) {
 		t.Skip("POSIX permission bits do not apply")
 	}
 	noHome(t)
-	dir := Data()
+	dir := whereStranded()
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := EnsureData(); err == nil {
 		t.Errorf("EnsureData used %s, which lets every account in", dir)
+	}
+}
+
+// whereStranded is the name the stranded directory has, which Data makes if it
+// is not there, so a test that has to put something at the name asks for it
+// without Data.
+func whereStranded() string {
+	return filepath.Join(os.TempDir(), fmt.Sprintf("rta-%d", os.Getuid()))
+}
+
+// The grant gate reads grants.json and the key that seals it from wherever
+// Data says, and never goes through EnsureData: a directory another account
+// made at the stranded name, holding a grant file and a key that agree, was
+// read as this account's own grants. The mode is what stands in for the
+// owner, which a test cannot be another account to set.
+func TestAReaderIsNeverSentIntoAStrandedDirectoryThatIsNotPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits do not apply")
+	}
+	noHome(t)
+	dir := whereStranded()
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	forged := filepath.Join(dir, "grants.json")
+	if err := os.WriteFile(forged, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := Data()
+	if got == dir || strings.HasPrefix(got, dir+string(filepath.Separator)) {
+		t.Fatalf("Data() = %q, a directory that lets every account in, so whoever made it wrote what is read there", got)
+	}
+	_, err := os.ReadFile(filepath.Join(got, "grants.json"))
+	if err == nil {
+		t.Fatalf("a read under Data() = %q found a file", got)
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a read under Data() = %q is %v: a reader takes that for no grants having been issued, "+
+			"and not for state it cannot trust", got, err)
+	}
+}
+
+func TestAReaderIsNeverSentThroughALinkPlantedAtTheStrandedName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges there")
+	}
+	noHome(t)
+	elsewhere := t.TempDir()
+	if err := os.Symlink(elsewhere, whereStranded()); err != nil {
+		t.Fatal(err)
+	}
+	if got := Data(); got == whereStranded() || strings.HasPrefix(got, elsewhere) {
+		t.Errorf("Data() = %q followed a link planted where the stranded directory goes", got)
+	}
+}
+
+// The directory a reader is sent to is one this account made, so there is no
+// moment between looking at it and reading from it for another account to put
+// its own there.
+func TestDataMakesTheStrandedDirectoryPrivateBeforeAnyoneReadsFromIt(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits do not apply")
+	}
+	noHome(t)
+	dir := Data()
+	info, err := os.Lstat(dir)
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		t.Fatalf("%s: %v, %v, want a directory of mode 0700", dir, info, err)
+	}
+	if again := Data(); again != dir {
+		t.Errorf("a second Data() = %q, want %q", again, dir)
 	}
 }
 
@@ -109,7 +184,7 @@ func TestAStrandedDirectoryThatIsALinkIsRefused(t *testing.T) {
 	}
 	noHome(t)
 	elsewhere := t.TempDir()
-	if err := os.Symlink(elsewhere, Data()); err != nil {
+	if err := os.Symlink(elsewhere, whereStranded()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := EnsureData(); err == nil {

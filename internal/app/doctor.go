@@ -387,6 +387,10 @@ func doctorCatalogue(reg *registry.Registry, add func(check, status, detail stri
 // segment are listable by any account, and this row is the only thing
 // that says so.
 func doctorDataDir(add func(check, status, detail string)) {
+	if err := paths.Refused(); err != nil {
+		add("data", "error", err.Error())
+		return
+	}
 	dataDir := paths.Data()
 	switch info, err := os.Stat(dataDir); {
 	case err != nil:
