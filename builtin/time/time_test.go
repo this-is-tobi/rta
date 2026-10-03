@@ -178,6 +178,31 @@ func TestTheShortISOSpellingIsTheSameMinuteAsTheSpaceForm(t *testing.T) {
 	}
 }
 
+// A reading of the clock that the zone skipped — 02:30 on the night the clocks
+// went from 02:00 to 03:00 — was moved to 03:30 and answered as though it were
+// the instant typed. It is refused, with the offset that names the one meant.
+func TestAWallClockTheZoneSkippedIsRefusedNotMoved(t *testing.T) {
+	paris, err := stdtime.LoadLocation("Europe/Paris")
+	if err != nil {
+		t.Skip("no tz database to read Europe/Paris from")
+	}
+	t.Cleanup(func(prev *stdtime.Location) func() { return func() { stdtime.Local = prev } }(stdtime.Local))
+	stdtime.Local = paris
+
+	_, _, verr := resolve("2026-03-29 02:30", reference)
+	if verr == nil || verr.Code != "time.at.skipped" {
+		t.Fatalf("a time the clock skipped = %+v, want time.at.skipped", verr)
+	}
+	if !strings.Contains(verr.Hint, "2026-03-29T02:30:00+01:00") {
+		t.Errorf("hint %q does not name the instant with the offset in force before the change", verr.Hint)
+	}
+	for _, fine := range []string{"2026-03-29 01:30", "2026-03-29 03:30", "2026-03-29T02:30:00+01:00", "2026-10-25 02:30"} {
+		if _, _, verr := resolve(fine, reference); verr != nil {
+			t.Errorf("%q was refused: %v", fine, verr)
+		}
+	}
+}
+
 // Empty and absent both mean now, because `when` has a default and a form can
 // still submit a blank one.
 func TestNothingAtAllMeansNow(t *testing.T) {
