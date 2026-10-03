@@ -128,7 +128,7 @@ Inputs: []plugin.Field{
 
 Your handler reads each input by name, as the type it declared: `req.String("city")`, `req.Int("limit")`, `req.Float("ratio")`, `req.Bool("shout")`, `req.StringSlice("tag")`. An input nobody gave and nothing filled reads as the zero of its type, which is why `Required` and `Default` are declarations and not something to check for in the handler.
 
-A credential a caller may give more than once is `SecretSlice`, not `StringSlice`. It is `Secret`'s masking with `StringSlice`'s shape, and declaring the list type alone is the mistake worth naming: the value is then written to the completion shortlist and, over MCP, into the audit log in cleartext, because every sink that hides a credential asks whether the *type* is one. `vault.kv.set --data 'password=…'` is the shape.
+A credential a caller may give more than once is `SecretSlice`, not `StringSlice`. It is `Secret`'s masking with `StringSlice`'s shape, and declaring the list type alone is the mistake worth naming: the value is then written to the completion shortlist and, over MCP, into the record in cleartext, because every sink that hides a credential asks whether the *type* is one. `vault.kv.set --data 'password=…'` is the shape.
 
 What each one buys you:
 

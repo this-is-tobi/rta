@@ -288,11 +288,11 @@ func LoadRoster(path string) (Roster, bool, error) {
 		}
 		if other, dup := seen[string(pub)]; dup {
 			return Roster{}, groupReadable, fmt.Errorf("%s:%d: this key is already enrolled as %q — "+
-				"one label per key, so the audit trail names one person", path, i+1, other)
+				"one label per key, so the record names one person", path, i+1, other)
 		}
 		if labels[label] {
 			return Roster{}, groupReadable, fmt.Errorf("%s:%d: %q is already enrolled — "+
-				"one key per label, or the audit trail names a role instead of a person", path, i+1, label)
+				"one key per label, or the record names a role instead of a person", path, i+1, label)
 		}
 		seen[string(pub)] = label
 		labels[label] = true
