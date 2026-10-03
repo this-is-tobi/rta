@@ -411,7 +411,7 @@ func TestAProfiledCallIsNotPreviewedAgainstTheWrongPlace(t *testing.T) {
 	s := connectWith(t, reg, Options{
 		Origin:      reg.Origin,
 		Profiles:    cfg,
-		Reload:      func() config.Config { return cfg },
+		Reload:      func() (config.Config, error) { return cfg, nil },
 		Active:      func() string { return "" },
 		Consent:     true,
 		ConsentWait: 20 * time.Second,
