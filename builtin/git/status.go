@@ -36,23 +36,15 @@ func statusCapability() plugin.Capability {
 		Safety:       plugin.Read,
 		HostSpecific: true,
 		Idempotent:   true,
-		Description: "The structured equivalent of `git status --porcelain`: every path with a " +
-			"staged change, an unstaged change, or neither yet — added, tracked at all — one row " +
-			"per path, both halves shown side by side rather than requiring the two-column code to " +
-			"be decoded by eye. A path a merge stopped on is listed as git lists it — UU, AA, UD or DU — " +
-			"and not as an edit. A staged move of a file with its content unchanged is one row, `R` " +
-			"and `old -> new` in Path, as git pairs it; one that also edits the file stays a `D` " +
-			"and an `A`, since pairing it takes a similarity score. A submodule moved to another " +
-			"commit, or with a change inside it, is listed as modified; its ignore setting is " +
-			"honoured where the .gitmodules in the working tree or a config file says it. It " +
-			"ignores what git ignores, matching each pattern as git's own matcher " +
-			"does: each .gitignore, the repository's info/exclude, and the file core.excludesFile names, " +
-			"~/.config/git/ignore by default; at most 1 MiB and 10000 patterns of them in all, in the " +
-			"order it reads them. One past that is not applied, as git applies no pattern file past " +
-			"100 MB, and neither is a .gitignore that is a symbolic link, which git does not follow: " +
-			"what it ignores is listed, and a warning names it. It reads the working tree for at most two " +
-			"seconds, and past them is refused as git.status.timeout rather than answered with the part " +
-			"it had read, which would read as a cleaner tree than the one there.",
+		Description: "The structured equivalent of `git status --porcelain`: one row per path with a staged " +
+			"change, an unstaged change, or neither yet. A path a merge stopped on " +
+			"is listed as git lists it (UU, AA, UD, DU). A staged move with the content unchanged is one row, " +
+			"`R` with `old -> new` in Path; with an edit it stays a `D` and an `A`. A submodule moved to " +
+			"another commit, or with a change inside it, is listed as modified, honouring its ignore setting. " +
+			"It ignores what git ignores (.gitignore, info/exclude, core.excludesFile) up to 1 MiB and 10000 " +
+			"patterns; a pattern file past that, or a .gitignore that is a symbolic link, is skipped with a " +
+			"warning. Past two seconds it " +
+			"is refused as git.status.timeout, never answered with a cleaner tree.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},

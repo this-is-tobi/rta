@@ -67,8 +67,7 @@ func Plugin() plugin.Plugin {
 // lies — see refuseRemoteOverMCP.
 func pathField(help string) plugin.Field {
 	return plugin.Field{Name: "path", Type: plugin.Path, Positional: true, Default: ".",
-		Help: help + " — or, from a terminal, a remote URL (https://, ssh://, " +
-			"git@host:path) cloned in memory; not over MCP"}
+		Help: help + "; a remote URL is cloned in memory, not over MCP"}
 }
 
 // openRepo opens the repository at (or above) path, or clones it into memory
@@ -841,8 +840,7 @@ func isGitDir(look *beneathRoots, dir string) bool {
 // fileHelp is the help of the file input git.blame and git.log take, which
 // says what repoFile does with it.
 func fileHelp(what string) string {
-	return what + ", relative to the current directory as git takes it — or, in a repository " +
-		"with no checkout here (a URL, a bare repository), to the repository's root"
+	return what + ", relative to the working directory (the repository's root if it has no checkout)"
 }
 
 // repoFile is the file input git.blame and git.log take, the way go-git wants

@@ -25,21 +25,14 @@ func hooksCapability() plugin.Capability {
 		Safety:       plugin.Read,
 		HostSpecific: true,
 		Idempotent:   true,
-		Description: "Every entry in the directory git runs this repository's hooks from — " +
-			"core.hooksPath when any config git reads sets it, the repository's own hooks directory " +
-			"otherwise — judged by the same rule git itself uses to decide whether one fires on " +
-			"commit, push and the rest: named exactly (a `.sample` suffix never runs) and executable, " +
-			"a symbolic link by what it leads to, as git follows one. Anything but a file that passes " +
-			"that rule — a directory, a link to one, a named pipe — is one git tries to run and " +
-			"cannot, failing the command it guards, and is listed as fails. Over MCP a link leading out of " +
-			"the roots is not followed, and is listed active, as git may run what it leads to. " +
-			"The config is read from every file git reads and from the environment, as git.config " +
-			"reads them, each include followed as git follows it; one this cannot decide is not, and a " +
-			"warning says how many were not. core.hooksPath set to nothing is the top of the filesystem, where git looks " +
-			"for /pre-commit and the rest, and a warning says so; set with no value at all, it is " +
-			"refused, as git refuses to run with it. " +
-			"A hook is an arbitrary script that runs on this machine, so this reports what would " +
-			"actually execute, and where each file is, not merely what a directory listing shows.",
+		Description: "The hooks directory (core.hooksPath where any config git reads sets it, the repository's " +
+			"own otherwise) and which entries git would actually run, judged as git judges them: " +
+			"named exactly (a `.sample` suffix never runs) and executable, a symbolic link by what it " +
+			"leads to. Anything else with a hook's name, such as a directory or a named pipe, is one " +
+			"git tries to run and cannot, failing the command it guards, and is listed as fails. The " +
+			"config is read as git.config reads it; an include this cannot decide is not followed, " +
+			"and a warning says how many. Over MCP a link leading out of the roots is not followed " +
+			"and is listed active, as git may run what it leads to.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},

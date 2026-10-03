@@ -37,23 +37,17 @@ func diffCapability() plugin.Capability {
 		Safety:       plugin.Read,
 		HostSpecific: true,
 		Idempotent:   true,
-		Description: "Unified diff text, the structured-plugin equivalent of `git diff`. With no " +
-			"`commit`, this is every uncommitted change — staged and unstaged together — against " +
-			"HEAD; git.status already answers which paths changed, this answers what changed in " +
-			"them. `commit` diffs that one commit against its own parent instead, and the root " +
-			"commit against the empty tree, the equivalent of `git show <commit>`'s patch half; a merge " +
-			"is diffed against its first parent and a line after the patch says so. " +
-			"Diffing two arbitrary commits against each other is deliberately not offered in this " +
-			"first cut — the two cases above cover what an agent inspecting a repository's current " +
-			"state actually needs, and a revision-range comparison is a distinct enough question " +
-			"to design on its own rather than bolt on. One diff reads at most 16 MiB of a file and " +
-			"64 MiB in all, looks at no more than 10000 files, and spends at most two seconds matching " +
-			"lines; the lines after the patch name each file it left out or diffed coarsely, and count " +
-			"the ones it did not look at. An untracked file under an ignore file git.status did not " +
-			"apply is named, never shown: it may be one that ignore file keeps out of git. Without " +
-			"`commit`, the working tree is read as git.status reads it, and the diff is refused as " +
-			"git.status.timeout where that takes more than two seconds. Over MCP a link in the working " +
-			"tree is diffed by its text only where that names a place under the roots, and named otherwise.",
+		Description: "Unified diff text. With no `commit`, every uncommitted change, staged and unstaged " +
+			"together, against HEAD: git.status says which paths changed, this says what changed in " +
+			"them, and it is refused as git.status.timeout where reading the tree takes more than two " +
+			"seconds. `commit` diffs that one commit against its own parent, the root commit against " +
+			"the empty tree and a merge against its first parent, with a line after the patch saying " +
+			"so; two arbitrary commits are not compared. One diff reads at most 16 MiB of a file and " +
+			"64 MiB in all, looks at no more than 10000 files and spends two seconds matching lines, " +
+			"and the lines after the patch name each file it left out or diffed coarsely and count the " +
+			"ones it did not look at. An untracked file under an ignore file git.status did not apply " +
+			"is named, never shown. Over MCP a link in the working tree is diffed by its text only " +
+			"where that names a place under the roots, and named otherwise.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "commit", Type: plugin.String, Suggest: suggestCommits,
