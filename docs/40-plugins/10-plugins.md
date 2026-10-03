@@ -10,9 +10,9 @@ Twelve first-party plugins live in [rta-plugins](https://github.com/this-is-tobi
 
 | Plugin | Service |
 | --- | --- |
-| [`pg`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/pg) | PostgreSQL |
-| [`mysql`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/mysql) | MySQL. It reaches a MariaDB server for the capabilities that connect in-process, but not for `dump`/`restore`, which pass MySQL 8's own flags to a client that has them |
-| [`mariadb`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/mariadb) | MariaDB, adding Galera cluster state, replica status, and a `dump`/`restore` pair spelled the way that client spells it |
+| [`pg`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/pg) | PostgreSQL: connection health, schema, rows and activity, and replication — where each standby is and how far behind it is, from the primary or from a standby |
+| [`mysql`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/mysql) | MySQL: schema, rows, activity and replication status. It reaches a MariaDB server for the capabilities that connect in-process, but not for `dump`/`restore`, which pass MySQL 8's own flags to a client that has them |
+| [`mariadb`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/mariadb) | MariaDB, whose one replication view carries replica status, the binary log position and Galera cluster state, and a `dump`/`restore` pair spelled the way that client spells it |
 | [`etcd`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/etcd) | etcd v3: cluster health, members, leases, the keyspace, and a snapshot of the whole backend — the one datastore here whose backup has no restore beside it, because etcd's own API has none |
 | [`qdrant`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/qdrant) | Qdrant: collections, their configuration and index health |
 | [`redis`](https://github.com/this-is-tobi/rta-plugins/tree/main/plugins/redis) | Redis: health, memory, persistence, replication, the keyspace and the slow log — over RESP spoken in-package, no client library |
