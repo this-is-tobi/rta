@@ -65,6 +65,27 @@ func TestNoDescriptionSendsAModelToADottedName(t *testing.T) {
 	}
 }
 
+// A description may only send a model to a capability it has. One that exists
+// and is never a tool, because it answers to the person at the terminal
+// alone, is a name the tool list does not hold and a call that is answered as
+// an unknown tool and written to the record as a probe.
+func TestNoDescriptionSendsAModelToACapabilityThatIsNotATool(t *testing.T) {
+	tools := surface(t, mcp.Options{})
+	offered := map[string]bool{}
+	for _, tl := range tools {
+		offered[tl.Name] = true
+	}
+	known := capabilities(t)
+	dotted := regexp.MustCompile(`[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+`)
+	for _, tl := range tools {
+		for _, word := range dotted.FindAllString(authored(t, tl.Description), -1) {
+			if name := plugin.ToolName(word); known[name].ID == word && !offered[name] {
+				t.Errorf("%s: the description names %q, which exists and is not offered as a tool", tl.Name, word)
+			}
+		}
+	}
+}
+
 // Every input is a typed, described argument: a schema property with no type
 // is one a client cannot check, and one with no description is a guess.
 func TestEveryInputIsTypedAndDescribed(t *testing.T) {

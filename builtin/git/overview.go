@@ -25,7 +25,7 @@ func overviewCapability() plugin.Capability {
 		Detailed:     true,
 		Description: "A one-line answer to \"what state is this repository in\": which branch is " +
 			"checked out (or that HEAD is detached), whether the working tree is clean, and the " +
-			"latest commit. With `detail` (and on any full-page surface) it expands into the same " +
+			"latest commit. With `detail` it expands into the same " +
 			"status, log and branches views their own capabilities return — one shape, not a " +
 			"second implementation of each. The working tree is read as git.status reads it, and past its " +
 			"two seconds the overview is refused as git.status.timeout.",
