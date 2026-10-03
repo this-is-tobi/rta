@@ -728,10 +728,27 @@ func TestCertExpiryStaysQuietOutsideTheWindow(t *testing.T) {
 	}
 }
 
+// A certificate that is not valid yet fails every client as surely as one that
+// has expired, and was graded ok for as long as its end date was far off.
+func TestACertificateNotValidYetFailsTheExpiryCheck(t *testing.T) {
+	srv := validBetweenTLSServer(t, time.Now().Add(48*time.Hour), time.Now().Add(120*24*time.Hour))
+	r := auditRows(t, srv)["cert-expiry"]
+	if r == nil || r[1] != findings.Fail || !strings.Contains(r[2], "not valid until") {
+		t.Errorf("cert-expiry = %v, want a fail saying when the certificate becomes valid", r)
+	}
+}
+
 // expiringTLSServer starts a TLS server presenting a self-signed certificate
 // that expires at notAfter. httptest's own certificate is good until 2084,
 // which is exactly the case an expiry check never has to think about.
 func expiringTLSServer(t *testing.T, notAfter time.Time) *httptest.Server {
+	t.Helper()
+	return validBetweenTLSServer(t, time.Now().Add(-time.Hour), notAfter)
+}
+
+// validBetweenTLSServer is expiringTLSServer with the start of the
+// certificate's validity under the test's control as well.
+func validBetweenTLSServer(t *testing.T, notBefore, notAfter time.Time) *httptest.Server {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -741,7 +758,7 @@ func expiringTLSServer(t *testing.T, notAfter time.Time) *httptest.Server {
 		SerialNumber: big.NewInt(1),
 		Subject:      pkix.Name{CommonName: "127.0.0.1"},
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
-		NotBefore:    time.Now().Add(-time.Hour),
+		NotBefore:    notBefore,
 		NotAfter:     notAfter,
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
