@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -409,6 +410,11 @@ var sshConfigPath = func() (string, error) {
 	return filepath.Join(home, ".ssh", "config"), nil
 }
 
+// maxSSHConfig is more of ~/.ssh/config than a completion has any use for. The
+// file is read on every keystroke, and a named pipe or an endless file there
+// would otherwise hold or exhaust the shell that asked.
+const maxSSHConfig = 4 << 20
+
 // SSHHosts lists the Host aliases in the operator's own ssh config, sorted —
 // completion candidates for the head of an `ssh:` target, because an alias
 // is the exact case this feature is best at: one word that carries the user,
@@ -424,7 +430,7 @@ func SSHHosts() []string {
 	if err != nil {
 		return nil
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := atomicfile.ReadCapped(path, maxSSHConfig)
 	if err != nil {
 		return nil
 	}
