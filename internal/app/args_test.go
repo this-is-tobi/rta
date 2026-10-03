@@ -13,6 +13,29 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
+// `--for` was read in the one branch that switches a profile on, and as unset
+// whenever it was not positive: `rta use --for 2h` printed what was on and said
+// nothing of the two hours, and `rta use staging --for -5m`, or `--for 0`,
+// switched staging on with no deadline at all.
+func TestAUseDeadlineThatWouldBeDroppedIsRefused(t *testing.T) {
+	reg := testRegistry(t)
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"use", "--for", "2h"}, "no profile was named"},
+		{[]string{"use", "staging", "--for", "-5m"}, "end the switch before it began"},
+		{[]string{"use", "staging", "--for", "0"}, "end the switch before it began"},
+		{[]string{"use", "--off", "--for", "1h"}, "two different things"},
+	} {
+		_, _, err := run(t, reg, c.args...)
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != CodeUsage || !strings.Contains(ve.Message, c.want) {
+			t.Errorf("rta %s: %v, want a %s saying %q", strings.Join(c.args, " "), err, CodeUsage, c.want)
+		}
+	}
+}
+
 // The first things a person types at an rta they have just installed are
 // `rta version` and the name of a service. Neither is a command: the first is
 // `--version`, the second is a plugin. `rta pg query` was told that the
