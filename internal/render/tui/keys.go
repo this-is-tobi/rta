@@ -347,6 +347,11 @@ func (m Model) screenItems(screen mode) []hintItem {
 	case modeProfiles:
 		return m.profileFooterItems()
 	case modeProfilePlugins:
+		// An environment holding no plugin says "Press n to add one", and the
+		// bar offered to configure, set a credential for and delete nothing.
+		if row, ok := m.openProfile(); ok && len(row.conns) == 0 {
+			return []hintItem{item(bindNew), alias(item(bindBack), "left", "h"), item(bindQuit)}
+		}
 		return []hintItem{
 			item(bindColumn), alias(item(bindConfig), "enter", "e"), item(bindNew),
 			item(bindSecret), item(bindRemove),
