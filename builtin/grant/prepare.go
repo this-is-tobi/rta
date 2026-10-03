@@ -775,6 +775,15 @@ func revokeBody(sf plugin.Surface, spec operatorid.RevokeSpec, server string, ou
 			// "No active grant" would be a flat lie here: nothing named this
 			// target exactly, but something else still authorizes it.
 			msg = fmt.Sprintf("No grant named exactly %s to remove.", target)
+		default:
+			// Said with what it was narrowed to. "No active grant for
+			// cert.expiry" after `--agent other` read as no grant on
+			// cert.expiry at all, beside the one another agent holds: a
+			// mistyped agent name, and an operator told access is gone that
+			// is not.
+			if named := revokeSelector(spec).narrowed(); named != "" {
+				msg = fmt.Sprintf("No active grant for %s, %s.", target, named)
+			}
 		}
 		return stillCovered(msg)
 	}

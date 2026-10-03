@@ -574,6 +574,33 @@ func TestARevokeWithNoTargetThatMatchesNothingSaysWhatItNamed(t *testing.T) {
 	}
 }
 
+// A revoke that names a target and is narrowed to an agent, a connection or a
+// role says so when it matches nothing. "No active grant for kv.get" after
+// `--agent nobody` read as no grant on kv.get at all, beside the one another
+// agent holds: a mistyped agent name, and an operator told access was gone
+// that was not.
+func TestARevokeOfATargetNarrowedToSomethingThatMatchesNothingSaysWhatItWasNarrowedTo(t *testing.T) {
+	setup(t)
+	run(t, allowH, map[string]any{"target": "kv.get", "agent": "claude"})
+	for _, c := range []struct {
+		values map[string]any
+		want   string
+	}{
+		{map[string]any{"target": "kv.get", "agent": "nobody"}, "No active grant for kv.get, for agent nobody."},
+		{map[string]any{"target": "kv.get", "agent": "nobody", "profile": "prod"}, "No active grant for kv.get, for agent nobody via profile prod."},
+		{map[string]any{"target": "kv.set", "agent": "claude"}, "No active grant for kv.set, for agent claude."},
+		{map[string]any{"target": "kv.set"}, "No active grant for kv.set."},
+	} {
+		body := run(t, runRevoke, c.values).(view.Text).Body
+		if first, _, _ := strings.Cut(body, "\n"); first != c.want {
+			t.Errorf("%v: said %q, want %q", c.values, body, c.want)
+		}
+	}
+	if grants, _ := core.Load(); len(grants) != 1 {
+		t.Errorf("a revoke matching nothing changed the store: %+v", grants)
+	}
+}
+
 func TestRevokeNeedsATarget(t *testing.T) {
 	setup(t)
 	if _, err := runRevoke(context.Background(), req(nil)); err == nil {
