@@ -238,15 +238,22 @@ Nothing in the config grants anything. It holds connection profiles, dashboard p
 
 ## Where rta keeps things
 
-| What            | Where                                                     | Notes                                                        |
-| --------------- | --------------------------------------------------------- | ------------------------------------------------------------ |
-| Config          | `~/.config/rta/config.yaml`                               | `RTA_CONFIG` overrides                                       |
-| Encrypted store | `~/.local/share/rta/kv.age`, beside the grants            | [Secrets](../20-using/50-secrets.md); a key made by `kv init --generate` sits beside the config |
-| Grants          | `~/.local/share/rta/grants.json`                          | Sealed against tampering                                     |
-| Agent record    | beside the grants                                         | Hash-chained; [The record](../30-boundary/40-audit-trail.md) |
-| Team policy     | `.rta-policy.yaml`, walking up from the working directory | [Team policy](../30-boundary/50-team-policy.md)              |
+| What | Where | Notes |
+| --- | --- | --- |
+| Config | `~/.config/rta/config.yaml`, or `~/Library/Application Support/rta/config.yaml` on macOS | `RTA_CONFIG` overrides. Beside it: `policy.yaml` (your own [team policy](../30-boundary/50-team-policy.md)), `remotes.yaml` (the servers you operate) and the `kv.identity` key `kv init --generate` makes |
+| Data directory | `$RTA_DATA_DIR`, else `$XDG_DATA_HOME/rta`, else `~/.local/share/rta` — on every platform, macOS included | Everything rta writes below is in it, owner-only. `rta doctor` prints it |
+| Encrypted store | `kv.age` and `kv.recipients` | [Secrets](../20-using/50-secrets.md) |
+| Grants | `grants.json`, with its seal key `grants.key` | Sealed against tampering |
+| Agent record | `agent-log.jsonl`, with its seal key `agent-log.key` | Hash-chained; [The record](../30-boundary/40-audit-trail.md) |
+| Locks | `lockdown.json`, with `lockdown.key` | Sealed like the grants; [Locks](../30-boundary/20-mcp.md#locks-the-instant-no) |
+| Switched-on profile | `profile.json`, with `profile.key` | Sealed like the grants: one that does not verify holds every profile shut to agents until `rta use` writes it again; [Profiles](../20-using/40-profiles.md) |
+| Plugins | `trusted.json` (what you approved), `plugins/store/` (what an index installed), `plugins/run/` (a private copy a `$PATH` plugin runs from), `indexes/` (the clones) | [Using plugins](../40-plugins/10-plugins.md) |
+| Notebook and shortlists | `notes.json`, `recent.json` | [The CLI](../20-using/10-cli.md) |
+| Team policy | `.rta-policy.yaml`, walking up from the working directory | [Team policy](../30-boundary/50-team-policy.md) |
 
 Exact paths differ per platform. `rta doctor` prints the real ones rather than the documented ones, which is the answer to use when they disagree.
+
+A machine whose environment names no home — a service started without `HOME`, a container run as a uid with no environment — is asked its account database first. When that has none either, rta keeps its state in `rta-<uid>` under the temporary directory, which does not outlast a reboot or a container, says so on stderr once per run, and refuses to use that directory when it is not a private directory of the account. Set `HOME` or `RTA_DATA_DIR` to keep grants, the record and the store: a state directory that vanishes with the container is an audit trail that does too. A config path that falls back to `./.rta.yaml` for want of a config directory is not honoured for profiles, plugin settings or the dashboard, which is why a container sets `RTA_CONFIG` as [the MCP chapter](../30-boundary/20-mcp.md#in-a-container-for-a-hardened-server) shows.
 
 ## Next
 
