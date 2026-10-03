@@ -1,6 +1,8 @@
 package app
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -25,23 +27,7 @@ import (
 // sentences ("rta mcp server listening on stdio"), which are not commands
 // and must not be read as one.
 func TestEveryCommandTheDocsSpellExists(t *testing.T) {
-	reg, err := NewRegistry()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// NewRoot attaches cobra's own completion and help, so `rta completion
-	// zsh` and `rta help` are in the tree like every other command.
-	root := NewRoot(reg, "test")
-	tree := map[string]*cobra.Command{}
-	var walk func(c *cobra.Command, prefix string)
-	walk = func(c *cobra.Command, prefix string) {
-		for _, sub := range c.Commands() {
-			p := prefix + " " + sub.Name()
-			tree[p] = sub
-			walk(sub, p)
-		}
-	}
-	walk(root, "rta")
+	tree := rtaCommandTree(t)
 
 	repo := repoRoot(t)
 	pages, err := filepath.Glob(filepath.Join(repo, "docs", "*", "*.md"))
@@ -57,38 +43,67 @@ func TestEveryCommandTheDocsSpellExists(t *testing.T) {
 		rel, _ := filepath.Rel(repo, page)
 		for _, snippet := range commandSnippets(readDoc(t, repo, rel)) {
 			for _, m := range spelledCommand.FindAllStringSubmatch(snippet.text, -1) {
-				words := strings.Fields(m[1])
-				if _, known := tree["rta "+words[0]]; !known {
-					// Not rta's own noun: a plugin from another repository, or
-					// prose that happened to start with the word.
-					continue
+				if problem := unknownVerb(tree, strings.Fields(m[1])); problem != "" {
+					t.Errorf("%s:%d: %s", rel, snippet.line, problem)
 				}
-				longest := 0
-				for k := len(words); k >= 1; k-- {
-					if _, ok := tree["rta "+strings.Join(words[:k], " ")]; ok {
-						longest = k
-						break
-					}
-				}
-				cmd := tree["rta "+strings.Join(words[:longest], " ")]
-				// A leaf takes arguments, so whatever follows it is fine. A
-				// group takes verbs, so a word after it that is not one is a
-				// command nobody can run.
-				if longest == len(words) || !cmd.HasSubCommands() {
-					continue
-				}
-				if cmd.SuggestionsMinimumDistance <= 0 {
-					cmd.SuggestionsMinimumDistance = 2
-				}
-				hint := ""
-				if s := cmd.SuggestionsFor(words[longest]); len(s) > 0 {
-					hint = " — did you mean " + strings.Join(s, " or ") + "?"
-				}
-				t.Errorf("%s:%d: `rta %s` names no command: %q is not a verb of `%s`%s",
-					rel, snippet.line, strings.Join(words, " "), words[longest], cmd.CommandPath(), hint)
 			}
 		}
 	}
+}
+
+// rtaCommandTree is every command of the real tree by its full path, `rta
+// kv get` and the like. NewRoot attaches cobra's own completion and help, so
+// `rta completion zsh` and `rta help` are in it like every other command.
+func rtaCommandTree(t *testing.T) map[string]*cobra.Command {
+	t.Helper()
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := map[string]*cobra.Command{}
+	var walk func(c *cobra.Command, prefix string)
+	walk = func(c *cobra.Command, prefix string) {
+		for _, sub := range c.Commands() {
+			p := prefix + " " + sub.Name()
+			tree[p] = sub
+			walk(sub, p)
+		}
+	}
+	walk(NewRoot(reg, "test"), "rta")
+	return tree
+}
+
+// unknownVerb is what is wrong with `rta` followed by words, or "" when
+// nothing is: the first word is not one of rta's own nouns (a plugin from
+// another repository, or prose that happened to start with it), or the words
+// reach a command, or a leaf that takes whatever follows as arguments. What it
+// refuses is a word after a group that is not one of its verbs.
+func unknownVerb(tree map[string]*cobra.Command, words []string) string {
+	if _, known := tree["rta "+words[0]]; !known {
+		return ""
+	}
+	longest := 0
+	for k := len(words); k >= 1; k-- {
+		if _, ok := tree["rta "+strings.Join(words[:k], " ")]; ok {
+			longest = k
+			break
+		}
+	}
+	cmd := tree["rta "+strings.Join(words[:longest], " ")]
+	// A leaf takes arguments, so whatever follows it is fine. A group takes
+	// verbs, so a word after it that is not one is a command nobody can run.
+	if longest == len(words) || !cmd.HasSubCommands() {
+		return ""
+	}
+	if cmd.SuggestionsMinimumDistance <= 0 {
+		cmd.SuggestionsMinimumDistance = 2
+	}
+	hint := ""
+	if s := cmd.SuggestionsFor(words[longest]); len(s) > 0 {
+		hint = " — did you mean " + strings.Join(s, " or ") + "?"
+	}
+	return fmt.Sprintf("`rta %s` names no command: %q is not a verb of `%s`%s",
+		strings.Join(words, " "), words[longest], cmd.CommandPath(), hint)
 }
 
 // spelledCommand is `rta` followed by one to three words, bounded on the
@@ -298,4 +313,75 @@ func plainCommand(line string) ([]string, bool) {
 	}
 	flush()
 	return words[1:], len(words) > 1
+}
+
+// pluginNouns are the commands a plugin from another repository brings, which
+// the default build does not have: the first-party twelve, and the example
+// plugin's.
+var pluginNouns = map[string]bool{
+	"pg": true, "mysql": true, "mariadb": true, "etcd": true, "qdrant": true, "redis": true,
+	"s3": true, "vault": true, "kube": true, "cnpg": true, "docker": true, "keycloak": true,
+	"hello": true,
+}
+
+// The commands rta tells a person to run are written in Go strings as well as
+// in the docs — an error's hint, a card's description, the schema an editor
+// shows on hover — and nothing checked those: the config schema described the
+// theme block as "the names `rta theme` lists", and there is no such command,
+// so the one place an editor's reader looked for the answer named a command
+// that answers "unknown". The docs have had this test for a long time; the
+// strings the binary prints are the same promise.
+//
+// A code span that begins with `rta` in a string literal (not a comment, which
+// nobody reads at a terminal) is held to the same rule as a docs page: where
+// it names a command rta or a plugin has, and the words after it are verbs that exist.
+func TestEveryCommandAGoStringTellsAPersonToRunExists(t *testing.T) {
+	tree := rtaCommandTree(t)
+	root := repoRoot(t)
+	span := regexp.MustCompile("`rta((?: [a-z][a-z0-9-]*){1,3})")
+
+	checked := 0
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "node_modules", "testdata", ".local", "docs", "proto":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, path)
+		for i, line := range strings.Split(string(body), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "//") {
+				continue
+			}
+			for _, m := range span.FindAllStringSubmatch(line, -1) {
+				checked++
+				words := strings.Fields(m[1])
+				if _, builtIn := tree["rta "+words[0]]; !builtIn && !pluginNouns[words[0]] {
+					t.Errorf("%s:%d: `rta %s` names no command: %q is neither one of rta's own nor a plugin's", rel, i+1, m[1][1:], words[0])
+					continue
+				}
+				if problem := unknownVerb(tree, words); problem != "" {
+					t.Errorf("%s:%d: %s", rel, i+1, problem)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the checkout: %v", err)
+	}
+	if checked < 30 {
+		t.Fatalf("checked %d commands in Go strings, want the seventy or so there are; has the quoting moved?", checked)
+	}
 }
