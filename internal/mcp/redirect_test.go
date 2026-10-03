@@ -101,8 +101,9 @@ func TestAnAgentCannotChooseWhereACallGoes(t *testing.T) {
 		t.Errorf("an ordinary input stopped being offered:\n%s", schema)
 	}
 
-	// And sending it anyway must not work, since a declared name passes
-	// ValidateArgs whether or not the schema advertised it.
+	// And sending it anyway must not work: the name is refused as any other
+	// the tool does not take, and the handler never runs with it. (It was
+	// accepted and dropped, which a declared name passes Validate for.)
 	res, err := session.CallTool(ctx, &sdk.CallToolParams{
 		Name:      "svc_table_list",
 		Arguments: map[string]any{"host": "attacker.example.com", "table": "users"},
@@ -110,12 +111,22 @@ func TestAnAgentCannotChooseWhereACallGoes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.IsError {
-		t.Fatalf("the call failed for an unrelated reason: %+v", res.Content)
+	if !res.IsError {
+		t.Fatalf("a connection input an agent named was accepted: %+v", res.Content)
 	}
-	if sawHost == "attacker.example.com" {
+	if sawHost != "" {
 		t.Errorf("an agent redirected the call to %q — and the host supplied the credential %q with it",
 			sawHost, sawPassword)
+	}
+	res, err = session.CallTool(ctx, &sdk.CallToolParams{
+		Name:      "svc_table_list",
+		Arguments: map[string]any{"table": "users"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("the call failed for an unrelated reason: %+v", res.Content)
 	}
 	if sawHost != "localhost" {
 		t.Errorf("host = %q, want the configured default localhost", sawHost)

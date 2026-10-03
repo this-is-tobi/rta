@@ -933,29 +933,35 @@ func TestPathFieldsSayWhoseFilesystem(t *testing.T) {
 }
 
 // …and one sent anyway — the name is guessable even though the schema hides
-// it — must not reach the handler. It is dropped rather than refused, which
-// is the one exception to the unknown-argument rule below it: an error
-// saying "passphrase" is not accepted confirms to the model that a
-// credential input called passphrase exists, which is the disclosure Local
-// is there to prevent.
-func TestLocalFieldsAreStrippedFromAgentArguments(t *testing.T) {
+// it — is refused as a name the tool does not have, exactly as one it does not
+// have is. It was dropped, and the dropping was the disclosure: a tool that
+// refuses "zzz" and takes "passphrase" has a passphrase input, and a model
+// that sent {"context": "staging"} was told it had been honoured. Nothing of
+// it reaches the handler either way.
+func TestALocalFieldIsRefusedAsAnyNameTheToolDoesNotHave(t *testing.T) {
 	s := connect(t, Options{})
-	res, err := s.CallTool(context.Background(), &sdk.CallToolParams{
-		Name:      "demo_item_local",
-		Arguments: map[string]any{"name": "x", "passphrase": "guessed-by-the-model"},
-	})
-	if err != nil {
-		t.Fatal(err)
+	ask := func(name string) string {
+		res, err := s.CallTool(context.Background(), &sdk.CallToolParams{
+			Name:      "demo_item_local",
+			Arguments: map[string]any{"name": "x", name: "guessed-by-the-model"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.IsError {
+			t.Fatalf("%q was taken by a tool that does not offer it: %+v", name, res.Content)
+		}
+		return res.Content[0].(*sdk.TextContent).Text
 	}
-	if res.IsError {
-		t.Fatalf("a guessed credential name was refused instead of dropped: %+v", res.Content)
+	local, typo := ask("passphrase"), ask("passphrasf")
+	if !strings.Contains(local, "core.mcp.badargs") {
+		t.Errorf("a guessed credential name was refused as %s", local)
 	}
-	text := res.Content[0].(*sdk.TextContent).Text
-	if strings.Contains(text, "guessed-by-the-model") {
-		t.Fatalf("a caller-supplied Local credential reached the handler: %s", text)
+	if strings.ReplaceAll(local, "passphrase", "passphrasf") != typo {
+		t.Errorf("a hidden input's name is told from a typo:\n  %s\n  %s", local, typo)
 	}
-	if !strings.Contains(text, "passphrase=[]") {
-		t.Errorf("want an empty passphrase, got: %s", text)
+	if strings.Contains(local, "guessed-by-the-model") {
+		t.Errorf("a caller-supplied Local credential was echoed: %s", local)
 	}
 }
 

@@ -265,13 +265,13 @@ type Field struct {
 	// address of the server a call is aimed at — not the payload going into
 	// or out of it.
 	//
-	// Local fields are omitted from MCP tool schemas and stripped from
-	// incoming MCP arguments, unconditionally. An agent must never be
-	// invited to supply, invent, or repeat back a credential — one that
-	// reaches a model's context has already leaked, whatever happens next —
-	// and must never choose a destination for a value a grant only
-	// authorized revealing, not redirecting. CLI and TUI offer Local fields
-	// normally: there is a person there, and it is their machine.
+	// Local fields are omitted from MCP tool schemas and refused in incoming
+	// MCP arguments as any name the tool does not take, unconditionally. An
+	// agent must never be invited to supply, invent, or repeat back a
+	// credential — one that reaches a model's context has already leaked,
+	// whatever happens next — and must never choose a destination for a value
+	// a grant only authorized revealing, not redirecting. CLI and TUI offer
+	// Local fields normally: there is a person there, and it is their machine.
 	//
 	// **A destination is a destination whether or not it is on this
 	// machine**, and reading that narrowly was a live credential-redirect

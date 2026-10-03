@@ -451,9 +451,21 @@ func TestHostsAddCannotBeAimedAtAnArbitraryFileOverMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Refused as an argument the tool does not have, as a typo is, and the
+	// handler never sees it; the same call without it goes through.
 	res, err := session.CallTool(ctx, &sdk.CallToolParams{
 		Name:      "net_hosts_add",
 		Arguments: map[string]any{"ip": "10.0.0.1", "hostname": []string{"api.local"}, "file": victim},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError || !strings.Contains(res.Content[0].(*sdk.TextContent).Text, "unknown argument") {
+		t.Fatalf("a Local input an agent named was not refused as unknown: %+v", res.Content)
+	}
+	res, err = session.CallTool(ctx, &sdk.CallToolParams{
+		Name:      "net_hosts_add",
+		Arguments: map[string]any{"ip": "10.0.0.1", "hostname": []string{"api.local"}},
 	})
 	if err != nil {
 		t.Fatal(err)

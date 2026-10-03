@@ -43,6 +43,30 @@ func mcpSession(t *testing.T, opts mcp.Options) *sdk.ClientSession {
 	return session
 }
 
+// refusedAsUnknown fails unless res is the refusal an argument the tool does
+// not have gets, for name: a Local input an agent names is one, in the words
+// a typo gets (toolcall.Validate), and the handler never runs with it.
+func refusedAsUnknown(t *testing.T, res *sdk.CallToolResult, name string) {
+	t.Helper()
+	if !res.IsError {
+		t.Fatalf("a Local input an agent named, %q, was accepted: %+v", name, res.Content)
+	}
+	text := res.Content[0].(*sdk.TextContent).Text
+	if !strings.Contains(text, "core.mcp.badargs") || !strings.Contains(text, "unknown argument") {
+		t.Fatalf("%q was refused, but not as an argument the tool does not have: %s", name, text)
+	}
+}
+
+// callTool is one tools/call.
+func callTool(t *testing.T, session *sdk.ClientSession, tool string, args map[string]any) *sdk.CallToolResult {
+	t.Helper()
+	res, err := session.CallTool(context.Background(), &sdk.CallToolParams{Name: tool, Arguments: args})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
 // toolProperties returns one tool's published input properties: the list of
 // things an agent is told it may send.
 func toolProperties(t *testing.T, session *sdk.ClientSession, tool string) map[string]any {
@@ -105,18 +129,13 @@ func TestOutCannotBeAimedAtAnArbitraryFileOverMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := session.CallTool(context.Background(), &sdk.CallToolParams{
-		Name:      "kv_get",
-		Arguments: map[string]any{"key": "db-password", "out": victim},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	refusedAsUnknown(t, callTool(t, session, "kv_get", map[string]any{"key": "db-password", "out": victim}), "out")
+	// The value must come back in the response, not disappear into a file
+	// the caller named.
+	res := callTool(t, session, "kv_get", map[string]any{"key": "db-password"})
 	if res.IsError {
 		t.Fatalf("the granted call was refused: %+v", res.Content)
 	}
-	// The value must come back in the response, not disappear into a file
-	// the caller named.
 	got := res.Content[0].(*sdk.TextContent).Text
 	if !strings.Contains(got, "s3cret") {
 		t.Errorf("value not in the response: %q", got)
@@ -232,14 +251,9 @@ func TestSetFileCannotBeChosenOverMCP(t *testing.T) {
 	if err := os.WriteFile(secret, []byte("-----BEGIN OPENSSH PRIVATE KEY-----\nnot really\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	res, err := session.CallTool(context.Background(), &sdk.CallToolParams{
-		Name:      "kv_set",
-		Arguments: map[string]any{"key": "note", "value": "just a note", "file": secret},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.IsError {
+	refusedAsUnknown(t, callTool(t, session, "kv_set",
+		map[string]any{"key": "note", "value": "just a note", "file": secret}), "file")
+	if res := callTool(t, session, "kv_set", map[string]any{"key": "note", "value": "just a note"}); res.IsError {
 		t.Fatalf("the granted call was refused: %+v", res.Content)
 	}
 
@@ -294,14 +308,9 @@ func TestInitRecipientCannotBeSuppliedOverMCP(t *testing.T) {
 		t.Fatal("recipient is offered in the kv_init tool schema — an agent can be told to ask for it")
 	}
 
-	res, err := session.CallTool(context.Background(), &sdk.CallToolParams{
-		Name:      "kv_init",
-		Arguments: map[string]any{"generate": true, "recipient": []string{stray.Recipient().String()}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.IsError {
+	refusedAsUnknown(t, callTool(t, session, "kv_init",
+		map[string]any{"generate": true, "recipient": []string{stray.Recipient().String()}}), "recipient")
+	if res := callTool(t, session, "kv_init", map[string]any{"generate": true}); res.IsError {
 		t.Fatalf("the granted call was refused: %+v", res.Content)
 	}
 
@@ -339,14 +348,9 @@ func TestRekeyRecipientCannotBeSuppliedOverMCP(t *testing.T) {
 		t.Fatal("recipient is offered in the kv_rekey tool schema — an agent can be told to ask for it")
 	}
 
-	res, err := session.CallTool(context.Background(), &sdk.CallToolParams{
-		Name:      "kv_rekey",
-		Arguments: map[string]any{"generate": true, "recipient": []string{stray.Recipient().String()}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.IsError {
+	refusedAsUnknown(t, callTool(t, session, "kv_rekey",
+		map[string]any{"generate": true, "recipient": []string{stray.Recipient().String()}}), "recipient")
+	if res := callTool(t, session, "kv_rekey", map[string]any{"generate": true}); res.IsError {
 		t.Fatalf("the granted call was refused: %+v", res.Content)
 	}
 

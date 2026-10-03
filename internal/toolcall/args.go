@@ -97,9 +97,9 @@ func exact(n json.Number) any {
 // grant gate, so a call it was always going to refuse spent a --max-uses
 // grant and asked the operator to approve it first.
 //
-// A Local field is never type-checked: it is stripped regardless of what
-// arrived, so validating a value about to be discarded would only produce a
-// confusing error about a field the model does not even know exists.
+// A Local field is not a name this tool has, to a caller: it is not in the
+// schema, so one sent anyway is refused as any other name the tool does not
+// have is, in the same words and with the same list of what it does take.
 func Validate(c plugin.Capability, values map[string]any) *view.Error {
 	declared := make(map[string]bool, len(c.Inputs)+1)
 	check := func(f plugin.Field) *view.Error {
@@ -119,10 +119,10 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 		return held(c, f, v)
 	}
 	for _, f := range c.Inputs {
-		declared[f.Name] = true
 		if f.Local {
 			continue
 		}
+		declared[f.Name] = true
 		if verr := check(f); verr != nil {
 			return verr
 		}
@@ -158,11 +158,15 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 	// silently made a one-character typo indistinguishable from a deliberate
 	// call: sys_ps {"limt": 3} answered with every process on the machine at
 	// the default limit, isError unset, so a model read a complete answer to
-	// a question it never asked. A Local field's name is declared and so
-	// survives this check — it is not a typo but a guess at a credential, and
-	// the answer to a guess is to drop the value unread, which handler does a
-	// moment later. Refusing it instead would confirm to the model that the
-	// input the schema deliberately hides is there.
+	// a question it never asked. A Local field's name is not declared here:
+	// it is a guess at a credential the schema deliberately hides, and the
+	// answer to a guess is the answer to a typo. **Dropping the value
+	// unread was the other choice, and the one made first, on the reasoning
+	// that a refusal would confirm the input is there. It is the dropping that
+	// confirms it**: a name the tool has not got is refused, so one that is
+	// quietly taken is one it has, and a model told "accepted" about
+	// {"context": "staging"} was also told, wrongly, that its audit ran
+	// against staging. Refused as unknown, the two are the same answer.
 	var unknown []string
 	for name := range values {
 		if !declared[name] {
