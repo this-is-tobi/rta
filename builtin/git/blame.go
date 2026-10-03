@@ -28,16 +28,20 @@ func blameCapability() plugin.Capability {
 		HostSpecific: true,
 		Idempotent:   true,
 		Description: "One row per line: who last changed it, when, and the commit that did — the " +
-			"structured equivalent of `git blame`. Reads the file's history to answer, and refuses " +
+			"structured equivalent of `git blame`. `from` and `limit` show a window of the lines, " +
+			"and the total is the file's length. Reads the file's history to answer, and refuses " +
 			"a version of it over 16 MiB, or a history of more than 64 MiB in all, rather than read " +
 			"it. It spends at most two seconds on that history: a line it has not traced by then " +
 			"carries the commit it had reached, marked ^ as git marks a boundary, meaning the line " +
-			"is at least that old. So it is not offered as a dashboard tile the way a bounded, " +
-			"no-input capability would be.",
+			"is at least that old.",
 		NoPreview: true,
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "file", Type: plugin.Path, Positional: true, Required: true, Help: fileHelp("the file to blame")},
+			{Name: "from", Type: plugin.Int, Default: 1, Min: 1,
+				Help: "the first line to show, counting from 1"},
+			{Name: "limit", Type: plugin.Int, Min: 0,
+				Help: "how many lines to show from there; 0 shows the rest of the file"},
 		},
 		Run: runBlame,
 	}
@@ -112,8 +116,24 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Date", Kind: view.KindTimestamp},
 		{Name: "Content"},
 	}, Empty: file + " is empty at HEAD"}
+	// The whole file is walked either way, the history being the cost, so a
+	// window is only what is shown of it. The total stays the file's length,
+	// which is how a table says it is a part of something.
+	total := len(result.lines)
+	first := max(req.Int("from"), 1) - 1
+	if first >= total && total > 0 {
+		from := req.Surface().InputName("from")
+		return nil, view.Errorf("git.blame.range", "%s has %s, and %s is %d",
+			file, format.CountOf(total, "line"), from, first+1).
+			WithHint(from + " counts from 1; the file's last line is " + strconv.Itoa(total))
+	}
+	last := total
+	if limit := req.Int("limit"); limit > 0 {
+		last = min(total, first+limit)
+	}
 	boundary := 0
-	for i, l := range result.lines {
+	for i := first; i < last; i++ {
+		l := result.lines[i]
 		hash := shortHash(l.commit.Hash)
 		if l.boundary {
 			hash = "^" + hash
@@ -127,7 +147,7 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 			result.text(i),
 		})
 	}
-	t.Total = len(t.Rows)
+	t.Total = total
 	if boundary > 0 {
 		t.Warnings = append(t.Warnings, view.Error{
 			Code: "git.blame.partial",
