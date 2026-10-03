@@ -116,7 +116,7 @@ func documentArguments(root *cobra.Command) {
 	sort.Strings(clients)
 
 	table := map[string][]argDoc{
-		"rta explain": {{"capability", "capability ID to print in full, e.g. sys.cpu — omit to list every one"}},
+		"rta explain": {{"capability", "capability ID to print in full, e.g. sys.cpu — omit to list every one, or give a plugin (sys) to list its own"}},
 		"rta mcp install": {{"client",
 			"MCP client to register rta in: " + strings.Join(clients, ", ")}},
 		"rta plugin allow": {

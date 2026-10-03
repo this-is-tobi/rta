@@ -26,7 +26,9 @@ func newExplainCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 		Short: "Describe capabilities: inputs, safety class, invocation forms",
 		Long: "Without arguments, lists every registered capability.\n" +
 			"With a capability ID (e.g. sys.cpu), prints its full card:\n" +
-			"summary, safety class, inputs, and CLI/MCP invocation forms.",
+			"summary, safety class, inputs, and CLI/MCP invocation forms.\n" +
+			"With a plugin (sys) or the start of an ID (net.hosts), lists the\n" +
+			"capabilities under it.",
 		Args: cobra.MaximumNArgs(1),
 		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			caps := reg.Capabilities()
@@ -43,10 +45,17 @@ func newExplainCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 			}
 			renderOpts := renderOptions(cmd, format, opts.noColor)
 			if len(args) == 0 {
-				return cli.Render(cmd.OutOrStdout(), catalogView(reg), renderOpts)
+				return cli.Render(cmd.OutOrStdout(), catalogView(reg.Capabilities()), renderOpts)
 			}
 			c, ok := reg.Capability(args[0])
 			if !ok {
+				// A plugin, or the start of an ID, is a question with an answer
+				// in this command: what is under it. It was "unknown
+				// capability" over three suggestions out of however many there
+				// were, in no order a reader could use.
+				if under := capabilitiesUnder(reg, args[0]); len(under) > 0 {
+					return cli.Render(cmd.OutOrStdout(), catalogView(under), renderOpts)
+				}
 				ve := capabilityNotFound(reg, args[0])
 				_ = cli.RenderError(cmd.ErrOrStderr(), ve, renderOpts)
 				// Marked, because it has just been printed. Returning it bare
@@ -59,13 +68,30 @@ func newExplainCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 	}
 }
 
-func catalogView(reg *registry.Registry) view.View {
+// capabilitiesUnder is the capabilities whose ID is prefix or begins with it
+// and a dot — a plugin's name, or the start of a nested one (`net.hosts`) — in
+// the registry's order. A trailing dot is the same prefix.
+func capabilitiesUnder(reg *registry.Registry, prefix string) []plugin.Capability {
+	prefix = strings.TrimSuffix(prefix, ".")
+	if prefix == "" {
+		return nil
+	}
+	var under []plugin.Capability
+	for _, c := range reg.Capabilities() {
+		if strings.HasPrefix(c.ID, prefix+".") {
+			under = append(under, c)
+		}
+	}
+	return under
+}
+
+func catalogView(capabilities []plugin.Capability) view.View {
 	t := view.Table{Columns: []view.Column{
 		{Name: "Capability"},
 		{Name: "Safety", Kind: view.KindStatus},
 		{Name: "Summary"},
 	}}
-	for _, c := range reg.Capabilities() {
+	for _, c := range capabilities {
 		t.Rows = append(t.Rows, []string{c.ID, string(c.Safety), c.Summary})
 	}
 	t.Total = len(t.Rows)
@@ -372,7 +398,7 @@ func capabilityNotFound(reg *registry.Registry, id string) *view.Error {
 	}
 	e := view.Errorf("core.capability.unknown", "unknown capability %q", id)
 	if len(candidates) > 0 {
-		sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
+		sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
 		n := min(3, len(candidates))
 		ids := make([]string, n)
 		for i := range n {
