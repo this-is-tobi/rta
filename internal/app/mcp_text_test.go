@@ -41,16 +41,9 @@ var pending = map[string]map[string]bool{
 	"wording": {
 		"audit_deps": true,
 		"audit_why":  true,
-		"kv_get":     true,
-		"kv_rename":  true,
-		"kv_set":     true,
 	},
 	"local": {
-		"kv_get":   true,
-		"kv_init":  true,
-		"kv_rekey": true,
-		"kv_set":   true,
-		"net_dns":  true,
+		"net_dns": true,
 	},
 	"budget": {
 		"audit_deps":             true,
@@ -59,11 +52,6 @@ var pending = map[string]map[string]bool{
 		"audit_mail":             true,
 		"audit_web":              true,
 		"audit_why":              true,
-		"keys_list":              true,
-		"kv_get":                 true,
-		"kv_rekey":               true,
-		"kv_rename":              true,
-		"kv_set":                 true,
 		"net_listen":             true,
 	},
 }
