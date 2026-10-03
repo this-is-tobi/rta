@@ -3,6 +3,7 @@ package gen
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"slices"
 	"strings"
@@ -140,6 +141,25 @@ func TestTokenEncodings(t *testing.T) {
 		kv := v.(view.KeyValue)
 		if kv.Pairs[0].Value == "" {
 			t.Errorf("%s: empty token", enc)
+		}
+	}
+}
+
+// The URL-safe form is unpadded. It exists to put a token in a URL or a file
+// name, where the = of base64's padding is the one character that has to be
+// escaped again, and the length of the bytes behind it is known without it.
+func TestBase64URLTokenIsUnpadded(t *testing.T) {
+	for _, n := range []int{1, 2, 3, 16, 32} {
+		v, err := runToken(context.Background(), req(map[string]any{"length": n, "encoding": "base64url"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tok := v.(view.KeyValue).Pairs[0].Value
+		if strings.ContainsAny(tok, "=+/") {
+			t.Errorf("%d bytes: %q holds padding or a character outside the URL-safe alphabet", n, tok)
+		}
+		if raw, err := base64.RawURLEncoding.DecodeString(tok); err != nil || len(raw) != n {
+			t.Errorf("%d bytes: %q does not decode to them (%d bytes, %v)", n, tok, len(raw), err)
 		}
 	}
 }

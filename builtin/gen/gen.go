@@ -257,7 +257,11 @@ func token(n int, encoding string) (string, error) {
 	case "base64":
 		return base64.StdEncoding.EncodeToString(buf), nil
 	case "base64url":
-		return base64.URLEncoding.EncodeToString(buf), nil
+		// Unpadded, as JWTs, WebAuthn and Python's token_urlsafe write it. The
+		// URL-safe alphabet is chosen to put a token in a URL or a file name,
+		// where the = of the padded form is the one character that has to be
+		// escaped again, and nothing needs it: the length is known.
+		return base64.RawURLEncoding.EncodeToString(buf), nil
 	case "base32":
 		return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(buf), nil
 	default:
