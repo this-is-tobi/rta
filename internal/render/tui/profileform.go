@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -114,7 +116,19 @@ func (m Model) startProfileForm(name string) (tea.Model, tea.Cmd) {
 		profileNoteField:  p.Note,
 		profileTTLField:   ttl,
 		profileColorField: p.Color,
-	}, true, nil)
+	}, true, nil,
+		withCheck(profileNameField, func(s string) error {
+			if !config.ValidName(s) {
+				return errors.New("not a valid profile name: lowercase letters, digits and dashes")
+			}
+			return nil
+		}),
+		withCheck(profileColorField, func(s string) error {
+			if (config.Profile{Color: s}).BadColor() {
+				return fmt.Errorf("%s is not a colour — write it as #rrggbb, or leave it empty", s)
+			}
+			return nil
+		}))
 	m.form.profileTarget = name
 	m.form.profileEditing = true
 	m.origin = modeProfiles
