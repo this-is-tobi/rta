@@ -369,7 +369,11 @@ func cliForm(c plugin.Capability) string {
 		}
 	}
 	for _, f := range c.Inputs {
-		if !f.Positional {
+		switch {
+		case f.Positional:
+		case requiredOnCommandLine(f):
+			parts = append(parts, fmt.Sprintf("--%s <%s>", f.Name, f.Type))
+		default:
 			parts = append(parts, fmt.Sprintf("[--%s <%s>]", f.Name, f.Type))
 		}
 	}

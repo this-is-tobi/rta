@@ -310,3 +310,46 @@ func TestEveryUnexpectedArgumentIsNamed(t *testing.T) {
 		t.Fatalf("three extra: err = %v", err)
 	}
 }
+
+// A flag the command line cannot leave out read as optional everywhere it was
+// described: `rta explain` drew it in square brackets, as every optional flag
+// is, and --help gave it the same line as the ones beside it, so the first the
+// person heard that --data was required was the refusal for leaving it off.
+// One that config can fill is the exception, because the command line may
+// leave it off, and stays bracketed.
+func TestARequiredFlagIsSaidToBeRequiredWhereItIsDescribed(t *testing.T) {
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{
+		Name: "knob", Summary: "has flags",
+		Capabilities: []plugin.Capability{{
+			ID: "knob.turn", Summary: "turn it", Safety: plugin.Read,
+			Inputs: []plugin.Field{
+				{Name: "by", Type: plugin.String, Required: true, Help: "which way"},
+				{Name: "host", Type: plugin.String, Required: true, Config: "host", Help: "where"},
+				{Name: "loud", Type: plugin.Bool, Help: "shout"},
+			},
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	capability, ok := reg.Capability("knob.turn")
+	if !ok {
+		t.Fatal("knob.turn is not registered")
+	}
+	if got, want := cliForm(capability), "rta knob turn --by <string> [--host <string>] [--loud <bool>]"; got != want {
+		t.Errorf("the explain card shows %q, want %q", got, want)
+	}
+	out, _, err := run(t, reg, "knob", "turn", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"which way (required)", "where"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("--help does not say %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "where (required)") {
+		t.Errorf("--help calls a flag config can fill required on the command line:\n%s", out)
+	}
+}

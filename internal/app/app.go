@@ -1661,10 +1661,20 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 		// exists to supply. rta checks the resolved value instead, in run(),
 		// where config has already been applied — so the message can say
 		// which of the two ways to supply it were tried.
-		if f.Required && f.Config == "" {
+		if requiredOnCommandLine(f) {
 			_ = cmd.MarkFlagRequired(f.Name)
 		}
 	}
+}
+
+// requiredOnCommandLine is whether the line itself has to carry the input as a
+// flag: a required input that config can fill is checked after config is
+// applied instead, so it may be left off, and a positional one is required by
+// its place, which the usage line already draws. What the usage line and --help
+// promise has to follow the same rule as what cobra enforces, or a flag that
+// cannot be left out reads as optional until the refusal says otherwise.
+func requiredOnCommandLine(f plugin.Field) bool {
+	return f.Required && f.Config == "" && !f.Positional
 }
 
 // flagUsage renders a field's help for `--help`, appending what the host adds
@@ -1716,6 +1726,12 @@ func flagUsage(c plugin.Capability, f plugin.Field) string {
 			return env
 		}
 		usage += " (" + env + ")"
+	}
+	if requiredOnCommandLine(f) {
+		if usage == "" {
+			return "required"
+		}
+		usage += " (required)"
 	}
 	return usage
 }
