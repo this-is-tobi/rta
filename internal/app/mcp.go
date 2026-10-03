@@ -698,7 +698,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// to, since plugins are spawned during startup, long before
 				// this runs — so what is left to do is ask for it back.
 				err = mcp.Run(cmd.Context(), server, &sdk.IOTransport{
-					Reader: stdio.Real(),
+					Reader: mcp.LimitRequests(stdio.Real()),
 					Writer: stdio.Writer(cmd.OutOrStdout()),
 				}, 0, cmd.ErrOrStderr())
 			}
