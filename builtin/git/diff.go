@@ -41,7 +41,8 @@ func diffCapability() plugin.Capability {
 			"`commit`, this is every uncommitted change — staged and unstaged together — against " +
 			"HEAD; git.status already answers which paths changed, this answers what changed in " +
 			"them. `commit` diffs that one commit against its own parent instead, and the root " +
-			"commit against the empty tree, the equivalent of `git show <commit>`'s patch half. " +
+			"commit against the empty tree, the equivalent of `git show <commit>`'s patch half; a merge " +
+			"is diffed against its first parent and a line after the patch says so. " +
 			"Diffing two arbitrary commits against each other is deliberately not offered in this " +
 			"first cut — the two cases above cover what an agent inspecting a repository's current " +
 			"state actually needs, and a revision-range comparison is a distinct enough question " +
@@ -307,6 +308,18 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 			body += "\n"
 		}
 		body += strings.Join(bumps, "\n") + "\n"
+	}
+	// **A merge is shown against its first parent, and says so.** That is
+	// `git diff <merge>^1 <merge>`: what the merge brought into the branch it
+	// was made on. `git show` prints a combined diff of only the files both
+	// sides touched instead, which this does not, and a reader told nothing took
+	// the patch for everything the merge changed. Only where there is a patch:
+	// a merge that kept its first parent's tree is the empty answer, whose
+	// sentence already says why.
+	if body != "" && commit.NumParents() > 1 {
+		body += fmt.Sprintf("%s is a merge: this is its diff against its first parent %s, as `git diff %s^1 %s` "+
+			"shows it, not the combined diff `git show` prints\n", shortHash(commit.Hash), shortHash(parent.Hash),
+			shortHash(commit.Hash), shortHash(commit.Hash))
 	}
 	// Named in the diff's own shape, as the worktree diff names what it
 	// did not read.
