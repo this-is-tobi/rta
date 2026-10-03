@@ -240,6 +240,13 @@ func TestAHostThatDoesNotResolveIsNotBlamedOnItsPort(t *testing.T) {
 	if ve.Code != "net.ping.resolve" || !strings.Contains(ve.Hint, "rta net dns") {
 		t.Errorf("ping of a name that does not resolve names no next step: %+v", ve)
 	}
+
+	// And so does trace, which resolves the name itself.
+	_, err = runTrace(context.Background(), req(map[string]any{"host": host, "max-hops": 2, "probes": 1, "timeout": 1}))
+	ve = view.AsError(err, "x")
+	if ve.Code != "net.trace.resolve" || !strings.Contains(ve.Hint, "rta net dns") {
+		t.Errorf("trace of a name that does not resolve names no next step: %+v", ve)
+	}
 }
 
 // A regression test for a real bug: the TLS
