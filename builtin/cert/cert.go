@@ -19,6 +19,7 @@ import (
 	"io/fs"
 	"math/big"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -81,7 +82,7 @@ func Plugin() plugin.Plugin {
 	// net.port do — see their declarations below and in builtin/net/net.go.
 	targetField := plugin.Field{
 		Name: "target", Type: plugin.Path, Positional: true, Required: true,
-		Help: "a PEM or DER file, or — from a terminal — a host[:port] to connect to; not over MCP",
+		Help: "a PEM or DER file, or — from a terminal — a host[:port] or https:// URL to connect to; not over MCP",
 	}
 	timeoutField := plugin.Field{
 		Name: "timeout", Type: plugin.Int, Default: defaultTimeoutSeconds, Min: 1, Max: 120,
@@ -173,7 +174,7 @@ func Plugin() plugin.Plugin {
 					"subject, issuer, DNS names — is read as tool output the same way a banner is.",
 				Inputs: []plugin.Field{
 					{Name: "targets", Type: plugin.StringSlice, Positional: true, Required: true,
-						Help: "hosts to check (host[:port])"},
+						Help: "hosts to check (host[:port], or an https:// URL)"},
 					{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: x509check.DefaultWarnDays,
 						Help: "flag certificates expiring within this many days"},
 					timeoutField,
@@ -241,6 +242,12 @@ func loadCerts(ctx context.Context, req plugin.Request, target string, timeout t
 			WithHint("over MCP this reads a PEM or DER file under the server's roots and dials no host; " +
 				"cert.expiry checks a live host, with a grant")
 	}
+	if host, isURL, verr := urlTarget(target); isURL {
+		if verr != nil {
+			return nil, nil, verr
+		}
+		return dialCerts(ctx, host, timeout)
+	}
 	// A target that can only be a path, and is not a file: said so, as what
 	// the reader typed it as. The dial would refuse it as a path, which is
 	// right for cert.expiry, that reads no file, and no help to somebody who
@@ -253,6 +260,38 @@ func loadCerts(ctx context.Context, req plugin.Request, target string, timeout t
 		return nil, nil, view.Errorf("cert.file.unreadable", "reading %s: %v", target, err)
 	}
 	return dialCerts(ctx, target, timeout)
+}
+
+// urlTarget reads a target written as a URL. An https:// URL is the host and
+// port it names, 443 where it names none; a URL of any other scheme is not
+// somewhere a certificate is read from, and is refused as what it is.
+//
+// **The address of a site is what people paste.** `rta cert inspect
+// https://example.com` was refused as "no certificate file", its slashes read
+// as a path, and `rta cert expiry` called it "too many colons in address":
+// wrong reasons, for a target that names a host. isURL says whether the
+// target is written as one at all, so that a caller keeps its other readings
+// for what is not.
+func urlTarget(target string) (host string, isURL bool, verr *view.Error) {
+	scheme, _, found := strings.Cut(target, "://")
+	if !found || scheme == "" || strings.ContainsAny(scheme, "/\\: ") {
+		return "", false, nil
+	}
+	u, err := url.Parse(target)
+	if err != nil || u.Hostname() == "" {
+		return "", true, view.Errorf("cert.target.invalid", "invalid target %q: a URL with no host in it", target).
+			WithHint("use host, host:port, or an https:// URL for its host")
+	}
+	if !strings.EqualFold(u.Scheme, "https") {
+		return "", true, view.Errorf("cert.target.invalid", "%q is a %s URL, and a certificate is read from a TLS host",
+			target, strings.ToLower(u.Scheme)).
+			WithHint("use host, host:port, or an https:// URL for its host")
+	}
+	port := u.Port()
+	if port == "" {
+		port = "443"
+	}
+	return net.JoinHostPort(u.Hostname(), port), true, nil
 }
 
 // looksLikeFile reports whether a target can only be a path: no host name
@@ -911,7 +950,14 @@ func expiryRow(ctx context.Context, target string, warnDays int, timeout time.Du
 	// type for a slice today, the Help already describes a host, and a
 	// capability whose declared inputs cannot express what it does is the
 	// thing that made this invisible.
-	certs, state, err := dialCerts(ctx, target, timeout)
+	dial := target
+	if host, isURL, verr := urlTarget(target); isURL {
+		if verr != nil {
+			return []string{target, "-", "-", "ERROR: " + verr.Message}
+		}
+		dial = host
+	}
+	certs, state, err := dialCerts(ctx, dial, timeout)
 	if err != nil {
 		return []string{target, "-", "-", "ERROR: " + view.AsError(err, "cert.load").Message}
 	}
