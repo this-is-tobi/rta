@@ -351,3 +351,24 @@ func TestTheDocsNameWhatAgentsCallsAreWrittenIntoTheRecord(t *testing.T) {
 		}
 	}
 }
+
+// rta says "1 entry", and a count of one is singular everywhere the product
+// counts — a rule that took a pass over every surface to apply. The sample
+// output in the docs is typed by hand, so it is where the old spelling lives
+// on: the trees chapter still showed a directory holding "1 entries" after
+// the command had stopped printing it, which is the first thing a reader
+// comparing the page with their terminal would notice.
+//
+// A word ending in -ss, -us or -is is left out of the rule because it is a
+// singular that happens to end in s ("1 status", "1 process").
+func TestTheDocsShowACountOfOneAsSingular(t *testing.T) {
+	root := repoRoot(t)
+	one := regexp.MustCompile(`(^|[^0-9.,A-Za-z/_-])1 [a-z]{3,}(ies|[^sui]s)\b`)
+	for _, page := range markdownPages(t, root) {
+		for i, line := range strings.Split(readDoc(t, root, page), "\n") {
+			if m := one.FindString(line); m != "" {
+				t.Errorf("%s:%d shows %q; a count of one is singular", page, i+1, strings.TrimSpace(m))
+			}
+		}
+	}
+}
