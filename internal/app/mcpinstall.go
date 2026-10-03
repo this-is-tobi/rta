@@ -75,8 +75,8 @@ type mcpClient struct {
 
 // serveArgs is the argv every client ends up launching. `--as` is not
 // decoration: without it every MCP client on the machine is one principal, so
-// a grant issued while talking to one authorizes all the others
-// decision 1). The operator typed the client's name, so the name is theirs.
+// a grant issued while talking to one authorizes all the others. The operator
+// typed the client's name, so the name is theirs.
 func serveArgs(as string) []string { return []string{"mcp", "serve", "--as", as} }
 
 // stdioServer is one entry, as a struct rather than a map so the fields keep
@@ -223,7 +223,11 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 			"rta runs that. Where it does not, rta prints what to add and where, and " +
 			"writes nothing: this is the file that gives an agent access to your " +
 			"secrets, and it is worth reading before it changes.",
-		Args:      cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+		// ExactArgs alone. OnlyValidArgs refused a client it did not know in
+		// cobra's words — `invalid argument "nope" for "rta mcp install"` — one
+		// step ahead of the check in RunE that names every client rta does
+		// know, which therefore never ran. ValidArgs stays for completion.
+		Args:      cobra.ExactArgs(1),
 		ValidArgs: valid,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, ok := findClient(args[0])
