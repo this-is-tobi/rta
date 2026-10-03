@@ -1100,6 +1100,31 @@ func TestPluginNewDryRunWritesNothing(t *testing.T) {
 	}
 }
 
+// A scaffold named after a plugin that is already here can never load: `plugin
+// dev` and every start refuse a namespace that is taken. `rta plugin new sys`
+// wrote the whole directory, and the author learned so from their first
+// `plugin dev`, about code they had not written.
+func TestPluginNewRefusesTheNameOfAPluginThatIsAlreadyHere(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := session(t, reg)
+	dir := filepath.Join(t.TempDir(), "rta-plugin-sys")
+
+	_, _, err = run("plugin", "new", "sys", "--dir", dir)
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "plugin.taken" || !strings.Contains(ve.Message, `"sys"`) {
+		t.Fatalf("plugin new sys = %v, want a plugin.taken refusal naming it", err)
+	}
+	if _, statErr := os.Stat(dir); statErr == nil {
+		t.Errorf("a refused scaffold still wrote %s", dir)
+	}
+	if _, _, err = run("plugin", "new", "probe", "--dir", dir, "--dry-run"); err != nil {
+		t.Errorf("a name nothing answers to was refused: %v", err)
+	}
+}
+
 // plugin new answers with pairs: it printed a page of prose on stdout whatever
 // -o said, so a script scaffolding plugins parsed "Created ..." for where the
 // files went. The directory is named by its full path, and a `go mod tidy`
