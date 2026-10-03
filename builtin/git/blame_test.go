@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -35,6 +36,44 @@ func TestBlameAttributesEachLineToTheCommitThatIntroducedIt(t *testing.T) {
 	}
 	if got := tbl.Rows[0][2]; got != "Ada Lovelace" {
 		t.Errorf("line 1 author = %q, want %q", got, "Ada Lovelace")
+	}
+}
+
+// A model reading a 1900-line file's blame was handed all of it, 200 KB, with
+// nothing in the call to ask for less. A window is a part of the same table: the
+// rows are numbered by the file's own lines, and the total is the file's length.
+func TestBlameShowsAWindowOfTheLinesAndTheFilesTrueLength(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "one\ntwo\nthree\nfour\nfive\n", "initial")
+	t.Chdir(dir)
+
+	tbl := table(t, runBlame, req(t, dir, map[string]any{"file": "a.txt", "from": 2, "limit": 2}))
+	if len(tbl.Rows) != 2 || tbl.Rows[0][0] != "2" || tbl.Rows[0][4] != "two" || tbl.Rows[1][0] != "3" {
+		t.Errorf("rows = %v, want lines 2 and 3", tbl.Rows)
+	}
+	if tbl.Total != 5 {
+		t.Errorf("total = %d, want the file's 5 lines", tbl.Total)
+	}
+
+	rest := table(t, runBlame, req(t, dir, map[string]any{"file": "a.txt", "from": 4}))
+	if len(rest.Rows) != 2 || rest.Rows[1][4] != "five" {
+		t.Errorf("rows = %v, want the last two lines when limit is left out", rest.Rows)
+	}
+
+	_, err := runBlame(context.Background(), req(t, dir, map[string]any{"file": "a.txt", "from": 6}))
+	if verr := view.AsError(err, "x"); verr.Code != "git.blame.range" || !strings.Contains(verr.Hint, "5") {
+		t.Errorf("a window past the end: %+v, want git.blame.range naming the last line", verr)
+	}
+
+	for sf, want := range map[plugin.Surface]string{
+		plugin.SurfaceCLI: "--from counts from 1; the file's last line is 5",
+		plugin.SurfaceMCP: `the "from" argument counts from 1; the file's last line is 5`,
+	} {
+		_, err := runBlame(context.Background(),
+			req(t, dir, map[string]any{"file": "a.txt", "from": 6}).WithSurface(sf))
+		if verr := view.AsError(err, "x"); verr.Hint != want {
+			t.Errorf("over %q: the hint is %q, want %q", sf, verr.Hint, want)
+		}
 	}
 }
 
