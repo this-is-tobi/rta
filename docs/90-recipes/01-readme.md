@@ -281,7 +281,7 @@ The two probes mean different things, which is the only reason there are two. `/
 **`rta_record_intact == 0` is the alert worth having.** A record that stops verifying is either a bug or somebody editing it, and both are things to hear about in minutes rather than at the next review:
 
 ```yaml
-- alert: RtaLedgerBroken
+- alert: RtaRecordBroken
   expr: rta_record_intact == 0
   for: 1m
   annotations:
