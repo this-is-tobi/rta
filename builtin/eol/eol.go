@@ -48,7 +48,8 @@ func Plugin() plugin.Plugin {
 				Idempotent: true,
 				Description: "Looks up a product on endoflife.date and grades every release cycle " +
 					"by how close it is to its own end-of-life date. Name one cycle to see just " +
-					"that row, or a range of them — 13..16, 15.., ..16 — to see every numbered " +
+					"that row — or the version running, 16.2, for the cycle it belongs to, 16 — or " +
+					"a range of them — 13..16, 15.., ..16 — to see every numbered " +
 					"cycle inside it; leave it out to see all of them. Aliases work — \"postgres\" " +
 					"and \"postgresql\" name the same product.",
 				// No dashboard tile: product is Required, so the automatic
@@ -65,7 +66,7 @@ func Plugin() plugin.Plugin {
 						Live:    true,
 						Suggest: suggestProducts},
 					{Name: "cycle", Type: plugin.String, Positional: true,
-						Help:    "one release cycle — 15, bookworm, 22.04 — or a range of them: 13..16, 15.., ..16; every cycle when omitted",
+						Help:    "one release cycle — 15, bookworm, 22.04 — or a version in one, 16.2 — or a range of them: 13..16, 15.., ..16; every cycle when omitted",
 						Live:    true,
 						Suggest: suggestCycles},
 					{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: defaultWarnDays,

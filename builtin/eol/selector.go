@@ -71,6 +71,9 @@ func (sel cycleSelector) pick(releases []eolapi.Release) []eolapi.Release {
 		if r, found := findRelease(releases, sel.exact); found {
 			return []eolapi.Release{r}
 		}
+		if r, found := cycleOfVersion(releases, sel.exact); found {
+			return []eolapi.Release{r}
+		}
 		return nil
 	}
 	var out []eolapi.Release
@@ -88,6 +91,29 @@ func (sel cycleSelector) pick(releases []eolapi.Release) []eolapi.Release {
 		out = append(out, r)
 	}
 	return out
+}
+
+// cycleOfVersion finds the cycle a dotted version belongs to: 16.2 is in
+// PostgreSQL's 16, 1.29.4 in Kubernetes' 1.29, 3.10.4 in Python's 3.10, taken
+// by dropping the last component until a cycle has that name.
+//
+// **What a machine reports is a version, and the table is by cycle.** The
+// version running is what `psql --version` and `kubectl version` print, and
+// `rta eol check postgresql 16.2` was "no release "16.2"" with the twenty-nine
+// cycles listed, none of them the one the question names. A name that is not
+// a dotted number is not a version, and a cycle named exactly was found
+// before this is asked.
+func cycleOfVersion(releases []eolapi.Release, version string) (eolapi.Release, bool) {
+	if _, ok := numericCycle(version); !ok {
+		return eolapi.Release{}, false
+	}
+	parts := strings.Split(version, ".")
+	for n := len(parts) - 1; n > 0; n-- {
+		if r, found := findRelease(releases, strings.Join(parts[:n], ".")); found {
+			return r, true
+		}
+	}
+	return eolapi.Release{}, false
 }
 
 // numericCycle reads "15", "9.6" or "24.04" as components; anything else is

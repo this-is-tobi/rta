@@ -100,6 +100,37 @@ func TestPickRangeIsInclusiveKeepsOrderAndSkipsCodenames(t *testing.T) {
 	}
 }
 
+// What a machine reports is a version, and the table is by cycle: 16.2 is in
+// PostgreSQL's 16, 1.29.4 in Kubernetes' 1.29. `eol check postgresql 16.2` was
+// "no release 16.2" with every cycle but the one it belongs to listed. A cycle
+// named exactly is found before a version is asked about, and a name that is
+// not a dotted number is never taken for one.
+func TestPickTakesAVersionForTheCycleItBelongsTo(t *testing.T) {
+	releases := numbered("18", "16", "9.6", "1.29", "1", "24.04", "bookworm")
+	for _, c := range []struct{ sel, want string }{
+		{"16.2", "16"},
+		{"16.15.1", "16"},
+		{"9.6.24", "9.6"},
+		{"1.29.4", "1.29"},
+		{"1.30.2", "1"},
+		{"24.04.5", "24.04"},
+		{"16", "16"},
+		{"9.7", ""},
+		{"17.1", ""},
+		{"bookworm.1", ""},
+		{"v16.2", ""},
+		{"16a.2", ""},
+	} {
+		sel, verr := parseSelector(c.sel)
+		if verr != nil {
+			t.Fatalf("parseSelector(%q): %v", c.sel, verr)
+		}
+		if got := names(sel.pick(releases)); got != c.want {
+			t.Errorf("pick(%q) = %q, want %q", c.sel, got, c.want)
+		}
+	}
+}
+
 func TestPickOrdersDottedCyclesNumerically(t *testing.T) {
 	releases := numbered("10", "9.6", "9.5", "24.10", "24.04")
 	sel, verr := parseSelector("9.6..24.04")
