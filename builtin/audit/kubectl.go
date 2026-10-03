@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/kubeerr"
 	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -127,6 +128,19 @@ func classifyKubectl(ctx context.Context, err error, stderr string) *view.Error 
 	case strings.Contains(low, "forbidden"), strings.Contains(low, "is not allowed"):
 		return view.Errorf("audit.kube.forbidden", "%s", msg).
 			WithHint("the credential this context uses does not have permission to list this resource")
+	case kubeerr.Unreachable(stderr) != "":
+		// Before the generic case, which would show the first line of stderr:
+		// for a cluster that did not answer that is a klog line — a timestamp,
+		// a process id, a source file and a Go-quoted error — around the one
+		// clause that says what happened.
+		at := ""
+		if server := kubeerr.Server(stderr); server != "" {
+			at = " at " + server
+		}
+		return view.Errorf("audit.kube.unreachable", "the cluster%s cannot be reached — %s",
+			at, kubeerr.Unreachable(stderr)).
+			WithHint("the network, a VPN or the cluster itself, not rta — kubectl says the same when run " +
+				"by hand against that context")
 	case msg != "":
 		return view.Errorf("audit.kube.failed", "%s", msg)
 	}
