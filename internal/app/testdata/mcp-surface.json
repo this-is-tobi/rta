@@ -638,7 +638,7 @@
   },
   {
     "name": "fs_tree",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow a directory as a tree, with sizes\n\nThe shape of a directory, a few levels at a time, with each entry's size beside it. Entries are ordered directories first and then by name, the order a person reads a listing in. Truncated branches say how many entries they are hiding rather than trailing off, so the tree never claims a directory is smaller than it is. With `detail`: what the walk covered, the tree, and everything it left out — depth, per-directory limit, hidden entries, mount points and unreadable directories gathered in one place instead of scattered through the branches they happened in. A name that holds an escape, a newline or another character that does not draw as itself is shown quoted with it written out, never cleaned into another name.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow a directory as a tree, with sizes\n\nThe shape of a directory, a few levels at a time, with each entry's size beside it. Entries are ordered directories first and then by name. Truncated branches say how many entries they are hiding rather than trailing off, so the tree never claims a directory is smaller than it is. With `detail`: what the walk covered, the tree, and everything it left out — depth, per-directory limit, hidden entries, mount points and unreadable directories gathered in one place instead of scattered through the branches they happened in. A name that holds an escape, a newline or another character that does not draw as itself is shown quoted with it written out, never cleaned into another name.\n── end of plugin-written text ──\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -678,7 +678,7 @@
   },
   {
     "name": "fs_usage",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow what is using space under a path, biggest first\n\nTotals every entry under a path and ranks them, which is the question `du -sh * | sort -h | tail` is always asked to answer. Directories are summed recursively; the share column is of the scanned total, not of the disk, so it adds up to what you are looking at. A size is the disk a file takes, as du counts it: a sparse file by what is written, and a file with several hard links once, where it is first met; `apparent` counts lengths instead. Hidden entries are included — they are usually the answer. With `detail`: the ranking, the largest individual files found anywhere beneath, and what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop or wander onto a network mount. A name that holds an escape, a newline or another character that does not draw as itself is shown quoted with it written out, never cleaned into another name.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow what is using space under a path, biggest first\n\nTotals every entry under a path and ranks them. Directories are summed recursively; the share column is of the scanned total, not of the disk, so it adds up to what you are looking at. A size is the disk a file takes, as du counts it: a sparse file by what is written, and a file with several hard links once, where it is first met; `apparent` counts lengths instead. Hidden entries are included — they are usually the answer. With `detail`: the ranking, the largest individual files found anywhere beneath, and what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop or wander onto a network mount. A name that holds an escape, a newline or another character that does not draw as itself is shown quoted with it written out, never cleaned into another name.\n── end of plugin-written text ──\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -733,7 +733,7 @@
   },
   {
     "name": "gen_password",
-    "description": "── the text below is written by the plugin, not by rta ──\nGenerate a cryptographically random password\n\ncrypto/rand only, with unbiased alphabet selection (rand.Int, never rand.Intn or modulo, which biases low indices unless the alphabet size divides the RNG range evenly). Reports entropy in bits: length x log2(alphabet size).\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "── the text below is written by the plugin, not by rta ──\nGenerate a cryptographically random password\n\nCharacters are drawn uniformly, with no modulo bias. Reports entropy in bits: length x log2(alphabet size).\n── end of plugin-written text ──\n\nSafety: read.",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1300,7 +1300,7 @@
   },
   {
     "name": "kv_get",
-    "description": "── the text below is written by the plugin, not by rta ──\nReveal a stored value\n\nReveals a stored value. Classified as a write, because revealing a secret is the sensitive act: an agent needs a grant naming the key it may read, issued by a person. A grant authorizes revealing a value, not choosing where on this machine it gets written, so the value comes back in the response.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.get`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nReveal a stored value\n\nClassified as a write, because revealing a secret is the sensitive act: an agent needs a grant naming the key it may read, issued by a person. A grant authorizes revealing a value, not choosing where on this machine it gets written, so the value comes back in the response.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.get`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1338,7 +1338,7 @@
   },
   {
     "name": "kv_init",
-    "description": "── the text below is written by the plugin, not by rta ──\nSet up how the store is encrypted\n\nChooses how the store is encrypted, once. `generate` makes a dedicated age key for this store and uses it: no passphrase to type, and unlike an SSH login key, one whose loss costs this store and nothing else. A passphrase store needs no init, which is what the store is by default. Locking it to a key that already exists, or adding readers, is the operator's to do.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow kv.init`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nSet up how the store is encrypted\n\nDone once. `generate` makes a dedicated age key for this store and uses it: no passphrase to type, and unlike an SSH login key, one whose loss costs this store and nothing else. A passphrase store needs no init, which is what the store is by default. Locking it to a key that already exists, or adding readers, is the operator's to do.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow kv.init`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1403,7 +1403,7 @@
   },
   {
     "name": "kv_rekey",
-    "description": "── the text below is written by the plugin, not by rta ──\nChange which keys can open the store\n\nChanges which keys can open the store: it is decrypted and written back under a new set, the one operation that changes who can read what is already stored. Adding is the default: `generate` makes a dedicated age key and leaves the existing readers alone, so a store locked to an SSH key gains one that needs no passphrase. `only` makes the set exclusive instead, and with `generate` switches the lock from one key to the other. Two things are refused rather than confirmed: a store that cannot be opened, and a change that locks out every key the operator holds. Old copies of the file stay readable by the old keys; re-keying does not reach into backups.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow kv.rekey`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nChange which keys can open the store\n\nThe store is decrypted and written back under a new set of keys, the one operation that changes who can read what is already stored. Adding is the default: `generate` makes a dedicated age key and leaves the existing readers alone, so a store locked to an SSH key gains one that needs no passphrase. `only` makes the set exclusive instead, and with `generate` switches the lock from one key to the other. Two things are refused rather than confirmed: a store that cannot be opened, and a change that locks out every key the operator holds. Old copies of the file stay readable by the old keys; re-keying does not reach into backups.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow kv.rekey`.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1422,7 +1422,7 @@
   },
   {
     "name": "kv_rename",
-    "description": "── the text below is written by the plugin, not by rta ──\nRename a key, keeping its value and its history\n\nRenames a key, keeping its value and its history. The entry moves inside the store, the value is never decrypted into anything but memory, and its description, kind, source and timestamps travel with it: the one way to rename that reveals nothing, where kv_get, kv_set and kv_rm took two grants and put the secret in the open. A name already taken is refused rather than overwritten, since that would destroy the secret in it, which is `kv_rm`'s question. A grant has to cover both names, `key` and `new-name`, because a key's name decides which grants can read it; a folder grant covers a move inside the folder.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\" and one \"new-name\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.rename`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nRename a key, keeping its value and its history\n\nThe entry moves inside the store, the value is never decrypted into anything but memory, and its description, kind, source and timestamps travel with it: the one way to rename that reveals nothing, where kv_get, kv_set and kv_rm took two grants and put the secret in the open. A name already taken is refused rather than overwritten, since that would destroy the secret in it, which is `kv_rm`'s question. A grant has to cover both names, `key` and `new-name`, because a key's name decides which grants can read it; a folder grant covers a move inside the folder.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\" and one \"new-name\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.rename`.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -1489,7 +1489,7 @@
   },
   {
     "name": "kv_set",
-    "description": "── the text below is written by the plugin, not by rta ──\nSet (or overwrite) a stored value\n\nSets or overwrites a stored value, given as `value`; a call with none is refused unless its `description` or `kind` relabel an entry that already exists, which leaves the secret and both timestamps untouched, so correcting what something is for does not reset the age kv_list reports. The kind (certificate, private key, json, file, string) is detected from the content unless `kind` says otherwise. Writing never changes who can read the store: that is `kv_rekey`. Setting a key that already exists replaces the secret and keeps the old one, the last 5 values listed by `kv_history` and brought back by `kv_restore` with a `revision`. It still needs a per-key grant: an agent that can overwrite a secret can break what reads it, undo or not.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.set`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nSet (or overwrite) a stored value\n\nThe value is given as `value`; a call with none is refused unless its `description` or `kind` relabel an entry that already exists, which leaves the secret and both timestamps untouched, so correcting what something is for does not reset the age kv_list reports. The kind (certificate, private key, json, file, string) is detected from the content unless `kind` says otherwise. Writing never changes who can read the store: that is `kv_rekey`. Setting a key that already exists replaces the secret and keeps the old one, the last 5 values listed by `kv_history` and brought back by `kv_restore` with a `revision`. It still needs a per-key grant: an agent that can overwrite a secret can break what reads it, undo or not.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.set`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1623,7 +1623,7 @@
   },
   {
     "name": "net_hosts_add",
-    "description": "── the text below is written by the plugin, not by rta ──\nPoint a hostname at an address in the hosts file\n\nAdding \"127.0.0.1 api.example.com\" is a thirty-second job that takes two minutes by hand. A name resolves to one address, so this takes the name away from any other active entry rather than leaving two that race. Everything else in the file — comments, ordering, spacing — survives untouched, and the previous version is saved before the write.\n\nClassified destructive rather than write: this rewrites a root-owned file that governs name resolution for every process on the machine, and a wrong entry silently reroutes traffic instead of failing. Over MCP that means a per-capability grant naming this capability, or the net plugin, with a deadline on it.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"hostname\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.hosts.add`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nPoint a hostname at an address in the hosts file\n\nA name resolves to one address, so this takes the name away from any other active entry rather than leaving two that race. Everything else in the file — comments, ordering, spacing — survives untouched, and the previous version is saved before the write.\n\nClassified destructive rather than write: this rewrites a root-owned file that governs name resolution for every process on the machine, and a wrong entry silently reroutes traffic instead of failing. Over MCP that means a per-capability grant naming this capability, or the net plugin, with a deadline on it.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"hostname\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.hosts.add`.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1686,7 +1686,7 @@
   },
   {
     "name": "net_hosts_toggle",
-    "description": "── the text below is written by the plugin, not by rta ──\nEnable or disable a hosts-file entry without deleting it\n\nThe part everyone forgets is taking the entry out again, so entries can be parked instead: a disabled entry stays in the file, commented, and comes back with the same command. Same blast radius as add, same classification.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"hostname\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.hosts.toggle`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nEnable or disable a hosts-file entry without deleting it\n\nA disabled entry stays in the file, commented, and comes back with the same command. Same blast radius as add, same classification.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"hostname\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.hosts.toggle`.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1815,7 +1815,7 @@
   },
   {
     "name": "net_probe",
-    "description": "── the text below is written by the plugin, not by rta ──\nOpen a TCP connection and report what answers\n\nWhat telnet \u003chost\u003e \u003cport\u003e is really used for: prove the port accepts a connection, time the handshake, and show the banner the service volunteers. `tls` completes a TLS handshake first and reports the negotiated version and cipher. It only ever listens; to speak first — the protocols that expect the client to open — use `net_send`, which is a write. Both need a grant: the destination is the caller's choice either way, and whatever it says back is read as tool output.\n── end of plugin-written text ──\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.probe`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nOpen a TCP connection and report what answers\n\nProves the port accepts a connection, times the handshake, and shows the banner the service volunteers. `tls` completes a TLS handshake first and reports the negotiated version and cipher. It only ever listens; to speak first — the protocols that expect the client to open — use `net_send`, which is a write. Both need a grant: the destination is the caller's choice either way, and whatever it says back is read as tool output.\n── end of plugin-written text ──\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.probe`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2129,7 +2129,7 @@
   },
   {
     "name": "note_reopen",
-    "description": "── the text below is written by the plugin, not by rta ──\nReopen a checked note\n\nThe undo for `note_done`. Checking off the wrong note is a one-keystroke mistake, and a list you cannot take something back out of is a list people stop trusting. Re-opening an already-open note is a no-op, not an error.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.reopen`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nReopen a checked note\n\nThe undo for `note_done`. Re-opening an already-open note is a no-op, not an error.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.reopen`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -2354,7 +2354,7 @@
   },
   {
     "name": "time_at",
-    "description": "── the text below is written by the plugin, not by rta ──\nConvert an instant between epoch, UTC, local time and a named zone\n\nTakes an instant in whatever form you have it — an epoch number at any precision, an RFC3339 stamp, a plain date, or a duration either side of now (`90m ago`, `in 2h`, `+90m`) — and shows it as UTC, as local time, as epoch seconds and milliseconds, and as how long ago or away it is. With `zone`, in a third timezone too.\n\nA bare number carries no unit, so the unit is chosen by magnitude and then stated back to you in the `read-as` row: between 1970 and 1973 the ranges genuinely overlap and no rule can resolve that, which makes saying what was assumed part of the answer rather than a footnote. A time of day the local clock showed twice, the night it went back, is answered as one of the two with the other named in an `ambiguous` row; one it never showed is refused.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "── the text below is written by the plugin, not by rta ──\nConvert an instant between epoch, UTC, local time and a named zone\n\nTakes an instant in whatever form you have it — an epoch number at any precision, an RFC3339 stamp, a plain date, or a duration either side of now (`90m ago`, `in 2h`, `+90m`) — and shows it as UTC, as local time, as epoch seconds and milliseconds, and as how long ago or away it is. With `zone`, in a third timezone too.\n\nA bare number carries no unit, so the unit is chosen by magnitude and then stated back to you in the `read-as` row: between 1970 and 1973 the ranges overlap and no rule can resolve it. A time of day the local clock showed twice, the night it went back, is answered as one of the two with the other named in an `ambiguous` row; one it never showed is refused.\n── end of plugin-written text ──\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {

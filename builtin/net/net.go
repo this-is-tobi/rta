@@ -166,8 +166,8 @@ func Plugin() plugin.Plugin {
 				// unlike http.* — and read back whatever greeted it.
 				NeedsGrant: true,
 				Scope:      "host",
-				Description: "What telnet <host> <port> is really used for: prove the port accepts a " +
-					"connection, time the handshake, and show the banner the service volunteers. " +
+				Description: "Proves the port accepts a connection, times the handshake, and shows the " +
+					"banner the service volunteers. " +
 					"`tls` completes a TLS handshake first and reports the negotiated version and " +
 					"cipher. It only ever listens; to speak first — the protocols that expect the " +
 					"client to open — use `net.send`, which is a write. Both need a grant: the " +
@@ -270,8 +270,7 @@ func Plugin() plugin.Plugin {
 				Safety:       plugin.Destructive,
 				HostSpecific: true,
 				Scope:        "hostname",
-				Description: "Adding \"127.0.0.1 api.example.com\" is a thirty-second job that takes two " +
-					"minutes by hand. A name resolves to one address, so this takes the name away from " +
+				Description: "A name resolves to one address, so this takes the name away from " +
 					"any other active entry rather than leaving two that race. Everything else in the " +
 					"file — comments, ordering, spacing — survives untouched, and the previous version " +
 					"is saved before the write.\n\n" +
@@ -305,9 +304,8 @@ func Plugin() plugin.Plugin {
 				Safety:       plugin.Destructive,
 				HostSpecific: true,
 				Scope:        "hostname",
-				Description: "The part everyone forgets is taking the entry out again, so entries can be " +
-					"parked instead: a disabled entry stays in the file, commented, and comes back with " +
-					"the same command. Same blast radius as add, same classification.",
+				Description: "A disabled entry stays in the file, commented, and comes back with the " +
+					"same command. Same blast radius as add, same classification.",
 				Inputs: []plugin.Field{
 					{Name: "hostname", Type: plugin.String, Positional: true, Required: true, Help: "hostname to toggle",
 						Suggest: suggestHostnames},

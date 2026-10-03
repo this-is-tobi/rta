@@ -64,10 +64,9 @@ func Plugin() plugin.Plugin {
 					"third timezone too.\n\n" +
 					"A bare number carries no unit, so the unit is chosen by magnitude and then " +
 					"stated back to you in the `read-as` row: between 1970 and 1973 the ranges " +
-					"genuinely overlap and no rule can resolve that, which makes saying what was " +
-					"assumed part of the answer rather than a footnote. A time of day the local clock showed twice, the " +
-					"night it went back, is answered as one of the two with the other named in an `ambiguous` row; " +
-					"one it never showed is refused.",
+					"overlap and no rule can resolve it. A time of day the local clock showed twice, the " +
+					"night it went back, is answered as one of the two with the other named in an " +
+					"`ambiguous` row; one it never showed is refused.",
 				Inputs: []plugin.Field{
 					{Name: "when", Type: plugin.String, Positional: true, Default: "now",
 						Help: "an instant: now, an epoch number, 2026-09-04T12:00:00Z, 2026-09-04, or a relative duration like \"90m ago\""},

@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/this-is-tobi/rta/internal/mcp"
 )
@@ -89,6 +90,38 @@ func TestToolTextStaysInBudget(t *testing.T) {
 		}
 		if len(over) > 0 {
 			t.Errorf("%s: %s", tl.Name, strings.Join(over, "; "))
+		}
+	}
+}
+
+// A tool's description follows its summary on the next line, so a first
+// sentence that says the summary again, "Reveals a stored value" under
+// "Reveal a stored value", is a model reading the same thing twice, once for
+// every tool that does it.
+func TestADescriptionDoesNotOpenByRestatingItsSummary(t *testing.T) {
+	words := func(s string) map[string]bool {
+		out := map[string]bool{}
+		for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		}) {
+			out[strings.TrimSuffix(strings.TrimSuffix(w, "es"), "s")] = true
+		}
+		return out
+	}
+	for _, c := range capabilities(t) {
+		if c.Description == "" {
+			continue
+		}
+		first, _, _ := strings.Cut(c.Description, ". ")
+		sentence, summary := words(first), words(c.Summary)
+		shared := 0
+		for w := range sentence {
+			if summary[w] {
+				shared++
+			}
+		}
+		if len(sentence) > 0 && len(sentence) <= len(summary)+3 && shared*5 >= len(sentence)*4 {
+			t.Errorf("%s: the description opens by saying its summary again:\n  %s\n  %s", c.ID, c.Summary, first)
 		}
 	}
 }

@@ -93,9 +93,8 @@ func Plugin() plugin.Plugin {
 			{
 				ID:      "gen.password",
 				Summary: "Generate a cryptographically random password",
-				Description: "crypto/rand only, with unbiased alphabet selection (rand.Int, never " +
-					"rand.Intn or modulo, which biases low indices unless the alphabet size divides " +
-					"the RNG range evenly). Reports entropy in bits: length x log2(alphabet size).",
+				Description: "Characters are drawn uniformly, with no modulo bias. Reports entropy in " +
+					"bits: length x log2(alphabet size).",
 				Safety: plugin.Read,
 				Inputs: []plugin.Field{
 					// Bounded at the limits specFrom holds. The host once clamped
