@@ -203,7 +203,7 @@ func decodeB64(value string) ([]byte, error) {
 		}
 		lastErr = err
 	}
-	return nil, lastErr
+	return nil, b64Failure(value, lastErr)
 }
 
 func runHex(_ context.Context, req plugin.Request) (view.View, error) {
