@@ -714,7 +714,7 @@ func parseRate(sf plugin.Surface, raw string) (int, string, *view.Error) {
 	// which is --max-uses wearing a different hat and worth saying so.
 	if d > core.MaxTTL {
 		return 0, "", bad(fmt.Sprintf("a window longer than the %s a grant can live is "+
-			"%s %d in disguise", core.MaxTTL, sf.InputName("max-uses"), calls))
+			"%s %d in disguise", format.Duration(core.MaxTTL), sf.InputName("max-uses"), calls))
 	}
 	return calls, window, nil
 }
