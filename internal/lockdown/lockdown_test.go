@@ -492,6 +492,21 @@ func TestALockWithNoPrincipalIsRefused(t *testing.T) {
 	}
 }
 
+// The refusal is read by whoever typed the value, and the place they were told
+// to copy it from is the table `rta agent log` prints. A word for that table
+// that exists only in the source — the code's own name for it — sends them to
+// look for something the product never shows.
+func TestACredentialLockRefusalNamesTheTableAPersonCanRead(t *testing.T) {
+	fresh(t)
+	verr := Add(Lock{Kind: KindCredential, Name: "	padded", At: time.Now()})
+	if verr == nil || verr.Code != "core.lock.name" {
+		t.Fatalf("Add of a credential name with a tab: %v, want core.lock.name", verr)
+	}
+	if !strings.Contains(verr.Message, "agent log") || strings.Contains(strings.ToLower(verr.Message), "ledger") {
+		t.Errorf("the refusal sends the reader to %q", verr.Message)
+	}
+}
+
 // Build checks the kind, and so does Add, for a Lock handed to it directly
 // — the shape the operator channel's handler uses.
 func TestAddRefusesAKindItWasHandedDirectly(t *testing.T) {

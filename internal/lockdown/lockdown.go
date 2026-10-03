@@ -156,7 +156,7 @@ func checkName(kind Kind, name string) *view.Error {
 	if kind == KindCredential {
 		if name == "" || name != textclean.Terminal(strings.TrimSpace(name)) || len(name) > maxCredentialName {
 			return view.Errorf("core.lock.name",
-				"a credential lock names the exact value the ledger's credential column shows — "+
+				"a credential lock names the exact value the agent log's credential column shows — "+
 					"%q is not one", name)
 		}
 		return nil
