@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -300,4 +301,34 @@ func readDoc(t *testing.T, root, rel string) string {
 		t.Fatalf("reading %s: %v", rel, err)
 	}
 	return string(b)
+}
+
+// A plugin author learns what a declaration can say from the writing chapter,
+// and the chapter is prose that a person keeps current by hand. Writing a
+// plugin from it alone turned up four Capability fields the SDK offers and the
+// chapter never names — Detailed, Prefill, Idempotent and MinWidth — so an
+// author who wanted an overview page, an edit form that opens on today's
+// values, or a tile that keeps its width could not find that they exist.
+//
+// The check is the cheap kind: every exported field of the five declaration
+// types is named, as a word, somewhere on the two plugin pages. It cannot say
+// the sentence is right, only that nobody added a switch to the SDK and left
+// its authors to read the source to learn it.
+func TestThePluginChaptersNameEveryFieldAPluginDeclares(t *testing.T) {
+	root := repoRoot(t)
+	pages := readDoc(t, root, "docs/40-plugins/10-plugins.md") + readDoc(t, root, "docs/40-plugins/20-writing-a-plugin.md")
+
+	for _, decl := range []any{plugin.Plugin{}, plugin.Capability{}, plugin.Field{}, plugin.Action{}, plugin.Toggle{}} {
+		typ := reflect.TypeOf(decl)
+		for i := range typ.NumField() {
+			name := typ.Field(i).Name
+			if !typ.Field(i).IsExported() {
+				continue
+			}
+			if !regexp.MustCompile(`\b` + name + `\b`).MatchString(pages) {
+				t.Errorf("neither plugin page names %s.%s; say what it does where an author declaring a %s would look",
+					typ.Name(), name, strings.ToLower(typ.Name()))
+			}
+		}
+	}
 }

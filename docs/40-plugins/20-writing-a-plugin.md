@@ -24,6 +24,25 @@ Your inner loop does not need it at all: `rta plugin dev` compiles from a direct
 
 > A scaffolded plugin requires the released rta module at the version of the rta that scaffolded it, so `go mod tidy` resolves `pkg/sdk` from the module proxy like any other dependency and the SDK it builds against is the one whose host will load it. Inside an rta checkout — or anywhere, with `--rta-source <path>` — `rta plugin new` points a `replace` at the tree instead, for building against unreleased changes. Its answer says which happened, on its `builds against` line — under `-o json` too, beside the directory it wrote and the files in it.
 
+## What `plugin new` wrote
+
+A plugin is an ordinary Go `main` package, and the whole of its contract with rta is the value it serves:
+
+```go
+func main() { sdk.Serve(Plugin()) }
+
+func Plugin() plugin.Plugin {
+	return plugin.Plugin{
+		Name:         "weather",
+		Summary:      "what the plugin is for, in one line",
+		Version:      version,
+		Capabilities: []plugin.Capability{ /* one per thing it can do */ },
+	}
+}
+```
+
+`sdk.Serve` is imported from `pkg/sdk`, the declaration types from `pkg/plugin`, and the answers from `pkg/view`. `Name` is the namespace and the first word of every capability ID (`weather.greet`), `Summary` is the line `rta plugin list` shows, and `Version` is what the build claims to be — shown by `rta plugin dev` and recorded by an index entry. Stamp it from your release, `go build -ldflags "-X main.version=$(git describe --tags)" .`, rather than editing a constant: an unstamped build says `dev` instead of a version nobody cut. `Needs` is the one other `plugin.Plugin` field, and [If your plugin needs a credential location](#if-your-plugin-needs-a-credential-location) says when to set it.
+
 ## The one thing to understand
 
 You return **data**, not output.
@@ -147,6 +166,8 @@ The rule that catches people: **a capability that reveals a secret's plaintext i
 
 **A `Write` or `Destructive` capability honours a dry run.** `req.DryRun` is true when the caller asked for one — `--dry-run` at a terminal, and the preview [the TUI](../20-using/20-tui.md#running-something) shows instead of running a destructive call — and the handler returns, before its first side effect, a view saying what it would have done (`would add station beta`), having touched nothing. `sdktest` drives every such capability that way and fails one that writes. The confirmation a destructive capability needs is the host's: at a terminal it asks, or takes `--yes`, before your handler runs, and an agent's call has to clear a grant before it gets that far, so there is no prompt of yours to write. A plugin's handler is never run to preview a parked agent call; its dry run is the one a person asks for.
 
+`Idempotent: true` is a second claim, and a smaller one: running the capability again with the same inputs changes nothing more. It reaches an MCP client as the tool's `idempotentHint` and the TUI prints it beside the safety class, so say it only when it holds — a `list`, or a `put` that overwrites with the same value, never an `add` that appends.
+
 Set `NeedsGrant: true` when the class understates it, and `Scope: "city"` to name the input a grant can be narrowed to — then a person can allow one record rather than the capability.
 
 A capability that names a second record — the destination of a rename or a copy — lists that input in `ScopeAlso` as well, and a grant then has to cover both. Record names are what grants are scoped by, so a move checked only at its source carries a record from under one grant to under another: a grant to rename one key plus a grant to read another folder would add up to reading the key.
@@ -250,6 +271,8 @@ A tile runs on load and then every few seconds with nobody watching, so it has t
 
 A capability that is worth a tile but not at that pace — an answer that moves by the day and costs a network round trip to compute — declares `Refresh: 2 * time.Hour` and the dashboard waits that long between runs. It is how a person who adds your `NoPreview` capability to their dashboard (`rta dashboard add`) gets it at a pace you chose rather than one the host guessed; the automatic dashboard still leaves it out.
 
+A tile is small, and the same capability can have a bigger page: declare `Detailed: true` and the host sets the boolean `detail` input when it has the whole screen — a tile opened, a selection in browse — and leaves it false for the compact view, which is what the dashboard draws. At a terminal it is `--detail`. `detail` is the host's own name, so you never declare an input for it; your handler branches on `req.Bool("detail")`. A detail page is assembled from views your plugin already returns, with `plugin.NewPage(ctx, req)`: `Add`/`AddAs` run a sibling handler and append its view as a section, `Put`/`PutAs` append a view you hold, `Run` runs one without appending so a failure is yours to decide, and `p.View()` is what you return. Every section runs with the page's own inputs, so one that connects reaches what the caller reached, and a section that fails is dropped and recorded as a warning rather than costing the reader the rest — say so with `Put` and an explanation when the absence is itself the finding. Only a `Read` handler can be embedded, and the call states it — `p.AddAs("stations", "nearby stations", listStations, plugin.Read, nil)`, the last argument being values that overlay the page's inputs — because a page composes calls directly and nothing in it could gate a `Write`: any other class panics the first time the page is built, so a test that runs the capability finds it. A tile that needs more than a few columns to stay readable — a long key, an identifier that must not be cut — declares `MinWidth` in terminal cells, so the dashboard gives it that much and no more.
+
 **Say what the TUI may do with a result.** A list is more than a table when its rows answer keys, and those keys are yours to declare — the same way rta's own `note.list` does, with no table inside the TUI to get into:
 
 ```go
@@ -269,6 +292,8 @@ A capability that is worth a tile but not at that pace — an answer that moves 
 
 An `Action` opens a sibling capability with the row (or, on a record's own page, the page's pairs) read into its inputs by name — `Seed` maps an input to a differently named column — and the form opens for whatever is still unfilled. `Bare` skips that form for a target that needs nothing more; it never skips a destructive target's confirmation. A `Toggle` flips one of your own `Bool` inputs and runs the view again. `Copy` names the column or key that `c` copies — a generated password, a token. `Live` re-runs a `Read` view on the dashboard's interval while it is on screen. `Flash` marks a mutation whose result is a confirmation sentence, so a view that launched it shows the sentence on its footer and reloads instead of opening a page.
 
+A capability that edits a record can declare `Prefill func(ctx, req) (map[string]any, error)`: given the record's identity — the required positional inputs — it returns the current values of the other inputs by name, and the TUI opens the edit form with them filled in, the way `note.edit` opens on today's title and body. It runs on the TUI alone, within five seconds, so it reads and never writes; the CLI and an agent pass every value explicitly and never reach it.
+
 Validate admits all of it at registration: the keys every screen owns (`q`, `r`, `e`, `y`, `hjkl`, `b`, `/`, `?`, `tab`, `esc`) are refused, a target in your own namespace has to exist, `Bare` is refused onto a destructive target or one with a required input nothing seeds, and a target in another plugin is allowed but never bare. `rta explain <capability>` prints what you declared, and `sdktest` checks that `Copy` names a column the view really has.
 
 Name a capability for the **question it answers**, not the mechanism. `audit mail` is DNS lookups underneath, but nobody reaches for `net dns` while hardening a domain.
@@ -277,7 +302,7 @@ Give a detail page's sections an id. `view.Section` carries both an `ID` and a `
 
 ```go
 p.PutAs("summary", "at a glance", summary)
-p.AddAs("stations", "nearby stations", listStations, nil)
+p.AddAs("stations", "nearby stations", listStations, plugin.Read, nil)
 ```
 
 It is optional — `Put` and `Add` work, and `Key()` falls back to the title — but then rewording a heading silently renames the handle. `sdktest` says so.
