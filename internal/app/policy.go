@@ -308,7 +308,10 @@ func policyRequireCommand(opts *globalOpts) *cobra.Command {
 			if verr != nil {
 				return verr
 			}
-			existing, err := os.ReadFile(path)
+			// Opened without waiting and read under a cap, as the policy is
+			// everywhere else it is read: a named pipe where the file goes
+			// would otherwise hold this command for good.
+			existing, err := atomicfile.ReadCapped(path, 1<<20)
 			if err != nil && !os.IsNotExist(err) {
 				return view.Errorf("core.policy.read", "reading %s: %v", path, err)
 			}
