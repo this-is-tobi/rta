@@ -446,6 +446,17 @@ func stalePinPairs(name, from, to string, dryRun bool) []view.Pair {
 	return pairs
 }
 
+// upToDateValue is the answer to an upgrade that found nothing newer. It is
+// the index as last updated that was read: an upgrade fetches the artifact the
+// index claims and never the index itself, so "up to date" beside an index
+// that has since moved on read as a verdict on the repository, and the person
+// whose maintainer had just tagged a release had no way to learn that
+// `rta plugin index update` was the step left.
+func upToDateValue(up plugindist.Upgraded) string {
+	return up.Name + " " + up.Version + " (" + shortDigest(up.FromDigest) + ") by its index as last updated — " +
+		"`rta plugin index update` fetches newer claims"
+}
+
 func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 	var (
 		all   bool
@@ -460,6 +471,8 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 			"does not tell you: the same publisher signing a worse plugin verifies\n" +
 			"perfectly. The previous artifact stays in the store, so rolling back is\n" +
 			"a re-install away, not a re-download.\n\n" +
+			"What \"now\" claims is the index as `rta plugin index update` last left it:\n" +
+			"an upgrade never fetches the index itself.\n\n" +
 			"`--all` sweeps every installed plugin, and holds back any whose new\n" +
 			"declaration would hand it more than you last approved — nobody reads a\n" +
 			"diff going past in a sweep, so the diff stops the sweep instead. Name\n" +
@@ -492,8 +505,7 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 			}
 			if up.UpToDate {
 				return renderView(cmd, opts, view.KeyValue{Pairs: []view.Pair{
-					{Key: "up to date", Value: up.Name + " " + up.Version + " (" +
-						shortDigest(up.FromDigest) + ")"},
+					{Key: "up to date", Value: upToDateValue(up)},
 				}})
 			}
 			upgradedLabel := "upgraded"

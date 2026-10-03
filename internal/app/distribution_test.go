@@ -64,6 +64,21 @@ func TestTheInstallReportDoesNotSendAPluginWithNoKeysToTheConfig(t *testing.T) {
 	}
 }
 
+// "Up to date" is a verdict on the index as it was last updated, and an upgrade
+// never fetches the index: it said so with no mention of the one command that
+// would change the answer.
+func TestUpToDateNamesTheIndexUpdateThatCouldChangeIt(t *testing.T) {
+	got := upToDateValue(plugindist.Upgraded{
+		Report:     plugindist.Report{Name: "hello", Version: "v0.1.0"},
+		FromDigest: "6db7eaeebf84" + strings.Repeat("0", 52),
+	})
+	for _, want := range []string{"hello v0.1.0 (6db7eaeebf84)", "as last updated", "`rta plugin index update`"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("%q does not contain %q", got, want)
+		}
+	}
+}
+
 // An upgrade says what it did to the config that pinned the old build, and only
 // that. It said "your pin plugins.pg@abc no longer applies" on every upgrade,
 // whether or not the config named the old build — and never named `rta profile
