@@ -522,14 +522,48 @@ func (m Model) searchResults() []plugin.Capability {
 	// Straight from the registry rather than from the browse list: the two
 	// answer the same question and only one of them has section headers in it.
 	for _, c := range m.reg.Capabilities() {
-		switch {
-		case strings.HasPrefix(strings.ToLower(c.ID), q):
+		switch tier, ok := matchCapability(c.ID, c.Summary, q); {
+		case !ok:
+		case tier == matchPrefix:
 			prefix = append(prefix, c)
-		case strings.Contains(strings.ToLower(c.ID+" "+c.Summary), q):
+		default:
 			rest = append(rest, c)
 		}
 	}
 	return append(prefix, rest...)
+}
+
+// How a query found a capability. The dashboard's search and the catalogue's
+// filter answer one question, so they share the rule: they ranked differently
+// when the catalogue used the list's fuzzy matcher, which found "gen" in
+// "agent.deny" and in "git.log" (g, then an e and an n from the summary) and
+// put both above gen.password, with sixty-two of a hundred and twenty-eight
+// rows matching a three-letter query.
+const (
+	matchPrefix = iota // the ID starts with the query
+	matchWithin        // the query is somewhere in the ID or the summary
+)
+
+// matchCapability says whether q, already lower-cased and trimmed, finds a
+// capability, and how well. Every word of q has to be somewhere in the ID or
+// the summary, so "hosts list" finds net.hosts.list as the fuzzy matcher did
+// without finding what only a scattering of its letters spelled.
+func matchCapability(id, summary, q string) (tier int, ok bool) {
+	words := strings.Fields(q)
+	if len(words) == 0 {
+		return 0, false
+	}
+	id = strings.ToLower(id)
+	haystack := id + " " + strings.ToLower(summary)
+	for _, w := range words {
+		if !strings.Contains(haystack, w) {
+			return 0, false
+		}
+	}
+	if strings.HasPrefix(id, words[0]) {
+		return matchPrefix, true
+	}
+	return matchWithin, true
 }
 
 // searchWindow returns the visible slice of matches and where it starts,
