@@ -132,6 +132,23 @@ func TestDiffOfARevisionThatNamesNoCommitSaysWhy(t *testing.T) {
 	}
 }
 
+// A revision that matches nothing is handed on to what lists the ones that
+// exist, spelled for whoever asked: a tool for an agent, a command for a person.
+func TestDiffOfARevisionThatNamesNoCommitSaysWhereToLook(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "first")
+
+	for sf, want := range map[plugin.Surface]string{
+		plugin.SurfaceMCP: "the `git_log` tool lists the commits and the `git_branches` tool the branches",
+		plugin.SurfaceCLI: "`rta git log` lists the commits and `rta git branches` the branches",
+	} {
+		_, err := runDiff(context.Background(), req(t, dir, map[string]any{"commit": "nosuch"}).WithSurface(sf))
+		if verr := view.AsError(err, "x"); err == nil || verr.Hint != want {
+			t.Errorf("over %q: %v, want the hint %q", sf, err, want)
+		}
+	}
+}
+
 // A commit whose patch is empty answers an empty patch, and says why only to
 // a person: the sentence was the body, so `rta git diff --commit <empty> >
 // x.patch` wrote it into the patch.
