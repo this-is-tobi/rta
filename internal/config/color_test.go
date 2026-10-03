@@ -1,6 +1,9 @@
 package config
 
 import (
+	"reflect"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/render/theme"
@@ -35,6 +38,30 @@ func TestTheColourGrammarIsTheSameEverywhereItIsWrittenDown(t *testing.T) {
 		if got := theme.HexColor.MatchString(c.in); got != c.ok {
 			t.Errorf("theme.HexColor %q = %v, want %v — the two have drifted", c.in, got, c.ok)
 		}
+	}
+}
+
+// The palette's slot names are written down twice as well — the theme package
+// owns them, and the schema tells an editor which ones a theme: block takes —
+// and the schema once described them as the names a `rta theme` command lists,
+// which is no command. It names them itself now, and this holds the two lists
+// to the same names.
+func TestTheSchemaNamesTheSlotsThePaletteHas(t *testing.T) {
+	want := theme.Fields()
+	got := append([]string(nil), themeKeys...)
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("the schema's theme keys are %v, the palette's are %v", got, want)
+	}
+	block := Schema()["properties"].(map[string]any)["theme"].(map[string]any)
+	description := block["description"].(string)
+	for _, name := range want {
+		if !strings.Contains(description, name) {
+			t.Errorf("the theme block's description does not name %q: %s", name, description)
+		}
+	}
+	if strings.Contains(description, "rta theme") {
+		t.Errorf("the theme block's description sends the reader to a command that does not exist: %s", description)
 	}
 }
 
