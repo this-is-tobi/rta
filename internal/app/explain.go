@@ -89,9 +89,9 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 	if !c.HumanOnly && grant.Required(c, "") {
 		need := "yes — a person must run `rta grant allow " + c.ID + "`"
 		if c.Scope != "" {
-			need += ", optionally naming one " + c.Scope
+			need += ", optionally naming " + oneOf(c, c.Scope)
 			for _, also := range c.ScopeAlso {
-				need += " and one " + also
+				need += " and " + oneOf(c, also)
 			}
 		}
 		pairs = append(pairs, view.Pair{Key: "grant required (mcp)", Value: need})
@@ -250,6 +250,18 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 		})
 	}
 	return view.KeyValue{Pairs: pairs}
+}
+
+// oneOf is the input a grant narrows to, as "one key", or "one of the
+// targets" for an input that holds a list: cert.expiry takes several hosts and
+// a grant names one of them, and "one targets" read as a misprint.
+func oneOf(c plugin.Capability, name string) string {
+	for _, f := range c.Inputs {
+		if f.Name == name && (f.Type == plugin.StringSlice || f.Type == plugin.SecretSlice) {
+			return "one of the " + name
+		}
+	}
+	return "one " + name
 }
 
 // dashboardRow says what the TUI's landing screen does with this capability:
