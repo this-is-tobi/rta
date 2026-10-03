@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -120,5 +121,33 @@ func TestAnEmptyPageIsASentenceNotAnEmptyContents(t *testing.T) {
 	}
 	if meta := strings.TrimSpace(plain(m.resultMeta())); strings.HasSuffix(meta, "·") {
 		t.Errorf("meta = %q, want no separator before an empty list of titles", meta)
+	}
+}
+
+// A narrow pane drops the line's counts, not its warning. At forty columns the
+// pane clipped the right end of "read · idempotent · 15 of 463 rows · ⚠ partial
+// (1 warning)", which is the one part saying the answer is not all there.
+func TestANarrowResultLineKeepsItsWarning(t *testing.T) {
+	c := plugin.Capability{ID: "sys.ps", Safety: plugin.Read, Idempotent: true}
+	tbl := view.Table{
+		Columns:  []view.Column{{Name: "PID"}},
+		Rows:     [][]string{{"1"}, {"2"}},
+		Total:    463,
+		Warnings: []view.Error{{Code: "sys.ps.denied", Message: "a process could not be read"}},
+	}
+	m := Model{current: c, result: resultMsg{cap: c, view: tbl}}
+	for _, width := range []int{36, 30, 24} {
+		m.viewport.SetWidth(width)
+		got := plain(m.resultMeta())
+		if !strings.Contains(got, "⚠ partial (1 warning)") {
+			t.Errorf("at %d columns the warning went: %q", width, got)
+		}
+		if w := lipgloss.Width(got); w > width {
+			t.Errorf("at %d columns the line is %d wide: %q", width, w, got)
+		}
+	}
+	m.viewport.SetWidth(200)
+	if got := plain(m.resultMeta()); !strings.Contains(got, "read · idempotent · 2 of 463 rows") {
+		t.Errorf("a wide pane lost its counts: %q", got)
 	}
 }

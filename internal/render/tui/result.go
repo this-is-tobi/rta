@@ -129,8 +129,8 @@ func (m Model) resultMeta() string {
 	if m.result.err != nil {
 		return ""
 	}
-	sep := theme.Subtle.Render(" · ")
 	parts := []string{theme.StatusStyle(string(m.current.Safety)).Render(string(m.current.Safety))}
+	warn := ""
 	if m.current.Idempotent {
 		parts = append(parts, theme.Subtle.Render("idempotent"))
 	}
@@ -154,7 +154,7 @@ func (m Model) resultMeta() string {
 		// on its own and as partial inside a page — the grant roster among
 		// them, flat until a role stood.
 		if head := warningsHead(v.Warnings); head != "" {
-			parts = append(parts, theme.WarnText.Render(head))
+			warn = theme.WarnText.Render(head)
 		}
 	case view.KeyValue:
 		parts = append(parts, theme.Subtle.Render(format.CountOf(len(v.Pairs), "field")))
@@ -189,10 +189,30 @@ func (m Model) resultMeta() string {
 		// and a second copy here drew every one of them twice — in a
 		// narrower block that truncated the messages the first copy wrapped.
 		if head := warningsHead(pageWarnings(v)); head != "" {
-			parts = append(parts, theme.WarnText.Render(head))
+			warn = theme.WarnText.Render(head)
 		}
 	}
-	return " " + strings.Join(parts, sep)
+	return " " + fitMeta(parts, warn, m.viewport.Width())
+}
+
+// fitMeta joins the context line's parts, and when they are wider than the
+// pane drops them from the right, the safety class last, so a long line loses
+// its counts rather than being cut mid-word. The warning is held back and
+// always kept: it says "you are not looking at all of it", and at forty
+// columns it was the part the pane clipped, in favour of "read · idempotent".
+func fitMeta(parts []string, warn string, width int) string {
+	sep := theme.Subtle.Render(" · ")
+	for {
+		all := parts
+		if warn != "" {
+			all = append(append([]string{}, parts...), warn)
+		}
+		line := strings.Join(all, sep)
+		if width <= 0 || lipgloss.Width(line)+1 <= width || len(parts) == 0 {
+			return line
+		}
+		parts = parts[:len(parts)-1]
+	}
 }
 
 // warningsHead is what the line above the fold says of the warnings under
