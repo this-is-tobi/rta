@@ -3,9 +3,11 @@ package tui
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 )
 
@@ -153,5 +155,42 @@ func TestSaveThemeReportsWhatApplyCouldNotHonour(t *testing.T) {
 	// live palette.
 	if got := theme.Current()["primary"]; got == "definitely-not-hex" {
 		t.Errorf("an invalid value reached the live palette: %q", got)
+	}
+}
+
+// A swatch and its name are one unit however narrow the terminal: a plain
+// soft wrap broke the strip between "████" and the word beside it, leaving a
+// line that began with a name and read as the swatch of the line above.
+func TestThePreviewStripNeverPartsASwatchFromItsName(t *testing.T) {
+	resetTheme(t)
+	for _, width := range []int{30, 40, 60, 200} {
+		m := New(registry.New(), config.Dashboard{}, nil)
+		m.width, m.height = width, 40
+		m.themeForm, m.mode = newThemeForm(nil), modeTheme
+		m.fitThemeForm()
+		rows := strings.Split(plain(m.themeView()), "\n")
+		seen := 0
+		// The strip is the first block of the panel's body, after its blank
+		// first line and up to the next blank one.
+		for _, row := range rows[2:] {
+			row = strings.TrimSuffix(strings.TrimPrefix(row, "│"), "│")
+			words := strings.Fields(row)
+			if len(words) == 0 {
+				break
+			}
+			if len(words)%2 != 0 {
+				t.Errorf("width %d: line %q does not hold whole swatch-and-name pairs", width, row)
+				continue
+			}
+			for i := 0; i < len(words); i += 2 {
+				if words[i] != "████" && words[i] != "××××" {
+					t.Errorf("width %d: line %q has %q where a swatch belongs", width, row, words[i])
+				}
+				seen++
+			}
+		}
+		if seen != len(themeFieldOrder) {
+			t.Errorf("width %d: %d swatches shown, want %d", width, seen, len(themeFieldOrder))
+		}
 	}
 }
