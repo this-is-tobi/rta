@@ -249,13 +249,13 @@ func loadCerts(ctx context.Context, req plugin.Request, target string, timeout t
 		}
 		return nil, nil, view.Errorf("cert.file.notfound", "no certificate file at %s", target).
 			WithHint("over MCP this reads a PEM or DER file under the server's roots and dials no host; " +
-				"cert.expiry checks a live host, with a grant")
+				req.Surface().CapabilityName("cert.expiry") + " checks a live host, with a grant")
 	}
 	if host, isURL, verr := urlTarget(target); isURL {
 		if verr != nil {
 			return nil, nil, verr
 		}
-		return dialCerts(ctx, host, timeout)
+		return dialCerts(ctx, req.Surface(), host, timeout)
 	}
 	// A target that can only be a path, and is not a file: said so, as what
 	// the reader typed it as. The dial would refuse it as a path, which is
@@ -268,7 +268,7 @@ func loadCerts(ctx context.Context, req plugin.Request, target string, timeout t
 		}
 		return nil, nil, view.Errorf("cert.file.unreadable", "reading %s: %v", target, err)
 	}
-	return dialCerts(ctx, target, timeout)
+	return dialCerts(ctx, req.Surface(), target, timeout)
 }
 
 // urlTarget reads a target written as a URL. An https:// URL is the host and
@@ -321,7 +321,7 @@ func looksLikeFile(target string) bool {
 
 // dialCerts fetches the peer chain from a live host, and never touches the
 // filesystem.
-func dialCerts(ctx context.Context, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, error) {
+func dialCerts(ctx context.Context, sf plugin.Surface, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, error) {
 	addr := target
 	if !strings.Contains(addr, ":") {
 		addr += ":443"
@@ -333,7 +333,8 @@ func dialCerts(ctx context.Context, target string, timeout time.Duration) ([]*x5
 	}
 	if looksLikeFile(target) || looksLikeFile(host) {
 		return nil, nil, view.Errorf("cert.target.notahost", "%q is a file path, not a host[:port]", target).
-			WithHint("cert.expiry checks hosts; cert.inspect, cert.chain and cert.pem read a certificate file that exists")
+			WithHint(sf.CapabilityName("cert.expiry") + " checks hosts; " + sf.CapabilityName("cert.inspect") +
+				" reads a certificate file that exists")
 	}
 	// We are inspecting, not trusting: report what the host presents even if
 	// the chain is invalid, since verification status is part of the output,
@@ -996,7 +997,7 @@ func expiryChain(ctx context.Context, req plugin.Request, target string, timeout
 			}
 			dial = host
 		}
-		chain, state, err = dialCerts(ctx, dial, timeout)
+		chain, state, err = dialCerts(ctx, req.Surface(), dial, timeout)
 	} else {
 		chain, state, err = loadCerts(ctx, req, target, timeout)
 	}

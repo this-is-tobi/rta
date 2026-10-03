@@ -302,6 +302,22 @@ func TestDialFailureIsCodedWithHint(t *testing.T) {
 	}
 }
 
+// A hint that sends the reader to another capability spells it the way the
+// reader's surface does: over MCP the way to check a live host is the
+// cert_expiry tool, and "cert.expiry" is a name that tool list does not hold.
+func TestAHintToCertExpiryIsSpelledForTheSurfaceAsking(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "host.example:443")
+	_, err := runChain(context.Background(), req(map[string]any{"target": missing}).WithSurface(plugin.SurfaceMCP))
+	if ve := view.AsError(err, "x"); ve.Code != "cert.file.notfound" || !strings.Contains(ve.Hint, "`cert_expiry`") {
+		t.Errorf("over MCP: %s %q, want a hint naming the cert_expiry tool", ve.Code, ve.Hint)
+	}
+	_, err = runInspect(context.Background(), req(map[string]any{"target": "host.example.pem:443"}).
+		WithSurface(plugin.SurfaceCLI))
+	if ve := view.AsError(err, "x"); ve.Code != "cert.target.notahost" || !strings.Contains(ve.Hint, "`rta cert expiry`") {
+		t.Errorf("a file mistaken for a host: %s %q, want the hint spelled as a command", ve.Code, ve.Hint)
+	}
+}
+
 // cert was the only network-touching family in the catalogue with no timeout
 // input, so every capability that dials has to declare one — and declare the
 // same one, since a per-capability guess is how `cert inspect` and `cert tls`
