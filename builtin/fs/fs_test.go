@@ -449,12 +449,63 @@ func TestHashMatchesAndSaysSo(t *testing.T) {
 			t.Errorf("expect %q did not match: %q", spelling, got)
 		}
 	}
-	kv = run(t, runHash, map[string]any{"path": path, "algo": "sha256", "expect": "deadbeef"}).(view.KeyValue)
-	if got := pairValue(kv, "match"); !strings.HasPrefix(got, "NO") {
-		t.Errorf("a wrong checksum reported %q", got)
+}
+
+// A file that is not the one described is an error, not a row reading NO
+// beside exit 0: `rta fs hash f --expect $SUM && install f` ran the install
+// on the file it had just found was not the one described. Both checksums are
+// in the message, which is all a reader has to compare.
+func TestAMismatchIsAnErrorCarryingBothChecksums(t *testing.T) {
+	root := fixture(t, map[string]int{"f.bin": 0})
+	path := filepath.Join(root, "f.bin")
+	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if pairValue(kv, "expected") != "deadbeef" {
-		t.Error("a mismatch should show what was expected")
+	sum := sha256.Sum256([]byte("hello"))
+	have := hex.EncodeToString(sum[:])
+	other := strings.Repeat("0", 64)
+
+	_, err := runHash(context.Background(), plugin.NewRequest(
+		map[string]any{"path": path, "algo": "sha256", "expect": "sha256:" + strings.ToUpper(other)}, false, false))
+	verr := view.AsError(err, "x")
+	if err == nil || verr.Code != "fs.hash.mismatch" {
+		t.Fatalf("a wrong checksum: %v, want fs.hash.mismatch", err)
+	}
+	for _, want := range []string{have, other, "sha256"} {
+		if !strings.Contains(verr.Message, want) {
+			t.Errorf("message %q does not hold %q", verr.Message, want)
+		}
+	}
+}
+
+// A checksum no digest of the algorithm can be is refused, not compared. A
+// sha512 sum given to the default sha256 came back "NO — this is not the
+// described file", the verdict that sends somebody to re-download a file that
+// is fine, or to distrust a release that is.
+func TestAChecksumOfAnotherLengthIsRefusedNotCompared(t *testing.T) {
+	root := fixture(t, map[string]int{"f.bin": 4})
+	path := filepath.Join(root, "f.bin")
+	for _, c := range []struct {
+		algo, expect, message, hint string
+	}{
+		{"sha256", strings.Repeat("a", 128), "128 hex digits, where a sha256 is 64", "--algo sha512"},
+		{"sha256", strings.Repeat("a", 40), "40 hex digits, where a sha256 is 64", "--algo sha1"},
+		{"sha512", "sha256:" + strings.Repeat("a", 64), "64 hex digits, where a sha512 is 128", "--algo sha256"},
+		{"sha256", strings.Repeat("a", 63), "63 hex digits, where a sha256 is 64", "cut short"},
+		{"md5", strings.Repeat("a", 32) + "g", "", "takes the checksum itself"},
+	} {
+		_, err := runHash(context.Background(), plugin.NewRequest(
+			map[string]any{"path": path, "algo": c.algo, "expect": c.expect}, false, false))
+		if err == nil {
+			t.Errorf("%s given %q: compared", c.algo, c.expect)
+			continue
+		}
+		verr := view.AsError(err, "x")
+		if verr.Code != "fs.hash.expect" || !strings.Contains(verr.Message, c.message) ||
+			!strings.Contains(verr.Hint, c.hint) {
+			t.Errorf("%s given %q: %v (hint %q), want fs.hash.expect saying %q and %q",
+				c.algo, c.expect, err, verr.Hint, c.message, c.hint)
+		}
 	}
 }
 

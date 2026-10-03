@@ -97,7 +97,10 @@ func Plugin() plugin.Plugin {
 				Idempotent:   true,
 				Description: "Hashes a file and, given `expect`, says plainly whether it matches — " +
 					"which is the actual task, and the one comparing two hex strings by eye is bad " +
-					"at. The comparison is case-insensitive and tolerates the \"sha256:\" prefix and " +
+					"at. A file that is not the one described is an error, so a script's && stops " +
+					"there, and a checksum that cannot be this algorithm's, by its length, is " +
+					"refused and not reported as a mismatch. The comparison is case-insensitive " +
+					"and tolerates the \"sha256:\" prefix and " +
 					"the surrounding whitespace that come with a pasted checksum. It is not a " +
 					"signature check: it says a file is the one somebody described, not that the " +
 					"description came from anybody in particular.",
