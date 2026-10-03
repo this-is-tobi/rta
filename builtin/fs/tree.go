@@ -341,6 +341,11 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("fs.hash.expect", "%q holds no checksum to compare against", rawExpect).
 			WithHint(req.Surface().InputName("expect") + " takes the checksum itself, bare or as shasum prints it")
 	}
+	if expect != "" {
+		if verr := checkChecksumShape(req.Surface(), algo, expect, newHash().Size()); verr != nil {
+			return nil, verr
+		}
+	}
 
 	// Stat'ed first for the refusal a directory gets, which names the
 	// capability that measures one. What is opened is judged again by
@@ -379,23 +384,59 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Key: "size", Value: humanBytes(info.Size())},
 		{Key: algo, Value: sum},
 	}
+	if expect != "" && expect != sum {
+		// An error, where it was a row reading NO beside exit 0. Comparing two
+		// 64-character hex strings is the point of the capability, and a
+		// verdict nothing can branch on is not one: `rta fs hash f --expect
+		// $SUM && install f` ran the install on the file it had just found
+		// was not the one described.
+		return nil, view.Errorf("fs.hash.mismatch", "the %s of %s is %s, not the expected %s", algo, path, sum, expect).
+			WithHint("the file is not the one described: download it again, and check where the checksum came from")
+	}
 	if expect != "" {
-		// The point of the capability. Comparing two 64-character hex strings
-		// by eye is a task humans are measurably bad at, and the failure is
-		// silent.
-		if expect == sum {
-			pairs = append(pairs, view.Pair{Key: "match", Value: "yes — the file is the one described"})
-		} else {
-			pairs = append(pairs,
-				view.Pair{Key: "match", Value: "NO — this is not the described file"},
-				view.Pair{Key: "expected", Value: expect})
-		}
+		pairs = append(pairs, view.Pair{Key: "match", Value: "yes — the file is the one described"})
 	}
 	if weakHashes[algo] {
 		pairs = append(pairs, view.Pair{Key: "note", Value: algo +
 			" detects accidental corruption; it does not detect a file somebody wanted to match"})
 	}
 	return view.KeyValue{Pairs: pairs}, nil
+}
+
+// checkChecksumShape refuses an expected checksum that no digest of algo can
+// be: not hex, or not as long as one. It is compared with nothing, because
+// the comparison it would lose is not the one that was asked for.
+//
+// **A digest of another algorithm was reported as a mismatch.** A sha512 sum
+// given to the default sha256 came back "NO — this is not the described
+// file", the one verdict that sends somebody to re-download a file that is
+// fine, or worse to distrust a release that is. The two lengths differ for
+// every algorithm offered, so the length says which one the checksum is, and
+// the refusal names it.
+func checkChecksumShape(sf plugin.Surface, algo, expect string, size int) *view.Error {
+	for _, r := range expect {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return view.Errorf("fs.hash.expect", "%q is not a checksum: it holds %q, outside 0-9 and a-f", expect, r).
+				WithHint(sf.InputName("expect") + " takes the checksum itself, bare or as shasum prints it")
+		}
+	}
+	if len(expect) == size*2 {
+		return nil
+	}
+	var same []string
+	for name, newHash := range hashers {
+		if newHash().Size()*2 == len(expect) {
+			same = append(same, name)
+		}
+	}
+	sort.Strings(same)
+	hint := "a checksum is given whole; one cut short compares as different from the file"
+	if len(same) > 0 {
+		hint = "that is the length of a " + strings.Join(same, " or ") + " checksum: give " +
+			sf.InputName("algo") + " " + same[0]
+	}
+	return view.Errorf("fs.hash.expect", "the expected checksum is %s, where a %s is %d",
+		format.CountOf(len(expect), "hex digit"), algo, size*2).WithHint(hint)
 }
 
 // normalizeChecksum takes a checksum as it was pasted: any case, wrapped in
