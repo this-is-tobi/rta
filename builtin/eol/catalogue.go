@@ -19,7 +19,8 @@ func productsCapability() plugin.Capability {
 		Idempotent: true,
 		Description: "Lists the products endoflife.date tracks, with the aliases eol.check " +
 			"and eol.watch accept for each. A term narrows the list to products whose " +
-			"name, label or alias contains it; leave it out to see the whole catalogue.",
+			"name, label or alias contains it. Without one the first products are listed and the " +
+			"total says how many there are; `limit` shows more.",
 		NoPreview: true,
 		Refresh:   tileRefresh,
 		Inputs: []plugin.Field{
@@ -27,6 +28,11 @@ func productsCapability() plugin.Capability {
 				Help: "part of a name, label or alias — postgres, kube, ubuntu"},
 			{Name: "category", Type: plugin.String,
 				Help: "only this category — database, os, framework, lang, …"},
+			// Bounded because the catalogue is some five hundred products, 35 KB
+			// of rows, and a model that leaves the term out to see what there
+			// is pays for all of it, in tokens, to read the first screen of it.
+			{Name: "limit", Type: plugin.Int, Config: "catalogue.limit", Default: 50, Min: 1, Max: 1000,
+				Help: "how many products to list"},
 		},
 		Run: runProducts,
 	}
@@ -62,9 +68,12 @@ func runProductsAt(ctx context.Context, req plugin.Request, base string) (view.V
 			e.Category, strings.Join(e.Tags, ", ")})
 	}
 	t.Total = len(t.Rows)
+	if limit := req.Int("limit"); limit > 0 && len(t.Rows) > limit {
+		t.Rows = t.Rows[:limit]
+	}
 	if len(t.Rows) == 0 {
 		return nil, view.Errorf("eol.products.none", "nothing in the catalogue matches %q", req.String("term")).
-			WithHint(req.Surface().CapabilityName("eol.products") + " with no term lists everything endoflife.date tracks")
+			WithHint(req.Surface().CapabilityName("eol.products") + " with no term lists what endoflife.date tracks")
 	}
 	return t, nil
 }
