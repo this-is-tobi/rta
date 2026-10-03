@@ -1,10 +1,12 @@
 package http
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"fmt"
+	stdnet "net"
 	"net/url"
 	"runtime"
 	"strings"
@@ -57,6 +59,28 @@ func TestARequestRefusedForAnUntrustedCertificatePointsAtWhatTheServerPresented(
 	mcp := requestFailed(plugin.SurfaceMCP, "GET", "https://self-signed.example.org/x", err)
 	if !strings.Contains(mcp.Hint, "cert_chain") || !strings.Contains(mcp.Hint, "self-signed.example.org") {
 		t.Errorf("hint %q over MCP", mcp.Hint)
+	}
+}
+
+// A name that did not resolve is told as that, with the tool that asks the
+// resolver; a deadline is offered only to a request that ran out of time. Both
+// were "check the URL is reachable; --timeout extends the deadline", and a
+// longer deadline does not make a mistyped host exist or a refused port listen.
+func TestARequestHintFollowsHowFarItGot(t *testing.T) {
+	unresolved := &url.Error{Op: "Get", URL: "https://nope.example", Err: &stdnet.DNSError{Err: "no such host", Name: "nope.example", IsNotFound: true}}
+	verr := requestFailed(plugin.SurfaceCLI, "GET", "https://nope.example:8443/x", unresolved)
+	if strings.Contains(verr.Hint, "timeout") || !strings.Contains(verr.Hint, "`rta net dns nope.example`") {
+		t.Errorf("hint %q for a name that did not resolve", verr.Hint)
+	}
+
+	refused := &url.Error{Op: "Get", URL: "https://x.example", Err: errors.New("dial tcp 192.0.2.1:443: connect: connection refused")}
+	if h := requestFailed(plugin.SurfaceCLI, "GET", "https://x.example", refused).Hint; strings.Contains(h, "timeout") {
+		t.Errorf("hint %q offers a longer deadline to a connection that was refused", h)
+	}
+
+	late := &url.Error{Op: "Get", URL: "https://x.example", Err: context.DeadlineExceeded}
+	if h := requestFailed(plugin.SurfaceCLI, "GET", "https://x.example", late).Hint; !strings.Contains(h, "--timeout") {
+		t.Errorf("hint %q does not offer the deadline to a request that ran out of time", h)
 	}
 }
 

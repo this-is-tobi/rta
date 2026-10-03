@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	stdnet "net"
 	stdhttp "net/http"
 	"net/http/httptrace"
 	neturl "net/url"
@@ -195,7 +196,25 @@ func requestFailed(sf plugin.Surface, method, url string, err error) *view.Error
 		}
 		return verr.WithHint(hint)
 	}
-	return verr.WithHint("check the URL is reachable; " + sf.InputName("timeout") + " extends the deadline")
+	// A name the resolver could not answer for sent nothing: a longer deadline
+	// cannot make a mistyped host exist, and the tool that says whether the name
+	// or the lookup failed is this binary's own.
+	var dnsErr *stdnet.DNSError
+	if errors.As(err, &dnsErr) {
+		hint := "the name did not resolve, so nothing was sent"
+		if parsed, perr := neturl.Parse(url); perr == nil && parsed.Hostname() != "" {
+			hint += " — `" + sf.Call("net.dns", plugin.Arg{Name: "name", Value: parsed.Hostname(), Positional: true}) +
+				"` asks the resolver for it directly"
+		}
+		return verr.WithHint(hint)
+	}
+	// The deadline is only what a request that ran out of time can change; a
+	// refused or reset connection answered at once.
+	var netErr stdnet.Error
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
+		return verr.WithHint("check the URL is reachable; " + sf.InputName("timeout") + " extends the deadline")
+	}
+	return verr.WithHint("check the URL is reachable")
 }
 
 // blockedRefusal is the refusal for a request err says was stopped by the
