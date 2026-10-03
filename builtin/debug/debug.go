@@ -44,7 +44,9 @@ func Plugin() plugin.Plugin {
 					"bracketed paste, DEC line drawing), the requests a terminal answers into " +
 					"the input as if typed, and the OSC " +
 					"sequences most worth knowing about on sight: window title, hyperlink " +
-					"target, and the system clipboard write (decoded, not left as base64); " +
+					"target, the system clipboard write (decoded, not left as base64), the " +
+					"colour queries a terminal answers into the input, and the working-directory, " +
+					"shell-integration and notification commands; " +
 					"tmux passthrough and kitty graphics strings. Also names the kinds of " +
 					"character known to hide themselves: bidi overrides (the Trojan Source " +
 					"trick), zero-width and filler characters, 8-bit C1 controls, and tag " +

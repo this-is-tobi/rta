@@ -283,11 +283,11 @@ func TestOscClipboardInvalidBase64DoesNotCrash(t *testing.T) {
 // before its first ';' had its number read as missing too.
 func TestAnOscCommandIsReadFromTheSequence(t *testing.T) {
 	for input, want := range map[string]string{
-		"\x1b]\x07":      "OSC with no command number",
-		"\x1b]x;y\x07":   "OSC with no command number",
-		"\x1b]0":         "Once terminated: set window/icon title",
-		"\x1b]52":        "Once terminated: clipboard write",
-		"\x1b]777;x\x07": "OSC 777",
+		"\x1b]\x07":       "OSC with no command number",
+		"\x1b]x;y\x07":    "OSC with no command number",
+		"\x1b]0":          "Once terminated: set window/icon title",
+		"\x1b]52":         "Once terminated: clipboard write",
+		"\x1b]5555;x\x07": "OSC 5555",
 	} {
 		got := explainAnsi(input).Rows[0][2]
 		if !strings.Contains(got, want) || strings.Contains(got, "2147483647") {
