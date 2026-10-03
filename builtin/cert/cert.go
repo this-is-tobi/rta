@@ -151,7 +151,7 @@ func Plugin() plugin.Plugin {
 				Summary:    "Check certificate expiry for one or more hosts",
 				Safety:     plugin.Read,
 				Idempotent: true,
-				// `targets` is a StringSlice (see expiryRow's comment for why —
+				// `targets` is a StringSlice (see expiryChain's comment for why —
 				// no Path type exists for a slice), which means it never passes
 				// through the MCP path gate at all: unlike targetField above,
 				// nothing rewrites or refuses it, so this dials whatever host an
@@ -166,9 +166,11 @@ func Plugin() plugin.Plugin {
 					"the date, the time left, and a status — ok, WARN once it ends within " +
 					"`warn-days`, EXPIRED once it has, INVALID before it begins, and a host that still " +
 					"negotiates TLS 1.0 or 1.1 is flagged beside the date. One row per host; a host " +
-					"that cannot be reached is its row's error and does not stop the rest. It reads " +
-					"the leaf alone and trusts nothing: `cert.inspect` is where a chain is " +
-					"judged.\n\n" +
+					"that cannot be reached is its row's error and does not stop the rest. It grades " +
+					"the leaf and the intermediates the host sends, and the one that ends first " +
+					"sets the date and the status, which names it when it is not the leaf; a root " +
+					"sent along is the client's store to judge. It trusts nothing: `cert.inspect` " +
+					"is where a chain is judged.\n\n" +
 					"Over MCP it needs a grant, one per host listed, for the reason `net.probe` does: " +
 					"the hosts are the caller's choice, and what a certificate says about itself — " +
 					"subject, issuer, DNS names — is read as tool output the same way a banner is.",
@@ -944,51 +946,18 @@ feed:
 // expiryRow grades one target. An unreachable host is a row saying so rather
 // than an error that throws away the thirty-nine hosts that did answer.
 func expiryRow(ctx context.Context, target string, warnDays int, timeout time.Duration) []string {
-	// dialCerts, not loadCerts. Sharing loadCerts gave this capability a
-	// file-reading branch its own Help never claimed ("hosts to check
-	// (host[:port])") — and `targets` is a StringSlice, which the MCP path
-	// gate cannot hook because it only looks at Field.Path. So over MCP, with
-	// no flag and no grant, cert.expiry answered "does this path exist, is it
-	// PEM, is it readable, is it a directory" for anywhere on the machine
-	// while its sibling cert.inspect was refused for the same string.
-	//
-	// Removing the branch rather than retyping the field: there is no path
-	// type for a slice today, the Help already describes a host, and a
-	// capability whose declared inputs cannot express what it does is the
-	// thing that made this invisible.
-	dial := target
-	if host, isURL, verr := urlTarget(target); isURL {
-		if verr != nil {
-			return []string{target, "-", "-", "ERROR: " + verr.Message}
-		}
-		dial = host
+	chain, state, verr := expiryChain(ctx, target, timeout)
+	if verr != nil {
+		return []string{target, "-", "-", "ERROR: " + verr.Message}
 	}
-	certs, state, err := dialCerts(ctx, dial, timeout)
-	if err != nil {
-		return []string{target, "-", "-", "ERROR: " + view.AsError(err, "cert.load").Message}
-	}
-	leaf := certs[0]
-	status := "ok"
-	now := time.Now()
-	switch {
-	// First, and not ok: a certificate that is not valid yet fails every
-	// client's check as surely as an expired one, and read ok here for as
-	// long as its end date was far off. INVALID is a word the table colours
-	// as the failure it is.
-	case now.Before(leaf.NotBefore):
-		status = "INVALID — not valid until " + leaf.NotBefore.Format("2006-01-02")
-	case now.After(leaf.NotAfter):
-		status = "EXPIRED"
-	case x509check.Expiring(leaf.NotAfter, warnDays):
-		status = fmt.Sprintf("WARN <%dd", warnDays)
-	}
+	decider, status := gradeChain(chain, time.Now(), warnDays)
 	// A retired protocol is the host's weakness, graded beside its
 	// certificate's dates: the handshake takes one so the certificate can be
 	// read at all (x509check.InspectionTLS), and the row says what it took
 	// rather than reading ok about a host that speaks TLS 1.0.
-	if x509check.DeprecatedTLS(state.Version) {
+	if state != nil && x509check.DeprecatedTLS(state.Version) {
 		weak := tls.VersionName(state.Version) + " (deprecated)"
-		if status == "ok" {
+		if strings.HasPrefix(status, "ok") {
 			status = "WARN " + weak
 		} else {
 			status += ", " + weak
@@ -996,10 +965,87 @@ func expiryRow(ctx context.Context, target string, warnDays int, timeout time.Du
 	}
 	return []string{
 		target,
-		leaf.NotAfter.Format("2006-01-02"),
-		humanUntil(leaf.NotAfter),
+		decider.NotAfter.Format("2006-01-02"),
+		humanUntil(decider.NotAfter),
 		status,
 	}
+}
+
+// expiryChain is where a target's certificates come from: a host is dialled.
+// `targets` is a StringSlice, which the MCP path gate cannot hook because it
+// only looks at Field.Path, so a file branch here answered "does this path
+// exist, is it PEM, is it readable, is it a directory" for anywhere on the
+// machine while its sibling cert.inspect was refused for the same string.
+func expiryChain(ctx context.Context, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, *view.Error) {
+	dial := target
+	if host, isURL, verr := urlTarget(target); isURL {
+		if verr != nil {
+			return nil, nil, verr
+		}
+		dial = host
+	}
+	chain, state, err := dialCerts(ctx, dial, timeout)
+	if err != nil {
+		return nil, nil, view.AsError(err, "cert.load")
+	}
+	if len(chain) == 0 {
+		return nil, nil, view.Errorf("cert.none", "no certificate in %s", target)
+	}
+	return chain, state, nil
+}
+
+// gradeChain reads a presented chain the way a client does: the first
+// certificate that fails decides, and when none has, the one that ends soonest
+// does. It returns that certificate, because the row's date and time left are
+// its, and a status that names it when it is not the leaf.
+//
+// **The leaf alone is not the answer.** An intermediate two days from its end
+// under a leaf with eighty read ok, and the outage it caused arrived with no
+// warning from the one command that exists to give it. A self-signed
+// certificate past the leaf is a root the host sent along; whether it is
+// trusted is the client's store and its end is the store's to manage, so it
+// does not grade the host (a self-signed leaf still does: it is the target).
+func gradeChain(chain []*x509.Certificate, now time.Time, warnDays int) (*x509.Certificate, string) {
+	graded := []*x509.Certificate{chain[0]}
+	for _, c := range chain[1:] {
+		if !bytes.Equal(c.RawIssuer, c.RawSubject) {
+			graded = append(graded, c)
+		}
+	}
+	// Not valid yet comes first, and is not ok: such a certificate fails every
+	// client's check as surely as an expired one, and read ok here for as long
+	// as its end date was far off. INVALID is a word the table colours as the
+	// failure it is.
+	for _, c := range graded {
+		if now.Before(c.NotBefore) {
+			return c, namedIn(chain, c, "INVALID — not valid until "+c.NotBefore.Format("2006-01-02"))
+		}
+	}
+	decider := graded[0]
+	for _, c := range graded[1:] {
+		if c.NotAfter.Before(decider.NotAfter) {
+			decider = c
+		}
+	}
+	status := "ok"
+	switch {
+	case now.After(decider.NotAfter):
+		status = "EXPIRED"
+	case x509check.Expiring(decider.NotAfter, warnDays):
+		status = fmt.Sprintf("WARN <%dd", warnDays)
+	}
+	return decider, namedIn(chain, decider, status)
+}
+
+// namedIn says which certificate a status is about when it is not the
+// target's own, so a date that is not the leaf's is never left to be read as
+// the leaf's. "ok" stays bare for the leaf and names the intermediate for the
+// others, since the date beside it is theirs.
+func namedIn(chain []*x509.Certificate, c *x509.Certificate, status string) string {
+	if c == chain[0] {
+		return status
+	}
+	return fmt.Sprintf("%s (intermediate %s)", status, nameOf(c))
 }
 
 func runTLS(ctx context.Context, req plugin.Request) (view.View, error) {
