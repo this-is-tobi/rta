@@ -322,7 +322,7 @@ There is deliberately no coercion. Reading `"true"` as true would then have to a
 
 `rta profile set` cannot produce this: a flag argument is always text, so it converts to the declared type before writing, and refuses what will not convert.
 
-The same rule covers the base `plugins:` block: `rta doctor` reports the line, and every call reading it is refused, naming the key it came from under the heading you wrote — at a terminal, `` `rta mysql status` takes text for --tls, not a boolean, which the config's plugins.mysql@f5074594.tls sets ``.
+The same rule covers the base `plugins:` block: `rta doctor` reports the line, and every call reading it is refused, naming the key it came from under the heading you wrote — at a terminal, `` `rta mysql status` takes text for --tls, not a boolean, which the config's plugins.mysql@f5074594a1c3.tls sets ``.
 
 A number of the right shape outside what every capability reading its key takes is different: each capability holds it to its own nearest bound, so the profile still resolves — but not as written. `rta profile set` refuses to write one; written by hand, `rta profile list` shows the profile as `warn` — or as `on`, with the same note, while it is switched on — and `rta profile show` and `rta doctor` name the range to write instead.
 
@@ -449,7 +449,7 @@ rta doctor
 ```
 
 ```
-profile   ok     staging → pg@685186a7, s3@a586c1f1 — pg.password from kv:staging-db-password
+profile   ok     staging → pg@685186a7f1c2, s3@a586c1f19b04 — pg.password from kv:staging-db-password
 profile   info   staging is switched on with no deadline — while it is,
                  `rta mcp serve` refuses every other profile, whatever grants exist
 ```

@@ -500,3 +500,29 @@ func TestTheDocsQuoteTheConfinementRowAlike(t *testing.T) {
 		t.Errorf("the docs quote the confinement row with different numbers of pinned directories: %v", pagesByCount)
 	}
 }
+
+// A plugin's build is named by the first twelve characters of its digest
+// everywhere rta prints one — `rta doctor`, `rta profile show`, the key a
+// config block is filed under, the error that names it — and the profiles
+// chapter quoted two of them at eight, `pg@685186a7` and `mysql@f5074594`,
+// beside recipes that quoted the same kind of name at twelve. Somebody
+// copying a key out of the chapter into their config got a block that matched
+// no build.
+func TestADigestTheDocsQuoteIsSpelledAtTheLengthRtaPrintsIt(t *testing.T) {
+	root := repoRoot(t)
+	pin := regexp.MustCompile(`\b[a-z][a-z0-9]*(?:/[a-z0-9-]+)?@([0-9a-f]{6,64})\b`)
+	quoted := 0
+	for _, page := range markdownPages(t, root) {
+		for i, line := range strings.Split(readDoc(t, root, page), "\n") {
+			for _, m := range pin.FindAllStringSubmatch(line, -1) {
+				quoted++
+				if len(m[1]) != 12 {
+					t.Errorf("%s:%d quotes %q, a digest of %d characters; rta prints twelve", page, i+1, m[0], len(m[1]))
+				}
+			}
+		}
+	}
+	if quoted < 5 {
+		t.Fatalf("found %d quoted plugin digests, want the half dozen the docs hold; has the spelling moved?", quoted)
+	}
+}
