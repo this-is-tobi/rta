@@ -600,10 +600,17 @@ func inProgress(repo *git.Repository) string {
 // counts fit in the same line and answer the question the number was standing
 // in for — whether there is anything to commit, anything to add, or only
 // build output nobody has ignored yet.
+//
+// A path a merge left unresolved is counted once, as unmerged, and first: it
+// is neither staged nor merely modified, and it is the count that says the
+// next step is to resolve something rather than to commit.
 func worktreeSummary(status git.Status) string {
-	staged, changed, untracked := 0, 0, 0
+	unmerged, staged, changed, untracked := 0, 0, 0, 0
 	for _, s := range status {
 		switch {
+		case isUnmerged(s):
+			unmerged++
+			continue
 		case s.Worktree == git.Untracked && s.Staging == git.Untracked:
 			untracked++
 			continue
@@ -614,10 +621,13 @@ func worktreeSummary(status git.Status) string {
 			changed++
 		}
 	}
-	if staged+changed+untracked == 0 {
+	if unmerged+staged+changed+untracked == 0 {
 		return "clean"
 	}
 	var parts []string
+	if unmerged > 0 {
+		parts = append(parts, fmt.Sprintf("%d unmerged", unmerged))
+	}
 	if staged > 0 {
 		parts = append(parts, fmt.Sprintf("%d staged", staged))
 	}
