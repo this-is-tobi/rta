@@ -1635,6 +1635,14 @@ func ReadAfter(seq int64, limit int) ([]Entry, error) {
 // Recent is every entry written at or after since, oldest first, bounded by
 // time rather than by count: a tile that says "calls in the last hour" must
 // not stop counting at the last five hundred rows.
+//
+// It reads each segment from its end and stops at the first block that
+// reaches back past since, because the dashboard asks this every few seconds
+// for the last hour and the newest segment is up to eight megabytes of days:
+// parsing all of it to count a few hundred rows was 22 ms and 48 MiB of
+// garbage per ask on a segment that had nearly filled. The record is written
+// in time order, which is the assumption the older segments were already
+// skipped on, here applied a block at a time.
 func Recent(since time.Time) ([]Entry, error) {
 	files, err := Segments()
 	if err != nil {
@@ -1642,20 +1650,91 @@ func Recent(since time.Time) ([]Entry, error) {
 	}
 	var out []Entry
 	for i := len(files) - 1; i >= 0; i-- {
-		es, err := entriesIn(files[i])
+		es, reachedBack, err := entriesSince(files[i], since)
 		if err != nil {
 			return nil, err
 		}
-		var keep []Entry
-		for _, e := range es {
-			if !e.At.Before(since) {
-				keep = append(keep, e)
-			}
-		}
-		out = append(keep, out...)
-		if len(es) > 0 && es[0].At.Before(since) {
+		out = append(es, out...)
+		if reachedBack {
 			break
 		}
 	}
 	return out, nil
+}
+
+// recentBlock is how much of a segment's end entriesSince reads at a time:
+// a few hundred entries, so the last hour of a busy one is a block or two and
+// the block that reaches back past it costs little more than the rest. A
+// variable so a test can make lines straddle blocks without writing a
+// quarter of a megabyte to do it.
+var recentBlock int64 = 256 << 10
+
+// entriesSince is the entries of one segment written at or after since,
+// oldest first, read backwards a block at a time. reachedBack says a block
+// began with an entry from before since, so nothing earlier in this file or
+// in an earlier one can be wanted.
+//
+// A line that straddles two blocks is joined from its halves before it is
+// parsed, and one longer than a block — a row written before rows were
+// bounded — simply keeps growing the carried half until its start is found.
+func entriesSince(path string, since time.Time) (kept []Entry, reachedBack bool, err error) {
+	f, err := atomicfile.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, false, err
+	}
+	var blocks [][]Entry
+	var carry []byte
+	for end := info.Size(); end > 0 && !reachedBack; {
+		start := max(end-recentBlock, 0)
+		data := make([]byte, int(end-start)+len(carry))
+		if _, err := f.ReadAt(data[:end-start], start); err != nil && !errors.Is(err, io.EOF) {
+			return nil, false, err
+		}
+		copy(data[end-start:], carry)
+		end = start
+		if start > 0 {
+			// Up to the first newline is the tail of a line that began in the
+			// block before this one; it waits for its start.
+			cut := bytes.IndexByte(data, '\n')
+			if cut < 0 {
+				carry = data
+				continue
+			}
+			carry = data[:cut]
+			data = data[cut+1:]
+		}
+		var block []Entry
+		for _, line := range bytes.Split(data, []byte{'\n'}) {
+			if len(bytes.TrimSpace(line)) == 0 {
+				continue
+			}
+			var e Entry
+			// A corrupt line is skipped here as entriesIn skips it; Verify is
+			// what reports it.
+			if json.Unmarshal(line, &e) != nil {
+				continue
+			}
+			block = append(block, e)
+		}
+		if len(block) > 0 && block[0].At.Before(since) {
+			reachedBack = true
+		}
+		blocks = append(blocks, block)
+	}
+	for i := len(blocks) - 1; i >= 0; i-- {
+		for _, e := range blocks[i] {
+			if !e.At.Before(since) {
+				kept = append(kept, e)
+			}
+		}
+	}
+	return kept, reachedBack, nil
 }
