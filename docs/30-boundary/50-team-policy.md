@@ -197,6 +197,7 @@ So `rta mcp serve` says which one it found, next to the path roots and for the s
 ```
 rta mcp server listening on stdio
 path arguments confined to: /Users/you/projects
+record: /Users/you/.local/share/rta/agent-log.jsonl (session 4a030411)
 rta: team policy: /Users/you/projects/.rta-policy.yaml
 ```
 
