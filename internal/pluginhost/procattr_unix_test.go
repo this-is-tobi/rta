@@ -16,6 +16,17 @@ import (
 	"github.com/this-is-tobi/rta/internal/shutdown"
 )
 
+// scriptRunning is a plugin-shaped file that hands what it is given to a
+// system program: a script, which only a platform with shebangs can run.
+func scriptRunning(t *testing.T, program string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), BinaryName("rta-plugin-script"))
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexec "+program+" \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 // go-plugin kills the process it started and nothing else. A plugin that
 // shells out — which is most of the interesting ones, and the entire exec
 // tier — leaves its children running when it dies: still holding sockets,
@@ -25,7 +36,7 @@ import (
 // the plugin itself exit, so a test that only checked the plugin would pass
 // against the broken version.
 func TestReapTakesTheWholeProcessTree(t *testing.T) {
-	id, err := Identify("/bin/sh")
+	id, err := Identify(scriptRunning(t, "/bin/sh"))
 	if err != nil {
 		t.Skipf("no /bin/sh: %v", err)
 	}
@@ -43,7 +54,7 @@ func TestReapTakesTheWholeProcessTree(t *testing.T) {
 	// sleep even though the child it started has long exited — which is the
 	// same reason a real plugin's orphan can wedge a host that waits on
 	// output rather than on the process.
-	cmd := buildCmd(id, deny, []string{"-c", "sleep 60 >/dev/null 2>&1 & echo $!; exit 0"})
+	cmd := stagedCmd(t, id, deny, []string{"-c", "sleep 60 >/dev/null 2>&1 & echo $!; exit 0"})
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("spawning: %v", err)
@@ -80,7 +91,7 @@ func TestAPluginGetsItsOwnProcessGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := buildCmd(id, deny, []string{"-c", "sleep 5"})
+	cmd := stagedCmd(t, id, deny, []string{"-c", "sleep 5"})
 	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
 		t.Fatal("Setpgid was not requested, so reap would signal rta's own group")
 	}
