@@ -232,6 +232,67 @@ func TestTheInstallationPageQuotesDoctorsCounts(t *testing.T) {
 	}
 }
 
+// The first-party plugins are counted in words, in four places, and the writing
+// chapter's "Ten first-party plugins live in rta-plugins" outlived the twelve
+// the other three pages named: the page a plugin author reads to see what has
+// been built before them undercounted it by two, with a table beside the
+// sentence listing all twelve. Their source lives in another repository, so
+// the registry cannot be asked; the README's own list is the one every other
+// statement is held to — each "<number> first-party plugins" in the docs, and
+// the table of them on the plugins page, must agree with how many it names.
+func TestTheDocsCountTheFirstPartyPluginsAlike(t *testing.T) {
+	root := repoRoot(t)
+	list := regexp.MustCompile("(?s)first-party plugins live in .*? as proof the contract works — (.*?) — each ")
+	m := list.FindStringSubmatch(readDoc(t, root, "README.md"))
+	if m == nil {
+		t.Fatal("README.md no longer lists the first-party plugins after \"as proof the contract works\"; " +
+			"if the sentence moved, move this test with it")
+	}
+	want := len(regexp.MustCompile("`[a-z0-9]+`").FindAllString(m[1], -1))
+	if want < 2 {
+		t.Fatalf("read %d first-party plugins out of %q", want, m[1])
+	}
+
+	words := map[string]int{
+		"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+		"ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+		"sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+	}
+	stated := regexp.MustCompile(`(?i)\b(\w+) first-party plugins\b`)
+	found := 0
+	for _, rel := range markdownPages(t, root) {
+		for _, s := range stated.FindAllStringSubmatch(readDoc(t, root, rel), -1) {
+			n, ok := words[strings.ToLower(s[1])]
+			if !ok {
+				continue
+			}
+			found++
+			if n != want {
+				t.Errorf("%s says %s first-party plugins, the README names %d", rel, s[1], want)
+			}
+		}
+	}
+	if found < 3 {
+		t.Errorf("found %d statements of how many first-party plugins there are; has the wording changed?", found)
+	}
+
+	page := readDoc(t, root, "docs/40-plugins/10-plugins.md")
+	_, table, ok := strings.Cut(page, "| Plugin | Service |")
+	if !ok {
+		t.Fatal("docs/40-plugins/10-plugins.md no longer has the Plugin | Service table; if it moved, move this test with it")
+	}
+	rows := 0
+	for _, line := range strings.Split(table, "\n")[2:] {
+		if !strings.HasPrefix(line, "| [`") {
+			break
+		}
+		rows++
+	}
+	if rows != want {
+		t.Errorf("the table on the plugins page has %d rows, the README names %d first-party plugins", rows, want)
+	}
+}
+
 func readDoc(t *testing.T, root, rel string) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(root, rel))
