@@ -36,13 +36,14 @@ import (
 // attacker-controlled name — so re-resolving between the check and the
 // connect would silently reopen the gap this exists to close.
 //
-// There is no opt-in to reach these addresses anyway, and no flag on this
-// file's capabilities offers one. The guard holds at the terminal as well:
-// it lives in the one client every http.* call shares, whoever makes it, so
-// an operator who genuinely needs their own internal service reaches it
-// with a client of their own. Accepting a caller-supplied "yes, this one
-// is fine" would hand exactly that decision to whoever holds the grant,
-// which is the consent a grant exists to require in the first place.
+// There is no opt-in an agent can give. The guard lives in the one client every
+// http.* call shares, whoever makes it, and accepting a caller-supplied "yes,
+// this one is fine" would hand exactly that decision to whoever holds the
+// grant, which is the consent a grant exists to require in the first place.
+// The one way through is for the person at the terminal, who is the operator:
+// a Local input that lets a loopback or private address by (withOwnNetwork),
+// for an internal service of their own, and never the addresses cloud
+// metadata lives at.
 //
 // **A configured proxy (HTTP(S)_PROXY, which client's own comment already
 // says this file supports) used to turn all of the above off.** With one
@@ -90,17 +91,24 @@ func defaultBlockedIP(ip stdnet.IP) bool { return blockedReason(ip) != "" }
 // dialed directly. The local-use NAT64 prefix is refused whole instead: where
 // an operator puts the IPv4 address inside it is theirs to choose, so nothing
 // here can read it back out.
-func blockedReason(ip stdnet.IP) string {
+func blockedReason(ip stdnet.IP) string { return reasonFor(ip, false) }
+
+// reasonFor is blockedReason for a call that may reach a service of its own
+// (own): a loopback or private address, which a person at a terminal asked for
+// by name (ownNetwork), is let through, and everything else stays refused —
+// link-local, where cloud metadata lives, the shared address space, the
+// reserved ranges, and an address another one is carried inside.
+func reasonFor(ip stdnet.IP, own bool) string {
 	addr, ok := netip.AddrFromSlice(ip)
 	if !ok {
 		return "an address of neither family"
 	}
 	addr = addr.Unmap()
-	if why := addrReason(addr); why != "" {
+	if why := addrReason(addr, own); why != "" {
 		return why
 	}
 	if inner, form, ok := embeddedIPv4(addr); ok {
-		if why := addrReason(inner); why != "" {
+		if why := addrReason(inner, own); why != "" {
 			return fmt.Sprintf("the %s form of %s, %s", form, inner, why)
 		}
 	}
@@ -123,13 +131,27 @@ var reserved = []struct {
 	{netip.MustParsePrefix("64:ff9b:1::/48"), "a local-use NAT64 address (RFC 8215)"},
 }
 
-func addrReason(a netip.Addr) string {
+// awsMetadataV6 is where AWS serves instance metadata over IPv6, in the unique
+// local range, which is private to Go and so what a service of one's own may
+// be on: the one private address that is not.
+var awsMetadataV6 = netip.MustParsePrefix("fd00:ec2::/32")
+
+func addrReason(a netip.Addr, own bool) string {
+	if own && awsMetadataV6.Contains(a) {
+		return "the address AWS serves instance metadata at over IPv6"
+	}
 	switch {
 	case a.IsUnspecified():
 		return "the unspecified address"
 	case a.IsLoopback():
+		if own {
+			return ""
+		}
 		return "a loopback address"
 	case a.IsPrivate():
+		if own {
+			return ""
+		}
 		return "a private address"
 	case a.IsLinkLocalUnicast(), a.IsLinkLocalMulticast():
 		return "a link-local address"
@@ -220,12 +242,39 @@ func resolveAndCheck(ctx context.Context, host string) ([]stdnet.IPAddr, error) 
 	if len(ips) == 0 {
 		return nil, fmt.Errorf("%s: no addresses found", host)
 	}
+	own := ownNetwork(ctx)
 	for _, resolved := range ips {
-		if isBlockedIP(resolved.IP) {
+		if isBlockedIP(resolved.IP) && (!own || reasonFor(resolved.IP, true) != "") {
 			return nil, &blockedAddrError{host: host, ip: resolved.IP}
 		}
 	}
 	return ips, nil
+}
+
+// ownNetworkKey marks a request context as one whose caller asked, by name,
+// to reach a service of their own: see withOwnNetwork.
+type ownNetworkKey struct{}
+
+// withOwnNetwork lets the request reach a loopback or private address, the
+// one thing the guard otherwise refuses at the terminal as well.
+//
+// **An opt-in, and one an agent can never give.** The guard was absolute so
+// that no caller could say "this one is fine": a grant authorizes the URL
+// named, and a flag the grantee could set would take back the decision the
+// grant exists to keep with the operator. The input that sets this is Local —
+// it is in no agent's schema, and the bridge refuses it if one sends it — so
+// the only one who can ask is the person at the terminal, who is the operator.
+// It is asked for per call and never from the environment or a profile, which
+// would carry it to every URL a later call names. What stays refused is what
+// no service of one's own is on: link-local, where cloud metadata is, the
+// shared address space, and the reserved ranges.
+func withOwnNetwork(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ownNetworkKey{}, true)
+}
+
+func ownNetwork(ctx context.Context) bool {
+	own, _ := ctx.Value(ownNetworkKey{}).(bool)
+	return own
 }
 
 // trustedProxyKey marks a request context as having a proxy the operator's
