@@ -271,6 +271,14 @@ func newPluginRemoveCommand(opts *globalOpts) *cobra.Command {
 				return runPluginRemoveAll(cmd, opts)
 			}
 			if !opts.dryRun && !opts.yes {
+				// The refusal for a name nothing manages comes before the
+				// ask: a confirmation claiming trust would be withdrawn from
+				// stored artifacts, for a name that has none, made a typo
+				// read as a decision and sent the operator to re-run with
+				// --yes only to be told it was never installed.
+				if _, verr := plugindist.PreviewRemove(name); verr != nil {
+					return verr
+				}
 				return &view.Error{
 					Code:    CodeConfirmRequired,
 					Message: "removing " + name + " withdraws trust from every stored artifact and needs confirmation",
