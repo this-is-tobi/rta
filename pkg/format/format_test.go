@@ -15,6 +15,15 @@ func TestBytes(t *testing.T) {
 		{512, "512 B"},
 		{2048, "2.0 KiB"},
 		{3 * 1024 * 1024 * 1024, "3.0 GiB"},
+		// What one decimal rounds up to the next unit's whole is counted in
+		// that unit: 1048575 was "1024.0 KiB", beside "1.0 MiB" for the next byte.
+		{1023, "1023 B"},
+		{1024*1024 - 1, "1.0 MiB"},
+		{1024*1024 - 51, "1.0 MiB"},
+		{1024*1024 - 52, "1023.9 KiB"},
+		{1024*1024*1024 - 1, "1.0 GiB"},
+		{1<<50 - 1, "1.0 PiB"},
+		{1<<64 - 1, "16.0 EiB"},
 	}
 	for _, tt := range tests {
 		if got := Bytes(tt.in); got != tt.want {

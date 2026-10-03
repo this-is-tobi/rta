@@ -606,21 +606,10 @@ func systemTrustedAmong(digests []string) int {
 const stillLoading = "it keeps loading: the system root trusts it as well, so what is withdrawn is " +
 	"your approval and any location you allowed it"
 
-// humanBytes is a file size a person reads without counting digits. Local to
-// this one report: nothing else in the app formats a size, and a shared helper
-// for a single caller is a dependency without a reason.
-func humanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for m := n / unit; m >= unit; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGT"[exp])
-}
+// humanBytes is a file size a person reads without counting digits: the
+// shared formatter, under a name that cannot be shadowed by the output format
+// the commands here carry in a variable of their own.
+func humanBytes(n int64) string { return format.Bytes(n) }
 
 // discovered finds one plugin by the name it is installed under, and hashes
 // it. It refuses a name that is not on $PATH rather than trusting a digest

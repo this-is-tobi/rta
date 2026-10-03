@@ -14,6 +14,7 @@ package format
 
 import (
 	"fmt"
+	"math"
 	"time"
 )
 
@@ -59,7 +60,16 @@ func binaryUnits(b uint64) string {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+	v := float64(b) / float64(div)
+	// 1048575 bytes is 1023.999 KiB, which one decimal writes as "1024.0 KiB":
+	// the next unit's whole, the one number a count in this unit never
+	// reaches, beside "1.0 MiB" for the byte after it. What rounds to it is
+	// counted in the next unit, as span does for a time.
+	if exp < len("KMGTPE")-1 && math.Round(v*10)/10 >= unit {
+		v /= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", v, "KMGTPE"[exp])
 }
 
 // Ago renders how long ago something happened, in the one unit that answers
