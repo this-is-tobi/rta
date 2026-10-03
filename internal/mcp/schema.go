@@ -11,6 +11,23 @@ import (
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
+// instructions is what the server tells a model once, at the handshake, about
+// everything that is true of every tool. It used to be said again in each
+// tool's description: "Returns a JSON view envelope discriminated by "type""
+// was 56 bytes of the same sentence on all ninety-three tools, a model reads
+// every description to choose between them, and a sentence that is the same in
+// all of them chooses nothing.
+//
+// Only what holds without exception goes here. What changes per tool — the
+// safety class, a grant, a narrowed scope — stays in the description, where
+// rta's own words come last (agentText).
+const instructions = "rta is a security boundary in front of this machine, not a shell. " +
+	"Every tool answers with one JSON object whose \"type\" names its shape (table, keyvalue, text, sections, ...). " +
+	"A failure is {\"type\":\"error\",\"code\",\"message\",\"hint\"}: the hint says what to change in the call, " +
+	"or whose the fix is. A command in a hint (`rta ...`) is the operator's to run and you have no terminal, so say what " +
+	"is needed and ask the operator rather than retrying. A tool that needs a grant is refused until a person issues one " +
+	"for you. A path argument names a file on the machine running rta, under the roots the operator started it with."
+
 // What an agent is shown: the tool name a capability maps onto, the text
 // that describes it, and the JSON Schema its inputs publish. The schema is
 // the agent-facing half of the declaration — what it says a field accepts
@@ -26,9 +43,8 @@ import (
 //
 // The plugin's words go inside the frame and rta's after it, which is a
 // deliberate order rather than the obvious one. Putting rta first would bury
-// the summary under a "Safety: read. Returns a JSON view envelope..." preamble
-// identical across every tool in the catalogue, and a model choosing between
-// forty-nine of those reads the first line — so the text that says what the
+// the summary under a preamble identical across every tool in the catalogue,
+// and a model choosing between forty-nine of those reads the first line — so the text that says what the
 // tool is for stays near the top, and rta keeps the last word, which is where
 // the instruction that must not be overridden belongs.
 //
@@ -44,7 +60,7 @@ func agentText(c plugin.Capability, profiles []string) string {
 	}
 	b.WriteString("\n" + plugin.AuthoredClose)
 
-	fmt.Fprintf(&b, "\n\nSafety: %s. Returns a JSON view envelope discriminated by \"type\".", c.Safety)
+	fmt.Fprintf(&b, "\n\nSafety: %s.", c.Safety)
 	if grant.Required(c, "") {
 		// Said here as well as enforced in the gate, so a model asks the
 		// person for a grant instead of retrying a call that cannot work.

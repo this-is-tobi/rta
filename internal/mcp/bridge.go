@@ -71,6 +71,7 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 		Title:   "Rule Them All",
 		Version: version,
 	}, &sdk.ServerOptions{
+		Instructions: instructions,
 		// The handshake is the moment a client exists: before it there is
 		// a process nobody has spoken to, after it an agent that may call.
 		InitializedHandler: func(_ context.Context, req *sdk.InitializedRequest) {
