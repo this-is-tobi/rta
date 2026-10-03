@@ -290,6 +290,14 @@ func migrationOr(name string, p config.Profile, generic *view.Error) *view.Error
 // second artifact to collide with it is not a realistic attack.
 const minPinLen = 8
 
+// repinHint is the command that writes the installed pin into every entry
+// that names the plugin. The refusals of a pin say which pin is the installed
+// one, which is the half to type by hand into one file; this is the half that
+// does it for all of them, and an upgrade leaves all of them behind at once.
+func repinHint(ns string) string {
+	return "`rta profile repin --all --plugin " + ns + "` points every profile at it"
+}
+
 // checkPin confirms a profile's plugin key names the artifact that is actually
 // installed.
 //
@@ -347,11 +355,11 @@ func checkPin(key string, inst Installed) *view.Error {
 		return view.Errorf("core.profile.shortpin",
 			"this profile's pin for %q is too short to trust", ns).
 			WithHint("the installed one is `" + ns + "@" + o.Short() + "` — at least " +
-				strconv.Itoa(minPinLen) + " hex characters")
+				strconv.Itoa(minPinLen) + " hex characters; " + repinHint(ns))
 	case !strings.HasPrefix(o.Digest, pin):
 		return view.Errorf("core.profile.stalepin",
 			"this profile's pin does not match the installed %q", ns).
-			WithHint("the installed one is `" + ns + "@" + o.Short() + "`")
+			WithHint("the installed one is `" + ns + "@" + o.Short() + "`; " + repinHint(ns))
 	}
 	return nil
 }
