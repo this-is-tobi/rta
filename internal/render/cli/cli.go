@@ -531,6 +531,13 @@ func prettyKeyValue(w io.Writer, kv view.KeyValue, st styles) error {
 			}
 			continue
 		}
+		if hasNoRoomBesideKey(val, width+2, st.width) {
+			hung := hangIndent + strings.ReplaceAll(wrap(val, st.width-len(hangIndent), ""), "\n", "\n"+hangIndent)
+			if _, err := fmt.Fprintf(w, "%s\n%s\n", st.key.Render(p.Key), hung); err != nil {
+				return err
+			}
+			continue
+		}
 		key := st.key.Render(pad(p.Key, width))
 		val = wrap(val, st.width, strings.Repeat(" ", width+2))
 		if _, err := fmt.Fprintf(w, "%s  %s\n", key, val); err != nil {
@@ -538,6 +545,33 @@ func prettyKeyValue(w io.Writer, kv view.KeyValue, st styles) error {
 		}
 	}
 	return nil
+}
+
+// hasNoRoomBesideKey reports whether val is prose that has to wrap and has
+// less than minWrap cells to do it in beside its key (keyCol cells), so that it
+// goes under the key instead.
+//
+// wrap never breaks a line narrower than minWrap, because below that it is one
+// short word per line. That floor is measured from the continuation indent and
+// not from the width the pane has, so a key column of 24 in a 34-cell dashboard
+// tile broke the value at 16 into a space of 10: the tile clipped every line
+// with an ellipsis and `connected now  none — no client has an rta server open`
+// read "none — no c…". Past the width the caller gave, text is not wrapped but
+// lost. Under the key it has the whole line.
+//
+// A value that fits whole beside its key stays there, whatever the room: a
+// narrow tile still reads "waiting on you  0".
+func hasNoRoomBesideKey(val string, keyCol, width int) bool {
+	beside := width - keyCol
+	if width < minWrap || beside >= minWrap {
+		return false
+	}
+	for _, line := range strings.Split(val, "\n") {
+		if lipgloss.Width(line) > beside {
+			return true
+		}
+	}
+	return false
 }
 
 // hangIndent is how far a value drawn under its key sits in from it: enough

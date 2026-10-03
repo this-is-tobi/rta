@@ -686,6 +686,41 @@ func TestAColumnWithOneLongOutlierKeepsItsHeadingAndItsOrdinaryValues(t *testing
 	}
 }
 
+// A value that cannot wrap beside its key goes under it rather than past the
+// edge. wrap's floor of minWrap cells is measured from the continuation indent,
+// so with a key column of 24 and a width of 34 it broke the prose at 16 into
+// ten cells of room, and a dashboard tile clipped each line with an ellipsis:
+// `connected now  none — no client has an rta server open` read "none — no c…",
+// and everything the clip took was gone.
+func TestAValueWithNoRoomBesideItsKeyHangsUnderIt(t *testing.T) {
+	kv := view.KeyValue{Pairs: []view.Pair{
+		{Key: "waiting on you", Value: "0"},
+		{Key: "connected now", Value: "none — no client has an rta server open; `rta mcp install claude`, then restart the client"},
+		{Key: "calls in the last hour", Value: "0"},
+	}}
+	const width = 34
+	out, widest := renderWidth(t, kv, Options{Width: width})
+	if widest > width {
+		t.Errorf("drawn %d wide in %d:\n%s", widest, width, out)
+	}
+	for _, word := range strings.Fields("none — no client has an rta server open; `rta mcp install claude`, then restart the client") {
+		if !strings.Contains(out, word) {
+			t.Errorf("%q is missing from:\n%s", word, out)
+		}
+	}
+	// The short ones keep their place beside the key.
+	for _, want := range []string{"waiting on you          0", "calls in the last hour  0"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%q was moved off its line:\n%s", want, out)
+		}
+	}
+	// And a terminal wide enough for the value beside its key is untouched.
+	wide, _ := renderWidth(t, kv, Options{Width: 100})
+	if !strings.Contains(wide, "connected now           none — no client has an rta server open;") {
+		t.Errorf("a wide terminal lost the layout beside the key:\n%s", wide)
+	}
+}
+
 // A table wider than its terminal gives up the long columns, not the short
 // ones. lipgloss shrinks by the gap between a column's width and the median of
 // its cells, and a short column under a long heading is the widest gap there
