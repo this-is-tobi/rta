@@ -25,7 +25,9 @@ func remotesCapability() plugin.Capability {
 		Description: "The other half of \"which branch am I on\": which server that branch reaches, " +
 			"and whether this machine has ever heard from it. Three remotes with confusingly " +
 			"similar URLs is how somebody pushes a fix to their fork and waits for a review " +
-			"nobody can see.\n\n" +
+			"nobody can see. A remote with a pushurl is two rows, and Use says which does what: " +
+			"git fetches from the first url and pushes to every pushurl where one is set, and to " +
+			"every url where none is.\n\n" +
 			"Branches counts what this repository knows about that remote — the refs a fetch " +
 			"left behind — so a remote that has never been fetched reads as 0 rather than as " +
 			"missing.\n\n" +
@@ -65,6 +67,7 @@ func runRemotes(ctx context.Context, req plugin.Request) (view.View, error) {
 	t := view.Table{Columns: []view.Column{
 		{Name: "Remote"},
 		{Name: "URL"},
+		{Name: "Use"},
 		{Name: "Branches", Kind: view.KindNumber},
 		{Name: "Origin"},
 	}}
@@ -76,9 +79,10 @@ func runRemotes(ctx context.Context, req plugin.Request) (view.View, error) {
 		if len(urls) == 0 {
 			urls = []setURL{{origin: r.origin}}
 		}
-		for _, u := range urls {
+		for i, u := range urls {
 			t.Rows = append(t.Rows, []string{
-				maskURLCredentials(r.name), maskURLCredentials(u.url), strconv.Itoa(known[r.name]), u.origin,
+				maskURLCredentials(r.name), maskURLCredentials(u.url), r.use(i),
+				strconv.Itoa(known[r.name]), u.origin,
 			})
 		}
 	}
@@ -106,6 +110,33 @@ type configuredRemote struct {
 	name       string
 	urls, push []setURL
 	origin     string
+}
+
+// use is what git does with the i-th of the URLs the remote lists, urls then
+// pushes: it fetches from the first url and from no other, and pushes to every
+// pushurl where one is set, and to every url where none is.
+//
+// **The rows were the URLs, and nothing said which was which.** A remote with
+// a pushurl is two rows under one name, and a table of two URLs that differ in
+// a few characters does not say which one a fetch reaches and which a push
+// does: the case this capability's description opens with, a fix pushed to
+// the wrong place. `git remote -v` says it with (fetch) and (push).
+func (r configuredRemote) use(i int) string {
+	switch {
+	case len(r.urls)+len(r.push) == 0:
+		return ""
+	case i < len(r.urls) && len(r.push) > 0:
+		if i == 0 {
+			return "fetch"
+		}
+		return ""
+	case i < len(r.urls):
+		if i == 0 {
+			return "fetch, push"
+		}
+		return "push"
+	}
+	return "push"
 }
 
 // setURL is a URL a remote names, rewritten as git rewrites it, and the file
