@@ -843,11 +843,26 @@ func credentialPairs(name, key string, conn config.Connection, reg *registry.Reg
 	}
 	var pairs []view.Pair
 	seen := map[string]bool{}
+	// A labeled instance has no environment channel — see profile.Bind: a
+	// variable for `staging/analytics` would be forgeable by naming a profile
+	// carefully, so none is read. This page used to name the default
+	// instance's variable for it anyway, and report that variable as filling
+	// it when it was exported: an export meant for the main database shown as
+	// the analytics one's credential, by the page that exists to say which.
+	_, instance, _ := config.SplitKey(key)
 	for _, f := range profileSecrets(config.PluginNamespace(key), reg) {
 		seen[f] = true
+		ref, referenced := refs[f]
+		if instance != "" {
+			value := "not mapped — a labeled instance takes its credentials from `secrets:` only"
+			if referenced {
+				value = ref.Scheme + ":" + ref.Ref
+			}
+			pairs = append(pairs, view.Pair{Key: "  credential:" + f, Value: value})
+			continue
+		}
 		env := plugin.ProfileEnvVar(name, f)
 		_, exported := os.LookupEnv(env)
-		ref, referenced := refs[f]
 
 		var value string
 		switch {
@@ -1025,29 +1040,36 @@ func currentView(cfg config.Config, s profile.Selection, now time.Time) view.Vie
 	return view.KeyValue{Pairs: pairs}
 }
 
-// missingCredentials names the RTA_PROFILE_* variables an environment needs and
-// has neither exported nor mapped with `secrets:`.
+// missingCredentials names what an environment needs and has neither exported
+// nor mapped with `secrets:`: the RTA_PROFILE_* variables of its default
+// entries, and the "entry input" pairs of its labeled instances, which read no
+// variable at all (see credentialPairs) and so can only be mapped.
 //
 // Only Secret inputs, and only the ones a profile is allowed to fill. An
 // environment whose plugins need no credential — or whose credential is
 // genuinely optional, like vault's namespace — yields nothing and earns a plain
 // "ok".
-func missingCredentials(name string, p config.Profile, reg *registry.Registry) []string {
-	var missing []string
+func missingCredentials(name string, p config.Profile, reg *registry.Registry) (envs, unmapped []string) {
 	for _, key := range p.PluginKeys() {
 		conn := p.Plugins[key]
+		_, instance, _ := config.SplitKey(key)
 		for _, f := range profileSecrets(config.PluginNamespace(key), reg) {
 			if _, mapped := conn.Secrets[f]; mapped {
 				continue
 			}
+			if instance != "" {
+				unmapped = append(unmapped, config.PluginNamespace(key)+"/"+instance+" "+f)
+				continue
+			}
 			env := plugin.ProfileEnvVar(name, f)
 			if _, ok := os.LookupEnv(env); !ok {
-				missing = append(missing, env)
+				envs = append(envs, env)
 			}
 		}
 	}
-	sort.Strings(missing)
-	return missing
+	sort.Strings(envs)
+	sort.Strings(unmapped)
+	return envs, unmapped
 }
 
 // registeredNamespace answers whether anything in ns was actually registered.

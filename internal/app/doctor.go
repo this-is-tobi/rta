@@ -648,9 +648,16 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 			// Unmapped and unexported credentials are reported even when others
 			// are mapped: an environment is several plugins now, and "the
 			// database has a password" says nothing about the bucket.
-			if missing := missingCredentials(name, p, reg); len(missing) > 0 {
-				add("profile", "warn", detail+" — no credential: set $"+strings.Join(missing, ", $")+
-					", or map one with `secrets:`")
+			if envs, unmapped := missingCredentials(name, p, reg); len(envs)+len(unmapped) > 0 {
+				var needs []string
+				if len(envs) > 0 {
+					needs = append(needs, "set $"+strings.Join(envs, ", $")+", or map one with `secrets:`")
+				}
+				if len(unmapped) > 0 {
+					needs = append(needs, "map "+strings.Join(unmapped, ", ")+" with `secrets:`, "+
+						"since a labeled instance reads no variable")
+				}
+				add("profile", "warn", detail+" — no credential: "+strings.Join(needs, "; "))
 				continue
 			}
 			add("profile", "ok", detail)
