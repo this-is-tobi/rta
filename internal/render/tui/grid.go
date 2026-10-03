@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/theme"
@@ -765,7 +766,15 @@ func (m Model) dashboardView() string {
 
 	rows := m.tileRows()
 	if len(rows) == 0 {
-		return header + "\n" + search + "\n" + footer
+		frame := header + "\n" + search + "\n" + footer
+		// Said when there is room, for a dashboard with nothing under the search
+		// bar looks like one that failed to load, and its footer offers to
+		// select, move and hide what is not there.
+		if m.height-lipgloss.Height(frame) >= 1 {
+			note := "  no tiles — p brings hidden ones back, + adds one"
+			frame = header + "\n" + search + "\n" + theme.Subtle.Render(ansi.Truncate(note, max(m.width, 1), "…")) + "\n" + footer
+		}
+		return frame
 	}
 
 	// Window the rows to the screen; the selection-driven scroll offset is

@@ -262,3 +262,30 @@ func filled(t *testing.T, m Model, w, h int) Model {
 	}
 	return m
 }
+
+// A dashboard with nothing under the search bar says so. It looked like one
+// that had failed to load, under a footer offering to select, move and hide
+// what was not there; the note is what to press to get tiles back.
+func TestAnEmptyDashboardSaysHowToGetTilesBack(t *testing.T) {
+	m := New(registry.New(), config.Dashboard{}, nil)
+	m = filled(t, m, 80, 24)
+	if len(m.tileRows()) != 0 {
+		t.Fatal("the fixture has tiles")
+	}
+	content := plain(m.View().Content)
+	if !strings.Contains(content, "no tiles — p brings hidden ones back, + adds one") {
+		t.Errorf("an empty dashboard says nothing:\n%s", content)
+	}
+	if got := lipgloss.Height(content); got > 24 {
+		t.Errorf("the frame is %d lines on a 24-line terminal", got)
+	}
+
+	// And only where it fits: the frame that is already as tall as the terminal
+	// is left alone.
+	for _, h := range []int{9, 10, 12} {
+		m = filled(t, New(registry.New(), config.Dashboard{}, nil), 40, h)
+		if got := lipgloss.Height(plain(m.View().Content)); got > h {
+			t.Errorf("the note pushed the frame to %d lines on a %d-line terminal", got, h)
+		}
+	}
+}
