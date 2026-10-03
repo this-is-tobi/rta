@@ -3,6 +3,8 @@ package kv
 import (
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // Reveal is the one place that bypasses kv.get's grant gate, on the strength
@@ -39,6 +41,10 @@ func TestRevealDoesNotEnumerateOnNotFound(t *testing.T) {
 	}
 	if strings.Contains(verr.Message, "a-real-entry") || strings.Contains(verr.Hint, "a-real-entry") {
 		t.Fatalf("the not-found error names an entry that does exist: %+v", verr)
+	}
+	// Read by an agent as often as by a person: the command is the operator's.
+	if !strings.HasPrefix(verr.Hint, plugin.AskOperator("kv list")) {
+		t.Errorf("the hint hands on a command without saying whose it is: %q", verr.Hint)
 	}
 }
 
