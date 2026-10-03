@@ -204,6 +204,32 @@ func Record(s string) string {
 	return glyph.Quote(s)
 }
 
+// Name is a name read off a disk or out of a store — a file in a listing, a
+// link's target — as a person reads it in a list of them: as it is when it
+// reads as itself, and otherwise quoted with every character they would not
+// see written out, as Record does it for a record they decide about.
+//
+// **A listing is the one place a name cannot be cleaned.** Terminal drops what
+// a terminal would act on, which is right of a body or a cell and wrong of a
+// name: `esc` ESC `[31mred` came out as `escred`, which is not the file, a
+// newline in a name split a tree line or a table row in two, and a tab drew
+// as a gap. None of it tells the reader the name is odd, and the listing is
+// where they would learn it. Quoted, the name is shown as it is on disk, and
+// the one place it can be told from an ordinary one is the quotation marks.
+//
+// Unlike Record, a space inside a name is a name's own: a list of files is one
+// name to a line or a cell, and "Annual Report.pdf" is what it reads as. One
+// at either end draws as nothing and is quoted, as is a name opening with a
+// quotation mark, so a name shown as it is can never be mistaken for one
+// shown quoted.
+func Name(s string) string {
+	if s != "" && s[0] != '"' && utf8.ValidString(s) && strings.TrimSpace(s) == s &&
+		!strings.ContainsFunc(s, func(r rune) bool { return r != ' ' && !glyph.Seen(r) }) {
+		return s
+	}
+	return glyph.Quote(s)
+}
+
 // Records is the records one call names, each as Record shows it, one after
 // another as a call lists them.
 func Records(records []string) string {

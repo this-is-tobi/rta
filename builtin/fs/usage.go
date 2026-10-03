@@ -12,6 +12,7 @@ import (
 
 	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/internal/pathguard"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -324,7 +325,7 @@ func usageTable(path string, entries []entry, total int64, limit, skipped int) v
 		shown = shown[:limit]
 	}
 	for _, e := range shown {
-		name := e.name
+		name := textclean.Name(e.name)
 		if e.dir {
 			name += "/"
 		}
@@ -380,7 +381,7 @@ func usageDetail(ctx context.Context, req plugin.Request, path string,
 	if len(s.largest) > 0 {
 		lt := view.Table{Columns: []view.Column{{Name: "File"}, {Name: "Size", Kind: view.KindBytes}}}
 		for _, f := range s.largest {
-			lt.Rows = append(lt.Rows, []string{f.path, humanBytes(f.size)})
+			lt.Rows = append(lt.Rows, []string{textclean.Name(f.path), humanBytes(f.size)})
 		}
 		lt.Total = len(lt.Rows)
 		p.PutAs("largest-files", "largest files anywhere beneath", lt)

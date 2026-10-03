@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/builtin/internal/pathin"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -69,7 +70,7 @@ func runTree(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("fs.tree.cancelled", "walk of %s was interrupted", path)
 	}
 	root := view.Node{
-		Label:    filepath.Base(path) + "/",
+		Label:    textclean.Name(filepath.Base(path)) + "/",
 		Detail:   path,
 		Children: children,
 	}
@@ -175,7 +176,7 @@ func (b *treeBuilder) children(ctx context.Context, dir *pathin.Dir, depth int) 
 		info, err := dir.Lstat(item.Name())
 		if err != nil {
 			b.stats.unreadable++
-			nodes = append(nodes, view.Node{Label: item.Name(), Detail: "unreadable"})
+			nodes = append(nodes, view.Node{Label: textclean.Name(item.Name()), Detail: "unreadable"})
 			continue
 		}
 		switch {
@@ -187,10 +188,10 @@ func (b *treeBuilder) children(ctx context.Context, dir *pathin.Dir, depth int) 
 			} else if b.target != nil {
 				target = b.target(dir.Path(), target)
 			}
-			nodes = append(nodes, view.Node{Label: item.Name(), Detail: "→ " + target})
+			nodes = append(nodes, view.Node{Label: textclean.Name(item.Name()), Detail: "→ " + textclean.Name(target)})
 		case info.IsDir():
 			b.stats.dirs++
-			node := view.Node{Label: item.Name() + "/"}
+			node := view.Node{Label: textclean.Name(item.Name()) + "/"}
 			switch {
 			case !b.sameDevice(info):
 				b.stats.otherFS++
@@ -220,11 +221,11 @@ func (b *treeBuilder) children(ctx context.Context, dir *pathin.Dir, depth int) 
 			// Named, as the directory of rta's state is, and not sized: a
 			// file of its configuration under the root is refused by name.
 			if err := dir.Withheld(item.Name(), info); err != nil {
-				nodes = append(nodes, view.Node{Label: item.Name(), Detail: b.unopened(err)})
+				nodes = append(nodes, view.Node{Label: textclean.Name(item.Name()), Detail: b.unopened(err)})
 				continue
 			}
 			b.stats.files++
-			nodes = append(nodes, view.Node{Label: item.Name(), Detail: humanBytes(info.Size())})
+			nodes = append(nodes, view.Node{Label: textclean.Name(item.Name()), Detail: humanBytes(info.Size())})
 		}
 	}
 	if truncated > 0 {
