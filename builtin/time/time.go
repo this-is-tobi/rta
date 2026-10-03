@@ -164,12 +164,7 @@ func resolve(raw string, now stdtime.Time) (stdtime.Time, timefmt.Unit, *view.Er
 // hour or so on; the offset in force before the change is what lets the person
 // name the instant they meant, and is read from half a day before it.
 func skippedClock(raw string, wall, moved stdtime.Time) *view.Error {
-	_, offset := moved.Add(-12 * stdtime.Hour).Zone()
-	sign := "+"
-	if offset < 0 {
-		sign, offset = "-", -offset
-	}
-	example := fmt.Sprintf("%s%s%02d:%02d", wall.Format("2006-01-02T15:04:05"), sign, offset/3600, offset%3600/60)
+	example := timefmt.SkippedExample(wall, moved)
 	return view.Errorf("time.at.skipped",
 		"%q never showed on this machine's clock — the clocks went forward over it", raw).
 		WithHint("name the instant with an offset (" + example + "), or write a time the clock did show")
