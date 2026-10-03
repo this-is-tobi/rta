@@ -395,12 +395,12 @@ func TestAPinnedProfileSilentAboutThePluginIsAnError(t *testing.T) {
 // capability are otherwise the same panel twice.
 func TestTheTitleNamesThePinnedProfile(t *testing.T) {
 	pinned := tile{cap: plugin.Capability{ID: "db.status"}, profile: "prod", view: view.Text{Body: "ok"}}
-	top := strings.SplitN(plain(renderTile(pinned, 60, 6, false)), "\n", 2)[0]
+	top := strings.SplitN(plain(renderTile(pinned, 60, 6, false, false)), "\n", 2)[0]
 	if !strings.Contains(top, "db.status") || !strings.Contains(top, "prod") {
 		t.Errorf("title line = %q, want the capability and the profile", top)
 	}
 	following := tile{cap: plugin.Capability{ID: "db.status"}, view: view.Text{Body: "ok"}}
-	if top := strings.SplitN(plain(renderTile(following, 60, 6, false)), "\n", 2)[0]; strings.Contains(top, "prod") {
+	if top := strings.SplitN(plain(renderTile(following, 60, 6, false, false)), "\n", 2)[0]; strings.Contains(top, "prod") {
 		t.Errorf("an unpinned tile named a profile: %q", top)
 	}
 }

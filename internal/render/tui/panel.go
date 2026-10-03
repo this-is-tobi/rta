@@ -31,7 +31,26 @@ type panelHead struct {
 	// does anything that is not a #rrggbb colour.
 	NoteColor string
 	Right     string // muted, right-aligned in the top border: a cost, a count
+	// Heavy draws a focused panel in heavy lines. Focus is otherwise the
+	// border's primary colour and nothing else, so on a terminal that shows no
+	// colour (NO_COLOR, TERM=dumb) the selected tile of the dashboard was
+	// indistinguishable from its neighbours and the arrow keys moved a
+	// selection nobody could see. The size is the same: the grid and the
+	// mouse's hit-testing count on every panel being width by height cells.
+	Heavy bool
 }
+
+// boxGlyphs are the characters a panel's border is drawn in.
+type boxGlyphs struct {
+	topLeft, topRight, bottomLeft, bottomRight, across, down string
+}
+
+// roundedBox is every panel's border; heavyBox replaces it on the focused one
+// where colour cannot carry the difference.
+var (
+	roundedBox = boxGlyphs{"╭", "╮", "╰", "╯", "─", "│"}
+	heavyBox   = boxGlyphs{"┏", "┓", "┗", "┛", "━", "┃"}
+)
 
 // panel draws a bordered pane with its title embedded in the top border —
 // the shared visual grammar of dashboard tiles and the result pane:
@@ -52,8 +71,12 @@ func panel(h panelHead, body string, width, height int, focus bool) string {
 	h.Title, h.Note, h.Right = textclean.Terminal(h.Title),
 		textclean.Terminal(h.Note), textclean.Terminal(h.Right)
 	border := theme.Border
+	box := roundedBox
 	if focus {
 		border = lipgloss.NewStyle().Foreground(theme.Primary)
+		if h.Heavy {
+			box = heavyBox
+		}
 	}
 	inner := width - 4 // "│ " + content + " │"
 
@@ -76,8 +99,9 @@ func panel(h panelHead, body string, width, height int, focus bool) string {
 	}
 	title = ansi.Truncate(title, width-lipgloss.Width(rightSeg)-7, "…")
 	fill := width - lipgloss.Width(title) - lipgloss.Width(rightSeg) - 6
-	top := border.Render("╭─ ") + title + " " + border.Render(strings.Repeat("─", max(fill, 0))) +
-		rightSeg + border.Render("─╮")
+	top := border.Render(box.topLeft+box.across+" ") + title + " " +
+		border.Render(strings.Repeat(box.across, max(fill, 0))) +
+		rightSeg + border.Render(box.across+box.topRight)
 
 	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
 	if height > 0 {
@@ -89,7 +113,7 @@ func panel(h panelHead, body string, width, height int, focus bool) string {
 			lines = append(lines, "")
 		}
 	}
-	side := border.Render("│")
+	side := border.Render(box.down)
 	var b strings.Builder
 	b.WriteString(top)
 	for _, line := range lines {
@@ -97,7 +121,7 @@ func panel(h panelHead, body string, width, height int, focus bool) string {
 		pad := strings.Repeat(" ", max(inner-lipgloss.Width(line), 0))
 		b.WriteString("\n" + side + " " + line + pad + " " + side)
 	}
-	b.WriteString("\n" + border.Render("╰"+strings.Repeat("─", width-2)+"╯"))
+	b.WriteString("\n" + border.Render(box.bottomLeft+strings.Repeat(box.across, width-2)+box.bottomRight))
 	return b.String()
 }
 

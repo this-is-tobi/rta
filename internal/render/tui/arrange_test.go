@@ -463,8 +463,8 @@ func TestTilesSharingARowMatchTheTallestOne(t *testing.T) {
 		t.Fatalf("heights = %v, want one row at the max %d, set by the tall tile", heights, tileHeight)
 	}
 	g := sm.grid()
-	shortPanel := renderTile(sm.tiles[1], g.tileW, heights[0], false)
-	tallPanel := renderTile(sm.tiles[2], g.tileW, heights[0], false)
+	shortPanel := renderTile(sm.tiles[1], g.tileW, heights[0], false, false)
+	tallPanel := renderTile(sm.tiles[2], g.tileW, heights[0], false, false)
 	shortLines, tallLines := strings.Count(shortPanel, "\n"), strings.Count(tallPanel, "\n")
 	if shortLines != tallLines {
 		t.Fatalf("row neighbors have different heights: short=%d tall=%d lines", shortLines, tallLines)

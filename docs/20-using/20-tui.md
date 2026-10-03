@@ -30,6 +30,8 @@ A search bar across the top, and one tile per plugin that has something to show 
 
 Tiles are yours to arrange. `H` hides one you never look at, and `p` opens the inventory where it comes back; one panel of an entry that expanded into several connections is hidden by its own key, which the inventory has no row for, so it comes back with the `rta dashboard unhide <id> --profile <profile/instance>` line its note prints. On a tile you added, `H` removes the entry instead — the footer says `remove` there, and the note prints the `rta dashboard add` line that puts it back; `+` on a catalogue row or a search match adds one the automatic set left out, asking which connection when the capability takes one.
 
+The selected tile is the one with the coloured border. On a terminal that shows no colour (`NO_COLOR`, `TERM=dumb`) its border is drawn in heavy lines instead, so the selection never rests on colour alone.
+
 ### Stating the dashboard yourself
 
 With no `dashboard:` block, rta builds one: a tile per plugin that has a capability which is `Read`, needs no input, and is cheap enough to run unasked. Plugins installed later appear on their own.

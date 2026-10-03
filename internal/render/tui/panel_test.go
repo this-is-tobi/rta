@@ -77,7 +77,7 @@ func TestTilesOnSameRowAreUniform(t *testing.T) {
 	}
 	const w = 49
 	for _, ti := range []tile{overflowing, tiny} {
-		p := renderTile(ti, w, tileHeight, false)
+		p := renderTile(ti, w, tileHeight, false, false)
 		assertExact(t, p, w, tileHeight)
 	}
 }
@@ -116,7 +116,7 @@ func TestAPanelTitleIsNotTheColourOfItsContents(t *testing.T) {
 	p := renderTile(tile{
 		cap:  plugin.Capability{ID: "sys.mem"},
 		view: view.KeyValue{Pairs: []view.Pair{{Key: "used", Value: "4.2 GB"}}},
-	}, 40, 6, false)
+	}, 40, 6, false, false)
 
 	title, key := fgBefore(t, p, "sys.mem"), fgBefore(t, p, "used")
 	if title == key {
@@ -131,7 +131,7 @@ func TestAPanelTitleIsNotTheColourOfAnyStatus(t *testing.T) {
 	p := renderTile(tile{
 		cap:  plugin.Capability{ID: "sys.mem"},
 		view: view.KeyValue{Pairs: []view.Pair{{Key: "used", Value: "4.2 GB"}}},
-	}, 40, 6, false)
+	}, 40, 6, false, false)
 	title := fgBefore(t, p, "sys.mem")
 
 	for name, style := range map[string]lipgloss.Style{

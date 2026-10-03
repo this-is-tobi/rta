@@ -494,7 +494,7 @@ func tileRowHeight(t tile, width int) int {
 // they did under the old fixed tileHeight. The panel primitive guarantees
 // exact width × height cells, so overflowing content can never make one tile
 // taller than its row.
-func renderTile(t tile, width, height int, selected bool) string {
+func renderTile(t tile, width, height int, selected, heavy bool) string {
 	lines := tileContentLines(t, width)
 	preview := height - 2
 	if len(lines) > preview {
@@ -506,7 +506,7 @@ func renderTile(t tile, width, height int, selected bool) string {
 	// clusters are the same panel twice without it, and a tile about
 	// production is the one panel whose name must not be the first thing
 	// to go.
-	head := panelHead{Title: t.cap.ID, Note: t.profile, NoteColor: t.color}
+	head := panelHead{Title: t.cap.ID, Note: t.profile, NoteColor: t.color, Heavy: heavy}
 	return panel(head, strings.Join(lines, "\n"), width, height, selected)
 }
 
@@ -600,7 +600,7 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 	if n := len(results); n > searchMatches {
 		right = fmt.Sprintf("%d/%d · ", min(m.searchSel, n-1)+1, n) + right
 	}
-	return panel(panelHead{Title: "⌕ search", Right: right},
+	return panel(panelHead{Title: "⌕ search", Right: right, Heavy: m.noColor},
 		strings.Join(lines, "\n"), width, searchTileHeight, selected)
 }
 
@@ -747,7 +747,7 @@ func (m Model) dashboardView() string {
 				// divides by.
 				parts = append(parts, " ")
 			}
-			parts = append(parts, renderTile(m.asReturned(i), m.tileWidth(i), heights[r-first], i == m.selected))
+			parts = append(parts, renderTile(m.asReturned(i), m.tileWidth(i), heights[r-first], i == m.selected, m.noColor))
 		}
 		rendered = append(rendered, lipgloss.JoinHorizontal(lipgloss.Top, parts...))
 	}
