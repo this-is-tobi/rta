@@ -32,9 +32,15 @@ import (
 // copied by hand — the same instant as the space-separated form, spelled the
 // way the log spelled it. It widens what `agent log --since` accepts and
 // narrows nothing.
+//
+// The T form without seconds is here for the same reason as the one with: it is
+// ISO 8601's own short spelling, and what a datetime-local field and `date
+// +%Y-%m-%dT%H:%M` write. It was refused while the space form of the same
+// minute was read, under a hint that listed the space form beside it.
 var layouts = []string{
 	time.RFC3339,
 	"2006-01-02T15:04:05",
+	"2006-01-02T15:04",
 	"2006-01-02 15:04:05",
 	"2006-01-02 15:04",
 	"2006-01-02",
