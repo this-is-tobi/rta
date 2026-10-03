@@ -804,6 +804,38 @@ func TestTheDetailedLogSaysWhenHistoryWasRetired(t *testing.T) {
 	}
 }
 
+// An empty log is a sentence on a screen, as an empty queue is: the record's
+// columns with nothing under them read as a listing that failed. What a filter
+// matched nothing of is not the same news as a record with nothing in it.
+func TestAnEmptyLogSaysWhyItIsEmpty(t *testing.T) {
+	isolate(t)
+	v, err := run(t, "agent.log", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty := v.(view.Table).Empty; !strings.Contains(empty, "no call has arrived over MCP yet") {
+		t.Errorf("an empty record says %q", empty)
+	}
+
+	if err := agentlog.Append(agentlog.Entry{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open}); err != nil {
+		t.Fatal(err)
+	}
+	v, err = run(t, "agent.log", map[string]any{"refused": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty := v.(view.Table).Empty; !strings.Contains(empty, "matches the filters given") {
+		t.Errorf("a filter that matched nothing says %q", empty)
+	}
+	v, err = run(t, "agent.log", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty := v.(view.Table).Empty; empty != "" {
+		t.Errorf("a record with a call in it says %q", empty)
+	}
+}
+
 func TestTheLogShowsCallsAndVerifiesItsOwnChain(t *testing.T) {
 	isolate(t)
 	for _, e := range []agentlog.Entry{

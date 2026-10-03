@@ -758,6 +758,16 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		total = len(shown)
 	}
 	table := view.Table{Columns: cols, Rows: rows, Total: total, Tail: true}
+	// A sentence for a screen, as `agent pending` has: the record's columns
+	// with nothing under them read as a listing that failed, and what a filter
+	// matched nothing of is not the same news as a record with nothing in it.
+	switch {
+	case len(rows) > 0:
+	case filtered:
+		table.Empty = "no recorded call matches the filters given"
+	default:
+		table.Empty = "no call has arrived over MCP yet — what an agent asks of rta appears here, refusals included"
+	}
 	if !req.Bool("detail") {
 		return table, nil
 	}
