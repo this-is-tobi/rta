@@ -5,10 +5,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 
+	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/registry"
 )
 
@@ -71,7 +71,11 @@ func Identify(name string) (Identity, error) {
 	if err != nil {
 		return Identity{}, fmt.Errorf("resolving %q: %w", resolved, err)
 	}
-	f, err := os.Open(abs)
+	// Without waiting: a named pipe with the execute bit, planted in a $PATH
+	// directory or the store, held this open for good, and with it every
+	// start of rta that discovers plugins. atomicfile.Open refuses anything
+	// that is not a regular file and never blocks on one that is not.
+	f, err := atomicfile.Open(abs)
 	if err != nil {
 		return Identity{}, fmt.Errorf("reading plugin %q: %w", abs, err)
 	}
