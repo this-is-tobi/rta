@@ -111,7 +111,12 @@ rta kv get missing-key -o json
 ```
 
 ```json
-{ "code": "kv.notfound", "message": "no key \"missing-key\"", "hint": "…" }
+{
+  "code": "kv.notfound",
+  "hint": "`rta kv list` lists every key",
+  "message": "no key missing-key",
+  "type": "error"
+}
 ```
 
 The code is stable across versions; the message is not. Match on the code.
@@ -145,7 +150,7 @@ rta cert expiry --help
 
 ```
   Arguments:
-    targets  hosts to check (host[:port])
+    targets  hosts to check (host[:port], or an https:// URL)
 
   USAGE
 
@@ -159,8 +164,9 @@ The arguments are read from the same declaration as the flags below them, so a c
 The authoritative reference for anything, and the one that goes deeper than `--help`: types, defaults, which config key fills an input, and whether an MCP caller may supply it at all.
 
 ```bash
-rta explain              # every capability
-rta explain kv.get       # one, in full
+rta explain              # every capability, one row each
+rta explain sys          # what is under a plugin, or under any ID prefix
+rta explain sys.cpu      # one, in full
 ```
 
 ```
@@ -170,8 +176,13 @@ safety       read
 idempotent   true
 cli          rta sys cpu [--cores <bool>]
 mcp-tool     sys_cpu
-input:cores  bool — per-core usage as a bar chart
+profiles     --profile <name> runs this against a configured connection; over MCP that always needs `rta grant allow sys --profile <name>`
+input:cores  bool, from config plugins.sys.cpu.cores — per-core usage as a bar chart
+config file  ~/.config/rta/config.yaml
+dashboard    a tile when added (`rta dashboard add sys.cpu`, or + on it in the TUI), re-run every few seconds; the automatic dashboard shows sys.overview for this plugin
 ```
+
+A capability that needs a grant over MCP says so on its card, with the command that issues it — `rta explain kv.get` has a `grant required (mcp)` row — and an input an agent may not give is marked `local (never offered to MCP callers)`.
 
 This is generated from the same declaration the CLI parser, the TUI form and the MCP schema are built from. It cannot drift, which is more than most documentation can say — including this page.
 
