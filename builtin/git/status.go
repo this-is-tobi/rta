@@ -4,18 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	iofs "io/fs"
 	"os"
 	pathpkg "path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
+	gitformat "github.com/go-git/go-git/v5/plumbing/format/config"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/storage/filesystem"
@@ -38,9 +42,10 @@ func statusCapability() plugin.Capability {
 			"be decoded by eye. A path a merge stopped on is listed as git lists it — UU, AA, UD or DU — " +
 			"and not as an edit. A staged move of a file with its content unchanged is one row, `R` " +
 			"and `old -> new` in Path, as git pairs it; one that also edits the file stays a `D` " +
-			"and an `A`, since pairing it takes a similarity score. A submodule is listed when its " +
-			"commit moved; what is changed inside it is its own repository's status, which this " +
-			"does not read. It ignores what git ignores, matching each pattern as git's own matcher " +
+			"and an `A`, since pairing it takes a similarity score. A submodule moved to another " +
+			"commit, or with a change inside it, is listed as modified; its ignore setting is " +
+			"honoured where the .gitmodules in the working tree or a config file says it. It " +
+			"ignores what git ignores, matching each pattern as git's own matcher " +
 			"does: each .gitignore, the repository's info/exclude, and the file core.excludesFile names, " +
 			"~/.config/git/ignore by default; at most 1 MiB and 10000 patterns of them in all, in the " +
 			"order it reads them. One past that is not applied, as git applies no pattern file past " +
@@ -136,6 +141,15 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 func worktreeStatus(ctx context.Context, deadline time.Time, repo *git.Repository, wt *git.Worktree,
 	req plugin.Request,
 ) (git.Status, unapplied, error) {
+	return worktreeStatusAt(ctx, deadline, repo, wt, req, 0)
+}
+
+// worktreeStatusAt is worktreeStatus for a working tree depth submodules down,
+// which is how far the status that reads submodules has followed them
+// (dirtySubmodules).
+func worktreeStatusAt(ctx context.Context, deadline time.Time, repo *git.Repository, wt *git.Worktree,
+	req plugin.Request, depth int,
+) (git.Status, unapplied, error) {
 	storer := repo.Storer
 	store, onDisk := repo.Storer.(*filesystem.Storage)
 	if onDisk {
@@ -173,6 +187,11 @@ func worktreeStatus(ctx context.Context, deadline time.Time, repo *git.Repositor
 		restoreRootIgnore(wt.Filesystem, idx, status, budget)
 		markUnmerged(idx, status)
 		markIntentToAdd(idx, status)
+		if onDisk {
+			if err := dirtySubmodules(ctx, deadline, req, files, wt.Filesystem, idx, status, configs, depth); err != nil {
+				return nil, nil, err
+			}
+		}
 	}
 	if onDisk {
 		tree, err := worktreeDir(req, wt)
@@ -250,6 +269,154 @@ func isUnmerged(s *git.FileStatus) bool {
 		}
 	}
 	return false
+}
+
+// submoduleDepth is how many submodules deep a status follows one inside
+// another. Past it the inner one is read as the commit the index records, which
+// is all go-git reads of any of them.
+const submoduleDepth = 4
+
+// dirtySubmodules marks a submodule whose own working tree holds a change, as
+// git does, M in the worktree column.
+//
+// **A submodule edited in place read as unchanged.** go-git compares a
+// submodule's HEAD with the commit the index records and nothing else, so a
+// submodule moved to another commit was reported and one with a modified file,
+// a staged change or an untracked file in it was not: git.status said "nothing
+// to commit, working tree clean" about a checkout `git status` lists ` M lib`
+// for, and git.overview counted it clean. The submodule is opened where it is
+// read from (openAt, through files and the gate like the repository holding
+// it) and its own status taken, held to the same deadline; one that is not
+// there or cannot be opened — never cloned, a directory with nothing in it —
+// reads as git reads it, unchanged.
+//
+// git's own switches for it are honoured where this reads them: the
+// submodule's ignore in the working tree's .gitmodules or in a config file, and
+// diff.ignoreSubmodules, all and dirty leaving the content out and untracked
+// the untracked files.
+func dirtySubmodules(ctx context.Context, deadline time.Time, req plugin.Request, files *repoFiles, tree billy.Filesystem,
+	idx *index.Index, status git.Status, configs []scopedConfig, depth int,
+) error {
+	if depth >= submoduleDepth {
+		return nil
+	}
+	root := tree.Root()
+	declared := readGitmodules(tree)
+	for _, e := range idx.Entries {
+		if e.Mode != filemode.Submodule || e.Stage != 0 {
+			continue
+		}
+		if fs := status[e.Name]; fs != nil && fs.Worktree != git.Unmodified {
+			continue
+		}
+		name, declaredIgnore := e.Name, ""
+		if m, ok := declared[e.Name]; ok {
+			name, declaredIgnore = m.name, m.ignore
+		}
+		ignore := submoduleIgnore(configs, name, declaredIgnore)
+		if ignore == "all" || ignore == "dirty" {
+			continue
+		}
+		at := filepath.Join(root, filepath.FromSlash(e.Name))
+		sub, verr := openAt(req, files, at, at, readsObjects)
+		if verr != nil {
+			continue
+		}
+		subWT, err := sub.Worktree()
+		if err != nil {
+			release(sub)
+			continue
+		}
+		inner, _, err := worktreeStatusAt(ctx, deadline, sub, subWT, req, depth+1)
+		release(sub)
+		if err != nil {
+			var refused *view.Error
+			if errors.As(err, &refused) {
+				return err
+			}
+			continue
+		}
+		for _, fs := range inner {
+			if ignore == "untracked" && fs.Worktree == git.Untracked && fs.Staging == git.Untracked {
+				continue
+			}
+			if fs.Worktree == git.Unmodified && fs.Staging == git.Unmodified {
+				continue
+			}
+			if status[e.Name] == nil {
+				status[e.Name] = &git.FileStatus{Staging: git.Unmodified, Worktree: git.Modified}
+			} else {
+				status[e.Name].Worktree = git.Modified
+			}
+			break
+		}
+	}
+	return nil
+}
+
+// submoduleIgnore is what the config files git reads, and the .gitmodules the
+// working tree holds (declared), say to leave out of a submodule's status: the
+// submodule's own setting in a config file over the one .gitmodules gives it,
+// and either over diff.ignoreSubmodules, the later of two files over the
+// earlier, as git reads them.
+func submoduleIgnore(configs []scopedConfig, name, declared string) string {
+	ignore := ""
+	for _, f := range configs {
+		if opt := f.config.Raw.Section("diff"); opt.HasOption("ignoreSubmodules") {
+			ignore = strings.ToLower(strings.TrimSpace(opt.Option("ignoreSubmodules")))
+		}
+	}
+	if declared != "" {
+		ignore = declared
+	}
+	for _, f := range configs {
+		sec := f.config.Raw.Section("submodule")
+		if !sec.HasSubsection(name) {
+			continue
+		}
+		if sub := sec.Subsection(name); sub.HasOption("ignore") {
+			ignore = strings.ToLower(strings.TrimSpace(sub.Option("ignore")))
+		}
+	}
+	return ignore
+}
+
+// declaredSubmodule is what the working tree's .gitmodules says of one: the
+// name its settings are kept under in the config files, and its ignore.
+type declaredSubmodule struct{ name, ignore string }
+
+// readGitmodules is the submodules the working tree's .gitmodules declares, by
+// path. Read as git reads it for a status, from the working tree, and only if
+// it is a regular file of its own: git does not follow a .gitmodules that is a
+// link, and one that pointed elsewhere would make this read what the
+// repository does not hold. Nothing declared reads as git does with no file,
+// each submodule under its path and with no setting.
+func readGitmodules(tree billy.Filesystem) map[string]declaredSubmodule {
+	info, err := tree.Lstat(gitmodules)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maxConfigBytes {
+		return nil
+	}
+	f, err := tree.Open(gitmodules)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = f.Close() }()
+	raw := gitformat.New()
+	if err := gitformat.NewDecoder(io.LimitReader(f, maxConfigBytes)).Decode(raw); err != nil {
+		return nil
+	}
+	out := map[string]declaredSubmodule{}
+	for _, sub := range raw.Section("submodule").Subsections {
+		path := strings.TrimSpace(sub.Option("path"))
+		if path == "" {
+			continue
+		}
+		out[pathpkg.Clean(path)] = declaredSubmodule{
+			name:   sub.Name,
+			ignore: strings.ToLower(strings.TrimSpace(sub.Option("ignore"))),
+		}
+	}
+	return out
 }
 
 // statusFailed is why a status could not be read, as a capability reports it:
