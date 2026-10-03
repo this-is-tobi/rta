@@ -1,6 +1,6 @@
 # Writing an rta plugin
 
-A plugin is a program that returns a declaration. rta launches it, asks what it can do, and renders that on four surfaces — CLI, TUI, MCP and JSON — none of which your code mentions.
+A plugin is a program that returns a declaration. rta launches it, asks what it can do, and renders that on three surfaces — CLI, TUI and MCP, with JSON, CSV and markdown as formats the CLI answers in — none of which your code mentions.
 
 ## Fifteen minutes, start to finish
 
