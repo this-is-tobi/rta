@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -319,5 +321,81 @@ func TestTheBlockARefusedInstanceValueNamesIsOneProfileShowShows(t *testing.T) {
 	out, stderr, err := runWith(t, reg, cfg, "profile", "show", "staging/analytics")
 	if err != nil || !strings.Contains(out, "verify-full") || strings.Contains(out, "require") {
 		t.Errorf("the page it names = %v, and does not show the block alone:\n%s%s", err, out, stderr)
+	}
+}
+
+const credentialInstancesConfig = `profiles:
+  staging:
+    plugins:
+      db:
+        set:
+          host: db.internal
+      db/analytics:
+        set:
+          host: analytics.internal
+      db/mapped:
+        set:
+          host: mapped.internal
+        secrets:
+          password: kv:staging-mapped-password
+`
+
+// A labeled instance reads no RTA_PROFILE_* variable — a name for
+// `staging/analytics` would be forgeable by naming a profile carefully, so
+// profile.Bind leaves the channel to the default instance — and the page that
+// says where each credential comes from named the default instance's variable
+// for it anyway, and called it the instance's credential when it was exported.
+// An export meant for the main database was shown filling the analytics one.
+func TestProfileShowDoesNotOfferALabeledInstanceTheDefaultInstancesVariable(t *testing.T) {
+	t.Setenv("RTA_PROFILE_STAGING_PASSWORD", "for-the-default-instance")
+	reg := connRegistry(t)
+
+	out, stderr, err := runWith(t, reg, credentialInstancesConfig, "profile", "show", "staging/analytics")
+	if err != nil {
+		t.Fatalf("show staging/analytics: %v\n%s", err, stderr)
+	}
+	if strings.Contains(out, "RTA_PROFILE_STAGING_PASSWORD") {
+		t.Errorf("a labeled instance was shown the variable only the default instance reads:\n%s", out)
+	}
+	if !strings.Contains(out, "credential:password") || !strings.Contains(out, "`secrets:` only") {
+		t.Errorf("the instance's page does not say its credential comes from `secrets:`:\n%s", out)
+	}
+
+	out, _, err = runWith(t, reg, credentialInstancesConfig, "profile", "show", "staging/mapped")
+	if err != nil || !strings.Contains(out, "kv:staging-mapped-password") {
+		t.Errorf("a mapped instance does not show its reference: %v\n%s", err, out)
+	}
+
+	// The default instance keeps the variable, which it does read.
+	out, _, err = runWith(t, reg, credentialInstancesConfig, "profile", "show", "staging")
+	if err != nil || !strings.Contains(out, "$RTA_PROFILE_STAGING_PASSWORD (set)") {
+		t.Errorf("the default instance lost its variable: %v\n%s", err, out)
+	}
+}
+
+// Doctor's profile row said the same thing in its own words: "set
+// $RTA_PROFILE_STAGING_PASSWORD" for an instance that reads none, and nothing
+// at all once somebody exported it for the default instance — a profile whose
+// analytics connection had no credential was reported ok.
+func TestDoctorAsksALabeledInstanceForAMappingNotAVariable(t *testing.T) {
+	_, configDir := isolate(t)
+	t.Setenv("RTA_PROFILE_STAGING_PASSWORD", "for-the-default-instance")
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(credentialInstancesConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var row, status string
+	for _, r := range doctorReport(connRegistry(t)).(view.Table).Rows {
+		if r[0] == "profile" {
+			status, row = r[1], r[2]
+		}
+	}
+	if status != "warn" {
+		t.Fatalf("an instance with no `secrets:` mapping was reported %q:\n%s", status, row)
+	}
+	if !strings.Contains(row, "map db/analytics password with `secrets:`") {
+		t.Errorf("the row does not ask for the mapping the instance needs:\n%s", row)
+	}
+	if strings.Contains(row, "db/mapped password") || strings.Contains(row, "set $") {
+		t.Errorf("the row asks for what is already there, or for a variable nothing reads:\n%s", row)
 	}
 }
