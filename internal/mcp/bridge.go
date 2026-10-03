@@ -1107,8 +1107,13 @@ func viewResult(v view.View) (*sdk.CallToolResult, error) {
 
 func errResult(e *view.Error) *sdk.CallToolResult {
 	// AsError puts a foreign error's own text into Message, so an error is as
-	// much a channel from elsewhere as a result body is.
-	raw, _ := view.Marshal(view.Envelope{View: view.MapErrorStrings(e, func(s string) string { return textclean.Credentials(textclean.Model(s)) })})
+	// much a channel from elsewhere as a result body is. It is also written
+	// for the person at a terminal, who is told where things are: what an agent
+	// is told of the operator's own places is their names (operatorPaths), and
+	// what it sent in a URL or a header is not repeated to it with its secrets.
+	raw, _ := view.Marshal(view.Envelope{View: view.MapErrorStrings(e, func(s string) string {
+		return withoutOperatorPaths(textclean.Credentials(textclean.Model(s)))
+	})})
 	return &sdk.CallToolResult{
 		IsError: true,
 		Content: []sdk.Content{&sdk.TextContent{Text: string(raw)}},
