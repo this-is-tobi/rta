@@ -160,9 +160,16 @@ func Plugin() plugin.Plugin {
 				// individually rather than one for all of them.
 				NeedsGrant: true,
 				Scope:      "targets",
-				Description: "Same reasoning as `net.probe`: the hosts are the caller's choice, and " +
-					"what a certificate says about itself — subject, issuer, DNS names — is read as " +
-					"tool output the same way a banner is. Needs a grant, one per host listed.",
+				Description: "Connects to each host over TLS and reports when its certificate ends: " +
+					"the date, the time left, and a status — ok, WARN once it ends within " +
+					"`warn-days`, EXPIRED once it has, INVALID before it begins, and a host that still " +
+					"negotiates TLS 1.0 or 1.1 is flagged beside the date. One row per host; a host " +
+					"that cannot be reached is its row's error and does not stop the rest. It reads " +
+					"the leaf alone and trusts nothing: `cert.inspect` is where a chain is " +
+					"judged.\n\n" +
+					"Over MCP it needs a grant, one per host listed, for the reason `net.probe` does: " +
+					"the hosts are the caller's choice, and what a certificate says about itself — " +
+					"subject, issuer, DNS names — is read as tool output the same way a banner is.",
 				Inputs: []plugin.Field{
 					{Name: "targets", Type: plugin.StringSlice, Positional: true, Required: true,
 						Help: "hosts to check (host[:port])"},
