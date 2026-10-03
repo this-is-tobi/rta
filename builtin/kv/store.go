@@ -255,7 +255,7 @@ func resolvePassphrase(req plugin.Request) (string, *view.Error) {
 // needs no setup step. A decrypt failure (wrong key or a corrupted file —
 // age cannot tell them apart, and neither can we) is one coded error.
 func load(req plugin.Request) (store, *view.Error) {
-	data, err := os.ReadFile(storePath())
+	data, err := atomicfile.ReadFile(storePath())
 	if os.IsNotExist(err) {
 		return store{Entries: map[string]entry{}}, nil
 	}

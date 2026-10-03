@@ -604,7 +604,7 @@ func writeAnchor(key []byte, a anchor) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(retiredPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := atomicfile.OpenAppend(retiredPath(), 0o600)
 	if err != nil {
 		return err
 	}
@@ -810,7 +810,7 @@ func Append(e Entry) (err error) {
 		return fmt.Errorf("sealing the entry")
 	}
 	e.Seal = mac
-	f, err := os.OpenFile(Path(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := atomicfile.OpenAppend(Path(), 0o600)
 	if err != nil {
 		return err
 	}
@@ -1027,7 +1027,7 @@ func lastEntryIn(path string) (Entry, error) {
 // lastLineIn reads one file's final entry and the bytes it was stored as,
 // which is what verifying its seal needs.
 func lastLineIn(path string) ([]byte, Entry, error) {
-	f, err := os.Open(path)
+	f, err := atomicfile.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, Entry{}, nil
 	}
@@ -1122,7 +1122,7 @@ func tailLines(path string, want int) ([]string, error) {
 	if want <= 0 {
 		return nil, nil
 	}
-	f, err := os.Open(path)
+	f, err := atomicfile.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -1164,7 +1164,7 @@ func tailLines(path string, want int) ([]string, error) {
 
 // entriesIn parses one whole file.
 func entriesIn(path string) ([]Entry, error) {
-	f, err := os.Open(path)
+	f, err := atomicfile.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -1320,7 +1320,7 @@ func Verify() (Report, error) {
 	var seq int64
 	started := false
 	for _, p := range files {
-		f, err := os.Open(p)
+		f, err := atomicfile.Open(p)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}

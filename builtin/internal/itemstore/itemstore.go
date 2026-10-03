@@ -91,7 +91,7 @@ func dataDir() string { return paths.Data() }
 func Load(file, ns string) (Store, error) {
 	path := filepath.Join(dataDir(), file)
 	var s Store
-	data, err := os.ReadFile(path)
+	data, err := atomicfile.ReadFile(path)
 	if os.IsNotExist(err) {
 		return Store{NextID: 1}, nil
 	}

@@ -123,6 +123,42 @@ func openRegular(path string) (*os.File, error) {
 	return f, nil
 }
 
+// Open is how a file rta wrote is opened to read where ReadCapped's bound on
+// its size does not fit: a segment of the record, read a line at a time.
+// Opened as openRegular opens it.
+func Open(path string) (*os.File, error) { return openRegular(path) }
+
+// ReadFile is os.ReadFile for a file rta wrote, opened as openRegular opens
+// it: for the stores and lists whose size is their own business.
+func ReadFile(path string) ([]byte, error) {
+	f, err := openRegular(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return io.ReadAll(f)
+}
+
+// OpenAppend opens path to append to, creating it, if it is or becomes a
+// regular file, and never waits for a reader of one that is not: the same
+// open(2) that waits for a writer on the read side waits for a reader here,
+// and a record that is a pipe is a record read by whoever opened the other end.
+func OpenAppend(path string, perm fs.FileMode) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY|syscall.O_NONBLOCK, perm)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = &fs.PathError{Op: "append", Path: path, Err: errNotRegular}
+	}
+	if err != nil {
+		cerr := f.Close()
+		return nil, errors.Join(err, cerr)
+	}
+	return f, nil
+}
+
 // waitingOut runs a query about a path until the platform stops refusing it for
 // a reason that resolves on its own.
 //
