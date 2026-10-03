@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"os"
 	"os/exec"
@@ -263,10 +264,20 @@ func Describe(ctx context.Context, path string) (plugin.Plugin, *view.Error) {
 		// Neutrally coded, because this is reached from install and from
 		// `rta plugin manifest`, and a code naming the wrong one of those is
 		// a code that misleads whoever pastes it into a search.
-		return plugin.Plugin{}, view.Errorf("plugin.declaration.unreadable", "%v", err).
-			WithHint("rta learns what a plugin declares by running it and asking, which is " +
-				"how an index's claims get checked and how a manifest gets written; " +
-				"a binary that cannot answer is not one rta will use")
+		verr := view.Errorf("plugin.declaration.unreadable", "%v", err)
+		// No file at all is the commonest way to get here from the command line,
+		// and for a person who has installed a plugin the commonest argument is
+		// its name — `rta plugin doc pg` — which is a plugin and not the program
+		// the command wants. The general hint below is about a binary that ran
+		// and could not answer, and tells that person nothing of the mistake.
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, exec.ErrNotFound) {
+			return plugin.Plugin{}, verr.WithHint("this takes the plugin's executable itself: a path to it " +
+				"(`./rta-plugin-mytool`), or its file name `rta-plugin-<name>` when that is on $PATH; " +
+				"an installed plugin is read with `rta explain <capability>`")
+		}
+		return plugin.Plugin{}, verr.WithHint("rta learns what a plugin declares by running it and asking, which is " +
+			"how an index's claims get checked and how a manifest gets written; " +
+			"a binary that cannot answer is not one rta will use")
 	}
 	return client.Declared, nil
 }
