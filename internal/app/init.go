@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
@@ -181,7 +182,7 @@ var askInit = func(ctx context.Context, reg *registry.Registry, current config.C
 				Title("Dashboard tiles").
 				Description("Leave empty for the automatic dashboard: one tile per plugin.\n"+
 					"Choosing here fixes the set instead — new plugins will not appear.").
-				Options(tileOptions(reg, a.tiles)...).
+				Options(tileOptions(reg, a.tiles, formLabelWidth(out))...).
 				Value(&a.tiles),
 			confirm,
 		),
@@ -271,7 +272,13 @@ func initConfig(current config.Config, output string, tiles []string) config.Con
 
 // tileOptions lists dashboard-eligible capabilities: read-only, no required
 // inputs — the same rule the dashboard itself enforces.
-func tileOptions(reg *registry.Registry, selected []string) []huh.Option[string] {
+//
+// Each label is cut to width when that is known (0 draws them whole). huh
+// wraps a label that is wider than the form, and the continuation is a few
+// letters of a sentence on a line of its own, indented under nothing — "pkg",
+// "tha", "t" — that reads as three more options. The ID is what is chosen and
+// is never the part cut.
+func tileOptions(reg *registry.Registry, selected []string, width int) []huh.Option[string] {
 	chosen := map[string]bool{}
 	for _, id := range selected {
 		chosen[id] = true
@@ -281,9 +288,28 @@ func tileOptions(reg *registry.Registry, selected []string) []huh.Option[string]
 		if c.Safety != plugin.Read || hasRequiredInputs(c) {
 			continue
 		}
-		opts = append(opts, huh.NewOption(c.ID+" — "+c.Summary, c.ID).Selected(chosen[c.ID]))
+		label := c.ID + " — " + c.Summary
+		if width > 0 {
+			label = ansi.Truncate(label, width, "…")
+		}
+		opts = append(opts, huh.NewOption(label, c.ID).Selected(chosen[c.ID]))
 	}
 	return opts
+}
+
+// formLabelWidth is how wide an option's label may be on the form drawn on out:
+// the terminal's width less what huh puts in front of a label — its margin, the
+// selection marker and the bullet — and a little to spare. 80 when out is not
+// a terminal that can say, which is the width everything here is written for.
+func formLabelWidth(out io.Writer) int {
+	const gutter = 10
+	columns := 80
+	if f, ok := out.(*os.File); ok {
+		if w, _, err := term.GetSize(int(f.Fd())); err == nil && w > 0 {
+			columns = w
+		}
+	}
+	return max(columns-gutter, 20)
 }
 
 // hasRequiredInputs counts a Piped input as required, as the dashboard does
