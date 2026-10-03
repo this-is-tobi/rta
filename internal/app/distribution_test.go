@@ -8,6 +8,48 @@ import (
 	"testing"
 )
 
+// An upgrade says what it did to the config that pinned the old build, and only
+// that. It said "your pin plugins.pg@abc no longer applies" on every upgrade,
+// whether or not the config named the old build — and never named `rta profile
+// repin`, which moves every profile entry in one command and is the thing the
+// person with forty of them needs.
+func TestAnUpgradeNamesWhatTheConfigPinnedAndHowToMoveIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	t.Setenv("RTA_CONFIG", path)
+	old, fresh := "6db7eaeebf84"+strings.Repeat("0", 52), "099d72c38cfc"+strings.Repeat("1", 52)
+
+	pairs := func(dryRun bool) map[string]string {
+		out := map[string]string{}
+		for _, p := range stalePinPairs("hello", old, fresh, dryRun) {
+			out[p.Key] = p.Value
+		}
+		return out
+	}
+
+	// Nothing in the config names the build: nothing to say.
+	if got := pairs(false); len(got) != 0 {
+		t.Errorf("a config that pins nothing was told about pins: %v", got)
+	}
+
+	body := "profiles:\n  staging:\n    plugins:\n      hello@6db7eaeebf84:\n        set:\n          url: https://a.example\n" +
+		"  other:\n    plugins:\n      hello@ffffffffffff:\n        set:\n          url: https://b.example\n" +
+		"plugins:\n  hello@6db7eaeebf84:\n    url: https://c.example\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := pairs(false)
+	if v := got["your profiles"]; !strings.Contains(v, "1 profile (staging)") || strings.Contains(v, "other") ||
+		!strings.Contains(v, "`rta profile repin --all --plugin hello`") || !strings.Contains(v, "hello@099d72c38cfc") {
+		t.Errorf("profiles row = %q", v)
+	}
+	if v := got["your pin"]; !strings.Contains(v, "plugins.hello@6db7eaeebf84 no longer applies") {
+		t.Errorf("pin row = %q", v)
+	}
+	if v := pairs(true)["your profiles"]; !strings.Contains(v, "will refuse after the upgrade") {
+		t.Errorf("a dry run speaks of what has already happened: %q", v)
+	}
+}
+
 // `--platform` is where an author says the one thing a binary cannot say
 // about itself, so its grammar is the one place a typo turns into a manifest
 // nobody can install from. Every refusal here is one caught before the file
