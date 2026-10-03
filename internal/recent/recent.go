@@ -45,6 +45,7 @@ import (
 	"sync"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/headerlist"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -192,7 +193,17 @@ func offerable(c plugin.Capability, values map[string]any) map[string][]string {
 		if !given || !worthOffering(f) {
 			continue
 		}
-		for _, raw := range entries(v) {
+		raws := entries(v)
+		// A header list arrives cut at its commas, and `Accept: text/html,
+		// application/json` is two entries that are each wrong to keep: half a
+		// header offered back as an input, and, for a credential, the half after
+		// the comma that the check below cannot recognise as one — `X-Api-Key:
+		// a, b` was refused, and `b` was remembered. By name, as credentialName
+		// is: the list is the shape of the input and nothing else says so.
+		if f.Name == "header" {
+			raws = headerlist.Join(raws)
+		}
+		for _, raw := range raws {
 			// Refused rather than cleaned, and the difference matters here.
 			// These strings come back out onto a completion list, where one
 			// keystroke accepts one as an input — so a cleaned version would

@@ -339,3 +339,21 @@ func TestAMultiLineValueIsNotRemembered(t *testing.T) {
 		t.Errorf("shortlist = %q, want nothing that is not one line", got)
 	}
 }
+
+// A header whose value has commas reaches Record cut at them, and is remembered
+// whole: the second half of `Accept: text/html, application/json` is no header
+// to offer back, and the second half of a credential is not refused by the
+// check that refuses the first.
+func TestAHeaderWithCommasInItsValueIsRememberedWhole(t *testing.T) {
+	isolated(t)
+	c := capWith("http.get", plugin.Field{Name: "header", Type: plugin.StringSlice})
+	Record(plugin.SurfaceCLI, c, map[string]any{"header": []string{
+		"Accept: text/html", " application/json",
+		"X-Api-Key: sk_one", " sk_two",
+	}})
+	got := Load().For("http.get", "header")
+	want := []string{"Accept: text/html, application/json"}
+	if !slices.Equal(got, want) {
+		t.Errorf("shortlist = %q, want %q", got, want)
+	}
+}
