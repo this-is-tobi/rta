@@ -44,12 +44,11 @@ func Plugin() plugin.Plugin {
 			{
 				ID:      "codec.b64",
 				Summary: "Base64 encode or decode a value",
-				Description: "Decoding accepts standard, URL-safe, and unpadded variants, and the line " +
-					"breaks and spaces wrapped base64 arrives with, without being told which — the caller " +
-					"already has the encoded value, so being forgiving about which dialect produced it " +
-					"costs nothing. Bytes that are not plain text are shown as a hex dump rather than " +
-					"printed at the terminal, where they would show as nothing, and text holding a control " +
-					"or invisible character comes back as its exact value beside the dump.",
+				Description: "Decoding accepts standard, URL-safe and unpadded variants, and the line breaks and " +
+					"spaces wrapped base64 arrives with, without being told which dialect: the caller already " +
+					"has the encoded value, so being forgiving about which produced it costs nothing. Bytes " +
+					"that are not plain text come back as a hex dump, and text holding a control or invisible " +
+					"character comes back as its exact value beside the dump.",
 				Safety: plugin.Read, Idempotent: true,
 				Inputs: []plugin.Field{valueField, decodeField,
 					{Name: "url", Type: plugin.Bool, Help: "use the URL-safe alphabet when encoding"}},
@@ -81,20 +80,15 @@ func Plugin() plugin.Plugin {
 			{
 				ID:      "codec.jwt",
 				Summary: "Decode a JWT, JWS or JWE for inspection: headers, claims, dates",
-				Description: "Reads every serialization the JOSE family defines — a signed token (JWS), an " +
-					"encrypted one (JWE), and the JSON form of either — with the headers and claims decoded, " +
-					"the dates read, and anything a strict parser would refuse named: a padded segment, a " +
-					"member given twice, an empty signature. A JWE's header is read and its content is not, " +
-					"because decrypting takes the recipient's key: a private key, a shared key or a password, " +
-					"depending on its alg. Unverified unless a key or a secret file " +
-					"is given, and labeled as such: anyone can hand you a token with any claims at all. With " +
-					"`key` — a public key, certificate or the issuer's key set, fetched by you, since a capability " +
-					"that fetched a URL its caller names would not be a free read — the signature is checked, the " +
-					"algorithm is decided by the key and never by the token, and a mismatch is an error naming " +
-					"why. An HMAC signature is checked only against a shared secret the person at the terminal " +
-					"keeps in a file (`secret-file`): never a public key, and never a secret an agent passes. A pasted " +
-					"`Authorization: Bearer` line works. On the CLI, a token left out is read from a pipe, " +
-					"which keeps a live one out of shell history and out of the process list.",
+				Description: "Decodes a signed token (JWS), an encrypted one (JWE) or the JSON form of either, and " +
+					"names what a strict parser would refuse: a padded segment, a repeated member, an empty " +
+					"signature. A JWE's content is not read, because decrypting takes the recipient's key: a " +
+					"private key, a shared key or a password, depending on its alg. Unverified, and labeled " +
+					"so, unless `key` is given: a public key, certificate or issuer's key set, which you " +
+					"fetch, since this never fetches a URL. Then the signature is checked, the algorithm is " +
+					"decided by the key and never by the token, and a mismatch is an error naming why. An " +
+					"HMAC signature is checked only against a shared secret the operator keeps in a file, " +
+					"never one an agent passes.",
 				Safety: plugin.Read, Idempotent: true,
 				// Positional but not Required, because a pipe can supply it —
 				// so without this the dashboard's automatic set (every Read
@@ -137,12 +131,12 @@ func Plugin() plugin.Plugin {
 			{
 				ID:      "codec.jwk",
 				Summary: "Read a JSON Web Key or key set: type, size, thumbprint, and whether it is private",
-				Description: "Takes one JWK or a whole key set — an issuer's jwks_uri answer — and says what " +
-					"each key is: its type and size, whether its point is on its curve, its kid, use and alg, " +
-					"and the RFC 7638 thumbprint a DPoP cnf.jkt or a pinned key is compared against. Names a " +
-					"key holding private material, which a published set never should, and two keys sharing " +
-					"a kid. A certificate chain in x5c is read and checked against the key beside it. Private " +
-					"members are never printed. On the CLI, a key left out is read from a pipe.",
+				Description: "Takes one JWK or a whole key set, an issuer's jwks_uri answer, and says what each key " +
+					"is: its type and size, whether its point is on its curve, its kid, use and alg, and the " +
+					"RFC 7638 thumbprint a DPoP cnf.jkt or a pinned key is compared against. Names a key " +
+					"holding private material, which a published set never should, and two keys sharing a " +
+					"kid. A certificate chain in x5c is read and checked against the key beside it. Private " +
+					"members are never printed.",
 				Safety: plugin.Read, Idempotent: true,
 				NoPreview: true,
 				// Secret for the reason codec.jwt's token is: a private JWK is

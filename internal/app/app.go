@@ -1669,6 +1669,12 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 // The shell-history clause goes here too and only here. It is true of argv
 // and of nothing else: a TUI form has no history and an MCP caller has no
 // argv, and it was being read out under a masked box.
+//
+// So does the pipe. Four descriptions ended on "On the CLI, a token left out
+// is read from a pipe", which is true of one surface, was sent to every
+// agent as part of the tool's description, and said nothing a Piped
+// declaration does not already say: Field.Piped is what makes the CLI read
+// standard input, so the sentence is generated from it here.
 func flagUsage(c plugin.Capability, f plugin.Field) string {
 	usage := f.Help
 	if len(f.Options) > 0 {
@@ -1677,6 +1683,14 @@ func flagUsage(c plugin.Capability, f plugin.Field) string {
 			usage = set
 		} else {
 			usage += " (" + set + ")"
+		}
+	}
+	if f.Piped {
+		const pipe = "read from standard input when left out"
+		if usage == "" {
+			usage = pipe
+		} else {
+			usage += " (" + pipe + ")"
 		}
 	}
 	if f.Local && f.EnvFallback {

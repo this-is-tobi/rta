@@ -36,27 +36,16 @@ func Plugin() plugin.Plugin {
 			{
 				ID:      "debug.ansi",
 				Summary: "Break down the escape sequences and hidden characters in a string",
-				Description: "Walks the input the way a terminal would, one printable run or " +
-					"control/escape sequence at a time, and names what each one does — SGR " +
-					"colors and attributes (underline styles and colon-form colors included), " +
-					"cursor movement, screen/line erase, the modes a program leaves set when it " +
-					"garbles a terminal (hidden cursor, alternate screen, mouse reporting, " +
-					"bracketed paste, DEC line drawing), the requests a terminal answers into " +
-					"the input as if typed, and the OSC " +
-					"sequences most worth knowing about on sight: window title, hyperlink " +
-					"target, the system clipboard write (decoded, not left as base64), the " +
-					"colour queries a terminal answers into the input, and the working-directory, " +
-					"shell-integration and notification commands; " +
-					"tmux passthrough and kitty graphics strings. Also names the kinds of " +
-					"character known to hide themselves: bidi overrides (the Trojan Source " +
-					"trick), zero-width and filler characters, 8-bit C1 controls, and tag " +
-					"characters and runs of variation selectors, decoded to what they invisibly " +
-					"carry — the way a prompt injection hides in an innocent sentence. Never " +
-					"prints a raw control byte back at the terminal it is running in — the " +
-					"whole point is seeing what a sequence does without it happening. The escape " +
-					"character written out as a log shows it — \\033, \\x1b, \\e, \\u001b or ^[ ahead of [ " +
-					"or ] — is read as the character, and said to be. On the CLI, text left out is " +
-					"read from a pipe.",
+				Description: "Walks the input as a terminal would and names what each printable run or " +
+					"escape sequence does: the modes a program leaves set when it garbles a " +
+					"terminal (hidden cursor, alternate screen, mouse reporting, bracketed paste), " +
+					"the requests a terminal answers into the input, and the OSC sequences worth " +
+					"knowing on sight (title, hyperlink, a clipboard write, decoded). Also names the " +
+					"characters that hide themselves, bidi overrides, zero-width characters, C1 " +
+					"controls, tag characters and variation-selector runs, decoded to what they " +
+					"invisibly carry, as a prompt injection hides in a sentence. " +
+					"An escape written out as a log shows it — \\033, \\x1b, \\e, \\u001b or ^[ ahead of [ " +
+					"or ] — is read as the character, and said to be.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				// input is Positional but not Required — stdin can supply

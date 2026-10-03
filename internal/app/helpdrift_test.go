@@ -121,3 +121,35 @@ func TestCLIHelpNamesTheEnvironmentVariableForACredential(t *testing.T) {
 		t.Errorf("--passphrase usage does not name $RTA_KV_PASSPHRASE: %q", flag.Usage)
 	}
 }
+
+// A Piped input is read from standard input when the CLI leaves it out, and
+// --help says so from the declaration. The descriptions of codec.jwt,
+// codec.jwk and debug.ansi used to end on a sentence saying it, which every
+// agent was sent as well, for a pipe it has none of.
+func TestCLIHelpSaysAPipedInputIsReadFromStandardInput(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"codec.jwt", "codec.jwk", "debug.ansi"} {
+		c, ok := reg.Capability(id)
+		if !ok {
+			t.Fatalf("no capability %s", id)
+		}
+		var piped plugin.Field
+		for _, f := range c.Inputs {
+			if f.Piped {
+				piped = f
+			}
+		}
+		if piped.Name == "" {
+			t.Fatalf("%s has no piped input, so this test checks nothing", id)
+		}
+		if got := flagUsage(c, piped); !strings.Contains(got, "read from standard input when left out") {
+			t.Errorf("%s --help says %q of %s, and not that it is read from standard input", id, got, piped.Name)
+		}
+		if strings.Contains(c.Description, "pipe") {
+			t.Errorf("%s: the description talks about a pipe the help already mentions: %q", id, c.Description)
+		}
+	}
+}
