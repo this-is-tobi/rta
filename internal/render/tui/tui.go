@@ -154,6 +154,7 @@ type Model struct {
 	lastYes    bool
 	result     resultMsg
 	flash      string // one-shot footer notice (e.g. "copied"), cleared on next key
+	flashBad   string // the flash when it reports what did not happen (see refuse)
 	// armedDelete is the two-press gate on the profile panes' `d`: the first
 	// press names what would be removed, the next `y` removes it, and any
 	// other key disarms. It exists because `d` sat one mispress from the
@@ -480,14 +481,40 @@ func (m Model) reopenTop() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	if nm, ok := next.(Model); ok {
+		return nm.fitCatalogue(), cmd
+	}
+	return next, cmd
+}
+
+// fitCatalogue sizes the catalogue's list to what is left of the window once
+// its own column header and the hint bar are drawn, which is the room it has
+// — otherwise its last rows land under the footer and the scroll position
+// lies about what is reachable.
+//
+// **After every message, because the footer is not one height.** It was done
+// once, when the window's size arrived, with whatever the footer said then; a
+// message in it, which `+` on the dashboard puts there, makes it two lines,
+// and the frame was a line taller than the terminal, so the renderer cut off
+// the bottom: the line that had just been put there. The size is only set when
+// it changed, which leaves the list's page and cursor alone on the many
+// messages that change nothing.
+func (m Model) fitCatalogue() Model {
+	if m.height <= 0 {
+		return m
+	}
+	w, h := m.width, max(m.height-1-lipgloss.Height(m.browseFooter()), 3)
+	if m.list.Width() != w || m.list.Height() != h {
+		m.list.SetSize(w, h)
+	}
+	return m
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		// The catalogue draws its own column header above the list and the
-		// shared hint bar below it, so the list gets what is left rather
-		// than the whole window — otherwise its last rows land under the
-		// footer and the scroll position lies about what is reachable.
-		m.list.SetSize(msg.Width, max(msg.Height-1-lipgloss.Height(m.browseFooter()), 3))
 		m.viewport.SetWidth(msg.Width - 4)   // result panel: borders + padding
 		m.viewport.SetHeight(msg.Height - 3) // panel top/bottom + footer
 		m.clampScroll()                      // dashboard rows per screen changed

@@ -317,7 +317,7 @@ func (m Model) selectedAction(key string) (capAction, bool) {
 // confirmation — opens a form first.
 func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 	if where, ok := m.follows(a); !ok {
-		m.flash = a.cap.ID + " acts on this machine only, and these rows are " + where + "'s"
+		m.refuse(a.cap.ID + " acts on this machine only, and these rows are " + where + "'s")
 		return m, nil
 	}
 	base, ok := m.actionSeed(a, tbl)

@@ -52,7 +52,9 @@ func Plugin() plugin.Plugin {
 					"Hidden entries are included — they are " +
 					"usually the answer. With `detail`: the ranking, the largest individual files " +
 					"found anywhere beneath, and what was skipped. Follows no symlinks and crosses " +
-					"no filesystem boundary, so a scan cannot loop or wander onto a network mount.",
+					"no filesystem boundary, so a scan cannot loop or wander onto a network mount. A name that " +
+					"holds an escape, a newline or another character that does not draw as itself is shown quoted " +
+					"with it written out, never cleaned into another name.",
 				Inputs: []plugin.Field{
 					pathField("directory to measure"),
 					{Name: "limit", Type: plugin.Int, Config: "limit", Default: 20, Min: 1, Max: 1000, Help: "how many entries to rank"},
@@ -85,7 +87,9 @@ func Plugin() plugin.Plugin {
 					"smaller than it is. With `detail`: what the walk covered, the tree, and " +
 					"everything it left out — depth, per-directory limit, hidden entries, mount " +
 					"points and unreadable directories gathered in one place instead of scattered " +
-					"through the branches they happened in.",
+					"through the branches they happened in. A name that holds an escape, a newline or another " +
+					"character that does not draw as itself is shown quoted with it written out, never " +
+					"cleaned into another name.",
 				Inputs: []plugin.Field{
 					pathField("directory to show"),
 					{Name: "depth", Type: plugin.Int, Config: "depth", Default: 2, Min: 1, Max: 12, Help: "how many levels to show"},

@@ -141,7 +141,7 @@ func (m Model) confirmCopyPick() (tea.Model, tea.Cmd) {
 	next, cmd := m.closeCopyPick()
 	nm := next.(Model)
 	if verr := copyValueToClipboard(value); verr != nil {
-		nm.flash = "not copied: " + verr.Error()
+		nm.refuse("not copied: " + verr.Error())
 	} else {
 		nm.flash = "copied value"
 	}

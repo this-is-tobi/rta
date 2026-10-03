@@ -165,10 +165,33 @@ type capForm struct {
 	// heads is the section title rendered above a named field, keyed by that
 	// field's name. See withSection.
 	heads map[string]string
+	// checks is a rule a field is held to beyond what its declaration says, by
+	// field name: the form of a profile's name, which only the profile editor
+	// knows. See withCheck.
+	checks map[string]func(string) error
 }
 
 // formOption tunes a form beyond the fields it collects.
 type formOption func(*capForm)
+
+// withCheck holds a field to a rule its declaration cannot say, as it is
+// typed: the message lands in the footer beside the key just pressed, and the
+// form stays where it is. check is called with the value trimmed and never
+// empty, since an empty one is the required rule's.
+//
+// **A rule checked only at the save throws the form away.** The profile
+// editor found a bad name or colour after the last box, closed to the pane
+// behind it, and said so in a footer line the form was no longer there to be
+// corrected from: everything typed was gone. Said at the box, it is the one
+// field to fix.
+func withCheck(name string, check func(string) error) formOption {
+	return func(cf *capForm) {
+		if cf.checks == nil {
+			cf.checks = map[string]func(string) error{}
+		}
+		cf.checks[name] = check
+	}
+}
 
 // hideUnless asks about a field only while want holds.
 //
@@ -547,7 +570,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 				ExternalEditor(true).
 				Lines(5).
 				Accessor(cf.bind(f.Name, defaultString(f))).
-				Validate(validatorFor(f)))
+				Validate(cf.validator(f)))
 		case plugin.StringSlice:
 			// A []string default (from a declared Field.Default or a
 			// Prefill result, e.g. a task's current tags) must render as
@@ -557,7 +580,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 				Title(fieldTitle(f.Name)).
 				Description(completionHint(f, fieldDescription(f)+" (comma-separated)")).
 				Accessor(typed).
-				Validate(validatorFor(f)), f, typed, lastItem)))
+				Validate(cf.validator(f)), f, typed, lastItem)))
 		case plugin.Path:
 			// The filesystem is re-read on every keystroke, which is what
 			// makes it a completion rather than a list, and whatever the field
@@ -567,7 +590,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 				Title(fieldTitle(f.Name)).
 				Description(fieldDescription(f)+" — tab completes paths").
 				Accessor(typed).
-				Validate(validatorFor(f)), f, typed, walkingDisk)))
+				Validate(cf.validator(f)), f, typed, walkingDisk)))
 		case plugin.Secret, plugin.SecretSlice:
 			// Never completed, and that is a rule rather than an omission: a
 			// suggestion list renders in plain text beside a box that is
@@ -586,14 +609,14 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 				Description(commaHint(f)).
 				EchoMode(huh.EchoModePassword).
 				Accessor(cf.bind(f.Name, defaultString(f))).
-				Validate(validatorFor(f))))
+				Validate(cf.validator(f))))
 		default:
 			typed := cf.bind(f.Name, defaultString(f))
 			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
 				Title(fieldTitle(f.Name)).
 				Description(completionHint(f, fieldDescription(f))).
 				Accessor(typed).
-				Validate(validatorFor(f)), f, typed, wholeBox)))
+				Validate(cf.validator(f)), f, typed, wholeBox)))
 		}
 	}
 	// After the bindings exist, because a condition reads one of them.
@@ -1084,6 +1107,24 @@ func fieldDescription(f plugin.Field) string {
 		return extra
 	}
 	return d + " (" + extra + ")"
+}
+
+// validator is validatorFor plus the form's own rule for the field, if it has
+// one (withCheck). Looked up as the box is validated, not when it is built,
+// because the options that set it are applied after the boxes are.
+func (cf *capForm) validator(f plugin.Field) func(string) error {
+	base := validatorFor(f)
+	return func(s string) error {
+		if err := base(s); err != nil {
+			return err
+		}
+		if check := cf.checks[f.Name]; check != nil {
+			if s = strings.TrimSpace(s); s != "" {
+				return check(s)
+			}
+		}
+		return nil
+	}
 }
 
 // validatorFor enforces required presence and type shape while typing.

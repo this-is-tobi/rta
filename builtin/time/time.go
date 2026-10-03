@@ -65,7 +65,9 @@ func Plugin() plugin.Plugin {
 					"A bare number carries no unit, so the unit is chosen by magnitude and then " +
 					"stated back to you in the `read-as` row: between 1970 and 1973 the ranges " +
 					"genuinely overlap and no rule can resolve that, which makes saying what was " +
-					"assumed part of the answer rather than a footnote.",
+					"assumed part of the answer rather than a footnote. A time of day the local clock showed twice, the " +
+					"night it went back, is answered as one of the two with the other named in an `ambiguous` row; " +
+					"one it never showed is refused.",
 				Inputs: []plugin.Field{
 					{Name: "when", Type: plugin.String, Positional: true, Default: "now",
 						Help: "an instant: now, an epoch number, 2026-09-04T12:00:00Z, 2026-09-04, or a relative duration like \"90m ago\""},
@@ -107,6 +109,9 @@ func runAt(_ context.Context, req plugin.Request) (view.View, error) {
 	// assume, and a row saying so would be noise on the common path.
 	if unit != "" {
 		pairs = append(pairs, view.Pair{Key: "read-as", Value: string(unit)})
+	}
+	if note := ambiguousClock(strings.TrimSpace(req.String("when")), t); note != "" {
+		pairs = append(pairs, view.Pair{Key: "ambiguous", Value: note})
 	}
 	return view.KeyValue{Pairs: pairs}, nil
 }
@@ -159,15 +164,31 @@ func resolve(raw string, now stdtime.Time) (stdtime.Time, timefmt.Unit, *view.Er
 // hour or so on; the offset in force before the change is what lets the person
 // name the instant they meant, and is read from half a day before it.
 func skippedClock(raw string, wall, moved stdtime.Time) *view.Error {
-	_, offset := moved.Add(-12 * stdtime.Hour).Zone()
-	sign := "+"
-	if offset < 0 {
-		sign, offset = "-", -offset
-	}
-	example := fmt.Sprintf("%s%s%02d:%02d", wall.Format("2006-01-02T15:04:05"), sign, offset/3600, offset%3600/60)
+	example := timefmt.SkippedExample(wall, moved)
 	return view.Errorf("time.at.skipped",
 		"%q never showed on this machine's clock — the clocks went forward over it", raw).
 		WithHint("name the instant with an offset (" + example + "), or write a time the clock did show")
+}
+
+// ambiguousClock says so when raw is a reading of the clock this machine's
+// zone showed twice, the night the clocks went back, and names the other
+// instant it could have meant. t is the one that was answered.
+//
+// Said beside the answer rather than refused, as a reading the clock skipped
+// is: that one names no instant at all, and this names two, one of which is
+// what was asked for half the time. Every other row is right for the instant
+// read, and the person who meant the other one needs the offset that names it.
+func ambiguousClock(raw string, t stdtime.Time) string {
+	first, second, ok := timefmt.AmbiguousWallClock(raw, stdtime.Local)
+	if !ok {
+		return ""
+	}
+	which, other := "earlier", second
+	if !t.Equal(first) {
+		which, other = "later", first
+	}
+	return fmt.Sprintf("the clock showed this twice that day; read as the %s one, the other is %s (epoch %d), "+
+		"so add an offset to name the one meant", which, withZone(other.In(stdtime.Local)), other.Unix())
 }
 
 // relativeDuration reads the spellings that carry their own direction: `-90m`,

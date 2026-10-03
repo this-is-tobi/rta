@@ -184,12 +184,23 @@ func TestAPathThatNamesNoFileIsNotDialledAsAHost(t *testing.T) {
 
 	v, err := runExpiry(context.Background(), req(map[string]any{
 		"targets": []string{"/etc/ssl/leaf.pem"}, "warn-days": 30, "timeout": 2,
-	}))
+	}).WithSurface(plugin.SurfaceMCP))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if status := v.(view.Table).Rows[0][3]; !strings.Contains(status, "file path") || strings.Contains(status, "lookup") {
 		t.Errorf("status = %q, want the file path named as what it is", status)
+	}
+	// At a terminal expiry reads files too, so the same mistyped path is a
+	// missing file there, not a host and not a lookup.
+	v, err = runExpiry(context.Background(), req(map[string]any{
+		"targets": []string{"/etc/ssl/leaf.pem"}, "warn-days": 30, "timeout": 2,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status := v.(view.Table).Rows[0][3]; !strings.Contains(status, "no certificate file at") || strings.Contains(status, "lookup") {
+		t.Errorf("status = %q, want it said that there is no such file", status)
 	}
 
 	addr, _ := startTLS(t)

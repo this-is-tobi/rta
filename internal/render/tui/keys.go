@@ -462,7 +462,10 @@ func (m Model) footerFor(screen mode) string {
 		// rankAction, so it is the last thing dropped: it is the answer to the
 		// key just pressed, which is more use in that moment than any hint
 		// beside it.
-		good := theme.GoodText
+		mark, style := "✓", theme.GoodText
+		if m.flash == m.flashBad {
+			mark, style = "✗", theme.BadText
+		}
 		// Truncated as well as packed. Every other entry is two words and is
 		// never split — "a half-rendered key is worse than a missing one" —
 		// but a confirmation is a sentence, so the one that does not fit has
@@ -478,9 +481,21 @@ func (m Model) footerFor(screen mode) string {
 		if m.width > 0 {
 			flash = ansi.Truncate(flash, max(m.width-3, 8), "…")
 		}
-		items = append(items, hintItem{display: "✓", label: flash, rank: rankAction, style: &good})
+		items = append(items, hintItem{display: mark, label: flash, rank: rankAction, style: &style})
 	}
 	return fitHintBar(m.width, footerMaxLines, items...)
+}
+
+// refuse is a flash that says what the key just pressed did not do: a save
+// that failed, a copy that found nothing, a row that cannot take the action.
+//
+// **It is drawn as a refusal, with the cross a form's error gets.** Every
+// flash wore the green check mark of success, so "config not saved: permission
+// denied" read as the confirmation of the save beside it. The mark follows the
+// text and not a flag that outlives it: a later flash is a different string,
+// and a key clears it, so a refusal can never colour what replaced it.
+func (m *Model) refuse(msg string) {
+	m.flash, m.flashBad = msg, msg
 }
 
 // formErrors is what the form on screen refuses to accept right now: huh's

@@ -3,6 +3,7 @@ package time
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	stdtime "time"
@@ -199,6 +200,48 @@ func TestAWallClockTheZoneSkippedIsRefusedNotMoved(t *testing.T) {
 	for _, fine := range []string{"2026-03-29 01:30", "2026-03-29 03:30", "2026-03-29T02:30:00+01:00", "2026-10-25 02:30"} {
 		if _, _, verr := resolve(fine, reference); verr != nil {
 			t.Errorf("%q was refused: %v", fine, verr)
+		}
+	}
+}
+
+// The other half of the clock changing: the night it goes back, 02:30 shows
+// twice. Go reads it as one of the two and said nothing of the other, so the
+// answer was right for an instant the person may not have meant and gave no
+// hint that another existed an hour away. It is answered, as the one it read,
+// with the other named beside it; a reading that happened once, and one that
+// carries its own offset, say nothing.
+func TestAWallClockTheZoneShowedTwiceNamesTheOtherInstant(t *testing.T) {
+	paris, err := stdtime.LoadLocation("Europe/Paris")
+	if err != nil {
+		t.Skip("no tz database to read Europe/Paris from")
+	}
+	t.Cleanup(func(prev *stdtime.Location) func() { return func() { stdtime.Local = prev } }(stdtime.Local))
+	stdtime.Local = paris
+
+	kv := at(t, map[string]any{"when": "2026-10-25 02:30"})
+	note := value(kv, "ambiguous")
+	if note == "" {
+		t.Fatalf("a reading the clock showed twice has no ambiguous row: %+v", kv.Pairs)
+	}
+	earlier := stdtime.Date(2026, 10, 25, 0, 30, 0, 0, stdtime.UTC).Unix()
+	later := earlier + 3600
+	utc := value(kv, "epoch")
+	var other int64
+	switch utc {
+	case strconv.FormatInt(earlier, 10):
+		other = later
+	case strconv.FormatInt(later, 10):
+		other = earlier
+	default:
+		t.Fatalf("epoch = %s, want one of the two instants %d and %d", utc, earlier, later)
+	}
+	if !strings.Contains(note, "(epoch "+strconv.FormatInt(other, 10)+")") || !strings.Contains(note, "offset") {
+		t.Errorf("ambiguous = %q, want the other instant (epoch %d) named and the way out said", note, other)
+	}
+
+	for _, fine := range []string{"2026-10-25 01:30", "2026-10-25 03:30", "2026-10-25T02:30:00+02:00", "2026-03-29 03:30"} {
+		if v := value(at(t, map[string]any{"when": fine}), "ambiguous"); v != "" {
+			t.Errorf("%q said it was ambiguous: %q", fine, v)
 		}
 	}
 }

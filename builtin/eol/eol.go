@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -50,7 +51,8 @@ func Plugin() plugin.Plugin {
 					"by how close it is to its own end-of-life date. Name one cycle to see just " +
 					"that row — or the version running, 16.2, for the cycle it belongs to, 16 — or " +
 					"a range of them — 13..16, 15.., ..16 — to see every numbered " +
-					"cycle inside it; leave it out to see all of them. Aliases work — \"postgres\" " +
+					"cycle inside it; leave it out to see every cycle still supported and the latest one that has " +
+					"ended, or pass `all` for every one. Aliases work — \"postgres\" " +
 					"and \"postgresql\" name the same product.",
 				// No dashboard tile: product is Required, so the automatic
 				// picker (every Read capability that needs no input)
@@ -71,6 +73,8 @@ func Plugin() plugin.Plugin {
 						Suggest: suggestCycles},
 					{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: defaultWarnDays,
 						Help: "flag a cycle within this many days of its end-of-life date"},
+					{Name: "all", Type: plugin.Bool, Config: "all",
+						Help: "list every cycle, including those long ended, when none is named"},
 				},
 				Run: runCheck,
 			},
@@ -148,11 +152,55 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 		{Name: "In", Kind: view.KindDuration},
 		{Name: "Status", Kind: view.KindStatus},
 	}}
-	for _, r := range releases {
+	shown := releases
+	if cycle == "" && !req.Bool("all") {
+		shown = supportedAndLatestEnded(releases, warnDays, now)
+	}
+	for _, r := range shown {
 		t.Rows = append(t.Rows, gradeRow(r, warnDays, now))
 	}
-	t.Total = len(t.Rows)
+	t.Total = len(releases)
+	if left := len(releases) - len(shown); left > 0 {
+		t.Warnings = append(t.Warnings, view.Error{
+			Code:    "eol.check.ended",
+			Message: format.CountOf(left, "ended cycle") + " not listed",
+			Hint: "`" + req.Surface().Call("eol.check", plugin.Arg{Name: "product", Value: product, Positional: true},
+				plugin.Arg{Name: "all", Value: true}) + "` lists every cycle",
+		})
+	}
 	return t, nil
+}
+
+// supportedAndLatestEnded is the cycles a person reads an end-of-life table
+// for: every one still supported or ending, and the most recent one that has
+// ended, which is the answer to "how long ago did my old version lose
+// support". Postgres is thirty-eight rows, most of them ended for years, and
+// the three that mattered were scrolled off the screen; the whole table is
+// one `all` away.
+//
+// The most recent ended is the one with the latest end-of-life date, and the
+// first in the API's own order (newest release first) when none has a date
+// that reads.
+func supportedAndLatestEnded(releases []eolapi.Release, warnDays int, now time.Time) []eolapi.Release {
+	var out []eolapi.Release
+	latest := -1
+	for _, r := range releases {
+		if eolapi.Grade(r, warnDays, now) != eolapi.Ended {
+			out = append(out, r)
+			continue
+		}
+		if latest < 0 {
+			latest = len(out)
+			out = append(out, r)
+			continue
+		}
+		prev, prevOK := eolapi.EolDate(out[latest])
+		date, ok := eolapi.EolDate(r)
+		if ok && (!prevOK || date.After(prev)) {
+			out[latest] = r
+		}
+	}
+	return out
 }
 
 // findRelease matches by name or codename, case-insensitively: cycle names

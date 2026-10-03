@@ -782,6 +782,39 @@ func TestMacOSUpdatesParse(t *testing.T) {
 	}
 }
 
+// pkg os printed "1 offered" once and "3 offered" on four runs against what was
+// taken to be one answer from softwareupdate. The reading is a pure function of
+// the listing it is handed, so it was pinned across the shapes a listing has —
+// several updates, the order they come in, an entry with no Action, a title
+// with a comma, CRLF line ends — and each gives the same three on every run.
+// A count that varies between runs is therefore the listing's, which
+// softwareupdate builds from a catalogue fetch, and not this reading's.
+func TestMacOSUpdatesParseEveryEntryOfAListing(t *testing.T) {
+	entries := []string{
+		"* Label: macOS Sequoia 15.6.1-24G90\n\tTitle: macOS Sequoia 15.6.1, Version: 15.6.1, Size: 3312090KiB, Recommended: YES, Action: restart,\n",
+		"* Label: Safari18.6SequoiaAuto-18.6\n\tTitle: Safari, Version: 18.6, Size: 188564KiB, Recommended: YES,\n",
+		"* Label: Command Line Tools for Xcode 16.4-16.4\n\tTitle: Command Line Tools for Xcode, Version: 16.4, Size: 788462KiB, Recommended: YES,\n",
+	}
+	head := "Software Update Tool\n\nFinding available software\nSoftware Update found the following new or updated software:\n"
+	for name, listing := range map[string]string{
+		"in order":   head + strings.Join(entries, ""),
+		"reversed":   head + entries[2] + entries[1] + entries[0],
+		"crlf":       strings.ReplaceAll(head+strings.Join(entries, ""), "\n", "\r\n"),
+		"no heading": strings.Join(entries, ""),
+	} {
+		f := &fake{bins: map[string]bool{"softwareupdate": true}, answers: map[string]fakeAnswer{
+			"softwareupdate --list": {out: listing},
+		}}
+		install(t, f)
+		for run := range 20 {
+			st := readMacOS(context.Background())
+			if len(st.Updates) != 3 || !st.RebootRequired {
+				t.Fatalf("%s, run %d: %d updates, reboot %v; want 3 and a reboot owed", name, run, len(st.Updates), st.RebootRequired)
+			}
+		}
+	}
+}
+
 func TestSemverLess(t *testing.T) {
 	for _, c := range []struct {
 		a, b string

@@ -1027,11 +1027,13 @@ func TestRemoveSaysWhatTheSystemRootKeepsTrusting(t *testing.T) {
 }
 
 // D3: plugin remove is destructive (it withdraws trust from every stored
-// artifact) and now needs --yes the same way a Destructive capability does
-// — checked before plugindist.Remove ever runs, so even a name nothing has
-// installed hits the confirmation gate first.
+// artifact) and needs --yes the same way a Destructive capability does,
+// checked before plugindist.Remove runs for a plugin that is installed.
 func TestPluginRemoveWithoutConfirmationRefuses(t *testing.T) {
 	run := session(t, registry.New())
+	if err := os.MkdirAll(filepath.Join(plugindist.StoreDir(), "probe", strings.Repeat("ab", 32)), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	_, _, err := run("plugin", "remove", "probe")
 	if err == nil {
 		t.Fatal("plugin remove ran with no --yes and no --dry-run")
@@ -1039,6 +1041,19 @@ func TestPluginRemoveWithoutConfirmationRefuses(t *testing.T) {
 	verr, ok := err.(*view.Error)
 	if !ok || verr.Code != CodeConfirmRequired {
 		t.Errorf("err = %v, want %s", err, CodeConfirmRequired)
+	}
+}
+
+// A name nothing manages is refused as that, not asked about: the
+// confirmation claims trust would be withdrawn from stored artifacts, and a
+// typo has none, so asking made it look like a decision and the --yes it
+// asked for only led to the real answer.
+func TestPluginRemoveOfAGhostSaysSoBeforeAskingForConsent(t *testing.T) {
+	run := session(t, registry.New())
+	_, _, err := run("plugin", "remove", "ghost")
+	verr, ok := err.(*view.Error)
+	if !ok || verr.Code != "plugin.remove.unknown" {
+		t.Errorf("err = %v, want plugin.remove.unknown ahead of the consent gate", err)
 	}
 }
 

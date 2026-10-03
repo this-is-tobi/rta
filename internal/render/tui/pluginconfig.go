@@ -89,12 +89,12 @@ func configFields(p plugin.Plugin) []plugin.Field {
 func (m Model) startConfigForm(row pluginRow) (tea.Model, tea.Cmd) {
 	fields := configFields(row.plugin)
 	if len(fields) == 0 {
-		m.flash = row.plugin.Name + " has nothing to configure"
+		m.refuse(row.plugin.Name + " has nothing to configure")
 		return m, nil
 	}
 	onDisk, err := config.LoadFile()
 	if err != nil {
-		m.flash = "config not read: " + err.Error()
+		m.refuse("config not read: " + err.Error())
 		return m, nil
 	}
 	_, raw, _ := pluginconf.RawSection(onDisk, row.plugin.Name)
@@ -214,7 +214,7 @@ func (m Model) saveConfigForm() (tea.Model, tea.Cmd) {
 		cfg.Plugins[heading] = merged
 		return cfg, true
 	}); err != nil {
-		m.flash = "config not saved: " + err.Error()
+		m.refuse("config not saved: " + err.Error())
 		return m.closeToOrigin()
 	}
 
@@ -225,7 +225,7 @@ func (m Model) saveConfigForm() (tea.Model, tea.Cmd) {
 	// later run will load.
 	written, err := config.LoadFile()
 	if err != nil {
-		m.flash = "saved, but not re-read: " + err.Error()
+		m.refuse("saved, but not re-read: " + err.Error())
 		return m.closeToOrigin()
 	}
 	resolver, _ := pluginconf.Resolve(written, m.reg.Origin)

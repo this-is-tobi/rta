@@ -51,6 +51,20 @@ func Seen(r rune) bool {
 		!unicode.Is(unicode.Variation_Selector, r)
 }
 
+// Name is a name read off a disk, a bucket or a store as a list of them
+// shows it: as it is when it reads as itself, spaces and accents included, and
+// Quote otherwise. One with a space at either end, which draws as nothing, or
+// opening with a quotation mark is quoted too, so a name shown as it is can
+// never be mistaken for one shown quoted. textclean.Name and the plugin SDK's
+// ListedName are this, in the one place so that they cannot disagree.
+func Name(s string) string {
+	if s != "" && s[0] != '"' && utf8.ValidString(s) && strings.TrimSpace(s) == s &&
+		!strings.ContainsFunc(s, func(r rune) bool { return r != ' ' && !Seen(r) }) {
+		return s
+	}
+	return Quote(s)
+}
+
 // Quote is s in double quotes, as Go quotes a string, with every character a
 // reader would not see as itself (Seen) named by its code point and every
 // byte that is not UTF-8 by its value: the one spelling from which a person

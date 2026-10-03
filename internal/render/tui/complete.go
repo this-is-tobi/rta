@@ -235,7 +235,7 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// the fetch stalled the update loop for it.
 	name, conn, filled, verr := m.pickedConn(c, all)
 	if verr != nil {
-		m.flash = verr.Message
+		m.refuse(verr.Message)
 		return m, nil
 	}
 	if conn.Tunnelled() {
@@ -243,12 +243,12 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if conn.TunnelKey() == "ssh" {
 			what = "ssh target"
 		}
-		m.flash = "completion cannot reach " + name + "'s " + what + " — the forward opens per call"
+		m.refuse("completion cannot reach " + name + "'s " + what + " — the forward opens per call")
 		return m, nil
 	}
 	if filled == nil && name != "" {
 		if filled, verr = m.fillConn(name, conn, c, values); verr != nil {
-			m.flash = verr.Message
+			m.refuse(verr.Message)
 			return m, nil
 		}
 	}
@@ -407,7 +407,7 @@ func (m Model) applyCompletion(msg completeMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.err != nil {
-		m.flash = msg.err.Message
+		m.refuse(msg.err.Message)
 		return m, nil
 	}
 	if len(msg.c.Items) == 0 {

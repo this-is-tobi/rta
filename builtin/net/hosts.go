@@ -240,6 +240,53 @@ func checkHostname(sf plugin.Surface, name string) *view.Error {
 	return nil
 }
 
+// checkNewHostname is checkHostname plus the one thing only an entry about to
+// be written needs: that the name is a hostname. The file stayed readable for
+// a name like `"api"` or bank.com spelled with a Cyrillic a, but no resolver
+// looks either up as typed, so the first is a typo that fails silently later
+// and the second is a look-alike an operator approving the call reads as the
+// real domain. Letters, digits, hyphen, underscore and dots in labels of at
+// most 63 characters, the shape DNS names have, with an internationalised name
+// written in its punycode form. add is the only caller: toggle and rm act on
+// entries the file already holds, and refusing to touch one it has because it
+// is odd would leave an operator unable to clean it up.
+func checkNewHostname(sf plugin.Surface, name string) *view.Error {
+	if verr := checkHostname(sf, name); verr != nil {
+		return verr
+	}
+	bad := func(why string) *view.Error {
+		return view.Errorf("net.hosts.badhostname", "%q is not a hostname: %s", name, why).
+			WithHint(sf.ArgumentName("hostname") + " takes names such as api.local; write an internationalised name in its xn-- form")
+	}
+	if len(name) > 253 {
+		return bad("it is longer than 253 characters")
+	}
+	for _, label := range strings.Split(strings.TrimSuffix(name, "."), ".") {
+		switch {
+		case label == "":
+			return bad("it has an empty label")
+		case len(label) > 63:
+			return bad("a label is longer than 63 characters")
+		case label[0] == '-' || label[len(label)-1] == '-':
+			return bad("a label starts or ends with a hyphen")
+		}
+		for _, r := range label {
+			if !dnsLabelRune(r) {
+				return bad(fmt.Sprintf("it contains %q", r))
+			}
+		}
+	}
+	return nil
+}
+
+func dnsLabelRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return true
+	}
+	return r == '-' || r == '_'
+}
+
 func runHostsAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	ip := strings.TrimSpace(req.String("ip"))
 	if stdnet.ParseIP(ip) == nil {
@@ -255,7 +302,7 @@ func runHostsAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	// Before the file is read, let alone written: a refused call must leave
 	// no backup and no half-applied edit behind.
 	for _, n := range names {
-		if verr := checkHostname(req.Surface(), n); verr != nil {
+		if verr := checkNewHostname(req.Surface(), n); verr != nil {
 			return nil, verr
 		}
 	}
