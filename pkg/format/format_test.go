@@ -62,6 +62,32 @@ func TestAgo(t *testing.T) {
 	}
 }
 
+// A distance that rounds up to the next unit's whole is counted in that unit.
+// 59.7 minutes was "60 minutes": under an hour, so counted in minutes, then
+// rounded to the one number a count of minutes never reaches. A token minted
+// for an hour read "in 60 minutes" and, an hour on, "1 hour ago".
+func TestAgoHandsARoundedUpCountToTheNextUnit(t *testing.T) {
+	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		at   time.Time
+		want string
+	}{
+		{now.Add(-59*time.Second - 600*time.Millisecond), "1 minute ago"},
+		{now.Add(-59*time.Minute - 40*time.Second), "1 hour ago"},
+		{now.Add(-23*time.Hour - 40*time.Minute), "1 day ago"},
+		{now.Add(-6*24*time.Hour - 15*time.Hour), "1 week ago"},
+		{now.Add(59*time.Minute + 40*time.Second), "in 1 hour"},
+		{now.Add(59*time.Minute + 20*time.Second), "in 59 minutes"},
+		{now.Add(364*24*time.Hour + 20*time.Hour), "in 52 weeks"},
+		// A future instant under half a second away is not no distance.
+		{now.Add(300 * time.Millisecond), "in 1 second"},
+	} {
+		if got := relativeTo(c.at, now); got != c.want {
+			t.Errorf("%v from %v = %q, want %q", c.at.Sub(now), now, got, c.want)
+		}
+	}
+}
+
 // An instant centuries away is counted in calendar years. time.Since saturates
 // at about 292 years, so a token's exp of 9999-12-31, the usual way to write
 // "does not expire", read "in -9223372036 seconds" once negated, and 1700 was
