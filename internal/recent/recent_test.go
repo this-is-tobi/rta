@@ -3,6 +3,7 @@ package recent
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -268,6 +269,32 @@ func TestAnAuthorizationHeaderIsRefused(t *testing.T) {
 	got := Load().For("http.get", "header")
 	if len(got) != 1 || got[0] != "Accept: application/json" {
 		t.Errorf("shortlist = %v, want only the header that is not a credential", got)
+	}
+}
+
+// And so is every other header that carries a credential. Authorization is the
+// one the HTTP spec names; the headers an API takes its key in are the rest,
+// and `--header 'X-Api-Key: …'` went to recent.json in clear, to come back on a
+// completion list. Refused by what the header is called, since nothing looks at
+// the value: a Cookie, a session or a signature is no better than a token.
+func TestAHeaderThatCarriesACredentialIsRefusedWhateverItIsCalled(t *testing.T) {
+	isolated(t)
+	c := capWith("http.get", plugin.Field{Name: "header", Type: plugin.StringSlice})
+	Record(plugin.SurfaceCLI, c, map[string]any{"header": []string{
+		"Accept: application/json",
+		"X-Api-Key: sk_live_notreal",
+		"x-auth-token: notreal",
+		"Cookie: session=notreal",
+		"Proxy-Authorization: Basic bm90cmVhbA==",
+		"X-Amz-Security-Token: notreal",
+		"X_API_KEY: notreal",
+		"X-Signature: notreal",
+		"Content-Type: application/json",
+	}})
+	got := Load().For("http.get", "header")
+	want := []string{"Content-Type: application/json", "Accept: application/json"}
+	if !slices.Equal(got, want) {
+		t.Errorf("shortlist = %v, want only the headers that are not credentials: %v", got, want)
 	}
 }
 
