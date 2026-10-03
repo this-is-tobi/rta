@@ -247,10 +247,17 @@ func decodeHex(s string) ([]byte, error) {
 		if len(digits) > 2 && (digits[:2] == "0x" || digits[:2] == "0X") {
 			digits = digits[2:]
 		}
-		if len(groups) > 1 && len(digits)%2 != 0 {
+		if len(digits)%2 != 0 {
 			return nil, fmt.Errorf("%q is %s, which is not whole bytes", g, format.CountOf(len(digits), "digit"))
 		}
 		raw, err := hex.DecodeString(digits)
+		// encoding/hex names itself in its errors ("encoding/hex: invalid
+		// byte: U+007A 'z'"), which says which package refused it and not
+		// which group of the value it was in.
+		var bad hex.InvalidByteError
+		if errors.As(err, &bad) {
+			return nil, fmt.Errorf("%q holds %q, which is not a hex digit", g, rune(bad))
+		}
 		if err != nil {
 			return nil, err
 		}
