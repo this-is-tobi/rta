@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -51,12 +52,12 @@ const instructions = "rta is a security boundary in front of this machine, not a
 // The frame is only worth anything because Validate refuses both literals in
 // declared text (pkg/plugin/text.go). A plugin that could write the closing
 // line would close the untrusted block early and continue as rta.
-func agentText(c plugin.Capability, profiles []string) string {
+func agentText(c plugin.Capability, profiles []string, tools map[string]bool) string {
 	var b strings.Builder
 	b.WriteString(plugin.AuthoredOpen)
-	b.WriteString("\n" + c.Summary)
+	b.WriteString("\n" + nameTools(c.Summary, tools))
 	if c.Description != "" {
-		b.WriteString("\n\n" + c.Description)
+		b.WriteString("\n\n" + nameTools(c.Description, tools))
 	}
 	b.WriteString("\n" + plugin.AuthoredClose)
 
@@ -119,8 +120,45 @@ func toolDef(c plugin.Capability, opts Options) *sdk.Tool {
 
 	return &sdk.Tool{
 		Name:        plugin.ToolName(c.ID),
-		Description: agentText(c, opts.Profiles.ProfilesFor(plugin.Namespace(c.ID))),
+		Description: agentText(c, opts.Profiles.ProfilesFor(plugin.Namespace(c.ID)), opts.tools),
 		Annotations: ann,
 		InputSchema: toolcall.InputSchema(c, opts.Profiles.ProfilesFor(plugin.Namespace(c.ID)), opts.pluginConfig(c)),
 	}
+}
+
+// dotted is a run of words joined by dots, as a capability ID is written.
+var dotted = regexp.MustCompile(`[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+`)
+
+// nameTools says, of every capability this server offers that text mentions
+// by ID, what a model calls it: `kv.get` is the kv_get tool here, and a
+// description sending a model to "git.status" sent it after a name its tool
+// list does not contain. The plugin writes one text for every surface and
+// writes the ID, which is the only name that is the same on all of them.
+//
+// Whole dotted words only. "git.status.timeout" is an error code and
+// "config.worktree" a file, and neither is the capability they begin with, so
+// a word that is not exactly an ID is left as it was. A word glued to a path
+// or a flag by a slash or a hyphen is somebody's file name rather than a
+// reference.
+//
+// Applied to the plugin's words and no others: rta's own line tells the
+// operator what to type, "rta grant allow kv.get", where the dotted ID is
+// the command line's spelling and must stay one.
+func nameTools(text string, tools map[string]bool) string {
+	if len(tools) == 0 {
+		return text
+	}
+	var out strings.Builder
+	last := 0
+	for _, at := range dotted.FindAllStringIndex(text, -1) {
+		word := text[at[0]:at[1]]
+		if !tools[word] || at[0] > 0 && strings.ContainsRune("/-", rune(text[at[0]-1])) {
+			continue
+		}
+		out.WriteString(text[last:at[0]])
+		out.WriteString(plugin.ToolName(word))
+		last = at[1]
+	}
+	out.WriteString(text[last:])
+	return out.String()
 }
