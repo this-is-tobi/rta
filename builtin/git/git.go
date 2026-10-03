@@ -859,6 +859,10 @@ func fileHelp(what string) string {
 // the CLI took README and refused repo/README: two surfaces wanting opposite
 // inputs, and the help describing one of them.
 //
+// The root itself is ".", a directory like any other: refused as "not inside
+// the repository at" the very directory it is, it was a sentence that
+// contradicted itself, for the spelling git takes to mean the whole tree.
+//
 // Taking the file from the repository root on every surface would have meant
 // a file input the boundary does not judge, left to this handler to put to
 // the gate, and every path an agent can send is one the boundary judges for
@@ -897,7 +901,7 @@ func repoFile(repo *git.Repository, file string, surface plugin.Surface, spelled
 		return "", view.Errorf("git.path.invalid", "%s: %v", file, err)
 	}
 	rel, err := filepath.Rel(realPath(root), filepath.Join(realPath(filepath.Dir(abs)), filepath.Base(abs)))
-	if err != nil || rel == "." || climbsOut(rel) {
+	if err != nil || climbsOut(rel) {
 		return "", view.Errorf("git.file.outside", "%s is not inside the repository at %s", abs, root).
 			WithHint("give " + spelled + " as a path to a file in that repository: a relative one is " +
 				"taken from the directory rta runs in, as git takes one, and not from the repository")

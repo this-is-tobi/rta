@@ -61,6 +61,10 @@ func TestBlameOnADirectorySaysItIsOne(t *testing.T) {
 	if err == nil || verr.Code != "git.blame.isdir" || !strings.Contains(verr.Message, "deploy is a directory") {
 		t.Fatalf("blaming a directory: %v, want git.blame.isdir naming it as one", err)
 	}
+	_, err = runBlame(context.Background(), req(t, dir, map[string]any{"file": "."}))
+	if verr := view.AsError(err, "x"); err == nil || verr.Code != "git.blame.isdir" {
+		t.Errorf("blaming the repository's own root: %v, want git.blame.isdir, not a claim that it is outside itself", err)
+	}
 	_, err = runBlame(context.Background(), req(t, dir, map[string]any{"file": "deploy/nope.yaml"}))
 	if verr := view.AsError(err, "x"); err == nil || verr.Code != "git.blame.failed" {
 		t.Errorf("blaming a file never committed: %v, want git.blame.failed", err)

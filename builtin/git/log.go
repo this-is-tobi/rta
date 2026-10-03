@@ -58,7 +58,9 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 			return nil, verr
 		}
 		opts.PathFilter = within(rel)
-		t.Empty = "no commit reaching HEAD touched " + rel
+		if rel != "." {
+			t.Empty = "no commit reaching HEAD touched " + rel
+		}
 	}
 	// A repository with no commits yet has an empty history, as git.branches
 	// answers it has no branches, rather than go-git's "reference not found".
@@ -102,6 +104,9 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 // not read as a failure. The description promised `git log -- <path>`, and
 // git takes a directory there.
 func within(rel string) func(string) bool {
+	if rel == "." {
+		return func(string) bool { return true }
+	}
 	below := rel + "/"
 	return func(changed string) bool { return changed == rel || strings.HasPrefix(changed, below) }
 }

@@ -257,6 +257,9 @@ type origin struct {
 
 // isDirectoryAt reports whether path names a directory in commit's tree.
 func isDirectoryAt(commit *object.Commit, path string) bool {
+	if path == "." {
+		return true
+	}
 	tree, err := commit.Tree()
 	if err != nil {
 		return false
