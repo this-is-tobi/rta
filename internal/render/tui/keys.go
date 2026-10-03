@@ -348,7 +348,7 @@ func (m Model) screenItems(screen mode) []hintItem {
 		return m.profileFooterItems()
 	case modeProfilePlugins:
 		return []hintItem{
-			item(bindScroll), alias(item(bindConfig), "enter", "e"), item(bindNew),
+			item(bindColumn), alias(item(bindConfig), "enter", "e"), item(bindNew),
 			item(bindSecret), item(bindRemove),
 			alias(item(bindBack), "left", "h"), item(bindQuit),
 		}

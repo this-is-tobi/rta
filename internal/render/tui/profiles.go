@@ -649,7 +649,7 @@ func (m Model) profileFooter() string { return m.footerFor(modeProfiles) }
 // has just said "2 credentials · 1 not set".
 func (m Model) profileFooterItems() []hintItem {
 	items := []hintItem{
-		item(bindScroll), item(bindUse), alias(labelled(bindOpen, "plugins"), "right", "l"),
+		item(bindColumn), item(bindUse), alias(labelled(bindOpen, "plugins"), "right", "l"),
 		alias(item(bindConfig), "e"), item(bindNew), item(bindRemove),
 	}
 	if m.selectedProfileHasUnsetCredential() {
