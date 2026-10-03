@@ -125,11 +125,19 @@ func installView(rep plugindist.Report, dryRun bool) view.View {
 			Value: strings.Join(asks, ", ") + " — not granted by installing; " +
 				"`rta plugin allow " + rep.Name + "` decides"})
 	}
-	installedLabel, configureLabel := "installed", "to configure it"
-	// A sentence, not a YAML key with a dash after it: "plugins.pg@abc: — `rta
-	// explain pg.query` lists its keys" read as a line of config that stopped.
-	configureNote := "its keys go under `plugins." + pin + ":` in the config, or in a profile — `rta explain " +
-		firstCapability(rep.Declared) + "` lists them"
+	installedLabel := "installed"
+	// What to do next depends on what the plugin reads from a config. One that
+	// reads nothing was told "to configure it" all the same, with a heading for
+	// keys it does not have; the next step for it is to see how it is called.
+	configureLabel := "to use it"
+	configureNote := "`rta explain " + firstCapability(rep.Declared) + "` shows how to call it"
+	if readsConfig(rep.Declared) {
+		// A sentence, not a YAML key with a dash after it: "plugins.pg@abc: — `rta
+		// explain pg.query` lists its keys" read as a line of config that stopped.
+		configureLabel = "to configure it"
+		configureNote = "its keys go under `plugins." + pin + ":` in the config, or in a profile — `rta explain " +
+			firstCapability(rep.Declared) + "` lists them"
+	}
 	if dryRun {
 		installedLabel = "would install to"
 		configureLabel = "once installed"
@@ -191,6 +199,19 @@ func declaresLine(p plugin.Plugin) string {
 		classes = append(classes, fmt.Sprintf("%d need a grant", grants))
 	}
 	return strings.Join(ids, ", ") + " — " + strings.Join(classes, " · ")
+}
+
+// readsConfig says whether any input of the plugin has a key in the config to
+// be read from, which is what makes "its keys go under plugins.<name>" true.
+func readsConfig(p plugin.Plugin) bool {
+	for _, c := range p.Capabilities {
+		for _, f := range c.Inputs {
+			if f.Config != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func firstCapability(p plugin.Plugin) string {
