@@ -229,6 +229,26 @@ func TestHexDecodeRefusesGroupsThatAreNotWholeBytes(t *testing.T) {
 	}
 }
 
+// A refused hex value says which group and which character, in the tool's own
+// words. encoding/hex's came through as they are, "encoding/hex: odd length hex
+// string", naming the package that refused and not the part of the value it
+// refused.
+func TestHexDecodeNamesTheGroupAndTheCharacterItRefused(t *testing.T) {
+	for in, want := range map[string]string{
+		"686":       `"686" is 3 digits, which is not whole bytes`,
+		"zz":        `"zz" holds 'z', which is not a hex digit`,
+		"68:6g:6c":  `"6g" holds 'g', which is not a hex digit`,
+		"0xGG":      `"0xGG" holds 'G', which is not a hex digit`,
+		"68656c6c6": `"68656c6c6" is 9 digits, which is not whole bytes`,
+	} {
+		_, err := runHex(context.Background(), req(map[string]any{"value": in, "decode": true}))
+		verr := view.AsError(err, "test")
+		if err == nil || !strings.Contains(verr.Message, want) || strings.Contains(verr.Message, "encoding/hex") {
+			t.Errorf("%q: %v, want it to say %s and not name Go's package", in, err, want)
+		}
+	}
+}
+
 // A path is not a query: a space is %20, and + is a plus. Decoding a path as
 // a query turned c++.txt into "c  .txt".
 func TestURLPathModeKeepsAPlusAPlus(t *testing.T) {
