@@ -158,6 +158,20 @@ func isResolveFailure(err error) bool {
 	return errors.As(err, &dnsErr)
 }
 
+// resolveFailed is the refusal for a name that did not resolve, for the
+// capabilities that resolve it themselves — ping and trace — in one place so
+// neither can go without the next step. err may be nil: a lookup that answers
+// with no address and no error is a name that resolved to nothing.
+func resolveFailed(code string, sf plugin.Surface, host string, err error) *view.Error {
+	reason := "the name resolved to no address"
+	if err != nil {
+		reason = err.Error()
+	}
+	return view.Errorf(code, "resolving %s: %s", host, reason).
+		WithHint(sf.CapabilityName("net.dns") + " asks the resolver for " + host +
+			" directly, and says whether the name or the lookup is what failed")
+}
+
 func probe(ctx context.Context, req plugin.Request, send string) (view.View, error) {
 	host := req.String("host")
 	port := req.Int("port")
