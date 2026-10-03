@@ -31,7 +31,7 @@ When the hour is up, all of it lapses on its own.
 ## Hand over one secret, once
 
 ```bash
-rta grant allow kv.get deploy-token --ttl 5m --max-uses 1
+rta grant allow kv.get deploy-token --agent claude --ttl 5m --max-uses 1
 ```
 
 One key, five minutes, one read. The clearest case in the whole model — and the record shows that `kv.get deploy-token` happened without showing what came back.

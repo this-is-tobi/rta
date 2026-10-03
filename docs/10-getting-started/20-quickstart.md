@@ -93,10 +93,10 @@ That is the default with no configuration, no flags, and no decisions from you.
 ### Letting it do one more thing
 
 ```bash
-rta grant allow kv.get db-password --ttl 30m --max-uses 1
+rta grant allow kv.get db-password --agent claude --ttl 30m --max-uses 1
 ```
 
-That allows one key, for thirty minutes, once. Not the store — that key. When any of those three bounds is reached, it stops.
+That allows one key, for thirty minutes, once, to the client you registered as `claude`. Not the store — that key. (`--agent` can be left off once a client has connected or holds a grant, and this machine knows exactly one; on a fresh install it knows none yet.) When any of those three bounds is reached, it stops.
 
 ```bash
 rta grant list      # what is allowed right now
