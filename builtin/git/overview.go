@@ -94,6 +94,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 			// part of the tree it had read would summarise as a cleaner one.
 			return nil, refused
 		case err == nil:
+			pairRenames(repo, status)
 			summary := worktreeSummary(status)
 			if len(ignored) > 0 {
 				summary += ", " + format.CountOf(len(ignored), "ignore file") + " not applied"
