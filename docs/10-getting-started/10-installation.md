@@ -241,7 +241,7 @@ Nothing in the config grants anything. It holds connection profiles, dashboard p
 | What            | Where                                                     | Notes                                                        |
 | --------------- | --------------------------------------------------------- | ------------------------------------------------------------ |
 | Config          | `~/.config/rta/config.yaml`                               | `RTA_CONFIG` overrides                                       |
-| Encrypted store | beside the config                                         | [Secrets](../20-using/50-secrets.md)                         |
+| Encrypted store | `~/.local/share/rta/kv.age`, beside the grants            | [Secrets](../20-using/50-secrets.md); a key made by `kv init --generate` sits beside the config |
 | Grants          | `~/.local/share/rta/grants.json`                          | Sealed against tampering                                     |
 | Agent record    | beside the grants                                         | Hash-chained; [The record](../30-boundary/40-audit-trail.md) |
 | Team policy     | `.rta-policy.yaml`, walking up from the working directory | [Team policy](../30-boundary/50-team-policy.md)              |
