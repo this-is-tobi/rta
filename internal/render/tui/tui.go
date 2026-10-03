@@ -586,6 +586,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		if m.mode == modeDashboard && msg.Button == tea.MouseLeft {
 			if idx := m.tileAt(msg.X, msg.Y); idx >= 0 {
+				// A click moves focus off the search box as much as a launch
+				// from it does, so its query is spent the same way. Left
+				// standing, esc back to the dashboard found the box still
+				// holding the keyboard with the old query in it, and `q`
+				// typed a letter instead of quitting.
+				if !m.tiles[idx].search {
+					m.searchEditing, m.query, m.searchSel = false, "", 0
+				}
 				m.selected = idx
 				return m.openTile(idx)
 			}
