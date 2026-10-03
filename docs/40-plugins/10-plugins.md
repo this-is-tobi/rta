@@ -187,7 +187,7 @@ Each manifest is generated from the plugin binary rather than written: `rta plug
 rta plugin search postgres
 ```
 
-Search answers from the manifests alone — nothing is fetched and nothing is executed. Every row is a **claim**, labelled with the index making it.
+Search answers from the manifests alone — nothing is fetched and nothing is executed. Every row is a **claim**, labelled with the index making it. `--safety` keeps the plugins claiming a capability of one class, `read`, `write` or `destructive`, so `rta plugin search --safety destructive` is the list to read before installing anything.
 
 The safety column says what a plugin can do *and* what it asks to read, because both decide whether you want it. A row reading `all read · none needs a grant · asks for kubeconfig` is a plugin that changes nothing and wants your cluster credentials, and the first half alone would be true and misleading.
 

@@ -422,13 +422,15 @@ A remote server closes the agent out of `grant allow` — and closes you out wit
 
 ```bash
 # on your machine, once
-rta operator init                     # mints your key; prints the line below
+rta operator init --label tobi        # mints your key; prints the line below
 # on the server, in a file only its owner can write
 tobi 4Jx…base64…Qk=                   # one "label base64-pubkey" per line
 # start the server with it
 rta mcp serve --http :8443 --token-file tokens.txt \
   --operators operators.txt --operators-url https://rta.example.com
 ```
+
+The label is how the roster and [the record](./40-audit-trail.md) name you, as `operator:tobi` in its credential column. `--label` sets it when the key is minted (it is `operator` otherwise), and `rta operator status --label <name>` prints the roster line for another label from the same key, without minting anything.
 
 `--operators-url` is the server's canonical identity — the exact URL operators write in their `remotes.yaml` — and it is signed into every operator request. That is the anti-relay binding: a hostile server you also talk to could present another server's challenge as its own, but the envelope it collects names the server you were actually addressing and verifies nowhere else.
 

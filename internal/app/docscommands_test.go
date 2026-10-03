@@ -204,6 +204,43 @@ func TestEveryCommandTheDocsSpellParsesAsWritten(t *testing.T) {
 	}
 }
 
+// The commands that set rta up and run its boundary have no `rta explain`
+// card to say what their flags are for — the docs are where a person learns
+// that `rta operator init` takes a `--label`, and that the roster line in the
+// MCP chapter carries it. A capability's inputs are the card's business; these
+// are the flags of the other commands, and each is named somewhere in the
+// docs, so a flag added to one of them has to be written about by the change
+// that adds it.
+func TestEveryFlagOfTheSetUpAndBoundaryCommandsIsNamedInTheDocs(t *testing.T) {
+	root := repoRoot(t)
+	var corpus strings.Builder
+	for _, page := range markdownPages(t, root) {
+		corpus.WriteString(readDoc(t, root, page))
+	}
+	roots := map[string]bool{
+		"agent": true, "grant": true, "lock": true, "mcp": true, "operator": true, "policy": true,
+		"config": true, "dashboard": true, "doctor": true, "init": true, "plugin": true, "profile": true, "use": true,
+	}
+	checked := 0
+	for path, cmd := range rtaCommandTree(t) {
+		if !roots[strings.Fields(path)[1]] {
+			continue
+		}
+		cmd.LocalFlags().VisitAll(func(f *pflag.Flag) {
+			if f.Hidden || f.Name == "help" || f.Name == "dry-run" {
+				return
+			}
+			checked++
+			if !strings.Contains(corpus.String(), "--"+f.Name) {
+				t.Errorf("`%s` takes --%s, and no page of the docs names it", path, f.Name)
+			}
+		})
+	}
+	if checked < 50 {
+		t.Fatalf("checked %d flags, want the seventy or so there are; has the command tree changed shape?", checked)
+	}
+}
+
 // A grant is for one agent, and `rta grant allow` fills the name in only when
 // this machine knows exactly one: on a fresh install it knows none and refuses
 // with grant.noagent, and for a remote server (`--server`) it never fills one

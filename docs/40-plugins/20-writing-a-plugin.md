@@ -14,7 +14,7 @@ rta plugin trust weather
 rta weather greet world
 ```
 
-That is the whole loop. The mechanical part takes about two seconds; the rest is deciding what your capability should do.
+That is the whole loop. The mechanical part takes about two seconds; the rest is deciding what your capability should do. `rta plugin dev` builds into a temporary directory and removes it when it exits; `--keep` leaves the binary in place and prints where, for running it by hand or putting a debugger on it.
 
 **The `trust` step is not paperwork.** rta loads a plugin by *running* it — that is how it learns what you declared — so a file called `rta-plugin-*` on `$PATH` would execute before anybody typed a command naming it, including the `rta __complete` a tab press runs. Being on `$PATH` is not consent, so an artifact runs once somebody has approved that exact digest. Rebuild and it needs approving again, which during development is a keystroke and in production is the event worth stopping for. `rta plugin trust` on its own lists what is waiting.
 
@@ -26,7 +26,7 @@ Your inner loop does not need it at all: `rta plugin dev` compiles from a direct
 
 ## What `plugin new` wrote
 
-A plugin is an ordinary Go `main` package, and the whole of its contract with rta is the value it serves:
+The Go module is named for the binary, `rta-plugin-weather`, which builds anywhere; `--module github.com/you/rta-plugin-weather` names it for the repository you will publish from, and `--dir` says where the files go. A plugin is an ordinary Go `main` package, and the whole of its contract with rta is the value it serves:
 
 ```go
 func main() { sdk.Serve(Plugin()) }
@@ -368,7 +368,7 @@ rta plugin manifest bin/rta-plugin-mytool \
   --index ../my-index
 ```
 
-rta runs your binary the way a load does — sandboxed — and writes down what it declares. You supply the one thing the binary cannot know: where its bytes will live. `--checksums` reads the `<sha256>  <filename>` lines your release already publishes and matches them by filename; a `--platform` pointing at a file on your machine is hashed on the spot instead, and its archive is opened to prove the `bin:` claim while it is still in reach.
+rta runs your binary the way a load does — sandboxed — and writes down what it declares. You supply the one thing the binary cannot know: where its bytes will live. `--checksums` reads the `<sha256>  <filename>` lines your release already publishes and matches them by filename; a `--platform` pointing at a file on your machine is hashed on the spot instead, and its archive is opened to prove the `bin:` claim while it is still in reach. `--bin` says where the binary sits inside a `.tar.gz` when it is not at the top under its usual name, `rta-plugin-<name>`.
 
 The reference page is generated the same way, for the same reason — a page written by hand goes stale on the first commit that touches a capability, and nobody notices, because the commit is about something else:
 
