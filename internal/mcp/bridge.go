@@ -731,7 +731,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 // outcome is the call's, ran, and the code and the reason say what happened to
 // the answer.
 func withheld(e *agentlog.Entry, verr *view.Error) {
-	e.Outcome, e.Code, e.Reason = agentlog.Ran, cut(verr.Code, maxCode), cut(verr.Message, maxReason)
+	e.Outcome, e.Code, e.Reason = agentlog.Ran, cut(verr.Code, maxCode), cut(textclean.Credentials(verr.Message), maxReason)
 }
 
 // resultSize is what a result is as the client receives it: its text.
@@ -838,12 +838,36 @@ func takeProfile(c plugin.Capability, values map[string]any, opts Options) (stri
 // (plugin.AskOperator).
 func storeRefusal(verr *view.Error) *view.Error {
 	switch verr.Code {
-	case "core.grant.required", "core.grant.rate":
+	case "core.grant.required":
+		return withoutCredentialedCommand(verr)
+	case "core.grant.rate":
 		return verr
 	}
 	out := *verr
 	out.Hint = "this is about the grants rta keeps rather than this call, and only the operator " +
 		"can fix it — " + plugin.AskOperator("doctor")
+	return &out
+}
+
+// withoutCredentialedCommand is a refusal for a call that needs a grant, with
+// the command that would issue it left out when it names a credential.
+//
+// The record a grant names is compared byte for byte, so the command for a URL
+// that carries a token is the one with the token in it, and the agent is handed
+// every error with such shapes masked (errResult): the command it came out with
+// was one that issues a grant for a URL nobody sent, and authorizes nothing. A
+// command that does not fix the problem is worse than none. A standing grant
+// would also have to keep the credential in the clear in the grants file, which
+// is the reason to keep it out of the URL, so that is what the agent is told.
+func withoutCredentialedCommand(verr *view.Error) *view.Error {
+	if textclean.Credentials(verr.Hint) == verr.Hint {
+		return verr
+	}
+	out := *verr
+	out.Hint = "a person has to allow this first, but the record it names carries what looks like a credential, " +
+		"which a grant would have to keep in the clear and a command would show — send the credential in an input " +
+		"made for one (a bearer, a basic login, a header), not in the record, and ask again with the record " +
+		"without it"
 	return &out
 }
 
@@ -1084,7 +1108,7 @@ func viewResult(v view.View) (*sdk.CallToolResult, error) {
 func errResult(e *view.Error) *sdk.CallToolResult {
 	// AsError puts a foreign error's own text into Message, so an error is as
 	// much a channel from elsewhere as a result body is.
-	raw, _ := view.Marshal(view.Envelope{View: view.MapErrorStrings(e, textclean.Model)})
+	raw, _ := view.Marshal(view.Envelope{View: view.MapErrorStrings(e, func(s string) string { return textclean.Credentials(textclean.Model(s)) })})
 	return &sdk.CallToolResult{
 		IsError: true,
 		Content: []sdk.Content{&sdk.TextContent{Text: string(raw)}},

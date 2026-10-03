@@ -37,7 +37,7 @@ func refusedBy(e *agentlog.Entry, verr *view.Error) {
 	if e == nil || verr == nil {
 		return
 	}
-	e.Outcome, e.Code, e.Reason = agentlog.Refused, cut(verr.Code, maxCode), cut(verr.Message, maxReason)
+	e.Outcome, e.Code, e.Reason = agentlog.Refused, cut(verr.Code, maxCode), cut(textclean.Credentials(verr.Message), maxReason)
 }
 
 // maxReason and maxCode bound what a handler's error may put in a row. A
@@ -65,7 +65,7 @@ func failedBy(e *agentlog.Entry, verr *view.Error) {
 	if e == nil || verr == nil {
 		return
 	}
-	e.Outcome, e.Code, e.Reason = agentlog.Failed, cut(verr.Code, maxCode), cut(verr.Message, maxReason)
+	e.Outcome, e.Code, e.Reason = agentlog.Failed, cut(verr.Code, maxCode), cut(textclean.Credentials(verr.Message), maxReason)
 }
 
 // maxClientName bounds what a caller may write into every one of its own
@@ -230,13 +230,16 @@ func auditArgs(c plugin.Capability, values map[string]any) map[string]any {
 //
 // Not cleaned, unlike every argument beside it, and that is the point: a
 // record is compared byte for byte, and one cleaned is a record the call did
-// not name. A scope is never a credential (pkg/plugin refuses Scope and
-// ScopeAlso on a Secret), so there is nothing here to mask either.
+// not name. A scope is never a Secret input (pkg/plugin refuses Scope and
+// ScopeAlso on one), but it may be a URL, which the http capabilities scope by,
+// and a URL may carry what is not part of the record at all: the userinfo or
+// the token the agent put in it. Those are masked and nothing else is, so the
+// host and path a grant is judged on read as they were named.
 func namedRecords(c plugin.Capability, values map[string]any) []string {
 	var out []string
 	for _, s := range grant.Scopes(c, values) {
 		if s != "" {
-			out = append(out, s)
+			out = append(out, textclean.Credentials(s))
 		}
 	}
 	return out
@@ -245,11 +248,11 @@ func namedRecords(c plugin.Capability, values map[string]any) []string {
 func cleanValue(v any) any {
 	switch t := v.(type) {
 	case string:
-		return textclean.Model(t)
+		return textclean.Credentials(textclean.Model(t))
 	case []string:
 		out := make([]string, len(t))
 		for i, s := range t {
-			out[i] = textclean.Model(s)
+			out[i] = textclean.Credentials(textclean.Model(s))
 		}
 		return out
 	case []any:
