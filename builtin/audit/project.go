@@ -234,8 +234,7 @@ func (p *project) manifests(recursive bool) (names []string, shown []string, cov
 // pathHelp is the --path help both capabilities share, so the two never
 // describe the same input differently.
 func pathHelp(what string) string {
-	return what + " — or, from a terminal, a repository URL (https://, ssh://, " +
-		"git@host:path) read in memory; not over MCP"
+	return what + "; a repository URL is read in memory, not over MCP"
 }
 
 // remoteLabel is how a report names where it read from, for the header line.
