@@ -24,7 +24,9 @@ A search bar across the top, and one tile per plugin that has something to show 
 | `+` | Add a tile — on the dashboard it opens the catalogue; on a catalogue row or a search match it adds that one |
 | `p` | Plugin inventory — where a hidden automatic tile comes back |
 | `t` | Theme |
-| `c` | Configure |
+| `f` | Profiles — your configured environments, which one is on |
+| `b` | Browse the whole catalogue |
+| `c` | Copy the selected tile's value, on a tile that offers one |
 
 Tiles are yours to arrange. `H` hides one you never look at, and `p` opens the inventory where it comes back; one panel of an entry that expanded into several connections is hidden by its own key, which the inventory has no row for, so it comes back with the `rta dashboard unhide <id> --profile <profile/instance>` line its note prints. On a tile you added, `H` removes the entry instead — the footer says `remove` there, and the note prints the `rta dashboard add` line that puts it back; `+` on a catalogue row or a search match adds one the automatic set left out, asking which connection when the capability takes one.
 

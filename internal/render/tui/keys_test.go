@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -38,6 +40,65 @@ func footerOf(view string, lines int) string {
 		lines = len(all)
 	}
 	return plain(strings.Join(all[len(all)-lines:], "\n"))
+}
+
+// The docs' table of the dashboard's keys named `c` as "Configure" — which is
+// the plugin inventory's key, one screen over; on the dashboard it copies a
+// tile's value — and left out `f` and `b`, the two keys that open the profiles
+// pane and the catalogue. A reader learning the screen from the page was told
+// of a key that does something else and not told of two that do.
+//
+// The footer is what the screen answers, so the table is held to it: every key
+// in the footer's entries for the dashboard, the arrows aside, is a row of the
+// table.
+func TestTheDocsTableOfTheDashboardsKeysHasEveryKeyTheFooterOffers(t *testing.T) {
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("no go.mod above the test's directory")
+		}
+		dir = parent
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "docs", "20-using", "20-tui.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, after, found := strings.Cut(string(raw), "## The landing dashboard")
+	if !found {
+		t.Fatal(`docs/20-using/20-tui.md no longer has a section called "The landing dashboard"`)
+	}
+	section, _, _ := strings.Cut(after, "\n##")
+	documented := map[string]bool{}
+	code := regexp.MustCompile("`([^`]+)`")
+	for _, line := range strings.Split(section, "\n") {
+		if !strings.HasPrefix(line, "| `") {
+			continue
+		}
+		cell, _, _ := strings.Cut(strings.TrimPrefix(line, "|"), "|")
+		for _, m := range code.FindAllStringSubmatch(cell, -1) {
+			documented[m[1]] = true
+		}
+	}
+	if len(documented) < 5 {
+		t.Fatalf("found only %d keys in the table; the test no longer reads it", len(documented))
+	}
+
+	m, _ := realModel(t, 200, 40)
+	for _, it := range m.footerItems(modeDashboard) {
+		for _, key := range strings.Fields(it.display) {
+			if strings.ContainsAny(key, "↑↓←→") || documented[key] {
+				continue
+			}
+			t.Errorf("the dashboard offers %q (%s) and the docs' table of its keys does not list it", key, it.label)
+		}
+	}
 }
 
 // The bug this pins down, in the reporter's words: "why don't all tiles get
