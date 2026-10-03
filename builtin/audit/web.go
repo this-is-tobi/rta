@@ -319,6 +319,11 @@ func auditTLS(r *findings.Report, state *tls.ConnectionState, host string) {
 	// certificate 20 days out was "ok" from the audit and "WARN <30d" from
 	// the cert check — same host, same minute, two answers.
 	switch {
+	// First: a certificate every client refuses until its not-before was
+	// graded ok for as long as its end date was far off, beside a chain row
+	// that fails only for a private CA, so on a public one nothing said so.
+	case time.Now().Before(leaf.NotBefore):
+		r.Add(grpTransport, "cert-expiry", findings.Fail, "not valid until "+leaf.NotBefore.Format("2006-01-02"), refCertValidation)
 	case time.Now().After(leaf.NotAfter):
 		r.Add(grpTransport, "cert-expiry", findings.Fail, "expired "+leaf.NotAfter.Format("2006-01-02"), refCertValidation)
 	case x509check.Expiring(leaf.NotAfter, x509check.DefaultWarnDays):
