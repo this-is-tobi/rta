@@ -73,7 +73,14 @@ func NewObserveHandler(cfg ObserveConfig) http.Handler {
 				// person looking at `kubectl describe` after the pod stopped
 				// taking traffic — and because it says what is wrong with this
 				// server's own storage, not anything about a caller.
-				fmt.Fprintln(w, err.Error())
+				//
+				// With the places named by what they are (operatorPaths): the
+				// probe answers whoever can reach the address without a token,
+				// and "the data directory <path> is not writable" is the layout
+				// of the server's state for any of them. `<data dir> is not
+				// writable` says the same to the person describing the pod,
+				// who knows where it is.
+				fmt.Fprintln(w, withoutOperatorPaths(err.Error()))
 				return
 			}
 		}
