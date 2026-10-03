@@ -210,7 +210,7 @@ func (tf *themeForm) overrides() map[string]string {
 // actually side by side: the swatch for "faint" landed next to the
 // description text of some field three rows away. A strip above the form has
 // no height to disagree about.
-func (tf *themeForm) preview() string {
+func (tf *themeForm) preview(width int) string {
 	live := theme.Current()
 	parts := make([]string, 0, len(themeFieldOrder))
 	for _, key := range themeFieldOrder {
@@ -228,7 +228,30 @@ func (tf *themeForm) preview() string {
 		}
 		parts = append(parts, swatch+" "+key)
 	}
-	return strings.Join(parts, "  ")
+	return packParts(parts, "  ", width)
+}
+
+// packParts lays parts out in lines of at most width cells, a part never split
+// across two: a swatch parted from its name reads as the swatch of whatever
+// name came before it. A width of zero or less is one line, and a part wider
+// than a line gets a line to itself.
+func packParts(parts []string, sep string, width int) string {
+	var lines []string
+	line, lineW := "", 0
+	for _, p := range parts {
+		pw := lipgloss.Width(p)
+		switch {
+		case line == "":
+			line, lineW = p, pw
+		case width > 0 && lineW+len(sep)+pw > width:
+			lines = append(lines, line)
+			line, lineW = p, pw
+		default:
+			line += sep + p
+			lineW += len(sep) + pw
+		}
+	}
+	return strings.Join(append(lines, line), "\n")
 }
 
 // startThemeForm opens the editor, seeded from what is actually written down
@@ -342,14 +365,12 @@ func (m Model) themeView() string {
 		return ""
 	}
 	footer := m.footerFor(modeTheme)
-	strip := m.themeForm.preview()
-	if m.width > 4 {
-		// Soft-wrapped, not truncated: at a narrow width the strip runs onto
-		// a second line rather than losing the last few fields off the edge,
-		// which is the one place in this screen an operator cannot recover a
-		// dropped fact by scrolling.
-		strip = lipgloss.NewStyle().Width(m.width - 4).Render(strip)
-	}
+	// Wrapped, not truncated: at a narrow width the strip runs onto more
+	// lines rather than losing the last few fields off the edge, which is the
+	// one place in this screen an operator cannot recover a dropped fact by
+	// scrolling. By swatch and name together (packParts), since a plain soft
+	// wrap broke between the two.
+	strip := m.themeForm.preview(max(m.width-4, 0))
 	body := strip + "\n\n" + m.themeForm.form.View()
 	head := panelHead{Title: "theme", Note: "#rrggbb, or blank for the built-in"}
 	return panel(head, "\n"+body, m.width, m.height-lipgloss.Height(footer), true) + "\n" + footer
