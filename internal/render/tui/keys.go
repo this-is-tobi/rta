@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"charm.land/bubbles/v2/list"
 	huh "charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -352,6 +353,9 @@ func (m Model) screenItems(screen mode) []hintItem {
 			alias(item(bindBack), "left", "h"), item(bindQuit),
 		}
 	case modeBrowse:
+		if m.list.FilterState() == list.Filtering {
+			return filteringItems()
+		}
 		return []hintItem{
 			item(bindColumn), labelled(bindOpen, "run"), item(bindAdd), labelled(bindSearch, "filter"),
 			item(bindBack), item(bindQuit),
@@ -404,6 +408,19 @@ func (m Model) screenItems(screen mode) []hintItem {
 		return m.confirmFooterItems()
 	}
 	return nil
+}
+
+// filteringItems is the bar while the catalogue's filter box holds the
+// keyboard, where q, / and + are letters of a query and esc clears it rather
+// than leaving: the dashboard's search bar has the same bar for the same
+// reason (searchEditingItems), and the catalogue went on advertising "q quit"
+// and "esc back" over a box that typed one and cancelled the other.
+func filteringItems() []hintItem {
+	return []hintItem{
+		{display: "↑↓", label: "select", rank: rankPrimary, keys: []string{"up", "down"}},
+		labelled(bindOpen, "apply"), labelled(bindBack, "clear"),
+		{display: "ctrl+c", label: "quit", rank: rankLeave, keys: []string{"ctrl+c"}},
+	}
 }
 
 // footerFor renders one screen's bar, with the flash beside it.
