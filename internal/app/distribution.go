@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -364,6 +365,63 @@ func shortAll(digests []string) string {
 	return strings.Join(out, ", ")
 }
 
+// stalePinPairs says what an upgrade does to the config that pinned the old
+// build: which profiles and which `plugins:` section name it, and the command
+// that moves the profiles. Nothing when nothing does.
+//
+// It said "your pin plugins.pg@abc no longer applies; the new pin is pg@def" on
+// every upgrade, whether or not the config named the old build at all, and
+// never named `rta profile repin`, which rewrites every profile entry in one
+// command. The first made a person with no pin look for one; the second left
+// the one with forty profile entries to find the command in the docs after
+// each of them refused at its next --profile.
+func stalePinPairs(name, from, to string, dryRun bool) []view.Pair {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil
+	}
+	pinsOld := func(key string) bool {
+		ns, _, pin := config.SplitKey(key)
+		return ns == name && pin != "" && strings.HasPrefix(from, pin)
+	}
+	var profiles []string
+	for pname, p := range cfg.Profiles {
+		for key := range p.Plugins {
+			if pinsOld(key) {
+				profiles = append(profiles, pname)
+				break
+			}
+		}
+	}
+	sort.Strings(profiles)
+	section := false
+	for key := range cfg.Plugins {
+		section = section || pinsOld(key)
+	}
+	newPin := name + "@" + shortDigest(to)
+	var pairs []view.Pair
+	if len(profiles) > 0 {
+		note := format.Count(len(profiles), "profile", "profiles") + " (" + strings.Join(profiles, ", ") +
+			") pin " + name + "@" + shortDigest(from)
+		if dryRun {
+			note += ", and will refuse after the upgrade until `rta profile repin --all --plugin " + name +
+				"` points them at " + newPin
+		} else {
+			note += " and now refuse — `rta profile repin --all --plugin " + name + "` points them at " + newPin
+		}
+		pairs = append(pairs, view.Pair{Key: "your profiles", Value: note})
+	}
+	if section {
+		pin := "plugins." + name + "@" + shortDigest(from)
+		note := pin + " no longer applies; the new pin is " + newPin
+		if dryRun {
+			note = pin + " still applies — after the upgrade it will not; the new pin is " + newPin
+		}
+		pairs = append(pairs, view.Pair{Key: "your pin", Value: note})
+	}
+	return pairs
+}
+
 func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 	var (
 		all   bool
@@ -429,13 +487,7 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 			for _, line := range up.Diff {
 				pairs = append(pairs, view.Pair{Key: "declaration", Value: line})
 			}
-			pin := "plugins." + up.Name + "@" + shortDigest(up.FromDigest)
-			newPin := up.Name + "@" + shortDigest(up.Digest)
-			pinNote := pin + " no longer applies; the new pin is " + newPin
-			if opts.dryRun {
-				pinNote = pin + " still applies — run without --dry-run to move it to " + newPin
-			}
-			pairs = append(pairs, view.Pair{Key: "your pin", Value: pinNote})
+			pairs = append(pairs, stalePinPairs(up.Name, up.FromDigest, up.Digest, opts.dryRun)...)
 			return renderView(cmd, opts, view.KeyValue{Pairs: pairs})
 		},
 	}
