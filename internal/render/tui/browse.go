@@ -248,7 +248,16 @@ func (m Model) browseView() string {
 	if width <= 0 {
 		width = 80
 	}
-	return m.browseHeader(width) + "\n" + m.list.View() + "\n" + m.browseFooter()
+	footer := m.browseFooter()
+	// Sized from the footer drawn in this frame, not the one the window had
+	// when it was last resized. A flash makes the bar two lines (the add flow
+	// opens with one), and a list sized for one pushed the frame a row past the
+	// terminal, which cut the bar's second line: the one with esc and q. The
+	// list keeps its cursor across a resize, so the page it lands on follows.
+	if m.height > 0 {
+		m.list.SetSize(width, max(m.height-1-lipgloss.Height(footer), 3))
+	}
+	return m.browseHeader(width) + "\n" + m.list.View() + "\n" + footer
 }
 
 // browseFooter is the catalogue's hint bar, in the app's own vocabulary.
