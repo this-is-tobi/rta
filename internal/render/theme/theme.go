@@ -40,9 +40,17 @@ import (
 // it is named here and the color is built from it, once.
 const (
 	primaryHex = "#D97757" // clay orange — identity, keys, selection
-	accentHex  = "#F0A868" // amber — sparing highlights (filter matches)
-	mutedHex   = "#8B8B96" // secondary text
-	faintHex   = "#4A4A56" // structure: borders, chart fills
+	// The status colours and the accent sit at relative luminance 0.26, which
+	// is 3.4 against white and 6.2 against black. They were brighter, and a
+	// "warn" that was 13 against black was 1.6 against white: a light terminal
+	// showed "ok" and "warn" as near-white text on white. One palette that
+	// reads on both is worth more than a pretty dark one plus a guess at which
+	// terminal this is, and detecting it is a query some terminals never
+	// answer. Hue and saturation are the old ones, so a status still reads as
+	// the colour it was.
+	accentHex = "#D77015" // amber — sparing highlights (filter matches)
+	mutedHex  = "#8B8B96" // secondary text
+	faintHex  = "#4A4A56" // structure: borders, chart fills
 	// labelHex is Label's color, chosen against four constraints rather than
 	// by eye: hue 212° against Primary's 15°, near enough opposite that a
 	// title can never read as content; calibrated to Primary's exact relative
@@ -54,9 +62,9 @@ const (
 	// status hue, since tile bodies are full of coloured statuses and a title
 	// that reads as one is worse than a title that reads as a key.
 	labelHex   = "#7794B6" // slate blue — pane names
-	goodHex    = "#3ED598"
-	warnHex    = "#FFC24B"
-	badHex     = "#FF6B7A"
+	goodHex    = "#229F6C"
+	warnHex    = "#BF7E00"
+	badHex     = "#FF4357"
 	inverseHex = "#FFFFFF"
 	inkHex     = "#1A1A22"
 )
