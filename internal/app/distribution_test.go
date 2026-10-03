@@ -19,7 +19,8 @@ func TestTheInstallReportSaysWhereTheKeysGoInASentence(t *testing.T) {
 	rep := plugindist.Report{
 		Name: "hello", Version: "v0.1.0", Index: "local", URL: "file:///x",
 		Digest: "6db7eaeebf84" + strings.Repeat("0", 52), Signature: "none stated", Path: "/store/hello",
-		Declared: plugin.Plugin{Name: "hello", Capabilities: []plugin.Capability{{ID: "hello.greet", Safety: plugin.Read}}},
+		Declared: plugin.Plugin{Name: "hello", Capabilities: []plugin.Capability{{ID: "hello.greet", Safety: plugin.Read,
+			Inputs: []plugin.Field{{Name: "greeting", Type: plugin.String, Config: "greeting"}}}}},
 	}
 	kv, ok := installView(rep, false).(view.KeyValue)
 	if !ok {
@@ -34,6 +35,32 @@ func TestTheInstallReportSaysWhereTheKeysGoInASentence(t *testing.T) {
 	if note == "" || strings.Contains(note, ":` —") || strings.Contains(note, ": —") ||
 		!strings.Contains(note, "go under `plugins.hello@6db7eaeebf84:`") || !strings.Contains(note, "`rta explain hello.greet`") {
 		t.Errorf("to configure it: %q", note)
+	}
+}
+
+// A plugin that reads nothing from a config is not told to configure itself: the
+// report said where "its keys go" for a plugin with none, a heading over
+// nothing, where the next step for it is to see how it is called.
+func TestTheInstallReportDoesNotSendAPluginWithNoKeysToTheConfig(t *testing.T) {
+	rep := plugindist.Report{
+		Name: "hello", Version: "v0.1.0", Index: "local", URL: "file:///x",
+		Digest: "6db7eaeebf84" + strings.Repeat("0", 52), Signature: "none stated", Path: "/store/hello",
+		Declared: plugin.Plugin{Name: "hello", Capabilities: []plugin.Capability{{ID: "hello.greet", Safety: plugin.Read,
+			Inputs: []plugin.Field{{Name: "name", Type: plugin.String, Required: true}}}}},
+	}
+	kv, ok := installView(rep, false).(view.KeyValue)
+	if !ok {
+		t.Fatal("the install report is not a key/value page")
+	}
+	got := map[string]string{}
+	for _, p := range kv.Pairs {
+		got[p.Key] = p.Value
+	}
+	if _, configure := got["to configure it"]; configure {
+		t.Errorf("a plugin with no config keys was sent to the config: %q", got["to configure it"])
+	}
+	if !strings.Contains(got["to use it"], "`rta explain hello.greet`") {
+		t.Errorf("to use it: %q", got["to use it"])
 	}
 }
 
