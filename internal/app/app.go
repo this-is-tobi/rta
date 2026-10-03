@@ -767,6 +767,11 @@ func editDistance(a, b string) int {
 // attached the hint is how to get one, since the first-party index is where
 // that service lives and the person has not been told yet.
 //
+// A plugin found on the machine and not yet approved comes first, since it is
+// the one answer that is about this machine rather than a guess: the word is
+// the plugin the person just built, and the step they skipped is `rta plugin
+// trust`.
+//
 // A word that is plainly a half-typed command (`rta sy`, near is [sys]) keeps
 // to the suggestion; so does a longer one with a neighbour. A short word with
 // only a distant neighbour does not, since the service names are the short
@@ -783,6 +788,18 @@ func notACommandHint(cmd *cobra.Command, arg string, near []string) string {
 	}
 	if !plugin.ValidName(arg) {
 		return ""
+	}
+	// Before the neighbours and before the index: a plugin that is on this
+	// machine and waiting for approval is the one thing a person who just
+	// built it and typed its name needs told. The startup notice that names
+	// it is printed by the root command's pre-run, which an unknown word
+	// never reaches, so without this the answer to `rta weather greet` right
+	// after the build is a pointer at an index the plugin was never in.
+	for _, u := range untrustedPluginsFound {
+		if u.Name == arg && !u.Taken {
+			return arg + " is installed at " + u.Path + " and has not been approved to run — " +
+				"`rta plugin trust " + arg + "` approves that build"
+		}
 	}
 	if len(near) > 0 && (len([]rune(arg)) > 3 || slices.ContainsFunc(near, func(n string) bool {
 		return strings.HasPrefix(strings.ToLower(n), strings.ToLower(arg))

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -151,6 +152,50 @@ func TestAnUnknownWordAtTheRootPointsAtWhereItMayLive(t *testing.T) {
 		if err := unknownCommand(root, word); !strings.Contains(err.Error(), want) {
 			t.Errorf("`rta %s` lost its suggestion %s: %v", word, want, err)
 		}
+	}
+}
+
+// The step a plugin author skips after building is `rta plugin trust`, and the
+// startup line that names it is printed by a pre-run an unknown word never
+// reaches. `rta weather greet world` was then answered with the index the
+// plugin was never in, while `rta doctor` — which does run it — said the
+// artifact was installed and waiting.
+func TestAWordNamingAPluginWaitingForApprovalSaysSo(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	prev := untrustedPluginsFound
+	t.Cleanup(func() { untrustedPluginsFound = prev })
+	SetUntrustedPlugins([]pluginhost.Untrusted{
+		{Name: "weather", Path: "/home/you/.local/bin/rta-plugin-weather", Digest: strings.Repeat("a", 64)},
+		{Name: "hello", Path: "/usr/local/bin/rta-plugin-hello", Digest: strings.Repeat("b", 64), Taken: true},
+	})
+	root := NewRoot(reg, "test")
+	hintOf := func(word string) string {
+		t.Helper()
+		var ve *view.Error
+		if !errors.As(unknownCommand(root, word), &ve) {
+			return ""
+		}
+		return ve.Hint
+	}
+
+	hint := hintOf("weather")
+	for _, want := range []string{"/home/you/.local/bin/rta-plugin-weather", "has not been approved", "`rta plugin trust weather`"} {
+		if !strings.Contains(hint, want) {
+			t.Errorf("`rta weather` was sent to %q, which lacks %q", hint, want)
+		}
+	}
+	if strings.Contains(hint, "index") {
+		t.Errorf("`rta weather` was sent to an index for a plugin that is already here: %q", hint)
+	}
+	// One something else already answers to is not waiting on an approval:
+	// approving it would earn a collision on the next start.
+	if hint := hintOf("hello"); strings.Contains(hint, "plugin trust") {
+		t.Errorf("a plugin whose name is taken was offered `rta plugin trust`: %q", hint)
 	}
 }
 
