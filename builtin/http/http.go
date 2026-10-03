@@ -87,6 +87,10 @@ func Plugin() plugin.Plugin {
 			Help: "read the bearer token from this file (/dev/stdin for a pipe), which a shell does not keep and ps does not show"},
 		{Name: "basic-file", Type: plugin.Path, Local: true,
 			Help: "read user:password from this file (/dev/stdin for a pipe), which a shell does not keep and ps does not show"},
+		// Local, for the reason the two files above are: it widens what the request
+		// may reach, and only the person at the terminal may ask (withOwnNetwork).
+		{Name: "local-network", Type: plugin.Bool, Local: true,
+			Help: "allow a loopback or private address — a service of your own; never offered to agents"},
 		{Name: "timeout", Type: plugin.Int, Config: "timeout", Default: 30, Min: 1, Max: 600, Help: "request timeout in seconds"},
 	}
 	withBody := append([]plugin.Field{}, common...)
@@ -254,8 +258,14 @@ func blockedRefusal(sf plugin.Surface, method, url string, err error) *view.Erro
 		"link-local, shared (100.64.0.0/10) or reserved ones, where cloud metadata endpoints live"
 	if sf == plugin.SurfaceMCP {
 		hint += " — and a grant naming this URL does not change that"
+	} else if reasonFor(blocked.ip, true) == "" {
+		// A loopback or private address is what a service of one's own is on,
+		// which a person at the terminal may ask for by name (withOwnNetwork).
+		hint += " — at the terminal too, unless you ask for it: " + sf.InputName("local-network") +
+			" allows a loopback or private address, a service of your own, and never an address cloud " +
+			"metadata lives at"
 	} else {
-		hint += " — at the terminal too; reach a service of your own with a client of your own"
+		hint += " — at the terminal too, with no way round it: nothing of your own is at an address like that"
 	}
 	return view.Errorf("http.request.blocked", "%s %s: %v", method, url, err).WithHint(hint)
 }
@@ -318,6 +328,11 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 	timeout := time.Duration(req.Int("timeout")) * time.Second
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	// And never over MCP, whatever arrived: the input is Local and the bridge
+	// refuses it there, so this is the second lock on the same door.
+	if req.Bool("local-network") && req.Surface() != plugin.SurfaceMCP {
+		ctx = withOwnNetwork(ctx)
+	}
 
 	var body io.Reader
 	if data := req.String("data"); data != "" {
