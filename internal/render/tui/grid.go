@@ -643,7 +643,7 @@ func searchEditingItems() []hintItem {
 			keys: []string{"up", "down", "ctrl+p", "ctrl+n", "tab", "pgup", "pgdown"},
 		},
 		labelled(bindOpen, "run"), item(bindAdd), labelled(bindBack, "clear"),
-		{display: "ctrl+c", label: "quit", rank: rankExit, keys: []string{"ctrl+c"}},
+		{display: "ctrl+c", label: "quit", rank: rankLeave, keys: []string{"ctrl+c"}},
 	}
 }
 
