@@ -37,6 +37,7 @@ package recent
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -199,7 +200,7 @@ func offerable(c plugin.Capability, values map[string]any) map[string][]string {
 			// that would display as something other than what it is simply
 			// does not get remembered.
 			s := strings.TrimSpace(raw)
-			if s == "" || len(s) > maxValue || textclean.Deceives(s) || authorizationHeader(s) {
+			if s == "" || len(s) > maxValue || textclean.Deceives(s) || credentialHeader(s) || urlCarriesCredential(s) {
 				continue
 			}
 			key := Key(c.ID, f.Name)
@@ -259,7 +260,7 @@ func credentialName(name string) bool {
 	return false
 }
 
-// authorizationHeader reports whether a value is a header that carries a
+// credentialHeader reports whether a value is a header that carries a
 // credential, whatever field it arrived on.
 //
 // The shape that is a credential no matter what the input is called:
@@ -272,7 +273,7 @@ func credentialName(name string) bool {
 // Not an attempt to recognise a secret by looking at it, which is not a thing
 // that works: the value is never read. Wrong in this direction costs a
 // suggestion nobody sees.
-func authorizationHeader(v string) bool {
+func credentialHeader(v string) bool {
 	name, _, isHeader := strings.Cut(strings.TrimSpace(v), ":")
 	if !isHeader || strings.ContainsAny(name, " \t") {
 		return false
@@ -281,6 +282,37 @@ func authorizationHeader(v string) bool {
 	for _, w := range credentialHeaderWords {
 		if strings.Contains(name, w) {
 			return true
+		}
+	}
+	return false
+}
+
+// urlCarriesCredential reports whether a value is a URL with a credential in
+// it: user information before the host (`https://user:pw@host`,
+// `https://TOKEN@host`) or a query parameter named like one (`?api_key=…`,
+// `?access_token=…`, `?sig=…`).
+//
+// `http get https://user:pw@example.com` was written to recent.json whole, and
+// offered back for the next --url. The same rule as a header's, and for the same
+// reason: the name of the thing says what it is, the value is never read, and
+// wrong costs a suggestion nobody sees.
+func urlCarriesCredential(v string) bool {
+	u, err := url.Parse(strings.TrimSpace(v))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return false
+	}
+	if u.User != nil {
+		return true
+	}
+	for param := range u.Query() {
+		name := strings.NewReplacer("-", "", "_", "").Replace(strings.ToLower(param))
+		if name == "sig" {
+			return true
+		}
+		for _, w := range credentialHeaderWords {
+			if strings.Contains(name, w) {
+				return true
+			}
 		}
 	}
 	return false
