@@ -43,21 +43,32 @@ type binding struct {
 	rank int
 }
 
-// Ranks, lowest survives longest.
+// Ranks, lowest survives longest. They are ordered by what a person cannot do
+// without. A confirmation or a refusal comes first because it answers the key
+// just pressed, and a bar that dropped it said nothing about a save that had
+// happened. How to leave comes next: at forty columns a pane whose own actions
+// and navigation filled both lines dropped esc and q along with the rest of the
+// tail, which left a screen that did not say how to get out of it. The two
+// hints cost a dozen cells. The zero value stays rankAction so a hint built
+// without a rank is the common case.
 const (
-	rankAction  = iota // context-specific: learnable on this screen and nowhere else
-	rankPrimary        // the thing this screen is for, and how to move around it
-	rankExit           // how to leave
-	rankExtra          // everything else the screen can also do
+	rankNotice  = iota - 2 // the answer to the key just pressed
+	rankLeave              // how to leave a screen
+	rankAction             // context-specific: learnable on this screen and nowhere else
+	rankPrimary            // the thing this screen is for, and how to move around it
+	rankExit               // how to reach the rest of the keys
+	rankExtra              // everything else the screen can also do
 )
 
 // The vocabulary. One entry per idea, not per screen.
 var (
-	bindQuit = binding{display: "q", keys: []string{"q", "ctrl+c"}, label: "quit", rank: rankExit}
-	// rankExtra: the overlay is the fallback for a bar that had to drop
-	// something, so it is the first thing to go when the bar is short.
-	bindHelp   = binding{display: "?", keys: []string{"?"}, label: "help", rank: rankExtra}
-	bindBack   = binding{display: "esc", keys: []string{"esc"}, label: "back", rank: rankExit}
+	bindQuit = binding{display: "q", keys: []string{"q", "ctrl+c"}, label: "quit", rank: rankLeave}
+	// rankExit: after a screen's own actions and navigation, before the
+	// arrangement keys. A bar that had to drop something says so with "…",
+	// and the overlay is where what it dropped is listed, so it has to outlast
+	// the keys it stands in for.
+	bindHelp   = binding{display: "?", keys: []string{"?"}, label: "help", rank: rankExit}
+	bindBack   = binding{display: "esc", keys: []string{"esc"}, label: "back", rank: rankLeave}
 	bindOpen   = binding{display: "enter", keys: []string{"enter"}, label: "open", rank: rankPrimary}
 	bindRerun  = binding{display: "r", keys: []string{"r"}, label: "re-run", rank: rankPrimary}
 	bindEdit   = binding{display: "e", keys: []string{"e"}, label: "edit inputs", rank: rankExtra}
@@ -447,7 +458,7 @@ func (m Model) footerFor(screen mode) string {
 			if m.width > 0 {
 				label = ansi.Truncate(label, max(m.width-3, 8), "…")
 			}
-			items = append(items, hintItem{display: "✗", label: label, rank: rankAction, style: &bad})
+			items = append(items, hintItem{display: "✗", label: label, rank: rankNotice, style: &bad})
 		}
 	}
 	if m.flash != "" {
@@ -459,9 +470,17 @@ func (m Model) footerFor(screen mode) string {
 		// the terminal drew two. A saved-profile message stole a row the grid
 		// had already given to a tile and scrolled the header off the top.
 		//
-		// rankAction, so it is the last thing dropped: it is the answer to the
+		// rankNotice, so it is the last thing dropped: it is the answer to the
 		// key just pressed, which is more use in that moment than any hint
-		// beside it.
+		// beside it, esc and q included. Both fit: the flash is cut to one line
+		// and the bar has two.
+		//
+		// And first rather than last. A long flash fills its line, and the
+		// ellipsis of a bar that dropped something is packed after the final
+		// part, so with the flash at the end "…" took a line of its own, the
+		// bar was three lines, and fitHintBar dropped how to leave to get
+		// back to two. Ahead of the hints, the rest of the bar and its "…"
+		// share the second line.
 		mark, style := "✓", theme.GoodText
 		if m.flash == m.flashBad {
 			mark, style = "✗", theme.BadText
@@ -481,7 +500,7 @@ func (m Model) footerFor(screen mode) string {
 		if m.width > 0 {
 			flash = ansi.Truncate(flash, max(m.width-3, 8), "…")
 		}
-		items = append(items, hintItem{display: mark, label: flash, rank: rankAction, style: &style})
+		items = append([]hintItem{{display: mark, label: flash, rank: rankNotice, style: &style}}, items...)
 	}
 	return fitHintBar(m.width, footerMaxLines, items...)
 }
