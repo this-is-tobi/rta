@@ -127,21 +127,47 @@ func yearsBetween(from, to time.Time) int {
 	return n
 }
 
+// spanUnits are the units span counts in, each with the distance at which the
+// next one takes over.
+var spanUnits = []spanUnit{
+	{"second", time.Second, time.Minute},
+	{"minute", time.Minute, time.Hour},
+	{"hour", time.Hour, 24 * time.Hour},
+	{"day", 24 * time.Hour, 7 * 24 * time.Hour},
+	{"week", 7 * 24 * time.Hour, 365 * 24 * time.Hour},
+	{"year", 365 * 24 * time.Hour, 0},
+}
+
 // span is Ago's magnitude half, without the direction.
+//
+// **The count is rounded before the unit is judged.** 59.7 minutes is under
+// an hour, so it was counted in minutes, and rounded to "60 minutes": the
+// next unit's whole, the one number a count in its own unit never reaches. A
+// token minted for an hour read "in 60 minutes" for the first half minute
+// and "in 59 minutes" after, and the same hour behind read "1 hour ago". The
+// same at every step: "60 seconds", "24 hours", "7 days". A count that
+// rounds up to the next unit is handed on to it.
+//
+// And never zero: a distance under half a second is not no distance, and
+// "in 0 seconds" said a thing that had not happened was happening.
 func span(d time.Duration) string {
-	switch {
-	case d < time.Minute:
-		return count(int(d.Round(time.Second)/time.Second), "second")
-	case d < time.Hour:
-		return count(int(d.Round(time.Minute)/time.Minute), "minute")
-	case d < 24*time.Hour:
-		return count(int(d.Round(time.Hour)/time.Hour), "hour")
-	case d < 7*24*time.Hour:
-		return count(int(d.Round(24*time.Hour)/(24*time.Hour)), "day")
-	case d < 365*24*time.Hour:
-		return count(int(d.Round(7*24*time.Hour)/(7*24*time.Hour)), "week")
+	last := spanUnits[len(spanUnits)-1]
+	for _, u := range spanUnits[:len(spanUnits)-1] {
+		if n := u.in(d); d < u.until && time.Duration(n)*u.size < u.until {
+			return count(n, u.name)
+		}
 	}
-	return count(int(d.Round(365*24*time.Hour)/(365*24*time.Hour)), "year")
+	return count(last.in(d), last.name)
+}
+
+type spanUnit struct {
+	name        string
+	size, until time.Duration
+}
+
+// in is d in whole units of u, rounded, and at least one.
+func (u spanUnit) in(d time.Duration) int {
+	return max(1, int(d.Round(u.size)/u.size))
 }
 
 func count(n int, unit string) string {
