@@ -108,13 +108,22 @@ func (r Roster) Verify(env Envelope, server string) (Identity, bool) {
 
 // timingDummy is the key Verify burns a check against when a fingerprint
 // names no enrolled key; see the comment at its use.
-var timingDummy = func() ed25519.PublicKey {
-	pub, _, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		panic(err)
-	}
-	return pub
-}()
+//
+// A constant, not a key generated when the package loads: generating one cost
+// about 0.7 ms of every rta start — measured with GODEBUG=inittrace=1 — for a
+// key whose private half nobody ever needs. This is the public half of the
+// all-zero seed, so anyone can sign for it, and that is harmless because the
+// verdict of that verify is thrown away: what Verify wants from it is the
+// time a real point decompression and check take, and nothing else.
+//
+// It has to stay a valid curve point. ed25519.Verify returns at once for a
+// key that does not decode, which would make an unknown fingerprint answer
+// faster than a wrong signature and reopen exactly the channel the burn
+// closes; TestTheTimingDummyIsAPointVerifyDecodes pins that.
+var timingDummy = ed25519.PublicKey{
+	0x3b, 0x6a, 0x27, 0xbc, 0xce, 0xb6, 0xa4, 0x2d, 0x62, 0xa3, 0xa8, 0xd0, 0x2a, 0x6f, 0x0d, 0x73,
+	0x65, 0x32, 0x15, 0x77, 0x1d, 0xe2, 0x43, 0xa6, 0x3a, 0xc0, 0x48, 0xa1, 0x8b, 0x59, 0xda, 0x29,
+}
 
 // Nonces is a server's single-use challenge store, in memory beside the
 // roster: what makes a captured envelope worthless a second time. Issuance
