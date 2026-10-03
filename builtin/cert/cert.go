@@ -511,8 +511,8 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 	leaf := certs[0]
 	sum := sha256.Sum256(leaf.Raw)
 	pairs := []view.Pair{
-		{Key: "subject", Value: leaf.Subject.String()},
-		{Key: "issuer", Value: leaf.Issuer.String()},
+		{Key: "subject", Value: orEmpty(leaf.Subject.String())},
+		{Key: "issuer", Value: orEmpty(leaf.Issuer.String())},
 		{Key: "serial", Value: serialHex(leaf.SerialNumber)},
 		{Key: "not-before", Value: leaf.NotBefore.Format(time.RFC3339)},
 		{Key: "not-after", Value: leaf.NotAfter.Format(time.RFC3339)},
@@ -532,6 +532,31 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 		pairs = append(pairs, view.Pair{Key: "tls", Value: protocolOf(state.Version)})
 	}
 	return view.KeyValue{Pairs: append(pairs, namePairs(leaf)...)}, nil
+}
+
+// nameOf is what a certificate is called in a tree or a sentence: its common
+// name, or without one the rest of its subject, or without a subject its first
+// name in the SAN, or its serial.
+//
+// **The common name is optional.** The CA/Browser Forum has deprecated it for
+// server certificates, many private CAs and every certificate with an empty
+// subject have none, and an intermediate named by its organisation alone is
+// ordinary. `cert chain` drew each of them as a branch with no name, "
+// expires 2026-11-02 (29d)", and nothing said which link of the chain it was.
+func nameOf(c *x509.Certificate) string {
+	switch {
+	case c.Subject.CommonName != "":
+		return c.Subject.CommonName
+	case c.Subject.String() != "":
+		return c.Subject.String()
+	case len(c.DNSNames) > 0:
+		return c.DNSNames[0]
+	case len(c.IPAddresses) > 0:
+		return c.IPAddresses[0].String()
+	case len(c.EmailAddresses) > 0:
+		return c.EmailAddresses[0]
+	}
+	return "serial " + serialHex(c.SerialNumber)
 }
 
 // publicKeyOf is the key a certificate certifies, by type and size: "RSA
@@ -611,7 +636,7 @@ func runChain(ctx context.Context, req plugin.Request) (view.View, error) {
 		}
 		c := certs[i]
 		return []view.Node{{
-			Label:    c.Subject.CommonName,
+			Label:    nameOf(c),
 			Detail:   fmt.Sprintf("expires %s (%s)", c.NotAfter.Format("2006-01-02"), humanUntil(c.NotAfter)),
 			Children: build(i + 1),
 		}}
@@ -689,7 +714,7 @@ func encodePEM(certs []*x509.Certificate) (string, *view.Error) {
 	var b strings.Builder
 	for _, c := range certs {
 		if err := pem.Encode(&b, &pem.Block{Type: "CERTIFICATE", Bytes: c.Raw}); err != nil {
-			return "", view.Errorf("cert.encode.failed", "encoding %s: %v", c.Subject.CommonName, err)
+			return "", view.Errorf("cert.encode.failed", "encoding %s: %v", nameOf(c), err)
 		}
 	}
 	return b.String(), nil
@@ -828,6 +853,16 @@ func protocolOf(version uint16) string {
 		return tls.VersionName(version) + " — deprecated, upgrade to TLS 1.2+"
 	}
 	return tls.VersionName(version)
+}
+
+// orEmpty says an empty distinguished name is empty. A certificate may carry
+// no subject at all (its names are all in the SAN), and a row with nothing
+// after its key reads as one that failed to print.
+func orEmpty(dn string) string {
+	if dn == "" {
+		return "(empty)"
+	}
+	return dn
 }
 
 func orDash(s string) string {
