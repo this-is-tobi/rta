@@ -39,6 +39,27 @@ func TestARequestRefusedForItsCertificatesValidityPeriodSaysTheRule(t *testing.T
 	}
 }
 
+// A certificate that did not verify is the server's certificate, and the host
+// is reachable. `http get https://expired.badssl.com` was told to check the URL
+// was reachable and that --timeout extends the deadline; the client has no way
+// round a certificate, so what helps is seeing the one the server presented,
+// with a tool of this binary's own.
+func TestARequestRefusedForAnUntrustedCertificatePointsAtWhatTheServerPresented(t *testing.T) {
+	err := &url.Error{Op: "Get", URL: "https://self-signed.example.org:8443/x", Err: &tls.CertificateVerificationError{
+		Err: x509.UnknownAuthorityError{},
+	}}
+	verr := requestFailed(plugin.SurfaceCLI, "GET", "https://self-signed.example.org:8443/x", err)
+	if strings.Contains(verr.Hint, "reachable") || strings.Contains(verr.Hint, "timeout") ||
+		!strings.Contains(verr.Hint, "`rta cert chain self-signed.example.org:8443`") {
+		t.Errorf("hint %q for a certificate that did not verify", verr.Hint)
+	}
+	// Over MCP the same pointer is the tool, with the host in it.
+	mcp := requestFailed(plugin.SurfaceMCP, "GET", "https://self-signed.example.org/x", err)
+	if !strings.Contains(mcp.Hint, "cert_chain") || !strings.Contains(mcp.Hint, "self-signed.example.org") {
+		t.Errorf("hint %q over MCP", mcp.Hint)
+	}
+}
+
 // A scheme the client does not speak is the URL's fault and not the network's.
 // `http get ftp://host` was told to check the URL was reachable and that
 // --timeout extends the deadline, neither of which has anything to do with a

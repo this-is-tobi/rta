@@ -6,12 +6,14 @@ package http
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	stdhttp "net/http"
 	"net/http/httptrace"
+	neturl "net/url"
 	"sort"
 	"strings"
 	"time"
@@ -178,6 +180,19 @@ func requestFailed(sf plugin.Surface, method, url string, err error) *view.Error
 	// dialled, which reachability and a longer deadline cannot change.
 	if strings.Contains(err.Error(), "unsupported protocol scheme") {
 		return verr.WithHint("this client speaks http and https; write the URL with one of them")
+	}
+	// The handshake got an answer, and the certificate in it did not pass: the
+	// host is reachable and a longer deadline would change nothing. This client
+	// has no way round a certificate (it is the point of it), so the way
+	// forward is to see what the server presented — a tool of this binary's own.
+	var unverified *tls.CertificateVerificationError
+	if errors.As(err, &unverified) {
+		hint := "the server answered, but its certificate did not pass this machine's checks"
+		if parsed, perr := neturl.Parse(url); perr == nil && parsed.Host != "" {
+			hint += " — `" + sf.Call("cert.chain", plugin.Arg{Name: "target", Value: parsed.Host, Positional: true}) +
+				"` shows what it presented"
+		}
+		return verr.WithHint(hint)
 	}
 	return verr.WithHint("check the URL is reachable; " + sf.InputName("timeout") + " extends the deadline")
 }
