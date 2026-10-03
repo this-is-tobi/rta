@@ -289,6 +289,20 @@ func TestAnEnumMissIsHintedWithTheEnum(t *testing.T) {
 	}
 }
 
+// A list sent to an input that is one comma-separated string, or a number sent
+// to one that is text, was told "expects a string" and nothing of what string:
+// the input's own help is the half of the answer the type does not carry.
+func TestAShapeRefusalHandsOnTheInputsOwnHelp(t *testing.T) {
+	c := plugin.Capability{ID: "net.port", Inputs: []plugin.Field{
+		{Name: "ports", Type: plugin.String, Help: "ports and ranges, comma-separated: 22,80,8000-8010"},
+	}}
+	verr := Validate(c, map[string]any{"ports": []any{"22", "80"}})
+	want := `the "ports" argument expects a string: ports and ranges, comma-separated: 22,80,8000-8010`
+	if verr == nil || verr.Hint != want {
+		t.Errorf("a list for a string: %v, want the hint %q", verr, want)
+	}
+}
+
 // A shape refusal names the input as an agent's schema does, an argument, the
 // way the host's own refusals of the same call name it: "encoding: must be a
 // string" read as a field of something else, and beside the tool's other

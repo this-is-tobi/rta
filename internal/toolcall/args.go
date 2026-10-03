@@ -113,8 +113,16 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 			// bare "encoding: must be a string" read as a field of something
 			// else. Never a Local input's name, which is not type-checked.
 			input := plugin.SurfaceMCP.InputName(f.Name)
-			return view.Errorf("core.mcp.badargs", "%s %v", input, err).
-				WithHint(fmt.Sprintf("%s expects %s", input, SchemaTypeName(f.Type)))
+			hint := fmt.Sprintf("%s expects %s", input, SchemaTypeName(f.Type))
+			// The input's own help, because the type is the half of it the
+			// message above already says, and the other half is what a model
+			// that sent a list to net_port's "ports", a comma-separated string,
+			// or a number to http_status's "code", which is text, needs to
+			// send it right the second time.
+			if f.Help != "" {
+				hint += ": " + f.Help
+			}
+			return view.Errorf("core.mcp.badargs", "%s %v", input, err).WithHint(hint)
 		}
 		return held(c, f, v)
 	}
