@@ -38,7 +38,11 @@ func Plugin() plugin.Plugin {
 				Summary: "Break down the escape sequences and hidden characters in a string",
 				Description: "Walks the input the way a terminal would, one printable run or " +
 					"control/escape sequence at a time, and names what each one does — SGR " +
-					"colors and attributes, cursor movement, screen/line erase, and the OSC " +
+					"colors and attributes (underline styles and colon-form colors included), " +
+					"cursor movement, screen/line erase, the modes a program leaves set when it " +
+					"garbles a terminal (hidden cursor, alternate screen, mouse reporting, " +
+					"bracketed paste, DEC line drawing), the requests a terminal answers into " +
+					"the input as if typed, and the OSC " +
 					"sequences most worth knowing about on sight: window title, hyperlink " +
 					"target, and the system clipboard write (decoded, not left as base64); " +
 					"tmux passthrough and kitty graphics strings. Also names the kinds of " +
