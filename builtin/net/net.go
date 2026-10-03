@@ -378,7 +378,12 @@ func runPing(ctx context.Context, req plugin.Request) (view.View, error) {
 	host := req.String("host")
 	pinger, err := probing.NewPinger(host)
 	if err != nil {
-		return nil, view.Errorf("net.ping.resolve", "resolving %s: %v", host, err)
+		verr := view.Errorf("net.ping.resolve", "resolving %s: %v", host, err)
+		if isResolveFailure(err) {
+			verr = verr.WithHint(req.Surface().CapabilityName("net.dns") + " asks the resolver for " +
+				host + " directly, and says whether the name or the lookup is what failed")
+		}
+		return nil, verr
 	}
 	pinger.Count = req.Int("count")
 	pinger.Timeout = time.Duration(req.Int("timeout")) * time.Second
