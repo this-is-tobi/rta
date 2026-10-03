@@ -372,7 +372,7 @@ It is deliberately not more paths on the `--http` listener. Bearer authenticatio
 | Path | Credential | Says |
 | --- | --- | --- |
 | `/livez` | none | the process is serving. It consults nothing on purpose — a liveness probe wired to the store asks for a restart that meets the same broken volume |
-| `/readyz` | none | the record can actually be written. A detached volume or a full disk leaves a server that still accepts connections and authenticates callers while failing at the one thing it is for |
+| `/readyz` | none | the config reads (one that does not parse leaves a server that refuses every capability a profile could change, so it is not sent traffic until it does, with no restart), and the record can actually be written: the data directory takes a file and, once there is a record, it takes an append — the question a call that needs a grant is asked, since one is refused when it cannot. A detached volume or a full disk leaves a server that still accepts connections and authenticates callers while failing at the one thing it is for. The verdict is kept for a second, so asking as often as the open address allows costs the server one check |
 | `/healthz` | none | the same as `/readyz`, for tooling that asks by that name |
 | `/metrics` | **the same bearer token as MCP** | the exposition format `rta agent metrics` prints |
 

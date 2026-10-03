@@ -55,6 +55,22 @@ func newMCPCommand(reg *registry.Registry, version string, opts *globalOpts) *co
 	return root
 }
 
+// serverReady is what readiness asks: that the config reads, and that the
+// record can be written.
+//
+// A config that does not parse does not stop the server, and the capabilities a
+// profile could change are refused while it does not (mcp.Options.ProfilesErr).
+// That is a server that looks up and answers every agent with a refusal, so it
+// is not one to send traffic to: the probe says so, with the file's own reason,
+// to whoever describes the pod, and the first read that succeeds (a ConfigMap
+// put right) ends it without a restart.
+func serverReady() error {
+	if _, err := config.Load(); err != nil {
+		return fmt.Errorf("the config does not read, so a call to a capability a profile could change is refused: %w", err)
+	}
+	return recordWritable()
+}
+
 // recordWritable is the readiness question, and it is deliberately a write.
 //
 // What makes this server useful is that every call an agent makes lands in the
@@ -88,6 +104,18 @@ func recordWritable() error {
 	}
 	_ = f.Close()
 	_ = os.Remove(probe)
+	// A directory that takes a file is not yet a record that takes an append:
+	// something sitting where the record goes, a key gone from beside it. A
+	// call that needs a grant is refused in that state (core.record.unwritable),
+	// so a server in it is not one to send traffic to either. Only where there
+	// is a record to ask about, which keeps a fresh data directory what this
+	// probe found it: the first call creates the record, and asking before it
+	// would create one here.
+	if agentlog.Started() {
+		if err := agentlog.Writable(); err != nil {
+			return fmt.Errorf("the record of agent calls cannot be written, so a call that needs a grant is refused: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -651,7 +679,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				if observeLn != nil {
 					observeHandler = mcp.NewObserveHandler(mcp.ObserveConfig{
 						Verifier: verifier,
-						Ready:    recordWritable,
+						Ready:    serverReady,
 						Metrics:  func() (string, error) { return agentcap.Exposition(reg.Artifact) },
 					})
 					fmt.Fprintf(cmd.ErrOrStderr(),
