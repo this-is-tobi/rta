@@ -29,7 +29,8 @@ func statusCapability() plugin.Capability {
 		// status codes is a reference you open on purpose, not a glance.
 		NoPreview: true,
 		Description: "A code prints its card; a class (`4xx`, `500-599`) or nothing prints the " +
-			"table. Offline: the text is the standard's, and every code net/http knows is here.",
+			"table. Offline: the text is the standard's, and every code net/http knows is here. " +
+			"It looks at no URL: `http.head` reports the status a live one returns.",
 		Inputs: []plugin.Field{
 			{Name: "code", Type: plugin.String, Positional: true,
 				Help:    "a code (404), a class (4xx) or a range (500-599); every code when omitted",
