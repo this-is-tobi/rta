@@ -260,15 +260,15 @@ func depthOf(p string) int {
 // same string for a directory on this machine and necessarily different for
 // a clone, and the parsers only ever see the second — a component's source
 // is a thing somebody has to be able to go and open.
-func parseManifest(fsys fs.FS, name, shown string) ([]component, graph, error) {
+func parseManifest(fsys fs.FS, name, shown string) ([]component, graph, []string, error) {
 	// Decided before the read: nothing here can parse a binary lockfile, so
 	// pulling one into memory only makes the failure slower.
 	if path.Base(name) == "bun.lockb" {
-		return nil, graph{}, errBinaryLockfile
+		return nil, graph{}, nil, errBinaryLockfile
 	}
 	data, err := readManifest(fsys, name, shown)
 	if err != nil {
-		return nil, graph{}, err
+		return nil, graph{}, nil, err
 	}
 	// From shown, which is the path as the caller gave it: a file named on
 	// its own is read under its base name alone, and requirements/prod.txt is
@@ -276,9 +276,13 @@ func parseManifest(fsys fs.FS, name, shown string) ([]component, graph, error) {
 	format := manifestFormat(shown)
 	comps, err := parseComponents(format, data, shown)
 	if err != nil {
-		return nil, graph{}, err
+		return nil, graph{}, nil, err
 	}
-	return comps, parseGraph(format, data), nil
+	var gaps []string
+	if format == "requirements.txt" {
+		gaps = requirementGaps(string(data))
+	}
+	return comps, parseGraph(format, data), gaps, nil
 }
 
 // readManifest reads name from fsys, refusing a file past maxManifestBytes by
@@ -608,6 +612,67 @@ func parseRequirements(text, source string) []component {
 		out = append(out, component{ecosystem: "PyPI", name: name, version: version, source: source})
 	}
 	return out
+}
+
+// requirementGaps is what a requirements file lists that parseRequirements
+// does not check: a range ("django>=4.2"), a URL or a VCS reference, and the
+// other files it includes (-r, -c), which are read only if something else
+// finds them. Each is named: by its package where there is one, by the line's
+// own words where there is not.
+//
+// **A pin that is not there was a line that was not mentioned.** parseRequirements
+// takes only pinned lines, rightly, and `django>=4.2` on the line above
+// `flask==2.0.0` was dropped without a word: seven dependencies declared, no
+// sign that an eighth was never looked at. The same report says outright when
+// a file has no pin at all; one with some had nothing to say.
+func requirementGaps(text string) []string {
+	var out []string
+	for _, raw := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(raw)
+		// A comment starts at a # that begins the line or follows a space, as
+		// pip reads one: the # of "#egg=name" on a URL is part of it.
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		if i := strings.IndexAny(line, " \t"); i >= 0 {
+			if j := strings.Index(line[i:], "#"); j >= 0 {
+				line = strings.TrimSpace(line[:i+j])
+			}
+		}
+		switch {
+		case line == "":
+		case includeFlag(line):
+			out = append(out, line)
+		case strings.HasPrefix(line, "-"):
+			// --hash, --index-url, -e . and the rest are options, not packages.
+		case len(parseRequirements(line, "")) == 0:
+			out = append(out, requirementName(line))
+		}
+	}
+	return out
+}
+
+// includeFlag reports whether line pulls another requirements file in: -r and
+// -c, attached to their file or not, and their long spellings.
+func includeFlag(line string) bool {
+	if strings.HasPrefix(line, "--") {
+		long, _, _ := strings.Cut(strings.Fields(line)[0], "=")
+		return long == "--requirement" || long == "--constraint"
+	}
+	return strings.HasPrefix(line, "-r") || strings.HasPrefix(line, "-c")
+}
+
+// requirementName is the package a requirement line names, or the line's own
+// first words where it is a URL without one.
+func requirementName(line string) string {
+	if _, egg, ok := strings.Cut(line, "#egg="); ok && egg != "" {
+		return egg
+	}
+	name := line
+	if i := strings.IndexAny(name, "<>=!~;[ \t@"); i > 0 {
+		name = name[:i]
+	}
+	return findings.Clip(name)
 }
 
 // sbom covers the two formats that matter, distinguished by the field each

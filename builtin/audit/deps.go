@@ -343,6 +343,22 @@ type unreadableManifest struct {
 	reason string
 }
 
+// listed names up to five of names, and counts the rest.
+func listed(names []string) string {
+	const most = 5
+	if len(names) <= most {
+		return strings.Join(names, ", ")
+	}
+	return strings.Join(names[:most], ", ") + " and " + strconv.Itoa(len(names)-most) + " more"
+}
+
+// uncheckedLines is what a manifest that was read lists and nothing asked
+// about: the requirements it does not pin, and the files it includes.
+type uncheckedLines struct {
+	path  string
+	names []string
+}
+
 // inventory is everything the scan read off disk, before anything was asked
 // about it.
 //
@@ -359,6 +375,9 @@ type inventory struct {
 	unknown   []component
 	// unreadable is what was found and could not be parsed.
 	unreadable []unreadableManifest
+	// unchecked is what manifests that were read list and the scan did not
+	// check, so that coverage of a file that is read in part is stated.
+	unchecked []uncheckedLines
 	// manifests is every file that was looked at, readable or not.
 	manifests []string
 	// structure is what those files record about how they fit together.
@@ -400,7 +419,7 @@ func read(fsys fs.FS, names, shown []string) inventory {
 	inv := inventory{manifests: shown, structure: newGraph()}
 	var comps []component
 	for i, m := range names {
-		got, g, err := parseManifest(fsys, m, shown[i])
+		got, g, gaps, err := parseManifest(fsys, m, shown[i])
 		if err != nil {
 			inv.unreadable = append(inv.unreadable,
 				unreadableManifest{path: shown[i], reason: findings.Clip(whyUnread(err))})
@@ -412,6 +431,9 @@ func read(fsys fs.FS, names, shown []string) inventory {
 		}
 		comps = append(comps, got...)
 		inv.structure.merge(g)
+		if len(gaps) > 0 {
+			inv.unchecked = append(inv.unchecked, uncheckedLines{path: shown[i], names: gaps})
+		}
 	}
 	inv.all = dedupe(comps)
 	sort.Slice(inv.all, func(i, j int) bool { return inv.all[i].key() < inv.all[j].key() })
@@ -475,6 +497,12 @@ func gradeDeps(r *findings.Report, inv inventory, vulns map[string][]string,
 			"found "+findings.Plural(len(inv.manifests), "manifest")+" but no pinned dependencies in them — "+
 				"a requirements.txt of ranges names no version to check", refUnpinnedDep)
 		return
+	}
+
+	for _, u := range inv.unchecked {
+		r.Add(grpInventory, "unpinned", findings.Warn,
+			u.path+" lists "+findings.Plural(len(u.names), "requirement")+" this does not check — a range or a URL "+
+				"names no version, and an included file is read only if it is found itself: "+listed(u.names), refUnpinnedDep)
 	}
 
 	// Vulnerable packages first, one finding each: a dependency is the unit

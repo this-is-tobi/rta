@@ -216,6 +216,44 @@ urllib3 == 1.26.5
 	}
 }
 
+// What a requirements file lists and the scan does not check is said. A range
+// above a pin was dropped without a word: seven dependencies declared, no sign
+// an eighth was never looked at, in a report that says outright when a file has
+// no pin at all.
+func TestRequirementsThatAreNotCheckedAreNamed(t *testing.T) {
+	text := `# deps
+django==4.2.1
+flask>=2.0           # a range
+celery[redis]>=5 ; python_version >= "3.9"
+pyyaml @ https://example.org/pyyaml-6.0.tar.gz
+git+https://github.com/x/y.git@main#egg=ypkg
+-e .
+--index-url https://pypi.example.org/simple
+--hash=sha256:abcdef
+-r base.txt
+--constraint=constraints.txt
+requests==2.31.0
+`
+	got := requirementGaps(text)
+	want := []string{"flask", "celery", "pyyaml", "ypkg", "-r base.txt", "--constraint=constraints.txt"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("gaps = %q, want %q", got, want)
+	}
+	if gaps := requirementGaps("django==4.2.1\nrequests==2.31.0\n"); len(gaps) != 0 {
+		t.Errorf("a file of pins has gaps: %q", gaps)
+	}
+
+	fsys := fstest.MapFS{"requirements.txt": {Data: []byte(text)}}
+	inv := read(fsys, []string{"requirements.txt"}, []string{"requirements.txt"})
+	r := &findings.Report{}
+	gradeDeps(r, inv, nil, nil, false, true, plugin.SurfaceCLI)
+	f := mustFind(t, r, "unpinned")
+	if f.Status != findings.Warn || !strings.Contains(f.Detail, "6 requirements") ||
+		!strings.Contains(f.Detail, "flask") || !strings.Contains(f.Detail, "and 1 more") {
+		t.Errorf("unpinned = %+v, want a warning naming the requirements it did not check", f)
+	}
+}
+
 // A pin with nothing after the == crashed the whole command: strings.Fields
 // returns an empty slice for a whitespace-only string, unlike strings.Split,
 // so indexing [0] panicked. Worth pinning as more than an injection case —
