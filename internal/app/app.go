@@ -1177,7 +1177,30 @@ func flagValueError(cmd *cobra.Command, err error, c *plugin.Capability) error {
 	if refused := refuseFlagValue(cmd, err, c); refused != nil {
 		return refused
 	}
+	if refused := refuseDashedValue(cmd, err); refused != nil {
+		return refused
+	}
 	return usageError(cmd, err)
+}
+
+// shorthandRun is pflag's refusal of a word that opens on a dash and is not a
+// flag: `unknown shorthand flag: '9' in -90m`.
+var shorthandRun = regexp.MustCompile(`^unknown shorthand flag: '.' in (-[0-9]\S*)$`)
+
+// refuseDashedValue says what to do about a value that starts with a dash and a
+// digit — a negative number, a signed duration, an epoch before 1970 — which a
+// flag parser reads as the flags `-9`, `-0`, `-m`. `rta time at -90m` answered
+// `unknown shorthand flag: '9' in -90m` under a hint to read --help, which does
+// not mention the one thing that fixes it: a `--` before the value. The time
+// capability's own description says so; the error did not.
+func refuseDashedValue(cmd *cobra.Command, err error) *view.Error {
+	m := shorthandRun.FindStringSubmatch(err.Error())
+	if m == nil {
+		return nil
+	}
+	return &view.Error{Code: CodeUsage, Message: err.Error(),
+		Hint: "a value that starts with a dash is read as a flag — put `--` before it: `" +
+			cmd.CommandPath() + " -- " + m[1] + "`"}
 }
 
 // refuseFlagValue restates pflag's refusal of a value in the words the same

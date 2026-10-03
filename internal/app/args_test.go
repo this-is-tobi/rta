@@ -13,6 +13,31 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
+// A negative number or a signed duration given as a value is read as flags:
+// `rta time at -90m` answered `unknown shorthand flag: '9' in -90m` under a hint
+// to read --help, and nothing in it says that a `--` before the value is what
+// makes it one. The capability's own description knew; the error did not.
+func TestAValueThatStartsWithADashAndADigitSaysToPutDashDashBeforeIt(t *testing.T) {
+	reg := testRegistry(t)
+	for _, arg := range []string{"-5", "-90m", "-1.5"} {
+		_, _, err := run(t, reg, "demo", "item", "list", arg)
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != CodeUsage || !strings.Contains(ve.Hint, "`rta demo item list -- "+arg+"`") {
+			t.Errorf("rta demo item list %s: %v, want a hint putting -- before it", arg, err)
+		}
+	}
+	// A flag that does not exist keeps the ordinary hint.
+	_, _, err := run(t, reg, "demo", "item", "list", "-x")
+	var ve *view.Error
+	if !errors.As(err, &ve) || strings.Contains(ve.Hint, " -- ") {
+		t.Errorf("an unknown flag was told to use --: %v", err)
+	}
+	// And after the --, the value is taken as one.
+	if _, _, err := run(t, reg, "demo", "item", "list", "--", "-90m"); err != nil {
+		t.Errorf("a value after -- was refused: %v", err)
+	}
+}
+
 // `--for` was read in the one branch that switches a profile on, and as unset
 // whenever it was not positive: `rta use --for 2h` printed what was on and said
 // nothing of the two hours, and `rta use staging --for -5m`, or `--for 0`,
