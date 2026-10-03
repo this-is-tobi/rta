@@ -143,12 +143,12 @@ The ceiling is applied where every authorization path already goes — when a gr
 The difference matters. A ceiling checked only at issue would live in the CLI, and any grant that predated the policy would escape it. Checking on the way out makes the cap **a property of what a grant can do**, rather than of how one was asked for. Add a policy today and yesterday's over-broad grants are bounded by it from the next call onward.
 
 ```bash
-rta grant allow pg.query --ttl 2h
+rta grant allow pg.query --agent claude --ttl 2h
 ```
 
 ```
-✓ granted pg.query for 15m
-  clamped from 2h by maxTTL in ./.rta-policy.yaml
+claude may call pg.query for 15m (until 14:32)
+capped at 15m by your team's policy (you asked for 2h) — /home/you/project/.rta-policy.yaml
 ```
 
 It names which rule did it and where that rule lives, because a bound that silently shortens is indistinguishable from one you mistyped.
