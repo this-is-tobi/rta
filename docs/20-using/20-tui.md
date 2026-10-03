@@ -32,6 +32,8 @@ Tiles are yours to arrange. `H` hides one you never look at, and `p` opens the i
 
 The selected tile is the one with the coloured border. On a terminal that shows no colour (`NO_COLOR`, `TERM=dumb`) its border is drawn in heavy lines instead, so the selection never rests on colour alone.
 
+What a key did is said in the footer, beside the keys: a green `✓` for something done and a red `✗` for something that did not happen, such as a save the file refused or an approval that was turned down. The mark carries the difference where colour does not show.
+
 ### Stating the dashboard yourself
 
 With no `dashboard:` block, rta builds one: a tile per plugin that has a capability which is `Read`, needs no input, and is cheap enough to run unasked. Plugins installed later appear on their own.
@@ -108,6 +110,8 @@ Two things the block will not do, whatever you write in it:
 ## The catalogue
 
 Every capability as a table grouped by plugin — one row each, with its ID, its safety class and its summary. The filter stays live, every pane is bounded by the terminal and scrolls inside it, and the mouse wheel works. `enter` runs the row; `+` puts it on the dashboard.
+
+`/` opens the filter, and while its box has the keyboard `q`, `/` and `+` are letters of the query: `enter` applies it, `esc` clears it and `ctrl+c` quits. It finds IDs that start with what you typed first, then anything with every word of the query in its ID or summary, which is the dashboard search's rule, so `gen` leads with the `gen` capabilities and `hosts list` finds `net.hosts.list`.
 
 ## Running something
 
