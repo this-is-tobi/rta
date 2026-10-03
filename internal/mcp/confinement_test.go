@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,9 +141,9 @@ func TestAFileInsideTheRootIsUsableByGitBlameAndLog(t *testing.T) {
 		if res.IsError {
 			t.Fatalf("%s refused a file inside the root: %s", tool, text)
 		}
-		m, ok := res.StructuredContent.(map[string]any)
-		if !ok {
-			t.Fatalf("%s: structured content = %T", tool, res.StructuredContent)
+		var m map[string]any
+		if err := json.Unmarshal([]byte(text), &m); err != nil {
+			t.Fatalf("%s: the text is not the JSON envelope: %v", tool, err)
 		}
 		if rows, _ := m["rows"].([]any); len(rows) != 1 {
 			t.Errorf("%s: rows = %v, want one — the file has one line and one commit", tool, m["rows"])
