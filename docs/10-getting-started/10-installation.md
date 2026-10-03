@@ -112,7 +112,7 @@ cosign verify ghcr.io/this-is-tobi/rta:latest \
 Two shapes of use:
 
 - **An MCP server** — [In a container, for a hardened server](../30-boundary/20-mcp.md#in-a-container-for-a-hardened-server) has the full `docker run` recipe: read-only root, dropped capabilities, no network by default.
-- **A one-shot command**, anywhere `docker run` reaches, including inside a cluster: `kubectl run --rm -it rta-debug --image=ghcr.io/this-is-tobi/rta:latest -- net probe db.internal:5432`.
+- **A one-shot command**, anywhere `docker run` reaches, including inside a cluster: `kubectl run --rm -it rta-debug --image=ghcr.io/this-is-tobi/rta:latest -- net probe db.internal 5432`.
 
 ## Kubernetes
 
