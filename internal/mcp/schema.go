@@ -24,6 +24,8 @@ import (
 // rta's own words come last (agentText).
 const instructions = "rta is a security boundary in front of this machine, not a shell. " +
 	"Every tool answers with one JSON object whose \"type\" names its shape (table, keyvalue, text, sections, ...). " +
+	"A table's \"total\" counts every row there is: when it is more than the rows sent, the list is cut, " +
+	"and the tool's \"limit\" or a narrower call shows the rest. " +
 	"A failure is {\"type\":\"error\",\"code\",\"message\",\"hint\"}: the hint says what to change in the call, " +
 	"or whose the fix is. A command in a hint (`rta ...`) is the operator's to run and you have no terminal, so say what " +
 	"is needed and ask the operator rather than retrying. A tool that needs a grant is refused until a person issues one " +
