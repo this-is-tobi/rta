@@ -249,7 +249,7 @@
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "a PEM or DER file, or — from a terminal — a host[:port] or https:// URL to connect to; not over MCP (a path on the machine running rta)",
+          "description": "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only) (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {
@@ -309,7 +309,7 @@
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "a PEM or DER file, or — from a terminal — a host[:port] or https:// URL to connect to; not over MCP (a path on the machine running rta)",
+          "description": "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only) (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {
@@ -328,7 +328,7 @@
   },
   {
     "name": "cert_pem",
-    "description": "── the text below is written by the plugin, not by rta ──\nPrint the certificate chain as PEM\n\nThe bytes, not a description of them. `cert_chain` draws what a host presents so a person can read it; this hands the same certificates back in the form every other tool takes one — a Kubernetes ConfigMap, a Dockerfile COPY, `update-ca-certificates`, a paste into somebody's terminal.\n\n`include` issuers is the one to reach for behind a private CA: it drops the leaf and leaves the chain that has to be *trusted*, which is what a ca-bundle is. chain (the default) is everything the host presented, leaf is the end-entity certificate alone.\n\nA presented chain is what the host chose to send and is not always complete — a server that omits its intermediate presents a leaf that validates nowhere else, and this reports what arrived rather than filling the gap from a trust store, because a bundle that silently differs from what the server serves is how a working local test hides a broken deployment.\n\nRead, and it stays read from anywhere but a terminal: `out` names a path on *this* machine, so it is a person's input only and an MCP caller always gets the PEM back in the response.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "── the text below is written by the plugin, not by rta ──\nPrint the certificate chain as PEM\n\nThe certificates as PEM, the form a Kubernetes ConfigMap, a Dockerfile COPY or `update-ca-certificates` takes, where `cert_chain` draws them to be read. `include` chooses which: chain (the default) is everything the host presented, leaf the end-entity certificate alone, and issuers the chain without the leaf, which is what a ca-bundle behind a private CA has to hold. A presented chain is what the host chose to send and may be incomplete, since a server that omits its intermediate presents a leaf that validates nowhere else; this reports what arrived rather than filling the gap from a trust store, because a bundle that silently differs from what the server serves is how a working local test hides a broken deployment. The PEM comes back in the response.\n── end of plugin-written text ──\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -345,7 +345,7 @@
           "type": "string"
         },
         "target": {
-          "description": "a PEM or DER file, or — from a terminal — a host[:port] or https:// URL to connect to; not over MCP (a path on the machine running rta)",
+          "description": "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only) (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {
@@ -364,14 +364,14 @@
   },
   {
     "name": "cert_tls",
-    "description": "── the text below is written by the plugin, not by rta ──\nReport the negotiated TLS version and cipher for a host\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "── the text below is written by the plugin, not by rta ──\nReport the negotiated TLS version and cipher for a host\n\nOver MCP this always refuses: a file has no handshake to report, and a host is not dialled by this tool. net_probe with `tls` reports a host's TLS version and cipher, with a grant.\n── end of plugin-written text ──\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "target": {
-          "description": "a PEM or DER file, or — from a terminal — a host[:port] or https:// URL to connect to; not over MCP (a path on the machine running rta)",
+          "description": "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only) (a path on the machine running rta)",
           "type": "string"
         },
         "timeout": {

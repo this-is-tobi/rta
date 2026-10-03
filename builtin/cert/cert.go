@@ -82,7 +82,7 @@ func Plugin() plugin.Plugin {
 	// net.port do — see their declarations below and in builtin/net/net.go.
 	targetField := plugin.Field{
 		Name: "target", Type: plugin.Path, Positional: true, Required: true,
-		Help: "a PEM or DER file, or — from a terminal — a host[:port] or https:// URL to connect to; not over MCP",
+		Help: "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only)",
 	}
 	timeoutField := plugin.Field{
 		Name: "timeout", Type: plugin.Int, Default: defaultTimeoutSeconds, Min: 1, Max: 120,
@@ -113,22 +113,15 @@ func Plugin() plugin.Plugin {
 				Summary:    "Print the certificate chain as PEM",
 				Safety:     plugin.Read,
 				Idempotent: true,
-				Description: "The bytes, not a description of them. `cert.chain` draws what a host " +
-					"presents so a person can read it; this hands the same certificates back in the " +
-					"form every other tool takes one — a Kubernetes ConfigMap, a Dockerfile COPY, " +
-					"`update-ca-certificates`, a paste into somebody's terminal.\n\n" +
-					"`include` issuers is the one to reach for behind a private CA: it drops the leaf " +
-					"and leaves the chain that has to be *trusted*, which is what a ca-bundle is. " +
-					"chain (the default) is everything the host presented, leaf is the end-entity " +
-					"certificate alone.\n\n" +
-					"A presented chain is what the host chose to send and is not always complete — a " +
-					"server that omits its intermediate presents a leaf that validates nowhere else, " +
-					"and this reports what arrived rather than filling the gap from a trust store, " +
-					"because a bundle that silently differs from what the server serves is how a " +
-					"working local test hides a broken deployment.\n\n" +
-					"Read, and it stays read from anywhere but a terminal: `out` names a path on " +
-					"*this* machine, so it is a person's input only and an MCP caller always gets the " +
-					"PEM back in the response.",
+				Description: "The certificates as PEM, the form a Kubernetes ConfigMap, a Dockerfile COPY or " +
+					"`update-ca-certificates` takes, where `cert.chain` draws them to be read. `include` " +
+					"chooses which: chain (the default) is everything the host presented, leaf the end-entity " +
+					"certificate alone, and issuers the chain without the leaf, which is what a ca-bundle " +
+					"behind a private CA has to hold. A presented chain is what the host chose to send and " +
+					"may be incomplete, since a server that omits its intermediate presents a leaf that " +
+					"validates nowhere else; this reports what arrived rather than filling the gap from a " +
+					"trust store, because a bundle that silently differs from what the server serves is how a " +
+					"working local test hides a broken deployment. The PEM comes back in the response.",
 				Inputs: []plugin.Field{
 					targetField,
 					{Name: "include", Type: plugin.String, Config: "include", Default: "chain",
@@ -189,8 +182,15 @@ func Plugin() plugin.Plugin {
 				Summary:    "Report the negotiated TLS version and cipher for a host",
 				Safety:     plugin.Read,
 				Idempotent: true,
-				Inputs:     []plugin.Field{targetField, timeoutField},
-				Run:        runTLS,
+				// A handshake is a conversation with a host, so a file has none
+				// to report and a host is not dialled over MCP: said where a
+				// model reads it, because the target input otherwise reads as
+				// the one the other three accept.
+				Description: "Over MCP this always refuses: a file has no handshake to report, and a host is not " +
+					"dialled by this tool. net.probe with `tls` reports a host's TLS version and cipher, with " +
+					"a grant.",
+				Inputs: []plugin.Field{targetField, timeoutField},
+				Run:    runTLS,
 			},
 		},
 	}
@@ -1070,8 +1070,14 @@ func runTLS(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, err
 	}
 	if state == nil {
+		hint := "pass host[:port] instead"
+		if sf := req.Surface(); sf == plugin.SurfaceMCP {
+			// A host is never dialled over MCP, so the advice a person at a
+			// terminal is given would send an agent to the next refusal.
+			hint = sf.CapabilityName("net.probe") + " with `tls` reports a host's TLS version and cipher, with a grant"
+		}
 		return nil, view.Errorf("cert.tls.filetarget", "%q is a file; cert.tls needs a live host", target).
-			WithHint("pass host[:port] instead")
+			WithHint(hint)
 	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: "version", Value: protocolOf(state.Version)},
