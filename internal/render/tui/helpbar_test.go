@@ -95,3 +95,16 @@ func TestTheCatalogueBarNamesWhatTheFilterBoxAnswers(t *testing.T) {
 		t.Errorf("q while filtering did not type into the box: mode %v, query %q", m.mode, m.list.FilterValue())
 	}
 }
+
+// The arrows on the profiles panes move the cursor between the rows the other
+// keys act on, so they are "select", as on every other list. They said
+// "scroll", the word for a page of text with nothing to pick.
+func TestTheProfilePanesCallTheArrowsSelect(t *testing.T) {
+	m := profileModel(t, twoProfileConfig())
+	for _, screen := range []mode{modeProfiles, modeProfilePlugins} {
+		bar := plain(fitHintBar(120, footerMaxLines, m.footerItems(screen)...))
+		if !strings.Contains(bar, "↑↓ select") || strings.Contains(bar, "scroll") {
+			t.Errorf("%s calls its arrows something else:\n%s", screenName(screen), bar)
+		}
+	}
+}
