@@ -22,6 +22,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
+	"github.com/charmbracelet/colorprofile"
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
@@ -174,6 +175,11 @@ type Model struct {
 	query         string
 	searchSel     int
 	searchInfo    string // idle prompt: plugin/capability inventory
+
+	// noColor is whether the terminal reports no colour at all (NO_COLOR,
+	// TERM=dumb, a pipe), told once by tea.ColorProfileMsg. Focus is a border
+	// colour, so it is what makes the focused tile heavy-framed instead.
+	noColor bool
 
 	// Profiles panes: the operator's environments, which one is switched on,
 	// and — one level in — the plugins each one covers.
@@ -529,6 +535,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fitAddPick()
 		return m, nil
 
+	case tea.ColorProfileMsg:
+		m.noColor = msg.Profile <= colorprofile.ASCII
+		return m, nil
 	case tea.MouseWheelMsg:
 		return m.wheel(msg)
 	case spinner.TickMsg:
