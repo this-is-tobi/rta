@@ -759,5 +759,25 @@ func (m Model) dashboardView() string {
 	case last < len(rows):
 		header += theme.Subtle.Render("  ↓ more")
 	}
-	return header + "\n" + search + "\n" + strings.Join(rendered, "\n") + "\n" + footer
+	return aboveFooter(header+"\n"+search+"\n"+strings.Join(rendered, "\n"), footer, m.height)
+}
+
+// aboveFooter puts footer under top, and cuts top from its bottom when the two
+// together are taller than the terminal. The grid budgets the tile rows for
+// the room there is, but it never draws a row shorter than its borders and the
+// line that says there is more, so on a terminal about ten rows high the
+// header, the search bar and that row already filled it and the footer, which
+// is where "q quit" is, was the part that fell off. A clipped tile is the
+// smaller loss.
+func aboveFooter(top, footer string, height int) string {
+	if height > 0 {
+		lines := strings.Split(top, "\n")
+		if room := max(height-lipgloss.Height(footer), 0); len(lines) > room {
+			if room == 0 {
+				return footer
+			}
+			top = strings.Join(lines[:room], "\n")
+		}
+	}
+	return top + "\n" + footer
 }
