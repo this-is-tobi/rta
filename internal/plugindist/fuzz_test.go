@@ -23,7 +23,7 @@ func FuzzParseOCIRef(f *testing.F) {
 		if ref.host == "" || !ociRepoRe.MatchString(ref.repo) {
 			t.Fatalf("parseOCIRef(%q) accepted host %q repo %q", raw, ref.host, ref.repo)
 		}
-		if !ociTagRe.MatchString(ref.ref) && !ociDigestRe.MatchString(ref.ref) {
+		if !ociTagRe().MatchString(ref.ref) && !ociDigestRe.MatchString(ref.ref) {
 			t.Fatalf("parseOCIRef(%q) accepted reference %q", raw, ref.ref)
 		}
 	})

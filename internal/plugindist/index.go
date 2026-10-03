@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/paths"
@@ -255,14 +256,22 @@ func PreviewAddIndexAt(ctx context.Context, name, url, ref string) *view.Error {
 // a tag or a branch name, never something git would read as an option — a
 // leading dash is refused for that reason alone — and never a path
 // separator run or whitespace that would make the recorded value ambiguous.
-var pinRef = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$`)
+//
+// Compiled on first use, with ociTagRe: a {0,127} repetition is expanded into
+// a hundred and twenty-seven nested options, which is about 1,400 allocations
+// and, measured with GODEBUG=inittrace=1, most of the 0.6 ms this package
+// added to the start of every rta command for two checks only `plugin index`
+// and `plugin install` ever make.
+var pinRef = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$`)
+})
 
 func addIndex(ctx context.Context, name, url, ref string, dryRun bool) *view.Error {
 	if !indexName.MatchString(name) {
 		return view.Errorf("plugin.index.name", "%q is not an index name", name).
 			WithHint("lowercase letters, digits and dashes, up to 32")
 	}
-	if ref != "" && !pinRef.MatchString(ref) {
+	if ref != "" && !pinRef().MatchString(ref) {
 		return view.Errorf("plugin.index.ref", "%q is not a commit, tag or branch name", ref).
 			WithHint("letters, digits, dots, dashes and slashes, not starting with a dash")
 	}

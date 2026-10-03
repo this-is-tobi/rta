@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -71,9 +72,11 @@ type ociRef struct {
 // value that does not match is refused rather than escaped, because "escaped
 // correctly" is a claim about every downstream parser and this is a claim
 // about the value.
+//
+// ociTagRe is compiled on first use; pinRef says why.
 var (
 	ociRepoRe   = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$`)
-	ociTagRe    = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$`)
+	ociTagRe    = sync.OnceValue(func() *regexp.Regexp { return regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$`) })
 	ociDigestRe = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
 
@@ -113,7 +116,7 @@ func parseOCIRef(raw string) (ociRef, *view.Error) {
 		slash := strings.LastIndex(rest, "/")
 		if colon := strings.LastIndex(rest, ":"); colon > slash {
 			out.repo, out.ref = rest[:colon], rest[colon+1:]
-			if !ociTagRe.MatchString(out.ref) {
+			if !ociTagRe().MatchString(out.ref) {
 				return ociRef{}, bad("the tag after : is not a legal tag")
 			}
 		} else {
