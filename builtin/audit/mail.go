@@ -733,6 +733,16 @@ func auditDMARC(r *findings.Report, f mailFacts) {
 // SMTP's opportunistic TLS can be stripped by anything on the path, and the
 // sending server has no way to know it was supposed to insist.
 func auditMailTransport(r *findings.Report, f mailFacts) {
+	// A domain that states it accepts no mail (RFC 7505) has no delivery to
+	// protect. Warned about a missing MTA-STS policy, it was told to harden
+	// the one thing it had already removed, in the same report that grades its
+	// null MX as the hardening it is.
+	if len(f.mx) == 1 && f.mxErr == nil && strings.TrimSuffix(f.mx[0].Host, ".") == "" {
+		const why = "not applicable — the domain publishes a null MX and accepts no mail, so there is no delivery to protect"
+		r.Add(grpMailTLS, "mta-sts", findings.Info, why, refCleartext)
+		r.Add(grpMailTLS, "tls-rpt", findings.Info, why, refCleartext)
+		return
+	}
 	switch {
 	case f.stsErr != nil:
 		r.AddUnchecked(grpMailTLS, "mta-sts", "lookup failed: "+f.stsErr.Error(), refCleartext)

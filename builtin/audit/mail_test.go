@@ -619,6 +619,25 @@ func TestNullMXIsGradedAsHardening(t *testing.T) {
 	}
 }
 
+// A domain that publishes a null MX accepts no mail, and MTA-STS and TLS-RPT
+// protect the delivery of mail to a domain. It was warned that nothing told
+// senders to require TLS, in the report that graded the same domain's null MX
+// as the hardening it is.
+func TestNullMXNeedsNoMTASTS(t *testing.T) {
+	r := gradeMail(mailFacts{domain: "d.test", mx: []*stdnet.MX{{Host: "."}}})
+	for _, check := range []string{"mta-sts", "tls-rpt"} {
+		f := mustFind(t, r, check)
+		if f.Status != findings.Info || !strings.Contains(f.Detail, "not applicable") {
+			t.Errorf("%s of a domain with a null MX: %+v, want it not applicable", check, f)
+		}
+	}
+	// A domain that does take mail is still asked for them.
+	r = gradeMail(mailFacts{domain: "d.test", mx: []*stdnet.MX{{Host: "mx.d.test."}}})
+	if f := mustFind(t, r, "mta-sts"); f.Status != findings.Warn {
+		t.Errorf("mta-sts of a domain with a mail exchanger: %+v, want the warning", f)
+	}
+}
+
 // A lookup that failed is not a finding about the domain. Reporting "no SPF
 // record" because the resolver timed out is the audit lying with confidence.
 func TestFailedLookupsAreNotGradedAsFindings(t *testing.T) {
