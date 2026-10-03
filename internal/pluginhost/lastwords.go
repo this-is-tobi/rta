@@ -139,7 +139,14 @@ func errorEntry(line string) (message string, entry bool) {
 // keep adds a line to lines, what the plugin said: the last few, or a
 // panic's first few, each cut to a bounded piece of itself.
 func (w *lastWords) keep(lines []string, line string) []string {
-	line, _ = format.Head(strings.TrimRight(line, " \t\r\n"), wordLength)
+	// A line cut short says so. The validator's refusal of a declaration is one
+	// long sentence, and the cut fell inside it — "…or an agent can point the
+	// operator's credential at a machine it" — with nothing to say that the
+	// sentence went on.
+	line, rest := format.Head(strings.TrimRight(line, " \t\r\n"), wordLength)
+	if rest > 0 {
+		line += "…"
+	}
 	switch {
 	case line == "":
 	case w.panicking:
