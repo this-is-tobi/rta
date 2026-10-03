@@ -398,6 +398,30 @@ profiles:
 	}
 }
 
+// An upgrade leaves every profile entry for the plugin pinned to a build that
+// is gone, and the refusal that follows is the first the person meets of it.
+// It said which pin to type — the installed one — and left them to find the
+// file and the entries; `rta profile repin` rewrites every one in a command,
+// and the refusal is the place to say so.
+func TestAStalePinNamesTheCommandThatRepinsIt(t *testing.T) {
+	reg := registry.New()
+	origin := registry.Origin{Path: "/usr/local/bin/rta-plugin-pg", Digest: "1a2b3c4d5e6f"}
+	if err := reg.RegisterFrom(plugin.Plugin{
+		Name: "pg", Summary: "pg", Capabilities: []plugin.Capability{pgCap()},
+	}, origin); err != nil {
+		t.Fatal(err)
+	}
+	for name, key := range map[string]string{"stale": "pg@000000000000", "short": "pg@1a2b"} {
+		_, verr := Lookup(load(t, envFor(key)), pgCap(), "staging", reg)
+		if verr == nil {
+			t.Fatalf("%s: a pin that does not match resolved", name)
+		}
+		if !strings.Contains(verr.Hint, "pg@1a2b3c4d5e6f") || !strings.Contains(verr.Hint, "`rta profile repin --all --plugin pg`") {
+			t.Errorf("%s: %s: hint %q names the pin but not the command that writes it", name, verr.Code, verr.Hint)
+		}
+	}
+}
+
 // What `rta profile list` calls invalid is exactly what refuses to resolve.
 //
 // The pin was briefly advisory: Check reported an unpinned profile as invalid
