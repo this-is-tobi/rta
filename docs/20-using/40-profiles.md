@@ -167,6 +167,8 @@ The same fact, spelled for a service behind a jump host rather than in a cluster
 
 One forward per call, torn down afterwards. A cached port-forward outlives the pod it points at, and a stale tunnel to a rescheduled pod fails in a way nobody can read.
 
+A forward is also torn down when the server that opened it is killed outright: on Linux the kernel ends it with its parent, and on macOS, which has no such signal, the next `rta mcp serve` finds what a killed one left in `forwards/` under the data directory and stops it — only when the process that started it is gone and the pid still has the start time that was written down, so a pid the kernel has reused is never signalled. Until then a forward left by a `kill -9` is a loopback listener into the cluster; `rta mcp serve` says on its stderr how many it stopped. Windows has neither, and a forward left there runs until it is stopped.
+
 A connection states **at most one** of `kube` and `ssh`; both at once is refused.
 
 ### When the far side speaks TLS on its own

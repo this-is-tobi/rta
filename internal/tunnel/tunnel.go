@@ -96,7 +96,7 @@ type Tunnel struct {
 	// the forward is really gone — and a send is consumed by whichever
 	// arrives first. That cost two seconds on every failed open before the
 	// tests were timed rather than merely watched to pass.
-	exited chan struct{}
+	exited <-chan struct{}
 
 	// The ssh half: rta owns the listener, and each accepted connection is an
 	// `ssh -W` child of its own — see ssh.go for why there is no single
@@ -315,7 +315,8 @@ func openInstrumented(ctx context.Context, name string, t Target) (*Tunnel, *vie
 	// for -race being in the bar rather than an option.
 	stderr := &syncBuffer{}
 	cmd.Stderr = stderr
-	if err := cmd.Start(); err != nil {
+	exited, err := startPinned(cmd, true)
+	if err != nil {
 		// os/exec will not start a command whose context has already ended,
 		// and answers with the context's own error — which read as kubectl
 		// failing to start: "could not start kubectl: context deadline
@@ -328,9 +329,8 @@ func openInstrumented(ctx context.Context, name string, t Target) (*Tunnel, *vie
 		return nil, view.Errorf("tunnel.open.failed", "could not start kubectl: %v", err)
 	}
 
-	tun := &Tunnel{cmd: cmd, exited: make(chan struct{})}
+	tun := &Tunnel{cmd: cmd, exited: exited}
 	tun.stop = tun.stopKube
-	go func() { _ = cmd.Wait(); close(tun.exited) }()
 
 	// waitCtx bounds only how long we wait for the listener line — a
 	// fallback ceiling so Open can never hang forever regardless of what

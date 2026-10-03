@@ -37,6 +37,8 @@ import (
 	agentsession "github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/internal/shellquote"
 	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/internal/tunnel"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -596,6 +598,14 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			// the first thing to rule out when nothing shows up, and it is
 			// only visible if both sides say which file they mean.
 			fmt.Fprintf(cmd.ErrOrStderr(), "record: %s (session %s)\n", agentlog.Path(), sessionID)
+			// A server killed outright leaves its port-forwards running where
+			// the platform has no parent-death signal for them (macOS), and a
+			// listener into the cluster nobody watches is found here, by the
+			// next server to start, and stopped.
+			if n := tunnel.ReapOrphans(); n > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(), "rta: stopped %s a previous server was killed without closing\n",
+					format.Count(n, "port-forward", "port-forwards"))
+			}
 			// What Remote hides, named rather than left for an agent to notice
 			// as a shorter tool list: see plugin.Capability.HostSpecific.
 			if blocked := opts.RemoteBlocked(reg); len(blocked) > 0 {
