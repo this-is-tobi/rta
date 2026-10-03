@@ -489,10 +489,40 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 	if state != nil {
 		pairs = append(pairs, view.Pair{Key: "tls", Value: protocolOf(state.Version)})
 	}
-	if len(leaf.DNSNames) > 0 {
-		pairs = append(pairs, view.Pair{Key: "dns-names", Value: strings.Join(leaf.DNSNames, ", ")})
+	return view.KeyValue{Pairs: append(pairs, namePairs(leaf)...)}, nil
+}
+
+// namePairs is every name a certificate answers to, one row per kind that has
+// any: the DNS names a browser matches a host against, the IP addresses a
+// client dialling one matches, and the email addresses and URIs that identify
+// a person or a workload.
+//
+// **Only the DNS names were listed.** A certificate for an address, which is
+// what a service reached by IP, a node's kubelet or an etcd member carries,
+// printed no names row at all, and read as one valid for nothing. An
+// internal service that answers on 10.0.0.5 is checked against exactly that
+// SAN, and the row that holds it is the first thing anybody opens this for
+// when a client says the name does not match.
+func namePairs(c *x509.Certificate) []view.Pair {
+	var pairs []view.Pair
+	add := func(key string, names []string) {
+		if len(names) > 0 {
+			pairs = append(pairs, view.Pair{Key: key, Value: strings.Join(names, ", ")})
+		}
 	}
-	return view.KeyValue{Pairs: pairs}, nil
+	add("dns-names", c.DNSNames)
+	ips := make([]string, len(c.IPAddresses))
+	for i, ip := range c.IPAddresses {
+		ips[i] = ip.String()
+	}
+	add("ip-addresses", ips)
+	add("emails", c.EmailAddresses)
+	uris := make([]string, len(c.URIs))
+	for i, u := range c.URIs {
+		uris[i] = u.String()
+	}
+	add("uris", uris)
+	return pairs
 }
 
 func runChain(ctx context.Context, req plugin.Request) (view.View, error) {
