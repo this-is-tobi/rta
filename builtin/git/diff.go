@@ -213,11 +213,31 @@ func notDiffed(large []string, skipped []withheld) string {
 	return b.String()
 }
 
+// unresolvedRevision is why spec names no commit, in words about the revision
+// and not the library's.
+//
+// **The reason was a sentinel's text.** `--commit HEAD~99` was "does not name
+// a commit: EOF", the end-of-file marker of the walk back through the
+// parents, and `--commit HEAD^2` on a commit that is not a merge the same;
+// `zzz` was "reference not found". Neither says what to try: the first two
+// count past the first commit or name a parent the commit lacks, and the
+// last is a name that no branch, tag or commit here answers to.
+func unresolvedRevision(spec string, err error) *view.Error {
+	why := err.Error()
+	switch {
+	case errors.Is(err, io.EOF):
+		why = "it counts back past the first commit, or names a parent that commit does not have"
+	case errors.Is(err, plumbing.ErrReferenceNotFound):
+		why = "no branch, tag or commit here goes by that name"
+	}
+	return view.Errorf("git.diff.unresolved", "%s does not name a commit: %s", spec, why)
+}
+
 func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate func(string) *view.Error) (view.View, error) {
 	deadline := matchDeadline(ctx)
 	hash, err := repo.ResolveRevision(plumbing.Revision(spec))
 	if err != nil {
-		return nil, view.Errorf("git.diff.unresolved", "%s does not name a commit: %v", spec, err)
+		return nil, unresolvedRevision(spec, err)
 	}
 	// Read through a store that holds rename detection to a budget, which
 	// the trees carry to it (renameReads): half the call's time, so that the

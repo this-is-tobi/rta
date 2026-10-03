@@ -110,6 +110,28 @@ func TestDiffOnTheRootCommitShowsEveryFileAdded(t *testing.T) {
 	}
 }
 
+// A revision that names no commit says what is wrong with it, not the
+// library's sentinel: HEAD~99 was "does not name a commit: EOF", the marker
+// of the walk back through the parents running out.
+func TestDiffOfARevisionThatNamesNoCommitSaysWhy(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "first")
+	commitFile(t, repo, dir, "a.txt", "v2\n", "second")
+
+	for spec, want := range map[string]string{
+		"HEAD~99": "counts back past the first commit",
+		"HEAD^2":  "names a parent that commit does not have",
+		"nosuch":  "no branch, tag or commit here goes by that name",
+	} {
+		_, err := runDiff(context.Background(), req(t, dir, map[string]any{"commit": spec}))
+		verr := view.AsError(err, "x")
+		if err == nil || verr.Code != "git.diff.unresolved" || !strings.Contains(verr.Message, want) ||
+			strings.Contains(verr.Message, "EOF") || strings.Contains(verr.Message, "reference not found") {
+			t.Errorf("%s: %v, want git.diff.unresolved saying %q", spec, err, want)
+		}
+	}
+}
+
 // A commit whose patch is empty answers an empty patch, and says why only to
 // a person: the sentence was the body, so `rta git diff --commit <empty> >
 // x.patch` wrote it into the patch.
