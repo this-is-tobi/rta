@@ -876,6 +876,15 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 			if !isTTY() {
 				return cmd.Help()
 			}
+			// A terminal that cannot move the cursor cannot show a screen
+			// that redraws itself in place: Emacs's shell buffer and a few
+			// serial consoles say so with TERM=dumb, and the TUI there is a
+			// scroll of escape sequences with no way out spelled in any of
+			// it. Help is what a pipe gets and what this can read.
+			if os.Getenv("TERM") == "dumb" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "rta: TERM=dumb cannot draw the TUI, so here is the help instead")
+				return cmd.Help()
+			}
 			if cfgErr != nil {
 				return cfgErr
 			}
