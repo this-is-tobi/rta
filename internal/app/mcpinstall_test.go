@@ -42,6 +42,22 @@ func argvOf(t *testing.T, file string) []string {
 // machine shares one set of grants, which is the whole point of naming one
 // — and a feature that has to be turned on by hand is one that stays off
 // (a control that requires homework is a control that stays off).
+// A client rta does not know is told so with the ones it does. RunE had the
+// sentence all along — `unknown client "nope" — try one of: claude, …` — and
+// cobra's OnlyValidArgs refused first with `invalid argument "nope" for "rta mcp
+// install"`, naming no client at all.
+func TestAnUnknownClientIsAnsweredWithTheOnesThatExist(t *testing.T) {
+	_, _, err := run(t, testRegistry(t), "mcp", "install", "nope")
+	if err == nil || !strings.Contains(err.Error(), `unknown client "nope"`) {
+		t.Fatalf("err = %v, want it to name the client it does not know", err)
+	}
+	for _, name := range []string{"claude", "codex", "copilot", "cursor", "gemini", "vscode"} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("%q is not offered in %q", name, err.Error())
+		}
+	}
+}
+
 func TestEveryClientIsRegisteredUnderAName(t *testing.T) {
 	for _, c := range mcpClients() {
 		t.Run(c.name, func(t *testing.T) {
