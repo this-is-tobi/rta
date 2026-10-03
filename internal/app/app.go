@@ -952,6 +952,8 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 			sub.Run, sub.RunE = nil, helpRunE
 		}
 	}
+	// After cobra's own commands are added, whose long text is hand-wrapped too.
+	reflowHelp(root)
 	codeUsageErrors(root)
 	completeThroughOneRule(root)
 	return root
