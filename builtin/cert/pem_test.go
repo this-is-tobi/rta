@@ -215,6 +215,26 @@ func TestPEMDryRunWritesNothing(t *testing.T) {
 	}
 }
 
+// A directory named as the file to write is said to be one. The write replaces
+// by renaming over the name, and the answer was "rename ./.outd-3503688715.tmp
+// outd: file exists", the temporary file's name in the middle of it.
+func TestPEMOutNamingADirectorySaysSo(t *testing.T) {
+	addr, _ := startTLS(t)
+	dir := filepath.Join(t.TempDir(), "certs")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runPEM(context.Background(), req(map[string]any{"target": addr, "out": dir}))
+	verr := view.AsError(err, "test")
+	if err == nil || verr.Code != "cert.out.isdir" || strings.Contains(verr.Message, ".tmp") ||
+		!strings.Contains(verr.Hint, filepath.Join(dir, "chain.pem")) {
+		t.Errorf("--out naming a directory: %v (hint %q), want cert.out.isdir naming a file to use", err, verr.Hint)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("the directory was written to: %v", entries)
+	}
+}
+
 // --out is Local: it names a path on this machine, and which of this machine's
 // files gets overwritten is not a question a remote caller answers, whatever
 // it is being overwritten with.

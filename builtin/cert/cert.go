@@ -695,6 +695,13 @@ func runPEM(ctx context.Context, req plugin.Request) (view.View, error) {
 			format.Count(len(chosen), "certificate", "certificates"), target, out)}, nil
 	}
 	path := pathguard.ExpandTilde(out)
+	// A directory named as the file is said to be one: the write replaces by
+	// renaming over the name, and the answer was "rename ./.outd-3503688715.tmp
+	// outd: file exists", the temporary file's name in the middle of it.
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return nil, view.Errorf("cert.out.isdir", "%s is a directory", out).
+			WithHint("name the file to write the PEM to, " + req.Surface().InputName("out") + " " + filepath.Join(out, "chain.pem"))
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, view.Errorf("cert.out.unwritable", "creating %s: %v", filepath.Dir(path), err)
 	}
