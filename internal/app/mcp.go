@@ -257,20 +257,19 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			// is sent once, so this is a snapshot; what a call actually
 			// resolves through is Reload, below.
 			//
-			// A config that will not parse is not fatal here. It costs the
-			// agent every profile: the server still serves the base
-			// connection, and `rta doctor` is where the operator finds out why
-			// nothing else worked. **It is not the fail-closed direction for a
-			// call that names no profile**: with none to name, that call runs
-			// on the base connection, and the rule that keeps it off that
-			// connection once profiles exist has no snapshot to hold until
-			// the file reads again (mcp.Options.Reload). Refusing those
-			// calls, or refusing to start, would turn a typo in the config
-			// into a server that offers nothing, which is the operator's call
-			// to make and not one made quietly here.
+			// A config that will not parse is not fatal here: the server
+			// starts, serves every capability a profile has no say over, and
+			// `rta doctor` is where the operator finds out why the rest
+			// refuse. Refusing to start would turn a typo in the config into a
+			// server that offers nothing, and an agent attached to it into one
+			// that reports the whole thing missing. A call to a plugin that
+			// profiles may govern is refused while the file is unreadable
+			// (mcp.Options.ProfilesErr), because with no snapshot the rule
+			// that keeps an unprofiled call off the base connection has
+			// nothing to hold; the first read that succeeds lifts it.
 			profileCfg, cfgErr := config.Load()
 			if cfgErr != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), "rta: no profiles are available:", cfgErr)
+				fmt.Fprintln(cmd.ErrOrStderr(), "rta: the config did not read, so a call to a plugin that profiles govern is refused until it does:", cfgErr)
 				profileCfg = config.Config{}
 			}
 			// Refused here, by the same function `rta grant allow --agent`
@@ -537,6 +536,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				Config:        pluginConfig.For,
 				ConfigSection: pluginConfig.Section,
 				Profiles:      profileCfg,
+				ProfilesErr:   cfgErr,
 				// The schema above is a snapshot; what a call resolves through
 				// is the file as it is now, so an environment the operator
 				// edits takes effect without a restart — and the grant they
