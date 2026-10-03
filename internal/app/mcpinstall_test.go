@@ -225,6 +225,29 @@ func TestMCPInstallDrawsTheBlockAsItIsOnANarrowTerminal(t *testing.T) {
 	}
 }
 
+// The note under a block said that without the name "every MCP client on this
+// machine shares one set of permissions". `rta mcp serve` has refused to start
+// without a name for a long time, so there is no nameless client to share
+// anything: the sentence described a state the block it sat under cannot be
+// used to reach, and the reason the name matters is the one the server's own
+// refusal gives — grants are issued to it, and a lock freezes it.
+func TestTheNoteUnderABlockSaysWhatTheNameIsFor(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	out, errOut, err := run(t, testRegistry(t), "mcp", "install", "cursor", "--show", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	next := answerPairs(t, out)["next"]
+	for _, want := range []string{"`--as cursor`", "grants are issued to that name", "`rta lock add cursor`"} {
+		if !strings.Contains(next, want) {
+			t.Errorf("the note %q lacks %q", next, want)
+		}
+	}
+	if strings.Contains(next, "shares one set") {
+		t.Errorf("the note describes clients with no name, which cannot start: %q", next)
+	}
+}
+
 // D3: --dry-run used to be silently ignored here too — `rta mcp install
 // claude --dry-run` ran claude's own registration command for real, the
 // one command in this file that touches a config file rta does not own.
