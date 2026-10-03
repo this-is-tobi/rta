@@ -72,9 +72,11 @@ func Reveal(key string) (string, *view.Error) {
 		// Deliberately does not list what is there. This runs on behalf of a
 		// call that may have come from an agent, and the entry names in an
 		// operator's store are exactly what an agent has no business
-		// enumerating. `rta kv list` answers it for the person who can.
+		// enumerating. `rta kv list` answers it for the person who can, and the
+		// hint hands it on as theirs to run, since whoever made the call may be
+		// an agent with no terminal.
 		return "", view.Errorf("kv.notfound", "no entry %s in the store", textclean.Record(key)).
-			WithHint("`rta kv list` shows what is there")
+			WithHint(plugin.AskOperator("kv list") + " to see what is there")
 	}
 	return string(e.Value), nil
 }
