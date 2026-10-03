@@ -348,7 +348,19 @@ func flatten(path string, v any, emit func(path, value string)) {
 // handed to renderCSV. -o csv exists to be opened in a spreadsheet, which
 // makes that cell a place to run a formula, and on legacy DDE-enabled Excel
 // a place to run a command.
-const csvFormulaTriggers = "=+-@"
+const csvFormulaTriggers = "=+-@\t\r"
+
+// csvInertSigned is what may follow a leading + or - for the cell to be left
+// as it is. Everything dangerous a formula does needs a character outside it:
+// a function call (HYPERLINK, WEBSERVICE) needs a parenthesis, a DDE command
+// needs a pipe, another workbook needs a quote or a bang, a string needs a
+// quote, a union a comma. What is left is names, cell references and
+// arithmetic, which at worst evaluate to a number or #NAME?. That keeps a
+// negative number, a lone "-" placeholder and a force-update refspec such as
+// +refs/heads/*:refs/remotes/origin/* as they are, which a prefix turned into
+// text a script reading the column had to know to strip. = and @ are never
+// exempt: they open a formula whatever follows.
+const csvInertSigned = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._/*:+-"
 
 // csvSafeCell prefixes a formula-triggering cell with an apostrophe, which
 // every mainstream spreadsheet reads as "the rest of this cell is text" and
@@ -356,6 +368,9 @@ const csvFormulaTriggers = "=+-@"
 // original value everywhere but the one place it would otherwise be run.
 func csvSafeCell(s string) string {
 	if s == "" || !strings.ContainsRune(csvFormulaTriggers, rune(s[0])) {
+		return s
+	}
+	if (s[0] == '+' || s[0] == '-') && strings.Trim(s[1:], csvInertSigned) == "" {
 		return s
 	}
 	return "'" + s
