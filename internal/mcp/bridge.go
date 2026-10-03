@@ -490,6 +490,14 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 						rec.Note = "a grant covers this call but names a connection " +
 							"that is not the one it now resolves to — `rta doctor`"
 					}
+					// Or the selection file that fences the environments does
+					// not verify, which closes every profile (profile.Fence):
+					// the agent hears an ungranted call's sentence, and the
+					// operator is told whose the fix is.
+					if profileName != "" && by.Active == profile.Unverified {
+						rec.Note = "the file that says which environment is on does not verify, " +
+							"so no profile is usable — `rta doctor`, then `rta use`"
+					}
 					return errResult(storeRefusal(verr)), nil
 				}
 				return errResult(decided), nil
