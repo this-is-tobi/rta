@@ -660,6 +660,58 @@ func TestFillWidensTheTextColumn(t *testing.T) {
 	}
 }
 
+// A column with one long outlier keeps its heading and its ordinary values.
+// lipgloss shrank INSTALLED to the median of its cells, which a pseudo-version
+// in one row left no wider than "v2.18.", so `rta pkg outdated go` at a hundred
+// cells drew the heading as "INSTA…" and cut "v2.18.0" in two lines. The outlier
+// wraps; the rest do not.
+func TestAColumnWithOneLongOutlierKeepsItsHeadingAndItsOrdinaryValues(t *testing.T) {
+	outdated := view.Table{
+		Columns: []view.Column{{Name: "target"}, {Name: "package"}, {Name: "installed"}, {Name: "latest"}, {Name: "status"}, {Name: "upgrade"}},
+		Rows: [][]string{
+			{"go", "goreleaser", "v2.18.0", "v2.18.2", "outdated", "go install github.com/goreleaser/goreleaser/v2@latest"},
+			{"go", "govulncheck", "v1.7.0", "v1.8.0", "outdated", "go install golang.org/x/vuln/cmd/govulncheck@latest"},
+			{"go", "rta", "v0.31.1-0.20260928215756-14f7fa9d1c3e", "v0.33.0", "outdated", "go install github.com/this-is-tobi/rta/cmd/rta@latest"},
+		},
+	}
+	const width = 100
+	out, widest := renderWidth(t, outdated, Options{Width: width})
+	if widest > width {
+		t.Errorf("drawn %d wide in %d:\n%s", widest, width, out)
+	}
+	for _, want := range []string{"INSTALLED", "LATEST", "STATUS", "v2.18.0 ", "v1.7.0 ", "v2.18.2 ", "v1.8.0 ", "v0.33.0 "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%q was cut:\n%s", want, out)
+		}
+	}
+}
+
+// A table wider than its terminal gives up the long columns, not the short
+// ones. lipgloss shrinks by the gap between a column's width and the median of
+// its cells, and a short column under a long heading is the widest gap there
+// is: `rta keys list` at a hundred cells drew LOCKED and BACKUP as "LO…" and
+// "BA…", cut "ssh-ed25519" in two, and left the path whole.
+func TestAShortColumnIsNotTheFirstThingASqueezeTakesFrom(t *testing.T) {
+	keys := view.Table{
+		Columns: []view.Column{{Name: "key"}, {Name: "type"}, {Name: "locked"}, {Name: "backup"}, {Name: "fingerprint"}},
+		Rows: [][]string{
+			{"/Users/tobi/.ssh/id_ed25519", "ssh-ed25519", "no", "yes", "SHA256:48Vy19lnO44KDdmzTvhLurOgRnZx6D+UJ3hBvuubWQc"},
+			{"/Users/tobi/.ssh/id_rsa_work", "ssh-rsa", "yes", "no", "SHA256:SG2HLdK9EVs96v35Jp8URpRmdMj5lkA/b7OHVnsyvc0"},
+		},
+	}
+	for _, width := range []int{110, 100, 90} {
+		out, got := renderWidth(t, keys, Options{Width: width})
+		if got > width {
+			t.Errorf("width %d: drawn %d wide:\n%s", width, got, out)
+		}
+		for _, want := range []string{"LOCKED", "BACKUP", "ssh-ed25519", "ssh-rsa"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("width %d: %q was cut:\n%s", width, want, out)
+			}
+		}
+	}
+}
+
 // Without Fill nothing changes: a command writing to a pipe or a scrollback
 // wants its natural width.
 func TestWidthAloneIsStillACeiling(t *testing.T) {
