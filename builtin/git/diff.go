@@ -66,7 +66,16 @@ func runDiff(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	gate := pathGate(req, repo)
 	if commit := req.String("commit"); commit != "" {
-		return diffCommit(ctx, repo, commit, gate)
+		v, err := diffCommit(ctx, repo, commit, gate)
+		// The way out of a name that matches nothing is to look at what does
+		// exist, and which capability does that depends on who is asking.
+		var verr *view.Error
+		if errors.As(err, &verr) && verr.Code == "git.diff.unresolved" {
+			sf := req.Surface()
+			return nil, verr.WithHint(sf.CapabilityName("git.log") + " lists the commits and " +
+				sf.CapabilityName("git.branches") + " the branches")
+		}
+		return v, err
 	}
 	return diffWorktree(ctx, repo, gate, req)
 }
