@@ -20,6 +20,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/internal/headerlist"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -69,6 +70,23 @@ func Plugin() plugin.Plugin {
 		// authorization for it, which is what Local would take away.
 		{Name: "bearer", Type: plugin.Secret, Help: "bearer token (Authorization: Bearer ...)"},
 		{Name: "basic", Type: plugin.Secret, Help: "basic auth as user:password"},
+		// Local, unlike the two above, and for the opposite reason: a path is a
+		// place on this machine, and an agent that could name one would read any
+		// file the server can into a request it sends to a host of its own
+		// choosing. A person at a terminal keeps it, and `--bearer-file
+		// /dev/stdin` is how a token is piped in (pathin reads a stream where
+		// the CLI is, as `fs hash /dev/stdin` does), which is what the flag is
+		// for: --bearer is in the shell's history and, while the call runs, in a
+		// process table every user on the machine can read.
+		//
+		// Not the environment, though kv's passphrase has one: RTA_HTTP_GET_BEARER
+		// would follow every granted URL an agent names, so a token exported for
+		// one host went to whichever other the agent was allowed, the redirect
+		// Resolve skips a profile to avoid. A file or a pipe is chosen per call.
+		{Name: "bearer-file", Type: plugin.Path, Local: true,
+			Help: "read the bearer token from this file (/dev/stdin for a pipe), which a shell does not keep and ps does not show"},
+		{Name: "basic-file", Type: plugin.Path, Local: true,
+			Help: "read user:password from this file (/dev/stdin for a pipe), which a shell does not keep and ps does not show"},
 		{Name: "timeout", Type: plugin.Int, Config: "timeout", Default: 30, Min: 1, Max: 600, Help: "request timeout in seconds"},
 	}
 	withBody := append([]plugin.Field{}, common...)
@@ -259,6 +277,39 @@ func wholeHeaders(s plugin.Surface, pieces []string) []string {
 	return headerlist.Join(pieces)
 }
 
+// maxCredential is more than any token or user:password pair a person keeps
+// in a file.
+const maxCredential = 64 << 10
+
+// credential is the credential the call carries under name, from its input
+// or from the file named by name+"-file", never both: two answers to one
+// question are a refusal, not a guess. The file is read as the CLI reads any
+// path, so /dev/stdin is a pipe, and a line break the editor or `echo` left
+// at its end is no part of a token.
+func credential(req plugin.Request, name string) (string, *view.Error) {
+	value, file := req.String(name), req.String(name+"-file")
+	switch {
+	case file == "":
+		return value, nil
+	case value != "":
+		return "", view.Errorf("http.auth.twice", "%s is given as a value and as a file", name).
+			WithHint("give one: " + req.Surface().InputName(name) + " or " + req.Surface().InputName(name+"-file"))
+	}
+	data, err := pathin.Read(req, file, maxCredential)
+	var tooLarge *pathin.TooLargeError
+	switch {
+	case errors.As(err, &tooLarge):
+		return "", view.Errorf("http.auth.file", "%s is more than a %s holds", file, name)
+	case err != nil:
+		return "", view.Errorf("http.auth.file", "reading the %s from %s: %v", name, file, err)
+	}
+	if got := strings.TrimRight(string(data), "\r\n"); got != "" {
+		return got, nil
+	}
+	return "", view.Errorf("http.auth.file", "%s holds no %s", file, name).
+		WithHint("an empty file, or nothing was piped to it")
+}
+
 func doRequest(ctx context.Context, method string, req plugin.Request) (view.View, error) {
 	url := req.String("url")
 	if !strings.Contains(url, "://") {
@@ -284,10 +335,18 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 		}
 		httpReq.Header.Set(strings.TrimSpace(key), strings.TrimSpace(value))
 	}
-	if bearer := req.String("bearer"); bearer != "" {
+	bearer, verr := credential(req, "bearer")
+	if verr != nil {
+		return nil, verr
+	}
+	basic, verr := credential(req, "basic")
+	if verr != nil {
+		return nil, verr
+	}
+	if bearer != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+bearer)
 	}
-	if basic := req.String("basic"); basic != "" {
+	if basic != "" {
 		user, pass, _ := strings.Cut(basic, ":")
 		httpReq.SetBasicAuth(user, pass)
 	}
