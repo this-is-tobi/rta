@@ -298,6 +298,37 @@ func TestAHeaderThatCarriesACredentialIsRefusedWhateverItIsCalled(t *testing.T) 
 	}
 }
 
+// A URL with a credential in it is not remembered either: user information
+// before the host, or a query parameter named like a key. `http get
+// https://user:pw@example.com` went to recent.json whole and came back on the
+// completion list for the next --url.
+func TestAURLThatCarriesACredentialIsRefused(t *testing.T) {
+	isolated(t)
+	c := capWith("http.get", plugin.Field{Name: "url", Type: plugin.String})
+	for _, bad := range []string{
+		"https://user:pw@example.com/path",
+		"https://ghp_notarealtoken@github.com/org/repo",
+		"https://api.example.com/v1?api_key=notreal",
+		"https://api.example.com/v1?access_token=notreal&x=1",
+		"https://store.blob.example.net/c?sv=2024&sig=notreal",
+		"https://api.example.com/v1?X-Amz-Signature=notreal",
+	} {
+		Record(plugin.SurfaceCLI, c, map[string]any{"url": bad})
+	}
+	for _, good := range []string{
+		"https://example.com/path?page=2&q=search",
+		"https://example.com:8443/healthz",
+		"example.com",
+	} {
+		Record(plugin.SurfaceCLI, c, map[string]any{"url": good})
+	}
+	got := Load().For("http.get", "url")
+	want := []string{"example.com", "https://example.com:8443/healthz", "https://example.com/path?page=2&q=search"}
+	if !slices.Equal(got, want) {
+		t.Errorf("shortlist = %v, want only the URLs with no credential in them: %v", got, want)
+	}
+}
+
 // A value with a newline or a tab in it is not one completion entry.
 func TestAMultiLineValueIsNotRemembered(t *testing.T) {
 	isolated(t)
