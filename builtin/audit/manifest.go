@@ -595,6 +595,11 @@ func parseRequirements(text, source string) []component {
 			name = name[:i]
 		}
 		version, _, _ = strings.Cut(version, ";")
+		// The == was cut at its first two characters: a === ("arbitrary
+		// equality", a pin to the exact string) left its third behind, and the
+		// version went to OSV as "=1.25.0", which matches no release, so every
+		// advisory the package ever had came back against it.
+		version = strings.TrimLeft(version, "=")
 		// Fields, not Split, returns an empty slice for a whitespace-only
 		// string, so `foo==` — or a CRLF file's `foo==\r`, or `foo==  # pin
 		// later` — indexed [0] on nothing and panicked. The trailing space
@@ -606,7 +611,10 @@ func parseRequirements(text, source string) []component {
 			continue
 		}
 		version = fields[0]
-		if name = strings.TrimSpace(name); name == "" || version == "" {
+		// "1.21.*" is a prefix match, a range by another spelling, and OSV
+		// took it as a version string that no release has: numpy==1.21.* came
+		// back critical, fixed in 1.16.3, for releases nobody had pinned.
+		if name = strings.TrimSpace(name); name == "" || version == "" || strings.Contains(version, "*") {
 			continue
 		}
 		out = append(out, component{ecosystem: "PyPI", name: name, version: version, source: source})
