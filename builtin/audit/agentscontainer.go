@@ -268,7 +268,7 @@ func gradeContainer(r *agentReport, f agentFile, name string, d serverDecl) {
 		r.addFix("container-state", name+" — let its grants and record outlive the container",
 			"Mount a named volume at "+dir+" in "+shortPath(f.path)+":\n\n"+
 				"  \"-v\", \"rta-home:"+dir+"\",\n\n"+
-				"Without it the audit trail resets on every restart, and so does every grant you "+
+				"Without it the record resets on every restart, and so does every grant you "+
 				"issued — which reads as consent being re-asked rather than as state being lost.")
 	}
 

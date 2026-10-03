@@ -369,12 +369,52 @@ func TestThePluginChaptersNameEveryFieldAPluginDeclares(t *testing.T) {
 // create, which is the one string somebody copies out whole.
 func TestTheDocsNameWhatAgentsCallsAreWrittenIntoTheRecord(t *testing.T) {
 	root := repoRoot(t)
-	ledger := regexp.MustCompile(`(?i)ledger`)
+	ledger := regexp.MustCompile(`(?i)ledger|audit log`)
 	for _, page := range markdownPages(t, root) {
 		for i, line := range strings.Split(readDoc(t, root, page), "\n") {
 			if ledger.MatchString(line) {
-				t.Errorf("%s:%d says ledger; the docs call it the record, read with `rta agent log`", page, i+1)
+				t.Errorf("%s:%d says ledger or audit log; the docs call it the record, read with `rta agent log`", page, i+1)
 			}
+		}
+	}
+}
+
+// The same word, from the other side: a message the binary prints is read by
+// somebody who has only the docs and `rta agent log` to go on, and two of the
+// operator roster's refusals and the container audit's advice still said "the
+// audit trail" for what every page calls the record. Only a string a person
+// can be shown is read, not a comment, and not a struct tag.
+func TestNoMessageCallsTheRecordALedgerOrAnAuditTrail(t *testing.T) {
+	root := repoRoot(t)
+	literal := regexp.MustCompile(`"(?:[^"\\\n]|\\.)*"`)
+	word := regexp.MustCompile(`(?i)ledger|audit log|audit trail`)
+	for _, dir := range []string{"cmd", "internal", "pkg", "builtin"} {
+		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			rel, _ := filepath.Rel(root, path)
+			for i, line := range strings.Split(string(body), "\n") {
+				if strings.HasPrefix(strings.TrimSpace(line), "//") || strings.Contains(line, "json:\"") {
+					continue
+				}
+				for _, s := range literal.FindAllString(line, -1) {
+					if word.MatchString(s) {
+						t.Errorf("%s:%d prints %s; the product calls what an agent's calls are written into the record", rel, i+1, s)
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("reading the source under %s: %v", dir, err)
 		}
 	}
 }
