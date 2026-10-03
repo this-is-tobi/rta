@@ -68,7 +68,7 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 	}
 	server := sdk.NewServer(&sdk.Implementation{
 		Name:    "rta",
-		Title:   "Rule Them All",
+		Title:   "RTA",
 		Version: version,
 	}, &sdk.ServerOptions{
 		Instructions: instructions,
