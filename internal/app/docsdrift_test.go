@@ -372,3 +372,71 @@ func TestTheDocsShowACountOfOneAsSingular(t *testing.T) {
 		}
 	}
 }
+
+// The README's table of contents is the one list of the docs a reader on
+// GitHub sees, and the site builds its own sidebar from the tree: a page added
+// to the tree and not to the list is on the site and invisible from the
+// repository, which is how a chapter goes unread for a release.
+func TestTheReadmeListsEveryDocsPage(t *testing.T) {
+	root := repoRoot(t)
+	readme := readDoc(t, root, "README.md")
+	for _, page := range markdownPages(t, root) {
+		if page == "README.md" || page == "docs/01-readme.md" {
+			continue
+		}
+		if !strings.Contains(readme, "(./"+page+")") {
+			t.Errorf("README.md's table of contents does not list %s", page)
+		}
+	}
+}
+
+// Prose that says "RBAC" or "SLSA" to somebody who has not met it is where a
+// page stops being readable, and nobody writing the sentence can see it,
+// because they know the word. So a capitalised abbreviation in the docs'
+// prose is either one every working programmer knows — listed below, and
+// short on purpose — or it is in the glossary, which is what the reader is
+// sent to. A new one fails here with the name to add.
+//
+// Code spans and fenced blocks are skipped: what is typed or printed is
+// quoted, not explained.
+func TestTheGlossaryExplainsEveryAcronymTheDocsUse(t *testing.T) {
+	root := repoRoot(t)
+	known := map[string]bool{}
+	for _, w := range strings.Fields(`AI API ASCII CI CPU CSV DNS ES256 GID HEAD HMAC HTTP IAM ID IP JSON
+		JSONL JWT KV MB OS PATH PEM PS256 README RPC RPM RS256 S3 SDK SQL SSH TCP TOML UI UID URL UUID VPN VS YAML`) {
+		known[w] = true
+	}
+	glossary := readDoc(t, root, "docs/95-reference/10-glossary.md")
+	span := regexp.MustCompile("`[^`\n]*`")
+	link := regexp.MustCompile(`\]\([^)]*\)`)
+	word := regexp.MustCompile(`\b[A-Z][A-Z0-9]{1,6}\b`)
+
+	used := map[string]string{}
+	for _, page := range markdownPages(t, root) {
+		if page == "docs/95-reference/10-glossary.md" {
+			continue
+		}
+		fenced := false
+		for i, line := range strings.Split(readDoc(t, root, page), "\n") {
+			if strings.HasPrefix(line, "```") {
+				fenced = !fenced
+				continue
+			}
+			if fenced {
+				continue
+			}
+			line = link.ReplaceAllString(span.ReplaceAllString(line, ""), "]")
+			for _, w := range word.FindAllString(line, -1) {
+				if _, seen := used[w]; !seen {
+					used[w] = page + ":" + strconv.Itoa(i+1)
+				}
+			}
+		}
+	}
+	for w, where := range used {
+		if known[w] || strings.Contains(glossary, "**"+w+"**") {
+			continue
+		}
+		t.Errorf("%s uses %s, which neither the glossary explains nor the test counts as known to every reader", where, w)
+	}
+}

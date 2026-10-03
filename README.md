@@ -47,6 +47,9 @@ Which is why the security chapters below are not an appendix, and why every one 
 - [For a developer](./docs/90-recipes/20-for-developers.md) *- A day's work: environments, secrets, grants for your agent, the TUI*
 - [An agent in a cluster](./docs/90-recipes/30-an-agent-in-a-cluster.md) *- From a profile to an agent connected over MCP, with a minted, expiring ServiceAccount token the only thing between them and the cluster*
 
+*Reference*
+- [Glossary](./docs/95-reference/10-glossary.md) *- The words these pages use in one particular way — grant, record, roster, profile, role, plugin — and the acronyms they assume*
+
 ## What is in it
 
 **20 built-in plugins, 128 capabilities** in the default build, and `rta plugin list` is the inventory:
