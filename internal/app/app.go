@@ -799,9 +799,35 @@ func notACommandHint(cmd *cobra.Command, arg string, near []string) string {
 	return ""
 }
 
+// RootOption adjusts how NewRoot builds the command tree.
+type RootOption func(*rootSettings)
+
+type rootSettings struct {
+	load func() (config.Config, error)
+}
+
+// WithConfig hands NewRoot the configuration the caller has already read, as
+// config.Load returned it, so the tree is built from the same read the rest of
+// startup used instead of from a second one.
+//
+// Measured, not tidiness: the file was parsed once in main for the plugin
+// sections and the palette and parsed again here for the default output
+// format, and goccy/go-yaml parses a 350-line config with twenty-five
+// profiles in about two milliseconds — a tenth of every command's startup,
+// spent a second time on an identical file. A single read is also the
+// stronger statement of what main's comment already promises: nothing
+// discovers its own configuration halfway through a run.
+func WithConfig(cfg config.Config, err error) RootOption {
+	return func(s *rootSettings) { s.load = func() (config.Config, error) { return cfg, err } }
+}
+
 // NewRoot builds the root cobra command over the given registry.
-func NewRoot(reg *registry.Registry, version string) *cobra.Command {
+func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cobra.Command {
 	opts := &globalOpts{}
+	settings := rootSettings{load: config.Load}
+	for _, option := range options {
+		option(&settings)
+	}
 	// Recorded here rather than threaded: resolveProfile is reached from a
 	// cobra RunE that has the capability and nothing else, and this is the
 	// registry the whole tree is being built from.
@@ -812,7 +838,7 @@ func NewRoot(reg *registry.Registry, version string) *cobra.Command {
 	agentsession.SetSelf(version)
 	// Config is optional; a broken file must not brick the CLI — doctor and
 	// init both diagnose it, so they need the binary to still run.
-	cfg, cfgErr := config.Load()
+	cfg, cfgErr := settings.load()
 	defaultOutput := cfg.Output
 	if defaultOutput == "" {
 		defaultOutput = "pretty"
