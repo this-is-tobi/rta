@@ -380,6 +380,15 @@ A caller now has to prove who it is over the wire, since there is no parent proc
 | `--token-file <path>` | A static, operator-issued token — one `label token` pair per line in a file only the operator can read; world-readable files are refused, and so is a token shorter than 16 characters (`rta gen token` makes one) |
 | `--oidc-issuer`, `--oidc-audience`, `--oidc-subject` | A real identity provider's token, for one of the named subjects. An issuer and audience alone identify an application, not a person, so at least one `--oidc-subject` is required — [OIDC](./70-oidc.md) is the full setup, including the Keycloak audience mapper without which every token is rejected |
 
+The file is the label and the token, so `rta gen token`, which prints the token among a few facts about it, is taken from its JSON answer:
+
+```bash
+printf 'work %s\n' "$(rta gen token -o json | jq -r '.pairs[] | select(.key == "token") | .value')" > tokens.txt
+chmod 600 tokens.txt
+```
+
+The label is what [the record](./40-audit-trail.md) shows for the credential that authenticated a call, so give each caller its own line.
+
 A rejected token is answered slower from the same address after five failures in a minute, doubling up to two seconds: a guess a second becomes a guess every two, and an operator who mistyped once never notices. Behind a reverse proxy every client shares the address, so a guessing attacker slows the operators beside it for as long as the guessing lasts — that trade is taken rather than trusting a `Forwarded` header the attacker writes.
 
 `--http` refuses to start with neither configured. `--consent` over `--http` additionally requires `--operators` — a parked call waits for a person, enrolled operators answering over [the operator channel](#the-operator-channel) are the only people positioned to be that person, and a control nobody can exercise must not be allowed to pretend it works.
