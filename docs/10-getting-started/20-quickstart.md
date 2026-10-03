@@ -30,12 +30,12 @@ rta audit web example.com   # TLS, headers, cookies, exposure — graded
 The same command renders five ways. `--output` (or `-o`) is on every command:
 
 ```bash
-rta sys cpu -o json | jq '.rows'
+rta sys cpu -o json | jq '.pairs'
 rta net dns github.com -o csv
 rta sys overview -o md >> report.md
 ```
 
-`pretty` is the default when a human is looking. Scripts should say what they want.
+`pretty` is the default when a human is looking. Scripts should say what they want, and what they get back has a shape that depends on the answer: `sys cpu` is key/value pairs, so `jq` reads `.pairs`, and `net dns` is a table, whose rows are `.rows`. [The shape of a result](../20-using/10-cli.md#the-shape-of-a-result) lists them.
 
 ## 3. Open the shell
 
