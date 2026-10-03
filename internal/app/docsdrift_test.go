@@ -12,6 +12,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/mcp"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The docs state two numbers that nothing generates: how many built-in plugins
@@ -310,7 +311,7 @@ func readDoc(t *testing.T, root, rel string) string {
 // author who wanted an overview page, an edit form that opens on today's
 // values, or a tile that keeps its width could not find that they exist.
 //
-// The check is the cheap kind: every exported field of the five declaration
+// The check is the cheap kind: every exported field of the declaration and view
 // types is named, as a word, somewhere on the two plugin pages. It cannot say
 // the sentence is right, only that nobody added a switch to the SDK and left
 // its authors to read the source to learn it.
@@ -318,7 +319,13 @@ func TestThePluginChaptersNameEveryFieldAPluginDeclares(t *testing.T) {
 	root := repoRoot(t)
 	pages := readDoc(t, root, "docs/40-plugins/10-plugins.md") + readDoc(t, root, "docs/40-plugins/20-writing-a-plugin.md")
 
-	for _, decl := range []any{plugin.Plugin{}, plugin.Capability{}, plugin.Field{}, plugin.Action{}, plugin.Toggle{}} {
+	// An error is left out: its code, message and hint are what Errorf and
+	// WithHint take, and the chapter shows them as those calls.
+	for _, decl := range []any{
+		plugin.Plugin{}, plugin.Capability{}, plugin.Field{}, plugin.Action{}, plugin.Toggle{},
+		view.Text{}, view.Table{}, view.Column{}, view.KeyValue{}, view.Pair{}, view.Tree{}, view.Node{},
+		view.Chart{}, view.Series{}, view.Sections{}, view.Section{},
+	} {
 		typ := reflect.TypeOf(decl)
 		for i := range typ.NumField() {
 			name := typ.Field(i).Name
@@ -326,8 +333,8 @@ func TestThePluginChaptersNameEveryFieldAPluginDeclares(t *testing.T) {
 				continue
 			}
 			if !regexp.MustCompile(`\b` + name + `\b`).MatchString(pages) {
-				t.Errorf("neither plugin page names %s.%s; say what it does where an author declaring a %s would look",
-					typ.Name(), name, strings.ToLower(typ.Name()))
+				t.Errorf("neither plugin page names %s.%s; say what it does where an author using %s would look",
+					typ.Name(), name, typ.Name())
 			}
 		}
 	}
@@ -438,5 +445,31 @@ func TestTheGlossaryExplainsEveryAcronymTheDocsUse(t *testing.T) {
 			continue
 		}
 		t.Errorf("%s uses %s, which neither the glossary explains nor the test counts as known to every reader", where, w)
+	}
+}
+
+// The suite an author is told to pass can be told to look away, one capability
+// and one rule at a time, with `sdktest.Skip` — and the rules it takes were
+// named nowhere in the chapter, so the message that offers the way out (and
+// the redaction warning that every plugin with a secret input meets first)
+// sent an author to the source to learn what the word meant. The rules are
+// read from the source, not listed here, so a new one fails this test until
+// the chapter says what it checks.
+func TestThePluginChapterNamesEveryRuleTheSuiteCanBeToldToSkip(t *testing.T) {
+	root := repoRoot(t)
+	chapter := readDoc(t, root, "docs/40-plugins/20-writing-a-plugin.md")
+	rule := regexp.MustCompile(`(?m)^\t(Rule[A-Z]\w*) Rule = `)
+	src := readDoc(t, root, "pkg/sdk/sdktest/sdktest.go")
+	found := rule.FindAllStringSubmatch(src, -1)
+	if len(found) < 6 {
+		t.Fatalf("found %d rules in sdktest.go; has the declaration moved?", len(found))
+	}
+	for _, m := range found {
+		if m[1] == "RuleDeclaration" {
+			continue
+		}
+		if !strings.Contains(chapter, m[1]) {
+			t.Errorf("the writing chapter does not name sdktest.%s, which Skip takes", m[1])
+		}
 	}
 }
