@@ -46,28 +46,26 @@ type binding struct {
 // Ranks, lowest survives longest. They are ordered by what a person cannot do
 // without. A confirmation or a refusal comes first because it answers the key
 // just pressed, and a bar that dropped it said nothing about a save that had
-// happened. How to leave comes next: at forty columns a pane whose own actions
-// and navigation filled both lines dropped esc and q along with the rest of the
-// tail, which left a screen that did not say how to get out of it. The two
-// hints cost a dozen cells. The zero value stays rankAction so a hint built
-// without a rank is the common case.
+// happened. How to leave comes next, with "? help": at forty columns a pane
+// whose own actions and navigation filled both lines dropped esc and q along
+// with the rest of the tail, which left a screen that did not say how to get
+// out of it, and a "…" without "? help" points at keys nobody can find. The
+// three hints cost about twenty cells. The zero value stays rankAction so a
+// hint built without a rank is the common case.
 const (
 	rankNotice  = iota - 2 // the answer to the key just pressed
-	rankLeave              // how to leave a screen
+	rankLeave              // how to leave a screen, and how to list what the bar dropped
 	rankAction             // context-specific: learnable on this screen and nowhere else
 	rankPrimary            // the thing this screen is for, and how to move around it
-	rankExit               // how to reach the rest of the keys
 	rankExtra              // everything else the screen can also do
 )
 
 // The vocabulary. One entry per idea, not per screen.
 var (
 	bindQuit = binding{display: "q", keys: []string{"q", "ctrl+c"}, label: "quit", rank: rankLeave}
-	// rankExit: after a screen's own actions and navigation, before the
-	// arrangement keys. A bar that had to drop something says so with "…",
-	// and the overlay is where what it dropped is listed, so it has to outlast
-	// the keys it stands in for.
-	bindHelp   = binding{display: "?", keys: []string{"?"}, label: "help", rank: rankExit}
+	// Last on the bar, so of the hints that share its rank it is the first
+	// to go when even those do not fit.
+	bindHelp   = binding{display: "?", keys: []string{"?"}, label: "help", rank: rankLeave}
 	bindBack   = binding{display: "esc", keys: []string{"esc"}, label: "back", rank: rankLeave}
 	bindOpen   = binding{display: "enter", keys: []string{"enter"}, label: "open", rank: rankPrimary}
 	bindRerun  = binding{display: "r", keys: []string{"r"}, label: "re-run", rank: rankPrimary}

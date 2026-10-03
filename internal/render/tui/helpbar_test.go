@@ -51,3 +51,23 @@ func TestANarrowFooterKeepsTheFlashAndHowToLeave(t *testing.T) {
 		}
 	}
 }
+
+// A bar that ends in "…" points at keys it cannot show, and "? help" is how
+// they are found: it stays wherever the screen answers it. The plugin pane's
+// bar at forty columns kept its own actions and dropped it.
+func TestABarThatDroppedKeysStillOffersHelp(t *testing.T) {
+	m, _ := realModel(t, 100, 40)
+	for screen := modeDashboard; screen <= modeConfirm; screen++ {
+		n := m
+		n.mode = screen
+		if !n.helpOffered(screen) {
+			continue
+		}
+		for width := 80; width >= 30; width -= 10 {
+			bar := plain(fitHintBar(width, footerMaxLines, n.footerItems(screen)...))
+			if strings.Contains(bar, "…") && !strings.Contains(bar, "? help") {
+				t.Errorf("%s at %d columns dropped keys and \"? help\" with them:\n%s", screenName(screen), width, bar)
+			}
+		}
+	}
+}
