@@ -63,6 +63,9 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 	if opts.refusals == nil {
 		opts.refusals = newBackoff(refusalFree, refusalWindow, refusalStep, refusalMax)
 	}
+	if opts.pace == nil {
+		opts.pace = newPacer(openBurst, openRate, openQueue)
+	}
 	server := sdk.NewServer(&sdk.Implementation{
 		Name:    "rta",
 		Title:   "Rule Them All",
@@ -509,6 +512,17 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			rec.Auth = agentlog.Standing
 			rec.Role, rec.RoleIssued = roleOf(covering)
 		} else {
+			// What no grant, no question and no refusal covers: the one kind
+			// of call a loop can make for as long as it likes, and each is a
+			// row. Held before it runs and not after its row, so that a caller
+			// sending its calls without waiting for the replies is held to the
+			// same rate as one that waits (pacer).
+			if err := opts.pace.wait(ctx, refusalKey(ctx, opts)); err != nil {
+				verr := view.Errorf("core.mcp.cancelled",
+					"%s was not run: the caller went away while it waited its turn", c.ID)
+				refusedBy(rec, verr)
+				return errResult(verr), nil
+			}
 			rec.Auth = agentlog.Open
 		}
 		// Only now, with consent in hand, is the profile resolved. The order
