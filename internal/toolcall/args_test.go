@@ -33,6 +33,28 @@ func TestValidateAcceptsDeclaredFieldsAndRejectsUnknownOnes(t *testing.T) {
 	}
 }
 
+// Tool names are snake_case and argument names kebab-case, and the other
+// spelling is the one a model reaches for: it is refused still, and told which
+// declared argument it is a spelling of rather than only the whole list. A
+// Local input is not declared to a caller, so its kebab-case name is never
+// offered back as the spelling of anything.
+func TestAnArgumentInTheOtherSpellingIsToldItsName(t *testing.T) {
+	c := plugin.Capability{ID: "kv.rename", Inputs: []plugin.Field{
+		{Name: "key", Type: plugin.String},
+		{Name: "new-name", Type: plugin.String},
+		{Name: "secret-file", Type: plugin.Path, Local: true},
+	}}
+	verr := Validate(c, map[string]any{"key": "a", "new_name": "b"})
+	want := `"new_name" is spelled "new-name"; accepted arguments: key, new-name`
+	if verr == nil || verr.Code != "core.mcp.badargs" || verr.Hint != want {
+		t.Errorf("new_name: %v, want the hint %q", verr, want)
+	}
+	verr = Validate(c, map[string]any{"key": "a", "secret_file": "x"})
+	if verr == nil || strings.Contains(verr.Hint, "secret-file") {
+		t.Errorf("secret_file: %v, want no hint naming the Local input", verr)
+	}
+}
+
 func TestValidateRejectsAWrongTypeByName(t *testing.T) {
 	c := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{{Name: "count", Type: plugin.Int}}}
 	verr := Validate(c, map[string]any{"count": "not a number"})
