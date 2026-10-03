@@ -81,3 +81,24 @@ func TestInspectListsEveryNameACertificateAnswersTo(t *testing.T) {
 		}
 	}
 }
+
+// The serial is hexadecimal, a whole number of bytes: the spelling `openssl x509
+// -serial`, a CRL, a CT log and a browser use. A 160-bit serial in decimal is
+// 48 digits that match none of them.
+func TestInspectSpellsTheSerialInHex(t *testing.T) {
+	serial, _ := new(big.Int).SetString("637cb9bee3d623e2cfad17ec4e0680e8282c0c", 16)
+	for _, c := range []struct {
+		serial *big.Int
+		want   string
+	}{
+		{serial, "637cb9bee3d623e2cfad17ec4e0680e8282c0c"},
+		{big.NewInt(255), "ff"},
+		{big.NewInt(15), "0f"},
+		{big.NewInt(0x1234), "1234"},
+	} {
+		rows := inspectFile(t, &x509.Certificate{Subject: pkix.Name{CommonName: "s"}, SerialNumber: c.serial})
+		if rows["serial"] != c.want {
+			t.Errorf("serial %v = %q, want %q", c.serial, rows["serial"], c.want)
+		}
+	}
+}
