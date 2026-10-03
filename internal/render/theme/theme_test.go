@@ -29,3 +29,23 @@ func TestClassifyStatus(t *testing.T) {
 		}
 	}
 }
+
+// The text colours read on a white terminal and on a black one. Good, warn and
+// bad were chosen for black alone: warn was 13:1 there and 1.6:1 on white, so
+// on a light terminal "ok" and "warn" were near-white text on white, and no
+// palette detection can be relied on to say which terminal this is. Three is
+// the floor the label colour's own comment holds Primary to.
+func TestTheTextColoursAreReadableOnLightAndDarkTerminals(t *testing.T) {
+	for name, hex := range map[string]string{
+		"primary": primaryHex, "accent": accentHex, "muted": mutedHex,
+		"label": labelHex, "good": goodHex, "warn": warnHex, "bad": badHex,
+	} {
+		l := relativeLuminance(hex)
+		if onWhite := 1.05 / (l + 0.05); onWhite < 3 {
+			t.Errorf("%s %s is %.2f:1 on white, under 3:1", name, hex, onWhite)
+		}
+		if onBlack := (l + 0.05) / 0.05; onBlack < 3 {
+			t.Errorf("%s %s is %.2f:1 on black, under 3:1", name, hex, onBlack)
+		}
+	}
+}
