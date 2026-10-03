@@ -122,6 +122,49 @@ func SkippedWallClock(raw string, loc *time.Location) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// AmbiguousWallClock reports whether raw, which ParseInstant read in loc
+// without an offset of its own, names a reading of the clock that loc showed
+// twice: 02:30 on the night the clocks went back from 03:00 to 02:00. It
+// returns the two instants, the earlier first.
+//
+// Go reads such a time as one of the two and says nothing of the other, so
+// `2026-10-25 02:30` in Paris was answered as an instant the person may not
+// have meant, with every row correct for it, and no hint that a second one
+// existed an hour away. The pair is what lets a message name both.
+func AmbiguousWallClock(raw string, loc *time.Location) (first, second time.Time, ambiguous bool) {
+	raw = strings.TrimSpace(raw)
+	for _, l := range layouts {
+		if l == time.RFC3339 {
+			continue
+		}
+		read, err := time.ParseInLocation(l, raw, loc)
+		if err != nil {
+			continue
+		}
+		typed, err := time.Parse(l, raw)
+		if err != nil {
+			continue
+		}
+		const wall = "2006-01-02 15:04:05"
+		// The other instant, if there is one, is the same reading at the
+		// offset in force on the other side of the change, so each offset
+		// the zone has within half a day of this one is tried.
+		for _, probe := range []time.Duration{-12 * time.Hour, 12 * time.Hour} {
+			_, offset := read.Add(probe).Zone()
+			other := typed.Add(-time.Duration(offset) * time.Second)
+			if other.Equal(read) || other.In(loc).Format(wall) != typed.Format(wall) {
+				continue
+			}
+			if other.Before(read) {
+				return other, read, true
+			}
+			return read, other, true
+		}
+		return time.Time{}, time.Time{}, false
+	}
+	return time.Time{}, time.Time{}, false
+}
+
 // offsetOutOfRange names the part of an RFC3339 offset no zone has: an hour
 // of 24 or more, or a minute of 60 or more. raw must already have parsed as
 // RFC3339, which leaves it ending in `Z` or in `±hh:mm`.
