@@ -216,6 +216,30 @@ urllib3 == 1.26.5
 	}
 }
 
+// ==1.21.* is a prefix match, a range, and was sent to OSV as the version
+// "1.21.*": numpy came back critical for releases nobody had pinned. And ===,
+// a pin to an exact string, left its third = on the version, "=1.25.0", which
+// is no release either. The wildcard is named as unchecked; the pin is read.
+func TestParseRequirementsReadsAWildcardAsARangeAndTripleEqualsAsAPin(t *testing.T) {
+	text := "numpy==1.21.*\nurllib3===1.25.0\nflask === 2.0.0\ndjango==4.2.1\n"
+	got := map[string]string{}
+	for _, c := range parseRequirements(text, "requirements.txt") {
+		got[c.name] = c.version
+	}
+	want := map[string]string{"urllib3": "1.25.0", "flask": "2.0.0", "django": "4.2.1"}
+	if len(got) != len(want) {
+		t.Errorf("read %v, want %v", got, want)
+	}
+	for name, version := range want {
+		if got[name] != version {
+			t.Errorf("%s: version %q, want %q", name, got[name], version)
+		}
+	}
+	if gaps := requirementGaps(text); strings.Join(gaps, "|") != "numpy" {
+		t.Errorf("gaps = %q, want the wildcard named", gaps)
+	}
+}
+
 // What a requirements file lists and the scan does not check is said. A range
 // above a pin was dropped without a word: seven dependencies declared, no sign
 // an eighth was never looked at, in a report that says outright when a file has
