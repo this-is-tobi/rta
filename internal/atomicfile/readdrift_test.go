@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -46,6 +47,19 @@ var stateReaders = []string{
 	// ReadCapped.
 	"internal/atomicfile",
 	"internal/filelock",
+}
+
+// waitingOpeners are where an os.Open of a path would wait on a named pipe
+// planted at it: the files the operator owns and rta reads before anything
+// checks them, in directories something else can write to. Whole packages
+// where every read is of such a file, one file where the package also opens
+// paths the operator typed or rta staged itself, which are not this rule's
+// business.
+var waitingOpeners = []string{
+	"internal/config",
+	"internal/operator",
+	"internal/mcp",
+	"internal/plugindist/index.go",
 }
 
 // The read half of TestPersistentStateIsNotWrittenWithOsWriteFile, and it
@@ -106,6 +120,54 @@ func TestRtasOwnStateIsNotReadUnbounded(t *testing.T) {
 					"one large write is enough to take out the process that reads it. "+
 					"Use atomicfile.ReadCapped with a cap sized to what rta writes.",
 					filepath.ToSlash(rel), fset.Position(call.Pos()).Line)
+				return true
+			})
+		}
+	}
+}
+
+// os.Open of a file the operator owns waits for a writer if a named pipe has
+// been put in its place, which Lstat before it cannot prevent: the check and
+// the open are two moments. atomicfile.Open opens without waiting and refuses
+// anything that is not a regular file.
+func TestOperatorOwnedFilesAreNotOpenedWithOsOpen(t *testing.T) {
+	root := repoRoot(t)
+	fset := token.NewFileSet()
+	for _, target := range waitingOpeners {
+		full := filepath.Join(root, filepath.FromSlash(target))
+		files := []string{full}
+		if filepath.Ext(full) != ".go" {
+			var err error
+			if files, err = filepath.Glob(filepath.Join(full, "*.go")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if len(files) == 0 {
+			t.Errorf("%s: no Go files — did it move? A renamed target silently stops being checked.", target)
+		}
+		for _, path := range files {
+			if strings.HasSuffix(path, "_test.go") {
+				continue
+			}
+			file, perr := parser.ParseFile(fset, path, nil, 0)
+			if perr != nil {
+				t.Fatal(perr)
+			}
+			ast.Inspect(file, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				sel, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok || (sel.Sel.Name != "Open" && sel.Sel.Name != "ReadFile") {
+					return true
+				}
+				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "os" {
+					rel, _ := filepath.Rel(root, path)
+					t.Errorf("%s:%d: os.%s waits for a writer on a named pipe put in the file's place; "+
+						"use atomicfile.Open, ReadFile or ReadCapped",
+						filepath.ToSlash(rel), fset.Position(call.Pos()).Line, sel.Sel.Name)
+				}
 				return true
 			})
 		}

@@ -5,12 +5,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"os"
 	"runtime"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/internal/passkey"
@@ -174,7 +174,7 @@ func (r Roster) Operators() []OperatorInfo {
 // at all, but a group-writable one is enrollment for whoever shares the
 // group.
 func LoadRoster(path string) (Roster, bool, error) {
-	f, err := os.Open(path)
+	f, err := atomicfile.Open(path)
 	if err != nil {
 		return Roster{}, false, err
 	}

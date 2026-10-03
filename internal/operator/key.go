@@ -54,6 +54,10 @@ import (
 
 const stateFile = "operator.json"
 
+// maxKeyBytes bounds the key file: a public key, a private one sealed under a
+// passphrase and the parameters of the sealing are a few hundred bytes.
+const maxKeyBytes = 64 << 10
+
 // ScryptWorkFactor overrides age's default passphrase hardening in tests,
 // exactly as the guard's knob does; zero keeps the production default.
 var ScryptWorkFactor = 0
@@ -106,7 +110,7 @@ func Exists() bool {
 
 func load() (state, *view.Error) {
 	var st state
-	data, err := os.ReadFile(Path())
+	data, err := atomicfile.ReadCapped(Path(), maxKeyBytes)
 	if err != nil {
 		return st, view.Errorf("core.operator.off", "no operator key here yet").
 			WithHint("rta operator init")
