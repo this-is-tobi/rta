@@ -705,37 +705,9 @@ func Append(e Entry) (err error) {
 	}()
 	appendMu.Lock()
 	defer appendMu.Unlock()
-
-	// The key is minted for a record that has none, never over one that
-	// exists: a fresh key beside six hundred entries made every one of
-	// them read as edited, and named entry 1 as the culprit. And a key
-	// that is present but too short is named by its path with the next
-	// step, because the server's stderr is the only place this is seen.
-	keyPath := seal.Path(keyFile)
-	if _, statErr := os.Stat(keyPath); os.IsNotExist(statErr) {
-		if info, err := os.Stat(Path()); err == nil && info.Size() > 0 {
-			return fmt.Errorf("%s is missing beside a record that is not empty; rta will not mint a new key over an existing record — restore it, or move agent-log*.jsonl aside to start a new one", keyPath)
-		}
-	}
-	key, err := seal.Key(keyFile, true)
+	key, release, err := begin()
 	if err != nil {
-		// "the agent log", never the two words bare: they are the agent.log
-		// capability's command line, `rta agent log`, without its first
-		// word, and a message opening on them read as a command to whoever
-		// was handed it — Verify's errors among them, which agent.log
-		// prints in its own "chain" row.
-		return fmt.Errorf("the agent log's key %s: %w — restore it, or move the record aside to start a new one", keyPath, err)
-	}
-	if _, err := paths.EnsureData(); err != nil {
 		return err
-	}
-	// One writer at a time: the chain is read-then-append, and two servers
-	// interleaving would produce two entries claiming the same predecessor.
-	// The same lock covers rolling and retiring, so a second server cannot
-	// append to a file the first one is in the middle of renaming.
-	release, err := filelock.Acquire(Path()+".lock", lockStale, lockRetry, lockTimeout)
-	if err != nil {
-		return fmt.Errorf("the agent log is busy: %w", err)
 	}
 	defer release()
 
@@ -826,6 +798,99 @@ func Append(e Entry) (err error) {
 	// the alarm this exists to raise — so the crash window is one entry of
 	// *under*-reporting rather than a false accusation.
 	return writeHead(key, e)
+}
+
+// Started reports whether a record exists to be written to, so a diagnosis can
+// ask Writable of one that is there without creating one that is not.
+func Started() bool {
+	_, err := os.Lstat(Path())
+	return err == nil
+}
+
+// probeFile is the name of the scratch file Writable writes and removes.
+const probeFile = "agent-log.probe"
+
+// Writable reports whether a call made now could be written to the record,
+// and why not when it could not.
+//
+// **Asked before a call that spends authority, because after it the answer is
+// no use.** Append's failures are returned and dropped onto stderr (the
+// comment above it says why they are never allowed to fail a read), so a
+// granted write ran unrecorded for as long as the record could not be written
+// — a disk that was full, a directory that went read-only, a record that
+// something had replaced with a file nothing could append to — and the one
+// trace was a count riding on the next row that did get written. The mcp
+// bridge asks before it spends a grant or runs anything that changes
+// something, and refuses with the reason instead.
+//
+// It takes the steps Append takes up to the write — the key, the directory,
+// the lock, a read of the record's last entry, the open for appending — and
+// then writes the largest row Append would write to a file of its own and
+// removes it, because a full disk is the likeliest reason and only a write
+// finds that out. What it cannot do is promise the write that follows: space
+// can run out between the two, and that gap is what the count on the next
+// row is still for.
+func Writable() error {
+	appendMu.Lock()
+	defer appendMu.Unlock()
+	key, release, err := begin()
+	if err != nil {
+		return err
+	}
+	defer release()
+	if _, err := lastEntry(key); err != nil {
+		return err
+	}
+	f, err := atomicfile.OpenAppend(Path(), 0o600)
+	if err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	probe := filepath.Join(paths.Data(), probeFile)
+	defer func() { _ = os.Remove(probe) }()
+	return atomicfile.Write(probe, make([]byte, maxLine), 0o600)
+}
+
+// begin is what writing to the record needs before anything is written: the
+// key, the data directory and the file lock. Append and Writable both go
+// through it, so a record Writable calls writable is one Append gets as far as
+// writing to, by the same steps. The caller holds appendMu and calls release
+// when it is done.
+func begin() (key []byte, release func(), err error) {
+	// The key is minted for a record that has none, never over one that
+	// exists: a fresh key beside six hundred entries made every one of
+	// them read as edited, and named entry 1 as the culprit. And a key
+	// that is present but too short is named by its path with the next
+	// step, because the server's stderr is the only place this is seen.
+	keyPath := seal.Path(keyFile)
+	if _, statErr := os.Stat(keyPath); os.IsNotExist(statErr) {
+		if info, err := os.Stat(Path()); err == nil && info.Size() > 0 {
+			return nil, nil, fmt.Errorf("%s is missing beside a record that is not empty; rta will not mint a new key over an existing record — restore it, or move agent-log*.jsonl aside to start a new one", keyPath)
+		}
+	}
+	key, err = seal.Key(keyFile, true)
+	if err != nil {
+		// "the agent log", never the two words bare: they are the agent.log
+		// capability's command line, `rta agent log`, without its first
+		// word, and a message opening on them read as a command to whoever
+		// was handed it — Verify's errors among them, which agent.log
+		// prints in its own "chain" row.
+		return nil, nil, fmt.Errorf("the agent log's key %s: %w — restore it, or move the record aside to start a new one", keyPath, err)
+	}
+	if _, err := paths.EnsureData(); err != nil {
+		return nil, nil, err
+	}
+	// One writer at a time: the chain is read-then-append, and two servers
+	// interleaving would produce two entries claiming the same predecessor.
+	// The same lock covers rolling and retiring, so a second server cannot
+	// append to a file the first one is in the middle of renaming.
+	release, err = filelock.Acquire(Path()+".lock", lockStale, lockRetry, lockTimeout)
+	if err != nil {
+		return nil, nil, fmt.Errorf("the agent log is busy: %w", err)
+	}
+	return key, release, nil
 }
 
 // rotate rolls the active file aside once it is full and retires the oldest

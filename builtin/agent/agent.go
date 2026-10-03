@@ -466,6 +466,12 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 		{Key: "refused", Value: fmt.Sprintf("%d", refused)},
 		{Key: "you approved live", Value: fmt.Sprintf("%d", approved)},
 	}
+	if agentlog.Started() {
+		if err := agentlog.Writable(); err != nil {
+			pairs = append(pairs, view.Pair{Key: "recording",
+				Value: "cannot be written — a call that needs a grant is refused until it can, and the rest are not recorded"})
+		}
+	}
 	if last, err := agentlog.Read(1); err == nil && len(last) > 0 {
 		pairs = append(pairs, view.Pair{Key: "last call",
 			Value: fmt.Sprintf("%s %s, %s", last[0].Cap, last[0].Outcome, format.Ago(last[0].At))})

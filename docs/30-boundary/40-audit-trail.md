@@ -61,6 +61,8 @@ The record keeps about 64 MB — eight files of 8 MB — and drops the oldest pa
 
 A refusal is a row too, so a caller looping on a tool that refuses it would be writing that history away. Past twenty refusals in a minute, each further one from the same caller is answered slower, doubling up to five seconds — which turns minutes of churn into weeks, and costs a caller that reads its refusals nothing.
 
+**A call that needs a grant is not run when the record cannot be written.** A full disk, a directory gone read-only, or something sitting where the record goes would otherwise have let a granted write or destroy run with no row, and the one trace was a count on the next row that did get written. Before it spends a grant, asks you or runs, such a call writes a scratch row's worth to the data directory and checks the record takes an append; when that fails the call is refused as `core.record.unwritable`, with `rta doctor` as the way on and no path in what the agent reads, and the grant keeps its use. A read that needs no grant still runs: it spends nothing, and refusing every read of a machine whose disk is full would take `sys disk`, the tool that finds the full disk, with it. Those reads are not recorded, which `rta doctor` reports as an error and `rta agent overview` as a `recording` row, and the count of what was not written rides on the first row that is. The check cannot promise the write that follows it: space can run out in between, and that call is the one the count is for.
+
 ## History, not policy
 
 The distinction is worth keeping straight:

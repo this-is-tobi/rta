@@ -435,6 +435,28 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			refusedBy(rec, verr)
 			return errResult(storeRefusal(verr)), nil
 		}
+		// A call that needs authority is not run if it cannot be recorded.
+		//
+		// Asked here, before Reserve, so a refusal spends no use and parks no
+		// consent question: asking the operator to approve a call that would
+		// then run with no trace would have them consent to something nobody
+		// can look back on.
+		//
+		// Only for a call that needs a grant. A free read spends nothing, and
+		// refusing every one of them while the record cannot be written would
+		// take sys.disk, the tool that finds the full disk, down with the rest:
+		// it runs, the failed append goes to stderr (record), and the count of
+		// what was lost rides on the next row that is written.
+		if grant.Required(c, profileName) {
+			if err := agentlog.Writable(); err != nil {
+				fmt.Fprintf(os.Stderr, "rta: refusing %s, the record of agent calls cannot be written: %v\n", c.ID, err)
+				verr := view.Errorf("core.record.unwritable",
+					"%s was not run: a call that needs a grant is not run while the record of agent calls cannot be written", c.ID).
+					WithHint(plugin.AskOperator("doctor"))
+				refusedBy(rec, verr)
+				return errResult(verr), nil
+			}
+		}
 		by := grant.Caller{
 			Agent:   opts.Agent,
 			Profile: profileName,
