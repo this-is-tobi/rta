@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/mcp"
+	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -524,5 +525,19 @@ func TestADigestTheDocsQuoteIsSpelledAtTheLengthRtaPrintsIt(t *testing.T) {
 	}
 	if quoted < 5 {
 		t.Fatalf("found %d quoted plugin digests, want the half dozen the docs hold; has the spelling moved?", quoted)
+	}
+}
+
+// `theme:` is a config key like any other, and the only place a reader could
+// learn its ten names was the theme editor on `t` and an error from `rta
+// doctor` after a wrong one: no page said the block exists. The TUI chapter
+// names each colour now, so a colour added to the palette fails here until the
+// chapter does too.
+func TestTheTUIChapterNamesEveryColourAThemeBlockTakes(t *testing.T) {
+	chapter := readDoc(t, repoRoot(t), "docs/20-using/20-tui.md")
+	for _, name := range theme.Fields() {
+		if !strings.Contains(chapter, "`"+name+"`") {
+			t.Errorf("docs/20-using/20-tui.md does not name the theme colour `%s`", name)
+		}
 	}
 }
