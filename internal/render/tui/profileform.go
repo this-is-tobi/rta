@@ -196,6 +196,15 @@ func (m Model) saveProfileForm() (tea.Model, tea.Cmd) {
 		return m.closeToOrigin()
 	}
 	m.profiles = m.profileRows()
+	// The cursor follows the profile that was saved. The list is sorted, so a
+	// new one lands wherever its name falls and the cursor stayed on whatever
+	// row was there: the next key, enter to add its first plugin, opened a
+	// different environment from the one just made.
+	for i, row := range m.profiles {
+		if row.name == name {
+			m.profileSel = i
+		}
+	}
 	if m.profileOpen == was {
 		m.profileOpen = name
 	}
