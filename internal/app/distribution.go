@@ -81,7 +81,8 @@ func newPluginInstallCommand(opts *globalOpts) *cobra.Command {
 			"what rta computed rather than what anybody claimed.\n\n" +
 			"Installing is the trust decision: no separate `rta plugin trust` is\n" +
 			"needed for a plugin installed this way.",
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeInstallable,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			install := plugindist.Install
 			if opts.dryRun {
@@ -259,7 +260,8 @@ func newPluginRemoveCommand(opts *globalOpts) *cobra.Command {
 			"now point at nothing, without touching them: the config file is yours,\n" +
 			"and `rta doctor` keeps reporting the orphans until you decide.\n\n" +
 			"`--all` does that for every managed plugin.",
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeManaged,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, verr := bulkScope(args, all, "plugin.remove.scope", "remove")
 			if verr != nil {
@@ -446,6 +448,59 @@ func stalePinPairs(name, from, to string, dryRun bool) []view.Pair {
 	return pairs
 }
 
+// completeInstallable offers the names the attached indexes claim and that are
+// not installed yet. `rta plugin install <TAB>` fell back to the files of the
+// current directory, an answer to a question nobody asked: the names are in
+// manifests already on the disk, and reading them fetches nothing.
+func completeInstallable(_ *cobra.Command, args []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	installed := map[string]bool{}
+	for _, e := range plugindist.ReadLock() {
+		installed[e.Name] = true
+	}
+	seen := map[string]bool{}
+	var out []cobra.Completion
+	for _, ix := range plugindist.Indexes() {
+		listed, _ := plugindist.Manifests(ix)
+		for _, l := range listed {
+			name := l.Manifest.Name
+			if installed[name] || seen[name] {
+				continue
+			}
+			seen[name] = true
+			out = append(out, cobra.CompletionWithDesc(name, l.Manifest.Summary+" — "+ix.Name))
+		}
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeManaged offers the plugins rta installed, which is what upgrade and
+// remove act on, described by the version and index each came from.
+func completeManaged(_ *cobra.Command, args []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var out []cobra.Completion
+	for _, e := range plugindist.ReadLock() {
+		out = append(out, cobra.CompletionWithDesc(e.Name, e.Version+" from "+e.Index))
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeIndexes offers the attached indexes.
+func completeIndexes(_ *cobra.Command, args []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var out []cobra.Completion
+	for _, ix := range plugindist.Indexes() {
+		out = append(out, ix.Name)
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp
+}
+
 // upToDateValue is the answer to an upgrade that found nothing newer. It is
 // the index as last updated that was read: an upgrade fetches the artifact the
 // index claims and never the index itself, so "up to date" beside an index
@@ -480,7 +535,8 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 		Example: "  rta plugin upgrade pg\n" +
 			"  rta plugin upgrade --all --dry-run\n" +
 			"  rta plugin upgrade --all --index official",
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeManaged,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, verr := bulkScope(args, all, "plugin.upgrade.scope", "upgrade")
 			if verr != nil {
@@ -785,7 +841,7 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 	root.AddCommand(&cobra.Command{
 		Use:   "update [name]",
 		Short: "Bring one index up to date, or every one",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  cobra.MaximumNArgs(1), ValidArgsFunction: completeIndexes,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := ""
 			if len(args) == 1 {
@@ -824,7 +880,8 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 		Long: "Refused while an installed plugin records this index as its provenance:\n" +
 			"rta.lock exists to answer where a binary came from, and detaching the\n" +
 			"answer would leave the question standing.",
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeIndexes,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			removeIndex := plugindist.RemoveIndex
 			body := "detached " + args[0]
