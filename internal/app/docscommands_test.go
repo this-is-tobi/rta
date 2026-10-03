@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // The quickstart told a new reader to run `rta cert check example.com`, and
@@ -383,5 +384,88 @@ func TestEveryCommandAGoStringTellsAPersonToRunExists(t *testing.T) {
 	}
 	if checked < 30 {
 		t.Fatalf("checked %d commands in Go strings, want the seventy or so there are; has the quoting moved?", checked)
+	}
+}
+
+// The same promise for a flag: a hint that says to re-run with `--force` is a
+// string nobody type-checks, and a flag that was renamed or never written is
+// the sentence a person copies to the terminal and meets "unknown flag" from.
+// A flag a code span in a Go string cites has to be a flag of some command in
+// the tree. Which command is not judged — a hint names the flags of commands
+// that are not even in the default build — only that the word exists as a flag
+// somewhere, which is what catches a spelling that exists nowhere.
+//
+// Flags of other programs sit in the same strings (`git fetch --prune`,
+// `kubectl --context`), so a span is read only when it begins with `rta`, or
+// is a bare flag.
+func TestEveryFlagAGoStringTellsAPersonToTypeExists(t *testing.T) {
+	flags := map[string]bool{}
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		c.Flags().VisitAll(func(f *pflag.Flag) { flags[f.Name] = true })
+		c.InheritedFlags().VisitAll(func(f *pflag.Flag) { flags[f.Name] = true })
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	walk(NewRoot(reg, "test"))
+	// Cobra adds --help when a command runs, not when the tree is built, and
+	// the plugins from other repositories bring flags of their own which a
+	// string here may name when it explains one.
+	for _, f := range []string{"help", "bucket", "cluster", "namespace", "database", "collection"} {
+		flags[f] = true
+	}
+
+	root := repoRoot(t)
+	span := regexp.MustCompile("`(rta [^`]*|--[a-z][a-z0-9-]*[^`]*)`")
+	flag := regexp.MustCompile(`(?:^|[\s=(])--([a-z][a-z0-9-]*)`)
+	checked := 0
+	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "node_modules", "testdata", ".local", "docs", "proto":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, path)
+		for i, line := range strings.Split(string(body), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "//") {
+				continue
+			}
+			for _, s := range span.FindAllStringSubmatch(line, -1) {
+				if strings.Contains(s[1], "{{") {
+					// A template for a plugin the reader has not written yet.
+					continue
+				}
+				for _, m := range flag.FindAllStringSubmatch(s[1], -1) {
+					checked++
+					if !flags[m[1]] {
+						t.Errorf("%s:%d: %q cites --%s, which is no flag of any command", rel, i+1, s[1], m[1])
+					}
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the checkout: %v", err)
+	}
+	if checked < 30 {
+		t.Fatalf("checked %d flags in Go strings, want the hundred or so there are; has the quoting moved?", checked)
 	}
 }
