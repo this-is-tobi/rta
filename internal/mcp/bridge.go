@@ -628,7 +628,11 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// And the rule a named link is told by (finalLink), for the links
 			// a handler comes across rather than receives: fs.tree lists a
 			// directory's, each with what it holds.
-			WithLinkTargets(func(dir, target string) string { return tellTarget(opts.Paths, dir, target) })
+			WithLinkTargets(func(dir, target string) string { return tellTarget(opts.Paths, dir, target) }).
+			// And how much of an answer the host takes: a plugin's is held whole
+			// as it arrives, and an answer an agent cannot read is not worth the
+			// memory it costs (plugin.DefaultResultLimit).
+			WithResultLimit(opts.resultLimit())
 		for field, l := range links {
 			run = run.WithLink(field, l.path, l.target)
 		}
@@ -690,16 +694,55 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// the authority gate, open or grant means authority allowed it
 			// and the handler's own policy still said no — the pair tells a
 			// reader where in the stack the refusal happened.
-			if ve.Refusal {
+			switch {
+			case ve.Code == "core.result.toolarge":
+				// A plugin's answer the host would not receive (pluginhost's
+				// overLimit): the call ran, what it changed is changed, and the
+				// row says so beside the reason the answer was withheld.
+				withheld(rec, ve)
+			case ve.Refusal:
 				refusedBy(rec, ve)
-			} else {
+			default:
 				failedBy(rec, ve)
 			}
 			return errResult(ve), nil
 		}
 		rec.Outcome = agentlog.Ran
-		return viewResult(v)
+		res, err := viewResult(v)
+		if err != nil {
+			return nil, err
+		}
+		// A built-in's answer is measured as it is sent: it is already in
+		// memory, so what this saves the agent is the answer, which a model
+		// cannot read at that size and an SDK would encode a second time for the
+		// structured copy.
+		if limit := opts.resultLimit(); limit > 0 {
+			if size := resultSize(res); size > limit {
+				ve := plugin.ResultTooLarge(c.ID, size, limit)
+				withheld(rec, ve)
+				return errResult(ve), nil
+			}
+		}
+		return res, nil
 	}
+}
+
+// withheld records a call that ran and whose result was not handed over: the
+// outcome is the call's, ran, and the code and the reason say what happened to
+// the answer.
+func withheld(e *agentlog.Entry, verr *view.Error) {
+	e.Outcome, e.Code, e.Reason = agentlog.Ran, cut(verr.Code, maxCode), cut(verr.Message, maxReason)
+}
+
+// resultSize is what a result is as the client receives it: its text.
+func resultSize(res *sdk.CallToolResult) int {
+	n := 0
+	for _, c := range res.Content {
+		if t, ok := c.(*sdk.TextContent); ok {
+			n += len(t.Text)
+		}
+	}
+	return n
 }
 
 // takeProfile removes the host-owned "profile" argument from what the caller

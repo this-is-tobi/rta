@@ -77,6 +77,7 @@ type Request struct {
 	links   map[string]link
 	targets func(dir, target string) string
 	bounds  Bounds
+	limit   int
 	DryRun  bool
 	Yes     bool
 }
@@ -293,6 +294,19 @@ func (r Request) WithBounds(b Bounds) Request {
 	r.bounds = b
 	return r
 }
+
+// WithResultLimit stamps the most a result of this call may be, in bytes, for a
+// surface that hands results to something that cannot take any size. The host
+// that runs a plugin holds the plugin's answer to it as it receives it, so the
+// bound is on what is allocated for an answer and not only on what is shown;
+// zero is no bound, which is what every call is given that did not ask.
+func (r Request) WithResultLimit(bytes int) Request {
+	r.limit = bytes
+	return r
+}
+
+// ResultLimit is the bound WithResultLimit stamped, or 0.
+func (r Request) ResultLimit() int { return r.limit }
 
 // Bounds is the reach this call was given, the zero Bounds when it was given
 // none. For the package that opens what a path names (Bounds says which);

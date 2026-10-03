@@ -39,6 +39,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/internal/tunnel"
 	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -158,11 +159,18 @@ func localityGated(reg *registry.Registry) string {
 	return strings.Join(names, ", ")
 }
 
+// maxResultCeilingMiB is the most --max-result takes. A result is held several
+// times over while it is handled (measured at about sixteen: 100 MB took the
+// server to 1.68 GB), so the number an operator may set is bounded by what the
+// machine can hold of it.
+const maxResultCeilingMiB = 256
+
 func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	var (
 		consentOn     bool
 		consentWait   time.Duration
 		consentNotify bool
+		maxResultMiB  int
 		agentName     string
 		roots         []string
 		httpAddr      string
@@ -230,6 +238,12 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			if consentNotify && !notify.Available() {
 				fmt.Fprintln(cmd.ErrOrStderr(),
 					"rta: no desktop notifier here, so parked calls will only appear in `rta agent pending`")
+			}
+			if maxResultMiB < 1 || maxResultMiB > maxResultCeilingMiB {
+				return serveUsage(fmt.Sprintf("--max-result is %d MiB, which is not between 1 and %d",
+					maxResultMiB, maxResultCeilingMiB),
+					"it is the most a result may be before it is withheld: what the server holds of an answer is "+
+						"several times its size, so a ceiling is a memory limit, not only a courtesy to the model")
 			}
 			if consentWait > consent.MaxWait {
 				fmt.Fprintln(cmd.ErrOrStderr(),
@@ -534,6 +548,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				Consent:       consentOn,
 				ConsentWait:   consentWait,
 				ConsentNotify: consentNotify,
+				MaxResult:     maxResultMiB << 20,
 				Origin:        reg.Origin,
 				Config:        pluginConfig.For,
 				ConfigSection: pluginConfig.Section,
@@ -711,6 +726,8 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		"how long a parked call waits for your answer before it is refused")
 	cmd.Flags().BoolVar(&consentNotify, "consent-notify", false,
 		"also ring this machine's desktop notification when a call is parked")
+	cmd.Flags().IntVar(&maxResultMiB, "max-result", plugin.DefaultResultLimit>>20,
+		"the most a result may be, in MiB, before it is withheld and the caller told how to ask for less")
 	// A root is a directory, and the shell has the list.
 	completeFlag(cmd, "root",
 		func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {

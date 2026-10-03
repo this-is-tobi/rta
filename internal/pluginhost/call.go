@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	goplugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
@@ -53,14 +55,46 @@ func (c *Client) call(ctx context.Context, id string, req plugin.Request) (view.
 	if err != nil {
 		return nil, liveError(id, err)
 	}
-	resp, err := stub.Call(ctx, callRequest(id, req))
+	// **The bound is on what the host receives, not on what it is shown.**
+	// go-plugin lifts gRPC's own limit on a message to the largest there is, and
+	// a plugin that answered with 100 MB took the server to 1.68 GB before
+	// anything could look at the size: the answer is held whole in the
+	// transport's buffer and again at every step that follows. A limit given to
+	// the call is handed to gRPC, which refuses a message over it from the
+	// length its header declares, before any of it is read.
+	var opts []grpc.CallOption
+	if limit := req.ResultLimit(); limit > 0 {
+		opts = append(opts, grpc.MaxCallRecvMsgSize(limit))
+	}
+	resp, err := stub.Call(ctx, callRequest(id, req), opts...)
 	if err != nil {
+		if verr := overLimit(id, req.ResultLimit(), err); verr != nil {
+			return nil, verr
+		}
 		return nil, c.transportError(ctx, id, err)
 	}
 	if e := resp.GetError(); e != nil {
 		return nil, failure(id, req.Surface(), e)
 	}
 	return wire.ViewFromProto(resp.GetView()), nil
+}
+
+// overLimit is the refusal of an answer gRPC would not receive for being over
+// limit, with its size from the message gRPC gives ("received message larger
+// than max (104857600 vs. 8388608)"), or nil for any other failure.
+func overLimit(id string, limit int, err error) *view.Error {
+	if limit <= 0 || status.Code(err) != codes.ResourceExhausted {
+		return nil
+	}
+	msg := status.Convert(err).Message()
+	if !strings.Contains(msg, "larger than max") {
+		return nil
+	}
+	size := 0
+	if _, after, found := strings.Cut(msg, "("); found {
+		size, _ = strconv.Atoi(strings.SplitN(after, " ", 2)[0])
+	}
+	return plugin.ResultTooLarge(id, size, limit)
 }
 
 // failure is the plugin's own failure of a call to capability id, as the
