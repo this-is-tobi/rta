@@ -3,11 +3,16 @@ package git
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/storage/filesystem"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -31,7 +36,9 @@ func branchesCapability() plugin.Capability {
 			"Nothing here touches the network: a " +
 			"remote is reported as it stood the last time this repository fetched it. A " +
 			"detached HEAD — checked out at a commit rather than a branch — is reported as its " +
-			"own row rather than left for the caller to notice no branch was marked.",
+			"own row rather than left for the caller to notice no branch was marked. A branch " +
+			"checked out in another worktree of the repository is marked `worktree`, as " +
+			"`git branch` marks it with a `+`: git refuses to check it out here.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "all", Type: plugin.Bool, Config: "all", Help: "include remote-tracking branches"},
@@ -76,6 +83,7 @@ func runBranches(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("git.branches.failed", "reading what each branch tracks: %v", err)
 	}
 	tracks := configuredUpstreams(pieces)
+	elsewhere := checkedOutElsewhere(req, repo)
 
 	t := view.Table{Columns: []view.Column{
 		{Name: "Name"},
@@ -87,8 +95,11 @@ func runBranches(ctx context.Context, req plugin.Request) (view.View, error) {
 	for _, ref := range locals {
 		name := ref.Name().Short()
 		current := ""
-		if name == currentBranch {
+		switch {
+		case name == currentBranch:
 			current = "yes"
+		case elsewhere[name]:
+			current = "worktree"
 		}
 		upstream, status := upstreamStatus(repo, tracks, name, ref.Hash())
 		t.Rows = append(t.Rows, []string{name, current, upstream, status})
@@ -191,4 +202,87 @@ func drift(repo *git.Repository, tip, upstream plumbing.Hash) string {
 		return "up to date"
 	}
 	return strings.Join(parts, ", ")
+}
+
+// maxHeadBytes is more than a HEAD file holds: "ref: " and a branch name.
+const maxHeadBytes = 4096
+
+// checkedOutElsewhere is the branches checked out in a worktree other than
+// this one, which `git branch` marks with a "+": git refuses to check one of
+// them out here, and a table that showed them as free sent the reader into
+// that refusal.
+//
+// Read from the git directories alone — worktrees/<name>/HEAD under the
+// common directory, and the common directory's own HEAD when this is a
+// linked worktree — so no worktree's path is read, let alone shown: a
+// worktree can sit anywhere, and its path is the thing a root may not
+// disclose. The common directory was judged when the repository was opened,
+// and is opened here as that judgement left it (openBoundDir), so a link
+// swapped in since still cannot lead out of the roots.
+//
+// An answer that cannot be read is no marker, never an error: nothing here
+// is the reason a caller asked, and git.branches without the marker is what
+// it was.
+func checkedOutElsewhere(req plugin.Request, repo *git.Repository) map[string]bool {
+	store, ok := repo.Storer.(*filesystem.Storage)
+	if !ok {
+		return nil
+	}
+	own := store.Filesystem()
+	common := commonGitDir(own)
+	judged, verr := req.Confine("path", common)
+	if verr != nil {
+		return nil
+	}
+	dir, err := openBoundDir(req, judged)
+	if err != nil {
+		return nil
+	}
+	defer dir.Close()
+
+	elsewhere := map[string]bool{}
+	note := func(name string) {
+		if branch := headFileBranch(dir, name); branch != "" {
+			elsewhere[branch] = true
+		}
+	}
+	linked := commonDir(own) != ""
+	// A bare repository has no checkout of its own to be on a branch.
+	if linked && filepath.Base(common) == gitDirName {
+		note("HEAD")
+	}
+	entries, err := dir.ReadDir("worktrees")
+	if err != nil {
+		return elsewhere
+	}
+	for _, e := range entries {
+		note(filepath.Join("worktrees", e.Name(), "HEAD"))
+	}
+	return elsewhere
+}
+
+// headFileBranch is the branch the HEAD file at name in dir is on, "" for a
+// detached one or one that cannot be read as a HEAD file.
+func headFileBranch(dir boundDir, name string) string {
+	f, err := dir.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxHeadBytes))
+	if err != nil {
+		return ""
+	}
+	ref, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "ref: ")
+	if !ok {
+		return ""
+	}
+	branch, ok := strings.CutPrefix(ref, "refs/heads/")
+	if !ok {
+		return ""
+	}
+	return branch
 }
