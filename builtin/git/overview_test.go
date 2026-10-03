@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -74,6 +75,39 @@ func TestOverviewCompactSaysWhatKindOfChange(t *testing.T) {
 	}
 	if got := kvValue(t, v.(view.KeyValue), "working tree"); got != "1 staged, 1 untracked" {
 		t.Errorf("working tree = %q, want the staged change named as staged", got)
+	}
+}
+
+// controlNamedRepo is a repository whose HEAD holds a file named with an
+// escape sequence: legal to git, and refused by go-git's tree reader, which
+// stops a status or a diff of it. Skipped where there is no git to commit one.
+func controlNamedRepo(t *testing.T) string {
+	t.Helper()
+	machineConfig(t, "")
+	dir, _ := testRepo(t)
+	writeFile(t, dir, "bad\x1b[31mred.txt", "x\n")
+	for _, args := range [][]string{
+		{"add", "-A"},
+		{"-c", "user.name=t", "-c", "user.email=t@example.org", "-c", "commit.gpgsign=false", "commit", "-m", "odd name"},
+	} {
+		if _, ok := gitSays(t, dir, args...); !ok {
+			t.Skip("no git to commit a path with a control character in its name")
+		}
+	}
+	return dir
+}
+
+// A status that could not be read is a row saying so. The line was left out,
+// and an overview with no working-tree line reads as a repository with nothing
+// to report on, which is the answer for a bare one and not for a checkout.
+func TestOverviewSaysWhenItCouldNotReadTheWorkingTree(t *testing.T) {
+	dir := controlNamedRepo(t)
+	v, err := runOverview(context.Background(), req(t, dir, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := kvValue(t, v.(view.KeyValue), "working tree"); !strings.HasPrefix(got, "unreadable — ") {
+		t.Errorf("working tree = %q, want it said that the status could not be read", got)
 	}
 }
 
