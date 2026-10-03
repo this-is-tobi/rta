@@ -691,6 +691,18 @@ func newPluginNewCommand(version string, opts *globalOpts) *cobra.Command {
 			if verr := checkName(name); verr != nil {
 				return verr
 			}
+			// A name something here already answers to is a scaffold that
+			// cannot load: `plugin dev` and every start refuse a namespace
+			// that is taken, so the author's first run would be that refusal
+			// about code they have not written yet. `rta plugin new sys`
+			// wrote a plugin named after a built-in without a word.
+			if installed != nil {
+				if _, taken := installed.Origin(name); taken {
+					return view.Errorf("plugin.taken", "%q is already the name of a plugin on this machine", name).
+						WithHint("a namespace is one plugin's alone, so this one could never load — " +
+							"pick a name `rta plugin list` does not show")
+				}
+			}
 			s := scaffold{
 				Name:   name,
 				Binary: pluginhost.Prefix + name,
