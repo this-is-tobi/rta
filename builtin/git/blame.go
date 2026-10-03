@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/format/diff"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/storer"
@@ -94,6 +95,11 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("git.blame.cancelled", "the blame of %s was interrupted", file)
 	case errors.As(err, &over):
 		return nil, toolarge("%s: blaming it reads %s", file, over)
+	case err != nil && isDirectoryAt(commit, file):
+		// "file not found" for a directory that is there blamed the wrong
+		// thing: it was found, and it is not a file.
+		return nil, view.Errorf("git.blame.isdir", "%s is a directory at HEAD, and blame takes a file", file).
+			WithHint(req.Surface().CapabilityWith("git.log", "file") + " names the commits that touched anything in it")
 	case err != nil:
 		return nil, view.Errorf("git.blame.failed", "%s: %v", file, err).
 			WithHint("the file must be tracked at HEAD: a new one has no history to blame until it is committed")
@@ -247,6 +253,16 @@ type origin struct {
 	path     string
 	content  string
 	suspects []suspect
+}
+
+// isDirectoryAt reports whether path names a directory in commit's tree.
+func isDirectoryAt(commit *object.Commit, path string) bool {
+	tree, err := commit.Tree()
+	if err != nil {
+		return false
+	}
+	entry, err := tree.FindEntry(path)
+	return err == nil && entry.Mode == filemode.Dir
 }
 
 // blame attributes each line of path at head to the commit that last changed

@@ -49,6 +49,24 @@ func TestBlameOnAnUntrackedFileFailsWithAClearError(t *testing.T) {
 	}
 }
 
+// A directory is there, and is not a file: it was answered "file not found",
+// which blames the wrong thing, beside a hint about a file never committed.
+func TestBlameOnADirectorySaysItIsOne(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "deploy/values.yaml", "replicas: 2\n", "initial")
+	t.Chdir(dir)
+
+	_, err := runBlame(context.Background(), req(t, dir, map[string]any{"file": "deploy"}))
+	verr := view.AsError(err, "x")
+	if err == nil || verr.Code != "git.blame.isdir" || !strings.Contains(verr.Message, "deploy is a directory") {
+		t.Fatalf("blaming a directory: %v, want git.blame.isdir naming it as one", err)
+	}
+	_, err = runBlame(context.Background(), req(t, dir, map[string]any{"file": "deploy/nope.yaml"}))
+	if verr := view.AsError(err, "x"); err == nil || verr.Code != "git.blame.failed" {
+		t.Errorf("blaming a file never committed: %v, want git.blame.failed", err)
+	}
+}
+
 // A file over the bound a diff holds one file to is refused by its size, not
 // read: blame reads it whole at every commit that touched it and answers a
 // row per line, and a 100 MB file cost one ungated call 3.2 GB.
