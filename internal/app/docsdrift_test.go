@@ -473,3 +473,30 @@ func TestThePluginChapterNamesEveryRuleTheSuiteCanBeToldToSkip(t *testing.T) {
 		}
 	}
 }
+
+// `rta doctor`'s confinement row is quoted on two pages as a sample — the
+// installation page, where it is the first thing a new reader runs, and the
+// plugins page, where it is explained — and the two said different numbers of
+// pinned directories, 15 and 9. The figure is per machine, which is why both
+// pages tell the reader to read their own row, but two samples of one row on
+// one site that disagree read as one of them being stale. They are held to the
+// same number, so a future edit to one has to take the other with it.
+func TestTheDocsQuoteTheConfinementRowAlike(t *testing.T) {
+	root := repoRoot(t)
+	pinned := regexp.MustCompile(`(\d+)\s+directories\s+pinned`)
+	pagesByCount := map[string][]string{}
+	quotes := 0
+	for _, page := range markdownPages(t, root) {
+		for _, m := range pinned.FindAllStringSubmatch(readDoc(t, root, page), -1) {
+			pagesByCount[m[1]] = append(pagesByCount[m[1]], page)
+			quotes++
+		}
+	}
+	if quotes < 2 {
+		t.Fatalf("found %d quotes of the confinement row's pinned directories, want the two pages that sample it; "+
+			"if the sample moved, move this test with it", quotes)
+	}
+	if len(pagesByCount) > 1 {
+		t.Errorf("the docs quote the confinement row with different numbers of pinned directories: %v", pagesByCount)
+	}
+}
