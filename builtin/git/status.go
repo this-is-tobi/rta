@@ -36,7 +36,11 @@ func statusCapability() plugin.Capability {
 			"staged change, an unstaged change, or neither yet — added, tracked at all — one row " +
 			"per path, both halves shown side by side rather than requiring the two-column code to " +
 			"be decoded by eye. A path a merge stopped on is listed as git lists it — UU, AA, UD or DU — " +
-			"and not as an edit. It ignores what git ignores, matching each pattern as git's own matcher " +
+			"and not as an edit. A staged move of a file with its content unchanged is one row, `R` " +
+			"and `old -> new` in Path, as git pairs it; one that also edits the file stays a `D` " +
+			"and an `A`, since pairing it takes a similarity score. A submodule is listed when its " +
+			"commit moved; what is changed inside it is its own repository's status, which this " +
+			"does not read. It ignores what git ignores, matching each pattern as git's own matcher " +
 			"does: each .gitignore, the repository's info/exclude, and the file core.excludesFile names, " +
 			"~/.config/git/ignore by default; at most 1 MiB and 10000 patterns of them in all, in the " +
 			"order it reads them. One past that is not applied, as git applies no pattern file past " +
@@ -88,6 +92,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, statusFailed("git.status.failed", err)
 	}
+	pairRenames(repo, status)
 
 	t := view.Table{Columns: []view.Column{
 		{Name: "Path"},
@@ -101,7 +106,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	sort.Strings(paths)
 	for _, p := range paths {
 		fs := status[p]
-		t.Rows = append(t.Rows, []string{p, statusLetter(fs.Staging), statusLetter(fs.Worktree)})
+		t.Rows = append(t.Rows, []string{statusPath(p, fs), statusLetter(fs.Staging), statusLetter(fs.Worktree)})
 	}
 	t.Total = len(t.Rows)
 	if len(ignored) > 0 {
