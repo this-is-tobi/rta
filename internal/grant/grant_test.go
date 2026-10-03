@@ -384,6 +384,38 @@ func TestEveryRecordACallNamesThroughScopeAlsoNeedsCover(t *testing.T) {
 	}
 }
 
+// A grant covers one record, so a refusal naming several has to hand on a
+// command for each: given only the first, the operator ran it, the agent
+// retried and was refused again for the second, and so on down the list.
+func TestARefusalNamingSeveralRecordsHandsOnACommandForEach(t *testing.T) {
+	setup(t)
+	c := declare("cert.expiry", plugin.Read, "targets", true)
+	c.Inputs = []plugin.Field{{Name: "targets", Type: plugin.StringSlice}}
+	hosts := []string{"a.example:443", "b.example:443", "c.example:443"}
+
+	verr := gate(t, c, map[string]any{"targets": hosts}, "", "")
+	if verr == nil || verr.Code != "core.grant.required" {
+		t.Fatalf("an ungranted call went through: %v", verr)
+	}
+	for _, host := range hosts {
+		if want := "`rta grant allow cert.expiry " + host + " --ttl 15m`"; !strings.Contains(verr.Hint, want) {
+			t.Errorf("the hint hands on no command for %s: %s", host, verr.Hint)
+		}
+	}
+
+	many := make([]string, 0, 9)
+	for i := range 9 {
+		many = append(many, "h"+strconv.Itoa(i)+".example:443")
+	}
+	verr = gate(t, c, map[string]any{"targets": many}, "", "")
+	if got := strings.Count(verr.Hint, "ask the operator to run"); got != maxHintCommands {
+		t.Errorf("the hint spells %d commands, want %d: %s", got, maxHintCommands, verr.Hint)
+	}
+	if want := "the same for the other 5 records"; !strings.Contains(verr.Hint, want) {
+		t.Errorf("the hint does not count the rest (%q): %s", want, verr.Hint)
+	}
+}
+
 // Where a rename moves its key to is not a second act: one grant covering
 // both ends spends one use on the move, so a --max-uses 2 folder grant is two
 // renames inside the folder rather than one. Two grants, one per end,
