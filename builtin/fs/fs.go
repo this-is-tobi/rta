@@ -46,7 +46,10 @@ func Plugin() plugin.Plugin {
 				Description: "Totals every entry under a path and ranks them, which is the question " +
 					"`du -sh * | sort -h | tail` is always asked to answer. Directories are summed " +
 					"recursively; the share column is of the scanned total, not of the disk, so it " +
-					"adds up to what you are looking at. Hidden entries are included — they are " +
+					"adds up to what you are looking at. A size is the disk a file takes, as du " +
+					"counts it: a sparse file by what is written, and a file with several hard " +
+					"links once, where it is first met; `apparent` counts lengths instead. " +
+					"Hidden entries are included — they are " +
 					"usually the answer. With `detail`: the ranking, the largest individual files " +
 					"found anywhere beneath, and what was skipped. Follows no symlinks and crosses " +
 					"no filesystem boundary, so a scan cannot loop or wander onto a network mount.",
@@ -59,6 +62,8 @@ func Plugin() plugin.Plugin {
 					// declaration said any integer would do.
 					{Name: "depth", Type: plugin.Int, Config: "depth", Default: 0, Min: 0,
 						Help: "how deep to descend when totalling (0 = no limit)"},
+					{Name: "apparent", Type: plugin.Bool, Config: "apparent",
+						Help: "count each file by its length rather than the disk it takes"},
 				},
 				Run: runUsage,
 			},

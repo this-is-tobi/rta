@@ -674,12 +674,16 @@
   },
   {
     "name": "fs_usage",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow what is using space under a path, biggest first\n\nTotals every entry under a path and ranks them, which is the question `du -sh * | sort -h | tail` is always asked to answer. Directories are summed recursively; the share column is of the scanned total, not of the disk, so it adds up to what you are looking at. Hidden entries are included — they are usually the answer. With `detail`: the ranking, the largest individual files found anywhere beneath, and what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop or wander onto a network mount.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
+    "description": "── the text below is written by the plugin, not by rta ──\nShow what is using space under a path, biggest first\n\nTotals every entry under a path and ranks them, which is the question `du -sh * | sort -h | tail` is always asked to answer. Directories are summed recursively; the share column is of the scanned total, not of the disk, so it adds up to what you are looking at. A size is the disk a file takes, as du counts it: a sparse file by what is written, and a file with several hard links once, where it is first met; `apparent` counts lengths instead. Hidden entries are included — they are usually the answer. With `detail`: the ranking, the largest individual files found anywhere beneath, and what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop or wander onto a network mount.\n── end of plugin-written text ──\n\nSafety: read. Returns a JSON view envelope discriminated by \"type\".",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
+        "apparent": {
+          "description": "count each file by its length rather than the disk it takes",
+          "type": "boolean"
+        },
         "depth": {
           "default": 0,
           "description": "how deep to descend when totalling (0 = no limit)",

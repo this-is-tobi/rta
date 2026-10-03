@@ -61,7 +61,7 @@ func TestUsageRanksBiggestFirstAndSumsDirectories(t *testing.T) {
 		"big/two.bin":     2000,
 		"medium/only.bin": 1000,
 	})
-	tbl, ok := run(t, runUsage, map[string]any{"path": root, "limit": 20}).(view.Table)
+	tbl, ok := run(t, runUsage, map[string]any{"path": root, "limit": 20, "apparent": true}).(view.Table)
 	if !ok {
 		t.Fatal("usage did not return a table")
 	}
@@ -91,7 +91,7 @@ func TestUsageRanksBiggestFirstAndSumsDirectories(t *testing.T) {
 // looking at — not of the disk, which they did not ask about.
 func TestUsageSharesAreOfTheScannedTotal(t *testing.T) {
 	root := fixture(t, map[string]int{"a.bin": 750, "b.bin": 250})
-	tbl := run(t, runUsage, map[string]any{"path": root, "limit": 20}).(view.Table)
+	tbl := run(t, runUsage, map[string]any{"path": root, "limit": 20, "apparent": true}).(view.Table)
 	if got := rowFor(t, tbl, "a.bin")[2]; got != "75.0%" {
 		t.Errorf("a.bin share = %q, want 75.0%%", got)
 	}

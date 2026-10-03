@@ -219,12 +219,14 @@ func TestALinkOutAnswersTheSameWhetherItsTargetExists(t *testing.T) {
 // from outside.
 func walkCases() []fileCase {
 	// Every file inside is a few bytes and the one outside is kilobytes, so a
-	// size in KiB anywhere in a listing is one that counted it.
+	// size in KiB anywhere in a listing is one that counted it. fs_usage is
+	// asked for lengths: by the disk a file takes, a few bytes is a block, and
+	// every answer says KiB.
 	small, large := []byte("a note"), bytes.Repeat([]byte("x"), 4096)
 	return []fileCase{
 		{tool: "fs_tree", input: "path", name: "notes.txt", args: map[string]any{"depth": 3},
 			inside: small, outside: large, leaks: says("KiB")},
-		{tool: "fs_usage", input: "path", name: "notes.txt", args: map[string]any{"detail": true},
+		{tool: "fs_usage", input: "path", name: "notes.txt", args: map[string]any{"detail": true, "apparent": true},
 			inside: small, outside: large, leaks: says("KiB")},
 		{tool: "audit_deps", input: "path", name: "go.mod", args: map[string]any{"offline": true, "recursive": true},
 			inside: goMod("inside", 3), outside: goMod("outside", outsideDeps), leaks: declared},
