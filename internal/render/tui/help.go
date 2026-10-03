@@ -153,13 +153,28 @@ func (m Model) helpView() string {
 		}
 		lines = append(lines, row)
 	}
-	lines = append(lines, "", theme.Subtle.Render("esc or ? closes this"))
 	body := strings.Join(lines, "\n")
-	width := lipgloss.Width(body) + 4
-	if m.width > 0 {
+	// How to close it is in the border, not in a last line of the body: on a
+	// terminal shorter than the list the bottom is what is cut, and an
+	// overlay that does not say how to leave is the one that must.
+	name := "keys on the " + screenName(m.mode)
+	head := panelHead{Title: name, Right: "esc or ? closes"}
+	width := max(lipgloss.Width(body)+4, lipgloss.Width(head.Title)+lipgloss.Width(head.Right)+9)
+	if m.width > 0 && width > m.width {
+		// Too narrow for the screen's name and the way out together: the way
+		// out gets shorter, and then the name goes, before the way out does.
+		head.Right = "esc closes"
+		width = max(lipgloss.Width(body)+4, lipgloss.Width(head.Title)+lipgloss.Width(head.Right)+9)
+		if width > m.width {
+			head = panelHead{Title: "keys · esc closes"}
+		}
 		width = min(width, m.width)
 	}
-	box := panel(panelHead{Title: "keys on the " + screenName(m.mode)}, body, width, 0, true)
+	height := 0 // natural, unless the terminal has less
+	if m.height > 0 && len(lines)+2 > m.height {
+		height = m.height
+	}
+	box := panel(head, body, width, height, true)
 	if m.width > 0 && m.height > 0 {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
