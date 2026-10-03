@@ -33,39 +33,6 @@ const (
 var terminalWording = regexp.MustCompile("(?i)\\bfrom a terminal\\b|\\b(?:at|on) (?:a|the) terminal\\b|" +
 	"\\bon the CLI\\b|\\bread from a pipe\\b|\\bpiping\\b|\\bshell history\\b|`rta ")
 
-// pending is the tools still breaking a rule below, by rule. It exists so the
-// rules could land before the text they hold was fixed, one namespace at a
-// time; a tool leaves it in the commit that fixes it, and a tool listed that no
-// longer breaks its rule is an error, so the list cannot outlive the debt.
-var pending = map[string]map[string]bool{
-	"wording": {
-		"audit_deps": true,
-		"audit_why":  true,
-	},
-	"local": {
-		"net_dns": true,
-	},
-	"budget": {
-		"audit_deps":             true,
-		"audit_kube_eol":         true,
-		"audit_kube_podsecurity": true,
-		"audit_mail":             true,
-		"audit_web":              true,
-		"audit_why":              true,
-		"net_listen":             true,
-	},
-}
-
-func hold(t *testing.T, rule, tool string, broken bool, format string, args ...any) {
-	t.Helper()
-	switch {
-	case broken && !pending[rule][tool]:
-		t.Errorf("%s: %s", tool, fmt.Sprintf(format, args...))
-	case !broken && pending[rule][tool]:
-		t.Errorf("%s no longer breaks the %q rule: take it off the pending list", tool, rule)
-	}
-}
-
 func TestNoToolSpeaksToAPersonAtACommandLine(t *testing.T) {
 	for _, tl := range surface(t, mcp.Options{}) {
 		texts := map[string]string{"description": authored(t, tl.Description)}
@@ -80,7 +47,9 @@ func TestNoToolSpeaksToAPersonAtACommandLine(t *testing.T) {
 				found = append(found, fmt.Sprintf("%s says %q", where, m))
 			}
 		}
-		hold(t, "wording", tl.Name, len(found) > 0, "%s", strings.Join(found, "; "))
+		if len(found) > 0 {
+			t.Errorf("%s: %s", tl.Name, strings.Join(found, "; "))
+		}
 	}
 }
 
@@ -98,7 +67,9 @@ func TestNoDescriptionNamesAnInputTheToolDoesNotTake(t *testing.T) {
 				found = append(found, f.Name)
 			}
 		}
-		hold(t, "local", tl.Name, len(found) > 0, "the description names %v, which an agent cannot give", found)
+		if len(found) > 0 {
+			t.Errorf("%s: the description names %v, which an agent cannot give", tl.Name, found)
+		}
 	}
 }
 
@@ -115,6 +86,8 @@ func TestToolTextStaysInBudget(t *testing.T) {
 				over = append(over, fmt.Sprintf("input %s is %d bytes, over the %d it is held to", name, len(desc), inputBudget))
 			}
 		}
-		hold(t, "budget", tl.Name, len(over) > 0, "%s", strings.Join(over, "; "))
+		if len(over) > 0 {
+			t.Errorf("%s: %s", tl.Name, strings.Join(over, "; "))
+		}
 	}
 }

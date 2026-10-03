@@ -74,15 +74,13 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				// actually reason about.
 				NeedsGrant: true,
 				Scope:      "host",
-				Description: "One HTTPS request, graded: TLS version and cipher, certificate validity, " +
-					"expiry and signature algorithm, the security headers a host should send (HSTS, CSP " +
-					"— checked for weak directives like unsafe-inline, not just presence — " +
-					"X-Frame-Options/frame-ancestors, cross-origin isolation headers), CORS behavior " +
-					"(probed with an Origin no real browser would send, to catch blind reflection), " +
-					"cookie flags, and the version/stack details a host should not leak. Every finding " +
-					"cites an OWASP Top 10:2025 category and a MITRE CWE, so a result traces back to a " +
-					"named control rather than an opinion. With `detail`: one section per area plus the " +
-					"cited references with lookup URLs. Read-only — it only inspects the response the " +
+				Description: "One HTTPS request, graded: TLS version and cipher, certificate validity, expiry and " +
+					"signature algorithm, the security headers a host should send (HSTS, CSP checked for weak " +
+					"directives like unsafe-inline, X-Frame-Options/frame-ancestors, cross-origin isolation), " +
+					"CORS behavior (probed with an Origin no real browser would send, to catch blind " +
+					"reflection), cookie flags, and the version/stack details a host should not leak. Every " +
+					"finding cites an OWASP Top 10:2025 category and a MITRE CWE. With `detail`: one section " +
+					"per area plus the cited references with lookup URLs. It only inspects the response the " +
 					"host volunteers, plus the one Origin header the CORS probe adds.",
 				Inputs: []plugin.Field{
 					{Name: "host", Type: plugin.String, Positional: true, Required: true, Help: "host or URL to audit"},
@@ -112,18 +110,15 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				// stays, and it needs no second one.
 				NeedsGrant: true,
 				Scope:      "domain",
-				Description: "Answers \"can somebody send mail as this domain\" from the records the " +
-					"domain publishes: SPF (present, singular, how it ends, and how close it is to " +
-					"RFC 7208's ten-lookup limit past which it silently stops applying), DMARC (policy, " +
-					"rollout percentage, whether anything reports back), DKIM for a given selector, " +
-					"MTA-STS and TLS-RPT for the server-to-server hop (the MTA-STS policy file, which " +
-					"carries its mode, is not fetched — only the TXT record that advertises it is read), " +
-					"and MX — including RFC 7505's " +
-					"null MX, which is a hardening measure rather than an omission. Every finding cites " +
-					"an OWASP Top 10:2025 category and a MITRE CWE. With `detail`: one section per area " +
-					"plus the cited references with lookup URLs. Read-only, a handful of lookups of " +
-					"names derived from the domain by rule — nothing is enumerated, which is why DKIM " +
-					"needs its selector handed to it.",
+				Description: "Answers \"can somebody send mail as this domain\" from the records the domain publishes: " +
+					"SPF (present, singular, how it ends, how close to RFC 7208's ten-lookup limit), DMARC " +
+					"(policy, rollout percentage, whether anything reports back), DKIM for a given selector, " +
+					"MTA-STS and TLS-RPT (only the TXT record that advertises the policy is read, not the " +
+					"policy file), and MX, including RFC 7505's null MX, a hardening measure rather than an " +
+					"omission. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. With " +
+					"`detail`: one section per area plus the cited references with lookup URLs. A handful of " +
+					"lookups of names derived from the domain by rule, and nothing is enumerated, which is " +
+					"why DKIM needs its selector.",
 				Inputs: []plugin.Field{
 					{Name: "domain", Type: plugin.String, Positional: true, Required: true, Help: "domain to audit"},
 					{Name: "selector", Type: plugin.String, Help: "DKIM selector to check (the s= tag of a DKIM-Signature)"},
@@ -143,29 +138,15 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				// and it would send this project's dependency list to osv.dev
 				// every time somebody opened the TUI.
 				NoPreview: true,
-				Description: "Reads what a project already declares — go.mod, any of the four " +
-					"JavaScript lockfiles (npm, pnpm, yarn, bun), uv.lock, poetry.lock, Pipfile.lock, " +
-					"requirements.txt, Cargo.lock, composer.lock, Gemfile.lock, or a CycloneDX/SPDX " +
-					"SBOM sitting beside them — and asks osv.dev " +
-					"once about every pinned dependency, reporting which are named in an advisory. " +
-					"Nothing is resolved, built or crawled: a lockfile is a list a package manager " +
-					"already committed, and reading it is not scanning. Each advisory it finds is then " +
-					"read for its severity and the versions that fix it — a second question asked only " +
-					"about findings, so a project with nothing wrong asks nothing extra — and the " +
-					"records every database publishes for one vulnerability are collapsed onto it, " +
-					"since a package can otherwise be counted twice under a GHSA and a GO identifier " +
-					"for the same CVE. It still points at osv-scanner, trivy or grype for the depth " +
-					"this does not have: whether your code reaches the vulnerable function at all, " +
-					"which no advisory can say. " +
-					"Components whose ecosystem OSV does not recognise are counted and named rather " +
-					"than dropped. `offline` inventories without asking anything. `recursive` walks a " +
-					"monorepo, skipping node_modules, vendor and build output, which is what a " +
-					"polyglot repository needs: one lockfile per service and no single file that " +
-					"knows about the others. From a terminal `path` also takes a repository URL, " +
-					"read shallowly in memory and never written to disk, which is how you audit a " +
-					"repository you have not checked out — refused over MCP, since a URL a caller " +
-					"composes is a request rta makes on its behalf. Cites A03:2025 Software Supply " +
-					"Chain Failures and CWE-1395.",
+				Description: "Reads what a project already declares (go.mod, the JavaScript, Python, Rust, PHP and " +
+					"Ruby lockfiles, or a CycloneDX/SPDX SBOM beside them) and asks osv.dev once about every " +
+					"pinned dependency, reporting which are named in an advisory with its severity and the " +
+					"versions that fix it, the records for one vulnerability collapsed onto it. Nothing is " +
+					"resolved, built or crawled: reading a lockfile is not scanning, so whether your code " +
+					"reaches the vulnerable function is for osv-scanner, trivy or grype. Components whose " +
+					"ecosystem OSV does not recognise are counted and named rather than dropped. `offline` " +
+					"inventories without asking anything; `recursive` walks a monorepo, skipping " +
+					"node_modules, vendor and build output.",
 				Inputs: []plugin.Field{
 					{Name: "path", Type: plugin.Path, Positional: true, Default: ".",
 						Help: pathHelp("directory holding the lockfile or SBOM, or the file itself")},
@@ -195,16 +176,15 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				// fills itself with — and a tile asking "why is lodash here"
 				// about a project nobody named is a question with no subject.
 				NoPreview: true,
-				Description: "Answers the question an advisory raises second: did we ask for this, " +
-					"or did something else pull it in — and if something else, what. Reads the same " +
-					"manifests `audit.deps` does and draws the package at the root with everything " +
-					"that requires it beneath, up to the dependencies the project asks for by name. " +
-					"Nothing is resolved, installed or fetched. Formats differ in what they record: " +
-					"go.mod marks a require direct or indirect and stores no edges, while the four " +
-					"JavaScript lockfiles, Cargo, uv, Poetry, composer, Gemfile.lock, pip-compile's " +
-					"`# via` annotations and a CycloneDX SBOM all carry the graph. Where the file " +
-					"does not say, this says so and hands over the package manager's own command — " +
-					"`go mod why`, `pnpm why`, `cargo tree --invert` — with the package already in it.",
+				Description: "Answers the question an advisory raises second: did we ask for this, or did something " +
+					"else pull it in, and if so what. Reads the same manifests as audit.deps and draws the " +
+					"package at the root with everything that requires it beneath, up to the dependencies the " +
+					"project asks for by name. Nothing is resolved, installed or fetched. go.mod marks a " +
+					"require direct or indirect and stores no edges; the JavaScript lockfiles, Cargo, uv, " +
+					"Poetry, composer, Gemfile.lock, pip-compile's `# via` annotations and a CycloneDX SBOM " +
+					"carry the graph. Where the file does not say, this says so and hands over the package " +
+					"manager's own command (`go mod why`, `pnpm why`, `cargo tree --invert`) with the package " +
+					"already in it.",
 				Inputs: []plugin.Field{
 					{Name: "package", Type: plugin.String, Positional: true, Required: true,
 						Help: "the package to trace, as the lockfile spells it"},
@@ -313,19 +293,15 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Idempotent: true,
 				Detailed:   true,
 				NoPreview:  true,
-				Description: "Every pod cluster-wide, checked against three Pod Security Standards " +
-					"controls: a privileged container (fail), hostNetwork/hostPID/hostIPC (fail), and " +
-					"whether anything in the pod asserts non-root — neither the pod nor any container " +
-					"sets runAsNonRoot or a non-zero runAsUser (warn). Init and ephemeral containers are " +
-					"graded exactly as main ones, because the standards' restricted fields name all three " +
-					"lists; a row for one says so. The non-root check approximates " +
-					"Kubernetes' own securityContext merge rather than fully simulating it: a pod that " +
-					"asserts non-root at the pod level and never overrides it per container is not " +
-					"flagged, which is the common, correct case; one relying only on an image's own " +
-					"non-root USER with no Kubernetes-level assertion at all is. Cites CWE-250 and " +
-					"Kubernetes Pod Security Standards.\n\nA namespace narrows which pods are read, and the " +
-					"clean result says so — it reports that no pod in that namespace is affected, never " +
-					"that no pod in the cluster is.",
+				Description: "Every pod cluster-wide, checked against three Pod Security Standards controls: a " +
+					"privileged container (fail), hostNetwork/hostPID/hostIPC (fail), and whether anything in " +
+					"the pod asserts non-root (warn), meaning that neither the pod nor any container sets " +
+					"runAsNonRoot or a non-zero runAsUser. Init and ephemeral containers count as main ones. " +
+					"The non-root check approximates Kubernetes' securityContext merge rather than simulating " +
+					"it: a pod that asserts non-root at the pod level and never overrides it per container is " +
+					"not flagged, while one relying only on an image's own non-root USER is. A namespace " +
+					"narrows which pods are read, and a clean result says so, never that no pod in the " +
+					"cluster is affected.",
 				Scope:  "namespace",
 				Inputs: []plugin.Field{namespaceField(), contextField()},
 				Run:    runKubePodSecurity,
@@ -370,17 +346,14 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Idempotent: true,
 				Detailed:   true,
 				NoPreview:  true,
-				Description: "The control plane's version, every node's kubelet, and the release each " +
-					"running image's tag names, graded against endoflife.date the way `eol.check` " +
-					"grades one product: past its end of life fails, within warn-days of it warns, " +
-					"supported passes with the date. An image is recognised by its name — postgres, " +
-					"redis, nginx — through the catalogue's own aliases, and its tag read as a " +
-					"release: 15.4 is postgresql 15, v1.35.3+k3s1 is kubernetes 1.35, bookworm is " +
-					"debian 12. Images endoflife.date does not track, tags that name no release, " +
-					"and digests with no tag are each reported once rather than guessed at. Cites " +
-					"CWE-1104.\n\nNarrowed to a namespace it grades that namespace's images and the " +
-					"control plane; nodes belong to no namespace and are not examined, which the " +
-					"result says rather than leaves implied.",
+				Description: "The control plane's version, every node's kubelet and the release each running image's " +
+					"tag names, graded against endoflife.date as `eol.check` grades one product: past its end " +
+					"of life fails, within warn-days of it warns, supported passes with the date. An image is " +
+					"recognised by its name through the catalogue's aliases and its tag read as a release " +
+					"(15.4 is postgresql 15, bookworm is debian 12). Images endoflife.date does not track, " +
+					"tags that name no release and digests with no tag are each reported once rather than " +
+					"guessed at. Narrowed to a namespace it grades that namespace's images and the control " +
+					"plane; nodes belong to no namespace and are not examined, which the result says.",
 				Scope:  "namespace",
 				Inputs: []plugin.Field{namespaceField(), contextField(), warnDaysField()},
 				Run:    runKubeEOL,

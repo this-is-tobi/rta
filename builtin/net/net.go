@@ -59,18 +59,14 @@ func Plugin() plugin.Plugin {
 				Safety:       plugin.Read,
 				HostSpecific: true,
 				Idempotent:   true,
-				Description: "Every TCP and UDP socket this machine has open for business, with the " +
-					"address it is bound to, how far that reaches (loopback, one address, or all " +
-					"interfaces) and the process behind it.\n\n" +
-					"Two honest limits. **UDP has no listening state** — a bound UDP socket is in no " +
-					"state at all — so a socket with a port and no peer is shown whether it is a " +
-					"server waiting or a resolver with a query in flight; the kernel does not tell " +
-					"them apart and neither does netstat. And **the answer is only as complete as " +
-					"the caller's privileges**, differently on each platform: Linux reads the whole " +
-					"socket table from /proc but can only name the process behind sockets it may " +
-					"look into, so the Process column empties; macOS reads through lsof, which shows " +
-					"only what the caller may see, so the row is absent entirely. Neither platform " +
-					"silently substitutes one for the other.",
+				Description: "Every TCP and UDP socket this machine has open for business, with the address it is " +
+					"bound to, how far that reaches (loopback, one address, or all interfaces) and the " +
+					"process behind it. Two limits. UDP has no listening state, so a socket with a port and " +
+					"no peer is shown whether it is a server waiting or a resolver with a query in flight; " +
+					"the kernel does not tell them apart. And the answer is only as complete as the caller's " +
+					"privileges: Linux reads the whole socket table but can only name the process behind " +
+					"sockets it may look into, so the Process column empties; macOS reads through lsof, which " +
+					"shows only what the caller may see, so the row is absent entirely.",
 				Inputs: []plugin.Field{
 					{Name: "port", Type: plugin.Int, Min: 1, Max: 65535,
 						Help: "only this port — the \"who has 8080\" question"},
@@ -117,11 +113,9 @@ func Plugin() plugin.Plugin {
 				// configures it.
 				NeedsGrant: true,
 				Scope:      "name",
-				Description: "A `type` of auto (the default) asks the question you usually mean: A, AAAA and " +
-					"CNAME for a name, PTR for an address. `server` sends the query to a specific " +
-					"resolver instead of the system one, which is how you tell \"the record is wrong\" " +
-					"apart from \"my resolver is stale\". With `detail`: the query, the resolver that " +
-					"answered, and how long it took.",
+				Description: "A `type` of auto (the default) asks the question you usually mean: A, AAAA and CNAME for " +
+					"a name, PTR for an address. The system resolver answers unless the operator has set " +
+					"another. With `detail`: the query, the resolver that answered, and how long it took.",
 				Inputs: []plugin.Field{
 					{Name: "name", Type: plugin.String, Positional: true, Required: true,
 						Suggest: suggestHostnames, Help: "name or IP address to resolve"},
