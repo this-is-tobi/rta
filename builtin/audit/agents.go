@@ -244,7 +244,7 @@ func runClients(ctx context.Context, req plugin.Request, catalog func() []plugin
 		}, r.Grade()...)
 		return r.Page(ctx, req, agentsGroupOrder, view.KeyValue{Pairs: summary}), nil
 	}
-	return r.Table(true), nil
+	return r.TableFor(req.Surface(), true), nil
 }
 
 // auditFileMode grades who else on this machine can read the file.

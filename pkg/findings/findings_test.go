@@ -107,6 +107,25 @@ func TestALinkSurvivesClipping(t *testing.T) {
 	}
 }
 
+// The compact bound is a layout decision for a row that is one line of a
+// terminal. A model has no line to fit, and was handed the next step an audit
+// recommends cut off mid-word.
+func TestAModelIsHandedEachDetailWhole(t *testing.T) {
+	long := strings.Repeat("run osv-scanner against this project for reachability. ", 6)
+	r := &Report{}
+	r.Add(grpInventory, "next step", Info, long, refVulnerableDep)
+
+	detail := func(tbl view.Table) string { return tbl.Rows[0][columnIndex(t, tbl, "Detail")] }
+	if got := detail(r.TableFor(plugin.SurfaceMCP, false)); got != strings.TrimSpace(long) {
+		t.Errorf("over MCP the detail was cut: %q", got)
+	}
+	for _, sf := range []plugin.Surface{plugin.SurfaceCLI, plugin.SurfaceTUI} {
+		if got := detail(r.TableFor(sf, false)); !strings.HasSuffix(got, "…") {
+			t.Errorf("%v: a long detail was not clipped to a line: %q", sf, got)
+		}
+	}
+}
+
 // The column is earned, not always present: an audit with nothing to link to
 // must not spend width on an empty column, which is exactly the width the
 // prose beside it needed on a narrow terminal.

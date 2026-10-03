@@ -24,6 +24,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/this-is-tobi/rta/pkg/format"
+	"math"
 	"strconv"
 	"strings"
 
@@ -158,6 +159,20 @@ func (r *Report) linked() bool {
 // Table is the compact one-table view: one line per finding, and with
 // summary the overall grade as the first row.
 func (r *Report) Table(summary bool) view.Table { return r.build(summary, compactDetail) }
+
+// TableFor is Table for the surface that asked. Over MCP a detail is sent
+// whole: the bound is a layout decision, a row that is one screen line, and a
+// model has no screen. It cost the part that says what to do: audit_deps
+// ended its one next step on "Run osv-scanner, trivy or grype ag…", and the
+// only way to the rest was the detail page, many times the size, whose rows
+// are clipped too. What could run away is the producer's to bound (Clip), and
+// the bridge bounds what is sent in all.
+func (r *Report) TableFor(sf plugin.Surface, summary bool) view.Table {
+	if sf == plugin.SurfaceMCP {
+		return r.build(summary, math.MaxInt)
+	}
+	return r.Table(summary)
+}
 
 // section is one group of a detail page, which is a different promise from
 // the compact table and needs a different bound.

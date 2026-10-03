@@ -201,7 +201,7 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 	if req.Bool("detail") {
 		return detailedWeb(ctx, req, r, u, resp)
 	}
-	return r.Table(true), nil
+	return r.TableFor(req.Surface(), true), nil
 }
 
 // auditTLSConfig is the client side of an audit's handshake: every protocol
