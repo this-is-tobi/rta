@@ -560,3 +560,70 @@ func TestTheTUIChapterNamesEveryColourAThemeBlockTakes(t *testing.T) {
 		}
 	}
 }
+
+// The table of where rta keeps things is the one page a person opens to find a
+// file, and a row written from a branch that had not landed named a directory
+// (`plugins/run/`) and a seal key (`profile.key`) that no code on this tree
+// ever creates, so a reader looked for them and found the data directory
+// without. Each file or directory the section names is held to the source:
+// every segment of it has to appear as a quoted string in code that is not a
+// test, which is how rta spells a path it builds. Looser than resolving the
+// path, as the check on cited pages is, and for the same reason: it cannot say
+// where a file is, only that nothing in rta could have made one by that name.
+func TestTheFilesTheInstallationPageSaysRtaKeepsAreNamesRtaUses(t *testing.T) {
+	root := repoRoot(t)
+	page := readDoc(t, root, "docs/10-getting-started/10-installation.md")
+	_, section, ok := strings.Cut(page, "## Where rta keeps things")
+	if !ok {
+		t.Fatal("docs/10-getting-started/10-installation.md no longer has a `Where rta keeps things` section; if it moved, move this test with it")
+	}
+	section, _, _ = strings.Cut(section, "\n## ")
+
+	var src strings.Builder
+	for _, dir := range []string{"cmd", "internal", "pkg", "builtin"} {
+		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			body, err := os.ReadFile(path)
+			src.Write(body)
+			return err
+		})
+		if err != nil {
+			t.Fatalf("reading the source under %s: %v", dir, err)
+		}
+	}
+
+	checked := 0
+	for _, m := range regexp.MustCompile("`([^`\n]+)`").FindAllStringSubmatch(section, -1) {
+		name := m[1]
+		if strings.ContainsAny(name, "~$< ") || !(strings.Contains(name, ".") || strings.HasSuffix(name, "/")) {
+			continue
+		}
+		segments := strings.Split(strings.Trim(name, "/"), "/")
+		for _, segment := range segments {
+			if segment == "" || segment == "." {
+				continue
+			}
+			checked++
+			if !strings.Contains(src.String(), `"`+segment+`"`) {
+				t.Errorf("the installation page says rta keeps `%s`, and nothing in rta's source spells %q", name, segment)
+			}
+		}
+		// A directory under another is built as Join(data, "plugins", "store"),
+		// and each word alone is in the source for some other reason: "run"
+		// is a verb, so `plugins/run/` passed the check above.
+		if len(segments) > 1 {
+			joined := `"` + strings.Join(segments, `",\s*"`) + `"`
+			if !regexp.MustCompile(joined).MatchString(src.String()) && !strings.Contains(src.String(), strings.Trim(name, "/")) {
+				t.Errorf("the installation page says rta keeps `%s`, and nothing in rta's source builds that path", name)
+			}
+		}
+	}
+	if checked < 15 {
+		t.Fatalf("checked %d names in the section; has its table changed shape?", checked)
+	}
+}
