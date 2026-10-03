@@ -43,8 +43,7 @@ func Plugin() plugin.Plugin {
 				// ruinous in a home directory. fs.tree is the fs tile: same
 				// question, bounded by construction.
 				NoPreview: true,
-				Description: "Totals every entry under a path and ranks them, which is the question " +
-					"`du -sh * | sort -h | tail` is always asked to answer. Directories are summed " +
+				Description: "Totals every entry under a path and ranks them. Directories are summed " +
 					"recursively; the share column is of the scanned total, not of the disk, so it " +
 					"adds up to what you are looking at. A size is the disk a file takes, as du " +
 					"counts it: a sparse file by what is written, and a file with several hard " +
@@ -81,8 +80,8 @@ func Plugin() plugin.Plugin {
 				// already showed.
 				Detailed: true,
 				Description: "The shape of a directory, a few levels at a time, with each entry's " +
-					"size beside it. Entries are ordered directories first and then by name, the " +
-					"order a person reads a listing in. Truncated branches say how many entries they " +
+					"size beside it. Entries are ordered directories first and then by name. " +
+					"Truncated branches say how many entries they " +
 					"are hiding rather than trailing off, so the tree never claims a directory is " +
 					"smaller than it is. With `detail`: what the walk covered, the tree, and " +
 					"everything it left out — depth, per-directory limit, hidden entries, mount " +

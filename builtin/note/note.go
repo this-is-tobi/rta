@@ -231,11 +231,8 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "note.reopen", Summary: "Reopen a checked note", Safety: plugin.Write, Idempotent: true,
-				Flash: true,
-				Description: "The undo for `note.done`. Checking off the wrong note is a " +
-					"one-keystroke mistake, and a list you cannot take something back out of is a " +
-					"list people stop trusting. Re-opening an already-open note is a no-op, not an " +
-					"error.",
+				Flash:       true,
+				Description: "The undo for `note.done`. Re-opening an already-open note is a no-op, not an error.",
 				Inputs: []plugin.Field{
 					{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "note id",
 						Suggest: suggestDoneIDs},

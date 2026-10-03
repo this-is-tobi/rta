@@ -154,7 +154,7 @@ func Plugin() plugin.Plugin {
 			{
 				ID: "kv.get", Summary: "Reveal a stored value", Safety: plugin.Write, Idempotent: true,
 				NeedsGrant: true, Scope: "key",
-				Description: "Reveals a stored value. Classified as a write, because revealing a secret is the " +
+				Description: "Classified as a write, because revealing a secret is the " +
 					"sensitive act: an agent needs a grant naming the key it may read, issued by a person. A " +
 					"grant authorizes revealing a value, not choosing where on this machine it gets written, " +
 					"so the value comes back in the response.",
@@ -222,7 +222,7 @@ func Plugin() plugin.Plugin {
 				ID: "kv.set", Summary: "Set (or overwrite) a stored value", Safety: plugin.Write, Idempotent: true,
 				Flash:      true,
 				NeedsGrant: true, Scope: "key",
-				Description: "Sets or overwrites a stored value, given as `value`; a call with none is refused unless " +
+				Description: "The value is given as `value`; a call with none is refused unless " +
 					"its `description` or `kind` relabel an entry that already exists, which leaves the " +
 					"secret and both timestamps untouched, so correcting what something is for does not reset " +
 					"the age kv.list reports. The kind (certificate, private key, json, file, string) is " +
@@ -286,7 +286,7 @@ func Plugin() plugin.Plugin {
 				// under another — a rename grant for one prod key plus a
 				// read grant for scratch/ read that prod key.
 				ScopeAlso: []string{"new-name"},
-				Description: "Renames a key, keeping its value and its history. The entry moves inside the store, the " +
+				Description: "The entry moves inside the store, the " +
 					"value is never decrypted into anything but memory, and its description, kind, source and " +
 					"timestamps travel with it: the one way to rename that reveals nothing, where kv.get, " +
 					"kv.set and kv.rm took two grants and put the secret in the open. A name already taken is " +
@@ -359,7 +359,7 @@ func Plugin() plugin.Plugin {
 			{
 				ID: "kv.init", Summary: "Set up how the store is encrypted", Safety: plugin.Write,
 				Idempotent: true,
-				Description: "Chooses how the store is encrypted, once. `generate` makes a dedicated age key for this " +
+				Description: "Done once. `generate` makes a dedicated age key for this " +
 					"store and uses it: no passphrase to type, and unlike an SSH login key, one whose loss " +
 					"costs this store and nothing else. A passphrase store needs no init, which is what the " +
 					"store is by default. Locking it to a key that already exists, or adding readers, is the " +
@@ -386,7 +386,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "kv.rekey", Summary: "Change which keys can open the store", Safety: plugin.Destructive,
-				Description: "Changes which keys can open the store: it is decrypted and written back under a new set, " +
+				Description: "The store is decrypted and written back under a new set of keys, " +
 					"the one operation that changes who can read what is already stored. Adding is the " +
 					"default: `generate` makes a dedicated age key and leaves the existing readers alone, so " +
 					"a store locked to an SSH key gains one that needs no passphrase. `only` makes the set " +
