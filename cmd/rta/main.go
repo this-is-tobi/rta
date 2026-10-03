@@ -159,7 +159,11 @@ func main() {
 	// not installed yet, one file shared across machines — and refusing to
 	// start over it would make config a liability rather than a convenience.
 	// `rta doctor` reports them.
-	cfg, cfgErr := config.LoadFile()
+	//
+	// Load rather than LoadFile because this one read is also the tree's: it
+	// goes to NewRoot below, which wants RTA_OUTPUT laid over the file, and
+	// nothing between here and there writes the config back.
+	cfg, cfgErr := config.Load()
 	if cfgErr != nil {
 		fmt.Fprintln(os.Stderr, "rta:", cfgErr)
 	}
@@ -172,7 +176,7 @@ func main() {
 	// color, never the run.
 	app.SetThemeProblems(theme.Apply(cfg.Theme))
 
-	root := app.NewRoot(reg, buildVersion())
+	root := app.NewRoot(reg, buildVersion(), app.WithConfig(cfg, cfgErr))
 	interrupts.Attach(root, host.CloseAll)
 
 	err = fang.Execute(ctx, root,
