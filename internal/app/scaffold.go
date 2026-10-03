@@ -426,7 +426,7 @@ One declaration in ` + "`" + `main.go` + "`" + ` becomes:
 
 - **` + "`" + `Safety` + "`" + ` is a claim about blast radius**, not a label. ` + "`" + `Read` + "`" + ` is free for
   agents; ` + "`" + `Write` + "`" + ` and ` + "`" + `Destructive` + "`" + ` each cost a grant a person issued
-  (` + "`" + `rta grant allow {{.Name}} --ttl 30m` + "`" + `), pinned to your plugin's digest.
+  (` + "`" + `rta grant allow {{.Name}} --agent claude --ttl 30m` + "`" + `), pinned to your plugin's digest.
 - **Return a ` + "`" + `view.Error` + "`" + `, not a bare error**, when you can. The code is stable
   enough to branch on and the hint is what the person does next.
 - **Your process is confined on macOS.** It cannot read or write rta's own data

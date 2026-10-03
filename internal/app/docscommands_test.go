@@ -204,6 +204,33 @@ func TestEveryCommandTheDocsSpellParsesAsWritten(t *testing.T) {
 	}
 }
 
+// A grant is for one agent, and `rta grant allow` fills the name in only when
+// this machine knows exactly one: on a fresh install it knows none and refuses
+// with grant.noagent, and for a remote server (`--server`) it never fills one
+// in at all. So an example that leaves `--agent` off is one that fails the
+// first time it is copied, which is how the remote-server example and the
+// README every new plugin is scaffolded with came to say it for years after
+// the other pages learned to. Prose naming the command (`rta grant allow
+// kv.get` as the whole-store form) is not an example and is not read.
+func TestEveryGrantAnExampleIssuesNamesItsAgent(t *testing.T) {
+	root := repoRoot(t)
+	issue := regexp.MustCompile("rta grant allow[^`\n]*")
+	for _, page := range markdownPages(t, root) {
+		for _, line := range shellLines(readDoc(t, root, page)) {
+			if strings.HasPrefix(line.text, "rta grant allow") && !strings.Contains(line.text, "--agent") {
+				t.Errorf("%s:%d: `%s` names no --agent", page, line.line, line.text)
+			}
+		}
+	}
+	for name, body := range scaffoldFiles() {
+		for _, span := range issue.FindAllString(body, -1) {
+			if !strings.Contains(span, "--agent") {
+				t.Errorf("the scaffolded %s tells a plugin's author to run `%s`, which names no --agent", name, span)
+			}
+		}
+	}
+}
+
 // shellLines is every logical line of every shell fence, a backslash
 // continuation joined onto the line it continues, and the inline code spans
 // outside a fence that run rta in its image, with the line it began on. Not
