@@ -397,20 +397,9 @@ func share(size, total int64) string {
 	return fmt.Sprintf("%.1f%%", float64(size)*100/float64(total))
 }
 
-// humanBytes formats a size the way a person reads one. Binary units, because
+// humanBytes formats a size the way a person reads one: binary units, because
 // that is what every other size in this tool reports.
-func humanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for m := n / unit; m >= unit && exp < 5; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
-}
+func humanBytes(n int64) string { return format.Bytes(n) }
 
 // resolvePath expands ~ and makes the path absolute, so that every message
 // names the same thing the caller would name.
