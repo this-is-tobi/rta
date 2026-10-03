@@ -209,6 +209,34 @@ func TestProductsListsEverythingWithoutATerm(t *testing.T) {
 	}
 }
 
+func TestProductsListsOnlyTheFirstFewAndSaysHowManyThereAre(t *testing.T) {
+	srv := newCatalogueServer(t)
+	tbl := productsTable(t, srv.URL, map[string]any{"limit": 2})
+	if len(tbl.Rows) != 2 || tbl.Total != 3 {
+		t.Errorf("rows = %v, total = %d, want the first two of three", tbl.Rows, tbl.Total)
+	}
+}
+
+func TestProductsListsFiftyByDefault(t *testing.T) {
+	var body strings.Builder
+	for i := range 60 {
+		if i > 0 {
+			body.WriteString(",")
+		}
+		fmt.Fprintf(&body, `{"name":"product-%02d","label":"Product %02d","category":"lang","aliases":[],"tags":[]}`, i, i)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"result":[%s]}`, body.String())
+	}))
+	t.Cleanup(srv.Close)
+
+	tbl := productsTable(t, srv.URL, nil)
+	if len(tbl.Rows) != 50 || tbl.Total != 60 {
+		t.Errorf("%d rows of %d, want the first 50 of 60: a call with no term costs the whole catalogue",
+			len(tbl.Rows), tbl.Total)
+	}
+}
+
 func TestProductsNarrowsByCategory(t *testing.T) {
 	srv := newCatalogueServer(t)
 	tbl := productsTable(t, srv.URL, map[string]any{"category": "os"})

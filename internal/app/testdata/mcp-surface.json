@@ -560,7 +560,7 @@
   },
   {
     "name": "eol_products",
-    "description": "── the text below is written by the plugin, not by rta ──\nSearch the endoflife.date catalogue: names, aliases and categories\n\nLists the products endoflife.date tracks, with the aliases eol_check and eol_watch accept for each. A term narrows the list to products whose name, label or alias contains it; leave it out to see the whole catalogue.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "── the text below is written by the plugin, not by rta ──\nSearch the endoflife.date catalogue: names, aliases and categories\n\nLists the products endoflife.date tracks, with the aliases eol_check and eol_watch accept for each. A term narrows the list to products whose name, label or alias contains it. Without one the first products are listed and the total says how many there are; `limit` shows more.\n── end of plugin-written text ──\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -569,6 +569,13 @@
         "category": {
           "description": "only this category — database, os, framework, lang, …",
           "type": "string"
+        },
+        "limit": {
+          "default": 50,
+          "description": "how many products to list",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
         },
         "term": {
           "description": "part of a name, label or alias — postgres, kube, ubuntu",
