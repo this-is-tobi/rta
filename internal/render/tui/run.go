@@ -366,7 +366,7 @@ func (m *Model) refreshInPlace(c plugin.Capability, values map[string]any, yes b
 		// own promise is that the result already shown stays until a new
 		// one lands, which a resolve failure is not a reason to break on
 		// top of everything else.
-		m.flash = verr.Message
+		m.refuse(verr.Message)
 		m.tickGen++
 		gen := m.tickGen
 		return tea.Tick(tileRefreshInterval, func(time.Time) tea.Msg { return tickMsg{gen: gen} })

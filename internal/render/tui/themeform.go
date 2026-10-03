@@ -236,7 +236,7 @@ func (tf *themeForm) preview() string {
 func (m Model) startThemeForm() (tea.Model, tea.Cmd) {
 	cfg, err := config.LoadFile()
 	if err != nil {
-		m.flash = "theme not opened: " + err.Error()
+		m.refuse("theme not opened: " + err.Error())
 		return m, nil
 	}
 	m.themeForm = newThemeForm(cfg.Theme)
@@ -273,7 +273,7 @@ func (m Model) saveTheme() (tea.Model, tea.Cmd) {
 		cfg.Theme = overrides
 		return cfg, true
 	}); err != nil {
-		m.flash = "theme not saved: " + err.Error()
+		m.refuse("theme not saved: " + err.Error())
 		return m, nil
 	}
 
