@@ -8,7 +8,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"math/big"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -87,6 +90,19 @@ func serveChain(t *testing.T, chain []*x509.Certificate, key *ecdsa.PrivateKey) 
 	return ln.Addr().String()
 }
 
+func bundleFile(t *testing.T, chain []*x509.Certificate) string {
+	t.Helper()
+	var b []byte
+	for _, c := range chain {
+		b = append(b, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})...)
+	}
+	path := filepath.Join(t.TempDir(), "bundle.pem")
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func expiryRows(t *testing.T, r plugin.Request) [][]string {
 	t.Helper()
 	v, err := runExpiry(context.Background(), r)
@@ -127,5 +143,24 @@ func TestExpiryGradesTheChainNotTheLeaf(t *testing.T) {
 		"targets": []string{serveChain(t, gone, gkey)}, "warn-days": 30, "timeout": 5,
 	}))[0]; !strings.HasPrefix(row[3], "EXPIRED") || !strings.Contains(row[3], "intermediate inter") {
 		t.Errorf("status = %q, want EXPIRED naming the intermediate", row[3])
+	}
+}
+
+// At a terminal a target that is a file is read, so "which of my certificate
+// files end soon" is one command. Over MCP it is still dialled and refused as
+// the file path it is: targets is a StringSlice the path gate cannot hook, and
+// reading a path through it would answer for anywhere on the machine.
+func TestExpiryReadsCertificateFilesAtATerminalOnly(t *testing.T) {
+	chain, _ := chainOf(t, 80*day, 2*day, 400*day)
+	path := bundleFile(t, chain)
+	values := map[string]any{"targets": []string{path}, "warn-days": 30, "timeout": 2}
+
+	row := expiryRows(t, req(values))[0]
+	if !strings.HasPrefix(row[3], "WARN <30d") || !strings.Contains(row[3], "intermediate inter") {
+		t.Errorf("a file at a terminal: status = %q, want the bundle graded", row[3])
+	}
+	row = expiryRows(t, req(values).WithSurface(plugin.SurfaceMCP))[0]
+	if !strings.Contains(row[3], "file path") || row[1] != "-" {
+		t.Errorf("a file over MCP: %v, want it refused as a file path and not read", row)
 	}
 }

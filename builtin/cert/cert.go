@@ -170,7 +170,8 @@ func Plugin() plugin.Plugin {
 					"the leaf and the intermediates the host sends, and the one that ends first " +
 					"sets the date and the status, which names it when it is not the leaf; a root " +
 					"sent along is the client's store to judge. It trusts nothing: `cert.inspect` " +
-					"is where a chain is judged.\n\n" +
+					"is where a chain is judged. At a terminal a target may also be a PEM or DER file " +
+					"(a bundle is graded the same way); over MCP it is never read.\n\n" +
 					"Over MCP it needs a grant, one per host listed, for the reason `net.probe` does: " +
 					"the hosts are the caller's choice, and what a certificate says about itself — " +
 					"subject, issuer, DNS names — is read as tool output the same way a banner is.",
@@ -914,7 +915,7 @@ func runExpiry(ctx context.Context, req plugin.Request) (view.View, error) {
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				rows[i] = expiryRow(ctx, targets[i], warnDays, timeout)
+				rows[i] = expiryRow(ctx, req, targets[i], warnDays, timeout)
 			}
 		}()
 	}
@@ -945,8 +946,8 @@ feed:
 
 // expiryRow grades one target. An unreachable host is a row saying so rather
 // than an error that throws away the thirty-nine hosts that did answer.
-func expiryRow(ctx context.Context, target string, warnDays int, timeout time.Duration) []string {
-	chain, state, verr := expiryChain(ctx, target, timeout)
+func expiryRow(ctx context.Context, req plugin.Request, target string, warnDays int, timeout time.Duration) []string {
+	chain, state, verr := expiryChain(ctx, req, target, timeout)
 	if verr != nil {
 		return []string{target, "-", "-", "ERROR: " + verr.Message}
 	}
@@ -971,20 +972,34 @@ func expiryRow(ctx context.Context, target string, warnDays int, timeout time.Du
 	}
 }
 
-// expiryChain is where a target's certificates come from: a host is dialled.
-// `targets` is a StringSlice, which the MCP path gate cannot hook because it
-// only looks at Field.Path, so a file branch here answered "does this path
-// exist, is it PEM, is it readable, is it a directory" for anywhere on the
-// machine while its sibling cert.inspect was refused for the same string.
-func expiryChain(ctx context.Context, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, *view.Error) {
-	dial := target
-	if host, isURL, verr := urlTarget(target); isURL {
-		if verr != nil {
-			return nil, nil, verr
+// expiryChain is where a target's certificates come from. A host is dialled on
+// every surface. A path is read only at a terminal, where the person typing it
+// owns the machine and `rta cert expiry /etc/ssl/*.pem` is the first thing an
+// operator asks of a certificate checker: which of my files end soon.
+//
+// **Never over MCP, where it was removed on purpose.** `targets` is a
+// StringSlice, which the MCP path gate cannot hook because it only looks at
+// Field.Path, so a file branch here answered "does this path exist, is it PEM,
+// is it readable, is it a directory" for anywhere on the machine while its
+// sibling cert.inspect was refused for the same string. A path over MCP is
+// still dialled, and refused as the file path it is; cert.inspect and cert.chain
+// are what read a certificate file there, under the server's roots.
+func expiryChain(ctx context.Context, req plugin.Request, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, *view.Error) {
+	var chain []*x509.Certificate
+	var state *tls.ConnectionState
+	var err error
+	if req.Surface() == plugin.SurfaceMCP {
+		dial := target
+		if host, isURL, verr := urlTarget(target); isURL {
+			if verr != nil {
+				return nil, nil, verr
+			}
+			dial = host
 		}
-		dial = host
+		chain, state, err = dialCerts(ctx, dial, timeout)
+	} else {
+		chain, state, err = loadCerts(ctx, req, target, timeout)
 	}
-	chain, state, err := dialCerts(ctx, dial, timeout)
 	if err != nil {
 		return nil, nil, view.AsError(err, "cert.load")
 	}
