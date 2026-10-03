@@ -1,6 +1,6 @@
 # Quick start
 
-Ten minutes, three surfaces. Nothing here needs configuration and nothing here writes to your machine.
+Ten minutes, three surfaces. Nothing here needs configuration, and nothing changes anything outside rta's own data directory until step 5, which registers rta with your AI client.
 
 ## 1. Ask it something
 
