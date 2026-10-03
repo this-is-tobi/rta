@@ -1,4 +1,4 @@
-// Command rta is the Rule Them All CLI.
+// Command rta is the RTA command line.
 package main
 
 import (
