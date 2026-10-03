@@ -48,11 +48,40 @@ func TestRemotesListsWhereTheRepositoryReaches(t *testing.T) {
 	}
 	// What this repository knows, from the refs a fetch left behind — never
 	// from a network call.
-	if got := rows["origin"][2]; got != "2" {
+	if got := rows["origin"][3]; got != "2" {
 		t.Errorf("origin branches = %q, want 2", got)
 	}
-	if got := rows["fork"][2]; got != "0" {
+	if got := rows["fork"][3]; got != "0" {
 		t.Errorf("fork branches = %q, want 0 — never fetched is a fact, not a gap", got)
+	}
+}
+
+// A remote's URLs say what git does with each: it fetches from the first url
+// and no other, and pushes to every pushurl where one is set and to every url
+// where none is. Two rows of one name that differ in a few characters did not
+// say which one a push reaches, the mistake this capability exists to catch.
+func TestEachURLOfARemoteSaysWhatGitUsesItFor(t *testing.T) {
+	machineConfig(t, "")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial commit")
+	writeFile(t, dir, ".git/config", "[core]\n\tbare = false\n"+
+		"[remote \"plain\"]\n\turl = https://a.example/r.git\n"+
+		"[remote \"split\"]\n\turl = https://b.example/r.git\n\turl = https://unused.example/r.git\n"+
+		"\tpushurl = https://c.example/r.git\n"+
+		"[remote \"both\"]\n\turl = https://d.example/r.git\n\turl = https://e.example/r.git\n"+
+		"[remote \"bare\"]\n\tfetch = +refs/heads/*:refs/remotes/bare/*\n")
+
+	var got []string
+	for _, r := range table(t, runRemotes, req(t, dir, nil)).Rows {
+		got = append(got, r[0]+" "+r[1]+" ["+r[2]+"]")
+	}
+	want := []string{
+		"bare  []", "both https://d.example/r.git [fetch, push]", "both https://e.example/r.git [push]",
+		"plain https://a.example/r.git [fetch, push]", "split https://b.example/r.git [fetch]",
+		"split https://unused.example/r.git []", "split https://c.example/r.git [push]",
+	}
+	if strings.Join(got, "; ") != strings.Join(want, "; ") {
+		t.Errorf("rows = %q, want %q", got, want)
 	}
 }
 
@@ -165,10 +194,10 @@ func TestARemoteSetInAnyFileGitReadsIsListedWhereItsScopeIsShown(t *testing.T) {
 
 	cli := table(t, runRemotes, req(t, dir, nil))
 	if got, want := fmt.Sprint(cli.Rows), fmt.Sprint([][]string{
-		{"corp", "https://bob:" + view.Mask + "@corp.example/r.git", "0", filepath.Join(home, ".gitconfig")},
-		{"inner", "https://inner.example/r.git", "0", ".git/shared.cfg"},
-		{"origin", "https://mirror.example/r.git", "1", ".git/config"},
-		{"origin", "https://push.example/r.git", "1", filepath.Join(home, "more.gitconfig")},
+		{"corp", "https://bob:" + view.Mask + "@corp.example/r.git", "fetch, push", "0", filepath.Join(home, ".gitconfig")},
+		{"inner", "https://inner.example/r.git", "fetch, push", "0", ".git/shared.cfg"},
+		{"origin", "https://mirror.example/r.git", "fetch", "1", ".git/config"},
+		{"origin", "https://push.example/r.git", "push", "1", filepath.Join(home, "more.gitconfig")},
 	}); got != want {
 		t.Errorf("at a terminal, git.remotes rows = %s, want %s", got, want)
 	}
@@ -192,8 +221,8 @@ func TestARemoteSetInAnyFileGitReadsIsListedWhereItsScopeIsShown(t *testing.T) {
 
 	mcp := table(t, runRemotes, mcpReq(t, dir, dir))
 	if got, want := fmt.Sprint(mcp.Rows), fmt.Sprint([][]string{
-		{"inner", "https://inner.example/r.git", "0", ".git/shared.cfg"},
-		{"origin", "https://slow.example/r.git", "1", ".git/config"},
+		{"inner", "https://inner.example/r.git", "fetch, push", "0", ".git/shared.cfg"},
+		{"origin", "https://slow.example/r.git", "fetch, push", "1", ".git/config"},
 	}); got != want {
 		t.Errorf("over MCP, git.remotes rows = %s, want %s", got, want)
 	}
