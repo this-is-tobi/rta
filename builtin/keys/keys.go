@@ -75,8 +75,8 @@ func Plugin() plugin.Plugin {
 					"exactly as if they had the file, with no passphrase of their own to guess. Classified as " +
 					"a write for the same reason `kv.get` is: revealing key material is the sensitive act, not " +
 					"changing anything. Never an MCP tool rather than only requiring a grant — the " +
-					"same precedent grant.allow/grant.revoke set, for the same reason `share.secret.set/get` " +
-					"will: once melted, the words work forever until the underlying key is rotated, with no " +
+					"same precedent grant.allow and grant.revoke set, for the same reason: once the " +
+					"words exist they work forever until the underlying key is rotated, with no " +
 					"per-call log and nothing a grant's expiry can take back. ed25519 only: the algorithm has " +
 					"a single 32-byte seed to encode; RSA and ECDSA keys do not.",
 				Inputs: []plugin.Field{
@@ -93,7 +93,7 @@ func Plugin() plugin.Plugin {
 				Safety: plugin.Write, Idempotent: true, HumanOnly: true,
 				Description: "ed25519 and nothing else, which is the same rule keys.backup " +
 					"already enforces from the other end: a key generated here can always be " +
-					"melted into words, and one that could not would be a key this plugin " +
+					"turned into words, and one that could not would be a key this plugin " +
 					"cannot do its own job on. Writes <out> at 0600 and <out>.pub at 0644, " +
 					"refusing to touch either if it already exists — the discipline keys.restore " +
 					"uses, for the sharper reason here: overwriting a private key destroys access " +
