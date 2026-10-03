@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,62 @@ func TestDiffCommitShowsWhatThatCommitChanged(t *testing.T) {
 	}
 	if !strings.Contains(body, "a.txt") {
 		t.Errorf("diff does not name the changed file:\n%s", body)
+	}
+}
+
+// A change of mode is a change, shown as git shows it: the two mode lines and
+// no hunk. The status lists the path, and the diff said nothing of it, so a
+// script that gained its execute bit, or lost it, was a change the answer to
+// "what changed in them" left out. A new executable file is added as one, and
+// a repository whose filesystem keeps no such bit (core.fileMode off) shows
+// no mode change at all, as git shows none.
+func TestDiffShowsAChangeOfMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no execute bit here")
+	}
+	machineConfig(t, "")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "run.sh", "#!/bin/sh\n", "first")
+	if err := os.Chmod(filepath.Join(dir, "run.sh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "tool.sh", "#!/bin/sh\n")
+	if err := os.Chmod(filepath.Join(dir, "tool.sh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add("tool.sh"); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "empty.txt", "")
+
+	body := text(t, runDiff, req(t, dir, nil))
+	for _, want := range []string{
+		"diff --git a/empty.txt b/empty.txt\nnew file mode 100644\n",
+		"diff --git a/run.sh b/run.sh\nold mode 100644\nnew mode 100755\n",
+		"diff --git a/tool.sh b/tool.sh\nnew file mode 100755\n",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the diff does not hold %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "--- a/run.sh") {
+		t.Errorf("a change of mode alone has hunk headers:\n%s", body)
+	}
+
+	cfg, err := repo.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Raw.Section("core").SetOption("filemode", "false")
+	if err := repo.Storer.SetConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if body := text(t, runDiff, req(t, dir, nil)); strings.Contains(body, "old mode") {
+		t.Errorf("with core.fileMode off the diff still shows a change of mode:\n%s", body)
 	}
 }
 

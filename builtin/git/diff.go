@@ -10,6 +10,7 @@ import (
 	"os"
 	pathpkg "path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"syscall"
@@ -861,6 +862,8 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 	if err != nil {
 		return nil, view.Errorf("git.diff.failed", "%v", err)
 	}
+	configs, cerr := gitConfigs(ctx, req, repo)
+	trustMode := trustsFileMode(configs, cerr)
 	files := newWorkingFiles(tree)
 	patches := make([]diff.FilePatch, 0, len(status))
 	var large []string
@@ -926,7 +929,7 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 		// still the answer: it returned on the first, so an untracked link to
 		// a directory — bazel-out, a `current` pointing at a release — left
 		// the caller with no patch at all, for a file git diffs as one line.
-		fp, coarsely, ferr := diffOneFile(tree, head, path, disk, deadline, req.LinkTarget)
+		fp, coarsely, ferr := diffOneFile(tree, head, path, disk, deadline, req.LinkTarget, trustMode)
 		// The gate's refusal at the open is named as the gate's refusal by
 		// name above is: rta's own state reached by another name — a hard
 		// link, or the file moved onto this one — is refused by the file's
@@ -963,6 +966,23 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 			" are named rather than diffed") + "\n"
 	}
 	return textOrEmpty(body), nil
+}
+
+// trustsFileMode reports whether the execute bit of a file on disk is read as
+// git reads it: core.fileMode, as the last of configs that sets it has it,
+// which git sets off in a repository made on a filesystem that keeps no such
+// bit, and which is off by default on Windows.
+func trustsFileMode(configs []scopedConfig, cerr error) bool {
+	on := runtime.GOOS != "windows"
+	if cerr != nil {
+		return on
+	}
+	for _, f := range configs {
+		if core := f.config.Raw.Section("core"); core.HasOption("filemode") {
+			on = gitBool(core.Option("filemode"))
+		}
+	}
+	return on
 }
 
 // changedPaths is every path the status holds a change for, in the order git
@@ -1063,7 +1083,7 @@ func sideSizes(repo *git.Repository, head *headFiles, path string, disk os.FileI
 // cut the matching of its lines short. tell is what the caller may be told a
 // link holds (readWorktreeEntry).
 func diffOneFile(tree boundDir, head *headFiles, path string, disk os.FileInfo, deadline time.Time,
-	tell func(dir, target string) string,
+	tell func(dir, target string) string, trustMode bool,
 ) (fp diff.FilePatch, coarsely bool, err error) {
 	var from *diffFile
 	oldContent := ""
@@ -1086,14 +1106,40 @@ func diffOneFile(tree boundDir, head *headFiles, path string, disk os.FileInfo, 
 			return nil, false, err
 		}
 		newContent = content
-		if mode == filemode.Regular && from != nil && from.mode != filemode.Symlink {
-			mode = from.mode
+		// The execute bit is the file's own, as git reads it, unless the
+		// filesystem is one where git is told not to trust it (core.fileMode
+		// off, and the default on Windows): then the mode HEAD has stands, as
+		// it did for every file. A script that gained its bit was a change the
+		// diff did not show, beside a status that listed it.
+		if mode == filemode.Regular {
+			switch {
+			case trustMode && disk.Mode().Perm()&0o111 != 0:
+				mode = filemode.Executable
+			case trustMode:
+			case from != nil && from.mode != filemode.Symlink:
+				mode = from.mode
+			}
 		}
 		to = &diffFile{path: path, hash: plumbing.ZeroHash, mode: mode}
 	}
 
 	if oldContent == newContent {
-		return nil, false, nil
+		// **The same text is not the same change.** A file made executable,
+		// a file added with nothing in it and one emptied and removed all have
+		// the text they had, and are changes git shows as headers with no
+		// lines: `old mode 100644 / new mode 100755`, `new file mode 100644`.
+		// Dropped here, git.status listed the path and git.diff said nothing of
+		// it, so a script that gained its execute bit or a file that appeared
+		// empty was a change the answer to "what changed in them" left out.
+		switch {
+		case from == nil && to == nil, from != nil && to != nil && from.mode == to.mode:
+			return nil, false, nil
+		case from != nil && to != nil:
+			// The same content, so the same blob: the encoder then writes the
+			// mode lines and nothing else, as git does for a mode-only change.
+			to.hash = from.hash
+		}
+		return &filePatch{from: from, to: to}, false, nil
 	}
 	if isBinary(oldContent) || isBinary(newContent) {
 		return &filePatch{from: from, to: to, binary: true}, false, nil
