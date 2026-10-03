@@ -99,6 +99,12 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 				summary += ", " + format.CountOf(len(ignored), "ignore file") + " not applied"
 			}
 			add("working tree", summary)
+		default:
+			// Said, where it was left out: a tile with no working-tree line
+			// reads as a repository with nothing to report on, which is the
+			// answer for a bare one and not for a checkout whose status could
+			// not be read.
+			add("working tree", "unreadable — "+statusFailed("git.status.failed", err).Message)
 		}
 	}
 
