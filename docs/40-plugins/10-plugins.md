@@ -29,6 +29,33 @@ Every one of them draws the same line in the same place: the read tier describes
 
 A capability ships built into `rta` when it needs no credential and no configuration, brings nothing outside the standard library, and reaches either nothing or one fixed public host that no input can redirect — `eol.check` asks endoflife.date, the `audit` plugin asks OSV and endoflife.date, and neither can be pointed anywhere else. It is a plugin the moment any of that stops being true: a client library the people who never use it should not carry, a credential location it has to declare, or a destination the caller chooses, which is the line `http.get` sits behind a grant for. Every plugin in rta-plugins fails at least one of those tests, and that is what put it there; `eol` passed all of them, and that is what brought it here.
 
+What is built in, with a first command for each. `rta plugin list` is the same inventory with a count of capabilities and the highest safety class each carries, and `rta explain <plugin>` lists what is under one.
+
+| Plugin | What it is for | A first command |
+| --- | --- | --- |
+| `sys` | Host telemetry: CPU, memory, disk, load, processes | `rta sys overview` |
+| `net` | Network diagnostics: ping, DNS, ports, hosts file | `rta net dns github.com` |
+| `http` | Request any endpoint and inspect the response — a REST client | `rta http get https://example.com` |
+| `cert` | X.509 and TLS inspection: certificates, chains, expiry | `rta cert expiry example.com` |
+| `fs` | Filesystem answers: what is using space, what is here, what is this file | `rta fs usage ~/Downloads` |
+| `git` | Structured views of a git repository — status, log, diff, branches, blame, config, hooks | `rta git status` |
+| `audit` | Security hardening checks, each graded against a named OWASP/CWE control | `rta audit web example.com` |
+| `kv` | Encrypted local store for secrets, certificates and key files | `rta kv init --generate` |
+| `note` | Local notebook: capture, tag, cross-link, schedule, break down, check off | `rta note add "renew the certificate"` |
+| `gen` | Generate passwords, tokens and UUIDs — offline, crypto/rand only | `rta gen password` |
+| `codec` | Mechanical encode/decode: base64, hex, URL escaping, JWT and JWK inspection | `rta codec b64 hello` |
+| `time` | Read an instant in every form worth having: epoch, UTC, local, a named zone | `rta time at` |
+| `eol` | Support windows and end-of-life dates, via endoflife.date | `rta eol check go` |
+| `pkg` | What is outdated on this machine — every package manager, your own binaries, the OS — and one upgrade at a time | `rta pkg overview` |
+| `keys` | Back up an SSH private key as memorizable words, and restore it | `rta keys list` |
+| `debug` | Explain terminal escape sequences, and the characters that hide themselves | `rta debug ansi` |
+| `grant` | Permissions for AI agents that expire on their own | `rta grant list` |
+| `agent` | What AI agents asked rta for, what they got, and what is waiting on you | `rta agent log` |
+| `lock` | Freeze one principal now — the instant path when revoking and restarting are too slow | `rta lock list` |
+| `operator` | Your identity for managing remote rta servers: a key only your passphrase can use | `rta operator status` |
+
+The last four are rta's own boundary rather than something it inspects, and each has a chapter: [grants](../30-boundary/30-grants.md), [the record](../30-boundary/40-audit-trail.md), [locks](../30-boundary/20-mcp.md#locks-the-instant-no) and [the operator channel](../30-boundary/20-mcp.md#the-operator-channel).
+
 ## Getting the first-party ones
 
 ```bash

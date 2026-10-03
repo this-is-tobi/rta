@@ -91,6 +91,25 @@ func TestTheDocsNameEveryBuiltInPlugin(t *testing.T) {
 	}
 }
 
+// The README names the built-in plugins and `rta plugin list` prints them, but
+// no page said what `http`, `time`, `keys` or `debug` are for, or how to start
+// with one: a reader of the docs alone met their names and nothing else. The
+// plugins page carries a table of them, and it says what each is for in the
+// plugin's own words, held here to the declaration rather than to a copy of it
+// that a rewording would leave behind.
+func TestThePluginsPageSaysWhatEveryBuiltInPluginIsFor(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("building the built-in registry: %v", err)
+	}
+	body := readDoc(t, repoRoot(t), "docs/40-plugins/10-plugins.md")
+	for _, p := range reg.Plugins() {
+		if !strings.Contains(body, "| `"+p.Name+"` | "+p.Summary+" | `rta "+p.Name+" ") {
+			t.Errorf("docs/40-plugins/10-plugins.md has no row for the built-in plugin %s saying %q and giving a first command", p.Name, p.Summary)
+		}
+	}
+}
+
 // The whole-store backups the first-party plugins declare, listed by hand now
 // that their source lives in rta-plugins and cannot be read from this tree.
 // The other half of the old check — that each receipt carries a `does not
