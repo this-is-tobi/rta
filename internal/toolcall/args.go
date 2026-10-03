@@ -189,15 +189,30 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 	// noise for whoever has to read two of them.
 	sort.Strings(unknown)
 	quoted := make([]string, len(unknown))
+	var respelled []string
 	for i, name := range unknown {
 		quoted[i] = fmt.Sprintf("%q", name)
+		// Tool names are snake_case and argument names are kebab-case, so a
+		// model that has just called kv_rename writes new_name for what the
+		// schema calls new-name. Said as a spelling, naming the declared
+		// argument it is another spelling of, which is a name already in the
+		// schema and never a Local input's, since declared holds none of
+		// those. The call is still refused: accepting the other spelling
+		// would be a wider gate.
+		if kebab := strings.ReplaceAll(name, "_", "-"); kebab != name && declared[kebab] {
+			respelled = append(respelled, fmt.Sprintf("%q is spelled %q", name, kebab))
+		}
 	}
 	plural := ""
 	if len(unknown) > 1 {
 		plural = "s"
 	}
+	hint := acceptedHint(c)
+	if len(respelled) > 0 {
+		hint = strings.Join(respelled, ", ") + "; " + hint
+	}
 	return view.Errorf("core.mcp.badargs", "unknown argument%s: %s", plural, strings.Join(quoted, ", ")).
-		WithHint(acceptedHint(c))
+		WithHint(hint)
 }
 
 // held is the host's refusal of v for f, or nil: plugin.CheckInputs over
