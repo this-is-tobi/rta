@@ -113,7 +113,7 @@ kv store   info   unlocks from this environment — an MCP server started here
 If you locked the store with `--generate` or an identity that is available in your shell, then a server started from that shell **can** open it. That is not a bug; it is what "no passphrase to type" means. What bounds it is grants:
 
 ```bash
-rta grant allow kv.get db-password --ttl 15m --max-uses 1
+rta grant allow kv.get db-password --agent claude --ttl 15m --max-uses 1
 ```
 
 Without a grant naming it, an agent's `kv.get` is refused and the refusal is written down.
