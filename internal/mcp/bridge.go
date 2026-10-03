@@ -88,11 +88,16 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 		},
 	})
 
-	known := map[string]bool{}
+	offered := make([]plugin.Capability, 0, len(reg.Capabilities()))
+	opts.tools = map[string]bool{}
 	for _, c := range reg.Capabilities() {
-		if !opts.exposed(c) || !opts.remoteExposed(c) {
-			continue
+		if opts.exposed(c) && opts.remoteExposed(c) {
+			offered = append(offered, c)
+			opts.tools[c.ID] = true
 		}
+	}
+	known := map[string]bool{}
+	for _, c := range offered {
 		server.AddTool(toolDef(c, opts), handler(c, opts, reg))
 		known[plugin.ToolName(c.ID)] = true
 	}

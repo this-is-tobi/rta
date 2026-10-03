@@ -40,6 +40,10 @@ type Options struct {
 	// pace holds a caller whose calls keep succeeding to a rate the record can
 	// keep up with — see pacer. Set by NewServer unless a test supplied one.
 	pace *pacer
+	// tools is the capability IDs this server offers, so that a description
+	// naming one can say what a model calls it (nameTools). Set by NewServer;
+	// nil in a unit test that builds one tool, where nothing is renamed.
+	tools map[string]bool
 
 	// Session is the id this process stamps on every ledger entry, and
 	// Connected is told the client's announced name once the MCP handshake
