@@ -150,17 +150,21 @@ That is reported, and it matters most in the direction you would actually hit it
 ## Reaching things that are not directly reachable
 
 ```yaml
-plugins:
-  pg:
-    kube: staging/db/svc/postgres:5432
+profiles:
+  staging:
+    plugins:
+      pg:
+        kube: staging/db/svc/postgres:5432
 ```
 
 A call filled from that connection runs through a `kubectl port-forward` that rta raises and tears down again. The plugin sees an ordinary local address and never learns a tunnel was there — which is why no service plugin needs changing to gain this.
 
 ```yaml
-plugins:
-  pg:
-    ssh: bastion.example.com/db.internal:5432
+profiles:
+  staging:
+    plugins:
+      pg:
+        ssh: bastion.example.com/db.internal:5432
 ```
 
 The same fact, spelled for a service behind a jump host rather than in a cluster. The head is an `~/.ssh/config` alias, and everything your SSH config says about it keeps working — rta shells out to `ssh`.
@@ -174,13 +178,15 @@ A connection states **at most one** of `kube` and `ssh`; both at once is refused
 ### When the far side speaks TLS on its own
 
 ```yaml
-plugins:
-  vault:
-    kube: homelab/vault-operator-system/svc/vault:8200
-    tunnelTLS: true
-    set:
-      ca-file: ~/.config/rta/vault-ca.crt
-      tls-server-name: vault.vault-operator-system.svc
+profiles:
+  homelab:
+    plugins:
+      vault:
+        kube: homelab/vault-operator-system/svc/vault:8200
+        tunnelTLS: true
+        set:
+          ca-file: ~/.config/rta/vault-ca.crt
+          tls-server-name: vault.vault-operator-system.svc
 ```
 
 `kubectl port-forward` and `ssh -L` are both a raw byte pipe from `127.0.0.1` straight into whatever the destination socket speaks — neither terminates a request the way a proxy would. So the plain `http://` a forward fills in by default is correct for the ordinary case (a plaintext service behind a TLS-secured cluster or bastion hop) and silently wrong for a service whose own listener speaks TLS, Vault's being the common example: the forward carries the TLS bytes through unchanged, and a plain HTTP client sending a request into them gets a connection that closes with nothing readable back.
@@ -205,12 +211,14 @@ The field is named for what it mirrors, plugin by plugin, rather than one word f
 For a directly-reached server — a managed Postgres, an on-prem instance with no forward in front of it — `sslmode` is exactly what `set:` states:
 
 ```yaml
-plugins:
-  pg:
-    host: pg.example.internal
-    set:
-      sslmode: verify-ca
-      sslrootcert: ~/.config/rta/pg-ca.crt
+profiles:
+  managed:
+    plugins:
+      pg:
+        set:
+          host: pg.example.internal
+          sslmode: verify-ca
+          sslrootcert: ~/.config/rta/pg-ca.crt
 ```
 
 **`sslmode` does not follow `sslrootcert`, and a CA beside a mode that would not verify against it is refused.** `sslmode`'s own default, `prefer`, never verifies the server in pgx whatever CA it is given, and libpq — which `pg_dump`, `psql` and `pg_restore` run on — verifies under it and then retries in plaintext when verification fails; `require` verifies only because a file is there, and stops without a word the day the file is dropped. So a CA beside either is refused before anything dials, as `pg.tls.ca.unused` and `pg.tls.ca.implied`, naming the mode to set instead: `verify-ca` checks the server's chain against the CA, and `verify-full` its name as well. `verify-ca` with no `sslrootcert` is refused too, since pgx would then check the chain against this machine's own store and read no name, and `sslrootcert: system`, this machine's own store, is taken beside `verify-full` alone. This is deliberate rather than a gap: which axis to move — the CA, how strict to be about it — is two separate decisions, and silently elevating one because the other was set would be a second, undocumented way `sslmode`'s value changes (the codebase already argues against exactly that kind of surprise — see the type-coercion section below), so the refusal says which mode to set rather than setting it. Set both, as above.
