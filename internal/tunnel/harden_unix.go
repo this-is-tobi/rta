@@ -16,6 +16,7 @@ func harden(cmd *exec.Cmd) {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
 	cmd.SysProcAttr.Setpgid = true
+	deathSignal(cmd.SysProcAttr)
 }
 
 // reap signals the whole group, not just the leader.

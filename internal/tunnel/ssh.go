@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -216,7 +217,8 @@ func probeSSH(ctx context.Context, name string, spec sshSpec, tun *Tunnel) *view
 				"a destination that never closes an idle connection can also park this probe",
 				spec.dest, spec.host))
 	}
-	if err := cmd.Start(); err != nil {
+	exited, err := startPinned(cmd, false)
+	if err != nil {
 		// A context already ended is refused by os/exec in its own words, and
 		// it is the deadline's, not ssh's — see openInstrumented.
 		if ctx.Err() != nil {
@@ -224,8 +226,6 @@ func probeSSH(ctx context.Context, name string, spec sshSpec, tun *Tunnel) *view
 		}
 		return view.Errorf("tunnel.open.failed", "could not start ssh: %v", err)
 	}
-	exited := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(exited) }()
 
 	waitCtx, cancel := context.WithTimeout(ctx, openCeiling)
 	defer cancel()
@@ -280,6 +280,11 @@ func (t *Tunnel) acceptSSH(ctx context.Context, spec sshSpec) {
 func (t *Tunnel) spliceSSH(ctx context.Context, spec sshSpec, conn net.Conn) {
 	defer t.served.Done()
 	defer func() { _ = conn.Close() }()
+	// The thread that starts the child is the one its parent-death signal is
+	// tied to (startPinned), so this goroutine keeps it until the child has
+	// been waited for.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	cmd := exec.CommandContext(ctx, sshBin, sshArgs(spec)...)
 	// Pipes rather than `cmd.Stdin = conn; cmd.Stdout = conn`, and WaitDelay
 	// is not an alternative here: when it fires it closes os/exec's own pipes
