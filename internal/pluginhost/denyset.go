@@ -162,7 +162,8 @@ type DenySet struct {
 	// literal directory entry, leaving everything inside it alone.
 	NoMove []string
 	// Own is the launched artifact's own directory, readable again under the
-	// denial that covers it. Empty for a plugin found anywhere but the store.
+	// denial that covers it. Empty for a plugin run from anywhere but a store
+	// or the private copy stage makes of one found elsewhere.
 	//
 	// **On macOS a process that cannot read its own directory cannot verify
 	// a TLS certificate.** Proven with a plain Go binary under
@@ -243,8 +244,8 @@ func ResolveAllowing(granted []plugin.Need) (DenySet, error) {
 }
 
 // Launching is d for one launch: the artifact's own directory readable when
-// it lies inside the managed store or the system root's, and d unchanged
-// otherwise. See Own.
+// it lies inside the managed store, the system root's or the directory staged
+// copies are run from, and d unchanged otherwise. See Own.
 //
 // Validated like every other entry, because it is rendered into the same
 // policy string — and refused rather than dropped for the same reason
@@ -252,7 +253,7 @@ func ResolveAllowing(granted []plugin.Need) (DenySet, error) {
 // noticed shrinking, in either direction.
 func (d DenySet) Launching(exe string) (DenySet, error) {
 	dir := filepath.Dir(exe)
-	stores := withTarget(ManagedStore())
+	stores := append(withTarget(ManagedStore()), withTarget(ManagedRun())...)
 	if system := SystemStore(); system != "" {
 		stores = append(stores, withTarget(system)...)
 	}

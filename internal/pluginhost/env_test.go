@@ -84,7 +84,7 @@ func TestTheLaunchedCommandCarriesOnlyTheAllowlist(t *testing.T) {
 	if err != nil {
 		t.Skip("no env(1)")
 	}
-	id, err := Identify(env)
+	id, err := Identify(scriptRunning(t, env))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestTheLaunchedCommandCarriesOnlyTheAllowlist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := buildCmd(id, deny, nil)
+	cmd := stagedCmd(t, id, deny, nil)
 	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("running the built command: %v", err)
