@@ -2,7 +2,7 @@
 
 An encrypted local store for the things you keep re-pasting: database passwords, API tokens, certificates, private key files.
 
-It is `age`-backed, it lives beside your config, and it never writes a value to a log, an argv or the terminal unless you ask it to.
+It is `age`-backed, it lives in rta's data directory beside your grants (`kv status` prints the path), and it never writes a value to a log, an argv or the terminal unless you ask it to. The one thing that sits beside your config instead is the dedicated key `kv init --generate` makes.
 
 ```bash
 rta kv set db-password
