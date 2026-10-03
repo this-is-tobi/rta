@@ -78,7 +78,7 @@ func pluginDocView(p plugin.Plugin) (view.View, *view.Error) {
 	}
 	page := view.Sections{Items: []view.Section{
 		{View: view.Text{Body: head, Markdown: true}},
-		{Title: "Capabilities", View: catalogView(reg)},
+		{Title: "Capabilities", View: catalogView(reg.Capabilities())},
 	}}
 	if cfg := configKeysView(reg, p); cfg != nil {
 		page.Items = append(page.Items, view.Section{Title: "Configuration", View: cfg})

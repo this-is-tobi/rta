@@ -28,6 +28,47 @@ func TestExplainCatalog(t *testing.T) {
 	}
 }
 
+// A plugin's name, or the start of one of its nested IDs, is asked about as
+// often as a capability is: `rta explain sys` was "unknown capability" over
+// three of the plugin's eight, picked in no order — `sys.cpu, sys.temp, sys.ps`
+// for `sys.`, a different three for `sys`. What is under it is the answer.
+func TestExplainListsWhatIsUnderAPluginOrAPrefix(t *testing.T) {
+	reg, _ := NewRegistry()
+	for arg, c := range map[string]struct{ want, notWant []string }{
+		"sys":       {[]string{"sys.cpu", "sys.disk", "sys.host", "sys.load", "sys.mem", "sys.overview", "sys.ps", "sys.temp"}, []string{"net.dns", "note.add"}},
+		"sys.":      {[]string{"sys.cpu", "sys.temp"}, []string{"net.dns"}},
+		"net.hosts": {[]string{"net.hosts.add", "net.hosts.list", "net.hosts.rm", "net.hosts.toggle"}, []string{"net.dns", "net.info"}},
+	} {
+		out, _, err := run(t, reg, "explain", arg)
+		if err != nil {
+			t.Fatalf("rta explain %s: %v", arg, err)
+		}
+		for _, want := range c.want {
+			if !strings.Contains(out, want) {
+				t.Errorf("rta explain %s: %q is missing:\n%s", arg, want, out)
+			}
+		}
+		for _, notWant := range c.notWant {
+			if strings.Contains(out, notWant) {
+				t.Errorf("rta explain %s: %q is not under it:\n%s", arg, notWant, out)
+			}
+		}
+	}
+	// A word that is no prefix of anything is still an unknown capability.
+	if _, _, err := run(t, reg, "explain", "syss"); err == nil {
+		t.Error("`rta explain syss` listed something")
+	}
+	// And suggestions that score alike come in the registry's order, not in
+	// whatever order an unstable sort left them: eight capabilities tied for a
+	// word that matched only the plugin's name were offered as `sys.cpu,
+	// sys.temp, sys.ps`.
+	_, errOut, err := run(t, reg, "explain", "sys.zz")
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Hint != "did you mean: sys.cpu, sys.disk, sys.host" {
+		t.Errorf("tied suggestions for sys.zz: %v (stderr %q)", err, errOut)
+	}
+}
+
 func TestExplainCard(t *testing.T) {
 	reg, _ := NewRegistry()
 	out, _, err := run(t, reg, "explain", "net.port")
