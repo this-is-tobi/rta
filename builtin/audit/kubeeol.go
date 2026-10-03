@@ -154,9 +154,9 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 	}
 
 	if !req.Bool("detail") {
-		return r.Table(true), nil
+		return r.TableFor(req.Surface(), true), nil
 	}
-	return r.Page(ctx, req, kubeGroupOrder5, r.Table(true)), nil
+	return r.Page(ctx, req, kubeGroupOrder5, r.TableFor(req.Surface(), true)), nil
 }
 
 // grader looks each product up once and grades versions against it.

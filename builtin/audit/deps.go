@@ -123,7 +123,7 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 		summary = append(summary, depsDeeper(req.Surface(), remoteLabel(path), gitclone.IsRemote(path), shown)...)
 		return r.Page(ctx, req, depsGroupOrder, view.KeyValue{Pairs: summary}), nil
 	}
-	return r.Table(true), nil
+	return r.TableFor(req.Surface(), true), nil
 }
 
 // How much of a chain is worth printing. Three explanations, eight links: a

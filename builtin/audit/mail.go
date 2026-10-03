@@ -73,7 +73,7 @@ func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 		summary = append(summary, mailDeeper(domain)...)
 		return r.Page(ctx, req, mailGroupOrder, view.KeyValue{Pairs: summary}), nil
 	}
-	return r.Table(true), nil
+	return r.TableFor(req.Surface(), true), nil
 }
 
 // mailDomain accepts what people have to hand: a domain, an address they were
