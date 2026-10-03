@@ -238,6 +238,12 @@ func loadCerts(ctx context.Context, req plugin.Request, target string, timeout t
 	// DNS lookup of that path, in the middle of an agent's error. A live host
 	// is cert.expiry's, which needs a grant.
 	if req.Surface() == plugin.SurfaceMCP {
+		// A file that is there and cannot be read is said to be, as it is at a
+		// terminal: "no certificate file" of one the server may not open sent
+		// the caller looking for a path that was right.
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, nil, view.Errorf("cert.file.unreadable", "reading %s: %v", target, err)
+		}
 		return nil, nil, view.Errorf("cert.file.notfound", "no certificate file at %s", target).
 			WithHint("over MCP this reads a PEM or DER file under the server's roots and dials no host; " +
 				"cert.expiry checks a live host, with a grant")
