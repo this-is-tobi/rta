@@ -33,6 +33,34 @@ func writeHook(t *testing.T, dir, name string, executable bool) {
 	}
 }
 
+// What git would run comes first and the samples last. `git init` leaves
+// fourteen samples in every repository, and in the directory's own order the
+// one hook that runs on every commit was the seventh row of sixteen, in the
+// middle of what never runs.
+func TestHooksListsWhatRunsBeforeWhatDoesNot(t *testing.T) {
+	machineConfig(t, "")
+	dir, repo := testRepo(t)
+	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
+	for _, name := range []string{"applypatch-msg.sample", "commit-msg.sample", "update.sample"} {
+		writeHook(t, dir, name, false)
+	}
+	writeHook(t, dir, "pre-commit", true)
+	writeHook(t, dir, "post-merge", false)
+	writeHook(t, dir, "pre-push", true)
+
+	var got []string
+	for _, r := range table(t, runHooks, req(t, dir, nil)).Rows {
+		got = append(got, r[0]+"="+r[1])
+	}
+	want := []string{
+		"pre-commit=active", "pre-push=active", "post-merge=disabled",
+		"applypatch-msg=sample", "commit-msg=sample", "update=sample",
+	}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("hooks = %v, want %v", got, want)
+	}
+}
+
 // PlainInit writes no hook templates at all (unlike the real git binary,
 // which drops in *.sample files for every hook git knows about) — this
 // fixture builds all three states by hand rather than relying on any of
