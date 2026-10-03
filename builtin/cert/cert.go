@@ -93,35 +93,36 @@ func Plugin() plugin.Plugin {
 		Summary: "X.509 and TLS inspection: certificates, chains, expiry",
 		Capabilities: []plugin.Capability{
 			{
-				ID:         "cert.inspect",
-				Summary:    "Show certificate details for a host or PEM file",
-				Safety:     plugin.Read,
-				Idempotent: true,
-				Inputs:     []plugin.Field{targetField, timeoutField},
-				Run:        runInspect,
+				ID:          "cert.inspect",
+				Summary:     "Show certificate details for a host or PEM file",
+				Safety:      plugin.Read,
+				Idempotent:  true,
+				Description: overMCPReadsAFile,
+				Inputs:      []plugin.Field{targetField, timeoutField},
+				Run:         runInspect,
 			},
 			{
-				ID:         "cert.chain",
-				Summary:    "Show the certificate chain presented by a host",
-				Safety:     plugin.Read,
-				Idempotent: true,
-				Inputs:     []plugin.Field{targetField, timeoutField},
-				Run:        runChain,
+				ID:          "cert.chain",
+				Summary:     "Show the certificate chain presented by a host",
+				Safety:      plugin.Read,
+				Idempotent:  true,
+				Description: overMCPReadsAFile,
+				Inputs:      []plugin.Field{targetField, timeoutField},
+				Run:         runChain,
 			},
 			{
 				ID:         "cert.pem",
 				Summary:    "Print the certificate chain as PEM",
 				Safety:     plugin.Read,
 				Idempotent: true,
-				Description: "The certificates as PEM, the form a Kubernetes ConfigMap, a Dockerfile COPY or " +
-					"`update-ca-certificates` takes, where `cert.chain` draws them to be read. `include` " +
-					"chooses which: chain (the default) is everything the host presented, leaf the end-entity " +
+				Description: "The certificates as PEM, for a ConfigMap, a Dockerfile COPY or " +
+					"`update-ca-certificates`; `cert.chain` draws them to be read. `include` chooses " +
+					"which: chain (the default) is everything the host presented, leaf the end-entity " +
 					"certificate alone, and issuers the chain without the leaf, which is what a ca-bundle " +
 					"behind a private CA has to hold. A presented chain is what the host chose to send and " +
-					"may be incomplete, since a server that omits its intermediate presents a leaf that " +
-					"validates nowhere else; this reports what arrived rather than filling the gap from a " +
-					"trust store, because a bundle that silently differs from what the server serves is how a " +
-					"working local test hides a broken deployment. The PEM comes back in the response.",
+					"may be incomplete: this reports what arrived rather than filling the gap from a trust " +
+					"store, so a bundle never silently differs from what the server serves. The PEM comes " +
+					"back in the response. " + overMCPReadsAFile,
 				Inputs: []plugin.Field{
 					targetField,
 					{Name: "include", Type: plugin.String, Config: "include", Default: "chain",
@@ -318,6 +319,12 @@ func looksLikeFile(target string) bool {
 	}
 	return false
 }
+
+// overMCPReadsAFile is what the tools that take a host or a file say of the
+// one an agent has: their summaries name a host, and an agent that sends one
+// is refused, having chosen the tool by its first line.
+const overMCPReadsAFile = "Over MCP it reads a PEM or DER file under the server's roots and dials no host; " +
+	"`cert.expiry` checks a live host, with a grant."
 
 // dialCerts fetches the peer chain from a live host, and never touches the
 // filesystem.
