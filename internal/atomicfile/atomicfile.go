@@ -23,6 +23,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/this-is-tobi/rta/internal/shutdown"
@@ -78,13 +79,49 @@ func ReadCapped(path string, max int) ([]byte, error) {
 	return data, nil
 }
 
-// openFile is os.Open and lstatFile is os.Lstat, overridable so a test can
+// openFile is openRegular and lstatFile is os.Lstat, overridable so a test can
 // refuse a read or a check the way Windows refuses one while another handle is
 // open — see waitingOut.
 var (
-	openFile  = os.Open
+	openFile  = openRegular
 	lstatFile = os.Lstat
 )
+
+// errNotRegular is the refusal of a path that names something other than a
+// regular file: a refusal that does not clear, so it is not waited out.
+var errNotRegular = errors.New("is not a regular file")
+
+// openRegular opens path to read, if it names a regular file, and never waits
+// for one that does not.
+//
+// **A named pipe put where a state file goes held every read of it for good.**
+// The files read here sit in a directory something other than rta can write
+// to, which is why ReadCapped bounds what it takes from them, and a bound on
+// the size does nothing for an open that does not return: open(2) on a FIFO
+// waits for a writer, no context reaches into a syscall, and each read pinned
+// an OS thread, until the runtime aborted the process at its ten-thousandth.
+// The name that mattered is the lock list, which is read before every call an
+// agent makes and is not there on a machine with no locks, so it can be
+// created by something that could not replace a file that was: with a pipe at
+// it, no call was answered, the free reads among them. Opened without
+// waiting, and refused unless it is a regular file, as the paths a caller names
+// are (builtin/internal/pathin).
+func openRegular(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, &fs.PathError{Op: "read", Path: path, Err: errNotRegular}
+	}
+	return f, nil
+}
 
 // waitingOut runs a query about a path until the platform stops refusing it for
 // a reason that resolves on its own.
@@ -114,14 +151,14 @@ var (
 // instead of going round again, and plugintrust's read — which treats any
 // failure as an empty list — would have answered that nothing is trusted.
 //
-// A missing file is returned on the first attempt rather than waited out,
-// because it is an answer and not a refusal: Publish's contract rests on "it
-// existed for the Link and was gone for the Read" arriving at once, and pacing
-// that would put this whole budget between every contended acquire and its
-// retry. Every other error is retried, for the reason Replace gives — naming a
-// sharing violation means naming a platform's error numbers in a path that
-// runs on all of them — and a lasting refusal costs under a second before it is
-// reported unchanged.
+// A missing file, and one that is not a regular file, are returned on the first
+// attempt rather than waited out, because each is an answer and not a refusal:
+// Publish's contract rests on "it existed for the Link and was gone for the
+// Read" arriving at once, and pacing that would put this whole budget between
+// every contended acquire and its retry. Every other error is retried, for the
+// reason Replace gives — naming a sharing violation means naming a platform's
+// error numbers in a path that runs on all of them — and a lasting refusal
+// costs under a second before it is reported unchanged.
 func waitingOut(query func() error) error {
 	var err error
 	for _, wait := range contendedWaits {
@@ -131,7 +168,7 @@ func waitingOut(query func() error) error {
 		if err = query(); err == nil {
 			return nil
 		}
-		if errors.Is(err, fs.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, errNotRegular) {
 			return err
 		}
 	}

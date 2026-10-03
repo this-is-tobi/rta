@@ -66,6 +66,11 @@ import (
 
 const stateFile = "guard.json"
 
+// maxStateFile bounds a read of the guard's state: a key and the roster of an
+// operators file are a few kilobytes, and what is read here is a file a process
+// that cannot read the directory can still write to.
+const maxStateFile = 256 << 10
+
 // ScryptWorkFactor overrides age's default passphrase hardening, exactly as
 // builtin/kv/crypt.go does for the store: the default work factor is the
 // point in production and a tax in a test loop. Zero keeps age's default.
@@ -201,10 +206,16 @@ func Enabled() bool {
 // load reads and parses the state, refusing corruption loudly.
 func load() (state, *view.Error) {
 	var st state
-	data, err := os.ReadFile(Path())
-	if err != nil {
+	data, err := atomicfile.ReadCapped(Path(), maxStateFile)
+	if errors.Is(err, os.ErrNotExist) {
 		return st, view.Errorf("core.guard.off", "the guard is not enabled").
 			WithHint("rta grant guard on")
+	}
+	// Anything else is a file that is there and cannot be taken for the
+	// guard's: a named pipe put at the name held the server's start for good
+	// (atomicfile.openRegular), where Enabled had already said it was on.
+	if err != nil {
+		return st, corruptState()
 	}
 	if err := json.Unmarshal(data, &st); err != nil {
 		return st, corruptState()
