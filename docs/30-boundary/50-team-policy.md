@@ -105,7 +105,7 @@ roles:
       - pg.query --profile staging
 ```
 
-`rta grant issue dev --agent claude` issues every line, under one passphrase, and every line is capped by the ceiling above it — a role cannot exceed the policy it sits in, by construction; `rta grant roles` says what window each role will really get under it, since the starter file's one-hour `maxTTL` caps an eight-hour role to one. See [roles](./30-grants.md#roles-a-days-grants-under-one-word) for the commands.
+`rta grant issue dev --agent claude` issues every line, under one passphrase, and every line is capped by the ceiling above it — a role cannot exceed the policy it sits in, by construction; `rta grant roles` says what window each role will really get under it, since the starter file's one-hour `maxTTL` caps an eight-hour role to one. See [roles](./30-grants.md#roles-a-day-of-grants-under-one-word) for the commands.
 
 This is the one block in the file that a hostile edit could use to widen something rather than narrow it: not by granting — nothing here grants — but by changing the list a person issues with one word. So a role from this file is issued at the command line only: `grant issue` prints the lines before the guard's passphrase asks for them, and with the guard off it wants `--yes`, after `rta grant roles <name>`. A role in your own config or policy file, or in a file you named with `RTA_POLICY`, asks nothing extra. The same name in two files is refused, not resolved by precedence. And a key the file does not have — `nevr:` for `never:` — refuses the whole file rather than silently dropping a bound.
 

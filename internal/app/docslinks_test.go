@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // A relative link between two docs files is the one kind of rot nothing here
@@ -16,9 +17,10 @@ import (
 // that matters is the first time the tree is reorganised.
 //
 // So this walks every one of them and opens what it points at. File existence
-// only, deliberately — not anchors: heading-to-slug rules differ between the
-// site generator and GitHub, and a check that fires on punctuation nobody got
-// wrong would be turned off within a week, taking the useful half with it.
+// only, deliberately: heading-to-slug rules differ between the site generator
+// and GitHub, and a check that fired on punctuation nobody got wrong would be
+// turned off within a week, taking the useful half with it. The anchors are
+// the next test's, which asks only whether a link lands under both rules.
 func TestEveryLinkBetweenDocsPointsAtAFileThatExists(t *testing.T) {
 	root := repoRoot(t)
 
@@ -192,4 +194,111 @@ func markdownPages(t *testing.T, root string) []string {
 		t.Fatal("found no markdown under docs/, which cannot be right")
 	}
 	return pages
+}
+
+// A link to a heading is written once and read in two places that disagree
+// about what the heading is called. GitHub, where the README and the
+// repository browser render the pages, keeps an apostrophe out of a heading's
+// anchor; the docs site is VitePress, which turns it into a hyphen. So
+// "Roles: a day's grants under one word" was `#roles-a-days-grants-under-one-word`
+// to the first and `#roles-a-day-s-grants-under-one-word` to the second, and
+// the three links written to the first landed at the top of the page on the
+// site, with nothing to say they had missed.
+//
+// The existing link test stops at the file, for the reason it gives: a check
+// that fires on punctuation nobody got wrong is switched off within a week.
+// This one fires only on an anchor that is wrong under one of the two rules,
+// which is a link that lands somewhere else for some reader, and the fix it
+// asks for is a heading with no punctuation that the two read differently.
+func TestEveryAnchorLinkResolvesOnGitHubAndOnTheSite(t *testing.T) {
+	root := repoRoot(t)
+
+	anchors := map[string]struct{ github, site map[string]bool }{}
+	heading := regexp.MustCompile(`^#{1,6}\s+(.*?)\s*$`)
+	for _, page := range markdownPages(t, root) {
+		own := struct{ github, site map[string]bool }{map[string]bool{}, map[string]bool{}}
+		fenced := false
+		for _, line := range strings.Split(readDoc(t, root, page), "\n") {
+			if strings.HasPrefix(line, "```") {
+				fenced = !fenced
+				continue
+			}
+			if m := heading.FindStringSubmatch(line); m != nil && !fenced {
+				text := headingText(m[1])
+				own.github[githubSlug(text)] = true
+				own.site[siteSlug(text)] = true
+			}
+		}
+		anchors[page] = own
+	}
+
+	link := regexp.MustCompile(`\]\(((?:\.{1,2}/)[^)#\s]*)?#([^)\s]+)\)`)
+	checked := 0
+	for _, page := range markdownPages(t, root) {
+		for i, line := range strings.Split(readDoc(t, root, page), "\n") {
+			for _, m := range link.FindAllStringSubmatch(line, -1) {
+				target := page
+				if m[1] != "" {
+					target = filepath.ToSlash(filepath.Join(filepath.Dir(page), m[1]))
+				}
+				own, ok := anchors[target]
+				if !ok {
+					continue
+				}
+				checked++
+				switch {
+				case !own.github[m[2]] && !own.site[m[2]]:
+					t.Errorf("%s:%d links to %s#%s, which is no heading's anchor", page, i+1, target, m[2])
+				case !own.github[m[2]]:
+					t.Errorf("%s:%d links to %s#%s, which only the docs site resolves; GitHub does not", page, i+1, target, m[2])
+				case !own.site[m[2]]:
+					t.Errorf("%s:%d links to %s#%s, which only GitHub resolves; the docs site does not — "+
+						"reword the heading so it has no apostrophe, dot or other punctuation the two slug differently",
+						page, i+1, target, m[2])
+				}
+			}
+		}
+	}
+	if checked < 20 {
+		t.Fatalf("checked %d anchor links, want the fifty or so the docs hold; has the link syntax moved?", checked)
+	}
+}
+
+// headingText is a heading as a slugger reads it: link text kept, images and
+// tags dropped, the backticks around code taken off.
+func headingText(h string) string {
+	h = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`).ReplaceAllString(h, "")
+	h = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`).ReplaceAllString(h, "$1")
+	h = regexp.MustCompile(`<[^>]+>`).ReplaceAllString(h, "")
+	return strings.TrimSpace(strings.ReplaceAll(h, "`", ""))
+}
+
+// githubSlug keeps letters, digits, underscores and hyphens, lower-cased, and
+// turns each space into a hyphen.
+func githubSlug(h string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(h) {
+		switch {
+		case r == ' ':
+			b.WriteByte('-')
+		case r == '_' || r == '-' || unicode.IsLetter(r) || unicode.IsDigit(r):
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// siteSlug is VitePress's: every run of white space or punctuation from its
+// list becomes one hyphen, none left at either end, and a leading digit gets
+// an underscore.
+func siteSlug(h string) string {
+	// The four curly quotes are named by code point: the source guard refuses
+	// them typed, since a reader cannot tell them from the straight ones.
+	curly := string([]rune{0x201c, 0x201d, 0x2018, 0x2019})
+	special := regexp.MustCompile("[\\s~`!@#$%^&*()\\-_+=\\[\\]{}|\\\\;:\"'" + curly + "<>,.?/]+")
+	s := strings.Trim(special.ReplaceAllString(h, "-"), "-")
+	if s != "" && s[0] >= '0' && s[0] <= '9' {
+		s = "_" + s
+	}
+	return strings.ToLower(s)
 }
