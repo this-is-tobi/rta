@@ -7,6 +7,7 @@ import (
 	iofs "io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
@@ -117,8 +118,28 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 			shownFrom(base, filepath.Join(dir, name)),
 		})
 	}
+	// What git would run first, then what it passes over, samples last.
+	// `git init` leaves fourteen samples in every repository, and in the
+	// directory's own order the one hook that runs on every commit was the
+	// seventh row of sixteen: the answer this is asked for, in the middle of
+	// what never runs. Stable, so each kind keeps the directory's order.
+	sort.SliceStable(t.Rows, func(i, j int) bool { return hookRank(t.Rows[i][1]) < hookRank(t.Rows[j][1]) })
 	t.Total = len(t.Rows)
 	return t, nil
+}
+
+// hookRank orders the statuses hookStatus reports by how much they matter:
+// a hook git fails on, one it runs, one it passes over, and a sample.
+func hookRank(status string) int {
+	switch status {
+	case "fails":
+		return 0
+	case "active":
+		return 1
+	case "disabled":
+		return 2
+	}
+	return 3
 }
 
 // hookStatus is what git does with the entry name of a hooks directory, by
