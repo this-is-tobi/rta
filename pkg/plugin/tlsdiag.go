@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // CertNames lists the names cert is for, as a hostname check reads them —
@@ -31,6 +33,32 @@ func CertNames(cert *x509.Certificate) string {
 		return strings.Join(names[:3], ", ") + fmt.Sprintf(" and %d more", len(names)-3)
 	}
 	return strings.Join(names, ", ")
+}
+
+// ForwardNameRefusal is the refusal for a certificate that was checked for
+// the end of a forward the host opened — 127.0.0.1 — and is for the name the
+// server answers as instead: the host's own address is not a name any
+// certificate carries, so a call through a profile's forward to a server that
+// verifies its name fails there, and the way on is the name the certificate
+// is for.
+//
+// **Seven plugins worded this the same, each by hand.** Only the code, the
+// input that names the server and what answers it differed (a server, a
+// member, an instance), and a hint kept alike by hand in seven places is one
+// that drifts: the way through is tls-server-name, which the profile holds
+// beside its forward and which is checked as strictly as the host it
+// replaces — never a mode that skips the name, which would accept any
+// certificate its CA ever signed, and never the plaintext setting the forward
+// has already switched off, which the host refuses beside it. A plugin passes
+// its own code (pg.tls.forward), the address its call reached as the input
+// holds it (Request.Reached words the rest), and what answers.
+func ForwardNameRefusal(req Request, code, address, answerer string, hostErr x509.HostnameError) *view.Error {
+	return view.Errorf(code, "the certificate behind %s is for %s, not for %s, where the forward ends",
+		req.Reached(address), CertNames(hostErr.Certificate), hostErr.Host).
+		WithHint("a forward always ends at 127.0.0.1, so the certificate is checked for the name the " + answerer +
+			" answers as instead: " + req.Surface().SettingName("tls-server-name") + ", which the profile can " +
+			"hold beside its forward, names it — one the certificate is for — and it is checked as strictly " +
+			"as the host it replaces")
 }
 
 // TLSExpected reports whether err says a plain-HTTP request reached a
