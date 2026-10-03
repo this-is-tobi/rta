@@ -7,10 +7,10 @@ It is the whole of the model. Reads are free; **everything that changes anything
 ## Issuing one
 
 ```bash
-rta grant allow kv.get db-password --ttl 30m
+rta grant allow kv.get db-password --agent claude --ttl 30m
 ```
 
-That reads as: allow `kv.get`, but only the key `db-password`, for thirty minutes.
+That reads as: allow the agent `claude` to call `kv.get`, but only on the key `db-password`, for thirty minutes.
 
 | Part | What it means |
 | --- | --- |
@@ -30,7 +30,7 @@ That reads as: allow `kv.get`, but only the key `db-password`, for thirty minute
 They compose. A grant stops at whichever is reached first.
 
 ```bash
-rta grant allow kv.get deploy-key --ttl 5m --max-uses 1
+rta grant allow kv.get deploy-key --agent claude --ttl 5m --max-uses 1
 ```
 
 - **`--ttl` bounds time.** The one you always get, because it is the only bound that keeps working when you forget.
@@ -46,7 +46,7 @@ The last one is worth dwelling on. Time and quantity both fail the same way: an 
 rta grant allow pg.query --agent claude --profile staging --ttl 1h
 ```
 
-Without `--agent`, a grant covers **every** MCP client on this machine. That is rarely what you mean once you have more than one: consent given while pairing with one editor should not silently follow the agent running in a CI container.
+A grant is for one agent, and there is no grant for every client: consent given while pairing with one editor should not silently follow the agent running in a CI container. Leave `--agent` out and rta fills the name in when this machine knows exactly one agent — one that has connected, or that already holds a grant — asks which when it knows several (`grant.whichagent`), and refuses when it knows none (`grant.noagent`), since a grant for nobody would be a row `grant list` shows and the gate ignores.
 
 The name comes from `rta mcp serve --as <name>`, which `rta mcp install` sets for you. Both halves name the same thing on purpose.
 
