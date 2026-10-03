@@ -722,20 +722,22 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			return errResult(ve), nil
 		}
 		rec.Outcome = agentlog.Ran
-		res, err := viewResult(v)
-		if err != nil {
-			return nil, err
-		}
-		// A built-in's answer is measured as it is sent: it is already in
-		// memory, so what this saves the agent is the answer, which a model
-		// cannot read at that size and an SDK would encode a second time for the
-		// structured copy.
+		// A built-in's answer is measured whole, before it is cut to what a
+		// model can hold: it is already in memory, so what this saves the agent
+		// is the answer, which a model cannot read at that size and an SDK would
+		// encode a second time for the structured copy. The operator's limit is
+		// on what the call produced, not on what is left once it is shortened.
+		cleaned := cleanedView(v)
 		if limit := opts.resultLimit(); limit > 0 {
-			if size := resultSize(res); size > limit {
-				ve := plugin.ResultTooLarge(c.ID, size, limit)
+			if n := size(cleaned); n > limit {
+				ve := plugin.ResultTooLarge(c.ID, n, limit)
 				withheld(rec, ve)
 				return errResult(ve), nil
 			}
+		}
+		res, err := fittedResult(cleaned)
+		if err != nil {
+			return nil, err
 		}
 		return res, nil
 	}
@@ -746,17 +748,6 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 // the answer.
 func withheld(e *agentlog.Entry, verr *view.Error) {
 	e.Outcome, e.Code, e.Reason = agentlog.Ran, cut(verr.Code, maxCode), cut(textclean.Credentials(verr.Message), maxReason)
-}
-
-// resultSize is what a result is as the client receives it: its text.
-func resultSize(res *sdk.CallToolResult) int {
-	n := 0
-	for _, c := range res.Content {
-		if t, ok := c.(*sdk.TextContent); ok {
-			n += len(t.Text)
-		}
-	}
-	return n
 }
 
 // takeProfile removes the host-owned "profile" argument from what the caller
@@ -1101,7 +1092,7 @@ func nameUnder(root, p string) bool {
 //
 // textclean.Model, not only Redact. Redact answers "may the caller see this
 // value"; it says nothing about what the value does when a model reads it. A
-// result is per-call, unbounded and attacker-influenced — `http.get` returns
+// result is per-call, large and attacker-influenced — `http.get` returns
 // an arbitrary internet body straight into a model's context, and that is true
 // today with no plugin installed — so the same neutralising the terminal
 // renderers do is owed here, plus the invisible characters a terminal does not
@@ -1111,12 +1102,31 @@ func nameUnder(root, p string) bool {
 // is what the MCP bridge encodes". The first half is true against a terminal,
 // because the encoder escapes the byte. It was never true against a model,
 // which reads the decoded string.
+//
+// And bounded (fitResult): unbounded is what a result may be to a person at a
+// terminal, who scrolls, and what a model's context is not.
 func viewResult(v view.View) (*sdk.CallToolResult, error) {
+	return fittedResult(cleanedView(v))
+}
+
+// cleanedView is v masked and made safe to read, whole: what the operator's
+// limit on an answer is measured against (the call), before anything is cut.
+func cleanedView(v view.View) view.View {
 	// The operator's own places are named by what they are in a result as they
 	// are in an error (operatorPaths): kv.status says where the store is, and
 	// that is for the person who runs it.
 	names := operatorNames()
-	m, err := view.ToMap(view.Redact(view.MapStrings(v, func(s string) string { return names(textclean.Model(s)) })))
+	return view.Redact(view.MapStrings(v, func(s string) string { return names(textclean.Model(s)) }))
+}
+
+// fittedResult is a cleaned view cut to what a model can hold (fitResult) and
+// encoded as the one JSON text a result is sent as.
+func fittedResult(v view.View) (*sdk.CallToolResult, error) {
+	v, tooLarge := fitResult(v)
+	if tooLarge != nil {
+		return errResult(tooLarge), nil
+	}
+	m, err := view.ToMap(v)
 	if err != nil {
 		return nil, err
 	}
