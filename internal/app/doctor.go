@@ -1356,4 +1356,9 @@ func doctorClients(add func(check, status, detail string)) {
 	for _, r := range clientRows(claudeInstalled == nil, agentsession.Self()) {
 		add(r[0], r[1], r[2])
 	}
+	home, _ := os.UserHomeDir()
+	wd, _ := os.Getwd()
+	for _, r := range otherClientRows(home, wd) {
+		add(r[0], r[1], r[2])
+	}
 }

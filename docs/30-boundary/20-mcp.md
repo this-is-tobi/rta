@@ -27,6 +27,7 @@ as      cursor
 next    add the block to that file yourself — rta writes nothing there. The `--as cursor` in it
         names this agent: grants are issued to that name, so one issued for another client
         does not reach it, and `rta lock add cursor` freezes it
+then    restart Cursor, ask it to call sys_overview, and `rta agent overview` shows it connected
 
 {
   "mcpServers": {
@@ -43,7 +44,41 @@ next    add the block to that file yourself — rta writes nothing there. The `-
 }
 ```
 
-In `pretty` the block is drawn last, under the pairs, so it can be copied whole. The answer is the same pairs in every format, with the block as one of them — `block`, between `add to` and `as` — so `-o json` hands a script provisioning a machine the block as one value to lift out whole. A client that registered itself answers with `registered`, `as` and the command line it `ran`; whatever that client printed of its own goes to stderr, beside the answer rather than inside it.
+In `pretty` the block is drawn last, under the pairs, so it can be copied whole. The answer is the same pairs in every format, with the block as one of them — `block`, between `add to` and `as` — so `-o json` hands a script provisioning a machine the block as one value to lift out whole. A client that registered itself answers with `registered`, `as` and the command line it `ran`, then where that put it and what to do next; whatever that client printed of its own goes to stderr, beside the answer rather than inside it.
+
+```
+registered  Claude Code
+as          claude
+ran         claude mcp add rta -- /opt/homebrew/bin/rta mcp serve --as claude
+scope       this directory only (/work/shop) — add --global for every project
+next        restart Claude Code in this directory, ask it to call sys_overview, and `rta agent
+            overview` shows it connected
+reach       read-only until you say otherwise — `rta grant allow <capability> --agent claude` lets
+            one more thing through, and it expires on its own
+```
+
+The `scope` line is there because Claude Code's own default is the directory you ran the command in and nothing else: an agent opened in any other project sees no rta. `--global` registers it for every project. When a client's command is missing or fails, the block is the answer and a `why` pair comes before it saying which: `claude is not on PATH, so rta ran nothing`.
+
+The path registered is the one you ran rta by when it is on `PATH` and is the same file — `/opt/homebrew/bin/rta`, which a package upgrade leaves in place — and the file it resolves to otherwise.
+
+### Server options belong in the registration
+
+The client launches `rta mcp serve`, so a server option is only set if it is in the line the client was given. `rta mcp install` takes the ones that belong there, each off unless you pass it: `--consent`, `--consent-notify` and `--consent-wait` for [live consent](#live-consent), `--root` (repeatable) for [the path gate](#the-path-gate), and `--max-result` for [the ceiling on an answer](#how-large-a-result-may-be).
+
+```bash
+rta mcp install claude --consent --consent-notify --root ~/projects
+# registers: rta mcp serve --as claude --consent --consent-notify --root /Users/you/projects
+```
+
+The options show under `ran`, `--dry-run` and `--show`. A `--root` is registered as the absolute path it names and has to exist, and naming any replaces the default root, the directory the client starts the server in. `--consent-notify` and `--consent-wait` without `--consent` are refused, since they would configure nothing.
+
+### Running it again
+
+Run again, `rta mcp install` compares what is registered with what you ask for. The same registration answers `already registered` and runs nothing, at exit 0, so a provisioning script can call it on every boot. A different name, path or option is replaced through the client's own `mcp remove` and `mcp add`, and `changed` says what differed. That comparison reads the client's configuration and never writes it: for Claude Code it replaces, and `--global` also takes out a directory-only registration of rta for the current directory, which would otherwise override the new one there. Every other client is asked to add, and told there is nothing to do only when its file already holds exactly this registration. When a client refuses because rta is already there and rta cannot read enough to compare, the exit is non-zero and the error carries the exact `claude mcp remove rta --scope user` line to run first.
+
+### A client rta does not list
+
+Anything that speaks MCP over stdio takes the standard `mcpServers` block: `rta mcp install windsurf` prints it with `--as windsurf` and says that rta does not know where Windsurf keeps its configuration. A name close to one of the six is read as a typo and refused with the one it was near.
 
 ### rta does not write another tool's config file
 
@@ -98,11 +133,13 @@ A few capabilities are not on offer at any price. `grant`, `agent`, `lock`, `ope
 
 ### The path gate
 
-Every path a call would use must sit under a **root** — one the agent sent, a capability's declared default, or one your config names. The default root is the directory the server was started in; widen it with `--root`, which is repeatable.
+Every path a call would use must sit under a **root** — one the agent sent, a capability's declared default, or one your config names. The default root is the directory the server was started in; widen it with `--root`, which is repeatable, in the registration — the client launches the server, so a flag that is not in that line is not set:
 
 ```bash
-rta mcp serve --root ~/projects --root /tmp/scratch
+rta mcp install claude --root ~/projects --root /tmp/scratch
 ```
+
+`rta mcp serve --root` is the same flag for a server you start yourself.
 
 The gate governs path *arguments* only. A capability that opens a fixed file of its own — `net hosts list` and `/etc/hosts` — is unaffected, because that path is never an argument for anyone to send. A path a capability *derives* from an argument is held to the gate as though it had been sent: `git` finds the repository a directory belongs to by walking up from it, and follows a `.git` file, a `commondir` and `objects/info/alternates` to the directories they name, and a repository any of those place outside the roots is refused rather than read. A linked worktree is opened only under a root that also holds its main checkout.
 
@@ -154,7 +191,7 @@ A config that does not read when the server starts does not stop it, and does no
 
 A result is held whole while it is handled, and measured at about sixteen times its size: a plugin that answered with 100 MB took the server to 1.68 gigabytes. So a result is bounded, by default at 8 MiB, which is more than anything the catalogue answers honestly (an HTTP body is cut at 1 MiB, a listing runs to hundreds of kilobytes, a table dump of a few thousand rows to a few megabytes) and more than a model can use. A plugin's answer is refused while it is received, from the length its message declares, before any of it is held; a built-in's is measured as it is sent. Either way the call ran, what it changed is changed, and the agent is told it as `core.result.toolarge` with the size, the limit and how to ask for less — a smaller limit, a tighter filter, a narrower path. The record keeps the call as one that ran, with that code beside it.
 
-`rta mcp serve --max-result <MiB>` sets the ceiling, between 1 and 256. It is the operator's: an agent has no argument that raises it. The CLI and the TUI are not bounded by it, since the person at them chose to ask. Size the server's memory for what it allows: the default is about 128 MiB at its peak for one answer that large, several at once add up, and a pod's limit is the place the ceiling is really set — [the chart](./80-kubernetes.md) passes `--max-result` through `serverDefaults.extraArgs`.
+`--max-result <MiB>` sets the ceiling, between 1 and 256, on `rta mcp serve` and on `rta mcp install`, which writes it into the registration. It is the operator's: an agent has no argument that raises it. The CLI and the TUI are not bounded by it, since the person at them chose to ask. Size the server's memory for what it allows: the default is about 128 MiB at its peak for one answer that large, several at once add up, and a pod's limit is the place the ceiling is really set — [the chart](./80-kubernetes.md) passes `--max-result` through `serverDefaults.extraArgs`.
 
 ### How large a request may be
 
@@ -174,13 +211,13 @@ A tool's description is the capability's own summary and description inside a fr
 
 ## Live consent
 
-Off by default:
+Off by default, and an option of the server, so it goes into the registration:
 
 ```bash
-rta mcp serve --consent --consent-notify
+rta mcp install claude --consent --consent-notify
 ```
 
-With `--consent`, a call that needs a grant nobody issued is **parked** instead of refused. You answer it:
+(`rta mcp serve --consent --consent-notify` is the same two flags for a server you start yourself.) With `--consent`, a call that needs a grant nobody issued is **parked** instead of refused. You answer it:
 
 ```bash
 rta agent pending

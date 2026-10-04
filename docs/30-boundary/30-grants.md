@@ -101,7 +101,7 @@ Each line is in the grammar `rta grant allow` takes — a target, an optional re
 
 ## Live consent, when you would rather be asked
 
-With `rta mcp serve --consent`, a call that needs a grant nobody issued is **parked** rather than refused:
+With live consent (`rta mcp install claude --consent`), a call that needs a grant nobody issued is **parked** rather than refused:
 
 ```bash
 rta agent pending

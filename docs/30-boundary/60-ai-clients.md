@@ -10,7 +10,9 @@ If you only read one thing, read this: **the `--as` name is the whole point.** G
 rta mcp install claude
 ```
 
-That is it for a client that ships its own configuration command. For one that does not, the same command prints exactly what to add and where, and writes nothing.
+That is it for a client that ships its own configuration command. For one that does not, the same command prints exactly what to add and where, and writes nothing. Any other client that speaks MCP over stdio gets the standard block too — `rta mcp install windsurf` — with a line saying rta does not know where that client keeps its configuration.
+
+The answer says where the client's command registered rta (`scope`), what to do next and what the agent can reach. [Server options](./20-mcp.md#server-options-belong-in-the-registration) — `--consent`, `--root`, `--max-result` — go into the same command, and [running it again](./20-mcp.md#running-it-again) replaces a registration that differs rather than keeping it.
 
 ## What rta does for each client
 
@@ -49,12 +51,14 @@ rta mcp install claude
 
 This runs `claude mcp add rta -- /path/to/rta mcp serve --as claude`. The `--` matters and rta always passes it: without the separator, `claude` reads `--as` as one of its own flags.
 
-Scope is Claude Code's decision, not rta's. `claude mcp add` registers a server for the current directory alone by default, under that directory's entry in `~/.claude.json`; `--scope user` puts it there for every project, and `--scope project` writes the project's `.mcp.json` instead. `rta mcp install claude --global` passes `--scope user` through:
+Scope is Claude Code's decision, not rta's. `claude mcp add` registers a server for the current directory alone by default, under that directory's entry in `~/.claude.json`; `--scope user` puts it there for every project, and `--scope project` writes the project's `.mcp.json` instead. `rta mcp install claude --global` passes `--scope user` through, and takes out a directory-only registration of rta for the directory you ran it in, which would otherwise override the new one there:
 
 ```bash
 rta mcp install claude --global
 # runs: claude mcp add rta --scope user -- /usr/local/bin/rta mcp serve --as claude
 ```
+
+The answer's `scope` line says which it was, so a session in another project that has no rta is not how you find out. `rta doctor` reads the same files and reports, for every client on the machine, whether rta is registered with it.
 
 Confirm it connected:
 

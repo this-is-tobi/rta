@@ -27,10 +27,11 @@ func TestClaudeRegistrationsTellTheThreeScopesApart(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("registrations = %+v, want the project file and the directory entry", got)
 	}
-	if got[0].scope != "this project (.mcp.json)" || got[0].as != "claude" {
+	if got[0].scope != scopeProject || got[0].scope.where() != "this project (.mcp.json)" || got[0].as != "claude" {
 		t.Errorf("project = %+v", got[0])
 	}
-	if got[1].scope != "this directory only" || got[1].as != "claude-here" {
+	if got[1].scope != scopeLocal || got[1].scope.where() != "this directory only" || got[1].as != "claude-here" ||
+		got[1].command != "/Users/me/go/bin/rta" || strings.Join(got[1].args, " ") != "mcp serve --as claude-here" {
 		t.Errorf("directory = %+v", got[1])
 	}
 	userWide := `{"mcpServers":{"rta":{"command":"rta","args":["mcp","serve"]}}}`
@@ -38,7 +39,7 @@ func TestClaudeRegistrationsTellTheThreeScopesApart(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = claudeRegistrations(home, t.TempDir())
-	if len(got) != 1 || got[0].scope != "every project" || got[0].as != "" {
+	if len(got) != 1 || got[0].scope != scopeUser || got[0].scope.where() != "every project" || got[0].as != "" {
 		t.Errorf("user-wide without --as = %+v", got)
 	}
 }
@@ -131,5 +132,87 @@ func TestAgentsConnectedWarnsWhenItCannotCheck(t *testing.T) {
 	}
 	if row[1] != "warn" || !strings.Contains(row[2], "could not check") {
 		t.Fatalf("agents connected row = %+v, want a warn row saying it could not check", row)
+	}
+}
+
+// The row for Claude Code names the command that fixes what it found, not
+// claude's own long spelling of it, and stops nagging about a directory-only
+// registration once an every-project one stands beside it.
+func TestTheClaudeRowsNameTheCommandThatFixesThem(t *testing.T) {
+	rows := claudeRows(true, nil)
+	if len(rows) != 1 || rows[0][1] != "info" || !strings.Contains(rows[0][2], "`rta mcp install claude --global`") {
+		t.Fatalf("not registered = %v, want one info row naming rta mcp install claude --global", rows)
+	}
+	if rows := claudeRows(false, nil); len(rows) != 0 {
+		t.Errorf("no claude and nothing registered = %v, want no row about a client that is not here", rows)
+	}
+
+	local := claudeRegistration{scope: scopeLocal, as: "claude", name: "rta"}
+	rows = claudeRows(true, []claudeRegistration{local})
+	if len(rows) != 1 || rows[0][1] != "info" || !strings.Contains(rows[0][2], "`rta mcp install claude --global`") ||
+		strings.Contains(rows[0][2], "claude mcp add") {
+		t.Errorf("directory only = %v, want the nag with rta's own command", rows)
+	}
+
+	user := claudeRegistration{scope: scopeUser, as: "claude", name: "rta"}
+	rows = claudeRows(true, []claudeRegistration{user, local})
+	for _, r := range rows {
+		if r[1] != "ok" || strings.Contains(r[2], "a session opened elsewhere") {
+			t.Errorf("both scopes, same name = %v, want ok rows and no nag", r)
+		}
+	}
+
+	elsewhere := local
+	elsewhere.as = "claude-here"
+	rows = claudeRows(true, []claudeRegistration{user, elsewhere})
+	if len(rows) != 2 || rows[1][1] != "info" || !strings.Contains(rows[1][2], "overrides the every-project registration") {
+		t.Errorf("both scopes, two names = %v, want the override said", rows)
+	}
+
+	rows = claudeRows(true, []claudeRegistration{{scope: scopeUser, name: "rta"}})
+	if len(rows) != 1 || rows[0][1] != "warn" || !strings.Contains(rows[0][2], "refuses to start without one") {
+		t.Errorf("no --as = %v, want a warning: rta mcp serve refuses to start without a name", rows)
+	}
+}
+
+// Every other client on the machine is asked whether rta is registered with
+// it, by the reader `rta audit clients` uses; a client that is not here earns
+// no row.
+func TestEveryOtherClientOnTheMachineIsAskedWhetherRtaIsRegistered(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	home, wd := t.TempDir(), t.TempDir()
+	write := func(path, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(home, ".cursor", "mcp.json"),
+		`{"mcpServers":{"rta":{"command":"/opt/homebrew/bin/rta","args":["mcp","serve","--as","cursor"]}}}`)
+	if err := os.MkdirAll(filepath.Join(home, ".gemini"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(filepath.Join(home, ".copilot", "mcp-config.json"), "{ not json")
+
+	rows := map[string][3]string{}
+	for _, r := range otherClientRows(home, wd) {
+		rows[r[0]] = r
+	}
+	if r := rows["cursor"]; r[1] != "ok" || !strings.Contains(r[2], "starts rta as cursor") || !strings.Contains(r[2], "mcp.json") {
+		t.Errorf("cursor = %v, want a registered row naming the name and the file", r)
+	}
+	if r := rows["gemini"]; r[1] != "info" || !strings.Contains(r[2], "`rta mcp install gemini`") {
+		t.Errorf("gemini = %v, want installed and not registered, with the command", r)
+	}
+	if r := rows["copilot"]; r[1] != "warn" || !strings.Contains(r[2], "is not known") {
+		t.Errorf("copilot = %v, want a warning that it could not tell", r)
+	}
+	for _, absent := range []string{"codex", "vscode", "claude"} {
+		if _, ok := rows[absent]; ok {
+			t.Errorf("a row for %s, which is not on this machine: %v", absent, rows[absent])
+		}
 	}
 }
