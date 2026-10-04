@@ -1173,7 +1173,7 @@
           "type": "string"
         },
         "data": {
-          "description": "request body, sent as given",
+          "description": "request body, sent as given; a JSON object or array goes out as application/json unless a Content-Type header says otherwise",
           "type": "string"
         },
         "header": {
@@ -1218,7 +1218,7 @@
           "type": "string"
         },
         "data": {
-          "description": "request body, sent as given",
+          "description": "request body, sent as given; a JSON object or array goes out as application/json unless a Content-Type header says otherwise",
           "type": "string"
         },
         "header": {

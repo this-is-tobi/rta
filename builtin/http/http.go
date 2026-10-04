@@ -23,6 +23,7 @@ import (
 
 	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/internal/headerlist"
+	"github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -115,8 +116,19 @@ func Plugin() plugin.Plugin {
 		// say twice does not work. So this stays legible, and the answer for
 		// a caller who is sending a credential is the same as for a header:
 		// put it in a field declared for it.
-		Name: "data", Type: plugin.Text, Help: "request body, sent as given",
-	})
+		Name: "data", Type: plugin.Text,
+		Help: "request body, sent as given; a JSON object or array goes out as application/json unless a Content-Type header says otherwise",
+	},
+		// Local, as the two credential files above are and for their reason: a
+		// path is a place on this machine, and an agent that could name one would
+		// send any file the server can read to a host of its own choosing. The
+		// body stays an input an agent supplies; only where it is read from is
+		// the person's. Not an `@file` spelled into data, as curl has it: that
+		// would be a value the CLI reads from disk and MCP sends as it is, and the
+		// same text meaning two things on two surfaces is how a path ends up read
+		// for an agent.
+		plugin.Field{Name: "data-file", Type: plugin.Path, Local: true,
+			Help: "read the request body from this file (/dev/stdin for a pipe) in place of data"})
 	return plugin.Plugin{
 		Name:    "http",
 		Summary: "Request any endpoint and inspect the response — a REST client",
@@ -332,6 +344,35 @@ func credential(req plugin.Request, name string) (string, *view.Error) {
 		WithHint("an empty file, or nothing was piped to it")
 }
 
+// maxRequestBody is more than any JSON payload somebody keeps in a file and
+// hands to an API, and well under what a pipe left running would fill memory
+// with.
+const maxRequestBody = 8 << 20
+
+// requestBody is the body the call carries, from its data input or from the
+// file named by data-file, never both: two answers to one question are a
+// refusal, not a guess.
+func requestBody(req plugin.Request) (string, *view.Error) {
+	data, file := req.String("data"), req.String("data-file")
+	switch {
+	case file == "":
+		return data, nil
+	case data != "":
+		return "", view.Errorf("http.data.twice", "the body is given as a value and as a file").
+			WithHint("give one: " + req.Surface().InputName("data") + " or " + req.Surface().InputName("data-file"))
+	}
+	got, err := pathin.Read(req, file, maxRequestBody)
+	var tooLarge *pathin.TooLargeError
+	switch {
+	case errors.As(err, &tooLarge):
+		return "", view.Errorf("http.data.file", "%s is more than %d MiB, which is the most a request body takes",
+			file, maxRequestBody>>20)
+	case err != nil:
+		return "", view.Errorf("http.data.file", "reading the body from %s: %v", file, err)
+	}
+	return string(got), nil
+}
+
 // withScheme is the URL a call names with the scheme it left out filled in:
 // https, except for a host that is a service of one's own, which a person who
 // asked for the local network (own) is almost never reaching over TLS.
@@ -369,6 +410,45 @@ func namesOwnHost(host string) bool {
 	return (addr.IsLoopback() || addr.IsPrivate()) && reasonFor(stdnet.IP(addr.AsSlice()), true) == ""
 }
 
+// setDefaultHeaders gives a request what a REST client's server expects of
+// one and the caller did not write: that JSON is wanted back, who is asking,
+// and, for a body that is a JSON object or array, that it is JSON.
+//
+// A header the caller wrote is never touched, whatever case its name was spelled
+// in (Header.Set canonicalised it), and an empty one is how a default is taken
+// away: net/http sends no User-Agent at all for an empty one.
+//
+// An object or array and not any text json.Valid accepts: 42, true and "text"
+// are valid JSON and are far likelier a line of text than a JSON scalar, and
+// claiming a type for a body the caller never called JSON is the guess this
+// default must not make.
+func setDefaultHeaders(h stdhttp.Header, body string) {
+	fallback := func(name, value string) {
+		if _, set := h[name]; !set {
+			h.Set(name, value)
+		}
+	}
+	fallback("Accept", "application/json, */*")
+	fallback("User-Agent", userAgent())
+	if isJSONDocument(body) {
+		fallback("Content-Type", "application/json")
+	}
+}
+
+func isJSONDocument(body string) bool {
+	trimmed := strings.TrimSpace(body)
+	return (strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")) && json.Valid([]byte(trimmed))
+}
+
+// userAgent names this client and the build asking, the string `rta --version`
+// reports; a run that recorded none is just rta.
+func userAgent() string {
+	if v := session.Self(); v != "" {
+		return "rta/" + v
+	}
+	return "rta"
+}
+
 func doRequest(ctx context.Context, method string, req plugin.Request) (view.View, error) {
 	// And never over MCP, whatever arrived: the input is Local and the bridge
 	// refuses it there, so this is the second lock on the same door.
@@ -381,7 +461,10 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 		ctx = withOwnNetwork(ctx)
 	}
 
-	data := req.String("data")
+	data, verr := requestBody(req)
+	if verr != nil {
+		return nil, verr
+	}
 	var body io.Reader
 	if data != "" {
 		body = strings.NewReader(data)
@@ -413,6 +496,7 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 		user, pass, _ := strings.Cut(basic, ":")
 		httpReq.SetBasicAuth(user, pass)
 	}
+	setDefaultHeaders(httpReq.Header, data)
 
 	// Checked before anything picks a route, proxy or not — see ssrf.go's
 	// checkDestination for why a proxy makes this the only check the real
