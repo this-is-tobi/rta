@@ -50,7 +50,7 @@ func TestShiftEnterAcceptsABoolFieldsCurrentDefault(t *testing.T) {
 
 func TestShiftEnterAcceptsAClosedSetSelectFieldsCurrentDefault(t *testing.T) {
 	c := plugin.Capability{
-		ID: "demo.select", Summary: "s", Safety: plugin.Read,
+		ID: "demo.select", Summary: "s", Safety: plugin.Write,
 		Inputs: []plugin.Field{{Name: "kind", Type: plugin.String, Default: "b", Options: []string{"a", "b", "c"}}},
 		Run: func(context.Context, plugin.Request) (view.View, error) {
 			return view.Text{Body: "SELECT-RAN"}, nil

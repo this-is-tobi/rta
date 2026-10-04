@@ -117,8 +117,23 @@ var (
 	// more terminal that needs no setup at all on rta's side, at the cost
 	// of nothing: no plain "enter" ever carries ModAlt, so this can never
 	// fire from an ordinary keypress.
-	bindFastSubmit = binding{display: "⇧enter", keys: []string{"shift+enter", "alt+enter"}, label: "submit", rank: rankExtra}
-	bindBrowse     = binding{display: "b", keys: []string{"b", ":"}, label: "browse", rank: rankExtra}
+	//
+	// ctrl+s is the third way in and the only one every terminal can send:
+	// shift+enter needs the keyboard protocol and alt+enter needs Option as
+	// Meta, and Terminal.app has neither out of the box, so for the people
+	// using it "submit" was a word in the footer for a key that never arrived.
+	// A control byte needs nothing negotiated. Bubble Tea puts the terminal in
+	// raw mode, which is what stops ctrl+s being the XOFF it is at a cooked
+	// prompt, and no huh or bubbles field binds it, so it cannot be a letter of
+	// anything typed. All three are shown, because a hint that names only the
+	// key that works for you is a hint that hides the one that works for
+	// someone else.
+	bindFastSubmit = binding{
+		display: "⇧enter/alt+enter/ctrl+s",
+		keys:    []string{"shift+enter", "alt+enter", "ctrl+s"},
+		label:   "submit", rank: rankExtra,
+	}
+	bindBrowse = binding{display: "b", keys: []string{"b", ":"}, label: "browse", rank: rankExtra}
 	// The catalogue's and the search bar's way onto the dashboard: what
 	// `rta dashboard add` does from a shell; on the dashboard itself it
 	// opens the catalogue to pick from. `+` rather than `a`, which the

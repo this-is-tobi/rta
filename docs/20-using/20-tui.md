@@ -121,13 +121,15 @@ The permission column says what an AI agent needs for the row, after its safety 
 
 ## Running something
 
-A capability with inputs opens a form built from its declaration:
+`enter` on a read that needs nothing runs it at once with its defaults — `sys.cpu`, `gen.password`, `time.at` — from a search match, a catalogue row or a tile's action key, and `e` on the result opens the inputs when you want to change one. That is every read with no required input, except one holding a credential nothing has supplied yet: the `kv` unlock, for one, still asks, because a run without it would only come back refused. A write opens its form, because the values are the consent, and a destructive capability goes through its dry run.
+
+A capability with a required input, or a write, opens a form built from its declaration:
 
 - Fields that declare `Options` become a picker.
 - Fields that declare `Suggest` complete from what exists on your machine — your tags, your keys, your hosts file.
 - `Path` fields complete directory by directory as you type.
 - `ctrl+e` opens `$EDITOR` on a long body.
-- `shift+enter` accepts every remaining field at its current value, for a form whose defaults are already right.
+- `ctrl+s` accepts every remaining field at its current value, for a form whose defaults are already right. It is the one every terminal can send; `shift+enter` does the same where the terminal reports it, and `alt+enter` where Option is set to act as Meta.
 
 ### Which environment the run goes to
 

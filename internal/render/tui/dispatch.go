@@ -417,7 +417,7 @@ func (m Model) addPickKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return nm, cmd, true
 	case "ctrl+c":
 		return m.quit()
-	case "shift+enter", "alt+enter":
+	case "shift+enter", "alt+enter", "ctrl+s":
 		nm, cmd := m.fastSubmitAddPick()
 		return nm, cmd, true
 	}
@@ -431,7 +431,7 @@ func (m Model) formKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return nm, cmd, true
 	case "ctrl+c":
 		return m.quit()
-	case "shift+enter", "alt+enter":
+	case "shift+enter", "alt+enter", "ctrl+s":
 		nm, cmd := m.fastSubmitForm()
 		return nm, cmd, true
 	case "tab":
@@ -459,7 +459,7 @@ func (m Model) themeKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return m, nil, true
 	case "ctrl+c":
 		return m.quit()
-	case "shift+enter", "alt+enter":
+	case "shift+enter", "alt+enter", "ctrl+s":
 		nm, cmd := m.fastSubmitThemeForm()
 		return nm, cmd, true
 	case "tab":
@@ -482,7 +482,7 @@ func (m Model) copyPickKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return nm, cmd, true
 	case "ctrl+c":
 		return m.quit()
-	case "shift+enter", "alt+enter":
+	case "shift+enter", "alt+enter", "ctrl+s":
 		nm, cmd := m.fastSubmitCopyPick()
 		return nm, cmd, true
 	}

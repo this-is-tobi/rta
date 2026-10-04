@@ -831,13 +831,18 @@ func (m Model) openTile(idx int) (tea.Model, tea.Cmd) {
 	return m, m.startRun(t.cap, values, false)
 }
 
-// open decides what Enter does for a capability: form when there is anything
-// to ask (inputs or a destructive confirmation), direct run otherwise.
+// open decides what Enter does for a capability: a read with nothing it must
+// be told runs at once (quick.go), a form opens when there is anything to ask
+// (inputs or a destructive confirmation), and the rest runs directly.
 func (m Model) open(c plugin.Capability) (tea.Model, tea.Cmd) {
 	m.current = c
 	m.trail = nil
 	m.row = 0
 	m.refreshPending = false
+	if values, ok := m.quickRun(c); ok {
+		m.lastValues, m.lastYes = values, false
+		return m, m.startRun(c, values, false)
+	}
 	if hasInputs(c) {
 		return m.startForm(c, nil)
 	}

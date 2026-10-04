@@ -38,13 +38,13 @@ func TestTheFormFooterSpeaksForTheFocusedField(t *testing.T) {
 		},
 		"a plain box": {
 			first: plugin.Field{Name: "name", Type: plugin.String},
-			want:  []string{"enter next", "⇧enter submit", "esc cancel"},
+			want:  []string{"enter next", "⇧enter/alt+enter/ctrl+s submit", "esc cancel"},
 			never: []string{"complete", "browse", "filter"},
 		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			c := plugin.Capability{ID: "demo.thing", Summary: "s", Safety: plugin.Read,
+			c := plugin.Capability{ID: "demo.thing", Summary: "s", Safety: plugin.Write,
 				Inputs: []plugin.Field{tc.first, {Name: "other", Type: plugin.String}}, Run: run}
 			m := New(fastFormRegistry(t, c), config.Dashboard{}, nil)
 			um, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
