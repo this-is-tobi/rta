@@ -106,19 +106,11 @@ func Send(ctx context.Context, n Note) error {
 // the next program down the list would fail the same way for the same
 // reason.
 func lookup() (string, error) {
-	var name string
-	switch runtime.GOOS {
-	case "darwin":
+	name := "notify-send"
+	if runtime.GOOS == "darwin" {
 		// Part of macOS since forever; the check is for a stripped image
 		// rather than for a missing package.
 		name = "osascript"
-	case "linux", "freebsd", "openbsd", "netbsd":
-		name = "notify-send"
-	default:
-		// Windows has toasts and no way to raise one that does not involve
-		// asking PowerShell to construct XML. Claiming a doorbell that does
-		// not ring is worse than saying there is none.
-		return "", ErrNoNotifier
 	}
 	path, err := exec.LookPath(name)
 	if err != nil {
