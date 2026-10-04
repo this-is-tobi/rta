@@ -529,6 +529,12 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		// has its argument, the TUI its masked box, and a script with no
 		// terminal on its standard input the refusal below, which is what it
 		// always had.
+		//
+		// The passphrase is settled first (lockBeforeValue): the secret is
+		// typed once the store is known to open, never before.
+		if verr := lockBeforeValue(req); verr != nil {
+			return nil, verr
+		}
 		typed, verr := askValue(req, key)
 		if verr != nil {
 			return nil, verr
@@ -571,7 +577,13 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		// was new. Refused, its hint sent the person at the terminal to type
 		// the value after the key, into the shell's history the prompt above
 		// keeps it out of. So it is asked for here instead, under the lock as
-		// the passphrase before it was.
+		// the passphrase before it was — and a first store has not asked for its
+		// passphrase yet, which is chosen before the value is typed as it is above.
+		if !fileExists(storePath()) {
+			if verr := lockBeforeValue(req); verr != nil {
+				return nil, verr
+			}
+		}
 		typed, verr := askValue(req, key)
 		if verr != nil {
 			return nil, verr
@@ -658,13 +670,15 @@ func wouldSet(key, kind string, value []byte) view.View {
 //
 // The prompt reads one line, and a value pasted at it that spans lines is cut
 // to its first. The rest used to go on to whatever reads the terminal next —
-// the passphrase prompt after this one, which took a service account's JSON
-// key's second line as the passphrase and, for a store not yet made, locked
-// it with that, or the shell, which runs each line and keeps it in its
-// history. So the prompt reads on while the paste is still arriving and
-// drops it (stdio.ReadSecretLine), and a line that came with more is refused
-// whatever it holds: the first line of a kubeconfig is a value of its own to
-// look at, and not the one pasted.
+// the passphrase prompt that followed this one, which took a service account's
+// JSON key's second line as the passphrase and, for a store not yet made,
+// locked it with that, or the shell, which runs each line and keeps it in its
+// history. The passphrase is asked for before the value now (lockBeforeValue),
+// so only the shell is left to read on, and the rest is dropped all the same:
+// the prompt reads on while the paste is still arriving and drops it
+// (stdio.ReadSecretLine), and a line that came with more is refused whatever it
+// holds: the first line of a kubeconfig is a value of its own to look at, and
+// not the one pasted.
 //
 // A paste slower than the moment the prompt waits still has the rest go on,
 // and nothing here can take those lines back. A first line that only opens a
