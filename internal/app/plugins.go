@@ -35,6 +35,8 @@ func newPluginListCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comma
 		Short:   "List installed plugins and what each one offers",
 		Long: "One line per plugin: its purpose, how many capabilities it has, and\n" +
 			"whether any of them write or destroy.\n\n" +
+			"A plugin that is installed and not running has a row too, saying which\n" +
+			"way: waiting for your approval, or approved and unable to start.\n\n" +
 			"Use `rta explain` for the capabilities themselves, and the TUI's `p`\n" +
 			"pane to choose which plugins appear on the dashboard.",
 		Args:              cobra.NoArgs,
@@ -64,6 +66,13 @@ func pluginsView(reg *registry.Registry) view.View {
 			reach(p),
 			p.Summary,
 		})
+	}
+	// Approved and not started: the other way an installed plugin is absent
+	// from the inventory, and the one the startup report says once and then
+	// scrolls away. Above the untrusted rows because this is the plugin the
+	// operator expects to be working.
+	for _, f := range failedPluginsFound {
+		t.Rows = append(t.Rows, []string{f.Name, "—", failedToStartStatus, failedPluginDetail(f)})
 	}
 	// Installed and not run, in the same table rather than a section of its
 	// own. A trust gate's failure mode is silence: a plugin that is present,
