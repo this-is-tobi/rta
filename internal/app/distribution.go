@@ -1079,7 +1079,7 @@ func parsePlatformSpec(spec, binMember string) (plugindist.PlatformSource, *view
 				WithHint("a value with no scheme is a file on this machine; " +
 					"a published artifact needs its https:// URL")
 		}
-		location = "file://" + filepath.ToSlash(abs)
+		location = "file://" + abs
 	}
 	return plugindist.PlatformSource{OS: goos, Arch: goarch, URL: location, Bin: binMember}, nil
 }

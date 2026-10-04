@@ -5,7 +5,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/paths"
@@ -19,9 +18,6 @@ import (
 // exists, driven against a directory that does not exist yet — which is the
 // only state in which a creator's mode can be observed at all.
 func TestTheFirstCommandCreatesAnOwnerOnlyDataDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permission bits do not apply")
-	}
 	reg, err := NewRegistry()
 	if err != nil {
 		t.Fatal(err)

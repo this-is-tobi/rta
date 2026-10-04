@@ -239,7 +239,7 @@ func TestEveryAnchorLinkResolvesOnGitHubAndOnTheSite(t *testing.T) {
 			for _, m := range link.FindAllStringSubmatch(line, -1) {
 				target := page
 				if m[1] != "" {
-					target = filepath.ToSlash(filepath.Join(filepath.Dir(page), m[1]))
+					target = filepath.Join(filepath.Dir(page), m[1])
 				}
 				own, ok := anchors[target]
 				if !ok {

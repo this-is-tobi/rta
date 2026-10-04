@@ -911,10 +911,9 @@ func TestWritingWhereProfilesAreNotHonouredIsRefused(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	t.Setenv("RTA_CONFIG", "")
-	// os.UserConfigDir reads $HOME on unix and $AppData on Windows; with
-	// neither, Path falls back to the working directory.
+	// os.UserConfigDir reads $XDG_CONFIG_HOME and $HOME; with neither, Path
+	// falls back to the working directory.
 	t.Setenv("HOME", "")
-	t.Setenv("AppData", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("RTA_DATA_DIR", filepath.Join(dir, "data"))
 	if config.TrustedPath() {

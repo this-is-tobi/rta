@@ -198,9 +198,7 @@ func replacePath(rtaDir, pluginDir string) string {
 	if err != nil {
 		return rtaDir
 	}
-	// Slashes rather than the host separator: go.mod is read on every
-	// platform, including by the machine that did not write it.
-	return filepath.ToSlash(rel)
+	return rel
 }
 
 // within reports whether path is inside dir.
