@@ -12,7 +12,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1141,9 +1140,6 @@ func TestListFindsAKeyThatIsNotCalledIdSomething(t *testing.T) {
 // once a credential-exposure report and the answer to why that key stopped
 // working.
 func TestTheExposedColumnAppearsOnlyWhenAKeyIs(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX mode bits mean nothing here; the ACL is the real answer")
-	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	sshDir := filepath.Join(home, ".ssh")
@@ -1436,9 +1432,6 @@ func TestANewKeyIsOneThisPluginCanBackUp(t *testing.T) {
 // The private key is not readable by anybody else, which `keys.list` would
 // otherwise report as Exposed the moment it was made.
 func TestANewKeyIsWrittenTightlyEnoughForSSHToUseIt(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX mode bits mean nothing here")
-	}
 	dir := t.TempDir()
 	out := filepath.Join(dir, "id_new")
 	if _, err := runAdd(context.Background(), req(map[string]any{"out": out})); err != nil {
