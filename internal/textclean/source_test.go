@@ -144,14 +144,16 @@ func TestTheSourceGuardReadsWhatGitTracks(t *testing.T) {
 	write("logo.png", "\x89PNG\r\n\x1a\n\x00\x00"+rlo)
 	tracked := []string{"main.go", "charts/x/templates/_helpers.tpl",
 		"mise.toml", "go.mod", ".gitignore", "logo.png", "quote.go", "nbsp.md", "hyphen.yaml", "prose.go",
-		"filler.go", "selector.md"}
-	if err := os.Symlink("nowhere.md", filepath.Join(dir, "gone.md")); err == nil {
-		tracked = append(tracked, "gone.md")
+		"filler.go", "selector.md", "gone.md"}
+	if err := os.Symlink("nowhere.md", filepath.Join(dir, "gone.md")); err != nil {
+		t.Fatal(err)
 	}
 	run(append([]string{"add", "--"}, tracked...)...)
 	write("nested/worktrees/old/docs/x.md", "old "+rlo+" branch\n")
 	write("scratch.txt", rlo+"\n")
-	_ = os.Symlink("/nonexistent", filepath.Join(dir, "docs", "dangling.md"))
+	if err := os.Symlink("/nonexistent", filepath.Join(dir, "dangling.md")); err != nil {
+		t.Fatal(err)
+	}
 
 	found, err := hiddenInTrackedSource(dir)
 	if err != nil {
