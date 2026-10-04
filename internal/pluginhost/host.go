@@ -378,7 +378,9 @@ func teardown(client *goplugin.Client, cmd *exec.Cmd, sockDir string) {
 
 // removeSocketDir removes the directory socketDir made, and with it whatever
 // socket the plugin left in it. Nothing is said when it cannot: the process
-// is gone either way, and what is left is an empty directory at most.
+// is gone either way, and what is left is an empty directory at most. A client
+// whose declaration came from the cache never launched a process and has no
+// directory to remove.
 func removeSocketDir(dir string) {
 	if dir != "" {
 		_ = os.RemoveAll(dir)
@@ -630,9 +632,7 @@ func (h *Host) start(ctx context.Context, id Identity, deny DenySet, args []stri
 	// Here rather than in buildCmd, which makes nothing: the directory is
 	// this launch's, made just now, and a command built to be inspected
 	// would leave one behind every time.
-	if sockDir != "" {
-		cmd.Env = append(cmd.Env, goplugin.EnvUnixSocketDir+"="+sockDir)
-	}
+	cmd.Env = append(cmd.Env, goplugin.EnvUnixSocketDir+"="+sockDir)
 
 	words := &lastWords{}
 	client := goplugin.NewClient(&goplugin.ClientConfig{

@@ -1,11 +1,9 @@
-//go:build !darwin
-
 package pluginhost
 
-// Linux and Windows run plugins unconfined, and rta says so rather than
-// implying otherwise.
+// Linux runs plugins unconfined, and rta says so rather than implying
+// otherwise.
 //
-// Linux is a deliberate removal, not an omission. The Landlock allowlist was
+// That is a deliberate removal, not an omission. The Landlock allowlist was
 // designed, and dropped whole: `go install ./cmd/rta` is today's install path
 // and defaults to CGO_ENABLED=1; go-landlock's pre-ABI-8 path uses
 // unix.AllThreadsSyscall, which returns ENOTSUP in a cgo binary, and
@@ -17,13 +15,6 @@ package pluginhost
 // What Linux does get is in host.go and applies on every platform: the
 // environment allowlist, process-group reaping, PR_SET_DUMPABLE=0, mTLS, and
 // the descriptor handling. Those are the parts that were load-bearing anyway.
-//
-// Windows gets CREATE_NEW_PROCESS_GROUP (procattr_windows.go) — one handle,
-// one kill, no orphans — documented there as lifetime control and not as
-// confinement. A job object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE would be
-// the stronger form; it is not what runs today, and procattr_windows.go
-// says so rather than letting this file's own silence about it read as
-// "already done".
 
 const confined = false
 

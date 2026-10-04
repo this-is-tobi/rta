@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -97,9 +96,6 @@ func TestALineKeptCutSaysSo(t *testing.T) {
 // took the goroutine reading it down, and rta with it — every plugin it ran,
 // an MCP server's included.
 func TestAPluginsStderrIsReadByNothingThatPanicsOnIt(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("a shell script is no plugin binary on Windows")
-	}
 	lines := []string{
 		`{"@message":1,"@level":"error"}`,
 		`{"@message":"m","@level":1}`,
@@ -214,9 +210,6 @@ const launchChild = "RTA_PLUGINHOST_TEST_LAUNCH"
 // process started with, so a test that swapped os.Stderr for a pipe passed
 // with the logger taken out and every line on the terminal.
 func TestAPluginThatFailsToStartWritesNothingToTheTerminal(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("a shell script is no plugin binary on Windows")
-	}
 	if p := os.Getenv(launchChild); p != "" {
 		h := New()
 		_, err := h.Open(context.Background(), p)
@@ -286,9 +279,6 @@ func TestAPluginsLastLinesAreKeptWhateverTheySay(t *testing.T) {
 // Each case is launched as rta launches it, under the sandbox on macOS, and
 // unwrapped, as it runs everywhere else.
 func TestAPluginThatExitsBeforeItsHandshakeIsSaidToHave(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("a shell script is no plugin binary on Windows")
-	}
 	for _, tc := range []struct{ name, script, want, or string }{
 		{"exits at once", "exit 1", " exited before its handshake: exit status 1", ""},
 		{"prints, then exits", "echo 'no config at /etc/x' >&2\necho '[DEBUG] looked in /etc' >&2\nexit 3",
@@ -342,9 +332,6 @@ func TestAPluginThatExitsBeforeItsHandshakeIsSaidToHave(t *testing.T) {
 // a library, the file's mode — were never why: a process that printed a line
 // ran.
 func TestAPluginThatSaysSomethingElseIsNotDescribedAsTheWrapper(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("a shell script is no plugin binary on Windows")
-	}
 	p := filepath.Join(t.TempDir(), "rta-plugin-talks")
 	if err := os.WriteFile(p, []byte("#!/bin/sh\necho not a handshake\nsleep 5\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -416,9 +403,6 @@ func TestTheSandboxsOwnWordOnAPluginItCannotRunIsKept(t *testing.T) {
 // the line, which is all that is known, in rta's words and not go-plugin's
 // guesses.
 func TestAPluginKilledOverTheLineItPrintedIsNotSaidToHaveExited(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("a shell script is no plugin binary on Windows")
-	}
 	p := filepath.Join(t.TempDir(), "rta-plugin-early")
 	// exec, so the one process that printed is the one go-plugin kills and
 	// no child holds its output open past it.

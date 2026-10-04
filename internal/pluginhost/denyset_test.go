@@ -23,6 +23,7 @@ func TestAPathThatCouldCloseAPolicyFormIsRefused(t *testing.T) {
 		"/tmp/paren)here",
 		"/tmp/new\nline",
 		"/tmp/carriage\rreturn",
+		`/tmp/back\slash`,
 	} {
 		if err := validate([]string{bad}); err == nil {
 			t.Errorf("%q was accepted into a policy", bad)
@@ -38,40 +39,6 @@ func TestAPathThatCouldCloseAPolicyFormIsRefused(t *testing.T) {
 	} {
 		if err := validate([]string{ok}); err != nil {
 			t.Errorf("%q was refused: %v", ok, err)
-		}
-	}
-}
-
-// The separator is the one character whose answer is platform knowledge, and
-// both answers are checked from whatever machine runs this — the property the
-// runtime.GOOS branch exists for, since a build tag would leave one of them
-// untested everywhere except the platform it is for.
-//
-// **This was total on Windows.** Every path there contains a backslash, so a
-// machine-derived deny set had one in its first entry, ResolveAllowing
-// returned the refusal, and Host.OpenAllowing passed it back to its caller:
-// no plugin could launch at all. The policy it was protecting is never
-// rendered off darwin — profile() returns "" and wrap() is the identity — so
-// the check was failing closed over a file that does not exist.
-func TestTheSeparatorIsRefusedOnlyWhereItIsAnAnomaly(t *testing.T) {
-	if strings.ContainsRune(forbiddenIn("windows"), '\\') {
-		t.Error("a backslash is refused on Windows, where it is the path separator — " +
-			"no plugin could ever launch")
-	}
-	if !strings.ContainsRune(forbiddenIn("darwin"), '\\') {
-		t.Error("a backslash reaches a rendered SBPL policy on darwin")
-	}
-	if !strings.ContainsRune(forbiddenIn("linux"), '\\') {
-		t.Error("a backslash is accepted on linux, so the darwin renderer can still meet one")
-	}
-	// The characters that are anomalies anywhere stay refused everywhere,
-	// which is the half of the original rule that platform knowledge does
-	// not touch.
-	for _, goos := range []string{"windows", "darwin", "linux"} {
-		for _, bad := range []string{`"`, "\n", "\r", "(", ")"} {
-			if !strings.Contains(forbiddenIn(goos), bad) {
-				t.Errorf("%q is accepted on %s", bad, goos)
-			}
 		}
 	}
 }
@@ -121,7 +88,7 @@ func TestASymlinkedDenyPathDeniesItsTargetToo(t *testing.T) {
 	}
 	link := filepath.Join(base, "link")
 	if err := os.Symlink(real, link); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 
 	got := withTarget(link)
@@ -156,7 +123,7 @@ func TestADenyPathBelowASymlinkResolvesEvenWhenItDoesNotExist(t *testing.T) {
 	}
 	link := filepath.Join(base, ".config")
 	if err := os.Symlink(real, link); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 
 	// Deliberately never created — that is the whole point.
@@ -253,7 +220,7 @@ func TestTheConfinementClaimMatchesTheBehaviour(t *testing.T) {
 	}
 
 	// Unconfined platforms must not pretend. The command runs as given, and
-	// doctor says so — see the per-platform reasons in confine_other.go.
+	// doctor says so — see the reason in confine_linux.go.
 	if name != "/bin/echo" || len(argv) != 1 || argv[0] != "hi" {
 		t.Errorf("Confined() is false but wrap altered the command: %q %v", name, argv)
 	}
@@ -263,7 +230,7 @@ func TestTheConfinementClaimMatchesTheBehaviour(t *testing.T) {
 }
 
 // Whatever the platform, the parts that are NOT confinement still apply, and
-// they are the ones carrying the weight on Linux and Windows.
+// they are the ones carrying the weight on Linux.
 func TestTheNonConfinementHardeningIsPlatformIndependent(t *testing.T) {
 	id := Identity{Path: "/bin/echo", Digest: "abc"}
 	cmd := buildCmd(id, DenySet{}, nil)

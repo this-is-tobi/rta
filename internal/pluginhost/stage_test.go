@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -14,9 +13,8 @@ import (
 )
 
 // envPrinterSource is a plugin-shaped program that prints the environment it
-// was started with. It is compiled rather than a copy of env(1): a copy of a
-// platform binary is killed on macOS, a script is not something Windows can
-// execute, and a plugin is always a file of its own.
+// was started with. It is compiled rather than a copy of env(1), because a
+// copy of a platform binary is killed on macOS.
 const envPrinterSource = `package main
 
 import (
@@ -101,9 +99,7 @@ func TestAPluginOnThePathRunsFromAPrivateCopy(t *testing.T) {
 	if err != nil || !bytes.Equal(got, want) {
 		t.Fatalf("the copy differs from what was hashed: %v", err)
 	}
-	// Windows keeps no permission bits to read back: the directory's access
-	// list is what keeps the copy private there.
-	if info, err := os.Stat(exe); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) {
+	if info, err := os.Stat(exe); err != nil || info.Mode().Perm()&0o077 != 0 {
 		t.Errorf("the copy is reachable by others: %v %v", info, err)
 	}
 	cmd := buildCmd(id, DenySet{}, nil)

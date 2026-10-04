@@ -20,8 +20,8 @@ func TestHardenSelfMatchesWhatTheADRClaims(t *testing.T) {
 	HardenSelf() // idempotent: main calls it once, tests call it repeatedly
 
 	if runtime.GOOS != "linux" {
-		// The platforms that do nothing must say so somewhere a reader will
-		// find it; self_other.go carries the per-platform reasons.
+		// The platform that does nothing must say so somewhere a reader will
+		// find it; self_darwin.go carries the reason.
 		return
 	}
 	status, err := os.ReadFile("/proc/self/status")

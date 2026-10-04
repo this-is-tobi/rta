@@ -136,8 +136,8 @@ func matches(path, digest string) bool {
 }
 
 // sweepRun removes the copies of other digests nobody has started in a day. A
-// process running from one keeps its file on every platform that lets a
-// running file be removed, and elsewhere the removal fails and is not said.
+// process running from one keeps its file: removing it unlinks the name and
+// leaves the process its inode.
 func sweepRun(keep string) {
 	entries, err := os.ReadDir(ManagedRun())
 	if err != nil {

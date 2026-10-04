@@ -1,5 +1,3 @@
-//go:build unix
-
 package pluginhost
 
 import (
@@ -19,7 +17,7 @@ import (
 func TestANamedPipeWithTheExecuteBitDoesNotHoldIdentify(t *testing.T) {
 	pipe := filepath.Join(t.TempDir(), BinaryName("rta-plugin-fifo"))
 	if err := syscall.Mkfifo(pipe, 0o755); err != nil {
-		t.Skipf("no named pipes here: %v", err)
+		t.Fatal(err)
 	}
 
 	done := make(chan error, 1)

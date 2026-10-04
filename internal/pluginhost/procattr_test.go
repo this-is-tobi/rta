@@ -1,5 +1,3 @@
-//go:build !windows
-
 package pluginhost
 
 import (
@@ -17,7 +15,7 @@ import (
 )
 
 // scriptRunning is a plugin-shaped file that hands what it is given to a
-// system program: a script, which only a platform with shebangs can run.
+// system program.
 func scriptRunning(t *testing.T, program string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), BinaryName("rta-plugin-script"))
