@@ -3,7 +3,6 @@ package app
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -13,9 +12,6 @@ import (
 // once, at the start, naming the root and the fix, and a root it can read is
 // not mentioned.
 func TestAServerSaysWhichRootItCannotRead(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("a directory's mode bits are not what refuses a read on Windows")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root reads a directory whatever its mode says")
 	}

@@ -396,7 +396,7 @@ func doctorDataDir(add func(check, status, detail string)) {
 	switch info, err := os.Stat(dataDir); {
 	case err != nil:
 		add("data", "info", dataDir+" (nothing written yet)")
-	case runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0:
+	case info.Mode().Perm()&0o077 != 0:
 		add("data", "warn", fmt.Sprintf("%s is mode %04o — other accounts on this machine can list "+
 			"what is in it; chmod 700 %s", dataDir, info.Mode().Perm(), dataDir))
 	default:

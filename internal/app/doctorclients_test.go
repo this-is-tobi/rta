@@ -3,7 +3,6 @@ package app
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -110,7 +109,7 @@ func TestServersOnThisBuildDrawNoWarning(t *testing.T) {
 // the operator "no client has an rta server open" during exactly the
 // incident where that line matters most.
 func TestAgentsConnectedWarnsWhenItCannotCheck(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("file modes do not deny the owner here")
 	}
 	t.Setenv("RTA_DATA_DIR", t.TempDir())

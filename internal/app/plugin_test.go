@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -1189,9 +1188,6 @@ func TestPluginNewAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 func TestPluginDevPassesALaunchRefusalOnAsItself(t *testing.T) {
 	if testing.Short() {
 		t.Skip("compiles a binary")
-	}
-	if runtime.GOOS == "windows" {
-		t.Skip("a plugin listens on loopback TCP on Windows, where TMPDIR sets no limit")
 	}
 	src := devModule(t)
 	// Too long for any socket's path, and there, so that the build, which

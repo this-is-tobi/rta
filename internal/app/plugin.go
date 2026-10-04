@@ -76,7 +76,7 @@ func newPluginCommand(reg *registry.Registry, version string, opts *globalOpts) 
 //
 // On the platforms that confine plugins, a standard list of credential
 // locations is denied to all of them — a weather plugin has no business
-// reading a kubeconfig. (macOS confines; Linux and Windows do not, and say so
+// reading a kubeconfig. (macOS confines; Linux does not, and says so
 // through `rta doctor` and confinementLine below. The allow list still governs
 // what a plugin *declares* it needs on every platform, which is what this
 // command edits; what changes is whether anything enforces the denial.) Some
@@ -987,9 +987,7 @@ func buildPlugin(ctx context.Context, dir string, keep bool, stderr io.Writer) (
 	}
 	release()
 	// Named with the plugin prefix so anything reading the process list, or a
-	// crash report, says what it is — and with the platform's own executable
-	// suffix, because `go build -o` writes the name it is given and Windows
-	// will not run one without `.exe`.
+	// crash report, says what it is.
 	binary := filepath.Join(out, pluginhost.BinaryName("dev"))
 
 	build := exec.CommandContext(ctx, "go", "build", "-o", binary, ".")
