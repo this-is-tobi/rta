@@ -872,7 +872,7 @@ func runInit(_ context.Context, req plugin.Request) (view.View, error) {
 	if !generate && identity == "" && os.Getenv(identityEnv) == "" {
 		return nil, view.Errorf("kv.init.nokey", "name a key, or generate one").
 			WithHint(sf.InputName("generate") + " makes a key for this store, or " + identityName(sf) +
-				" names one already held, e.g. ~/.ssh/id_ed25519")
+				" names one already held, e.g. ~/.ssh/id_ed25519 — or skip init: " + NoStoreNext(sf, "<key>"))
 	}
 
 	var generated string
@@ -925,7 +925,7 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 	sf := req.Surface()
 	if !fileExists(storePath()) {
 		return nil, view.Errorf("kv.rekey.nostore", "no store yet — nothing to re-key").
-			WithHint(sf.CapabilityWith("kv.init", "generate") + " sets one up")
+			WithHint(NoStoreNext(sf, "<key>"))
 	}
 	generate := req.Bool("generate")
 	adding := req.StringSlice("recipient")
@@ -1109,7 +1109,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	case os.IsNotExist(err):
 		return view.KeyValue{Pairs: append(pairs, view.Pair{
 			Key:   "state",
-			Value: "no store yet — " + req.Surface().CapabilityName("kv.set") + " creates it the first time it runs",
+			Value: "no store yet — " + NoStoreNext(req.Surface(), "<key>"),
 		})}, nil
 	case err != nil:
 		return nil, view.Errorf("kv.store.unreadable", "reading %s: %v", path, err)
@@ -1242,8 +1242,7 @@ func runRecipients(_ context.Context, req plugin.Request) (view.View, error) {
 			"What it is locked with is decided when it is created:\n" + callList(
 			[2]string{sf.Call("kv.init", plugin.Arg{Name: "generate", Value: true}), "a key made for this store"},
 			[2]string{operatorsCall(sf, "kv.init", plugin.Arg{Name: "identity", Value: ownKey}), held},
-			[2]string{sf.Call("kv.set", keyArg("<key>"), plugin.Arg{Name: "value", Value: "<value>", Positional: true}),
-				"a passphrase, if you never run init"})
+			[2]string{setCall(sf), "a passphrase you choose, if you never run init"})
 		return t, nil
 	}
 	specs, verr := loadRecipients()
@@ -1322,6 +1321,18 @@ func suggestKeys(_ context.Context, req plugin.Request) []string {
 	return keys
 }
 
+// setCall is the call that makes the first store a passphrase one. A person at a
+// terminal is asked for the value, and a value typed after the key is in shell
+// history, so the call they are shown does not carry one; an agent has no prompt
+// and gives its value as an argument.
+func setCall(sf plugin.Surface) string {
+	args := []plugin.Arg{keyArg("<key>")}
+	if sf == plugin.SurfaceMCP {
+		args = append(args, plugin.Arg{Name: "value", Value: "<value>", Positional: true})
+	}
+	return sf.Call("kv.set", args...)
+}
+
 // callList lays calls out one per line, each with what it is for aligned
 // beside it.
 func callList(calls ...[2]string) string {
@@ -1343,6 +1354,9 @@ func callList(calls ...[2]string) string {
 // gives the capabilities that answer next.
 func emptyList(sf plugin.Surface, stored int, kind, match string) string {
 	if stored == 0 {
+		if !fileExists(storePath()) {
+			return "No keys stored yet — " + NoStoreNext(sf, "<key>")
+		}
 		return "No keys stored yet — " + sf.CapabilityName("kv.set") + " adds one"
 	}
 	var narrowed []string
