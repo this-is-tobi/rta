@@ -55,8 +55,8 @@ const maxToken = 1 << 10
 // never the resource it protects — Acquire never touches that.
 //
 // The lock is a sentinel file, not flock(2): creating a name that cannot
-// already exist behaves identically on every platform rta ships for (Linux,
-// macOS, Windows), where POSIX file locking does not.
+// already exist behaves identically on every platform rta ships for (Linux and
+// macOS), where POSIX file locking does not.
 //
 // **The lock is held by identity, not by name.** Every operation on the
 // sentinel is by content — release removes it only if it still holds this
@@ -137,46 +137,16 @@ func token() ([]byte, error) {
 	return []byte(fmt.Sprintf("%d %s\n", os.Getpid(), hex.EncodeToString(nonce))), nil
 }
 
-// removeWaits paces a removal the platform may refuse for a reason that is
-// nobody's fault. On Windows DeleteFile needs delete access on the target,
-// and every handle os.Open takes shares read and write but not delete
-// (syscall.Open's share mode), so a waiter reading the sentinel — one poll of
-// Acquire's own loop — is enough to refuse a release. Discarding that left
-// the sentinel holding a departed holder's token with a frozen timestamp,
-// and because DefaultTimeout is shorter than DefaultStale, every queued
-// waiter then failed with "timed out waiting for another call" seconds
-// before the stale break would have cleared it.
-//
-// Same budget and the same reasoning as internal/atomicfile's Replace, which
-// waits out the same physics on the other side of a rename. Well inside the
-// lease either way, so no waiter can legitimately break in during it.
-var removeWaits = []time.Duration{
-	0, 5 * time.Millisecond, 10 * time.Millisecond, 20 * time.Millisecond,
-	50 * time.Millisecond, 100 * time.Millisecond, 200 * time.Millisecond,
-	400 * time.Millisecond,
-}
-
 // releaseLock gives the lock up, and only if it is still ours.
 //
 // A holder whose lock was broken as stale has already been replaced. Removing
 // the file by name on the way out would delete its successor's lock and leave
 // that successor inside a critical section it believes it has to itself.
 func releaseLock(path string, mine []byte) {
-	for _, wait := range removeWaits {
-		if wait > 0 {
-			time.Sleep(wait)
-		}
-		// Re-confirmed on every attempt, not once before the loop: the
-		// identity check is the whole of what stops a release deleting a
-		// successor's lock, and after a wait it would be asserting something
-		// it learned up to a second ago.
-		if held, err := atomicfile.ReadCapped(path, maxToken); err != nil || !bytes.Equal(held, mine) {
-			return
-		}
-		if err := remove(path); err == nil {
-			return
-		}
+	if held, err := atomicfile.ReadCapped(path, maxToken); err != nil || !bytes.Equal(held, mine) {
+		return
 	}
+	_ = os.Remove(path)
 }
 
 // beats is how many times a holder restamps its sentinel within one lease.
@@ -232,13 +202,9 @@ type heartbeat struct {
 	stopped bool
 }
 
-// chtimes is os.Chtimes, overridable so a test can make one beat fail the way
-// Windows makes them fail — see beat.
+// chtimes is os.Chtimes, overridable so a test can make one beat fail — see
+// beat.
 var chtimes = os.Chtimes
-
-// remove is os.Remove, overridable so a test can refuse a removal the way
-// Windows refuses one while another handle is open — see releaseLock.
-var remove = os.Remove
 
 // beat restamps the sentinel and arms the next one — for as long as the
 // sentinel is still this call's own lock. A holder that was broken as stale
@@ -251,14 +217,10 @@ var remove = os.Remove
 // That is what `beats` has always claimed — a holder has to miss five in a row
 // before a waiter may call it dead — and for a while it was not what this did:
 // the first beat to fail was the last one ever armed, so one hiccup cost the
-// whole lease. A beat is not a syscall that either works or ends the lease. On
-// Windows every one of them is refused outright while a waiter has the
-// sentinel open, because os.Chtimes opens the file sharing write but not read
-// and a reader holds a read handle, which the share check refuses in both
-// directions — so a holder doing slow work under contention froze at its last
-// stamp, a waiter broke its lock at `stale`, and two writers ran the
-// read-modify-write this package exists to serialize. Unix is one EINTR away
-// from the same thing.
+// whole lease. A beat is not a syscall that either works or ends the lease: a
+// holder doing slow work that froze at its last stamp would have a waiter break
+// its lock at `stale` and run the read-modify-write this package exists to
+// serialize beside it, and a stamp is one EINTR away from failing.
 //
 // Re-arming on failure means a lasting condition keeps a timer alive for as
 // long as the lock is held; stop takes the mutex and cancels whichever timer
@@ -310,10 +272,7 @@ func (h *heartbeat) stop() {
 // nothing about that failure changes on a second attempt, whichever of the
 // two calls below hits it first. Acquire refuses immediately on this one
 // rather than retrying it: retrying costs a Link, two Stats and a Remove
-// every time, for a condition no number of attempts resolves. Within one
-// call, though, the removal itself is retried over removeWaits' short
-// budget, because a Windows sharing violation clears the instant the other
-// reader closes and looks exactly like the lasting refusal until it does.
+// every time, for a condition no number of attempts resolves.
 //
 // Link, not Rename, is what takes the reference to examine. Rename would
 // make path briefly not exist, and any waiter — including one in another
@@ -370,33 +329,13 @@ func breakStale(dir, path string, judged os.FileInfo) error {
 		}
 		return nil
 	}
-	if err := removeJudged(path, name, judged); err != nil {
+	after, serr := os.Stat(name)
+	if serr != nil || !os.SameFile(judged, after) || after.ModTime().After(judged.ModTime()) {
+		return nil //nolint:nilerr // replaced, or renewed since judged: leaving path exactly as it is is the answer, not a failure
+	}
+	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("lock %s has been stale since %s and cannot be removed: %w",
 			path, judged.ModTime().Format(time.RFC3339), err)
 	}
 	return nil
-}
-
-// removeJudged removes the stale lock, re-confirming before every attempt
-// that the file is still the one judged stale — SameFile catches a
-// replacement, the mtime comparison a renewal that landed after judging,
-// which never changes a file's identity — and waiting out a platform that
-// refuses the removal for a reason that resolves on its own (removeWaits).
-// Both guards run again on every attempt, so the retry cannot widen the
-// residual window breakStale's own doc comment describes.
-func removeJudged(path, ref string, judged os.FileInfo) error {
-	var err error
-	for _, wait := range removeWaits {
-		if wait > 0 {
-			time.Sleep(wait)
-		}
-		after, serr := os.Stat(ref)
-		if serr != nil || !os.SameFile(judged, after) || after.ModTime().After(judged.ModTime()) {
-			return nil //nolint:nilerr // replaced, or renewed since judged: leaving path exactly as it is is the answer, not a failure
-		}
-		if err = remove(path); err == nil {
-			return nil
-		}
-	}
-	return err
 }

@@ -69,8 +69,7 @@ func awaitRenewed(t *testing.T, path string, after time.Time, within time.Durati
 	deadline := time.Now().Add(patience)
 	for {
 		// Not mtime, which ends the test at the first look that fails: a look
-		// that fails costs a look here, as a refused beat costs a beat, and a
-		// file a beat has open can refuse a reader on Windows.
+		// that fails costs a look here, as a refused beat costs a beat.
 		if info, err := os.Stat(path); err == nil {
 			stamp, age = info.ModTime(), time.Since(info.ModTime())
 			if stamp.After(after) && age <= within {
@@ -195,17 +194,14 @@ func TestReleasingStopsTheRenewal(t *testing.T) {
 // after `stale` a waiter was entitled to break its lock and run the same
 // read-modify-write beside it.
 //
-// The refusal is injected because nothing on Unix makes Chtimes fail in
-// practice; Windows does it structurally — os.Chtimes opens the file sharing
-// write but not read, and a waiter reading the sentinel holds a read handle,
-// so every beat that lands while a waiter is inside its poll is refused.
+// The failure is injected because nothing makes Chtimes fail on demand.
 func TestAMissedBeatCostsABeatNotTheLease(t *testing.T) {
 	path := lockPath(t)
 	original := chtimes
 	var refused atomic.Int32
 	chtimes = func(name string, atime, mtime time.Time) error {
 		if refused.CompareAndSwap(0, 1) {
-			return errors.New("the process cannot access the file because it is being used by another process")
+			return errors.New("interrupted system call")
 		}
 		return original(name, atime, mtime)
 	}
