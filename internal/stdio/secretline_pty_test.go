@@ -1,5 +1,3 @@
-//go:build darwin || linux
-
 package stdio
 
 import (

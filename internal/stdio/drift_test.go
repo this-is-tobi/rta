@@ -55,7 +55,6 @@ func TestOnlyStdioNamesOsStdin(t *testing.T) {
 		if rerr != nil {
 			return rerr
 		}
-		rel = filepath.ToSlash(rel)
 		// This package owns fd 0, and its tests have to be able to install a
 		// pipe as the real one to test anything at all.
 		if strings.HasPrefix(rel, "internal/stdio/") {
