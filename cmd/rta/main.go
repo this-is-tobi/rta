@@ -1,4 +1,4 @@
-//go:build unix
+//go:build linux || darwin
 
 // Command rta is the RTA command line.
 package main
