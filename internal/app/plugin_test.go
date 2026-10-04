@@ -824,7 +824,7 @@ func TestPluginUntrustAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	pairs := answerPairs(t, out)
-	if pairs["would untrust"] != "probe" || pairs["approvals"] != "2" || !strings.Contains(pairs["next"], "--dry-run") {
+	if pairs["would untrust"] != "probe" || pairs["approvals to withdraw"] != "2" || pairs["approvals left after"] != "2" || !strings.Contains(pairs["next"], "--dry-run") {
 		t.Errorf("a dry run answered %v", pairs)
 	}
 
@@ -833,7 +833,7 @@ func TestPluginUntrustAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	pairs = answerPairs(t, out)
-	if pairs["untrusted"] != "probe" || pairs["approvals"] != "2" || pairs["record"] != plugintrust.Path() {
+	if pairs["untrusted"] != "probe" || pairs["approvals withdrawn"] != "2" || pairs["approvals left"] != "2" || pairs["record"] != plugintrust.Path() {
 		t.Errorf("answered %v, want the name, both approvals and the record written", pairs)
 	}
 
@@ -855,7 +855,7 @@ func TestPluginUntrustAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	readsOnATerminal(t, out, "untrusted", "approvals", "left alone", "record", "next")
+	readsOnATerminal(t, out, "untrusted", "approvals withdrawn", "approvals left", "left alone", "record", "next")
 	if !strings.Contains(out, "other") || !strings.Contains(out, strings.Repeat("12", 6)) {
 		t.Errorf("--all did not name everything it withdrew:\n%s", out)
 	}
@@ -864,7 +864,7 @@ func TestPluginUntrustAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	if pairs = answerPairs(t, out); pairs["approvals"] != "0" || pairs["untrusted"] != "nothing" {
+	if pairs = answerPairs(t, out); pairs["approvals withdrawn"] != "0" || pairs["approvals left"] != "0" || pairs["untrusted"] != "nothing" {
 		t.Errorf("--all with nothing to withdraw answered %v, want the same pairs, counting 0", pairs)
 	}
 	if !strings.HasPrefix(pairs["left alone"], "1 artifact trusted by the system root") {
@@ -922,7 +922,7 @@ func TestUntrustSaysWhatTheSystemRootKeepsLoading(t *testing.T) {
 	if strings.Contains(pairs["next"], "will not load again") {
 		t.Errorf("next = %q for an artifact the system root still trusts", pairs["next"])
 	}
-	if pairs["approvals"] != "1" || !strings.Contains(pairs["next"], "keeps loading") {
+	if pairs["approvals withdrawn"] != "1" || !strings.Contains(pairs["next"], "keeps loading") {
 		t.Errorf("answered %v, want the one approval withdrawn and the plugin still loading", pairs)
 	}
 
@@ -936,7 +936,8 @@ func TestUntrustSaysWhatTheSystemRootKeepsLoading(t *testing.T) {
 	}
 	pairs = answerPairs(t, out)
 	keepsLoading(t, pairs)
-	if pairs["approvals"] != "2" || !strings.HasPrefix(pairs["left alone"], "1 artifact trusted by the system root") {
+	if pairs["approvals withdrawn"] != "2" || pairs["approvals left"] != "0" ||
+		!strings.HasPrefix(pairs["left alone"], "1 artifact trusted by the system root") {
 		t.Errorf("--all answered %v, want both approvals withdrawn and the shared one left loading", pairs)
 	}
 	if !strings.Contains(pairs["next"], "the rest will not load again") {
