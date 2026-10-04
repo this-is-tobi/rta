@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -127,7 +126,7 @@ func TestConfigReadsTheSystemFileOfEveryUsualBuildOfGit(t *testing.T) {
 	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
 
 	want := []string{"credential.helper=osxkeychain", "init.defaultBranch=trunk"}
-	if os.Geteuid() == 0 || runtime.GOOS == "windows" {
+	if os.Geteuid() == 0 {
 		want = append(want, "a.b=c") // a mode of 0 locks nothing away from either
 	}
 	if got := scopeRows(table(t, runConfig, req(t, dir, nil)), "system"); strings.Join(got, " ") != strings.Join(want, " ") {

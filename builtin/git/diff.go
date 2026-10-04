@@ -10,7 +10,6 @@ import (
 	"os"
 	pathpkg "path"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"syscall"
@@ -1005,9 +1004,9 @@ func diffWorktree(ctx context.Context, repo *git.Repository, gate func(string) *
 // trustsFileMode reports whether the execute bit of a file on disk is read as
 // git reads it: core.fileMode, as the last of configs that sets it has it,
 // which git sets off in a repository made on a filesystem that keeps no such
-// bit, and which is off by default on Windows.
+// bit.
 func trustsFileMode(configs []scopedConfig, cerr error) bool {
-	on := runtime.GOOS != "windows"
+	on := true
 	if cerr != nil {
 		return on
 	}
@@ -1142,8 +1141,7 @@ func diffOneFile(tree boundDir, head *headFiles, path string, disk os.FileInfo, 
 		newContent = content
 		// The execute bit is the file's own, as git reads it, unless the
 		// filesystem is one where git is told not to trust it (core.fileMode
-		// off, and the default on Windows): then the mode HEAD has stands, as
-		// it did for every file. A script that gained its bit was a change the
+		// off): then the mode HEAD has stands, as it did for every file. A script that gained its bit was a change the
 		// diff did not show, beside a status that listed it.
 		if mode == filemode.Regular {
 			switch {

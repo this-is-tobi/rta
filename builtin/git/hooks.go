@@ -9,10 +9,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"golang.org/x/sys/unix"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -107,7 +109,7 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 		mode, at, unfollowed := hookMode(req, look, hooks, name, info)
 		t.Rows = append(t.Rows, []string{
 			strings.TrimSuffix(name, ".sample"),
-			hookStatus(name, mode, unfollowed, at.name != "" && mayExecute(at.dir, at.name, mode)),
+			hookStatus(name, mode, unfollowed, at.name != "" && mayExecute(at.dir, at.name)),
 			shownFrom(base, filepath.Join(dir, name)),
 		})
 	}
@@ -239,6 +241,28 @@ func hookMode(req plugin.Request, look *beneathRoots, dir boundDir, name string,
 type hookPlace struct {
 	dir  boundDir
 	name string
+}
+
+// mayExecute is whether access(2) finds name in dir executable for this
+// process, the question git asks of a hook's name before it runs it
+// (hookStatus).
+//
+// Over MCP it is asked of the directory holding name as it is held open
+// beneath the roots, and of name itself where it is, without following it: a
+// hook that was a file when it was listed and a link out of the roots when it
+// is asked about answers for the link, and says nothing of what is at its far
+// end. The far end of a hook that was a link is asked about where the gate
+// judged it to be (hookMode), which was no link.
+func mayExecute(dir boundDir, name string) bool {
+	if dir.root == nil {
+		return unix.Access(dir.join(name), unix.X_OK) == nil
+	}
+	parent, err := dir.OpenFile(filepath.Dir(name), os.O_RDONLY|syscall.O_NONBLOCK)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = parent.Close() }()
+	return unix.Faccessat(int(parent.Fd()), filepath.Base(name), unix.X_OK, unix.AT_SYMLINK_NOFOLLOW) == nil
 }
 
 // hooksDir is the directory git runs this repository's hooks from, and the

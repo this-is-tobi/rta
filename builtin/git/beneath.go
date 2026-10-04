@@ -6,7 +6,6 @@ import (
 	iofs "io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -16,7 +15,6 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5"
 
-	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -204,7 +202,7 @@ func (d boundDir) sub(name string) (boundDir, error) {
 	if d.root == nil {
 		return boundDir{path: d.join(name)}, nil
 	}
-	root, err := d.root.OpenRoot(onlyADirectory(inRoot(name), "/"))
+	root, err := d.root.OpenRoot(onlyADirectory(inRoot(name)))
 	if err != nil {
 		return boundDir{}, err
 	}
@@ -219,7 +217,7 @@ func (d boundDir) Close() {
 }
 
 // onlyADirectory is name, a directory to open as a root, spelled so that it
-// opens only if it is one: with the directory itself, ".", after it, sep
+// opens only if it is one: with the directory itself, ".", after it, a slash
 // between them.
 //
 // **os.OpenRoot and Root.OpenRoot open the last part of a name as whatever
@@ -228,7 +226,7 @@ func (d boundDir) Close() {
 // git directory, or a directory swapped for one as it was opened, held the
 // call for good. Every part of a name but the last is opened as a directory,
 // which a pipe refuses at once, and "." after it makes it one of those.
-func onlyADirectory(name, sep string) string { return name + sep + "." }
+func onlyADirectory(name string) string { return name + "/." }
 
 // rootAbove is the directory of the server's roots p lies under: the first
 // of the directories on p's way, from the top of the filesystem down, that
@@ -248,12 +246,10 @@ func onlyADirectory(name, sep string) string { return name + sep + "." }
 // the name first. A relative one is taken from the working directory, as the
 // gate takes it.
 func rootAbove(req plugin.Request, p string) (_ string, verr *view.Error) {
-	sep := string(filepath.Separator)
 	p = fromWorkingDir(p)
-	vol := filepath.VolumeName(p)
-	cur := vol + sep
+	cur := "/"
 	var parts []string
-	for _, part := range pathguard.NameParts(runtime.GOOS, p[len(vol):]) {
+	for _, part := range strings.Split(p, "/") {
 		if part != "" {
 			parts = append(parts, part)
 		}
@@ -265,7 +261,7 @@ func rootAbove(req plugin.Request, p string) (_ string, verr *view.Error) {
 		if i == len(parts) {
 			return "", verr
 		}
-		cur = strings.TrimSuffix(cur, sep) + sep + parts[i]
+		cur = strings.TrimSuffix(cur, "/") + "/" + parts[i]
 	}
 }
 
@@ -316,7 +312,7 @@ func (b *beneathRoots) under(p string) (boundDir, string, error) {
 	if verr != nil {
 		return boundDir{}, "", verr
 	}
-	root, err := os.OpenRoot(onlyADirectory(top, string(filepath.Separator)))
+	root, err := os.OpenRoot(onlyADirectory(top))
 	if errors.Is(err, syscall.ENOTDIR) && top == p {
 		return boundDir{}, p, nil
 	}
@@ -530,11 +526,9 @@ const maxLinks = 40
 // all the way now stays so when it is opened; one that enters them at any
 // point is the caller's to lead anywhere from there.
 func throughRoots(req plugin.Request, p string) bool {
-	sep := string(filepath.Separator)
 	p = fromWorkingDir(p)
-	vol := filepath.VolumeName(p)
-	cur := vol + sep
-	pending := pathguard.NameParts(runtime.GOOS, p[len(vol):])
+	cur := "/"
+	pending := strings.Split(p, "/")
 	for links := 0; len(pending) > 0; {
 		part := pending[0]
 		pending = pending[1:]
@@ -557,13 +551,10 @@ func throughRoots(req plugin.Request, p string) bool {
 		if links++; links > maxLinks {
 			return false
 		}
-		switch tvol := filepath.VolumeName(target); {
-		case filepath.IsAbs(target):
-			cur, target = tvol+sep, target[len(tvol):]
-		case pathguard.VolumeRooted(runtime.GOOS, target):
-			cur = filepath.VolumeName(cur) + sep
+		if filepath.IsAbs(target) {
+			cur = "/"
 		}
-		pending = append(pathguard.NameParts(runtime.GOOS, target), pending...)
+		pending = append(strings.Split(target, "/"), pending...)
 	}
 	return false
 }

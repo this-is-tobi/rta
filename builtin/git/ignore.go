@@ -466,8 +466,8 @@ type ignorePattern struct {
 // no path, and is not kept.
 //
 // **go-git read the bytes as they were, and git does not.** git skips the
-// byte order mark an editor on Windows writes, where go-git kept it as part
-// of the first pattern, and ends a line at a NUL, where go-git kept the rest
+// byte order mark some editors write, where go-git kept it as part of the
+// first pattern, and ends a line at a NUL, where go-git kept the rest
 // as part of the pattern, so neither matched: `.env` after either was a file
 // git ignores that git.status listed and git.diff showed whole. And go-git's
 // reader stopped at a line longer than 64 KiB and dropped every pattern after
@@ -806,7 +806,7 @@ func rootExcludeSources(repo *git.Repository, configs []scopedConfig, cerr error
 }
 
 // byName is the file p as git reads it, by name wherever its links lead: a
-// filesystem over the top of p's volume, and p's name in it.
+// filesystem over the root of the machine, and p's name in it.
 //
 // **Not over the directory holding it.** go-billy's osfs follows a link only
 // as far as the directory it was opened on, and refuses one leading out of
@@ -817,8 +817,7 @@ func byName(p string) (billy.Filesystem, string) {
 	if abs, err := filepath.Abs(p); err == nil {
 		p = abs
 	}
-	top := filepath.VolumeName(p) + string(filepath.Separator)
-	return osfs.New(top), strings.TrimPrefix(p, top)
+	return osfs.New("/"), strings.TrimPrefix(p, "/")
 }
 
 // excludesBeneath is judged, an excludes file inside the roots, as a status

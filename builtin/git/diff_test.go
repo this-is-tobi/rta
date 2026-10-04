@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -39,9 +38,6 @@ func TestDiffCommitShowsWhatThatCommitChanged(t *testing.T) {
 // a repository whose filesystem keeps no such bit (core.fileMode off) shows
 // no mode change at all, as git shows none.
 func TestDiffShowsAChangeOfMode(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("no execute bit here")
-	}
 	machineConfig(t, "")
 	dir, repo := testRepo(t)
 	commitFile(t, repo, dir, "run.sh", "#!/bin/sh\n", "first")

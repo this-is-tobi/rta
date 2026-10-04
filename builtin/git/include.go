@@ -655,8 +655,7 @@ func (r *configReading) collect(f scopedConfig, l configLine, forbid bool) error
 // call here: rta's own state or configuration, which nothing an agent reaches
 // may read however little of it an answer shows (an include naming the
 // secret store's identity from inside a root drawn around the home directory
-// was read, and counted), and on Windows a network share, whose opening is
-// the very connection the gate refuses it to prevent.
+// was read, and counted).
 //
 // Counted among the includes one reading follows before the gate is asked,
 // since each judgement is a look at the filesystem, and a config of nothing

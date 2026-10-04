@@ -265,7 +265,6 @@ func machineConfig(t *testing.T, gitconfig string) (home string) {
 	t.Helper()
 	home = t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	for _, name := range []string{
 		"GIT_CONFIG_SYSTEM", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "DEVELOPER_DIR",
