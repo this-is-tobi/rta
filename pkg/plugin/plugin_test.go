@@ -180,6 +180,20 @@ func TestValidateFailures(t *testing.T) {
 				Suggest: func(context.Context, Request) []string { return nil }}}
 		}, "String box"},
 		{"scope names no input", func(p *Plugin) { p.Capabilities[0].Scope = "nope" }, "names no input"},
+		// Keywords are search words: single lowercase words, few, and each once.
+		{"keyword that is a phrase", func(p *Plugin) { p.Capabilities[0].Keywords = []string{"disk space"} }, "one lowercase word"},
+		{"keyword in capitals", func(p *Plugin) { p.Capabilities[0].Keywords = []string{"SSL"} }, "one lowercase word"},
+		{"keyword declared twice", func(p *Plugin) { p.Capabilities[0].Keywords = []string{"ssl", "tls", "ssl"} }, "declared twice"},
+		{"keyword too long", func(p *Plugin) {
+			p.Capabilities[0].Keywords = []string{strings.Repeat("a", maxKeyword+1)}
+		}, "characters, want at most"},
+		{"too many keywords", func(p *Plugin) {
+			words := make([]string, maxKeywords+1)
+			for i := range words {
+				words[i] = fmt.Sprintf("w%d", i)
+			}
+			p.Capabilities[0].Keywords = words
+		}, "declares 13 keywords"},
 		// A reveal is coupled to the gate that already exists, so declaring one
 		// is never a way around it.
 		{"reveals on a read", func(p *Plugin) {
@@ -920,5 +934,13 @@ func TestARevealIsAdmittedBehindAScopedGrantOrForAPersonAlone(t *testing.T) {
 	}
 	if err := human.Validate(); err != nil {
 		t.Errorf("a reveal only a person can reach was refused: %v", err)
+	}
+}
+
+func TestKeywordsAreAcceptedAsWords(t *testing.T) {
+	p := validPlugin()
+	p.Capabilities[0].Keywords = []string{"todo", "ssl", "to-do", "ipv6"}
+	if err := p.Validate(); err != nil {
+		t.Errorf("search words were refused: %v", err)
 	}
 }

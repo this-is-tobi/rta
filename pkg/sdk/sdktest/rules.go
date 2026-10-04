@@ -318,6 +318,41 @@ func checkVerbs(t reporter, p plugin.Plugin, cfg config) {
 		format.Plural(len(novel), "it means", "one of these means"), strings.Join(vocabulary, "/"))
 }
 
+// checkKeywords says when a search word adds nothing. Search matches a query's
+// words against the words of the ID and the summary as prefixes, so a keyword
+// the capability's own words already start with is found without it, and a
+// list padded with such words hides the few that earn their place.
+//
+// A note and never a failure: it costs nothing but the author's attention, and
+// a keyword that is redundant today is not one tomorrow, when the summary is
+// reworded.
+func checkKeywords(t reporter, p plugin.Plugin, cfg config) {
+	t.Helper()
+
+	for _, c := range p.Capabilities {
+		if cfg.skipped(RuleDeclaration, c.ID) {
+			continue
+		}
+		own := wordsOf(c.ID + " " + c.Summary)
+		for _, k := range c.Keywords {
+			for _, w := range own {
+				if strings.HasPrefix(w, k) {
+					t.Logf("sdktest: %s: %s keyword %q is already a word of its ID or summary (%q); "+
+						"search finds it without", RuleDeclaration, c.ID, k, w)
+					break
+				}
+			}
+		}
+	}
+}
+
+// wordsOf splits text into the lowercase words search matches by.
+func wordsOf(text string) []string {
+	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	})
+}
+
 func dedupe(sorted []string) []string {
 	out := sorted[:0]
 	var last string

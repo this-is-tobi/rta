@@ -54,6 +54,15 @@ const (
 	maxOptions = 256
 )
 
+// maxKeywords and maxKeyword bound a capability's search words. Search reads
+// every capability's words on every keystroke of a person typing into it, and
+// a word that long, or a list that long, is a description trying to be found
+// by a keyword.
+const (
+	maxKeywords = 12
+	maxKeyword  = 24
+)
+
 // FieldTypes returns every type an input may declare, in the order the
 // rejection message lists them.
 //
@@ -218,6 +227,9 @@ func (c Capability) validate(ns string) error {
 			"has no call for a grant to cover", c.ID)
 	}
 	if err := checkReveals(c); err != nil {
+		return err
+	}
+	if err := checkKeywords(c); err != nil {
 		return err
 	}
 	scoped := c.Scope == ""
@@ -615,6 +627,35 @@ func (c Capability) validate(ns string) error {
 		return err
 	}
 	return checkArguments(c)
+}
+
+// keywordRe is a search word: one lowercase word, digits and inner hyphens
+// allowed ("to-do" is a word a person types). Anything else is a phrase or a
+// sentence, and search tokenises its query into words, so a phrase here could
+// only ever match by accident.
+var keywordRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
+// checkKeywords holds a capability's search words to being words.
+func checkKeywords(c Capability) error {
+	if len(c.Keywords) > maxKeywords {
+		return fmt.Errorf("capability %q declares %d keywords, want at most %d; a keyword list is for "+
+			"the handful of words people search by that the ID and summary lack", c.ID, len(c.Keywords), maxKeywords)
+	}
+	seen := map[string]bool{}
+	for _, k := range c.Keywords {
+		switch {
+		case !keywordRe.MatchString(k):
+			return fmt.Errorf("capability %q: keyword %q must be one lowercase word, [a-z0-9-]; search "+
+				"matches the words of a query, so a phrase here would never be found", c.ID, k)
+		case len(k) > maxKeyword:
+			return fmt.Errorf("capability %q: keyword %q is %d characters, want at most %d",
+				c.ID, k, len(k), maxKeyword)
+		case seen[k]:
+			return fmt.Errorf("capability %q: keyword %q is declared twice", c.ID, k)
+		}
+		seen[k] = true
+	}
+	return nil
 }
 
 // checkReveals couples a reveal to the gate that already exists, so that

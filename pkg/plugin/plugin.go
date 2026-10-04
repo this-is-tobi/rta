@@ -737,6 +737,17 @@ type Capability struct {
 	// (view.RevealKey), and the reveal it points at does not mask the value it
 	// exists to show.
 	Reveals bool
+	// Keywords are words a person would search for that this capability's ID
+	// and summary do not contain: "todo" for the note list, "ssl" for the
+	// certificate check, "timestamp" for the clock. Search on the human
+	// surfaces matches them as it matches the ID's words, so a query written in
+	// the person's vocabulary finds the capability written in the catalogue's.
+	//
+	// Single lowercase words, a dozen at most. Never published to a model,
+	// which picks a tool by its description and would only be spent context by
+	// more words; and a keyword that is already a word of the ID is noise,
+	// which sdktest says.
+	Keywords []string
 
 	// Actions are the keys a result of this capability offers: a sibling
 	// capability opened from a row, from the record's own page, or from the
