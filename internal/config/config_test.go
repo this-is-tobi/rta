@@ -58,10 +58,11 @@ func TestWriteLoadRoundTrip(t *testing.T) {
 }
 
 // The header describes the file, whoever wrote it. It said "created by `rta
-// init`" on a file made by `rta profile set` or a tile moved in the TUI, and
-// said nothing of what a reader editing it by hand most needs to know: the
-// file is written again whole, and a comment typed into it does not come back.
-func TestTheHeaderNamesNoCommandAndWarnsAboutHandWrittenComments(t *testing.T) {
+// init`" on a file made by `rta profile set` or a tile moved in the TUI, so it
+// names no command as the author, and it says what a person who annotates the
+// file most needs to know: a comment typed into it stays (preserve_test.go
+// shows that it does).
+func TestTheHeaderNamesNoCommandAsTheAuthorAndPromisesTheCommentsStay(t *testing.T) {
 	setPath(t)
 	if err := Write(Config{Output: "json"}); err != nil {
 		t.Fatal(err)
@@ -70,21 +71,8 @@ func TestTheHeaderNamesNoCommandAndWarnsAboutHandWrittenComments(t *testing.T) {
 	if strings.Contains(string(raw), "rta init") {
 		t.Errorf("the header names the wizard for a file anything may have written:\n%s", raw)
 	}
-	if !strings.Contains(string(raw), "a comment added by hand does not survive") {
+	if !strings.Contains(string(raw), "Comments you add by hand stay") {
 		t.Errorf("the header does not say what a rewrite does to a comment:\n%s", raw)
-	}
-
-	// And the claim is true: a comment in the file is gone after the next write.
-	hand := "# my own note\n" + string(raw)
-	if err := os.WriteFile(Path(), []byte(hand), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := Mutate(func(cfg Config) (Config, bool) { cfg.Output = "yaml"; return cfg, true }); err != nil {
-		t.Fatal(err)
-	}
-	after, _ := os.ReadFile(Path())
-	if strings.Contains(string(after), "my own note") {
-		t.Errorf("a hand-written comment survived a rewrite, so the header's warning is out of date:\n%s", after)
 	}
 }
 
