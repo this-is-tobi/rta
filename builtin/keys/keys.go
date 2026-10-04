@@ -28,7 +28,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/this-is-tobi/rta/builtin/internal/sshkeys"
 	"github.com/this-is-tobi/rta/internal/pathguard"
@@ -210,12 +209,8 @@ func keyTable(paths []string) view.Table {
 }
 
 // exposure grades one key file's permissions, and is empty when there is
-// nothing to say — including on Windows, where the POSIX bits mean nothing
-// and the ACL is the real answer (builtin/audit draws the same line).
+// nothing to say.
 func exposure(path string) string {
-	if runtime.GOOS == "windows" {
-		return ""
-	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return ""
