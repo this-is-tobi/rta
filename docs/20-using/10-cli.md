@@ -218,6 +218,8 @@ kubectl get secret db -o jsonpath='{.data.password}' | base64 -d | rta kv set db
 
 The second line is the one that matters: it is how a credential another command prints reaches the store without ever being an argument in `ps` or in your shell history. To type one instead, run `rta kv set db-password` at a terminal: it asks for the value with echo off. The http client takes its credential the same way: `--bearer-file` and `--basic-file` read a token or `user:password` from a file or from `/dev/stdin`, so `rta http get https://api.example.com/me --bearer-file /dev/stdin` keeps it out of `ps` and your history, and there is no environment variable for it on purpose, since one would follow every URL the client is asked for. The client refuses loopback and private addresses; `--local-network` lets one call at a terminal reach a service of your own there, never the addresses cloud metadata lives at, and an agent cannot ask for it.
 
+`--local-network` reaches `localhost`, `::1` and `127.0.0.1` alike, and a name with two addresses is tried on each until one answers. A URL written without a scheme is `https://`, except that with `--local-network` a host that is `localhost`, a name under it, or a loopback or private address is `http://` (port 443 keeps `https://`): `rta http get localhost:8080 --local-network`. A name that merely might be private, like `grafana.internal`, keeps `https://`, since the scheme is chosen before the name is looked up; write `http://` for it.
+
 ## Scripting notes
 
 - **Be explicit about format.** `-o json` or `RTA_OUTPUT=json`.
