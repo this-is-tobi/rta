@@ -483,43 +483,65 @@ func secretReason(c plugin.Capability) string {
 
 // --- (f) actions ----------------------------------------------------------
 
-// checkActions holds the one declared TUI behaviour Validate cannot see
-// without a run: Copy names a column of the Table, or a key of the KeyValue,
-// the capability actually returns. Validate sees a well-formed name; a name
-// that misses the view is a copy key that hints on the footer and never
-// fires, which is exactly the shape a conformance suite exists to catch.
-// The rest of the declaration — keys, targets, bare, toggles, live, flash —
-// is admitted by Validate, which checkDeclaration already runs.
+// checkActions holds the declared behaviour Validate cannot see without a run:
+// the column or key a capability names — Copy for the TUI's `c`, Primary for
+// what a pipe is handed — is one the capability actually returns. Validate
+// sees a well-formed name; a name that misses the view is a copy key that
+// hints on the footer and never fires, or a pipe that is handed nothing,
+// which is exactly the shape a conformance suite exists to catch. The rest of
+// the declaration — keys, targets, bare, toggles, live, flash — is admitted by
+// Validate, which checkDeclaration already runs.
 func checkActions(t reporter, seen []observed, cfg config) {
 	t.Helper()
 
 	for _, o := range seen {
 		c := o.cap
-		if c.Copy == "" || o.err != nil || cfg.skipped(RuleActions, c.ID) {
+		if (c.Copy == "" && c.Primary == "") || o.err != nil || cfg.skipped(RuleActions, c.ID) {
 			continue
 		}
-		switch v := o.view.(type) {
-		case view.Table:
-			names := make([]string, 0, len(v.Columns))
-			for _, col := range v.Columns {
-				names = append(names, col.Name)
-			}
-			if !slices.Contains(names, c.Copy) {
-				t.Errorf("sdktest: %s: %s declares Copy %q, and its table has no such column (columns: %s)",
-					RuleActions, c.ID, c.Copy, strings.Join(names, ", "))
-			}
-		case view.KeyValue:
-			found := false
-			for _, pair := range v.Pairs {
-				found = found || pair.Key == c.Copy
-			}
-			if !found {
-				t.Errorf("sdktest: %s: %s declares Copy %q, and its pairs carry no such key", RuleActions, c.ID, c.Copy)
-			}
-		default:
-			t.Errorf("sdktest: %s: %s declares Copy %q, but returns a %s; c copies a Table's column or a KeyValue's key",
-				RuleActions, c.ID, c.Copy, view.TypeOf(v))
+		if c.Copy != "" {
+			checkNamed(t, c, o.view, "Copy", c.Copy)
 		}
+		if c.Primary != "" {
+			checkNamed(t, c, o.view, "Primary", c.Primary)
+		}
+	}
+}
+
+// checkNamed holds one declared name to the view it should find itself in.
+//
+// A Primary the view marks Redacted is an error as well: it is the whole
+// answer a pipe is handed, and the mask is what the pipe would get.
+func checkNamed(t reporter, c plugin.Capability, v view.View, what, name string) {
+	t.Helper()
+
+	switch v := v.(type) {
+	case view.Table:
+		names := make([]string, 0, len(v.Columns))
+		for _, col := range v.Columns {
+			names = append(names, col.Name)
+		}
+		if !slices.Contains(names, name) {
+			t.Errorf("sdktest: %s: %s declares %s %q, and its table has no such column (columns: %s)",
+				RuleActions, c.ID, what, name, strings.Join(names, ", "))
+		} else if what == "Primary" && v.IsRedacted(name) {
+			t.Errorf("sdktest: %s: %s declares Primary %q, and its table marks that column Redacted; "+
+				"the value a pipe is handed would be the mask", RuleActions, c.ID, name)
+		}
+	case view.KeyValue:
+		found := false
+		for _, pair := range v.Pairs {
+			found = found || pair.Key == name
+		}
+		if !found {
+			t.Errorf("sdktest: %s: %s declares %s %q, and its pairs carry no such key", RuleActions, c.ID, what, name)
+		} else if what == "Primary" && v.IsRedacted(name) {
+			t.Errorf("sdktest: %s: %s declares Primary %q, and its view marks that key Redacted; "+
+				"the value a pipe is handed would be the mask", RuleActions, c.ID, name)
+		}
+	default:
+		t.Errorf("sdktest: %s: %s declares %s %q, but returns a %s; it names a Table's column or a KeyValue's key",
+			RuleActions, c.ID, what, name, view.TypeOf(v))
 	}
 }
 
