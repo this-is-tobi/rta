@@ -2,6 +2,10 @@ package plugindist
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -95,5 +99,104 @@ func TestNothingAttachedNamesTheOneCommandThatFixesIt(t *testing.T) {
 	}
 	if verr = UpdateIndex(context.Background(), ""); verr == nil || !strings.Contains(verr.Hint, "rta plugin index add official") {
 		t.Errorf("index update with nothing attached: %v", verr)
+	}
+}
+
+// `rta pg` was told it meant "pkg", `rta docker` that it meant "doctor" and
+// `rta qdrant` that it meant "grant", and the plugin hint was given to a
+// service or withheld from it by how near the word lay to a command. The
+// names are static so the answer does not depend on the neighbours.
+func TestAFirstPartyPluginIsKnownByName(t *testing.T) {
+	for _, name := range []string{"pg", "mysql", "mariadb", "etcd", "qdrant", "redis", "s3", "vault",
+		"kube", "cnpg", "docker", "keycloak"} {
+		got, ok := FirstParty(name)
+		if !ok || got != name {
+			t.Errorf("FirstParty(%q) = %q, %v", name, got, ok)
+		}
+		if hint := FirstPartyHint(name); !strings.Contains(hint, "`rta plugin install "+name+"`") ||
+			!strings.Contains(hint, name+" is a first-party plugin") {
+			t.Errorf("FirstPartyHint(%q) = %q", name, hint)
+		}
+	}
+}
+
+func TestTheLongSpellingOfAFirstPartyServiceNamesIt(t *testing.T) {
+	for word, want := range map[string]string{"postgres": "pg", "postgresql": "pg", "k8s": "kube",
+		"kubernetes": "kube", "PG": "pg"} {
+		got, ok := FirstParty(word)
+		if !ok || got != want {
+			t.Errorf("FirstParty(%q) = %q, %v, want %q", word, got, ok, want)
+		}
+	}
+	if hint := FirstPartyHint("k8s"); !strings.Contains(hint, "k8s is the first-party plugin kube") ||
+		!strings.Contains(hint, "`rta plugin install kube`") {
+		t.Errorf("an alias was answered with %q", hint)
+	}
+}
+
+// A word that merely resembles a first-party name, or a service rta has no
+// plugin for, is not told it is one: the hint is exact or absent.
+func TestAWordNoPluginAnswersToIsNotTold(t *testing.T) {
+	for _, word := range []string{"", "pk", "pkg", "mongo", "helm", "install", "doctor", "grant", "kv", "rds",
+		"official"} {
+		if name, ok := FirstParty(word); ok {
+			t.Errorf("FirstParty(%q) = %q", word, name)
+		}
+		if hint := FirstPartyHint(word); hint != "" {
+			t.Errorf("FirstPartyHint(%q) = %q", word, hint)
+		}
+	}
+}
+
+// The list is typed in and the docs are typed by hand, which is two places a
+// thirteenth plugin can be added to and one forgotten. The docs link each
+// plugin to its directory in rta-plugins, and that link is what is read.
+func TestTheFirstPartyNamesAreTheOnesTheDocsList(t *testing.T) {
+	root := repoRootOf(t)
+	link := regexp.MustCompile(`\| \[` + "`" + `([a-z0-9]+)` + "`" + `\]\(https://github\.com/this-is-tobi/rta-plugins/tree/main/plugins/([a-z0-9]+)\)`)
+	documented := map[string]bool{}
+	err := filepath.WalkDir(filepath.Join(root, "docs"), func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".md") {
+			return err
+		}
+		body, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		for _, m := range link.FindAllStringSubmatch(string(body), -1) {
+			if m[1] == m[2] {
+				documented[m[1]] = true
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var docs []string
+	for name := range documented {
+		docs = append(docs, name)
+	}
+	slices.Sort(docs)
+	if got := FirstPartyNames(); !slices.Equal(got, docs) {
+		t.Errorf("rta knows the first-party plugins %v and the docs list %v", got, docs)
+	}
+}
+
+func repoRootOf(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("no go.mod above the test's working directory")
+		}
+		dir = parent
 	}
 }

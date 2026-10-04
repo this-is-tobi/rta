@@ -1,6 +1,11 @@
 package plugindist
 
-import "github.com/this-is-tobi/rta/pkg/view"
+import (
+	"slices"
+	"strings"
+
+	"github.com/this-is-tobi/rta/pkg/view"
+)
 
 // The first-party index, known by name.
 //
@@ -20,12 +25,80 @@ import "github.com/this-is-tobi/rta/pkg/view"
 //
 // Not auto-attached on first use, deliberately: that would have rta reach a
 // network destination the operator never named, and the docs promise it does
-// not.
+// not. What rta may do is ask: `rta plugin install pg` with no index attached
+// offers to attach this one, at a terminal, naming the URL, and a "yes" typed
+// there is the operator naming the destination.
 //
 // A var rather than a const so a test can point the name at a repository on
 // this machine; nothing outside this package writes it.
 var knownIndexes = map[string]string{
-	"official": "https://github.com/this-is-tobi/rta-plugins",
+	FirstPartyIndex: "https://github.com/this-is-tobi/rta-plugins",
+}
+
+// FirstPartyIndex is the name the first-party index is attached under.
+const FirstPartyIndex = "official"
+
+// firstParty is every plugin that repository publishes, by the name `rta
+// plugin install` takes.
+//
+// Static, and in the binary, because the moment it is needed is the moment
+// nothing else knows it: on a machine with no index attached, `rta pg` has no
+// manifest to read, and fetching one to answer a word that may be a typo would
+// reach the network for a guess. Before this the plugin hint was given or
+// withheld by how close the word lay to a command: `rta pg` was told it meant
+// "pkg" and `rta docker` that it meant "doctor", while `rta redis`, a word no
+// command resembles, was told it was a plugin.
+//
+// A claim about names and nothing else: it grants nothing, installs nothing
+// and is not consulted by anything that decides what may run. Whether a name
+// is installable is still the attached index's statement, and what an install
+// trusts is still the digest of the bytes it verified.
+var firstParty = []string{
+	"cnpg", "docker", "etcd", "keycloak", "kube", "mariadb",
+	"mysql", "pg", "qdrant", "redis", "s3", "vault",
+}
+
+// firstPartyAliases are other names a first-party plugin is called by, and
+// only the ones nobody would dispute: the long spelling of the service, which
+// is what a person types before they have learned rta's short one.
+var firstPartyAliases = map[string]string{
+	"postgres":   "pg",
+	"postgresql": "pg",
+	"k8s":        "kube",
+	"kubernetes": "kube",
+}
+
+// FirstPartyNames lists the first-party plugins, sorted.
+func FirstPartyNames() []string { return slices.Clone(firstParty) }
+
+// FirstParty is the first-party plugin a word names, spelled as `rta plugin
+// install` takes it: the plugin's own name, or one it is known by.
+func FirstParty(word string) (name string, ok bool) {
+	word = strings.ToLower(word)
+	if slices.Contains(firstParty, word) {
+		return word, true
+	}
+	name, ok = firstPartyAliases[word]
+	return name, ok
+}
+
+// FirstPartyHint answers a word that names a first-party plugin which is not
+// installed: that it is one, and the command that gets it. "" for any other
+// word.
+//
+// The command is the install and not the index attach, because the install is
+// the whole of what the person wants and attaches the index itself when it has
+// to (a terminal is asked first; anything else is told how).
+func FirstPartyHint(word string) string {
+	name, ok := FirstParty(word)
+	if !ok {
+		return ""
+	}
+	install := "`rta plugin install " + name + "` installs it"
+	if strings.ToLower(word) != name {
+		return word + " is the first-party plugin " + name + " — " + install
+	}
+	return name + " is a first-party plugin — " + install
 }
 
 // KnownIndexURL is the repository rta ships for name, if it ships one.
