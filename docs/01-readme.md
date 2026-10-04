@@ -12,7 +12,7 @@ Which is why the security chapters are not an appendix, and why every one of the
 
 ## Where to start
 
-**Installation** and **Quick start** are ten minutes together: the CLI, the TUI, and an agent that can only read.
+**Installation** and **Quick start** are ten minutes together: the CLI, the TUI, and an agent you connect, refuse and allow.
 
 After that the chapters stand alone, with one exception worth stating because a sidebar cannot: if you are here to give an agent access, read **What rta actually bounds** first. An agent that still has a shell is not bounded by rta at all, and that chapter is what tells you whether you are in the configuration where any of the rest applies. The chapters after it — MCP, grants, the record, team policy — each describe a smaller blast radius than the one before.
 

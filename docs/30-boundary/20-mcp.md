@@ -106,13 +106,15 @@ You will see both in the record: the agent name plainly, the client's self-repor
 
 ## What is exposed, before you decide anything
 
-**Only read capabilities.** That is the default, and it holds with no flags, no config and no decisions.
+**Only reads, and only the ones that stay on this machine.** That is the default, and it holds with no flags, no config and no decisions.
 
 | Safety class | What an agent needs |
 | --- | --- |
-| `read` | nothing |
+| `read` | nothing, unless it names a destination (below) |
 | `write` | a grant a person issued |
 | `destructive` | a grant a person issued |
+
+Ten reads name a destination the agent chooses, and a destination is a request rta makes on its behalf: `net.dns`, `net.ping`, `net.port`, `net.probe`, `net.trace`, `http.get`, `http.head`, `cert.expiry`, `audit.web` and `audit.mail`. They cost a grant like a write, and the grant can name the one host. `rta explain` shows `grant required (mcp)` on each card, and so on any capability run against a configured connection.
 
 ```bash
 rta grant allow note --agent claude --ttl 30m   # every write in the note plugin, for half an hour

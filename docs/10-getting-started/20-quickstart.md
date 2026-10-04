@@ -1,6 +1,6 @@
 # Quick start
 
-Ten minutes, three surfaces. Nothing here needs configuration, and nothing changes anything outside rta's own data directory until step 5, which registers rta with your AI client.
+Ten minutes, three surfaces. Nothing here needs configuration, and nothing changes anything outside rta's own data directory until step 5, which registers rta with your AI client. Steps 1 to 4 need only a terminal; step 5 needs an MCP client such as Claude Code, Cursor or Codex.
 
 ## 1. Ask it something
 
@@ -70,38 +70,89 @@ That card is not documentation *about* the capability — it is generated from t
 
 ## 5. Connect an agent
 
-This is the part worth slowing down for.
+This is the part worth slowing down for. It needs an MCP client — Claude Code, Cursor, Codex, anything that speaks MCP — and the steps below use Claude Code.
+
+What rta can bound depends on what else the agent can do, so find out which of three situations you are in before you connect anything:
+
+```bash
+rta audit clients
+```
+
+```mermaid
+flowchart TD
+    Q{"can the agent<br/>run shell commands?"}
+    Q -->|yes| A["A — hygiene<br/>rta is the easy path,<br/>and a record of the<br/>calls that took it"]
+    Q -->|no| Q2{"can it reach<br/>credentials directly?"}
+    Q2 -->|yes| B["B — enforced<br/>rta's gates are<br/>the agent's reach"]
+    Q2 -->|no| C["C — contained<br/>rta is the only<br/>route that exists"]
+```
+
+The `shell` row is the one to read: `Bash` allowed unrestricted puts you in A. Connecting is still worth doing from there, and [What rta actually bounds](../30-boundary/10-the-boundary.md) says what A gives you and how to reach B.
 
 ```bash
 rta mcp install claude
 ```
 
-That registers rta with Claude Code under the name `claude`, for the directory you ran it in — the answer's `scope` line says so, and `--global` registers it for every project. The name matters: grants you issue while talking to one client do not follow every other client on this machine. Restart Claude Code, ask it to call `sys_overview`, and `rta agent overview` shows it connected.
-
-For a client that has no command of its own, rta prints exactly what to add and where, and **writes nothing**. It will not edit another tool's config file — that file is what gives an agent access to your secrets, and it is worth reading before it changes.
-
-```bash
-rta mcp install cursor --show
+```
+registered  Claude Code
+as          claude
+ran         /usr/local/bin/claude mcp add rta -- /usr/local/bin/rta mcp serve --as claude
+scope       this directory only (/home/you/project) — add --global for every project
+next        restart Claude Code in this directory, ask it to call sys_overview, and `rta agent overview` shows it connected
+reach       read-only until you say otherwise — `rta grant allow <capability> --agent claude` lets one more thing through, and it expires on its own
 ```
 
-### What the agent can do now
+That registers rta with Claude Code for the directory you ran it in, under the name `claude` (the `scope` line says so, and `--global` registers it for every project). The name matters: grants you issue while talking to one client do not follow every other client on this machine. A client with no command of its own gets the block to add printed instead, and rta writes nothing: `rta mcp install cursor --show`. [Connecting your AI tool](../30-boundary/60-ai-clients.md) has every client.
 
-**Reads, and nothing else.** The agent can call `sys.cpu`, `net.dns`, `git status` and every other read capability. It can *see* the rest — writes and deletes are listed as tools — and every one of them is refused until you allow it. It cannot write, cannot delete, and cannot read your secret store.
+### Ask, get refused, allow, ask again
+
+Start Claude Code in this directory and ask it two things.
+
+First, *"Call the rta `sys_overview` tool."* It runs. A read that stays on this machine needs no grant.
+
+Second, *"Use the rta `note_add` tool to add a note titled remember the milk."* It is refused, because a write costs a grant, and the refusal carries the exact line to run:
+
+```
+a person has to allow this first — ask the operator to run `rta grant allow note.add --agent claude --ttl 15m`
+```
+
+Run that line yourself, in your own terminal. An agent cannot issue a grant, and that is the point:
+
+```bash
+rta grant allow note.add --agent claude --ttl 15m
+```
+
+```
+claude may call note.add for 15m (until 01:46:07)
+```
+
+Ask for the note again. This time it is added, and the record shows all three calls, the refusal included:
+
+```bash
+rta agent log
+```
+
+```
+╭─────┬──────────┬──────────────┬────────┬──────────┬─────────────────────────┬─────────┬─────────┬────────────┬─────────────────────┬─────────────────────────╮
+│ SEQ │ AT       │ CAPABILITY   │ AGENT  │ SESSION  │ ARGUMENTS               │ PROFILE │ OUTCOME │ AUTHORIZED │ CODE                │ WHY                     │
+├─────┼──────────┼──────────────┼────────┼──────────┼─────────────────────────┼─────────┼─────────┼────────────┼─────────────────────┼─────────────────────────┤
+│ 1   │ 01:31:07 │ sys.overview │ claude │ cce732bf │                         │         │ ran     │ open       │                     │                         │
+│ 2   │ 01:31:07 │ note.add     │ claude │ cce732bf │ title="remember the     │         │ refused │ blocked    │ core.grant.required │ no active grant for     │
+│     │          │              │        │          │ milk"                   │         │         │            │                     │ note.add                │
+│ 3   │ 01:31:07 │ note.add     │ claude │ cce732bf │ title="remember the     │         │ ran     │ grant      │                     │                         │
+│     │          │              │        │          │ milk"                   │         │         │            │                     │                         │
+╰─────┴──────────┴──────────────┴────────┴──────────┴─────────────────────────┴─────────┴─────────┴────────────┴─────────────────────┴─────────────────────────╯
+```
+
+That loop is the whole product: the agent asks, rta refuses what it was never given, you decide in one line, and everything is written down. `rta grant list` shows what is allowed right now, and the grant is gone by itself in fifteen minutes.
+
+### What the agent can reach now
+
+**Reads that stay on this machine, and nothing else.** `sys.cpu`, `git status`, `fs usage` and the other reads that describe this machine run without asking. A read aimed at a destination the agent chooses does not: `net.dns`, `net.ping`, `net.port`, `net.probe`, `net.trace`, `http.get`, `http.head`, `cert.expiry`, `audit.web` and `audit.mail` need a grant as a write does, and the grant can name the one host — `rta grant allow net.dns example.org --agent claude`. `rta explain net.dns` shows `grant required (mcp)` on its card, and so does any capability run against a configured connection. Writes and deletes are listed as tools, so the agent can ask for them, and every one is refused until you allow it. The secret store is no exception: `kv.get` is a write, and there is no store to read until you create one.
 
 That is the default with no configuration, no flags, and no decisions from you.
 
-### Letting it do one more thing
-
-```bash
-rta grant allow kv.get db-password --agent claude --ttl 30m --max-uses 1
-```
-
-That allows one key, for thirty minutes, once, to the client you registered as `claude`. Not the store — that key. (`--agent` can be left off once a client has connected or holds a grant, and this machine knows exactly one; on a fresh install it knows none yet.) When any of those three bounds is reached, it stops.
-
-```bash
-rta grant list      # what is allowed right now
-rta agent log       # what agents actually did, refusals included
-```
+**This bounds the route through rta, not the agent.** Claude Code can also run shell commands, and an agent that can run `rta` itself can issue itself a grant. [What rta actually bounds](../30-boundary/10-the-boundary.md) is the chapter on where that line falls, and `rta grant guard on` puts a passphrase in front of issuing a grant. Read it before you hand an agent anything you would mind losing.
 
 ## 6. Check what you have exposed
 
@@ -115,9 +166,10 @@ Read the `info` rows rather than skipping to the failures. Lines like *"the stor
 
 | If you want to… | Read |
 | --- | --- |
-| Script rta, or use it in CI | [The CLI](../20-using/10-cli.md) |
-| Understand what an agent can reach | [MCP and the safety gate](../30-boundary/20-mcp.md) |
+| Know exactly what rta does and does not bound, before you grant more | [What rta actually bounds](../30-boundary/10-the-boundary.md) |
 | Grant something narrowly | [Grants](../30-boundary/30-grants.md) |
+| Understand what an agent can reach | [MCP and the safety gate](../30-boundary/20-mcp.md) |
+| Script rta, or use it in CI | [The CLI](../20-using/10-cli.md) |
 | Store credentials | [Secrets](../20-using/50-secrets.md) |
 | Point rta at staging vs production | [Profiles](../20-using/40-profiles.md) |
 | Add postgres, S3, Vault, Kubernetes | [Using plugins](../40-plugins/10-plugins.md) |

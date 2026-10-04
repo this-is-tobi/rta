@@ -22,7 +22,7 @@ rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run native
 
 *Getting started*
 - [Installation](./docs/10-getting-started/10-installation.md) *- Build it, verify it, put it on `$PATH`, turn on completion*
-- [Quick start](./docs/10-getting-started/20-quickstart.md) *- Ten minutes: the CLI, the TUI, and an agent that can only read*
+- [Quick start](./docs/10-getting-started/20-quickstart.md) *- Ten minutes: the CLI, the TUI, and an agent you connect, refuse and allow*
 
 *Using it*
 - [The CLI](./docs/20-using/10-cli.md) *- Output formats, exit codes, `--dry-run`, `explain`, scripting*
