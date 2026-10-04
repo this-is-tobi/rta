@@ -44,10 +44,17 @@ import (
 // kv capability. Sealing the grant file closed that specific route;
 // denying the write closes the shape.
 func tier1() []string {
-	return dedupe([]string{
+	own := []string{
 		paths.Data(),
 		filepath.Dir(config.Path()),
-	})
+	}
+	// What an earlier build left in its old config directory stays denied for
+	// as long as it is there: a kv.identity in it still decrypts the store, and
+	// moving the directory must not have been how that protection lapsed.
+	if legacy := paths.LegacyConfigDir(); legacy != "" {
+		own = append(own, legacy)
+	}
+	return dedupe(own)
 }
 
 // tier2 is the standard credential locations: denied for reading only.

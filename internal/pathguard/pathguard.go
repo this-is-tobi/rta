@@ -114,10 +114,17 @@ func New(roots ...string) (*Guard, error) {
 // the same reason: its directory is the working directory.
 func configDenied() []string {
 	file := paths.ConfigFile()
+	denied := []string{file, filepath.Join(filepath.Dir(file), "remotes.yaml")}
 	if own := paths.OwnConfigDir(); own != "" && within(own, file) {
-		return []string{own}
+		denied = []string{own}
 	}
-	return []string{file, filepath.Join(filepath.Dir(file), "remotes.yaml")}
+	// What an earlier build left in its old directory is no less private for
+	// no longer being read — a kv.identity there still decrypts the store — so
+	// it stays denied for as long as it is there (paths.LegacyConfigDir).
+	if legacy := paths.LegacyConfigDir(); legacy != "" {
+		denied = append(denied, legacy)
+	}
+	return denied
 }
 
 // Roots reports what this guard allows, for a message that has to say so.
