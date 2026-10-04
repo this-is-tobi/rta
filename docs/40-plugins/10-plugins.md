@@ -115,7 +115,7 @@ plugin confinement   ok   sandbox-exec: 2 paths denied read+write (rta's own sta
                           read its own directory cannot verify a certificate
 ```
 
-Read that row rather than assuming it. It states what is denied on *this* machine, and it is honest about platforms where confinement is weaker.
+Read that row rather than assuming it. It states what is denied on *this* machine, and on Linux, where rta applies no sandbox, it says so.
 
 That last clause is the one exception, and it is there because of what macOS does rather than because a plugin was trusted with something: the Security framework initialises from the main executable's location, so a process that cannot read its own directory cannot verify a TLS certificate at all. Without the carve-out no managed plugin could reach an `https://` address, while a copy of the same plugin on `$PATH` could. It is reads only, of that one directory, and only for an artifact rta installed there, or for the private copy it starts a `$PATH` plugin from.
 
