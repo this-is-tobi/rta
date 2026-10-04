@@ -60,9 +60,6 @@ func TestDataFallsBackToHomeWhenNeitherIsSet(t *testing.T) {
 // machine happened to run first. Owner-only here, or every one of those
 // filenames is listable by any account.
 func TestEnsureDataCreatesTheDirectoryOwnerOnly(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permission bits do not apply")
-	}
 	clear(t)
 	nested := filepath.Join(t.TempDir(), "xdg", "rta")
 	t.Setenv("RTA_DATA_DIR", nested)
@@ -88,9 +85,6 @@ func TestEnsureDataCreatesTheDirectoryOwnerOnly(t *testing.T) {
 // An existing directory is the operator's: its mode is reported by `rta
 // doctor`, never rewritten behind their back.
 func TestEnsureDataLeavesAnExistingDirectoryAlone(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permission bits do not apply")
-	}
 	clear(t)
 	dir := filepath.Join(t.TempDir(), "rta")
 	if err := os.Mkdir(dir, 0o755); err != nil {
@@ -131,7 +125,7 @@ func TestSystemIsTheOverrideAndSetEmptyMeansNone(t *testing.T) {
 
 // Unset, the root exists on Linux only: that is where images and packages
 // put things, and a default on every platform would have discovery reading a
-// directory nothing on a Mac or Windows machine fills.
+// directory nothing on a Mac fills.
 //
 // t.Setenv first, for what it records: the value the process came with,
 // which it puts back when the test ends. An Unsetenv ahead of it had it

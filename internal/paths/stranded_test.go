@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -20,11 +19,8 @@ func noHome(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	clear(t)
 	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", "")
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
-	t.Setenv("TMP", tmp)
-	t.Setenv("TEMP", tmp)
 	savedHome, savedTo := passwdHome, noticeTo
 	passwdHome = func() string { return "" }
 	strandedNotice = sync.Once{}
@@ -40,9 +36,6 @@ func noHome(t *testing.T) *bytes.Buffer {
 // "." put the grant file, its seal key and the stores in whatever directory
 // rta ran in — inside a project an agent was working on.
 func TestNoHomeNeverMeansTheCurrentDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows resolves a home from USERPROFILE and the account database")
-	}
 	noHome(t)
 	got := Data()
 	if got == "." || !filepath.IsAbs(got) {
@@ -56,9 +49,6 @@ func TestNoHomeNeverMeansTheCurrentDirectory(t *testing.T) {
 // A HOME that is not set is not a machine with no home: the account database
 // says where the account lives.
 func TestAnUnsetHomeIsAskedOfTheAccountDatabase(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows resolves a home from USERPROFILE")
-	}
 	clear(t)
 	t.Setenv("HOME", "")
 	saved := passwdHome
@@ -74,9 +64,6 @@ func TestAnUnsetHomeIsAskedOfTheAccountDatabase(t *testing.T) {
 // Said once and on the way in, ending in what to do: a record that vanishes at
 // the next reboot is a surprise for whoever was not told.
 func TestTheStrandedDirectoryIsSaidOnceAndSaysWhatToDo(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows resolves a home from USERPROFILE and the account database")
-	}
 	notice := noHome(t)
 	first := Data()
 	Data()
@@ -93,9 +80,6 @@ func TestTheStrandedDirectoryIsSaidOnceAndSaysWhatToDo(t *testing.T) {
 // The name is the uid and nothing else, in a directory every account can
 // write to, so whoever creates it first decides who owns it.
 func TestAStrandedDirectoryThatIsNotPrivateIsRefused(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permission bits do not apply")
-	}
 	noHome(t)
 	dir := whereStranded()
 	if err := os.Mkdir(dir, 0o755); err != nil {
@@ -119,9 +103,6 @@ func whereStranded() string {
 // read as this account's own grants. The mode is what stands in for the
 // owner, which a test cannot be another account to set.
 func TestAReaderIsNeverSentIntoAStrandedDirectoryThatIsNotPrivate(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permission bits do not apply")
-	}
 	noHome(t)
 	dir := whereStranded()
 	if err := os.Mkdir(dir, 0o755); err != nil {
@@ -147,9 +128,6 @@ func TestAReaderIsNeverSentIntoAStrandedDirectoryThatIsNotPrivate(t *testing.T) 
 }
 
 func TestAReaderIsNeverSentThroughALinkPlantedAtTheStrandedName(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlinks need privileges there")
-	}
 	noHome(t)
 	elsewhere := t.TempDir()
 	if err := os.Symlink(elsewhere, whereStranded()); err != nil {
@@ -164,9 +142,6 @@ func TestAReaderIsNeverSentThroughALinkPlantedAtTheStrandedName(t *testing.T) {
 // moment between looking at it and reading from it for another account to put
 // its own there.
 func TestDataMakesTheStrandedDirectoryPrivateBeforeAnyoneReadsFromIt(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permission bits do not apply")
-	}
 	noHome(t)
 	dir := Data()
 	info, err := os.Lstat(dir)
@@ -179,9 +154,6 @@ func TestDataMakesTheStrandedDirectoryPrivateBeforeAnyoneReadsFromIt(t *testing.
 }
 
 func TestAStrandedDirectoryThatIsALinkIsRefused(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlinks need privileges there")
-	}
 	noHome(t)
 	elsewhere := t.TempDir()
 	if err := os.Symlink(elsewhere, whereStranded()); err != nil {
@@ -193,9 +165,6 @@ func TestAStrandedDirectoryThatIsALinkIsRefused(t *testing.T) {
 }
 
 func TestAStrandedDirectoryIsCreatedPrivateAndReused(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permission bits do not apply")
-	}
 	noHome(t)
 	dir, err := EnsureData()
 	if err != nil {
