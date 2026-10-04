@@ -38,12 +38,6 @@ func hello(t *testing.T) string {
 			helloErr = err
 			return
 		}
-		// BinaryName rather than the literal, so the fixture is named the
-		// way the thing it stands in for is named. Without the .exe every
-		// test that opens a real plugin failed on Windows with "executable
-		// file not found in %PATH%" — the fixture was unrunnable — and
-		// every discovery test found nothing, because Namespace refuses a
-		// file without the suffix, correctly.
 		helloPath = filepath.Join(dir, BinaryName("hello"))
 		cmd := exec.Command("go", "build", "-o", helloPath, "../../examples/plugin-hello")
 		if out, err := cmd.CombinedOutput(); err != nil {

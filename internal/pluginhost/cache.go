@@ -138,8 +138,7 @@ func writeCache(digest string, p *rtav1.Plugin) {
 	// with some of its capabilities missing. atomicfile rather than a copy of
 	// its temporary file and rename: it holds off a forced exit between the
 	// two (internal/shutdown), which left a temporary file here for pruning
-	// to count as an entry, and it waits out the replace Windows refuses while
-	// another rta has the entry open to read.
+	// to count as an entry.
 	if err := atomicfile.Write(cachePath(digest), append(sealFor(key, digest, data), data...), 0o600); err != nil {
 		return
 	}

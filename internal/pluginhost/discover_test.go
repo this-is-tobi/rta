@@ -33,18 +33,23 @@ func trustHello(t *testing.T) {
 	}
 }
 
-// touch writes a file that stands in for something on $PATH, named the way
-// that platform names an executable.
-//
-// ExeSuffix here rather than at each call site: every one of these is a file
-// discovery is meant to look at, and on Windows a file with no extension is
-// not one Discover should find — Namespace refuses it, correctly. Without the
-// suffix the fixtures were all invisible and every discovery test read "found
-// nothing", which is indistinguishable from the scan being broken.
+// touch writes a file that stands in for something on $PATH.
 func touch(t *testing.T, path string, mode os.FileMode) {
 	t.Helper()
-	if err := os.WriteFile(path+ExeSuffix, []byte("#!/bin/sh\n"), mode); err != nil {
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), mode); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The namespace is the filename without the prefix, and a name without the
+// prefix announces none.
+func TestANamespaceIsTheFilenameWithoutThePrefix(t *testing.T) {
+	got, ok := Namespace(BinaryName("pg"))
+	if !ok || got != "pg" {
+		t.Fatalf("Namespace(%q) = %q %v, want pg", BinaryName("pg"), got, ok)
+	}
+	if _, ok := Namespace("rta-something-else"); ok {
+		t.Fatal("a name without the plugin prefix announced a namespace")
 	}
 }
 
@@ -67,14 +72,7 @@ func TestDiscoveryTakesSdkPluginsAndLeavesTheExecTierAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]bool{"hello": true, "pg": true}
-	// "not executable" is a question only a platform with an execute bit can
-	// be asked. Go derives a Windows FileMode from the read-only attribute, so
-	// 0o644 there is an ordinary readable file and runnable() says yes to
-	// every one — which is why runnable is per-platform rather than a mode
-	// test that quietly matched nothing (exename_windows.go).
-	if ExeSuffix == "" {
-		touch(t, filepath.Join(dir, "rta-plugin-notexec"), 0o644)
-	}
+	touch(t, filepath.Join(dir, "rta-plugin-notexec"), 0o644)
 	t.Setenv("PATH", dir)
 
 	got := Discover()
@@ -149,7 +147,7 @@ func TestACollidingPluginIsRefusedWithoutTakingDownTheRegistry(t *testing.T) {
 	dir := t.TempDir()
 	linked := filepath.Join(dir, BinaryName("hello"))
 	if err := os.Symlink(hello(t), linked); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
 
@@ -182,7 +180,7 @@ func TestADiscoveredPluginBecomesUsableCapabilities(t *testing.T) {
 	dir := t.TempDir()
 	linked := filepath.Join(dir, BinaryName("hello"))
 	if err := os.Symlink(hello(t), linked); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
 
@@ -290,7 +288,7 @@ func installAs(t *testing.T, dir, filename string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := filepath.Join(dir, filename+ExeSuffix)
+	out := filepath.Join(dir, filename)
 	if err := os.WriteFile(out, body, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -523,7 +521,7 @@ func TestAnEmptySystemRootIsNoRoot(t *testing.T) {
 func TestAnAllowTheArtifactNeverDeclaredRelaxesNothing(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.Symlink(hello(t), filepath.Join(dir, BinaryName("hello"))); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
 	trustHello(t)

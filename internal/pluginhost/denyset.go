@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 
@@ -342,9 +341,8 @@ func withTarget(p string) []string {
 // this did not name; that is why the deny set is recomputed on every spawn and
 // why the ancestors are pinned against creation and renaming.
 func resolveDeepest(abs string) string {
-	vol := filepath.VolumeName(abs)
-	out := vol + string(filepath.Separator)
-	for _, seg := range strings.Split(abs[len(vol):], string(filepath.Separator)) {
+	out := string(filepath.Separator)
+	for _, seg := range strings.Split(abs, string(filepath.Separator)) {
 		if seg == "" || seg == "." {
 			continue
 		}
@@ -377,7 +375,7 @@ func resolveDeepest(abs string) string {
 // silently omitting a rule is how a deny set shrinks to nothing without
 // anybody noticing.
 func validate(entries []string) error {
-	forbidden := forbiddenIn(runtime.GOOS)
+	const forbidden = "\"\n\r()\\"
 	for _, e := range entries {
 		if i := strings.IndexAny(e, forbidden); i >= 0 {
 			return fmt.Errorf("refusing to build a sandbox profile: path %q contains %q, "+
@@ -385,38 +383,6 @@ func validate(entries []string) error {
 		}
 	}
 	return nil
-}
-
-// forbiddenIn is what validate refuses, which is everything above except on
-// the one platform where a backslash is not an anomaly but the separator.
-//
-// **Refusing `\` on Windows refuses every path there is.** `C:\Users\...`
-// contains one by construction, so ResolveAllowing returned an error for any
-// machine-derived deny set and Host.OpenAllowing handed that straight back to
-// its caller: rta could not launch a single plugin on Windows, whatever else
-// was fixed. The deny set is not even rendered there — profile() returns ""
-// and wrap() is the identity on every platform but darwin (confine_other.go)
-// — so the check was failing closed on a policy file that does not exist.
-//
-// The other five characters stay forbidden everywhere, and that is the half
-// worth keeping: a quote, a newline or a parenthesis in a path is an anomaly
-// on any platform, and refusing it on Linux is how the darwin renderer never
-// meets one. Only the separator is platform knowledge.
-//
-// Branched on runtime.GOOS rather than a build tag, which the comment above
-// asks for in as many words: a check that only compiles on one GOOS is a
-// check nobody runs. This one compiles everywhere and both answers are
-// reachable from any machine, so validate's Windows behaviour is testable on
-// the laptop it was written on rather than only on the platform it is for.
-func forbiddenIn(goos string) string {
-	const (
-		anywhere = "\"\n\r()"
-		posix    = anywhere + `\`
-	)
-	if goos == "windows" {
-		return anywhere
-	}
-	return posix
 }
 
 func dedupe(in []string) []string {

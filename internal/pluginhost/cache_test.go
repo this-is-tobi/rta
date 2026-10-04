@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -134,13 +133,10 @@ func TestADamagedCacheEntryIsAMissNotAFailure(t *testing.T) {
 // process with less trust than the operator can write, and an entry that never
 // ends — a link to /dev/zero — kept every rta reading until memory ran out.
 func TestAnEntryLargerThanRtaWritesIsAMissNotARead(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("no /dev/zero to link to")
-	}
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	writeCache("first", &rtav1.Plugin{Name: "x"})
 	if err := os.Symlink("/dev/zero", cachePath("endless")); err != nil {
-		t.Skipf("no symlinks here: %v", err)
+		t.Fatal(err)
 	}
 	read := make(chan bool, 1)
 	go func() { _, ok := readCache("endless"); read <- ok }()
@@ -409,15 +405,12 @@ func TestTheCacheKeyIsCreatedOnce(t *testing.T) {
 // before a single entry was looked at. One the read refuses is no key, and no
 // key is no cache: a launch per plugin, the answer every miss gets.
 func TestAKeyLargerThanRtaWritesIsNoKeyNotARead(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("no /dev/zero to link to")
-	}
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	if _, err := paths.EnsureData(); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink("/dev/zero", cacheKeyPath()); err != nil {
-		t.Skipf("no symlinks here: %v", err)
+		t.Fatal(err)
 	}
 	for _, create := range []bool{false, true} {
 		read := make(chan []byte, 1)

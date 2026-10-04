@@ -3,7 +3,6 @@ package pluginhost
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
@@ -15,9 +14,6 @@ import (
 // and it created it 0755. Through paths.EnsureData now, like every other
 // writer under it.
 func TestTheDescribeCacheCreatesAnOwnerOnlyDataDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permission bits do not apply")
-	}
 	data := filepath.Join(t.TempDir(), "share", "rta")
 	t.Setenv("RTA_DATA_DIR", data)
 	writeCache("0123456789abcdef0123456789abcdef", &rtav1.Plugin{Name: "hello", Version: "1"})

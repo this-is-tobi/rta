@@ -22,21 +22,12 @@ import (
 // the only honest way to ask that is to give it something to do and look for
 // the trace.
 //
-// **A compiled binary rather than a shell script**, which is what this was.
-// Windows executes neither a shebang nor a .bat through CreateProcess, so on
-// the one platform where rta's plugin loading had just been found broken in
-// three separate ways, the test that asks "does a stranger's code run"
-// answered no because *nothing* could run. That is a pass for the wrong
-// reason, on a security property, which is worse than a skip — a skip at
-// least says so.
-//
 // It writes its trace under a name made from the digest of its own bytes, so
 // one build serves every test, and not beside its own executable, because what
 // runs is rta's private copy of the file in a directory a confined process
 // cannot write to. The directory is the test process's temporary one, baked in
-// at build time: the launched process carries only the allowlisted environment,
-// and on Windows that has no TEMP, so asking the child where the temporary
-// directory is would send the trace somewhere the test does not look.
+// at build time rather than asked of the launched process, which carries only
+// the allowlisted environment.
 const canarySource = `package main
 
 import (
@@ -156,7 +147,7 @@ func TestAnUntrustedPluginIsNeverExecuted(t *testing.T) {
 }
 
 // And once approved, it runs — which is what makes the test above about trust
-// rather than about the script being unrunnable.
+// rather than about the canary being unrunnable.
 func TestATrustedPluginIsExecuted(t *testing.T) {
 	dir, trace, digest := canary(t)
 	t.Setenv("PATH", dir)

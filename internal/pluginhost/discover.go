@@ -31,24 +31,14 @@ import (
 // understands is how a plugin ecosystem fails to start.
 const Prefix = "rta-plugin-"
 
-// BinaryName is what a plugin's artifact is called on *this* machine — the
-// name to build, to install, and to look for. Not what an index calls it: a
-// manifest describes six platforms and only one of them is this one.
-func BinaryName(name string) string { return Prefix + name + ExeSuffix }
+// BinaryName is what a plugin's artifact is called — the name to build, to
+// install, and to look for.
+func BinaryName(name string) string { return Prefix + name }
 
 // Namespace is the plugin name a filename announces, and false when it
 // announces none.
-//
-// The suffix half is inert on Unix (ExeSuffix is empty, so every name has it)
-// and load-bearing on Windows, where the artifact is `rta-plugin-pg.exe`.
-// Trimming only the prefix there yields the namespace "pg.exe", which then
-// disagrees with everything the binary declares about itself — and LoadInto
-// would refuse the plugin, correctly, for a reason that was really here.
 func Namespace(filename string) (string, bool) {
-	if !strings.HasPrefix(filename, Prefix) || !strings.HasSuffix(filename, ExeSuffix) {
-		return "", false
-	}
-	return strings.TrimSuffix(strings.TrimPrefix(filename, Prefix), ExeSuffix), true
+	return strings.CutPrefix(filename, Prefix)
 }
 
 // Found is a discovered plugin binary, before anything has been launched.
@@ -170,7 +160,10 @@ func Discover() []Found {
 			}
 			full := filepath.Join(dir, name)
 			info, err := os.Stat(full)
-			if err != nil || info.IsDir() || !runnable(info) {
+			// The execute bit is the whole test: a file named exactly right with
+			// mode 0644 is something somebody forgot to chmod, not a plugin, and
+			// running it would fail anyway.
+			if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
 				continue
 			}
 			if i, dup := at[name]; dup {

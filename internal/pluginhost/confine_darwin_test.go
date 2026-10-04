@@ -404,7 +404,7 @@ func TestADenyPathBelowASymlinkDeniesTheRealFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join(home, "dotfiles", "config"), filepath.Join(home, ".config")); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 	credentials := filepath.Join(real, "credentials.db")
 	if err := os.WriteFile(credentials, []byte("GCLOUD-REFRESH-TOKEN"), 0o600); err != nil {

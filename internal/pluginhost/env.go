@@ -25,9 +25,6 @@ import (
 //     shared, while $TMPDIR is a per-user 0700 directory. Every plugin that
 //     writes a temp file would move its scratch data somewhere every other
 //     user on the box can see it.
-//   - TEMP, TMP — TMPDIR's Windows spelling, for the same reason: without them
-//     os.TempDir falls back to the Windows directory, which is shared where
-//     it is writable at all, instead of the per-user directory.
 //   - TZ, LANG, LC_* — a plugin that formats a timestamp or sorts a list in a
 //     different locale than the surface around it looks broken.
 //   - SSL_CERT_FILE, SSL_CERT_DIR — corporate CA bundles. Without these, every
@@ -41,8 +38,6 @@ var allowedEnv = []string{
 	"PATH",
 	"HOME",
 	"TMPDIR",
-	"TEMP",
-	"TMP",
 	"TZ",
 	"LANG",
 	"SSL_CERT_FILE",
