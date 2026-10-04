@@ -398,7 +398,7 @@ func TestCoreHooksPathIsReadFromEveryScopeGitReads(t *testing.T) {
 func TestAPipeInPlaceOfTheOperatorsGitConfigIsRefusedRatherThanWaitedOn(t *testing.T) {
 	home := machineConfig(t, "")
 	if err := mkfifo(filepath.Join(home, ".gitconfig")); err != nil {
-		t.Skipf("no named pipes here: %v", err)
+		t.Fatal(err)
 	}
 	dir, repo := testRepo(t)
 	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
@@ -439,7 +439,7 @@ func TestAPipeInPlaceOfTheHooksDirectoryIsRefusedRatherThanWaitedOn(t *testing.T
 	dir, repo := testRepo(t)
 	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
 	if err := mkfifo(filepath.Join(dir, "hookspipe")); err != nil {
-		t.Skipf("no named pipes here: %v", err)
+		t.Fatal(err)
 	}
 	setHooksPath(t, repo, "hookspipe")
 	for name, r := range map[string]plugin.Request{

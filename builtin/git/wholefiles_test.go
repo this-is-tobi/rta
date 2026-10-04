@@ -173,7 +173,7 @@ func TestWhatTheRepositorysFilesystemOpenedIsJudgedByTheOpenFile(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "real", "ref: refs/heads/main\n")
 	if err := mkfifo(filepath.Join(dir, "HEAD")); err != nil {
-		t.Skipf("no named pipes here: %v", err)
+		t.Fatal(err)
 	}
 	regular, err := os.Stat(filepath.Join(dir, "real"))
 	if err != nil {

@@ -333,14 +333,16 @@ func TestAnIncludeGitCannotReadIsRefused(t *testing.T) {
 	if err := os.Chmod(filepath.Join(dir, ".git", "unreadable.cfg"), 0); err != nil {
 		t.Fatal(err)
 	}
-	pipe := mkfifo(filepath.Join(dir, ".git", "pipe.cfg")) == nil
+	if err := mkfifo(filepath.Join(dir, ".git", "pipe.cfg")); err != nil {
+		t.Fatal(err)
+	}
 	for include, refused := range map[string]bool{
 		"path = adir":                 true,
 		"path =":                      true,
 		"path":                        true,
 		"path = junk.cfg":             true,
 		"path = unreadable.cfg":       os.Geteuid() != 0,
-		"path = pipe.cfg":             pipe,
+		"path = pipe.cfg":             true,
 		"path = missing.cfg":          false,
 		"path = " + os.DevNull:        false,
 		"path = missing/under/it.cfg": false,
@@ -379,12 +381,11 @@ func answersOf(t *testing.T, r plugin.Request) string {
 
 // pipeOpened is a named pipe at path with a writer waiting on it, whose
 // open(2) returns only once something opens the pipe to read it: opened
-// reports whether anything did, then lets the writer go. nil where there are
-// no named pipes.
+// reports whether anything did, then lets the writer go.
 func pipeOpened(t *testing.T, path string) (opened func() bool) {
 	t.Helper()
-	if mkfifo(path) != nil {
-		return nil
+	if err := mkfifo(path); err != nil {
+		t.Fatal(err)
 	}
 	done := make(chan struct{})
 	go func() {
@@ -484,15 +485,14 @@ func TestAnIncludeOfAFileOutsideTheRootsIsNeverLookedAtOverMCP(t *testing.T) {
 			}
 		}
 		_ = os.RemoveAll(probe)
-		if opened := pipeOpened(t, probe); opened != nil {
-			got := answersOf(t, mcpReq(t, dir, dir))
-			if opened() {
-				t.Errorf("over MCP, with %s, the named pipe outside the roots was opened", include)
-			}
-			if got != want {
-				t.Errorf("over MCP, with %s, a named pipe outside the roots:\n%s\nwhere a missing one gets:\n%s",
-					include, got, want)
-			}
+		opened := pipeOpened(t, probe)
+		got := answersOf(t, mcpReq(t, dir, dir))
+		if opened() {
+			t.Errorf("over MCP, with %s, the named pipe outside the roots was opened", include)
+		}
+		if got != want {
+			t.Errorf("over MCP, with %s, a named pipe outside the roots:\n%s\nwhere a missing one gets:\n%s",
+				include, got, want)
 		}
 		_ = os.RemoveAll(probe)
 	}

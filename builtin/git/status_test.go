@@ -82,7 +82,7 @@ func TestStatusReportsAChangeOfKindAsGitDoes(t *testing.T) {
 	}
 	for _, name := range []string{"link-to-file", "link-to-pipe"} {
 		if err := os.Symlink("staged", filepath.Join(dir, name)); err != nil {
-			t.Skipf("no symbolic links here: %v", err)
+			t.Fatal(err)
 		}
 	}
 	wt, err := repo.Worktree()
@@ -110,7 +110,7 @@ func TestStatusReportsAChangeOfKindAsGitDoes(t *testing.T) {
 	writeFile(t, dir, "link-to-file", "now a file\n")
 	for _, name := range []string{"file-to-pipe", "link-to-pipe"} {
 		if err := mkfifo(filepath.Join(dir, name)); err != nil {
-			t.Skipf("no named pipes here: %v", err)
+			t.Fatal(err)
 		}
 	}
 	if _, err := wt.Add("staged"); err != nil {

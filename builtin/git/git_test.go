@@ -394,7 +394,7 @@ func TestAPipeInTheRepositoryIsRefusedRatherThanWaitedOn(t *testing.T) {
 					}
 				}
 				if err := mkfifo(target); err != nil {
-					t.Skipf("no named pipes here: %v", err)
+					t.Fatal(err)
 				}
 				r := req(t, dir, nil)
 				if surface == "MCP" {
