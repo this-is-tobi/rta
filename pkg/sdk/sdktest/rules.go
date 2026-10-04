@@ -131,6 +131,7 @@ func checkOneView(t reporter, c plugin.Capability, v view.View) {
 				t.Logf("sdktest: %s: %s carries an uncoded warning %q", RuleViews, c.ID, w.Message)
 			}
 		}
+		checkCursor(t, c, t2)
 		for i, row := range t2.Rows {
 			if len(row) > len(t2.Columns) {
 				// A cell past the last column has no column name, and a cell
@@ -170,6 +171,49 @@ func checkOneView(t reporter, c plugin.Capability, v view.View) {
 				t.Logf("sdktest: %s: %s carries an uncoded warning %q", RuleViews, c.ID, w.Message)
 			}
 		}
+	}
+}
+
+// checkCursor holds a table's cursor to naming the input that takes it.
+//
+// A table that stops short hands back where the call left off, and whoever
+// reads it — a person at a terminal, an agent with a schema — has to be told
+// which input to give it to: "more rows after k8s-0412" names a value and
+// leaves the argument for them to guess. Cursor.Input is that name. An agent
+// is the reader that matters, so it has to be an input an agent can give: one
+// that is declared, is not Local (the schema hides those and the bridge drops
+// them unread), and takes text, which is what a cursor is.
+//
+// A cursor naming nothing is a note and not a failure: every table written
+// before the field existed is one, and the cursor in it still works for
+// whoever knows the plugin.
+func checkCursor(t reporter, c plugin.Capability, tbl view.Table) {
+	t.Helper()
+	if tbl.Page == nil || tbl.Page.Next == "" {
+		return
+	}
+	if tbl.Page.Input == "" {
+		t.Logf("sdktest: %s: %s returns a cursor and does not say which input takes it; set view.Cursor.Input",
+			RuleViews, c.ID)
+		return
+	}
+	var f plugin.Field
+	for _, in := range c.Inputs {
+		if in.Name == tbl.Page.Input {
+			f = in
+		}
+	}
+	switch {
+	case f.Name == "":
+		t.Errorf("sdktest: %s: %s names %q as the input that takes its cursor, and declares no such input",
+			RuleViews, c.ID, tbl.Page.Input)
+	case f.Local:
+		t.Errorf("sdktest: %s: %s names %q as the input that takes its cursor, and that input is Local: "+
+			"an agent's schema does not have it, so the cursor can never be given back",
+			RuleViews, c.ID, f.Name)
+	case f.Type != plugin.String:
+		t.Errorf("sdktest: %s: %s names %q as the input that takes its cursor, and it is %s; a cursor is text, "+
+			"so it takes a %s", RuleViews, c.ID, f.Name, f.Type, plugin.String)
 	}
 }
 
