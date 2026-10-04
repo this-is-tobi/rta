@@ -443,6 +443,51 @@ func TestAStrangerInBinIsNotTheCurrentVersion(t *testing.T) {
 	}
 }
 
+// A symlink the system refuses ends the install there. bin/ states which
+// version is current by a link and by nothing else, so a copy of the binary
+// put in its place would be a current version no link names, which
+// CurrentDigest does not answer for (TestAStrangerInBinIsNotTheCurrentVersion).
+func TestAnInstallThatCannotLinkFailsAndLeavesNothingCurrent(t *testing.T) {
+	testData(t)
+	original := symlink
+	symlink = func(string, string) error { return os.ErrPermission }
+	t.Cleanup(func() { symlink = original })
+
+	staged := filepath.Join(t.TempDir(), "staged")
+	if err := os.WriteFile(staged, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	digest, verr := digestFile(staged)
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if _, verr := place("hello", digest, staged); verr == nil || verr.Code != "plugin.install.place" {
+		t.Fatalf("place = %v, want plugin.install.place", verr)
+	}
+	if _, err := os.Lstat(filepath.Join(BinDir(), pluginhost.BinaryName("hello"))); err == nil {
+		t.Error("something stands in bin/ for a version no link names")
+	}
+	if got, ok := CurrentDigest("hello"); ok {
+		t.Errorf("CurrentDigest = %q after an install that never linked", got)
+	}
+}
+
+// A file URL names the path it carries. One whose first segment is a letter
+// and a colon is a directory called that, not a drive, so it is opened as the
+// absolute path it is: reading it as a drive turned file:///a:/x into the
+// relative path a:/x.
+func TestAFileURLIsOpenedAsTheAbsolutePathItCarries(t *testing.T) {
+	dst, err := os.CreateTemp(t.TempDir(), "dst")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	_, verr := fetchArtifact(context.Background(), "file:///a:/x", dst)
+	if verr == nil || !strings.Contains(verr.Message, "open /a:/x:") {
+		t.Fatalf("fetch = %v, want the absolute path /a:/x to be the one opened", verr)
+	}
+}
+
 // Remove takes everything back — store, trust, lock — and names the config
 // statements now pointing at nothing, without touching them.
 func TestRemoveUninstallsAndNamesOrphans(t *testing.T) {
