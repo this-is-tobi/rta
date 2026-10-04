@@ -2497,16 +2497,16 @@ func TestListMatchesDescriptionsAsWellAsNames(t *testing.T) {
 // that was there all along, one filter away.
 func TestAnEmptyListSaysWhichKindOfEmptyItIs(t *testing.T) {
 	setup(t)
-	if got := emptyList(plugin.SurfaceCLI, 0, "", ""); !strings.Contains(got, "No keys stored yet") {
+	if got := emptyList(plugin.SurfaceCLI, 0, "", "", ""); !strings.Contains(got, "No keys stored yet") {
 		t.Errorf("empty store = %q", got)
 	}
-	got := emptyList(plugin.SurfaceCLI, 4, "json", "aws")
+	got := emptyList(plugin.SurfaceCLI, 4, "", "json", "aws")
 	for _, want := range []string{"of kind json", `matching "aws"`, "holds 4 keys"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("filtered empty = %q, want it to mention %q", got, want)
 		}
 	}
-	if got := emptyList(plugin.SurfaceCLI, 1, "json", ""); !strings.Contains(got, "holds 1 key") {
+	if got := emptyList(plugin.SurfaceCLI, 1, "", "json", ""); !strings.Contains(got, "holds 1 key") {
 		t.Errorf("one stored key = %q", got)
 	}
 }

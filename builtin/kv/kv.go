@@ -95,10 +95,14 @@ func Plugin() plugin.Plugin {
 					"thing each is, its size, its description, when it changed and — once any " +
 					"value has been replaced — how many earlier values `kv.history` still keeps " +
 					"for each. With `detail`: the source filename of anything stored from disk.\n\n" +
+					"`folder` is one folder of the tree `kv.tree` draws, `db/` for `db/password` and " +
+					"`db/user`: only the keys under it.\n\n" +
 					"`match` is the \"which one was it called?\" filter: a substring of the name or " +
 					"the description, case-insensitive, so a `match` of aws finds " +
 					"`prod-deploy-key` when the description is the only place the word AWS appears.",
 				Inputs: unlockFields([]plugin.Field{
+					{Name: "folder", Type: plugin.String, Positional: true, Suggest: suggestFolders,
+						Help: "only the keys in this folder, e.g. db/"},
 					{Name: "kind", Type: plugin.String, Options: kinds,
 						Help: "only entries of this kind"},
 					{Name: "match", Type: plugin.String,

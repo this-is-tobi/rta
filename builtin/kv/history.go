@@ -90,7 +90,7 @@ func runHistory(_ context.Context, req plugin.Request) (view.View, error) {
 	if !live {
 		r, removed := s.Removed[key]
 		if !removed {
-			return nil, notFound(req.Surface(), key)
+			return nil, notFound(req.Surface(), s, key)
 		}
 		e, head = r.entry, "removed "+itemstore.Age(r.RemovedAt)
 	}
@@ -159,7 +159,7 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 					WithHint("`" + sf.Call("kv.history", keyArg(key)) + "` lists its earlier values; " +
 						sf.InputName("revision") + " brings one back")
 			}
-			return nil, notFound(req.Surface(), key)
+			return nil, notFound(req.Surface(), s, key)
 		}
 		if _, live := s.Entries[key]; live {
 			return nil, view.Errorf("kv.restore.taken", "%s was removed and then set again", textclean.Record(key)).
@@ -185,7 +185,7 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 			return nil, view.Errorf("kv.restore.removed", "%s is removed", textclean.Record(key)).
 				WithHint("`" + sf.Call("kv.restore", keyArg(key)) + "`, with no revision, brings it back first")
 		}
-		return nil, notFound(req.Surface(), key)
+		return nil, notFound(req.Surface(), s, key)
 	}
 	if n < 0 || n > len(e.Previous) {
 		return nil, view.Errorf("kv.restore.norevision", "%s has %s, not a revision %d", textclean.Record(key),

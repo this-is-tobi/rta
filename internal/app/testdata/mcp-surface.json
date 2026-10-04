@@ -1361,7 +1361,7 @@
   },
   {
     "name": "kv_list",
-    "description": "── the text below is written by the plugin, not by rta ──\nList stored keys (names and metadata only, never values)\n\nNever returns a value or a preview of one — only key names, what kind of thing each is, its size, its description, when it changed and — once any value has been replaced — how many earlier values `kv_history` still keeps for each. With `detail`: the source filename of anything stored from disk.\n\n`match` is the \"which one was it called?\" filter: a substring of the name or the description, case-insensitive, so a `match` of aws finds `prod-deploy-key` when the description is the only place the word AWS appears.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "── the text below is written by the plugin, not by rta ──\nList stored keys (names and metadata only, never values)\n\nNever returns a value or a preview of one — only key names, what kind of thing each is, its size, its description, when it changed and — once any value has been replaced — how many earlier values `kv_history` still keeps for each. With `detail`: the source filename of anything stored from disk.\n\n`folder` is one folder of the tree `kv_tree` draws, `db/` for `db/password` and `db/user`: only the keys under it.\n\n`match` is the \"which one was it called?\" filter: a substring of the name or the description, case-insensitive, so a `match` of aws finds `prod-deploy-key` when the description is the only place the word AWS appears.\n── end of plugin-written text ──\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1371,6 +1371,10 @@
           "default": false,
           "description": "return the full detailed view instead of the compact summary",
           "type": "boolean"
+        },
+        "folder": {
+          "description": "only the keys in this folder, e.g. db/",
+          "type": "string"
         },
         "kind": {
           "description": "only entries of this kind",

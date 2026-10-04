@@ -34,6 +34,9 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	kindFilter := strings.TrimSpace(req.String("kind"))
+	// "db" and "db/" both name the folder: a key is never called "db/", so the
+	// slash is only how the folder is spelled (checkKeyName).
+	folder := strings.TrimSuffix(strings.TrimSpace(req.String("folder")), "/")
 	// Matched against the description as well as the name, because the name
 	// is the half you have forgotten: "which one was the deploy key for the
 	// staging cluster" is answerable from what you wrote down at the time
@@ -47,6 +50,9 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	names := make([]string, 0, len(s.Entries))
 	for k, e := range s.Entries {
 		if kindFilter != "" && e.Kind != kindFilter {
+			continue
+		}
+		if folder != "" && !strings.HasPrefix(k, folder+"/") {
 			continue
 		}
 		if match != "" && !strings.Contains(strings.ToLower(k), match) &&
@@ -123,7 +129,7 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	// The table even when nothing is listed, and the sentence beside it for a
 	// screen: see view.Table.Empty.
 	if len(t.Rows) == 0 {
-		t.Empty = emptyList(req.Surface(), len(s.Entries), kindFilter, req.String("match"))
+		t.Empty = emptyList(req.Surface(), len(s.Entries), folder, kindFilter, req.String("match"))
 	}
 	return t, nil
 }
@@ -149,7 +155,7 @@ func runShow(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	e, ok := s.Entries[key]
 	if !ok {
-		return nil, notFound(req.Surface(), key)
+		return nil, notFound(req.Surface(), s, key)
 	}
 	pairs := []view.Pair{
 		{Key: "key", Value: key},
@@ -201,7 +207,7 @@ func runGet(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	e, ok := s.Entries[key]
 	if !ok {
-		return nil, notFound(req.Surface(), key)
+		return nil, notFound(req.Surface(), s, key)
 	}
 	out := req.String("out")
 	if out == "" {
@@ -300,7 +306,7 @@ func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
 		// the export itself, so `rta kv env > .env` wrote it into the file
 		// and -o json handed it to a script as the environment.
 		if len(keys) == 0 {
-			return view.Text{Empty: emptyList(req.Surface(), 0, "", "")}, nil
+			return view.Text{Empty: emptyList(req.Surface(), 0, "", "", "")}, nil
 		}
 	}
 
@@ -317,7 +323,7 @@ func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
 	for _, k := range keys {
 		e, ok := s.Entries[k]
 		if !ok {
-			return nil, notFound(req.Surface(), k)
+			return nil, notFound(req.Surface(), s, k)
 		}
 		name := envName(prefix, k)
 		if other, taken := from[name]; taken {
@@ -763,7 +769,7 @@ func runRename(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	e, ok := s.Entries[from]
 	if !ok {
-		return nil, notFound(req.Surface(), from)
+		return nil, notFound(req.Surface(), s, from)
 	}
 	// Refused, never confirmed. The overwrite would destroy the secret under
 	// the target name with no history and no undo, which is exactly what
@@ -817,7 +823,7 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 			return view.Text{Body: fmt.Sprintf("purged %s — it was removed %s, and is gone now", textclean.Record(key),
 				itemstore.Age(r.RemovedAt))}, nil
 		}
-		return nil, notFound(req.Surface(), key)
+		return nil, notFound(req.Surface(), s, key)
 	}
 	if req.DryRun {
 		if purge {
@@ -1333,6 +1339,25 @@ func setCall(sf plugin.Surface) string {
 	return sf.Call("kv.set", args...)
 }
 
+// suggestFolders completes a folder from the keys the store holds, under
+// suggestKeys' rule: only when the store opens without asking anybody anything.
+func suggestFolders(ctx context.Context, req plugin.Request) []string {
+	seen := map[string]bool{}
+	var folders []string
+	for _, entry := range suggestKeys(ctx, req) {
+		key, _, _ := strings.Cut(entry, "\t")
+		parts := strings.Split(key, "/")
+		for i := 1; i < len(parts); i++ {
+			folder := strings.Join(parts[:i], "/") + "/"
+			if !seen[folder] {
+				seen[folder] = true
+				folders = append(folders, folder)
+			}
+		}
+	}
+	return folders
+}
+
 // callList lays calls out one per line, each with what it is for aligned
 // beside it.
 func callList(calls ...[2]string) string {
@@ -1352,7 +1377,7 @@ func callList(calls ...[2]string) string {
 // "no keys stored yet" sent people off to re-add a secret that was there all
 // along, one kind of json away. sf is the surface asking, for the names it
 // gives the capabilities that answer next.
-func emptyList(sf plugin.Surface, stored int, kind, match string) string {
+func emptyList(sf plugin.Surface, stored int, folder, kind, match string) string {
 	if stored == 0 {
 		if !fileExists(storePath()) {
 			return "No keys stored yet — " + NoStoreNext(sf, "<key>")
@@ -1360,6 +1385,9 @@ func emptyList(sf plugin.Surface, stored int, kind, match string) string {
 		return "No keys stored yet — " + sf.CapabilityName("kv.set") + " adds one"
 	}
 	var narrowed []string
+	if folder != "" {
+		narrowed = append(narrowed, "in "+folder+"/")
+	}
 	if kind != "" {
 		narrowed = append(narrowed, "of kind "+kind)
 	}

@@ -91,7 +91,7 @@ func TestAnEmptyStoreIsNotAMissingOne(t *testing.T) {
 	if ve := view.AsError(err, "x"); ve.Hint != "`rta kv list` lists every key" {
 		t.Errorf("hint = %q", ve.Hint)
 	}
-	if got := emptyList(plugin.SurfaceCLI, 0, "", ""); got != "No keys stored yet — `rta kv set` adds one" {
+	if got := emptyList(plugin.SurfaceCLI, 0, "", "", ""); got != "No keys stored yet — `rta kv set` adds one" {
 		t.Errorf("an empty store: %q", got)
 	}
 }

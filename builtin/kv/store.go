@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -21,6 +22,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -476,13 +478,55 @@ func writeAtomic(data []byte) *view.Error {
 
 // notFound is the refusal for a key the store does not hold, and its hint is the
 // next step that works from where the caller stands: with no store at all, how
-// one is made; otherwise the listing.
-func notFound(sf plugin.Surface, key string) *view.Error {
+// one is made; for a name that is a folder (`kv tree` draws them, a grant can be
+// scoped to one), the keys in it, since the name was a reasonable guess at one
+// of them; otherwise the listing. s is the store as loaded, for the hint that
+// reads it.
+func notFound(sf plugin.Surface, s store, key string) *view.Error {
 	verr := view.Errorf("kv.notfound", "no key %s", textclean.Record(key))
 	if !fileExists(storePath()) {
 		return verr.WithHint("no store yet — " + NoStoreNext(sf, key))
 	}
+	if hint := folderHint(sf, s, key); hint != "" {
+		return verr.WithHint(hint)
+	}
 	return verr.WithHint(sf.CapabilityName("kv.list") + " lists every key")
+}
+
+// maxFolderNames is how many of a folder's keys a hint spells out. A folder of
+// forty keys is a listing, and the hint then says which listing.
+const maxFolderNames = 4
+
+// folderHint says that key names a folder and which keys are in it, or "" when
+// it does not. The names are the ones kv.list hands any caller, so naming them
+// here is no new reach: it is that listing, narrowed to the one place a person
+// who typed a folder's name was looking.
+func folderHint(sf plugin.Surface, s store, key string) string {
+	folder := strings.TrimSuffix(key, "/") + "/"
+	if folder == "/" {
+		return ""
+	}
+	var inside []string
+	for k := range s.Entries {
+		if strings.HasPrefix(k, folder) {
+			inside = append(inside, k)
+		}
+	}
+	if len(inside) == 0 {
+		return ""
+	}
+	sort.Strings(inside)
+	shown := make([]string, 0, maxFolderNames)
+	for _, k := range inside[:min(len(inside), maxFolderNames)] {
+		shown = append(shown, textclean.Record(k))
+	}
+	named := strings.Join(shown, ", ")
+	if len(inside) <= maxFolderNames {
+		return textclean.Record(folder) + " is a folder: " + named
+	}
+	list := sf.Call("kv.list", plugin.Arg{Name: "folder", Value: folder, Positional: true})
+	return fmt.Sprintf("%s is a folder of %s: %s and %d more — `%s` lists them", textclean.Record(folder),
+		format.CountOf(len(inside), "key"), named, len(inside)-maxFolderNames, list)
 }
 
 // NoStoreNext is the next step every surface gives while there is no store, in
