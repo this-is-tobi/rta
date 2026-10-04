@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
 	"github.com/this-is-tobi/rta/internal/render/cli"
@@ -322,7 +323,7 @@ type terminal struct {
 // descriptor the runtime polls back into blocking mode, and fd 0 is `mcp
 // serve`'s request stream as well as the keyboard.
 func savedTerminal() *terminal {
-	fd := int(syscall.Stdin) //nolint:unconvert // an int here, a Handle on Windows
+	fd := syscall.Stdin
 	if !term.IsTerminal(fd) {
 		return nil
 	}
@@ -342,4 +343,11 @@ func (t *terminal) restore() {
 		return
 	}
 	_ = term.Restore(t.fd, t.state)
+}
+
+// foreground reports whether this process's group is the one the terminal on
+// fd is talking to.
+func foreground(fd int) bool {
+	group, err := unix.IoctlGetInt(fd, unix.TIOCGPGRP)
+	return err == nil && group == unix.Getpgrp()
 }

@@ -1,5 +1,3 @@
-//go:build linux || darwin
-
 package tunnel
 
 import (
@@ -67,9 +65,6 @@ func waitDead(pid int, within time.Duration) bool {
 // Linux the kernel ends it with its parent. Where it cannot (macOS), the next
 // start finds it and does.
 func TestAKilledServersForwardDoesNotOutliveIt(t *testing.T) {
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		t.Skip("no parent-death signal and no record kept here")
-	}
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "pid")
 	script := filepath.Join(dir, "kubectl")

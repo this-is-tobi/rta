@@ -1,5 +1,3 @@
-//go:build !windows
-
 package tunnel
 
 import (
@@ -22,9 +20,9 @@ func harden(cmd *exec.Cmd) {
 // reap signals the whole group, not just the leader.
 //
 // The group id is the child's own pid, read from the command rta configured,
-// and never the answer to Getpgid. internal/pluginhost/procattr_unix.go
-// carries the full argument and this package had the bug that comment
-// describes; the two reasons it matters here are both on the common path.
+// and never the answer to Getpgid. internal/pluginhost's reap carries the
+// full argument and this package had the bug that comment describes; the two
+// reasons it matters here are both on the common path.
 //
 // A waited-on pid is not a live process. Every failed open closes its tunnel,
 // and by then the goroutine watching kubectl has usually returned from Wait,
