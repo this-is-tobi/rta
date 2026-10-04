@@ -118,7 +118,7 @@ func TestTerminalSpellsOutAReorderCharacterAndChangesNothingElse(t *testing.T) {
 	spelled := fmt.Sprintf(`\u%04x`, 0x202e)
 	upper := fmt.Sprintf(`\u%04X`, 0x202e)
 	for s, want := range map[string]string{
-		`C:\Users\me`:       `C:\Users\me`,
+		`dir\sub\me`:        `dir\sub\me`,
 		`dir\` + rlo + "x":  `dir\` + spelled + "x",
 		"invoice" + spelled: "invoice" + spelled,
 		"invoice" + upper:   "invoice" + upper,
@@ -302,7 +302,7 @@ func TestARecordThatIsNotWhatItShowsIsQuoted(t *testing.T) {
 		return fmt.Sprintf("%cu%04x", '\\', r)
 	}
 	for _, plain := range []string{"prod/db", "db-password", "https://api.example.com/v1/", "café",
-		`C:\Users\me`, `a"b`, "4"} {
+		`dir\sub\me`, `a"b`, "4"} {
 		if got := Record(plain); got != plain {
 			t.Errorf("Record(%q) = %q, want it as it is", plain, got)
 		}
