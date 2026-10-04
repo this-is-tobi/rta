@@ -97,6 +97,20 @@ func TestAKilledServersForwardDoesNotOutliveIt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = syscall.Kill(-forwardPID, syscall.SIGKILL); _ = syscall.Kill(forwardPID, syscall.SIGKILL) })
 
+	// The script writes its marker the moment it runs, and the helper writes
+	// the forward down just after starting it: a server killed between the two
+	// leaves nothing for the next start to find, which is a window this test is
+	// not about. It waits for the record, where one is kept, so what it kills
+	// is a server with a forward in flight.
+	if runtime.GOOS == "darwin" {
+		record := filepath.Join(dir, "data", "forwards", strconv.Itoa(forwardPID)+".json")
+		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+			if _, err := os.Stat(record); err == nil {
+				break
+			}
+		}
+	}
+
 	if err := helper.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
