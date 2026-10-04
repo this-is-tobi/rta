@@ -42,8 +42,7 @@ import (
 // over them — and a dangling symlink ended the walk with an error that said
 // nothing about hidden characters. What the repository ships is what git
 // lists, so a new file is read from the moment it is added to the index, and
-// not before. A carriage return before a line feed is a line ending: a
-// Windows checkout converts every line to one.
+// not before.
 //
 // Every file git lists, whatever its name. The guard read a list of
 // extensions, and the tree it passed held a Helm template shipped in the
@@ -94,9 +93,8 @@ func TestNoSourceFileHidesACharacter(t *testing.T) {
 }
 
 // The guard reads what git tracks and nothing beside it: an untracked nested
-// worktree and a scratch file holding an override, a dangling symlink, and a
-// file written with Windows line endings pass, and a tracked file holding an
-// override is found, on its line.
+// worktree and a scratch file holding an override, and a dangling symlink,
+// pass, and a tracked file holding an override is found, on its line.
 func TestTheSourceGuardReadsWhatGitTracks(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git to build a checkout with")
@@ -106,7 +104,7 @@ func TestTheSourceGuardReadsWhatGitTracks(t *testing.T) {
 	rdquo, nbsp, nbhy := string(rune(0x201d)), string(rune(0xa0)), string(rune(0x2011))
 	write := func(rel, content string) {
 		t.Helper()
-		p := filepath.Join(dir, filepath.FromSlash(rel))
+		p := filepath.Join(dir, rel)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -121,7 +119,6 @@ func TestTheSourceGuardReadsWhatGitTracks(t *testing.T) {
 		}
 	}
 	run("init", "-q")
-	write("docs/windows.md", "one\r\ntwo\r\n")
 	write("main.go", "package main\n\n// ends "+rlo+" here\n")
 	// Whatever the name says. A Helm template, a tool pin, a module file and
 	// an ignore list are read by something that acts on them as surely as Go
@@ -145,7 +142,7 @@ func TestTheSourceGuardReadsWhatGitTracks(t *testing.T) {
 	// A binary file is read by nothing that reviews it as text: it is passed
 	// over, whatever its bytes happen to spell.
 	write("logo.png", "\x89PNG\r\n\x1a\n\x00\x00"+rlo)
-	tracked := []string{"docs/windows.md", "main.go", "charts/x/templates/_helpers.tpl",
+	tracked := []string{"main.go", "charts/x/templates/_helpers.tpl",
 		"mise.toml", "go.mod", ".gitignore", "logo.png", "quote.go", "nbsp.md", "hyphen.yaml", "prose.go",
 		"filler.go", "selector.md"}
 	if err := os.Symlink("nowhere.md", filepath.Join(dir, "gone.md")); err == nil {
@@ -214,7 +211,7 @@ func hiddenInTrackedSource(root string) ([]string, error) {
 		if rel == "" {
 			continue
 		}
-		file := filepath.Join(root, filepath.FromSlash(rel))
+		file := filepath.Join(root, rel)
 		data, rerr := os.ReadFile(file)
 		if rerr != nil {
 			// Deleted in the working tree and not yet committed, a link to
@@ -233,7 +230,7 @@ func hiddenInTrackedSource(root string) ([]string, error) {
 			continue
 		}
 		line := 1
-		for _, r := range strings.ReplaceAll(string(data), "\r\n", "\n") {
+		for _, r := range string(data) {
 			switch {
 			case r == '\n':
 				line++
