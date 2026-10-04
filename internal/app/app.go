@@ -24,6 +24,7 @@ import (
 
 	"github.com/this-is-tobi/rta/builtin/all"
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/match"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/profile"
@@ -721,39 +722,11 @@ func plausibleSuggestions(arg string, near []string) []string {
 	allowed := max(1, len([]rune(arg))/3)
 	var kept []string
 	for _, n := range near {
-		if strings.HasPrefix(strings.ToLower(n), arg) || editDistance(arg, strings.ToLower(n)) <= allowed {
+		if strings.HasPrefix(strings.ToLower(n), arg) || match.Distance(arg, strings.ToLower(n)) <= allowed {
 			kept = append(kept, n)
 		}
 	}
 	return kept
-}
-
-// editDistance is the optimal-string-alignment distance between two words:
-// Levenshtein's insertions, deletions and substitutions, and a swap of two
-// neighbouring letters as one edit.
-func editDistance(a, b string) int {
-	ra, rb := []rune(a), []rune(b)
-	d := make([][]int, len(ra)+1)
-	for i := range d {
-		d[i] = make([]int, len(rb)+1)
-		d[i][0] = i
-	}
-	for j := range d[0] {
-		d[0][j] = j
-	}
-	for i := 1; i <= len(ra); i++ {
-		for j := 1; j <= len(rb); j++ {
-			cost := 1
-			if ra[i-1] == rb[j-1] {
-				cost = 0
-			}
-			d[i][j] = min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
-			if i > 1 && j > 1 && ra[i-1] == rb[j-2] && ra[i-2] == rb[j-1] {
-				d[i][j] = min(d[i][j], d[i-2][j-2]+1)
-			}
-		}
-	}
-	return d[len(ra)][len(rb)]
 }
 
 // notACommandHint says where a word typed at the root may live when it is no

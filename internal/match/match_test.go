@@ -122,6 +122,7 @@ func TestNearestAnswersWhatFindCannot(t *testing.T) {
 		"proceses":   "sys.ps",
 		"pings":      "net.ping",
 		"cert.expir": "cert.expiry",
+		"kvv":        "kv.get",
 	} {
 		got := ids(catalogue, Nearest(query, catalogue))
 		if len(got) == 0 {

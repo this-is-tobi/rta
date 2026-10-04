@@ -272,7 +272,7 @@ func nearScore(w string, parts []idPart, tokens []text) int {
 		if len(have) >= 3 && strings.HasPrefix(w, have) {
 			return typedMore
 		}
-		if len(w) >= 4 && len(have) >= 4 && Distance(w, have) <= max(1, len(w)/4) {
+		if len(w) >= 3 && len(have) >= 2 && Distance(w, have) <= max(1, len(w)/4) {
 			return typo
 		}
 	}

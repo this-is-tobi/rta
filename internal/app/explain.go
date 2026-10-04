@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/match"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/tui"
@@ -393,27 +393,27 @@ func cliForm(c plugin.Capability) string {
 
 // capabilityNotFound returns a coded error with closest-match suggestions.
 func capabilityNotFound(reg *registry.Registry, id string) *view.Error {
-	type scored struct {
-		id    string
-		score int
-	}
-	var candidates []scored
-	for _, c := range reg.Capabilities() {
-		if s := similarity(id, c.ID); s > 0 {
-			candidates = append(candidates, scored{c.ID, s})
-		}
-	}
+	caps := reg.Capabilities()
 	e := view.Errorf("core.capability.unknown", "unknown capability %q", id)
-	if len(candidates) > 0 {
-		sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
-		n := min(3, len(candidates))
-		ids := make([]string, n)
-		for i := range n {
-			ids[i] = candidates[i].id
-		}
-		return e.WithHint("did you mean: " + strings.Join(ids, ", "))
+	near := match.Nearest(id, capabilityItems(caps))
+	if len(near) == 0 {
+		return e.WithHint("run `rta explain` to list all capabilities")
 	}
-	return e.WithHint("run `rta explain` to list all capabilities")
+	ids := make([]string, min(3, len(near)))
+	for i := range ids {
+		ids[i] = caps[near[i].Index].ID
+	}
+	return e.WithHint("did you mean: " + strings.Join(ids, ", "))
+}
+
+// capabilityItems is the catalogue as the matcher reads it, in the registry's
+// order, which is the order equal scores keep.
+func capabilityItems(caps []plugin.Capability) []match.Item {
+	items := make([]match.Item, len(caps))
+	for i, c := range caps {
+		items[i] = match.Item{ID: c.ID, Summary: c.Summary}
+	}
+	return items
 }
 
 // toolName is what an agent would call this by, or the reason it cannot.
@@ -422,21 +422,6 @@ func toolName(c plugin.Capability) string {
 		return "none — for the person at the terminal, never an agent"
 	}
 	return plugin.ToolName(c.ID)
-}
-
-// similarity is a cheap shared-segment score, good enough for suggestions.
-func similarity(a, b string) int {
-	score := 0
-	for _, sa := range strings.Split(a, ".") {
-		for _, sb := range strings.Split(b, ".") {
-			if sa == sb {
-				score += 2
-			} else if strings.HasPrefix(sb, sa) || strings.HasPrefix(sa, sb) {
-				score++
-			}
-		}
-	}
-	return score
 }
 
 // configSection names the config block this capability's plugin reads,
