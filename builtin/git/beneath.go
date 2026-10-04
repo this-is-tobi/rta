@@ -276,7 +276,7 @@ func fromWorkingDir(p string) string {
 	if err != nil {
 		return p
 	}
-	return cwd + string(filepath.Separator) + p
+	return cwd + "/" + p
 }
 
 // beneathRoots looks at paths the gate judged for one call, each from the

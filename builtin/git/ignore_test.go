@@ -616,7 +616,7 @@ func TestASymlinkedGitignoreIsNotFollowed(t *testing.T) {
 	writeFile(t, dir, "patterns", "*.env\n")
 	writeFile(t, dir, "sub/secret.env", "TOKEN=hunter2\n")
 	if err := os.Symlink("../patterns", filepath.Join(dir, "sub", ".gitignore")); err != nil {
-		t.Skip("no symbolic links here:", err)
+		t.Fatal(err)
 	}
 	tbl := table(t, runStatus, req(t, dir, nil))
 	rowFor(t, tbl, "Path", "sub/secret.env")

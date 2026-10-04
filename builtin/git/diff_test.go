@@ -292,7 +292,7 @@ func symlink(t *testing.T, dir, target, name string) {
 	full := filepath.Join(dir, name)
 	_ = os.Remove(full)
 	if err := os.Symlink(target, full); err != nil {
-		t.Skipf("no symlinks here: %v", err)
+		t.Fatal(err)
 	}
 }
 
@@ -381,7 +381,7 @@ func TestDiffWorktreeNamesANamedPipeRatherThanWaitingOnIt(t *testing.T) {
 	commitFile(t, repo, dir, "a.txt", "v1\n", "initial")
 	writeFile(t, dir, "a.txt", "v2\n")
 	if err := mkfifo(filepath.Join(dir, "pipe")); err != nil {
-		t.Skipf("no named pipes here: %v", err)
+		t.Fatal(err)
 	}
 
 	type answer struct {

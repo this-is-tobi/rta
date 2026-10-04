@@ -1141,8 +1141,9 @@ func diffOneFile(tree boundDir, head *headFiles, path string, disk os.FileInfo, 
 		newContent = content
 		// The execute bit is the file's own, as git reads it, unless the
 		// filesystem is one where git is told not to trust it (core.fileMode
-		// off): then the mode HEAD has stands, as it did for every file. A script that gained its bit was a change the
-		// diff did not show, beside a status that listed it.
+		// off): then the mode HEAD has stands, as it did for every file. A
+		// script that gained its bit was a change the diff did not show,
+		// beside a status that listed it.
 		if mode == filemode.Regular {
 			switch {
 			case trustMode && disk.Mode().Perm()&0o111 != 0:
