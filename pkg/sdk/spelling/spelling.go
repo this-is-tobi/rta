@@ -435,7 +435,7 @@ type Text struct {
 // Declared is everything p says about itself that is shown on every surface
 // at once — `rta explain` and --help, the TUI's form and its footer, an
 // agent's tool list — in the order p declares it: the plugin's summary, and
-// each capability's summary, description, inputs' help, and the labels of
+// each capability's summary, description, agent text, inputs' help, and the labels of
 // its actions and toggles, and the titles of its examples. None of it has a surface to ask which one is
 // reading, so it names an input as `key` and a capability by its ID.
 func Declared(p plugin.Plugin) []Text {
@@ -446,6 +446,7 @@ func Declared(p plugin.Plugin) []Text {
 		}
 		add("summary", c.Summary)
 		add("description", c.Description)
+		add("agent text", c.Agent)
 		for _, f := range c.Inputs {
 			add("help of "+f.Name, f.Help)
 		}

@@ -370,6 +370,7 @@ func fullDeclaration() plugin.Plugin {
 				{Title: "one thing on a port", Inputs: map[string]any{"key": "a", "port": int64(80), "tags": []string{"x"}}},
 			},
 			Primary: "name",
+			Agent:   "Fetches one thing by its key.",
 			// What the TUI may do with the result crosses as data: a host
 			// that lost it would show a third-party list with no row
 			// actions, which is the second-class plugin the fields exist to

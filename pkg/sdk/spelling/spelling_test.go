@@ -146,6 +146,7 @@ func TestDeclaredIsEverythingAPluginSaysAboutItself(t *testing.T) {
 		"demo summary: demo plugin",
 		"demo.key.list summary: list keys",
 		"demo.key.list description: ",
+		"demo.key.list agent text: ",
 		"demo.key.list help of limit: at most this many",
 		"demo.key.list help of jobs: ",
 		"demo.key.list help of host: ",
@@ -153,6 +154,7 @@ func TestDeclaredIsEverythingAPluginSaysAboutItself(t *testing.T) {
 		"demo.key.list toggle A: all of them",
 		"demo.key.get summary: get one (terminal)",
 		"demo.key.get description:  (terminal)",
+		"demo.key.get agent text:  (terminal)",
 		"demo.key.get help of key:  (terminal)",
 	}
 	if !slices.Equal(got, want) {

@@ -212,6 +212,13 @@ func (c Capability) validate(ns string) error {
 	if err := checkText(fmt.Sprintf("capability %q: description", c.ID), c.Description, maxDescription); err != nil {
 		return err
 	}
+	if err := checkText(fmt.Sprintf("capability %q: agent text", c.ID), c.Agent, maxDescription); err != nil {
+		return err
+	}
+	if c.Agent != "" && c.HumanOnly {
+		return fmt.Errorf("capability %q: declares Agent text and HumanOnly; a capability that is never a "+
+			"tool has no agent to read it", c.ID)
+	}
 	if !safetySet[c.Safety] {
 		return fmt.Errorf("capability %q: invalid safety %q", c.ID, c.Safety)
 	}
