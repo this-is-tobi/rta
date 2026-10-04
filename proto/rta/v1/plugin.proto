@@ -292,6 +292,13 @@ message Capability {
   // checked only at its source carries a record from under one grant to
   // under another. Each must name a declared input, and scope must be set.
   repeated string scope_also = 21;
+  // This capability's answer is the value a masked view elsewhere withholds:
+  // the reveal that view points at. It is a declaration about what the
+  // capability returns, never a switch that lifts a mask, and it is coupled to
+  // the gate that already exists: not Read, and either human_only or both
+  // needs_grant and scope, so the grant that lets a caller see the value is
+  // issued for it by name and, where it can be, for one record.
+  bool reveals = 22;
 }
 
 // ActionSource says what an action acts on.

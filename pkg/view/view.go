@@ -304,6 +304,25 @@ func (Sections) isView() {}
 // Mask is the placeholder every renderer substitutes for redacted values.
 const Mask = "••••••"
 
+// RevealKey is the key of the pair a view uses to say how to read what it
+// masks.
+//
+// A view that marks a field Redacted withholds a value on purpose, and a
+// mask with nothing beside it is a dead end: nobody reading the page can
+// tell whether the value is out of reach by design or only out of this
+// page. The capability whose answer is that value declares Reveals
+// (plugin.Capability.Reveals), and the masked view points at it with a pair
+// under this key, worded as the caller on the surface makes the call
+// (plugin.Surface.Call): `reveal: rta kv get db-password` at a terminal, the
+// kv_get tool and its arguments to an agent. A mask that is permanent — the
+// credentials rta itself connects with, which the operator already holds —
+// has no such capability, and says so with a reason where it is declared
+// (sdktest.Skip).
+//
+// A pointer, never a switch: nothing here lifts a mask, and the capability it
+// names is gated by its own grant like any other.
+const RevealKey = "reveal"
+
 // IsRedacted reports whether the given key is marked redacted.
 func (kv KeyValue) IsRedacted(key string) bool { return slices.Contains(kv.Redacted, key) }
 
