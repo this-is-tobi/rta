@@ -63,6 +63,16 @@ func TestTmpdirIsCarriedDeliberately(t *testing.T) {
 	}
 }
 
+// TEMP and TMP are the same measure on Windows, where a launched plugin with
+// neither asks the system for a temporary directory and is given the Windows
+// directory.
+func TestTempAndTmpAreCarriedDeliberately(t *testing.T) {
+	got := childEnv([]string{`TEMP=C:\Users\a\AppData\Local\Temp`, `TMP=C:\Users\a\AppData\Local\Temp`})
+	if len(got) != 2 {
+		t.Fatalf("TEMP or TMP was dropped: %v", got)
+	}
+}
+
 // An empty value and an absent name mean different things to a surprising
 // number of programs, so filtering must not normalise one into the other.
 func TestAnEmptyAllowedValueCrossesAsEmpty(t *testing.T) {
