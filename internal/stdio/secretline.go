@@ -27,9 +27,7 @@ import (
 // The line is read by rta rather than by the terminal's line discipline,
 // erase and kill keys included, since the discipline holds a line to a
 // fixed length — 1024 bytes on macOS, where a longer one never ends — and
-// ^D on an empty line is nothing typed, as it is to ReadSecret. Where rta
-// cannot set the terminal's mode itself (not macOS or Linux) the line is
-// read as ReadSecret reads it and more is always false.
+// ^D on an empty line is nothing typed, as it is to ReadSecret.
 func ReadSecretLine(prompt string) (line []byte, more bool, err error) {
 	defer shutdown.Prompting()()
 	fmt.Fprint(os.Stderr, prompt)
@@ -39,7 +37,7 @@ func ReadSecretLine(prompt string) (line []byte, more bool, err error) {
 	return line, more, err
 }
 
-// readSecretLine is the platform's line reader, a var so a test can answer
+// readSecretLine is the terminal's line reader, a var so a test can answer
 // the prompt without a terminal.
 var readSecretLine = readTerminalLine
 
