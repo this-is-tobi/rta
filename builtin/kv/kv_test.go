@@ -845,15 +845,18 @@ func TestWrongPassphraseIsCoded(t *testing.T) {
 	}
 }
 
-// stubPrompt makes the prompt reachable and counts how often it is used.
+// stubPrompt makes the prompt reachable and counts how often it is used, for
+// the passphrase of a store that exists and for the one chosen for a store about
+// to be made (typed twice, counted once: it is one question).
 func stubPrompt(t *testing.T, answer string) *int {
 	t.Helper()
 	asked := 0
-	origPrompt, origCan := promptPassphrase, canPrompt
+	origPrompt, origNew, origCan := promptPassphrase, promptNewPassphrase, canPrompt
 	promptPassphrase = func() (string, error) { asked++; return answer, nil }
+	promptNewPassphrase = func() (string, string, error) { asked++; return answer, answer, nil }
 	canPrompt = func(req plugin.Request) bool { return req.Surface() == plugin.SurfaceCLI }
 	t.Cleanup(func() {
-		promptPassphrase, canPrompt, prompted = origPrompt, origCan, ""
+		promptPassphrase, promptNewPassphrase, canPrompt, prompted = origPrompt, origNew, origCan, ""
 	})
 	prompted = ""
 	return &asked

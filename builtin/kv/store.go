@@ -190,6 +190,36 @@ var promptPassphrase = func() (string, error) {
 	return string(secret), err
 }
 
+// newStoreNote is what a person is told before choosing the passphrase a store
+// that does not exist yet is locked with. The three things it says are the ones
+// that cannot be taken back afterwards: nothing recovers a forgotten
+// passphrase, the key file `kv init --generate` makes is the other lock and
+// anything running as the person can read it, and an MCP server — which
+// inherits an environment and has no terminal — opens a passphrase store only
+// from the passphrase in that environment (docs/30-boundary/20-mcp.md).
+func newStoreNote() string {
+	return "New store — choose a passphrase. You type it each time, and it cannot be\n" +
+		"recovered. " + plugin.SurfaceCLI.CapabilityWith("kv.init", "generate") + " uses a key file instead, which anything\n" +
+		"running as you can read. Agents cannot use a passphrase store unless\n" +
+		passphraseEnv + " is set in their server's environment."
+}
+
+// promptNewPassphrase asks for the passphrase of a store about to be created,
+// twice and after newStoreNote: a typo in the only prompt there was is a store
+// nobody can open, with the first secret already inside it. It returns both
+// answers rather than deciding whether they match, so that the comparison lives
+// in chooseNewPassphrase and a test can stub the terminal and still reach it.
+// Overridable in tests.
+var promptNewPassphrase = func() (first, again string, err error) {
+	fmt.Fprintln(os.Stderr, newStoreNote())
+	f, err := stdio.ReadSecret("New passphrase: ")
+	if err != nil {
+		return "", "", err
+	}
+	a, err := stdio.ReadSecret("Once more: ")
+	return string(f), string(a), err
+}
+
 // promptKeyPassphrase asks for a private key's own passphrase, naming the file
 // so it is clear which secret is wanted: the key's, not the store's. Also
 // overridable in tests.
@@ -238,8 +268,11 @@ func resolvePassphrase(req plugin.Request) (string, *view.Error) {
 		return prompted, nil
 	}
 	if canPrompt(req) {
-		p, err := promptPassphrase()
-		if err == nil && p != "" {
+		p, verr := askPassphrase()
+		if verr != nil {
+			return "", verr
+		}
+		if p != "" {
 			prompted = p
 			return p, nil
 		}
@@ -249,6 +282,58 @@ func resolvePassphrase(req plugin.Request) (string, *view.Error) {
 		hint = "ask the operator to set " + passphraseEnv + " in the environment rta mcp serve runs in"
 	}
 	return "", view.Errorf("kv.passphrase.missing", "no passphrase provided").WithHint(hint)
+}
+
+// askPassphrase is the terminal's answer to "what is the passphrase", or "" when
+// there was none. No store on disk means the answer is about to create one, so
+// it is chosen — told what it commits to and typed twice — rather than offered
+// to something that would only fail to open it; the store being absent is the
+// whole test, because every other way a passphrase is wanted has a store to
+// check it against.
+func askPassphrase() (string, *view.Error) {
+	if fileExists(storePath()) {
+		p, err := promptPassphrase()
+		if err != nil {
+			return "", nil
+		}
+		return p, nil
+	}
+	first, again, err := promptNewPassphrase()
+	switch {
+	case err != nil:
+		return "", nil
+	case first != again:
+		return "", view.Errorf("kv.passphrase.mismatch", "the two answers differ — nothing was stored").
+			WithHint("run it again and type the same passphrase both times")
+	}
+	return first, nil
+}
+
+// lockBeforeValue settles the lock on the store before a person is asked for a
+// secret to put in it: the passphrase of one that exists is typed and checked
+// by opening it, the passphrase of one about to be made is chosen. The secret
+// was asked for first, and a wrong passphrase on an existing store then threw
+// away what had just been typed, while a first store was locked with whatever
+// was typed after it, once, with nothing to say the typing was the choice.
+//
+// What is asked here is remembered (prompted, keyPassphrases), so the load and
+// save under the store lock that follow ask nothing. Only the passphrase mode
+// is settled for a store not yet made: one that will be locked to a key asks
+// nothing, and a recipients file with no store behind it is refused by
+// writeKeys in its own words once there is a value to refuse.
+func lockBeforeValue(req plugin.Request) *view.Error {
+	if !canPrompt(req) || req.DryRun {
+		return nil
+	}
+	if fileExists(storePath()) {
+		_, verr := load(req)
+		return verr
+	}
+	if mode, _, verr := currentMode(); verr != nil || mode != modePassphrase || identityPath(req) != "" {
+		return verr
+	}
+	_, verr := resolvePassphrase(req)
+	return verr
 }
 
 // load decrypts the store. A missing file is an empty store — first use
