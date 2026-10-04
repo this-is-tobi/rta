@@ -276,31 +276,31 @@ func TestAnExplicitPreferredTileBeatsTheOverviewConvention(t *testing.T) {
 // gets, and catches the two things the map never could — a plugin that
 // silently stopped having a tile, and a new one that silently gained one.
 //
-// gen.overview is the entry worth reading twice: it puts fresh, real, usable
-// secrets on a five-second timer, which was raised explicitly and accepted
-// (the reasoning is on the capability, in builtin/gen). That it now arrives
-// by convention rather than by being named in a map is not that decision
-// loosening — this test is where it is pinned, and gen.password taking the
-// tile back fails it by name.
+// gen and fs are the entries worth reading twice, for what is not here.
+// gen.overview put freshly generated secrets on a five-second timer, which is
+// a sampler and not a status, and fs.tree printed the working directory's
+// absolute path over three wrapped lines; both qualify as tiles and both are
+// left off the landing screen (leftOff), one `rta dashboard add` away. A
+// plugin quietly taking either back, or gen.password taking gen's place as
+// the next previewable capability, fails this test by name.
 func TestTheShippedDashboardIsTheOneWeThinkItIs(t *testing.T) {
 	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
-		"note.list",
+		// What the machine is doing, then what the agents asked of it under the
+		// standing policy: agent beside grant because a parked call has a clock
+		// on it and a dashboard is where somebody notices in time.
 		"sys.overview",
+		"agent.overview",
+		"grant.list",
 		"net.overview",
 		"kv.status",
-		"grant.list",
+		// An empty notebook is the one tile that says nothing on a first run,
+		// so it follows the ones that do.
+		"note.list",
 		// Unranked by pluginOrder, so alphabetical after the ranked six.
-		// agent.overview earns one deliberately: "what have
-		// agents been doing, and is anything waiting on me" is the question
-		// this product exists to answer, and a parked call has a clock on
-		// it — a dashboard is where somebody notices in time.
-		"agent.overview",
-		"fs.tree",
-		"gen.overview",
 		"git.overview",
 		// time.at is the one tile that reports nothing about this machine's
 		// state, and it earns the slot anyway: it shows UTC beside local
@@ -312,6 +312,48 @@ func TestTheShippedDashboardIsTheOneWeThinkItIs(t *testing.T) {
 	got := tileIDs(buildTiles(reg, config.Dashboard{}))
 	if !slices.Equal(got, want) {
 		t.Errorf("dashboard tiles:\n got %v\nwant %v", got, want)
+	}
+}
+
+// What the landing screen leaves off stays one `rta dashboard add` away, and
+// every surface that talks about the automatic set says so in the same words:
+// the plugin inventory and `rta plugin dev` ask TileFor, `rta explain` asks
+// Unasked.
+func TestWhatTheLandingScreenLeavesOffIsStillAddable(t *testing.T) {
+	reg, err := all.Registry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id := range leftOff {
+		c, ok := reg.Capability(id)
+		if !ok {
+			t.Fatalf("leftOff names %s, which is not registered", id)
+		}
+		if !previewable(c) {
+			t.Errorf("%s is left off but would not have been a tile anyway; the entry is dead weight", id)
+		}
+		if strings.Contains(strings.Join(tileIDs(buildTiles(reg, config.Dashboard{})), " "), id) {
+			t.Errorf("%s is on the automatic dashboard", id)
+		}
+		added := tileIDs(buildTiles(reg, config.Dashboard{Add: []config.Tile{{ID: id}}}))
+		if !slices.Contains(added, id) {
+			t.Errorf("add: [%s] gave %v, want the tile", id, added)
+		}
+		if why := Unasked(c); why == "" {
+			t.Errorf("explain would call %s an automatic tile", id)
+		}
+		var p plugin.Plugin
+		for _, cand := range reg.Plugins() {
+			if cand.Name == plugin.Namespace(id) {
+				p = cand
+			}
+		}
+		if _, ok := TileFor(reg, p); ok {
+			t.Errorf("TileFor(%s) still reports a tile", p.Name)
+		}
+		if got := NoTileReason(p); !strings.Contains(got, id) || !strings.Contains(got, leftOff[id]) {
+			t.Errorf("NoTileReason(%s) = %q, want it to name %s and say why", p.Name, got, id)
+		}
 	}
 }
 

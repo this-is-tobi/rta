@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	teatest "github.com/charmbracelet/x/exp/teatest/v2"
 
+	"github.com/this-is-tobi/rta/builtin/all"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -235,7 +236,22 @@ func TestPressingCThenEnterCopiesTheDefaultChoice(t *testing.T) {
 }
 
 // Dashboard tile copy: "c" against a tile's own preview, without opening
-// it — gen.overview is the real capability this exists for.
+// it — gen.overview is the real capability this exists for. It is not on the
+// automatic dashboard (a sampler of random secrets is not a status), so these
+// tests ask for it the way a person does, with an `add:` entry.
+
+var withGenTile = config.Dashboard{Add: []config.Tile{{ID: "gen.overview"}}}
+
+// genTileModel is realModel with gen.overview on the dashboard.
+func genTileModel(t *testing.T, w, h int) Model {
+	t.Helper()
+	reg, err := all.Registry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	um, _ := New(reg, withGenTile, nil).Update(tea.WindowSizeMsg{Width: w, Height: h})
+	return um.(Model)
+}
 
 func tileIndex(t *testing.T, m Model, capID string) int {
 	t.Helper()
@@ -258,7 +274,7 @@ func answerTile(t *testing.T, m Model, i int, v view.View) Model {
 }
 
 func TestPressingCOnATileOpensThePickerAgainstItsOwnPreview(t *testing.T) {
-	base, _ := realModel(t, 120, 40)
+	base := genTileModel(t, 120, 40)
 	i := tileIndex(t, base, "gen.overview")
 	base.selected = i
 	base = answerTile(t, base, i, view.Table{
@@ -287,7 +303,7 @@ func TestPressingCOnATileOpensThePickerAgainstItsOwnPreview(t *testing.T) {
 // here through closeCopyPick).
 func TestConfirmingATilePickerReturnsToTheDashboardAndRestartsRefresh(t *testing.T) {
 	stdin := fakeClipboard(t)
-	base, _ := realModel(t, 120, 40)
+	base := genTileModel(t, 120, 40)
 	i := tileIndex(t, base, "gen.overview")
 	base.selected = i
 	base = answerTile(t, base, i, view.Table{
@@ -341,7 +357,7 @@ func TestPressingCOnATileWithNoCopySpecDoesNothing(t *testing.T) {
 // The dashboard footer only offers the copy hint when the selected tile
 // actually has something to copy.
 func TestDashFooterOffersCopyOnlyWhenTheSelectedTileHasSomethingToCopy(t *testing.T) {
-	base, _ := realModel(t, 120, 40)
+	base := genTileModel(t, 120, 40)
 	i := tileIndex(t, base, "gen.overview")
 	base.selected = i
 	base = answerTile(t, base, i, view.Table{
@@ -370,11 +386,11 @@ func TestPressingCOnTheRealGenTileEndToEnd(t *testing.T) {
 	// code. Seven tests in this package already stand a fake in; these did
 	// not, and passed only where pbcopy exists.
 	fakeClipboard(t)
-	// Tall enough for the whole shipped dashboard: this test is about what
+	// Tall enough for the whole dashboard: this test is about what
 	// `c` does on the gen tile, and a terminal that cannot show that tile
 	// makes it fail for a reason that has nothing to do with copying.
 	reg := mustRegistry(t)
-	tm := newTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(120, 60))
+	tm := newTestModel(t, New(reg, withGenTile, nil), teatest.WithInitialTermSize(120, 60))
 	waitFor(t, tm, "gen.overview")
 	// Move onto the gen tile: right along the bottom-right area of the
 	// grid a few times is more robust than counting exact columns, since
@@ -388,7 +404,7 @@ func TestPressingCOnTheRealGenTileEndToEnd(t *testing.T) {
 	// the fixed point moved and the failure was about copying, which is not
 	// what changed. Left and right walk the tiles in order (grid.go), so the
 	// order is the only fact needed and the tile list already states it.
-	ids := tileIDs(buildTiles(reg, config.Dashboard{}))
+	ids := tileIDs(buildTiles(reg, withGenTile))
 	back := len(ids) - 1 - slices.Index(ids, "gen.overview")
 	if back < 0 {
 		t.Fatalf("gen.overview is not on the dashboard: %v", ids)

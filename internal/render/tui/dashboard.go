@@ -157,13 +157,33 @@ const (
 
 // pluginOrder is the shipped arrangement: what you glance at most, first.
 //
-// agent sits beside grant deliberately: grant is the standing policy and
-// agent is what happened under it, and a parked call waiting for an answer
-// has a clock on it — a dashboard is where somebody notices in
-// time rather than after the request has expired.
-// Plugins not named here follow, alphabetically — a plugin installed later
-// lands on the dashboard without anyone editing this list.
-var pluginOrder = []string{"note", "sys", "net", "kv", "grant", "agent"}
+// sys leads because it is the one tile every machine can answer on the first
+// run. agent and grant come straight after it because they are what this
+// product is for: grant is the standing policy and agent is what happened
+// under it, and a parked call waiting for an answer has a clock on it — a
+// dashboard is where somebody notices in time rather than after the request
+// has expired. On an 80x24 terminal that is the first screen: the search bar
+// costs a row, so sys and agent share the first row and grant the second.
+// note is last of the six because its tile is empty until the first note is
+// written, and an empty notebook that took the first slot was the first thing
+// everybody saw. Plugins not named here follow, alphabetically — a plugin
+// installed later lands on the dashboard without anyone editing this list.
+var pluginOrder = []string{"sys", "agent", "grant", "net", "kv", "note"}
+
+// leftOff names the capabilities the automatic dashboard declines even though
+// they qualify as tiles, each with the reason, worded to follow "not on the
+// automatic dashboard — " on `rta explain`'s card.
+//
+// A plugin whose pick is on this list gets no automatic tile at all, rather
+// than the next capability that could be previewed: gen would fall through to
+// gen.password, which is the same re-rolled secret as one line. They stay one
+// `rta dashboard add` away. The list lives here, beside the picker, because the
+// declarations are the plugins' and what a landing screen shows is the host's
+// to decide — the same split preferredTile is made of.
+var leftOff = map[string]string{
+	"gen.overview": "a table of freshly generated secrets is not a status, and it would re-roll on every refresh",
+	"fs.tree":      "it prints the directory rta was started in, which says nothing about the machine",
+}
 
 // preferredTile overrides the tile convention for a plugin whose best glance
 // is not the one the convention lands on.
@@ -245,23 +265,35 @@ func autoTiles(reg *registry.Registry) []tile {
 // away in the search bar instead, which is where you go once you do have a
 // hostname in mind.
 func pluginTile(reg *registry.Registry, p plugin.Plugin) (tile, bool) {
+	c, ok := pickCapability(reg, p)
+	if !ok {
+		return tile{}, false
+	}
+	if _, left := leftOff[c.ID]; left {
+		return tile{}, false
+	}
+	return tile{cap: c}, true
+}
+
+// pickCapability is the three rules of pluginTile, before leftOff has its say.
+func pickCapability(reg *registry.Registry, p plugin.Plugin) (plugin.Capability, bool) {
 	if id, ok := preferredTile[p.Name]; ok {
 		if c, ok := reg.Capability(id); ok && previewable(c) {
-			return tile{cap: c}, true
+			return c, true
 		}
 	}
 	// The namespace's own overview. Not any capability ending in the word:
 	// `net.hosts.overview` would be an overview of the hosts file, which is a
 	// section of the plugin rather than the plugin.
 	if c, ok := reg.Capability(p.Name + ".overview"); ok && previewable(c) {
-		return tile{cap: c}, true
+		return c, true
 	}
 	for _, c := range p.Capabilities {
 		if previewable(c) {
-			return tile{cap: c}, true
+			return c, true
 		}
 	}
-	return tile{}, false
+	return plugin.Capability{}, false
 }
 
 // TileFor reports which capability the dashboard would show for a plugin, and
@@ -295,9 +327,17 @@ func TileFor(reg *registry.Registry, p plugin.Plugin) (string, bool) {
 // tile, while one that declined has to be told to run unasked — a decision
 // about consent, not about arguments. Telling an operator the wrong one sends
 // them to fix something that is not there.
+//
+// A fourth reason is not the plugin's at all: a tile that qualifies and that
+// the host leaves off the landing screen (leftOff). It is named first, because
+// "nothing here only reads" would be false of gen and fs, which have tiles an
+// author could be forgiven for expecting.
 func NoTileReason(p plugin.Plugin) string {
 	var read, declined, needsInput int
 	for _, c := range p.Capabilities {
+		if reason, left := leftOff[c.ID]; left && previewable(c) {
+			return "the automatic dashboard leaves " + c.ID + " out: " + reason
+		}
 		if c.Safety != plugin.Read {
 			continue
 		}
@@ -337,7 +377,7 @@ func Unasked(c plugin.Capability) string {
 	case formNeeded(c):
 		return "it needs to be told what to look at"
 	}
-	return ""
+	return leftOff[c.ID]
 }
 
 // previewable reports whether the dashboard may run a capability on its own:
