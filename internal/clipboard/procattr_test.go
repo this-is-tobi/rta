@@ -1,5 +1,3 @@
-//go:build !windows
-
 package clipboard
 
 import (
@@ -26,7 +24,7 @@ func alive(pid int) bool {
 // the machine.
 const patience = 60 * time.Second
 
-// The regression procattr_unix.go exists to close: a wedged program that
+// The regression procattr.go exists to close: a wedged program that
 // had already forked a child of its own — the same shape xclip's own
 // successful path takes, backgrounding a helper to keep serving the
 // selection — must not leave that child running once Copy gives up on it.
