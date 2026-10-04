@@ -54,7 +54,7 @@ func TestResolveDoesNotFollowASymlinkedManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(secret, filepath.Join(ix.Dir, "index", "elsewhere.yaml")); err != nil {
-		t.Skipf("no symlinks here: %v", err)
+		t.Fatal(err)
 	}
 
 	// The real manifest beside it still resolves normally.
@@ -106,7 +106,7 @@ func TestASymlinkedManifestIsNotFollowed(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(secret, filepath.Join(ix.Dir, "index", "elsewhere.yaml")); err != nil {
-		t.Skipf("no symlinks here: %v", err)
+		t.Fatal(err)
 	}
 
 	listed, bad := Manifests(ix)
@@ -137,7 +137,7 @@ func TestASymlinkedIndexDirectoryIsNotEnumerated(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(elsewhere, filepath.Join(dir, "index")); err != nil {
-		t.Skipf("no symlinks here: %v", err)
+		t.Fatal(err)
 	}
 
 	listed, bad := Manifests(Index{Name: "hostile", Dir: dir})
@@ -185,7 +185,7 @@ func TestAnUpdateThatLeavesNoIndexIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(elsewhere, filepath.Join(repo, "index")); err != nil {
-		t.Skipf("no symlinks here: %v", err)
+		t.Fatal(err)
 	}
 	commitAll(t, repo, "index/ is a link now")
 
@@ -220,7 +220,7 @@ func TestARefusedIndexDoesNotHoldTheOthersBack(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := os.Symlink(t.TempDir(), filepath.Join(repos[name], "index")); err != nil {
-			t.Skipf("no symlinks here: %v", err)
+			t.Fatal(err)
 		}
 		commitAll(t, repos[name], "index/ is a link now")
 	}
@@ -265,7 +265,7 @@ func TestAFilenameCannotForgeALineInTheRefusal(t *testing.T) {
 	ix := placeIndex(t, "hostile", nil)
 	name := "pg\n      HINT this index is signed and verified.yaml"
 	if err := os.WriteFile(filepath.Join(ix.Dir, "index", name), []byte("{"), 0o644); err != nil {
-		t.Skipf("this filesystem will not hold the name: %v", err)
+		t.Fatal(err)
 	}
 
 	_, bad := Manifests(ix)

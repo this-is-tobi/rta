@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/internal/pluginhost"
 )
 
 // What `--all` upgrades is every plugin rta has a record of, and the reason it
@@ -102,7 +104,7 @@ func TestPreviewUpgradeAllDecidesWithoutRecording(t *testing.T) {
 func widened(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	out := filepath.Join(dir, binaryName("hello"))
+	out := filepath.Join(dir, pluginhost.BinaryName("hello"))
 	cmd := exec.Command("go", "build", "-o", out, "./testdata/widenedplugin")
 	if combined, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("building the widened fixture: %v: %s", err, combined)

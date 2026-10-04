@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
 )
 
@@ -36,11 +37,7 @@ func installHello(t *testing.T) Report {
 func TestUpgradeRefusesStoreBytesThatAreNotTheLockedDigest(t *testing.T) {
 	first := installHello(t)
 
-	// binaryName, not the literal: the store spells it with the platform's
-	// suffix, so writing to the bare name left the real artifact untouched and
-	// the upgrade correctly succeeded — reported here as "an upgrade ran bytes
-	// nobody had approved", which is the alarming way a fixture can lie.
-	stored := filepath.Join(StoreDir(), "hello", first.Digest, binaryName("hello"))
+	stored := filepath.Join(StoreDir(), "hello", first.Digest, pluginhost.BinaryName("hello"))
 	// Not a plugin at all: if this runs, the handshake fails and the test
 	// would report plugin.upgrade.old — the point is that it is never asked.
 	//
@@ -51,18 +48,11 @@ func TestUpgradeRefusesStoreBytesThatAreNotTheLockedDigest(t *testing.T) {
 	// os.WriteFile here failed with ETXTBSY on Linux and never once on macOS,
 	// which does not enforce the rule at all. A rename puts a new inode at the
 	// path without ever asking for write access on the executed one.
-	//
-	// And the rename goes through moveExecutable, not a bare os.Rename: on
-	// Windows the handle on a just-run image outlives the process and a move
-	// issued in that window fails with "access is denied" — seen once in CI
-	// here, in the store's own path never, because the store retries
-	// (store.go). The test reaches the path exactly the way the code under
-	// test does, retry included.
 	staged := filepath.Join(filepath.Dir(stored), ".replacement")
 	if err := os.WriteFile(staged, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := moveExecutable(staged, stored); err != nil {
+	if err := os.Rename(staged, stored); err != nil {
 		t.Fatal(err)
 	}
 
@@ -110,7 +100,7 @@ func TestUpgradeRefusesALockfileDigestThatIsAPath(t *testing.T) {
 
 	elsewhere := t.TempDir()
 	marker := filepath.Join(elsewhere, "ran")
-	planted := filepath.Join(elsewhere, binaryName("hello"))
+	planted := filepath.Join(elsewhere, pluginhost.BinaryName("hello"))
 	if err := os.WriteFile(planted, []byte("#!/bin/sh\ntouch "+marker+"\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}

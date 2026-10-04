@@ -156,7 +156,7 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 	// The staged binary carries its final name: the filename is the
 	// operator-side half of the identity check, and the verification
 	// launch below must see the same one the store will.
-	staged := filepath.Join(staging, binaryName(m.Name))
+	staged := filepath.Join(staging, pluginhost.BinaryName(m.Name))
 	if plat.Bin != "" {
 		archive, err := os.Open(filepath.Join(staging, "artifact"))
 		if err != nil {
@@ -208,7 +208,7 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 		// Named the same way place would, without moving anything there —
 		// the path is a deterministic function of name and digest, both
 		// already in hand.
-		dest := filepath.Join(StoreDir(), m.Name, digest, binaryName(m.Name))
+		dest := filepath.Join(StoreDir(), m.Name, digest, pluginhost.BinaryName(m.Name))
 		return Report{
 			Name: m.Name, Version: m.Version, Index: listed.Index, URL: plat.URL,
 			Digest: digest, Signature: sig, Path: dest, Declared: declared,
@@ -340,7 +340,7 @@ func describeStored(ctx context.Context, name, want string) (plugin.Plugin, *vie
 			WithHint("the lockfile has been edited by hand or corrupted; `rta plugin remove " +
 				name + "` and a fresh install rewrite it")
 	}
-	path := filepath.Join(StoreDir(), name, want, binaryName(name))
+	path := filepath.Join(StoreDir(), name, want, pluginhost.BinaryName(name))
 	id, err := pluginhost.Identify(path)
 	if err != nil {
 		return plugin.Plugin{}, view.Errorf("plugin.upgrade.old",

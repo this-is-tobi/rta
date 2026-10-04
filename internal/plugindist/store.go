@@ -1,13 +1,11 @@
 package plugindist
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -36,57 +34,19 @@ func StoreDir() string { return pluginhost.ManagedStore() }
 // pluginhost's, because discovery lives there and the import runs this way.
 func BinDir() string { return pluginhost.ManagedBin() }
 
-// binaryName is the on-disk name for a namespace on this machine — with
-// `.exe` on Windows, because that is what discovery looks for and what the OS
-// will run.
-func binaryName(name string) string { return pluginhost.BinaryName(name) }
-
-// symlink is os.Symlink, overridable so a test can make it fail the way
-// Windows does without Developer Mode. See place.
+// symlink is os.Symlink, overridable so a test can stand between the artifact
+// being placed and the install being recorded, and see whether an exit can land
+// there.
 var symlink = os.Symlink
 
 // removeAll is os.RemoveAll, overridable so a test can stand between a
 // remove's or a prune's writes and see whether an exit can land there.
 var removeAll = os.RemoveAll
 
-// artifactName is what an index calls the same binary, and it is deliberately
-// not binaryName: a manifest describes six platforms from whichever one
-// generated it, so the host's own suffix has no business in any of them.
-func artifactName(name string) string { return pluginhost.Prefix + name }
-
 // place moves a staged, verified binary into the store and points the bin/
 // symlink at it. The rename is atomic on one filesystem — staging lives under
 // the same data dir for exactly that — and the symlink swap goes through a
 // temporary name so no reader ever sees a missing or half-written link.
-// moveExecutable renames a file that something has just finished running.
-//
-// **Install runs the artifact before it stores it.** describeBinary launches
-// the staged binary to read its declaration, verifyClaims checks that against
-// the index, and only then does place move it into the store — so the rename
-// is always issued moments after a process holding that image exited.
-//
-// Windows refuses to move a file whose image a handle still holds, and the
-// handle outlives the process: the move fails with "The process cannot access
-// the file because it is being used by another process". Nothing is wrong when
-// that happens, and it does not happen every time — which makes it the worst
-// shape of bug to leave in an install path, one that fails a few percent of
-// the time on somebody else's machine and works on every retry.
-//
-// This is the same physics the upgrade admission test already documents from
-// the other side: Linux refuses open(O_WRONLY) on a mapped executable with
-// ETXTBSY, measured there at around 20ms past the wait() that reaped the
-// process. Windows expresses it as a sharing violation on the move instead.
-//
-// Waiting rather than asking, because there is nothing to ask: the handle
-// belongs to the kernel, not to a process rta can wait on. The wait itself is
-// atomicfile.Replace's — the same refusal meets every replace rta makes, a
-// reader being enough to trigger it where an exited process is enough here —
-// and what it reports on giving up is the real error rather than a claim
-// that the install worked.
-func moveExecutable(from, to string) error {
-	return atomicfile.Replace(from, to)
-}
-
 func place(name, digest, staged string) (string, *view.Error) {
 	dir := filepath.Join(StoreDir(), name, digest)
 	if _, err := paths.EnsureData(); err != nil {
@@ -95,8 +55,9 @@ func place(name, digest, staged string) (string, *view.Error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", view.Errorf("plugin.install.place", "%v", err)
 	}
-	dest := filepath.Join(dir, binaryName(name))
-	if err := moveExecutable(staged, dest); err != nil {
+	binary := pluginhost.BinaryName(name)
+	dest := filepath.Join(dir, binary)
+	if err := os.Rename(staged, dest); err != nil {
 		return "", view.Errorf("plugin.install.place", "%v", err)
 	}
 	if err := os.Chmod(dest, 0o755); err != nil {
@@ -107,97 +68,33 @@ func place(name, digest, staged string) (string, *view.Error) {
 	}
 	// Relative, so the whole data dir can move — a backup restored under
 	// another home keeps working.
-	target := filepath.Join("..", "store", name, digest, binaryName(name))
-	tmp := filepath.Join(BinDir(), "."+binaryName(name)+".swap")
+	target := filepath.Join("..", "store", name, digest, binary)
+	tmp := filepath.Join(BinDir(), "."+binary+".swap")
 	_ = os.Remove(tmp)
-	// A symlink where the OS will make one, a copy where it will not.
-	//
-	// Windows refuses an unprivileged symlink unless Developer Mode is on —
-	// ERROR_PRIVILEGE_NOT_HELD — so on a stock machine this is the step that
-	// ends the install, after the artifact has been fetched, hashed, launched
-	// and approved. Falling back costs a second copy of the binary and keeps
-	// every property the link had: bin/ still holds exactly one current
-	// version, the store still holds the rest for rollback, and CurrentDigest
-	// still reads which from the layout — by hashing it, which is a stronger
-	// answer than a link target anyway, since a target is a claim and a hash
-	// is the thing itself.
-	// A var so a test can take the fallback on a machine that symlinks
-	// happily; there is no Windows in reach to prove it the honest way.
 	if err := symlink(target, tmp); err != nil {
-		if verr := copyFile(dest, tmp); verr != nil {
-			return "", verr
-		}
+		return "", view.Errorf("plugin.install.place", "%v", err)
 	}
-	// moveExecutable again, and for the destination this time: bin/ holds the
-	// version that is current, so on an upgrade this replaces a file another
-	// rta may have running.
-	if err := moveExecutable(tmp, filepath.Join(BinDir(), binaryName(name))); err != nil {
+	if err := os.Rename(tmp, filepath.Join(BinDir(), binary)); err != nil {
 		_ = os.Remove(tmp)
 		return "", view.Errorf("plugin.install.place", "%v", err)
 	}
 	return dest, nil
 }
 
-// copyFile writes src to dst, executable, replacing whatever was there.
-func copyFile(src, dst string) *view.Error {
-	in, err := os.Open(src)
-	if err != nil {
-		return view.Errorf("plugin.install.place", "%v", err)
-	}
-	defer func() { _ = in.Close() }()
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
-	if err != nil {
-		return view.Errorf("plugin.install.place", "%v", err)
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		_ = os.Remove(dst)
-		return view.Errorf("plugin.install.place", "%v", err)
-	}
-	if err := out.Close(); err != nil {
-		_ = os.Remove(dst)
-		return view.Errorf("plugin.install.place", "%v", err)
-	}
-	return nil
-}
-
 // CurrentDigest reads which digest the bin/ symlink points at — the store's
 // own statement of "current", read from the layout rather than from the
 // lockfile, so the two can be compared instead of one asserting both.
 func CurrentDigest(name string) (string, bool) {
-	current := filepath.Join(BinDir(), binaryName(name))
-	target, err := os.Readlink(current)
+	target, err := os.Readlink(filepath.Join(BinDir(), pluginhost.BinaryName(name)))
 	if err != nil {
-		// Not a link: place fell back to a copy, which is the ordinary case
-		// on a Windows without Developer Mode. Hash it and see which stored
-		// version it is. Slower — it reads the whole binary — and a better
-		// answer than a link target, which only ever said what somebody
-		// intended; this says what is there.
-		return storedDigestOf(name, current)
+		return "", false
 	}
-	parts := strings.Split(filepath.ToSlash(target), "/")
+	parts := strings.Split(target, "/")
 	// ../store/<name>/<digest>/<binary>
 	if len(parts) != 5 || parts[1] != "store" || parts[2] != name {
 		return "", false
 	}
 	return parts[3], true
-}
-
-// storedDigestOf hashes the current binary and returns the stored digest it
-// matches. A digest that is not in the store is not "current" — it is a file
-// somebody put in bin/ by hand, and answering with it would let anything
-// dropped there claim to be the installed version.
-func storedDigestOf(name, path string) (string, bool) {
-	sum, verr := digestFile(path)
-	if verr != nil {
-		return "", false
-	}
-	for _, held := range StoredDigests(name) {
-		if held == sum {
-			return sum, true
-		}
-	}
-	return "", false
 }
 
 // StoredDigests lists the digests the store holds for one plugin, sorted —
@@ -219,7 +116,7 @@ func StoredDigests(name string) []string {
 
 // removeStored deletes one plugin's bin link and every stored digest.
 func removeStored(name string) *view.Error {
-	link := filepath.Join(BinDir(), binaryName(name))
+	link := filepath.Join(BinDir(), pluginhost.BinaryName(name))
 	if err := os.Remove(link); err != nil && !os.IsNotExist(err) {
 		return view.Errorf("plugin.remove.store", "%v", err)
 	}

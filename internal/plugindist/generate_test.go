@@ -22,23 +22,9 @@ func hostPlatform(url string) []PlatformSource {
 	return []PlatformSource{{OS: runtime.GOOS, Arch: runtime.GOARCH, URL: url}}
 }
 
-// fileURL is the file:// URL naming a local path, which is not the scheme
-// concatenated with the path on every platform — the form these tests used
-// everywhere.
-//
-// On Unix a path already begins with "/", so the concatenation happens to
-// produce the three slashes a file URL needs. A Windows path begins with a
-// drive letter and separates with backslashes, so it produced
-// `file://C:\Users\...`, where "C:" parses as the host and the backslashes are
-// not legal in a path — checkArtifactURL refused it before any test reached
-// what it meant to test.
+// fileURL is the file:// URL naming an absolute local path.
 func fileURL(path string) string {
-	p := filepath.ToSlash(path)
-	if !strings.HasPrefix(p, "/") {
-		// C:/Users/… → /C:/Users/…, which is what file:///C:/Users/… means.
-		p = "/" + p
-	}
-	return (&url.URL{Scheme: "file", Path: p}).String()
+	return (&url.URL{Scheme: "file", Path: path}).String()
 }
 
 func generate(t *testing.T, req GenerateRequest) ([]byte, Manifest) {
