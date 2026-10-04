@@ -31,7 +31,7 @@
 // authorization, and an unsealed one rebuilds exactly the hole the grant seal
 // closed for grants — a confined plugin, denied every read of the data
 // directory and never denied a write, could drop an approval for itself
-// (macOS confines a plugin; Linux and Windows do not, and internal/seal
+// (macOS confines a plugin; Linux does not, and internal/seal
 // says what the seal still buys there). A request carries no authority, so
 // the worst a forged one achieves is a question the operator did not
 // expect, whose answer authorizes nothing.

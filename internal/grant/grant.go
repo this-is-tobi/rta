@@ -2240,7 +2240,7 @@ const (
 //
 // The lock is a sentinel file, not flock(2): creating a name that cannot
 // already exist behaves identically on every platform rta ships for (Linux,
-// macOS, Windows), where POSIX file locking does not.
+// macOS), where POSIX file locking does not.
 //
 // **The lock is held by identity, not by name.** Every operation on the
 // sentinel used to be by path — release removed whatever was there, and a

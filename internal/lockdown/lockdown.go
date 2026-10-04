@@ -197,9 +197,8 @@ func KeyWithoutFile() bool {
 // it says "`rm` the file", and the file a reader takes that to mean is the
 // one the message named, which on the write path is lockdown.json and may
 // not exist at all. Named as files to delete rather than as a command,
-// because the hint is shown on Windows too, where no shell takes `rm -f`,
-// and because the sealed file is often not there — "if it is there" says so
-// where a pasted command would only complain.
+// because the sealed file is often not there — "if it is there" says so where
+// a pasted command would only complain.
 func shortKeyHint() string {
 	return "at the machine's terminal, delete " + keyPath() + " and, if it is there, " + Path() +
 		", then re-place the locks you mean with `rta lock add` — running servers keep enforcing " +
