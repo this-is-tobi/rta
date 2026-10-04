@@ -155,10 +155,10 @@ func TestSetAsksForTheValueOfANewKeyGivenALabel(t *testing.T) {
 }
 
 // A pasted certificate, key or JSON credential the prompt could not read on
-// after — on Windows, or pasted slower than the prompt waits — reaches it as
-// its first line alone, which is never a value on its own: refused, whether
-// the prompt came before the store was opened or after, and nothing is
-// stored. A line that only starts like one is a value like any other.
+// after — pasted slower than the prompt waits — reaches it as its first line
+// alone, which is never a value on its own: refused, whether the prompt came
+// before the store was opened or after, and nothing is stored. A line that
+// only starts like one is a value like any other.
 func TestSetRefusesTheFirstLineAPasteWasCutTo(t *testing.T) {
 	setup(t)
 	ctx := context.Background()

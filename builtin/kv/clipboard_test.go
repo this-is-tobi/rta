@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -20,14 +19,11 @@ import (
 // real program and reads back both.
 func fakeClipboard(t *testing.T) (stdin, argv string) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the stand-in is a shell script")
-	}
 	dir := t.TempDir()
 	stdin = filepath.Join(dir, "stdin")
 	argv = filepath.Join(dir, "argv")
 	script := "#!/bin/sh\ncat > " + stdin + "\nprintf '%s\\n' \"$@\" > " + argv + "\n"
-	for _, name := range []string{"pbcopy", "xclip", "xsel", "wl-copy", "clip", "clip.exe", "termux-clipboard-set"} {
+	for _, name := range []string{"pbcopy", "xclip", "xsel", "wl-copy", "clip.exe", "termux-clipboard-set"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil {
 			t.Fatal(err)
 		}

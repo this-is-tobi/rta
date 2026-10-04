@@ -3,7 +3,6 @@ package kv
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
@@ -13,9 +12,6 @@ import (
 // seal key and record segment then lands in. Both writers go through
 // paths.EnsureData now.
 func TestTheStoreCreatesAnOwnerOnlyDataDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permission bits do not apply")
-	}
 	for name, write := range map[string]func() error{
 		"the ciphertext": func() error {
 			if verr := writeAtomic([]byte("age-encrypted bytes")); verr != nil {
