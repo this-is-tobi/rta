@@ -325,20 +325,16 @@ func TestAnOCIPlatformTakesItsDigestFromTheRegistry(t *testing.T) {
 		Binary: hello(t),
 		Platforms: []PlatformSource{
 			{OS: "linux", Arch: "amd64", URL: "oci://" + host + "/" + reg.repo + ":1.0.0"},
-			{OS: "windows", Arch: "amd64", URL: "oci://" + host + "/" + reg.repo + ":1.0.0"},
+			{OS: "darwin", Arch: "arm64", URL: "oci://" + host + "/" + reg.repo + ":1.0.0"},
 		},
 	})
 	for _, p := range m.Platforms {
 		if want := strings.TrimPrefix(reg.digest, "sha256:"); p.SHA256 != want {
 			t.Fatalf("%s/%s sha256 = %q, want the registry's %q", p.OS, p.Arch, p.SHA256, want)
 		}
-		want := "rta-plugin-hello"
-		if p.OS == "windows" {
-			want += ".exe"
-		}
-		if p.Bin != want {
+		if p.Bin != "rta-plugin-hello" {
 			t.Fatalf("%s/%s bin = %q, want %q — the layer is a tar+gzip",
-				p.OS, p.Arch, p.Bin, want)
+				p.OS, p.Arch, p.Bin, "rta-plugin-hello")
 		}
 	}
 }

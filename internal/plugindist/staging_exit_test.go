@@ -1,5 +1,3 @@
-//go:build !windows
-
 package plugindist
 
 import (
@@ -29,7 +27,7 @@ func TestAnExitDuringAnInstallsFetchRemovesWhatItStaged(t *testing.T) {
 	testData(t)
 	fifo := filepath.Join(t.TempDir(), "artifact")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("no named pipes here: %v", err)
+		t.Fatal(err)
 	}
 	attach(t, fmt.Sprintf(`name: hello
 version: 0.1.0
@@ -139,7 +137,7 @@ func TestAnExitDuringASignaturesFetchLeavesNothingBehind(t *testing.T) {
 	dir := t.TempDir()
 	fifo := filepath.Join(dir, "artifact.sig")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("no named pipes here: %v", err)
+		t.Fatal(err)
 	}
 	key := filepath.Join(dir, "key.pub")
 	cosign := filepath.Join(dir, "cosign")

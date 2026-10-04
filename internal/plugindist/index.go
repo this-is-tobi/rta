@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -459,9 +458,8 @@ const (
 )
 
 // gitScheme matches the `<scheme>://` prefix git reads as a URL. Hand-rolled
-// rather than url.Parse's, because url.Parse reads a Windows drive letter as a
-// scheme ("C:/repo" parses with Scheme "c") and refuses the scp-like spelling
-// outright — the two shapes this most has to get right.
+// rather than url.Parse's, because url.Parse reads "host:/repo" as a scheme and
+// refuses the scp-like spelling outright — the shape this most has to get right.
 var gitScheme = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9+.\-]*)://`)
 
 // gitHelper matches `<transport>::`, the remote-helper spelling. Anchored to a
@@ -472,8 +470,6 @@ var gitScheme = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9+.\-]*)://`)
 var gitHelper = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.\-]*::`)
 
 var gitHost = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9._\-]*[A-Za-z0-9])?$`)
-
-var dosDrive = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
 
 // classifyGitURL is the whole grammar `rta plugin index add` admits, and the
 // same grammar read back off an attached clone to say where it came from.
@@ -568,13 +564,6 @@ func classifyGitURL(raw string) (gitURLKind, *view.Error) {
 		return kind, verr.WithHint("`<transport>::<argument>` runs git-remote-<transport>, " +
 			"and the built-in ext:: helper's argument is a command line — an index is an " +
 			"https or ssh URL, or a path on this machine")
-	}
-	// git reads a drive letter as a path rather than a scheme, and only on
-	// Windows — has_dos_drive_prefix is compiled out elsewhere. Mirrored with
-	// the same guard, because "C:/x" on Linux is a directory called C: and the
-	// colon rule below says so, which is also what git says.
-	if runtime.GOOS == "windows" && dosDrive.MatchString(raw) {
-		return gitLocalURL, nil
 	}
 	colon := strings.IndexByte(raw, ':')
 	slash := strings.IndexByte(raw, '/')

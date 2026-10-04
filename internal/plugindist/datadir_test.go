@@ -3,7 +3,6 @@ package plugindist
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/paths"
@@ -15,9 +14,6 @@ import (
 // record segment and parked request listable by any account. Every writer
 // here goes through paths.EnsureData now, and this is what keeps it so.
 func TestWritingUnderTheDataDirectoryCreatesItOwnerOnly(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permission bits do not apply")
-	}
 	for name, write := range map[string]func(t *testing.T){
 		"the lockfile": func(t *testing.T) {
 			if verr := mutateLock(func(e []LockEntry) []LockEntry { return e }); verr != nil {

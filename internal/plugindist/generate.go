@@ -12,6 +12,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -135,7 +136,7 @@ func Generate(ctx context.Context, req GenerateRequest) ([]byte, Manifest, *view
 		})
 	}
 	for _, src := range req.Platforms {
-		plat, verr := req.platform(ctx, src, artifactName(declared.Name))
+		plat, verr := req.platform(ctx, src, pluginhost.BinaryName(declared.Name))
 		if verr != nil {
 			return nil, Manifest{}, verr
 		}
@@ -173,7 +174,7 @@ func Generate(ctx context.Context, req GenerateRequest) ([]byte, Manifest, *view
 func FileName(m Manifest) string { return path.Join("index", m.Name+".yaml") }
 
 func header(name string) string {
-	return "# " + artifactName(name) + ", as rta read it out of the binary.\n" +
+	return "# " + pluginhost.BinaryName(name) + ", as rta read it out of the binary.\n" +
 		"#\n" +
 		"# Everything here except the platform URLs came from the artifact's own\n" +
 		"# declaration, so this file cannot disagree with the plugin it describes.\n" +
@@ -197,12 +198,11 @@ func (req GenerateRequest) platform(ctx context.Context, src PlatformSource, mem
 	if strings.HasSuffix(base, ".zip") {
 		// Refused here rather than discovered at an install. rta extracts one
 		// member from a .tar.gz and has no zip reader at all, so a manifest
-		// naming a .zip is a manifest whose Windows entry cannot be installed
-		// by the tool the manifest is for.
+		// naming a .zip is a manifest whose entry cannot be installed by the
+		// tool the manifest is for.
 		return Platform{}, bad("%s/%s: %s is a zip, and rta extracts .tar.gz only",
 			src.OS, src.Arch, base).
-			WithHint("publish this platform as .tar.gz or as the bare binary — " +
-				"including on Windows, where GoReleaser's default is zip")
+			WithHint("publish this platform as .tar.gz or as the bare binary")
 	}
 
 	plat := Platform{OS: src.OS, Arch: src.Arch, URL: src.URL, Bin: src.Bin}
@@ -225,30 +225,17 @@ func (req GenerateRequest) platform(ctx context.Context, src PlatformSource, mem
 		plat.SHA256 = strings.TrimPrefix(layer.Digest, "sha256:")
 		if plat.Bin == "" && layer.IsArchive() {
 			plat.Bin = member
-			if src.OS == "windows" {
-				plat.Bin += ".exe"
-			}
 		}
 		return plat, nil
 	}
 
 	if plat.Bin == "" && strings.HasSuffix(base, ".tar.gz") {
 		plat.Bin = member
-		// Per platform, never per host. A Windows archive holds
-		// rta-plugin-pg.exe — the Go toolchain and GoReleaser both put it
-		// there, and nothing on Windows would run it under any other name —
-		// so the member to extract differs by the OS the entry describes and
-		// not by the OS generating the manifest. Getting this from the host
-		// would produce a manifest that is right for whoever ran the command
-		// and wrong for the other five platforms.
-		if src.OS == "windows" {
-			plat.Bin += ".exe"
-		}
 	}
 
 	local := ""
 	if u.Scheme == "file" {
-		local = localPath(u)
+		local = u.Path
 	}
 	if local != "" {
 		sum, verr := digestFile(local)

@@ -42,10 +42,6 @@ func hello(t *testing.T) string {
 			helloErr = err
 			return
 		}
-		// pluginhost.BinaryName, for the reason its twin in that package
-		// carries: a fixture standing in for an installed plugin has to be
-		// named the way one is named, and on Windows that means the .exe
-		// without which nothing will execute it.
 		helloPath = filepath.Join(dir, pluginhost.BinaryName("hello"))
 		cmd := exec.Command("go", "build", "-o", helloPath, "../../examples/plugin-hello")
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -222,19 +218,16 @@ func TestInstallVerifiesPlacesTrustsAndRecords(t *testing.T) {
 			}
 
 			// The store holds the bytes where the layout says, executable.
-			placed := filepath.Join(StoreDir(), "hello", wantDigest, binaryName("hello"))
+			placed := filepath.Join(StoreDir(), "hello", wantDigest, pluginhost.BinaryName("hello"))
 			info, err := os.Stat(placed)
-			// The execute bit only where there is one: Go derives a Windows
-			// FileMode from the read-only attribute, so this is 0 for every
-			// file there and asserting it would fail on a correct install.
-			if err != nil || (pluginhost.ExeSuffix == "" && info.Mode()&0o111 == 0) {
+			if err != nil || info.Mode()&0o111 == 0 {
 				t.Fatalf("stored binary: %v, mode %v", err, info)
 			}
 			if got, ok := CurrentDigest("hello"); !ok || got != wantDigest {
 				t.Fatalf("CurrentDigest = %q, %v", got, ok)
 			}
 			// The bin/ link resolves to the stored file.
-			link := filepath.Join(BinDir(), binaryName("hello"))
+			link := filepath.Join(BinDir(), pluginhost.BinaryName("hello"))
 			if resolved, err := filepath.EvalSymlinks(link); err != nil ||
 				sha256Of(t, resolved) != wantDigest {
 				t.Fatalf("bin link resolves to %q (%v)", resolved, err)
@@ -433,6 +426,23 @@ func dataDirOf(t *testing.T) string {
 	return os.Getenv("RTA_DATA_DIR")
 }
 
+// A digest that is not in the store is not "current" — otherwise anything
+// dropped into bin/ by hand claims to be the installed version, which is the
+// one question CurrentDigest exists to answer independently of the lockfile.
+func TestAStrangerInBinIsNotTheCurrentVersion(t *testing.T) {
+	testData(t)
+	if err := os.MkdirAll(BinDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(BinDir(), pluginhost.BinaryName("hello")),
+		[]byte("not from the store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := CurrentDigest("hello"); ok {
+		t.Fatalf("CurrentDigest = %q, want no answer for a file the store never placed", got)
+	}
+}
+
 // Remove takes everything back — store, trust, lock — and names the config
 // statements now pointing at nothing, without touching them.
 func TestRemoveUninstallsAndNamesOrphans(t *testing.T) {
@@ -467,7 +477,7 @@ func TestRemoveUninstallsAndNamesOrphans(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(StoreDir(), "hello")); err == nil {
 		t.Error("the store entry survived remove")
 	}
-	if _, err := os.Readlink(filepath.Join(BinDir(), binaryName("hello"))); err == nil {
+	if _, err := os.Readlink(filepath.Join(BinDir(), pluginhost.BinaryName("hello"))); err == nil {
 		t.Error("the bin link survived remove")
 	}
 	if _, held := LockedFor("hello"); held {
@@ -545,7 +555,7 @@ func TestUpgradeMovesKeepsRollbackAndReportsUpToDate(t *testing.T) {
 	// The upstream ships different bytes: the same source built with the
 	// linker stripping symbols — a different artifact, the same declaration.
 	dir := t.TempDir()
-	rebuilt := filepath.Join(dir, binaryName("hello"))
+	rebuilt := filepath.Join(dir, pluginhost.BinaryName("hello"))
 	cmd := exec.Command("go", "build", "-ldflags=-s -w", "-o", rebuilt, "../../examples/plugin-hello")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("rebuilding: %v: %s", err, out)
@@ -632,17 +642,9 @@ func TestSignatureOutcomesAreRecordedNeverRequired(t *testing.T) {
 		return fmt.Sprintf("signature:\n  sig: %s\n  key: %s\n",
 			fileURL(filepath.Join(dir, "artifact.sig")), fileURL(filepath.Join(dir, "key.pub")))
 	}
-	// A cosign that decides, without cosign being installed. The stub is a
-	// shell script, which is the one thing here that is not portable: Windows
-	// will not execute a file with a shebang, and a .bat is not something
-	// CreateProcess starts either. What these two cases check — that rta
-	// records the outcome it was handed rather than gating the install on it —
-	// has nothing to do with the platform, and it runs on the other three.
+	// A cosign that decides, without cosign being installed.
 	fakeCosign := func(t *testing.T, exit int) {
 		t.Helper()
-		if pluginhost.ExeSuffix != "" {
-			t.Skip("the cosign stub is a shell script; the outcome recording it drives is platform-independent")
-		}
 		path := filepath.Join(t.TempDir(), "cosign")
 		if err := os.WriteFile(path,
 			[]byte(fmt.Sprintf("#!/bin/sh\nexit %d\n", exit)), 0o755); err != nil {

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
 )
 
@@ -17,7 +18,7 @@ func stored(t *testing.T, name, digest, content string) string {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, binaryName(name))
+	path := filepath.Join(dir, pluginhost.BinaryName(name))
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -30,8 +31,8 @@ func current(t *testing.T, name, digest string) {
 	if err := os.MkdirAll(BinDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join("..", "store", name, digest, binaryName(name))
-	if err := os.Symlink(target, filepath.Join(BinDir(), binaryName(name))); err != nil {
+	target := filepath.Join("..", "store", name, digest, pluginhost.BinaryName(name))
+	if err := os.Symlink(target, filepath.Join(BinDir(), pluginhost.BinaryName(name))); err != nil {
 		t.Fatal(err)
 	}
 }
