@@ -2,10 +2,10 @@ package pathguard
 
 import (
 	"io/fs"
-	"os"
 	"path/filepath"
 	"slices"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -87,18 +87,25 @@ import (
 // time, which Linux reports only through statx, never in the FileInfo an
 // opener or a walk has to hand.
 
+// fileID is a file's identity: the device it is on and its number there,
+// which every name of the file shares.
+type fileID struct{ dev, ino uint64 }
+
+// identity is the device and inode number info names its file by, and false
+// for a FileInfo that carries none: one from something other than the
+// operating system's filesystem.
+func identity(info fs.FileInfo) (fileID, bool) {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fileID{}, false
+	}
+	return fileID{dev: uint64(st.Dev), ino: uint64(st.Ino)}, true //nolint:unconvert,gosec // Dev is int32 on darwin and uint64 on linux, Ino uint64 on both; the conversions are what builds on both, and each is an identity compared for equality, never arithmetic, so a sign-wrapped value is as unique as the original.
+}
+
 // idSet is the identities of a set of files, with what each was when the set
 // was read.
 type idSet struct {
 	ids map[fileID]stamp
-	// other is every file whose identity the platform does not name,
-	// compared one by one with os.SameFile: all of them, on Windows.
-	other []seenFile
-}
-
-type seenFile struct {
-	info fs.FileInfo
-	kept bool
 }
 
 // stamp is what a file was when a set was read: what a rename leaves as it
@@ -118,30 +125,18 @@ func (s *idSet) add(info fs.FileInfo, kept bool) {
 			s.ids = make(map[fileID]stamp)
 		}
 		s.ids[id] = stampOf(info, kept)
-		return
 	}
-	// os.SameFile reads a Windows file's identity from its name the first
-	// time it is asked and keeps it, so it is asked now: the identity is then
-	// that of what the name held while the set was read, not of whatever it
-	// holds when an open is compared with it later.
-	_ = os.SameFile(info, info)
-	s.other = append(s.other, seenFile{info, kept})
 }
 
 // find is what the set saw of the file info describes, and whether it saw
 // it at all.
 func (s *idSet) find(info fs.FileInfo) (stamp, bool) {
-	if id, ok := identity(info); ok {
-		if was, ok := s.ids[id]; ok {
-			return was, true
-		}
+	id, ok := identity(info)
+	if !ok {
+		return stamp{}, false
 	}
-	for _, seen := range s.other {
-		if os.SameFile(seen.info, info) {
-			return stampOf(seen.info, seen.kept), true
-		}
-	}
-	return stamp{}, false
+	was, ok := s.ids[id]
+	return was, ok
 }
 
 // readState is the identity of everything under each of denied, the

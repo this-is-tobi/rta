@@ -28,7 +28,7 @@ func FuzzCheck(f *testing.F) {
 	}
 	for _, seed := range []string{
 		"file", "dir/sub/x", "../x", "dir/../../x", "out/grants.key", "out/../dir",
-		"~/x", "https://example.com/repo.git", "user@host:path", "\\\\host\\share", "//x/y", "", " ",
+		"~/x", "https://example.com/repo.git", "user@host:path", "//x/y", "", " ",
 		root, filepath.Join(root, "out", "grants.key"), data,
 	} {
 		f.Add(seed)

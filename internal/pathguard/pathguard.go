@@ -32,7 +32,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 
@@ -312,8 +311,8 @@ func (g *Guard) refuser() func(string, fs.FileInfo) error {
 
 // scpLike matches git's other address form, `user@host:path`, which has no
 // scheme to give it away. Anchored and deliberately narrow: a host part with
-// no slash in it, then a colon. A Windows drive letter has no "@" and a real
-// local file called "notes@work" has no colon after it.
+// no slash in it, then a colon. A real local file called "notes@work" has no
+// colon after it.
 var scpLike = regexp.MustCompile(`^[A-Za-z0-9._~-]+@[A-Za-z0-9._-]+:`)
 
 // remote reports whether a caller's "path" is really an address somewhere
@@ -337,58 +336,10 @@ var scpLike = regexp.MustCompile(`^[A-Za-z0-9._~-]+@[A-Za-z0-9._-]+:`)
 // typed it.
 func remote(raw string) bool {
 	s := strings.TrimSpace(raw)
-	if i := strings.Index(s, "://"); i > 0 && !strings.ContainsAny(s[:i], `/\`) {
-		return true
-	}
-	if unc(s) {
+	if i := strings.Index(s, "://"); i > 0 && !strings.Contains(s[:i], "/") {
 		return true
 	}
 	return scpLike.MatchString(s)
-}
-
-// unc reports whether a path names a Windows network share.
-//
-// **This is the one address form that makes the guard itself do the
-// connecting.** The two cases above hand a mangled string to a handler and let
-// it fail; a UNC path does its damage inside `resolve`, before any in-root
-// decision is reached. `filepath.EvalSymlinks` on `\\host\share` asks the
-// Windows SMB redirector to open it, which dials the host and authenticates
-// with the rta process's own machine credentials — the forced-authentication
-// primitive Responder and ntlmrelayx are built to catch. The eventual
-// "outside what this server may read" is returned long after the NetNTLM
-// exchange has happened, so refusing at the string is the only place it can be
-// stopped.
-//
-// Two separators, judged differently, because they are not the same claim:
-//
-//   - A backslash pair is refused on every platform. No POSIX caller means a
-//     file whose name begins `\\`, and the server's GOOS is not something the
-//     value should depend on when the value is this unambiguous.
-//   - A forward-slash pair is refused only on Windows, where FromSlash turns
-//     `//host/share` into exactly the UNC volume above. On POSIX `//x/y` is an
-//     ordinary absolute path that Clean collapses to `/x/y`, and refusing it
-//     there would be a false positive on a path nobody chose for its network
-//     meaning.
-//
-// Testing the first two bytes rather than matching a host name also covers
-// `\\?\` and `\\.\` device paths, which a host-shaped pattern would let
-// through.
-//
-// The cost, stated rather than discovered: an operator who serves with
-// `--root \\fileserver\projects` can no longer have callers name absolute
-// paths under it, because this refuses the root's own spelling. That
-// deployment is exotic, the refusal is explicit and names itself, and
-// fail-closed is the rule everywhere else in this package — a caller-chosen
-// network destination is not something to allow because a root happened to be
-// spelled the same way.
-func unc(s string) bool {
-	if len(s) < 2 {
-		return false
-	}
-	sep := func(c byte) bool {
-		return c == '\\' || (c == '/' && runtime.GOOS == "windows")
-	}
-	return sep(s[0]) && sep(s[1])
 }
 
 // resolve turns a caller's string into the absolute path a handler would
@@ -400,7 +351,7 @@ func unc(s string) bool {
 // then opens /etc. Doing it with EvalSymlinks alone would fail for every path
 // that does not exist yet, which is most of the write ones.
 func resolve(raw string) (string, error) {
-	p := filepath.FromSlash(ExpandTilde(strings.TrimSpace(raw)))
+	p := ExpandTilde(strings.TrimSpace(raw))
 	if !filepath.IsAbs(p) {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -449,9 +400,8 @@ func resolve(raw string) (string, error) {
 	// macOS to the resolved roots under /private — and the outside link it
 	// would reveal is one pointing into the roots, which only somebody who
 	// could already write outside them can make.
-	vol := filepath.VolumeName(p)
-	out := vol + string(filepath.Separator)
-	rest := NameParts(runtime.GOOS, p[len(vol):])
+	out := string(filepath.Separator)
+	rest := strings.Split(p, string(filepath.Separator))
 	hops := 0
 	for len(rest) > 0 {
 		seg := rest[0]
@@ -476,19 +426,10 @@ func resolve(raw string) (string, error) {
 		if hops++; hops > 255 {
 			return out, fmt.Errorf("%s: too many levels of symbolic links", raw)
 		}
-		switch tv := filepath.VolumeName(target); {
-		case filepath.IsAbs(target):
-			out, target = tv+string(filepath.Separator), target[len(tv):]
-		case VolumeRooted(runtime.GOOS, target):
-			// Rooted but not absolute, which only Windows has: the root of
-			// the volume the link is on.
-			out = filepath.VolumeName(out) + string(filepath.Separator)
+		if filepath.IsAbs(target) {
+			out = string(filepath.Separator)
 		}
-		// Taken apart at every separator the system reads: split at the
-		// backslash alone, a Windows link written with forward slashes was
-		// one part, whose .. filepath.Join took off before the link ahead of
-		// it was asked where it led — judging a path the kernel never opens.
-		rest = append(NameParts(runtime.GOOS, target), rest...)
+		rest = append(strings.Split(target, string(filepath.Separator)), rest...)
 	}
 	return out, nil
 }
@@ -511,9 +452,9 @@ func readLink(path string) (string, bool) {
 // inside reports whether p is root or under it, by name and then by identity.
 //
 // The name test alone is wrong on any case-insensitive filesystem, which is
-// the default on macOS and Windows. Reproduced on this machine: with the data
-// directory denied, `…/rta/grants.key` is refused and `…/RTA/grants.key` is
-// allowed — and reads the same bytes. That is the seal key for every grant
+// the default on macOS. Reproduced on this machine: with the data directory
+// denied, `…/rta/grants.key` is refused and `…/RTA/grants.key` is allowed — and
+// reads the same bytes. That is the seal key for every grant
 // (internal/grant/seal.go) named by an agent that changed one letter's case.
 //
 // Case-folding the strings would be the obvious fix and is the wrong one: a
@@ -578,10 +519,10 @@ func relWithin(root, p string) (string, bool) {
 
 // ExpandTilde replaces a leading ~ with the user's home directory.
 //
-// Only a leading "~" or "~/", and "~\" on Windows, its own separator: "~user"
-// is deliberately not supported, because resolving another account's home is
-// not something any input here means, and a file literally named "~something"
-// in the current directory should keep working.
+// Only a leading "~" or "~/": "~user" is deliberately not supported, because
+// resolving another account's home is not something any input here means, and
+// a file literally named "~something" in the current directory should keep
+// working.
 //
 // The rule itself lives in pkg/plugin, exported so a plugin can apply the
 // same one to its own Local path inputs; this is the host's name for it.

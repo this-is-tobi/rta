@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"syscall"
 )
 
 // Data resolves where local state lives: RTA_DATA_DIR overrides (tests,
@@ -140,7 +141,7 @@ func privateStranded(dir string) error {
 	if err != nil {
 		return fmt.Errorf("%s cannot be looked at (%w), so rta will not keep its state there — set HOME or RTA_DATA_DIR", dir, err)
 	}
-	if !info.IsDir() || (runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0) || !ownedByUs(info) {
+	if !info.IsDir() || info.Mode().Perm()&0o077 != 0 || !ownedByUs(info) {
 		return fmt.Errorf("%s exists and is not a private directory of this account, so rta will "+
 			"not keep its state there — set HOME or RTA_DATA_DIR", dir)
 	}
@@ -251,4 +252,11 @@ func OwnConfigDir() string {
 		return ""
 	}
 	return filepath.Join(base, "rta")
+}
+
+// ownedByUs reports that info names a file this account owns. A FileInfo that
+// carries no owner is not vouched for.
+func ownedByUs(info fs.FileInfo) bool {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	return ok && int(st.Uid) == os.Getuid()
 }

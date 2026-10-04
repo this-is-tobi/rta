@@ -4,7 +4,6 @@ import (
 	"github.com/this-is-tobi/rta/internal/paths"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -176,7 +175,6 @@ func TestRelativeValuesAreNotRefused(t *testing.T) {
 		"example.com:443",
 		"kv.get",
 		"notes@work",
-		"C:relative",
 		"sub/dir/file.txt",
 		"",
 		"   ",
@@ -214,17 +212,6 @@ func TestARemoteAddressIsNotAPath(t *testing.T) {
 		"ssh://git@example.com/repo.git",
 		"git://example.com/repo.git",
 		"git@github.com:owner/repo.git",
-		// A UNC share is the address form that makes the guard itself dial:
-		// EvalSymlinks on it asks the Windows SMB redirector to connect and
-		// authenticate, before any in-root decision is reached. Refused on
-		// every platform, because no POSIX caller means a file whose name
-		// begins with two backslashes.
-		`\\attacker.example.com\share\x`,
-		`\\attacker.example.com\share`,
-		// Device-path spellings ride the same two-separator test rather than
-		// needing a host-shaped pattern of their own.
-		`\\?\UNC\attacker.example.com\share\x`,
-		`\\.\pipe\whatever`,
 	} {
 		verr := func() *view.Error { _, e := g.Check("path", v); return e }()
 		if verr == nil {
@@ -237,15 +224,9 @@ func TestARemoteAddressIsNotAPath(t *testing.T) {
 	}
 }
 
-// The other half of the UNC refusal, and the reason it judges the two
-// separators differently: on POSIX a doubled forward slash is an ordinary
-// absolute path that Clean collapses, not a network share, so refusing it
-// here would break a caller who never asked for one. On Windows the same
-// spelling is the UNC volume and is refused by the case above.
-func TestADoubledForwardSlashIsAnOrdinaryPathOffWindows(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("//host/share is a UNC volume here, and is refused on purpose")
-	}
+// A doubled forward slash is an ordinary absolute path that Clean collapses,
+// not an address, so refusing it would break a caller who never asked for one.
+func TestADoubledForwardSlashIsAnOrdinaryPath(t *testing.T) {
 	dir := t.TempDir()
 	g, err := New(dir)
 	if err != nil {
@@ -259,8 +240,7 @@ func TestADoubledForwardSlashIsAnOrdinaryPathOffWindows(t *testing.T) {
 	// Compared by suffix, not prefix: the root itself resolves through
 	// symlinks here (/var is /private/var on macOS), so the prefix is the
 	// resolved root rather than the one New was handed. The property under
-	// test is that the doubled separator collapsed instead of being read as
-	// a share name.
+	// test is that the doubled separator collapsed.
 	if !strings.HasSuffix(got, string(filepath.Separator)+filepath.Join("sub", "file")) {
 		t.Errorf("resolved to %q, want it to end at sub/file", got)
 	}
@@ -540,13 +520,12 @@ func TestRtasOwnConfigDirectoryIsRefused(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("RTA_DATA_DIR", filepath.Join(t.TempDir(), "data"))
 	t.Setenv("RTA_CONFIG", "")
-	// The user's config directory, under the root: XDG for Linux, HOME for
-	// the platforms that derive it from there.
+	// The user's config directory, under the root: XDG on Linux, HOME on macOS.
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "xdg"))
 	t.Setenv("HOME", root)
 	own := paths.OwnConfigDir()
-	if own == "" || !strings.HasPrefix(own, root) {
-		t.Skipf("the user's config directory (%q) did not land under the root on this platform", own)
+	if !strings.HasPrefix(own, root) {
+		t.Fatalf("the user's config directory (%q) did not land under the root", own)
 	}
 	if err := os.MkdirAll(own, 0o700); err != nil {
 		t.Fatal(err)

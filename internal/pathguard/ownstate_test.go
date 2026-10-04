@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -154,9 +153,6 @@ func (r renumbered) ModTime() time.Time { return r.mod }
 // guard saw only when it was made counts while the file it saw is unchanged,
 // which a file moved out of the directory is, and a new one is not.
 func TestANumberRtaHasSinceGivenUpIsNotItsState(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("os.SameFile compares only the operating system's own FileInfo there")
-	}
 	root := t.TempDir()
 	stateUnder(t, filepath.Join(t.TempDir(), "data"))
 	out := filepath.Join(root, "build.out")

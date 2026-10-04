@@ -73,7 +73,7 @@ func TestOnlyPathguardExpandsALeadingTilde(t *testing.T) {
 		if strings.Contains(src, "os.UserHomeDir()") && tildeTest.MatchString(src) {
 			t.Errorf("%s expands a leading tilde itself — call pathguard.ExpandTilde (or "+
 				"plugin.ExpandHome, the same function), which handles a bare ~ and says why "+
-				"~user is left alone", filepath.ToSlash(rel))
+				"~user is left alone", rel)
 		}
 		return nil
 	})
