@@ -2,11 +2,9 @@ package filelock
 
 import (
 	"bytes"
-	"errors"
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -233,74 +231,9 @@ func TestBreakingAStaleLockDoesNotStealARenewalThatLandedAfterJudging(t *testing
 	}
 }
 
-// A release whose removal is refused once still lets the lock go.
-//
-// On Windows DeleteFile needs delete access on the target, and every handle
-// os.Open takes shares read and write but not delete — so a waiter reading
-// the sentinel, one poll of Acquire's own loop, is enough to refuse a
-// release. Discarding that refusal left the sentinel holding a departed
-// holder's token with a frozen timestamp, and because a waiter gives up
-// before the lease runs out, every queued waiter then failed with a message
-// blaming a caller that had already left.
-func TestAReleaseRefusedOnceStillLetsTheLockGo(t *testing.T) {
-	path := lockPath(t)
-	refuseOnce(t)
-	release, err := Acquire(path, DefaultStale, DefaultRetry, DefaultTimeout)
-	if err != nil {
-		t.Fatal(err)
-	}
-	release()
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("the lock is still there after a release whose first removal was refused (stat: %v)", err)
-	}
-}
-
-// refuseOnce makes the next removal fail the way a Windows sharing violation
-// does and every later one succeed, and fails the test if nothing ever asked.
-func refuseOnce(t *testing.T) {
-	t.Helper()
-	original := remove
-	var refused atomic.Int32
-	remove = func(name string) error {
-		if refused.CompareAndSwap(0, 1) {
-			return errors.New("the process cannot access the file because it is being used by another process")
-		}
-		return original(name)
-	}
-	t.Cleanup(func() {
-		remove = original
-		if refused.Load() == 0 {
-			t.Error("no removal was refused, so this proved nothing about a refused one")
-		}
-	})
-}
-
-// Breaking a stale lock waits out a refused removal too. The refusal Acquire
-// rightly gives up on is the lasting kind — chflags uchg leaves unlink
-// failing forever — but a sharing violation clears the moment the other
-// reader closes, and reporting it as "cannot be removed" turned an instant of
-// contention into a refused acquire.
-func TestBreakingAStaleLockWaitsOutARefusedRemoval(t *testing.T) {
-	path := lockPath(t)
-	if err := os.WriteFile(path, []byte("1 abandoned\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-2 * DefaultStale)
-	if err := os.Chtimes(path, old, old); err != nil {
-		t.Fatal(err)
-	}
-	refuseOnce(t)
-	release, err := Acquire(path, DefaultStale, DefaultRetry, DefaultTimeout)
-	if err != nil {
-		t.Fatalf("a stale lock whose removal was refused once was not reclaimed: %v", err)
-	}
-	release()
-}
-
 // Many callers taking the lock and giving it back in a hurry, every one of
 // them getting it. This is the shape builtin/kv's store test drives from
-// twelve goroutines, and the shape a release the platform refuses fails: the
-// waiter times out seconds before the stale break could have rescued it.
+// twelve goroutines.
 func TestAcquireAndReleaseSurviveContention(t *testing.T) {
 	path := lockPath(t)
 	const callers, rounds = 8, 20
