@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -113,7 +112,7 @@ func TestTheOverviewSaysWhichRolesStand(t *testing.T) {
 // dashboard telling an operator no standing role is issued when the truth is
 // that rta could not check.
 func TestOverviewRolesIsUnreadableWhenTheGrantsFileCannotBeRead(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("file modes do not deny the owner here")
 	}
 	roleSetup(t)

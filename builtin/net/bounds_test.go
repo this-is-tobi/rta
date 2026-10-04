@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -34,9 +33,6 @@ func underRoot(t *testing.T) func(values map[string]any) plugin.Request {
 // could read the file it lists. A file the caller names is still held to the
 // root.
 func TestTheSystemFileIsReadUnderARootAndANamedOneIsHeldToIt(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink semantics differ")
-	}
 	hosts := hostsFixture(t, sampleHosts)
 	stub := filepath.Join(t.TempDir(), "stub-resolv.conf")
 	if err := os.WriteFile(stub, []byte("nameserver 192.0.2.53\n"), 0o644); err != nil {

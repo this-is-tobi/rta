@@ -3,7 +3,6 @@ package itemstore
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 )
@@ -183,9 +182,6 @@ func TestNormalizeTag(t *testing.T) {
 // grant file, the seal key and the record. Owner-only, through
 // paths.EnsureData, whatever writes first.
 func TestSaveCreatesAnOwnerOnlyDataDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permission bits do not apply")
-	}
 	data := filepath.Join(t.TempDir(), "share", "rta")
 	t.Setenv("RTA_DATA_DIR", data)
 	if err := Save("probe.json", "probe", Store{}); err != nil {

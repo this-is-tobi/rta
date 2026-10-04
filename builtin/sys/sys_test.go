@@ -187,7 +187,6 @@ func TestAZeroFromARefusedReadIsNotShownAsIdle(t *testing.T) {
 		{"darwin", 0, true},
 		{"darwin", 4096, false},
 		{"linux", 0, false},
-		{"windows", 0, false},
 	} {
 		if got := taskUnreadable(tc.goos, tc.rss); got != tc.want {
 			t.Errorf("taskUnreadable(%s, %d) = %v, want %v", tc.goos, tc.rss, got, tc.want)

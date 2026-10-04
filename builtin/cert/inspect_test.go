@@ -18,7 +18,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -215,7 +214,7 @@ func TestAPathThatNamesNoFileIsNotDialledAsAHost(t *testing.T) {
 // both were "no certificate file at" the path, and the caller went looking for
 // a mistake in a path that was right.
 func TestOverMCPAnUnreadableCertificateFileIsNotSaidToBeMissing(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("needs a directory this user cannot search")
 	}
 	dir := t.TempDir()
@@ -310,8 +309,8 @@ func TestChainNamesACertificateThatHasNoCommonName(t *testing.T) {
 	}
 }
 
-// A DER file is a certificate file: what a Windows export names .cer, what an
-// AIA caIssuers URL serves, and what Java and most appliances write. It holds
+// A DER file is a certificate file: what a certificate export names .cer, what
+// an AIA caIssuers URL serves, and what Java and most appliances write. It holds
 // no PEM block, so it was "no CERTIFICATE blocks found", the words for a file
 // that is not a certificate at all.
 func TestADERCertificateIsRead(t *testing.T) {

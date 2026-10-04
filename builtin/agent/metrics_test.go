@@ -2,7 +2,6 @@ package agent
 
 import (
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -148,7 +147,7 @@ func TestABrokenChainIsReportedAsZero(t *testing.T) {
 // not read published rta_agent_pending 0 with nothing to tell an alert that
 // the number is not "nothing is parked" but "the read failed".
 func TestPendingReadableGoesToZeroWhenTheQueueCannotBeRead(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("file modes do not deny the owner here")
 	}
 	t.Setenv("RTA_DATA_DIR", t.TempDir())

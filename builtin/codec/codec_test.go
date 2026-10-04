@@ -126,7 +126,7 @@ func TestBinaryDecodesToADumpOfEveryByte(t *testing.T) {
 	if got := decodeText(t, runB64, map[string]any{"value": "bGluZSAxCmxpbmUgMgo="}); got != "line 1\nline 2\n" {
 		t.Errorf("text = %q", got)
 	}
-	// Windows line endings are text too.
+	// CRLF line endings are text too.
 	if got := decodeText(t, runHex, map[string]any{"value": "610d0a62"}); got != "a\r\nb" {
 		t.Errorf("CRLF = %q", got)
 	}

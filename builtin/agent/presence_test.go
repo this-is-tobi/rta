@@ -2,7 +2,6 @@ package agent
 
 import (
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -45,7 +44,7 @@ func TestTheConnectedTableSaysWhetherAServerAsks(t *testing.T) {
 // the exact question an operator opens the dashboard to ask during an
 // incident, answered with confidence from a state that was actually unknown.
 func TestConnectedNowIsUnreadableWhenTheSessionStoreCannotBeRead(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("file modes do not deny the owner here")
 	}
 	isolate(t)
