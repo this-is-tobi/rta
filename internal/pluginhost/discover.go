@@ -304,7 +304,7 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 		}
 		c, err := h.openIdentified(ctx, id, deny, nil)
 		if err != nil {
-			problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, err))
+			problems = append(problems, h.failedToStart(f, id, err))
 			continue
 		}
 		// This artifact's own profile, when somebody has allowed it a
@@ -335,7 +335,7 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 				c, err = h.openIdentified(ctx, id, relaxed, nil)
 			}
 			if err != nil {
-				problems = append(problems, fmt.Errorf("plugin %s: %w", f.Name, err))
+				problems = append(problems, h.failedToStart(f, id, err))
 				continue
 			}
 		}
