@@ -472,6 +472,7 @@ func doctorConfig(add func(check, status, detail string)) {
 		}
 		add("config", "ok", detail)
 	}
+	doctorLegacyConfig(add)
 }
 
 // The default output format, when it names nothing rta renders. Every other

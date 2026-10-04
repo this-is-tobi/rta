@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -707,8 +708,9 @@ func TrustedPath() bool { return trustedPath() }
 // trustedPath reports whether the config file rta just read is one somebody
 // named, rather than the working-directory fallback.
 //
-// config.Path() falls back to ./.rta.yaml when os.UserConfigDir() fails —
-// ordinary under `env -i`, inside a container, and in CI — so without this a
+// config.Path() falls back to ./.rta.yaml when there is no config directory
+// (paths.OwnConfigDir) — ordinary under `env -i`, inside a container, and in
+// CI — so without this a
 // cloned repository could ship a .rta.yaml defining a profile called "prod"
 // pointing at the operator's own cluster, and `rta pg query --profile prod`
 // would reach it. The answer is the file's, not the profiles block's: LoadFile
@@ -718,6 +720,5 @@ func trustedPath() bool {
 	if os.Getenv("RTA_CONFIG") != "" {
 		return true
 	}
-	_, err := os.UserConfigDir()
-	return err == nil
+	return paths.OwnConfigDir() != ""
 }

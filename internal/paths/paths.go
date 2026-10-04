@@ -223,9 +223,8 @@ func EnsureData() (string, error) {
 func Indexes() string { return filepath.Join(Data(), "indexes") }
 
 // ConfigFile resolves the config file: RTA_CONFIG overrides (tests, portable
-// setups), otherwise config.yaml in rta's own directory under the user's
-// config directory, otherwise ./.rta.yaml for a machine with no such
-// directory at all.
+// setups), otherwise config.yaml in rta's own config directory, otherwise
+// ./.rta.yaml for a machine with no such directory at all.
 //
 // Here rather than in internal/config, which used to own it, because the MCP
 // path gate needs the same answer and cannot import config without a cycle:
@@ -242,16 +241,73 @@ func ConfigFile() string {
 	return filepath.Join(".", ".rta.yaml")
 }
 
-// OwnConfigDir is rta's directory under the user's config directory —
-// ~/.config/rta, ~/Library/Application Support/rta — or "" when the platform
-// has no such directory. Everything in it is rta's: config.yaml, and the
-// remotes.yaml the operator channel reads beside it.
+// OwnConfigDir is rta's configuration directory: $XDG_CONFIG_HOME/rta, else
+// ~/.config/rta, on every OS — or "" when neither names an absolute place.
+// Everything in it is rta's: config.yaml, the policy.yaml and remotes.yaml
+// beside it, and the kv.identity key.
+//
+// **The same convention as Data, on purpose.** os.UserConfigDir answers
+// ~/Library/Application Support on macOS, so the two halves of one product sat
+// in unrelated trees: state honoured XDG_DATA_HOME and settings ignored
+// XDG_CONFIG_HOME, and a dotfiles user who exported it was ignored without a
+// message. The old name also held a space, which wraps in the middle of a path
+// in every line rta prints one in, so a path it says is a path no one can
+// copy off the screen. Nothing reads the old location any more, and no shim
+// carries a file across: `rta doctor` names one it finds there
+// (LegacyConfigDir) rather than ignoring it quietly.
+//
+// A relative XDG_CONFIG_HOME is ignored, as the XDG specification says to
+// treat it, and the default is used instead; os.UserConfigDir refused the
+// whole directory over it, which silently moved the configuration to the
+// working-directory file nobody has honoured. $HOME is read alone, with no
+// account-database fallback as Data has: no config directory is what makes
+// ConfigFile fall back to ./.rta.yaml, and what that fallback is trusted with
+// is decided from this same answer (internal/config's trustedPath), so a
+// machine that cannot say where its home is must keep failing closed here.
 func OwnConfigDir() string {
-	base, err := os.UserConfigDir()
+	if x := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(x) {
+		return filepath.Join(x, "rta")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || !filepath.IsAbs(home) {
+		return ""
+	}
+	return filepath.Join(home, ".config", "rta")
+}
+
+// userConfigDir is the platform's own idea of a config directory, overridable
+// so a test can be a macOS machine on any host.
+var userConfigDir = os.UserConfigDir
+
+// LegacyConfigDir is the directory earlier builds kept the configuration in,
+// when it is somewhere other than OwnConfigDir and still exists — on macOS,
+// ~/Library/Application Support/rta — or "" when it is the same place, as it
+// is on Linux, when it is gone, or when RTA_CONFIG moves the configuration and
+// the old directory never held it.
+//
+// Two readers need it. `rta doctor` has to say a file is being ignored: a
+// config that stops applying after an upgrade, with every command still
+// succeeding, is the failure that looks like nothing happened. And the path
+// gate and the plugin sandbox keep it denied for as long as it is there,
+// because what it holds is no less private for no longer being read: the
+// kv.identity left in it decrypts the store, and a protection that lapsed with
+// the move would have been a loosening bought by a rename.
+func LegacyConfigDir() string {
+	if os.Getenv("RTA_CONFIG") != "" {
+		return ""
+	}
+	base, err := userConfigDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(base, "rta")
+	old := filepath.Join(base, "rta")
+	if old == OwnConfigDir() {
+		return ""
+	}
+	if info, err := os.Stat(old); err != nil || !info.IsDir() {
+		return ""
+	}
+	return old
 }
 
 // ownedByUs reports that info names a file this account owns. A FileInfo that
