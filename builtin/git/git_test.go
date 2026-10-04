@@ -42,7 +42,6 @@ func TestMain(m *testing.M) {
 		_ = os.Unsetenv(name)
 	}
 	_ = os.Setenv("HOME", home)
-	_ = os.Setenv("USERPROFILE", home)
 	vendorGitConfigs = []string{filepath.Join(home, "no-vendor-gitconfig")}
 	systemGitConfigs = []string{filepath.Join(home, "no-system-gitconfig")}
 	code := m.Run()
@@ -229,7 +228,7 @@ func skipGitOlderThan(t *testing.T, since gitSince) {
 }
 
 // gitOnPath is the version of the git on PATH as `git version` prints it,
-// 2.50.1 or 2.47.1.windows.1, "" where there is none to ask.
+// 2.50.1 or 2.51.0-rc2, "" where there is none to ask.
 var gitOnPath = sync.OnceValue(func() string {
 	out, err := exec.Command("git", "version").Output()
 	if fields := strings.Fields(string(out)); err == nil && len(fields) >= 3 {
@@ -239,7 +238,7 @@ var gitOnPath = sync.OnceValue(func() string {
 })
 
 // versionNumbers is the first three numbers of a version as git prints one,
-// each the digits a part starts with: 2.47.1.windows.1 is 2, 47 and 1.
+// each the digits a part starts with: 2.51.0-rc2 is 2, 51 and 0.
 func versionNumbers(version string) []int {
 	parts := strings.Split(version, ".")
 	out := make([]int, 0, 3)
