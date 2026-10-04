@@ -135,7 +135,7 @@ func errNoSource(dir string) error {
 }
 
 // parseSource parses every file in dir that is not a test, whatever its
-// build constraints: a sentence behind `//go:build windows` is read by
+// build constraints: a sentence behind `//go:build darwin` is read by
 // somebody too.
 func parseSource(dir string) (*token.FileSet, []*ast.File, error) {
 	names, err := filepath.Glob(filepath.Join(dir, "*.go"))

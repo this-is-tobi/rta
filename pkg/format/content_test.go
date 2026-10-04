@@ -14,7 +14,7 @@ func TestPlainTextTellsTextFromBinary(t *testing.T) {
 	for in, want := range map[string]bool{
 		"hello":                                 true,
 		"two\nlines\tand a tab":                 true,
-		"windows\r\nline ending":                true,
+		"crlf\r\nline ending":                   true,
 		"a lone\rcarriage return":               true,
 		"page one\fpage two\vtab":               true,
 		"café":                                  true,

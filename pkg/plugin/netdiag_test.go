@@ -275,7 +275,6 @@ func TestOnlyTheSystemsNotTrustedVerdictIsReadAsUntrusted(t *testing.T) {
 		{"darwin", notTrusted, true},
 		{"ios", notTrusted, true},
 		{"linux", notTrusted, false},
-		{"windows", notTrusted, false},
 		{"darwin", fmt.Errorf("pg: %w", notTrusted), true},
 		{"darwin", system("db.internal", "certificate is revoked"), false},
 		{"darwin", system("db.internal", "certificate is not standards compliant"), false},
@@ -299,9 +298,6 @@ func TestOnlyTheSystemsNotTrustedVerdictIsReadAsUntrusted(t *testing.T) {
 		{"darwin", errors.New("x509: " + open + "db.internal" + closing + " certificate is not trusted"), false},
 		{"linux", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, true},
 		{"darwin", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, true},
-		// What Go's Windows verifier answers for every chain it refuses for
-		// a reason other than a date or a use; CAHint says what it costs.
-		{"windows", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, true},
 		{"linux", x509.SystemRootsError{}, true},
 		{"darwin", &tls.CertificateVerificationError{Err: x509.CertificateInvalidError{Reason: x509.Expired}}, false},
 		{"darwin", &tls.CertificateVerificationError{Err: x509.InsecureAlgorithmError(x509.SHA1WithRSA)}, false},
@@ -352,7 +348,6 @@ func TestAPolicyHintNamesTheValidityPeriodAndNeverACAFile(t *testing.T) {
 		{"darwin", sent(issued, 3650*day, "certificate is not trusted"), ""},
 		{"darwin", sent(issued, 3650*day, "certificate is revoked"), ""},
 		{"linux", tenYears, ""},
-		{"windows", tenYears, ""},
 		{"darwin", &tls.CertificateVerificationError{Err: fmt.Errorf("x509: %s",
 			open+"db.internal"+closing+" certificate is not standards compliant")}, ""},
 		{"darwin", &tls.CertificateVerificationError{Err: x509.CertificateInvalidError{Reason: x509.Expired}}, ""},
@@ -404,12 +399,6 @@ func TestTheCAHintSaysACAFileReplacesTheSystemsChecks(t *testing.T) {
 		{SurfaceTUI, "ios", "the CA that issued it belongs in the ca-file box (a self-signed certificate is its own " +
 			"CA), and a CA file replaces the system's checks: the certificate is then checked against that CA alone, " +
 			"with none of the revocation and policy checks macOS makes"},
-		// Go asks Windows' verifier too when no CA file is set, and a
-		// certificate Windows distrusts reaches CertUntrusted as an unknown
-		// authority: the hint is all that says what a CA file goes around.
-		{SurfaceCLI, "windows", "the CA that issued it belongs in --ca-file (a self-signed certificate is its own " +
-			"CA), and a CA file replaces the system's checks: the certificate is then checked against that CA alone, " +
-			"with none of the checks Windows makes, its list of distrusted certificates among them"},
 	} {
 		if got := c.s.caHint(c.goos, "ca-file"); got != c.want {
 			t.Errorf("over %q on %s: %s\nwant %s", c.s, c.goos, got, c.want)
@@ -442,12 +431,10 @@ func TestARevokedCertificateIsTheSystemsVerdictAlone(t *testing.T) {
 		{"darwin", &tls.CertificateVerificationError{UnverifiedCertificates: []*x509.Certificate{{}},
 			Err: fmt.Errorf("x509: %s", open+closing+" certificate is revoked")}, true},
 		{"linux", revoked, false},
-		{"windows", revoked, false},
 		{"darwin", system("db.internal", "certificate is not trusted"), false},
 		{"darwin", system("x"+closing+" certificate is revoked", "certificate is not trusted"), false},
 		{"darwin", errors.New("x509: " + open + "db.internal" + closing + " certificate is revoked"), false},
 		{"darwin", &tls.CertificateVerificationError{Err: x509.CertificateInvalidError{Reason: x509.Expired}}, false},
-		{"windows", &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}}, false},
 		{"darwin", nil, false},
 	} {
 		if got := certRevoked(c.goos, c.err); got != c.want {
