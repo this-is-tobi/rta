@@ -61,13 +61,14 @@ FMT_PATHS := ./builtin ./cmd ./examples ./internal ./pkg
 # runs once rather than per runner, and it builds to /dev/null: what it checks
 # is that the build constraints resolve, not that the binary runs.
 #
-# **A laptop can check this and nobody did.** `builtin/fs/platform.go` asserted
-# on `syscall.Stat_t` behind a comma-ok and documented the Windows case as
-# degrading to "always the same device" — but that type does not exist on
-# Windows, so the package did not compile there at all and the degradation it
-# promised could never happen. Nothing noticed, because nothing ever built for
-# a platform other than the one it was sitting on.
-CROSS_TARGETS := darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 windows/amd64 windows/arm64
+# **A laptop can check this and nobody did.** Platform files come in pairs
+# here, a `_linux.go` beside a `_darwin.go`, and each compiles on the machine
+# it was written on and says nothing about its twin: a symbol only one of them
+# defines, or a syscall type whose fields differ between the two kernels, is a
+# package that does not build on the other platform at all. Nothing else builds
+# for a platform other than the one the author is sitting on, so without this a
+# break like that surfaces on release day.
+CROSS_TARGETS := darwin/arm64 darwin/amd64 linux/arm64 linux/amd64
 
 # The wire contract. buf compiles .proto in pure Go and both generator plugins
 # are `go run`, so the only thing anybody needs installed is the Go toolchain —
