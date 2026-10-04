@@ -391,7 +391,7 @@ func fullDeclaration() plugin.Plugin {
 					Options: []string{"a", "b"},
 				},
 				{Name: "port", Type: plugin.Int, Help: "port", Default: int64(8080), Min: int64(1), Max: int64(65535),
-					Config: "connection.port"},
+					Config: "connection.port", Short: "p"},
 				{Name: "ratio", Type: plugin.Float, Help: "ratio", Default: 0.5, Min: 0.0, Max: 1.0},
 				{Name: "force", Type: plugin.Bool, Help: "force", Default: true},
 				{Name: "tags", Type: plugin.StringSlice, Help: "tags", Default: []string{"x", "y"}},

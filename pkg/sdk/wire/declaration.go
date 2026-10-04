@@ -297,6 +297,7 @@ func FieldToProto(f plugin.Field) *rtav1.Field {
 		Live:        f.Live,
 		TlsAdjacent: f.TLSAdjacent,
 		Piped:       f.Piped,
+		Short:       f.Short,
 	}
 }
 
@@ -326,6 +327,7 @@ func FieldFromProto(f *rtav1.Field) (plugin.Field, bool) {
 		Live:        f.GetLive(),
 		TLSAdjacent: f.GetTlsAdjacent(),
 		Piped:       f.GetPiped(),
+		Short:       f.GetShort(),
 	}, ok
 }
 

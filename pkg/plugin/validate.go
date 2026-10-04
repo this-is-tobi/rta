@@ -237,6 +237,7 @@ func (c Capability) validate(ns string) error {
 	}
 	scoped := c.Scope == ""
 	seenInputs := map[string]bool{}
+	seenShorts := map[string]string{}
 	for _, f := range c.Inputs {
 		if !fieldRe.MatchString(f.Name) {
 			return fmt.Errorf("capability %q: field name %q must be lowercase [a-z0-9-]", c.ID, f.Name)
@@ -269,6 +270,9 @@ func (c Capability) validate(ns string) error {
 			}
 		}
 		seenInputs[f.Name] = true
+		if err := checkShort(c.ID, f, seenShorts); err != nil {
+			return err
+		}
 		if why, reserved := reservedInputs[f.Name]; reserved {
 			return fmt.Errorf("capability %q: input %q is reserved by the host (%s); rename it",
 				c.ID, f.Name, why)
@@ -920,6 +924,60 @@ var reservedInputs = map[string]string{
 	"output":   "chooses the renderer, so shadowing it means a caller cannot ask for JSON",
 	"no-color": "disables styling, which is what makes rta's output safe to pipe",
 	"help":     "cobra's; shadowing it makes `rta <ns> <cap> --help` unreachable",
+}
+
+// reservedShorts are the one-letter flags the host owns on every command, so
+// an input may not also take one. The same silence as reservedInputs, with the
+// same ending: cobra resolves a command's own shorthand before an inherited
+// one, so an input declaring -o would quietly become `rta … -o`, and the
+// person who wrote `-o json` would be handing the plugin a value for an input
+// it never asked about.
+var reservedShorts = map[string]string{
+	"h": "cobra's --help",
+	"o": "--output, which chooses the renderer",
+	"v": "--version",
+	"y": "--yes, the host's record that a human confirmed a destructive operation",
+}
+
+// ReservedShorts lists the one-letter flags the host owns, sorted. Exported
+// for the reason ReservedInputs is: the flag set lives in internal/app and the
+// list lives here, and only a test holds them together.
+func ReservedShorts() []string {
+	out := make([]string, 0, len(reservedShorts))
+	for letter := range reservedShorts {
+		out = append(out, letter)
+	}
+	slices.Sort(out)
+	return out
+}
+
+var shortRe = regexp.MustCompile(`^[A-Za-z]$`)
+
+// checkShort holds a declared one-letter flag to being one the command line
+// can give this input: a single letter, a flag at all, not the host's, and
+// not another input's. taken carries the letters earlier inputs of the same
+// capability claimed.
+func checkShort(id string, f Field, taken map[string]string) error {
+	if f.Short == "" {
+		return nil
+	}
+	switch {
+	case !shortRe.MatchString(f.Short):
+		return fmt.Errorf("capability %q: input %q declares short flag %q; want one ASCII letter",
+			id, f.Name, f.Short)
+	case f.Positional:
+		return fmt.Errorf("capability %q: input %q is positional and declares short flag -%s; a positional "+
+			"input is given by its place and has no flag", id, f.Name, f.Short)
+	}
+	if why, reserved := reservedShorts[f.Short]; reserved {
+		return fmt.Errorf("capability %q: input %q declares short flag -%s, which the host owns (%s); "+
+			"choose another letter", id, f.Name, f.Short, why)
+	}
+	if first, dup := taken[f.Short]; dup {
+		return fmt.Errorf("capability %q: inputs %q and %q both declare short flag -%s", id, first, f.Name, f.Short)
+	}
+	taken[f.Short] = f.Name
+	return nil
 }
 
 // ReservedInputs lists the names the host owns, sorted.
