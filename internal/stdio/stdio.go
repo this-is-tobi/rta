@@ -16,8 +16,7 @@
 //
 // The contract specifies dup(2) on fd 0 plus a reopen. This does the simpler
 // thing that covers the actual gap: go-plugin reads the `os.Stdin` *variable*
-// at spawn time, so repointing that variable is sufficient and needs no
-// platform split for Windows, where dup2 has no equivalent. What the dup
+// at spawn time, so repointing that variable is sufficient. What the dup
 // would additionally cover is a child inheriting raw fd 0 without going
 // through exec.Cmd's descriptor plumbing, which is not reachable here:
 // exec.Cmd sets a child's fds 0/1/2 from Stdin/Stdout/Stderr, and exec.Cmd is
