@@ -236,8 +236,10 @@ func fastFormRegistry(t *testing.T, c plugin.Capability) *registry.Registry {
 // reasonable default, and shift+enter runs the capability with them
 // rather than requiring a trip through each field in turn.
 func TestShiftEnterRunsACapabilityWithCurrentDefaults(t *testing.T) {
+	// A write, because a read with nothing required runs on enter and never
+	// shows the form this test is about (quick.go).
 	c := plugin.Capability{
-		ID: "demo.quick", Summary: "s", Safety: plugin.Read,
+		ID: "demo.quick", Summary: "s", Safety: plugin.Write,
 		Inputs: []plugin.Field{
 			{Name: "a", Type: plugin.String, Default: "x"},
 			{Name: "b", Type: plugin.Int, Default: 3},
