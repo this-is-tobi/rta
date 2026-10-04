@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -183,17 +182,14 @@ func LoadRoster(path string) (Roster, bool, error) {
 	if err != nil {
 		return Roster{}, false, err
 	}
-	groupReadable := false
-	if runtime.GOOS != "windows" {
-		mode := info.Mode().Perm()
-		if mode&0o037 != 0 {
-			return Roster{}, false, fmt.Errorf(
-				"%s has weak permissions (mode %s) — someone besides its owner can write or execute "+
-					"it, or any account on this machine can read it, and it decides who may operate "+
-					"this server; chmod 600 it", path, mode)
-		}
-		groupReadable = mode&0o040 != 0
+	mode := info.Mode().Perm()
+	if mode&0o037 != 0 {
+		return Roster{}, false, fmt.Errorf(
+			"%s has weak permissions (mode %s) — someone besides its owner can write or execute "+
+				"it, or any account on this machine can read it, and it decides who may operate "+
+				"this server; chmod 600 it", path, mode)
 	}
+	groupReadable := mode&0o040 != 0
 	raw, err := io.ReadAll(f)
 	if err != nil {
 		return Roster{}, groupReadable, err

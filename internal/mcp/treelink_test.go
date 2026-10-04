@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -24,9 +23,6 @@ import (
 // place under the roots, relative or absolute, keeps its target, and so does
 // every link at a terminal, where the person can read their own files.
 func TestTreeTellsALinksTargetOnlyWhenItNamesPlacesUnderTheRoots(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink semantics differ")
-	}
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 	root, outside := t.TempDir(), t.TempDir()

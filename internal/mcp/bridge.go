@@ -999,7 +999,7 @@ const outsideRoots = "a path outside this server's roots"
 // under the roots, or above one on the way down to it; otherwise the handler
 // is told outsideRoots, which says the link leads out without saying where.
 func finalLink(g *pathguard.Guard, field, raw string) (namedLink, bool) {
-	p := strings.TrimRight(filepath.FromSlash(pathguard.ExpandTilde(strings.TrimSpace(raw))), string(filepath.Separator))
+	p := strings.TrimRight(pathguard.ExpandTilde(strings.TrimSpace(raw)), string(filepath.Separator))
 	dir, base := ".", p
 	if i := strings.LastIndexByte(p, filepath.Separator); i >= 0 {
 		dir, base = p[:i+1], p[i+1:]
@@ -1052,10 +1052,10 @@ func namesOnlyInside(roots []string, dir, target string) bool {
 		return slices.ContainsFunc(roots, func(r string) bool { return nameUnder(p, r) })
 	}
 	cur := dir
-	if vol := filepath.VolumeName(target); filepath.IsAbs(target) {
-		cur, target = vol+string(filepath.Separator), target[len(vol):]
+	if filepath.IsAbs(target) {
+		cur = string(filepath.Separator)
 	}
-	for _, seg := range strings.Split(filepath.FromSlash(target), string(filepath.Separator)) {
+	for _, seg := range strings.Split(target, string(filepath.Separator)) {
 		switch seg {
 		case "", ".":
 			continue

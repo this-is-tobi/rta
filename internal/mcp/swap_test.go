@@ -17,7 +17,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -42,9 +41,6 @@ import (
 // out of the way.
 func swapServer(t *testing.T, root string) *sdk.ClientSession {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink semantics differ")
-	}
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 	reg, err := all.Registry(nil)

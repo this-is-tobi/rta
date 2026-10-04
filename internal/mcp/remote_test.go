@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -96,9 +95,6 @@ func TestLoadTokenFile(t *testing.T) {
 		}
 	})
 	t.Run("world-readable refuses", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("POSIX permission bits do not apply")
-		}
 		path := writeTokenFile(t, 0o644, "alice tok-a-0123456789abcdef\n")
 		if _, _, err := LoadTokenFile(path); err == nil {
 			t.Fatal("world-readable token file was accepted")
@@ -124,9 +120,6 @@ func TestLoadTokenFile(t *testing.T) {
 	})
 
 	t.Run("group-readable warns but loads", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
-			t.Skip("POSIX permission bits do not apply")
-		}
 		path := writeTokenFile(t, 0o640, "alice tok-a-0123456789abcdef\n")
 		tokens, groupReadable, err := LoadTokenFile(path)
 		if err != nil {

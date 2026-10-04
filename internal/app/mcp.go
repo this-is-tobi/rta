@@ -418,12 +418,6 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 							"rta: %s is group-readable — anyone in that group can authenticate as every label it holds\n",
 							tokenFile)
 					}
-					if runtime.GOOS == "windows" {
-						fmt.Fprintf(cmd.ErrOrStderr(),
-							"rta: %s's permissions were not checked — rta cannot read NTFS ACLs on Windows; "+
-								"make sure only you can read, write or execute it before relying on it as a trust anchor\n",
-							tokenFile)
-					}
 					verifiers = append(verifiers, mcp.StaticTokenVerifier(tokens))
 				}
 				if oidcIssuer != "" {
@@ -497,12 +491,6 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					if groupReadable {
 						fmt.Fprintf(cmd.ErrOrStderr(),
 							"rta: %s is group-readable — it holds no secret, but anyone who can also write it can enroll themselves\n",
-							operatorsFile)
-					}
-					if runtime.GOOS == "windows" {
-						fmt.Fprintf(cmd.ErrOrStderr(),
-							"rta: %s's permissions were not checked — rta cannot read NTFS ACLs on Windows; "+
-								"make sure only you can write it before relying on it as a trust anchor\n",
 							operatorsFile)
 					}
 					operatorHandler = mcp.NewOperatorHandler(mcp.OperatorConfig{
