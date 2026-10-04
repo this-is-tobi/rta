@@ -37,17 +37,15 @@ func diffCapability() plugin.Capability {
 		Safety:       plugin.Read,
 		HostSpecific: true,
 		Idempotent:   true,
-		Description: "Unified diff text. With no `commit`, every uncommitted change, staged and unstaged " +
-			"together, against HEAD: git.status says which paths changed, this says what changed in " +
-			"them, and it is refused as git.status.timeout where reading the tree takes more than two " +
-			"seconds. `commit` diffs that one commit against its own parent, the root commit against " +
-			"the empty tree and a merge against its first parent, with a line after the patch saying " +
-			"so; two arbitrary commits are not compared. One diff reads at most 16 MiB of a file and " +
-			"64 MiB in all, looks at no more than 10000 files and spends two seconds matching lines, " +
-			"and the lines after the patch name each file it left out or diffed coarsely and count the " +
-			"ones it did not look at. An untracked file under an ignore file git.status did not apply " +
-			"is named, never shown. Over MCP a link in the working tree is diffed by its text only " +
-			"where that names a place under the roots, and named otherwise.",
+		Description: "Unified diff text. With no `commit`, every uncommitted change, staged and unstaged, " +
+			"against HEAD, refused as git.status.timeout past two seconds. " +
+			"`commit` diffs that commit against its parent, the root commit against the empty tree, a merge " +
+			"against its first parent; two arbitrary commits are not compared. " +
+			"One diff reads at most 16 MiB of a file and 64 MiB in all, looks at no more than 10000 files and " +
+			"spends two seconds matching lines; the lines after the patch name each file left out or diffed " +
+			"coarsely. An untracked file under an ignore file git.status did not apply is named, never shown. " +
+			"Over MCP a link in the working tree is diffed only where it names a place under " +
+			"the roots.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "commit", Type: plugin.String, Suggest: suggestCommits,

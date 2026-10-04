@@ -156,19 +156,14 @@ func Plugin() plugin.Plugin {
 				// individually rather than one for all of them.
 				NeedsGrant: true,
 				Scope:      "targets",
-				Description: "Connects to each host over TLS and reports when its certificate ends: " +
-					"the date, the time left, and a status — ok, WARN once it ends within " +
-					"`warn-days`, EXPIRED once it has, INVALID before it begins, and a host that still " +
-					"negotiates TLS 1.0 or 1.1 is flagged beside the date. One row per host; a host " +
-					"that cannot be reached is its row's error and does not stop the rest. It grades " +
-					"the leaf and the intermediates the host sends, and the one that ends first " +
-					"sets the date and the status, which names it when it is not the leaf; a root " +
-					"sent along is the client's store to judge. It trusts nothing: `cert.inspect` " +
-					"is where a chain is judged. At a terminal a target may also be a PEM or DER file " +
-					"(a bundle is graded the same way); over MCP it is never read.\n\n" +
-					"Over MCP it needs a grant, one per host listed, for the reason `net.probe` does: " +
-					"the hosts are the caller's choice, and what a certificate says about itself — " +
-					"subject, issuer, DNS names — is read as tool output the same way a banner is.",
+				Description: "Connects to each host over TLS and reports when its certificate ends: the date, the " +
+					"time left, and a status: ok, WARN once it ends within `warn-days`, EXPIRED once it has, INVALID " +
+					"before it begins; a host still negotiating TLS 1.0 or 1.1 is flagged beside the date. One row per " +
+					"host, and one that cannot be reached is its row's error and does not stop the rest. The chain the " +
+					"host sends is graded: the certificate that ends first sets the date and status and is named when it " +
+					"is not the leaf; a root sent along is the client's store to judge. It trusts nothing: `cert.inspect` " +
+					"judges a chain. Over MCP a target is never a file, and each host listed needs a grant, since " +
+					"a certificate's own words are tool output, as a banner is.",
 				Inputs: []plugin.Field{
 					{Name: "targets", Type: plugin.StringSlice, Positional: true, Required: true,
 						Help: "hosts to check (host[:port], or an https:// URL)"},
