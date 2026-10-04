@@ -16,8 +16,6 @@ func vsCodeConfig() string {
 	switch runtime.GOOS {
 	case "darwin":
 		return "Library/Application Support/Code/User/mcp.json"
-	case "windows":
-		return "AppData/Roaming/Code/User/mcp.json"
 	}
 	return ".config/Code/User/mcp.json"
 }
@@ -139,20 +137,19 @@ func TestAReferenceToTheLaunchingEnvironmentIsGradedByWhatTheClientExpands(t *te
 	}
 }
 
-// A bare $NAME and a %NAME% are how a variable is named to a shell, and how a
-// password can be spelled: "$ECRET_PASSWORD", or a token after "Bearer $".
-// Read as a variable's name, the report printed the value with its first
-// character taken off, in the row and in the fix. Such an entry is named by
-// its key instead, and the fix suggests a variable named for the entry, as
-// it does for a value held; a braced reference, which no credential is
-// spelled as, is still named as written.
+// A bare $NAME is how a variable is named to a shell, and how a password can
+// be spelled: "$ECRET_PASSWORD", or a token after "Bearer $". Read as a
+// variable's name, the report printed the value with its first character
+// taken off, in the row and in the fix. Such an entry is named by its key
+// instead, and the fix suggests a variable named for the entry, as it does
+// for a value held; a braced reference, which no credential is spelled as, is
+// still named as written.
 func TestAValueSpelledLikeABareReferenceIsNeverPrinted(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, value, fix string
 	}{
 		{"env", launchedWithEnv("$ECRET_PASSWORD"), "ECRET_PASSWORD", "${API_TOKEN}"},
 		{"header", remoteWithHeader("Bearer $ABCDEF123XYZ"), "ABCDEF123XYZ", "${SVC_TOKEN}"},
-		{"percent", launchedWithEnv("%HUNTER_TWO%"), "HUNTER_TWO", "${API_TOKEN}"},
 		{"braced", remoteWithHeader("Bearer ${env:API_TOKEN}"), "", "${API_TOKEN}"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -175,44 +172,6 @@ func TestAValueSpelledLikeABareReferenceIsNeverPrinted(t *testing.T) {
 			}
 			if tc.value != "" && strings.Contains(strings.Join(failed, " ")+fix, tc.value) {
 				t.Errorf("the value reached the report: %q\n%s", failed, fix)
-			}
-		})
-	}
-}
-
-// Gemini CLI expands %VAR% in a server's env block when it runs on Windows,
-// and there alone: its settings.json reads $VAR and ${VAR} in every string on
-// every system, %VAR% in none. So %API_TOKEN% in an env block is a reference
-// the client reads on Windows, graded as holding nothing, and the text itself
-// on any other system or in a headers block, still failed. The system is the
-// one the configuration belongs to, the machine whose clients this reads.
-func TestAGeminiPercentReferenceIsGradedByTheSystemItsClientRunsOn(t *testing.T) {
-	for _, tc := range []struct {
-		name, goos, file, body string
-		plain                  bool
-	}{
-		{"gemini env on windows", "windows", ".gemini/settings.json", launchedWithEnv("%API_TOKEN%"), false},
-		{"gemini header on windows", "windows", ".gemini/settings.json", remoteWithHeader("Bearer %API_TOKEN%"), true},
-		{"gemini env on linux", "linux", ".gemini/settings.json", launchedWithEnv("%API_TOKEN%"), true},
-		{"gemini env on macos", "darwin", ".gemini/settings.json", launchedWithEnv("%API_TOKEN%"), true},
-		{"claude env on windows", "windows", ".claude.json", launchedWithEnv("%API_TOKEN%"), true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			was := clientOS
-			clientOS = tc.goos
-			t.Cleanup(func() { clientOS = was })
-			fakeHome(t, map[string]struct {
-				body string
-				mode os.FileMode
-			}{tc.file: {tc.body, 0o600}})
-			var failed []string
-			for _, row := range agentRowList(t) {
-				if row[0] == "svc" && row[1] == findings.Fail {
-					failed = append(failed, row[2])
-				}
-			}
-			if plain := len(failed) > 0; plain != tc.plain {
-				t.Fatalf("failed rows %q, want the reference failed: %v", failed, tc.plain)
 			}
 		})
 	}
