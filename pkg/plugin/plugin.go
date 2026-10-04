@@ -233,6 +233,17 @@ type Field struct {
 	Default    any
 	Required   bool
 	Positional bool // rendered as a CLI positional argument instead of a flag
+	// Short is the one-letter form of this input's flag on the CLI: -n for
+	// --limit, -d for --decode. For the handful of inputs somebody types every
+	// day, so it is the plugin's to declare, being the one that knows which
+	// those are; the rest cost nobody anything by staying long. Only the CLI has
+	// flags, and every other surface ignores it.
+	//
+	// A single letter, refused when it is a flag the host owns (ReservedShorts)
+	// or one of the capability's own, and on a Positional input, which has no
+	// flag. Never a rename: the long form is the name every surface and every
+	// script uses.
+	Short string
 	// Piped marks an input the CLI reads from its standard input when the
 	// call leaves it out: the token codec.jwt decodes, the text debug.ansi
 	// explains, the words keys.restore rebuilds a key from. A pipe is the

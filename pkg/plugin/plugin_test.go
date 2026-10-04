@@ -180,6 +180,24 @@ func TestValidateFailures(t *testing.T) {
 				Suggest: func(context.Context, Request) []string { return nil }}}
 		}, "String box"},
 		{"scope names no input", func(p *Plugin) { p.Capabilities[0].Scope = "nope" }, "names no input"},
+		// A short flag is one letter the command line can give this input.
+		{"short flag of two letters", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "limit", Type: Int, Short: "nn"}}
+		}, "one ASCII letter"},
+		{"short flag that is a digit", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "limit", Type: Int, Short: "1"}}
+		}, "one ASCII letter"},
+		{"short flag on a positional", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "key", Type: String, Positional: true, Short: "k"}}
+		}, "has no flag"},
+		{"short flag the host owns", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "format", Type: String, Short: "o"}}
+		}, "which the host owns"},
+		{"short flag two inputs claim", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{
+				{Name: "limit", Type: Int, Short: "n"}, {Name: "name", Type: String, Short: "n"},
+			}
+		}, "both declare short flag -n"},
 		// Keywords are search words: single lowercase words, few, and each once.
 		{"keyword that is a phrase", func(p *Plugin) { p.Capabilities[0].Keywords = []string{"disk space"} }, "one lowercase word"},
 		{"keyword in capitals", func(p *Plugin) { p.Capabilities[0].Keywords = []string{"SSL"} }, "one lowercase word"},
@@ -946,5 +964,23 @@ func TestKeywordsAreAcceptedAsWords(t *testing.T) {
 	p.Capabilities[0].Keywords = []string{"todo", "ssl", "to-do", "ipv6"}
 	if err := p.Validate(); err != nil {
 		t.Errorf("search words were refused: %v", err)
+	}
+}
+
+func TestShortFlagsAreAcceptedAsLetters(t *testing.T) {
+	p := validPlugin()
+	p.Capabilities[0].Inputs = []Field{
+		{Name: "limit", Type: Int, Short: "n"}, {Name: "decode", Type: Bool, Short: "d"},
+		{Name: "tags", Type: StringSlice, Short: "T"},
+	}
+	if err := p.Validate(); err != nil {
+		t.Errorf("one-letter flags were refused: %v", err)
+	}
+}
+
+func TestReservedShortsAreTheHostsAndSorted(t *testing.T) {
+	got := ReservedShorts()
+	if !slices.IsSorted(got) || !slices.Equal(got, []string{"h", "o", "v", "y"}) {
+		t.Errorf("ReservedShorts() = %q", got)
 	}
 }

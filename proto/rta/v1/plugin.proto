@@ -189,6 +189,12 @@ message Field {
   // happen, rather than the marker being dropped on the way and the input
   // quietly treated as optional everywhere.
   bool piped = 20;
+  // The one-letter form of this input's flag on the CLI: -n for --limit. A
+  // convenience for the few inputs somebody types every day, so it is declared
+  // by the plugin that knows which those are, and refused at load when it
+  // collides with a flag the host owns or one of the capability's own. Only
+  // the CLI has flags; every other surface ignores it.
+  string short = 21;
 }
 
 // EndpointRole is which part of a resolved tunnel an input takes.
