@@ -79,8 +79,8 @@ jobs:
   # which of this repository's gates run. It is that default and the chart.
   #
   # The chart is on it because prose, to the classifier, is what no gate
-  # behind `code` reads, and nothing the linters, the builds, the images, the
-  # Windows leg or the dependency scan read lives under charts/. test-chart
+  # behind `code` reads, and nothing the linters, the builds, the images or the
+  # dependency scan read lives under charts/. test-chart
   # does not need them either: it installs the released image the chart's
   # appVersion names, and the image built here is a tarball nothing loads into
   # Kind. What reads the chart on the Go side is two tests:
@@ -176,59 +176,6 @@ jobs:
       # Most of this module is exercised from other packages' tests, which
       # reads as untested without this.
       COVERAGE_PACKAGES: ./...
-
-  # The fourth runner the job above argues for, at a fraction of its scope.
-  #
-  # Five packages, not `./...`, and that is a statement about the suite rather
-  # than about Windows: much of it assumes Unix paths, modes and sandboxing,
-  # and making all of it Windows-clean is its own piece of work. These five are
-  # where the platform is actually load-bearing, so these five run.
-  #
-  # It exists because `cross` proving the code compiles for windows/amd64 hid
-  # three separate bugs that made a plugin unloadable there, none of which a
-  # compiler can see: discovery tested files for the execute bit, which
-  # Windows reports on none of them, so nothing was ever discovered; the
-  # namespace was the filename minus the prefix, which on Windows is "pg.exe";
-  # and the store pointed bin/ at a symlink, which an unprivileged Windows
-  # refuses outright, ending every install at its last step. rta ships for
-  # Windows, so it has to be able to say those stay fixed — and whoever
-  # publishes the plugin archives, only a Windows machine can say it.
-  #
-  # The three packages beyond the plugin store are the same argument applied to
-  # state rather than to binaries. filelock and atomicfile are where Windows
-  # stops being POSIX: a rename must delete what it replaces, a delete needs a
-  # handle nobody else holds, and os.Chtimes opens with FILE_SHARE_WRITE alone —
-  # so a reader doing nothing but reading can refuse a lock release, a lease
-  # renewal and an atomic write, none of which a compiler or a Linux runner will
-  # ever say. Three real bugs came out of reading that, and only a Windows
-  # machine can say they stay fixed. builtin/kv is here for one test:
-  # TestStoreDoesNotLoseAConcurrentWrite is the only place in the tree that
-  # contends a lock sentinel from many goroutines at once.
-  #
-  # internal/clipboard and internal/render/tui are deliberately not here, and
-  # that is a decision rather than an oversight: on Windows every meaningful
-  # clipboard test skips (the stand-in is a shell script) and the TUI's fixtures
-  # want /tmp and #!/bin/sh. Listing either would make this leg claim coverage
-  # it does not have, which is worse than a shorter list.
-  test-windows:
-    name: Test platform-sensitive packages on Windows
-    needs: changes
-    if: ${{ needs.changes.outputs.code == 'true' }}
-    uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
-    permissions:
-      contents: read
-    with:
-      PACKAGES: >-
-        ./internal/plugindist/... ./internal/pluginhost/...
-        ./internal/filelock/... ./internal/atomicfile/... ./builtin/kv/...
-      RUNNERS: '[["windows-latest"]]'
-      # Stated rather than inherited from the catalogue default, because the
-      # comment above used to deny it: windows-latest ships a C toolchain,
-      # this leg has run under -race for as long as it has existed, and the
-      # second scheduler is worth what it costs.
-      RACE: true
-      SHUFFLE: true
-      COUNT: "1"
 
   # The suite's tests that read prose, for every pull request `test` skips.
   #
@@ -387,12 +334,13 @@ jobs:
       IMAGE_ARTIFACT: ${{ needs.build-docker-full.outputs.artifact-prefix }}-amd64
       COMMAND: --version
 
-  # **A laptop can check this and nobody did.** `builtin/fs/platform.go`
-  # asserted on `syscall.Stat_t` behind a comma-ok and documented the Windows
-  # case as degrading to "always the same device" — but that type does not
-  # exist on Windows, so the package did not compile there at all and the
-  # degradation it promised could never happen. Nothing noticed, because
-  # nothing ever built for a platform other than the one it was sitting on.
+  # **A laptop can check this and nobody did.** Platform files come in pairs
+  # here, a `_linux.go` beside a `_darwin.go`, and each compiles on the machine
+  # it was written on and says nothing about its twin: a symbol only one of
+  # them defines, or a syscall type whose fields differ between the two
+  # kernels, is a package that does not build on the other platform at all.
+  # Nothing else builds for a platform other than the one the author is
+  # sitting on, so without this a break like that surfaces on release day.
   #
   # Kept local rather than folded into `build` above: GoReleaser builds what a
   # release ships, and this proves every target compiles at all — a narrower
@@ -558,7 +506,6 @@ jobs:
     - lint
     - lint-proto
     - test
-    - test-windows
     - test-prose
     - build
     - build-docker

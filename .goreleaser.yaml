@@ -42,7 +42,7 @@ builds:
       # and the pure-Go resolver is the more predictable one for
       # a tool whose network capabilities are the point.
       - CGO_ENABLED=0
-    goos: [darwin, linux, windows]
+    goos: [darwin, linux]
     goarch: [amd64, arm64]
     flags:
       # Keeps the build machine's directory layout out of the artifact. Both
@@ -72,9 +72,6 @@ builds:
 archives:
   - id: rta
     formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     files:
