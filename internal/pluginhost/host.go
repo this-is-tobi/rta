@@ -99,6 +99,9 @@ type Host struct {
 	// which is the whole failure mode a trust gate introduces, and the one it
 	// has to answer for.
 	untrusted []Untrusted
+	// failed is what discovery found, trusted, and could not start, in
+	// $PATH order (failed.go).
+	failed []Failed
 }
 
 // Untrusted is a discovered plugin binary that nothing has approved, and that
