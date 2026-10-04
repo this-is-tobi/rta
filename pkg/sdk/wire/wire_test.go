@@ -366,6 +366,7 @@ func fullDeclaration() plugin.Plugin {
 			HumanOnly:    true,
 			Reveals:      true,
 			Keywords:     []string{"secret", "password"},
+			Primary:      "name",
 			// What the TUI may do with the result crosses as data: a host
 			// that lost it would show a third-party list with no row
 			// actions, which is the second-class plugin the fields exist to

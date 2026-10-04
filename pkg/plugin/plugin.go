@@ -748,6 +748,20 @@ type Capability struct {
 	// more words; and a keyword that is already a word of the ID is noise,
 	// which sdktest says.
 	Keywords []string
+	// Primary names the column of a Table, or the key of a KeyValue, that is
+	// the whole answer when the answer is one value: the password a generator
+	// made, the response body, the token. A host writing to something that is
+	// not a terminal prints that value alone, one per row, so
+	// `rta gen password | pbcopy` copies a password and not the box drawn
+	// around it; everything else the view carries stays in the structured
+	// formats.
+	//
+	// The same kind of name as Copy, which says what `c` copies from a row,
+	// and kept apart from it because a list can copy a column and still be a
+	// list to print whole. sdktest holds it to a column or key the view has,
+	// and never to one the view marks Redacted: a primary value that is masked
+	// prints as the mask.
+	Primary string
 
 	// Actions are the keys a result of this capability offers: a sibling
 	// capability opened from a row, from the record's own page, or from the

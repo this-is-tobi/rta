@@ -194,6 +194,10 @@ func TestValidateFailures(t *testing.T) {
 			}
 			p.Capabilities[0].Keywords = words
 		}, "declares 13 keywords"},
+		// Primary is a column or key name, displayed beside the answer, so it is
+		// declared text like any other.
+		{"primary over two lines", func(p *Plugin) { p.Capabilities[0].Primary = "pass\nword" }, "one line"},
+		{"primary with a control character", func(p *Plugin) { p.Capabilities[0].Primary = "pass\x1b[31m" }, "control character"},
 		// A reveal is coupled to the gate that already exists, so declaring one
 		// is never a way around it.
 		{"reveals on a read", func(p *Plugin) {

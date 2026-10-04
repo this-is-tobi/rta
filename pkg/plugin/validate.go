@@ -232,6 +232,9 @@ func (c Capability) validate(ns string) error {
 	if err := checkKeywords(c); err != nil {
 		return err
 	}
+	if err := checkLine(fmt.Sprintf("capability %q: primary", c.ID), c.Primary, maxOption); err != nil {
+		return err
+	}
 	scoped := c.Scope == ""
 	seenInputs := map[string]bool{}
 	for _, f := range c.Inputs {

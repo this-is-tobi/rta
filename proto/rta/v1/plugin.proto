@@ -292,6 +292,11 @@ message Capability {
   // checked only at its source carries a record from under one grant to
   // under another. Each must name a declared input, and scope must be set.
   repeated string scope_also = 21;
+  // The column of a Table, or the key of a KeyValue, that is the whole answer
+  // when the answer is one value (the password a generator made, a response
+  // body). A host writing to something that is not a terminal prints that
+  // value alone, so it can be piped.
+  string primary = 25;
   // Words a person would search for that the id and summary do not contain
   // ("todo" for a note list, "ssl" for a certificate check). Lowercase single
   // words; used by search on the human surfaces and never published to a

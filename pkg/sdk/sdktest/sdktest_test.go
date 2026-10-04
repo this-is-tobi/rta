@@ -778,3 +778,42 @@ func TestAKeywordTheCapabilityAlreadyContainsIsNoted(t *testing.T) {
 		t.Errorf("a keyword that earns its place was noted: %q", rec.logText())
 	}
 }
+
+// Primary is what a pipe is handed in place of the table around it, so a name
+// the view lacks hands it nothing, and a name the view masks hands it the
+// mask. Both are findings only a run can make.
+func TestAPrimaryValueTheViewDoesNotHaveOrMasksIsRejected(t *testing.T) {
+	check := func(c plugin.Capability) *recorder {
+		rec := &recorder{}
+		p := plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}
+		checkActions(rec, drive(rec, p, noConfig(), t.TempDir(), nil), noConfig())
+		return rec
+	}
+
+	c := ok()
+	c.Primary = "nope"
+	if rec := check(c); !strings.Contains(rec.errText(), `Primary "nope"`) {
+		t.Errorf("a Primary naming a missing column was accepted: %q", rec.errText())
+	}
+
+	c.Primary = "name"
+	if rec := check(c); len(rec.errs) > 0 {
+		t.Errorf("a Primary naming a real column was rejected: %s", rec.errText())
+	}
+
+	masked := ok()
+	masked.Primary = "token"
+	masked.Run = func(context.Context, plugin.Request) (view.View, error) {
+		return view.KeyValue{Pairs: []view.Pair{{Key: "token", Value: "s3cret"}}, Redacted: []string{"token"}}, nil
+	}
+	if rec := check(masked); !strings.Contains(rec.errText(), "would be the mask") {
+		t.Errorf("a masked Primary was accepted: %q", rec.errText())
+	}
+
+	text := ok()
+	text.Primary = "token"
+	text.Run = func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "s3cret"}, nil }
+	if rec := check(text); !strings.Contains(rec.errText(), "but returns a text") {
+		t.Errorf("a Primary on a text view was accepted: %q", rec.errText())
+	}
+}
