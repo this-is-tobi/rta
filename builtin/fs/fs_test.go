@@ -177,7 +177,7 @@ func TestUsageLimitDoesNotHideThatItLimited(t *testing.T) {
 func TestUsageDoesNotFollowSymlinksIntoALoop(t *testing.T) {
 	root := fixture(t, map[string]int{"real/file.bin": 100})
 	if err := os.Symlink(root, filepath.Join(root, "real", "loop")); err != nil {
-		t.Skipf("cannot create symlink: %v", err)
+		t.Fatal(err)
 	}
 	tbl := run(t, runUsage, map[string]any{"path": root, "limit": 20}).(view.Table)
 	if len(tbl.Rows) == 0 {
@@ -384,7 +384,7 @@ func TestTreeSaysWhatItIsNotShowing(t *testing.T) {
 func TestTreeShowsSymlinkTargetsWithoutFollowingThem(t *testing.T) {
 	root := fixture(t, map[string]int{"real/deep/file.bin": 10})
 	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "link")); err != nil {
-		t.Skipf("cannot create symlink: %v", err)
+		t.Fatal(err)
 	}
 	tr := run(t, runTree, map[string]any{"path": root, "depth": 3, "limit": 12}).(view.Tree)
 	for _, n := range tr.Roots[0].Children {

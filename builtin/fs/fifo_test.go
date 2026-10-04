@@ -21,7 +21,7 @@ import (
 func TestHashRefusesAFIFOOverMCPAtOnce(t *testing.T) {
 	fifo := filepath.Join(t.TempDir(), "pipe")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		t.Fatal(err)
 	}
 	done := make(chan error, 1)
 	go func() {
@@ -48,7 +48,7 @@ func TestHashRefusesAFIFOOverMCPAtOnce(t *testing.T) {
 func TestTreeAndUsageNameAPipeForWhatItIs(t *testing.T) {
 	fifo := filepath.Join(t.TempDir(), "pipe")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		t.Fatal(err)
 	}
 	for id, run := range map[string]plugin.Handler{"fs.tree": runTree, "fs.usage": runUsage} {
 		_, err := run(context.Background(), plugin.NewRequest(map[string]any{"path": fifo}, false, false))

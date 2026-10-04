@@ -12,14 +12,14 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// mkfifo makes a named pipe at path, skipping where the platform has none.
+// mkfifo makes a named pipe at path.
 func mkfifo(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := syscall.Mkfifo(path, 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		t.Fatal(err)
 	}
 }
 

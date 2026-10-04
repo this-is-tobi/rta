@@ -554,7 +554,7 @@ func TestHostsWritersRefuseASymlinkedFile(t *testing.T) {
 	}
 	link := filepath.Join(dir, "hosts")
 	if err := os.Symlink(filepath.Join("static", "hosts"), link); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	orig := hostsFile

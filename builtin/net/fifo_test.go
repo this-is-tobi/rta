@@ -18,7 +18,7 @@ import (
 func TestTheOverviewsResolverLineDoesNotWaitOnAFIFO(t *testing.T) {
 	fifo := filepath.Join(t.TempDir(), "resolv.conf")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		t.Fatal(err)
 	}
 	orig := resolvConf
 	resolvConf = fifo
@@ -45,7 +45,7 @@ func TestTheOverviewsResolverLineDoesNotWaitOnAFIFO(t *testing.T) {
 func TestTheListingsRefuseAFIFOOverMCPAtOnce(t *testing.T) {
 	fifo := filepath.Join(t.TempDir(), "pipe")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		t.Fatal(err)
 	}
 	for name, h := range map[string]plugin.Handler{
 		"net.hosts.list":    runHostsList,
