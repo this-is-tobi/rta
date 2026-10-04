@@ -10,6 +10,10 @@ That is the whole proposition. Handing an agent a shell is **one decision that c
 
 Which is why the security chapters below are not an appendix, and why every one of them is also usable by a person at a terminal. The same capability serves both — nothing here is an agent-only feature bolted on.
 
+## Platforms
+
+rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run natively on Windows; a person on Windows can use the Linux build under the Windows Subsystem for Linux, version 2, which has not been tested.
+
 ## Documentation
 
 **Website:** <https://this-is-tobi.com/rta/introduction>

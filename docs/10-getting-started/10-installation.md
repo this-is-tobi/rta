@@ -1,8 +1,10 @@
 # Installation
 
+rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run natively on Windows; a person on Windows can use the Linux build under the Windows Subsystem for Linux, version 2, which has not been tested.
+
 ## From a release
 
-Every release ships prebuilt binaries for Linux, macOS and Windows on both `amd64` and `arm64`, as `rta_<version>_<os>_<arch>.tar.gz` (`.zip` on Windows), plus `.deb`/`.rpm`/`.apk` packages for Linux. With the [gh CLI](https://cli.github.com):
+Every release ships a prebuilt binary for macOS and Linux on both `amd64` and `arm64`, as `rta_<version>_<os>_<arch>.tar.gz`, plus `.deb`/`.rpm`/`.apk` packages for Linux. With the [gh CLI](https://cli.github.com):
 
 ```bash
 gh release download --repo this-is-tobi/rta \
@@ -242,7 +244,7 @@ Nothing in the config grants anything. It holds connection profiles, dashboard p
 | What | Where | Notes |
 | --- | --- | --- |
 | Config | `~/.config/rta/config.yaml`, or `~/Library/Application Support/rta/config.yaml` on macOS | `RTA_CONFIG` overrides. Beside it: `policy.yaml` (your own [team policy](../30-boundary/50-team-policy.md)), `remotes.yaml` (the servers you operate) and the `kv.identity` key `kv init --generate` makes |
-| Data directory | `$RTA_DATA_DIR`, else `$XDG_DATA_HOME/rta`, else `~/.local/share/rta` — on every platform, macOS included | Everything rta writes below is in it, owner-only. `rta doctor` prints it |
+| Data directory | `$RTA_DATA_DIR`, else `$XDG_DATA_HOME/rta`, else `~/.local/share/rta` — on macOS as well as Linux | Everything rta writes below is in it, owner-only. `rta doctor` prints it |
 | Encrypted store | `kv.age` and `kv.recipients` | [Secrets](../20-using/50-secrets.md) |
 | Grants | `grants.json`, with its seal key `grants.key` | Sealed against tampering |
 | Agent record | `agent-log.jsonl`, with its seal key `agent-log.key` | Hash-chained; [The record](../30-boundary/40-audit-trail.md) |
