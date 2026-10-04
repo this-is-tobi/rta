@@ -107,9 +107,6 @@ func outdatedCapability() plugin.Capability {
 		// form only opens for the destructive confirmation.
 		Actions: []plugin.Action{{Key: "u", Label: "upgrade", Target: "pkg.upgrade", Source: plugin.ActionRow}},
 		Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
-			if verr := supported(); verr != nil {
-				return nil, verr
-			}
 			only := req.String("manager")
 			if only != "" {
 				if _, ok := managerByName(only); !ok {
@@ -207,9 +204,6 @@ func overviewCapability() plugin.Capability {
 }
 
 func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
-	if verr := supported(); verr != nil {
-		return nil, verr
-	}
 	c := newRegistryClient()
 	l := collect(ctx, c, "")
 	tools, verr := readTools(ctx, c, req.StringSlice("tools"))

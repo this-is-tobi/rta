@@ -195,9 +195,6 @@ func installedVersion(ctx context.Context, bin string) string {
 }
 
 func runTools(ctx context.Context, req plugin.Request) (view.View, error) {
-	if verr := supported(); verr != nil {
-		return nil, verr
-	}
 	raw := req.StringSlice("tools")
 	// The table even when no tool is listed, and the sentence beside it for
 	// a screen: see view.Table.Empty.

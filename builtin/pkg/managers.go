@@ -23,10 +23,7 @@ func managersCapability() plugin.Capability {
 		// next question is what one of them has behind, and the column is named
 		// for pkg.outdated's input so the row answers it.
 		Actions: []plugin.Action{{Key: "o", Label: "outdated", Target: "pkg.outdated", Source: plugin.ActionRow}},
-		Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
-			if verr := supported(); verr != nil {
-				return nil, verr
-			}
+		Run: func(ctx context.Context, _ plugin.Request) (view.View, error) {
 			return managersTable(ctx), nil
 		},
 	})
