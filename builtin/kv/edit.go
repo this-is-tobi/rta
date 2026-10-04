@@ -154,7 +154,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	e, ok := s.Entries[key]
 	if !ok {
-		return nil, notFound(req.Surface(), key)
+		return nil, notFound(req.Surface(), s, key)
 	}
 	// A DER certificate, a PKCS#12 bundle or a JKS keystore opened in a text
 	// editor comes back re-encoded, line-ending-normalised and one newline

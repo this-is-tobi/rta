@@ -78,10 +78,13 @@ Every write over an existing key keeps what it replaced — the last five values
 ```bash
 rta kv status
 rta kv list
+rta kv list db/             # only the keys in one folder
 rta kv show db-password     # everything about it except the value
 rta kv tree                 # the store by the folders its names share
 rta kv recipients           # which public keys can decrypt this store
 ```
+
+A folder is what keys named with slashes share: `db/password` and `db/user` are in `db/`. It is never a key itself, so `kv get db` is refused as `kv.notfound`, and the hint says `db/` is a folder and names the keys in it.
 
 `kv status` answers "where is the store and what can open it" **without unlocking it**, which makes it safe to run anywhere — including in a script that is checking whether a machine is set up.
 

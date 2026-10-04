@@ -51,7 +51,7 @@ func runCopy(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	e, ok := s.Entries[key]
 	if !ok {
-		return nil, notFound(req.Surface(), key)
+		return nil, notFound(req.Surface(), s, key)
 	}
 	size := format.Bytes(len(e.Value))
 	if req.DryRun {
