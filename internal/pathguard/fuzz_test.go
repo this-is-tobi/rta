@@ -24,7 +24,7 @@ func FuzzCheck(f *testing.F) {
 		f.Fatal(err)
 	}
 	if err := os.Symlink(data, filepath.Join(root, "out")); err != nil {
-		f.Skip("no symlinks here")
+		f.Fatal(err)
 	}
 	for _, seed := range []string{
 		"file", "dir/sub/x", "../x", "dir/../../x", "out/grants.key", "out/../dir",
