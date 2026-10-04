@@ -173,7 +173,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "kv.get", Summary: "Reveal a stored value", Safety: plugin.Write, Idempotent: true,
-				NeedsGrant: true, Scope: "key",
+				NeedsGrant: true, Scope: "key", Reveals: true,
 				Description: "Classified as a write, because revealing a secret is the " +
 					"sensitive act: an agent needs a grant naming the key it may read, issued by a person. A " +
 					"grant authorizes revealing a value, not choosing where on this machine it gets written, " +
@@ -199,7 +199,7 @@ func Plugin() plugin.Plugin {
 			{
 				ID: "kv.copy", Summary: "Copy a value to the clipboard without displaying it",
 				Flash:  true,
-				Safety: plugin.Write, Idempotent: true, HumanOnly: true,
+				Safety: plugin.Write, Idempotent: true, HumanOnly: true, Reveals: true,
 				Description: "The value goes to this machine's clipboard and nowhere else: not to the " +
 					"screen, not into scrollback, not into shell history — because getting a secret " +
 					"somewhere is nearly always a paste rather than a read, and the reading is the " +
@@ -222,7 +222,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "kv.env", Summary: "Print stored values as shell exports", Safety: plugin.Write, Idempotent: true,
-				NeedsGrant: true, Scope: "key",
+				NeedsGrant: true, Scope: "key", Reveals: true,
 				Description: "Output for a shell to evaluate, which loads secrets into its session " +
 					"without ever writing them to a file. Key names become environment " +
 					"names (db-password → DB_PASSWORD). A `format` of dotenv writes .env syntax instead. " +
@@ -274,7 +274,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "kv.edit", Summary: "Open a stored value in $EDITOR and re-encrypt it on save",
-				Safety: plugin.Write, HumanOnly: true,
+				Safety: plugin.Write, HumanOnly: true, Reveals: true,
 				Description: "For changing a secret you have to look at while you change it: one line " +
 					"of a kubeconfig, one field of a JSON credential, a certificate chain gaining an " +
 					"intermediate. `kv.set` can do all of that too, and puts the entire new value in " +
