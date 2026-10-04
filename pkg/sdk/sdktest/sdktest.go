@@ -86,7 +86,10 @@ const (
 	// Warning only: see checkVerbs for why an error would be wrong here.
 	RuleVerbs Rule = "verbs"
 	// RuleRedaction: a view that declares a redacted field names one that
-	// exists, and a capability that handles secrets declares one at all.
+	// exists and says where the value can be read (a pair keyed
+	// view.RevealKey) unless Skip states why the mask is permanent, a
+	// capability that declares Reveals marks nothing Redacted, and a
+	// capability that handles secrets declares one at all.
 	RuleRedaction Rule = "redaction"
 	// RuleActions: what a capability declares the TUI may do with its result
 	// holds against the result it returns — Copy names a column or key the
