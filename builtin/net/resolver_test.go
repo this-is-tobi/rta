@@ -137,7 +137,7 @@ func TestResolverSetRefusesASymlink(t *testing.T) {
 	}
 	link := filepath.Join(dir, "resolv.conf")
 	if err := os.Symlink(real, link); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	orig := resolvConf

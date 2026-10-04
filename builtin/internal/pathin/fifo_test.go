@@ -19,7 +19,7 @@ import (
 func TestAFIFOIsRefusedAtOnceOffTheCLI(t *testing.T) {
 	fifo := filepath.Join(t.TempDir(), "pipe")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		t.Fatal(err)
 	}
 	for _, sf := range []plugin.Surface{plugin.SurfaceMCP, plugin.SurfaceTUI, plugin.SurfaceCompletion} {
 		done := make(chan error, 1)
@@ -48,7 +48,7 @@ func TestAFIFOIsRefusedAtOnceOffTheCLI(t *testing.T) {
 func TestTheCLIReadsAPipeItsWriterFeeds(t *testing.T) {
 	fifo := filepath.Join(t.TempDir(), "pipe")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		t.Fatal(err)
 	}
 	go func() {
 		w, err := os.OpenFile(fifo, os.O_WRONLY, 0)
@@ -70,7 +70,7 @@ func TestTheCLIReadsAPipeItsWriterFeeds(t *testing.T) {
 func TestReadFileRefusesAFIFOOnTheCLITooAtOnce(t *testing.T) {
 	fifo := filepath.Join(t.TempDir(), "pipe")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		t.Fatal(err)
 	}
 	done := make(chan error, 1)
 	go func() {
@@ -100,7 +100,7 @@ func TestAFIFOWhereADirectoryIsOpenedIsRefusedAtOnce(t *testing.T) {
 	dir := t.TempDir()
 	fifo := filepath.Join(dir, "pipe")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		t.Fatal(err)
 	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {

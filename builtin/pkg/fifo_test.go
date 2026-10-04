@@ -24,7 +24,7 @@ func TestAGoBinEntryThatIsNoFileIsNotHandedToGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := syscall.Mkfifo(filepath.Join(bin, "pipe"), 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		t.Fatal(err)
 	}
 	l := collect(context.Background(), newRegistryClient(), "go")
 	if len(l.failed) != 0 {

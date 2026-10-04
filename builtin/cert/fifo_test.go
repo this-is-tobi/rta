@@ -18,7 +18,7 @@ import (
 func TestInspectRefusesAFIFOOverMCPAtOnce(t *testing.T) {
 	fifo := filepath.Join(t.TempDir(), "pipe")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Skipf("mkfifo: %v", err)
+		t.Fatal(err)
 	}
 	done := make(chan error, 1)
 	go func() {

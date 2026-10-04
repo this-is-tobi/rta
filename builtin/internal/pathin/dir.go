@@ -223,7 +223,7 @@ func (d *Dir) at(op, name string, err error) error {
 // walks one step at a time, and a name with a separator in it, or "..",
 // would be os.Root's walk instead, which follows links.
 func (d *Dir) element(op, name string) error {
-	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/`+string(filepath.Separator)) {
+	if name == "" || name == "." || name == ".." || strings.Contains(name, "/") {
 		return &fs.PathError{Op: op, Path: filepath.Join(d.path, name), Err: fs.ErrInvalid}
 	}
 	return nil

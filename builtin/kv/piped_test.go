@@ -23,7 +23,7 @@ func TestAValuePipedThroughFileIsLabelledByWhatItHolds(t *testing.T) {
 		t.Helper()
 		p := filepath.Join(dir, name)
 		if err := syscall.Mkfifo(p, 0o600); err != nil {
-			t.Skipf("mkfifo: %v", err)
+			t.Fatal(err)
 		}
 		go func() {
 			w, err := os.OpenFile(p, os.O_WRONLY, 0)
