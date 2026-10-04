@@ -20,6 +20,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/notify"
 	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -366,14 +367,25 @@ func askConsent(ctx context.Context, c plugin.Capability, opts Options, values m
 		rec.Code, rec.Reason = "core.consent.abandoned", "the client stopped waiting for an answer"
 		return false, verr
 	default:
-		// The degradation promise: with consent on and nobody there, the
-		// agent gets exactly the refusal it would have got with consent
-		// off, hint included — an unattended machine must not fail
-		// differently for having been told to ask. Only the record knows
-		// the question was put.
+		// The agent is told the question went unanswered, under the code the
+		// record files it by. The gate's own "no active grant" is true and says
+		// the wrong thing: it reads as the operator declining to issue one, so
+		// an agent relays a missing permission when what is missing is somebody
+		// at the machine.
+		//
+		// The hint is for a person to act on and carries no command: the request
+		// is gone with its deadline and can no longer be answered, and the retry
+		// parks a fresh one for them to find.
+		//
+		// The window is the request's own, from the second it was asked to the
+		// second it expires: the one `rta agent pending` shows the person, and
+		// the one a call that joined an earlier question had, which the
+		// configured wait is not.
+		wait := format.Duration(parked.Request.Deadline.Sub(parked.Request.AskedAt))
 		rec.Outcome, rec.Auth = agentlog.Refused, agentlog.Blocked
-		rec.Code, rec.Reason = "core.consent.expired", "nobody answered before the request expired"
-		return false, verr
+		rec.Code, rec.Reason = "core.consent.expired", "nobody answered within "+wait
+		return false, view.Errorf("core.consent.expired", "the operator did not answer within %s", wait).
+			WithHint("if they are at the machine, ask them to answer, then retry")
 	}
 }
 
