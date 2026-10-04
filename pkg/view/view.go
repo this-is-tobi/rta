@@ -108,6 +108,13 @@ type Column struct {
 // Cursor carries contract-level pagination state.
 type Cursor struct {
 	Next string `json:"next,omitempty"`
+	// Input names the input of the capability that returned this table which
+	// takes Next, so whoever is reading the table can be told how to ask for
+	// the following page — to pass `after` the value in Next — without
+	// knowing the plugin. Empty means the producer did not say, which is every
+	// table written before the field existed; a reader then has the cursor
+	// and no name for it, as it always had.
+	Input string `json:"input,omitempty"`
 }
 
 // Table is tabular data. Rows hold pre-formatted cell values; Total reports

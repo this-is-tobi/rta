@@ -99,6 +99,10 @@ message Column {
 // Cursor carries contract-level pagination state.
 message Cursor {
   string next = 1;
+  // The name of the input of the capability that returned this table which
+  // takes next, so a host can say how to ask for the following page without
+  // knowing the plugin. Empty means the plugin did not say.
+  string input = 2;
 }
 
 // Row exists because proto3 has no repeated-of-repeated. It is not a concept

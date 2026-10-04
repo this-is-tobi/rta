@@ -698,3 +698,62 @@ func TestVocabularyCannotBeMutatedByACaller(t *testing.T) {
 		t.Error("Vocabulary hands out the package's own slice")
 	}
 }
+
+func pagedBy(input string, inputs ...plugin.Field) plugin.Capability {
+	c := ok()
+	c.Inputs = append(c.Inputs, inputs...)
+	c.Run = func(context.Context, plugin.Request) (view.View, error) {
+		return view.Table{
+			Columns: []view.Column{{Name: "name"}}, Rows: [][]string{{"a"}},
+			Total: 9, Page: &view.Cursor{Next: "k-2", Input: input},
+		}, nil
+	}
+	return c
+}
+
+func viewsOf(t *testing.T, c plugin.Capability) *recorder {
+	t.Helper()
+	rec := &recorder{}
+	p := plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}
+	if !checkDeclaration(rec, p) {
+		t.Fatalf("the fixture does not validate:\n%s", rec.errText())
+	}
+	checkViews(rec, drive(rec, p, noConfig(), t.TempDir(), nil), noConfig())
+	return rec
+}
+
+// A cursor is useful to whoever can give it back, and the table says how:
+// the input that takes it has to be one an agent can give.
+func TestACursorNamingAnInputNobodyCanGiveIsRejected(t *testing.T) {
+	after := plugin.Field{Name: "after", Type: plugin.String, Help: "continue after this"}
+	if rec := viewsOf(t, pagedBy("after", after)); len(rec.errs) > 0 || len(rec.logs) > 0 {
+		t.Errorf("a cursor naming a declared string input was reported:\nerrors %q\nlogs %q", rec.errText(), rec.logText())
+	}
+
+	for name, tc := range map[string]struct {
+		c    plugin.Capability
+		want string
+	}{
+		"undeclared": {pagedBy("after"+"x", after), "declares no such input"},
+		"local":      {pagedBy("after", plugin.Field{Name: "after", Type: plugin.String, Local: true, Help: "h"}), "is Local"},
+		"a number":   {pagedBy("after", plugin.Field{Name: "after", Type: plugin.Int, Help: "h"}), "a cursor is text"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if rec := viewsOf(t, tc.c); !strings.Contains(rec.errText(), tc.want) {
+				t.Errorf("want an error containing %q, got %q", tc.want, rec.errText())
+			}
+		})
+	}
+}
+
+// Every table written before the field existed returns a cursor and names no
+// input; that is a note, because the cursor in it still works.
+func TestACursorThatNamesNoInputIsANoteNotAFailure(t *testing.T) {
+	rec := viewsOf(t, pagedBy("", plugin.Field{Name: "after", Type: plugin.String, Help: "h"}))
+	if len(rec.errs) > 0 {
+		t.Errorf("an unnamed cursor was made an error: %s", rec.errText())
+	}
+	if !strings.Contains(rec.logText(), "set view.Cursor.Input") {
+		t.Errorf("an unnamed cursor was not noted: %q", rec.logText())
+	}
+}

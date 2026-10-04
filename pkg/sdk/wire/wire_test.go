@@ -207,7 +207,7 @@ func everyViewType() map[string]view.View {
 			Columns:  []view.Column{{Name: "A", Kind: view.KindBytes}, {Name: "B", Kind: view.KindStatus}},
 			Rows:     [][]string{{"1", "ok"}, {"2", "bad"}},
 			Total:    99,
-			Page:     &view.Cursor{Next: "cursor-token"},
+			Page:     &view.Cursor{Next: "cursor-token", Input: "after"},
 			Redacted: []string{"B"},
 			Tail:     true,
 			// A table that could not cover everything has to say so, and the

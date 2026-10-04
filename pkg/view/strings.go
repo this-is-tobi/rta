@@ -85,11 +85,13 @@ func mapStrings(v View, f func(string) string) (View, bool) {
 		// Page.Next is as much plugin-controlled text as a cell is: it round
 		// trips through the caller and reaches a model in both the text and
 		// the structured halves of an MCP result. It was the one string on a
-		// Table this function did not visit.
+		// Table this function did not visit. The input that takes it is the
+		// plugin's text too, and is read as a name a model is told to give.
 		page, pc := t.Page, false
 		if t.Page != nil {
-			if next := f(t.Page.Next); next != t.Page.Next {
-				page, pc = &Cursor{Next: next}, true
+			next, input := f(t.Page.Next), f(t.Page.Input)
+			if next != t.Page.Next || input != t.Page.Input {
+				page, pc = &Cursor{Next: next, Input: input}, true
 			}
 		}
 		red, dc := mapNames(t.Redacted, f)

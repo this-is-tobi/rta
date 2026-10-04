@@ -139,7 +139,7 @@ func ViewToProto(v view.View) *rtav1.View {
 			Empty: t.Empty,
 		}
 		if t.Page != nil {
-			tbl.Page = &rtav1.Cursor{Next: t.Page.Next}
+			tbl.Page = &rtav1.Cursor{Next: t.Page.Next, Input: t.Page.Input}
 		}
 		return &rtav1.View{Kind: &rtav1.View_Table{Table: tbl}}
 	case view.Tree:
@@ -220,7 +220,7 @@ func ViewFromProto(v *rtav1.View) view.View {
 			Empty: k.Table.GetEmpty(),
 		}
 		if p := k.Table.GetPage(); p != nil {
-			t.Page = &view.Cursor{Next: p.GetNext()}
+			t.Page = &view.Cursor{Next: p.GetNext(), Input: p.GetInput()}
 		}
 		return t
 	case *rtav1.View_Tree:

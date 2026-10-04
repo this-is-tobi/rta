@@ -68,6 +68,8 @@ return view.Table{
 
 Cells are strings and a column's `Kind` (`view.KindStatus`, `view.KindDuration`, …) is a hint the renderers style by, never styling itself. `Total` is how many rows the answer holds when the page shows fewer.
 
+A table that stops short hands back where it left off: `Page: &view.Cursor{Next: next, Input: "after"}`. `Next` is the value, and `Input` names the input of the same capability that takes it, so whoever reads the table is told what to pass instead of left to guess. It has to be one an agent can give: a declared `String` that is not `Local`, which `sdktest` checks; a cursor that names no input still works for whoever knows the plugin, and `sdktest` notes it.
+
 The other views are built the same way:
 
 ```go
