@@ -216,12 +216,18 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 		Short:       "Serve capabilities as MCP tools, over stdio or HTTP",
 		Long: "Serve every registered capability as an MCP tool, over stdio by default" +
 			" or over HTTP with --http.\n\n" +
-			"One gate: a read is free, and every capability that changes" +
-			" anything needs a grant a person issued — `rta grant allow`." +
-			" There is no flag that stands in for one.\n\n" +
+			"One gate, and a grant is it. A capability that only reads this machine" +
+			" runs without one. Everything else needs a grant a person issued —" +
+			" `rta grant allow` — and that is every capability that changes anything," +
+			" every call that names a connection profile, and the reads that leak:" +
+			" a secret, or a destination the caller chooses. There is no flag that" +
+			" stands in for a grant.\n\n" +
 			"Path gate: every path argument must be under a root, including a" +
 			" capability's own declared default. The default root is the directory" +
 			" the server was started in; widen it with --root, which is repeatable." +
+			" A client launches the server, so the option belongs in its registration:" +
+			" `rta mcp install <client> --root <dir>`, which takes --consent and" +
+			" --max-result the same way." +
 			" The gate governs path arguments only: a capability that opens a fixed" +
 			" file of its own — `net hosts list` and /etc/hosts — is unaffected," +
 			" because that path is never an argument for anyone to send.\n\n" +

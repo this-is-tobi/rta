@@ -26,6 +26,10 @@ func fakeClient(t *testing.T, bin string, code int) (argvFile string) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	// A registration reads the client's own configuration in the home
+	// directory to compare it with what it is about to make, so a test that
+	// registers gets a home of its own rather than the developer's.
+	t.Setenv("HOME", t.TempDir())
 	return argvFile
 }
 
@@ -42,19 +46,47 @@ func argvOf(t *testing.T, file string) []string {
 // machine shares one set of grants, which is the whole point of naming one
 // — and a feature that has to be turned on by hand is one that stays off
 // (a control that requires homework is a control that stays off).
-// A client rta does not know is told so with the ones it does. RunE had the
-// sentence all along — `unknown client "nope" — try one of: claude, …` — and
-// cobra's OnlyValidArgs refused first with `invalid argument "nope" for "rta mcp
-// install"`, naming no client at all.
-func TestAnUnknownClientIsAnsweredWithTheOnesThatExist(t *testing.T) {
-	_, _, err := run(t, testRegistry(t), "mcp", "install", "nope")
-	if err == nil || !strings.Contains(err.Error(), `unknown client "nope"`) {
-		t.Fatalf("err = %v, want it to name the client it does not know", err)
+//
+// A name close to a client rta knows is a typo, and is told so with the one it
+// was near. cobra's OnlyValidArgs once refused it in cobra's own words —
+// `invalid argument "nope" for "rta mcp install"` — one step ahead of the check
+// in RunE that names a client rta does know.
+func TestATypoOfAKnownClientIsAnsweredWithTheOneItWasNear(t *testing.T) {
+	_, _, err := run(t, testRegistry(t), "mcp", "install", "cluade")
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != CodeUsage || !strings.Contains(ve.Message, `"claude"`) {
+		t.Fatalf("err = %#v, want a usage refusal naming claude", err)
 	}
 	for _, name := range []string{"claude", "codex", "copilot", "cursor", "gemini", "vscode"} {
-		if !strings.Contains(err.Error(), name) {
-			t.Errorf("%q is not offered in %q", name, err.Error())
+		if !strings.Contains(ve.Hint, name) {
+			t.Errorf("%q is not offered in %q", name, ve.Hint)
 		}
+	}
+}
+
+// Any other client that speaks MCP over stdio takes the standard block, and
+// rta says what it does not know instead of refusing the name: the docs say
+// anything that speaks MCP works, and the command line was the one place that
+// did not.
+func TestAClientRtaDoesNotKnowGetsTheStandardBlock(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	out, errOut, err := run(t, testRegistry(t), "mcp", "install", "windsurf", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	pairs := answerPairs(t, out)
+	var block map[string]json.RawMessage
+	if jerr := json.Unmarshal([]byte(pairs["block"]), &block); jerr != nil || block["mcpServers"] == nil {
+		t.Errorf("block = %q, want the standard mcpServers json: %v", pairs["block"], jerr)
+	}
+	if !strings.Contains(pairs["block"], `"windsurf"`) || pairs["as"] != "windsurf" {
+		t.Errorf("the block does not name the agent windsurf: %v", pairs)
+	}
+	if !strings.Contains(pairs["add to"], "rta does not know where") {
+		t.Errorf("add to = %q, want it to say rta does not know where windsurf keeps its config", pairs["add to"])
+	}
+	if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".windsurf")); err == nil {
+		t.Error("something was written for a client rta cannot register with")
 	}
 }
 
@@ -63,13 +95,13 @@ func TestEveryClientIsRegisteredUnderAName(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			self := "/opt/rta"
 			if c.bin != "" {
-				got := strings.Join(c.args(self, c.name), " ")
+				got := strings.Join(c.args(self, serveArgs(c.name, serveOptions{})), " ")
 				if !strings.Contains(got, "--as "+c.name) &&
 					!strings.Contains(got, `"--as","`+c.name+`"`) {
 					t.Errorf("the command rta would run does not name the agent: %s", got)
 				}
 			}
-			if block := c.block(self, c.name); !strings.Contains(block, "--as") ||
+			if block := c.block(self, serveArgs(c.name, serveOptions{})); !strings.Contains(block, "--as") ||
 				!strings.Contains(block, c.name) {
 				t.Errorf("the block rta would print does not name the agent:\n%s", block)
 			}
@@ -138,8 +170,8 @@ func TestMCPInstallAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 	pairs = answerPairs(t, out)
 	if pairs["registered"] != "Claude Code" || pairs["as"] != "claude" ||
 		!strings.HasSuffix(pairs["ran"], "mcp serve --as claude") ||
-		!strings.Contains(pairs["next"], "--agent claude") {
-		t.Errorf("answered %v, want the client, the name, the command it ran and what comes next", pairs)
+		!strings.Contains(pairs["reach"], "--agent claude") || !strings.Contains(pairs["next"], "restart Claude Code") {
+		t.Errorf("answered %v, want the client, the name, the command it ran, what comes next and what it reaches", pairs)
 	}
 	if !strings.Contains(errOut, "Added stdio MCP server rta") {
 		t.Errorf("the client's own words were lost rather than moved to stderr: %q", errOut)
@@ -213,7 +245,7 @@ func TestMCPInstallDrawsTheBlockAsItIsOnANarrowTerminal(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s: no block after the pairs:\n%s", name, out)
 		}
-		if want := strings.TrimRight(client.block(self, name), "\n"); strings.TrimRight(drawnBlock, "\n") != want {
+		if want := strings.TrimRight(client.block(self, serveArgs(name, serveOptions{})), "\n"); strings.TrimRight(drawnBlock, "\n") != want {
 			t.Errorf("%s: the block was reshaped on a 30-column terminal:\n%s\nwant:\n%s", name, drawnBlock, want)
 		}
 		if strings.Contains(pairsDrawn, "mcpServers") || strings.Contains(pairsDrawn, "mcp_servers") {
@@ -323,25 +355,32 @@ func TestInstallGlobalPassesClaudesScopeFlag(t *testing.T) {
 // A second install is refused by the client because rta is already there, and
 // was answered "could not register it — here is what to add instead" with a
 // block to paste: a duplicate of the server the client had just said it holds.
-// The client's own words are read, and the answer is that rta is registered and
-// how to change what it was registered with.
-func TestAnAlreadyRegisteredServerIsNotAnsweredWithABlockToAddAgain(t *testing.T) {
+// Then it was answered "already registered" at exit 0 while doing nothing of
+// what was asked. When rta cannot read what is registered to compare it, the
+// registration asked for is not the one that is there, and that is an error
+// with the exact line that takes the old one out.
+func TestARegistrationRtaCannotCompareIsRefusedWithTheLineThatTakesItOut(t *testing.T) {
 	dir := t.TempDir()
 	script := "#!/bin/sh\necho 'MCP server rta already exists in local config' >&2\nexit 1\n"
 	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("HOME", t.TempDir())
 
-	out, errOut, err := run(t, testRegistry(t), "mcp", "install", "claude")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, "already registered") || !strings.Contains(out, "mcp remove") {
-		t.Errorf("answer = %q, want it to say rta is already registered and how to change it", out)
-	}
-	if strings.Contains(out+errOut, "here is what to add instead") || strings.Contains(out, `"mcpServers"`) {
-		t.Errorf("a server that is already there was answered with a block to add:\n%s\n%s", out, errOut)
+	for global, remove := range map[bool]string{false: "claude mcp remove rta --scope local", true: "claude mcp remove rta --scope user"} {
+		args := []string{"mcp", "install", "claude"}
+		if global {
+			args = append(args, "--global")
+		}
+		out, errOut, err := run(t, testRegistry(t), args...)
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != "core.mcp.install.exists" || !strings.Contains(ve.Hint, remove) {
+			t.Errorf("global=%v: err = %#v, want core.mcp.install.exists naming %q", global, err, remove)
+		}
+		if strings.Contains(out+errOut, "here is what to add instead") || strings.Contains(out, `"mcpServers"`) {
+			t.Errorf("a server that is already there was answered with a block to add:\n%s\n%s", out, errOut)
+		}
 	}
 }
 
@@ -525,7 +564,7 @@ func TestEachClientGetsItsOwnShape(t *testing.T) {
 				t.Fatalf("no such client")
 			}
 			var parsed map[string]json.RawMessage
-			if err := json.Unmarshal([]byte(c.block("/opt/rta", "x")), &parsed); err != nil {
+			if err := json.Unmarshal([]byte(c.block("/opt/rta", serveArgs("x", serveOptions{}))), &parsed); err != nil {
 				t.Fatalf("the block is not valid JSON: %v", err)
 			}
 			if _, ok := parsed[tc.wantKey]; !ok {
@@ -535,7 +574,7 @@ func TestEachClientGetsItsOwnShape(t *testing.T) {
 	}
 	// Codex is TOML, alone among them, so it is checked for what it is.
 	c, _ := findClient("codex")
-	block := c.block("/opt/rta", "x")
+	block := c.block("/opt/rta", serveArgs("x", serveOptions{}))
 	if !strings.Contains(block, "[mcp_servers.rta]") || !strings.Contains(block, `"--as", "x"`) {
 		t.Errorf("codex's block is not the TOML it needs:\n%s", block)
 	}

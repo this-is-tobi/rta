@@ -76,7 +76,7 @@ This is the part worth slowing down for.
 rta mcp install claude
 ```
 
-That registers rta with Claude Code under the name `claude`. The name matters: grants you issue while talking to one client do not follow every other client on this machine.
+That registers rta with Claude Code under the name `claude`, for the directory you ran it in — the answer's `scope` line says so, and `--global` registers it for every project. The name matters: grants you issue while talking to one client do not follow every other client on this machine. Restart Claude Code, ask it to call `sys_overview`, and `rta agent overview` shows it connected.
 
 For a client that has no command of its own, rta prints exactly what to add and where, and **writes nothing**. It will not edit another tool's config file — that file is what gives an agent access to your secrets, and it is worth reading before it changes.
 

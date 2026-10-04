@@ -197,21 +197,21 @@ rta git blame internal/grant/grant.go
 
 ```bash
 cd /tmp/scratch
-rta mcp serve --as sandbox --root /tmp/scratch
+rta mcp install claude --as sandbox --root /tmp/scratch
 ```
 
-Every path argument must sit under a root, and the default root is the directory the server started in. rta prints the roots at startup rather than leaving them to be discovered from a refusal.
+Every path argument must sit under a root, and the default root is the directory the server started in. The client launches the server, so the root goes into the registration; rta prints the roots at startup rather than leaving them to be discovered from a refusal.
 
 Widen deliberately, never by default:
 
 ```bash
-rta mcp serve --as sandbox --root ~/projects --root /tmp/scratch
+rta mcp install claude --as sandbox --root ~/projects --root /tmp/scratch
 ```
 
 ## Be asked instead of refused, while you are at the machine
 
 ```bash
-rta mcp serve --as claude --consent --consent-notify
+rta mcp install claude --consent --consent-notify
 ```
 
 A call needing a grant nobody issued parks rather than failing:
