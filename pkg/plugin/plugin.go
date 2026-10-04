@@ -748,6 +748,10 @@ type Capability struct {
 	// more words; and a keyword that is already a word of the ID is noise,
 	// which sdktest says.
 	Keywords []string
+	// Examples are calls worth showing beside the declaration, in `--help`
+	// and `rta explain` and wherever else the host teaches one: what a person
+	// pastes first. See Example.
+	Examples []Example
 	// Primary names the column of a Table, or the key of a KeyValue, that is
 	// the whole answer when the answer is one value: the password a generator
 	// made, the response body, the token. A host writing to something that is

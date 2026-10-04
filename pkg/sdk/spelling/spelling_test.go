@@ -2,6 +2,7 @@ package spelling
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -174,5 +175,31 @@ func TestTheSDKsConnectionHelpersSpellNothingForATerminalOverMCP(t *testing.T) {
 		if hits := sp.Find(text, false); len(hits) > 0 {
 			t.Errorf("%q spells a terminal's: %q", text, hits)
 		}
+	}
+}
+
+// An example's title is read on every surface the example is shown on, so it
+// is declared text like a summary is and is held to the same rule.
+func TestDeclaredIncludesTheTitlesOfExamples(t *testing.T) {
+	p := demo()
+	p.Capabilities[0].Examples = []plugin.Example{
+		{Title: "the first twenty", Inputs: map[string]any{"limit": 20}},
+		{Title: "raise --limit for more", Inputs: map[string]any{"limit": 100}},
+	}
+	var titles, spelled []string
+	for _, d := range Declared(p) {
+		if strings.HasPrefix(d.Where, "title of example") {
+			titles = append(titles, d.Where+": "+d.Text)
+			if len(ForPlugin(p).Find(d.Text, d.TerminalOnly)) > 0 {
+				spelled = append(spelled, d.Text)
+			}
+		}
+	}
+	want := []string{"title of example 1: the first twenty", "title of example 2: raise --limit for more"}
+	if !slices.Equal(titles, want) {
+		t.Errorf("example titles in Declared = %q, want %q", titles, want)
+	}
+	if !slices.Equal(spelled, []string{"raise --limit for more"}) {
+		t.Errorf("the speller held these titles to a terminal's spelling: %q", spelled)
 	}
 }
