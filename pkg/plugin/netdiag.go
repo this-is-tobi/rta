@@ -105,7 +105,7 @@ func DialUnroutable(err error) bool {
 // certificate is what to say.
 //
 // **And words are read only as a dial spells them, the call that failed
-// before them** (dialCalls): "connect: connection refused", never
+// before them** (dialCall): "connect: connection refused", never
 // "connection refused" alone. A server's own message, relayed untyped by a
 // driver, said "connection refused" about something of its own — a backend
 // it could not reach — and was read as a port nothing listened on, where the
@@ -128,19 +128,24 @@ func dialFailed(err error, errnos []syscall.Errno) bool {
 	}
 	text := err.Error()
 	for _, e := range errnos {
-		for _, call := range dialCalls {
-			if strings.Contains(text, call+": "+e.Error()) {
-				return true
-			}
+		if strings.Contains(text, dialCall+": "+e.Error()) {
+			return true
 		}
 	}
 	return false
 }
 
-// dialCalls are the calls a failed TCP dial names before the operating
-// system's error, as Go's *os.SyscallError spells it: connect on a Unix, and
-// connectex, the overlapped connect, on Windows.
-var dialCalls = []string{"connect", "connectex"}
+// dialCall is the call a failed TCP dial names before the operating system's
+// error, as Go's *os.SyscallError spells it.
+const dialCall = "connect"
+
+// The operating system's errors DialRefused and DialUnroutable read a dial
+// by. EHOSTDOWN is macOS's answer for a host on its own network that nothing
+// answers for, where Linux says EHOSTUNREACH.
+var (
+	refusedErrnos    = []syscall.Errno{syscall.ECONNREFUSED}
+	unroutableErrnos = []syscall.Errno{syscall.ENETUNREACH, syscall.EHOSTUNREACH, syscall.EHOSTDOWN, syscall.ENETDOWN}
+)
 
 // handshook reports whether err holds a TLS handshake's failure or a verdict
 // on a certificate: something only a server that was reached gives. By type,
@@ -177,7 +182,7 @@ func verifierSystem() string {
 
 // UseVerifierSystem makes CertUntrusted, CertRevoked, CertPolicyHint and
 // CAHint read a handshake's error as the verifier of goos ("darwin", "ios",
-// "windows", "linux") would have worded it, and returns what puts the
+// "linux") would have worded it, and returns what puts the
 // machine's own back.
 //
 // **For a plugin's tests, through sdktest.VerifierSystem.** Those four answer
@@ -235,16 +240,6 @@ func UseVerifierSystem(goos string) (restore func()) {
 // as every verdict CertUntrusted does not read is. Elsewhere an untyped
 // answer is one of Go's own errors, never a verdict on trust, and is not
 // read as one.
-//
-// **Windows is the one system whose verdict Go does not tell apart.** With
-// no CA file given it asks the system's verifier too, and types every chain
-// the system refuses for a reason other than a date or a use as
-// UnknownAuthorityError, with nothing else in it: a certificate Windows
-// distrusts reads as one from an unknown CA. It is read as untrusted all the
-// same, since a private CA is by far the likelier reason and nothing in the
-// error tells the two apart — which is why CAHint says what naming a CA
-// file goes around there too: Windows' own checks, its list of distrusted
-// certificates among them.
 func CertUntrusted(err error) bool { return certUntrusted(verifierSystem(), err) }
 
 // certUntrusted is CertUntrusted on goos, whose verifier answered err.
@@ -276,10 +271,8 @@ func certUntrusted(goos string, err error) bool {
 // CA-file hint needs no such guard.
 //
 // **Only where a verifier says so.** Go's own verifier, which runs on Linux
-// and wherever a CA file is set, checks no revocation at all, and Windows'
-// revocation verdict reaches Go as an unknown authority with nothing to tell
-// it apart (CertUntrusted): on those, a revoked certificate is not known as
-// one, and this answers false.
+// and wherever a CA file is set, checks no revocation at all: on those, a
+// revoked certificate is not known as one, and this answers false.
 func CertRevoked(err error) bool { return certRevoked(verifierSystem(), err) }
 
 // certRevoked is CertRevoked on goos, whose verifier answered err.
@@ -373,11 +366,7 @@ func certPolicyHint(goos string, err error) string {
 // macOS and iOS that is the system's revocation, Certificate Transparency and
 // policy checks no longer run, which an operator told only "name the CA"
 // learned from nothing — and one who named it to get past a verdict that was
-// no untrusted issuer's went around the check that gave it. On Windows it is
-// the system's checks as well, not only its roots: Go asks the system's
-// verifier there too when no CA file is set, and a certificate Windows
-// distrusts reaches CertUntrusted as an unknown authority, which only this
-// hint's words can warn about.
+// no untrusted issuer's went around the check that gave it.
 func (s Surface) CAHint(setting string) string { return s.caHint(verifierSystem(), setting) }
 
 // caHint is CAHint on goos.
@@ -388,9 +377,6 @@ func (s Surface) caHint(goos, setting string) string {
 	case "darwin", "ios":
 		return hint + "checks: the certificate is then checked against that CA alone, with none of the revocation " +
 			"and policy checks macOS makes"
-	case "windows":
-		return hint + "checks: the certificate is then checked against that CA alone, with none of the checks " +
-			"Windows makes, its list of distrusted certificates among them"
 	}
 	return hint + "roots: the certificate is then checked against that CA alone"
 }
