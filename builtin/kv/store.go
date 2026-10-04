@@ -474,9 +474,30 @@ func writeAtomic(data []byte) *view.Error {
 	return nil
 }
 
+// notFound is the refusal for a key the store does not hold, and its hint is the
+// next step that works from where the caller stands: with no store at all, how
+// one is made; otherwise the listing.
 func notFound(sf plugin.Surface, key string) *view.Error {
-	return view.Errorf("kv.notfound", "no key %s", textclean.Record(key)).
-		WithHint(sf.CapabilityName("kv.list") + " lists every key")
+	verr := view.Errorf("kv.notfound", "no key %s", textclean.Record(key))
+	if !fileExists(storePath()) {
+		return verr.WithHint("no store yet — " + NoStoreNext(sf, key))
+	}
+	return verr.WithHint(sf.CapabilityName("kv.list") + " lists every key")
+}
+
+// NoStoreNext is the next step every surface gives while there is no store, in
+// one wording so that `kv status`, a refusal naming a missing key, `kv rekey`
+// and `rta doctor` cannot send a person two different ways. It is the default,
+// which a first `kv set` is; the key file is the alternative, and is offered
+// where the lock is actually chosen (newStoreNote), not repeated in every line
+// that points there. An agent is told only that the call it has makes the
+// store: which lock it gets is the operator's to choose, and a passphrase store
+// is not the agent's to open.
+func NoStoreNext(sf plugin.Surface, key string) string {
+	if sf == plugin.SurfaceMCP {
+		return sf.CapabilityName("kv.set") + " creates it the first time it runs"
+	}
+	return "`" + sf.Call("kv.set", keyArg(key)) + "` creates one, locked with a passphrase you choose"
 }
 
 // identityName names the identity input for a hint, as the caller on sf
