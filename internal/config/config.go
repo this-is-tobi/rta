@@ -10,6 +10,8 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -474,6 +476,11 @@ func Write(cfg Config) error {
 // dashboard saves the arrangement on every tile move, so this is the file rta
 // rewrites most often and the one a torn write would cost the user a
 // `config.invalid` on every subsequent run.
+//
+// The file is not marshalled afresh. What the person typed into it — comments,
+// the order of their keys, the blocks nothing changed, keys rta does not know —
+// is theirs, and a write that dropped it made the file unsafe to annotate. See
+// render for how the text that is already there is kept.
 func write(cfg Config) error {
 	path := Path()
 	// Owner-only, the same as the data directory: this directory holds the
@@ -484,21 +491,24 @@ func write(cfg Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return view.Errorf("config.mkdir", "creating %s: %v", filepath.Dir(path), err)
 	}
-	data, err := yaml.Marshal(cfg)
+	// A missing file is a new one. Anything else that stops it being read is
+	// reported rather than written over: LoadFile has just failed the same way
+	// for every caller that reads before it writes.
+	old, err := atomicfile.ReadCapped(path, maxConfigBytes)
+	if err != nil && !os.IsNotExist(err) {
+		return view.Errorf("config.unreadable", "reading %s: %v", path, err)
+	}
+	data, err := render(old, cfg)
 	if err != nil {
+		var verr *view.Error
+		if errors.As(err, &verr) {
+			return verr
+		}
 		return view.Errorf("config.encode", "encoding config: %v", err)
 	}
-	// Written by rta, not by `rta init`: a profile set from a script, a tile
-	// added from a shell and a tile moved in the TUI all create this file, and
-	// the line named the wizard on every one of them.
-	//
-	// And the cost of that, said where the person editing it will read it: the
-	// whole file is marshalled again on every write, and a comment typed by
-	// hand has nowhere to go in that. It was dropped without a word.
-	header := "# rta configuration — written by rta.\n" +
-		"# Everything here is optional: rta works with no config at all.\n" +
-		"# rta writes this whole file again when it changes something (`rta profile set`,\n" +
-		"# `rta dashboard add`, the TUI), and a comment added by hand does not survive that.\n"
+	if bytes.Equal(data, old) {
+		return nil
+	}
 	// A rewrite must not change a file's permissions, so an existing config
 	// keeps whatever mode it has; a new one gets the mode rta has always
 	// asked for.
@@ -506,7 +516,7 @@ func write(cfg Config) error {
 	if info, err := os.Stat(path); err == nil {
 		perm = info.Mode().Perm()
 	}
-	if err := atomicfile.Write(path, append([]byte(header), data...), perm); err != nil {
+	if err := atomicfile.Write(path, data, perm); err != nil {
 		return view.Errorf("config.write", "writing %s: %v", path, err)
 	}
 	return nil
