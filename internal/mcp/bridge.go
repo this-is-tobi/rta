@@ -66,6 +66,7 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 	if opts.pace == nil {
 		opts.pace = newPacer(openBurst, openRate, openQueue)
 	}
+	opts.ended = &endedGrants{}
 	server := sdk.NewServer(&sdk.Implementation{
 		Name:    "rta",
 		Title:   "RTA",
@@ -475,6 +476,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		}
 		release, covering, verr := grant.ReserveNaming(c, gated, by)
 		if verr != nil {
+			verr = opts.ended.explain(verr, c, gated, by, refusalKey(ctx, opts))
 			// Nobody pre-authorized it. With consent enabled, that is a
 			// question rather than an answer: park the call, ask the
 			// person, and proceed on their word.
@@ -684,6 +686,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		started := time.Now()
 		v, err := c.Run(ctx, run)
 		rec.Millis = time.Since(started).Milliseconds()
+		opts.ended.spentOn(refusalKey(ctx, opts), covering)
 		if err != nil {
 			// No refund: the handler ran. A use used to come back on any
 			// error, which made --max-uses and --rate mean nothing for the
