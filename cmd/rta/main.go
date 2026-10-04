@@ -1,3 +1,5 @@
+//go:build unix
+
 // Command rta is the RTA command line.
 package main
 
