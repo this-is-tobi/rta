@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/pathguard"
@@ -35,9 +34,6 @@ func put(t *testing.T, path, body string) {
 
 func link(t *testing.T, target, at string) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink semantics differ")
-	}
 	if err := os.Symlink(target, at); err != nil {
 		t.Fatal(err)
 	}

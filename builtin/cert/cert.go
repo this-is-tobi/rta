@@ -479,7 +479,7 @@ func readPEM(req plugin.Request, path string) ([]*x509.Certificate, error) {
 		return nil, verr
 	}
 	if len(certs) == 0 && blocks == 0 {
-		// **A DER file is a certificate file too.** It is what a Windows
+		// **A DER file is a certificate file too.** It is what a certificate
 		// export names .cer, what an AIA caIssuers URL serves when the issuing
 		// certificate is fetched to see why a chain does not build, and what
 		// Java and most appliances write by default. It holds no PEM block, so

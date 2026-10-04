@@ -326,7 +326,7 @@ func decoded(raw []byte) view.View {
 // showsAsItIs is the strict test a decoder needs: text holding nothing a
 // renderer strips, spells out or cannot show — a control, an escape sequence,
 // an invisible or bidi character, or a carriage return that is not the first
-// half of a Windows line ending, which returns the cursor and lets the rest of
+// half of a CRLF line ending, which returns the cursor and lets the rest of
 // the line print over the start of it. Line breaks and tabs are the layout of
 // ordinary text.
 //

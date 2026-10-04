@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -1100,7 +1099,7 @@ func TestOverviewOnAQuietMachineSaysSo(t *testing.T) {
 // that asks the operator to do something, silently turned into the one
 // answer that asks for nothing.
 func TestOverviewWaitingIsUnreadableWhenTheQueueCannotBeRead(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("file modes do not deny the owner here")
 	}
 	isolate(t)

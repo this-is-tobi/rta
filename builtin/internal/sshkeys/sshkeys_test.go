@@ -3,7 +3,6 @@ package sshkeys
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
@@ -111,9 +110,6 @@ func TestAPrivateKeyInAPubFileIsFound(t *testing.T) {
 // own copy is an ordinary setup, and the DirEntry's own type would call it a
 // symlink and drop it.
 func TestASymlinkedKeyIsAKey(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlinks need a privilege here that the test does not have")
-	}
 	store := t.TempDir()
 	real := write(t, store, "real_key", "-----BEGIN OPENSSH PRIVATE KEY-----\n")
 
@@ -131,7 +127,7 @@ func TestASymlinkedKeyIsAKey(t *testing.T) {
 // A key this process cannot open is left out rather than listed: the row would
 // promise something the next step cannot do.
 func TestAnUnreadableKeyIsNotOffered(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("mode bits do not stop this reader")
 	}
 	dir := t.TempDir()

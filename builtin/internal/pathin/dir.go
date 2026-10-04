@@ -193,10 +193,9 @@ func (d *Dir) Withheld(name string, info fs.FileInfo) error {
 // names it without opening anything, and asked again of what was opened,
 // from the open file's own Stat: the bounds know rta's state by identity as
 // well as by name (plugin.Bounds.Refuse), and the identity that counts is
-// the one of the file being read. The first look's is a name's — a Windows
-// FileInfo from a look by name reads its identity by that name when it is
-// first compared, which may be after the open — and the second is the
-// file's, whatever has been done to the name since.
+// the one of the file being read. The first look's is a name's, as of the
+// look, and the second is the file's, whatever has been done to the name
+// since.
 func (d *Dir) withhold(full string, info fs.FileInfo) error {
 	if d.refuse == nil {
 		return nil

@@ -140,8 +140,7 @@ func OpenFile(path string) (*os.File, fs.FileInfo, error) {
 		return nil, nil, &NotAFileError{Path: path, Mode: info.Mode()}
 	}
 	// O_NONBLOCK changes nothing about reading a regular file, and is what
-	// keeps a FIFO swapped in after the Stat from blocking the open. Windows
-	// defines the flag and ignores it, and has no FIFO to open there.
+	// keeps a FIFO swapped in after the Stat from blocking the open.
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, nil, err

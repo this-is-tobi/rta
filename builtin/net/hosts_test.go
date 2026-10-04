@@ -5,7 +5,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -622,9 +621,6 @@ func TestHostsEditBacksUpFirst(t *testing.T) {
 // mode rta had chosen. The directory is paths.EnsureData's, owner-only, and
 // so is everything the backup puts in it.
 func TestHostsEditBacksUpOwnerOnlyIntoAFreshDataDir(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX modes")
-	}
 	path := hostsFixture(t, "127.0.0.1 localhost\n")
 	data := filepath.Join(t.TempDir(), "fresh", "rta")
 	t.Setenv("RTA_DATA_DIR", data)
