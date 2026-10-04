@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"runtime"
 	"strings"
 	"time"
 
@@ -248,6 +247,15 @@ func StaticTokenVerifier(tokens map[string]string) auth.TokenVerifier {
 	}
 }
 
+// minTokenLen is the shortest bearer token the file may hold. A one-character
+// token started the listener once; on a transport where the token is the
+// entire credential, that is a door with no lock. Sixteen characters of
+// anything `rta gen token` produces is past what an online guess reaches;
+// the floor is on length rather than on a measured entropy because the
+// file is written by the operator, and refusing a token as "not random
+// enough" is a judgement rta cannot make honestly from the bytes alone.
+const minTokenLen = 16
+
 // LoadTokenFile reads a static-token file: one "label token" pair per
 // non-blank, non-comment line, whitespace-separated. A line starting with #
 // is a comment.
@@ -277,25 +285,6 @@ func StaticTokenVerifier(tokens map[string]string) auth.TokenVerifier {
 // operator does, by whatever means they chose, and a permission check at
 // load time is the only guarantee available that a wider read did not
 // happen along the way.
-//
-// On Windows this check does not run: Go's Mode().Perm() on that platform is
-// synthesized from the single read-only file attribute, identical for
-// owner/group/other, so applying the POSIX bit test there would either
-// refuse nearly every file or verify nothing — neither is honest. Rather
-// than add a new dependency for real ACL introspection (see
-// internal/pluginhost/procattr_windows.go for the same tradeoff made the
-// same way elsewhere in this codebase), internal/app/mcp.go prints an
-// explicit warning on Windows instead of silently claiming a guarantee this
-// function cannot give there.
-// minTokenLen is the shortest bearer token the file may hold. A one-character
-// token started the listener once; on a transport where the token is the
-// entire credential, that is a door with no lock. Sixteen characters of
-// anything `rta gen token` produces is past what an online guess reaches;
-// the floor is on length rather than on a measured entropy because the
-// file is written by the operator, and refusing a token as "not random
-// enough" is a judgement rta cannot make honestly from the bytes alone.
-const minTokenLen = 16
-
 func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, err error) {
 	f, err := atomicfile.Open(path)
 	if err != nil {
@@ -310,24 +299,22 @@ func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, e
 	if err != nil {
 		return nil, false, err
 	}
-	if runtime.GOOS != "windows" {
-		mode := info.Mode().Perm()
-		// 0o037: every world bit, plus group write (2) and group execute (1).
-		// Group read (0o040) is deliberately absent from the mask — it warns
-		// instead, see above. Worth spelling the digits out, because the first
-		// attempt at this wrote 0o027 and a comment claiming it covered group
-		// execute; 2 is write alone, and only the test for an 0o610 file said
-		// so. A permission mask is exactly the place a plausible-looking
-		// constant goes unchallenged.
-		if mode&0o037 != 0 {
-			return nil, false, fmt.Errorf(
-				"%s has weak permissions (mode %s) — someone besides its owner can write or execute "+
-					"it, or any account on this machine can read it, and it is the entire trust anchor "+
-					"for the static-token path; chmod 600 it",
-				path, mode)
-		}
-		groupReadable = mode&0o040 != 0
+	mode := info.Mode().Perm()
+	// 0o037: every world bit, plus group write (2) and group execute (1).
+	// Group read (0o040) is deliberately absent from the mask — it warns
+	// instead, see above. Worth spelling the digits out, because the first
+	// attempt at this wrote 0o027 and a comment claiming it covered group
+	// execute; 2 is write alone, and only the test for an 0o610 file said
+	// so. A permission mask is exactly the place a plausible-looking
+	// constant goes unchallenged.
+	if mode&0o037 != 0 {
+		return nil, false, fmt.Errorf(
+			"%s has weak permissions (mode %s) — someone besides its owner can write or execute "+
+				"it, or any account on this machine can read it, and it is the entire trust anchor "+
+				"for the static-token path; chmod 600 it",
+			path, mode)
 	}
+	groupReadable = mode&0o040 != 0
 	raw, err := io.ReadAll(f)
 	if err != nil {
 		return nil, groupReadable, err

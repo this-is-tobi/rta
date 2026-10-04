@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -70,13 +69,11 @@ func ServerURL(name string) (string, *view.Error) {
 	if err != nil {
 		return "", view.Errorf("core.operator.remotes", "reading %s: %v", RemotesPath(), err)
 	}
-	if runtime.GOOS != "windows" {
-		if mode := info.Mode().Perm(); mode&0o037 != 0 {
-			return "", view.Errorf("core.operator.remotes",
-				"%s has weak permissions (mode %s) — someone besides its owner can write or execute it, "+
-					"and it decides where your signed operator calls go", RemotesPath(), mode).
-				WithHint("chmod 600 " + RemotesPath())
-		}
+	if mode := info.Mode().Perm(); mode&0o037 != 0 {
+		return "", view.Errorf("core.operator.remotes",
+			"%s has weak permissions (mode %s) — someone besides its owner can write or execute it, "+
+				"and it decides where your signed operator calls go", RemotesPath(), mode).
+			WithHint("chmod 600 " + RemotesPath())
 	}
 	data, err := io.ReadAll(f)
 	if err != nil {

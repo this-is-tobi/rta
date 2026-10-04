@@ -180,9 +180,6 @@ func TestHTTPOIDCDiscoveryFailureIsRefusedAtStartup(t *testing.T) {
 }
 
 func TestHTTPRefusesAnUnreadableTokenFile(t *testing.T) {
-	if os.PathSeparator == '\\' {
-		t.Skip("POSIX permission bits do not apply")
-	}
 	path := filepath.Join(t.TempDir(), "tokens")
 	if err := os.WriteFile(path, []byte("alice tok-a-0123456789abcdef\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -259,9 +256,6 @@ func TestHTTPOperatorsRequiresACanonicalURL(t *testing.T) {
 // `-o json` got a box of prose for the mistakes a person wiring up a server
 // makes first.
 func TestServeRefusalsAreCodedInTheFormatAskedFor(t *testing.T) {
-	if os.PathSeparator == '\\' {
-		t.Skip("POSIX permission bits do not apply")
-	}
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	dir := t.TempDir()
