@@ -84,9 +84,6 @@ func upgradeCapability() plugin.Capability {
 }
 
 func runUpgradeCapability(ctx context.Context, req plugin.Request) (view.View, error) {
-	if verr := supported(); verr != nil {
-		return nil, verr
-	}
 	// As given, never trimmed: the target is this capability's record, and a
 	// record is judged as the call spells it, so " brew" is not the target a
 	// grant on brew covers nor the one a person approving the call read.

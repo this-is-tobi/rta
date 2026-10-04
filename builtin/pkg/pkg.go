@@ -58,7 +58,6 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
@@ -215,16 +214,4 @@ func Plugin() plugin.Plugin {
 			upgradeCapability(),
 		},
 	}
-}
-
-// supported says whether this platform is one the managers here know. The
-// list commands and the reboot conventions are Unix-shaped; Windows has its
-// own managers and none of the assumptions below, so it is refused plainly
-// rather than answered with an empty table.
-func supported() *view.Error {
-	if runtime.GOOS == "windows" {
-		return view.Errorf("pkg.unsupported", "pkg does not know Windows package managers yet").
-			WithHint("winget and scoop have their own shapes; this is a Unix-shaped built-in for now")
-	}
-	return nil
 }

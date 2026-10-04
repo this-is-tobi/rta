@@ -55,14 +55,10 @@ func (s osState) kernelBehind() bool {
 }
 
 func readOS(ctx context.Context) osState {
-	switch runtime.GOOS {
-	case "darwin":
+	if runtime.GOOS == "darwin" {
 		return readMacOS(ctx)
-	case "linux":
-		return readLinux(ctx)
-	default:
-		return osState{Notes: []string{runtime.GOOS + " is not read here"}}
 	}
+	return readLinux(ctx)
 }
 
 // readMacOS parses `softwareupdate --list`:
@@ -160,9 +156,6 @@ func newestInstalledKernel(ctx context.Context) string {
 }
 
 func runOS(ctx context.Context, req plugin.Request) (view.View, error) {
-	if verr := supported(); verr != nil {
-		return nil, verr
-	}
 	st := readOS(ctx)
 	p := plugin.NewPage(ctx, req)
 	p.PutAs("state", "state", osStatePairs(st))

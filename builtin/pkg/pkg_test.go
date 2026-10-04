@@ -98,9 +98,6 @@ func req(t *testing.T, capID string, values map[string]any) plugin.Request {
 // was what every format got: `-o json | jq '.rows[]'` met a text view, and -o
 // csv refused one and exited 2.
 func TestNothingToListIsATableToAParser(t *testing.T) {
-	if supported() != nil {
-		t.Skip("pkg is not supported here")
-	}
 	install(t, &fake{})
 	tools, err := toolsCapability().Run(context.Background(), req(t, "pkg.tools", nil))
 	if err != nil {
@@ -693,9 +690,6 @@ func TestAReleaseTagIsReadForTheVersionInIt(t *testing.T) {
 // the digest the release publishes is checked, the member is found under a
 // directory, and the binary lands atomically with the executable bit.
 func TestInstallToolVerifiesAndPlaces(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip()
-	}
 	archive, digest := tarGz(t, "fzf-0.55.0/fzf", "#!/bin/sh\necho new\n")
 	assetName := "fzf-0.55.0-" + runtime.GOOS + "_" + runtime.GOARCH + ".tar.gz"
 	var srv *httptest.Server
