@@ -298,6 +298,11 @@ message Capability {
   // checked only at its source carries a record from under one grant to
   // under another. Each must name a declared input, and scope must be set.
   repeated string scope_also = 21;
+  // What an agent is told about this capability beyond the summary, in place
+  // of description. Description is read at a terminal as well, and a sentence
+  // about flags, pipes and the dashboard is spent context for a model that has
+  // none of those. Empty means description serves both readers, as before.
+  string agent = 26;
   // The column of a Table, or the key of a KeyValue, that is the whole answer
   // when the answer is one value (the password a generator made, a response
   // body). A host writing to something that is not a terminal prints that

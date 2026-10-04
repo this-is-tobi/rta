@@ -759,6 +759,27 @@ type Capability struct {
 	// more words; and a keyword that is already a word of the ID is noise,
 	// which sdktest says.
 	Keywords []string
+	// Agent is what an agent is told about this capability beyond its Summary,
+	// in place of Description (AgentText).
+	//
+	// Description is read at a terminal as well as by a model, and the two do
+	// not want the same text: a person at a command line reads which flag does
+	// what and what a pipe changes, and a model has no flags and no pipe — it
+	// reads the same sentences as context it pays for on every connection,
+	// before it has decided to call anything. One description for both came out
+	// either too thin for the person or too long, and too wrong, for the
+	// model: a tool listing is rta's biggest bill in a model's context, and
+	// most of it is prose written for somebody else. Set, this is what the MCP
+	// bridge publishes after the Summary; unset, Description serves both
+	// readers as before, which is every capability written before the field
+	// existed.
+	//
+	// Worded for a reader with a tool list and an arguments schema: inputs by
+	// name, other capabilities by ID (the bridge spells them as the tools they
+	// are), and nothing about flags, `rta` command lines, pipes or the TUI.
+	// Refused on a HumanOnly capability, which is never a tool, so its agent
+	// text would be read by nobody.
+	Agent string
 	// Examples are calls worth showing beside the declaration, in `--help`
 	// and `rta explain` and wherever else the host teaches one: what a person
 	// pastes first. See Example.
@@ -895,6 +916,17 @@ func KnownNeed(n Need) bool { return slices.Contains(needs, n) }
 // wire form crosses as "no tunnel", and the far side then runs the call
 // against the plugin's own default host with nothing reporting why.
 func EndpointRoles() []EndpointRole { return slices.Clone(endpointRoles) }
+
+// AgentText is the text an agent is shown after c's Summary: what c wrote for
+// it (Agent), and Description when c wrote nothing separate. The one place the
+// choice is made, so the tool listing, the conformance suite and the budgets
+// that hold what an agent reads cannot disagree about which text that is.
+func (c Capability) AgentText() string {
+	if c.Agent != "" {
+		return c.Agent
+	}
+	return c.Description
+}
 
 // Words returns the ID split into command segments, e.g. ["pg","table","list"].
 func (c Capability) Words() []string { return strings.Split(c.ID, ".") }
