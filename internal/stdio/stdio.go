@@ -97,9 +97,8 @@ func Real() *os.File {
 	return claimed
 }
 
-// readPassword is the platform's reader for a secret's line
-// (readTerminalSecret), a var so a test can answer a prompt without a
-// terminal.
+// readPassword is the reader for a secret's line (readTerminalSecret), a var
+// so a test can answer a prompt without a terminal.
 var readPassword = readTerminalSecret
 
 // ReadSecret asks the person at the terminal for a secret: prompt on standard
@@ -115,13 +114,13 @@ var readPassword = readTerminalSecret
 // a value that may arrive pasted, so that none of them can be the one that
 // forgot to say so.
 //
-// On macOS and Linux the line is read as ReadSecretLine reads it, by rta
-// rather than by the terminal's line discipline, and for the same two
-// reasons: term.ReadPassword, which read it before, waited on after ^D on an
-// empty line, so a passphrase prompt could only be left with ^C and the
-// wait for the forced exit after it, and a line past the discipline's 1024
-// bytes on macOS never ended. ^D on an empty line is nothing typed (no
-// answer), which every caller refuses in its own words.
+// The line is read as ReadSecretLine reads it, by rta rather than by the
+// terminal's line discipline, and for the same two reasons: term.ReadPassword,
+// which read it before, waited on after ^D on an empty line, so a passphrase
+// prompt could only be left with ^C and the wait for the forced exit after it,
+// and a line past the discipline's 1024 bytes on macOS never ended. ^D on an
+// empty line is nothing typed (no answer), which every caller refuses in its
+// own words.
 func ReadSecret(prompt string) ([]byte, error) {
 	defer shutdown.Prompting()()
 	fmt.Fprint(os.Stderr, prompt)
