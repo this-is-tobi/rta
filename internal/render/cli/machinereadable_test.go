@@ -30,7 +30,7 @@ import (
 // hostile is one string per way a serializer can be wrong about it.
 var hostile = []struct{ name, value string }{
 	{"quote", `he said "hello"`},
-	{"backslash", `C:\Users\tobi\path`},
+	{"backslash", `dir\sub\file`},
 	{"both", `"\" and more`},
 	{"newline", "line one\nline two"},
 	{"tab", "col\tcol"},

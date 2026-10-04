@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -23,13 +22,10 @@ import (
 // buys less than it costs.
 func fakeClipboard(t *testing.T) (stdin string) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the stand-in is a shell script")
-	}
 	dir := t.TempDir()
 	stdin = filepath.Join(dir, "stdin")
 	script := "#!/bin/sh\ncat > " + stdin + "\n"
-	for _, name := range []string{"pbcopy", "xclip", "xsel", "wl-copy", "clip", "clip.exe", "termux-clipboard-set"} {
+	for _, name := range []string{"pbcopy", "xclip", "xsel", "wl-copy", "clip.exe", "termux-clipboard-set"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -281,9 +277,6 @@ func TestPressingCOnACapabilityWithNoCopySpecDoesNothing(t *testing.T) {
 // No clipboard program on the machine: the failure is surfaced, not
 // swallowed — matching kv.copy's own precedent for this exact condition.
 func TestPressingCWithNoClipboardProgramFlashesTheFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH semantics differ")
-	}
 	t.Setenv("PATH", t.TempDir())
 	m := New(registry.New(), config.Dashboard{}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
