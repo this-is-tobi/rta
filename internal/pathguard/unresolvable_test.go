@@ -50,7 +50,7 @@ func TestAnUnresolvableLinkIsJudgedByWhereItPoints(t *testing.T) {
 			link := filepath.Join(root, "key")
 			_ = os.Remove(link)
 			if err := os.Symlink(c.target, link); err != nil {
-				t.Skipf("symlinks unavailable: %v", err)
+				t.Fatal(err)
 			}
 			answer := func(present bool) string {
 				c.present(present)
@@ -77,7 +77,7 @@ func TestALinkLoopIsUnresolvable(t *testing.T) {
 	g, root := rooted(t)
 	a, b := filepath.Join(root, "a"), filepath.Join(root, "b")
 	if err := os.Symlink(b, a); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 	if err := os.Symlink(a, b); err != nil {
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func TestADanglingLinkInsideTheRootIsAllowedWhereItPoints(t *testing.T) {
 	g, root := rooted(t)
 	link := filepath.Join(root, "latest")
 	if err := os.Symlink(filepath.Join("reports", "2026.md"), link); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 	got, verr := g.Check("path", link)
 	if verr != nil {

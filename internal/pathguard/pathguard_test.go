@@ -105,7 +105,7 @@ func TestASymlinkOutOfTheRootIsRefused(t *testing.T) {
 	// A link to the file itself.
 	link := filepath.Join(root, "innocent.txt")
 	if err := os.Symlink(secret, link); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 	if _, err := g.Check("path", link); err == nil {
 		t.Error("a symlink to a file outside the root was allowed")
