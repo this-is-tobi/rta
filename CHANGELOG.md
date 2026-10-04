@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.35.0](https://github.com/this-is-tobi/rta/compare/v0.34.0...v0.35.0) (2026-10-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **host:** rta is no longer supported on Windows.
+
+### Code Refactoring
+
+* **app:** doctor, plugin dev, scaffold and the app's tests stop making room for Windows ([453db0b](https://github.com/this-is-tobi/rta/commit/453db0b5682d90080ec5c8cbb90edf25d91eed70))
+* **app:** the client scan stops matching rta.exe, and a skip no platform reaches goes ([cf1e282](https://github.com/this-is-tobi/rta/commit/cf1e2826b3aa5c53de7f90b494081d80fca749c9))
+* **atomicfile:** rename and open once, with no wait for a refusal that clears ([710139c](https://github.com/this-is-tobi/rta/commit/710139c871e25204223533350b03a342578686b6))
+* **audit:** drop the Windows client paths and the %VAR% reference form ([324cd45](https://github.com/this-is-tobi/rta/commit/324cd45ce1060b0c9eb35f6363b367e10600bce6))
+* **builtin:** drop the Windows skips, build tags and wording from the other packages ([5fc668c](https://github.com/this-is-tobi/rta/commit/5fc668c010ef755094e4f2509f1ff33d6bba6a29))
+* **builtin:** fail where a pipe or a link cannot be made, and name only the slash ([587d4ac](https://github.com/this-is-tobi/rta/commit/587d4ac436b5b4c407829ca16714bbc516c01640))
+* **clipboard:** put a program in its own process group and nothing else ([05c1bb3](https://github.com/this-is-tobi/rta/commit/05c1bb3543c0f68ec5bf80cfa61f8f6feae6342b))
+* **filelock:** remove and break a stale lock once, with no wait for a sharing refusal ([38063a8](https://github.com/this-is-tobi/rta/commit/38063a839c05169bafabbda3a9ca2146a68eb0d4))
+* **fs:** fold the platform split into stat.go and drop the build tags ([cc5683f](https://github.com/this-is-tobi/rta/commit/cc5683f828c1d279a0148990df39dd46521cc6cb))
+* **git:** drop the non-unix fallbacks and the volume handling ([f1f999e](https://github.com/this-is-tobi/rta/commit/f1f999ed739cdcd7916360343ead57bc233ae8c0))
+* **git:** make the named pipes and links the tests need a failure, not a skip ([2f43a54](https://github.com/this-is-tobi/rta/commit/2f43a54071a3167675d5bcff74e798f387f6db41))
+* **host:** signals, process groups, forwards and terminals keep only their unix half ([e378b25](https://github.com/this-is-tobi/rta/commit/e378b25470ce94fda28da408243a482e6eab8b3f))
+* **keys:** grade key file permissions without a platform carve-out ([19baa31](https://github.com/this-is-tobi/rta/commit/19baa31f519e89f250d49999fe6a5319dc36aacc))
+* **kv:** drop the notepad fallback and the Windows test skips ([19ff8b7](https://github.com/this-is-tobi/rta/commit/19ff8b7b1c58600cc4737118a0f68c0faead0194))
+* **kv:** drop the platform that cannot read on from the multi-line paste comment ([670c688](https://github.com/this-is-tobi/rta/commit/670c688de88c9adab6dd0b20bd6f35ea284a8fb0))
+* **lockdown:** the recovery hint, two tests and three package docs name no Windows ([462e7d1](https://github.com/this-is-tobi/rta/commit/462e7d1d28687a45b6c08997275cc6cfc37a9f62))
+* **mcp:** the token file, the roster and the remotes list are mode-checked unconditionally ([27700e2](https://github.com/this-is-tobi/rta/commit/27700e20b98514bfd7ed95834c065784b737f124))
+* **notify:** pick the notifier by darwin against everything else ([99dd048](https://github.com/this-is-tobi/rta/commit/99dd04836f006c2e306a7e67489bad01063b97d7))
+* **pathguard:** judge paths as a unix path alone, with no volumes, drives or shares ([2f195f0](https://github.com/this-is-tobi/rta/commit/2f195f08a9d57280c1a2b28e84a735e909695fd5))
+* **pkg:** drop the Windows refusal and the unknown-OS fallback ([52fad77](https://github.com/this-is-tobi/rta/commit/52fad77e45e6f979652f942277363ce916d1aef5))
+* **plugindist:** place an artifact with one rename and one symlink ([d3138e0](https://github.com/this-is-tobi/rta/commit/d3138e04bc0f5ba329daa524c57744bd57c8ceb6))
+* **pluginhost:** one launch path for Linux and macOS ([f530c05](https://github.com/this-is-tobi/rta/commit/f530c05b04c45e1c202c87c13dcf99fd01cf1f20))
+* **render:** complete a typed path at the platform separator alone ([cac9834](https://github.com/this-is-tobi/rta/commit/cac98344505d5986515dedc56822cbbf996c6c3d))
+* **sdk:** read dials, certificates and ~ paths as Linux and macOS give them ([8c9323d](https://github.com/this-is-tobi/rta/commit/8c9323da458fdd0c2c24de923aa84fcb88444943))
+* **sdk:** rewrap the UseVerifierSystem comment ([3a75720](https://github.com/this-is-tobi/rta/commit/3a75720bb59d5a72d0cee818b9ba0a293303603a))
+* **stdio:** drop the comment clauses for a system whose terminal rta cannot set ([b843f6c](https://github.com/this-is-tobi/rta/commit/b843f6c50d090cffc3c25e9a9d71eb969e0d2f43))
+* **stdio:** read a secret through the terminal's own settings on every platform ([cd28e4b](https://github.com/this-is-tobi/rta/commit/cd28e4be4885c740d68b8700dfc99d82675938de))
+* **textclean:** hold a tracked file's carriage return to the same rule as a bare one ([cf5b63b](https://github.com/this-is-tobi/rta/commit/cf5b63bc8c357cf1ab8d05dc27393692a784e559))
+* two comments stop describing a platform rta no longer runs on ([970c1fc](https://github.com/this-is-tobi/rta/commit/970c1fcc8d33561831e90335d4359da1df06954a))
+
+
+### Dependencies
+
+* rta is no longer built, tested or released for Windows ([7756566](https://github.com/this-is-tobi/rta/commit/7756566b07573e13eecfec5ccff97247a49db04b))
+* **rta:** the binary builds only on unix, so a Windows build stops at once ([494c2ee](https://github.com/this-is-tobi/rta/commit/494c2ee82fffc42f9511a0d210622624e14c3a7c))
+* **rta:** the binary names the two systems it builds on, so any other build stops at once ([f93e353](https://github.com/this-is-tobi/rta/commit/f93e35375c21bd2b843f9bd5995894e8493228e6))
+
 ## [0.34.0](https://github.com/this-is-tobi/rta/compare/v0.33.0...v0.34.0) (2026-10-04)
 
 
