@@ -44,16 +44,13 @@ func Plugin() plugin.Plugin {
 				// question, bounded by construction.
 				NoPreview: true,
 				Description: "Totals every entry under a path and ranks them. Directories are summed " +
-					"recursively; the share column is of the scanned total, not of the disk, so it " +
-					"adds up to what you are looking at. A size is the disk a file takes, as du " +
-					"counts it: a sparse file by what is written, and a file with several hard " +
-					"links once, where it is first met; `apparent` counts lengths instead. " +
-					"Hidden entries are included — they are " +
-					"usually the answer. With `detail`: the ranking, the largest individual files " +
-					"found anywhere beneath, and what was skipped. Follows no symlinks and crosses " +
-					"no filesystem boundary, so a scan cannot loop or wander onto a network mount. A name that " +
-					"holds an escape, a newline or another character that does not draw as itself is shown quoted " +
-					"with it written out, never cleaned into another name.",
+					"recursively; the share column is of the scanned total, not of the disk. A size is the disk a " +
+					"file takes, as du counts it: a sparse file by what is written, a file with several hard links " +
+					"once; `apparent` counts lengths instead. Hidden entries are included, they are usually the " +
+					"answer. With `detail`: the ranking, the largest individual files found anywhere beneath, and " +
+					"what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop " +
+					"or wander onto a network mount. A name holding an escape, a newline or another character that " +
+					"does not draw as itself is shown quoted with it written out, never cleaned into another name.",
 				Inputs: []plugin.Field{
 					pathField("directory to measure"),
 					{Name: "limit", Type: plugin.Int, Config: "limit", Default: 20, Min: 1, Max: 1000, Help: "how many entries to rank"},
