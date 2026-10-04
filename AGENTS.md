@@ -28,6 +28,7 @@ Breaking changes are welcome when they buy security, performance, binary size or
 - No comments explaining *what* code does — names should already say that. When the *why* is genuinely non-obvious (a hidden constraint, a bug a naive reading would reintroduce, a tradeoff a future reader would otherwise redo from scratch), write it, at whatever length that takes. This codebase's own comments are the calibration: they run long when the reasoning is long. Read a few near what you're touching before adding your own, and match their depth rather than defaulting to a one-liner.
 - Match existing patterns before introducing a new one. If two approaches already coexist in the codebase, ask which is preferred rather than adding a third.
 - Errors are `*view.Error` (`pkg/view`), named by a dotted code and addressed to whoever can act on the message — not a generic wrapped `error`.
+- The platforms are macOS and Linux, on `amd64` and `arm64`, and nothing else. Don't write a branch, a build tag, a test skip or a fallback for another operating system, and don't keep one "in case": the only operating-system difference that exists here is Linux against macOS.
 
 ## Before implementing
 
