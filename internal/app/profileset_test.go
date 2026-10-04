@@ -916,9 +916,6 @@ func TestWritingWhereProfilesAreNotHonouredIsRefused(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("RTA_DATA_DIR", filepath.Join(dir, "data"))
-	if config.TrustedPath() {
-		t.Skip("this platform still finds a config directory, so there is nothing to refuse")
-	}
 
 	reg := setRegistry(t)
 	SetInstalled(reg)

@@ -59,7 +59,7 @@ func rtaEntry(servers any) (string, bool) {
 		}
 		cmd, _ := entry["command"].(string)
 		args, _ := entry["args"].([]any)
-		if name == "rta" || strings.HasSuffix(cmd, "/rta") || cmd == "rta" || filepath.Base(cmd) == "rta.exe" {
+		if name == "rta" || strings.HasSuffix(cmd, "/rta") || cmd == "rta" {
 			return asFromArgs(args), true
 		}
 	}
