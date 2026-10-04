@@ -80,7 +80,7 @@ func TestRtasOwnStateIsNotReadUnbounded(t *testing.T) {
 	fset := token.NewFileSet()
 
 	for _, pkg := range stateReaders {
-		dir := filepath.Join(root, filepath.FromSlash(pkg))
+		dir := filepath.Join(root, pkg)
 		files, err := filepath.Glob(filepath.Join(dir, "*.go"))
 		if err != nil {
 			t.Fatal(err)
@@ -119,7 +119,7 @@ func TestRtasOwnStateIsNotReadUnbounded(t *testing.T) {
 					"a same-uid process put there, before any seal or MAC is checked — "+
 					"one large write is enough to take out the process that reads it. "+
 					"Use atomicfile.ReadCapped with a cap sized to what rta writes.",
-					filepath.ToSlash(rel), fset.Position(call.Pos()).Line)
+					rel, fset.Position(call.Pos()).Line)
 				return true
 			})
 		}
@@ -134,7 +134,7 @@ func TestOperatorOwnedFilesAreNotOpenedWithOsOpen(t *testing.T) {
 	root := repoRoot(t)
 	fset := token.NewFileSet()
 	for _, target := range waitingOpeners {
-		full := filepath.Join(root, filepath.FromSlash(target))
+		full := filepath.Join(root, target)
 		files := []string{full}
 		if filepath.Ext(full) != ".go" {
 			var err error
@@ -166,7 +166,7 @@ func TestOperatorOwnedFilesAreNotOpenedWithOsOpen(t *testing.T) {
 					rel, _ := filepath.Rel(root, path)
 					t.Errorf("%s:%d: os.%s waits for a writer on a named pipe put in the file's place; "+
 						"use atomicfile.Open, ReadFile or ReadCapped",
-						filepath.ToSlash(rel), fset.Position(call.Pos()).Line, sel.Sel.Name)
+						rel, fset.Position(call.Pos()).Line, sel.Sel.Name)
 				}
 				return true
 			})

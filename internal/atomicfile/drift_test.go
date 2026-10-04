@@ -59,7 +59,7 @@ func TestPersistentStateIsNotWrittenWithOsWriteFile(t *testing.T) {
 		if rerr != nil {
 			return rerr
 		}
-		if _, ok := allowed[filepath.ToSlash(rel)]; ok {
+		if _, ok := allowed[rel]; ok {
 			return nil
 		}
 		// Parsed rather than grepped: this package's own doc comments argue
@@ -87,7 +87,7 @@ func TestPersistentStateIsNotWrittenWithOsWriteFile(t *testing.T) {
 				"atomicfile.Write, or atomicfile.Publish for a file that must be "+
 				"created once and never replaced. If this really is scratch, say so "+
 				"in atomicfile's allowed map.",
-				filepath.ToSlash(rel), fset.Position(call.Pos()).Line)
+				rel, fset.Position(call.Pos()).Line)
 			return true
 		})
 		return nil
@@ -104,7 +104,7 @@ func TestEveryExemptionIsStillNeeded(t *testing.T) {
 	root := repoRoot(t)
 	fset := token.NewFileSet()
 	for rel := range allowed {
-		path := filepath.Join(root, filepath.FromSlash(rel))
+		path := filepath.Join(root, rel)
 		file, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			t.Errorf("%s is exempted but cannot be read: %v", rel, err)

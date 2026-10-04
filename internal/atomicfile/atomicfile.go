@@ -24,7 +24,6 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
-	"time"
 
 	"github.com/this-is-tobi/rta/internal/shutdown"
 )
@@ -60,11 +59,8 @@ import (
 // plugin, took 2 ms and up to 57 MB of memory, against 0.3 ms and 6 MB read
 // as they are now. And the slice handed back kept the whole buffer alive for
 // as long as its caller held it.
-//
-// The open itself waits out a platform that refuses it for a reason that
-// resolves on its own — see waitingOut.
 func ReadCapped(path string, max int) ([]byte, error) {
-	f, err := openWaiting(path)
+	f, err := openRegular(path)
 	if err != nil {
 		return nil, err
 	}
@@ -79,16 +75,8 @@ func ReadCapped(path string, max int) ([]byte, error) {
 	return data, nil
 }
 
-// openFile is openRegular and lstatFile is os.Lstat, overridable so a test can
-// refuse a read or a check the way Windows refuses one while another handle is
-// open — see waitingOut.
-var (
-	openFile  = openRegular
-	lstatFile = os.Lstat
-)
-
 // errNotRegular is the refusal of a path that names something other than a
-// regular file: a refusal that does not clear, so it is not waited out.
+// regular file.
 var errNotRegular = errors.New("is not a regular file")
 
 // openRegular opens path to read, if it names a regular file, and never waits
@@ -159,144 +147,13 @@ func OpenAppend(path string, perm fs.FileMode) (*os.File, error) {
 	return f, nil
 }
 
-// waitingOut runs a query about a path until the platform stops refusing it for
-// a reason that resolves on its own.
-//
-// **On Windows a read of a file rta is also writing is refused, and nothing is
-// wrong when it happens.** Two shapes, both of them seen in CI the first time
-// this package's tests ran on Windows at all:
-//
-//   - "The process cannot access the file because it is being used by another
-//     process." os.Chtimes is CreateFile with FILE_WRITE_ATTRIBUTES and
-//     FILE_SHARE_WRITE alone (syscall.UtimesNano), and the share check runs in
-//     both directions — so for as long as a lock holder's heartbeat is
-//     restamping its sentinel, microseconds once per beat, every reader's open
-//     is refused. filelock's beat already documented the mirror image of this,
-//     a stamp refused because a reader holds the file; the reader's side of the
-//     same instant was still being reported as a failure.
-//   - "Access is denied." A file deleted while any handle is still open is not
-//     gone, it is delete-pending, and every query about it until the last
-//     handle closes is refused with this rather than with ENOENT. The stat
-//     family opens sharing delete, so one concurrent Stat — Acquire polls one,
-//     Publish's own check is one — is enough: the holder's release succeeds, the
-//     file stops being reachable without yet being absent, and a caller written
-//     to expect "gone" gets a hard error instead.
-//
-// Both clear in microseconds, and both reached the operator. A contended lock
-// acquire came back as "acquiring lock: reading grants.lock: Access is denied"
-// instead of going round again, and plugintrust's read — which treats any
-// failure as an empty list — would have answered that nothing is trusted.
-//
-// A missing file, and one that is not a regular file, are returned on the first
-// attempt rather than waited out, because each is an answer and not a refusal:
-// Publish's contract rests on "it existed for the Link and was gone for the
-// Read" arriving at once, and pacing that would put this whole budget between
-// every contended acquire and its retry. Every other error is retried, for the
-// reason Replace gives — naming a sharing violation means naming a platform's
-// error numbers in a path that runs on all of them — and a lasting refusal
-// costs under a second before it is reported unchanged.
-func waitingOut(query func() error) error {
-	var err error
-	for _, wait := range contendedWaits {
-		if wait > 0 {
-			time.Sleep(wait)
-		}
-		if err = query(); err == nil {
-			return nil
-		}
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, errNotRegular) {
-			return err
-		}
-	}
-	return err
-}
-
-// openWaiting is os.Open, waiting out a refusal that clears.
-func openWaiting(path string) (*os.File, error) {
-	var f *os.File
-	err := waitingOut(func() error {
-		var oerr error
-		f, oerr = openFile(path)
-		return oerr
-	})
-	return f, err
-}
-
-// lstatWaiting is os.Lstat, waiting out the same refusal, because a
-// delete-pending file has no attributes to query either: GetFileAttributesEx is
-// refused, and so is the CreateFile os.Lstat falls back to when it is. Publish
-// checks what is at the path before reading it, and that check failing where the
-// read no longer does would leave the same bug one syscall earlier.
-func lstatWaiting(path string) (os.FileInfo, error) {
-	var info os.FileInfo
-	err := waitingOut(func() error {
-		var serr error
-		info, serr = lstatFile(path)
-		return serr
-	})
-	return info, err
-}
-
-// rename is os.Rename, overridable so a test can refuse a replace the way
-// Windows refuses one while the target is open — see Replace.
+// rename is os.Rename, overridable so a test can hold a write between its
+// temporary file and its rename (internal/shutdown).
 var rename = os.Rename
 
 // link is os.Link, overridable so a test can make a publish fail for a reason
 // of the filesystem's own rather than for a race — see Publish.
 var link = os.Link
-
-// contendedWaits paces an operation the platform may refuse for a reason that
-// is nobody's fault, and a var rather than a literal only so a test can shrink
-// it. One budget for Replace and for the queries waitingOut paces, because they
-// are the two sides of one refusal: the rename that cannot delete a file
-// somebody has open, and the open that cannot read a file somebody is renaming.
-var contendedWaits = []time.Duration{
-	0, 5 * time.Millisecond, 10 * time.Millisecond, 20 * time.Millisecond,
-	50 * time.Millisecond, 100 * time.Millisecond, 200 * time.Millisecond,
-	400 * time.Millisecond,
-}
-
-// Replace renames from onto to, waiting out a platform that will not let go.
-//
-// os.Rename on Windows is MoveFileEx with MOVEFILE_REPLACE_EXISTING, which
-// has to delete the destination to put something else in its place — and
-// every handle os.Open takes shares read and write but not delete
-// (syscall.Open's share mode), so anything with the target open refuses the
-// replace outright: rta's own reader, a virus scanner that opened the file a
-// millisecond after the last write, a backup agent, the search indexer.
-// Nothing is wrong when that happens and it does not happen every time,
-// which is the worst shape a bug can have on somebody else's machine — and
-// it sat on the two paths this package's own doc names as the hottest, the
-// config file on every dashboard keystroke and the grant lock on every gated
-// call. internal/plugindist met the same refusal placing a binary a process
-// had just finished running, and waited it out; this is that wait, for every
-// replace rta makes.
-//
-// Every error is retried, not only the sharing violation, because naming
-// that error means naming a platform's error numbers in a path that runs on
-// all of them. A permanent failure costs under a second before it is
-// reported unchanged, and the temporary file is still sitting there
-// untouched the whole time, so a retry can never make things worse.
-func Replace(from, to string) error {
-	var err error
-	for _, wait := range contendedWaits {
-		if wait > 0 {
-			time.Sleep(wait)
-		}
-		if err = rename(from, to); err == nil {
-			return nil
-		}
-		// A directory where the file goes is no handle that will be closed in a
-		// moment: nothing resolves it by waiting, on any platform. It cost the
-		// whole of the waits above on every replace, and the record's end mark
-		// is replaced after every call an agent makes, so a directory left at
-		// its name cost each call nearly a second.
-		if info, statErr := os.Lstat(to); statErr == nil && info.IsDir() {
-			return err
-		}
-	}
-	return err
-}
 
 // WriteFrom is Write for a stream: the same temporary-file-then-rename in
 // the target's own directory, the same enforced perm, without holding the
@@ -336,7 +193,7 @@ func WriteFrom(path string, r io.Reader, perm fs.FileMode) error {
 	if err := os.Chmod(tmp.Name(), perm); err != nil {
 		return fmt.Errorf("setting permissions on %s: %w", tmp.Name(), err)
 	}
-	if err := Replace(tmp.Name(), path); err != nil {
+	if err := rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("replacing %s: %w", path, err)
 	}
 	return nil
@@ -387,7 +244,7 @@ func Write(path string, data []byte, perm fs.FileMode) error {
 	if err := os.Chmod(tmp.Name(), perm); err != nil {
 		return fmt.Errorf("setting permissions on %s: %w", tmp.Name(), err)
 	}
-	if err := Replace(tmp.Name(), path); err != nil {
+	if err := rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("replacing %s: %w", path, err)
 	}
 	return nil
@@ -481,7 +338,7 @@ func Publish(path string, data []byte, perm fs.FileMode, max int) ([]byte, error
 		// below every time, spinning to the same false "gave up" error a
 		// genuinely contended publish would give. Lstat, which does not
 		// follow, is what tells the two apart before either can happen.
-		info, serr := lstatWaiting(path)
+		info, serr := os.Lstat(path)
 		if serr != nil {
 			if !os.IsNotExist(serr) {
 				return nil, fmt.Errorf("checking %s: %w", path, serr)
@@ -493,9 +350,7 @@ func Publish(path string, data []byte, perm fs.FileMode, max int) ([]byte, error
 			// some network mounts) reached the retry-exhaustion message below
 			// instead, which told the operator about a race against a process
 			// that does not exist rather than about the disk their data
-			// directory is on. fs.ErrExist is what Link's error answers to on
-			// every platform rta ships for, EEXIST and ERROR_ALREADY_EXISTS
-			// alike.
+			// directory is on. fs.ErrExist is what Link's EEXIST answers to.
 			if !errors.Is(lerr, fs.ErrExist) {
 				return nil, fmt.Errorf("publishing %s: %w", path, lerr)
 			}
