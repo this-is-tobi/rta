@@ -629,7 +629,10 @@ func (c Capability) validate(ns string) error {
 	if err := checkEndpoints(c); err != nil {
 		return err
 	}
-	return checkArguments(c)
+	if err := checkArguments(c); err != nil {
+		return err
+	}
+	return checkExamples(c)
 }
 
 // keywordRe is a search word: one lowercase word, digits and inner hyphens

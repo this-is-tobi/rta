@@ -329,6 +329,30 @@ func FieldFromProto(f *rtav1.Field) (plugin.Field, bool) {
 	}, ok
 }
 
+// ExampleToProto encodes one example call. Its values cross as a declared
+// default's do, so an example reads the same on both sides of the wire.
+func ExampleToProto(e plugin.Example) *rtav1.Example {
+	values := make(map[string]*rtav1.Value, len(e.Inputs))
+	for name, v := range e.Inputs {
+		values[name] = ValueToProto(v)
+	}
+	return &rtav1.Example{Title: e.Title, Values: values}
+}
+
+// ExampleFromProto decodes one. An example giving no inputs comes back with
+// none, nil rather than empty, so a declaration round-trips equal to what its
+// author wrote.
+func ExampleFromProto(e *rtav1.Example) plugin.Example {
+	var inputs map[string]any
+	if len(e.GetValues()) > 0 {
+		inputs = make(map[string]any, len(e.GetValues()))
+		for name, v := range e.GetValues() {
+			inputs[name] = ValueFromProto(v)
+		}
+	}
+	return plugin.Example{Title: e.GetTitle(), Inputs: inputs}
+}
+
 // CapabilityToProto encodes one capability declaration.
 //
 // Run, Prefill and Suggest do not cross — they are what the service's methods
@@ -353,6 +377,7 @@ func CapabilityToProto(c plugin.Capability) *rtav1.Capability {
 		HumanOnly:    c.HumanOnly,
 		Reveals:      c.Reveals,
 		Keywords:     c.Keywords,
+		Examples:     mapSlice(c.Examples, ExampleToProto),
 		Primary:      c.Primary,
 		Actions:      mapSlice(c.Actions, ActionToProto),
 		Toggles:      mapSlice(c.Toggles, ToggleToProto),
@@ -410,6 +435,7 @@ func CapabilityFromProto(c *rtav1.Capability) (plugin.Capability, []string) {
 		HumanOnly:    c.GetHumanOnly(),
 		Reveals:      c.GetReveals(),
 		Keywords:     c.GetKeywords(),
+		Examples:     mapSlice(c.GetExamples(), ExampleFromProto),
 		Primary:      c.GetPrimary(),
 		Actions:      mapSlice(c.GetActions(), ActionFromProto),
 		Toggles:      mapSlice(c.GetToggles(), ToggleFromProto),

@@ -28,6 +28,7 @@ package spelling
 import (
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -435,7 +436,7 @@ type Text struct {
 // at once — `rta explain` and --help, the TUI's form and its footer, an
 // agent's tool list — in the order p declares it: the plugin's summary, and
 // each capability's summary, description, inputs' help, and the labels of
-// its actions and toggles. None of it has a surface to ask which one is
+// its actions and toggles, and the titles of its examples. None of it has a surface to ask which one is
 // reading, so it names an input as `key` and a capability by its ID.
 func Declared(p plugin.Plugin) []Text {
 	out := []Text{{ID: p.Name, Where: "summary", Text: p.Summary}}
@@ -453,6 +454,9 @@ func Declared(p plugin.Plugin) []Text {
 		}
 		for _, tg := range c.Toggles {
 			add("toggle "+tg.Key, tg.Label)
+		}
+		for i, e := range c.Examples {
+			add("title of example "+strconv.Itoa(i+1), e.Title)
 		}
 	}
 	return out
