@@ -1866,7 +1866,7 @@ func TestALinkTheCallerNamedIsReportedBesideTheSubstitution(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join("run", "stub-resolv.conf"), filepath.Join(root, "resolv.conf")); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 	if err := os.Symlink("run", filepath.Join(root, "alias")); err != nil {
 		t.Fatal(err)
@@ -1933,7 +1933,7 @@ func TestALinkIsDescribedOnlyByNamesTheCallerMayRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(stub, filepath.Join(outside, "hop")); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join(outside, "hop"), filepath.Join(root, "resolv.conf")); err != nil {
 		t.Fatal(err)
@@ -1991,7 +1991,7 @@ func TestResolverListOverMCPSaysTheFileNamedIsALink(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join("run", "stub-resolv.conf"), filepath.Join(root, "resolv.conf")); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 	reg, err := all.Registry(nil)
 	if err != nil {
