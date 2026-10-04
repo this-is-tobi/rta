@@ -130,35 +130,46 @@ func TestADeclinedCallIsRefusedWithTheOperatorsAnswer(t *testing.T) {
 	}
 }
 
-func TestNobodyAnsweringRefusesExactlyAsBefore(t *testing.T) {
-	// The degradation promise: with consent on and nobody there, the agent
-	// gets the same refusal it would have got with consent off.
+func TestNobodyAnsweringIsToldSo(t *testing.T) {
+	// An unanswered question is not an unissued grant. The agent used to hear
+	// "no active grant", which reads as the operator's no and sends it to ask
+	// for a permission when what is missing is somebody at the machine.
+	//
+	// A whole second, because a request's window is read off two whole-second
+	// timestamps and a shorter wait is one or zero of them by the clock's luck.
 	s := connect(t, Options{
 		Consent:     true,
-		ConsentWait: 300 * time.Millisecond,
+		ConsentWait: time.Second,
 	})
 	res := callTool(t, s, "demo_item_reveal", map[string]any{"key": "db-password"})
 	if !res.IsError {
 		t.Fatal("a call nobody answered went through")
 	}
 	text := res.Content[0].(*sdk.TextContent).Text
-	if !strings.Contains(text, "core.grant.required") {
-		t.Fatalf("the refusal changed shape: %s", text)
+	if !strings.Contains(text, "core.consent.expired") || strings.Contains(text, "core.grant.required") {
+		t.Fatalf("the refusal does not say the question went unanswered: %s", text)
 	}
-	if !strings.Contains(text, "rta grant allow") {
-		t.Fatalf("the refusal lost its hint: %s", text)
+	if !strings.Contains(text, "the operator did not answer within 1s") {
+		t.Fatalf("the refusal does not say how long the operator had: %s", text)
+	}
+	if !strings.Contains(text, "if they are at the machine, ask them to answer, then retry") {
+		t.Fatalf("the refusal does not say what to do next: %s", text)
+	}
+	// A hint the agent can relay is the person's to act on; the grant command
+	// belongs to a refusal nobody was asked about.
+	if strings.Contains(text, "rta grant allow") {
+		t.Fatalf("an unanswered question handed out the grant command: %s", text)
 	}
 	// And the request is not left behind for somebody to answer later.
 	pending, _ := consent.Pending()
 	if len(pending) != 0 {
 		t.Fatalf("%d requests outlived the call", len(pending))
 	}
-	// The agent sees the unchanged refusal above; the ledger tells the
-	// operator what actually happened, under the expiry's own code rather
-	// than the question's.
+	// The record and the agent describe the same event, under the expiry's own
+	// code rather than the question's.
 	entries, _ := agentlog.Read(0)
 	if len(entries) != 1 || entries[0].Code != "core.consent.expired" ||
-		entries[0].Outcome != agentlog.Refused {
+		entries[0].Outcome != agentlog.Refused || entries[0].Reason != "nobody answered within 1s" {
 		t.Fatalf("the expiry is misrecorded: %+v", entries)
 	}
 }

@@ -54,13 +54,13 @@ type Options struct {
 
 	// Consent turns on just-in-time consent: a call the grant
 	// gate refuses for want of a grant is parked, the operator is asked,
-	// and it proceeds or is refused with the answer they gave.
+	// and it proceeds or is refused with the answer they gave, or with the
+	// news that nobody gave one (core.consent.expired).
 	//
 	// Off by default, and the default is the important half: a parked call
 	// in a server nobody is watching is worse than a refusal, and an
 	// operator running headless has said by their absence that there is
-	// nobody to ask. With it off, every refusal is exactly what it is
-	// today.
+	// nobody to ask. With it off, every refusal is the gate's own.
 	//
 	// It never widens the surface. A HumanOnly capability is not a tool at
 	// all, and no amount of asking makes it one; this answers the grant
