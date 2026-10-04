@@ -666,11 +666,11 @@ func wouldSet(key, kind string, value []byte) view.View {
 // whatever it holds: the first line of a kubeconfig is a value of its own to
 // look at, and not the one pasted.
 //
-// Where the prompt cannot read on — not macOS or Linux, or a paste slower
-// than the moment it waits — the rest still goes on, and nothing here can
-// take those lines back. A first line that only opens a value is never one on
-// its own, though, so it is refused rather than stored as though it were the
-// whole, and the refusal says where the rest may have gone.
+// A paste slower than the moment the prompt waits still has the rest go on,
+// and nothing here can take those lines back. A first line that only opens a
+// value is never one on its own, though, so it is refused rather than stored
+// as though it were the whole, and the refusal says where the rest may have
+// gone.
 func askValue(req plugin.Request, key string) ([]byte, *view.Error) {
 	if !canPrompt(req) {
 		return nil, nil
