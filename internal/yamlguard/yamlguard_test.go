@@ -111,7 +111,7 @@ func TestEveryYAMLDecodeIsGuarded(t *testing.T) {
 	fset := token.NewFileSet()
 
 	for _, pkg := range decoders {
-		dir := filepath.Join(root, filepath.FromSlash(pkg))
+		dir := filepath.Join(root, pkg)
 		files, err := filepath.Glob(filepath.Join(dir, "*.go"))
 		if err != nil {
 			t.Fatal(err)
@@ -166,7 +166,7 @@ func TestEveryYAMLDecodeIsGuarded(t *testing.T) {
 						"yamlguard.RefuseAnchors — a few hundred bytes of nested anchors expand into "+
 						"tens of gigabytes during the decode, and the decode is where the expansion "+
 						"happens, so the guard has to run before it.",
-						filepath.ToSlash(rel), fset.Position(fn.Pos()).Line, fn.Name.Name)
+						rel, fset.Position(fn.Pos()).Line, fn.Name.Name)
 				}
 			}
 		}
