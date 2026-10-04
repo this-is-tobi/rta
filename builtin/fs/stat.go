@@ -1,5 +1,3 @@
-//go:build !windows
-
 package fs
 
 import (
@@ -7,10 +5,15 @@ import (
 	"syscall"
 )
 
-// deviceOfInfo reads the device number out of the stat result. Available on
-// every unix Go builds for; the assertion is comma-ok anyway, because a
-// FileInfo from something other than the OS filesystem carries a different
-// Sys().
+// Crossing a filesystem boundary turns "what is using space here" into a
+// different question, and sometimes into a hang: descending into a network
+// mount, or into /proc, counts space that is not on this device and may not
+// answer at all. The device number is how a scan tells, and where a FileInfo
+// has none the check degrades to "always the same device".
+
+// deviceOfInfo reads the device number out of the stat result. The assertion
+// is comma-ok because a FileInfo from something other than the OS filesystem
+// carries a different Sys().
 func deviceOfInfo(info os.FileInfo) (uint64, bool) {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
@@ -36,4 +39,19 @@ func diskUsage(info os.FileInfo) (size int64, id fileID, shared bool) {
 	}
 	//nolint:unconvert,gosec // Dev, Ino and Nlink are different widths and signs on darwin and linux; they are identities compared for equality, and a count compared with one.
 	return int64(st.Blocks) * 512, fileID{uint64(st.Dev), uint64(st.Ino)}, st.Nlink > 1
+}
+
+// sameDevice reports whether an entry lives on the filesystem the scan
+// started on. A scanner that could not determine its own device does not
+// exclude anything — refusing to descend where the answer is unavailable
+// would silently report zero.
+func (s *scanner) sameDevice(info os.FileInfo) bool {
+	if s.device == 0 {
+		return true
+	}
+	dev, ok := deviceOfInfo(info)
+	if !ok {
+		return true
+	}
+	return dev == s.device
 }
