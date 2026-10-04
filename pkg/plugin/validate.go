@@ -217,6 +217,9 @@ func (c Capability) validate(ns string) error {
 		return fmt.Errorf("capability %q: declares NeedsGrant and HumanOnly; a capability that is never a tool "+
 			"has no call for a grant to cover", c.ID)
 	}
+	if err := checkReveals(c); err != nil {
+		return err
+	}
 	scoped := c.Scope == ""
 	seenInputs := map[string]bool{}
 	for _, f := range c.Inputs {
@@ -612,6 +615,39 @@ func (c Capability) validate(ns string) error {
 		return err
 	}
 	return checkArguments(c)
+}
+
+// checkReveals couples a reveal to the gate that already exists, so that
+// declaring one cannot be a way around it.
+//
+// Not Read: handing back the value another view withholds is the sensitive
+// act, and a Read capability is the class that needs nobody's say-so — the
+// bridge would run it for any registered agent with no grant. And one of the
+// two ways a capability is kept from a caller who has not been given leave: a
+// HumanOnly capability is never a tool, and the rest need a grant, narrowed by
+// a Scope to the record the value belongs to. Without the Scope a grant on the
+// reveal covers every record it can reach, which is the "read the staging
+// token" that turns out to mean "read every secret I own" that Scope exists
+// to prevent, and the NeedsGrant check below would only have found it when an
+// input happened to look like a record. Destructive implies a grant on the
+// host's side, but the declaration says so itself: what a reader of this file
+// sees is what the host enforces.
+func checkReveals(c Capability) error {
+	if !c.Reveals {
+		return nil
+	}
+	if c.Safety == Read {
+		return fmt.Errorf("capability %q: declares Reveals and is %s; returning the value another view "+
+			"withholds is not a read — declare it %s or %s, so a caller needs a grant for it",
+			c.ID, Read, Write, Destructive)
+	}
+	if !c.HumanOnly && !(c.NeedsGrant && c.Scope != "") {
+		return fmt.Errorf("capability %q: declares Reveals without a gate that names the record — "+
+			"declare NeedsGrant with a Scope (the input naming what is revealed), or HumanOnly if only the "+
+			"person at the terminal may see it; a reveal with no Scope makes every grant on it cover every "+
+			"record it can reach", c.ID)
+	}
+	return nil
 }
 
 // checkArguments refuses a list argument the command line does not end on.

@@ -703,6 +703,40 @@ type Capability struct {
 	// needs no grant, is never parked for consent, and `rta explain` lists it
 	// under its own heading rather than under a safety class.
 	HumanOnly bool
+	// Reveals marks the capability whose answer is the value that a masked
+	// view elsewhere withholds: kv.get, which hands back what kv.show only
+	// describes. It is a statement about what the capability returns, not a
+	// switch that lifts a mask, and it ties the act to the gate that already
+	// exists.
+	//
+	// **A reveal is its own capability, so it inherits every control with no
+	// new one.** Authority in rta binds to capability IDs — grants, ceilings,
+	// roles, an install's claims, an upgrade's diff, the record — so an act
+	// that is a capability of its own is granted, narrowed to one record,
+	// limited to a few uses, refused, locked and written down by the machinery
+	// that already does those things. The alternative is a flag on the masked
+	// capability that returns the value, and a flag is a new dimension for the
+	// grant schema, the guard and the operator wire to learn, or a switch no
+	// grant can name. view.Redact takes the view and nothing else, so nothing
+	// downstream of the handler can lift a mask either; a producer that wants
+	// the value shown returns a view with nothing marked, from a capability
+	// the gate has already admitted.
+	//
+	// Coupled to that gate at registration: not Read, because showing a value
+	// another view withholds is an act with a blast radius and the class says
+	// so; and either HumanOnly, where only the person at the terminal reaches
+	// it, or both NeedsGrant and a Scope, so the grant that lets a caller see
+	// the value is issued for this capability by name and, where it can be,
+	// for the one record the value belongs to. A reveal with no Scope makes
+	// every grant on it cover every record it can reach.
+	//
+	// Declared rather than inferred, so that a host can say in the caller's
+	// words that this call returns the stored value itself and that the value
+	// becomes part of the caller's context, and so that sdktest can hold both
+	// ends of the pair: a view that masks a value points at its reveal
+	// (view.RevealKey), and the reveal it points at does not mask the value it
+	// exists to show.
+	Reveals bool
 
 	// Actions are the keys a result of this capability offers: a sibling
 	// capability opened from a row, from the record's own page, or from the

@@ -180,6 +180,27 @@ func TestValidateFailures(t *testing.T) {
 				Suggest: func(context.Context, Request) []string { return nil }}}
 		}, "String box"},
 		{"scope names no input", func(p *Plugin) { p.Capabilities[0].Scope = "nope" }, "names no input"},
+		// A reveal is coupled to the gate that already exists, so declaring one
+		// is never a way around it.
+		{"reveals on a read", func(p *Plugin) {
+			p.Capabilities[0].Reveals = true
+			p.Capabilities[0].NeedsGrant = true
+		}, "not a read"},
+		{"reveals with no gate", func(p *Plugin) {
+			p.Capabilities[1].Reveals = true
+			p.Capabilities[1].Safety = Write
+		}, "without a gate that names the record"},
+		{"reveals needing a grant with no scope", func(p *Plugin) {
+			p.Capabilities[1].Reveals = true
+			p.Capabilities[1].Safety = Write
+			p.Capabilities[1].NeedsGrant = true
+		}, "every grant on it cover every record"},
+		{"reveals with a scope and no grant", func(p *Plugin) {
+			p.Capabilities[1].Reveals = true
+			p.Capabilities[1].Safety = Write
+			p.Capabilities[1].Scope = "key"
+			p.Capabilities[1].Inputs = []Field{{Name: "key", Type: String, Help: "the key"}}
+		}, "without a gate that names the record"},
 		// Endpoint roles. Every one of these is refused at registration rather
 		// than at dial time, because what goes wrong is *where a call goes*
 		// and the operator diagnosing it holds a connection error naming
@@ -876,5 +897,28 @@ func TestADeclaredNeedIsAccepted(t *testing.T) {
 	}
 	if err := p.Validate(); err != nil {
 		t.Errorf("a plugin declaring a known need was refused: %v", err)
+	}
+}
+
+// The two ways a reveal is admitted: behind a grant that names the record, or
+// for the person at the terminal alone.
+func TestARevealIsAdmittedBehindAScopedGrantOrForAPersonAlone(t *testing.T) {
+	scoped := validPlugin()
+	scoped.Capabilities[1] = Capability{
+		ID: "demo.item.get", Summary: "reveal one item", Safety: Write, Run: noop,
+		Reveals: true, NeedsGrant: true, Scope: "key",
+		Inputs: []Field{{Name: "key", Type: String, Help: "the key", Required: true, Positional: true}},
+	}
+	if err := scoped.Validate(); err != nil {
+		t.Errorf("a reveal behind a scoped grant was refused: %v", err)
+	}
+
+	human := validPlugin()
+	human.Capabilities[1] = Capability{
+		ID: "demo.item.copy", Summary: "copy one item", Safety: Write, Run: noop,
+		Reveals: true, HumanOnly: true,
+	}
+	if err := human.Validate(); err != nil {
+		t.Errorf("a reveal only a person can reach was refused: %v", err)
 	}
 }

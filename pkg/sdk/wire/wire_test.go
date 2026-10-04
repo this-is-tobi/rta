@@ -364,6 +364,7 @@ func fullDeclaration() plugin.Plugin {
 			ScopeAlso:    []string{"bucket"},
 			HostSpecific: true,
 			HumanOnly:    true,
+			Reveals:      true,
 			// What the TUI may do with the result crosses as data: a host
 			// that lost it would show a third-party list with no row
 			// actions, which is the second-class plugin the fields exist to
