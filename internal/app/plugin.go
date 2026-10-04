@@ -550,6 +550,11 @@ func newPluginUntrustCommand(opts *globalOpts) *cobra.Command {
 // under, so the two answers read as the pair they are. The count has a line of
 // its own because one name can stand for several approvals — a digest for
 // every build it was trusted under — and that number is what the command did.
+// It says "withdrawn" and not just "approvals": a bare `approvals 1` under
+// `untrusted hello` reads as one still standing, which is the opposite of the
+// answer, and sent the person who had just taken their only approval back to
+// check. So the line after it says what is left of the operator's own record,
+// and for a preview what would be.
 // The record is named because it is the file the command wrote, and the one
 // `rta doctor` reads back.
 //
@@ -560,13 +565,16 @@ func newPluginUntrustCommand(opts *globalOpts) *cobra.Command {
 // and an answer about "every approval" or "it" that left them out would be a
 // claim about the machine that is false.
 func untrustAnswer(what string, approvals, system int, next string, dryRun bool) view.KeyValue {
-	label := "untrusted"
+	label, withdrawn, left := "untrusted", "approvals withdrawn", "approvals left"
+	remaining := ownApprovals()
 	if dryRun {
-		label = "would untrust"
+		label, withdrawn, left = "would untrust", "approvals to withdraw", "approvals left after"
+		remaining = max(0, remaining-approvals)
 	}
 	pairs := []view.Pair{
 		{Key: label, Value: what},
-		{Key: "approvals", Value: strconv.Itoa(approvals)},
+		{Key: withdrawn, Value: strconv.Itoa(approvals)},
+		{Key: left, Value: strconv.Itoa(remaining)},
 	}
 	if system > 0 {
 		pairs = append(pairs, view.Pair{Key: "left alone", Value: systemKeeps(system)})
@@ -575,6 +583,19 @@ func untrustAnswer(what string, approvals, system int, next string, dryRun bool)
 		view.Pair{Key: "record", Value: plugintrust.Path()},
 		view.Pair{Key: "next", Value: next},
 	)}
+}
+
+// ownApprovals is how many approvals the operator's own record holds: the
+// system root's are not counted, since rta reads that file and never writes
+// it, and an untrust cannot change them.
+func ownApprovals() int {
+	n := 0
+	for _, e := range plugintrust.Load().Entries() {
+		if !e.System {
+			n++
+		}
+	}
+	return n
 }
 
 // systemKeeps is what a withdrawal says of the n artifacts it left trusted by
