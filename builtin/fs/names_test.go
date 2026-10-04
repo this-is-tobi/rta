@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -17,9 +16,6 @@ import (
 // ordinary one with a space in it, which stays as it is.
 func oddNames(t *testing.T) string {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("windows has no such file names")
-	}
 	root := t.TempDir()
 	for _, name := range []string{"esc\x1b[31mred", "line\nbreak", "tab\there", "Annual Report.pdf"} {
 		if err := os.WriteFile(filepath.Join(root, name), make([]byte, 100), 0o644); err != nil {

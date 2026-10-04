@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -176,9 +175,6 @@ func TestUsageLimitDoesNotHideThatItLimited(t *testing.T) {
 // is the test that would hang rather than fail, which is why the walk uses
 // Lstat and never follows one.
 func TestUsageDoesNotFollowSymlinksIntoALoop(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink semantics differ")
-	}
 	root := fixture(t, map[string]int{"real/file.bin": 100})
 	if err := os.Symlink(root, filepath.Join(root, "real", "loop")); err != nil {
 		t.Skipf("cannot create symlink: %v", err)
@@ -386,9 +382,6 @@ func TestTreeSaysWhatItIsNotShowing(t *testing.T) {
 }
 
 func TestTreeShowsSymlinkTargetsWithoutFollowingThem(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink semantics differ")
-	}
 	root := fixture(t, map[string]int{"real/deep/file.bin": 10})
 	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "link")); err != nil {
 		t.Skipf("cannot create symlink: %v", err)
@@ -753,7 +746,7 @@ func TestTreeDetailComposesUsageWithinTheSameBound(t *testing.T) {
 // blinded makes one subdirectory unreadable and returns the fixture root.
 func blinded(t *testing.T, files map[string]int, dir string) string {
 	t.Helper()
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("file modes do not deny the owner here")
 	}
 	root := fixture(t, files)

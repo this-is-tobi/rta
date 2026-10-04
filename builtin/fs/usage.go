@@ -442,7 +442,7 @@ func pathError(code, path string, err error) *view.Error {
 			WithHint("read it as a user that can, rather than running the whole tool elevated")
 	}
 	var pathErr *fs.PathError
-	if ok := asPathError(err, &pathErr); ok {
+	if errors.As(err, &pathErr) {
 		return view.Errorf(code+".failed", "%s: %v", path, pathErr.Err)
 	}
 	return view.Errorf(code+".failed", "%s: %v", path, err)
