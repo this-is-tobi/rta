@@ -18,14 +18,11 @@ import (
 // program and reads back both.
 func fakeClipboard(t *testing.T) (stdin, argv string) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the stand-in is a shell script")
-	}
 	dir := t.TempDir()
 	stdin = filepath.Join(dir, "stdin")
 	argv = filepath.Join(dir, "argv")
 	script := "#!/bin/sh\ncat > " + stdin + "\nprintf '%s\\n' \"$@\" > " + argv + "\n"
-	for _, name := range []string{"pbcopy", "xclip", "xsel", "wl-copy", "clip", "clip.exe", "termux-clipboard-set"} {
+	for _, name := range []string{"pbcopy", "xclip", "xsel", "wl-copy", "clip.exe", "termux-clipboard-set"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -87,7 +84,7 @@ func TestCopyDoesNotStopAtTheFirstLine(t *testing.T) {
 // further down the list — wl-copy on a Wayland session reached over SSH,
 // where xclip is present but has no $DISPLAY — is never tried.
 func TestCopyTriesTheNextProgramWhenTheFirstInstalledOneFails(t *testing.T) {
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+	if runtime.GOOS == "darwin" {
 		t.Skip("only one clipboard program is ever considered")
 	}
 	t.Setenv("WAYLAND_DISPLAY", "") // pin Commands()'s order for this test
@@ -128,9 +125,6 @@ func TestCopyTriesTheNextProgramWhenTheFirstInstalledOneFails(t *testing.T) {
 // machine running the test.
 func everyProgramFails(t *testing.T) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the stand-in is a shell script")
-	}
 	dir := t.TempDir()
 	for _, c := range Commands() {
 		if err := os.WriteFile(filepath.Join(dir, c.Name), []byte("#!/bin/sh\nexit 3\n"), 0o700); err != nil {
@@ -208,7 +202,7 @@ func TestCopyWithNoProgramInstalledReportsNoFailuresOnlyNothingTried(t *testing.
 // paste comes back with whatever was there before — the worst outcome
 // available to a command whose whole job is "it is now where you need it".
 func TestWaylandIsPreferredByEnvironmentNotByWhatIsInstalled(t *testing.T) {
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+	if runtime.GOOS == "darwin" {
 		t.Skip("one clipboard, no ambiguity")
 	}
 	t.Setenv("WAYLAND_DISPLAY", "wayland-0")
@@ -239,9 +233,6 @@ func TestWaylandIsPreferredByEnvironmentNotByWhatIsInstalled(t *testing.T) {
 // timeout: a real regression here should fail in seconds, not hang the
 // whole run for minutes before the test binary's own timeout kills it.
 func TestCopyDoesNotHangOnAProgramThatNeverExits(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("the stand-in is a shell script")
-	}
 	old := timeout
 	timeout = 2 * time.Second
 	t.Cleanup(func() { timeout = old })

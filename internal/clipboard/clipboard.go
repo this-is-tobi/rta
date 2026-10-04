@@ -62,11 +62,8 @@ type Command struct {
 // clip.exe is in the list for WSL, which has neither an X server nor a
 // compositor but does have the Windows clipboard one exec away.
 func Commands() []Command {
-	switch runtime.GOOS {
-	case "darwin":
+	if runtime.GOOS == "darwin" {
 		return []Command{{Name: "pbcopy"}}
-	case "windows":
-		return []Command{{Name: "clip"}}
 	}
 	rest := make([]Command, 0, 5)
 	rest = append(rest,
