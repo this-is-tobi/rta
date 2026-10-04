@@ -182,8 +182,8 @@ func verifierSystem() string {
 
 // UseVerifierSystem makes CertUntrusted, CertRevoked, CertPolicyHint and
 // CAHint read a handshake's error as the verifier of goos ("darwin", "ios",
-// "linux") would have worded it, and returns what puts the
-// machine's own back.
+// "linux") would have worded it, and returns what puts the machine's own
+// back.
 //
 // **For a plugin's tests, through sdktest.VerifierSystem.** Those four answer
 // differently by system, and the one whose verdicts they read is Apple's: a
