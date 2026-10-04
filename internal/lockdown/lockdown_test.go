@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -451,7 +450,7 @@ func TestAnUnparseableLockFileIsRefusedLikeAForgedOne(t *testing.T) {
 // A file that cannot be read is not an unlock either: the pin keeps the set
 // it last verified, the way it does for a file that vanished.
 func TestAnUnreadableLockFileIsNotAnUnlock(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("file modes do not deny the owner here")
 	}
 	fresh(t)
@@ -616,7 +615,7 @@ func TestTheSealBindsTheRowsAndNotTheBytes(t *testing.T) {
 // rta", with the hint to remove the sealed file: a wrong diagnosis with a
 // destructive recovery, over a key that was intact.
 func TestAnUnreadableSealKeyIsNotAMissingOne(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("file modes do not deny the owner here")
 	}
 	fresh(t)

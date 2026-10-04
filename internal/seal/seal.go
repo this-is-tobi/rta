@@ -27,11 +27,10 @@
 // # Which platforms actually supply the first case
 //
 // Only the ones that confine a plugin, which today means macOS —
-// pluginhost.Confined is the authority, and internal/pluginhost's
-// confine_other.go has the whole reason Linux has no sandbox (a deliberate
-// removal, not an omission) and Windows never had one. On those platforms a
-// plugin is an ordinary process at the operator's uid: it can read this
-// directory, so it can read the key, so the writer-that-cannot-read case
+// pluginhost.Confined is the authority, and internal/pluginhost has the whole
+// reason Linux has no sandbox (a deliberate removal, not an omission). On
+// Linux a plugin is an ordinary process at the operator's uid: it can read
+// this directory, so it can read the key, so the writer-that-cannot-read case
 // this was built for does not arise there at all.
 //
 // Sealing is still worth its cost on every platform, and it is worth being
