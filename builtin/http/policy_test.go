@@ -96,3 +96,15 @@ func TestARequestForASchemeItDoesNotSpeakSaysSo(t *testing.T) {
 		t.Errorf("hint %q for a scheme the client does not speak", verr.Hint)
 	}
 }
+
+// The server answered, in plain http, to a request that spoke TLS: it was
+// reached, and "check the URL is reachable" sent the reader looking at the
+// network for what was a scheme. The URL was written without one, so https was
+// assumed.
+func TestARequestToAPlainHTTPServerOverTLSSaysToWriteHTTP(t *testing.T) {
+	err := &url.Error{Op: "Get", URL: "https://grafana.internal:3000", Err: errors.New("http: server gave HTTP response to HTTPS client")}
+	verr := requestFailed(plugin.SurfaceCLI, "GET", "https://grafana.internal:3000", err)
+	if strings.Contains(verr.Hint, "reachable") || !strings.Contains(verr.Hint, "http://grafana.internal:3000") {
+		t.Errorf("hint %q", verr.Hint)
+	}
+}

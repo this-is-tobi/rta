@@ -14,6 +14,7 @@ import (
 	stdnet "net"
 	stdhttp "net/http"
 	"net/http/httptrace"
+	"net/netip"
 	neturl "net/url"
 	"sort"
 	"strings"
@@ -205,6 +206,17 @@ func requestFailed(sf plugin.Surface, method, url string, err error) *view.Error
 	if strings.Contains(err.Error(), "unsupported protocol scheme") {
 		return verr.WithHint("this client speaks http and https; write the URL with one of them")
 	}
+	// The server answered, in plain http, to a request that spoke TLS: it was
+	// reached, so reachability is not the question, and the scheme is the fix. A
+	// name that might be private keeps the https a URL without a scheme gets
+	// (withScheme), which is how a service of one's own on http lands here.
+	if strings.Contains(err.Error(), "server gave HTTP response to HTTPS client") {
+		hint := "the server answered in plain http; write the URL with http://"
+		if parsed, perr := neturl.Parse(url); perr == nil && parsed.Host != "" {
+			hint = "the server answered in plain http; write the URL as http://" + parsed.Host + parsed.RequestURI()
+		}
+		return verr.WithHint(hint)
+	}
 	// The handshake got an answer, and the certificate in it did not pass: the
 	// host is reachable and a longer deadline would change nothing. This client
 	// has no way round a certificate (it is the point of it), so the way
@@ -320,22 +332,58 @@ func credential(req plugin.Request, name string) (string, *view.Error) {
 		WithHint("an empty file, or nothing was piped to it")
 }
 
-func doRequest(ctx context.Context, method string, req plugin.Request) (view.View, error) {
-	url := req.String("url")
-	if !strings.Contains(url, "://") {
-		url = "https://" + url
+// withScheme is the URL a call names with the scheme it left out filled in:
+// https, except for a host that is a service of one's own, which a person who
+// asked for the local network (own) is almost never reaching over TLS.
+//
+// Decided from the text alone — localhost, anything under it, or an address
+// that is loopback or private — and never by looking the name up: the scheme is
+// fixed before the connection is made, and a name that answers with a private
+// address now and a public one a moment later (a rebinding record) must not be
+// able to turn a request meant to be encrypted into a plain one carrying its
+// credentials. A name that merely might be private, grafana.internal, keeps
+// https, and the one who knows better writes http://. Port 443 keeps https as
+// well: nobody means plain text there.
+func withScheme(url string, own bool) string {
+	if strings.Contains(url, "://") {
+		return url
 	}
+	if own {
+		if parsed, err := neturl.Parse("//" + url); err == nil && parsed.Port() != "443" && namesOwnHost(parsed.Hostname()) {
+			return "http://" + url
+		}
+	}
+	return "https://" + url
+}
+
+func namesOwnHost(host string) bool {
+	host = strings.ToLower(host)
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	addr = addr.Unmap()
+	return (addr.IsLoopback() || addr.IsPrivate()) && reasonFor(stdnet.IP(addr.AsSlice()), true) == ""
+}
+
+func doRequest(ctx context.Context, method string, req plugin.Request) (view.View, error) {
+	// And never over MCP, whatever arrived: the input is Local and the bridge
+	// refuses it there, so this is the second lock on the same door.
+	own := req.Bool("local-network") && req.Surface() != plugin.SurfaceMCP
+	url := withScheme(req.String("url"), own)
 	timeout := time.Duration(req.Int("timeout")) * time.Second
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	// And never over MCP, whatever arrived: the input is Local and the bridge
-	// refuses it there, so this is the second lock on the same door.
-	if req.Bool("local-network") && req.Surface() != plugin.SurfaceMCP {
+	if own {
 		ctx = withOwnNetwork(ctx)
 	}
 
+	data := req.String("data")
 	var body io.Reader
-	if data := req.String("data"); data != "" {
+	if data != "" {
 		body = strings.NewReader(data)
 	}
 	httpReq, err := stdhttp.NewRequestWithContext(ctx, method, url, body)
@@ -384,7 +432,7 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 	// anyway is worse than none at all: it reports what "would" happen after
 	// it has already happened.
 	if req.DryRun && method != stdhttp.MethodGet && method != stdhttp.MethodHead {
-		return dryRunView(method, url, httpReq, req.String("data")), nil
+		return dryRunView(method, url, httpReq, data), nil
 	}
 
 	// Coarse phase timing via httptrace.

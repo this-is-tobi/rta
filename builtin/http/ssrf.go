@@ -2,12 +2,14 @@ package http
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	stdnet "net"
 	stdhttp "net/http"
 	"net/netip"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // Where an http.* call is allowed to connect, decided at the moment it
@@ -29,7 +31,7 @@ import (
 // So the check below runs inside the dialer, against the IP about to be
 // dialed, not against the URL's hostname string — parsing the string proves
 // nothing about where the connection actually lands. And once it has
-// resolved and checked a name, it dials the exact IP it just validated
+// resolved and checked a name, it dials the exact IPs it just validated
 // rather than handing the hostname back to the network stack for a second
 // lookup: a second resolution can legitimately return a different answer
 // than the first — that is the whole attack, for a low-TTL or
@@ -177,6 +179,15 @@ var (
 // embeddedIPv4 is the IPv4 address an IPv6 address carries for a
 // translator or a tunnel to deliver to, and the name of the form.
 //
+// ::1 is excluded from the IPv4-compatible form, and nothing else in ::/96 is.
+// The form is deprecated (RFC 4291) and carves out exactly the unspecified
+// address and the loopback one, which are what they are and not an IPv4 address
+// in disguise. Read as one, ::1 was 0.0.0.1, in "this network" and refused even
+// for a person who asked for a loopback address by name, so `localhost`, which
+// resolves to ::1 on most machines, was out of reach of the flag made for it.
+// Nothing is let through that was refused for being a loopback address: without
+// the flag addrReason has already refused ::1 by then.
+//
 // The IPv4-translated form (RFC 2765, SIIT) is not the IPv4-mapped one Unmap
 // already reads: ::ffff:0:a9fe:a9fe has a zero word after the ffff one, so
 // it is neither mapped nor in ::/96, and a stateless translator hands it to
@@ -194,7 +205,7 @@ func embeddedIPv4(a netip.Addr) (netip.Addr, string, bool) {
 		return netip.AddrFrom4([4]byte(b[12:16])), "NAT64", true
 	case sixToFour.Contains(a):
 		return netip.AddrFrom4([4]byte(b[2:6])), "6to4", true
-	case ipv4Compatible.Contains(a):
+	case ipv4Compatible.Contains(a) && a != netip.IPv6Loopback():
 		return netip.AddrFrom4([4]byte(b[12:16])), "IPv4-compatible", true
 	case ipv4Translated.Contains(a):
 		return netip.AddrFrom4([4]byte(b[12:16])), "IPv4-translated", true
@@ -212,10 +223,11 @@ func embeddedIPv4(a netip.Addr) (netip.Addr, string, bool) {
 type blockedAddrError struct {
 	host string
 	ip   stdnet.IP
+	own  bool
 }
 
 func (e *blockedAddrError) Error() string {
-	why := blockedReason(e.ip)
+	why := reasonFor(e.ip, e.own)
 	if why == "" {
 		// Only a test's relaxed or tightened isBlockedIP gets here.
 		why = "an address"
@@ -245,7 +257,7 @@ func resolveAndCheck(ctx context.Context, host string) ([]stdnet.IPAddr, error) 
 	own := ownNetwork(ctx)
 	for _, resolved := range ips {
 		if isBlockedIP(resolved.IP) && (!own || reasonFor(resolved.IP, true) != "") {
-			return nil, &blockedAddrError{host: host, ip: resolved.IP}
+			return nil, &blockedAddrError{host: host, ip: resolved.IP, own: own}
 		}
 	}
 	return ips, nil
@@ -392,10 +404,45 @@ func dialGuarded(ctx context.Context, network, addr string) (stdnet.Conn, error)
 	if err != nil {
 		return nil, err
 	}
-	// The literal address just validated, not host:port again: asking the
-	// dialer to resolve host a second time is the TOCTOU this guard exists
-	// to close, not a detail it can afford to reintroduce.
-	return dialer.DialContext(ctx, network, stdnet.JoinHostPort(ips[0].IP.String(), port))
+	return dialValidated(ctx, dialer, network, ips, port)
+}
+
+// dialValidated connects to the first of ips that answers, each one dialed as
+// the literal address resolveAndCheck just validated, never host:port again:
+// asking the dialer to resolve host a second time is the TOCTOU this guard
+// exists to close, not a detail it can afford to reintroduce.
+//
+// Every address, not only the first, because a name that has two — `localhost`
+// is ::1 and 127.0.0.1 on most machines, a public host often has an AAAA
+// record — is served on one of them more often than on both. Dialing only the
+// first made `localhost` unreachable whenever the service listened on the
+// other, and a public host unreachable from a machine with no IPv6 route.
+// Nothing is dialed that was not checked: resolveAndCheck refuses a name when
+// any one of its addresses is blocked, so the ones left are all allowed.
+//
+// An address that is not the last one gets its share of what is left of the
+// deadline, as the standard library's own dialer gives it, so one that never
+// answers does not spend the whole request's time before the next is tried.
+func dialValidated(ctx context.Context, dialer *stdnet.Dialer, network string, ips []stdnet.IPAddr, port string) (stdnet.Conn, error) {
+	first := errors.New("no address to dial")
+	for i, ip := range ips {
+		attempt, cancel := ctx, context.CancelFunc(func() {})
+		if deadline, ok := ctx.Deadline(); ok && i < len(ips)-1 {
+			attempt, cancel = context.WithTimeout(ctx, time.Until(deadline)/time.Duration(len(ips)-i))
+		}
+		conn, err := dialer.DialContext(attempt, network, stdnet.JoinHostPort(ip.IP.String(), port))
+		cancel()
+		if err == nil {
+			return conn, nil
+		}
+		if i == 0 {
+			first = err
+		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return nil, first
 }
 
 // guardedTransport clones stdhttp.DefaultTransport — keeping its proxy

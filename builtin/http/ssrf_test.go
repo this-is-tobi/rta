@@ -377,3 +377,26 @@ func TestTheBlockedHintIsWordedForWhoAsked(t *testing.T) {
 		}
 	}
 }
+
+// A name with two addresses is served on one of them more often than on both,
+// and the guard dials the addresses it validated, in order, until one answers.
+func TestDialValidatedFallsBackToTheNextAddress(t *testing.T) {
+	srv := httptest.NewServer(stdhttp.HandlerFunc(func(stdhttp.ResponseWriter, *stdhttp.Request) {}))
+	defer srv.Close()
+	_, port, _ := stdnet.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+
+	nothingListens := stdnet.ParseIP("::1")
+	conn, err := dialValidated(context.Background(), &stdnet.Dialer{}, "tcp",
+		[]stdnet.IPAddr{{IP: nothingListens}, {IP: stdnet.ParseIP("127.0.0.1")}}, port)
+	if err != nil {
+		t.Fatalf("the second address answers: %v", err)
+	}
+	_ = conn.Close()
+
+	if _, err := dialValidated(context.Background(), &stdnet.Dialer{}, "tcp", []stdnet.IPAddr{{IP: nothingListens}}, port); err == nil {
+		t.Error("no address answers and the dial did not fail")
+	}
+	if _, err := dialValidated(context.Background(), &stdnet.Dialer{}, "tcp", nil, port); err == nil {
+		t.Error("no address at all and the dial did not fail")
+	}
+}
