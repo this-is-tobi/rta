@@ -10,7 +10,7 @@ It is the same capabilities as the CLI — the same declarations, the same safet
 
 ## The landing dashboard
 
-A search bar across the top, and one tile per plugin that has something to show at a glance. Typing filters every capability in the catalogue on the fly.
+A search bar across the top, and one tile per plugin that has something to show at a glance, in the order that matters on a first run: the machine (`sys`), what agents asked of it (`agent`) and the grants standing under it (`grant`), then the network, the secret store and the notebook. Typing filters every capability in the catalogue on the fly. `gen.overview` and `fs.tree` qualify as tiles and are left off on purpose, because a table of freshly generated secrets is not a status and the working directory says nothing about the machine; each is one `rta dashboard add` away.
 
 | Key | What it does |
 | --- | --- |
