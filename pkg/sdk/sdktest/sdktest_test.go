@@ -757,3 +757,24 @@ func TestACursorThatNamesNoInputIsANoteNotAFailure(t *testing.T) {
 		t.Errorf("an unnamed cursor was not noted: %q", rec.logText())
 	}
 }
+
+// Search finds a query's words in the ID and the summary as prefixes, so a
+// keyword they already start with adds nothing: the note says so, and leaves
+// the ones that earn their place alone.
+func TestAKeywordTheCapabilityAlreadyContainsIsNoted(t *testing.T) {
+	c := ok()
+	c.Keywords = []string{"list", "item", "inventory"}
+	rec := &recorder{}
+	checkKeywords(rec, plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}, noConfig())
+	if len(rec.errs) > 0 {
+		t.Errorf("a redundant keyword was made an error: %s", rec.errText())
+	}
+	for _, redundant := range []string{`"list"`, `"item"`} {
+		if !strings.Contains(rec.logText(), "keyword "+redundant+" is already a word") {
+			t.Errorf("redundant keyword %s was not noted: %q", redundant, rec.logText())
+		}
+	}
+	if strings.Contains(rec.logText(), `"inventory"`) {
+		t.Errorf("a keyword that earns its place was noted: %q", rec.logText())
+	}
+}

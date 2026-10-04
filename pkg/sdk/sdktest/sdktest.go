@@ -205,6 +205,7 @@ func checkAll(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[st
 		return
 	}
 	checkVerbs(t, p, cfg)
+	checkKeywords(t, p, cfg)
 	checkSpelling(t, p, cfg)
 	if cfg.source != "" {
 		checkSource(t, p, cfg.source)

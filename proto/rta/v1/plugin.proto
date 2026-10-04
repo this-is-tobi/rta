@@ -292,6 +292,11 @@ message Capability {
   // checked only at its source carries a record from under one grant to
   // under another. Each must name a declared input, and scope must be set.
   repeated string scope_also = 21;
+  // Words a person would search for that the id and summary do not contain
+  // ("todo" for a note list, "ssl" for a certificate check). Lowercase single
+  // words; used by search on the human surfaces and never published to a
+  // model, which chooses a tool by its description.
+  repeated string keywords = 23;
   // This capability's answer is the value a masked view elsewhere withholds:
   // the reveal that view points at. It is a declaration about what the
   // capability returns, never a switch that lifts a mask, and it is coupled to
