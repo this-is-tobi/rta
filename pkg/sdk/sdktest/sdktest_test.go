@@ -296,6 +296,132 @@ func TestASecretHandlingCapabilityThatMarksNothingWarnsRatherThanFails(t *testin
 	if !strings.Contains(rec.logText(), "marks nothing Redacted") {
 		t.Errorf("no warning raised: %q", rec.logText())
 	}
+	// Three exits, each named: the author is not left guessing which of them
+	// the rule wants.
+	for _, exit := range []string{"mark it Redacted", "view.RevealKey", "declare Reveals", "sdktest.Skip(sdktest.RuleRedaction"} {
+		if !strings.Contains(rec.logText(), exit) {
+			t.Errorf("the warning does not offer %q as a way out: %q", exit, rec.logText())
+		}
+	}
+}
+
+// reveal is a capability that is the reveal: gated, narrowed to a record, and
+// returning the value it exists to show.
+func reveal() plugin.Capability {
+	return plugin.Capability{
+		ID: "demo.item.get", Summary: "reveal an item's value", Safety: plugin.Write, Idempotent: true,
+		NeedsGrant: true, Scope: "key", Reveals: true,
+		Inputs: []plugin.Field{{Name: "key", Type: plugin.String, Default: "a", Help: "the item"}},
+		Run: func(context.Context, plugin.Request) (view.View, error) {
+			return view.KeyValue{Pairs: []view.Pair{{Key: "value", Value: "s3cret"}}}, nil
+		},
+	}
+}
+
+func redactionOf(t *testing.T, cfg config, c plugin.Capability) *recorder {
+	t.Helper()
+	rec := &recorder{}
+	p := plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}
+	if !checkDeclaration(rec, p) {
+		t.Fatalf("the fixture does not validate:\n%s", rec.errText())
+	}
+	checkRedaction(rec, drive(rec, p, cfg, t.TempDir(), nil), cfg)
+	return rec
+}
+
+// A reveal that masks its own value contradicts itself: every renderer masks
+// what is marked, so nobody, under any grant, could read what it was granted
+// to show. This is the bug the Reveals declaration exists to make a failure
+// instead of a shipped plugin.
+func TestARevealThatMarksItsOwnValueRedactedIsRejected(t *testing.T) {
+	c := reveal()
+	c.Run = func(context.Context, plugin.Request) (view.View, error) {
+		return view.KeyValue{
+			Pairs:    []view.Pair{{Key: "value", Value: "s3cret"}},
+			Redacted: []string{"value"},
+		}, nil
+	}
+	rec := redactionOf(t, noConfig(), c)
+	if !strings.Contains(rec.errText(), "declares Reveals and marks value Redacted") {
+		t.Fatalf("a reveal masking its own value was accepted: errors %q", rec.errText())
+	}
+	if len(redactionOf(t, noConfig(), reveal()).errs) > 0 {
+		t.Errorf("an unmasked reveal was rejected")
+	}
+}
+
+// A reveal is the answer to the nag, not a target of it: it shows the secret
+// on purpose.
+func TestARevealIsNotAskedWhetherItMarksNothing(t *testing.T) {
+	rec := redactionOf(t, noConfig(), reveal())
+	if len(rec.errs) > 0 || strings.Contains(rec.logText(), "marks nothing") {
+		t.Errorf("a reveal was asked about its redaction:\nerrors %q\nlogs %q", rec.errText(), rec.logText())
+	}
+}
+
+// A mask with nothing beside it is a dead end: three plugins shipped a value
+// no caller could read under a grant meant to allow it. The capability that
+// masks has to say where the value can be read, or say the mask is permanent
+// and why.
+func TestAMaskedViewThatSaysNowhereToReadItIsRejected(t *testing.T) {
+	masked := func(pairs ...view.Pair) plugin.Capability {
+		c := ok()
+		c.Run = func(context.Context, plugin.Request) (view.View, error) {
+			return view.KeyValue{
+				Pairs:    append([]view.Pair{{Key: "token", Value: "s3cret"}}, pairs...),
+				Redacted: []string{"token"},
+			}, nil
+		}
+		return c
+	}
+
+	rec := redactionOf(t, noConfig(), masked())
+	if !strings.Contains(rec.errText(), "says nowhere to read it") ||
+		!strings.Contains(rec.errText(), "view.RevealKey") {
+		t.Fatalf("a mask with no pointer was accepted: errors %q", rec.errText())
+	}
+
+	pointing := masked(view.Pair{Key: view.RevealKey, Value: "rta demo item get a"})
+	if rec := redactionOf(t, noConfig(), pointing); len(rec.errs) > 0 {
+		t.Errorf("a mask with a pointer was rejected: %s", rec.errText())
+	}
+
+	// The permanent mask: waived by the author, and the reason is printed on
+	// every run, so the exception is on the record and not merely quiet.
+	cfg := noConfig()
+	Skip(RuleRedaction, "demo.item.list", "the credential rta itself connects with")(&cfg)
+	if rec := redactionOf(t, cfg, masked()); len(rec.errs) > 0 {
+		t.Errorf("a mask waived with a reason was rejected: %s", rec.errText())
+	}
+	if lines := skipLines(cfg); len(lines) != 1 ||
+		!strings.Contains(lines[0], "the credential rta itself connects with") {
+		t.Errorf("the waiver does not print its reason: %q", lines)
+	}
+}
+
+// Where the masked thing is a table, the pointer sits in the page the table
+// is part of: a Table has no pair of its own.
+func TestAMaskedTableIsPointedAtFromThePageItIsPartOf(t *testing.T) {
+	table := view.Table{
+		Columns:  []view.Column{{Name: "name"}, {Name: "value"}},
+		Rows:     [][]string{{"a", "s3cret"}},
+		Redacted: []string{"value"},
+	}
+	run := func(v view.View) plugin.Capability {
+		c := ok()
+		c.Run = func(context.Context, plugin.Request) (view.View, error) { return v, nil }
+		return c
+	}
+	if rec := redactionOf(t, noConfig(), run(table)); !strings.Contains(rec.errText(), "says nowhere to read it") {
+		t.Errorf("a masked table with no pointer was accepted: %q", rec.errText())
+	}
+	page := view.Sections{Items: []view.Section{
+		{ID: "items", Title: "Items", View: table},
+		{ID: "reveal", Title: "Reveal", View: view.KeyValue{Pairs: []view.Pair{{Key: view.RevealKey, Value: "rta demo item get a"}}}},
+	}}
+	if rec := redactionOf(t, noConfig(), run(page)); len(rec.errs) > 0 {
+		t.Errorf("a masked table pointed at from its page was rejected: %s", rec.errText())
+	}
 }
 
 // The rule the http post/put/delete postmortem paid for: a

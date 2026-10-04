@@ -291,11 +291,24 @@ func dedupe(sorted []string) []string {
 // checkRedaction has an error half and a warning half, and the split is the
 // whole design.
 //
-// The error half is a Redacted entry naming a key or column that does not
-// exist. view.Redact matches by name and silently does nothing when the name
-// is wrong, so `Redacted: []string{"token"}` above a pair called "Token" is a
-// declaration that looks like protection, reviews like protection, and prints
-// the secret. There is no case where that is intended.
+// The error half is a mask that protects nothing or leads nowhere. A Redacted
+// entry naming a key or column that does not exist: view.Redact matches by
+// name and silently does nothing when the name is wrong, so
+// `Redacted: []string{"token"}` above a pair called "Token" is a declaration
+// that looks like protection, reviews like protection, and prints the secret.
+// A view that masks a value and says nowhere it can be read: a mask with
+// nothing beside it is a dead end, and nobody can tell whether the value is
+// out of reach by design or only out of this page — which is how three
+// plugins came to ship a value no caller could ever see, under a grant that
+// was meant to let them. And a capability that declares Reveals yet marks
+// something Redacted, which says it is the reveal and masks the very thing it
+// reveals, for every reader, whatever the grant.
+//
+// The first has no intended case. The second has one, a permanent mask — the
+// credentials rta itself connects with, which the operator already holds, are
+// withheld by design — and the author says so with Skip, which prints the
+// reason on every run, so the exception is on the record and not merely
+// quiet. The third is contradictory on its face.
 //
 // The warning half is a capability that handles secrets — a Secret input, or
 // NeedsGrant because its class understates it — and returns a KeyValue or
@@ -303,8 +316,10 @@ func dedupe(sorted []string) []string {
 // keys and shows none of their values, and `kv.status` reports whether a
 // store is unlocked. Erroring would make the cheapest way to go green a
 // redaction entry that protects nothing, which is strictly worse than the
-// gap. So it asks, once, and the author answers by marking a field or by
-// calling Skip with the reason — which is then printed on every run.
+// gap. So it asks, once, and names the three honest answers: mask the
+// credential and say where to read it, declare that this is the reveal, or
+// say that nothing it shows is a secret. A capability that declares Reveals
+// has answered already, and is not asked.
 func checkRedaction(t reporter, seen []observed, cfg config) {
 	t.Helper()
 
@@ -312,20 +327,22 @@ func checkRedaction(t reporter, seen []observed, cfg config) {
 		if cfg.skipped(RuleRedaction, o.cap.ID) || o.err != nil {
 			continue
 		}
-		nameable, marked := false, false
+		nameable, pointed := false, false
+		var masked []string
 		walkViews(o.view, func(v view.View) {
 			switch t2 := v.(type) {
 			case view.KeyValue:
 				nameable = true
-				marked = marked || len(t2.Redacted) > 0
+				masked = append(masked, t2.Redacted...)
 				keys := make([]string, 0, len(t2.Pairs))
 				for _, p := range t2.Pairs {
 					keys = append(keys, p.Key)
+					pointed = pointed || p.Key == view.RevealKey
 				}
 				reportUnmatched(t, o.cap, "key", t2.Redacted, keys)
 			case view.Table:
 				nameable = true
-				marked = marked || len(t2.Redacted) > 0
+				masked = append(masked, t2.Redacted...)
 				cols := make([]string, 0, len(t2.Columns))
 				for _, c := range t2.Columns {
 					cols = append(cols, c.Name)
@@ -333,8 +350,22 @@ func checkRedaction(t reporter, seen []observed, cfg config) {
 				reportUnmatched(t, o.cap, "column", t2.Redacted, cols)
 			}
 		})
-		if nameable && !marked && handlesSecrets(o.cap) {
-			t.Logf("sdktest: %s: %s %s but marks nothing Redacted. If it shows no secret, say so with "+
+		switch {
+		case o.cap.Reveals && len(masked) > 0:
+			t.Errorf("sdktest: %s: %s declares Reveals and marks %s Redacted; a reveal exists to show the value, "+
+				"and every renderer masks what is marked, for every reader and whatever the grant — return it "+
+				"unmarked (the grant is the control), or drop Reveals if this view is meant to be masked",
+				RuleRedaction, o.cap.ID, strings.Join(masked, ", "))
+		case len(masked) > 0 && !pointed:
+			t.Errorf("sdktest: %s: %s masks %s but its view says nowhere to read it; add a pair keyed "+
+				"view.RevealKey whose value is the call that returns it (req.Surface().Call(...); a Table carries "+
+				"it in a Sections page beside a KeyValue), or, where the mask is permanent, say why with "+
+				"sdktest.Skip(sdktest.RuleRedaction, %q, \"...\")",
+				RuleRedaction, o.cap.ID, strings.Join(masked, ", "), o.cap.ID)
+		case nameable && len(masked) == 0 && !o.cap.Reveals && handlesSecrets(o.cap):
+			t.Logf("sdktest: %s: %s %s but marks nothing Redacted. If it shows a credential, mark it Redacted "+
+				"and point at where it can be read (a pair keyed view.RevealKey). If what it shows is the secret "+
+				"itself, because this is the reveal, declare Reveals. If it shows no secret, say so with "+
 				"sdktest.Skip(sdktest.RuleRedaction, %q, \"...\").",
 				RuleRedaction, o.cap.ID, secretReason(o.cap), o.cap.ID)
 		}
