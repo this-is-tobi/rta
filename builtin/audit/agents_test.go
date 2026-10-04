@@ -235,7 +235,7 @@ func TestTheBoundaryIsStatedOutLoud(t *testing.T) {
 // answer that means "you have nothing to worry about here", given for a
 // machine nobody managed to examine.
 func TestAConfigDirectoryThatCannotBeTraversedIsNotNothingToGrade(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("file modes do not deny the owner here")
 	}
 	home := fakeHome(t, map[string]struct {

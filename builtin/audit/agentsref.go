@@ -2,7 +2,6 @@ package audit
 
 import (
 	"regexp"
-	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -40,8 +39,7 @@ import (
 //     "predefined variables" a configuration may use, so the fix names the
 //     input first.
 //   - Gemini CLI resolves $VAR, ${VAR} and ${VAR:-default} in every string of
-//     settings.json as it loads it, and %VAR% in a server's env block when it
-//     runs on Windows, and on no other system nor in headers (clientOS).
+//     settings.json as it loads it.
 //   - GitHub Copilot CLI reads ${VAR} in a server's env values and takes any
 //     other form literally; its headers are read the same way, which its
 //     documentation does not state.
@@ -70,7 +68,7 @@ func gradeCredentials(r *agentReport, f agentFile, name string, d serverDecl) {
 			if v == "" || !credentialKey.MatchString(k) {
 				continue
 			}
-			switch how, vars := classifyCredential(refs.formsIn(block.header), v); how {
+			switch how, vars := classifyCredential(refs.forms, v); how {
 			case credHeld:
 				held = append(held, k)
 			case credMisnamed:
@@ -129,8 +127,8 @@ func gradeHeld(r *agentReport, f agentFile, refs clientRefs, name, server string
 // does not expand, which reaches the server as the text it is, named holding
 // the variable a braced reference in each names (classifyCredential).
 //
-// Named by the entry, never by what it holds. A bare $NAME or a %NAME% is how
-// a shell names a variable, and also how a password can be spelled —
+// Named by the entry, never by what it holds. A bare $NAME is how a shell
+// names a variable, and also how a password can be spelled —
 // "$ECRET_PASSWORD", or a token after "Bearer $" — and read as a variable's
 // name it was printed, its first character taken off, in the row and in the
 // fix. So the row names the entries, as the one for a value held does, and
@@ -246,9 +244,8 @@ func gradeEmptied(r *agentReport, f agentFile, name string, d serverDecl) {
 type clientRefs struct {
 	client string
 	// forms are the references the client expands there, none for a client
-	// that expands none, and envForms the ones it expands in an env block
-	// and not in headers.
-	forms, envForms []*regexp.Regexp
+	// that expands none.
+	forms []*regexp.Regexp
 	// spell writes a reference to a variable in the form the client reads,
 	// for the fix; nil for a client whose file has no such form.
 	spell func(name string) string
@@ -264,37 +261,20 @@ var (
 	// A bare $NAME only in the upper case variables are named in: a
 	// password that begins with a dollar is plausible, and read as a
 	// reference it would lose its failure.
-	refBare    = regexp.MustCompile(`\$(?P<name>[A-Z_][A-Z0-9_]*)`)
-	refPercent = regexp.MustCompile(`%(?P<name>[A-Z_][A-Z0-9_]*)%`)
+	refBare = regexp.MustCompile(`\$(?P<name>[A-Z_][A-Z0-9_]*)`)
 )
 
 // anyRef is every form some client expands: a value written only in these is
 // a reference, whether or not the client whose file holds it reads it.
-var anyRef = []*regexp.Regexp{refBraces, refEnvColon, refInput, refBare, refPercent}
+var anyRef = []*regexp.Regexp{refBraces, refEnvColon, refInput, refBare}
 
 // envBraced are the forms that name a variable of the environment in braces,
 // the only ones a report repeats a name from: no credential is spelled like
-// one, where a bare $NAME or a %NAME% can be a password (gradeMisnamed), and
-// an input's id names no variable at all.
+// one, where a bare $NAME can be a password (gradeMisnamed), and an input's id
+// names no variable at all.
 var envBraced = []*regexp.Regexp{refBraces, refEnvColon}
 
-// formsIn are the references the client expands in a headers block, or with
-// header false in an env block.
-func (c clientRefs) formsIn(header bool) []*regexp.Regexp {
-	if header || len(c.envForms) == 0 {
-		return c.forms
-	}
-	return append(slices.Clip(c.forms), c.envForms...)
-}
-
-// refsOf is the reference syntax of the client a file belongs to, on the
-// system that file belongs to (clientOS).
-//
-// Gemini CLI's %VAR% is read by that system: its documentation on the env
-// block of a server says the form is "supported only when running on
-// Windows". Graded the same everywhere, it was failed on Windows as a form
-// Gemini does not expand, a finding the operator could only answer by
-// rewriting a reference that already works.
+// refsOf is the reference syntax of the client a file belongs to.
 func refsOf(f agentFile) clientRefs {
 	braces := func(name string) string { return "${" + name + "}" }
 	envColon := func(name string) string { return "${env:" + name + "}" }
@@ -310,9 +290,6 @@ func refsOf(f agentFile) clientRefs {
 		{"Codex CLI", clientRefs{client: "Codex CLI"}},
 	} {
 		if strings.HasPrefix(f.label, c.prefix) {
-			if c.prefix == "Gemini CLI" && clientOS == "windows" {
-				c.refs.envForms = []*regexp.Regexp{refPercent}
-			}
 			return c.refs
 		}
 	}

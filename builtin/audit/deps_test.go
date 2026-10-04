@@ -282,7 +282,7 @@ requests==2.31.0
 // returns an empty slice for a whitespace-only string, unlike strings.Split,
 // so indexing [0] panicked. Worth pinning as more than an injection case —
 // every input here is something an ordinary repository produces by accident.
-// A file authored on Windows reaches the parser with a trailing \r, and
+// A file with CRLF line endings reaches the parser with a trailing \r, and
 // "pin later" is a comment somebody genuinely writes.
 func TestParseRequirementsSurvivesAnEmptyPin(t *testing.T) {
 	for _, line := range []string{

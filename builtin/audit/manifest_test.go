@@ -3,7 +3,6 @@ package audit
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -54,7 +53,7 @@ func monorepoWithAnUnreadableService(t *testing.T) (dir string, blind string) {
 // manifests it found, counted them, graded them, and read exactly like a
 // complete dependency audit of the whole repository.
 func TestARecursiveScanReportsTheDirectoriesItCouldNotRead(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+	if os.Geteuid() == 0 {
 		t.Skip("file modes do not deny the owner here")
 	}
 	dir, _ := monorepoWithAnUnreadableService(t)
