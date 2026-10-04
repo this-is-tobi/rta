@@ -164,30 +164,19 @@ func TestPathFieldCompletesWhileTyping(t *testing.T) {
 	quit(t, tm)
 }
 
-// Windows accepts a forward slash wherever its own separator goes, and a path
-// typed that way — C:/Users/ — used to offer no completions at all, because
-// the split looked for the backslash alone. Either separator ends the
-// directory there; elsewhere only the platform's own does, so a name with a
-// backslash in it stays one name.
-func TestPathCompletionSplitsOnEitherSeparatorOnWindows(t *testing.T) {
-	if got := separatorsFor("windows"); got != `\/` {
-		t.Errorf("separatorsFor(windows) = %q", got)
-	}
-	if got := separatorsFor("linux"); got != string(filepath.Separator) {
-		t.Errorf("separatorsFor(linux) = %q, want the platform's own separator alone", got)
-	}
-	for _, tc := range []struct{ typed, seps, dir, fragment string }{
-		{`C:/Users/`, `\/`, `C:/Users/`, ``},
-		{`C:/Users/al`, `\/`, `C:/Users/`, `al`},
-		{`C:\Users\al`, `\/`, `C:\Users\`, `al`},
-		{`C:\Users/al`, `\/`, `C:\Users/`, `al`},
-		{`a/b`, `/`, `a/`, `b`},
-		{`odd\name`, `/`, ``, `odd\name`},
-		{`bare`, `\/`, ``, `bare`},
+// The last separator ends the directory being listed, and only the platform's
+// own does: a name with a backslash in it stays one name.
+func TestPathCompletionSplitsAtTheLastSeparator(t *testing.T) {
+	for _, tc := range []struct{ typed, dir, fragment string }{
+		{`/home/al/`, `/home/al/`, ``},
+		{`/home/al/no`, `/home/al/`, `no`},
+		{`a/b`, `a/`, `b`},
+		{`odd\name`, ``, `odd\name`},
+		{`bare`, ``, `bare`},
 	} {
-		dir, fragment := splitTyped(tc.typed, tc.seps)
+		dir, fragment := splitTyped(tc.typed)
 		if dir != tc.dir || fragment != tc.fragment {
-			t.Errorf("splitTyped(%q, %q) = %q, %q; want %q, %q", tc.typed, tc.seps, dir, fragment, tc.dir, tc.fragment)
+			t.Errorf("splitTyped(%q) = %q, %q; want %q, %q", tc.typed, dir, fragment, tc.dir, tc.fragment)
 		}
 	}
 }

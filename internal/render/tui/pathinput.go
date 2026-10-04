@@ -3,7 +3,6 @@ package tui
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -58,7 +57,7 @@ func pathSuggestions(typed string, declared []string) []string {
 		add(d)
 	}
 
-	dir, fragment := splitTyped(typed, pathSeparators())
+	dir, fragment := splitTyped(typed)
 	entries, err := os.ReadDir(expandHome(dir))
 	if err != nil {
 		return out
@@ -102,26 +101,11 @@ func expandHome(path string) string {
 	return pathguard.ExpandTilde(path)
 }
 
-// pathSeparators is what may end a directory in a typed path. Windows
-// accepts a forward slash wherever its own backslash goes and people type it
-// — C:/Users/ is an ordinary spelling there — so both count, the way
-// internal/pathguard already reads them. Splitting on the backslash alone
-// offered a path typed that way no completions at all, which defeats the
-// reason this exists: there is no shell inside the TUI to hand the job to.
-func pathSeparators() string { return separatorsFor(runtime.GOOS) }
-
-func separatorsFor(goos string) string {
-	if goos == "windows" {
-		return `\/`
-	}
-	return string(filepath.Separator)
-}
-
 // splitTyped is the split a shell makes: everything up to and including the
 // last separator is the directory being listed, the rest is the fragment to
 // match on.
-func splitTyped(typed, seps string) (dir, fragment string) {
-	if i := strings.LastIndexAny(typed, seps); i >= 0 {
+func splitTyped(typed string) (dir, fragment string) {
+	if i := strings.LastIndex(typed, string(filepath.Separator)); i >= 0 {
 		return typed[:i+1], typed[i+1:]
 	}
 	return "", typed

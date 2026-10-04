@@ -153,11 +153,11 @@ func TestMarkdownEscapesLinkCodeAndHTMLSyntaxInCells(t *testing.T) {
 func TestMarkdownABackslashCannotUndoAnEscape(t *testing.T) {
 	tbl := view.Table{
 		Columns: []view.Column{{Name: "note"}},
-		Rows:    [][]string{{`\<img src=x onerror=alert(1)> and \[a\](https://evil.example) in C:\Users`}},
+		Rows:    [][]string{{`\<img src=x onerror=alert(1)> and \[a\](https://evil.example) in dir\sub`}},
 	}
 	out := md(t, tbl)
 	checkGrid(t, out)
-	for _, escaped := range []string{`\\\<img`, `\\\[a\\\]`, `C:\\Users`} {
+	for _, escaped := range []string{`\\\<img`, `\\\[a\\\]`, `dir\\sub`} {
 		if !strings.Contains(out, escaped) {
 			t.Errorf("missing escaped form %q:\n%s", escaped, out)
 		}
@@ -175,11 +175,11 @@ func TestMarkdownDrawsAnEmptySentenceAsItsOwnLines(t *testing.T) {
 	say := "No store yet — nothing to read.\n\n" +
 		"What it is locked with:\n" +
 		"  rta kv init --generate     a key made for this store\n" +
-		"  rta kv set <key> <value>   a passphrase, in C:\\"
+		"  rta kv set <key> <value>   a passphrase, in dir\\"
 	want := "No store yet — nothing to read.\n\n" +
 		"What it is locked with:\\\n" +
 		"rta kv init --generate     a key made for this store\\\n" +
-		"rta kv set \\<key> \\<value>   a passphrase, in C:\\\\\n"
+		"rta kv set \\<key> \\<value>   a passphrase, in dir\\\\\n"
 	for name, v := range map[string]view.View{
 		"table": view.Table{Columns: []view.Column{{Name: "Type"}}, Empty: say},
 		"text":  view.Text{Empty: say},
@@ -205,7 +205,7 @@ func TestMarkdownDrawsAnEmptySentenceAsItsOwnLines(t *testing.T) {
 func TestMarkdownKeepsMultilineCellsInsideTheirRow(t *testing.T) {
 	tbl := view.Table{
 		Columns: []view.Column{{Name: "key"}, {Name: "detail"}},
-		Rows:    [][]string{{"a", "first\nsecond"}, {"b", "windows\r\nline"}},
+		Rows:    [][]string{{"a", "first\nsecond"}, {"b", "crlf\r\nline"}},
 	}
 	out := md(t, tbl)
 	checkGrid(t, out)
@@ -513,7 +513,7 @@ func codeSpanAfter(t *testing.T, out, prefix string) (content, rest string) {
 func TestMarkdownCodeSpansHoldTheCodeAsItIs(t *testing.T) {
 	codes := []struct{ code, drawn string }{
 		{"net.dns.failed", "net.dns.failed"},
-		{`C:\Users\x`, `C:\Users\x`},
+		{`dir\sub\x`, `dir\sub\x`},
 		{"a<b>c", "a<b>c"},
 		{"[x](https://evil.example)", "[x](https://evil.example)"},
 		{"a|b", "a|b"},

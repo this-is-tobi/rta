@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"os"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -140,9 +139,6 @@ func TestConfirmingThePickerCopiesTheChosenRawValue(t *testing.T) {
 // surface (no clipboard program on the machine) must not be swallowed here
 // either.
 func TestConfirmingThePickerWithNoClipboardProgramFlashesTheFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH semantics differ")
-	}
 	om := openPickerOnThreePasswords(t)
 	t.Setenv("PATH", t.TempDir())
 
