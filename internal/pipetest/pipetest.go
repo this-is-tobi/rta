@@ -1,5 +1,3 @@
-//go:build unix
-
 // Package pipetest is what a test needs to show that a file rta reads is
 // never waited on when something else has put a named pipe where it goes.
 //
@@ -17,7 +15,7 @@ import (
 	"time"
 )
 
-// Plant puts a named pipe at path, skipping the test where the platform has
+// Plant puts a named pipe at path, skipping the test where the filesystem has
 // none.
 func Plant(t *testing.T, path string) {
 	t.Helper()

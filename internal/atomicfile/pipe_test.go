@@ -1,5 +1,3 @@
-//go:build unix
-
 package atomicfile
 
 import (
@@ -14,7 +12,7 @@ import (
 // name on, and a named pipe put there is an open(2) that waits for a writer
 // which never comes: no context reaches into the syscall, and the file may be
 // the lock list or the grants, read before every call an agent makes. Refused
-// at once instead, and not retried the way a refusal that clears is.
+// at once instead.
 func TestANamedPipeWhereAStateFileGoesIsRefusedNotWaitedOn(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lockdown.json")
 	if err := syscall.Mkfifo(path, 0o600); err != nil {

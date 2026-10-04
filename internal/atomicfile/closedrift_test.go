@@ -75,7 +75,7 @@ func TestEveryCloseExemptionIsStillNeeded(t *testing.T) {
 	root := repoRoot(t)
 	fset := token.NewFileSet()
 	for rel := range closeAllowed {
-		path := filepath.Join(root, filepath.FromSlash(rel))
+		path := filepath.Join(root, rel)
 		file, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			t.Errorf("%s is exempted but cannot be read: %v", rel, err)
@@ -119,7 +119,7 @@ func forEachSource(t *testing.T, fn func(rel string, file *ast.File, fset *token
 		if perr != nil {
 			return perr
 		}
-		fn(filepath.ToSlash(rel), file, fset)
+		fn(rel, file, fset)
 		return nil
 	})
 	if err != nil {
