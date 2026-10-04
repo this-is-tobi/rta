@@ -42,7 +42,7 @@ func TestTreeTellsALinksTargetOnlyWhenItNamesPlacesUnderTheRoots(t *testing.T) {
 		"climb":  filepath.Join("..", filepath.Base(outside), "hop"),
 	}
 	if err := os.Symlink(filepath.Join(resolved, "file.txt"), filepath.Join(outside, "hop")); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
+		t.Fatal(err)
 	}
 	for name, target := range links {
 		if err := os.Symlink(target, filepath.Join(root, name)); err != nil {
