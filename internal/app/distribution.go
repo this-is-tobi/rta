@@ -814,7 +814,7 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 			// beside it for a screen: see view.Table.Empty.
 			t := view.Table{Columns: []view.Column{{Name: "Index"}, {Name: "Origin"},
 				{Name: "Pinned"}, {Name: "Plugins"}, {Name: "Problems"}},
-				Empty: "no index is attached — `rta plugin index add <name> <repository>`"}
+				Empty: "no index is attached — " + plugindist.NoIndexAttached().Hint}
 			var problems []*view.Error
 			for _, ix := range indexes {
 				listed, bad := plugindist.Manifests(ix)
