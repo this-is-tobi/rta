@@ -470,13 +470,18 @@ var bell struct {
 //
 // **The doorbell says that somebody is asking, never what they said.** Every
 // word of it is rta's own: the capability id, which pkg/plugin validated at
-// registration, and the request id, which is hex this process generated.
-// Nothing an agent chose — no record name, no argument, not even the profile
-// it named, which at this point in the call has not been checked against the
-// operator's config yet — reaches a channel that renders on a lock screen,
-// gets read aloud by an accessibility tool, or persists in a notification
-// centre. What the request actually asks for is one command away, in a
-// terminal, where it is displayed by code that knows the text is untrusted.
+// registration. Nothing an agent chose — no record name, no argument, not
+// even the profile it named, which at this point in the call has not been
+// checked against the operator's config yet — reaches a channel that renders
+// on a lock screen, gets read aloud by an accessibility tool, or persists in
+// a notification centre. What the request actually asks for is one command
+// away, in a terminal, where it is displayed by code that knows the text is
+// untrusted.
+//
+// The command carries no request id. The id is eight hex digits on a banner
+// that is gone in a few seconds, and copying it off was the whole cost of
+// answering; `rta agent allow` finds the waiting call itself, and shows it
+// before it asks.
 func ringDoorbell(ctx context.Context, capID string, r consent.Request) {
 	bell.Lock()
 	defer bell.Unlock()
@@ -485,7 +490,7 @@ func ringDoorbell(ctx context.Context, capID string, r consent.Request) {
 	}
 	err := notify.Send(ctx, notify.Note{
 		Title: "rta — an agent is waiting",
-		Body:  fmt.Sprintf("%s needs your answer · rta agent allow %s", capID, r.ID),
+		Body:  capID + " needs your answer · rta agent allow",
 		TTL:   time.Until(r.Deadline),
 	})
 	if err != nil {
