@@ -66,10 +66,13 @@ type claudeRegistration struct {
 }
 
 // managed says whether the entry is the one `rta mcp install` makes and may
-// therefore replace or take out: registered under the name rta gives it. An
-// entry that launches rta under another name is the operator's own and is
-// only ever reported.
-func (r claudeRegistration) managed() bool { return r.name == "rta" }
+// therefore replace or take out: registered under the name rta gives it, and
+// starting rta's server. An entry that launches rta under another name is the
+// operator's own and is only ever reported, and so is a server that is not
+// rta's at all in the name rta would have used: it is theirs, and taking it out
+// to put rta there would delete what rta did not write. The client refuses the
+// add, as it always did, and the answer says which line takes it out.
+func (r claudeRegistration) managed() bool { return r.name == "rta" && servesMCP(r.args) }
 
 func asFromArgs(args []string) string {
 	for i, a := range args {

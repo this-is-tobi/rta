@@ -370,6 +370,33 @@ func TestARegistrationUnderAnotherNameIsNotTouched(t *testing.T) {
 	}
 }
 
+// The name rta registers under is the operator's to have used for something
+// else. A server of theirs that starts nothing of rta's, under that name, is not
+// one `install` made, and taking it out to put rta in its place would delete a
+// thing rta did not write: the client refuses, as it always did, and the answer
+// carries the line that takes it out by hand.
+func TestAServerThatIsNotRtaUnderRtasNameIsNotReplaced(t *testing.T) {
+	calls := loggingClient(t, "claude", `echo "MCP server rta already exists in local config" >&2; exit 1`)
+	wd, _ := os.Getwd()
+	doc := map[string]any{"projects": map[string]any{wd: map[string]any{"mcpServers": map[string]any{
+		"rta": map[string]any{"command": "/usr/bin/true", "args": []string{"--stdio"}}}}}}
+	body, _ := json.Marshal(doc)
+	if err := os.WriteFile(filepath.Join(os.Getenv("HOME"), ".claude.json"), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err := run(t, testRegistry(t), "mcp", "install", "claude")
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "core.mcp.install.exists" || !strings.Contains(ve.Hint, "claude mcp remove rta") {
+		t.Fatalf("err = %#v, want core.mcp.install.exists carrying the remove line", err)
+	}
+	for _, c := range calls() {
+		if strings.Contains(c, "remove") {
+			t.Errorf("a server that is not rta's was removed: %v", calls())
+		}
+	}
+}
+
 // Every other client that keeps a file rta can read says "nothing to do" for
 // the registration that is already in it, the way Claude Code does.
 func TestAnIdenticalRegistrationInAClientsFileIsLeftAlone(t *testing.T) {
