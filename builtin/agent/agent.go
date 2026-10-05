@@ -920,20 +920,29 @@ func unknownAgentClause(agent string) string {
 		", it knows " + strings.Join(slices.Sorted(maps.Keys(seen)), ", ")
 }
 
-// severalWithin reports whether rows that share a first value differ in a
-// second: one agent's calls from more than one server, say.
+// interleaved reports whether, among the rows that share a first value, a
+// second one comes back after another has been seen: one agent's calls from
+// two servers that were open at the same time.
 //
-// It is the question the compact log asks of its session column. Two agents
-// each running one server have two sessions, and the agent column already says
-// which is which; the session id only earns its eight cells on the day one
-// agent has several servers open and the agent column cannot tell them apart.
-// Asked as "are there several sessions" it was always yes beside a second
-// agent, and the row then no longer fit eighty cells.
-func severalWithin(shown []agentlog.Entry, outer, inner func(agentlog.Entry) string) bool {
+// It is the question the compact log asks of its session column. A session
+// id is a server's, and a client starts a fresh server every time it is
+// restarted, so over a day one agent's rows carry a handful of ids that
+// follow one another — which the time column already says, and which would
+// put eight cells of hex in every row for good. Two agents with a server each
+// are told apart by the agent column. The id earns its place on the day one
+// agent has several servers calling in turn, which nothing else can say.
+func interleaved(shown []agentlog.Entry, outer, inner func(agentlog.Entry) string) bool {
 	last := map[string]string{}
+	left := map[string]map[string]bool{}
 	for _, e := range shown {
 		o, i := outer(e), inner(e)
-		if seen, ok := last[o]; ok && seen != i {
+		if prev, ok := last[o]; ok && prev != i {
+			if left[o] == nil {
+				left[o] = map[string]bool{}
+			}
+			left[o][prev] = true
+		}
+		if left[o][i] {
 			return true
 		}
 		last[o] = i
@@ -997,7 +1006,7 @@ func logColumns(shown []agentlog.Entry, terse, detail bool) []logColumn {
 		if several(credentialCell) {
 			cols = append(cols, credential)
 		}
-		if severalWithin(shown, whoCalled, sessionCell) {
+		if interleaved(shown, whoCalled, sessionCell) {
 			cols = append(cols, session)
 		}
 		if recorded {
