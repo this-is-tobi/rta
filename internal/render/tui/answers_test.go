@@ -181,3 +181,21 @@ func TestTheCallsOwnPageAnswersWithTheSameKeys(t *testing.T) {
 		t.Errorf("the line over the call's own page points at the queue it came from: %s", line)
 	}
 }
+
+// What is confirmed is what is answered: a call that is gone, or that is not
+// the one the line named, is refused before anything runs.
+func TestEnterRefusesACallThatIsGoneOrIsNotTheOneShown(t *testing.T) {
+	_ = parkCall(t, "note.rm", "2", "would remove note 2: third note")
+	armed := press(t, screenOf(t, "agent.pending", nil), "a")
+
+	changed := armed
+	changed.armed = &armedAnswer{act: armed.armed.act, base: armed.armed.base, line: "allow claude's kv.get once", done: "x"}
+	if got := press(t, changed, "enter"); got.mode != modeResult || !strings.Contains(got.flash, "changed after it was shown") {
+		t.Errorf("a call that is not the one named ran: mode %v flash %q", got.mode, got.flash)
+	}
+
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	if got := press(t, armed, "enter"); got.mode != modeResult || !strings.Contains(got.flash, "not waiting any more") {
+		t.Errorf("a call that is gone ran: mode %v flash %q", got.mode, got.flash)
+	}
+}
