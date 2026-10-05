@@ -41,12 +41,14 @@ func versionLine(version, commit string) string {
 	return version
 }
 
-// renderUncoded draws an error nothing coded the way a coded one is drawn,
-// under a code that says nobody named it: the same block, the same format the
-// command line asked for. A usage mistake is not one of these — it is coded at
-// the place it is found (CodeUsage) — so what reaches here is a failure inside
-// cobra or the runtime, which is exactly the one a person should be able to
-// quote.
+// renderUncoded draws an error nothing coded the way the rest of the line it
+// stands with is drawn, and in prose whatever --output says: it is a failure
+// inside cobra or the runtime, with no code to branch on and no place in a
+// machine-readable format's schema, which is exactly why docs/20-using/10-cli.md
+// gives it the exit a usage mistake has and no structure. A usage mistake is
+// not one of these — it is coded at the place it is found (CodeUsage).
 func renderUncoded(w io.Writer, root *cobra.Command, err error) {
-	_ = cli.RenderError(w, view.AsError(err, "core.error"), topLevelRenderOptions(root))
+	opts := topLevelRenderOptions(root)
+	opts.Format = cli.Pretty
+	_ = cli.RenderError(w, &view.Error{Message: err.Error()}, opts)
 }
