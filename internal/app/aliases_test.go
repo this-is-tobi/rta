@@ -3,6 +3,8 @@ package app
 import (
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/builtin/audit"
 )
 
 // `rta plugin ls` worked and `rta kv ls`, `rta note delete`, `rta plugin rm` and
@@ -143,5 +145,31 @@ func TestTheLockNounTakesTheArgumentsOfAdd(t *testing.T) {
 	}
 	if cmd, _, _ := NewRoot(reg, "test").Find([]string{"lock", "list"}); cmd.CommandPath() != "rta lock list" {
 		t.Errorf("`rta lock list` is %s, not the command that lists", cmd.CommandPath())
+	}
+}
+
+// The deny list `audit clients --fix` prints names a verb by its spelling —
+// "Bash(rta keys add:*)" — and a string match is blind to a second spelling of
+// the same command. A whole namespace is denied whole, so an alias inside it is
+// covered; a verb that is denied by itself must have no alias at all, or the
+// alias is a way round the harness's refusal. The day a verb of one of these
+// is named rm, show or list, this is what says it cannot also answer to the
+// other spellings.
+func TestAVerbTheDenyListNamesAloneHasNoAlias(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := NewRoot(reg, "test")
+	verbs := append(audit.HumanOnlyVerbs(reg.Capabilities), "plugin trust", "plugin allow", "plugin install")
+	for _, verb := range verbs {
+		cmd := commandAt(root, "rta "+verb)
+		if cmd == nil {
+			t.Errorf("the deny list names `rta %s`, which is not a command", verb)
+			continue
+		}
+		if len(cmd.Aliases) > 0 {
+			t.Errorf("`rta %s` is denied by name and answers to %v as well", verb, cmd.Aliases)
+		}
 	}
 }
