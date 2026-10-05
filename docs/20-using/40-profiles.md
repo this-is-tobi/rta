@@ -361,13 +361,13 @@ rta use                          # what is on
 rta use --off
 ```
 
-While a profile is on, every later command for a plugin it covers runs against it with no `--profile` at all.
+While a profile is on, every later command for a plugin it covers runs against it with no `--profile` at all, and says so first: at a terminal each prints ` ● staging · 59m left` on stderr before its result, in step with the TUI's header. A pipe, `-o json` and the other machine-readable formats never get the line, and a command that names its own `--profile` has already said which environment it means.
 
 **The deadline is real.** `--for` overrides it, a profile's own `ttl:` supplies it, and when it lapses everything falls back to the base configuration on its own. A deadline that depended on a process staying alive would not be a deadline.
 
 ### Mark the ones you would rather not be in by accident
 
-A switch outlives the command that made it — that is the whole point of it — so the twentieth command afterwards runs against production with nothing on screen saying so. Give an environment a colour and it says so first:
+A switch outlives the command that made it — that is the whole point of it — so the twentieth command afterwards runs against production with nothing but your memory saying so. Every environment that is on announces itself before the commands it can change, and giving one a colour makes it say so before every command, in that colour:
 
 ```yaml
 profiles:
@@ -385,15 +385,15 @@ hostname   db.internal
 ...
 ```
 
-The badge prints above every command while that environment is on, in the colour you gave it, with the deadline beside it when there is one. The TUI's dashboard header carries the same badge.
+The badge prints above the result while that environment is on, in the colour you gave it, with the deadline beside it when there is one. The TUI's dashboard header carries the same badge.
 
 Three things about it are deliberate:
 
 - **It paints the profile's name and nothing else.** A profile that could repaint the palette would put its colour on keys, labels and selection — right beside the ones that mean ok, warn and failed — and an environment marked red would draw healthy rows in the colour of a failure. That is worse than no marking at all, because it teaches the eye to ignore red.
-- **Only a profile with a `color:` announces itself.** Marking one is you saying *this* is the environment worth interrupting you about. Unmarked environments stay as quiet as they were, which is what keeps the badge meaning something.
+- **A colour is what makes it louder, not what makes it appear.** An environment without a `color:` prints a plain green bullet before the commands it acts on — a command of a plugin it covers, run without a `--profile` of its own — and stays out of `rta use`, `rta doctor` and the plugins it says nothing about, which is what keeps the line meaning something. Marking one is you saying *this* is the environment worth interrupting you about, wherever you are, so a marked one prints before every command.
 - **It never reaches machine-readable output.** `-o json` and `-o yaml` get exactly what they got before, because the output you read off your screen is the output you paste into a parser.
 
-`--no-color` keeps the badge and drops the paint: `[ shop-prod ]`. A colour rta cannot read paints nothing and is reported by `rta profile list`, `rta profile show` and `rta doctor`, rather than falling back to one you did not choose — and it never stops the environment from being switched to or used.
+`--no-color` keeps the badge and drops the paint: `[ shop-prod ]`. A colour rta cannot read marks nothing, so the environment announces itself as an unmarked one does, rather than in one you did not choose; it is reported by `rta profile list`, `rta profile show` and `rta doctor`, and never stops the environment from being switched to or used. Under a locale that does not name `UTF-8` the bullet is an asterisk, as everything rta draws is plain ASCII there (see [the CLI](./10-cli.md)).
 
 ## Switching authorizes nothing
 
