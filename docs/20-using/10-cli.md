@@ -142,7 +142,7 @@ rta note rm 4 --yes
 
 ## `--help`
 
-Every command's `--help` describes what it does, the arguments it takes, and the flags it accepts.
+Every command's `--help` describes what it does, the arguments it takes, and the flags it accepts, laid out for the width of your terminal.
 
 ```bash
 rta cert expiry --help
@@ -153,11 +153,12 @@ rta cert expiry --help
     targets  hosts to check (host[:port], or an https:// URL)
 
   USAGE
-
     rta cert expiry <targets> [--flags]
 ```
 
 The arguments are read from the same declaration as the flags below them, so a capability cannot take one without documenting it — `<targets>` alone would never tell you it accepts a port.
+
+The commands you type every day — `grant allow`, `lock add`, `agent log`, `kv set`, `mcp install` and the rest of the operator's verbs — carry an `EXAMPLES` block of two to four lines that run as written, so the first usable command is on the screen and not in a paragraph. `--yes` and `--dry-run` are listed on the commands that write, and `--profile` on the ones with a connection to point it at; every command accepts them all the same. `rta --help` opens with the four commands to type first, and bare `rta` opens the dashboard.
 
 ## `rta explain`
 
