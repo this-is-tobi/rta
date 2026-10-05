@@ -949,9 +949,14 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 				return nil
 			}
 			// Where am I, before the command rather than after it — and first,
-			// because it frames whatever follows it. Silent unless the active
-			// environment carries a `color:`; see WarnActiveProfile.
-			WarnActiveProfile(cmd.ErrOrStderr(), cfg, opts.output != "pretty", opts.noColor)
+			// because it frames whatever follows it. Before every command for
+			// an environment with a `color:`, and before the ones it can
+			// change for any other; see WarnActiveProfile.
+			WarnActiveProfile(cmd.ErrOrStderr(), cmd, cfg, BadgeStyle{
+				MachineReadable: opts.output != "pretty",
+				NoColor:         opts.noColor,
+				ASCII:           cli.ASCIIOnly(os.Getenv),
+			})
 			WarnUntrustedPlugins(cmd.ErrOrStderr(), opts.output != "pretty")
 			WarnConfigProblems(cmd.ErrOrStderr(), cmd, opts.output != "pretty")
 			return nil
