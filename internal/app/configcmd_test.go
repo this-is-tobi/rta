@@ -603,3 +603,42 @@ func TestConfigGetNeverPrintsACredentialThatShowWithholds(t *testing.T) {
 		t.Errorf("asking for a credential by name is not refused as one: %q, %v", errOut, err)
 	}
 }
+
+// `rta config set output` while RTA_OUTPUT is exported says that the variable
+// outranks the file, so the next command printing in another format is not a
+// mystery; with nothing exported, or the same format, there is nothing to say.
+//
+// Fails without outputOutranked: the receipt says only that the key was set.
+func TestConfigSetOutputSaysWhenTheEnvironmentOutranksIt(t *testing.T) {
+	reg := configRegistry(t)
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	SetInstalled(reg)
+	t.Cleanup(func() { SetInstalled(nil) })
+	set := func(env, value string) string {
+		t.Helper()
+		t.Setenv("RTA_OUTPUT", env)
+		root := NewRoot(reg, "test")
+		var out, errOut bytes.Buffer
+		root.SetOut(&out)
+		root.SetErr(&errOut)
+		root.SetArgs([]string{"config", "set", "output", value, "-o", "pretty"})
+		if err := root.ExecuteContext(context.Background()); err != nil {
+			t.Fatalf("%v\n%s", err, errOut.String())
+		}
+		return out.String()
+	}
+
+	if got := set("yaml", "json"); !strings.Contains(got, "RTA_OUTPUT=yaml is exported") {
+		t.Errorf("no word that RTA_OUTPUT outranks the file:\n%s", got)
+	}
+	if got := set("yaml", "json"); !strings.Contains(got, "unchanged") || !strings.Contains(got, "RTA_OUTPUT=yaml is exported") {
+		t.Errorf("an unchanged set does not say it either:\n%s", got)
+	}
+	if got := set("json", "json"); strings.Contains(got, "is exported") {
+		t.Errorf("the variable agrees with the file, and the receipt still warns:\n%s", got)
+	}
+	if got := set("", "yaml"); strings.Contains(got, "is exported") {
+		t.Errorf("nothing is exported, and the receipt warns:\n%s", got)
+	}
+}

@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"slices"
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
@@ -55,8 +57,9 @@ func runConfigSet(reg *registry.Registry, raw string, values []string, dryRun bo
 		return nil, view.AsError(err, "core.config.write")
 	}
 	if had == has && strings.Join(configValueLines(before), "\n") == strings.Join(configValueLines(after), "\n") {
-		return view.KeyValue{Pairs: []view.Pair{{Key: "unchanged",
-			Value: key.Name + " " + configStated(key, after, has) + " — nothing written to " + config.Path()}}}, nil
+		return view.KeyValue{Pairs: slices.Concat([]view.Pair{{Key: "unchanged",
+			Value: key.Name + " " + configStated(key, after, has) + " — nothing written to " + config.Path()}},
+			outputOutranked(key, strings.Join(configValueLines(after), "")))}, nil
 	}
 
 	label, verb := "wrote", "set "+key.Name+" to "+strings.Join(configValueLines(after), ", ")
@@ -67,10 +70,27 @@ func runConfigSet(reg *registry.Registry, raw string, values []string, dryRun bo
 		label = "would write"
 		verb = "would " + verb
 	}
-	return view.KeyValue{Pairs: []view.Pair{
+	return view.KeyValue{Pairs: slices.Concat([]view.Pair{
 		{Key: label, Value: verb + " in " + config.Path()},
 		{Key: "back", Value: configBack(key, before, had)},
-	}}, nil
+	}, outputOutranked(key, strings.Join(configValueLines(after), "")))}, nil
+}
+
+// outputOutranked says so when the key just written is the output format and
+// $RTA_OUTPUT is exported, which outranks the file: the next command prints in
+// the variable's format, and a receipt that only said "set output to json" would
+// leave the person looking for the reason in the file they just edited.
+func outputOutranked(key configKey, now string) []view.Pair {
+	env := os.Getenv("RTA_OUTPUT")
+	if now == "" {
+		now = "pretty"
+	}
+	if key.Name != "output" || env == "" || env == now {
+		return nil
+	}
+	return []view.Pair{{Key: "note", Value: "RTA_OUTPUT=" + env +
+		" is exported in this shell and outranks the file, so commands keep printing " + env +
+		" until it is unset"}}
 }
 
 // configStated is what a key is, for a sentence: its value, or what it is while
@@ -136,5 +156,5 @@ func runConfigUnset(reg *registry.Registry, raw string, dryRun bool) (view.View,
 	if had {
 		pairs = append(pairs, view.Pair{Key: "back", Value: configBack(key, before, true)})
 	}
-	return view.KeyValue{Pairs: pairs}, nil
+	return view.KeyValue{Pairs: append(pairs, outputOutranked(key, "")...)}, nil
 }
