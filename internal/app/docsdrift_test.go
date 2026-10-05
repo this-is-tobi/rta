@@ -315,6 +315,23 @@ func TestTheDocsCountTheFirstPartyPluginsAlike(t *testing.T) {
 	}
 }
 
+// pluginPages is the text of every page about plugins, the using page and the
+// authoring pages together, for a check that a word is said somewhere among
+// them.
+func pluginPages(t *testing.T, root string) string {
+	t.Helper()
+	pages, err := filepath.Glob(filepath.Join(root, "docs", "40-plugins", "*.md"))
+	if err != nil || len(pages) < 5 {
+		t.Fatalf("found %d plugin pages (%v); want the using page and the authoring pages", len(pages), err)
+	}
+	var all strings.Builder
+	for _, page := range pages {
+		rel, _ := filepath.Rel(root, page)
+		all.WriteString(readDoc(t, root, rel))
+	}
+	return all.String()
+}
+
 func readDoc(t *testing.T, root, rel string) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join(root, rel))
@@ -332,12 +349,12 @@ func readDoc(t *testing.T, root, rel string) string {
 // values, or a tile that keeps its width could not find that they exist.
 //
 // The check is the cheap kind: every exported field of the declaration and view
-// types is named, as a word, somewhere on the two plugin pages. It cannot say
+// types is named, as a word, somewhere on the plugin pages. It cannot say
 // the sentence is right, only that nobody added a switch to the SDK and left
 // its authors to read the source to learn it.
 func TestThePluginChaptersNameEveryFieldAPluginDeclares(t *testing.T) {
 	root := repoRoot(t)
-	pages := readDoc(t, root, "docs/40-plugins/10-plugins.md") + readDoc(t, root, "docs/40-plugins/20-writing-a-plugin.md")
+	pages := pluginPages(t, root)
 
 	// An error is left out: its code, message and hint are what Errorf and
 	// WithHint take, and the chapter shows them as those calls.
@@ -353,7 +370,7 @@ func TestThePluginChaptersNameEveryFieldAPluginDeclares(t *testing.T) {
 				continue
 			}
 			if !regexp.MustCompile(`\b` + name + `\b`).MatchString(pages) {
-				t.Errorf("neither plugin page names %s.%s; say what it does where an author using %s would look",
+				t.Errorf("no plugin page names %s.%s; say what it does where an author using %s would look",
 					typ.Name(), name, typ.Name())
 			}
 		}
@@ -517,7 +534,7 @@ func TestTheGlossaryExplainsEveryAcronymTheDocsUse(t *testing.T) {
 // the chapter says what it checks.
 func TestThePluginChapterNamesEveryRuleTheSuiteCanBeToldToSkip(t *testing.T) {
 	root := repoRoot(t)
-	chapter := readDoc(t, root, "docs/40-plugins/20-writing-a-plugin.md")
+	chapter := readDoc(t, root, "docs/40-plugins/24-testing-and-publishing.md")
 	rule := regexp.MustCompile(`(?m)^\t(Rule[A-Z]\w*) Rule = `)
 	src := readDoc(t, root, "pkg/sdk/sdktest/sdktest.go")
 	found := rule.FindAllStringSubmatch(src, -1)
@@ -529,7 +546,7 @@ func TestThePluginChapterNamesEveryRuleTheSuiteCanBeToldToSkip(t *testing.T) {
 			continue
 		}
 		if !strings.Contains(chapter, m[1]) {
-			t.Errorf("the writing chapter does not name sdktest.%s, which Skip takes", m[1])
+			t.Errorf("the testing page does not name sdktest.%s, which Skip takes", m[1])
 		}
 	}
 }

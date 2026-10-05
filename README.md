@@ -53,7 +53,11 @@ rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run native
 *Plugins*
 - [Using plugins](./docs/40-plugins/10-plugins.md) *- Discovery, trust, indexes, install and upgrade*
 - [The plugin inventory](./docs/40-plugins/15-the-plugin-inventory.md) *- What the TUI's plugin pane shows, and the plugins rta found and refused to run*
-- [Writing a plugin](./docs/40-plugins/20-writing-a-plugin.md) *- The SDK, the conformance suite, `plugin new` and `plugin dev`, and publishing it to an index*
+- [Writing a plugin](./docs/40-plugins/20-writing-a-plugin.md) *- Fifteen minutes from `plugin new` to a plugin that runs: the loop, what an answer is, and worked examples*
+- [Declaring inputs](./docs/40-plugins/21-declaring-inputs.md) *- What a capability takes, and how a connection is declared once for every capability of a plugin*
+- [Answers, errors and hints](./docs/40-plugins/22-answers-errors-and-hints.md) *- Hints in the reader's own words, connection failures, refusals and warnings*
+- [Safety, credentials and what rta does to your process](./docs/40-plugins/23-safety-and-credentials.md) *- The claims a capability makes about itself, and the checks on declared text*
+- [Testing, conventions and publishing](./docs/40-plugins/24-testing-and-publishing.md) *- The conformance suite, the habits worth keeping, and publishing it to an index*
 
 *Recipes*
 - [Recipes](./docs/90-recipes/01-readme.md) *- Worked end-to-end examples: incident triage, a scoped agent, CI checks, backups*
