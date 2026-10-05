@@ -987,6 +987,7 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 			sub.Run, sub.RunE = nil, helpRunE
 		}
 	}
+	shapeCompletion(root)
 	// After cobra's own commands are added, whose long text is hand-wrapped too.
 	reflowHelp(root)
 	codeUsageErrors(root)
