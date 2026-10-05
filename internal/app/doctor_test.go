@@ -118,6 +118,17 @@ func TestDoctorReportsAHealthyEmptyMachine(t *testing.T) {
 	check(t, rows, "kv store", "ok", "none yet")
 }
 
+// The first step toward a store is the one every kv hint gives: set a value
+// and choose the passphrase then. A doctor row that sent a person to `kv init`
+// first made two ways in out of one.
+func TestDoctorSendsAnEmptyKVStoreTheSameWayEveryKVHintDoes(t *testing.T) {
+	isolate(t)
+	want := "none yet — " + kv.NoStoreNext(plugin.SurfaceCLI, "<key>")
+	if got := report(t)["kv store"][1]; got != want {
+		t.Errorf("kv store detail = %q, want %q", got, want)
+	}
+}
+
 // The three kv answers are the point of the check, and they are genuinely
 // different: no store, a store this shell can open, and a store whose key is
 // here but locked. Saying "no key material" for the third would be a
