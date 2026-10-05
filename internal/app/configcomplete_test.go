@@ -1,11 +1,14 @@
 package app
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func completionsFor(t *testing.T, args ...string) []string {
@@ -82,5 +85,16 @@ func TestExplainEndsAPluginsKeysWithTheLineThatSetsOne(t *testing.T) {
 	out, _, _ = run(t, reg, "explain", "gen.overview", "-o", "pretty")
 	if strings.Contains(out, "set a key") {
 		t.Errorf("a card with no config key offers one:\n%s", out)
+	}
+}
+
+// A key typed without the part of it that names a capability is told where it
+// is, as the keys it can be spelled with.
+func TestConfigSetNamesTheDottedKeysAWordEnds(t *testing.T) {
+	_, _, _, err := configRun(t, configRegistry(t), "", "config", "set", "plugins.gen.symbols", "true")
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "core.config.key.unknown" ||
+		!strings.Contains(ve.Hint, "`plugins.gen.password.symbols`") {
+		t.Errorf("err = %#v, want the key it is spelled as", err)
 	}
 }

@@ -242,6 +242,13 @@ func unknownPluginKey(reg *registry.Registry, ns, key string, readers map[string
 	if guess := near.Word(key, keys); guess != "" {
 		return verr.WithHint("did you mean `plugins." + ns + "." + guess + "`?")
 	}
+	if where := near.Qualified(key, keys); len(where) > 0 {
+		spelled := make([]string, len(where))
+		for i, w := range where {
+			spelled[i] = "`plugins." + ns + "." + w + "`"
+		}
+		return verr.WithHint("it is spelled with the capability that reads it: " + strings.Join(spelled, " or "))
+	}
 	for _, c := range reg.Capabilities() {
 		if plugin.Namespace(c.ID) == ns {
 			return verr.WithHint("`rta explain " + c.ID + "` lists the keys " + ns + " reads — " +

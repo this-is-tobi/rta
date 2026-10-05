@@ -37,6 +37,24 @@ func Distance(a, b string) int {
 	return d[len(ra)][len(rb)]
 }
 
+// Qualified are the candidates that are word with a prefix before a dot, in the
+// order given and at most three: `limit` is the last part of `usage.limit` and
+// `tree.limit`, which is where a key that "nothing reads" went when a plugin
+// states the same setting once for each capability that takes it. Word cannot
+// find them, since the prefix is most of what separates them from the word.
+func Qualified(word string, candidates []string) []string {
+	var out []string
+	for _, c := range candidates {
+		if i := strings.LastIndex(c, "."); i > 0 && strings.EqualFold(c[i+1:], word) {
+			out = append(out, c)
+			if len(out) == 3 {
+				break
+			}
+		}
+	}
+	return out
+}
+
 // Word is the candidate word was most likely meant to be, or "" when none is
 // close enough to be worth saying.
 //

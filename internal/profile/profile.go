@@ -1096,6 +1096,8 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 			hint := "`rta explain <capability>` lists the config keys it reads"
 			if guess := near.Word(k, readerKeys(readers)); guess != "" {
 				hint = fmt.Sprintf("did you mean %q?", guess)
+			} else if where := near.Qualified(k, readerKeys(readers)); len(where) > 0 {
+				hint = "it is spelled with the capability that reads it: " + strings.Join(where, " or ")
 			}
 			if declared[k] {
 				// Declared but refused: a Path, or the capability's own Scope.

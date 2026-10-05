@@ -49,3 +49,24 @@ func TestDistanceCountsASwapOfNeighboursAsOneEdit(t *testing.T) {
 		}
 	}
 }
+
+// A key a plugin spells once per capability is found by its last part.
+func TestQualifiedFindsTheDottedKeysAWordEnds(t *testing.T) {
+	keys := []string{"algo", "tree.depth", "tree.limit", "usage.depth", "usage.limit", "limit.max", "a.b.limit", "x.limit"}
+	got := Qualified("limit", keys)
+	want := []string{"tree.limit", "usage.limit", "a.b.limit"}
+	if len(got) != len(want) {
+		t.Fatalf("Qualified = %v, want %v (at most three, a word that only begins a key is not one)", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Qualified[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if got := Qualified("algo", keys); got != nil {
+		t.Errorf("an undotted key is no qualification of itself: %v", got)
+	}
+	if got := Qualified("LIMIT", keys[:3]); len(got) != 1 {
+		t.Errorf("the case of the word is not held against it: %v", got)
+	}
+}

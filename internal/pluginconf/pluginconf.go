@@ -264,6 +264,8 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 				hint := "`rta explain` lists the inputs a capability takes"
 				if guess := near.Word(key, sortedKeys(readers)); guess != "" {
 					hint = fmt.Sprintf("did you mean %q?", guess)
+				} else if where := near.Qualified(key, sortedKeys(readers)); len(where) > 0 {
+					hint = "it is spelled with the capability that reads it: " + strings.Join(where, " or ")
 				}
 				problems = append(problems, Problem{Section: ns, Key: key,
 					Reason: fmt.Sprintf("nothing in %q reads %q", ns, key), Hint: hint})
