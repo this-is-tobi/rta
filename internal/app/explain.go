@@ -395,13 +395,18 @@ func cliForm(c plugin.Capability) string {
 func capabilityNotFound(reg *registry.Registry, id string) *view.Error {
 	caps := reg.Capabilities()
 	e := view.Errorf("core.capability.unknown", "unknown capability %q", id)
-	near := match.Nearest(id, capabilityItems(caps))
-	if len(near) == 0 {
-		return e.WithHint("run `rta explain` to list all capabilities")
+	var ids []string
+	for _, r := range match.Nearest(id, capabilityItems(caps)) {
+		// Only what is worth offering: below the floor is a word found inside
+		// another (`ports` in the summary of kv.env, which says "exports"), and a
+		// list that ends in one teaches that the first line is a guess too.
+		if r.Score < match.Likely || len(ids) == 3 {
+			break
+		}
+		ids = append(ids, caps[r.Index].ID)
 	}
-	ids := make([]string, min(3, len(near)))
-	for i := range ids {
-		ids[i] = caps[near[i].Index].ID
+	if len(ids) == 0 {
+		return e.WithHint("run `rta explain` to list all capabilities")
 	}
 	return e.WithHint("did you mean: " + strings.Join(ids, ", "))
 }

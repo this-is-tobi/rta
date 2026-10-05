@@ -38,3 +38,20 @@ func TestExplainSuggestsByTheWordsTypedAndByTheirSpelling(t *testing.T) {
 		}
 	}
 }
+
+// A list of suggestions ends where the likeness does: `ports` is `net.port`,
+// and kv.env is only there because its summary says "exports".
+func TestExplainOffersNothingThatOnlyContainsTheWord(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = run(t, reg, "explain", "ports")
+	var ve *view.Error
+	if !errors.As(err, &ve) {
+		t.Fatalf("`rta explain ports` answered %v", err)
+	}
+	if strings.Contains(ve.Hint, "kv.env") {
+		t.Errorf("`rta explain ports` hints %q, which offers a capability for a word inside another", ve.Hint)
+	}
+}
