@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -29,10 +28,7 @@ import (
 // each as the command it runs. Anything else about the file is a key to set
 // (`rta config schema` lists them) or, for the dashboard, `+` in the TUI and
 // `rta dashboard add`, which add a tile without turning the rest into a list.
-//
-// The first parameter is the registry the tile question was built from, which
-// nothing here reads any more; it stays so the command tree is built as it was.
-func newInitCommand(_ *registry.Registry, opts *globalOpts) *cobra.Command {
+func newInitCommand(opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "First-run setup: connect your agent clients, and shell completion",
