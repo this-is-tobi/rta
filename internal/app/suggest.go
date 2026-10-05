@@ -178,7 +178,7 @@ func commandItems(group *cobra.Command, summaries bool) ([]match.Item, []*cobra.
 			}
 			item := match.Item{
 				ID:       strings.ReplaceAll(strings.TrimPrefix(sub.CommandPath(), prefix), " ", "."),
-				Keywords: commandKeywords[sub.CommandPath()],
+				Keywords: append(slices.Clone(commandKeywords[sub.CommandPath()]), strings.Fields(sub.Annotations[annotKeywords])...),
 			}
 			if summaries {
 				item.Summary = sub.Short
