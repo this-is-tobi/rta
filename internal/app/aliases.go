@@ -149,7 +149,7 @@ func makeDefaultVerb(group *cobra.Command, name string) {
 			return cmd.Help()
 		}
 		if near := plausibleSuggestions(args[0], cmd.SuggestionsFor(args[0])); len(near) > 0 {
-			return usageError(cmd, unknownCommand(cmd, args[0]))
+			return usageError(cmd, unknownCommand(cmd, args[0], args[1:]...))
 		}
 		return verb.RunE(cmd, args)
 	}

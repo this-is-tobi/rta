@@ -84,12 +84,18 @@ func usageError(cmd *cobra.Command, err error) error {
 	if errors.As(err, &ve) {
 		return err
 	}
-	says := "says what it takes"
-	if cmd.HasSubCommands() {
-		says = "lists its commands"
+	hint := "`" + cmd.CommandPath() + " --help` says what it takes"
+	switch {
+	case cmd.HasSubCommands() && cmd.HasParent():
+		hint = verbsHint(cmd)
+	case cmd.HasSubCommands():
+		hint = "`" + cmd.CommandPath() + " --help` lists its commands"
+	case strings.HasPrefix(err.Error(), "unexpected argument"):
+		if flags := valueFlagsHint(cmd); flags != "" {
+			hint = flags
+		}
 	}
-	return &view.Error{Code: CodeUsage, Message: err.Error(),
-		Hint: "`" + cmd.CommandPath() + " --help` " + says}
+	return &view.Error{Code: CodeUsage, Message: err.Error(), Hint: hint}
 }
 
 // codeUsageErrors makes every argument check in the tree answer with
@@ -641,7 +647,7 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return cmd.Help()
 	}
-	return usageError(cmd, unknownCommand(cmd, args[0]))
+	return usageError(cmd, unknownCommand(cmd, args[0], args[1:]...))
 }
 
 // unknownCommand is what rta says about a name that is not a command, at
@@ -665,7 +671,15 @@ func groupRunE(cmd *cobra.Command, args []string) error {
 // So a near miss is one sentence, which is both what a renderer can put on
 // one line and what a reader takes in at a glance. Unpunctuated, as every
 // error message here is. It reaches the reader coded as CodeUsage.
-func unknownCommand(cmd *cobra.Command, arg string) error {
+func unknownCommand(cmd *cobra.Command, arg string, rest ...string) error {
+	return unknownWord(cmd, arg, rest, false)
+}
+
+// unknownWord is unknownCommand for a word that is a command line, or — with
+// topic — one that asks for help on a subject: `rta help security` is not a
+// service to install, and it is not a typo; the commands that name it are the
+// answer, and past them the documentation.
+func unknownWord(cmd *cobra.Command, arg string, rest []string, topic bool) error {
 	msg := fmt.Sprintf("unknown command %q for %q", arg, cmd.CommandPath())
 	if cmd.DisableSuggestions {
 		return errors.New(msg)
@@ -675,6 +689,23 @@ func unknownCommand(cmd *cobra.Command, arg string) error {
 	// and `lst` earns no `list`. The root's own value, applied here.
 	if cmd.SuggestionsMinimumDistance <= 0 {
 		cmd.SuggestionsMinimumDistance = 2
+	}
+	// What the word is called somewhere else in the tree comes first: `rta
+	// revoke` is `rta grant revoke`, and `rta ps` is `rta sys ps`, not the
+	// edit-distance neighbour `fs`. See suggestCommands.
+	guess := suggestCommands(cmd, arg, !topic)
+	if guess.whole {
+		hint := unknownHint(guess, arg, rest, topic)
+		// A word that names a group rather than a verb may as well be a
+		// service: `audit kube` is a command and `kube` is also a plugin, and
+		// the one thing a group's name does not rule out is the other reading.
+		// A verb (`revoke`, `ps`) is never one, and is not told it might be.
+		if !topic && guess.namesAGroup() {
+			if more := notACommandHint(cmd, arg, nil); more != "" {
+				hint += " · " + more
+			}
+		}
+		return &view.Error{Code: CodeUsage, Message: msg, Hint: hint}
 	}
 	// The suggestion is what turns a typo into a one-keystroke fix instead of
 	// a trip through --help: `rta sy cpu` suggested `sys` while `rta sys
@@ -687,11 +718,29 @@ func unknownCommand(cmd *cobra.Command, arg string) error {
 		}
 		msg = fmt.Sprintf("%s — the closest %s %s", msg,
 			format.Plural(len(near), "match is", "matches are"), strings.Join(quoted, ", "))
+	} else if len(guess.commands) > 0 {
+		return &view.Error{Code: CodeUsage, Message: msg, Hint: unknownHint(guess, arg, rest, topic)}
+	}
+	if topic {
+		return &view.Error{Code: CodeUsage, Message: msg, Hint: unknownHint(suggestion{}, arg, nil, true)}
 	}
 	if hint := notACommandHint(cmd, arg, near); hint != "" {
 		return &view.Error{Code: CodeUsage, Message: msg, Hint: hint}
 	}
 	return errors.New(msg)
+}
+
+// unknownHint is what a refused word is told: the commands it probably meant,
+// and for a subject asked of `help`, where to read about it.
+func unknownHint(guess suggestion, word string, rest []string, topic bool) string {
+	hint := suggestionHint(guess, word, rest)
+	if !topic {
+		return hint
+	}
+	if hint == "" {
+		hint = "`rta explain` finds a capability by word"
+	}
+	return hint + " — documentation: " + docsURL
 }
 
 // helpRunE is `rta help <command…>`: the help of the command named, and a usage
@@ -702,7 +751,7 @@ func unknownCommand(cmd *cobra.Command, arg string) error {
 func helpRunE(cmd *cobra.Command, args []string) error {
 	target, rest, _ := cmd.Root().Find(args)
 	if len(rest) > 0 {
-		return usageError(target, unknownCommand(target, rest[0]))
+		return usageError(target, unknownWord(target, rest[0], nil, true))
 	}
 	return target.Help()
 }
@@ -887,7 +936,7 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 			if len(args) == 0 {
 				return nil
 			}
-			return unknownCommand(cmd, args[0])
+			return unknownCommand(cmd, args[0], args[1:]...)
 		},
 		// Bare `rta` on a TTY opens the interactive shell; in a pipe it
 		// prints help so scripts never hang on an invisible TUI.
@@ -1227,7 +1276,7 @@ func positionalFlagError(c plugin.Capability, positionals []plugin.Field) func(*
 				return usageError(cmd, fmt.Errorf("this capability takes %q as an argument, not a flag — %s", f.Name, cliForm(c)))
 			}
 		}
-		return usageError(cmd, err)
+		return flagValueError(cmd, err, &c)
 	}
 }
 
@@ -1248,6 +1297,15 @@ func flagValueError(cmd *cobra.Command, err error, c *plugin.Capability) error {
 	}
 	if refused := refuseDashedValue(cmd, err); refused != nil {
 		return refused
+	}
+	if typed, unknown := unknownFlagName(err); unknown {
+		if refused := unknownBeforeFlag(cmd); refused != nil {
+			return refused
+		}
+		if near := nearestFlags(cmd, typed); len(near) > 0 {
+			return &view.Error{Code: CodeUsage, Message: err.Error(),
+				Hint: "did you mean " + strings.Join(near, " or ") + "? `" + cmd.CommandPath() + " --help` lists what it takes"}
+		}
 	}
 	return usageError(cmd, err)
 }
