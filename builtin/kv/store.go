@@ -292,18 +292,23 @@ func resolvePassphrase(req plugin.Request) (string, *view.Error) {
 // to something that would only fail to open it; the store being absent is the
 // whole test, because every other way a passphrase is wanted has a store to
 // check it against.
+//
+// A prompt that ends without an answer (^D, a terminal that closed) is no
+// passphrase rather than an error of its own, as it was when the prompt was
+// asked in resolvePassphrase: the caller says so as kv.passphrase.missing,
+// which names the environment variable that answers it without a terminal.
 func askPassphrase() (string, *view.Error) {
 	if fileExists(storePath()) {
 		p, err := promptPassphrase()
 		if err != nil {
-			return "", nil
+			return "", nil //nolint:nilerr // see above: an unanswered prompt is "no passphrase"
 		}
 		return p, nil
 	}
 	first, again, err := promptNewPassphrase()
 	switch {
 	case err != nil:
-		return "", nil
+		return "", nil //nolint:nilerr // see above: an unanswered prompt is "no passphrase"
 	case first != again:
 		return "", view.Errorf("kv.passphrase.mismatch", "the two answers differ — nothing was stored").
 			WithHint("run it again and type the same passphrase both times")
