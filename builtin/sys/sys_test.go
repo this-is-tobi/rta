@@ -469,7 +469,7 @@ func TestPSSaysHowManyProcessesItCouldNotRead(t *testing.T) {
 
 func TestTheProcessNoteCountsOutOfEveryProcessSeen(t *testing.T) {
 	w := unreadProcesses(135, 456)
-	if w.Message != "135 of 456 processes not shown: other users', or gone during the scan" || !w.Advisory {
+	if w.Message != "135 of 456 processes not shown: owned by other users, or gone during the scan" || !w.Advisory {
 		t.Errorf("note = %+v", w)
 	}
 }

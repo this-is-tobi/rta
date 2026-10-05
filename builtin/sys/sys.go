@@ -936,7 +936,7 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 func unreadProcesses(unread, all int) view.Error {
 	return view.Error{
 		Code: "sys.ps.unread",
-		Message: fmt.Sprintf("%d of %s not shown: other users', or gone during the scan",
+		Message: fmt.Sprintf("%d of %s not shown: owned by other users, or gone during the scan",
 			unread, format.CountOf(all, "process")),
 		Advisory: true,
 	}
