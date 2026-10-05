@@ -12,6 +12,10 @@ It is the same capabilities as the CLI — the same declarations, the same safet
 
 A search bar across the top, and one tile per plugin that has something to show at a glance, in the order that matters on a first run: the machine (`sys`), what agents asked of it (`agent`) and the grants standing under it (`grant`), then the network, the secret store and the notebook. Typing filters every capability in the catalogue on the fly. `gen.overview` and `fs.tree` qualify as tiles and are left off on purpose, because a table of freshly generated secrets is not a status and the working directory says nothing about the machine; each is one `rta dashboard add` away.
 
+The search is one line until you use it: `/` (or `enter` on the line) opens it to a box with the first matches, and `esc` gives the lines back to the tiles. On a short terminal each row of tiles is drawn at half the room under the search line and cut at `… enter for details`, so an 80x24 screen holds the machine, the agents, the grants and the network, and `enter` opens the rest of any of them.
+
+A tile is a glance, so it is drawn smaller than the page `enter` opens. A table too wide for its box becomes a borderless line per row under its headings, with the columns that say the same in every row dropped first, then the ones beside the first column, and the last text column cut with an ellipsis; a long path is cut in the middle, where its end still names the file.
+
 | Key | What it does |
 | --- | --- |
 | `/` | Search |
