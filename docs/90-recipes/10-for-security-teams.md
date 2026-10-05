@@ -47,7 +47,7 @@ rta grant roles                      # every role this machine can issue, and th
 rta grant issue dev --agent claude   # a person issues it, every line at once
 ```
 
-A role grants nothing by being in the file. A person issues it at a terminal, where its lines are printed before the guard's passphrase is asked for — with the guard off, `--yes` stands in once `rta grant roles dev` has been read — and the ceiling beside it caps every line. [Roles](../30-boundary/30-grants.md#roles-a-day-of-grants-under-one-word).
+A role grants nothing by being in the file. A person issues it at a terminal, where its lines are printed before the guard's passphrase is asked for — with the guard off, `--yes` stands in once `rta grant roles dev` has been read — and the ceiling beside it caps every line. [Roles](../30-boundary/35-roles-consent-and-the-guard.md#roles-a-day-of-grants-under-one-word).
 
 ## Put a passphrase in front of issuance
 
@@ -56,7 +56,7 @@ rta grant guard on
 rta grant guard status
 ```
 
-With the guard off, anything that can run commands as a person can issue that person's grants. With it on, issuing asks for a passphrase that lives in the person's head, and a grant it did not sign is not honoured; revoking never asks. A hosted instance takes the other shape, whose keys are the operators' own: [remote mode](../30-boundary/30-grants.md#remote-mode-a-guard-whose-keys-are-elsewhere).
+With the guard off, anything that can run commands as a person can issue that person's grants. With it on, issuing asks for a passphrase that lives in the person's head, and a grant it did not sign is not honoured; revoking never asks. A hosted instance takes the other shape, whose keys are the operators' own: [remote mode](../30-boundary/35-roles-consent-and-the-guard.md#remote-mode-a-guard-whose-keys-are-elsewhere).
 
 ## Review what is allowed right now
 

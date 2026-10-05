@@ -69,7 +69,7 @@ rta plugin install vault
 
 Two ways to skip the index entirely. **From source**, `make install` in [rta-plugins](https://github.com/this-is-tobi/rta-plugins) puts `rta-plugin-<name>` beside your `rta` and `make trust` there approves the ones built — a binary on your `$PATH` is not consent, and [Trust](../40-plugins/10-plugins.md#trust) is why. **Already in an image**, `ghcr.io/this-is-tobi/rta-full` carries every first-party plugin already trusted; [Container image](#container-image) has the tradeoff.
 
-[Plugins](../40-plugins/10-plugins.md#indexes) is the whole model.
+[Plugins](../40-plugins/12-indexes-and-upgrades.md#indexes) is the whole model.
 
 ## Next
 

@@ -75,7 +75,7 @@ The path registered is the one you ran rta by when it is on `PATH` and is the sa
 
 ### Server options belong in the registration
 
-The client launches `rta mcp serve`, so a server option is only set if it is in the line the client was given. `rta mcp install` takes the ones that belong there, each off unless you pass it: `--consent`, `--consent-notify` and `--consent-wait` for [live consent](../30-boundary/30-grants.md#live-consent-when-you-would-rather-be-asked), `--root` (repeatable) for [the path gate](../95-reference/20-the-path-gate.md), and `--max-result` for [the ceiling on an answer](../30-boundary/20-mcp.md#how-large-a-result-may-be).
+The client launches `rta mcp serve`, so a server option is only set if it is in the line the client was given. `rta mcp install` takes the ones that belong there, each off unless you pass it: `--consent`, `--consent-notify` and `--consent-wait` for [live consent](../30-boundary/35-roles-consent-and-the-guard.md#live-consent-when-you-would-rather-be-asked), `--root` (repeatable) for [the path gate](../95-reference/20-the-path-gate.md), and `--max-result` for [the ceiling on an answer](../30-boundary/20-mcp.md#how-large-a-result-may-be).
 
 ```bash
 rta mcp install claude --consent --consent-notify --root ~/projects

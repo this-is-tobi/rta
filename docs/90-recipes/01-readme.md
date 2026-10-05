@@ -238,7 +238,7 @@ rta agent show 5473aa62       # including what it would do, from its own --dry-r
 rta agent allow 5473aa62
 ```
 
-[Grants](../30-boundary/30-grants.md#live-consent-when-you-would-rather-be-asked) says what answering does, that it creates no standing grant, and why this is off by default: only turn it on when you are actually present.
+[Grants](../30-boundary/35-roles-consent-and-the-guard.md#live-consent-when-you-would-rather-be-asked) says what answering does, that it creates no standing grant, and why this is off by default: only turn it on when you are actually present.
 
 ## Ship the record somewhere durable
 
