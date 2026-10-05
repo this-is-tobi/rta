@@ -131,7 +131,7 @@ func TestAMistypedFlagIsAnsweredWithTheNearestOne(t *testing.T) {
 	for line, want := range map[string]string{
 		"sys cpu --core":            "--cores",
 		"grant allow kv.get --agnt": "--agent",
-		"gen password --lenght 20":  "--length",
+		"gen password --lengh 20":   "--length",
 		"agent log --refuse":        "--refused",
 		"agent log --lim 5":         "--limit",
 	} {

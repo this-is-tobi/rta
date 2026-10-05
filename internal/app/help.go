@@ -244,7 +244,7 @@ type group struct {
 // commandRows are the subcommands in the groups they were filed under, the
 // unfiled first.
 func (h *helper) commandRows(cmd *cobra.Command) []group {
-	ids := []string{""}
+	ids := make([]string, 1, 1+len(cmd.Groups()))
 	titles := map[string]string{"": "commands"}
 	for _, g := range cmd.Groups() {
 		ids = append(ids, g.ID)
