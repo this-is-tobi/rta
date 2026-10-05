@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -173,5 +174,29 @@ func TestADurationFromTheOperatorIsHeldInsideTheRange(t *testing.T) {
 	// What the caller sent is never moved: it is refused by CheckInputs.
 	if got := Resolve(c, Inputs{Caller: map[string]any{"timeout": "10m"}})["timeout"]; got != "10m" {
 		t.Errorf("a caller's value was moved to %v", got)
+	}
+}
+
+// A schema that publishes the grammar must agree with the parser the host
+// holds the value to: a pattern that refused "1h30m" would turn away a call the
+// host accepts, and one that matched "30" would advertise the one spelling it
+// refuses.
+func TestTheDurationPatternMatchesWhatTheParserAccepts(t *testing.T) {
+	pattern := regexp.MustCompile(DurationPattern)
+	for _, text := range []string{"30s", "5m", "1h30m", "2d", "1w", "1.5h", "100ms", "10us", "10µs", "10μs", "0", "1d12h"} {
+		if !pattern.MatchString(text) {
+			t.Errorf("the pattern refuses %q", text)
+		}
+		if _, err := ParseDuration(text); err != nil {
+			t.Errorf("the parser refuses %q: %v", text, err)
+		}
+	}
+	for _, text := range []string{"", "30", "s", "1 s", "1h 30m", "-1s", "1x", "soon", "5M", "1,5h", "1h30"} {
+		if pattern.MatchString(text) {
+			t.Errorf("the pattern accepts %q", text)
+		}
+		if _, err := ParseDuration(text); err == nil {
+			t.Errorf("the parser accepts %q", text)
+		}
 	}
 }
