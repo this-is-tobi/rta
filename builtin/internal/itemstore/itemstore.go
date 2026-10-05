@@ -211,6 +211,12 @@ func References(text string) []int {
 	return out
 }
 
+// DueForms is the one statement of what a due date can be said as, for every
+// place that has to say it: a field's help, a refusal, the chapter. The forms
+// are the ones ParseDue reads and nothing more, so a form added there is added
+// here in the same edit, and TestDueFormsAreAllRead keeps the two honest.
+const DueForms = "today, tomorrow, a weekday (fri or friday), +3d, 2w, next-week, 10-20 or yyyy-mm-dd"
+
 // dueShorthands are the natural-language forms accepted alongside RFC3339
 // and "2006-01-02" — the same instinct as GitHub's date fields, kept tiny.
 var dueShorthands = map[string]func(time.Time) time.Time{
@@ -220,8 +226,19 @@ var dueShorthands = map[string]func(time.Time) time.Time{
 	"next-week": func(t time.Time) time.Time { return t.AddDate(0, 0, 7) },
 }
 
-// ParseDue parses a due-date input: "today", "tomorrow", "next-week",
-// "2026-08-25", or a weekday name ("friday", nearest one on or after today).
+var (
+	// offsetRe is a number of days or weeks from today: 3d, +3d, 2w. Four
+	// digits at most — ten years of days — so a typo cannot ask for a date the
+	// calendar cannot hold.
+	offsetRe = regexp.MustCompile(`^\+?(\d{1,4})([dw])$`)
+	// monthDayRe is a date without its year, in the order an ISO date has them:
+	// 10-20 is the twentieth of October, never the tenth of the twentieth month.
+	monthDayRe = regexp.MustCompile(`^(\d{1,2})-(\d{1,2})$`)
+)
+
+// ParseDue parses a due-date input, in the forms DueForms lists. A weekday is
+// the next one on or after today, today included; a month and day without a
+// year is the next one on or after today, in this year or the next ones.
 // Empty input clears the due date (returns nil, nil).
 func ParseDue(raw string, now time.Time) (*time.Time, error) {
 	raw = strings.TrimSpace(raw)
@@ -237,26 +254,65 @@ func ParseDue(raw string, now time.Time) (*time.Time, error) {
 		d := dateOnly(nextWeekday(now, wd))
 		return &d, nil
 	}
+	if m := offsetRe.FindStringSubmatch(key); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		if m[2] == "w" {
+			n *= 7
+		}
+		d := dateOnly(now.AddDate(0, 0, n))
+		return &d, nil
+	}
+	if m := monthDayRe.FindStringSubmatch(key); m != nil {
+		if d, ok := nextMonthDay(now, m[1], m[2]); ok {
+			return &d, nil
+		}
+	}
 	if t, err := time.ParseInLocation("2006-01-02", raw, now.Location()); err == nil {
 		return &t, nil
 	}
 	if t, err := time.Parse(time.RFC3339, raw); err == nil {
 		return &t, nil
 	}
-	return nil, fmt.Errorf("unrecognized due date %q (try today, tomorrow, a weekday, or 2006-01-02)", raw)
+	return nil, fmt.Errorf("unrecognized due date %q (try %s)", raw, DueForms)
+}
+
+// nextMonthDay is the first date on or after today that falls on month and day.
+// It looks a few years ahead, because the 29th of February is a real date in
+// one year of four; a pair that no year holds (13-40) is not a date.
+func nextMonthDay(now time.Time, month, day string) (time.Time, bool) {
+	mo, _ := strconv.Atoi(month)
+	dy, _ := strconv.Atoi(day)
+	today := dateOnly(now)
+	for year := now.Year(); year <= now.Year()+4; year++ {
+		d := time.Date(year, time.Month(mo), dy, 0, 0, 0, 0, now.Location())
+		if int(d.Month()) != mo || d.Day() != dy {
+			continue // 31-04, or a 29th of February in a year without one
+		}
+		if !d.Before(today) {
+			return d, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func dateOnly(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
+// weekdays are the names a day can be given by: the whole word, its three
+// letters, and the few short forms people type by habit.
+var weekdays = map[string]time.Weekday{
+	"sunday": time.Sunday, "sun": time.Sunday,
+	"monday": time.Monday, "mon": time.Monday,
+	"tuesday": time.Tuesday, "tue": time.Tuesday, "tues": time.Tuesday,
+	"wednesday": time.Wednesday, "wed": time.Wednesday,
+	"thursday": time.Thursday, "thu": time.Thursday, "thur": time.Thursday, "thurs": time.Thursday,
+	"friday": time.Friday, "fri": time.Friday,
+	"saturday": time.Saturday, "sat": time.Saturday,
+}
+
 func weekday(key string) (time.Weekday, bool) {
-	names := map[string]time.Weekday{
-		"sunday": time.Sunday, "monday": time.Monday, "tuesday": time.Tuesday,
-		"wednesday": time.Wednesday, "thursday": time.Thursday, "friday": time.Friday,
-		"saturday": time.Saturday,
-	}
-	d, ok := names[key]
+	d, ok := weekdays[key]
 	return d, ok
 }
 

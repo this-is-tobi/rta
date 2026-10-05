@@ -43,14 +43,14 @@ const (
 // Both complete rather than enumerate. Tags are open by nature — the point of
 // a tag is that you invent it — so the suggestions are the ones already in
 // use, which is how a vocabulary stays consistent without anyone policing it.
-// Due dates accept far more than the shorthands offered; the list is the
-// forms worth remembering, not the grammar.
+// Due dates are read by itemstore.ParseDue and said once, as itemstore.DueForms;
+// what is offered here are the forms worth reaching for, not the grammar.
 var (
 	tagField = plugin.Field{Name: "tag", Type: plugin.StringSlice,
 		Help:    "tags — one per entry",
 		Suggest: suggestTags}
 	dueField = plugin.Field{Name: "due", Type: plugin.String,
-		Help:    "due date: today, tomorrow, a weekday, or 2006-01-02",
+		Help:    "due date: " + itemstore.DueForms,
 		Suggest: suggestDue}
 )
 
@@ -347,6 +347,23 @@ func titleCell(s itemstore.Store, it itemstore.Item, detail bool) string {
 	return title
 }
 
+// dueCell is a note's Due cell: its grade and the day it falls on. The grade
+// leads because a renderer colours a status cell by its first word
+// (theme.ClassifyStatus), and the day follows because a grade alone ("WARN
+// soon") never said which one — the list had to be opened note by note to find
+// out. A year is written only when it is not this one.
+func dueCell(due *time.Time, done bool, now time.Time) string {
+	grade := itemstore.DueStatus(due, done, now)
+	if grade == "" {
+		return ""
+	}
+	layout := "Jan 2"
+	if due.Year() != now.Year() {
+		layout = "Jan 2 2006"
+	}
+	return grade + " · " + due.Format(layout)
+}
+
 // listOrder puts what has a deadline on top, soonest first, and leaves the
 // rest in the order it was written.
 //
@@ -403,7 +420,7 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	listOrder(shown)
 	for _, it := range shown {
 		row := []string{
-			strconv.Itoa(it.ID), statusOf(it), itemstore.DueStatus(it.Due, it.Done, now),
+			strconv.Itoa(it.ID), statusOf(it), dueCell(it.Due, it.Done, now),
 			itemstore.Age(it.Created), titleCell(s, it, detail),
 		}
 		if detail {
