@@ -107,6 +107,16 @@ const (
 	// Skipped by capability ID, or by the plugin's name for its own summary;
 	// the source has no waiver.
 	RuleSpelling Rule = "spelling"
+	// RuleWording: what an agent is shown of a capability — its summary and
+	// agent text (Agent, or Description when there is none) and the help of each
+	// input an agent can give — stays within 800 bytes and 160 per input,
+	// speaks to nobody at a terminal, names no input an agent cannot give and
+	// does not open by saying the summary again, and an input that is a length
+	// of time says its unit. Notes, never failures: a summary written unlike the
+	// catalogue's, the catalogue's word `limit` spelled another way, an Agent
+	// text that is the Description, a time that is an Int where a Duration
+	// would carry its unit. Skipped by capability ID.
+	RuleWording Rule = "wording"
 )
 
 // runTimeout bounds one capability. A handler that ignores ctx would
@@ -207,6 +217,7 @@ func checkAll(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[st
 	checkVerbs(t, p, cfg)
 	checkKeywords(t, p, cfg)
 	checkSpelling(t, p, cfg)
+	checkWording(t, p, cfg)
 	if cfg.source != "" {
 		checkSource(t, p, cfg.source)
 	}
