@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +17,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -127,6 +130,43 @@ func TestADeclinedCallIsRefusedWithTheOperatorsAnswer(t *testing.T) {
 	// — it used to be the one refusal recorded as bare prose.
 	if entries[0].Code != "core.consent.declined" {
 		t.Fatalf("the decline's code: %+v", entries[0])
+	}
+}
+
+// Parked.Wait ends at once when the key that seals answers cannot be read, so
+// the question was never given the time the sentence "did not answer within"
+// counts. The agent is not told it was, and a hint to retry would only fail the
+// same instant again.
+func TestAnAnswerThatCannotBeSealedIsNotReportedAsUnanswered(t *testing.T) {
+	s := connect(t, Options{
+		Consent:     true,
+		ConsentWait: 20 * time.Second,
+	})
+	if err := os.WriteFile(filepath.Join(paths.Data(), "agent-consent.key"), []byte("short"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	started := time.Now()
+	res := callTool(t, s, "demo_item_reveal", map[string]any{"key": "db-password"})
+	if !res.IsError {
+		t.Fatal("a call nobody could answer went through")
+	}
+	if took := time.Since(started); took > 10*time.Second {
+		t.Fatalf("the call waited %s for an answer that could not be read", took)
+	}
+	text := res.Content[0].(*sdk.TextContent).Text
+	if strings.Contains(text, "did not answer") || strings.Contains(text, "core.consent.expired") {
+		t.Fatalf("a wait that never happened was reported as an unanswered one: %s", text)
+	}
+	if !strings.Contains(text, "core.grant.required") {
+		t.Fatalf("the agent was not given the gate's own refusal: %s", text)
+	}
+	rec := lastRecord(t)
+	if rec.Code != "core.grant.required" || !strings.Contains(rec.Note, "key that seals consent answers") {
+		t.Fatalf("the record does not say why nobody was waited on: %+v", rec)
+	}
+	if pending, _ := consent.Pending(); len(pending) != 0 {
+		t.Fatalf("%d requests outlived the call", len(pending))
 	}
 }
 

@@ -367,6 +367,19 @@ func askConsent(ctx context.Context, c plugin.Capability, opts Options, values m
 		rec.Code, rec.Reason = "core.consent.abandoned", "the client stopped waiting for an answer"
 		return false, verr
 	default:
+		// Parked.Wait gives up before its deadline in one case only: it cannot
+		// read the key that seals answers. Nobody was given any time then, and
+		// "did not answer within 90s" after no wait at all is false, with a hint
+		// to ask them and retry that fails the same instant every time. The agent
+		// gets the gate's own refusal, which is true, and the person gets the
+		// cause on stderr and in the record, where the old wording would have
+		// filed it as an expiry.
+		if time.Now().Before(parked.Request.Deadline) {
+			fmt.Fprintf(os.Stderr,
+				"rta: %s was refused without waiting for an answer: the key that seals consent answers could not be read\n", c.ID)
+			rec.Note = "the question was parked and not waited on, because the key that seals consent answers could not be read"
+			return false, nil
+		}
 		// The agent is told the question went unanswered, under the code the
 		// record files it by. The gate's own "no active grant" is true and says
 		// the wrong thing: it reads as the operator declining to issue one, so
