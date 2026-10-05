@@ -163,11 +163,12 @@ The rows that need you come first (`error`, then `warn`, then `info`, then `ok`)
 | If you want to… | Read |
 | --- | --- |
 | Know exactly what rta does and does not bound, before you grant more | [What rta actually bounds](../30-boundary/10-the-boundary.md) |
+| Harden the machine an agent will use, in one pass | [Harden in five minutes](../30-boundary/46-harden-in-five-minutes.md) |
 | Grant something narrowly | [Grants](../30-boundary/30-grants.md) |
 | Understand what an agent can reach | [MCP and the safety gate](../30-boundary/20-mcp.md) |
 | Script rta, or use it in CI | [The CLI](../20-using/10-cli.md) |
-| Store credentials | [Secrets](../20-using/50-secrets.md) |
 | Change a colour, a column count or a plugin's setting | [Your config file](../20-using/22-your-config-file.md) |
+| Store credentials | [Secrets](../20-using/50-secrets.md) |
 | Point rta at staging vs production | [Profiles](../20-using/40-profiles.md) |
 | Add postgres, S3, Vault, Kubernetes | [Using plugins](../40-plugins/10-plugins.md) |
 | See it all working together | [Recipes](../90-recipes/01-readme.md) |
