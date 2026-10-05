@@ -97,7 +97,20 @@ func (m Model) startConfigForm(row pluginRow) (tea.Model, tea.Cmd) {
 		m.refuse("config not read: " + err.Error())
 		return m, nil
 	}
-	_, raw, _ := pluginconf.RawSection(onDisk, row.plugin.Name)
+	_, section, _ := pluginconf.RawSection(onDisk, row.plugin.Name)
+	// A plugin declares the key it reads as a dotted path (`ping.count`) and the
+	// file holds it nested, one block per segment, which is the one place a
+	// reader looks for it. The form binds by the dotted name, so it is seeded
+	// from what the file says at each of them and not from a key literally
+	// named with a dot, and a key an earlier save wrote flat is read as the
+	// nested one it was meant to be.
+	nested := config.NestSection(section)
+	raw := map[string]any{}
+	for _, f := range fields {
+		if v, ok := config.SectionValue(nested, f.Name); ok {
+			raw[f.Name] = v
+		}
+	}
 
 	synth := plugin.Capability{
 		ID:      row.plugin.Name + ".configure",
@@ -170,12 +183,16 @@ func (m Model) saveConfigForm() (tea.Model, tea.Cmd) {
 		// overlay would keep resurrecting the value the operator just deleted.
 		// Declared keys are therefore taken from the form even when absent —
 		// absent means cleared — and only undeclared ones are carried forward.
+		//
+		// Nested, as the file is read: a declared key is a dotted path, and
+		// written as one key with a dot in it the value is never read, which is
+		// what this editor did for any plugin that declares one. What is carried
+		// is merged leaf by leaf so that a block holding one key the form showed
+		// and one it did not keeps the second.
 		merged := map[string]any{}
 		carry := func(section map[string]any) {
-			for k, v := range section {
-				if !declared[k] {
-					merged[k] = v
-				}
+			for _, leaf := range config.SectionLeaves(config.NestSection(section)) {
+				config.SetSectionValue(merged, leaf.Key, leaf.Value)
 			}
 		}
 		// Migrate rather than accumulate: any other heading already naming this
@@ -208,8 +225,11 @@ func (m Model) saveConfigForm() (tea.Model, tea.Cmd) {
 			delete(cfg.Plugins, section)
 		}
 		carry(cfg.Plugins[heading])
+		for key := range declared {
+			config.DeleteSectionValue(merged, key)
+		}
 		for k, v := range values {
-			merged[k] = v
+			config.SetSectionValue(merged, k, v)
 		}
 		cfg.Plugins[heading] = merged
 		return cfg, true

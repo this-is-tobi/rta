@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -459,5 +460,94 @@ func TestSaveConfigFormLeavesABuiltInSectionBare(t *testing.T) {
 	}
 	if _, ok := onDisk.Plugins["db"]; !ok {
 		t.Errorf("no bare 'db' section; plugins = %v", onDisk.Plugins)
+	}
+}
+
+// pingShapedPlugin declares keys as dotted paths, which is how a plugin names a
+// setting that belongs to one of its parts (`ping.count`).
+func pingShapedPlugin() plugin.Plugin {
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	return plugin.Plugin{
+		Name: "net", Summary: "network",
+		Capabilities: []plugin.Capability{
+			{ID: "net.ping", Summary: "ping", Safety: plugin.Read, Run: run, Inputs: []plugin.Field{
+				{Name: "count", Type: plugin.Int, Default: 4, Config: "ping.count"},
+				{Name: "interval", Type: plugin.String, Config: "ping.interval"},
+			}},
+		},
+	}
+}
+
+// A dotted key is read from the file one block per segment, and an editor that
+// wrote `ping.count` as one key with a dot in it wrote a value nothing reads,
+// beside a form that showed the right one as empty.
+func TestTheConfigFormReadsAndWritesADottedKeyNested(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	if err := config.Write(config.Config{Plugins: map[string]map[string]any{
+		"net": {
+			"ping":  map[string]any{"count": int64(7), "keep": "me"},
+			"other": "kept",
+		},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	m := New(registry.New(), config.Dashboard{}, nil)
+	next, _ := m.startConfigForm(pluginRow{plugin: pingShapedPlugin(), origin: registry.Origin{}})
+	nm := next.(Model)
+	if got := *nm.form.bindings["ping.count"]; got != "7" {
+		t.Errorf("the form shows ping.count as %q, want the 7 the file holds nested", got)
+	}
+	*nm.form.bindings["ping.count"] = "9"
+	*nm.form.bindings["ping.interval"] = "2s"
+	_, _ = nm.saveConfigForm()
+
+	onDisk, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	section := onDisk.Plugins["net"]
+	if _, flat := section["ping.count"]; flat {
+		t.Errorf("the editor wrote ping.count flat, which nothing reads: %v", section)
+	}
+	if v, _ := config.SectionValue(section, "ping.count"); fmt.Sprint(v) != "9" {
+		t.Errorf("ping.count = %v, want 9 nested under ping: %v", v, section)
+	}
+	if v, _ := config.SectionValue(section, "ping.interval"); v != "2s" {
+		t.Errorf("ping.interval = %v, want 2s: %v", v, section)
+	}
+	if v, _ := config.SectionValue(section, "ping.keep"); v != "me" {
+		t.Errorf("a key of the same block the form never showed was lost: %v", section)
+	}
+	if section["other"] != "kept" {
+		t.Errorf("a key the form never showed was lost: %v", section)
+	}
+}
+
+// What an earlier save wrote flat is the nested key it was meant to be, shown
+// in the form and moved on the next save.
+func TestTheConfigFormMovesAFlatDottedKeyAnEarlierSaveWrote(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	if err := config.Write(config.Config{Plugins: map[string]map[string]any{
+		"net": {"ping.count": int64(7)},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	m := New(registry.New(), config.Dashboard{}, nil)
+	next, _ := m.startConfigForm(pluginRow{plugin: pingShapedPlugin(), origin: registry.Origin{}})
+	nm := next.(Model)
+	if got := *nm.form.bindings["ping.count"]; got != "7" {
+		t.Errorf("the form shows ping.count as %q, want the 7 an earlier save wrote", got)
+	}
+	_, _ = nm.saveConfigForm()
+	onDisk, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	section := onDisk.Plugins["net"]
+	if _, flat := section["ping.count"]; flat {
+		t.Errorf("the flat key survived the save: %v", section)
+	}
+	if v, _ := config.SectionValue(section, "ping.count"); fmt.Sprint(v) != "7" {
+		t.Errorf("ping.count = %v, want 7 nested: %v", v, section)
 	}
 }
