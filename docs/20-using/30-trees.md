@@ -52,7 +52,7 @@ docs/ /Users/you/project/docs
 ├── examples/ 1 entry
 ├── 02-installation.md 3.2 KiB
 ├── 03-quickstart.md 3.9 KiB
-├── 10-cli.md 4.4 KiB
+└── 10-cli.md 4.4 KiB
 ```
 
 Directories first, then by name — the order a person reads a listing in.

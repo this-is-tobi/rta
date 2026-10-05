@@ -82,6 +82,17 @@ There is deliberately no `rta plugin trust --all`. Approving is the decision the
 
 **Trust attaches to the artifact's content digest, not its name.** Rebuilding or replacing a plugin needs approving again. That is the feature, not friction: a plugin's bytes changing under a name you already approved is precisely the event worth stopping for.
 
+The path a plugin takes from a file on your `$PATH` to a running process is short, and each step can only refuse:
+
+```mermaid
+flowchart LR
+    F["found<br/>rta-plugin-pg on $PATH,<br/>never run to find out"] --> T["trusted<br/>you approve one digest:<br/>rta plugin trust pg"]
+    T --> H["hashed<br/>at load, the file on disk<br/>must match that digest"]
+    H --> C["copied<br/>to plugins/run/DIGEST/,<br/>mode 0700"]
+    C --> S["started<br/>from the copy"]
+    H -.->|"differs"| R["refused<br/>changed on disk after<br/>it was trusted"]
+```
+
 **What runs is the bytes that were approved, not whatever the name holds a moment later.** A plugin found on `$PATH` is hashed, and then it is copied from the file that was hashed into `plugins/run/<digest>/` in rta's data directory (mode 0700) and started from the copy; a file rewritten in between is refused with `changed on disk after it was trusted` instead of being run under the old approval. A plugin in rta's own store or the system root's is started where it is, because those directories are not ones a confined process can write to. What this does not close is a process of your own user, outside any confinement, writing into rta's data directory: it could equally edit the grants file. Copies that nobody has started in a day are removed the next time one is made.
 
 ```bash

@@ -1,7 +1,10 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -100,6 +103,104 @@ func TestTheInstallationPageQuotesTheRowsDoctorPrintsOnAFreshMachine(t *testing.
 		head, tail, _ := strings.Cut(m[3], " (<your key file>)")
 		if row[0] != m[2] || !strings.HasPrefix(row[1], head) || !strings.HasSuffix(row[1], tail) {
 			t.Errorf("%s quotes the kv row as %q %q, doctor prints %q %q", rel, m[2], m[3], row[0], row[1])
+		}
+	}
+}
+
+// The quickstart shows the first rows of the card `rta explain sys.cpu` prints
+// and says the full card has more, so each row it quotes has to be a row the
+// card has, spelled as the card spells it. The sample it replaced was the
+// whole card, written by hand, and carried a config path that was one
+// platform's.
+func TestTheQuickstartQuotesRowsTheExplainCardHas(t *testing.T) {
+	const rel = "docs/10-getting-started/20-quickstart.md"
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("building the built-in registry: %v", err)
+	}
+	card, _, err := run(t, reg, "explain", "sys.cpu")
+	if err != nil {
+		t.Fatalf("rta explain sys.cpu: %v", err)
+	}
+	printed := map[string]bool{}
+	for _, line := range strings.Split(card, "\n") {
+		printed[strings.Join(strings.Fields(line), " ")] = true
+	}
+
+	quoted := 0
+	for _, line := range codeBlockAfter(t, readDoc(t, repoRoot(t), rel), "rta explain sys.cpu\n```") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		quoted++
+		if !printed[strings.Join(strings.Fields(line), " ")] {
+			t.Errorf("%s quotes %q, which is not a row of the card explain prints:\n%s", rel, line, card)
+		}
+	}
+	if quoted < 4 {
+		t.Fatalf("read %d rows of the quickstart's card; has its shape changed?", quoted)
+	}
+}
+
+// The trees page shows `rta fs tree docs --depth 1` over a folder holding a
+// directory with one entry and three files. The sample ended on a branch that
+// continues, a corner rta draws only for the last entry, so a reader comparing
+// it with their own listing found the page wrong in the one line that closes
+// it. The directory is built here from the sample itself, each file the size
+// its line names, and what rta prints for it has to be the sample, apart from
+// the root's own path.
+func TestTheTreesPageShowsWhatFsTreePrints(t *testing.T) {
+	const rel = "docs/20-using/30-trees.md"
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("building the built-in registry: %v", err)
+	}
+	quoted := codeBlockAfter(t, readDoc(t, repoRoot(t), rel), "rta fs tree docs --depth 1\n```")
+
+	dir := filepath.Join(t.TempDir(), "docs")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entry := regexp.MustCompile(`^[├└]── (\S+?)(/)? (?:(\d+) entry|(\d+(?:\.\d+)?) KiB)$`)
+	built := 0
+	for _, line := range quoted[1:] {
+		m := entry.FindStringSubmatch(line)
+		if m == nil {
+			t.Fatalf("%s: cannot read the tree line %q", rel, line)
+		}
+		built++
+		if m[2] == "/" {
+			if err := os.MkdirAll(filepath.Join(dir, m[1]), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, m[1], "entry.txt"), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		kib, _ := strconv.ParseFloat(m[4], 64)
+		if err := os.WriteFile(filepath.Join(dir, m[1]), make([]byte, int(kib*1024+0.5)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if built < 3 {
+		t.Fatalf("read %d entries out of the tree sample; has its shape changed?", built)
+	}
+
+	out, _, err := run(t, reg, "fs", "tree", dir, "--depth", "1")
+	if err != nil {
+		t.Fatalf("rta fs tree: %v", err)
+	}
+	printed := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(quoted) != len(printed) {
+		t.Fatalf("%s quotes %d lines of the tree, rta prints %d:\n%s", rel, len(quoted), len(printed), out)
+	}
+	if !strings.HasPrefix(quoted[0], "docs/ ") || !strings.HasPrefix(printed[0], "docs/ ") {
+		t.Errorf("the root line should be the folder and its path: quoted %q, printed %q", quoted[0], printed[0])
+	}
+	for i := 1; i < len(quoted); i++ {
+		if quoted[i] != printed[i] {
+			t.Errorf("%s quotes %q, rta prints %q", rel, quoted[i], printed[i])
 		}
 	}
 }
