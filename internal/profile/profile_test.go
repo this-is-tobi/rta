@@ -849,6 +849,30 @@ func TestAProfileNamingAnUnapprovedPluginSaysSo(t *testing.T) {
 	})
 }
 
+// advises is an Installed that can say what to do about a plugin it lacks.
+type advises struct {
+	Installed
+	advice string
+}
+
+func (a advises) MissingHint(string) string { return a.advice }
+
+// A plugin that is not there is told what to do about it when the Installed
+// knows — the first-party ones are installed by name — and the generic pointer
+// at `rta plugin list` stands when it has nothing to add.
+func TestAProfileNamingAMissingPluginCarriesTheAdviceOfTheInstalled(t *testing.T) {
+	reg := registry.New()
+	verr := checkPin("pg", advises{Installed: reg, advice: "pg is a first-party plugin — `rta plugin install pg` installs it"})
+	if verr == nil || verr.Code != "core.profile.unknownplugin" ||
+		verr.Hint != "pg is a first-party plugin — `rta plugin install pg` installs it" {
+		t.Errorf("verr = %v, want the unknown-plugin refusal with the advice as its hint", verr)
+	}
+	verr = checkPin("ghost", advises{Installed: reg})
+	if verr == nil || !strings.Contains(verr.Hint, "rta plugin list") {
+		t.Errorf("verr = %v, want the generic pointer when the Installed has no advice", verr)
+	}
+}
+
 // A coordinate the plugin cannot be pointed at is refused at resolution, not
 // warned about on a page.
 //
