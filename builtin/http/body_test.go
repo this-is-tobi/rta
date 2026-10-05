@@ -181,6 +181,15 @@ func TestABodyGivenTwiceOrUnreadableIsRefused(t *testing.T) {
 	}
 }
 
+// refusal is the code and hint of a call's refusal, and empty for a call that
+// was not refused, so that a test of one reads as a failure and not a panic.
+func refusal(err error) (code, hint string) {
+	if verr := view.AsError(err, "x"); verr != nil {
+		return verr.Code, verr.Hint
+	}
+	return "", ""
+}
+
 // `--data @payload.json` and `--data @-` are how curl takes a body from a file or
 // a pipe, and sent as written they were the text "@payload.json": a server's
 // complaint about its body and nothing about the command line. Where the name is
@@ -197,9 +206,8 @@ func TestCurlsFileFormIsRefusedWithTheFlagThatSendsAFile(t *testing.T) {
 		"the dash for a pipe":  {"@-", "--data-file: /dev/stdin"},
 	} {
 		_, err := sentBy(t, "POST", map[string]any{"data": c.data})
-		verr := view.AsError(err, "x")
-		if err == nil || verr.Code != "http.data.atfile" || !strings.Contains(verr.Hint, c.hint) {
-			t.Errorf("%s: %v, hint %q, want http.data.atfile naming %q", name, err, verr.Hint, c.hint)
+		if code, hint := refusal(err); code != "http.data.atfile" || !strings.Contains(hint, c.hint) {
+			t.Errorf("%s: %v, hint %q, want http.data.atfile naming %q", name, err, hint, c.hint)
 		}
 	}
 
@@ -226,18 +234,16 @@ func TestCurlsFileFormIsRefusedWithTheFlagThatSendsAFile(t *testing.T) {
 // which is how every Path input of rta takes one.
 func TestADashForAPipeIsToldTheSpellingRtaTakes(t *testing.T) {
 	_, err := sentBy(t, "POST", map[string]any{"data-file": "-"})
-	verr := view.AsError(err, "x")
-	if err == nil || verr.Code != "http.data.file" || !strings.Contains(verr.Hint, "/dev/stdin") {
-		t.Errorf("--data-file -: %v, hint %q", err, verr.Hint)
+	if code, hint := refusal(err); code != "http.data.file" || !strings.Contains(hint, "/dev/stdin") {
+		t.Errorf("--data-file -: %v, hint %q", err, hint)
 	}
 	_, err = sentBy(t, "POST", map[string]any{"bearer-file": "-"})
-	verr = view.AsError(err, "x")
-	if err == nil || verr.Code != "http.auth.file" || !strings.Contains(verr.Hint, "/dev/stdin") {
-		t.Errorf("--bearer-file -: %v, hint %q", err, verr.Hint)
+	if code, hint := refusal(err); code != "http.auth.file" || !strings.Contains(hint, "/dev/stdin") {
+		t.Errorf("--bearer-file -: %v, hint %q", err, hint)
 	}
 	_, err = sentBy(t, "POST", map[string]any{"data-file": filepath.Join(t.TempDir(), "absent")})
-	if verr := view.AsError(err, "x"); err == nil || verr.Hint != "" {
-		t.Errorf("a file that is not there got the pipe hint: %v", err)
+	if code, hint := refusal(err); code != "http.data.file" || hint != "" {
+		t.Errorf("a file that is not there: %v, hint %q, want the refusal and no pipe hint", err, hint)
 	}
 }
 
