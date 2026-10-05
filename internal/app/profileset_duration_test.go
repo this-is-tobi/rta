@@ -36,6 +36,8 @@ func TestSetHoldsADurationKeyToTheRangeItsReadersAllow(t *testing.T) {
 	for _, tc := range []struct{ pair, code, want string }{
 		{"wait=1h", "core.profile.set.range", "wait takes a value from 1s to 5m"},
 		{"wait=100ms", "core.profile.set.range", "from 1s to 5m"},
+		{"wait=45", "core.profile.set.type", "wait is declared duration, and takes a duration from 1s to 5m"},
+		{"wait=soon", "core.profile.set.type", "--set wait=10s"},
 	} {
 		_, errOut, err := runWith(t, reg, "", "profile", "set", "slow", "--plugin", "db", "--set", tc.pair)
 		if err == nil || !strings.Contains(errOut, tc.code) || !strings.Contains(errOut, tc.want) {
