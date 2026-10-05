@@ -144,6 +144,9 @@ func main() {
 	// the line that scrolled past at startup.
 	untrusted := host.Untrusted()
 	app.SetUntrustedPlugins(untrusted)
+	// The other way a plugin is installed and absent: approved, and the
+	// launch failed.
+	app.SetFailedPlugins(host.Failed())
 	// The notice about artifacts found and not run is emitted by the root
 	// command's PersistentPreRun rather than here, because it has to know
 	// which output format was asked for: a sentence of English above
