@@ -282,7 +282,7 @@ func nearScore(w string, parts []idPart, tokens []text) int {
 		words = append(words, t.word)
 	}
 	for _, have := range words {
-		if len(have) >= 3 && strings.HasPrefix(w, have) {
+		if len(have) >= 3 && strings.HasPrefix(w, have) && extendsByALetterOrTwo(w, have) {
 			return typedMore
 		}
 		if len(w) >= 3 && len(have) >= 2 && Distance(w, have) <= max(1, len(w)/4) {
@@ -290,6 +290,16 @@ func nearScore(w string, parts []idPart, tokens []text) int {
 		}
 	}
 	return 0
+}
+
+// extendsByALetterOrTwo says whether w is have with a slip at its end: one more
+// letter, or two on a word long enough to take a plural in -es. A longer tail
+// is another word that happens to begin the same way — `postgres` begins with
+// `post`, `login` with `log` — and offering the shorter one for it is a wrong
+// answer given with confidence.
+func extendsByALetterOrTwo(w, have string) bool {
+	extra := len(w) - len(have)
+	return extra <= 1 || (extra == 2 && len(have) >= 4)
 }
 
 // Distance is the optimal-string-alignment distance between two words:

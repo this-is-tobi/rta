@@ -100,6 +100,20 @@ func TestASynonymOfACommandIsNotToldItMightBeAService(t *testing.T) {
 	}
 }
 
+// A word that only begins like a command is another word: `postgres` is a
+// service to install, not `http post`, and `login` is not `agent log`.
+func TestAWordThatOnlyBeginsLikeACommandIsNotOfferedIt(t *testing.T) {
+	for word, not := range map[string]string{"postgres": "rta http post", "login": "rta agent log"} {
+		ve := hintFor(t, word)
+		if strings.Contains(ve.Hint, not) || strings.Contains(ve.Message, "closest") {
+			t.Errorf("`rta %s` was offered %q: %s / %s", word, not, ve.Message, ve.Hint)
+		}
+		if !strings.Contains(ve.Hint, "`rta plugin install "+word+"`") {
+			t.Errorf("`rta %s` was told %q, which does not say it may be a service", word, ve.Hint)
+		}
+	}
+}
+
 // What the tables name has to exist, or a hint points at nothing.
 func TestTheSuggestionTablesNameRealCommands(t *testing.T) {
 	reg, err := NewRegistry()
