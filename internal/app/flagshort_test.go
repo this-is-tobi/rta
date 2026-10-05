@@ -27,6 +27,10 @@ func shortRegistry(t *testing.T) *registry.Registry {
 				{Name: "tag", Type: plugin.StringSlice, Short: "t", Help: "tags"},
 				{Name: "wait", Type: plugin.Duration, Short: "w", Default: "30s", Min: "1s", Max: "2d", Help: "how long"},
 			},
+			Examples: []plugin.Example{
+				{Title: "three, quietly", Inputs: map[string]any{"limit": 3, "quiet": true}},
+				{Title: "an hour", Inputs: map[string]any{"wait": "1h"}},
+			},
 			Run: func(_ context.Context, req plugin.Request) (view.View, error) {
 				return view.Text{Body: fmt.Sprintf("limit=%d quiet=%v tags=%v wait=%v", req.Int("limit"),
 					req.Bool("quiet"), req.StringSlice("tag"), req.Duration("wait"))}, nil
@@ -83,5 +87,29 @@ func TestADurationFlagKeepsItsDefault(t *testing.T) {
 	}
 	if !strings.Contains(out, "wait=30s") {
 		t.Errorf("output = %q, want the default of 30s", out)
+	}
+}
+
+// A capability's declared calls are shown where a person looks one up: under
+// EXAMPLES in --help, spelled for the command line, and on the card
+// `rta explain` prints. They were declared and shown nowhere.
+func TestADeclaredExampleIsShownInHelpAndOnTheExplainCard(t *testing.T) {
+	help, _, err := run(t, shortRegistry(t), "brief", "show", "--help")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"EXAMPLES", "rta brief show --limit 3 --quiet   # three, quietly", "rta brief show --wait 1h   # an hour"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("help does not show %q:\n%s", want, help)
+		}
+	}
+	card, _, err := run(t, shortRegistry(t), "explain", "brief.show")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"rta brief show --limit 3 --quiet   # three, quietly", "rta brief show --wait 1h   # an hour"} {
+		if !strings.Contains(card, want) {
+			t.Errorf("the card does not show %q:\n%s", want, card)
+		}
 	}
 }
