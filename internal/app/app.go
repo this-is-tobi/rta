@@ -1058,7 +1058,7 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 	root.AddCommand(newExplainCommand(reg, opts))
 	root.AddCommand(newPluginCommand(reg, version, opts))
 	root.AddCommand(newDoctorCommand(reg, opts))
-	root.AddCommand(newInitCommand(reg, opts))
+	root.AddCommand(newInitCommand(opts))
 	root.AddCommand(newUseCommand(opts))
 	root.AddCommand(newPolicyCommand(opts))
 	root.AddCommand(newProfileCommand(reg, opts))
