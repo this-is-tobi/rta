@@ -315,3 +315,40 @@ func TestInitNamesAClientItHasNoCommandFor(t *testing.T) {
 		t.Errorf("cursor = %q", got)
 	}
 }
+
+// A machine with none of the clients rta knows is told so, with the one command
+// that serves any other client: a person on Windsurf or Zed was otherwise told
+// rta was configured as well as it could be and never that their client had
+// not been looked at.
+func TestInitSaysWhenNoClientIsOnTheMachine(t *testing.T) {
+	run := session(t, testRegistry(t))
+	initMachine(t, nil)
+	attachedIndex(t)
+	neverAsked(t)
+
+	out, errOut, err := run("init", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if got := answerPairs(t, out)["clients"]; !strings.Contains(got, "rta mcp install <name>") {
+		t.Errorf("clients = %q, want the command that serves a client rta does not know", got)
+	}
+}
+
+func TestInitSaysNothingAboutMissingClientsWhenOneIsHere(t *testing.T) {
+	run := session(t, testRegistry(t))
+	initMachine(t, nil)
+	attachedIndex(t)
+	if err := os.MkdirAll(filepath.Join(os.Getenv("HOME"), ".cursor"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	neverAsked(t)
+
+	out, errOut, err := run("init", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if got, ok := answerPairs(t, out)["clients"]; ok {
+		t.Errorf("clients = %q on a machine with Cursor", got)
+	}
+}

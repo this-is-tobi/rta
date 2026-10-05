@@ -60,6 +60,10 @@ func (p initPlan) run(ctx context.Context, said io.Writer, accepted []bool, dryR
 			res.pairs = append(res.pairs, view.Pair{Key: verb, Value: label + ", " + where + " — `" + o.line + "`"})
 		}
 	}
+	if p.noClient {
+		res.pairs = append(res.pairs, view.Pair{Key: "clients", Value: "none of the clients rta knows is on this " +
+			"machine — `rta mcp install <name>` prints what to add to any other client that speaks MCP"})
+	}
 	res.pairs = append(res.pairs, p.notes...)
 	return res
 }
