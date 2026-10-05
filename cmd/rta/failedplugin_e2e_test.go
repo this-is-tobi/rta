@@ -34,3 +34,21 @@ func TestAPluginThatCannotStartHasARowInPluginList(t *testing.T) {
 		t.Errorf("the startup report does not end with the way out: %q", r.stderr)
 	}
 }
+
+// The row quotes what the plugin wrote, and a plugin that is approved is still
+// a program rta does not control: what it prints in place of a handshake
+// reaches the inventories as text, never as something the terminal
+// acts on.
+func TestWhatAFailedPluginWroteReachesTheInventoriesAsText(t *testing.T) {
+	env := installed(t, map[string]string{
+		"evil": `printf '\033]0;PWNED\007 not a handshake\n'`,
+	})
+	for _, args := range [][]string{{"plugin", "list"}, {"doctor"}} {
+		r := runIn(t, env, args...)
+		for _, c := range []rune{0x1b, 0x07} {
+			if strings.ContainsRune(r.stdout, c) {
+				t.Errorf("rta %v holds %U, which a terminal acts on", args, c)
+			}
+		}
+	}
+}
