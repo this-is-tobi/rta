@@ -31,6 +31,9 @@ func (m Model) keyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		m.help = true
 		return m, nil, true
 	}
+	if msg.String() == "w" && m.answersWaiting() {
+		return m.openQueue()
+	}
 	switch m.mode {
 	case modeDashboard:
 		return m.dashboardKeys(msg)

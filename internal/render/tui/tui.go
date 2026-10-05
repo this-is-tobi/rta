@@ -166,9 +166,20 @@ type Model struct {
 	// plugin key in modeProfilePlugins; "" when nothing is armed.
 	armedDelete string
 	// help is the key overlay (help.go), open over whatever m.mode is.
-	help   bool
+	help bool
+	// width and height are the room a screen has, not the terminal's: the
+	// height is less the row the waiting line takes (banner), and the rows of
+	// the terminal are height+banner.
 	width  int
 	height int
+	// waiting is the calls parked for an answer, as of the last look at the
+	// queue (waiting.go), and banner the rows the line above every screen takes
+	// from the height because of them.
+	waiting []waitingCall
+	banner  int
+	// readWaiting looks at the queue; nil reads the real one, which is what
+	// everything but a test wants.
+	readWaiting func() []waitingCall
 
 	// Live search bar state (dashboard tile 0).
 	searchEditing bool
@@ -359,7 +370,7 @@ func New(reg *registry.Registry, dash config.Dashboard,
 const wheelStep = 3
 
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor)}
+	cmds := []tea.Cmd{refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor), m.pollWaiting(0)}
 	if m.active != "" {
 		cmds = append(cmds, bindCmd(m.reg, m.active, m.boundStamp))
 	}
@@ -521,20 +532,15 @@ func (m Model) fitCatalogue() Model {
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		m.viewport.SetWidth(msg.Width - 4)   // result panel: borders + padding
-		m.viewport.SetHeight(msg.Height - 3) // panel top/bottom + footer
-		m.clampScroll()                      // dashboard rows per screen changed
-		if m.mode == modeResult {
-			m.renderResult() // reflow to the new width
+		m.width, m.height, m.banner = msg.Width, msg.Height, 0
+		return m.settleBanner().fitToWindow(), nil
+
+	case waitingMsg:
+		m.waiting = msg.calls
+		if settled := m.settleBanner(); settled.banner != m.banner {
+			m = settled.fitToWindow()
 		}
-		// A form open across a resize has to be re-fitted too, or it keeps the
-		// height of a window that no longer exists.
-		m.fitForm()
-		m.fitThemeForm()
-		m.fitCopyPick()
-		m.fitAddPick()
-		return m, nil
+		return m, m.pollWaiting(waitingPoll)
 
 	case tea.ColorProfileMsg:
 		m.noColor = msg.Profile <= colorprofile.ASCII
@@ -595,7 +601,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseClickMsg:
 		if m.mode == modeDashboard && msg.Button == tea.MouseLeft {
-			if idx := m.tileAt(msg.X, msg.Y); idx >= 0 {
+			if idx := m.tileAt(msg.X, msg.Y-m.banner); idx >= 0 {
 				// A click moves focus off the search box as much as a launch
 				// from it does, so its query is spent the same way. Left
 				// standing, esc back to the dashboard found the box still
@@ -788,6 +794,24 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// fitToWindow sizes every pane to the room the screen has, which is the
+// window less the row a waiting call's line takes.
+func (m Model) fitToWindow() Model {
+	m.viewport.SetWidth(m.width - 4)   // result panel: borders + padding
+	m.viewport.SetHeight(m.height - 3) // panel top/bottom + footer
+	m.clampScroll()                    // dashboard rows per screen changed
+	if m.mode == modeResult {
+		m.renderResult() // reflow to the new width
+	}
+	// A form open across a resize has to be re-fitted too, or it keeps the
+	// height of a window that no longer exists.
+	m.fitForm()
+	m.fitThemeForm()
+	m.fitCopyPick()
+	m.fitAddPick()
+	return m
+}
+
 // closeToOrigin returns to wherever the current form/result was opened from,
 // restarting the tile refresh loop when that is the dashboard.
 func (m Model) closeToOrigin() (tea.Model, tea.Cmd) {
@@ -856,6 +880,15 @@ func (m Model) open(c plugin.Capability) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() tea.View {
+	v := m.screen()
+	if m.banner > 0 && v.Content != "" {
+		v.SetContent(m.bannerLine() + "\n" + v.Content)
+	}
+	return v
+}
+
+// screen is whatever the current mode draws, in the height it was given.
+func (m Model) screen() tea.View {
 	// Bubble Tea paints the initial model before it delivers the first
 	// WindowSizeMsg — the size goes out from a goroutine and the first view
 	// is rendered synchronously right after — so every run has at least one

@@ -339,6 +339,12 @@ const footerMaxLines = 2
 // only way this stops drifting again the next time a pane gains an action.
 func (m Model) footerItems(screen mode) []hintItem {
 	items := m.screenItems(screen)
+	// A call waiting is the one thing every screen that can answer it leads
+	// with: the line above says it, and this is the key that answers. The agent
+	// tile's own `w waiting` already is that, and says it once.
+	if screen == m.mode && m.answersWaiting() && !teachesKey(items, "w") {
+		items = append([]hintItem{action("w", "answer")}, items...)
+	}
 	// The overlay's key is advertised on exactly the screens that answer it
 	// (help.go), last so the bar drops it first: it is the fallback for a
 	// bar that had to drop something, not a thing to keep at their expense.
@@ -346,6 +352,18 @@ func (m Model) footerItems(screen mode) []hintItem {
 		items = append(items, item(bindHelp))
 	}
 	return items
+}
+
+// teachesKey is whether some entry teaches key.
+func teachesKey(items []hintItem, key string) bool {
+	for _, it := range items {
+		for _, k := range it.keys {
+			if k == key {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // screenItems is one screen's own vocabulary, before the overlay's key.

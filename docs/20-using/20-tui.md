@@ -30,6 +30,7 @@ A tile is a glance, so it is drawn smaller than the page `enter` opens. A table 
 | `t` | Theme |
 | `f` | Profiles — your configured environments, which one is on |
 | `b` or `:` | Browse the whole catalogue |
+| `w` | The queue of calls parked for you, while one waits |
 | `c` | Copy the selected tile's value, on a tile that offers one |
 
 Tiles are yours to arrange. `H` hides one you never look at, and `p` opens the inventory where it comes back; one panel of an entry that expanded into several connections is hidden by its own key, which the inventory has no row for, so it comes back with the `rta dashboard unhide <id> --profile <profile/instance>` line its note prints. On a tile you added, `H` removes the entry instead — the footer says `remove` there, and the note prints the `rta dashboard add` line that puts it back; `+` on a catalogue row or a search match adds one the automatic set left out, asking which connection when the capability takes one.
@@ -217,7 +218,9 @@ Views are actionable rather than static, and what a view offers is the plugin's 
 
 ## Answering agents
 
-The agent tile says how many calls are waiting on you. From it, and from the queue it opens:
+A call parked for you shows on every screen: one line above it, `● 1 call waiting — w to answer`, naming the call when there is exactly one, for as long as it waits and until it is answered or runs out. The line takes a row from the screen below it while it is there, and none on a terminal too short to spare one. `w` opens the queue from the dashboard, with or without a tile selected and from the search bar too — where it is the one letter that is a command while a call waits — and from any screen whose letters are commands; over a form or a filter box the line says `esc, then w`. The queue is read every two seconds, whichever screen is up.
+
+The agent tile says the same, and opens the queue and the record. From it, and from the queue:
 
 | Key | What it does |
 | --- | --- |
