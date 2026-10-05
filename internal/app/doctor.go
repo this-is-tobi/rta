@@ -1031,7 +1031,7 @@ func doctorGuard(add func(check, status, detail string), detail bool) {
 // environment.
 func doctorStore(add func(check, status, detail string), detail bool) {
 	if unlockable, from := kv.Unlockable(); from == "no store" {
-		add("kv store", "ok", "none yet — `rta kv init --generate` sets one up")
+		add("kv store", "ok", "none yet — "+kv.NoStoreNext(plugin.SurfaceCLI, "<key>"))
 	} else if unlockable {
 		add("kv store", "info", "unlocks from this environment ("+from+
 			") — an MCP server started here can read secrets, bounded only by grants")

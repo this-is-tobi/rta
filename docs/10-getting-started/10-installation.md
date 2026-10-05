@@ -48,7 +48,7 @@ grant guard      info    off — anything that can run commands as you can issue
 capabilities     ok      20 plugins, 128 capabilities
 agent grants     ok      none active — agents cannot write or destroy anything
 locks            ok      none — nothing is frozen
-kv store         ok      none yet — `rta kv init --generate` sets one up
+kv store         ok      none yet — `rta kv set <key>` creates one, locked with a passphrase you choose
 ```
 
 An `info` row is a note: a fact worth reading, not a failure, and a line under the table counts them and names the ones that bear most on what an agent can reach. Read the `info` rows rather than skipping to the failures. After you set a store up with `rta kv init --generate`, the `kv store` row changes to the one worth knowing about before you connect an agent:
