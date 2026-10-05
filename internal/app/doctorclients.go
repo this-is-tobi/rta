@@ -63,6 +63,10 @@ type claudeRegistration struct {
 	name    string
 	command string
 	args    []string
+	// env is the names of the variables the entry sets, and never their
+	// values: rta registers none, so any that are there are the operator's,
+	// and a value is as likely to be a credential as a data directory.
+	env []string
 }
 
 // managed says whether the entry is the one `rta mcp install` makes and may
@@ -104,6 +108,17 @@ func stringsOf(raw []any) []string {
 	return out
 }
 
+// envNames is the sorted names of the variables an entry's env object sets.
+func envNames(raw any) []string {
+	set, _ := raw.(map[string]any)
+	names := make([]string, 0, len(set))
+	for name := range set {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // rtaEntry finds the declaration in a `mcpServers` object that launches rta:
 // the one named "rta" when there is one, else the first by name. By name, not
 // by map order: two declarations that both launch rta used to be told apart by
@@ -131,7 +146,8 @@ func rtaEntry(servers any) (claudeRegistration, bool) {
 		if name != "rta" && !strings.HasSuffix(cmd, "/rta") && cmd != "rta" && !servesMCP(args) {
 			continue
 		}
-		found := claudeRegistration{as: asFromArgs(args), name: name, command: cmd, args: args}
+		found := claudeRegistration{as: asFromArgs(args), name: name, command: cmd, args: args,
+			env: envNames(entry["env"])}
 		if name == "rta" {
 			return found, true
 		}
