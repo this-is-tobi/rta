@@ -67,7 +67,7 @@ func TestARowTallerThanTheScreenIsDrawnAtTheHeightThatFits(t *testing.T) {
 // the refresh was the one mutation of that arithmetic that never re-windowed.
 // Scrolled to the end of six tall rows, six short answers left the window on
 // the last row alone above dead space, the header still saying there was
-// more above, when two rows fit.
+// more above, when three rows fit.
 func TestATileThatShrinksPullsTheWindowBackToFillTheScreen(t *testing.T) {
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 	tiles := make([]config.Tile, 6)
@@ -75,24 +75,25 @@ func TestATileThatShrinksPullsTheWindowBackToFillTheScreen(t *testing.T) {
 		tiles[i] = config.Tile{ID: "tall.info"}
 	}
 	m := New(heightRegistry(t), config.Dashboard{Tiles: tiles}, nil)
-	// At sixty cells the grid is one column, so six rows of tileHeight, and
-	// the height leaves room for one of them — or for two at tileMinHeight.
+	// At sixty cells the grid is one column, so six rows. Eighteen lines under
+	// the bar hold two of them at the nine a short terminal draws a tall row at
+	// (rowLimit), or three at tileMinHeight.
 	m = filled(t, m, 60, 30)
-	m = filled(t, m, 60, 1+lipgloss.Height(m.dashFooter())+searchTileHeight+tileHeight+2)
+	m = filled(t, m, 60, 1+lipgloss.Height(m.dashFooter())+searchBarHeight+18)
 	m.selected = 6
 	m.clampScroll()
-	if m.scroll != 5 {
-		t.Fatalf("scroll = %d before the answers, want the last row", m.scroll)
+	if m.scroll != 4 {
+		t.Fatalf("scroll = %d before the answers, want the last two rows", m.scroll)
 	}
 	for i := 1; i <= 6; i++ {
 		next, _ := m.Update(tileMsg{key: "tall.info", idx: i, v: view.Text{Body: "one line"}})
 		m = next.(Model)
 	}
-	if m.scroll != 4 {
-		t.Errorf("scroll = %d after every row shrank, want 4 so both rows that fit are on screen", m.scroll)
+	if m.scroll != 3 {
+		t.Errorf("scroll = %d after every row shrank, want 3 so all three rows that fit are on screen", m.scroll)
 	}
-	if got := plain(m.View().Content); strings.Count(got, "╭") != 3 { // the search bar and two tiles
-		t.Errorf("the frame does not show the two rows that fit:\n%s", got)
+	if got := plain(m.View().Content); strings.Count(got, "╭") != 3 {
+		t.Errorf("the frame does not show the three rows that fit:\n%s", got)
 	}
 }
 
@@ -153,14 +154,14 @@ func assertWholeFrame(t *testing.T, name string, m Model, w, h int) {
 	rows := m.tileRows()
 	first, last := m.rowWindow(len(rows))
 	heights := m.drawnHeights(first, last)
-	want := 1 + searchTileHeight + lipgloss.Height(m.dashFooter())
+	want := 1 + m.searchHeight() + lipgloss.Height(m.dashFooter())
 	for _, rh := range heights {
 		want += rh
 	}
 	if len(lines) != want {
 		t.Fatalf("%s: frame is %d lines, the geometry says %d:\n%s", name, len(lines), want, strings.Join(lines, "\n"))
 	}
-	y := 1 + searchTileHeight
+	y := 1 + m.searchHeight()
 	for r := first; r < last; r++ {
 		top, bottom := lines[y], lines[y+heights[r-first]-1]
 		if n := strings.Count(top, "╭"); n != len(rows[r]) {
