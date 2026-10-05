@@ -169,5 +169,15 @@ func (r Request) Duration(name string) time.Duration {
 	return d
 }
 
+// DurationPattern is the grammar ParseDuration reads, as the regular expression
+// a JSON Schema carries for a string: the one place an agent is told a Duration
+// is more than text, since its schema type is "string" and its help says what
+// the number is for, not how to write it. Anchored, and the same in RE2 and
+// ECMAScript, which is what a schema-enforcing client runs.
+//
+// What it matches ParseDuration accepts, bar the two spellings no one types
+// (".5s" and "1.s"), which the host reads and a schema need not advertise.
+const DurationPattern = `^(?:0|(?:[0-9]+(?:\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$`
+
 // durationHint is how a refusal says to write one.
 const durationHint = "write it with a unit: 30s, 5m, 2h or 1d"
