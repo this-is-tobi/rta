@@ -63,9 +63,15 @@ const (
 // which is the operator's decision to make when they launch it — not a
 // question to put in front of a model.
 var (
+	// The help says what a first store commits to because this box is the one
+	// place a store is born that does not ask twice: a terminal's prompt
+	// repeats itself for a store not made yet (askPassphrase), while a form —
+	// the TUI's, or a --passphrase flag — hands over one answer and nothing
+	// can ask again. The box is the same for every operation on the store, so
+	// the sentence has to serve the one that opens it as well.
 	passphraseField = plugin.Field{
 		Name: "passphrase", Type: plugin.Secret, Local: true, EnvFallback: true,
-		Help: "the passphrase this store is locked with",
+		Help: "the store's passphrase; a store not made yet is locked with it, and nothing recovers it",
 	}
 	identityField = plugin.Field{
 		Name: "identity", Type: plugin.Path, Local: true, EnvFallback: true,
