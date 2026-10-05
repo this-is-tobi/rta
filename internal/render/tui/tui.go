@@ -90,7 +90,7 @@ const (
 // capItem adapts a capability to the bubbles list.
 type capItem struct{ c plugin.Capability }
 
-func (i capItem) FilterValue() string { return i.c.ID + " " + i.c.Summary }
+func (i capItem) FilterValue() string { return filterTarget(i.c) }
 
 // runRef remembers one actionable view — a list, or the page of a single
 // record — so actions launched from it can hop out (show/edit/done/remove)

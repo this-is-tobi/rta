@@ -263,13 +263,13 @@ func (m Model) catalogueCount() string {
 }
 
 // catalogueFilter is the catalogue's filter box: the dashboard search's rule,
-// over the list's own targets, which capItem.FilterValue writes as the ID, a
-// space and the summary. A section header's target is empty and matches
-// nothing, which is what drops it from a filtered list.
+// over the list's own targets, which capItem.FilterValue writes
+// (filterTarget). A section header's target is empty and matches nothing,
+// which is what drops it from a filtered list.
 func catalogueFilter(term string, targets []string) []list.Rank {
 	items := make([]searchItem, len(targets))
 	for i, target := range targets {
-		items[i].ID, items[i].Summary, _ = strings.Cut(target, " ")
+		items[i] = itemOfTarget(target)
 	}
 	found := rankItems(term, items)
 	ranks := make([]list.Rank, len(found))
