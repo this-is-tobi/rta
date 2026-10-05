@@ -51,6 +51,22 @@ var duplicates = map[string]bool{"rta audit doctor": true}
 // their verbs: freezing is what a person who types `rta lock claude` means.
 var defaultVerbs = map[string]string{"rta lock": "add"}
 
+// readAsVerbs are words that a person types after a noun to say what to do with
+// it — to look, to undo, to do it harder — and never as the name of the thing
+// the default verb acts on. `rta lock claude` freezes claude, so `rta lock
+// unlock`, with nothing after it, would freeze a principal called unlock: a lock
+// that took effect on a mistake and says "locked" the way it says it for the
+// right one. They are refused as the unknown commands they are, with the verbs
+// the noun has, so the slip costs a second line and not a stray lock somebody has
+// to find in `lock list`. A name that really is one of these is still
+// `rta lock add <name>`.
+var readAsVerbs = map[string]bool{
+	"show": true, "get": true, "status": true, "info": true, "view": true, "check": true,
+	"inspect": true, "overview": true, "revoke": true, "unlock": true, "unfreeze": true,
+	"unblock": true, "lift": true, "release": true, "clear": true, "freeze": true,
+	"block": true, "ban": true, "kill": true, "stop": true, "all": true,
+}
+
 // shapeVerbs applies the four rules above to the finished tree.
 func shapeVerbs(root *cobra.Command) {
 	addVerbAliases(root)
@@ -123,6 +139,7 @@ func makeDefaultVerb(group *cobra.Command, name string) {
 	if err != nil || verb == group || verb.RunE == nil {
 		return
 	}
+	var carried []string
 	verb.LocalFlags().VisitAll(func(f *pflag.Flag) {
 		if group.Flags().Lookup(f.Name) != nil {
 			return
@@ -130,6 +147,7 @@ func makeDefaultVerb(group *cobra.Command, name string) {
 		shared := *f
 		shared.Hidden = true
 		group.Flags().AddFlag(&shared)
+		carried = append(carried, f.Name)
 	})
 	group.SuggestionsMinimumDistance = 2
 	if places := useArgument.FindAllString(verb.Use, 1); len(places) == 1 {
@@ -146,11 +164,30 @@ func makeDefaultVerb(group *cobra.Command, name string) {
 	}
 	group.RunE = func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
-			return cmd.Help()
-		}
-		if near := plausibleSuggestions(args[0], cmd.SuggestionsFor(args[0])); len(near) > 0 {
+			// A flag of the verb with no name beside it is a lock that was meant
+			// and has nothing to act on, which the verb says; help for it would be
+			// an answer that ignores what was typed.
+			if !slices.ContainsFunc(carried, cmd.Flags().Changed) {
+				return cmd.Help()
+			}
+			// Read now, not captured above: by this call the tree's argument
+			// checks have been wrapped to answer in CodeUsage (codeUsageErrors).
+			if err := verb.Args(verb, args); err != nil {
+				return err
+			}
+		} else if readsAsAVerb(cmd, args[0]) {
 			return usageError(cmd, unknownCommand(cmd, args[0], args[1:]...))
 		}
 		return verb.RunE(cmd, args)
 	}
+}
+
+// readsAsAVerb says whether word, typed after a noun that takes a name, is a
+// verb the noun does not have — a typo of one of its own, or a word from
+// readAsVerbs — rather than a name.
+func readsAsAVerb(group *cobra.Command, word string) bool {
+	if readAsVerbs[strings.ToLower(word)] {
+		return true
+	}
+	return len(plausibleSuggestions(word, group.SuggestionsFor(word))) > 0
 }

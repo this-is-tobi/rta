@@ -1,10 +1,12 @@
 package app
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/builtin/audit"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // `rta plugin ls` worked and `rta kv ls`, `rta note delete`, `rta plugin rm` and
@@ -145,6 +147,55 @@ func TestTheLockNounTakesTheArgumentsOfAdd(t *testing.T) {
 	}
 	if cmd, _, _ := NewRoot(reg, "test").Find([]string{"lock", "list"}); cmd.CommandPath() != "rta lock list" {
 		t.Errorf("`rta lock list` is %s, not the command that lists", cmd.CommandPath())
+	}
+}
+
+// A word that is a verb to whoever types it — look at the locks, lift one — is
+// not a principal to freeze: `rta lock unlock` took effect and said "locked",
+// which is a lock on a mistake. Each is refused and nothing is written, and the
+// same word is a name when `lock add` is the one asked.
+func TestAWordThatReadsAsAVerbIsNotFrozenAsAName(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, word := range []string{"unlock", "status", "show", "info", "lift", "all"} {
+		out, _, err := run(t, reg, "lock", word, "--no-color")
+		var ve *view.Error
+		if strings.Contains(out, "locked") {
+			t.Errorf("`rta lock %s` froze something: %q", word, out)
+		}
+		if !errors.As(err, &ve) || ve.Code != CodeUsage || !strings.Contains(ve.Message, `unknown command "`+word+`"`) {
+			t.Errorf("`rta lock %s` answered %v, want it refused as an unknown command", word, err)
+			continue
+		}
+		if !strings.Contains(ve.Hint, "`rta lock") {
+			t.Errorf("`rta lock %s` hints %q, want the command that means it or the verbs the noun has", word, ve.Hint)
+		}
+	}
+	if out, _, err := run(t, reg, "lock", "add", "unlock", "--dry-run", "--no-color"); err != nil ||
+		!strings.Contains(out, "would lock agent unlock") {
+		t.Errorf("`lock add unlock` is a name when asked for as one: %q %v", out, err)
+	}
+}
+
+// A flag of the verb with no name beside it is not a request for help: the
+// verb says what it is missing, instead of an answer that ignores the flag.
+func TestAFlagOfTheVerbWithNoNameIsMissingTheName(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = run(t, reg, "lock", "--ttl", "30m")
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != CodeUsage || !strings.Contains(ve.Message, "missing <name>") {
+		t.Errorf("`rta lock --ttl 30m` answered %v, want a missing name", err)
+	}
+	if err != nil && ExitCode(err) != 2 {
+		t.Errorf("`rta lock --ttl 30m` exits %d, want 2", ExitCode(err))
+	}
+	if out, _, err := run(t, reg, "lock", "-o", "json"); err != nil || !strings.Contains(out, "USAGE") {
+		t.Errorf("a flag every command has turned bare `rta lock` into %q %v", out, err)
 	}
 }
 
