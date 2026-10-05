@@ -13,6 +13,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -104,16 +105,13 @@ func configTable(reg *registry.Registry, file config.Config) view.Table {
 		ns, _, _ := strings.Cut(h, "@")
 		_, registered := reg.Origin(ns)
 		readers := pluginconf.Readers(reg, ns)
-		credentials := map[string]bool{}
-		for _, name := range profileSecrets(ns, reg) {
-			credentials[name] = true
-		}
+		credentials := credentialInputs(reg, ns)
 		for _, leaf := range config.SectionLeaves(file.Plugins[h]) {
 			value := strings.Join(configValueLines(leaf.Value), ", ")
 			source := "file"
 			switch {
 			case credentials[leaf.Key] || credentials[leaf.Key[strings.LastIndex(leaf.Key, ".")+1:]]:
-				value = "(redacted — a credential does not belong in this file)"
+				value = redactedCredential
 				source = "file (nothing reads it)"
 			case !registered:
 				source = "file (no plugin named " + ns + " is registered)"
@@ -174,7 +172,15 @@ func runConfigGet(reg *registry.Registry, raw string) (view.View, *view.Error) {
 	// What the file holds that no key stands for — a profile, a role, the
 	// tiles, a whole block — is read off the file as it is, and printed as the
 	// YAML that states it.
+	if verr != nil && verr.Code == "core.config.key.secret" {
+		return nil, verr
+	}
 	if sub, ok := configBlock(cfg, name); ok {
+		sub = redactCredentials(reg, name, sub)
+		if text, isText := sub.(string); isText && text == redactedCredential {
+			return nil, view.Errorf("core.config.key.secret", "%s is a credential, so it is not printed", name).
+				WithHint("a config file is plaintext that is read on every call: `rta config edit` takes it out")
+		}
 		out, merr := yaml.Marshal(sub)
 		if merr != nil {
 			return nil, view.Errorf("core.config.read", "encoding %s: %v", name, merr)
@@ -189,6 +195,83 @@ func runConfigGet(reg *registry.Registry, raw string) (view.View, *view.Error) {
 		hint = "it is " + key.Default + " until then — " + hint
 	}
 	return nil, view.Errorf("core.config.unset", "%s is not set", key.Name).WithHint(hint)
+}
+
+// redactedCredential stands where a credential stated in the file would print.
+const redactedCredential = "(redacted — a credential does not belong in this file)"
+
+// credentialInputs is the name of every input of a plugin that holds a
+// credential, whether or not a profile could fill it: a bearer token typed into
+// a `plugins:` section is as much a credential on a screen as a passphrase is.
+func credentialInputs(reg *registry.Registry, ns string) map[string]bool {
+	out := map[string]bool{}
+	for _, name := range profileSecrets(ns, reg) {
+		out[name] = true
+	}
+	for _, c := range reg.Capabilities() {
+		if plugin.Namespace(c.ID) != ns {
+			continue
+		}
+		for _, f := range c.Inputs {
+			if f.Type.Sensitive() {
+				out[f.Name] = true
+			}
+		}
+	}
+	return out
+}
+
+// redactCredentials is the block `rta config get` prints with every credential
+// a `plugins:` section states replaced, wherever in it the key is written and
+// however the name of the block reaches it: the whole of `plugins`, one plugin's
+// section, or one of its keys. `rta config show` redacts the same ones, so one
+// command cannot print what the other withholds.
+func redactCredentials(reg *registry.Registry, name string, tree any) any {
+	segs := strings.Split(name, ".")
+	if segs[0] != "plugins" {
+		return tree
+	}
+	var redact func(v any, credentials map[string]bool) any
+	redact = func(v any, credentials map[string]bool) any {
+		m, ok := v.(map[string]any)
+		if !ok {
+			return v
+		}
+		out := make(map[string]any, len(m))
+		for k, e := range m {
+			last := k[strings.LastIndex(k, ".")+1:]
+			if credentials[k] || credentials[last] {
+				out[k] = redactedCredential
+				continue
+			}
+			out[k] = redact(e, credentials)
+		}
+		return out
+	}
+	heading := func(h string) map[string]bool {
+		ns, _, _ := strings.Cut(h, "@")
+		return credentialInputs(reg, ns)
+	}
+	if len(segs) == 1 {
+		sections, ok := tree.(map[string]any)
+		if !ok {
+			return tree
+		}
+		out := make(map[string]any, len(sections))
+		for h, section := range sections {
+			out[h] = redact(section, heading(h))
+		}
+		return out
+	}
+	// plugins.<heading>[.<key>...]: the heading is the second segment, and what
+	// follows it is the key's own path, which a credential's name may end.
+	credentials := heading(segs[1])
+	if len(segs) > 2 {
+		if last := segs[len(segs)-1]; credentials[last] || credentials[strings.Join(segs[2:], ".")] {
+			return redactedCredential
+		}
+	}
+	return redact(tree, credentials)
 }
 
 // configBlock is the part of the file at a dotted name, as the tree the file
