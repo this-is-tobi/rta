@@ -146,19 +146,26 @@ func TestDueFormsAreAllRead(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), DueForms) {
 		t.Fatalf("the refusal = %v, want it to carry %q", err, DueForms)
 	}
-	for _, form := range []string{"today", "tomorrow", "fri", "friday", "+3d", "2w", "next-week", "10-20"} {
-		if !strings.Contains(DueForms, form) {
-			t.Errorf("DueForms does not list %q", form)
+	// What DueForms names, each as a form ParseDue reads: a weekday by its
+	// whole name or three letters, a full date as its digits.
+	for named, spelled := range map[string][]string{
+		"today":      {"today"},
+		"tomorrow":   {"tomorrow"},
+		"a weekday":  {"friday", "fri"},
+		"+3d":        {"+3d", "3d"},
+		"2w":         {"2w", "+2w"},
+		"next-week":  {"next-week", "next week"},
+		"10-20":      {"10-20"},
+		"yyyy-mm-dd": {"2026-10-20"},
+	} {
+		if !strings.Contains(DueForms, named) {
+			t.Errorf("DueForms does not list %q", named)
 		}
-		if _, err := ParseDue(form, now); err != nil {
-			t.Errorf("DueForms lists %q, which ParseDue refuses: %v", form, err)
+		for _, form := range spelled {
+			if _, err := ParseDue(form, now); err != nil {
+				t.Errorf("DueForms lists %q, which ParseDue refuses as %q: %v", named, form, err)
+			}
 		}
-	}
-	if !strings.Contains(DueForms, "yyyy-mm-dd") {
-		t.Errorf("DueForms does not name a full date: %q", DueForms)
-	}
-	if _, err := ParseDue("2026-10-20", now); err != nil {
-		t.Errorf("a full date is refused: %v", err)
 	}
 }
 

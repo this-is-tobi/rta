@@ -1448,7 +1448,7 @@
           "type": "string"
         },
         "due": {
-          "description": "due date: today, tomorrow, a weekday (fri or friday), +3d, 2w, next-week, 10-20 or yyyy-mm-dd",
+          "description": "due date: today, tomorrow, a weekday, +3d, 2w, next-week, 10-20 or yyyy-mm-dd",
           "type": "string"
         },
         "parent": {
@@ -1512,7 +1512,7 @@
           "type": "string"
         },
         "due": {
-          "description": "due date: today, tomorrow, a weekday (fri or friday), +3d, 2w, next-week, 10-20 or yyyy-mm-dd",
+          "description": "due date: today, tomorrow, a weekday, +3d, 2w, next-week, 10-20 or yyyy-mm-dd",
           "type": "string"
         },
         "id": {
