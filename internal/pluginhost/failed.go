@@ -33,7 +33,9 @@ type Failed struct {
 	// Remedy is the command that takes the plugin out of the way, as a
 	// sentence a hint can carry, and "" when none can: a plugin the system
 	// root provides is not the operator's to remove, and rta's words about it
-	// must not offer a command that cannot work.
+	// must not offer a command that cannot work. For a launch the machine
+	// refused it is that refusal's own hint instead — a TMPDIR too long for a
+	// socket stops every plugin, and withdrawing this one's approval fixes none.
 	Remedy string
 }
 
@@ -64,9 +66,16 @@ func (h *Host) Failed() []Failed {
 // every plugin in the same words, which ReportLoadProblems says once for all
 // of them; a hint naming this plugin would make each cause its own and bring
 // back the dozen copies of one sentence. The plugin is recorded all the same,
-// so the inventory still shows it did not start.
+// so the inventory still shows it did not start — beside that refusal's own
+// hint and not the command that withdraws this plugin, which would have the
+// operator untrust twelve working plugins for a TMPDIR.
 func (h *Host) failedToStart(f Found, id Identity, err error) error {
+	var coded *view.Error
+	machines := errors.As(err, &coded)
 	remedy := remedyFor(f)
+	if machines {
+		remedy = coded.Hint
+	}
 	h.mu.Lock()
 	h.failed = append(h.failed, Failed{
 		Name: f.Name, Path: id.Path, Digest: id.Digest,
@@ -74,8 +83,7 @@ func (h *Host) failedToStart(f Found, id Identity, err error) error {
 	})
 	h.mu.Unlock()
 
-	var coded *view.Error
-	if errors.As(err, &coded) {
+	if machines {
 		return fmt.Errorf("plugin %s: %w", f.Name, err)
 	}
 	cause := view.Errorf("plugin.start", "%s", err.Error())

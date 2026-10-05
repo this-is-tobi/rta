@@ -130,6 +130,33 @@ func TestTheWayOutDependsOnWhereThePluginLives(t *testing.T) {
 	}
 }
 
+// A refusal the machine makes stops every plugin in the same words, and the
+// inventory rows say so with that refusal's hint: the row of a plugin that was
+// fine said "`rta plugin untrust boom` stops rta launching it" after a TMPDIR
+// that was too long, which is the one thing that would not have helped.
+func TestAMachineWideRefusalIsRecordedWithItsOwnWayOut(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	brokenPlugin(t, dir)
+	long := filepath.Join(t.TempDir(), strings.Repeat("d", maxSocketPath))
+	if err := os.MkdirAll(long, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", long)
+
+	h, problems := loadBroken(t)
+	var verr *view.Error
+	if len(problems) != 1 || !errors.As(problems[0], &verr) || verr.Code != "plugin.tmpdir.toolong" {
+		t.Fatalf("problems = %v, want the TMPDIR refusal", problems)
+	}
+	f := h.Failed()
+	if len(f) != 1 || f[0].Remedy != verr.Hint || !strings.Contains(f[0].Remedy, "shorter directory") ||
+		strings.Contains(f[0].Remedy, "untrust") {
+		t.Errorf("Failed() = %+v, want the plugin recorded with the refusal's own hint", f)
+	}
+}
+
 // A plugin that loads is not in the list of the ones that did not, and one
 // that is simply not approved is the other list's.
 func TestOnlyAPluginThatCouldNotStartIsFailed(t *testing.T) {
