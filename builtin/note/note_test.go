@@ -604,7 +604,7 @@ func TestDueDateCaptureAndStatus(t *testing.T) {
 	text(t, runAdd, map[string]any{"title": "x", "due": "2020-01-01"}, false)
 
 	tbl := table(t, runList, map[string]any{"all": false})
-	if got := tbl.Rows[0][col(t, tbl, "Due")]; got != "OVERDUE" {
+	if got := tbl.Rows[0][col(t, tbl, "Due")]; got != "OVERDUE · Jan 1 2020" {
 		t.Errorf("overdue due status = %q", got)
 	}
 }

@@ -1448,7 +1448,7 @@
           "type": "string"
         },
         "due": {
-          "description": "due date: today, tomorrow, a weekday, or 2006-01-02",
+          "description": "due date: today, tomorrow, a weekday (fri or friday), +3d, 2w, next-week, 10-20 or yyyy-mm-dd",
           "type": "string"
         },
         "parent": {
@@ -1509,7 +1509,7 @@
           "type": "string"
         },
         "due": {
-          "description": "due date: today, tomorrow, a weekday, or 2006-01-02",
+          "description": "due date: today, tomorrow, a weekday (fri or friday), +3d, 2w, next-week, 10-20 or yyyy-mm-dd",
           "type": "string"
         },
         "id": {

@@ -3,6 +3,7 @@ package itemstore
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,6 +84,81 @@ func TestParseDueShorthands(t *testing.T) {
 		if got == nil || got.Format("2006-01-02") != tt.want {
 			t.Errorf("ParseDue(%q) = %v, want %s", tt.in, got, tt.want)
 		}
+	}
+}
+
+// Every form DueForms lists is read, and the ones people reach for by habit
+// beside them: a weekday by its three letters, a day count with or without its
+// plus, a week count, a month and day without a year.
+func TestParseDueTheFormsPeopleType(t *testing.T) {
+	now := time.Date(2026, 10, 5, 15, 0, 0, 0, time.UTC) // a Monday
+	tests := []struct {
+		in   string
+		want string // 2006-01-02
+	}{
+		{"mon", "2026-10-05"}, // today counts, as it does for the whole word
+		{"Fri", "2026-10-09"},
+		{"thurs", "2026-10-08"},
+		{"sun", "2026-10-11"},
+		{"3d", "2026-10-08"},
+		{"+3d", "2026-10-08"},
+		{"0d", "2026-10-05"},
+		{"1w", "2026-10-12"},
+		{"+2W", "2026-10-19"},
+		{"10-20", "2026-10-20"}, // this year
+		{"10-05", "2026-10-05"}, // today, not next year
+		{"10-04", "2027-10-04"}, // already past: the next one
+		{"1-9", "2027-01-09"},
+		{"next week", "2026-10-12"}, // accepted before it was listed
+		{"2026-12-25", "2026-12-25"},
+	}
+	for _, tt := range tests {
+		got, err := ParseDue(tt.in, now)
+		if err != nil {
+			t.Errorf("ParseDue(%q): %v", tt.in, err)
+			continue
+		}
+		if got.Format("2006-01-02") != tt.want {
+			t.Errorf("ParseDue(%q) = %s, want %s", tt.in, got.Format("2006-01-02"), tt.want)
+		}
+	}
+}
+
+// 29 February exists in one year of four, and a pair no year holds is no date.
+func TestParseDueMonthDayLooksAheadForLeapDays(t *testing.T) {
+	got, err := ParseDue("02-29", time.Date(2026, 10, 5, 0, 0, 0, 0, time.UTC))
+	if err != nil || got.Format("2006-01-02") != "2028-02-29" {
+		t.Errorf("02-29 from 2026 = %v, %v, want 2028-02-29", got, err)
+	}
+	for _, in := range []string{"13-01", "04-31", "00-10", "10-00", "1-2-3", "d", "3x", "99999d", "+d", "w"} {
+		if got, err := ParseDue(in, time.Now()); err == nil {
+			t.Errorf("ParseDue(%q) = %v, want a refusal", in, got)
+		}
+	}
+}
+
+// The refusal and the field's help are the same statement, and every form in it
+// is one ParseDue reads: a form listed there and refused here would be the help
+// lying.
+func TestDueFormsAreAllRead(t *testing.T) {
+	now := time.Date(2026, 10, 5, 15, 0, 0, 0, time.UTC)
+	_, err := ParseDue("whenever", now)
+	if err == nil || !strings.Contains(err.Error(), DueForms) {
+		t.Fatalf("the refusal = %v, want it to carry %q", err, DueForms)
+	}
+	for _, form := range []string{"today", "tomorrow", "fri", "friday", "+3d", "2w", "next-week", "10-20"} {
+		if !strings.Contains(DueForms, form) {
+			t.Errorf("DueForms does not list %q", form)
+		}
+		if _, err := ParseDue(form, now); err != nil {
+			t.Errorf("DueForms lists %q, which ParseDue refuses: %v", form, err)
+		}
+	}
+	if !strings.Contains(DueForms, "yyyy-mm-dd") {
+		t.Errorf("DueForms does not name a full date: %q", DueForms)
+	}
+	if _, err := ParseDue("2026-10-20", now); err != nil {
+		t.Errorf("a full date is refused: %v", err)
 	}
 }
 
