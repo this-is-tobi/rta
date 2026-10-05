@@ -55,3 +55,22 @@ func TestCompletionOnATerminalShowsTheStepsAndInAPipeTheScript(t *testing.T) {
 		}
 	}
 }
+
+// cobra's own command takes --no-descriptions, and replacing what it prints
+// must not drop what it accepts.
+func TestCompletionStillHonoursNoDescriptions(t *testing.T) {
+	reg := testRegistry(t)
+	for _, shell := range []string{"zsh", "bash", "fish"} {
+		with, _, err := run(t, reg, "completion", shell)
+		if err != nil {
+			t.Fatal(err)
+		}
+		without, _, err := run(t, reg, "completion", shell, "--no-descriptions")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if with == without || len(without) == 0 {
+			t.Errorf("`rta completion %s --no-descriptions` printed the same script as without it (%d bytes)", shell, len(with))
+		}
+	}
+}

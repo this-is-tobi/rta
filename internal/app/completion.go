@@ -58,10 +58,19 @@ Restart your shell afterwards.`,
 // caller, so a caller that sets its output afterwards — a test, an embedder —
 // would see the script go to the process's stdout instead.
 func shapeCompletion(root *cobra.Command) {
-	scripts := map[string]func(*cobra.Command, io.Writer) error{
-		"zsh":  func(c *cobra.Command, w io.Writer) error { return c.Root().GenZshCompletion(w) },
-		"bash": func(c *cobra.Command, w io.Writer) error { return c.Root().GenBashCompletionV2(w, true) },
-		"fish": func(c *cobra.Command, w io.Writer) error { return c.Root().GenFishCompletion(w, true) },
+	scripts := map[string]func(*cobra.Command, io.Writer, bool) error{
+		"zsh": func(c *cobra.Command, w io.Writer, noDesc bool) error {
+			if noDesc {
+				return c.Root().GenZshCompletionNoDesc(w)
+			}
+			return c.Root().GenZshCompletion(w)
+		},
+		"bash": func(c *cobra.Command, w io.Writer, noDesc bool) error {
+			return c.Root().GenBashCompletionV2(w, !noDesc)
+		},
+		"fish": func(c *cobra.Command, w io.Writer, noDesc bool) error {
+			return c.Root().GenFishCompletion(w, !noDesc)
+		},
 	}
 	for _, group := range root.Commands() {
 		if group.Name() != "completion" {
@@ -82,7 +91,8 @@ func shapeCompletion(root *cobra.Command) {
 					_, err := fmt.Fprintln(cmd.OutOrStdout(), strings.TrimRight(steps.String(), "\n"))
 					return err
 				}
-				return script(cmd, cmd.OutOrStdout())
+				noDescriptions, _ := cmd.Flags().GetBool("no-descriptions")
+				return script(cmd, cmd.OutOrStdout(), noDescriptions)
 			}
 		}
 	}
