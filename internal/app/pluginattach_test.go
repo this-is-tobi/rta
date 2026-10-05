@@ -228,6 +228,57 @@ func TestAnAliasIsAnsweredWithTheNameItGoesBy(t *testing.T) {
 	}
 }
 
+// An index that does carry the plugin under the other name answered `install
+// k8s` with the platform refusal and its hint, and the alias's pointer at the
+// first-party name replaced that hint: only a refusal that says no index
+// carries the name is about the name.
+func TestAnAliasAnIndexCarriesKeepsTheHintOfItsOwnRefusal(t *testing.T) {
+	s := newOfferSession(t)
+	s.terminal, s.answer = true, true
+	dir := filepath.Join(paths.Indexes(), "community", "index")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := strings.Replace(strings.ReplaceAll(noBuildHerePG, "pg", "k8s"), "PostgreSQL", "Kubernetes", 1)
+	if err := os.WriteFile(filepath.Join(dir, "k8s.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := s.run("plugin", "install", "k8s")
+	var verr *view.Error
+	if !errors.As(err, &verr) || verr.Code != "plugin.install.platform" {
+		t.Fatalf("err = %v, want the platform refusal of the index that carries k8s", err)
+	}
+	if strings.Contains(verr.Hint, "first-party") || !strings.Contains(verr.Hint, "it offers") {
+		t.Errorf("hint = %q, want the refusal's own, naming what the plugin offers", verr.Hint)
+	}
+}
+
+// Another index is attached and does not carry a first-party plugin: the
+// refusal was "`rta plugin search` lists what they do carry", which is true
+// and a dead end for a plugin the first-party index carries. Where nobody can
+// be asked, it names the index that does.
+func TestAFirstPartyNameAnotherIndexLacksNamesTheFirstPartyIndex(t *testing.T) {
+	s := newOfferSession(t)
+	if err := os.MkdirAll(filepath.Join(paths.Indexes(), "community", "index"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"redis", "pg"} {
+		_, _, err := s.run("plugin", "install", name)
+		var verr *view.Error
+		if !errors.As(err, &verr) || verr.Code != "plugin.install.unknown" {
+			t.Fatalf("install %s: err = %v, want plugin.install.unknown", name, err)
+		}
+		if !strings.Contains(verr.Hint, "`rta plugin index add official`") {
+			t.Errorf("install %s: hint = %q, want the command that attaches the first-party index", name, verr.Hint)
+		}
+	}
+	_, _, err := s.run("plugin", "install", "mongo")
+	var verr *view.Error
+	if !errors.As(err, &verr) || strings.Contains(verr.Hint, "official") {
+		t.Errorf("a name the first-party index does not carry was sent to it: %v", err)
+	}
+}
+
 // A machine without git is told so before it is asked to attach something it
 // cannot.
 func TestTheOfferIsNotMadeWhereTheAttachCannotWork(t *testing.T) {

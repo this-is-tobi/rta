@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -52,15 +53,22 @@ func withFirstPartyOffer(install *cobra.Command, opts *globalOpts) {
 	install.RunE = func(cmd *cobra.Command, args []string) error {
 		err := run(cmd, args)
 		var verr *view.Error
-		if err == nil || !errors.As(err, &verr) {
+		if err == nil || !errors.As(err, &verr) || !slices.Contains(notFoundCodes, verr.Code) {
 			return err
 		}
 		if aliasedFirstParty(args[0]) {
 			return verr.WithHint(plugindist.FirstPartyHint(args[0], nil))
 		}
-		name, wants := wantsFirstPartyIndex(args[0], verr)
-		if !wants || opts.dryRun || !indexOfferTerminal() {
+		name, wants := wantsFirstPartyIndex(args[0])
+		if !wants {
 			return err
+		}
+		refusal := err
+		if verr.Code == "plugin.install.unknown" {
+			refusal = verr.WithHint(plugindist.NoIndexAttached().Hint)
+		}
+		if opts.dryRun || !indexOfferTerminal() {
+			return refusal
 		}
 		ask := askToAttach
 		if opts.yes {
@@ -72,7 +80,7 @@ func withFirstPartyOffer(install *cobra.Command, opts *globalOpts) {
 			return aerr
 		}
 		if !attached {
-			return err
+			return refusal
 		}
 		return run(cmd, args)
 	}
@@ -80,6 +88,13 @@ func withFirstPartyOffer(install *cobra.Command, opts *globalOpts) {
 		"asks, at a terminal, whether to attach the first-party index first; --yes answers it. " +
 		"Without a terminal the refusal names `rta plugin index add official`."
 }
+
+// notFoundCodes are the refusals of an install that say no attached index
+// carries what was asked for: none attached, none carries it, or the index it
+// names is not attached. Only these are about the name, so only these are
+// answered about the name — an install that found the plugin and failed for
+// another reason keeps the words and the hint of that failure.
+var notFoundCodes = []string{"plugin.index.none", "plugin.install.unknown", "plugin.index.unknown"}
 
 // aliasedFirstParty reports whether an install was asked for a first-party
 // plugin under another name — `postgres` for pg. No index carries "postgres",
@@ -90,12 +105,11 @@ func aliasedFirstParty(spec string) bool {
 	return ok && name != spec
 }
 
-// wantsFirstPartyIndex is the first-party plugin an install failed to find,
-// and whether attaching the first-party index could change that: the spec
-// names one, bare or under `official/`; no index called official is attached;
-// and the refusal is one of the three that say "not found" — none attached,
-// none carries it, or the index it names is not attached.
-func wantsFirstPartyIndex(spec string, verr *view.Error) (name string, wants bool) {
+// wantsFirstPartyIndex is the first-party plugin a not-found install asked
+// for, and whether attaching the first-party index could change that: the spec
+// names one, bare or under `official/`, and no index called official is
+// attached.
+func wantsFirstPartyIndex(spec string) (name string, wants bool) {
 	index, bare, qualified := strings.Cut(spec, "/")
 	if !qualified {
 		bare, index = spec, ""
@@ -104,11 +118,6 @@ func wantsFirstPartyIndex(spec string, verr *view.Error) (name string, wants boo
 		return "", false
 	}
 	if first, ok := plugindist.FirstParty(bare); !ok || first != bare {
-		return "", false
-	}
-	switch verr.Code {
-	case "plugin.index.none", "plugin.install.unknown", "plugin.index.unknown":
-	default:
 		return "", false
 	}
 	if _, attached := plugindist.IndexByName(plugindist.FirstPartyIndex); attached {
