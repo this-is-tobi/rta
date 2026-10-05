@@ -16,6 +16,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -246,7 +247,7 @@ func newUseCommand(opts *globalOpts) *cobra.Command {
 		},
 	}
 	cmd.Flags().Bool("off", false, "switch off, back to the base configuration")
-	cmd.Flags().Duration("for", 0, "switch off again after this long (overrides the profile's ttl)")
+	cmd.Flags().String("for", "", "switch off again after this long, in days too: 8h, 1d (overrides the profile's ttl)")
 	completeFlag(cmd, "for", completeWindow)
 	return cmd
 }
@@ -328,6 +329,22 @@ func profileCompletions(instances bool) []cobra.Completion {
 	return out
 }
 
+// useWindow reads --for the way a lock's window and an audit window are read, so
+// 1d is a day here too; a Duration flag stopped at the unit a person who wants
+// the switch to last through tomorrow reaches for.
+func useWindow(cmd *cobra.Command) (time.Duration, *view.Error) {
+	raw, _ := cmd.Flags().GetString("for")
+	if !cmd.Flags().Changed("for") {
+		return 0, nil
+	}
+	window, err := format.ParseWindow(raw)
+	if err != nil {
+		return 0, &view.Error{Code: CodeUsage, Message: fmt.Sprintf("--for %q is not a length of time", raw),
+			Hint: "give one — `30m`, `2h`, `1d`"}
+	}
+	return window, nil
+}
+
 // checkUseWindow refuses a --for that would be dropped. The flag was read only
 // in the branch that switches a profile on, and as "unset" whenever it was not
 // positive, so `rta use --for 2h` printed what was on and said nothing of the
@@ -361,7 +378,10 @@ func runUse(cmd *cobra.Command, args []string, dryRun bool) (view.View, *view.Er
 		return nil, view.AsError(err, "core.profile.config")
 	}
 	off, _ := cmd.Flags().GetBool("off")
-	window, _ := cmd.Flags().GetDuration("for")
+	window, verr := useWindow(cmd)
+	if verr != nil {
+		return nil, verr
+	}
 	if verr := checkUseWindow(cmd, args, off, window); verr != nil {
 		return nil, verr
 	}
