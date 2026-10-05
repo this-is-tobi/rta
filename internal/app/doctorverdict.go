@@ -78,17 +78,6 @@ func judge(t view.Table) doctorVerdict {
 	return v
 }
 
-// status is the worst thing the report found, in the words the rows use.
-func (v doctorVerdict) status() string {
-	switch {
-	case len(v.errors) > 0:
-		return "error"
-	case len(v.warnings) > 0:
-		return "warn"
-	}
-	return "ok"
-}
-
 // line is the sentence under the table. "All ok" is only ever said of a
 // machine with nothing to fix, and it still says how many notes there are,
 // because a note is not a failure and is not nothing either: it is a fact the
