@@ -101,6 +101,9 @@ func Plugin() plugin.Plugin {
 				Safety:       plugin.Read,
 				HostSpecific: true,
 				Idempotent:   true,
+				Description: "Ranks the processes this account can read, by CPU over a 200ms window or by memory. " +
+					"Another user's processes cannot be read without privileges, and one that ends during " +
+					"the scan is gone before it is, so both are left out and counted in a note under the table.",
 				Inputs: []plugin.Field{
 					{Name: "limit", Type: plugin.Int, Config: "ps.limit", Help: "maximum processes to list", Default: 15, Min: 1, Max: 1000},
 					{Name: "sort", Type: plugin.String, Config: "ps.sort", Help: "sort by", Default: "cpu",
@@ -911,11 +914,32 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 		})
 	}
 	if unread > 0 {
-		t.Warnings = append(t.Warnings, partialWarning("sys.ps.partial", "process",
-			"another user's processes are not readable without privileges, and a process that "+
-				"exited during the scan counts here too", unread))
+		t.Warnings = append(t.Warnings, unreadProcesses(unread, total+unread))
 	}
 	return t, nil
+}
+
+// unreadProcesses is the one line under the process table about the ones it
+// could not rank: a count and who they usually are, in a sentence short enough
+// to be a footnote, since on a machine with another user's processes on it —
+// every Mac, every shared host — it is there on every run.
+//
+// **It is still said, and in every format, because a shorter list reads as the
+// whole of a smaller thing** (partialWarning says why at length). What changed
+// is how it is said. It used to be the "could not be read, so they are missing
+// from this table" warning that a failing listing gets, headed "partial" over
+// the table, for a condition nobody can act on: those processes are not this
+// account's to read, and the ranking is of the ones it can. So it is Advisory,
+// which a surface heads as a note rather than as a gap, and the long
+// explanation of why moved to the capability's description, where it is read
+// once and not on every run.
+func unreadProcesses(unread, all int) view.Error {
+	return view.Error{
+		Code: "sys.ps.unread",
+		Message: fmt.Sprintf("%d of %s not shown: other users', or gone during the scan",
+			unread, format.CountOf(all, "process")),
+		Advisory: true,
+	}
 }
 
 // recentCPU measures what each process spent on the CPU over one window, in
