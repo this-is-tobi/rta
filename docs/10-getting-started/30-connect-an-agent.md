@@ -20,6 +20,8 @@ Restarting a server changes none of what you allowed, and running one somewhere 
 
 ## Register a client
 
+`rta init` does this for every client it finds on the machine, asking about each with the command it would run shown first; by name, one client at a time:
+
 ```bash
 rta mcp install claude
 ```
