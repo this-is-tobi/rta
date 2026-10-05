@@ -268,6 +268,25 @@ func TestAPathTooLongForItsTileIsCutInTheMiddle(t *testing.T) {
 	}
 }
 
+// The same holds in a table's cells: the column that gives is cut at its end for
+// prose and in the middle for a path, because it is the file's name that tells
+// two rows apart and a cut at the end leaves rows that read the same.
+func TestAPathInAGlancedCellIsCutInTheMiddle(t *testing.T) {
+	tbl := view.Table{
+		Columns: []view.Column{{Name: "Name"}, {Name: "Path"}},
+		Rows: [][]string{
+			{"a", "/Users/somebody/.local/share/rta/stores/work/team-secrets.age"},
+			{"b", "/Users/somebody/.local/share/rta/stores/work/other-secrets.age"},
+		},
+	}
+	lines := glanced(t, tbl, 32)
+	for i, name := range []string{"team-secrets.age", "other-secrets.age"} {
+		if !strings.HasSuffix(lines[i+1], name) || !strings.Contains(lines[i+1], "…") {
+			t.Errorf("row %d lost the end of its path, which is what names it: %q", i, lines[i+1])
+		}
+	}
+}
+
 // A value that fits, or that is words and not a path, is left exactly as it is.
 func TestAValueThatFitsOrIsProseIsNotCut(t *testing.T) {
 	kv := view.KeyValue{Pairs: []view.Pair{
