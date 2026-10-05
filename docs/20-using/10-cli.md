@@ -37,7 +37,7 @@ rta audit web example.com -o md >> security-review.md
 export RTA_OUTPUT=json
 ```
 
-The config file's `output:` key sets it too, under `RTA_OUTPUT`, and a typed `-o` wins over both. A default that names no format stops every command that renders, before it runs, as `core.output.invalid`: the error names `RTA_OUTPUT` or the key and its file, lists the formats, and is written in `pretty`, since the format asked for is the broken thing. `rta doctor` still runs and reports it as a failing `output` row, `rta init` still runs, since it is how the key gets rewritten, and both answer in `pretty`; `rta mcp serve`, which renders nothing, is unaffected.
+The config file's `output:` key sets it too, under `RTA_OUTPUT`, and a typed `-o` wins over both. A default that names no format stops every command that renders, before it runs, as `core.output.invalid`: the error names `RTA_OUTPUT` or the key and its file, lists the formats, and is written in `pretty`, since the format asked for is the broken thing. `rta doctor` still runs and reports it as a failing `output` row, and answers in `pretty`; `rta mcp serve`, which renders nothing, is unaffected.
 
 **Say what you want in a script.** `pretty` is a rendering choice made for humans, and it is the one format whose shape is allowed to change.
 
@@ -94,7 +94,7 @@ Exit codes make the loop safe to write, and they are the next thing worth knowin
 | `3` | Confirmation required: `--yes` was not given where nobody could be asked, or the answer to the question was no |
 | `130`, `143` | A signal stopped rta: `SIGINT` (`^C`) or `SIGTERM`. The command has three seconds after the first one to stop on its own, and exits with its own code if it does; past that, rta exits without it, with the error `core.signal`, once a write under way has finished — a store's, or the whole of a plugin install or remove, of one version a prune takes out, or of a key pair — ends the plugins it started, one still starting included, gives back the locks the command held, and puts back the terminal mode a prompt changed. A second signal exits at once. `rta mcp serve` and the TUI stop on their own terms and the three seconds are not theirs: `mcp serve` cancels the calls in flight and waits ten seconds for any that do not end, then exits `0`, and the TUI hands the terminal back |
 
-Code `3` is the one worth handling in scripts. It means the command was destructive and nobody confirmed — not that anything failed.
+Code `3` is the one worth handling in scripts. It means the command was destructive, or changes another tool's configuration as `rta init` does, and nobody confirmed — not that anything failed.
 
 `rta doctor` is a check, and exits like one: `1` when any row of its report is an `error`, and with `--strict` when any is a `warn` too. The report is printed in full before it exits, in the format asked for, so a CI step or a pre-commit hook can gate on `rta doctor --strict` and the log still says which rows failed.
 

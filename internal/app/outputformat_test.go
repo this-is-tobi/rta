@@ -107,7 +107,7 @@ func TestABrokenOutputDefaultStopsASetupCommandBeforeItWrites(t *testing.T) {
 }
 
 // What a broken default does not stop: the commands that write no view in it,
-// doctor, which reports it, and init, which is how the key gets rewritten.
+// and doctor, which reports it.
 func TestABrokenOutputDefaultLeavesTheViewlessCommandsAlone(t *testing.T) {
 	root := NewRoot(testRegistry(t), "test")
 	for _, c := range []struct {
@@ -117,7 +117,7 @@ func TestABrokenOutputDefaultLeavesTheViewlessCommandsAlone(t *testing.T) {
 		{[]string{"mcp", "serve"}, false},
 		{[]string{"mcp", "install"}, true},
 		{[]string{"doctor"}, false},
-		{[]string{"init"}, false},
+		{[]string{"init"}, true},
 		{[]string{"config", "schema"}, false},
 		{[]string{"plugin", "doc"}, false},
 		{[]string{"plugin", "new"}, true},

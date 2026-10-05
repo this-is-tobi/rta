@@ -234,13 +234,17 @@ docker run --rm -e RTA_ALLOW_PLUGINS=kube,cnpg \
 
 ## Configuration
 
-rta runs with no configuration at all. When you want some:
+rta runs with no configuration at all, and a fresh machine needs none. What is worth doing once is connecting the agent clients that are on it, and that is what `rta init` is for:
 
 ```bash
 rta init
 ```
 
-That asks two questions — the default output format and the dashboard tiles — and writes `~/.config/rta/config.yaml` (or the platform equivalent: the answer names the file it wrote on its `wrote` line, and `rta doctor` prints the path too). The questions are asked on your terminal whatever stdout is, so `rta init -o json > answer.json` asks them there and leaves the answer alone in the file. `RTA_CONFIG` overrides the location, which is what portable setups and test harnesses use.
+It looks at the machine. For each client it finds — Claude Code, VS Code, Codex, Gemini — it offers to register rta with it, as the command it would run, one question each, Enter to skip; it prints the line that turns on tab completion for your shell, and names the command that attaches the first-party plugin index. It writes no config file, and run again it offers only what is not done yet. A client that already has a registration, with whatever options, is left as it is. The questions are asked on your terminal whatever stdout is, so `rta init -o json > answer.json` asks them there and leaves the answer alone in the file.
+
+`rta init --yes` registers every client it lists without asking, which is what a dotfiles script or a devcontainer wants, and `--dry-run` shows what that would run. With neither a terminal nor `--yes` it stops with exit code `3` and changes nothing.
+
+When you do want a setting, the config file is `~/.config/rta/config.yaml` (or the platform equivalent: `rta doctor` prints the real path), and `rta config schema` describes every key. `RTA_CONFIG` overrides the location, which is what portable setups and test harnesses use.
 
 Nothing in the config grants anything. It holds connection profiles, dashboard preferences and theme — see [Profiles](../20-using/40-profiles.md).
 
