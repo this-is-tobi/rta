@@ -214,7 +214,7 @@ func TestTheRootHelpSaysWhereToStart(t *testing.T) {
 	}
 	got := plainHelp(NewRoot(reg, "test"), 80)
 	for _, want := range []string{
-		"rta sys overview", "rta mcp install claude", "rta doctor", "no arguments opens it", docsURL,
+		"rta sys overview", "rta init", "rta doctor", "no arguments opens it", docsURL,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("`rta --help` does not say %q:\n%s", want, got)

@@ -39,11 +39,14 @@ const docsURL = "https://this-is-tobi.com/rta/introduction"
 
 // startHere is the four lines that answer "what do I type first", in the order
 // a person meets the product: try it, see it, connect an agent, see what that
-// agent could reach.
+// agent could reach. The connecting line is rta init and not one client's
+// install, because init finds the clients on the machine and is what the
+// quickstart and the README lead with; the command for one client, by name, is
+// where init and the quickstart both point next.
 var startHere = []row{
 	{key: "rta sys overview", desc: "try it: this machine's health, nothing to set up"},
 	{key: "rta", desc: "the dashboard: no arguments opens it"},
-	{key: "rta mcp install claude", desc: "connect an agent: it starts read-only until you grant more"},
+	{key: "rta init", desc: "connect your agent clients, one question each: they start read-only until you grant more"},
 	{key: "rta doctor", desc: "what an agent could reach from here"},
 }
 
