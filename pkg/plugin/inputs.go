@@ -377,9 +377,16 @@ func numberOf(t FieldType) string {
 // `rta gen password` and --length.
 func checkBoundsOf(c Capability, f Field, v any, s Surface) *view.Error {
 	if want, ok := f.Range(v); !ok {
-		return view.Errorf("core.input.range", "%s takes %s %s for %s, not %v",
-			s.CapabilityName(c.ID), numberOf(f.Type), want, refusedInput(s, f), v).
-			WithHint("the range is declared: " + declared(s, c, "names it"))
+		verr := view.Errorf("core.input.range", "%s takes %s %s for %s, not %v",
+			s.CapabilityName(c.ID), numberOf(f.Type), want, refusedInput(s, f), v)
+		if f.Type == Duration {
+			// A tool's schema types a duration as text and carries no minimum or
+			// maximum for it, so pointing there would send a model to a page that
+			// does not say. The refusal has already named the range; what is left
+			// to say is a value inside it.
+			return verr.WithHint("give a value inside it, such as " + exampleDuration(f))
+		}
+		return verr.WithHint("the range is declared: " + declared(s, c, "names it"))
 	}
 	return nil
 }

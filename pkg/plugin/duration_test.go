@@ -153,6 +153,15 @@ func TestTheHostRefusesAValueThatIsNotADurationOrIsOutOfRange(t *testing.T) {
 			t.Errorf("%v: want a refusal containing %q, got %v", v, want, refused)
 		}
 	}
+	// The hint of a range refusal gives a value inside it and does not send a tool's
+	// caller to a schema that carries no range for text.
+	for _, s := range []Surface{SurfaceCLI, SurfaceMCP, SurfaceTUI} {
+		req := NewRequest(map[string]any{"timeout": "2h"}, false, false).WithSurface(s)
+		verr := CheckInputs(c, req)
+		if verr == nil || verr.Hint != "give a value inside it, such as 30s" {
+			t.Errorf("on %q an out-of-range duration was told: %v", s, verr)
+		}
+	}
 	// An unbounded duration refuses what is no duration as a wrong type.
 	loose, _ := timed(Field{})
 	req := NewRequest(map[string]any{"timeout": 30}, false, false).WithSurface(SurfaceMCP)
