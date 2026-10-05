@@ -314,3 +314,29 @@ func TestATableTileOnTheDashboardIsOneLinePerRow(t *testing.T) {
 		t.Errorf("the tile is drawn as cards or as a bordered grid:\n%s", frame)
 	}
 }
+
+// A tile is handed what the capability returned, and the renderer cleans what it
+// draws. The lines of a glanced table are built here, so the cleaning is too: a
+// note's title is what an agent with a grant writes, and an OSC 52 in it would
+// put text on the reader's clipboard the moment the tile painted.
+func TestAGlancedTableIsCleanedOfTerminalEscapes(t *testing.T) {
+	tbl := notebook()
+	tbl.Rows[0][4] = "past due\x1b]52;c;aGk=\x07 thing\x1b[2J"
+	tbl.Columns[4].Name = "Note\x1b]0;owned\x07"
+	for _, body := range []string{
+		strings.Join(glanced(t, tbl, 35), "\n"),
+		plain(tileBody(tbl, 35)),
+	} {
+		if strings.ContainsAny(body, "\x1b\a\r") {
+			t.Errorf("a control character reached the screen through a glanced table: %q", body)
+		}
+		if !strings.Contains(body, "past due") {
+			t.Errorf("the cell lost its text along with its escape: %q", body)
+		}
+	}
+
+	kv := view.KeyValue{Pairs: []view.Pair{{Key: "store", Value: "/home/somebody/\x1b]52;c;aGk=\x07/a/long/path/to/the/file.age"}}}
+	if body := plain(tileBody(kv, 30)); strings.ContainsAny(body, "\x1b\a") {
+		t.Errorf("a control character reached the screen through a cut path: %q", body)
+	}
+}
