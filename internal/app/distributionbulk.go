@@ -199,15 +199,18 @@ func runPluginUntrustAll(cmd *cobra.Command, opts *globalOpts) error {
 	// Nothing of the operator's own to withdraw is the same answer with a
 	// count of 0, not a sentence in its place: a Text view here meant a script
 	// sweeping a fleet met pairs on one machine and prose on the next.
-	what, next := strings.Join(names, ", "), "none of them will load again; a session already "+
-		"running keeps what it loaded — restart `rta mcp serve` or the TUI to be rid of them"
+	them := format.Plural(own, "it", "them")
+	what, next := strings.Join(names, ", "), format.Plural(own, "it will not load again", "none of them will load again")+
+		"; a session already running keeps what it loaded — restart `rta mcp serve` or the TUI to be rid of "+them
 	switch {
 	case total == 0:
 		what, next = "nothing", "no approval of your own is recorded, so there was nothing to withdraw"
 	case opts.dryRun && still > 0:
-		next = "run without --dry-run to withdraw them; those the system root trusts as well would keep loading"
+		next = "run without --dry-run to withdraw " + them + "; " +
+			format.Plural(own, "it keeps loading, since the system root trusts it as well",
+				"those the system root trusts as well would keep loading")
 	case opts.dryRun:
-		next = "run without --dry-run to withdraw them"
+		next = "run without --dry-run to withdraw " + them
 	case still == 1 && own == 1:
 		next = stillLoading
 	case still == own:
