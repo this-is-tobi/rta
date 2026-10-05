@@ -35,6 +35,13 @@ import (
 // panics the whole test binary rather than failing the one test.
 func answerWhenAsked(t *testing.T, allow bool) chan consent.Request {
 	t.Helper()
+	return answerWhenAskedBy(t, allow, "test")
+}
+
+// answerWhenAskedBy is answerWhenAsked from the given origin, the word a
+// real answer carries for where it was given.
+func answerWhenAskedBy(t *testing.T, allow bool, by string) chan consent.Request {
+	t.Helper()
 	seen := make(chan consent.Request, 1)
 	over := t.Context()
 	go func() {
@@ -46,7 +53,7 @@ func answerWhenAsked(t *testing.T, allow bool) chan consent.Request {
 				case seen <- pending[0]:
 				default:
 				}
-				if err := consent.Decide(pending[0].ID, allow, "test"); err != nil {
+				if err := consent.Decide(pending[0].ID, allow, by); err != nil {
 					t.Errorf("Decide: %v", err)
 				}
 				return
@@ -102,6 +109,27 @@ func TestAParkedCallProceedsOnTheOperatorsWord(t *testing.T) {
 	}
 	if entries[0].Auth != agentlog.Live || entries[0].Outcome != agentlog.Ran {
 		t.Fatalf("the ledger misrecords the approval: %+v", entries[0])
+	}
+}
+
+// The record says what happened, in the words of what happened: an answer
+// given with one key in the TUI is "form" to the grant that may come with it,
+// and "approved by form" is not what anybody did.
+func TestTheRecordSaysWhereAnApprovalWasGiven(t *testing.T) {
+	for by, want := range map[string]string{
+		grant.FromForm:                     "approved in the TUI",
+		grant.FromTerminal:                 "approved at a terminal",
+		grant.FromCommand:                  "approved by a command run with no terminal",
+		grant.FromOperatorPrefix + "alice": "approved by operator:alice",
+	} {
+		s := connect(t, Options{Consent: true, ConsentWait: 20 * time.Second})
+		_ = answerWhenAskedBy(t, true, by)
+		if res := callTool(t, s, "demo_item_reveal", map[string]any{"key": "db-password"}); res.IsError {
+			t.Fatalf("%s: an approved call was refused: %s", by, res.Content[0].(*sdk.TextContent).Text)
+		}
+		if rec := lastRecord(t); rec.Reason != want {
+			t.Errorf("an answer from %q is recorded as %q, want %q", by, rec.Reason, want)
+		}
 	}
 }
 

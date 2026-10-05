@@ -342,7 +342,7 @@ func askConsent(ctx context.Context, c plugin.Capability, opts Options, values m
 	case answer.Allowed:
 		rec.Auth = agentlog.Live
 		if answer.By != "" {
-			rec.Reason = "approved by " + answer.By
+			rec.Reason = approvedWords(answer.By)
 		}
 		return true, nil
 	case answer.Answered:
@@ -514,4 +514,22 @@ func ringDoorbell(ctx context.Context, capID string, r consent.Request) {
 		bell.off = true
 		fmt.Fprintln(os.Stderr, "rta: no desktop notification this time or after it:", err)
 	}
+}
+
+// approvedWords is how the record says who let a parked call run, from the
+// origin the answer carried (grant.Origin). The origin is one word for where
+// the answer came from, "form" for any answer given in the TUI, and the record
+// read "approved by form" for a call allowed with one key and no form at all.
+// The three origins are said as what happened, and an operator's label as
+// itself: it is the attribution, and a person reads it as a name.
+func approvedWords(by string) string {
+	switch by {
+	case grant.FromForm:
+		return "approved in the TUI"
+	case grant.FromTerminal:
+		return "approved at a terminal"
+	case grant.FromCommand:
+		return "approved by a command run with no terminal"
+	}
+	return "approved by " + by
 }
