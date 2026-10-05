@@ -22,6 +22,10 @@ func TestWideningsNameEveryGrowthAndNothingElse(t *testing.T) {
 	cap_ := func(id string, s plugin.Safety, grant bool) plugin.Capability {
 		return plugin.Capability{ID: id, Safety: s, NeedsGrant: grant}
 	}
+	reveals := func(c plugin.Capability) plugin.Capability {
+		c.Reveals = true
+		return c
+	}
 	decl := func(caps []plugin.Capability, needs ...plugin.Need) plugin.Plugin {
 		return plugin.Plugin{Name: "pg", Capabilities: caps, Needs: needs}
 	}
@@ -79,6 +83,26 @@ func TestWideningsNameEveryGrowthAndNothingElse(t *testing.T) {
 		old:  decl([]plugin.Capability{cap_("pg.vacuum", plugin.Write, true)}),
 		next: decl([]plugin.Capability{cap_("pg.vacuum", plugin.Write, false)}),
 		want: []string{"! pg.vacuum  no longer needs a grant"},
+	}, {
+		name: "a new capability that reveals a masked value says so",
+		old:  decl([]plugin.Capability{cap_("pg.query", plugin.Read, false)}),
+		next: decl([]plugin.Capability{cap_("pg.query", plugin.Read, false),
+			reveals(cap_("pg.secret.get", plugin.Write, true))}),
+		want: []string{"+ pg.secret.get  write, needs a grant, reveals a masked value"},
+	}, {
+		name: "a capability that starts to reveal a masked value is growth under an id already approved",
+		old:  decl([]plugin.Capability{cap_("pg.secret.get", plugin.Write, true)}),
+		next: decl([]plugin.Capability{reveals(cap_("pg.secret.get", plugin.Write, true))}),
+		want: []string{"! pg.secret.get  now reveals a masked value"},
+	}, {
+		name: "a capability that stops declaring it reveals is a decision, not news",
+		old:  decl([]plugin.Capability{reveals(cap_("pg.secret.get", plugin.Write, true))}),
+		next: decl([]plugin.Capability{cap_("pg.secret.get", plugin.Write, true)}),
+		want: []string{"! pg.secret.get  no longer declares that it reveals a masked value"},
+	}, {
+		name: "a capability that keeps revealing widens nothing",
+		old:  decl([]plugin.Capability{reveals(cap_("pg.secret.get", plugin.Write, true))}),
+		next: decl([]plugin.Capability{reveals(cap_("pg.secret.get", plugin.Write, true))}),
 	}, {
 		name: "a new credential need is growth",
 		old:  decl([]plugin.Capability{cap_("pg.query", plugin.Read, false)}),
