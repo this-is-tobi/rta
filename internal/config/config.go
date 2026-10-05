@@ -568,7 +568,14 @@ func Replace(original, edited []byte) error {
 // put the old text back over what `rta config set` wrote. Only a link that
 // resolves to a regular file is followed; anything else is written where it
 // is, as it was before.
+//
+// Not for the working-directory fallback, which is a file somebody else's
+// directory chose: a link there is a way to have rta write YAML over any
+// file its user can, and that file is read as untrusted for the same reason.
 func writeTarget(path string) string {
+	if !trustedPath() {
+		return path
+	}
 	if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		return path
 	}

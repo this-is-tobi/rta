@@ -76,3 +76,33 @@ func TestADanglingConfigLinkIsWrittenWhereItIs(t *testing.T) {
 		t.Error("a dangling link was followed into a directory it names")
 	}
 }
+
+// The working-directory fallback is a file a cloned repository can supply, so a
+// link in it is not followed: following it would let that repository have rta
+// write over a file elsewhere in the account.
+//
+// Fails without the trustedPath check in writeTarget: the victim is rewritten.
+func TestALinkInTheWorkingDirectoryFallbackIsNotFollowed(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(dir, "victim.txt")
+	if err := os.WriteFile(victim, []byte("output: pretty # victim\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, filepath.Join(dir, ".rta.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	t.Setenv("RTA_CONFIG", "")
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	if err := Mutate(func(c Config) (Config, bool) {
+		c.Output = "json"
+		return c, true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(victim); string(got) != "output: pretty # victim\n" {
+		t.Errorf("the file the link names was written: %q", got)
+	}
+}
