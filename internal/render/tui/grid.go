@@ -483,6 +483,10 @@ func tileContentLines(t tile, width int) []string {
 	body := ""
 	switch {
 	case t.err != nil:
+		if say, quiet := quietSentence(t); quiet {
+			body = theme.Subtle.Render(ansi.Wordwrap(say, max(inner, 1), ""))
+			break
+		}
 		var buf bytes.Buffer
 		_ = cli.RenderError(&buf, t.err, cli.Options{Format: cli.Pretty, Width: inner})
 		body = buf.String()

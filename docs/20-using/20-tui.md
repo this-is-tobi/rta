@@ -14,7 +14,7 @@ A search bar across the top, and one tile per plugin that has something to show 
 
 The search is one line until you use it: `/` (or `enter` on the line) opens it to a box with the first matches, and `esc` gives the lines back to the tiles. On a short terminal each row of tiles is drawn at half the room under the search line and cut at `… enter for details`, so an 80x24 screen holds the machine, the agents, the grants and the network, and `enter` opens the rest of any of them.
 
-A tile is a glance, so it is drawn smaller than the page `enter` opens. A table too wide for its box becomes a borderless line per row under its headings, with the columns that say the same in every row dropped first, then the ones beside the first column, and the last text column cut with an ellipsis; a long path is cut in the middle, where its end still names the file.
+A tile is a glance, so it is drawn smaller than the page `enter` opens. A table too wide for its box becomes a borderless line per row under its headings, with the columns that say the same in every row dropped first, then the ones beside the first column, and the last text column cut with an ellipsis; a long path is cut in the middle, where its end still names the file. A tile with nothing to say from where you started rta is a muted sentence and not an error: `git.overview` outside a repository says so, and `enter` opens the full message with its hint.
 
 | Key | What it does |
 | --- | --- |
