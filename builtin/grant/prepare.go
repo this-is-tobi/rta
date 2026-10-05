@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,7 +14,9 @@ import (
 	"github.com/this-is-tobi/rta/internal/config"
 	core "github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
+	"github.com/this-is-tobi/rta/internal/lockdown"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/internal/plugindist"
 	profiles "github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -53,8 +56,12 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 	// kv.get — reads back as "done" right up until the agent tries the call
 	// it was supposedly just allowed to make, and is refused anyway.
 	if !targetExists(catalog, target) {
+		hint := "rta explain lists capability IDs, rta plugin list lists plugin names — check for a typo"
+		if more := notInstalledHint(catalog, target); more != "" {
+			hint += "; " + more
+		}
 		return core.Grant{}, notes, view.Errorf("grant.unknowntarget", "%q does not name a registered capability or plugin", target).
-			WithHint("rta explain lists capability IDs, rta plugin list lists plugin names — check for a typo")
+			WithHint(hint)
 	}
 	if verr := grantNeeded(sf, catalog, target, spec.Profile); verr != nil {
 		return core.Grant{}, notes, verr
@@ -148,6 +155,63 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 		RateMax:    rateMax,
 		RateWindow: rateWindow,
 	}, notes, nil
+}
+
+// notInstalledHint answers the other reading of an unknown target: not a typo
+// of a capability but a plugin that is not here yet — `pg.query` on a machine
+// that has not installed pg. Read from what is already on the machine, the
+// attached indexes' manifests, so a grant never reaches a network to find out;
+// with no index attached the hint is how to get one, hedged, since a word
+// that names nothing is as often a typo as a service.
+func notInstalledHint(catalog func() []plugin.Capability, target string) string {
+	ns := core.Namespace(target)
+	if targetExists(catalog, ns) || !plugin.ValidName(ns) {
+		return ""
+	}
+	if len(plugindist.Indexes()) == 0 {
+		return "if " + ns + " is a service rather than a typo, it comes from a plugin — " +
+			"`rta plugin index add official` attaches the first-party index, then `rta plugin install " + ns + "`"
+	}
+	if listed, verr := plugindist.Resolve(ns); verr == nil {
+		return ns + " is a plugin in the " + listed.Index + " index, not installed here — `rta plugin install " + ns +
+			"` installs it, and then it can be granted"
+	}
+	return ""
+}
+
+// breadthNote says how much a plugin-wide grant covers. `grant allow kv` reads
+// like one grant and is every capability in kv that needs one, destructive
+// ones included, and the receipt used to say the same as it did for a single
+// key: "claude may call kv for 1h".
+func breadthNote(catalog func() []plugin.Capability, g core.Grant) string {
+	if strings.Contains(g.Target, ".") {
+		return ""
+	}
+	var gated, destructive []string
+	for _, c := range catalog() {
+		if core.Namespace(c.ID) != g.Target || c.HumanOnly || !core.Required(c, g.Profile) {
+			continue
+		}
+		gated = append(gated, c.ID)
+		if c.Safety == plugin.Destructive {
+			destructive = append(destructive, c.ID)
+		}
+	}
+	if len(gated) == 0 {
+		return ""
+	}
+	sort.Strings(destructive)
+	which := "none destructive"
+	if len(destructive) > 0 {
+		shown := destructive[:min(3, len(destructive))]
+		which = strconv.Itoa(len(destructive)) + " destructive (" + strings.Join(shown, ", ")
+		if rest := len(destructive) - len(shown); rest > 0 {
+			which += " and " + format.Count(rest, "other", "others")
+		}
+		which += ")"
+	}
+	return fmt.Sprintf("note: %s covers %s an agent needs a grant for, %s — name one to allow only it",
+		g.Target, format.Count(len(gated), "capability", "capabilities"), which)
 }
 
 // givenRecord refuses a record that is nothing but white space, the one
@@ -763,9 +827,19 @@ func RevokeRemote(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutc
 // "revoked 1 grant" while a Reserve running at that instant put the
 // grant back.
 func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
+	out, _, verr := revokeDetailed(spec, write)
+	return out, verr
+}
+
+// revokeDetailed is revokeOutcome with the grants it took back, or would, as
+// they stood: the operator channel's answer is a count and stays one, and the
+// person at this machine is told which grants went, from the same snapshot the
+// count was taken from.
+func revokeDetailed(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, []core.Grant, *view.Error) {
 	// Said back, so a client that asked for exact can tell this revoke
 	// matched it from one by a server that never heard of it.
 	out := operatorid.RevokeOutcome{Exact: spec.Exact}
+	var gone []core.Grant
 	sel := revokeSelector(spec)
 	verr := core.Mutate(func(stored []core.Grant) ([]core.Grant, bool) {
 		now := time.Now()
@@ -775,7 +849,7 @@ func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOut
 		// — and those must survive a revoke of some other target without ever
 		// being counted or reported as covering anything.
 		var live []core.Grant
-		revoked := 0
+		gone = nil
 		for _, g := range stored {
 			// Revoking a plugin takes back every grant inside it: the point of
 			// `rta grant revoke kv` in a hurry is that nothing kv-shaped survives
@@ -785,7 +859,7 @@ func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOut
 			active := g.Active(now)
 			if match {
 				if active {
-					revoked++
+					gone = append(gone, g)
 				}
 				continue
 			}
@@ -794,7 +868,7 @@ func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOut
 				live = append(live, g)
 			}
 		}
-		if revoked == 0 && len(live) == 0 {
+		if len(gone) == 0 && len(live) == 0 {
 			out.NoneActive = true
 			return nil, false
 		}
@@ -805,13 +879,13 @@ func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOut
 		// kv survived `rta grant revoke kv.get` while the operator was told
 		// there was nothing to revoke — true of the row, false of the access.
 		out.Still = stillCovering(live, spec)
-		out.Revoked = revoked
-		if revoked == 0 || !write {
+		out.Revoked = len(gone)
+		if len(gone) == 0 || !write {
 			return nil, false
 		}
 		return kept, true
 	})
-	return out, verr
+	return out, gone, verr
 }
 
 // revokeBody words one outcome, for the local flow and the remote one
@@ -820,7 +894,7 @@ func revokeOutcome(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOut
 // either way, for the call a leftover grant is named with, and server the
 // remote server the outcome came from, empty for this machine's own.
 func revokeBody(sf plugin.Surface, spec operatorid.RevokeSpec, server string, out operatorid.RevokeOutcome,
-	dry bool,
+	gone []core.Grant, dry bool,
 ) string {
 	target := spec.Target
 	if out.NoneActive {
@@ -866,7 +940,107 @@ func revokeBody(sf plugin.Surface, spec operatorid.RevokeSpec, server string, ou
 		return stillCovered(msg)
 	}
 	if dry {
-		return stillCovered("would revoke " + format.Count(out.Revoked, "grant", "grants"))
+		return stillCovered("would revoke " + format.Count(out.Revoked, "grant", "grants") + goneLines(sf, gone, true))
 	}
-	return stillCovered("revoked " + format.Count(out.Revoked, "grant", "grants"))
+	return stillCovered("revoked " + format.Count(out.Revoked, "grant", "grants") + goneLines(sf, gone, false))
+}
+
+// goneLines is the grants a revoke took back, or would, each in the sentence
+// `grant allow` said it in, and — for one that is gone — the call that puts it
+// back. The receipt of "revoked 5 grants" was a count, and a count cannot be
+// checked against what was meant: the revoke that took the wrong five had to
+// be retyped from memory.
+//
+// The call is the grant as it stood: what time and what uses it had left, not
+// what it was first issued with, since putting back a spent grant with its
+// first budget would be a widening nobody asked for. It is a line to read and
+// to run by hand; rta runs nothing on a revoke's behalf.
+//
+// The remote flow has a count and nothing to list: the operator channel's
+// answer carries one, and a server on an older rta could not send more.
+func goneLines(sf plugin.Surface, gone []core.Grant, dry bool) string {
+	if len(gone) == 0 {
+		return ""
+	}
+	now := time.Now()
+	var b strings.Builder
+	b.WriteString(":")
+	for _, g := range gone {
+		b.WriteString("\n  " + subject(g) + " may " + describe(g))
+		if !dry {
+			b.WriteString("\n    re-issue: " + reissueCall(sf, g, now))
+		}
+	}
+	return b.String()
+}
+
+// reissueCall is the `grant allow` that gives g back with what it had left.
+func reissueCall(sf plugin.Surface, g core.Grant, now time.Time) string {
+	args := []plugin.Arg{{Name: "target", Value: g.Target, Positional: true}}
+	if g.Scope != "" {
+		args = append(args, plugin.Arg{Name: "scope", Value: g.Scope, Positional: true})
+	}
+	if g.Profile != "" {
+		args = append(args, plugin.Arg{Name: "profile", Value: g.Profile})
+	}
+	if g.Agent != "" {
+		args = append(args, plugin.Arg{Name: "agent", Value: g.Agent})
+	}
+	left := max(g.Expires.Sub(now), time.Second)
+	if left >= time.Minute {
+		// Rounded down to the minute: a command somebody reads and runs by hand
+		// is not improved by seconds, and never rounding up keeps it from
+		// giving back more time than was left.
+		left = left.Truncate(time.Minute)
+	}
+	args = append(args, plugin.Arg{Name: "ttl", Value: format.Duration(left)})
+	if left := g.MaxUses - g.Uses; g.MaxUses > 0 && left > 0 {
+		args = append(args, plugin.Arg{Name: "max-uses", Value: left})
+	}
+	if g.RateMax > 0 && g.RateWindow != "" {
+		args = append(args, plugin.Arg{Name: "rate", Value: fmt.Sprintf("%d/%s", g.RateMax, g.RateWindow)})
+	}
+	return sf.Call("grant.allow", args...)
+}
+
+// stillConnected is what a revoke leaves running: the agents that have an rta
+// server open and are not locked. Revoking takes back what grants gave and
+// nothing else — the ungated reads an agent's server answers stay open — and
+// the revoke someone types in a hurry is the one for which "the agent is
+// stopped" is the thing they believe. Said once, last, with the command that
+// does stop it. Empty when nothing is connected, or everything that is has
+// been frozen already.
+func stillConnected(sf plugin.Surface) string {
+	open, err := session.List()
+	if err != nil {
+		return ""
+	}
+	frozen := map[string]bool{}
+	if locks, verr := lockdown.Load(); verr == nil {
+		for _, l := range locks {
+			if l.Kind == lockdown.KindAgent {
+				frozen[l.Name] = true
+			}
+		}
+	}
+	if frozen[lockdown.Everyone] {
+		return ""
+	}
+	var running []string
+	for _, srv := range open {
+		if srv.Agent != "" && !frozen[srv.Agent] && !slices.Contains(running, srv.Agent) {
+			running = append(running, srv.Agent)
+		}
+	}
+	sort.Strings(running)
+	switch len(running) {
+	case 0:
+		return ""
+	case 1:
+		return running[0] + " is still connected (reads stay open): `" +
+			sf.Call("lock.add", plugin.Arg{Name: "name", Value: running[0], Positional: true}) + "`"
+	}
+	return strings.Join(running, ", ") + " are still connected (reads stay open): `" +
+		sf.Call("lock.add", plugin.Arg{Name: "all", Value: true}) + "` freezes them all, or `" +
+		sf.Call("lock.add", plugin.Arg{Name: "name", Value: "<name>", Positional: true}) + "` one"
 }
