@@ -22,7 +22,9 @@ import (
 //
 // Checked against the real command tree rather than a list kept here, so a
 // renamed verb fails the page that still uses the old name, and a management
-// command (`rta plugin index add`) is covered exactly as a capability is.
+// command (`rta plugin index add`) is covered exactly as a capability is. A
+// hidden alias (`rta kv ls`) is a command a page may spell; so is the name a
+// group with a default verb takes (`rta lock claude`).
 // Only what reads as a command is checked: fenced shell blocks and inline
 // code spans. Output blocks — the ones with no language — quote rta's own
 // sentences ("rta mcp server listening on stdio"), which are not commands
@@ -67,6 +69,9 @@ func rtaCommandTree(t *testing.T) map[string]*cobra.Command {
 		for _, sub := range c.Commands() {
 			p := prefix + " " + sub.Name()
 			tree[p] = sub
+			for _, alias := range sub.Aliases {
+				tree[prefix+" "+alias] = sub
+			}
 			walk(sub, p)
 		}
 	}
@@ -94,6 +99,9 @@ func unknownVerb(tree map[string]*cobra.Command, words []string) string {
 	// A leaf takes arguments, so whatever follows it is fine. A group takes
 	// verbs, so a word after it that is not one is a command nobody can run.
 	if longest == len(words) || !cmd.HasSubCommands() {
+		return ""
+	}
+	if _, takesName := defaultVerbs[cmd.CommandPath()]; takesName {
 		return ""
 	}
 	if cmd.SuggestionsMinimumDistance <= 0 {

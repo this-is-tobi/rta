@@ -220,9 +220,15 @@ func (h *helper) arguments(b *strings.Builder, block string) {
 // then what else it takes.
 func (h *helper) usage(cmd *cobra.Command) string {
 	use := strings.ReplaceAll(cmd.UseLine(), "[flags]", "[--flags]")
-	if cmd.HasAvailableSubCommands() && !strings.Contains(use, "[command]") {
+	if cmd.HasAvailableSubCommands() && !strings.Contains(use, "[command") {
 		before, after, found := strings.Cut(use, " [--flags]")
-		use = before + " [command]"
+		// A group that takes a verb's arguments itself (`rta lock claude`)
+		// has its argument beside the commands, not after them.
+		if place := useArgument.FindString(before); place != "" {
+			use = strings.Replace(before, place, "[command | "+strings.Trim(place, "<>[]")+"]", 1)
+		} else {
+			use = before + " [command]"
+		}
 		if found {
 			use += " [--flags]" + after
 		}

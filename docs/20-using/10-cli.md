@@ -193,6 +193,10 @@ rta's completion goes further than subcommand names. A capability that declares 
 
 See [Installation](../10-getting-started/10-installation.md#shell-completion) to turn it on.
 
+## Guessing a verb
+
+A verb answers to the spellings you would guess for it, in every namespace and in plugins' as well: `ls` for `list`; `rm`, `remove` and `delete` for one another; and `get` for `show` wherever there is no `get` of its own — `kv get` reveals a value and `kv show` does not, so each stays itself, and the verbs of `http` are request methods and have no synonyms. `rta grant rm` takes a grant back, and `rta lock claude` is `rta lock add claude`, with its flags. A word after `rta lock` that is a typo of one of its verbs is refused as one, never taken for a name to freeze. None of these is listed in `--help`, which shows each command once, under its own name.
+
 ## Piping in
 
 A few capabilities read a pipe when the argument naming their input is left out: `debug ansi` the text it explains, `keys restore` the seed words, `codec jwt` the token and `codec jwk` the key. For the last three that is the point — a pipe keeps a bearer token or a seed phrase out of `ps` and out of your shell history, where an argument is readable by every user on the machine for as long as the call runs:
