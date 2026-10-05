@@ -69,8 +69,9 @@ func runConfigEdit(reg *registry.Registry, dryRun bool) (view.View, *view.Error)
 	if err != nil {
 		return nil, view.AsError(err, "core.config.read")
 	}
+	// A file with nothing in it is opened as no file is: on the starter.
 	body := original
-	if body == nil {
+	if len(bytes.TrimSpace(body)) == 0 {
 		body = []byte(config.Starter())
 	}
 
