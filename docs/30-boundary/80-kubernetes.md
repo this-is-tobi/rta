@@ -58,13 +58,13 @@ servers:
 
 Every combination rta would refuse at startup is refused at render time instead, naming the values key rather than arriving later as a CrashLoopBackOff: an issuer with no audience, consent without operators, an empty `roots`, a token under 16 characters, an operator URL that is not `https://`.
 
-**The chart is published the way the image is.** Every release pushes it to `ghcr.io/this-is-tobi/rta/rta-chart` with SLSA build provenance and a cosign signature bound to the digest, the same pair the binaries and the image carry. It moves on its own version stream rather than the app's — a chart `0.2.0` deploying rta `0.17.0` — because a values default or a template fix is a chart release with no new rta in it; `appVersion` is where the app's version lives. `helm install` from a registry checks neither the provenance nor the signature on its own, so check before you install:
+**The chart is published the way the image is.** Every release pushes it to `ghcr.io/this-is-tobi/rta/rta-chart` with [SLSA](../95-reference/10-glossary.md#acronyms) build provenance and a cosign signature bound to the digest, the same pair the binaries and the image carry. It moves on its own version stream rather than the app's — a chart `0.2.0` deploying rta `0.17.0` — because a values default or a template fix is a chart release with no new rta in it; `appVersion` is where the app's version lives. `helm install` from a registry checks neither the provenance nor the signature on its own, so check before you install:
 
 ```bash
 gh attestation verify oci://ghcr.io/this-is-tobi/rta/rta-chart:<version> --owner this-is-tobi
 ```
 
-Then point the client at it — [Connecting your AI tool](./60-ai-clients.md) covers the per-client detail, and the server is an HTTP MCP endpoint like any other.
+Then point the client at it — [Connecting your AI tool](./60-ai-clients.md) covers the per-client detail, and the server is an HTTP [MCP](../95-reference/10-glossary.md#acronyms) endpoint like any other.
 
 ## Two log lines that look wrong and are not
 
@@ -84,12 +84,12 @@ The chart's defaults are safe; these are the ones you have to choose.
 - **Turn on the NetworkPolicy, and write the egress rules.** It is off by default because only you know which databases an instance's profiles reach, and a chart that guessed would either allow everything or cut the server off in a way that surfaces as unexplained timeouts. The ingress rules matter less than the egress ones.
 - **Keep the scraper off the MCP port.** `/metrics` sits behind the same verifier MCP does, so a token that reads the counters can call the protocol. Binding the observation listener privately is the outer control and the token is the inner one; a NetworkPolicy is what stops the outer one being decorative.
 - **Watch `rta_record_intact`.** A record that stops verifying is either a bug or somebody editing it, and both are worth knowing about in minutes. `grafanaDashboard.enabled` ships a dashboard built around that series.
-- **Do not raise replicas, and do not reach for ReadWriteMany.** The chart does not expose replicas and refuses RWX. Two rta processes on one data directory hold divergent grant rosters and split the record, so the audit trail answers questions *wrongly* rather than not at all. RWX would remove the rolling-update deadlock and change nothing else.
+- **Do not raise replicas, and do not reach for ReadWriteMany.** The chart does not expose replicas and refuses [RWX](../95-reference/10-glossary.md#acronyms). Two rta processes on one data directory hold divergent grant rosters and split the record, so the audit trail answers questions *wrongly* rather than not at all. RWX would remove the rolling-update deadlock and change nothing else.
 - **On OpenShift, set `openShift.enabled`.** It omits the UID, GID and fsGroup rather than setting them, because `restricted-v2` assigns a UID from the namespace's range and refuses a pod that asks for one outside it — the correct value is what blocks admission.
 
 ## Giving an instance access to the cluster it runs in
 
-The `kube` and `cnpg` plugins are the obvious thing to want from a pod, and getting there is four problems of which RBAC is the last.
+The `kube` and `cnpg` plugins are the obvious thing to want from a pod, and getting there is four problems of which [RBAC](../95-reference/10-glossary.md#acronyms) is the last.
 
 rta runs plugins with a deliberately narrow environment — `PATH`, `HOME`, `TMPDIR`, `TZ`, `LANG`, `SSL_CERT_*`, `LC_*` and nothing else. Those plugins shell out to `kubectl`, so `KUBECONFIG` never reaches them; and because `KUBERNETES_SERVICE_HOST` and `KUBERNETES_SERVICE_PORT` are stripped too, kubectl's own in-cluster fallback cannot fire either. A pod with a perfectly good projected ServiceAccount token gets *"there is no kubeconfig on this machine"*.
 
@@ -148,7 +148,7 @@ extraObjects:
 The ClusterRole is the part to think about rather than copy. `plugins/kube/rbac.go` in [rta-plugins](https://github.com/this-is-tobi/rta-plugins) already maps each capability to the rules it needs — it is what `kube.serviceaccount.provision` uses — and its header says what it deliberately leaves out. Two of those omissions are worth keeping out here too:
 
 - **`nodes/proxy`**, needed by `kube.metrics.pressure` and `kube.pvc.usage`. It cannot be subdivided, and it is effectively code execution against every pod on the node. Left out, those two capabilities degrade per node with `could not be read — Forbidden` rather than failing the call, which is the right shape.
-- **`secrets: get,list`**, needed by `kube.cert.list`. RBAC cannot scope a Secret rule by type, so granting it to read TLS Secrets grants reading all of them. Left out, the capability refuses with `kube.forbidden` and a hint naming the missing permission.
+- **`secrets: get,list`**, needed by `kube.cert.list`. RBAC cannot scope a Secret rule by type, so granting it to read [TLS](../95-reference/10-glossary.md#acronyms) Secrets grants reading all of them. Left out, the capability refuses with `kube.forbidden` and a hint naming the missing permission.
 
 A read-only starting point, cluster-scoped because `namespace.list`, `node.list` and `metrics.node` are:
 
@@ -177,7 +177,7 @@ Note this is a different mechanism from `kube:` credential references in a profi
 
 ## Day two
 
-**What a values change actually restarts.** The roster, the token file and the config are all read once at startup, so the chart puts a checksum of each in the pod annotations and editing one restarts the pod. Without that, removing a key in Git would appear to do nothing — the pod would keep honouring the roster it read at boot.
+**What a values change actually restarts.** The [roster](../95-reference/10-glossary.md#terms), the token file and the config are all read once at startup, so the chart puts a checksum of each in the pod annotations and editing one restarts the pod. Without that, removing a key in Git would appear to do nothing — the pod would keep honouring the roster it read at boot.
 
 **The one exception is `expires=`.** An operator key's expiry is checked per call against the running clock, so an expired key stops working with no restart, and restarting will not be what evicted it.
 

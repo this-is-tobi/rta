@@ -32,13 +32,13 @@ make build      # ./rta
 docker run --rm ghcr.io/this-is-tobi/rta:latest --version
 ```
 
-Distroless, non-root, multi-arch (`amd64`/`arm64`), published with every release alongside SLSA provenance, an SBOM and a cosign signature. `latest` tracks the newest release; a release `1.2.3` is also tagged `1.2` and `1`, so you can pin as loosely or as tightly as you want.
+Distroless, non-root, multi-arch (`amd64`/`arm64`), published with every release alongside [SLSA](../95-reference/10-glossary.md#acronyms) provenance, an [SBOM](../95-reference/10-glossary.md#acronyms) and a cosign signature. `latest` tracks the newest release; a release `1.2.3` is also tagged `1.2` and `1`, so you can pin as loosely or as tightly as you want.
 
 [Verify a download](../95-reference/30-verify-a-download.md#the-container-image) has the attestation and signature checks for it.
 
 Two shapes of use:
 
-- **An MCP server** — [In a container, for a hardened server](../30-boundary/67-containers-and-images.md#in-a-container-for-a-hardened-server) has the full `docker run` recipe: read-only root, dropped capabilities, no network by default.
+- **An [MCP](../95-reference/10-glossary.md#acronyms) server** — [In a container, for a hardened server](../30-boundary/67-containers-and-images.md#in-a-container-for-a-hardened-server) has the full `docker run` recipe: read-only root, dropped capabilities, no network by default.
 - **A one-shot command**, anywhere `docker run` reaches, including inside a cluster: `kubectl run --rm -it rta-debug --image=ghcr.io/this-is-tobi/rta:latest -- net probe db.internal 5432`.
 
 ## Kubernetes

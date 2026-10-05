@@ -100,7 +100,7 @@ rta kv rekey --only --recipient age1me...            # drop every other reader
 
 ## What this means for agents
 
-This is the part to read before connecting an MCP client.
+This is the part to read before connecting an [MCP](../95-reference/10-glossary.md#acronyms) client.
 
 **`kv.get` is classified as a write**, even though it only reads the store — revealing a secret is the sensitive act, not the lookup. An MCP agent needs a grant naming `kv.get` — and ideally the one key it should read — before the call goes anywhere, and on top of that the store still has to open, which is a separate question from calling the capability.
 

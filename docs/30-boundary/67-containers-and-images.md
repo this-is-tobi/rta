@@ -6,11 +6,11 @@ Two images ship with every release and you can build a third. `ghcr.io/this-is-t
 docker run --rm ghcr.io/this-is-tobi/rta:latest --version
 ```
 
-Every release publishes them with SLSA provenance, an SBOM and a cosign signature; `latest` tracks the newest release, and a release `1.2.3` is also tagged `1.2` and `1`. [Verify a download](../95-reference/30-verify-a-download.md#the-container-image) is how to check what you pulled. A one-shot command needs nothing more than `docker run`, inside a cluster as well: `kubectl run --rm -it rta-debug --image=ghcr.io/this-is-tobi/rta:latest -- net probe db.internal 5432`.
+Every release publishes them with [SLSA](../95-reference/10-glossary.md#acronyms) provenance, an [SBOM](../95-reference/10-glossary.md#acronyms) and a cosign signature; `latest` tracks the newest release, and a release `1.2.3` is also tagged `1.2` and `1`. [Verify a download](../95-reference/30-verify-a-download.md#the-container-image) is how to check what you pulled. A one-shot command needs nothing more than `docker run`, inside a cluster as well: `kubectl run --rm -it rta-debug --image=ghcr.io/this-is-tobi/rta:latest -- net probe db.internal 5432`.
 
 ## In a container, for a hardened server
 
-The binary is static and needs almost nothing at runtime — almost, because `cert`, `http`, `audit web` and every plugin that dials TLS (`pg`, `s3`, `vault`, `qdrant`...) still need a CA bundle to verify against, which a bare `scratch` image does not have. [`ghcr.io/this-is-tobi/rta`](https://github.com/this-is-tobi/rta/pkgs/container/rta) is built `FROM gcr.io/distroless/static-debian12:nonroot` instead: that CA bundle and the `/etc/passwd` entry for its nonroot user, and nothing else — still no shell, no package manager, no libc for anything to reach. Published multi-arch (`amd64`/`arm64`) with every release, with SLSA provenance, an SBOM and a cosign signature attached to the image digest. Point the client at `docker` instead of at `rta`:
+The binary is static and needs almost nothing at runtime — almost, because `cert`, `http`, `audit web` and every plugin that dials [TLS](../95-reference/10-glossary.md#acronyms) (`pg`, `s3`, `vault`, `qdrant`...) still need a [CA](../95-reference/10-glossary.md#acronyms) bundle to verify against, which a bare `scratch` image does not have. [`ghcr.io/this-is-tobi/rta`](https://github.com/this-is-tobi/rta/pkgs/container/rta) is built `FROM gcr.io/distroless/static-debian12:nonroot` instead: that CA bundle and the `/etc/passwd` entry for its nonroot user, and nothing else — still no shell, no package manager, no libc for anything to reach. Published multi-arch (`amd64`/`arm64`) with every release, with SLSA provenance, an SBOM and a cosign signature attached to the image digest. Point the client at `docker` instead of at `rta`:
 
 ```json
 {
@@ -50,7 +50,7 @@ Missing `RTA_CONFIG`/`RTA_DATA_DIR` is the one graded by which image you run. Ag
 
 **The image is the plugin allowlist.** A plugin is a separate binary, so a plugin that is not in the image is a plugin the agent cannot reach — no trust decision, no digest, no `$PATH` to search. Building the image with two plugins in it is the narrowest reach rta can be given.
 
-Which is exactly why **`ghcr.io/this-is-tobi/rta-full` is the wrong image to point an agent at.** It carries every first-party plugin and every external tool, so it is the widest reach rta has, and pointing an MCP client at it throws away the one boundary this section is about. It exists for a person at a terminal who wants a console; for an agent, build the narrow image with the plugins that job needs — the recipe is [further down](#a-team-share-the-configuration-not-the-process).
+Which is exactly why **`ghcr.io/this-is-tobi/rta-full` is the wrong image to point an agent at.** It carries every first-party plugin and every external tool, so it is the widest reach rta has, and pointing an [MCP](../95-reference/10-glossary.md#acronyms) client at it throws away the one boundary this section is about. It exists for a person at a terminal who wants a console; for an agent, build the narrow image with the plugins that job needs — the recipe is [further down](#a-team-share-the-configuration-not-the-process).
 
 The trade is real and worth stating: a containerized server sees the container's filesystem and network, so `fs tree` maps what you mounted and nothing else, and `git status` sees `/work`. That is the point, and it is also the reason this is not the default.
 
@@ -112,7 +112,7 @@ secrets:
   password: kube:postgres-creds/password
 ```
 
-So the image is safe to publish to your internal registry. The credential is read at call time from the cluster, **with the caller's own kubeconfig and their own RBAC** — the access control your organisation already runs keeps applying, per person, unchanged. The same is true of the `kube:` forward: reaching the database at all requires that member's cluster access.
+So the image is safe to publish to your internal registry. The credential is read at call time from the cluster, **with the caller's own kubeconfig and their own [RBAC](../95-reference/10-glossary.md#acronyms)** — the access control your organisation already runs keeps applying, per person, unchanged. The same is true of the `kube:` forward: reaching the database at all requires that member's cluster access.
 
 That is the whole of "without any config", and everything else stays where it belongs. Grants are theirs. The record says what *they* did. `rta use` bounds *their* agents. Nothing is shared that a person has to be accountable for.
 

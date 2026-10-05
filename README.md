@@ -1,6 +1,6 @@
 # RTA :ring:
 
-**RTA**, short for *Rule Them All* and written `rta` on the command line, is one binary over the tools you already juggle: databases, object storage, secrets, networking, certificates, host telemetry, HTTP APIs. Every capability is written once and rendered on three surfaces: a scriptable CLI, an interactive TUI, and an MCP server for AI agents.
+**RTA**, short for *Rule Them All* and written `rta` on the command line, is one binary over the tools you already juggle: databases, object storage, secrets, networking, certificates, host telemetry, HTTP APIs. Every capability is written once and rendered on three surfaces: a scriptable CLI, an interactive TUI, and an [MCP](./docs/95-reference/10-glossary.md#acronyms) server for AI agents.
 
 ## It works with your agent, not instead of it
 
@@ -52,7 +52,7 @@ Ask Claude Code to add a note and the refusal carries the exact line that would 
 - [Seeing the shape of things](./docs/20-using/30-trees.md) *- Mapping a directory, a bucket, a Vault mount or an etcd keyspace in one call*
 - [Profiles](./docs/20-using/40-profiles.md) *- Naming an environment once and pointing every plugin at it*
 - [Profiles in depth](./docs/20-using/41-profiles-in-depth.md) *- Several connections to one plugin, a profile from a script, types, and editor completion*
-- [Reaching private services](./docs/20-using/42-reaching-private-services.md) *- A connection through `kubectl port-forward` or `ssh`, and the TLS rules that come with it*
+- [Reaching private services](./docs/20-using/42-reaching-private-services.md) *- A connection through `kubectl port-forward` or `ssh`, and the certificate rules that come with it*
 - [Secrets (`kv`)](./docs/20-using/50-secrets.md) *- An encrypted local store for passwords, certificates and key files*
 
 *The boundary*
@@ -85,7 +85,7 @@ Ask Claude Code to add a note and the refusal carries the exact line that would 
 - [An agent in a cluster](./docs/90-recipes/30-an-agent-in-a-cluster.md) *- From a profile to an agent connected over MCP, with a minted, expiring ServiceAccount token the only thing between them and the cluster*
 
 *Reference*
-- [Glossary](./docs/95-reference/10-glossary.md) *- The words these pages use in one particular way — grant, record, roster, profile, role, plugin — and the acronyms they assume*
+- [Glossary](./docs/95-reference/10-glossary.md) *- The words these pages use in one particular way — grant, record, profile, role, plugin — and the acronyms they assume*
 - [The path gate](./docs/95-reference/20-the-path-gate.md) *- Roots, symbolic links, hard links and `git`: exactly where the line falls*
 - [Verify a download](./docs/95-reference/30-verify-a-download.md) *- Checksums, build attestations and signatures for the archive, the image and the chart*
 - [External tools](./docs/95-reference/40-external-tools.md) *- The programs some capabilities shell out to, and what is lost without each*

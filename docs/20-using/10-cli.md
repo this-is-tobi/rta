@@ -164,7 +164,7 @@ The commands you type every day — `grant allow`, `lock add`, `agent log`, `kv 
 
 ## `rta explain`
 
-The authoritative reference for anything, and the one that goes deeper than `--help`: types, defaults, which config key fills an input, and whether an MCP caller may supply it at all.
+The authoritative reference for anything, and the one that goes deeper than `--help`: types, defaults, which config key fills an input, and whether an [MCP](../95-reference/10-glossary.md#acronyms) caller may supply it at all.
 
 ```bash
 rta explain              # every capability, one row each

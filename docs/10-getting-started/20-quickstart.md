@@ -1,6 +1,6 @@
 # Quick start
 
-Ten minutes, three surfaces. Nothing here needs configuration, and nothing changes anything outside rta's own data directory until step 5, which registers rta with your AI client. Steps 1 to 4 need only a terminal; step 5 needs an MCP client such as Claude Code, Cursor or Codex.
+Ten minutes, three surfaces. Nothing here needs configuration, and nothing changes anything outside rta's own data directory until step 5, which registers rta with your AI client. Steps 1 to 4 need only a terminal; step 5 needs an [MCP](../95-reference/10-glossary.md#acronyms) client such as Claude Code, Cursor or Codex.
 
 ## 1. Ask it something
 

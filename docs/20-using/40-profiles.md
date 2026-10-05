@@ -31,7 +31,7 @@ rta
 | `c` or `e` | edit whatever is selected |
 | `tab` | in the plugin field, what is installed — already pinned to its artifact, because nobody should type a digest |
 
-Both are generated from each plugin's own declared inputs — the same declaration the CLI flags and the MCP schema come from — so both show exactly the keys that plugin reads, with their types, defaults and bounds. Both know which inputs are credentials, and neither will let one land in `set:`.
+Both are generated from each plugin's own declared inputs — the same declaration the CLI flags and the [MCP](../95-reference/10-glossary.md#acronyms) schema come from — so both show exactly the keys that plugin reads, with their types, defaults and bounds. Both know which inputs are credentials, and neither will let one land in `set:`.
 
 Everything below is what they write, and is worth reading whether or not you use them: the file is yours to edit, and a profile is the thing a grant names.
 

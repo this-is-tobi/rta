@@ -1,6 +1,6 @@
 # Using plugins
 
-A plugin is a program that returns a declaration and serves it over gRPC. rta launches it and renders what it declares on every surface at once — CLI, TUI and MCP. There is no separate registration step, and no way for a plugin to appear on one surface but not another.
+A plugin is a program that returns a declaration and serves it over [gRPC](../95-reference/10-glossary.md#acronyms). rta launches it and renders what it declares on every surface at once — CLI, TUI and [MCP](../95-reference/10-glossary.md#acronyms). There is no separate registration step, and no way for a plugin to appear on one surface but not another.
 
 ```bash
 rta plugin list
@@ -27,9 +27,9 @@ Every one of them draws the same line in the same place: the read tier describes
 
 ## Built in, or a plugin
 
-A capability ships built into `rta` when it needs no credential and no configuration, brings nothing outside the standard library, and reaches either nothing or one fixed public host that no input can redirect — `eol.check` asks endoflife.date, the `audit` plugin asks OSV and endoflife.date, and neither can be pointed anywhere else. It is a plugin the moment any of that stops being true: a client library the people who never use it should not carry, a credential location it has to declare, or a destination the caller chooses, which is the line `http.get` sits behind a grant for. Every plugin in rta-plugins fails at least one of those tests, and that is what put it there; `eol` passed all of them, and that is what brought it here.
+A capability ships built into `rta` when it needs no credential and no configuration, brings nothing outside the standard library, and reaches either nothing or one fixed public host that no input can redirect — `eol.check` asks endoflife.date, the `audit` plugin asks [OSV](../95-reference/10-glossary.md#acronyms) and endoflife.date, and neither can be pointed anywhere else. It is a plugin the moment any of that stops being true: a client library the people who never use it should not carry, a credential location it has to declare, or a destination the caller chooses, which is the line `http.get` sits behind a grant for. Every plugin in rta-plugins fails at least one of those tests, and that is what put it there; `eol` passed all of them, and that is what brought it here.
 
-What is built in, with a first command for each. `rta plugin list` is the same inventory with a count of capabilities and the highest safety class each carries, and `rta explain <plugin>` lists what is under one.
+What is built in, with a first command for each. `rta plugin list` is the same inventory with a count of capabilities and the highest [safety class](../95-reference/10-glossary.md#terms) each carries, and `rta explain <plugin>` lists what is under one.
 
 | Plugin | What it is for | A first command |
 | --- | --- | --- |
@@ -128,7 +128,7 @@ plugin confinement   ok   sandbox-exec: 2 paths denied read+write (rta's own sta
 
 Read that row rather than assuming it. It states what is denied on *this* machine. On Linux rta applies no sandbox: a plugin runs with your user's full access, the row says `none on linux`, and only the process-group and environment-allowlist rules hold. [Supported platforms](../10-getting-started/10-installation.md#supported-platforms) lists the other places the two systems differ.
 
-The row's last clause is the one exception, and it is there because of what macOS does rather than because a plugin was trusted with something: the Security framework initialises from the main executable's location, so a process that cannot read its own directory cannot verify a TLS certificate at all. Without the carve-out no managed plugin could reach an `https://` address, while a copy of the same plugin on `$PATH` could. It is reads only, of that one directory, and only for an artifact rta installed there, or for the private copy it starts a `$PATH` plugin from.
+The row's last clause is the one exception, and it is there because of what macOS does rather than because a plugin was trusted with something: the Security framework initialises from the main executable's location, so a process that cannot read its own directory cannot verify a [TLS](../95-reference/10-glossary.md#acronyms) certificate at all. Without the carve-out no managed plugin could reach an `https://` address, while a copy of the same plugin on `$PATH` could. It is reads only, of that one directory, and only for an artifact rta installed there, or for the private copy it starts a `$PATH` plugin from.
 
 ### When a plugin needs one of those locations
 
@@ -210,7 +210,7 @@ rta plugin upgrade pg
 rta plugin remove pg
 ```
 
-Install is where claims meet evidence. rta fetches the artifact — over `https`, from an OCI registry, or from a file on this machine — hashes it, launches it in the same sandbox any load uses, and **refuses if what it declares is not what the index said** — naming the index that made the claim.
+Install is where claims meet evidence. rta fetches the artifact — over `https`, from an [OCI](../95-reference/10-glossary.md#acronyms) registry, or from a file on this machine — hashes it, launches it in the same sandbox any load uses, and **refuses if what it declares is not what the index said** — naming the index that made the claim.
 
 A registry artifact is pulled **anonymously**: rta sends no credential to any registry, ever. That is not a missing feature to fill in casually — an index is somebody else's repository, so authenticating to whatever host a manifest names would turn a search result into a way to spend your credentials. A private artifact is refused by name instead. Capability by capability, safety class and grant flag, and every credential location the plugin asks for: an index cannot quietly leave out that a plugin wants your kubeconfig.
 

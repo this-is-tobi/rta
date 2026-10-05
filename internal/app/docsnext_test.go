@@ -118,3 +118,102 @@ func TestEveryRecipeIsInTheRecipesIndex(t *testing.T) {
 		}
 	}
 }
+
+// The glossary is where a reader is sent for a word the page assumes, and a
+// glossary that is linked from two places is a glossary nobody reaches: the
+// first use of a term on a page is where somebody who landed there from a
+// search needs it. So the first prose use, on each page, of an acronym the
+// glossary defines (and of the two terms of art it explains that no other
+// page does) is a link to it, or sits inside a link that already names a
+// page about it. The basics every reader of a terminal knows, CLI and TUI,
+// and the project's own name are left alone, and so are code spans, headings
+// and table rows, which are quoted rather than read.
+func TestTheFirstUseOfAGlossaryTermOnAPageLinksToTheGlossary(t *testing.T) {
+	root := repoRoot(t)
+	glossary := readDoc(t, root, "docs/95-reference/10-glossary.md")
+	_, acronymBlock, ok := strings.Cut(glossary, "## Acronyms")
+	if !ok {
+		t.Fatal("the glossary no longer has an Acronyms section; if it moved, move this test with it")
+	}
+	type term struct {
+		word   string
+		finder *regexp.Regexp
+	}
+	var terms []term
+	for _, m := range regexp.MustCompile(`(?m)^- \*\*([A-Za-z0-9]+)\*\* —`).FindAllStringSubmatch(acronymBlock, -1) {
+		switch m[1] {
+		case "RTA", "CLI", "TUI":
+			continue
+		}
+		terms = append(terms, term{m[1], wordFinder(m[1], false)})
+	}
+	for _, w := range []string{"roster", "safety class"} {
+		terms = append(terms, term{w, wordFinder(w, true)})
+	}
+	if len(terms) < 20 {
+		t.Fatalf("read %d glossary terms; has the glossary changed shape?", len(terms))
+	}
+
+	hidden := regexp.MustCompile("`[^`\n]*`|\\]\\([^)\n]*\\)|<https?://[^>]*>|https?://\\S+")
+	linkText := regexp.MustCompile(`\[[^\]\n]*\]`)
+	separator := regexp.MustCompile(`^\|[\s:|-]+\|\s*$`)
+
+	for _, page := range markdownPages(t, root) {
+		if page == "docs/95-reference/10-glossary.md" {
+			continue
+		}
+		done := map[string]bool{}
+		fenced := false
+		lines := strings.Split(readDoc(t, root, page), "\n")
+		for i, line := range lines {
+			if strings.HasPrefix(line, "```") {
+				fenced = !fenced
+				continue
+			}
+			if fenced || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "|") {
+				continue
+			}
+			if i+1 < len(lines) && separator.MatchString(lines[i+1]) {
+				continue
+			}
+			masked := hidden.ReplaceAllStringFunc(line, func(s string) string {
+				if strings.HasPrefix(s, "]") {
+					return "]" + strings.Repeat("\x00", len(s)-1)
+				}
+				return strings.Repeat("\x00", len(s))
+			})
+			for _, tm := range terms {
+				if done[tm.word] {
+					continue
+				}
+				hit := tm.finder.FindStringSubmatchIndex(masked)
+				if hit == nil {
+					continue
+				}
+				done[tm.word] = true
+				start := hit[2]
+				inLink := false
+				for _, span := range linkText.FindAllStringIndex(masked, -1) {
+					if span[0] <= start && start < span[1] {
+						inLink = true
+						break
+					}
+				}
+				if !inLink {
+					t.Errorf("%s:%d uses %q for the first time without linking it to the glossary", page, i+1, tm.word)
+				}
+			}
+		}
+	}
+}
+
+// wordFinder matches word as a whole word, capturing it, not as part of a
+// path, a flag or a longer name: `A-Z` acronyms exactly, the terms of art in
+// any case.
+func wordFinder(word string, anyCase bool) *regexp.Regexp {
+	flags := ""
+	if anyCase {
+		flags = "(?i)"
+	}
+	return regexp.MustCompile(flags + `(?:^|[^\w/.-])(` + regexp.QuoteMeta(word) + `)(?:$|[^\w/-])`)
+}

@@ -12,7 +12,7 @@ The lock is the one for an incident, and it is the rest of this page. Revoking a
 
 ## Locks: the instant no
 
-Expiry and revocation both leave a gap that only shows during an incident: revoking every grant still leaves a misbehaving agent's bearer token opening the ungated read tools, and a compromised operator key stays enrolled until someone edits the roster and restarts — the roster is deliberately read once. A **lock** is the instant path:
+Expiry and revocation both leave a gap that only shows during an incident: revoking every grant still leaves a misbehaving agent's bearer token opening the ungated read tools, and a compromised operator key stays enrolled until someone edits the [roster](../95-reference/10-glossary.md#terms) and restarts — the roster is deliberately read once. A **lock** is the instant path:
 
 ```bash
 rta lock add claude --note "runaway loop, ping me"       # on the machine

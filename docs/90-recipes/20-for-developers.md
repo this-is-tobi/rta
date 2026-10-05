@@ -61,7 +61,7 @@ rta agent log --limit 20
 rta agent log --refused
 ```
 
-Every call that came over MCP is a line — refusals included, secret arguments masked — and `g` in the TUI opens the same record. What you run at your own terminal is not in it: the record is what the agent did. [The record](../30-boundary/40-audit-trail.md).
+Every call that came over [MCP](../95-reference/10-glossary.md#acronyms) is a line — refusals included, secret arguments masked — and `g` in the TUI opens the same record. What you run at your own terminal is not in it: the record is what the agent did. [The record](../30-boundary/40-audit-trail.md).
 
 ## Secrets, day to day
 

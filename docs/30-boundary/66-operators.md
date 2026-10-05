@@ -1,6 +1,6 @@
 # The operator channel
 
-A remote server closes the agent out of `grant allow` — and closes you out with it: its grant roster lived behind whatever infrastructure access reaches the machine. The operator channel is the way back in that an agent cannot use.
+A remote server closes the agent out of `grant allow` — and closes you out with it: its grant [roster](../95-reference/10-glossary.md#terms) lived behind whatever infrastructure access reaches the machine. The operator channel is the way back in that an agent cannot use.
 
 ## Enroll a key
 
@@ -20,7 +20,7 @@ The label is how the roster and [the record](./40-audit-trail.md) name you, as `
 
 ## Talk to the server
 
-`--operators` mounts `/operator/v1` beside the MCP endpoint. Name the server in `remotes.yaml` beside your config —
+`--operators` mounts `/operator/v1` beside the [MCP](../95-reference/10-glossary.md#acronyms) endpoint. Name the server in `remotes.yaml` beside your config —
 
 ```yaml
 servers:
@@ -54,7 +54,7 @@ sequenceDiagram
 
 `--agent` is the name the server's own `--as` was given, and it is always typed here: the agents this machine knows are this machine's, so none is filled in for a grant that is for the server's, and the call is refused before the passphrase is asked for. `rta operator status --server work` says what the server runs as.
 
-The server *prepares* the grant — validation, TTL clamping against its policy, profile pinning, attribution — under its own config and catalogue; your rta then checks the draft against what you asked before anything is signed, field by field, with the server licensed only to clamp the lifetime downward — a compromised server must not be a signing oracle for authority nobody requested. Your passphrase unlocks the operator key; what survived the check is signed byte-for-byte and submitted; and the stored row carries `operator:<label>` in its Origin column, so a multi-operator server's listing names who issued what. The server re-checks everything on submission — attribution against the caller the envelope proved, untouched consumption bookkeeping, clock skew, expiry, both TTL ceilings — and the guard's own load-time enforcement then verifies the signature and its server binding on every read, like any other guard-signed row.
+The server *prepares* the grant — validation, [TTL](../95-reference/10-glossary.md#acronyms) clamping against its policy, profile pinning, attribution — under its own config and catalogue; your rta then checks the draft against what you asked before anything is signed, field by field, with the server licensed only to clamp the lifetime downward — a compromised server must not be a signing oracle for authority nobody requested. Your passphrase unlocks the operator key; what survived the check is signed byte-for-byte and submitted; and the stored row carries `operator:<label>` in its Origin column, so a multi-operator server's listing names who issued what. The server re-checks everything on submission — attribution against the caller the envelope proved, untouched consumption bookkeeping, clock skew, expiry, both TTL ceilings — and the guard's own load-time enforcement then verifies the signature and its server binding on every read, like any other guard-signed row.
 
 ## Answer consent from your machine
 
@@ -70,7 +70,7 @@ Everything the channel *changes* is written into [the record](./40-audit-trail.m
 
 ## The roster
 
-The roster is the token file's kind of trust anchor and gets the same treatment: rta never writes it, weak permissions refuse startup, and it is read once — a rewrite behind a running server's back changes nothing until the next deliberate restart. Plain `http://` in `remotes.yaml` is refused for anything but loopback, and for the OIDC issuer's reason: the signature protects what you send, TLS protects what you *read* — a grant listing rewritten in transit is decisions made on a lie.
+The roster is the token file's kind of trust anchor and gets the same treatment: rta never writes it, weak permissions refuse startup, and it is read once — a rewrite behind a running server's back changes nothing until the next deliberate restart. Plain `http://` in `remotes.yaml` is refused for anything but loopback, and for the [OIDC](../95-reference/10-glossary.md#acronyms) issuer's reason: the signature protects what you send, [TLS](../95-reference/10-glossary.md#acronyms) protects what you *read* — a grant listing rewritten in transit is decisions made on a lie.
 
 A roster line is `label base64-pubkey` — the exact line `rta operator status` prints on the operator's own machine — optionally annotated `role=read` and/or `expires=YYYY-MM-DD`. A read-only key answers `status`, `grant.list`, `consent.list` and `lock.list` and nothing else: no revocation, no issuance, no consent answers, and `grant guard remote` never enrolls it as grant-signing trust, so even its stolen key mints nothing. The intended occupant is a component rather than a person — a status page or dashboard watching the queue and the grants under its own key, with a blast radius of reads. A bare line stays what it has always been, a full operator; and anything unrecognized in the annotation position refuses the whole file, because a typo that silently meant "full" is the one failure a restriction must not have.
 

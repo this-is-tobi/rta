@@ -1,6 +1,6 @@
 # Connecting your AI tool
 
-rta is an MCP server over stdio, so anything that speaks MCP can use it. This chapter is the per-client detail: where each one keeps its configuration, what `rta mcp install` will and will not do for it, and how to check afterwards that it actually worked.
+rta is an [MCP](../95-reference/10-glossary.md#acronyms) server over stdio, so anything that speaks MCP can use it. This chapter is the per-client detail: where each one keeps its configuration, what `rta mcp install` will and will not do for it, and how to check afterwards that it actually worked.
 
 Every client below is registered under a name: grants are issued to it and a lock freezes it, so consent you give while talking to one client does not follow the others. `rta mcp install` always passes it, and the default is the client's own name. [Connect an agent](../10-getting-started/30-connect-an-agent.md#name-it) says why that name is the whole point, and how to check afterwards that the connection works.
 
@@ -42,7 +42,7 @@ rta mcp install codex --show
 Where a client ships its own command, rta runs that. Where it does not, rta prints and stops. Three reasons, in the order that decides it:
 
 - **That file is what grants an agent access to your secrets.** A tool whose entire argument is that consent should be visible and deliberate has no business writing itself into five agents' permission files unattended.
-- **Those files hold things rta must not touch.** VS Code's `mcp.json` is JSONC — comments and all — and often carries API keys in headers. A parse-and-rewrite would destroy comments at best and mishandle a credential at worst.
+- **Those files hold things rta must not touch.** VS Code's `mcp.json` is [JSONC](../95-reference/10-glossary.md#acronyms) — comments and all — and often carries API keys in headers. A parse-and-rewrite would destroy comments at best and mishandle a credential at worst.
 - **A config format changes when its client changes, not when rta does.** The tool that owns the format is the one that stays correct.
 
 ## Claude Code
@@ -169,7 +169,7 @@ Use an absolute path. A client launches this months from now, from a working dir
 
 ## What the agent can do once it is connected
 
-**Reads that stay on this machine, and nothing else.** That holds with no flags, no config and no decisions. `rta plugin list` is where you check what that covers — the `CAN` column is the highest safety class each plugin declares, and only the `read` half of it is reachable over MCP until you issue a grant — some of it not even then:
+**Reads that stay on this machine, and nothing else.** That holds with no flags, no config and no decisions. `rta plugin list` is where you check what that covers — the `CAN` column is the highest [safety class](../95-reference/10-glossary.md#terms) each plugin declares, and only the `read` half of it is reachable over MCP until you issue a grant — some of it not even then:
 
 ```bash
 rta plugin list
