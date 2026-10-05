@@ -91,7 +91,7 @@ Exit codes make the loop safe to write, and they are the next thing worth knowin
 | `0` | Success |
 | `1` | rta refused, or the operation failed — a structured error with a code and a hint |
 | `2` | The command line was wrong — an unknown command or flag, a missing or extra argument, a value a flag cannot take — so nothing ran. The error's code is `core.usage`, or `core.output.invalid` when the format is `RTA_OUTPUT`'s or `output:`'s and names none. A failure rta has no code for exits `2` as well, written as plain text whatever `-o` says |
-| `3` | Confirmation required, and `--yes` was not given |
+| `3` | Confirmation required: `--yes` was not given where nobody could be asked, or the answer to the question was no |
 | `130`, `143` | A signal stopped rta: `SIGINT` (`^C`) or `SIGTERM`. The command has three seconds after the first one to stop on its own, and exits with its own code if it does; past that, rta exits without it, with the error `core.signal`, once a write under way has finished — a store's, or the whole of a plugin install or remove, of one version a prune takes out, or of a key pair — ends the plugins it started, one still starting included, gives back the locks the command held, and puts back the terminal mode a prompt changed. A second signal exits at once. `rta mcp serve` and the TUI stop on their own terms and the three seconds are not theirs: `mcp serve` cancels the calls in flight and waits ten seconds for any that do not end, then exits `0`, and the TUI hands the terminal back |
 
 Code `3` is the one worth handling in scripts. It means the command was destructive and nobody confirmed — not that anything failed.
@@ -134,7 +134,7 @@ This is not only a convenience for you — it is what rta shows an operator on a
 
 ## `--yes`
 
-Skips confirmation prompts. Destructive capabilities ask before acting when a human is present; `--yes` (or `-y`) is how a script says it means it.
+Skips the question a destructive command asks. At a terminal, `rta note rm 4` finds the note, shows what it would remove — the line `--dry-run` prints — and asks `Go ahead? [y/N]`: `y` or `yes` goes ahead, and anything else, an empty line and `^D` included, leaves it alone and exits `3`. A target that is not there is reported without asking. Where there is no terminal on both standard input and standard error — a script, a pipe, `cron`, an agent's shell — nothing is asked, and a destructive command exits `3` unless it is given `--yes` (or `-y`), which is how a script says it means it. A plugin from outside rta's own binary is confirmed on what it will run with, a credential masked, and its own preview is not run before you have said yes.
 
 ```bash
 rta note rm 4 --yes

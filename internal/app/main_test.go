@@ -28,6 +28,10 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("RTA_DATA_DIR", dir)
 	os.Unsetenv("COLUMNS")
+	// Nobody is at the keyboard: a destructive run is refused for want of
+	// --yes, as it is in a script, and not asked about on whatever terminal
+	// `go test` was started from. A test of the question says otherwise.
+	confirmTerminal = func() bool { return false }
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)

@@ -455,10 +455,12 @@ func noColorOnCommandLine(args []string) bool {
 }
 
 // CodeConfirmRequired is returned when a destructive capability runs on the
-// CLI without --yes. There is no prompt on this surface, by design: a script
-// says it means it with the flag and exits 3 otherwise, which is a question
-// and not a failure (docs/20-using/10-cli.md). The TUI confirms on the
-// capability's own dry run instead (internal/render/tui/confirm.go).
+// CLI without --yes and nobody was asked, or the person asked said no. A
+// person at a terminal is asked, after the target is found and shown
+// (confirmprompt.go); a script is not, by design: it says it means it with the
+// flag and exits 3 otherwise, which is a question and not a failure
+// (docs/20-using/10-cli.md). The TUI confirms on the capability's own dry run
+// instead (internal/render/tui/confirm.go).
 const CodeConfirmRequired = "core.confirm.required"
 
 // RenderedError marks a *view.Error that has already been printed, so the
@@ -630,6 +632,9 @@ type globalOpts struct {
 	noColor bool
 	yes     bool
 	dryRun  bool
+	// external says whether a capability comes from a plugin outside this
+	// binary, which the confirmation question does not run a preview of.
+	external func(plugin.Capability) bool
 }
 
 // groupRunE is what a command that only groups other commands does with its
@@ -998,6 +1003,10 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 		}
 		nsCmds[p.Name] = nsCmd
 		root.AddCommand(nsCmd)
+	}
+	opts.external = func(c plugin.Capability) bool {
+		o, ok := reg.Origin(plugin.Namespace(c.ID))
+		return ok && o.External()
 	}
 	for _, c := range reg.Capabilities() {
 		attach(nsCmds[c.Words()[0]], c, opts)
@@ -1802,11 +1811,15 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	// machine-readable format must never be ambiguous about.
 	renderOpts := renderOptions(cmd, format, opts.noColor)
 
-	// Safety gate: on this surface a destructive capability runs only with
-	// --yes, and exits 3 otherwise — a question, not a failure, and a script
-	// answers it with the flag. The TUI confirms on the dry run instead
-	// (internal/render/tui/confirm.go).
-	if c.Safety == plugin.Destructive && !opts.yes && !opts.dryRun {
+	// Safety gate: a destructive capability runs only when somebody has said
+	// so. A person at a terminal is asked, further down, once the target is
+	// found and what would happen can be shown (confirmprompt.go); anywhere
+	// else it runs only with --yes, and exits 3 otherwise — a question, not a
+	// failure, and a script answers it with the flag. The TUI confirms on the
+	// dry run as well (internal/render/tui/confirm.go).
+	confirming := c.Safety == plugin.Destructive && !opts.yes && !opts.dryRun
+	asking := confirming && confirmTerminal()
+	if confirming && !asking {
 		verr := &view.Error{
 			Code:    CodeConfirmRequired,
 			Message: fmt.Sprintf("%s is destructive and needs confirmation", c.ID),
@@ -1837,7 +1850,7 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
 		return Rendered(verr)
 	}
-	req := plugin.ResolveRequest(c, plugin.Inputs{
+	inputs := plugin.Inputs{
 		Caller:      values,
 		Profile:     bound.filled,
 		ProfileName: bound.name,
@@ -1845,7 +1858,8 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		Config:      PluginConfig(c),
 		// The heading Config sits under, for a refusal to name the line.
 		ConfigSection: PluginConfigSection(c),
-	}, opts.dryRun, opts.yes).WithSurface(plugin.SurfaceCLI)
+	}
+	req := plugin.ResolveRequest(c, inputs, opts.dryRun, opts.yes).WithSurface(plugin.SurfaceCLI)
 	// The required checks cobra cannot make: of a config-backed input, since
 	// making it at parse time would run before config was consulted, and of
 	// any required input given empty — `--host ""`, a bare "" argument —
@@ -1858,6 +1872,12 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	if verr := plugin.CheckRequired(c, req); verr != nil {
 		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
 		return Rendered(verr)
+	}
+	if asking {
+		if err := confirmCapability(ctx, cmd, c, inputs, opts, renderOpts); err != nil {
+			return err
+		}
+		req = plugin.ResolveRequest(c, inputs, false, true).WithSurface(plugin.SurfaceCLI)
 	}
 	v, runErr := c.Run(ctx, req)
 	if runErr != nil {
