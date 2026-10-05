@@ -984,7 +984,7 @@ func TestShortFlagsAreAcceptedAsLetters(t *testing.T) {
 	p := validPlugin()
 	p.Capabilities[0].Inputs = []Field{
 		{Name: "limit", Type: Int, Short: "n"}, {Name: "decode", Type: Bool, Short: "d"},
-		{Name: "tags", Type: StringSlice, Short: "T"},
+		{Name: "tags", Type: StringSlice, Short: "T"}, {Name: "verbose", Type: Bool, Short: "v"},
 	}
 	if err := p.Validate(); err != nil {
 		t.Errorf("one-letter flags were refused: %v", err)
@@ -993,7 +993,7 @@ func TestShortFlagsAreAcceptedAsLetters(t *testing.T) {
 
 func TestReservedShortsAreTheHostsAndSorted(t *testing.T) {
 	got := ReservedShorts()
-	if !slices.IsSorted(got) || !slices.Equal(got, []string{"h", "o", "v", "y"}) {
+	if !slices.IsSorted(got) || !slices.Equal(got, []string{"h", "o", "y"}) {
 		t.Errorf("ReservedShorts() = %q", got)
 	}
 }

@@ -979,10 +979,15 @@ var reservedInputs = map[string]string{
 // one, so an input declaring -o would quietly become `rta … -o`, and the
 // person who wrote `-o json` would be handing the plugin a value for an input
 // it never asked about.
+//
+// -v is not here: it is root's own (--version), which no capability command
+// inherits, so an input taking it collides with nothing, and refusing it would
+// take the natural letter for "verbose" or "invert" away from a plugin for no
+// reason. internal/app holds this list against the flags a capability command
+// really resolves, both ways.
 var reservedShorts = map[string]string{
 	"h": "cobra's --help",
 	"o": "--output, which chooses the renderer",
-	"v": "--version",
 	"y": "--yes, the host's record that a human confirmed a destructive operation",
 }
 
