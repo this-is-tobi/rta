@@ -318,6 +318,7 @@ func doctorTable(reg *registry.Registry, detail bool) view.Table {
 	doctorStore(add, detail)
 	doctorConfinement(add, detail)
 	doctorLoadedPlugins(add)
+	doctorFailedPlugins(add)
 	doctorUntrustedPlugins(add)
 	doctorRecord(add)
 	doctorSelection(add)
