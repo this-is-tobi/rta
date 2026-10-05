@@ -1,6 +1,9 @@
 package tui
 
-import "github.com/this-is-tobi/rta/pkg/plugin"
+import (
+	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+)
 
 // What enter does on a capability that has nothing worth asking.
 //
@@ -32,16 +35,51 @@ import "github.com/this-is-tobi/rta/pkg/plugin"
 // the default its declaration, the configuration or the switched-on
 // environment gives it, exactly as it would from the form's untouched boxes.
 func (m Model) quickRun(c plugin.Capability) (map[string]any, bool) {
-	if c.Safety != plugin.Read || c.Run == nil || formNeeded(c) {
+	return m.quickRunFrom(c, nil)
+}
+
+// quickRunFrom is quickRun for a capability reached from a view that already
+// knows some of its inputs — a row's identity, a key on a tile: what is left
+// for the form to ask is what is left after those, and a read that has nothing
+// left to ask runs.
+func (m Model) quickRunFrom(c plugin.Capability, given map[string]any) (map[string]any, bool) {
+	if c.Safety != plugin.Read || c.Run == nil {
 		return nil, false
 	}
-	base := withStoreSession(c, nil)
-	for _, f := range c.Inputs {
-		if f.Type.Sensitive() && !m.answered(c, f, base) {
+	for _, f := range fieldsAfter(c, given) {
+		if requiredHere(f) {
+			return nil, false
+		}
+	}
+	base := withStoreSession(c, given)
+	for _, f := range fieldsAfter(c, base) {
+		if f.Type.Sensitive() && !readsOnlyAcrossAServer(c, f, base) && !m.answered(c, f, base) {
 			return nil, false
 		}
 	}
 	return base, true
+}
+
+// readsOnlyAcrossAServer is whether a credential is read for a call to another
+// machine and for no other: the box that signs a request to a server, and any
+// box its capability declares as read only beside another input that is empty.
+// A run on this machine has no use for it, and a form that asked for it
+// anyway is the form a person walked through to run `grant.list`.
+func readsOnlyAcrossAServer(c plugin.Capability, f plugin.Field, given map[string]any) bool {
+	driver := f.With
+	if driver == "" && f.Name == operatorid.PassphraseField.Name && f.Help == operatorid.PassphraseField.Help {
+		for _, g := range c.Inputs {
+			if g.Remote {
+				driver = g.Name
+				break
+			}
+		}
+	}
+	if driver == "" {
+		return false
+	}
+	v, ok := given[driver]
+	return !ok || v == nil || v == ""
 }
 
 // answered reports whether a secret input already has its value without
