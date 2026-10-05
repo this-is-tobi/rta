@@ -184,6 +184,383 @@
             "type": "object"
           },
           "description": "Each plugin's own settings, stated once instead of retyped per invocation. The key is a namespace for a built-in and namespace@digest for anything on $PATH. What the keys inside a section mean is each plugin's declaration \u2014 `rta explain <ns>` lists them, and `rta doctor` reports the ones nothing reads.",
+          "patternProperties": {
+            "^audit(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "Security hardening checks, each graded against a named OWASP/CWE control",
+              "properties": {
+                "context": {
+                  "description": "kubeconfig context to audit \u2014 the current one when omitted (read by audit.kube.eol, audit.kube.netpol, audit.kube.podsecurity, audit.kube.quotas, audit.kube.rbac)",
+                  "type": "string"
+                },
+                "namespace": {
+                  "description": "audit one namespace instead of the whole cluster (read by audit.kube.eol, audit.kube.netpol, audit.kube.podsecurity, audit.kube.quotas, audit.kube.rbac)",
+                  "type": "string"
+                },
+                "offline": {
+                  "description": "inventory the dependencies without querying osv.dev (read by audit.deps)",
+                  "type": "boolean"
+                },
+                "recursive": {
+                  "description": "walk subdirectories too, for a monorepo with a manifest per package (read by audit.deps, audit.why)",
+                  "type": "boolean"
+                },
+                "timeout": {
+                  "default": 30,
+                  "description": "query timeout in seconds (read by audit.deps, audit.mail, audit.web)",
+                  "maximum": 300,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "warn-days": {
+                  "default": 90,
+                  "description": "warn about a release within this many days of its end-of-life date (read by audit.kube.eol)",
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "^cert(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "X.509 and TLS inspection: certificates, chains, expiry",
+              "properties": {
+                "include": {
+                  "default": "chain",
+                  "description": "which certificates to print \u2014 one of chain, issuers, leaf (read by cert.pem)",
+                  "examples": [
+                    "chain",
+                    "issuers",
+                    "leaf"
+                  ],
+                  "type": "string"
+                },
+                "warn-days": {
+                  "default": 30,
+                  "description": "flag certificates expiring within this many days (read by cert.expiry)",
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "^eol(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "Support windows and end-of-life dates, via endoflife.date",
+              "properties": {
+                "all": {
+                  "description": "list every cycle, including those long ended, when none is named (read by eol.check)",
+                  "type": "boolean"
+                },
+                "catalogue": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "limit": {
+                      "default": 50,
+                      "description": "how many products to list (read by eol.products)",
+                      "maximum": 1000,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "products": {
+                  "description": "product or product@cycle, repeatable \u2014 usually from `plugins: eol: products:` in your config (read by eol.watch)",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "warn-days": {
+                  "default": 90,
+                  "description": "flag a cycle within this many days of its end-of-life date (read by eol.check, eol.watch)",
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "^fs(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "Filesystem answers: what is using space, what is here, what is this file",
+              "properties": {
+                "algo": {
+                  "default": "sha256",
+                  "description": "hash algorithm \u2014 one of sha256, sha512, sha1, md5 (read by fs.hash)",
+                  "examples": [
+                    "sha256",
+                    "sha512",
+                    "sha1",
+                    "md5"
+                  ],
+                  "type": "string"
+                },
+                "all": {
+                  "description": "include hidden entries (read by fs.tree)",
+                  "type": "boolean"
+                },
+                "apparent": {
+                  "description": "count each file by its length rather than the disk it takes (read by fs.usage)",
+                  "type": "boolean"
+                },
+                "depth": {
+                  "default": 2,
+                  "description": "how many levels to show (read by fs.tree, fs.usage)",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "limit": {
+                  "default": 12,
+                  "description": "entries to show per directory (read by fs.tree, fs.usage)",
+                  "maximum": 1000,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "^gen(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "Generate passwords, tokens and UUIDs \u2014 offline, crypto/rand only",
+              "properties": {
+                "encoding": {
+                  "default": "hex",
+                  "description": "output encoding \u2014 one of hex, base64, base64url, base32 (read by gen.token)",
+                  "examples": [
+                    "hex",
+                    "base64",
+                    "base64url",
+                    "base32"
+                  ],
+                  "type": "string"
+                },
+                "password": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "exclude-ambiguous": {
+                      "description": "drop look-alike characters: 0O1lI (read by gen.password)",
+                      "type": "boolean"
+                    },
+                    "symbols": {
+                      "description": "include symbols: !@#$%^&*()-_=+[]{}<>? (read by gen.password)",
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "^git(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "Structured views of a git repository \u2014 status, log, diff, branches, blame, config, hooks",
+              "properties": {
+                "all": {
+                  "description": "include remote-tracking branches (read by git.branches)",
+                  "type": "boolean"
+                },
+                "log": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "limit": {
+                      "default": 20,
+                      "description": "how many of the most recent commits to show (read by git.log)",
+                      "maximum": 500,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "^http(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "Request any endpoint and inspect the response \u2014 a REST client",
+              "properties": {
+                "timeout": {
+                  "default": 30,
+                  "description": "request timeout in seconds (read by http.delete, http.get, http.head, http.post, http.put)",
+                  "maximum": 600,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "^kv(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "Encrypted local store for secrets, certificates and key files",
+              "properties": {
+                "env": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "format": {
+                      "default": "export",
+                      "description": "shell exports, or .env syntax \u2014 one of export, dotenv (read by kv.env)",
+                      "examples": [
+                        "export",
+                        "dotenv"
+                      ],
+                      "type": "string"
+                    },
+                    "prefix": {
+                      "description": "prepend this to every variable name, e.g. APP_ (read by kv.env)",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "^net(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "Network diagnostics: ping, DNS, ports, hosts file",
+              "properties": {
+                "dns": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "server": {
+                      "description": "resolver to query, e.g. 1.1.1.1 or 9.9.9.9:53 (default: the system resolver) (read by net.dns)",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "ping": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "default": 4,
+                      "description": "number of probes (read by net.ping)",
+                      "maximum": 100,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "timeout": {
+                  "default": 5,
+                  "description": "query timeout in seconds (read by net.dns, net.ping, net.port, net.probe, net.send, net.trace)",
+                  "maximum": 300,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "trace": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "max-hops": {
+                      "default": 30,
+                      "description": "stop after this many hops (read by net.trace)",
+                      "maximum": 64,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "probes": {
+                      "default": 3,
+                      "description": "probes per hop (read by net.trace)",
+                      "maximum": 10,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "resolve": {
+                      "default": true,
+                      "description": "resolve hop addresses back to names (read by net.trace)",
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "^note(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "Local notebook: capture, tag, cross-link, schedule, break down, check off",
+              "properties": {
+                "all": {
+                  "description": "include checked-off notes (read by note.list)",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "^pkg(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "What is outdated on this machine \u2014 every package manager, your own binaries, the OS \u2014 and one upgrade at a time",
+              "properties": {
+                "tools": {
+                  "description": "bin=github:owner/repo, repeatable \u2014 usually from `plugins: pkg: tools:` (read by pkg.overview, pkg.tools, pkg.upgrade)",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "^sys(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "Host telemetry: CPU, memory, disk, load, processes",
+              "properties": {
+                "cpu": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cores": {
+                      "description": "per-core usage as a bar chart (read by sys.cpu)",
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                },
+                "disk": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "all": {
+                      "description": "include pseudo, duplicate and zero-size filesystems (read by sys.disk)",
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                },
+                "ps": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "limit": {
+                      "default": 15,
+                      "description": "maximum processes to list (read by sys.ps)",
+                      "maximum": 1000,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "sort": {
+                      "default": "cpu",
+                      "description": "sort by \u2014 one of cpu, mem (read by sys.ps)",
+                      "examples": [
+                        "cpu",
+                        "mem"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "^time(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "Read an instant in every form worth having: epoch, UTC, local, a named zone",
+              "properties": {
+                "zone": {
+                  "description": "also show it in this IANA timezone (Europe/Paris) (read by time.at)",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
           "propertyNames": {
             "pattern": "^[a-z][a-z0-9-]*(@[0-9a-f]+)?$"
           },

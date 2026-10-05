@@ -226,6 +226,9 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 	for _, f := range c.Inputs {
 		if f.Config != "" {
 			pairs = append(pairs, view.Pair{Key: "config file", Value: config.Path()})
+			if line := configSetLine(reg, configSection(reg, c)+"."+f.Config); line != "" {
+				pairs = append(pairs, view.Pair{Key: "set a key", Value: line})
+			}
 			break
 		}
 	}
