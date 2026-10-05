@@ -587,3 +587,34 @@ func keysOf(m map[string]json.RawMessage) []string {
 	}
 	return out
 }
+
+// `rta mcp install` with no client said "missing <client>" and left a person
+// to find the six in --help. It names them, the ones found on this machine
+// first.
+func TestInstallWithNoClientListsTheClientsAndMarksTheOnesFound(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", t.TempDir())
+	if err := os.MkdirAll(filepath.Join(home, ".cursor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := run(t, testRegistry(t), "mcp", "install")
+	var verr *view.Error
+	if !errors.As(err, &verr) || verr.Code != CodeUsage {
+		t.Fatalf("err = %v, want a usage error", err)
+	}
+	if !strings.HasPrefix(verr.Message, "missing <client>") {
+		t.Errorf("message = %q", verr.Message)
+	}
+	if !strings.Contains(verr.Hint, "cursor (found here), ") {
+		t.Errorf("hint = %q, want cursor first and marked", verr.Hint)
+	}
+	for _, c := range mcpClients() {
+		if !strings.Contains(verr.Hint, c.name) {
+			t.Errorf("hint = %q, does not name %s", verr.Hint, c.name)
+		}
+		if c.name != "cursor" && strings.Contains(verr.Hint, c.name+" (found here)") {
+			t.Errorf("hint = %q, marks %s found when it is not here", verr.Hint, c.name)
+		}
+	}
+}

@@ -458,6 +458,22 @@ func stableBinary(argv0, resolved string) string {
 	return onPath
 }
 
+// clientChoices lists the clients a person can name, the ones found on this
+// machine first and marked, since the one they have is the one they mean.
+func clientChoices(seen []clientSeen) string {
+	var here, elsewhere []string
+	for _, s := range seen {
+		if s.present() {
+			here = append(here, s.client.name+" (found here)")
+		} else {
+			elsewhere = append(elsewhere, s.client.name)
+		}
+	}
+	sort.Strings(here)
+	sort.Strings(elsewhere)
+	return strings.Join(append(here, elsewhere...), ", ")
+}
+
 func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 	var (
 		as            string
@@ -501,7 +517,15 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 		// cobra's words — `invalid argument "nope" for "rta mcp install"` — one
 		// step ahead of the check in RunE that names every client rta does
 		// know, which therefore never ran. ValidArgs stays for completion.
-		Args:      cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				home, _ := os.UserHomeDir()
+				return &view.Error{Code: CodeUsage,
+					Message: "missing <client> — usage: " + cmd.UseLine(),
+					Hint:    "register with " + clientChoices(seenClients(home)) + "; " + "`rta init` offers each one found here"}
+			}
+			return cobra.ExactArgs(1)(cmd, args)
+		},
 		ValidArgs: valid,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, ok := findClient(args[0])
