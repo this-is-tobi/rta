@@ -23,6 +23,7 @@ rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run native
 *Getting started*
 - [Installation](./docs/10-getting-started/10-installation.md) *- Build it, verify it, put it on `$PATH`, turn on completion*
 - [Quick start](./docs/10-getting-started/20-quickstart.md) *- Ten minutes: the CLI, the TUI, and an agent you connect, refuse and allow*
+- [Connect an agent](./docs/10-getting-started/30-connect-an-agent.md) *- Registering a client, naming it, and checking that it reached rta*
 
 *Using it*
 - [The CLI](./docs/20-using/10-cli.md) *- Output formats, exit codes, `--dry-run`, `explain`, scripting*
@@ -33,11 +34,15 @@ rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run native
 
 *The boundary* — worth reading in this order: each chapter is a smaller blast radius than the one before it
 - [What rta actually bounds](./docs/30-boundary/10-the-boundary.md) *- Read this first before giving an agent access: an agent with a shell is not bounded by rta, and this is how to be in the configuration where it is*
-- [MCP and the safety gate](./docs/30-boundary/20-mcp.md) *- Connecting a client, naming it, and what it can reach before you grant anything*
+- [MCP and the safety gate](./docs/30-boundary/20-mcp.md) *- What a connected agent can reach before you grant anything, and what every call is checked against*
 - [Grants](./docs/30-boundary/30-grants.md) *- Time-boxed permission for one capability, optionally one record*
 - [The record](./docs/30-boundary/40-audit-trail.md) *- What agents asked for, what they got, and what is waiting on you*
+- [Stop an agent now](./docs/30-boundary/45-stop-an-agent-now.md) *- Locks: the instant no, ahead of any expiry or revocation*
 - [Team policy](./docs/30-boundary/50-team-policy.md) *- A ceiling a repository can commit, which can only ever subtract*
 - [Connecting your AI tool](./docs/30-boundary/60-ai-clients.md) *- Claude Code, VS Code, Cursor, Codex, Gemini, Copilot, and anything else that speaks MCP*
+- [Hosting a server](./docs/30-boundary/65-hosting-a-server.md) *- `--http`, tokens, probes, and what a remote server leaves out*
+- [The operator channel](./docs/30-boundary/66-operators.md) *- Issuing grants and answering consent on a server you have no shell on*
+- [Containers and images](./docs/30-boundary/67-containers-and-images.md) *- The hardened server recipe, sharing an image, and why not one server for everyone*
 - [OIDC](./docs/30-boundary/70-oidc.md) *- Naming the person behind a call with the identity provider you already have: what rta verifies, a Keycloak walkthrough, and where the failure messages go*
 - [Kubernetes](./docs/30-boundary/80-kubernetes.md) *- Deploying the boundary as a chart, one instance per person: the decisions to make before setting a value, the posture worth choosing, and day two*
 
@@ -53,6 +58,7 @@ rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run native
 
 *Reference*
 - [Glossary](./docs/95-reference/10-glossary.md) *- The words these pages use in one particular way — grant, record, roster, profile, role, plugin — and the acronyms they assume*
+- [The path gate](./docs/95-reference/20-the-path-gate.md) *- Roots, symbolic links, hard links and `git`: exactly where the line falls*
 
 ## What is in it
 

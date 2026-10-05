@@ -190,7 +190,7 @@ Grants suppressed by a ceiling are reported rather than hidden, so "why can't th
 
 ## Where an MCP server looks, and why it may surprise you
 
-The walk up starts at the working directory, and **for an MCP server that directory is chosen by the client, not by you.** A team can commit `.rta-policy.yaml`, wire up a client that starts in `$HOME`, and get no ceiling at all.
+The walk up starts at the working directory, and **for an MCP server that directory is chosen by the client, not by you** — the same directory the server's default path root comes from. A team can commit `.rta-policy.yaml`, wire up a client that starts in `$HOME`, and get no ceiling at all.
 
 So `rta mcp serve` says which one it found, next to the path roots and for the same reason:
 

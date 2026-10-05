@@ -67,7 +67,7 @@ rta grant list --server tobi   # an instance's roster, over the operator channel
 rta doctor
 ```
 
-An Origin column appears the day a grant was issued with nobody at a terminal, and `rta doctor` says the same in a sentence. `--server` takes a name from `remotes.yaml`, and answers once the instance enrolls your operator key. [Grants](../30-boundary/30-grants.md) · [where a grant came from](../30-boundary/10-the-boundary.md#what-a-grant-says-about-where-it-came-from) · [the operator channel](../30-boundary/20-mcp.md#the-operator-channel).
+An Origin column appears the day a grant was issued with nobody at a terminal, and `rta doctor` says the same in a sentence. `--server` takes a name from `remotes.yaml`, and answers once the instance enrolls your operator key. [Grants](../30-boundary/30-grants.md) · [where a grant came from](../30-boundary/10-the-boundary.md#what-a-grant-says-about-where-it-came-from) · [the operator channel](../30-boundary/66-operators.md).
 
 ## Read the record
 
@@ -92,7 +92,7 @@ rta lock list
 rta lock rm claude
 ```
 
-Revoking takes grants back and leaves the ungated reads open; a lock refuses every call the agent makes, from its next one, with no restart. `--server` places either on an instance, and `--kind operator` freezes an operator key that should no longer be trusted. [Locks](../30-boundary/20-mcp.md#locks-the-instant-no).
+Revoking takes grants back and leaves the ungated reads open; a lock refuses every call the agent makes, from its next one, with no restart. `--server` places either on an instance, and `--kind operator` freezes an operator key that should no longer be trusted. [Locks](../30-boundary/45-stop-an-agent-now.md).
 
 ## Audit what the agents work on
 

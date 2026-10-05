@@ -54,7 +54,7 @@ What is built in, with a first command for each. `rta plugin list` is the same i
 | `lock` | Freeze one principal now — the instant path when revoking and restarting are too slow | `rta lock list` |
 | `operator` | Your identity for managing remote rta servers: a key only your passphrase can use | `rta operator status` |
 
-The last four are rta's own boundary rather than something it inspects, and each has a chapter: [grants](../30-boundary/30-grants.md), [the record](../30-boundary/40-audit-trail.md), [locks](../30-boundary/20-mcp.md#locks-the-instant-no) and [the operator channel](../30-boundary/20-mcp.md#the-operator-channel).
+The last four are rta's own boundary rather than something it inspects, and each has a chapter: [grants](../30-boundary/30-grants.md), [the record](../30-boundary/40-audit-trail.md), [locks](../30-boundary/45-stop-an-agent-now.md) and [the operator channel](../30-boundary/66-operators.md).
 
 ## Getting the first-party ones
 

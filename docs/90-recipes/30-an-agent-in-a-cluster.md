@@ -60,7 +60,7 @@ rta kube serviceaccount provision agent-payments --profile payments-staging \
 
 ## 3. Build the image the agent talks to
 
-The image is [the plugin allowlist](../30-boundary/20-mcp.md#in-a-container-for-a-hardened-server). The published narrow image carries no plugin and no `kubectl`, and the full one carries every plugin, so this one is derived: the full image's own Dockerfile, narrowed to one plugin by a build argument.
+The image is [the plugin allowlist](../30-boundary/67-containers-and-images.md#in-a-container-for-a-hardened-server). The published narrow image carries no plugin and no `kubectl`, and the full one carries every plugin, so this one is derived: the full image's own Dockerfile, narrowed to one plugin by a build argument.
 
 ```bash
 git clone --depth 1 --branch v<version> https://github.com/this-is-tobi/rta.git && cd rta
@@ -124,7 +124,7 @@ helm install rta oci://ghcr.io/this-is-tobi/rta/rta-chart --namespace rta --valu
 - **`HOME` and the mount** put the minted file where kubectl looks, `$HOME/.kube/config`: rta hands a plugin no `KUBECONFIG`, for the reason [Kubernetes](../30-boundary/80-kubernetes.md#giving-an-instance-access-to-the-cluster-it-runs-in) gives.
 - **`plugins.allow`** is rta's own question about that file — may `kube` read it — answered for this instance.
 - **Nothing else in the pod reaches the cluster.** The chart leaves the pod's own ServiceAccount token unmounted and binds it no role, so the minted identity is the only one there.
-- **The config holds no profile.** One cluster and one identity make the identity the bound: a `kube` read is an ungated read, and each one lands in the record. A profile there would put every call behind a grant issued on the instance — the heavier shape, for when [the operator channel](../30-boundary/20-mcp.md#the-operator-channel) is set up anyway.
+- **The config holds no profile.** One cluster and one identity make the identity the bound: a `kube` read is an ungated read, and each one lands in the record. A profile there would put every call behind a grant issued on the instance — the heavier shape, for when [the operator channel](../30-boundary/66-operators.md) is set up anyway.
 - **The pod has to reach the cluster at the address your context names**, since that is the address in the file. With the chart's NetworkPolicy on, that is one more egress rule.
 
 ## 5. Connect the agent
@@ -163,7 +163,7 @@ rta kube serviceaccount revoke agent-payments --profile payments-staging
 
 `list` is an estimate from what provisioning recorded, since Kubernetes keeps no object for a token to ask about. The kubelet refreshes a mounted Secret in place and kubectl reads the file on every call, so the instance needs no restart; revoke once the new file has landed. Revoking deletes the ServiceAccount, which is also the one way to end a token before its time: every token minted against it stops working at once.
 
-That takes the reach away. To stop the agent itself, [lock it](../30-boundary/20-mcp.md#locks-the-instant-no) on the instance — `kubectl -n rta exec deploy/rta-rta-chart-tobi -- rta lock add tobi` — and every call it makes is refused from the next one.
+That takes the reach away. To stop the agent itself, [lock it](../30-boundary/45-stop-an-agent-now.md) on the instance — `kubectl -n rta exec deploy/rta-rta-chart-tobi -- rta lock add tobi` — and every call it makes is refused from the next one.
 
 ## Next
 

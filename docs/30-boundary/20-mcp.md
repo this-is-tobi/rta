@@ -1,108 +1,10 @@
 # MCP and the safety gate
 
-rta speaks the Model Context Protocol over stdio by default, and over HTTP with `--http` — see [Remote hosting](#remote-hosting-http). An MCP client — Claude Code, VS Code, Cursor, Codex, Gemini, Copilot — launches `rta mcp serve` and gets every capability as a tool, with typed schemas, safety annotations and structured results.
+rta speaks the Model Context Protocol over stdio by default, and over HTTP with `--http` — see [Hosting a server](./65-hosting-a-server.md). An MCP client launches `rta mcp serve` and gets every capability as a tool, with typed schemas, safety annotations and structured results. [Connect an agent](../10-getting-started/30-connect-an-agent.md) is how to wire one up; this chapter is what it can reach once it is, and what every call is checked against.
 
 The interesting part is not that it works. It is what an agent can reach before you have decided anything.
 
 Everything in this chapter assumes the agent goes through the server. An agent that can also run shell commands can run `rta` itself, and [what that does to the guarantees](./10-the-boundary.md) is worth reading first.
-
-## Registering a client
-
-```bash
-rta mcp install claude
-```
-
-Supported clients: `claude`, `vscode`, `codex`, `gemini`, `cursor`, `copilot`. Anything else that speaks MCP works too — see [Connecting your AI tool](./60-ai-clients.md) for the per-client detail, including where each keeps its configuration and how to check afterwards that it worked.
-
-Where a client ships its own command for editing its own configuration, rta runs that. Where it does not, rta prints what to add and where, and stops:
-
-```bash
-rta mcp install cursor
-```
-
-```
-client  Cursor
-add to  ~/.cursor/mcp.json (or .cursor/mcp.json for one project)
-as      cursor
-next    add the block to that file yourself — rta writes nothing there. The `--as cursor` in it
-        names this agent: grants are issued to that name, so one issued for another client
-        does not reach it, and `rta lock add cursor` freezes it
-then    restart Cursor, ask it to call sys_overview, and `rta agent overview` shows it connected
-
-{
-  "mcpServers": {
-    "rta": {
-      "command": "/usr/local/bin/rta",
-      "args": [
-        "mcp",
-        "serve",
-        "--as",
-        "cursor"
-      ]
-    }
-  }
-}
-```
-
-In `pretty` the block is drawn last, under the pairs, so it can be copied whole. The answer is the same pairs in every format, with the block as one of them — `block`, between `add to` and `as` — so `-o json` hands a script provisioning a machine the block as one value to lift out whole. A client that registered itself answers with `registered`, `as` and the command line it `ran`, then where that put it and what to do next; whatever that client printed of its own goes to stderr, beside the answer rather than inside it.
-
-```
-registered  Claude Code
-as          claude
-ran         claude mcp add rta -- /opt/homebrew/bin/rta mcp serve --as claude
-scope       this directory only (/work/shop) — add --global for every project
-next        restart Claude Code in this directory, ask it to call sys_overview, and `rta agent
-            overview` shows it connected
-reach       read-only until you say otherwise — `rta grant allow <capability> --agent claude` lets
-            one more thing through, and it expires on its own
-```
-
-The `scope` line is there because Claude Code's own default is the directory you ran the command in and nothing else: an agent opened in any other project sees no rta. `--global` registers it for every project. When a client's command is missing or fails, the block is the answer and a `why` pair comes before it saying which: `claude is not on PATH, so rta ran nothing`.
-
-The path registered is the one you ran rta by when it is on `PATH` and is the same file — `/opt/homebrew/bin/rta`, which a package upgrade leaves in place — and the file it resolves to otherwise.
-
-### Server options belong in the registration
-
-The client launches `rta mcp serve`, so a server option is only set if it is in the line the client was given. `rta mcp install` takes the ones that belong there, each off unless you pass it: `--consent`, `--consent-notify` and `--consent-wait` for [live consent](#live-consent), `--root` (repeatable) for [the path gate](#the-path-gate), and `--max-result` for [the ceiling on an answer](#how-large-a-result-may-be).
-
-```bash
-rta mcp install claude --consent --consent-notify --root ~/projects
-# registers: rta mcp serve --as claude --consent --consent-notify --root /Users/you/projects
-```
-
-The options show under `ran`, `--dry-run` and `--show`. A `--root` is registered as the absolute path it names and has to exist, and naming any replaces the default root, the directory the client starts the server in. `--consent-notify` and `--consent-wait` without `--consent` are refused, since they would configure nothing.
-
-### Running it again
-
-Run again, `rta mcp install` compares what is registered with what you ask for. The same registration answers `already registered` and runs nothing, at exit 0, so a provisioning script can call it on every boot. A different name, path or option is replaced through the client's own `mcp remove` and `mcp add`, and `changed` says what differed. That comparison reads the client's configuration and never writes it: for Claude Code it replaces, and `--global` also takes out a directory-only registration of rta for the current directory, which would otherwise override the new one there. An entry that sets environment variables of yours — `XDG_DATA_HOME` is the usual one — is neither replaced nor taken out, since a re-registration would not bring them back: the replacement is refused, naming the variables and never their values, and `--global` leaves that entry where it is and says so, with the line that removes it. Every other client is asked to add, and told there is nothing to do only when its file already holds exactly this registration. When a client refuses because rta is already there and rta cannot read enough to compare, the exit is non-zero and the error carries the exact `claude mcp remove rta --scope user` line to run first. A server of your own that happens to be called `rta`, and does not start rta's server, is never taken out to make room: it is the same refusal, with the same line.
-
-### A client rta does not list
-
-Anything that speaks MCP over stdio takes the standard `mcpServers` block: `rta mcp install windsurf` prints it with `--as windsurf` and says that rta does not know where Windsurf keeps its configuration. A name close to one of the six is read as a typo and refused with the one it was near.
-
-### rta does not write another tool's config file
-
-This is deliberate, and there are three reasons in descending order of importance:
-
-- **That file is what grants an agent access to your secrets.** A tool whose entire argument is that consent should be visible and deliberate has no business writing itself into five agents' permission files unattended.
-- **Those files hold things rta must not touch.** VS Code's `mcp.json` is JSONC — comments and all — and often carries API keys in headers. A parse-and-rewrite would destroy comments at best and mishandle a credential at worst.
-- **A config format changes when its client changes, not when rta does.** The tool that owns the format is the one that stays correct.
-
-`--show` prints the block without running anything, for any client.
-
-## Naming the agent
-
-```bash
-rta mcp install claude --as work-laptop
-```
-
-**Every server is named.** `rta mcp serve` refuses to start without `--as`, and `rta mcp install` always passes it — the default is the client's name. Without one, every MCP client on your machine would be a single principal sharing one grant file, and worse, one nothing could stop: [a lock](#locks-the-instant-no) freezes an agent *by name*, so an unnamed server had no handle to pull during an incident.
-
-`rta grant allow` fills the name in when this machine knows exactly one agent — one that has connected, or that holds a grant already — and asks you which when it knows several. Before any has, name it: `--agent claude`.
-
-The name is your word, not the agent's. A client announces itself in the protocol handshake, and rta records that claim, but it does not authorize on it — *a name a thing chooses for itself is not an identity*. What authorizes is the name you typed when you wired the client up.
-
-You will see both in the record: the agent name plainly, the client's self-report in parentheses.
 
 ## What is exposed, before you decide anything
 
@@ -133,9 +35,9 @@ A grant on a plugin's capability binds to that plugin's **artifact**, not to its
 
 A few capabilities are not on offer at any price. `grant`, `agent`, `lock`, `operator` and `pkg` — every verb in each — plus `audit clients`, `audit doctor`, `kv copy`, `kv edit` and the `keys` verbs that move key material answer to the person at the terminal and to nobody else. They are absent from `tools/list` on every transport, whatever the flags: an agent that could issue itself a grant, lift its own lock, or read the roster of what your other agents may do would make the rest of this chapter theatre. A call naming one anyway is answered as an unknown tool and written to [the record](./40-audit-trail.md) like any other probe. `rta explain` lists them under *never a tool*.
 
-### The path gate
+## Paths and roots
 
-Every path a call would use must sit under a **root** — one the agent sent, a capability's declared default, or one your config names. The default root is the directory the server was started in; widen it with `--root`, which is repeatable, in the registration — the client launches the server, so a flag that is not in that line is not set:
+Every path argument a call would use must sit under a **root** — one the agent sent, a capability's declared default, or one your config names. The default root is the directory the server was started in; widen it with `--root`, which is repeatable, in the registration — the client launches the server, so a flag that is not in that line is not set:
 
 ```bash
 rta mcp install claude --root ~/projects --root /tmp/scratch
@@ -143,35 +45,7 @@ rta mcp install claude --root ~/projects --root /tmp/scratch
 
 `rta mcp serve --root` is the same flag for a server you start yourself.
 
-The gate governs path *arguments* only. A capability that opens a fixed file of its own — `net hosts list` and `/etc/hosts` — is unaffected, because that path is never an argument for anyone to send. A path a capability *derives* from an argument is held to the gate as though it had been sent: `git` finds the repository a directory belongs to by walking up from it, and follows a `.git` file, a `commondir` and `objects/info/alternates` to the directories they name, and a repository any of those place outside the roots is refused rather than read. A linked worktree is opened only under a root that also holds its main checkout.
-
-Each file `git diff` would show goes to the gate too, so rta's own data and configuration inside a versioned home directory are named in the diff as refused, never shown — and so is a file of them the working tree reaches by another name, a hard link or one moved onto a tracked file's name, which the diff opens and finds is rta's by the file itself. That holds for a bare repository as well, the usual shape of a dotfiles repository: its files are placed where git would check them out — the directory `core.worktree` names, or else the one holding the repository, as `~/.cfg` used with `--work-tree=$HOME` is laid out — and withheld there when they are rta's own state, as is the file `git blame` is asked about. A checkout whose `core.worktree` names another directory, where git checks its files out, has them withheld there too.
-
-The directory `git hooks` lists goes to the gate as well, since `core.hooksPath` — the repository's or the operator's own — can name one anywhere. So can an include: git reads the file an `[include]` or a matching `[includeIf]` names as though it were written in its place, and one of sections and keys reads as config, a MySQL client's `~/.my.cnf` and its password among them. An include of a file outside the roots made in a file of config a caller can write — `.git/config`, `config.worktree`, and every other file of config inside the roots, whoever includes it, the operator's own among them: `~/.gitconfig` itself under a root drawn around the home directory, or a `~/work/.gitconfig` that `~/.gitconfig` includes, served with a root of `~/work` — is not followed at all: the file is never opened, so every answer is the one an include of a missing file gets, and nothing of the file, not even whether it is there, whether it parses as config or how large it is, shows in one. Since git does follow it, `git config` and `git hooks` name the include as one outside the roots, not followed.
-
-The operator's own config outside the roots, and a file it includes from outside them, is read as git reads it; one whose name passes through the roots on its way, as it is spelled or where one of the operator's own links leads, and leaves them again, where a link a caller made could lead anywhere, is not read, and is named the same way. So is a `core.excludesFile` a file the caller can write names outside the roots: not applied, and named.
-
-A `hasconfig:remote.*.url` condition written in a file a caller can write is a glob a caller could try against URL after URL, so it is matched against the remotes the repository's own config sets inside the roots alone: one that matches the operator's remote, or the environment's, is answered as one that matches nothing. One the operator's config outside the roots writes is matched against every URL, those a caller is not shown with their credentials masked. An include of a file the gate refuses for any other reason, rta's own state or configuration among them, refuses the call, and the file is not read.
-
-None of these is opened by its name again once the gate has judged it: over MCP `git` reads the repository's directories, its working tree, the hooks directory, an included file and the excludes file from the root each lies under, through a handle held open on the directory, so a directory or a file swapped for a link out of the roots between the judgement and the read is not read through, and a link out of the roots is not looked through to say whether its far end exists. At a terminal each is read by name, as git reads it.
-
-A path argument naming a file to read — a certificate, a file to hash, a hosts file or a resolv.conf, a lockfile or an SBOM to audit — names a regular file. A named pipe, a device or a directory in its place is refused before anything opens it, and a file larger than its format ever is — past 16 MiB for a certificate file, 32 MiB for a hosts file, 1 MiB for a resolv.conf, 64 MiB for a lockfile or an SBOM — is refused by name rather than read whole.
-
-A repository's own files, which `git` reads whole, are held the same way whether or not anybody named them: a config or a `.gitmodules` past 4 MiB, an index past 128 MiB, a packed-refs past 64 MiB, or a HEAD or ref past 1 MiB is refused as `git.repository.toolarge` before anything reads it. Its ignore files are held in all rather than one by one: a status reads at most 1 MiB of them, each `.gitignore`, the repository's `info/exclude` and the file `core.excludesFile` names, and applies at most 10000 patterns from them, and a file past that is not applied, as git applies no pattern file past 100 MB. So is a `.gitignore` that is a symbolic link, which git does not follow either. What such a file ignores is listed by `git.status`, with a warning naming it, and `git.diff` names an untracked file it may have ignored rather than showing it. Each pattern is matched as git's own matcher matches it, a `[!...]` class negated and a directory it excludes keeping everything under it excluded, so an untracked file git ignores is not listed or shown. A `core.excludesFile` the repository's own config names is put to the gate as a path the caller sent, since its lines would be read as patterns; one the operator's own config names, or git's default `~/.config/git/ignore`, is read wherever it is. And the working tree itself, which `git.status`, `git.diff` without a commit and `git.overview` read, is read for at most two seconds a call: past them the call is refused as `git.status.timeout`, naming what it had read, rather than answered with the part of the tree it had got to, which would read as a cleaner tree than the one there.
-
-The CLI still reads `/dev/stdin` as [its guide](../20-using/10-cli.md#piping-in) shows, because a pipe given at a terminal has a writer the person started. A file nobody named is a file on every surface, the terminal included: a lockfile `audit deps` finds in the directory it was given, or the project `.mcp.json` `audit clients` reads from the working directory, is whatever the repository put there, and a pipe in its place is named as a file that could not be read.
-
-A path is judged with its symbolic links resolved, one hop at a time as the kernel follows them, and a link that cannot be followed to its end — its target missing, or behind a directory the server may not search — is judged by where it points: a link out of the roots is refused in the same words whether or not anything is there, so a refusal never says whether a file outside exists. A loop inside the roots is refused as unresolvable, and one outside them as outside, as a missing name there is. The capability is still told when the name it was given was a link, since for some that is the answer — `net resolver list` on a resolv.conf linked into `/run` says who owns it, over MCP as at a terminal. What the link holds is told as written only when it names places under the roots; a link whose next step is a name outside them, even one that leads back in, is told as leading outside the roots, without the name. A link a capability comes across rather than is given is told by the same rule: `fs tree` lists each link in the directory with what it holds, and over MCP one naming a place outside the roots reads `a path outside this server's roots`, and `git diff` diffs a link in the working tree by its text only where the text names a place under them, and names any other as changed without showing it, while at a terminal every link shows its target. Nor is such a link followed: `git hooks` judges a hook that is a link by what it leads to, as git does, and over MCP one leading outside the roots is listed as active without being looked through, since git may run what it leads to.
-
-What the gate then guarantees about the file read depends on who opens it, and how. `fs`, `cert`, the `net` capabilities that read a hosts file or a resolv.conf, and `audit deps` and `audit why` never open a path they were given by its name: it is judged again and opened from the root it lies under, one directory at a time from the root's own descriptor, following nothing that was not there when it was judged and opening nothing that is not what was looked at a moment before. Each directory on the way, the root included, is opened to be gone down from, so a path under one the server may search but not list is refused as unreadable. So a caller who can write inside a root and swaps the file, or a directory above it, for a link out between the gate and the open is refused, never handed what the link leads to, in the same words whatever the link points at.
-
-A directory `fs tree`, `fs usage` or `audit deps` walks is gone down the same way, a link the walk comes across is never followed by `fs` and followed by `audit deps` only where the gate would let a caller name it, and rta's own state and configuration is left out where a walk reaches it as well as refused where a path names it: an operator serving their home directory sees the data directory listed as withheld, not what is in it, and a configuration file under a root is listed as withheld, not sized. rta's own state and configuration is known by its files as well as by their names: a hard link inside a root to one of them, or one of them moved onto a name the gate has already judged, is another name for the same file, and what is opened, or reached by a walk, is compared by the file's identity with everything the data and configuration directories hold, and refused or withheld as the name itself is. The clones of the plugin indexes are the exception, refused by their names alone: an index attached from a checkout on this machine is a git clone of it, which git makes by hard-linking the checkout's objects, and compared by identity the checkout itself was refused as rta's own. Each call reads what those directories hold once, the first time it opens something, and the server reads it once more when it starts, for a file moved out of them before a call looks; the data or the configuration directory itself, moved under a root by another name, is refused whole, and `git` lists nothing of it. The refusal says the path is another name for rta's own state or configuration, which is how an operator finds a hard link, or a file moved, that they did not mean as rta's.
-
-Two things are beyond what a root can see. A hard link is the file itself rather than a pointer to one, so a hard link made inside a root to any other file outside it, on the same filesystem, is read as the file inside that it is. And a mount inside a root is inside it: `fs tree` and `fs usage` do not cross one, but a file under it can be named. `git` opens what it reads over MCP the same way, from the root each part of a repository lies under, and holds each file it opens to rta's own state by its identity too.
-
-A plugin opens its own path inputs, in its own process, where the root the host holds is not. For a `Path` input the gate judges the path exactly as it judges a built-in's, refuses it on the same terms, and hands the plugin the path it judged with its links resolved — and that is the whole of what it guarantees: the path as it was when judged. The plugin opens it by name, so a caller who can write inside a root can still swap the file, or a directory above it, for a link between the gate and the plugin's open, and the plugin follows it; a path the plugin works out from its inputs is not judged at all. What bounds a plugin past that point is its sandbox — on macOS, `sandbox-exec` denies it rta's own state and the credential directories, as `rta doctor` lists; on Linux, nothing rta applies. Serve an agent that can reach a plugin with a `Path` input from a root nothing else writes in, or count the plugin's sandbox as the bound.
-
-rta says its roots out loud at startup rather than leaving them to be discovered from a refusal:
+The gate has a great deal to say about links, `git`, hard links and what rta withholds as its own; all of it is on [The path gate](../95-reference/20-the-path-gate.md). What you need day to day is that rta says its roots out loud at startup rather than leaving them to be discovered from a refusal:
 
 ```
 rta mcp server listening on stdio
@@ -180,6 +54,8 @@ record: /Users/you/.local/share/rta/agent-log.jsonl (session 4a030411)
 ```
 
 The `record:` line names the file this server's calls are written to and the id of its session, which is what `rta agent log --session` takes; when the record looks empty, it is the path to compare with the one `rta agent overview --detail` reads. A root the server cannot open for reading is named there too, once, with the fix — one whose mode lets it be searched and not listed (`--x`), or a folder macOS keeps from the app that started the server. The built-ins open a path from its root, so they refuse every path they would open through it, on every call, until it can be read; the server serves the other roots meanwhile.
+
+## What a call is held to
 
 ### What an argument is held to
 
@@ -211,345 +87,22 @@ A tool's description is the capability's own summary and description inside a fr
 
 [Grants](./30-grants.md) are the whole of it: consent for one capability or one plugin, optionally one record, narrowed to one agent and one connection, expiring on its own. `rta grant allow note --ttl 8h` is the shape for "this agent works on notes today"; `rta grant allow kv.get deploy-key --ttl 5m --max-uses 1` is the shape for "this once".
 
-## Live consent
+## The rest of MCP
 
-Off by default, and an option of the server, so it goes into the registration:
+This chapter is what a connected agent can reach and what every call is held to. The rest of the subject is on its own pages:
 
-```bash
-rta mcp install claude --consent --consent-notify
-```
-
-(`rta mcp serve --consent --consent-notify` is the same two flags for a server you start yourself.) With `--consent`, a call that needs a grant nobody issued is **parked** instead of refused. You answer it:
-
-```bash
-rta agent pending
-rta agent show 5473aa62        # everything about it, including what it would do
-rta agent allow 5473aa62
-rta agent deny 5473aa62
-```
-
-A destructive call is previewed before it parks: rta runs the capability's own `--dry-run` and shows the result on the request, which changes the question from *"may this agent call `note.rm`"* to *"may it remove **this note**"*.
-
-`rta agent allow <id> --ttl 1h` also issues the grant the call was missing, for the record it named and no wider — a grant for each record when it names several, as a `kv.rename` names the key and where it goes. A call naming a record ending in `/` — a folder to a grant, `https://` included, and the agent chose it — is released on its own and no grant is issued; the answer names the `rta grant allow` calls that issue them on purpose, if every record under the folder is what you mean. A call naming a record that is only white space is released on its own too, since no grant can name that record: `grant allow` refuses it, and `grant revoke` and `grant renew` could never take one back by it. The team's ceiling holds the answer record by record, as it would hold each grant.
-
-`--consent-wait` bounds how long a call waits before it is refused anyway (default 90s).
-
-**The default is off on purpose.** A call parked in a server nobody is watching is worse than a refusal: the agent hangs, you never see it, and the timeout is the only thing that resolves it. Turn consent on when you are actually at the machine — or, for a remote server, when [the operator channel](#the-operator-channel) gives its enrolled operators a way to answer with `--server`.
-
-## Environment inheritance
-
-An MCP server inherits the environment it was started from. If your secret store unlocks without a passphrase in that environment, the server can open it — bounded by grants, but able to.
-
-```bash
-rta doctor
-```
-
-```
-kv store    info    unlocks from this environment — an MCP server started here
-                    can read secrets, bounded only by grants
-```
-
-That line is the whole warning. It is not a misconfiguration; it is a fact about how you set the store up, and it is worth knowing before you connect a client.
-
-## The working directory is the client's choice
-
-A server also inherits its working directory, and two things are decided by it: the default path root, and where the walk up for a [team policy](./50-team-policy.md) starts. You did not choose that directory — the client did.
-
-So a committed `.rta-policy.yaml` bounds this agent only if the client happened to start inside that repository. rta says which one it found at startup, beside the roots:
-
-```
-rta mcp server listening on stdio
-path arguments confined to: /Users/you/projects
-record: /Users/you/.local/share/rta/agent-log.jsonl (session 4a030411)
-rta: team policy: /Users/you/projects/.rta-policy.yaml
-```
-
-`none in force` there means the ceiling you committed is not the one applying. `rta policy require` turns that into a server that refuses to start rather than a line somebody has to notice.
-
-## Where the server runs
-
-Over stdio, the default, there is no daemon, no port and nothing to start. `rta mcp serve` is a child process of your MCP client, speaking JSON-RPC over its own stdin and stdout, and it lives exactly as long as the client does. Two clients means two processes:
-
-```mermaid
-flowchart LR
-    C1["Claude Code"] -->|stdio| S1["rta mcp serve<br/>--as claude"]
-    C2["Cursor"] -->|stdio| S2["rta mcp serve<br/>--as cursor"]
-    S1 --> G[("~/.local/share/rta<br/>grants · record")]
-    S2 --> G
-```
-
-Two processes, one grant file — which is the whole reason [`--as`](#naming-the-agent) exists. Without a name they are one principal, and consent given while talking to the first covers the second.
-
-### For one session, or for one task
-
-The server is per-session by construction, so the question is really about the permissions, and those have their own clocks rather than the process's:
-
-| Bound to a task by | What it does | Where |
-| --- | --- | --- |
-| `rta grant allow … --ttl 30m` | Consent that expires on its own, whatever the server does | [Grants](./30-grants.md) |
-| `rta grant allow … --max-uses 5` | Consent that runs out by use rather than by clock | [Grants](./30-grants.md) |
-| `rta use staging` | While it is on, every *other* environment is refused whatever grants exist | [Profiles](../20-using/40-profiles.md) |
-| `rta grant revoke --all` | The end of the task, without touching the client | [Grants](./30-grants.md) |
-
-Restarting the server changes none of it. That is deliberate: a deadline that ended when a process did would be a deadline your editor could reset by crashing.
-
-### In a container, for a hardened server
-
-The binary is static and needs almost nothing at runtime — almost, because `cert`, `http`, `audit web` and every plugin that dials TLS (`pg`, `s3`, `vault`, `qdrant`...) still need a CA bundle to verify against, which a bare `scratch` image does not have. [`ghcr.io/this-is-tobi/rta`](https://github.com/this-is-tobi/rta/pkgs/container/rta) is built `FROM gcr.io/distroless/static-debian12:nonroot` instead: that CA bundle and the `/etc/passwd` entry for its nonroot user, and nothing else — still no shell, no package manager, no libc for anything to reach. Published multi-arch (`amd64`/`arm64`) with every release, with SLSA provenance, an SBOM and a cosign signature attached to the image digest. Point the client at `docker` instead of at `rta`:
-
-```json
-{
-  "mcpServers": {
-    "rta": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-        "--network", "none",
-        "-v", "rta-home:/rta-home",
-        "-v", "${workspaceFolder}:/work:ro",
-        "-e", "RTA_CONFIG=/rta-home/config.yaml",
-        "-e", "RTA_DATA_DIR=/rta-home",
-        "-w", "/work",
-        "ghcr.io/this-is-tobi/rta:latest", "mcp", "serve", "--as", "sandboxed", "--root", "/work"
-      ]
-    }
-  }
-}
-```
-
-What each part is doing, since a hardening flag nobody can explain is a hardening flag somebody deletes:
-
-| Flag | Why |
+| If you came for… | Read |
 | --- | --- |
-| `-i` | stdio is the transport; without it the client and the server never meet |
-| `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges` | The server needs none of it, so it gets none of it |
-| `--network none` | The strongest setting, and it turns off every capability that reaches the network — `audit web`, `net dns`, `pg` against anything remote. Drop it when you want those |
-| `-v rta-home:/rta-home` | Grants and the record have to outlive the container, or every restart is a machine with no memory of what you allowed |
-| `-e RTA_CONFIG`, `-e RTA_DATA_DIR` | **Not optional.** With no config directory the config path falls back to `./.rta.yaml`, and a working-directory file is not honoured — `profiles:`, `plugins:` and `dashboard:` are all ignored, so a plugin would run with its declared defaults |
-| `-w /work` + `--root /work` | The path root defaults to the working directory, which in a container is `/` unless you say otherwise |
-
-`rta audit clients` grades a declaration against this recipe, so none of it has to be checked by eye. A data directory with nothing mounted at it, a missing `--root`, and any of the three hardening flags being absent all warn — as does pointing an agent at `rta-full`, where the bundled plugins are trusted at build time and a read needs no grant, so a dozen plugins' reads are reachable with no consent step. Every gate still applies there; what widens is how much sits behind none of them.
-
-Missing `RTA_CONFIG`/`RTA_DATA_DIR` is the one graded by which image you run. Against the published narrow image it fails, because that image's environment is defined here and sets neither, so the settings really are being ignored. Against any other image — your own build, the recipe below, a fork — it is only reported: a derived image may set them itself, reading its environment would mean pulling it, and a private deployment building its own image is the ordinary case rather than a suspicious one. `--network none` is treated as a bonus rather than a baseline, and is the one check that reports its presence instead of its absence: it turns off every capability that reaches the network, so most people running rta for what rta is for cannot use it. Closing the network is confirmed when you have done it; leaving it open earns no row at all, because a row on the ordinary correct setup reads as a deficiency and teaches people to skim past the ones that matter.
-
-**The image is the plugin allowlist.** A plugin is a separate binary, so a plugin that is not in the image is a plugin the agent cannot reach — no trust decision, no digest, no `$PATH` to search. Building the image with two plugins in it is the narrowest reach rta can be given.
-
-Which is exactly why **`ghcr.io/this-is-tobi/rta-full` is the wrong image to point an agent at.** It carries every first-party plugin and every external tool, so it is the widest reach rta has, and pointing an MCP client at it throws away the one boundary this section is about. It exists for a person at a terminal who wants a console; for an agent, build the narrow image with the plugins that job needs — the recipe is below.
-
-The trade is real and worth stating: a containerized server sees the container's filesystem and network, so `fs tree` maps what you mounted and nothing else, and `git status` sees `/work`. That is the point, and it is also the reason this is not the default.
-
-### A team: share the configuration, not the process
-
-The want is real and worth stating plainly: a team has environments — dev and staging for app A, staging and production for app B — everyone has their own agent, and nobody wants to configure the same six profiles on eight laptops. What people reach for is one shared MCP server everyone points at.
-
-**Share the image instead.** A profile is written by a command, so it can be baked in at build time, and every member starts with the environments already there and nothing to configure. Two things go into the image and neither goes under the state volume: the plugins with their trust, into rta's read-only system root, and the profiles, into a config file the image carries. The state volume each member mounts on `/rta-home` then holds only what is theirs — grants and the record — and hides nothing the image put there:
-
-```dockerfile
-FROM alpine:3.20 AS setup
-COPY --from=ghcr.io/this-is-tobi/rta:latest /usr/local/bin/rta /usr/local/bin/rta
-COPY rta-plugin-pg /usr/local/bin/
-ENV RTA_CONFIG=/etc/rta/config.yaml
-RUN mkdir -p /etc/rta && install -d -m 0700 -o 65532 -g 65532 /rta-home && \
-    RTA_DATA_DIR=/usr/local/lib/rta rta plugin trust pg --yes && \
-    chmod -R a+rX /usr/local/lib/rta && \
-    rta profile set app-a-staging --note "app A, staging" --ttl 8h \
-      --plugin pg --set database=app-a \
-      --kube staging/app-a/svc/postgres:5432 \
-      --secret password=kube:postgres-creds/password && \
-    rta profile set app-b-prod --note "app B, production" --ttl 1h \
-      --plugin pg --set database=app-b \
-      --kube prod/app-b/svc/postgres:5432 \
-      --secret password=kube:postgres-creds/password
-
-FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=setup /usr/local/bin/ /usr/local/bin/
-COPY --from=setup /usr/local/lib/rta /usr/local/lib/rta
-COPY --from=setup /etc/rta /etc/rta
-COPY --from=setup --chown=65532:65532 /rta-home /rta-home
-ENV RTA_CONFIG=/etc/rta/config.yaml RTA_DATA_DIR=/rta-home RTA_SYSTEM_DIR=/usr/local/lib/rta PATH=/usr/local/bin
-ENTRYPOINT ["/usr/local/bin/rta"]
-```
-
-The `setup` stage needs Alpine's shell to run `rta plugin trust`/`rta profile set` at build time — it never ships. `rta plugin trust` writes into whatever `RTA_DATA_DIR` names, so pointing it at `/usr/local/lib/rta` for that one command is what puts the trust record beside the plugin, in the root the run time reads as `RTA_SYSTEM_DIR` and a volume cannot mask. `/rta-home` ships empty and owned by `nonroot`, so a fresh named volume mounted there starts out writable by rta, the same way the published images arrange it. The final stage starts over from the same distroless base the published image uses, for the same reason: `pg` over TLS needs a CA bundle to verify against, same as the primary recipe above. The full image, `ghcr.io/this-is-tobi/rta-full`, is built this way too — every first-party plugin installed from the official index into that same root.
-
-Each member wires their client to `docker run` on that image, exactly as in the recipe above, mounting their own `~/.kube` and their own state volume. What the image carries is a *reference*, never a value:
-
-```yaml
-secrets:
-  password: kube:postgres-creds/password
-```
-
-So the image is safe to publish to your internal registry. The credential is read at call time from the cluster, **with the caller's own kubeconfig and their own RBAC** — the access control your organisation already runs keeps applying, per person, unchanged. The same is true of the `kube:` forward: reaching the database at all requires that member's cluster access.
-
-That is the whole of "without any config", and everything else stays where it belongs. Grants are theirs. The record says what *they* did. `rta use` bounds *their* agents. Nothing is shared that a person has to be accountable for.
-
-Add [`.rta-policy.yaml`](./50-team-policy.md) to the repositories they work in and the team also gets a ceiling — committed, travelling with a clone, needing no seal because it can only ever subtract.
-
-### Why not one server for everyone
-
-Because "a shared server that can reach everything anybody is authorised for" is a single process holding the union of every environment's credentials, reachable by every member's agent. Concretely, it costs you five things:
-
-| What breaks | Why |
-| --- | --- |
-| Per-person access control | The server authenticates as itself. Your cluster RBAC, database roles and cloud IAM stop distinguishing between eight people and start seeing one service account |
-| The record | rta logs the agent name a person typed on their own machine. On a shared process every client is a client of the same process — two members' agents both log as `claude`, and nobody can answer who ran `pg dump` |
-| Live consent | `--consent` parks a call and waits for the person at the machine. On a shared server, which person? Whose desktop notification rings, and who is accountable for the answer? |
-| `rta use` | It exists to *subtract* — switching to staging takes production away from every agent. Shared, one person switching takes it away from everyone, silently |
-| Blast radius | One compromised agent on one laptop reaches the union of every environment, because the union is what the server was configured with |
-
-The transport was the smaller problem, and smaller than it first looked: [Remote hosting](#remote-hosting-http), below, is `--http` — authenticated over the wire instead of by parent-process trust, so "who is on the other end" has a standard answer. What it does not change is anything in the table above — authenticating five people to one process that holds the union of their environments tells you which of them is calling and leaves every other row exactly as it is.
-
-None of that is an argument against rta running somewhere other than a laptop. Run it in your dev platform, in a Codespace, in a per-user pod — **one instance per person, authenticating as that person**, built from the shared image. That is the same convenience with none of the collapse.
-
-## Remote hosting (HTTP)
-
-```bash
-rta mcp serve --http 127.0.0.1:8443 --token-file tokens.txt --as work
-```
-
-A second transport, opt-in: the server listens on TCP instead of speaking stdio to a parent process, which is what running it somewhere other than your own machine — the shape the previous section argues for — actually needs.
-
-Putting that somewhere is its own subject: [Kubernetes](./80-kubernetes.md) is the deployment, with a chart whose unit is the instance rather than the release.
-
-A caller now has to prove who it is over the wire, since there is no parent process left to trust instead. Two mechanisms, usable together:
-
-| Flag | Proves |
-| --- | --- |
-| `--token-file <path>` | A static, operator-issued token — one `label token` pair per line in a file only the operator can read; world-readable files are refused, and so is a token shorter than 16 characters (`rta gen token` makes one) |
-| `--oidc-issuer`, `--oidc-audience`, `--oidc-subject` | A real identity provider's token, for one of the named subjects. An issuer and audience alone identify an application, not a person, so at least one `--oidc-subject` is required — [OIDC](./70-oidc.md) is the full setup, including the Keycloak audience mapper without which every token is rejected |
-
-The file is the label and the token, so `rta gen token`, which prints the token among a few facts about it, is taken from its JSON answer:
-
-```bash
-printf 'work %s\n' "$(rta gen token -o json | jq -r '.pairs[] | select(.key == "token") | .value')" > tokens.txt
-chmod 600 tokens.txt
-```
-
-The label is what [the record](./40-audit-trail.md) shows for the credential that authenticated a call, so give each caller its own line.
-
-A rejected token is answered slower from the same address after five failures in a minute, doubling up to two seconds: a guess a second becomes a guess every two, and an operator who mistyped once never notices. Behind a reverse proxy every client shares the address, so a guessing attacker slows the operators beside it for as long as the guessing lasts — that trade is taken rather than trusting a `Forwarded` header the attacker writes.
-
-`--http` refuses to start with neither configured. `--consent` over `--http` additionally requires `--operators` — a parked call waits for a person, enrolled operators answering over [the operator channel](#the-operator-channel) are the only people positioned to be that person, and a control nobody can exercise must not be allowed to pretend it works.
-
-TLS is not this process's job. Bind to a private address and put a reverse proxy, ingress or service mesh in front of it for termination. A bind that other machines can reach — `0.0.0.0`, `:8443`, an interface address — is announced at startup, because on that transport the token is the whole credential and it crosses the wire as it is.
-
-Every request's verified identity is recorded a third way, beside `--as` and the client's own self-report: `rta agent log` shows which credential actually authenticated each call — a token's label, an OIDC subject — so more than one credential valid for an instance stays distinguishable instead of collapsing into one indistinguishable principal.
-
-### Probes and counters, on a second listener
-
-A hosted server needs to tell an orchestrator whether it is alive and whether it is ready, and a monitoring stack in the same cluster has no node_exporter to read [the counters](../90-recipes/01-readme.md#put-it-on-a-dashboard) out of a file with. `--observe` binds a second address for both:
-
-```bash
-rta mcp serve --as work --http :8443 --token-file tokens.txt --observe :9090
-```
-
-It is deliberately not more paths on the `--http` listener. Bearer authentication wraps that one whole, and adding open paths beside the protocol handler would turn a property of the wrapper into a property of route matching — where every handler added later is a chance to match wrongly. Kept apart, an operator can also bind this where the agent-facing port is not: loopback, or a pod port the Service never publishes.
-
-| Path | Credential | Says |
-| --- | --- | --- |
-| `/livez` | none | the process is serving. It consults nothing on purpose — a liveness probe wired to the store asks for a restart that meets the same broken volume |
-| `/readyz` | none | the config reads (one that does not parse leaves a server that refuses every capability a profile could change, so it is not sent traffic until it does, with no restart), and the record can actually be written: the data directory takes a file and, once there is a record, it takes an append — the question a call that needs a grant is asked, since one is refused when it cannot. A detached volume or a full disk leaves a server that still accepts connections and authenticates callers while failing at the one thing it is for. The verdict is kept for a second, so asking as often as the open address allows costs the server one check |
-| `/healthz` | none | the same as `/readyz`, for tooling that asks by that name |
-| `/metrics` | **the same bearer token as MCP** | the exposition format `rta agent metrics` prints |
-
-`/metrics` is authenticated because the counters name which agent called what, and how often it was refused — a map of the machine's activity, not a health signal. Binding it somewhere private is the outer control and the token is the inner one; a Prometheus scrape config carries a bearer token without complaint, so keeping both costs nothing.
-
-### The operator channel
-
-A remote server closes the agent out of `grant allow` — and closes you out with it: its grant roster lived behind whatever infrastructure access reaches the machine. The operator channel is the way back in that an agent cannot use.
-
-```bash
-# on your machine, once
-rta operator init --label tobi        # mints your key; prints the line below
-# on the server, in a file only its owner can write
-tobi 4Jx…base64…Qk=                   # one "label base64-pubkey" per line
-# start the server with it
-rta mcp serve --http :8443 --token-file tokens.txt \
-  --operators operators.txt --operators-url https://rta.example.com
-```
-
-The label is how the roster and [the record](./40-audit-trail.md) name you, as `operator:tobi` in its credential column. `--label` sets it when the key is minted (it is `operator` otherwise), and `rta operator status --label <name>` prints the roster line for another label from the same key, without minting anything.
-
-`--operators-url` is the server's canonical identity — the exact URL operators write in their `remotes.yaml` — and it is signed into every operator request. That is the anti-relay binding: a hostile server you also talk to could present another server's challenge as its own, but the envelope it collects names the server you were actually addressing and verifies nowhere else.
-
-`--operators` mounts `/operator/v1` beside the MCP endpoint. Name the server in `remotes.yaml` beside your config —
-
-```yaml
-servers:
-  work:
-    url: https://rta.example.com
-```
-
-— and the existing verbs grow a `--server` flag. `rta grant list --server work` reads that server's roster, each grant's plugin build judged by the server against its own plugins; `rta operator status --server work` asks who it is (version, agent name, guard state, enrolled operators); `rta grant revoke kv --server work` takes authority back, with `--dry-run` previewed by the server's own store rather than guessed at from here; `rta agent pending --server work` reads its parked queue, and `rta agent allow`/`deny` answer it. Each call names its target, because an ambient "current server" is how a staging command lands on prod. One thing about the caller does not travel: the surface it called from. The envelope carries a verb and its arguments, and what comes back is worded on the server for a command line, so a TUI form given a server reads a remote refusal in flags rather than in its own boxes.
-
-Issuing remotely takes one more provisioning step, because a grant is authority and authority needs a signature the server will honour. On the server, once: `rta grant guard remote operators.txt --url https://rta.example.com` enrolls the roster's keys as the machine's [guard](./30-grants.md), bound to its canonical URL — after which a grant is honoured only when an enrolled operator signed it *for this server*, and `rta grant allow` at the server's own shell has no key to unlock, by construction. The binding is what keeps a fleet sharing one roster from becoming one trust domain: a grant signed for staging verifies on no other machine, however its bytes travel. Then, from your machine:
-
-```bash
-rta grant allow kv.get db-password --agent claude --ttl 15m --server work
-```
-
-`--agent` is the name the server's own `--as` was given, and it is always typed here: the agents this machine knows are this machine's, so none is filled in for a grant that is for the server's, and the call is refused before the passphrase is asked for. `rta operator status --server work` says what the server runs as.
-
-The server *prepares* the grant — validation, TTL clamping against its policy, profile pinning, attribution — under its own config and catalogue; your rta then checks the draft against what you asked before anything is signed, field by field, with the server licensed only to clamp the lifetime downward — a compromised server must not be a signing oracle for authority nobody requested. Your passphrase unlocks the operator key; what survived the check is signed byte-for-byte and submitted; and the stored row carries `operator:<label>` in its Origin column, so a multi-operator server's listing names who issued what. The server re-checks everything on submission — attribution against the caller the envelope proved, untouched consumption bookkeeping, clock skew, expiry, both TTL ceilings — and the guard's own load-time enforcement then verifies the signature and its server binding on every read, like any other guard-signed row.
-
-[Live consent](#live-consent) travels the same way, and it is what makes `--consent` legal beside `--http` at all: start the server with both plus `--operators`, and a call that parks waits for an enrolled operator rather than for nobody. `rta agent pending --server work` lists the queue, `rta agent show <id> --server work` reads one call in full, and `rta agent allow`/`deny` answer it — every answer signed under your passphrase, the one-shot included. That last part is a deliberate asymmetry with the local flow, where a bare `agent allow` is passphrase-free because it releases a call an agent with a shell could have run directly: that shell-equivalence argument does not travel a network, so remotely there is no passphrase-free answer. The binding is the digest the local flow already rests on, made to cross the wire: your machine derives it from the fields it *displayed* — never copies it from what the server sent — and the server compares it against the parked file at the moment the sealed decision is minted, so a queue entry that changed after you read it, or a server that showed you one call while parking another, produces a refusal instead of an approval. (`--ttl` and `--role` stay out of a remote answer, and are refused beside `--server`: a standing grant is the prepare-and-sign flow above, with its own review step.)
-
-What makes this channel one an agent cannot ride: every call is an ed25519 signature over the server's canonical URL, a single-use nonce the server just issued, the verb and its payload — and the signing key exists on your machine only inside a passphrase, the [guard](./30-grants.md)'s own mechanics pointed outward. The passphrase arrives through a prompt or the TUI's masked field, never from the environment, and is refused on the command line; so an agent that reads every file you own still cannot sign, a captured request replays nowhere and verifies on no other server, and an agent's bearer token opens nothing here — the two mechanisms never meet. The server, for its part, holds only public keys: compromising it forges no operator's hand.
-
-Everything the channel *changes* is written into [the record](./40-audit-trail.md) beside the agent's own calls: a revocation, an issued grant, an answered consent, a lock placed or lifted — one line each, `operator.` in front of the verb, attributed `operator:<label>` in the credential column, refusals included. The record that shows a parked call `approved` therefore also shows who approved it, from which enrolled key. Reads stay off the record: a watching dashboard polls `status` every few seconds, and recording polls would churn real history out of the record's retention.
-
-The roster is the token file's kind of trust anchor and gets the same treatment: rta never writes it, weak permissions refuse startup, and it is read once — a rewrite behind a running server's back changes nothing until the next deliberate restart. Plain `http://` in `remotes.yaml` is refused for anything but loopback, and for the OIDC issuer's reason: the signature protects what you send, TLS protects what you *read* — a grant listing rewritten in transit is decisions made on a lie.
-
-A roster line is `label base64-pubkey` — the exact line `rta operator status` prints on the operator's own machine — optionally annotated `role=read` and/or `expires=YYYY-MM-DD`. A read-only key answers `status`, `grant.list`, `consent.list` and `lock.list` and nothing else: no revocation, no issuance, no consent answers, and `grant guard remote` never enrolls it as grant-signing trust, so even its stolen key mints nothing. The intended occupant is a component rather than a person — a status page or dashboard watching the queue and the grants under its own key, with a blast radius of reads. A bare line stays what it has always been, a full operator; and anything unrecognized in the annotation position refuses the whole file, because a typo that silently meant "full" is the one failure a restriction must not have.
-
-`expires=` turns a departure everyone knows is coming — a contractor's end date, a component being retired — from a memory problem into a clock problem: the key stops working when that day arrives, checked per call against the running server's clock, so this is the one roster edit that needs no restart to take effect. It only subtracts. The row still shows on the status page after its day, marked `expired`, because that row is a chore: deleting the line is still the real eviction, and an already-expired key stays out of what `grant guard remote` would enroll. A date rta cannot read refuses the whole file, same as any other annotation typo. For a departure nobody saw coming, that is not this — that is a [lock](#locks-the-instant-no).
-
-### Locks: the instant no
-
-Expiry and revocation both leave a gap that only shows during an incident: revoking every grant still leaves a misbehaving agent's bearer token opening the ungated read tools, and a compromised operator key stays enrolled until someone edits the roster and restarts — the roster is deliberately read once. A **lock** is the instant path:
-
-```bash
-rta lock add claude --note "runaway loop, ping me"       # on the machine
-rta lock add dash --kind operator --server work          # or from your machine, signed
-rta lock list
-rta lock rm claude
-```
-
-A locked *agent* or *credential* is refused on every tool call before any other gate (the protocol's own handshake and catalogue listing still answer — nothing executes through them) — never parked as a consent question, because a lock is the "stop asking me" control — and a locked *operator* label gets no verb on the channel at all. Running servers pick a lock up on their next request, no restart, and the note travels to the locked party on every refusal. Locks only subtract, so placing one asks for no passphrase: revoking never asks, and an incident is the wrong moment to demand a secret. `--ttl 2h` makes one lift itself; without it a lock stands until `rta lock rm`.
-
-Two edges worth knowing before you need them. First lock wins: a locked operator cannot unlock anyone, themselves included, so a fully locked-out roster is recovered at the machine's own terminal — where `rta lock` always works, because the person standing there is the authority locks answer to. And the lock file is sealed like the grant file, with the guard's failure direction: a running server that saw locks keeps enforcing them even if the file is deleted out from under it, so the `rm` that would quietly restore access restores nothing for the process the attacker is talking through. A server that has no verified set to keep, started after the file was written over, refuses every call as `core.lock.unverified` until the file verifies: a file that is there and is not rta's is not the absence a machine with no locks has. Lifting a lock is `rta lock rm`, on the machine or as a signed operator call — never a file deletion.
-
-Locking an operator freezes the key, not what it already signed — pair it with `rta grant revoke` for anything that key issued. It silences the key's verbs, not its ink: a locked key's mutation attempts keep landing in [the record](./40-audit-trail.md) as refusals, which is the evidence trail working — and also why a key you believe compromised is one to remove from the roster (edit the `--operators` file, restart), not merely to lock forever: enrollment is what lets it make the server write anything at all. And `rta lock` is on the harness deny list `rta audit clients --fix` prints, for the expanding half: an agent that could run `lock rm` would be unfreezing itself.
-
-`sys`, `fs`, `git`, `keys.list`, `kv.status`, the two `audit` checks that grade a project on this disk (`audit.deps`, `audit.why`), and the parts of `net` that read or change this host's own network configuration (`net.overview`, `net.listen`, `net.hosts.*`, `net.resolver.*`) answer for the machine rta happens to run on. Over HTTP those are never registered as tools at all — absent from `tools/list`, not refused when called — because a remote caller is never this machine. `rta mcp serve --http` says so at startup:
-
-```
-rta mcp server listening on http://127.0.0.1:8443
-rta: every request needs a bearer token; TLS is not this process's job — put a reverse proxy, ingress or service mesh in front of it
-path arguments confined to: /Users/you/projects
-record: /Users/you/.local/share/rta/agent-log.jsonl (session 4e289252)
-rta: remote transport hides 32 capabilities that describe this machine: audit.deps, audit.why, fs.hash, fs.tree, fs.usage, git.blame, …
-```
-
-Everything else in `net` — `ping`, `dns`, `trace`, `probe`, `send`, `port` — stays reachable, since those describe a caller-named target rather than this host. A result still reflects the vantage point of wherever rta is actually running, which is worth knowing rather than assuming.
-
-### What is still true, and what stops being true
-
-The credentials-move trade [the container recipe above](#in-a-container-for-a-hardened-server) rests on — "the caller's own kubeconfig, the caller's own RBAC" — needs restating here rather than assumed. A container on your own machine still has *your* kubeconfig mounted into it; a real network call has no caller-side credential at all, only whatever the server's own ambient identity is. Provision that identity as deliberately as any other production credential.
-
-The `kv` store is exactly as strong remotely as locally, no stronger — "unlocks from this environment" (`rta doctor`) is equally true of a laptop and a gateway, with no hardware-backed second factor either way. Prefer a passphrase over a plaintext identity file sitting on a host other people can reach.
-
-Plugin confinement (`rta doctor`'s "plugin confinement" row) is `sandbox-exec` on macOS and nothing on Linux — a deliberate, documented gap rather than an oversight, and Linux is the realistic OS for a remote gateway. A hardened deployment supplies its own process sandboxing there — containers, seccomp, a read-only root filesystem, an egress allowlist — since rta contributes none of its own on that platform.
-
-Consent now has exactly one place to go. `--consent` combines with `--http` only when `--operators` names a roster, because answering a parked call needs a channel to reach a person, and [the operator channel](#the-operator-channel) is the one built for it — a signed answer from an enrolled operator's own machine, never a bearer credential an agent could ride. What has *not* changed is the multi-user arithmetic: one queue, several operators, first answer wins, and the accountability question the [cost table](./10-the-boundary.md#what-this-means-for-a-team) raises for a shared server is answered only as far as the decision file naming which operator signed — the rest of what a shared server would take still stands.
-
-`--network none` in [the container recipe above](#in-a-container-for-a-hardened-server) was only ever safe because stdio needs no network at all. A listener needs an inbound path: publish the container's port to wherever the reverse proxy in front of it reaches, and keep outbound scoped to what the enabled plugins actually call — not open, and not none.
+| Registering a client, naming the agent | [Connect an agent](../10-getting-started/30-connect-an-agent.md) |
+| Live consent, and how a grant is bound to a task | [Grants](./30-grants.md#live-consent-when-you-would-rather-be-asked) |
+| The kv store opening from the environment a server inherits | [Secrets](../20-using/50-secrets.md#what-this-means-for-agents) |
+| The working directory a client chooses, and the team policy | [Team policy](./50-team-policy.md#where-an-mcp-server-looks-and-why-it-may-surprise-you) |
+| Locks: the instant no | [Stop an agent now](./45-stop-an-agent-now.md) |
+| `--http`, tokens, probes, what a remote server hides | [Hosting a server](./65-hosting-a-server.md) |
+| The operator channel | [The operator channel](./66-operators.md) |
+| The container recipe, sharing an image, why not one server | [Containers and images](./67-containers-and-images.md) |
+| Symbolic links, `git`, hard links: the whole path gate | [The path gate](../95-reference/20-the-path-gate.md) |
 
 ## Next
 
-- [What rta actually bounds](./10-the-boundary.md) — the precondition everything above rests on
-- [Connecting your AI tool](./60-ai-clients.md) — the per-client setup detail
-- [Grants](./30-grants.md) — per-capability, time-boxed consent
-- [The record](./40-audit-trail.md) — what actually happened
-- [Team policy](./50-team-policy.md) — a ceiling nobody can raise
+[Grants](./30-grants.md) — per-capability, time-boxed consent.

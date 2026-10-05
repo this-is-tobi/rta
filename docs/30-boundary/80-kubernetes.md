@@ -8,7 +8,7 @@ That one is not a setting. It is a deployment, and this chapter is how to make i
 
 ## The unit is the instance, not the release
 
-[Why not one server for everyone](./20-mcp.md#why-not-one-server-for-everyone) is the argument, and it is the single thing to internalise before writing a values file. A shared server costs per-person access control, a record that can say who did what, live consent that reaches the right person, `rta use`, and blast radius.
+[Why not one server for everyone](./67-containers-and-images.md#why-not-one-server-for-everyone) is the argument, and it is the single thing to internalise before writing a values file. A shared server costs per-person access control, a record that can say who did what, live consent that reaches the right person, `rta use`, and blast radius.
 
 So the chart's unit is the instance. One entry per person under `servers:`, each authenticating as that person, each with its own ServiceAccount, its own data volume and its own record. A platform team owns one release; adding somebody is one entry, layered over `serverDefaults`.
 
