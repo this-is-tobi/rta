@@ -200,13 +200,13 @@ func TestDoctorRunsAndReportsABrokenOutputDefault(t *testing.T) {
 	} {
 		t.Setenv("RTA_OUTPUT", tc.env)
 		out, errOut, err := runWith(t, testRegistry(t), tc.yaml, "doctor")
-		if err != nil || out == "" || json.Valid([]byte(out)) {
-			t.Fatalf("doctor did not draw its report in pretty: %v %q\n%s", err, errOut, out)
+		if !isDoctorFailure(err) || out == "" || json.Valid([]byte(out)) {
+			t.Fatalf("doctor did not draw its report in pretty and exit 1: %v %q\n%s", err, errOut, out)
 		}
 		// Read back as json, typed, which the broken default does not stand
 		// in the way of.
 		out, errOut, err = runWith(t, testRegistry(t), tc.yaml, "doctor", "-o", "json")
-		if err != nil {
+		if !isDoctorFailure(err) {
 			t.Fatalf("%v %q", err, errOut)
 		}
 		var report struct{ Rows [][]string }
@@ -243,7 +243,7 @@ func TestRTAOutputHoldsOverAConfigFileThatDoesNotParse(t *testing.T) {
 		t.Errorf("err = %#v, want %s naming RTA_OUTPUT", err, CodeOutputInvalid)
 	}
 	out, errOut, err = runWith(t, testRegistry(t), broken, "doctor", "-o", "json")
-	if err != nil {
+	if !isDoctorFailure(err) {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	var report struct{ Rows [][]string }

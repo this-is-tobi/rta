@@ -103,7 +103,7 @@ So an authorisation attaches to an artifact rather than to a name a replacement 
 
 ## Confinement
 
-Plugins run in a sandbox. On macOS that is `sandbox-exec`; `rta doctor` reports what it actually applied:
+Plugins run in a sandbox. On macOS that is `sandbox-exec`; `rta doctor --detail` reports what it actually applied (plain `rta doctor` keeps the row to one line, with every number below and a pointer to the exception):
 
 ```
 plugin confinement   ok   sandbox-exec: 2 paths denied read+write (rta's own state),

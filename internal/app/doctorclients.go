@@ -228,7 +228,7 @@ func claudeRegistrations(home, dir string) []claudeRegistration {
 
 // clientRows is what the doctor says about agents: who is attached now, and
 // how Claude Code is registered when it is.
-func clientRows(claudeInstalled bool, version string) [][3]string {
+func clientRows(claudeInstalled bool, version string, detail bool) [][3]string {
 	var rows [][3]string
 	connected, n, err := agentcap.Connected()
 	switch {
@@ -236,8 +236,15 @@ func clientRows(claudeInstalled bool, version string) [][3]string {
 		rows = append(rows, [3]string{"agents connected", "warn",
 			"could not check: " + err.Error()})
 	case n == 0:
-		rows = append(rows, [3]string{"agents connected", "info", "none — no client has an rta server open right now; " +
-			"a client that is registered but not running, or running in a directory it was not registered for, looks exactly like this"})
+		// Ok, and not a note: a client that is not running is the ordinary state
+		// of a machine, and nothing here is asked of the operator. What it is
+		// worth knowing is that a registered client that is not connected looks
+		// exactly like this, which is the first thing to rule out when no
+		// traffic shows up.
+		rows = append(rows, [3]string{"agents connected", "ok", said(detail,
+			"none — no client has an rta server open right now",
+			"; a client that is registered but not running, or running in a directory it was not "+
+				"registered for, looks exactly like this")})
 	default:
 		rows = append(rows, [3]string{"agents connected", "ok", connected + " (`rta agent overview`)"})
 		if older := olderBuilds(version); older != "" {

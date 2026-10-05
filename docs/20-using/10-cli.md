@@ -96,6 +96,8 @@ Exit codes make the loop safe to write, and they are the next thing worth knowin
 
 Code `3` is the one worth handling in scripts. It means the command was destructive and nobody confirmed — not that anything failed.
 
+`rta doctor` is a check, and exits like one: `1` when any row of its report is an `error`, and with `--strict` when any is a `warn` too. The report is printed in full before it exits, in the format asked for, so a CI step or a pre-commit hook can gate on `rta doctor --strict` and the log still says which rows failed.
+
 ```bash
 rta note rm 4 || case $? in
   3) echo "needs --yes" ;;

@@ -10,8 +10,8 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// grantRows is the detail of every "agent grants" row doctor writes, in
-// order: report keys its rows by check, and this check can write several.
+// grantRows is the detail of every "agent grants" row doctor writes: report
+// keys its rows by check, and this check can write several.
 func grantRows(t *testing.T) []string {
 	t.Helper()
 	tbl, ok := doctorReport(testRegistry(t)).(view.Table)
@@ -48,11 +48,18 @@ func TestDoctorNamesAPaddedRecordAsTheGateComparesIt(t *testing.T) {
 		t.Fatalf("agent grants rows = %q, want the listing and the unattended line", rows)
 	}
 	shown := "kv.get " + strconv.QuoteToASCII(padded)
-	if !strings.Contains(rows[0], "kv.get db-password, "+shown) {
-		t.Errorf("the listing reads %q, want both grants told apart, the padded one as %s", rows[0], shown)
+	// By what each says, not by position: the report is in the order of what
+	// needs reading, so which of the two comes first is the status's to decide.
+	var listing, unattended bool
+	for _, r := range rows {
+		listing = listing || strings.Contains(r, "kv.get db-password, "+shown)
+		unattended = unattended || strings.Contains(r, ": "+shown+" — ")
 	}
-	if !strings.Contains(rows[1], ": "+shown+" — ") {
-		t.Errorf("the unattended line reads %q, want the padded grant as %s", rows[1], shown)
+	if !listing {
+		t.Errorf("no row lists both grants told apart, the padded one as %s: %q", shown, rows)
+	}
+	if !unattended {
+		t.Errorf("no row asks about the unattended grant naming the padded one as %s: %q", shown, rows)
 	}
 	for _, r := range rows {
 		if strings.ContainsRune(r, 0xa0) {
