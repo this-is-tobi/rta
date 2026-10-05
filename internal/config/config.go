@@ -494,14 +494,6 @@ func Write(cfg Config) error {
 // render for how the text that is already there is kept.
 func write(cfg Config) error {
 	path := Path()
-	// Owner-only, the same as the data directory: this directory holds the
-	// names of every environment, the `secrets:` references that point at
-	// them, and remotes.yaml beside it — and plugin confinement already
-	// denies it to plugins for exactly that reason (internal/pluginhost's
-	// tier1). An existing directory keeps whatever mode it has.
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return view.Errorf("config.mkdir", "creating %s: %v", filepath.Dir(path), err)
-	}
 	// A missing file is a new one. Anything else that stops it being read is
 	// reported rather than written over: LoadFile has just failed the same way
 	// for every caller that reads before it writes.
@@ -516,6 +508,48 @@ func write(cfg Config) error {
 			return verr
 		}
 		return view.Errorf("config.encode", "encoding config: %v", err)
+	}
+	return persist(path, old, data)
+}
+
+// Replace puts text in place of the file's text, provided the file still holds
+// original — what `rta config edit` read before it handed the file to an
+// editor. The editor stays open for as long as a person looks at it, and a
+// `rta profile set` that landed in the meantime is not the editor's to undo:
+// the answer is a refusal, naming the way to start again from what is there.
+//
+// Under the same lock every other writer takes, and held for the compare and
+// the write alone, never across the editor: serialising every writer behind a
+// person reading their file is a worse regression than the race it closes.
+// edited is validated by the caller (Parse); nothing here judges it.
+func Replace(original, edited []byte) error {
+	release, err := lock()
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	path := Path()
+	current, err := atomicfile.ReadCapped(path, maxConfigBytes)
+	if err != nil && !os.IsNotExist(err) {
+		return view.Errorf("config.unreadable", "reading %s: %v", path, err)
+	}
+	if !bytes.Equal(current, original) {
+		return view.Errorf("config.conflict", "%s changed while the editor was open", path).
+			WithHint("nothing was written — run `rta config edit` again to start from the file as it is")
+	}
+	return persist(path, current, edited)
+}
+
+// persist writes data as the file at path, whose present text is old.
+func persist(path string, old, data []byte) error {
+	// Owner-only, the same as the data directory: this directory holds the
+	// names of every environment, the `secrets:` references that point at
+	// them, and remotes.yaml beside it — and plugin confinement already
+	// denies it to plugins for exactly that reason (internal/pluginhost's
+	// tier1). An existing directory keeps whatever mode it has.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return view.Errorf("config.mkdir", "creating %s: %v", filepath.Dir(path), err)
 	}
 	if bytes.Equal(data, old) {
 		return nil
