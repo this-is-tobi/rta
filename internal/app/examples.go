@@ -54,6 +54,9 @@ var examples = map[string][]string{
 		"rta grant roles",
 		"rta grant roles dev   # one role, every line of it",
 	},
+	"rta lock": {
+		"rta lock claude --note \"runaway loop\"   # the same as rta lock add",
+	},
 	"rta lock add": {
 		"rta lock add claude --note \"runaway loop, ping me\"",
 		"rta lock add claude --ttl 30m      # lifts itself",

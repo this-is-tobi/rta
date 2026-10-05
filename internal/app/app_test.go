@@ -1006,8 +1006,10 @@ func TestEveryGroupCommandRejectsUnknownSubcommands(t *testing.T) {
 		// The ai namespace is deliberately not a pure group: its bare form
 		// takes free words as the question (`rta ai what broke`), so an
 		// unrecognised first word is a prompt, never a typo to refuse. Its
-		// subcommands underneath still get the rule.
-		if len(path) > 0 && path[0] != "ai" {
+		// subcommands underneath still get the rule. So does a group with a
+		// default verb (`rta lock claude`): a word it does not know is the
+		// name that verb takes, and the typo of a verb is what it refuses.
+		if _, takesName := defaultVerbs["rta "+strings.Join(path, " ")]; len(path) > 0 && path[0] != "ai" && !takesName {
 			groups = append(groups, path)
 		}
 		for _, sub := range cmd.Commands() {
