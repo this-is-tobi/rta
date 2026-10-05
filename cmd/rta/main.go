@@ -6,13 +6,9 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"runtime/debug"
 	"strings"
-
-	"charm.land/fang/v2"
-	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/app"
 	"github.com/this-is-tobi/rta/internal/config"
@@ -174,21 +170,16 @@ func main() {
 	}
 	app.SetPluginConfig(pluginconf.Resolve(cfg, reg.Origin))
 
-	// Before the command tree, so every renderer — CLI and TUI alike — reads
-	// the same palette from its first line of output; fang's own help and
-	// error styling is separate and untouched. Not fatal for the same reason
-	// SetPluginConfig's problems are not: a bad hex costs its own field a
-	// color, never the run.
+	// Before the command tree, so every renderer — CLI, TUI and help alike —
+	// reads the same palette from its first line of output. Not fatal for the
+	// same reason SetPluginConfig's problems are not: a bad hex costs its own
+	// field a color, never the run.
 	app.SetThemeProblems(theme.Apply(cfg.Theme))
 
 	root := app.NewRoot(reg, buildVersion(), app.WithConfig(cfg, cfgErr))
 	interrupts.Attach(root, host.CloseAll)
 
-	err = fang.Execute(ctx, root,
-		fang.WithVersion(buildVersion()),
-		fang.WithCommit(buildCommit()),
-		fang.WithErrorHandler(errorHandler(root)),
-	)
+	err = app.Execute(ctx, root, buildVersion(), buildCommit())
 
 	// The command returned on its own: no grace applies any more. It waits
 	// instead when an exit without the command is already under way, which
@@ -199,24 +190,4 @@ func main() {
 	// invocation of rta — including the ones that only printed help.
 	host.CloseAll()
 	os.Exit(app.ExitCode(err))
-}
-
-// errorHandler lets rta format the errors it owns and fang style the rest.
-//
-// The split is app.RenderTopLevelError's: an error already printed by the
-// command that produced it is swallowed, a *view.Error is rendered in the
-// format the caller asked for, and anything else is fang's. A usage mistake —
-// a bad flag, a missing argument — is no longer in that rest: it is coded
-// app.CodeUsage where it is found, so `-o json` gets it as json like every
-// other refusal. What fang still styles is an error nothing coded.
-// It closes over the root because the render options are read back off its
-// parsed flags — which is where the config file's default lives too, so what
-// an error is formatted with is exactly what the command would have used.
-func errorHandler(root *cobra.Command) fang.ErrorHandler {
-	return func(w io.Writer, styles fang.Styles, err error) {
-		if app.RenderTopLevelError(w, root, err) {
-			return
-		}
-		fang.DefaultErrorHandler(w, styles, err)
-	}
 }
