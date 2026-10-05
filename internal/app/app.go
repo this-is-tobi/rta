@@ -967,6 +967,7 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 	root.SetHelpFunc(helpFunc(opts))
 	describeGroups(root)
 	documentArguments(root)
+	attachExamples(root)
 	// Last, over the whole tree: see CodeUsage. A capability command sets a
 	// flag-error function of its own (positionalFlagError), which codes its
 	// answer itself; every other command inherits this one.
