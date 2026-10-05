@@ -147,16 +147,16 @@ A number of the right shape outside what every capability reading its key takes 
 
 ## Editor completion for the file
 
-The config file has a JSON Schema, and rta prints it:
+The config file has a JSON Schema, and rta keeps it beside the file for you: the first write puts `config.schema.json` next to `config.yaml` and a modeline at the top of the file that points at it, and `rta config edit` refreshes it with the keys of the plugins you have installed. For a config file somewhere else, rta prints the schema:
 
 ```bash
-rta config schema > schema.json   # next to the config file — `rta doctor` prints where that is
+rta config schema > config.schema.json   # next to the config file — `rta config path` prints where that is
 ```
 
-Then put one modeline at the top of the config file:
+Then put one modeline at the top of that file:
 
 ```yaml
-# yaml-language-server: $schema=schema.json
+# yaml-language-server: $schema=config.schema.json
 ```
 
 VS Code's YAML extension (`redhat.vscode-yaml`) and every other editor speaking yaml-language-server now complete each key, flag unknown ones, and show the explanation on hover — `tunnelTLS` tells you it is about the destination and not the hop without leaving the file.

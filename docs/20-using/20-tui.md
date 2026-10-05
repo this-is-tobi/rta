@@ -68,7 +68,7 @@ The selected tile is the one with the coloured border. On a terminal that shows 
 
 What a key did is said in the footer, beside the keys: a green `✓` for something done and a red `✗` for something that did not happen, such as a save the file refused or an approval that was turned down. The mark carries the difference where colour does not show.
 
-Stating the whole dashboard in the config file, and the colours it draws in, are on [Dashboard and theme](./25-dashboard-and-theme.md).
+The config file the dashboard and the colours are stated in is [Your config file](./22-your-config-file.md), and stating the whole dashboard there, with the colours it draws in, is on [Dashboard and theme](./25-dashboard-and-theme.md).
 
 ## Answering agents
 
@@ -206,10 +206,11 @@ Markdown bodies — notes, `audit` findings, anything returning prose — are re
 
 ## Related
 
+- [Your config file](./22-your-config-file.md) — where it lives and the commands that change it
 - [Dashboard and theme](./25-dashboard-and-theme.md) — stating the dashboard in the config file, and the colours
 - [The plugin inventory](../40-plugins/15-the-plugin-inventory.md) — what `p` shows, and the plugins rta found and refused to run
 - [The CLI](./10-cli.md) — the same capabilities, scriptable
 
 ## Next
 
-[Seeing the shape of things](./30-trees.md) — mapping a directory, a bucket, a Vault mount or an etcd keyspace in one call.
+[Your config file](./22-your-config-file.md) — what the file is, where it lives, and the commands that change it.
