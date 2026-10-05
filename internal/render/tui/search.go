@@ -3,18 +3,17 @@ package tui
 import (
 	"strings"
 
+	"github.com/this-is-tobi/rta/internal/match"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // The one question the dashboard's search bar and the catalogue's filter box
 // both ask: which of these did the person mean by those words.
 //
-// They used to carry a copy of the answer each and are held to one by asking
-// rankItems, so that the rule is a function with a single body. That body is
-// the only part of the TUI that knows how a word finds a capability; the
-// callers hand it items and take indexes back, which is the shape of the
-// shared matcher `rta explain` and the unknown-command hint ask as well. When
-// the TUI uses that one, rankItems is what changes and nothing around it does.
+// They used to carry a copy of the answer each, and now ask rankItems, which
+// hands the items to the shared matcher (internal/match) that `rta explain`
+// and the unknown-command hint ask as well, so a word finds the same thing
+// wherever it is typed and the rule is a function with a single body.
 
 // searchItem is what a query can find a capability by: its ID, the sentence
 // that says what it is for, and the words that name it without being in
@@ -27,59 +26,62 @@ type searchItem struct {
 }
 
 func itemOf(c plugin.Capability) searchItem {
-	return searchItem{ID: c.ID, Summary: c.Summary}
+	return searchItem{ID: c.ID, Summary: c.Summary, Keywords: c.Keywords}
 }
 
 // rankItems is the indexes of the items query finds, best first; equal ones
 // keep the order they were given in, which is the registry's. A blank query
 // finds nothing.
+//
+// What finds an item is internal/match's rule, the one `rta explain` and an
+// unknown command's hint ask: words, not letters, with an ID's own segments
+// above prose and a keyword above a word of the summary. A query that finds
+// nothing as a whole is answered with what it most likely misspells, once it
+// is long enough for that not to be chance (`cpuu` is sys.cpu, `pg` is no typo
+// of anything), as the hint does.
 func rankItems(query string, items []searchItem) []int {
-	q := strings.ToLower(strings.TrimSpace(query))
-	if q == "" {
-		return nil
-	}
-	var lead, rest []int
+	found := make([]match.Item, len(items))
 	for i, it := range items {
-		switch tier, ok := matchCapability(it.ID, it.Summary, q); {
-		case !ok:
-		case tier == matchPrefix:
-			lead = append(lead, i)
-		default:
-			rest = append(rest, i)
+		found[i] = match.Item(it)
+	}
+	results := match.Find(query, found)
+	if len(results) == 0 && len([]rune(strings.TrimSpace(query))) >= minTypoQuery {
+		for _, r := range match.Nearest(query, found) {
+			if r.Score >= match.Likely {
+				results = append(results, r)
+			}
 		}
 	}
-	return append(lead, rest...)
+	out := make([]int, len(results))
+	for n, r := range results {
+		out[n] = r.Index
+	}
+	return out
 }
 
-// How a query found a capability. The dashboard's search and the catalogue's
-// filter answer one question, so they share the rule: they ranked differently
-// when the catalogue used the list's fuzzy matcher, which found "gen" in
-// "agent.deny" and in "git.log" (g, then an e and an n from the summary) and
-// put both above gen.password, with sixty-two of a hundred and twenty-eight
-// rows matching a three-letter query.
-const (
-	matchPrefix = iota // the ID starts with the query
-	matchWithin        // the query is somewhere in the ID or the summary
-)
+// minTypoQuery is the shortest query that is offered what it might misspell.
+const minTypoQuery = 4
 
-// matchCapability says whether q, already lower-cased and trimmed, finds a
-// capability, and how well. Every word of q has to be somewhere in the ID or
-// the summary, so "hosts list" finds net.hosts.list as the fuzzy matcher did
-// without finding what only a scattering of its letters spelled.
-func matchCapability(id, summary, q string) (tier int, ok bool) {
-	words := strings.Fields(q)
-	if len(words) == 0 {
-		return 0, false
+// filterTarget is what the catalogue's list filters a capability by: the ID, a
+// space and the summary, and after a unit separator the keywords that name it
+// without being in either, which the list hands back to catalogueFilter whole.
+func filterTarget(c plugin.Capability) string {
+	target := c.ID + " " + c.Summary
+	if len(c.Keywords) > 0 {
+		target += keywordSeparator + strings.Join(c.Keywords, " ")
 	}
-	id = strings.ToLower(id)
-	haystack := id + " " + strings.ToLower(summary)
-	for _, w := range words {
-		if !strings.Contains(haystack, w) {
-			return 0, false
-		}
-	}
-	if strings.HasPrefix(id, words[0]) {
-		return matchPrefix, true
-	}
-	return matchWithin, true
+	return target
+}
+
+// keywordSeparator cannot be in a summary or a keyword, which are one line of
+// words.
+const keywordSeparator = "\x1f"
+
+// itemOfTarget is the search item filterTarget wrote.
+func itemOfTarget(target string) searchItem {
+	var it searchItem
+	text, keywords, _ := strings.Cut(target, keywordSeparator)
+	it.ID, it.Summary, _ = strings.Cut(text, " ")
+	it.Keywords = strings.Fields(keywords)
+	return it
 }
