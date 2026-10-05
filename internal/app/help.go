@@ -358,7 +358,8 @@ var readOnlyCommands = map[string]bool{
 	"rta explain": true, "rta doctor": true, "rta config schema": true, "rta profile list": true,
 	"rta profile show": true, "rta dashboard list": true, "rta plugin list": true,
 	"rta plugin search": true, "rta plugin outdated": true, "rta plugin doc": true,
-	"rta plugin manifest": true, "rta policy show": true, "rta mcp serve": true,
+	"rta plugin manifest": true, "rta plugin index list": true, "rta policy show": true,
+	"rta mcp serve": true,
 }
 
 // listsFlag says whether cmd's help lists f.
