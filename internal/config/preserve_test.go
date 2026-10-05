@@ -396,6 +396,34 @@ func TestANewBlockIsSetApartFromTheNoteOfTheBlockItGoesAheadOf(t *testing.T) {
 	}
 }
 
+// A byte-order mark in front of the file is not part of its first key. The
+// decoder reads it as one, so without the mark being dropped `output: json`
+// behind one is a key nothing reads, and a write that looked for `output` found
+// no such block and added a second.
+//
+// Fails without trimBOM: the file is written with `output` twice.
+func TestAFileThatStartsWithAByteOrderMarkIsReadAndWrittenAsWithout(t *testing.T) {
+	p := seed(t, "\ufeffoutput: pretty   # kept\ndashboard:\n  columns: 2\n")
+	cfg, err := LoadFile()
+	if err != nil || cfg.Output != "pretty" {
+		t.Fatalf("the first key behind the mark was not read: %q, %v", cfg.Output, err)
+	}
+	if found := CheckText([]byte("\ufeffoutput: json\n")); len(found) != 0 {
+		t.Errorf("a key behind a mark is reported as ignored: %v", found)
+	}
+
+	text := mutate(t, func(c *Config) { c.Output = "json" })
+	if strings.Count(text, "output:") != 1 || !strings.Contains(text, "output: json") {
+		t.Errorf("output is not stated once:\n%s", text)
+	}
+	if _, err := os.ReadFile(p); err != nil {
+		t.Fatal(err)
+	}
+	if again, err := LoadFile(); err != nil || again.Output != "json" || again.Dashboard.Columns != 2 {
+		t.Errorf("what was written does not read back: %+v, %v", again, err)
+	}
+}
+
 // A file kept with CRLF line endings comes back with them on every line, the
 // ones rta wrote as much as the ones it left.
 //

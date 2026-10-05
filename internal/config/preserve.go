@@ -95,6 +95,7 @@ func render(old []byte, cfg Config) ([]byte, error) {
 }
 
 func spliceText(old []byte, cfg Config) ([]byte, error) {
+	old = trimBOM(old)
 	// The text that is there is somebody else's as much as the loader's: a write
 	// that reached it without the loader having read it (Write, from a test or a
 	// caller stating the whole file) decodes it below, and the decode is where an
