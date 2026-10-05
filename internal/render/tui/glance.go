@@ -11,6 +11,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -27,6 +28,7 @@ import (
 // decision about the dashboard and not about the data: the capability returned
 // one table, the page it opens on enter draws that same table, and the copy
 // key reads what was returned. Only what the tile paints is changed.
+
 const (
 	// glanceGap is the cells between two columns of a glanced table.
 	glanceGap = 2
@@ -45,6 +47,10 @@ func tileBody(v view.View, inner int) string {
 	if lines, ok := glanceTable(v, inner); ok {
 		return strings.Join(lines, "\n")
 	}
+	// Cleaned before it is measured, because the renderer cleans what it draws
+	// and a path whose escape sequences were zero cells wide to the measure
+	// is longer than that once they are text.
+	v = view.MapStrings(v, textclean.Terminal)
 	var buf bytes.Buffer
 	// Fill: a tile is drawn at the grid's width whether its content wants it
 	// or not, so the slack belongs to the content rather than to the space
@@ -63,10 +69,12 @@ func tileRenderOptions(inner int) cli.Options {
 // borderless one line per row, and says false for every other view and for a
 // table that has the room, which the renderer draws as it always did.
 //
-// Redacted first, because the lines are built from the cells: a column the
-// capability marked secret is masked in the table the renderer would have
-// drawn, and a reshaping that read the raw cells would be the one place the
-// mask did not reach.
+// Redacted and cleaned first, because the lines are built from the cells and
+// not by the renderer: a column the capability marked secret is masked in the
+// table the renderer would have drawn, and a cell holding a terminal escape
+// sequence — a note's title is what an agent with a grant writes — is made
+// harmless there. A reshaping that read the raw cells would be the one place
+// neither reached the screen.
 //
 // Which columns survive when there is not room for all of them is decided from
 // the table alone, by rules a reader can predict. The first column is the row's
@@ -81,6 +89,10 @@ func tileRenderOptions(inner int) cli.Options {
 func glanceTable(v view.View, inner int) ([]string, bool) {
 	t, ok := view.Redact(v).(view.Table)
 	if !ok || len(t.Rows) == 0 || len(t.Columns) < 2 || inner < glanceFlexMin*2 {
+		return nil, false
+	}
+	t, ok = view.MapStrings(t, textclean.Terminal).(view.Table)
+	if !ok {
 		return nil, false
 	}
 	rows := evenRows(t)
