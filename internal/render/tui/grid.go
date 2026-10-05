@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -554,6 +555,27 @@ func (m Model) searchResults() []plugin.Capability {
 	return out
 }
 
+// searchPluginHint answers a query that is the name of a first-party plugin
+// that is not installed: a first-run person typing pg or postgres into a
+// dashboard that has neither is told what to run, not shown "no matches" or,
+// worse, only the one unrelated capability whose name contains those letters.
+// It is the sentence the command line gives for the same word (the shared
+// plugindist.FirstPartyHint), so the two surfaces cannot disagree, and it
+// reads the registry for what is running, so an installed plugin never gets
+// told to install itself.
+func (m Model) searchPluginHint() string {
+	word := strings.TrimSpace(m.query)
+	if word == "" {
+		return ""
+	}
+	caps := m.reg.Capabilities()
+	return plugindist.FirstPartyHint(word, func(namespace string) bool {
+		return slices.ContainsFunc(caps, func(c plugin.Capability) bool {
+			return plugin.Namespace(c.ID) == namespace
+		})
+	})
+}
+
 // searchWindow returns the visible slice of matches and where it starts,
 // keeping the selection inside it. The offset is derived rather than stored,
 // so it cannot drift out of step with a selection the keys just moved.
@@ -646,7 +668,10 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 		}
 		lines = append(lines, line)
 	}
-	if m.query != "" && len(results) == 0 {
+	switch hint := m.searchPluginHint(); {
+	case hint != "" && len(window) < searchMatches:
+		lines = append(lines, theme.Subtle.Render(ansi.Truncate("  "+hint, max(inner, 1), "…")))
+	case m.query != "" && len(results) == 0:
 		lines = append(lines, theme.Subtle.Render("  no matches"))
 	}
 
