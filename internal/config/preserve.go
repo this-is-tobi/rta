@@ -81,8 +81,20 @@ var managedKeys = func() []string {
 }()
 
 // render is the file cfg should be, given the one there is: old, which may be
-// empty. The result is old with the keys that changed written again.
+// empty. The result is old with the keys that changed written again, in the line
+// endings old uses: a file kept with CRLF by an editor or a checkout setting
+// would otherwise come back with the lines rta wrote ended differently from the
+// ones it left, which no diff of it reads well.
 func render(old []byte, cfg Config) ([]byte, error) {
+	out, err := spliceText(old, cfg)
+	if err != nil || bytes.Equal(out, old) || bytes.Count(old, []byte("\r\n"))*2 <= bytes.Count(old, []byte("\n")) {
+		return out, err
+	}
+	out = bytes.ReplaceAll(out, []byte("\r\n"), []byte("\n"))
+	return bytes.ReplaceAll(out, []byte("\n"), []byte("\r\n")), nil
+}
+
+func spliceText(old []byte, cfg Config) ([]byte, error) {
 	// The text that is there is somebody else's as much as the loader's: a write
 	// that reached it without the loader having read it (Write, from a test or a
 	// caller stating the whole file) decodes it below, and the decode is where an
