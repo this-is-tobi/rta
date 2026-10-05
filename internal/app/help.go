@@ -326,6 +326,11 @@ const (
 	// it at. On the flag, not on the command, because `grant allow` and
 	// `dashboard add` have a --profile of their own, which is what they are for.
 	annotUnlisted = "rta.help.unlisted"
+	// annotCredential marks a flag that carries a credential. An error that
+	// names the flags a command takes (valueFlagsHint) leaves these out: a
+	// sentence offered to somebody who typed an extra word is no place to
+	// suggest putting a secret on the command line, where it is in argv.
+	annotCredential = "rta.help.credential"
 )
 
 // capabilityAnnotations is what attach records about a capability for

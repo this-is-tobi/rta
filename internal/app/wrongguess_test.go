@@ -176,6 +176,18 @@ func TestAMistypedFlagIsAnsweredWithTheNearestOne(t *testing.T) {
 	}
 }
 
+// Only a flag the help lists is offered: `--dry-run` is accepted by a command
+// that only reads and listed by none, so `sys cpu --dryrun` is not sent to a
+// help screen that does not mention it.
+func TestAFlagTheHelpDoesNotListIsNotOffered(t *testing.T) {
+	if ve := hintFor(t, "sys", "cpu", "--dryrun"); strings.Contains(ve.Hint, "--dry-run") {
+		t.Errorf("a command that only reads was offered %q", ve.Hint)
+	}
+	if ve := hintFor(t, "note", "rm", "1", "--dryrun"); !strings.Contains(ve.Hint, "--dry-run") {
+		t.Errorf("a command that writes was told %q, which does not offer --dry-run", ve.Hint)
+	}
+}
+
 // `rta fs hash f 5891…` was told there was an unexpected argument and shown a
 // usage line with no flag in it. The person typed the value they meant to check
 // against; the flag that takes it is the answer.
@@ -194,6 +206,13 @@ func TestAnUnexpectedArgumentNamesTheFlagsThatTakeAValue(t *testing.T) {
 	// A command whose flags are all switches has nothing to name.
 	if ve := hintFor(t, "doctor", "x"); strings.Contains(ve.Hint, "behind a flag") {
 		t.Errorf("a command with no value flag was told %q", ve.Hint)
+	}
+	// A credential is not a value to suggest on the command line: --passphrase
+	// is accepted, listed in --help, and kept out of a sentence that is read as
+	// advice by somebody who typed one word too many.
+	ve := hintFor(t, "kv", "get", "a", "b", "c")
+	if !strings.Contains(ve.Hint, "--out") || strings.Contains(ve.Hint, "--passphrase") {
+		t.Errorf("`rta kv get a b c` was told %q, which has to name --out and leave the credential flag out", ve.Hint)
 	}
 }
 
