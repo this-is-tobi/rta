@@ -162,3 +162,25 @@ func BenchmarkFindOverACatalogue(b *testing.B) {
 		Find("disk usage", items)
 	}
 }
+
+// The two floors are what the hint for an unknown command trusts. A whole name
+// clears Whole and a word inside a summary does not; a typo clears Likely and a
+// fragment inside another word does not.
+func TestTheFloorsSeparateANameFromAMention(t *testing.T) {
+	if r := Find("ps", catalogue); len(r) == 0 || r[0].Score < Whole {
+		t.Errorf("a leaf scored %v, below Whole (%d)", r, Whole)
+	}
+	for _, r := range Find("hosts", []Item{{ID: "net.port", Summary: "TCP connect-scan ports on a host"}}) {
+		if r.Score >= Whole {
+			t.Errorf("a word in a summary scored %d, at or above Whole (%d)", r.Score, Whole)
+		}
+	}
+	if r := Nearest("cpuu", catalogue); len(r) == 0 || r[0].Score < Likely {
+		t.Errorf("a typo of a leaf scored %v, below Likely (%d)", r, Likely)
+	}
+	for _, r := range Nearest("ports", []Item{{ID: "kv.env", Summary: "Print stored values as shell exports"}}) {
+		if r.Score >= Likely {
+			t.Errorf("a fragment inside a word scored %d, at or above Likely (%d)", r.Score, Likely)
+		}
+	}
+}
