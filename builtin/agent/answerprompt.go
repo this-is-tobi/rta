@@ -3,6 +3,7 @@ package agent
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -100,8 +101,18 @@ var atTerminal = func(req plugin.Request) bool {
 // file. A var so a test can answer without a terminal.
 var putQuestion = func(card, prompt string) (string, error) {
 	defer shutdown.Prompting()()
-	fmt.Fprint(os.Stderr, card, prompt)
-	line, err := bufio.NewReader(stdio.Real()).ReadString('\n')
+	return askLine(stdio.Real(), os.Stderr, card, prompt)
+}
+
+// askLine writes the card and the prompt to out and reads one line from in.
+func askLine(in io.Reader, out io.Writer, card, prompt string) (string, error) {
+	fmt.Fprint(out, card, prompt)
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil {
+		// A closed input ends no line of its own, and what is written next
+		// would run on from the question.
+		fmt.Fprintln(out)
+	}
 	return strings.TrimSpace(line), err
 }
 

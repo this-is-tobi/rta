@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -356,5 +357,20 @@ func TestNoWarningWhenThereIsNoStoreToUnlock(t *testing.T) {
 	t.Setenv("RTA_KV_PASSPHRASE", "")
 	if w := kvWarning(park(t, "kv.get", "db-password")); w != "" {
 		t.Errorf("no store, and a warning about unlocking it: %q", w)
+	}
+}
+
+func TestAClosedInputEndsTheQuestionsLine(t *testing.T) {
+	var out bytes.Buffer
+	answer, err := askLine(strings.NewReader(""), &out, "card\n", "Allow once? [y/N] ")
+	if err == nil || answer != "" {
+		t.Fatalf("a closed input answered %q, %v", answer, err)
+	}
+	if got, want := out.String(), "card\nAllow once? [y/N] \n"; got != want {
+		t.Errorf("wrote %q, want %q: what follows would run on from the question", got, want)
+	}
+	out.Reset()
+	if _, err := askLine(strings.NewReader("y\n"), &out, "", "Q? "); err != nil || out.String() != "Q? " {
+		t.Errorf("an answered question wrote %q, %v: no line of its own is added", out.String(), err)
 	}
 }
