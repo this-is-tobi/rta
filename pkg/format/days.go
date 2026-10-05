@@ -44,6 +44,9 @@ func ParseWindow(raw string) (time.Duration, error) {
 		if err != nil || more < 0 {
 			return 0, errors.New("not a window: " + raw)
 		}
+		if window > time.Duration(1<<63-1)-more {
+			return 0, errors.New("a window that long does not fit: " + raw)
+		}
 		window += more
 	}
 	return window, nil
