@@ -666,3 +666,32 @@ func TestConfigSourceNamesTheVariableThatChoseTheDirectory(t *testing.T) {
 		}
 	}
 }
+
+// A block of the file is named whole by `plugins` and `theme`: one is read as
+// the YAML it holds, taken out whole, and refused as one value. What it must
+// not do is be guessed at as a neighbouring key, or answer with a hint that
+// ends in an empty command.
+//
+// Fails without the `plugins` block key: "plugins" is offered the first plugin
+// key as what was meant, and the unset-block hint reads "rta config set theme ".
+func TestConfigNamesAWholeBlockAsABlock(t *testing.T) {
+	reg := configRegistry(t)
+	text := "plugins:\n  net:\n    timeout: 20\n"
+
+	_, errOut, _, err := configRun(t, reg, text, "config", "set", "plugins", "x")
+	if err == nil || codeOf(t, errOut) != "core.config.set.block" || strings.Contains(errOut, "did you mean") {
+		t.Errorf("setting a block whole: %v\n%s", err, errOut)
+	}
+	out, _, _, err := configRun(t, reg, text, "config", "get", "plugins")
+	if err != nil || !strings.Contains(out, "net:") || !strings.Contains(out, "timeout: 20") {
+		t.Errorf("the block was not printed: %q, %v", out, err)
+	}
+	_, errOut, _, err = configRun(t, reg, "", "config", "get", "theme")
+	if err == nil || strings.Contains(errOut, "set theme `") || !strings.Contains(errOut, "block of keys") {
+		t.Errorf("an unset block does not say it is one: %v\n%s", err, errOut)
+	}
+	_, _, file, err := configRun(t, reg, text+"output: json\n", "config", "unset", "plugins")
+	if err != nil || strings.Contains(file, "plugins") || !strings.Contains(file, "output: json") {
+		t.Errorf("unset plugins did not take the block and only it: %v\n%s", err, file)
+	}
+}
