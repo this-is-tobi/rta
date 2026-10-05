@@ -335,13 +335,25 @@ func credential(req plugin.Request, name string) (string, *view.Error) {
 	case errors.As(err, &tooLarge):
 		return "", view.Errorf("http.auth.file", "%s is more than a %s holds", file, name)
 	case err != nil:
-		return "", view.Errorf("http.auth.file", "reading the %s from %s: %v", name, file, err)
+		return "", pipeSpelling(view.Errorf("http.auth.file", "reading the %s from %s: %v", name, file, err), file)
 	}
 	if got := strings.TrimRight(string(data), "\r\n"); got != "" {
 		return got, nil
 	}
 	return "", view.Errorf("http.auth.file", "%s holds no %s", file, name).
 		WithHint("an empty file, or nothing was piped to it")
+}
+
+// pipeSpelling points a `-` that named a file at the spelling a Path input
+// takes for a pipe. curl and most of what a person has typed before read
+// standard input from `-`, and "open -: no such file or directory" gives no way
+// from there to the answer; accepting it here as well would leave this client
+// with two spellings where the rest of the guide has one.
+func pipeSpelling(e *view.Error, file string) *view.Error {
+	if file == "-" {
+		return e.WithHint("a pipe is /dev/stdin, as it is for every path rta reads")
+	}
+	return e
 }
 
 // maxRequestBody is more than any JSON payload somebody keeps in a file and
@@ -368,7 +380,7 @@ func requestBody(req plugin.Request) (string, *view.Error) {
 		return "", view.Errorf("http.data.file", "%s is more than %d MiB, which is the most a request body takes",
 			file, maxRequestBody>>20)
 	case err != nil:
-		return "", view.Errorf("http.data.file", "reading the body from %s: %v", file, err)
+		return "", pipeSpelling(view.Errorf("http.data.file", "reading the body from %s: %v", file, err), file)
 	}
 	return string(got), nil
 }
