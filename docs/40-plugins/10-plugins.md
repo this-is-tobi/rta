@@ -120,7 +120,7 @@ So an authorisation attaches to an artifact rather than to a name a replacement 
 
 ```
 plugin confinement   ok   sandbox-exec: 2 paths denied read+write (rta's own state),
-                          10 denied read (credential locations), 15 directories pinned
+                          10 denied read (credential locations), 16 directories pinned
                           in place so a rename cannot move either out of its rule;
                           everything else is readable, and so is an installed plugin's
                           own directory under the store — reads only, the one place
