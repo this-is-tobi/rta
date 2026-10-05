@@ -302,9 +302,13 @@ func checkDuration(c Capability, f Field, v any, s Surface) (verr *view.Error, h
 				WithHint("a number does not say its unit — " + durationHint),
 			"write it there with a unit, as `" + exampleDuration(f) + "`"
 	}
+	how = "write it there with a unit, as `" + exampleDuration(f) + "`"
+	if _, isText := v.(string); isText {
+		return view.Errorf(code, "%s takes %s for %s; the value given is not one", capability, want, input).
+			WithHint(durationHint), how
+	}
 	return view.Errorf(code, "%s takes %s for %s, not %s", capability, want, input, statedShape(v)).
-			WithHint(durationHint),
-		"write it there with a unit, as `" + exampleDuration(f) + "`"
+		WithHint(durationHint), how
 }
 
 // exampleDuration is a duration for a hint to show, one the field takes: its

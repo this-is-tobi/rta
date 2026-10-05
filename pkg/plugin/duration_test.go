@@ -139,10 +139,12 @@ func TestTheHostRefusesAValueThatIsNotADurationOrIsOutOfRange(t *testing.T) {
 	for v, want := range map[any]string{
 		// What a flag hands over for the number 30: every flag arrives as text,
 		// and "not text" would name the one thing it is.
-		"30":    "core.input.range: `rta demo item wait` takes a duration from 1s to 1h for --timeout, not a bare number",
-		30:      "core.input.range: `rta demo item wait` takes a duration from 1s to 1h for --timeout, not a bare number",
-		"soon":  "core.input.range:",
-		true:    "core.input.range:",
+		"30": "core.input.range: `rta demo item wait` takes a duration from 1s to 1h for --timeout, not a bare number",
+		30:   "core.input.range: `rta demo item wait` takes a duration from 1s to 1h for --timeout, not a bare number",
+		// Text that is no duration is the one shape that cannot be called "text":
+		// a duration is text. It is never echoed back, and says so as it is.
+		"soon":  "core.input.range: `rta demo item wait` takes a duration from 1s to 1h for --timeout; the value given is not one",
+		true:    "core.input.range: `rta demo item wait` takes a duration from 1s to 1h for --timeout, not a boolean",
 		"500ms": "core.input.range: `rta demo item wait` takes a duration from 1s to 1h for --timeout, not 500ms",
 		"2h":    "core.input.range: `rta demo item wait` takes a duration from 1s to 1h for --timeout, not 2h",
 	} {
