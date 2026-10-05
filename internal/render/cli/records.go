@@ -220,7 +220,7 @@ func prettyRecords(w io.Writer, t view.Table, headers []string, rows [][]string,
 		// marker survives --no-color, where the accent is nothing at all.
 		marker, style := "  ", st.header
 		if rs.highlight > 0 && n == rs.highlight-1 {
-			marker = "▸ "
+			marker = st.glyphs.marker
 			if st.color {
 				style = style.Background(theme.Faint)
 			}

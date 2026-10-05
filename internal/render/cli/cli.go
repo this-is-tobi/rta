@@ -102,6 +102,12 @@ type Options struct {
 	// False unless a host says otherwise, so a host that forgets draws the
 	// headings on a screen rather than prose into somebody's file.
 	Screen bool
+	// ASCII draws the structure — borders, rules, bars, tree branches, the
+	// separators between parts — with ASCII characters only. It is a host's
+	// decision, made once where the options are built from what the terminal
+	// can display (ASCIIOnly), and never a per-view one. The text a view carries
+	// is not rewritten.
+	ASCII bool
 	// Notes is where the renderer reports things that must not pollute the
 	// output stream itself. nil discards them, which is the right default
 	// for a host that has nowhere sensible to put them (a TUI pane).
@@ -381,6 +387,7 @@ func renderPretty(w io.Writer, v view.View, opts Options) error {
 	st.width = opts.Width
 	st.fill = opts.Fill
 	st.screen = opts.Screen
+	st.glyphs = glyphsFor(opts.ASCII)
 	switch t := view.Redact(v).(type) {
 	case view.Text:
 		body := strings.TrimRight(t.Body, "\n")
@@ -442,7 +449,7 @@ func prettySections(w io.Writer, s view.Sections, st styles, opts Options) error
 		rule := ""
 		if st.width > 0 {
 			if pad := st.width - lipgloss.Width(title) - 1; pad > 0 {
-				rule = " " + strings.Repeat("─", pad)
+				rule = " " + strings.Repeat(st.glyphs.rule, pad)
 			}
 		}
 		if _, err := fmt.Fprintln(w, st.header.Render(title)+st.faint.Render(rule)); err != nil {
@@ -493,7 +500,7 @@ func prettyWarnings(w io.Writer, warnings []view.Error, st styles) error {
 	for _, e := range warnings {
 		line := st.warn.Render("!") + " " + st.muted.Render(e.Code) + "  " + e.Message
 		if e.Hint != "" {
-			line += st.muted.Render(" — " + e.Hint)
+			line += st.muted.Render(st.glyphs.dash + e.Hint)
 		}
 		if _, err := fmt.Fprintln(w, wrap(line, st.width, "  ")); err != nil {
 			return err
@@ -729,7 +736,7 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	// width change on a rendered instance is unreliable.
 	build := func(width int) string {
 		tbl := table.New().
-			Border(lipgloss.RoundedBorder()).
+			Border(st.glyphs.border).
 			BorderStyle(st.border).
 			Headers(shieldedHeaders...).
 			Rows(display...).
@@ -782,7 +789,7 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 		// Made to measure: the widths add up to the terminal's, and there is
 		// no second attempt at a few cells less to look for.
 		rendered = build(st.width)
-		if !drawnWhole(rendered, st.width) {
+		if !drawnWhole(rendered, st.width, st.glyphs.border) {
 			return asRecords()
 		}
 		if _, err := fmt.Fprintln(w, restore(rendered)); err != nil {
@@ -804,10 +811,10 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	// passed that, since a cut table is exactly as wide as it was asked to be.
 	// Asking for less until the render is whole finds the width where lipgloss
 	// shrinks, a few cells short of the terminal at worst.
-	for w := st.width; st.width > 0 && w >= 20 && !drawnWhole(rendered, st.width); w -= 2 {
+	for w := st.width; st.width > 0 && w >= 20 && !drawnWhole(rendered, st.width, st.glyphs.border); w -= 2 {
 		rendered = build(w)
 	}
-	if st.width > 0 && !drawnWhole(rendered, st.width) {
+	if st.width > 0 && !drawnWhole(rendered, st.width, st.glyphs.border) {
 		return asRecords()
 	}
 	if _, err := fmt.Fprintln(w, restore(rendered)); err != nil {
@@ -832,11 +839,10 @@ func drawEmpty(w io.Writer, say string, st styles) error {
 // ends in whatever cell or rule it was cut through — and the top rule, which
 // ends in a corner only when it is whole, gives even a cut that lands on a
 // column's border away.
-func drawnWhole(rendered string, width int) bool {
+func drawnWhole(rendered string, width int, b lipgloss.Border) bool {
 	if lipgloss.Width(rendered) > width {
 		return false
 	}
-	b := lipgloss.RoundedBorder()
 	edge := b.TopRight + b.Right + b.MiddleRight + b.BottomRight
 	for _, line := range strings.Split(ansi.Strip(rendered), "\n") {
 		r, _ := utf8.DecodeLastRuneInString(line)
@@ -864,7 +870,7 @@ func tableFooter(w io.Writer, t view.Table, st styles) error {
 		footer = append(footer, more)
 	}
 	if len(footer) > 0 {
-		if _, err := fmt.Fprintln(w, st.muted.Render(strings.Join(footer, " · "))); err != nil {
+		if _, err := fmt.Fprintln(w, st.muted.Render(strings.Join(footer, st.glyphs.join))); err != nil {
 			return err
 		}
 	}
@@ -1032,9 +1038,9 @@ func prettyTree(w io.Writer, t view.Tree, st styles) error {
 	var walk func(nodes []view.Node, prefix string) error
 	walk = func(nodes []view.Node, prefix string) error {
 		for i, n := range nodes {
-			connector, childPrefix := "├── ", prefix+"│   "
+			connector, childPrefix := st.glyphs.branch, prefix+st.glyphs.trunk
 			if i == len(nodes)-1 {
-				connector, childPrefix = "└── ", prefix+"    "
+				connector, childPrefix = st.glyphs.last, prefix+st.glyphs.gap
 			}
 			line := prefix + st.muted.Render(connector) + n.Label
 			if n.Detail != "" {
@@ -1108,7 +1114,7 @@ func prettyLines(w io.Writer, c view.Chart, st styles) error {
 		_, err := fmt.Fprintln(w, st.muted.Render("(no data)"))
 		return err
 	}
-	caption := strings.Join(names, " · ")
+	caption := strings.Join(names, st.glyphs.join)
 	if c.Unit != "" {
 		caption += " (" + c.Unit + ")"
 	}
@@ -1117,6 +1123,7 @@ func prettyLines(w io.Writer, c view.Chart, st styles) error {
 		// ~9 cells of asciigraph axis labels on the left.
 		asciigraph.Width(plotWidth(st, chartWidth, 9)),
 		asciigraph.Caption(caption),
+		asciigraph.SeriesChars(slices.Repeat([]asciigraph.CharSet{st.glyphs.plot}, len(data))...),
 	}
 	// A declared scale is a promise the chart is comparable to the next one
 	// drawn of the same metric. The line path used to ignore it and autoscale,
@@ -1125,7 +1132,7 @@ func prettyLines(w io.Writer, c view.Chart, st styles) error {
 	if c.Max > 0 {
 		opts = append(opts, asciigraph.LowerBound(0), asciigraph.UpperBound(c.Max))
 	}
-	plot := asciigraph.PlotMany(data, opts...)
+	plot := st.glyphs.asciiAxis(asciigraph.PlotMany(data, opts...))
 	_, err := fmt.Fprintln(w, plot)
 	return err
 }
@@ -1158,8 +1165,8 @@ func prettyBars(w io.Writer, c view.Chart, st styles) error {
 		}
 		filled := int(v / scale * float64(width))
 		filled = min(max(filled, 0), width)
-		bar := st.key.Render(strings.Repeat("█", filled)) +
-			st.faint.Render(strings.Repeat("░", width-filled))
+		bar := st.key.Render(strings.Repeat(st.glyphs.full, filled)) +
+			st.faint.Render(strings.Repeat(st.glyphs.empty, width-filled))
 		label := pad(s.Name, nameWidth)
 		value := fmt.Sprintf("%.1f%s", v, c.Unit)
 		if _, err := fmt.Fprintf(w, "%s  %s  %s\n", st.muted.Render(label), bar, value); err != nil {
@@ -1208,6 +1215,7 @@ func RenderError(w io.Writer, e *view.Error, opts Options) error {
 	}
 	st := newStyles(opts.NoColor)
 	st.width = opts.Width
+	st.glyphs = glyphsFor(opts.ASCII)
 	w = profiled(w, opts)
 	// The hanging indent is measured, not counted out by hand. Both badges
 	// carry Padding(0, 1) when there is colour and nothing when there is not
@@ -1446,6 +1454,7 @@ type styles struct {
 	width     int  // 0 = natural
 	fill      bool // width is a target, not a ceiling
 	screen    bool // see Options.Screen
+	glyphs    glyphs
 	key       lipgloss.Style
 	header    lipgloss.Style
 	border    lipgloss.Style
@@ -1459,13 +1468,15 @@ type styles struct {
 func newStyles(noColor bool) styles {
 	if noColor {
 		return styles{
-			key: theme.Plain, header: theme.Plain, border: theme.Plain,
+			glyphs: unicodeGlyphs,
+			key:    theme.Plain, header: theme.Plain, border: theme.Plain,
 			muted: theme.Plain, faint: theme.Plain, warn: theme.Plain,
 			errBadge: theme.Plain, hintBadge: theme.Plain,
 		}
 	}
 	return styles{
 		color:     true,
+		glyphs:    unicodeGlyphs,
 		key:       theme.Key,
 		header:    theme.Header,
 		border:    theme.Border,
