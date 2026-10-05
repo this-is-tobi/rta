@@ -34,4 +34,4 @@ Locking an operator freezes the key, not what it already signed — pair it with
 
 ## Next
 
-[Team policy](./50-team-policy.md) — a ceiling nobody on the team can raise, which is where this track ends and running it for others begins.
+[Harden in five minutes](./46-harden-in-five-minutes.md) — the checklist that puts doctor, init, a lock, a ceiling, small grants and the record in one pass.

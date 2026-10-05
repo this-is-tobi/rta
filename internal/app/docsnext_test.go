@@ -85,6 +85,28 @@ func exemptFromNext(page string) bool {
 	return page == "README.md" || page == "docs/01-readme.md" || strings.HasPrefix(page, "docs/95-reference/")
 }
 
+// The README is the front door the repository shows, and its list of the
+// documentation is how a reader who does not start at Start here finds a page
+// at all. A page added to docs/ and left out of it is one that is reached only
+// by a reader who happens to follow the Next before it.
+func TestEveryDocsPageIsInTheReadmeList(t *testing.T) {
+	root := repoRoot(t)
+	readme := readDoc(t, root, "README.md")
+	pages := 0
+	for _, page := range markdownPages(t, root) {
+		if page == "README.md" {
+			continue
+		}
+		pages++
+		if !strings.Contains(readme, "(./"+page+")") {
+			t.Errorf("README.md does not list %s; every page of the docs has a line in its list", page)
+		}
+	}
+	if pages < 25 {
+		t.Fatalf("checked %d pages; has the docs tree changed shape?", pages)
+	}
+}
+
 // The recipes page opens with a table of every recipe, its level, what it
 // needs and about how long it takes, because a page of recipes with no index
 // was read by scrolling, and the one it calls the one worth learning first

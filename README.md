@@ -65,6 +65,7 @@ Ask Claude Code to add a note and the refusal carries the exact line that would 
 - [Roles, consent and the guard](./docs/30-boundary/35-roles-consent-and-the-guard.md) *- A day of grants under one word, answering a parked call, and a passphrase in front of issuance*
 - [The record](./docs/30-boundary/40-audit-trail.md) *- What agents asked for, what they got, and what is waiting on you*
 - [Stop an agent now](./docs/30-boundary/45-stop-an-agent-now.md) *- Locks: the instant no, ahead of any expiry or revocation*
+- [Harden in five minutes](./docs/30-boundary/46-harden-in-five-minutes.md) *- A checklist: doctor, init, a lock, a ceiling, small grants and the record*
 - [Team policy](./docs/30-boundary/50-team-policy.md) *- A ceiling a repository can commit, which can only ever subtract*
 - [Connecting your AI tool](./docs/30-boundary/60-ai-clients.md) *- Claude Code, VS Code, Cursor, Codex, Gemini, Copilot, and anything else that speaks MCP*
 - [Hosting a server](./docs/30-boundary/65-hosting-a-server.md) *- `--http`, tokens, probes, and what a remote server leaves out*

@@ -146,6 +146,7 @@ All three unattended cases are legitimate and only you know which one ran, so th
 - [MCP and the safety gate](./20-mcp.md) — what an agent reaches before you decide anything
 - [Grants](./30-grants.md) — per-capability, time-boxed consent
 - [The record](./40-audit-trail.md) — what actually happened, and shipping it somewhere
+- [Harden in five minutes](./46-harden-in-five-minutes.md) — a checklist to run once on the machine an agent will use
 
 ## Next
 
