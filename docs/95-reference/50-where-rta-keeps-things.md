@@ -12,7 +12,7 @@ It looks at the machine. For each client it finds — Claude Code, VS Code, Code
 
 `rta init --yes` registers every client it lists without asking, which is what a dotfiles script or a devcontainer wants, and `--dry-run` shows what that would run. With neither a terminal nor `--yes` it stops with exit code `3` and changes nothing.
 
-When you do want a setting, the config file is `~/.config/rta/config.yaml` (or the platform equivalent: `rta doctor` prints the real path), and `rta config schema` describes every key. `RTA_CONFIG` overrides the location, which is what portable setups and test harnesses use.
+When you do want a setting, the config file is `~/.config/rta/config.yaml` (`$XDG_CONFIG_HOME/rta/config.yaml` when that is set, on macOS as well as Linux; `rta config` prints the real path), and `rta config schema` describes every key. `RTA_CONFIG` overrides the location, which is what portable setups and test harnesses use.
 
 Nothing in the config grants anything. It holds connection profiles, dashboard preferences and theme — see [Profiles](../20-using/40-profiles.md).
 
@@ -20,7 +20,7 @@ Nothing in the config grants anything. It holds connection profiles, dashboard p
 
 | What | Where | Notes |
 | --- | --- | --- |
-| Config | `~/.config/rta/config.yaml`, or `~/Library/Application Support/rta/config.yaml` on macOS | `RTA_CONFIG` overrides. Beside it: `policy.yaml` (your own [team policy](../30-boundary/50-team-policy.md)), `remotes.yaml` (the servers you operate) and the `kv.identity` key `kv init --generate` makes |
+| Config | `$XDG_CONFIG_HOME/rta/config.yaml`, else `~/.config/rta/config.yaml` — on macOS as well as Linux | `RTA_CONFIG` overrides. Builds before this one kept it in `~/Library/Application Support/rta` on macOS, which nothing reads now: `rta doctor` names what is left there (`old config`) with the command that moves it, and `rta` says so once at startup. Beside it: `policy.yaml` (your own [team policy](../30-boundary/50-team-policy.md)), `remotes.yaml` (the servers you operate) and the `kv.identity` key `kv init --generate` makes |
 | Data directory | `$RTA_DATA_DIR`, else `$XDG_DATA_HOME/rta`, else `~/.local/share/rta` — on macOS as well as Linux | Everything rta writes below is in it, owner-only. `rta doctor` prints it |
 | Encrypted store | `kv.age` and `kv.recipients` | [Secrets](../20-using/50-secrets.md) |
 | Grants | `grants.json`, with its seal key `grants.key` | Sealed against tampering |
