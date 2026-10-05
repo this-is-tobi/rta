@@ -19,7 +19,12 @@ rta lock add claude --note "runaway loop, ping me"       # on the machine
 rta lock add dash --kind operator --server work          # or from your machine, signed
 rta lock list
 rta lock rm claude
+rta lock claude                                          # the same as lock add: a name after lock is enough
+rta lock add --all                                       # every agent, when you do not know which one
+rta lock rm --all
 ```
+
+`--all` is the handle for the night you cannot tell which agent it is: it refuses every agent on its next call, the ones running and any that connects later, and `rta lock rm --all` lifts only that lock and names the locks on single agents that stand. A name no agent has used here is locked all the same, because a lock may be placed before the agent exists, and the answer says so and offers the name it knows nearest, so a misspelling in a hurry is seen when it is made and not when the real agent is still running.
 
 A locked *agent* or *credential* is refused on every tool call before any other gate (the protocol's own handshake and catalogue listing still answer — nothing executes through them) — never parked as a consent question, because a lock is the "stop asking me" control — and a locked *operator* label gets no verb on the channel at all. Running servers pick a lock up on their next request, no restart, and the note travels to the locked party on every refusal. Locks only subtract, so placing one asks for no passphrase: revoking never asks, and an incident is the wrong moment to demand a secret. `--ttl 2h` makes one lift itself; without it a lock stands until `rta lock rm`.
 
