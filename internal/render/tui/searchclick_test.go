@@ -15,6 +15,13 @@ func TestClickingATileLeavesTheSearchBoxSpent(t *testing.T) {
 	if len(m.tiles) < 2 {
 		t.Fatalf("need a tile besides the search bar, got %d", len(m.tiles))
 	}
+	m = press(t, m, "/")
+	m = press(t, press(t, m, "a"), "b")
+	if !m.searchEditing || m.query != "ab" {
+		t.Fatalf("the box did not take the query: editing=%v query=%q", m.searchEditing, m.query)
+	}
+	// Found with the box open: it is taller than the bar, so the first tile
+	// sits lower than it did a moment ago.
 	y := -1
 	for row := range m.height {
 		if m.tileAt(5, row) == 1 {
@@ -24,11 +31,6 @@ func TestClickingATileLeavesTheSearchBoxSpent(t *testing.T) {
 	}
 	if y < 0 {
 		t.Fatal("no cell on screen maps to the first tile")
-	}
-	m = press(t, m, "/")
-	m = press(t, press(t, m, "a"), "b")
-	if !m.searchEditing || m.query != "ab" {
-		t.Fatalf("the box did not take the query: editing=%v query=%q", m.searchEditing, m.query)
 	}
 	next, _ := m.Update(tea.MouseClickMsg{X: 5, Y: y, Button: tea.MouseLeft})
 	got := next.(Model)

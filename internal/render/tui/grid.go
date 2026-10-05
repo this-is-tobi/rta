@@ -186,14 +186,29 @@ func (m Model) rowAndCol(idx int) (int, int) {
 func (m Model) rowHeights() []int {
 	rows := m.tileRows()
 	heights := make([]int, 0, len(rows))
+	limit := m.rowLimit()
 	for _, row := range rows {
 		h := tileMinHeight
 		for _, i := range row {
 			h = max(h, tileRowHeight(m.asReturned(i), m.tileWidth(i)))
 		}
-		heights = append(heights, h)
+		heights = append(heights, min(h, limit))
 	}
 	return heights
+}
+
+// rowLimit is the tallest a row is drawn: tileHeight, unless the room under
+// the search bar holds less than two of them, in which case half of it. A row
+// has always been allowed up to tileHeight lines, so on a terminal 24 lines
+// high the first row took eleven of the twenty that were left and the second
+// did not fit at all; two rows clipped at "… enter for details" show twice the
+// tiles of one drawn whole, and the clipped line is where enter goes for the
+// rest. Never under tileMinHeight, which is the least a panel reads as one.
+func (m Model) rowLimit() int {
+	if m.height <= 0 {
+		return tileHeight
+	}
+	return min(tileHeight, max(tileMinHeight, m.dashRowBudget()/2))
 }
 
 // visibleRowCount is how many rows starting at from fit within avail lines,
@@ -224,7 +239,7 @@ func (m Model) tileAt(x, y int) int {
 	if y < 1 {
 		return -1
 	}
-	if y < 1+searchTileHeight {
+	if y < 1+m.searchHeight() {
 		return 0
 	}
 	rows := m.tileRows()
@@ -233,7 +248,7 @@ func (m Model) tileAt(x, y int) int {
 	}
 	first, last := m.rowWindow(len(rows))
 	heights := m.drawnHeights(first, last)
-	yy := y - 1 - searchTileHeight
+	yy := y - 1 - m.searchHeight()
 	row := -1
 	for r, h := range heights {
 		if yy < h {
@@ -281,13 +296,17 @@ func (m Model) dashRowsVisible() int {
 // dashRowBudget is how many lines the tile rows have between the header with
 // the search bar under it and the footer.
 func (m Model) dashRowBudget() int {
-	return m.height - 1 - lipgloss.Height(m.dashFooter()) - searchTileHeight
+	return m.height - 1 - lipgloss.Height(m.dashFooter()) - m.searchHeight()
 }
 
 // rowWindow is the half-open range of tile rows on screen: from the scroll
 // offset, as many as dashRowsVisible admits.
 func (m Model) rowWindow(rows int) (first, last int) {
-	first = min(m.scroll, rows-1)
+	// Capped by where the window can start, because the room is not constant:
+	// closing the search hands back four lines, and an offset that was right
+	// with the box open would leave the last row alone above dead space until
+	// the next tile answered and clampScroll caught up.
+	first = min(m.scroll, rows-1, m.maxScroll())
 	return first, min(first+m.dashRowsVisible(), rows)
 }
 
@@ -581,7 +600,33 @@ func (m Model) searchWindow(results []plugin.Capability) ([]plugin.Capability, i
 	return results[first : first+searchMatches], first
 }
 
-// renderSearchTile draws the full-width live search bar: a query line and a
+// searchOpen reports whether the search has the keyboard or a query to show,
+// which is when its box is drawn instead of the one-line bar.
+func (m Model) searchOpen() bool { return m.searchEditing || m.query != "" }
+
+// searchHeight is the lines the search takes right now, which everything that
+// measures the tile rows below it — the budget, the hit test, the scroll
+// window — has to agree on.
+func (m Model) searchHeight() int {
+	if m.searchOpen() {
+		return searchTileHeight
+	}
+	return searchBarHeight
+}
+
+// renderSearchBar is the search as it sits when nobody is using it: one line,
+// with the inventory it would search. Selecting it moves the glyph and the
+// colour, and not a border, because there is none to move — the glyph is what
+// carries the selection on a terminal that shows no colour.
+func (m Model) renderSearchBar(width int, selected bool) string {
+	glyph, text := theme.AccentTxt.Render(" ⌕ "), theme.Subtle.Render(m.searchInfo)
+	if selected {
+		glyph, text = theme.AccentTxt.Render(" ❯ "), theme.Key.Render(m.searchInfo)
+	}
+	return ansi.Truncate(glyph+text, max(width, 1), "…")
+}
+
+// renderSearchTile draws the full-width live search box: a query line and a
 // window over the matches, updating on every keystroke.
 func (m Model) renderSearchTile(width int, selected bool) string {
 	prompt := theme.AccentTxt.Render("❯ ")
@@ -762,7 +807,10 @@ func (m Model) dashboardView() string {
 		return header + "\n\n" + theme.Subtle.Render("  no tiles available") + "\n" + footer
 	}
 
-	search := m.renderSearchTile(m.width, m.selected == 0)
+	search := m.renderSearchBar(m.width, m.selected == 0)
+	if m.searchOpen() {
+		search = m.renderSearchTile(m.width, m.selected == 0)
+	}
 
 	rows := m.tileRows()
 	if len(rows) == 0 {

@@ -231,7 +231,7 @@ func TestDashboardEnterOpensTileDetail(t *testing.T) {
 
 func TestDashboardLiveSearchOpensMatch(t *testing.T) {
 	tm := newDashboard(t)
-	waitFor(t, tm, "⌕ search")
+	waitFor(t, tm, "press / to search")
 	// Selection starts on the search bar: enter focuses it, typing filters
 	// on the fly, enter opens the selected match.
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})

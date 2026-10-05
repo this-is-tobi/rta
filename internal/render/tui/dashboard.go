@@ -152,7 +152,15 @@ const (
 	// matches eleven capabilities should not silently become three.
 	searchMatches = 3
 	// searchTileHeight: borders + query line + searchMatches result lines.
+	// Only while somebody is searching; see searchBarHeight.
 	searchTileHeight = searchMatches + 3
+	// searchBarHeight is what the search costs the layout while nobody is using
+	// it: one line saying it is there. The box with room for results used to be
+	// drawn at all times, and on an 80x24 terminal its four empty lines were
+	// what kept the tiles that matter off the first screen. It opens to
+	// searchTileHeight when the bar takes the keyboard, and closes again when
+	// the search is left.
+	searchBarHeight = 1
 )
 
 // pluginOrder is the shipped arrangement: what you glance at most, first.

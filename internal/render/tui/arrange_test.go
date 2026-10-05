@@ -530,7 +530,7 @@ func TestTileAtWalksVariableRowHeights(t *testing.T) {
 	}
 
 	// Row 0 (short.info, height 6) starts right after the search band.
-	row0Start := 1 + searchTileHeight
+	row0Start := 1 + sm.searchHeight()
 	row1Start := row0Start + tileMinHeight
 	for _, y := range []int{row0Start, row0Start + tileMinHeight - 1} {
 		if got := sm.tileAt(5, y); got != 1 {
@@ -1148,7 +1148,7 @@ func TestClickingAnywhereOnAWideRowHitsThatTile(t *testing.T) {
 	if wideRow < 0 {
 		t.Skip("no wide tile")
 	}
-	y := 1 + searchTileHeight
+	y := 1 + m.searchHeight()
 	for r := 0; r < wideRow; r++ {
 		y += heights[r]
 	}
