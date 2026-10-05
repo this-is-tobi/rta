@@ -1725,6 +1725,9 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 		if requiredOnCommandLine(f) {
 			_ = cmd.MarkFlagRequired(f.Name)
 		}
+		if f.Type.Sensitive() {
+			_ = cmd.Flags().SetAnnotation(f.Name, annotCredential, []string{"true"})
+		}
 	}
 }
 

@@ -227,7 +227,10 @@ func nearestFlags(cmd *cobra.Command, typed string) []string {
 	}
 	var found []scored
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if f.Hidden || f.Name == "help" || f.Name == "version" {
+		// The flags help lists and no others: one it leaves out (`--dry-run` on
+		// a command that only reads) is accepted, not offered, or the sentence
+		// would send the person to a help screen that does not mention it.
+		if f.Hidden || f.Name == "help" || f.Name == "version" || !listsFlag(cmd, f) {
 			return
 		}
 		switch d := match.Distance(typed, f.Name); {
@@ -277,6 +280,9 @@ func valueFlagsHint(cmd *cobra.Command) string {
 	var names []string
 	cmd.LocalNonPersistentFlags().VisitAll(func(f *pflag.Flag) {
 		if f.Hidden || f.Name == "help" || f.Name == "profile" || f.Value.Type() == "bool" || f.Value.Type() == "count" {
+			return
+		}
+		if _, credential := f.Annotations[annotCredential]; credential {
 			return
 		}
 		names = append(names, "--"+f.Name)
