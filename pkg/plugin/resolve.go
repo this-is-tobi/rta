@@ -652,6 +652,9 @@ func StatedTypeProblem(f Field, v any) (problem, hint string) {
 		if _, ok := toDuration(v); ok {
 			return "", ""
 		}
+		if bareNumber(v) {
+			return "is a bare number, which does not say its unit — every call reading it is refused", durationHint
+		}
 		if text, isText := v.(string); isText && text != "" {
 			return "is text that is not a duration — every call reading it is refused", durationHint
 		}

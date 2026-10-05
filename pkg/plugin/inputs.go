@@ -297,7 +297,7 @@ func checkDuration(c Capability, f Field, v any, s Surface) (verr *view.Error, h
 		code, want = "core.input.range", want+" "+bounds
 	}
 	capability, input := s.CapabilityName(c.ID), refusedInput(s, f)
-	if statedShape(v) == "a number" {
+	if bareNumber(v) {
 		return view.Errorf(code, "%s takes %s for %s, not a bare number", capability, want, input).
 				WithHint("a number does not say its unit — " + durationHint),
 			"write it there with a unit, as `" + exampleDuration(f) + "`"

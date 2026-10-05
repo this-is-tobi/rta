@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -144,6 +145,19 @@ func toDuration(v any) (time.Duration, bool) {
 	}
 	return 0, false
 }
+
+// bareNumber reports whether v is a number nobody gave a unit: a numeric value
+// as a config file or an agent's JSON carries one, or the digits a command-line
+// flag hands over for it, since every flag arrives as text. It is the one
+// mistake in writing a duration common enough to be named as what it is.
+func bareNumber(v any) bool {
+	if text, isText := v.(string); isText {
+		return bareNumberText.MatchString(text)
+	}
+	return statedShape(v) == "a number"
+}
+
+var bareNumberText = regexp.MustCompile(`^[+-]?[0-9]+(?:\.[0-9]+)?$`)
 
 // Duration reads a Duration input. An input nobody gave, and one that is not a
 // duration, read as zero, as Int does: the host has already refused the second

@@ -84,8 +84,8 @@ func TestADurationInputIsDeclaredWithTextAndUnits(t *testing.T) {
 		f    Field
 		want string
 	}{
-		"a default with no unit":       {Field{Default: "30"}, "every call reading it is refused"},
-		"a default that is a number":   {Field{Default: 30}, "a bare number does not say its unit"},
+		"a default with no unit":       {Field{Default: "30"}, "is a bare number, which does not say its unit"},
+		"a default that is a number":   {Field{Default: 30}, "is a bare number, which does not say its unit"},
 		"a default that is not time":   {Field{Default: "soon"}, "is text that is not a duration"},
 		"a Go duration as the default": {Field{Default: 30 * time.Second}, "count of nanoseconds"},
 		"a minimum that is a number":   {Field{Min: 1}, "bounds are text with a unit"},
@@ -136,7 +136,9 @@ func TestTheHostRefusesAValueThatIsNotADurationOrIsOutOfRange(t *testing.T) {
 		}
 	}
 	for v, want := range map[any]string{
-		"30":    "core.input.range: `rta demo item wait` takes a duration from 1s to 1h for --timeout, not text",
+		// What a flag hands over for the number 30: every flag arrives as text,
+		// and "not text" would name the one thing it is.
+		"30":    "core.input.range: `rta demo item wait` takes a duration from 1s to 1h for --timeout, not a bare number",
 		30:      "core.input.range: `rta demo item wait` takes a duration from 1s to 1h for --timeout, not a bare number",
 		"soon":  "core.input.range:",
 		true:    "core.input.range:",
