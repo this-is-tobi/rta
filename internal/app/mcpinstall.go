@@ -631,8 +631,8 @@ func installClient(ctx context.Context, said io.Writer, req installRequest) (ins
 	if req.show || c.bin == "" {
 		return block(""), nil
 	}
-	bin, err := exec.LookPath(c.bin)
-	if err != nil {
+	bin, found := onPath(c.bin)
+	if !found {
 		return block(c.bin + " is not on PATH, so rta ran nothing"), nil
 	}
 	// Resolved here, inside the one branch that runs the client's own
@@ -780,6 +780,14 @@ func manualRemove(c mcpClient, global bool) string {
 		return c.bin + " " + shellJoin(c.removeArgs(scope))
 	}
 	return c.bin + " mcp remove rta"
+}
+
+// onPath finds a command the way the shell would. A command that is not there
+// is an ordinary answer for a client the operator does not have, which is why
+// this is not an error to carry.
+func onPath(name string) (string, bool) {
+	path, err := exec.LookPath(name)
+	return path, err == nil
 }
 
 func shellJoin(args []string) string {

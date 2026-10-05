@@ -315,8 +315,9 @@ func (s clientSeen) present() bool { return s.cli || s.dir }
 
 // seenClients is every client rta knows, with what could be told of it here.
 func seenClients(home string) []clientSeen {
-	var out []clientSeen
-	for _, c := range mcpClients() {
+	clients := mcpClients()
+	out := make([]clientSeen, 0, len(clients))
+	for _, c := range clients {
 		seen := clientSeen{client: c}
 		if c.bin != "" {
 			_, err := exec.LookPath(c.bin)
