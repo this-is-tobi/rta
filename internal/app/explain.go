@@ -365,11 +365,7 @@ func pace(d time.Duration) string {
 func cliForm(c plugin.Capability) string {
 	parts := append([]string{"rta"}, c.Words()...)
 	for _, f := range c.Arguments() {
-		if f.Required {
-			parts = append(parts, "<"+f.Name+">")
-		} else {
-			parts = append(parts, "["+f.Name+"]")
-		}
+		parts = append(parts, argumentSlot(f))
 	}
 	for _, f := range c.Inputs {
 		switch {

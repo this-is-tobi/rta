@@ -286,7 +286,7 @@ func TestEveryArgumentBindsToTheSlotItsUsageLineNames(t *testing.T) {
 		}
 		args, names, required := make([]string, len(slots)), make([]string, len(slots)), 0
 		for i, slot := range slots {
-			names[i] = strings.Trim(slot, "<>[]")
+			names[i] = strings.TrimSuffix(strings.Trim(slot, "<>[]"), "...")
 			switch {
 			case strings.HasPrefix(slot, "<") && required < i:
 				t.Errorf("%s: <%s> follows an optional slot in %q, and fang draws every optional one last",
