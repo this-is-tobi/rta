@@ -129,7 +129,12 @@ func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error
 	// says rather than making somebody reassemble it from three tables.
 	// Page.section forces detail:false, so this is the same handler and not a
 	// second implementation — and it cannot recurse.
-	p.AddAs("summary", "summary", runOverview, plugin.Read, nil)
+	summary, serr := p.Run(runOverview, plugin.Read, nil)
+	if serr != nil {
+		p.Warn(plugin.HandlerFailure(serr, "the summary section", "page.section.failed"))
+	} else {
+		p.PutAs("summary", "summary", summary)
+	}
 	p.AddAs("status", "status", runStatus, plugin.Read, nil)
 	p.AddAs("log", "log", runLog, plugin.Read, map[string]any{"limit": detailLogLimit})
 	p.AddAs("branches", "branches", runBranches, plugin.Read, nil)
@@ -139,6 +144,12 @@ func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error
 	p.AddAs("remotes", "remotes", runRemotes, plugin.Read, nil)
 
 	if p.Empty() {
+		// What the summary said, when it is why: every section fails for the
+		// same reason outside a repository, and "nothing to report" is the
+		// one answer that does not name it.
+		if serr != nil {
+			return nil, serr
+		}
 		return nil, view.Errorf("git.overview.unavailable", "nothing to report")
 	}
 	return p.View(), nil
