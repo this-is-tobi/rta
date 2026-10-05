@@ -520,7 +520,13 @@ func write(cfg Config) error {
 		}
 		return view.Errorf("config.encode", "encoding config: %v", err)
 	}
-	return persist(path, old, data)
+	if err := persist(path, old, data); err != nil {
+		return err
+	}
+	if len(bytes.TrimSpace(old)) == 0 && bytes.Contains(data, []byte("$schema="+SchemaFile)) {
+		ensureSchemaFile(filepath.Dir(path))
+	}
+	return nil
 }
 
 // Replace puts text in place of the file's text, provided the file still holds
