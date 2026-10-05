@@ -810,6 +810,19 @@ func TestAPrimaryValueTheViewDoesNotHaveOrMasksIsRejected(t *testing.T) {
 		t.Errorf("a masked Primary was accepted: %q", rec.errText())
 	}
 
+	maskedColumn := ok()
+	maskedColumn.Primary = "token"
+	maskedColumn.Run = func(context.Context, plugin.Request) (view.View, error) {
+		return view.Table{
+			Columns:  []view.Column{{Name: "name"}, {Name: "token"}},
+			Rows:     [][]string{{"a", "s3cret"}},
+			Redacted: []string{"token"},
+		}, nil
+	}
+	if rec := check(maskedColumn); !strings.Contains(rec.errText(), "would be the mask") {
+		t.Errorf("a Primary naming a masked column was accepted: %q", rec.errText())
+	}
+
 	text := ok()
 	text.Primary = "token"
 	text.Run = func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "s3cret"}, nil }
