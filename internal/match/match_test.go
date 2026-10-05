@@ -204,3 +204,17 @@ func TestAWordThatOnlyBeginsLikeANameIsNotATypoOfIt(t *testing.T) {
 		}
 	}
 }
+
+// `backup` begins with `back`, which is a word of "Trace one dependency back to
+// what pulled it in" and of "Take an agent's access back": two letters more is
+// the plural -es or it is another word, and `rta explain backup` offered both
+// capabilities after the one that is the backup.
+func TestATailThatIsNotAPluralIsAnotherWord(t *testing.T) {
+	items := []Item{{ID: "audit.why", Summary: "Trace one dependency back to what pulled it in"}, {ID: "keys.backup"}}
+	got := ids(items, Nearest("backup", items))
+	for _, id := range got {
+		if id == "audit.why" {
+			t.Errorf("backup is near %v, which takes a word of a summary it only begins like", got)
+		}
+	}
+}
