@@ -28,7 +28,8 @@ rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run native
 
 *Using it*
 - [The CLI](./docs/20-using/10-cli.md) *- Output formats, exit codes, `--dry-run`, `explain`, scripting*
-- [The TUI](./docs/20-using/20-tui.md) *- The dashboard, the catalogue, forms and confirmations*
+- [The TUI](./docs/20-using/20-tui.md) *- The dashboard, answering agents, the catalogue, forms and confirmations*
+- [Dashboard and theme](./docs/20-using/25-dashboard-and-theme.md) *- Stating the dashboard in the config file, and the colours*
 - [Seeing the shape of things](./docs/20-using/30-trees.md) *- Mapping a directory, a bucket, a Vault mount or an etcd keyspace in one call*
 - [Profiles](./docs/20-using/40-profiles.md) *- Naming an environment once and pointing every plugin at it*
 - [Profiles in depth](./docs/20-using/41-profiles-in-depth.md) *- Several connections to one plugin, a profile from a script, types, and editor completion*
@@ -51,6 +52,7 @@ rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run native
 
 *Plugins*
 - [Using plugins](./docs/40-plugins/10-plugins.md) *- Discovery, trust, indexes, install and upgrade*
+- [The plugin inventory](./docs/40-plugins/15-the-plugin-inventory.md) *- What the TUI's plugin pane shows, and the plugins rta found and refused to run*
 - [Writing a plugin](./docs/40-plugins/20-writing-a-plugin.md) *- The SDK, the conformance suite, `plugin new` and `plugin dev`, and publishing it to an index*
 
 *Recipes*
