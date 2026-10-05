@@ -872,6 +872,32 @@ func TestPluginUntrustAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 	}
 }
 
+// `plugin untrust --all` with a single approval of its own spoke of it in the plural: "none of them
+// will load again", "withdraw them". One thing is "it".
+func TestUntrustAllWithOneApprovalSpeaksOfIt(t *testing.T) {
+	run := session(t, registry.New())
+	if verr := plugintrust.Add(strings.Repeat("ab", 32), "solo", "/usr/local/bin/rta-plugin-solo"); verr != nil {
+		t.Fatal(verr)
+	}
+
+	out, errOut, err := run("plugin", "untrust", "--all", "--dry-run", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if next := answerPairs(t, out)["next"]; next != "run without --dry-run to withdraw it" {
+		t.Errorf("the preview of one approval said %q", next)
+	}
+
+	out, errOut, err = run("plugin", "untrust", "--all", "--yes", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	next := answerPairs(t, out)["next"]
+	if !strings.HasPrefix(next, "it will not load again") || strings.Contains(next, "them") {
+		t.Errorf("one approval withdrawn said %q, want it in the singular", next)
+	}
+}
+
 // An untrust that withdraws the operator's copy of an artifact the system
 // root trusts as well must not say it will not load again: it printed that,
 // exited 0, and the plugin answered the very next command. By name, by
