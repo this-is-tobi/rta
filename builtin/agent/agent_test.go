@@ -1032,7 +1032,8 @@ func TestOverviewCountsWhatMatters(t *testing.T) {
 	park(t, "kv.get", "db-password")
 	for _, e := range []agentlog.Entry{
 		{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open},
-		{Cap: "kv.get", Outcome: agentlog.Refused, Auth: agentlog.Blocked},
+		{Cap: "kv.get", Records: []string{"db-password"}, Outcome: agentlog.Refused, Auth: agentlog.Blocked,
+			Code: "core.grant.required"},
 		{Cap: "kv.get", Outcome: agentlog.Ran, Auth: agentlog.Live},
 	} {
 		if err := agentlog.Append(e); err != nil {
@@ -1067,8 +1068,8 @@ func TestOverviewCountsWhatMatters(t *testing.T) {
 	if got["calls in the last hour"] != "3" {
 		t.Fatalf("recent = %q", got["calls in the last hour"])
 	}
-	if got["refused"] != "1" {
-		t.Fatalf("refused = %q", got["refused"])
+	if want := "1 — kv.get db-password; `rta agent log --refused` lists them"; got["needs your grant"] != want {
+		t.Fatalf("needs your grant = %q, want %q", got["needs your grant"], want)
 	}
 	if got["you approved live"] != "1" {
 		t.Fatalf("approved = %q", got["you approved live"])
