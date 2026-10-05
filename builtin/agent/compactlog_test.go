@@ -89,8 +89,9 @@ func TestOnATerminalTheLogIsFourColumnsAndOneLinePerCall(t *testing.T) {
 // Who joins the compact rows only when there is more than one to tell apart:
 // a column that says "claude" thirty times says nothing, and the day a second
 // agent calls its arrival is the news. The session id is a finer question: two
-// agents with a server each are told apart by their names, so it joins only
-// when one agent has more than one server open, which a name cannot say.
+// agents with a server each are told apart by their names, and an agent that
+// was restarted has ids that follow one another, which the time says, so it
+// joins only when one agent's servers call in turn, which nothing else can say.
 func TestWhoColumnsJoinTheCompactLogOnlyWhenThereIsMoreThanOne(t *testing.T) {
 	defer compact.Pretend(true)()
 	seed(t)
@@ -100,6 +101,11 @@ func TestWhoColumnsJoinTheCompactLogOnlyWhenThereIsMoreThanOne(t *testing.T) {
 		t.Errorf("two agents with a server each: %v, want the agent and not the session", cols)
 	}
 	appendRow(t, agentlog.Entry{Cap: "sys.cpu", Agent: "claude", Session: "cccc3333", Outcome: agentlog.Ran, Auth: agentlog.Open})
+	cols = columnNames(logTable(t, nil))
+	if slices.Contains(cols, "session") {
+		t.Errorf("claude restarted once, its servers one after the other: %v, want no session column", cols)
+	}
+	appendRow(t, agentlog.Entry{Cap: "sys.cpu", Agent: "claude", Session: "aaaa1111", Outcome: agentlog.Ran, Auth: agentlog.Open})
 	cols = columnNames(logTable(t, nil))
 	for _, want := range []string{"agent", "session"} {
 		if !slices.Contains(cols, want) {
