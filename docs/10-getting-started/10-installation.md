@@ -113,7 +113,7 @@ cosign verify ghcr.io/this-is-tobi/rta:latest \
 
 Two shapes of use:
 
-- **An MCP server** — [In a container, for a hardened server](../30-boundary/20-mcp.md#in-a-container-for-a-hardened-server) has the full `docker run` recipe: read-only root, dropped capabilities, no network by default.
+- **An MCP server** — [In a container, for a hardened server](../30-boundary/67-containers-and-images.md#in-a-container-for-a-hardened-server) has the full `docker run` recipe: read-only root, dropped capabilities, no network by default.
 - **A one-shot command**, anywhere `docker run` reaches, including inside a cluster: `kubectl run --rm -it rta-debug --image=ghcr.io/this-is-tobi/rta:latest -- net probe db.internal 5432`.
 
 ## Kubernetes
@@ -215,22 +215,9 @@ Version policy is the same for all of them: rta uses what is on your `$PATH` and
 
 **MySQL and MariaDB share tool names, and that is the one place having a tool is not enough.** MariaDB ships `mysqldump` and `mysql` as symlinks onto its own binaries, so a lookup by name succeeds against either fork and the flags decide what happens next: `mysql.dump` passes MySQL 8 spellings (`--ssl-mode`, `--set-gtid-purged`, `--no-tablespaces`) that MariaDB's client refuses by name, and `mariadb.dump` passes the `--ssl` family that MySQL's client refuses the same way. Neither produces a worse dump — it is a refusal at the first flag, graded as `*.dump.toolskew`, and its hint tells you which client you really have and which plugin drives it. Point each plugin at its own fork and this never comes up.
 
-Two consequences worth knowing. The primary container image is distroless, so it carries none of these — a containerised `rta mcp serve` covers the capabilities that need no external tool, and [MCP and the safety gate](../30-boundary/20-mcp.md) says which. And a plugin that reads a credential location, such as kubectl's `~/.kube/config`, still needs `rta plugin allow` before it may: having the tool is not being granted the file.
+Two consequences worth knowing. The primary container image is distroless, so it carries none of these — a containerised `rta mcp serve` covers the capabilities that need no external tool, and [Containers and images](../30-boundary/67-containers-and-images.md) says which. And a plugin that reads a credential location, such as kubectl's `~/.kube/config`, still needs `rta plugin allow` before it may: having the tool is not being granted the file.
 
-If you want the tools rather than the narrowness, `ghcr.io/this-is-tobi/rta-full` is the same rta with every first-party plugin and the tools from the table above already in it — Alpine-based rather than distroless, because a distroless image has no package manager to put them there. Roughly 120 MB against the primary image's 12, and the plugins arrive already trusted: the image installed them from the official index at a commit it names, verified each against the index's sha256, and keeps them with their trust under `/usr/local/lib/rta`, the read-only system root a state volume on `/rta-home` cannot hide. Its version tag names the rta inside; the plugins are the official index's at the time of the build, and the image is rebuilt and republished under that tag when they move — so pin the digest, as with any image, if you need the exact set.
-
-One row of that table it cannot carry, for the reason just above: Alpine has no Oracle MySQL client — its `mysql-client` package is MariaDB's — so the image carries `mariadb-client`, and `mysql.dump`/`mysql.restore` are the two capabilities in it that will not run. They refuse at the first flag with the skew message, which is the diagnosis rather than a mystery; bring Oracle's client yourself if you need them.
-
-**Reach for it when you are the one at the keyboard, and for the primary image when something else is.** That is not a style preference: [the image is the plugin allowlist](../30-boundary/20-mcp.md) — a plugin that is not in the image is one an agent cannot reach at all — so the full image is the widest reach rta has, and handing it to an agent gives up a boundary the narrow one enforces for free. For a team that wants three of the plugins and not all of them, derive from the primary image instead; [the recipe](../30-boundary/20-mcp.md) is a dozen lines. What the full image does *not* do is answer the credential question for you: `kube` and `cnpg` still show `warn` until you run `rta plugin allow`, on your machine, against your own kubeconfig. Mount a state volume at `/rta-home` and that answer sticks, the same as on a laptop.
-
-For the throwaway case where it cannot stick — `docker run --rm`, with no volume — the entrypoint takes `RTA_ALLOW_PLUGINS`, and it is off unless you set it:
-
-```bash
-docker run --rm -e RTA_ALLOW_PLUGINS=kube,cnpg \
-  -v ~/.kube:/rta-home/.kube:ro ghcr.io/this-is-tobi/rta-full kube pod list
-```
-
-`all` covers every bundled plugin that asks for something. Naming a plugin that asks for nothing is an error rather than a no-op, because you typed it expecting it to mean something. It can only ever grant what a plugin already declares — `rta plugin allow` cannot invent a location the artifact never asked for — and setting it is visible in the command, the compose file or the pod spec that launched the container, which is the point of it not being a default.
+`ghcr.io/this-is-tobi/rta-full` is the same rta with every first-party plugin and the tools from the table above already in it, for a person at a terminal who wants them rather than the narrowness; what it costs, and why an agent should never be pointed at it, is on [Containers and images](../30-boundary/67-containers-and-images.md#rta-full-the-console).
 
 ## Configuration
 
@@ -257,7 +244,7 @@ Nothing in the config grants anything. It holds connection profiles, dashboard p
 | Encrypted store | `kv.age` and `kv.recipients` | [Secrets](../20-using/50-secrets.md) |
 | Grants | `grants.json`, with its seal key `grants.key` | Sealed against tampering |
 | Agent record | `agent-log.jsonl`, with its seal key `agent-log.key` | Hash-chained; [The record](../30-boundary/40-audit-trail.md) |
-| Locks | `lockdown.json`, with `lockdown.key` | Sealed like the grants; [Locks](../30-boundary/20-mcp.md#locks-the-instant-no) |
+| Locks | `lockdown.json`, with `lockdown.key` | Sealed like the grants; [Locks](../30-boundary/45-stop-an-agent-now.md) |
 | Switched-on profile | `profile.json` | Which profile `rta use` switched on, and until when. Not sealed, because all it can do is remove a bound: a file that goes missing leaves the grants alone deciding, which the sealed grants are the answer to; [Profiles](../20-using/40-profiles.md) |
 | Plugins | `trusted.json` (what you approved), `plugins/store/` and `plugins/bin/` (what an index installed, and the links that find it), `plugin-cache/` with `plugin-cache.key` (what each plugin build declared, sealed, so a run does not start every plugin to ask), `indexes/` (the clones) | [Using plugins](../40-plugins/10-plugins.md) |
 | Notebook and shortlists | `notes.json`, `recent.json` | [The CLI](../20-using/10-cli.md) |
@@ -265,7 +252,7 @@ Nothing in the config grants anything. It holds connection profiles, dashboard p
 
 Exact paths differ per platform. `rta doctor` prints the real ones rather than the documented ones, which is the answer to use when they disagree.
 
-A machine whose environment names no home — a service started without `HOME`, a container run as a uid with no environment — is asked its account database first. When that has none either, rta keeps its state in `rta-<uid>` under the temporary directory, which does not outlast a reboot or a container, says so on stderr once per run, and refuses to use that directory when it is not a private directory of the account. Set `HOME` or `RTA_DATA_DIR` to keep grants, the record and the store: a state directory that vanishes with the container is an audit trail that does too. A config path that falls back to `./.rta.yaml` for want of a config directory is not honoured for profiles, plugin settings or the dashboard, which is why a container sets `RTA_CONFIG` as [the MCP chapter](../30-boundary/20-mcp.md#in-a-container-for-a-hardened-server) shows.
+A machine whose environment names no home — a service started without `HOME`, a container run as a uid with no environment — is asked its account database first. When that has none either, rta keeps its state in `rta-<uid>` under the temporary directory, which does not outlast a reboot or a container, says so on stderr once per run, and refuses to use that directory when it is not a private directory of the account. Set `HOME` or `RTA_DATA_DIR` to keep grants, the record and the store: a state directory that vanishes with the container is an audit trail that does too. A config path that falls back to `./.rta.yaml` for want of a config directory is not honoured for profiles, plugin settings or the dashboard, which is why a container sets `RTA_CONFIG` as [the MCP chapter](../30-boundary/67-containers-and-images.md#in-a-container-for-a-hardened-server) shows.
 
 ## Next
 

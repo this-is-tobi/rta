@@ -143,7 +143,7 @@ func TestEveryWholeStoreBackupNamesWhatItLeavesBehind(t *testing.T) {
 	}
 }
 
-// The MCP chapter says what a remote server leaves out twice over: a
+// The hosting chapter says what a remote server leaves out twice over: a
 // paragraph naming the capabilities, and the startup line quoted under it
 // with their count. Both had drifted from HostSpecific — net.listen joined
 // the hidden set and the paragraph never named it, and the quoted line kept
@@ -155,13 +155,13 @@ func TestEveryWholeStoreBackupNamesWhatItLeavesBehind(t *testing.T) {
 // one of them, the way it hides sys, fs and git. The paragraph also says
 // "the parts of `net`", and counting that as naming net.listen is exactly
 // the reading that let the omission through.
-func TestTheMCPChapterNamesWhatARemoteServerHides(t *testing.T) {
+func TestTheHostingChapterNamesWhatARemoteServerHides(t *testing.T) {
 	reg, err := NewRegistry()
 	if err != nil {
 		t.Fatalf("building the built-in registry: %v", err)
 	}
 	hidden := mcp.Options{Remote: true}.RemoteBlocked(reg)
-	const rel = "docs/30-boundary/20-mcp.md"
+	const rel = "docs/30-boundary/65-hosting-a-server.md"
 	body := readDoc(t, repoRoot(t), rel)
 
 	m := regexp.MustCompile(`remote transport hides (\d+) capabilities`).FindStringSubmatch(body)

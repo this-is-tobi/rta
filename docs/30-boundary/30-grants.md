@@ -66,7 +66,20 @@ Each selector narrows, and one left out matches every grant: `grant revoke kv.ge
 
 `grant list` shows the target, the scope, what remains of each bound, the agent and profile it is narrowed to, and your `--note`. `--detail` adds the plugin build each grant is bound to: the short digest of the plugin's artifact, or `built in`. A grant whose plugin has been replaced since it was issued is marked `(replaced)` on every listing of this machine's grants, and one whose plugin rta no longer loads `(not loaded)`, each with a warning beside the rows saying what fixes it. A roster read with `--server` is judged by that server, against the plugins that answer there, which this machine cannot see, and carries the same marks and warnings; a server on an older rta sends no verdict, and each of its grants is marked `(unknown)`. It is the answer to "what can an agent do right now", and it is the one screen worth checking before you walk away from a machine with a server running.
 
-Revoking takes back what grants gave — it does not touch the ungated read tools an agent's token still opens. When the need is "this agent makes no call of any kind until I say so", that is a [lock](./20-mcp.md#locks-the-instant-no): `rta lock add <name>`, effective on its next call, no restart.
+Revoking takes back what grants gave — it does not touch the ungated read tools an agent's token still opens. When the need is "this agent makes no call of any kind until I say so", that is a [lock](./45-stop-an-agent-now.md): `rta lock add <name>`, effective on its next call, no restart.
+
+## Bound to a task, not to a process
+
+The server is per-session by construction, so the question of how long an agent's reach lasts is answered by the permissions, and those have their own clocks rather than the process's:
+
+| Bound to a task by | What it does |
+| --- | --- |
+| `rta grant allow … --ttl 30m` | Consent that expires on its own, whatever the server does |
+| `rta grant allow … --max-uses 5` | Consent that runs out by use rather than by clock |
+| `rta use staging` | While it is on, every *other* environment is refused whatever grants exist, as [Profiles](../20-using/40-profiles.md#switching-authorizes-nothing) explains |
+| `rta grant revoke --all` | The end of the task, without touching the client |
+
+Restarting the server changes none of it. That is deliberate: a deadline that ended when a process did would be a deadline your editor could reset by crashing.
 
 ## Roles: a day of grants under one word
 
@@ -91,7 +104,7 @@ rta grant renew --role dev           # move the whole bundle's deadline, one pas
 rta grant revoke --role dev          # take the whole bundle back
 ```
 
-Each line is in the grammar `rta grant allow` takes — a target, an optional record, and `--profile`, `--ttl`, `--max-uses`, `--rate` or `--note` — and is built and checked exactly as a typed grant is: the target has to exist and need a grant, the [ceiling](./50-team-policy.md) caps and forbids each line, the guard signs each grant, a [lock](./20-mcp.md#locks-the-instant-no) still overrides all of them. The grants last `--ttl`, else the role's `ttl:`, else twelve hours; a line with its own `--ttl` keeps the shorter. `grant list` shows the role on each row.
+Each line is in the grammar `rta grant allow` takes — a target, an optional record, and `--profile`, `--ttl`, `--max-uses`, `--rate` or `--note` — and is built and checked exactly as a typed grant is: the target has to exist and need a grant, the [ceiling](./50-team-policy.md) caps and forbids each line, the guard signs each grant, a [lock](./45-stop-an-agent-now.md) still overrides all of them. The grants last `--ttl`, else the role's `ttl:`, else twelve hours; a line with its own `--ttl` keeps the shorter. `grant list` shows the role on each row.
 
 **The bundle has no id of its own.** It is "role dev, issued to claude", and that pair already names it: the grant file keeps one row per target, record, connection and agent, so issuing a role whose lines already stand refreshes them rather than doubling them. A line that replaces a grant you issued by hand — with an hour left, say, under the role's twelve — is a widening you did not type, so the receipt says what each line replaced, before the passphrase asks for anything. `revoke --role` says what still stands afterwards, computed rather than promised.
 
@@ -101,19 +114,32 @@ Each line is in the grammar `rta grant allow` takes — a target, an optional re
 
 ## Live consent, when you would rather be asked
 
-With live consent (`rta mcp install claude --consent`), a call that needs a grant nobody issued is **parked** rather than refused:
+Off by default, and an option of the server, so it goes into the registration:
+
+```bash
+rta mcp install claude --consent --consent-notify
+```
+
+(`rta mcp serve --consent --consent-notify` is the same two flags for a server you start yourself.) With `--consent`, a call that needs a grant nobody issued is **parked** instead of refused. You answer it:
 
 ```bash
 rta agent pending
-rta agent show 5473aa62      # what it would do, from the capability's own --dry-run
+rta agent show 5473aa62        # everything about it, including what it would do
 rta agent allow 5473aa62
+rta agent deny 5473aa62
 ```
+
+A destructive call is previewed before it parks: rta runs the capability's own `--dry-run` and shows the result on the request, which changes the question from *"may this agent call `note.rm`"* to *"may it remove **this note**"*. The preview is not optional, and it is bounded to built-in capabilities, whose dry runs are cheap and honest about `DryRun` by test — a plugin's handler is never run to answer a question about it.
 
 Answering `allow` runs that one call. It does not create a standing grant — if the agent asks again, you are asked again. That is the difference between consent and permission, and rta keeps them separate.
 
-The same three commands take `--server <name>` to answer a call parked on a remote server, as a signed call over [the operator channel](./20-mcp.md#the-operator-channel) — where, unlike here, even the one-shot answer costs your operator key's passphrase, because "an agent with a shell could have done this anyway" is true at your terminal and false across a network.
+`rta agent allow <id> --ttl 1h` also issues the grant the call was missing, for the record it named and no wider — a grant for each record when it names several, as a `kv.rename` names the key and where it goes. A call naming a record ending in `/` — a folder to a grant, `https://` included, and the agent chose it — is released on its own and no grant is issued; the answer names the `rta grant allow` calls that issue them on purpose, if every record under the folder is what you mean. A call naming a record that is only white space is released on its own too, since no grant can name that record: `grant allow` refuses it, and `grant revoke` and `grant renew` could never take one back by it. The team's ceiling holds the answer record by record, as it would hold each grant.
 
-See [MCP and the safety gate](./20-mcp.md#live-consent) for why this is off by default.
+`--consent-wait` bounds how long a call waits before it is refused anyway (default 90s).
+
+**The default is off on purpose.** A call parked in a server nobody is watching is worse than a refusal: the agent hangs, you never see it, and the timeout is the only thing that resolves it. Turn consent on when you are actually at the machine — or, for a remote server, when [the operator channel](./66-operators.md) gives its enrolled operators a way to answer with `--server`.
+
+The same three commands take `--server <name>` to answer a call parked on a remote server, as a signed call over [the operator channel](./66-operators.md) — where, unlike here, even the one-shot answer costs your operator key's passphrase, because "an agent with a shell could have done this anyway" is true at your terminal and false across a network.
 
 ## The file, and why it is sealed
 
@@ -149,7 +175,7 @@ Honest edges, stated rather than implied:
 
 ### Remote mode: a guard whose keys are elsewhere
 
-For a machine whose humans are not at its terminal — an `rta mcp serve --http` gateway — the guard has a second shape: `rta grant guard remote operators.txt --url https://rta.example.com` enrolls the public keys from an operator roster (minus any `role=read` rows — a watching key is not a signing key), bound to this server's canonical URL, and from then on a grant is honoured only when one of those keys signed it for this server — the URL sits inside the signed authority, so a fleet sharing one roster stays many trust domains: a row signed for staging is refused on prod however its bytes travel. No key material lives on the machine at all: nothing to steal, no passphrase to phish out of a server process, and `rta grant allow` at its own shell finds nothing to unlock — refused by construction, which on a remote server is the boundary completing itself rather than a gap. Issuance happens from an enrolled operator's own machine over [the operator channel](./20-mcp.md#the-operator-channel), each grant signed there under that operator's passphrase and attributed to their roster label in the listing's Origin column. Turning remote mode off asks for no passphrase — there is none here to ask for — so it costs presence at the machine's terminal, and clears the grants the operators signed, the same clean-slate rule as every other guard transition.
+For a machine whose humans are not at its terminal — an `rta mcp serve --http` gateway — the guard has a second shape: `rta grant guard remote operators.txt --url https://rta.example.com` enrolls the public keys from an operator roster (minus any `role=read` rows — a watching key is not a signing key), bound to this server's canonical URL, and from then on a grant is honoured only when one of those keys signed it for this server — the URL sits inside the signed authority, so a fleet sharing one roster stays many trust domains: a row signed for staging is refused on prod however its bytes travel. No key material lives on the machine at all: nothing to steal, no passphrase to phish out of a server process, and `rta grant allow` at its own shell finds nothing to unlock — refused by construction, which on a remote server is the boundary completing itself rather than a gap. Issuance happens from an enrolled operator's own machine over [the operator channel](./66-operators.md), each grant signed there under that operator's passphrase and attributed to their roster label in the listing's Origin column. Turning remote mode off asks for no passphrase — there is none here to ask for — so it costs presence at the machine's terminal, and clears the grants the operators signed, the same clean-slate rule as every other guard transition.
 
 ## What a grant does not do
 

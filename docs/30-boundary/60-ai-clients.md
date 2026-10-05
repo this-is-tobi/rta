@@ -2,7 +2,7 @@
 
 rta is an MCP server over stdio, so anything that speaks MCP can use it. This chapter is the per-client detail: where each one keeps its configuration, what `rta mcp install` will and will not do for it, and how to check afterwards that it actually worked.
 
-If you only read one thing, read this: **the `--as` name is the whole point.** Grants are issued to it and a lock freezes it, so consent you give while talking to one client does not follow the others, and `rta mcp serve` refuses to start without one — a server with no name would be a principal nothing could be issued to or frozen by. `rta mcp install` always passes it, and the default is the client's own name.
+Every client below is registered under a name: grants are issued to it and a lock freezes it, so consent you give while talking to one client does not follow the others. `rta mcp install` always passes it, and the default is the client's own name. [Connect an agent](../10-getting-started/30-connect-an-agent.md#name-it) says why that name is the whole point, and how to check afterwards that the connection works.
 
 ## The short version
 
@@ -12,7 +12,7 @@ rta mcp install claude
 
 That is it for a client that ships its own configuration command. For one that does not, the same command prints exactly what to add and where, and writes nothing. Any other client that speaks MCP over stdio gets the standard block too — `rta mcp install windsurf` — with a line saying rta does not know where that client keeps its configuration.
 
-The answer says where the client's command registered rta (`scope`), what to do next and what the agent can reach. [Server options](./20-mcp.md#server-options-belong-in-the-registration) — `--consent`, `--root`, `--max-result` — go into the same command, and [running it again](./20-mcp.md#running-it-again) replaces a registration that differs rather than keeping it.
+The answer says where the client's command registered rta (`scope`), what to do next and what the agent can reach. [Server options](../10-getting-started/30-connect-an-agent.md#server-options-belong-in-the-registration) — `--consent`, `--root`, `--max-result` — go into the same command, and [running it again](../10-getting-started/30-connect-an-agent.md#running-it-again) replaces a registration that differs rather than keeping it.
 
 On a new machine, `rta init` does this for every client it finds: one question each, showing the command it would run, Enter to skip, and `--yes` to say yes to all of them without asking. It registers Claude Code for every project, leaves a client that already has a registration as it is, and writes no config file of its own — see [Configuration](../10-getting-started/10-installation.md#configuration).
 
@@ -37,7 +37,7 @@ rta mcp install codex --show
 
 `--global` installs for every project instead of just the one rta happens to run in, where the client actually supports the distinction — Claude Code does, and rta passes its own `--scope user` through. Where a client's own command is declared but not verified (codex, gemini), `--global` refuses rather than guess a flag on a command nobody has confirmed against the real CLI; `--show` still prints the block, and picking user versus project scope is then the same manual step it always was. VS Code has no such distinction to make — every install already lands in its one user-level file, so `--global` changes nothing there and is accepted as a no-op.
 
-## rta will not write another tool's config file
+## Why rta does not write client config files
 
 Where a client ships its own command, rta runs that. Where it does not, rta prints and stops. Three reasons, in the order that decides it:
 
@@ -166,55 +166,6 @@ Most clients use the shape Claude Desktop established, so this is usually what g
 Use an absolute path. A client launches this months from now, from a working directory you did not choose, with a `PATH` that may not be your shell's.
 
 **Claude Desktop is not the same thing as Claude Code.** `rta mcp install claude` configures the CLI. The desktop app is a separate application with its own configuration file, and rta has no entry for it — use the block above, and find the file through the app's own settings rather than a path written here, which would go stale the first time it moved.
-
-## Checking it worked
-
-Three things, in order of how much they tell you.
-
-```bash
-rta doctor
-```
-
-The row worth reading is not about clients at all — it is whether your secret store unlocks without a passphrase in this environment. If it does, an MCP server started here can open it, bounded by grants but able to. `doctor` also reports whether the `claude` CLI is on your `PATH`; the other clients are not probed, because rta only shells out to that one to check.
-
-Then ask the agent to call something harmless. `sys.overview` is a read, needs no grant, and reaches nothing off the machine — it appears to the agent as the tool `sys_overview`, since MCP tool names cannot carry a dot. If it comes back, the wiring is good.
-
-Then look at what actually happened:
-
-```bash
-rta agent log --limit 20
-```
-
-Every call is there with the name you registered the client under. If the agent name is not what you expect, the client is running an rta you did not configure — an old absolute path, or a second install.
-
-### Nothing shows up
-
-`rta agent overview` has a `connected now` row, and it is the one to read first: it names every client that has an rta server open right now, by the name it was registered under, with how many calls each has made. `--detail` adds a table with what the client called itself, since when, whether a call that needs a grant nobody issued is parked for you (`asks`) or refused (`refuses`), the roots its path arguments are confined to, its session id, the directory it started in and the record file it writes to. From there the silence is one of three things:
-
-- **Connected, zero calls.** The wiring is fine and the agent has not chosen an rta tool yet. Clients with many servers attached pick by tool description, and one that already has a Kubernetes or database server will often reach for that one first. Ask for something only rta answers — `rta agent overview` itself, or a capability under a profile — and the calls appear.
-- **Not connected.** Claude Code's `claude mcp add` registers rta for the current directory by default, so a session opened in another directory has no rta server at all. `rta doctor` says which it is — `every project`, `this project`, or `this directory only` — and prints the `--scope user` command that makes it global.
-- **Connected, calls made, and the record is empty.** The server and the TUI are reading different data directories. The server prints `record: <path>` when it starts, in the client's MCP log; `rta agent overview --detail` shows the file the TUI reads. A `RTA_DATA_DIR` or `XDG_DATA_HOME` set in one shell profile and not the other is the usual cause.
-
-Several sessions under the same name are one principal — grants and the team ceiling apply to `claude`, not to a window — and the record tells them apart by session: each server has an id, shown on the detail page and as a column in `rta agent log`, and `rta agent log --session <id>` narrows to one.
-
-## Two clients, two sets of permissions
-
-This is what `--as` buys, and it is worth doing deliberately:
-
-```bash
-rta mcp install claude --as claude-work
-rta mcp install cursor --as cursor-scratch
-```
-
-Now a grant naming one does not reach the other:
-
-```bash
-rta grant allow pg.query --agent claude-work --profile staging --ttl 1h
-```
-
-`cursor-scratch` still cannot run `pg.query`, whatever it asks for. Without the names, that one grant would have covered both.
-
-The name is your word, not the agent's. A client announces itself in the MCP handshake and rta records that claim, but it does not authorize on it — a name a thing chooses for itself is not an identity. What authorizes is the name you typed. You will see both in the record: the agent name plainly, the client's self-report in parentheses.
 
 ## What the agent can do once it is connected
 

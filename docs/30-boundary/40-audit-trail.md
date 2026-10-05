@@ -1,11 +1,11 @@
 # The record
 
-Grants say what may happen next. The record says what already did — one line per call that arrived over MCP, one per authority change an operator made over [the remote channel](./20-mcp.md#the-operator-channel), refusals included.
+Grants say what may happen next. The record says what already did — one line per call that arrived over MCP, one per authority change an operator made over [the remote channel](./66-operators.md), refusals included.
 
 ```bash
 rta agent overview    # the last hour at a glance
 rta agent log         # one line per call, oldest first — the latest is at the bottom
-rta agent pending     # anything parked, waiting on you
+rta agent pending     # anything parked, waiting on you — see Grants for live consent
 ```
 
 ## What a line carries
@@ -85,23 +85,6 @@ The distinction is worth keeping straight:
 | What is waiting on me right now? | `rta agent pending` |
 
 The log never authorizes anything. Deleting it takes away your evidence and grants nothing.
-
-## Parked calls
-
-With `rta mcp serve --consent`, a call needing a grant nobody issued is parked instead of refused:
-
-```bash
-rta agent pending
-rta agent show 5473aa62
-rta agent allow 5473aa62
-rta agent deny 5473aa62
-```
-
-`rta agent show` includes what the call **would do** — rta runs the capability's own `--dry-run` and puts the result on the parked request. That changes the question from *"may this agent call `note.rm`"* to *"may it remove **this note**"*, which is the question you can actually answer.
-
-Preview is not optional. It is bounded to built-in capabilities, whose dry runs are cheap and honest about `DryRun` by test — a plugin's handler is never run to answer a question about it.
-
-Answering `allow` runs that one call and creates no standing grant. Ask again, get asked again.
 
 ## Reading it as data
 
