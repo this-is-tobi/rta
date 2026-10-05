@@ -215,7 +215,7 @@ func References(text string) []int {
 // place that has to say it: a field's help, a refusal, the chapter. The forms
 // are the ones ParseDue reads and nothing more, so a form added there is added
 // here in the same edit, and TestDueFormsAreAllRead keeps the two honest.
-const DueForms = "today, tomorrow, a weekday (fri or friday), +3d, 2w, next-week, 10-20 or yyyy-mm-dd"
+const DueForms = "today, tomorrow, a weekday, +3d, 2w, next-week, 10-20 or yyyy-mm-dd"
 
 // dueShorthands are the natural-language forms accepted alongside RFC3339
 // and "2006-01-02" — the same instinct as GitHub's date fields, kept tiny.
