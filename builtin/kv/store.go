@@ -198,7 +198,7 @@ var promptPassphrase = func() (string, error) {
 // passphrase, the key file `kv init --generate` makes is the other lock and
 // anything running as the person can read it, and an MCP server — which
 // inherits an environment and has no terminal — opens a passphrase store only
-// from the passphrase in that environment (docs/30-boundary/20-mcp.md).
+// from the passphrase in that environment (docs/20-using/50-secrets.md).
 func newStoreNote() string {
 	return "New store — choose a passphrase. You type it each time, and it cannot be\n" +
 		"recovered. " + plugin.SurfaceCLI.CapabilityWith("kv.init", "generate") + " uses a key file instead, which anything\n" +
