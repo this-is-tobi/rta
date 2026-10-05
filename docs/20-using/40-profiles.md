@@ -71,46 +71,6 @@ profiles:
 | `plugins.<name>.ssh` | Reach it through an SSH jump host |
 | `plugins.<name>.secrets-from` | Which cluster and namespace a `kube:` secret is read from, when the connection opens no forward |
 
-## Several connections to one plugin
-
-An environment rarely has exactly one of everything: staging holds the main database *and* the analytics one, two buckets, sometimes two Vault mounts. One profile holds them all, as **instances** — a label inside the key you already write:
-
-```yaml
-profiles:
-  staging:
-    plugins:
-      pg:                     # the default instance — a bare key means what it always meant
-        set: {host: db.staging.internal}
-        secrets: {password: kv:staging-db-password}
-      pg/analytics:           # a second database, same plugin
-        set: {host: analytics.staging.internal}
-        secrets: {password: kv:staging-analytics-password}
-      s3/assets:
-        set: {bucket: shop-assets}
-      s3/logs:
-        set: {bucket: shop-logs}
-```
-
-A call picks one with the same string everywhere — the flag, the MCP argument, the grant:
-
-```bash
-rta pg query --profile staging "select 1"             # the default instance
-rta pg query --profile staging/analytics "select 1"   # the labeled one
-rta profile set staging --plugin pg/analytics --set host=…   # stating it from a script
-rta profile show staging/analytics                    # that one connection, inside its environment
-```
-
-The resolution rules are small and fail closed:
-
-- A bare `--profile staging` runs the **default** instance — the unlabeled entry, which is written as one.
-- With no unlabeled entry and exactly one labeled, that one is unambiguous and wins.
-- With several labeled entries and no default — the `s3` above — a bare name is **refused with the list**, never resolved by sort order: `staging/assets` or `staging/logs`, your call. Completion offers the refs directly, described by each instance's address.
-
-Two things follow from an instance being *one connection*:
-
-- **Grants name exactly one.** `rta grant allow pg.query --profile staging/analytics` consents to the analytics database and nothing else; asking for a bare `--profile staging` when several pg instances exist is refused with the same list, because "analytics, not the main database" is precisely the decision consent is recording. A policy `neverProfile: [prod]` covers every instance inside prod. `rta use staging` still switches — and bounds — the whole environment, instances included.
-- **A labeled instance's credentials come from `secrets:` references** (`kv:` or `kube:`), not from `RTA_PROFILE_*` variables — that channel belongs to the default instance only, because a variable name for `staging/analytics` would be forgeable by a carefully-named profile.
-
 ## `secrets:` holds a reference, never a value
 
 ```yaml
@@ -146,187 +106,6 @@ secrets:
 ```
 
 That is reported, and it matters most in the direction you would actually hit it: moving a credential out of `set:` and into `secrets:` while leaving the old line behind changes nothing, and the plaintext one is still in force. The report names the plaintext line as the one to remove.
-
-## Reaching things that are not directly reachable
-
-```yaml
-profiles:
-  staging:
-    plugins:
-      pg:
-        kube: staging/db/svc/postgres:5432
-```
-
-A call filled from that connection runs through a `kubectl port-forward` that rta raises and tears down again. The plugin sees an ordinary local address and never learns a tunnel was there — which is why no service plugin needs changing to gain this.
-
-```yaml
-profiles:
-  staging:
-    plugins:
-      pg:
-        ssh: bastion.example.com/db.internal:5432
-```
-
-The same fact, spelled for a service behind a jump host rather than in a cluster. The head is an `~/.ssh/config` alias, and everything your SSH config says about it keeps working — rta shells out to `ssh`.
-
-One forward per call, torn down afterwards. A cached port-forward outlives the pod it points at, and a stale tunnel to a rescheduled pod fails in a way nobody can read.
-
-A forward is also torn down when the server that opened it is killed outright: on Linux the kernel ends it with its parent, and on macOS, which has no such signal, the next `rta mcp serve` finds what a killed one left in `forwards/` under the data directory and stops it — only when the process that started it is gone and the pid still has the start time that was written down, so a pid the kernel has reused is never signalled. Until then a forward left by a `kill -9` is a loopback listener into the cluster; `rta mcp serve` says on its stderr how many it stopped.
-
-A connection states **at most one** of `kube` and `ssh`; both at once is refused.
-
-### When the far side speaks TLS on its own
-
-```yaml
-profiles:
-  homelab:
-    plugins:
-      vault:
-        kube: homelab/vault-operator-system/svc/vault:8200
-        tunnelTLS: true
-        set:
-          ca-file: ~/.config/rta/vault-ca.crt
-          tls-server-name: vault.vault-operator-system.svc
-```
-
-`kubectl port-forward` and `ssh -L` are both a raw byte pipe from `127.0.0.1` straight into whatever the destination socket speaks — neither terminates a request the way a proxy would. So the plain `http://` a forward fills in by default is correct for the ordinary case (a plaintext service behind a TLS-secured cluster or bastion hop) and silently wrong for a service whose own listener speaks TLS, Vault's being the common example: the forward carries the TLS bytes through unchanged, and a plain HTTP client sending a request into them gets a connection that closes with nothing readable back.
-
-`tunnelTLS: true` says the far end terminates TLS itself, so the forward should be addressed as `https://` — refused if the connection states neither `kube:` nor `ssh:`, since there is then no forward for it to describe. It changes *scheme only*. Certificate verification still runs as normal, against whatever this machine already trusts: a self-signed or cluster-internal CA (an operator-generated root, a private issuer) still refuses, exactly as it would over a direct connection, and `tunnelTLS: true` does not become `--insecure` under any configuration.
-
-The name is checked too, and through a forward the address the plugin dials is `127.0.0.1`, which a server's certificate names only when it was issued to answer probes on loopback as well. A certificate made for the service — `vault.vault-operator-system.svc` above — is refused for its name, and the refusal says the forward is why. `tls-server-name` is the name to check it for instead, the one the service's certificate was issued under: `etcd`, `keycloak`, `qdrant`, `redis`, `s3` and `vault` take it, as a setting only an operator states, and an agent cannot change it. The chain is still checked in full, against the CA the profile names.
-
-**Named apart from any plugin's own `tls` or `sslmode`.** etcd, qdrant and s3 each read `set: {tls: ...}`; pg reads `set: {sslmode: ...}` — that is the plugin's *own* on/off toggle, in its own client library's vocabulary, and the host forces it off over a tunnel (see [Types are part of the declaration](#types-are-part-of-the-declaration) below for that mechanism). `tunnelTLS` is a different fact at a different layer: not a plugin's setting, but what the host must know about the coordinate itself to address it correctly, before any plugin config is even read. The two can sit beside each other in the same entry without conflict — they answer different questions — but they would not if they shared a word.
-
-Where that CA lives is a plugin's own concern rather than the tunnel's, because reading it is a file-read primitive and the plugin declares — or does not — that it trusts a caller-named path for it: a PEM bundle read from this machine, never from the cluster, and never fillable by an MCP caller. `rta explain <capability>` lists whether a given plugin offers one. Not a secret either — a CA certificate is the public half of a key pair, the half a CA hands out for wide distribution so anyone can verify what it signed, the same reason an OS trust store ships thousands of them in the clear. It needs no more protection than `address` does, and reading it through `kv:`/`kube:` the way a credential is would be reaching for the wrong tool.
-
-The field is named for what it mirrors, plugin by plugin, rather than one word forced everywhere:
-
-| Plugin | Field | Why that name |
-| --- | --- | --- |
-| `etcd`, `vault`, `s3`, `qdrant` | `ca-file` | No existing library vocabulary to mirror, so these four agree with each other instead |
-| `pg` | `sslrootcert` | Its own `sslmode` already commits this plugin to libpq's vocabulary, and `sslrootcert` is libpq's own keyword for exactly this — pgx's DSN parser reads it directly |
-
-**`pg`'s `sslrootcert` only matters for a connection reached directly — no `kube:`, no `ssh:`.** A tunnelled one forces `sslmode` to `disable` regardless of what is written under `set:`: `sslmode` carries `plugin.EndpointTLS`, the role a forward's own hop takes over unconditionally (the same mechanism etcd's, qdrant's and s3's own `tls` field go through, and the reasoning is the same one — PostgreSQL's TLS kills a `kubectl port-forward` on the clean disconnect). `disable` never attempts TLS at all, so `pg` leaves `sslrootcert` out of the connection it makes, and a profile that sets it beside `kube:` or `ssh:` is refused, naming the forward — as is `--sslrootcert` given on a call that goes through one (`core.profile.tls.forward`): `sslrootcert` is declared `TLSAdjacent`, a value that does nothing once the TLS mode it depends on is turned off. This is not new with `sslrootcert` — it is the standing rule that governs everything `set:` states about transport security under a coordinate — and it is refused rather than left to do nothing because a CA is the one value here that is easy to type expecting it to survive.
-
-For a directly-reached server — a managed Postgres, an on-prem instance with no forward in front of it — `sslmode` is exactly what `set:` states:
-
-```yaml
-profiles:
-  managed:
-    plugins:
-      pg:
-        set:
-          host: pg.example.internal
-          sslmode: verify-ca
-          sslrootcert: ~/.config/rta/pg-ca.crt
-```
-
-A client certificate and key are `sslcert` and `sslkey`, named the same way. `ssl-home: true` is the opt-in for the habit libpq has of looking under `~/.postgresql` for all three when they are not named: with it on, `pg` uses what is there, resolved once and handed both the driver and `pg_dump`, `psql` and `pg_restore`, so they cannot disagree; it is off by default so that no file is read that a setting did not name, and it is never fillable by an MCP caller.
-
-**`sslmode` does not follow `sslrootcert`, and a CA beside a mode that would not verify against it is refused.** `sslmode`'s own default, `prefer`, never verifies the server in pgx whatever CA it is given, and libpq — which `pg_dump`, `psql` and `pg_restore` run on — verifies under it and then retries in plaintext when verification fails; `require` verifies only because a file is there, and stops without a word the day the file is dropped. So a CA beside either is refused before anything dials, as `pg.tls.ca.unused` and `pg.tls.ca.implied`, naming the mode to set instead: `verify-ca` checks the server's chain against the CA, and `verify-full` its name as well. `verify-ca` with no `sslrootcert` is refused too, since pgx would then check the chain against this machine's own store and read no name, and `sslrootcert: system`, this machine's own store, is taken beside `verify-full` alone. This is deliberate rather than a gap: which axis to move — the CA, how strict to be about it — is two separate decisions, and silently elevating one because the other was set would be a second, undocumented way `sslmode`'s value changes (the codebase already argues against exactly that kind of surprise — see the type-coercion section below), so the refusal says which mode to set rather than setting it. Set both, as above.
-
-## Writing one from a script
-
-`rta profile set` states a profile from flags. Nothing about it needs a terminal, which is the point: before it existed the only alternatives were a TTY form and hand-written YAML, and a team that cannot script its setup ships the YAML — the path where nothing checks the block until something tries to use it.
-
-```bash
-rta profile set <name> [--note ...] [--ttl 8h|none] [--color "#dd3333"|none]
-                       [--plugin <name> [--set k=v ...] [--secret input=kv:entry ...]
-                                        [--kube ...] [--ssh ...] [--direct] [--tunnel-tls]]
-rta profile rm  <name> [--plugin <name>]
-```
-
-**Each block is replaced by what the flags state, and a block no flag mentions is left alone.** So `--set` states that plugin's whole `set:` block — omit a key to remove it — while its `secrets:` stays exactly as it was, and a run with neither touches neither. That is the only reading under which running the command twice and running it once are the same thing, which is what makes it safe in a script that runs on every boot.
-
-**Anything a restatement leaves out is named.** Changing one key of four is also how `sslmode: require` disappears from the line beside it, so the loss is reported rather than assumed to be intended:
-
-```
-dropped  set.database, set.sslmode — the flags state the whole block, and these were not among them
-```
-
-One plugin per invocation. A profile spanning three plugins is three lines, and each of them is independently re-runnable — including in parallel: every writer of the config file takes a lock across the whole read-modify-write, so concurrent runs cannot lose each other's profiles.
-
-`rta profile rm <name>` removes the environment, switches it off if it was on, and **revokes every grant naming it**. That last part is not tidiness: a grant naming a profile nothing can look up authorizes nothing, so leaving it behind is a row in `rta grant list` that reads like access and is not. `--plugin` removes one entry and keeps the environment.
-
-### What it refuses
-
-| What you typed | Why it is refused |
-| --- | --- |
-| `--set password=…` on a declared credential | `set:` is a plaintext value in a world-readable file. It names `--secret` instead |
-| `--secret password=hunter2` | that block takes a **reference**, never a value — and the refusal does not repeat what you passed |
-| `--set port=six-thousand`, `--set tls=yes` | the declared type cannot hold it (see below) — `core.profile.set.type` |
-| `--set encoding=b64` on an input with a closed set | no call would accept it — `core.profile.set.option`. A listed value in another case is written the way the plugin declares it |
-| `--set ping.count=0` | it is outside the widest range of any capability reading the key — `core.profile.set.range`. Inside it, each capability holds the value to its own range |
-| `--set hsot=…` | nothing in that plugin reads the key |
-| `--kube …` and `--ssh …` together | a call opens one forward |
-| `--tunnel-tls` with neither `--kube` nor `--ssh` in effect (this run or already stored) | it states something about the far side of a forward that does not exist — `--direct` clears a stored `tunnelTLS: true` for the same reason |
-| a profile named after an installed plugin | a profile name and a namespace share a command line |
-| writing where the file is not honoured | with no config directory the config path falls back to `./.rta.yaml` — ordinary in a container or in CI — and nothing in a working-directory file is honoured: `profiles:`, `plugins:` and `dashboard:` are all ignored, because that file could have come from a repository you cloned. Set `$RTA_CONFIG` |
-
-Neither credential refusal echoes the value it was given. If you did pass a real one, it is in your shell history — rta will not put it anywhere else.
-
-`--plugin pg` is enough; the artifact pin is filled in from what is installed. A digest is not something anyone should type, and typing one wrong is exactly the failure the pin exists to prevent.
-
-### Repinning after a plugin rebuild
-
-Trust binds to the artifact's digest, never to a name or a version — see [the boundary](../30-boundary/10-the-boundary.md) — so `rta plugin upgrade pg` changes what "pg" pins to, and every profile still naming the old digest starts refusing with `this profile's pin does not match the installed "pg"` the next time it is resolved. `rta profile set staging --plugin pg` fixes one profile at a time, resolving the new digest itself rather than asking for one typed in. `rta profile repin` makes the same rewrite across every profile at once, touching nothing else stored beside the entry — the `set:`, `secrets:`, `kube:` and `ssh:` blocks all come along unchanged.
-
-```bash
-rta plugin upgrade pg
-rta profile repin --all --plugin pg               # every profile with a pg entry
-rta profile repin staging --plugin pg             # just one profile
-rta profile repin staging --plugin pg/analytics   # just one instance of it
-```
-
-Name a profile, or pass `--all` — one or the other is required, so a repin's scope is always stated rather than assumed. `--dry-run` reports what would change without writing it. An entry already pinned to what is installed is reported and left alone.
-
-**Tab completion knows the keys.** With `--plugin` on the line, `--set <tab>` offers exactly what that plugin reads, with its help text and — for a closed set — its accepted values. `--secret <tab>` offers the inputs a mapping may target, marking which of them are credentials. A credential never appears under `--set`, because it cannot be a config key at all:
-
-```
-$ rta profile set staging --plugin pg --set <tab>
-database=   database to connect to
-host=       database host
-port=       database port
-sslmode=    disable|prefer|require|verify-ca|verify-full
-user=       role to connect as
-```
-
-### Adding a forward to an existing connection
-
-A forward fills the endpoint inputs itself, so a stated host beside a coordinate is a line no run reads. A host given *on the call* — typed into the form, or passed as a flag — is different: it connects directly and no forward is opened, which is the override for a coordinate that is wrong. A TLS switch on the call — `--sslmode`, `--tls` — says how to talk, never where, so it opens no such way out: the call still goes through the forward, which turns that switch off, and a value asking for TLS is refused as `core.profile.tls.forward` before the forward opens, rather than dropped or taken somewhere else. Leave the switch out to go through the forward, or give the host and port as well to reach the server directly with it — the only place TLS you ask for is negotiated end to end. `--kube` on a connection that already sets one drops the keys it replaces and says so:
-
-```
-removed  set.host, set.port — the forward fills those, so nothing read them
-```
-
-Stating both in the same command is refused instead. Quietly dropping half of what you just typed is a different thing from clearing a line you are not looking at.
-
-## Types are part of the declaration
-
-Every value in `set:` is read back as the type the plugin declared, by a type assertion — so a value of the wrong shape would be read as the **zero**, and the host refuses it instead, on every call that reads it:
-
-```yaml
-set:
-  tls: "true"     # a string where a boolean is declared. Refused — read, it would be false.
-  tls: yes        # also a string — YAML 1.2. Refused the same way.
-  port: "5432"    # a string. Refused — never run as port 0.
-  sslmode: true   # a boolean where text is declared. Refused — read, it would be empty.
-```
-
-Each of these would otherwise leave a connection running somewhere, or without the transport security, its own configuration does not state. `rta profile list` and `rta doctor` report all four, and a mistyped profile refuses to resolve rather than connecting somewhere unexpected:
-
-```
-profiles.staging.pg: `set: tls` is written as text where a boolean is declared — every call reading it is refused
-  (write it unquoted as `true` or `false` — a quoted `"true"` is a string, and so is a bare `yes`)
-```
-
-There is deliberately no coercion. Reading `"true"` as true would then have to answer for `yes`, `on`, `1` and `TRUE`, and every answer is a guess about a value that decides whether a connection is encrypted.
-
-`rta profile set` cannot produce this: a flag argument is always text, so it converts to the declared type before writing, and refuses what will not convert.
-
-The same rule covers the base `plugins:` block: `rta doctor` reports the line, and every call reading it is refused, naming the key it came from under the heading you wrote — at a terminal, `` `rta mysql status` takes text for --tls, not a boolean, which the config's plugins.mysql@f5074594a1c3.tls sets ``.
-
-A number of the right shape outside what every capability reading its key takes is different: each capability holds it to its own nearest bound, so the profile still resolves — but not as written. `rta profile set` refuses to write one; written by hand, `rta profile list` shows the profile as `warn` — or as `on`, with the same note, while it is switched on — and `rta profile show` and `rta doctor` name the range to write instead.
 
 ## A secret in the wrong block
 
@@ -426,24 +205,6 @@ neverProfile:
   - production
 ```
 
-## Editor completion for the file
-
-The config file has a JSON Schema, and rta prints it:
-
-```bash
-rta config schema > schema.json   # next to the config file — `rta doctor` prints where that is
-```
-
-Then put one modeline at the top of the config file:
-
-```yaml
-# yaml-language-server: $schema=schema.json
-```
-
-VS Code's YAML extension (`redhat.vscode-yaml`) and every other editor speaking yaml-language-server now complete each key, flag unknown ones, and show the explanation on hover — `tunnelTLS` tells you it is about the destination and not the hop without leaving the file.
-
-The schema states the envelope, deliberately. What a `plugins:` section or a `set:` overlay may hold *inside* is each plugin's own declaration, which the schema cannot know without knowing every plugin — `rta explain <ns>` lists those keys, and `rta doctor` stays the deep validator for everything the envelope cannot see.
-
 ## Checking it
 
 ```bash
@@ -458,8 +219,13 @@ profile   info   staging is switched on with no deadline — while it is,
 
 That second line is the one to read. A profile switched on with no deadline is a state you chose; rta just makes sure you know you are in it.
 
+## Related
+
+- [Profiles in depth](./41-profiles-in-depth.md) — several connections to one plugin, writing a profile from a script, types, and editor completion
+- [Reaching private services](./42-reaching-private-services.md) — a connection that goes through `kubectl port-forward` or `ssh`
+- [Grants](../30-boundary/30-grants.md) — `--profile` as a bound
+- [Using plugins](../40-plugins/10-plugins.md) — the plugins a profile configures
+
 ## Next
 
-- [Grants](../30-boundary/30-grants.md) — `--profile` as a bound
-- [Secrets](./50-secrets.md) — what `kv:` references point at
-- [Using plugins](../40-plugins/10-plugins.md) — the plugins a profile configures
+[Secrets](./50-secrets.md) — what `kv:` references point at.
