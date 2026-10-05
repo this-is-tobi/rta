@@ -21,9 +21,10 @@ rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run native
 **Table of Contents** *- md sources*:
 
 *Getting started*
-- [Installation](./docs/10-getting-started/10-installation.md) *- Build it, verify it, put it on `$PATH`, turn on completion*
+- [Installation](./docs/10-getting-started/10-installation.md) *- Download it, put it on `$PATH`, check it works, and where the two supported systems differ*
 - [Quick start](./docs/10-getting-started/20-quickstart.md) *- Ten minutes: the CLI, the TUI, and an agent you connect, refuse and allow*
 - [Connect an agent](./docs/10-getting-started/30-connect-an-agent.md) *- Registering a client, naming it, and checking that it reached rta*
+- [Other ways to install](./docs/10-getting-started/40-other-ways-to-install.md) *- From source, the container image, the Helm chart, and the plugins that arrive from an index*
 
 *Using it*
 - [The CLI](./docs/20-using/10-cli.md) *- Output formats, exit codes, `--dry-run`, `explain`, scripting*
@@ -59,6 +60,9 @@ rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run native
 *Reference*
 - [Glossary](./docs/95-reference/10-glossary.md) *- The words these pages use in one particular way — grant, record, roster, profile, role, plugin — and the acronyms they assume*
 - [The path gate](./docs/95-reference/20-the-path-gate.md) *- Roots, symbolic links, hard links and `git`: exactly where the line falls*
+- [Verify a download](./docs/95-reference/30-verify-a-download.md) *- Checksums, build attestations and signatures for the archive, the image and the chart*
+- [External tools](./docs/95-reference/40-external-tools.md) *- The programs some capabilities shell out to, and what is lost without each*
+- [Where rta keeps things](./docs/95-reference/50-where-rta-keeps-things.md) *- The config file, the data directory and every file in them*
 
 ## What is in it
 

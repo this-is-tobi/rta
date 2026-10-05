@@ -6,7 +6,7 @@ Two images ship with every release and you can build a third. `ghcr.io/this-is-t
 docker run --rm ghcr.io/this-is-tobi/rta:latest --version
 ```
 
-Every release publishes them with SLSA provenance, an SBOM and a cosign signature; `latest` tracks the newest release, and a release `1.2.3` is also tagged `1.2` and `1`. [Installation](../10-getting-started/10-installation.md#container-image) is how to check what you pulled. A one-shot command needs nothing more than `docker run`, inside a cluster as well: `kubectl run --rm -it rta-debug --image=ghcr.io/this-is-tobi/rta:latest -- net probe db.internal 5432`.
+Every release publishes them with SLSA provenance, an SBOM and a cosign signature; `latest` tracks the newest release, and a release `1.2.3` is also tagged `1.2` and `1`. [Verify a download](../95-reference/30-verify-a-download.md#the-container-image) is how to check what you pulled. A one-shot command needs nothing more than `docker run`, inside a cluster as well: `kubectl run --rm -it rta-debug --image=ghcr.io/this-is-tobi/rta:latest -- net probe db.internal 5432`.
 
 ## In a container, for a hardened server
 
@@ -56,7 +56,7 @@ The trade is real and worth stating: a containerized server sees the container's
 
 ## `rta-full`: the console
 
-If you want the tools rather than the narrowness, `ghcr.io/this-is-tobi/rta-full` is the same rta with every first-party plugin and the tools from [the external tools table](../10-getting-started/10-installation.md#external-tools) already in it — Alpine-based rather than distroless, because a distroless image has no package manager to put them there. Roughly 120 MB against the primary image's 12, and the plugins arrive already trusted: the image installed them from the official index at a commit it names, verified each against the index's sha256, and keeps them with their trust under `/usr/local/lib/rta`, the read-only system root a state volume on `/rta-home` cannot hide. Its version tag names the rta inside; the plugins are the official index's at the time of the build, and the image is rebuilt and republished under that tag when they move — so pin the digest, as with any image, if you need the exact set.
+If you want the tools rather than the narrowness, `ghcr.io/this-is-tobi/rta-full` is the same rta with every first-party plugin and the tools from [the external tools table](../95-reference/40-external-tools.md) already in it — Alpine-based rather than distroless, because a distroless image has no package manager to put them there. Roughly 120 MB against the primary image's 12, and the plugins arrive already trusted: the image installed them from the official index at a commit it names, verified each against the index's sha256, and keeps them with their trust under `/usr/local/lib/rta`, the read-only system root a state volume on `/rta-home` cannot hide. Its version tag names the rta inside; the plugins are the official index's at the time of the build, and the image is rebuilt and republished under that tag when they move — so pin the digest, as with any image, if you need the exact set.
 
 One row of that table it cannot carry: Alpine has no Oracle MySQL client — its `mysql-client` package is MariaDB's — so the image carries `mariadb-client`, and `mysql.dump`/`mysql.restore` are the two capabilities in it that will not run. They refuse at the first flag with the skew message, which is the diagnosis rather than a mystery; bring Oracle's client yourself if you need them.
 

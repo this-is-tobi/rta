@@ -14,7 +14,7 @@ That is it for a client that ships its own configuration command. For one that d
 
 The answer says where the client's command registered rta (`scope`), what to do next and what the agent can reach. [Server options](../10-getting-started/30-connect-an-agent.md#server-options-belong-in-the-registration) — `--consent`, `--root`, `--max-result` — go into the same command, and [running it again](../10-getting-started/30-connect-an-agent.md#running-it-again) replaces a registration that differs rather than keeping it.
 
-On a new machine, `rta init` does this for every client it finds: one question each, showing the command it would run, Enter to skip, and `--yes` to say yes to all of them without asking. It registers Claude Code for every project, leaves a client that already has a registration as it is, and writes no config file of its own — see [Configuration](../10-getting-started/10-installation.md#configuration).
+On a new machine, `rta init` does this for every client it finds: one question each, showing the command it would run, Enter to skip, and `--yes` to say yes to all of them without asking. It registers Claude Code for every project, leaves a client that already has a registration as it is, and writes no config file of its own — see [Configuration](../95-reference/50-where-rta-keeps-things.md#configuration).
 
 ## What rta does for each client
 

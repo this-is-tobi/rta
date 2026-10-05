@@ -103,7 +103,7 @@ So an authorisation attaches to an artifact rather than to a name a replacement 
 
 ## Confinement
 
-Plugins run in a sandbox. On macOS that is `sandbox-exec`; `rta doctor --detail` reports what it actually applied (plain `rta doctor` keeps the row to one line, with every number below and a pointer to the exception):
+**Confinement is applied on macOS only.** There each plugin runs under `sandbox-exec`, and `rta doctor --detail` reports what it actually applied (plain `rta doctor` keeps the row to one line, with every number below and a pointer to the exception):
 
 ```
 plugin confinement   ok   sandbox-exec: 2 paths denied read+write (rta's own state),
@@ -115,9 +115,9 @@ plugin confinement   ok   sandbox-exec: 2 paths denied read+write (rta's own sta
                           read its own directory cannot verify a certificate
 ```
 
-Read that row rather than assuming it. It states what is denied on *this* machine, and on Linux, where rta applies no sandbox, it says so.
+Read that row rather than assuming it. It states what is denied on *this* machine. On Linux rta applies no sandbox: a plugin runs with your user's full access, the row says `none on linux`, and only the process-group and environment-allowlist rules hold. [Supported platforms](../10-getting-started/10-installation.md#supported-platforms) lists the other places the two systems differ.
 
-That last clause is the one exception, and it is there because of what macOS does rather than because a plugin was trusted with something: the Security framework initialises from the main executable's location, so a process that cannot read its own directory cannot verify a TLS certificate at all. Without the carve-out no managed plugin could reach an `https://` address, while a copy of the same plugin on `$PATH` could. It is reads only, of that one directory, and only for an artifact rta installed there, or for the private copy it starts a `$PATH` plugin from.
+The row's last clause is the one exception, and it is there because of what macOS does rather than because a plugin was trusted with something: the Security framework initialises from the main executable's location, so a process that cannot read its own directory cannot verify a TLS certificate at all. Without the carve-out no managed plugin could reach an `https://` address, while a copy of the same plugin on `$PATH` could. It is reads only, of that one directory, and only for an artifact rta installed there, or for the private copy it starts a `$PATH` plugin from.
 
 ### When a plugin needs one of those locations
 

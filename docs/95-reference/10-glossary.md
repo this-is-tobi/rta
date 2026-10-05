@@ -49,7 +49,7 @@ The words this documentation uses in one particular way, and the acronyms it ass
 - **RWX** — ReadWriteMany, a volume that several pods mount at once. The chart refuses it: two rta processes on one data directory would disagree about the grants. [Kubernetes](../30-boundary/80-kubernetes.md)
 - **SBOM** — software bill of materials, the list of what a build contains; `rta audit deps` reads one, and a release publishes its own.
 - **SIEM** — security information and event management, the system a log is shipped to; the codes in the record are what to match on there, not the wording.
-- **SLSA** — Supply-chain Levels for Software Artifacts; the build provenance a release is published with. [Installation](../10-getting-started/10-installation.md)
+- **SLSA** — Supply-chain Levels for Software Artifacts; the build provenance a release is published with. [Verify a download](./30-verify-a-download.md)
 - **TLS** — Transport Layer Security, the encryption beneath `https` and most database connections.
 - **TTL** — time to live; `--ttl 30m` is how long a grant, a profile or a lock stands before it lapses on its own.
 - **TTY** — a terminal. A form "at a TTY" is one a person fills in, as opposed to a script or a pipe, which has none.
