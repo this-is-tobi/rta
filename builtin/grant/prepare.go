@@ -201,17 +201,26 @@ func breadthNote(catalog func() []plugin.Capability, g core.Grant) string {
 		return ""
 	}
 	sort.Strings(destructive)
-	which := "none destructive"
-	if len(destructive) > 0 {
-		shown := destructive[:min(3, len(destructive))]
-		which = strconv.Itoa(len(destructive)) + " destructive (" + strings.Join(shown, ", ")
-		if rest := len(destructive) - len(shown); rest > 0 {
-			which += " and " + format.Count(rest, "other", "others")
-		}
-		which += ")"
-	}
+	which := destructiveSummary(destructive)
 	return fmt.Sprintf("note: %s covers %s an agent needs a grant for, %s — name one to allow only it",
 		g.Target, format.Count(len(gated), "capability", "capabilities"), which)
+}
+
+// destructiveSummary counts the destructive capabilities and names the first
+// few. Never "and 1 other": the fourth name is shorter than saying there is one.
+func destructiveSummary(ids []string) string {
+	if len(ids) == 0 {
+		return "none destructive"
+	}
+	shown := ids[:min(3, len(ids))]
+	if len(ids) == 4 {
+		shown = ids
+	}
+	which := strconv.Itoa(len(ids)) + " destructive (" + strings.Join(shown, ", ")
+	if rest := len(ids) - len(shown); rest > 0 {
+		which += " and " + format.Count(rest, "other", "others")
+	}
+	return which + ")"
 }
 
 // givenRecord refuses a record that is nothing but white space, the one
