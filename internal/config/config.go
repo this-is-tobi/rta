@@ -309,7 +309,6 @@ const maxConfigBytes = 8 << 20
 // the value, and saving that would bake one shell's environment into the
 // file for every future run.
 func LoadFile() (Config, error) {
-	var cfg Config
 	// Capped and opened without waiting: the file is the operator's, but the
 	// working-directory fallback is whatever a directory somebody else filled
 	// holds, and a named pipe there held every command for good.
@@ -317,9 +316,21 @@ func LoadFile() (Config, error) {
 	switch {
 	case os.IsNotExist(err):
 		// Zero-config mode.
+		return Parse(nil)
 	case err != nil:
-		return cfg, view.Errorf("config.unreadable", "reading %s: %v", Path(), err)
-	default:
+		return Config{}, view.Errorf("config.unreadable", "reading %s: %v", Path(), err)
+	}
+	return Parse(data)
+}
+
+// Parse reads configuration text as the loader reads the file: the same
+// refusals, the same stamping of where it came from, the same errors naming
+// the config path. It is what `rta config edit` holds the editor's result to
+// before anything of it reaches the file, so a save that would have broken
+// every later command is refused while the person is still looking at it.
+func Parse(data []byte) (Config, error) {
+	var cfg Config
+	if len(data) > 0 {
 		if err := yamlguard.RefuseAnchors(data); err != nil {
 			return cfg, view.Errorf("config.invalid", "parsing %s: %v", Path(), err).
 				WithHint(parseHint(err))
