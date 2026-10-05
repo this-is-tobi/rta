@@ -202,6 +202,9 @@ func (m Model) answersWaiting() bool {
 	}
 	switch m.mode {
 	case modeDashboard:
+		if a, claimed := m.selectedAction("w"); claimed && a.cap.ID != queueCapability {
+			return false
+		}
 		return !m.searchEditing
 	case modeResult, modeConfirm:
 		return !m.wTakenHere()
@@ -215,7 +218,7 @@ func (m Model) answersWaiting() bool {
 
 // wTakenHere is whether the capability on show gives `w` a meaning of its own,
 // which a plugin may: the key is the capability's to declare, and the queue
-// does not take it from one.
+// does not take it from one. The same goes for a selected tile, above.
 func (m Model) wTakenHere() bool {
 	for _, a := range capActions(m.reg, m.current.ID) {
 		if a.key == "w" {
