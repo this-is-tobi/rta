@@ -241,6 +241,21 @@ func TestAPlainNoteIsNotAToDoUntilYouAreDoneWithIt(t *testing.T) {
 	if got := v.(view.Table).Empty; !strings.Contains(got, "`note_add {\"parent\":1,\"title\":\"<title>\"}` adds one") {
 		t.Errorf("no sub-notes over MCP = %q", got)
 	}
+	// On the TUI it is the key the list has for it, not a capability's name.
+	v, err = runList(context.Background(), req(map[string]any{}, false).WithSurface(plugin.SurfaceTUI))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.(view.Table).Empty; strings.Contains(got, "note") || !strings.Contains(got, "press a to add one") {
+		t.Errorf("an empty list on the TUI says %q, want the key that adds a note", got)
+	}
+	v, err = runList(context.Background(), req(map[string]any{"parent": 1}, false).WithSurface(plugin.SurfaceTUI))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.(view.Table).Empty; !strings.Contains(got, "press a to add one, with the parent box set to 1") {
+		t.Errorf("no sub-notes on the TUI says %q", got)
+	}
 	if got := pair(t, section(t, show(t, 1), "note"), "status"); got != "done" {
 		t.Errorf("page status = %q", got)
 	}
