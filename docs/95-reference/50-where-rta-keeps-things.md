@@ -20,7 +20,7 @@ Nothing in the config grants anything. It holds connection profiles, dashboard p
 
 | What | Where | Notes |
 | --- | --- | --- |
-| Config | `$XDG_CONFIG_HOME/rta/config.yaml`, else `~/.config/rta/config.yaml` — on macOS as well as Linux | `RTA_CONFIG` overrides. Builds before this one kept it in `~/Library/Application Support/rta` on macOS, which nothing reads now: `rta doctor` names what is left there (`old config`) with the command that moves it, and `rta` says so once at startup. Beside it: `policy.yaml` (your own [team policy](../30-boundary/50-team-policy.md)), `remotes.yaml` (the servers you operate) and the `kv.identity` key `kv init --generate` makes |
+| Config | `$XDG_CONFIG_HOME/rta/config.yaml`, else `~/.config/rta/config.yaml` — on macOS as well as Linux | `RTA_CONFIG` overrides. Builds before this one kept it in `~/Library/Application Support/rta` on macOS, which nothing reads now: `rta doctor` names what is left there (`old config`) with the command that moves it, and every command at a terminal says so in one line until it is moved. Beside it: `policy.yaml` (your own [team policy](../30-boundary/50-team-policy.md)), `remotes.yaml` (the servers you operate) and the `kv.identity` key `kv init --generate` makes |
 | Data directory | `$RTA_DATA_DIR`, else `$XDG_DATA_HOME/rta`, else `~/.local/share/rta` — on macOS as well as Linux | Everything rta writes below is in it, owner-only. `rta doctor` prints it |
 | Encrypted store | `kv.age` and `kv.recipients` | [Secrets](../20-using/50-secrets.md) |
 | Grants | `grants.json`, with its seal key `grants.key` | Sealed against tampering |
