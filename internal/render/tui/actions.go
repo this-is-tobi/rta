@@ -59,6 +59,10 @@ type capAction struct {
 	// the counterexample that keeps this per-action (kv.list's own
 	// declaration tells that story).
 	bare bool
+	// form asks for the form even where the shell would answer in one key: the
+	// capital of a key that has a shortcut (answers.go). Never set by a
+	// declaration.
+	form bool
 	// seed is the declaration's input-to-column mapping; see plugin.Action.
 	seed map[string]string
 	// from is the capability that declared the action, whose view it acts

@@ -500,6 +500,11 @@ func (m Model) footerFor(screen mode) string {
 			hintItem{display: "✗", label: "any other key cancels", rank: rankAction, style: &bad},
 		)
 	}
+	// An armed answer replaces the bar for the same reason: while one key
+	// answers, the line that names the call is what the screen is for.
+	if m.armed != nil && screen == m.mode {
+		return fitHintBar(m.width, footerMaxLines, m.armedItems()...)
+	}
 	items := m.footerItems(screen)
 	// A form's validation errors, in the bar rather than under the fields.
 	// huh's own error line is off (form.go says why: it grew the form into a

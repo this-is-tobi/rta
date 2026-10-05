@@ -52,7 +52,7 @@ rta agent show 5473aa62    # what the call would do, from its own dry run
 rta agent allow 5473aa62
 ```
 
-The agent tile on the TUI's dashboard counts the calls waiting for you: `w` opens the queue, `enter` shows what a call would do, `a` allows it and `d` denies it. Allowing runs that one call and leaves no standing grant behind. A call parks instead of being refused only on a server started with `--consent` — [be asked instead of refused](./01-readme.md#be-asked-instead-of-refused-while-you-are-at-the-machine) says when that is worth it and when it is not.
+A call waiting for you shows on every screen of the TUI, in one line above it: `w` opens the queue, `enter` shows what a call would do, `a` names the call and what it would do and `enter` allows exactly that one, `d` denies it. Allowing runs that one call and leaves no standing grant behind; `A` is the form for one that should. A call parks instead of being refused only on a server started with `--consent` — [be asked instead of refused](./01-readme.md#be-asked-instead-of-refused-while-you-are-at-the-machine) says when that is worth it and when it is not.
 
 ## See what it did
 

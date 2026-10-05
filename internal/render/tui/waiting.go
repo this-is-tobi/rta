@@ -62,9 +62,7 @@ type waitingCall struct {
 // waitingMsg is the queue as it was read.
 type waitingMsg struct{ calls []waitingCall }
 
-// readWaiting reads the queue off disk. Everything it returns came from an
-// agent's call, so it is cleaned the way every other agent-written string is
-// before it can reach the terminal.
+// readWaiting reads the queue off disk.
 func readWaiting() []waitingCall {
 	reqs, err := consent.Pending()
 	if err != nil {
@@ -72,18 +70,30 @@ func readWaiting() []waitingCall {
 	}
 	out := make([]waitingCall, 0, len(reqs))
 	for _, r := range reqs {
-		call := textclean.Terminal(r.Cap)
-		if records := textclean.Records(r.Scopes); records != "" {
-			call += " " + records
-		}
-		would, _, _ := strings.Cut(strings.TrimSpace(r.Preview), "\n")
-		out = append(out, waitingCall{
-			agent: textclean.Name(r.Agent),
-			call:  call,
-			would: textclean.Terminal(would),
-		})
+		out = append(out, callOf(r))
 	}
 	return out
+}
+
+// waitingByID is the one parked call with that id, if it is still waiting.
+func waitingByID(id string) (waitingCall, bool) {
+	r, ok := consent.Find(id)
+	if !ok {
+		return waitingCall{}, false
+	}
+	return callOf(r), true
+}
+
+// callOf is a request as the screen says it. Everything in it came from an
+// agent's call, so it is cleaned the way every other agent-written string is
+// before it can reach the terminal.
+func callOf(r consent.Request) waitingCall {
+	call := textclean.Terminal(r.Cap)
+	if records := textclean.Records(r.Scopes); records != "" {
+		call += " " + records
+	}
+	would, _, _ := strings.Cut(strings.TrimSpace(r.Preview), "\n")
+	return waitingCall{agent: textclean.Name(r.Agent), call: call, would: textclean.Terminal(would)}
 }
 
 // pollWaiting reads the queue after delay and says what it found.
@@ -145,7 +155,27 @@ func leaveHint(screen mode) string {
 func (w waitingCall) describe() string {
 	s := w.call
 	if w.agent != "" {
-		s = w.agent + ": " + s
+		s = w.agent + " asks " + s
+	}
+	if w.would != "" {
+		s += " — " + w.would
+	}
+	return s
+}
+
+// allowedLine is allowLine once it has been done.
+func (w waitingCall) allowedLine() string {
+	if w.agent != "" {
+		return "allowed " + w.agent + "'s " + w.call + " once"
+	}
+	return "allowed " + w.call + " once"
+}
+
+// allowLine is what pressing a would do, said as the question it answers.
+func (w waitingCall) allowLine() string {
+	s := "allow " + w.call + " once"
+	if w.agent != "" {
+		s = "allow " + w.agent + "'s " + w.call + " once"
 	}
 	if w.would != "" {
 		s += " — " + w.would

@@ -77,10 +77,10 @@ func TestTheRowActionsWorkOnARosterLedByARole(t *testing.T) {
 	}
 	acted, _ := rm.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	am := acted.(Model)
-	if am.form == nil || am.current.ID != "grant.revoke" {
-		t.Fatalf("x on the page: current=%s form=%v, want grant.revoke's form", am.current.ID, am.form != nil)
+	if am.mode != modeRunning || am.current.ID != "grant.revoke" {
+		t.Fatalf("x on the page: current=%s mode=%v, want grant.revoke running on the row", am.current.ID, am.mode)
 	}
-	if got := am.form.values(); got["target"] != "kv.get" || got["scope"] != "api" || got["agent"] != "claude" {
+	if got := am.lastValues; got["target"] != "kv.get" || got["scope"] != "api" || got["agent"] != "claude" || got["exact"] != true {
 		t.Errorf("x on the grant on api revokes %#v, want that grant", got)
 	}
 }

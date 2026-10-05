@@ -155,11 +155,12 @@ func TestARowActionOnAChangedConnectionSeedsTheProfile(t *testing.T) {
 	}
 }
 
-// What the row seeds is what the command runs with: the form x and n open
-// asks only for what the row does not say, and hands the seeded record and
-// connection on untouched — a padded record included, which a box would
-// have trimmed — and the exact switch with them, or the row's grant is
-// named only as far as the seed goes and the run takes its neighbours too.
+// What the row seeds is what the command runs with: the form n opens asks
+// only for what the row does not say, and x has nothing left to ask and runs;
+// both hand the seeded record and connection on untouched — a padded record
+// included, which a box would have trimmed — and the exact switch with them,
+// or the row's grant is named only as far as the seed goes and the run takes
+// its neighbours too.
 func TestTheFormARowOpensRunsOnTheSeededGrant(t *testing.T) {
 	m := storeModel(t)
 	m.reg = realRegistry(t)
@@ -171,10 +172,15 @@ func TestTheFormARowOpensRunsOnTheSeededGrant(t *testing.T) {
 	for _, a := range grantRowActions(t, m) {
 		model, _ := m.runAction(a, tbl)
 		next := model.(Model)
-		if next.form == nil {
-			t.Fatalf("%s did not open a form", a.cap.ID)
+		var got map[string]any
+		switch {
+		case next.form != nil:
+			got = next.form.values()
+		case a.cap.ID == "grant.revoke" && next.mode == modeRunning:
+			got = next.lastValues
+		default:
+			t.Fatalf("%s did not open a form or run", a.cap.ID)
 		}
-		got := next.form.values()
 		if got["target"] != "kv.get" || got["scope"] != padded || got["profile"] != "staging" || got["agent"] != "claude" ||
 			got["exact"] != true {
 			t.Errorf("%s runs with %#v, want the row's grant as it is held, exactly", a.cap.ID, got)

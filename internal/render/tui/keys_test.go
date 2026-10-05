@@ -263,6 +263,16 @@ func advertisedScreens() map[string]func(*testing.T) (Model, mode) {
 			m := listResult(t, listRegistry(t, &doneLog))
 			return m, modeResult
 		},
+		// The two screens where something is answered, against the real
+		// catalogue: the capitals beside their lower-case keys, and what each
+		// does without a form.
+		"queue": func(t *testing.T) (Model, mode) {
+			parkCall(t, "note.rm", "2", "would remove note 2")
+			return screenOf(t, "agent.pending", nil), modeResult
+		},
+		"roster": func(t *testing.T) (Model, mode) {
+			return twoGrants(t), modeResult
+		},
 		"profilePlugins": func(t *testing.T) (Model, mode) {
 			m := profileModel(t, twoProfileConfig())
 			m.profileOpen = "staging"
@@ -393,10 +403,10 @@ func keyMsg(key string) tea.KeyPressMsg {
 // what each key is allowed to change would be the same drift this test exists
 // to catch, written twice.
 func fingerprint(m Model) string {
-	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d|%q",
+	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d|%q|%v|%v",
 		m.mode, m.selected, m.pluginSel, m.pluginScroll, m.profileSel, m.profileScroll,
 		m.row, m.query, m.searchEditing, m.form != nil, m.themeForm != nil,
-		m.copyPick != nil, len(m.trail), m.flash, m.tickGen, m.armedDelete)
+		m.copyPick != nil, len(m.trail), m.flash, m.tickGen, m.armedDelete, m.armed != nil, m.previewing)
 }
 
 // One idea, one word, one notation — everywhere. Three spellings of "the

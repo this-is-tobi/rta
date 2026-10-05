@@ -97,6 +97,7 @@ func (m Model) startFormWith(c plugin.Capability, base, prev map[string]any) (te
 	}
 	m.current = c
 	m.form = m.runForm(c, fieldsAfter(c, base), defaults, base)
+	m.form.about = aboutCall(c, base)
 	m.fitForm()
 	m.mode = modeForm
 	return m, m.form.form.Init()
@@ -385,7 +386,11 @@ func (m Model) formView() string {
 	// guarantee and not an estimate: huh scrolls its fields inside it, and
 	// nothing can render past the last row whatever the field mix turns out
 	// to cost.
-	return panel(capHead(m.current), "\n"+m.form.form.View(), m.width, m.height-lipgloss.Height(footer), true) + "\n" + footer
+	head := capHead(m.current)
+	if m.form.about != "" {
+		head.Note = m.form.about
+	}
+	return panel(head, "\n"+m.form.form.View(), m.width, m.height-lipgloss.Height(footer), true) + "\n" + footer
 }
 
 // closeForm dismisses the current form: back to the actionable view it was

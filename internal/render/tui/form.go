@@ -32,7 +32,11 @@ const suggestTimeout = 500 * time.Millisecond
 // then the remaining fields seeded with current values (base carries the
 // stage-one answers).
 type capForm struct {
-	form     *huh.Form
+	form *huh.Form
+	// about is what the panel's title says in place of the capability's
+	// summary, for a form that answers one thing in particular: the parked call
+	// it would allow (answers.go). Empty for every other form.
+	about    string
 	cap      plugin.Capability
 	fields   []plugin.Field // the fields this stage collects
 	base     map[string]any // request values this form does not collect itself
