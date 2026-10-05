@@ -48,6 +48,12 @@ func TestEveryStatusWordTheBuiltinsUseIsColoured(t *testing.T) {
 		// pkg
 		"outdated":       StatusWarn,
 		"pending reboot": StatusWarn,
+		// note: itemstore.DueStatus, which the Due column leads with
+		"OVERDUE":           StatusBad,
+		"OVERDUE · Sep 1":   StatusBad,
+		"WARN today":        StatusWarn,
+		"WARN soon · Oct 6": StatusWarn,
+		"done · Oct 2":      StatusMuted,
 		// profiles and the panes
 		"invalid":  StatusBad,
 		"disabled": StatusMuted,

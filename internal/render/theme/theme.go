@@ -311,7 +311,10 @@ func ClassifyStatus(s string) StatusKind {
 		strings.HasPrefix(v, "denied") || strings.HasPrefix(v, "unreachable") ||
 		strings.HasPrefix(v, "destructive") || strings.HasPrefix(v, "down") ||
 		strings.HasPrefix(v, "overloaded") || strings.HasPrefix(v, "eol") ||
-		strings.HasPrefix(v, "critical"):
+		strings.HasPrefix(v, "critical") ||
+		// A note past its due date, the one grade the note list gives that a
+		// person is meant to act on today, and it was the one drawn plainest.
+		strings.HasPrefix(v, "overdue"):
 		return StatusBad
 	case strings.HasPrefix(v, "closed") || strings.HasPrefix(v, "info") ||
 		strings.HasPrefix(v, "none") || strings.HasPrefix(v, "disabled") ||
