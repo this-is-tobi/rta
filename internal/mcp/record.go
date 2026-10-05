@@ -394,7 +394,11 @@ func askConsent(ctx context.Context, c plugin.Capability, opts Options, values m
 		// second it expires: the one `rta agent pending` shows the person, and
 		// the one a call that joined an earlier question had, which the
 		// configured wait is not.
-		wait := format.Duration(parked.Request.Deadline.Sub(parked.Request.AskedAt))
+		//
+		// Both ends are whole seconds, so a wait under one second reads as none at
+		// all, and "did not answer within 0s" is not a sentence: a second is the
+		// finest the request itself can say.
+		wait := format.Duration(max(parked.Request.Deadline.Sub(parked.Request.AskedAt), time.Second))
 		rec.Outcome, rec.Auth = agentlog.Refused, agentlog.Blocked
 		rec.Code, rec.Reason = "core.consent.expired", "nobody answered within "+wait
 		return false, view.Errorf("core.consent.expired", "the operator did not answer within %s", wait).
