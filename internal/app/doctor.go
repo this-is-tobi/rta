@@ -990,11 +990,7 @@ func doctorLocks(add func(check, status, detail string)) {
 	} else {
 		named := make([]string, 0, len(locks))
 		for _, l := range locks {
-			name := l.Name
-			if l.Kind != lockdown.KindAgent {
-				name += " (" + string(l.Kind) + ")"
-			}
-			named = append(named, name)
+			named = append(named, l.Label())
 		}
 		add("locks", "info", fmt.Sprintf("%d standing: %s — every call from %s is refused, "+
 			"whatever it holds (`rta lock list` says why)", len(locks), strings.Join(named, ", "),
