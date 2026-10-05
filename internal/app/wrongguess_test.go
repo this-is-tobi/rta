@@ -40,6 +40,7 @@ func TestAWordNamedSomewhereElseInTheTreeIsAnsweredWithWhereItIs(t *testing.T) {
 		"dns":            "`rta net dns`",
 		"disk":           "`rta sys disk`",
 		"install pg":     "`rta plugin install pg`",
+		"uninstall pg":   "`rta plugin remove pg`",
 		"status":         "`rta agent overview`",
 		"log":            "`rta agent log`",
 		"history":        "`rta agent log`",
@@ -81,6 +82,21 @@ func TestAVerbIsNotToldItMightBeAService(t *testing.T) {
 	ve := hintFor(t, "kube")
 	if !strings.Contains(ve.Hint, "`rta audit kube`") || !strings.Contains(ve.Hint, "`rta plugin install kube`") {
 		t.Errorf("`rta kube` was told %q, which has to name both readings", ve.Hint)
+	}
+}
+
+// A synonym the operator's vocabulary gives a command is not a service either:
+// `rta theme` is `rta config`, and the plugin sentence beside it is a second
+// reading nobody had. A group's own name keeps both (above).
+func TestASynonymOfACommandIsNotToldItMightBeAService(t *testing.T) {
+	for _, word := range []string{"theme", "settings", "cfg", "colors", "tiles"} {
+		ve := hintFor(t, word)
+		if !strings.Contains(ve.Hint, "did you mean") || strings.Contains(ve.Hint, "plugin") {
+			t.Errorf("`rta %s` was told %q", word, ve.Hint)
+		}
+	}
+	if ve := hintFor(t, "plugin", "uninstall", "pg"); !strings.Contains(ve.Hint, "`rta plugin remove pg`") {
+		t.Errorf("`rta plugin uninstall pg` was told %q, not that it is plugin remove", ve.Hint)
 	}
 }
 
