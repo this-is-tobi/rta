@@ -1,6 +1,7 @@
 package grant
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"slices"
@@ -456,6 +457,26 @@ func knownAgents() []string {
 	return out
 }
 
+// agentsSeen is every name an agent has been seen under: connected now,
+// holding a grant, or in the record. knownAgents is the first two, and what a
+// grant fills in on its own; this is the three, and what a lock, a filter and
+// a completion are checked against, because the agent an incident is about
+// is as likely to have called an hour ago as to be connected now.
+func agentsSeen() []string {
+	seen := map[string]bool{}
+	for _, n := range knownAgents() {
+		seen[n] = true
+	}
+	for _, n := range loggedAgents() {
+		seen[n] = true
+	}
+	return slices.Sorted(maps.Keys(seen))
+}
+
+// SuggestAgents completes an agent name from the ones this machine has seen,
+// for every command that takes one to filter by.
+func SuggestAgents(context.Context, plugin.Request) []string { return agentsSeen() }
+
 // grantNeeded refuses a grant that could never be spent. Reads are free —
 // core.Required is the one gate, and a Read on the base connection passes it
 // without a row — so a grant on one is a row `grant list` shows as live that
@@ -504,20 +525,77 @@ func grantNeeded(sf plugin.Surface, catalog func() []plugin.Capability, target, 
 	}
 }
 
-// unknownAgentNote says when a grant names an agent this machine has never
-// seen, beside the names it has. Not a refusal: the first grant on a fresh
-// machine is issued before the client has ever connected, and the name on
-// it is the one `rta mcp install` just wrote. But a grant matches its agent
-// exactly, so `--agent cluade` is a row that authorizes nothing and looks
-// live, and the moment to say so is while the operator is still looking.
-// Measured before the row is written, because afterwards the name on it is
-// one this machine knows.
-func unknownAgentNote(known []string, agent string) string {
-	if len(known) == 0 || slices.Contains(known, agent) {
+// unknownAgentNote says when a name is one this machine has never seen an
+// agent under, beside the names it has and the one the typed name is probably
+// a slip for. Not a refusal: the first grant on a fresh machine is issued
+// before the client has ever connected, and the name on it is the one `rta mcp
+// install` just wrote. But a grant matches its agent exactly, so `--agent
+// cluade` is a row that authorizes nothing and looks live, and a lock on it
+// freezes nobody while the screen says "locked" — and the moment to say so is
+// while the operator is still looking. Measured before the row is written,
+// because afterwards the name on it is one this machine knows.
+//
+// seen is agentsSeen: a name from the record counts as one the machine has
+// seen, since an agent that called last week and holds nothing now is the one
+// an incident is about.
+func unknownAgentNote(seen []string, agent string) string {
+	if len(seen) == 0 || slices.Contains(seen, agent) {
 		return ""
 	}
-	return fmt.Sprintf("note: no agent named %q has connected or holds a grant — this machine knows %s",
-		agent, strings.Join(known, ", "))
+	note := fmt.Sprintf("note: no agent named %q has connected, holds a grant or appears in the record — this machine knows %s",
+		agent, strings.Join(seen, ", "))
+	if near := nearestName(agent, seen); near != "" {
+		note += " (did you mean " + near + "?)"
+	}
+	return note
+}
+
+// UnknownAgentNote is unknownAgentNote for a name typed into another command
+// that names an agent, asked of what this machine has seen now.
+func UnknownAgentNote(agent string) string { return unknownAgentNote(agentsSeen(), agent) }
+
+// nearestName is the one name in names a slip of the keyboard could have made
+// name from, or "" when none is near enough to be a guess worth printing: at
+// most a third of the word away, one edit for a short name. A swap of two
+// neighbouring letters is one edit, since that is the typo.
+func nearestName(name string, names []string) string {
+	name = strings.ToLower(name)
+	allowed := max(1, len([]rune(name))/3)
+	best, bestDistance := "", allowed+1
+	for _, n := range names {
+		if d := editDistance(name, strings.ToLower(n)); d < bestDistance {
+			best, bestDistance = n, d
+		}
+	}
+	return best
+}
+
+// editDistance is the optimal-string-alignment distance between two words:
+// insertions, deletions and substitutions, and a swap of two neighbouring
+// letters as one edit.
+func editDistance(a, b string) int {
+	ra, rb := []rune(a), []rune(b)
+	d := make([][]int, len(ra)+1)
+	for i := range d {
+		d[i] = make([]int, len(rb)+1)
+		d[i][0] = i
+	}
+	for j := range d[0] {
+		d[0][j] = j
+	}
+	for i := 1; i <= len(ra); i++ {
+		for j := 1; j <= len(rb); j++ {
+			cost := 1
+			if ra[i-1] == rb[j-1] {
+				cost = 0
+			}
+			d[i][j] = min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
+			if i > 1 && j > 1 && ra[i-1] == rb[j-2] && ra[i-2] == rb[j-1] {
+				d[i][j] = min(d[i][j], d[i-2][j-2]+1)
+			}
+		}
+	}
+	return d[len(ra)][len(rb)]
 }
 
 // olderServerNote warns when a server that is open right now is running a

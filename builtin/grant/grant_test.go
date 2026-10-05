@@ -35,7 +35,7 @@ func listed(t *testing.T, v view.View) view.Table {
 		return got
 	case view.Sections:
 		for _, item := range got.Items {
-			if tbl, ok := item.View.(view.Table); ok && item.Title == "Allowed" {
+			if tbl, ok := item.View.(view.Table); ok && (item.Title == "Allowed" || item.Key() == "granted") {
 				return tbl
 			}
 		}

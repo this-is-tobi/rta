@@ -1,6 +1,7 @@
 package grant
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -25,15 +26,20 @@ func TestTheRosterSaysWhichRolesStand(t *testing.T) {
 	ownRole(t, configDir, "  dev:\n    ttl: 2h\n    grants: [kv.env, kv.get]\n")
 	issue(t, map[string]any{"role": "dev"})
 	before := time.Now()
-	v := run(t, listH, nil)
+	v := run(t, listH, map[string]any{"detail": true})
 	after := time.Now()
 	s, ok := v.(view.Sections)
-	if !ok || s.Items[0].ID != "roles" {
-		t.Fatalf("roster = %+v, want the roles in force first", v)
+	if !ok {
+		t.Fatalf("the detail page = %s", view.TypeOf(v))
 	}
-	force := s.Items[0].View.(view.Text).Body
+	var force string
+	for _, item := range s.Items {
+		if item.ID == "roles" {
+			force = item.View.(view.Text).Body
+		}
+	}
 	if !strings.HasPrefix(force, "dev for test — 2 grants, issued ") {
-		t.Fatalf("roles in force = %q", force)
+		t.Fatalf("roles in force = %q, want the section on the detail page", force)
 	}
 	grants, verr := core.Load()
 	if verr != nil {
@@ -54,6 +60,26 @@ func TestTheRosterSaysWhichRolesStand(t *testing.T) {
 	}
 	if listed(t, v).Total != 2 {
 		t.Fatalf("the rows are missing under the roles: %+v", v)
+	}
+}
+
+// `grant list -o json` is one table on the day the first role is issued as it
+// was the day before, with the role as a column: a script that reads `.rows`
+// does not break the first time somebody runs `grant issue`.
+func TestTheRosterIsOneTableWhateverIsInForce(t *testing.T) {
+	configDir, _ := roleSetup(t)
+	ownRole(t, configDir, "  dev:\n    ttl: 2h\n    grants: [kv.env, kv.get]\n")
+	issue(t, map[string]any{"role": "dev"})
+	tbl, ok := run(t, listH, nil).(view.Table)
+	if !ok {
+		t.Fatalf("the roster with a role in force is not a table")
+	}
+	var names []string
+	for _, c := range tbl.Columns {
+		names = append(names, c.Name)
+	}
+	if !slices.Contains(names, "Role") || tbl.Total != 2 {
+		t.Errorf("columns %v, total %d: want the role as a column and both grants", names, tbl.Total)
 	}
 }
 

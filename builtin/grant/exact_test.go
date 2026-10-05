@@ -147,7 +147,7 @@ func TestAnExactRevokeNamesTheGrantStillCoveringExactly(t *testing.T) {
 		t.Errorf("an exact revoke said %q, want %q", body, want)
 	}
 	body = run(t, runRevoke, map[string]any{"target": "kv.get", "scope": "db-password"}).(view.Text).Body
-	if want := "revoke that too: `rta grant revoke kv.get`"; !strings.HasSuffix(body, want) {
+	if want := "revoke that too: `rta grant revoke kv.get`"; !strings.Contains(body, want) {
 		t.Errorf("a revoke without exact said %q, want %q", body, want)
 	}
 }

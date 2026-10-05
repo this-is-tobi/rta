@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/builtin/internal/compact"
 	core "github.com/this-is-tobi/rta/internal/grant"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
 	"github.com/this-is-tobi/rta/internal/textclean"
@@ -57,10 +58,11 @@ func remoteList(ctx context.Context, req plugin.Request, server string) (view.Vi
 	// the role held all of them.
 	judged := remoteStates(gl)
 	grants, states := gl.Grants, judged
-	if role := strings.TrimSpace(req.String("role")); role != "" {
+	role, agent := strings.TrimSpace(req.String("role")), strings.TrimSpace(req.String("agent"))
+	if role != "" || agent != "" {
 		grants, states = nil, nil
 		for i, g := range gl.Grants {
-			if g.Role == role {
+			if (role == "" || g.Role == role) && (agent == "" || g.Agent == agent) {
 				grants = append(grants, g)
 				states = append(states, judged[i])
 			}
@@ -70,15 +72,14 @@ func remoteList(ctx context.Context, req plugin.Request, server string) (view.Vi
 	// the warnings beside the marks worded for that server — the local
 	// roster's column and sentences, since the operator is deciding the same
 	// things about these rows.
-	t := grantsTable(grants, nil, states, false)
+	t := grantsTable(grants, nil, states, false, compact.For(req))
 	t.Warnings = append(t.Warnings, artifactWarnings(req.Surface(), grants, states, server)...)
 	// The table even when the server holds nothing, with the sentence beside
 	// it for a person (view.Table.Empty), as the local listing answers: the
 	// sentence alone was a text view `jq '.rows[]'` could not iterate.
 	switch {
 	case len(grants) == 0 && len(gl.Grants) > 0:
-		t.Empty = fmt.Sprintf("No standing grant on %s was issued under the role %s.",
-			server, strings.TrimSpace(req.String("role")))
+		t.Empty = fmt.Sprintf("No standing grant on %s matches %s.", server, filterWords(role, agent))
 	case len(grants) == 0:
 		t.Empty = fmt.Sprintf("No active grants on %s — its agents can only read.", server)
 	}
@@ -304,4 +305,17 @@ func remoteRevoke(ctx context.Context, req plugin.Request, server string, spec o
 		return nil, verr
 	}
 	return view.Text{Body: revokeBody(req.Surface(), spec, server, out, req.DryRun)}, nil
+}
+
+// filterWords says what a roster was narrowed to: "the role dev", "the agent
+// claude", or both.
+func filterWords(role, agent string) string {
+	var parts []string
+	if role != "" {
+		parts = append(parts, "the role "+role)
+	}
+	if agent != "" {
+		parts = append(parts, "the agent "+agent)
+	}
+	return strings.Join(parts, " and ")
 }
