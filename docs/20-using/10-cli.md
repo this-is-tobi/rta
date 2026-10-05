@@ -202,6 +202,8 @@ A verb answers to the spellings you would guess for it, in every namespace and i
 
 A word that is no command at all is answered with the command that most likely means it, before anything else: `rta revoke` with `rta grant revoke`, `rta ps` with `rta sys ps`, `rta uuid` with `rta gen uuid`, `rta settings` or `rta theme` with `rta config`, `rta freeze claude` with `rta lock add claude`. It is the same matcher `rta explain` and the TUI's search use, so a word finds the same thing wherever it is typed. A flag after the wrong word does not hide it, a mistyped flag is answered with the nearest one (`--core` with `--cores`), an argument a command has no place for names the flags that take a value, and inside a namespace the refusal lists its verbs on the line.
 
+The name of a first-party plugin that is not installed is answered with the command that installs it: `rta pg query`, `rta explain pg.query` and `rta grant allow pg.query` all say that `pg` is a first-party plugin and that `rta plugin install pg` installs it. No other word is taken for a plugin, since installing is a decision about what to run and rta names it only for the plugins it knows.
+
 ## Several at once, and a date
 
 A command that takes more than one id says so with dots in its usage — `rta note done <id...>` — and takes them in one call: `rta note done 1 2`, or `rta note rm 1 2 --yes`. Completion offers the ids the command can still act on, and leaves out one already on the line. A due date is written the way it is said: `today`, `tomorrow`, a weekday, `+3d`, `2w`, `next-week`, `10-20` for the next 20 October, or `2026-10-20`, as in `rta note add "renew the certificate" --due +3d`; a due date makes the note a to-do, and `rta explain note.add` has the whole list.
