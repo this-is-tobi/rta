@@ -20,7 +20,7 @@ type seen struct {
 	userAgentSent                        bool
 }
 
-func sentBy(t *testing.T, method string, values map[string]any) (seen, error) {
+func sentBy(t *testing.T, method string, values map[string]any, surface ...plugin.Surface) (seen, error) {
 	t.Helper()
 	var got seen
 	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
@@ -31,7 +31,11 @@ func sentBy(t *testing.T, method string, values map[string]any) (seen, error) {
 	}))
 	defer srv.Close()
 	values["url"] = srv.URL
-	_, err := doRequest(context.Background(), method, req(values))
+	r := req(values)
+	if len(surface) > 0 {
+		r = r.WithSurface(surface[0])
+	}
+	_, err := doRequest(context.Background(), method, r)
 	return got, err
 }
 
@@ -174,6 +178,46 @@ func TestABodyGivenTwiceOrUnreadableIsRefused(t *testing.T) {
 	_, err = sentBy(t, "POST", map[string]any{"data-file": big})
 	if verr := view.AsError(err, "x"); err == nil || verr.Code != "http.data.file" {
 		t.Errorf("a file past the cap: %v, want http.data.file", err)
+	}
+}
+
+// `--data @payload.json` and `--data @-` are how curl takes a body from a file or
+// a pipe, and sent as written they were the text "@payload.json": a server's
+// complaint about its body and nothing about the command line. Where the name is
+// a file here, or is the dash, it is refused with the flag that does it. Text
+// that merely starts with @ is a body, and the agent's surface never looks at
+// the disk at all.
+func TestCurlsFileFormIsRefusedWithTheFlagThatSendsAFile(t *testing.T) {
+	file := bodyFile(t, `{"a":1}`)
+	for name, c := range map[string]struct {
+		data string
+		hint string
+	}{
+		"a file that is there": {"@" + file, "--data-file: " + file},
+		"the dash for a pipe":  {"@-", "--data-file: /dev/stdin"},
+	} {
+		_, err := sentBy(t, "POST", map[string]any{"data": c.data})
+		verr := view.AsError(err, "x")
+		if err == nil || verr.Code != "http.data.atfile" || !strings.Contains(verr.Hint, c.hint) {
+			t.Errorf("%s: %v, hint %q, want http.data.atfile naming %q", name, err, verr.Hint, c.hint)
+		}
+	}
+
+	for name, data := range map[string]string{
+		"a file that is not there": "@" + filepath.Join(t.TempDir(), "absent"),
+		"a mention":                "@tobi ping",
+		"a directory":              "@" + t.TempDir(),
+		"a lone @":                 "@",
+	} {
+		got, err := sentBy(t, "POST", map[string]any{"data": data})
+		if err != nil || got.body != data {
+			t.Errorf("%s: body %q, %v, want it sent as written", name, got.body, err)
+		}
+	}
+
+	got, err := sentBy(t, "POST", map[string]any{"data": "@" + file}, plugin.SurfaceMCP)
+	if err != nil || got.body != "@"+file {
+		t.Errorf("over MCP: body %q, %v, want the agent's text as written", got.body, err)
 	}
 }
 

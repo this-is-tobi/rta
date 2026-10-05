@@ -356,6 +356,32 @@ func pipeSpelling(e *view.Error, file string) *view.Error {
 	return e
 }
 
+// curlFileForm refuses a body that is curl's way of naming a file, `--data
+// @payload.json` or `--data @-`, where the person who typed it has such a file
+// or means a pipe. Sent as written it was the text "@payload.json", which the
+// server answers with an error about its body and nothing about this command
+// line, and the person typed what they have typed for years.
+//
+// The file form is not offered in its place, for the reason data-file exists:
+// the same text over MCP is the agent's own and must never read a path, so the
+// surface that is an agent's is left alone and never looks at the disk. A body
+// that really begins with @ and names a file goes in through data-file.
+func curlFileForm(req plugin.Request, data string) *view.Error {
+	name, found := strings.CutPrefix(data, "@")
+	if !found || name == "" || req.Surface() == plugin.SurfaceMCP {
+		return nil
+	}
+	if name != "-" {
+		if info, err := pathin.Stat(req, name); err != nil || info.IsDir() {
+			return nil
+		}
+	} else {
+		name = "/dev/stdin"
+	}
+	return view.Errorf("http.data.atfile", "the body %q is how curl names a file, and %s sends text as written", data, req.Surface().InputName("data")).
+		WithHint("to send the file, give it to " + req.Surface().InputName("data-file") + ": " + name)
+}
+
 // maxRequestBody is more than any JSON payload somebody keeps in a file and
 // hands to an API, and well under what a pipe left running would fill memory
 // with.
@@ -368,6 +394,9 @@ func requestBody(req plugin.Request) (string, *view.Error) {
 	data, file := req.String("data"), req.String("data-file")
 	switch {
 	case file == "":
+		if verr := curlFileForm(req, data); verr != nil {
+			return "", verr
+		}
 		return data, nil
 	case data != "":
 		return "", view.Errorf("http.data.twice", "the body is given as a value and as a file").
