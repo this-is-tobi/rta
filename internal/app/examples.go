@@ -93,7 +93,7 @@ var examples = map[string][]string{
 	"rta kv init": {
 		"rta kv init --generate                    # a dedicated key, no passphrase",
 		"rta kv init --identity ~/.ssh/id_ed25519  # a key you already have",
-		"rta kv init --recipient age1abc...        # let somebody else read it too",
+		"rta kv init --recipient \"$(cat alice.pub)\"  # let somebody else read it too",
 	},
 	"rta plugin install": {
 		"rta plugin install pg",
