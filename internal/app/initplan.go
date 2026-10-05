@@ -50,6 +50,10 @@ type initPlan struct {
 	// found. It is said apart from the notes: it is not something to do, and a
 	// machine with nothing to do is a good outcome that init reports as one.
 	noClient bool
+	// index is a machine with no plugin index attached, which is the offer
+	// offerIndex puts to a person at a terminal; the note that names the command
+	// stays for everyone else, and for a no.
+	index bool
 }
 
 // planInit looks at the machine: which clients are on it and whether rta is
@@ -97,8 +101,59 @@ func planInit(ctx context.Context) initPlan {
 	}
 	if note, ok := pluginsNote(); ok {
 		plan.notes = append(plan.notes, note)
+		plan.index = true
 	}
 	return plan
+}
+
+// offerIndex puts the first-party index to a person who can be asked, through
+// the same question and the same attach `rta plugin install` uses, in place of
+// printing the command for them to type.
+//
+// Only at a terminal, and never under --dry-run, for the reason the install's
+// offer is: a network destination is not reached on a prompt nobody could have
+// seen. --yes answers it there, as it does for the install, and a script
+// without a terminal keeps the note. A no keeps the note too.
+//
+// The error is for an attach the person said yes to and that failed. A machine
+// that cannot attach at all (no git) is told so in the note instead, since init
+// asked nothing and did nothing wrong.
+func (p *initPlan) offerIndex(ctx context.Context, said io.Writer, yes, dryRun bool) *view.Error {
+	if !p.index || dryRun || !indexOfferTerminal() {
+		return nil
+	}
+	asked := false
+	ask := askToAttach
+	if yes {
+		ask = func(string) (bool, error) { return true, nil }
+	}
+	attached, verr := offerFirstPartyIndex(ctx, func(url string) (bool, error) {
+		asked = true
+		return ask(url)
+	}, said)
+	switch {
+	case verr != nil:
+		p.setNote("plugins", "the first-party index could not be attached — "+verr.Message+
+			"; `rta plugin index add official` tries it again")
+		if !asked {
+			return nil
+		}
+		return verr
+	case attached:
+		p.setNote("plugins", "the first-party index is attached — `rta plugin search` lists what it carries "+
+			"and `rta plugin install <name>` installs one")
+	}
+	return nil
+}
+
+// setNote replaces the note under key.
+func (p *initPlan) setNote(key, value string) {
+	for i := range p.notes {
+		if p.notes[i].Key == key {
+			p.notes[i].Value = value
+			return
+		}
+	}
 }
 
 // registeredWith says whether rta is already registered with a client, by the

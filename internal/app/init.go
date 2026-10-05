@@ -41,8 +41,8 @@ func newInitCommand(_ *registry.Registry, opts *globalOpts) *cobra.Command {
 			"skipped by pressing Enter: registering rta with each AI client it finds, for every project " +
 			"where the client has a flag for that and read-only until you grant more (`rta mcp install " +
 			"<client>` does the same by hand, with --consent, --root and --max-result); the line that " +
-			"turns on tab completion for your shell; and the command that attaches the first-party " +
-			"plugin index.\n\n" +
+			"turns on tab completion for your shell; and the first-party plugin index, which at a " +
+			"terminal it asks to attach (and --yes answers) and otherwise names the command for.\n\n" +
 			"rta never writes a client's own file: the client's own command does, as for `rta mcp " +
 			"install`. A client that already has a registration is left as it is. --yes registers every " +
 			"client it lists without asking, which is what a dotfiles script or a devcontainer wants, and " +
@@ -71,11 +71,18 @@ func newInitCommand(_ *registry.Registry, opts *globalOpts) *cobra.Command {
 				}
 			}
 
+			indexErr := plan.offerIndex(cmd.Context(), cmd.ErrOrStderr(), opts.yes, opts.dryRun)
 			result := plan.run(cmd.Context(), cmd.ErrOrStderr(), accepted, opts.dryRun)
 			if err := renderView(cmd, opts, result.answer()); err != nil {
 				return err
 			}
-			return result.failure()
+			if err := result.failure(); err != nil {
+				return err
+			}
+			if indexErr != nil {
+				return indexErr
+			}
+			return nil
 		},
 	}
 }
