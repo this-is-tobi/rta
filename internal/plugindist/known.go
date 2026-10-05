@@ -101,6 +101,14 @@ func FirstPartyHint(word string) string {
 	return name + " is a first-party plugin — " + install
 }
 
+// FirstPartyHintFor is FirstPartyHint for a capability ID or a target that may
+// be one: `pg.query` is missing for the reason `pg` is, and the namespace
+// before the first dot is the plugin to name. "" when it is none.
+func FirstPartyHintFor(target string) string {
+	namespace, _, _ := strings.Cut(target, ".")
+	return FirstPartyHint(namespace)
+}
+
 // KnownIndexURL is the repository rta ships for name, if it ships one.
 func KnownIndexURL(name string) (string, bool) {
 	url, ok := knownIndexes[name]
