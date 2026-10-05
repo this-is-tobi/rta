@@ -181,7 +181,7 @@ func TestAddListDoneRemoveCycle(t *testing.T) {
 	}
 
 	// Done hides from the default list, shows with --all.
-	text(t, runDone, map[string]any{"id": 1}, false)
+	text(t, runDone, map[string]any{"id": []string{"1"}}, false)
 	tbl = table(t, runList, map[string]any{"all": false})
 	if len(tbl.Rows) != 1 || tbl.Rows[0][noteCol] != "ship it" {
 		t.Fatalf("after done, rows = %v", tbl.Rows)
@@ -191,7 +191,7 @@ func TestAddListDoneRemoveCycle(t *testing.T) {
 		t.Fatalf("with --all, rows = %v", tbl.Rows)
 	}
 
-	text(t, runRemove, map[string]any{"id": 2}, false)
+	text(t, runRemove, map[string]any{"id": []string{"2"}}, false)
 	if tbl = table(t, runList, map[string]any{"all": true}); len(tbl.Rows) != 1 {
 		t.Fatalf("after rm, rows = %v", tbl.Rows)
 	}
@@ -202,10 +202,10 @@ func TestAddListDoneRemoveCycle(t *testing.T) {
 	}
 }
 
-// A plain note is what you get by default, it is never hidden, and it has
-// nothing to be done about: `done` refuses and says what would make it a
-// to-do instead.
-func TestAPlainNoteIsNotAToDo(t *testing.T) {
+// A plain note is what you get by default and it is never hidden. Asking to
+// be done with one says what it is, so `done` makes it a to-do and checks it
+// off in the same call, and says it did.
+func TestAPlainNoteIsNotAToDoUntilYouAreDoneWithIt(t *testing.T) {
 	setup(t)
 	text(t, runAdd, map[string]any{"title": "how the cluster is wired"}, false)
 
@@ -213,17 +213,21 @@ func TestAPlainNoteIsNotAToDo(t *testing.T) {
 	if got := tbl.Rows[0][col(t, tbl, "Status")]; got != "note" {
 		t.Errorf("status = %q, want note", got)
 	}
-	_, err := runDone(context.Background(), req(map[string]any{"id": 1}, false))
-	ve := view.AsError(err, "x")
-	if ve.Code != "note.done.notatodo" || !strings.Contains(ve.Hint, "`rta note toggle 1` makes it one") {
-		t.Errorf("done on a note = %+v", ve)
+	if got := text(t, runDone, map[string]any{"id": []string{"1"}}, true); got !=
+		"would check off note 1: how the cluster is wired (a note, so it becomes a to-do first)" {
+		t.Errorf("done --dry-run on a note = %q", got)
 	}
-	// An agent is sent to the tool, never to a command line it cannot run.
-	_, err = runDone(context.Background(), req(map[string]any{"id": 1}, false).WithSurface(plugin.SurfaceMCP))
-	if ve := view.AsError(err, "x"); !strings.Contains(ve.Hint, "`note_toggle {\"id\":1}` makes it one") {
-		t.Errorf("done on a note over MCP = %+v", ve)
+	if s, _ := load(); s.Items[0].Todo || s.Items[0].Done {
+		t.Fatalf("a dry run changed the note: %+v", s.Items[0])
 	}
-	_, err = runDone(context.Background(), req(map[string]any{"id": 9}, false).WithSurface(plugin.SurfaceMCP))
+	if got := text(t, runDone, map[string]any{"id": []string{"1"}}, false); got !=
+		"done: how the cluster is wired (it was a note, now a checked-off to-do)" {
+		t.Errorf("done on a note = %q", got)
+	}
+	if s, _ := load(); !s.Items[0].Todo || !s.Items[0].Done || s.Items[0].DoneAt == nil {
+		t.Errorf("after done: %+v, want a checked-off to-do", s.Items[0])
+	}
+	_, err := runDone(context.Background(), req(map[string]any{"id": []string{"9"}}, false).WithSurface(plugin.SurfaceMCP))
 	if ve := view.AsError(err, "x"); ve.Code != "note.notfound" ||
 		ve.Hint != `the `+"`note_list`"+` tool with the "all" argument lists every note` {
 		t.Errorf("done on no note over MCP = %+v", ve)
@@ -237,7 +241,7 @@ func TestAPlainNoteIsNotAToDo(t *testing.T) {
 	if got := v.(view.Table).Empty; !strings.Contains(got, "`note_add {\"parent\":1,\"title\":\"<title>\"}` adds one") {
 		t.Errorf("no sub-notes over MCP = %q", got)
 	}
-	if got := pair(t, section(t, show(t, 1), "note"), "status"); got != "note" {
+	if got := pair(t, section(t, show(t, 1), "note"), "status"); got != "done" {
 		t.Errorf("page status = %q", got)
 	}
 }
@@ -251,7 +255,7 @@ func TestToggleSwitchesNoteAndToDo(t *testing.T) {
 	if body := text(t, runToggle, map[string]any{"id": 1}, false); !strings.Contains(body, "now a to-do") {
 		t.Errorf("toggle = %q", body)
 	}
-	text(t, runDone, map[string]any{"id": 1}, false)
+	text(t, runDone, map[string]any{"id": []string{"1"}}, false)
 	if s, _ := load(); !s.Items[0].Todo || !s.Items[0].Done {
 		t.Fatalf("after toggle+done: %+v", s.Items[0])
 	}
@@ -317,7 +321,7 @@ func TestDryRunTouchesNothing(t *testing.T) {
 	if body := text(t, runAdd, map[string]any{"title": "phantom"}, true); !strings.Contains(body, "would add") {
 		t.Errorf("dry-run add = %q", body)
 	}
-	if body := text(t, runRemove, map[string]any{"id": 1}, true); !strings.Contains(body, "would remove") {
+	if body := text(t, runRemove, map[string]any{"id": []string{"1"}}, true); !strings.Contains(body, "would remove") {
 		t.Errorf("dry-run rm = %q", body)
 	}
 	tbl := table(t, runList, map[string]any{"all": true})
@@ -332,7 +336,7 @@ func TestDryRunTouchesNothing(t *testing.T) {
 func TestDoneIsIdempotent(t *testing.T) {
 	setup(t)
 	addTodo(t, "x")
-	text(t, runDone, map[string]any{"id": 1}, false)
+	text(t, runDone, map[string]any{"id": []string{"1"}}, false)
 	s, err := load()
 	if err != nil {
 		t.Fatal(err)
@@ -342,7 +346,7 @@ func TestDoneIsIdempotent(t *testing.T) {
 		t.Fatal("the first done call did not set DoneAt")
 	}
 
-	text(t, runDone, map[string]any{"id": 1}, false)
+	text(t, runDone, map[string]any{"id": []string{"1"}}, false)
 	s, err = load()
 	if err != nil {
 		t.Fatal(err)
@@ -354,7 +358,7 @@ func TestDoneIsIdempotent(t *testing.T) {
 
 func TestNotFoundIsCodedWithHint(t *testing.T) {
 	setup(t)
-	_, err := runDone(context.Background(), req(map[string]any{"id": 99}, false))
+	_, err := runDone(context.Background(), req(map[string]any{"id": []string{"99"}}, false))
 	ve := view.AsError(err, "x")
 	if ve.Code != "note.notfound" || ve.Hint == "" {
 		t.Errorf("want note.notfound with hint, got %+v", ve)
@@ -651,7 +655,7 @@ func TestSubNotesProgressAndListing(t *testing.T) {
 		t.Fatalf("children list = %v", children.Rows)
 	}
 
-	text(t, runDone, map[string]any{"id": 2}, false)
+	text(t, runDone, map[string]any{"id": []string{"2"}}, false)
 	tbl = table(t, runList, map[string]any{"all": false})
 	if got := tbl.Rows[0][col(t, tbl, "Note")]; got != "epic (1/2)" {
 		t.Errorf("progress after done = %q", got)
@@ -733,7 +737,7 @@ func TestNotesAlreadyInACycleComeBackIntoView(t *testing.T) {
 		t.Fatalf("list = %v, want the two notes in the cycle beside the one outside it", tbl.Rows)
 	}
 
-	text(t, runRemove, map[string]any{"id": 1}, false)
+	text(t, runRemove, map[string]any{"id": []string{"1"}}, false)
 	if s, err = load(); err != nil {
 		t.Fatal(err)
 	}
@@ -781,7 +785,7 @@ func TestANoteLeftAsItsOwnParentIsNotItsOwnSubNote(t *testing.T) {
 			t.Errorf("show says %s: %s", p.Key, p.Value)
 		}
 	}
-	if body := text(t, runRemove, map[string]any{"id": 1}, false); strings.Contains(body, "moved up") {
+	if body := text(t, runRemove, map[string]any{"id": []string{"1"}}, false); strings.Contains(body, "moved up") {
 		t.Errorf("rm = %q, want no sub-note moved up", body)
 	}
 }
@@ -802,7 +806,7 @@ func TestRemovingANoteLeftAsItsOwnParentMovesItsSubNotesToTheTop(t *testing.T) {
 	}
 	text(t, runAdd, map[string]any{"title": "step", "parent": 1}, false)
 
-	if body := text(t, runRemove, map[string]any{"id": 1}, false); !strings.Contains(body, "1 sub-note moved up") {
+	if body := text(t, runRemove, map[string]any{"id": []string{"1"}}, false); !strings.Contains(body, "1 sub-note moved up") {
 		t.Errorf("rm = %q, want its one sub-note moved up", body)
 	}
 	if s, err = load(); err != nil {
@@ -820,7 +824,7 @@ func TestRemoveReparentsChildren(t *testing.T) {
 	text(t, runAdd, map[string]any{"title": "epic"}, false)
 	text(t, runAdd, map[string]any{"title": "child", "parent": 1}, false)
 
-	body := text(t, runRemove, map[string]any{"id": 1}, false)
+	body := text(t, runRemove, map[string]any{"id": []string{"1"}}, false)
 	if !strings.Contains(body, "(1 sub-note moved up)") {
 		t.Errorf("remove message = %q", body)
 	}
@@ -836,7 +840,7 @@ func TestShowRendersSubNotesAndReferences(t *testing.T) {
 	setup(t)
 	addTodo(t, "epic")
 	text(t, runAdd, map[string]any{"title": "child", "parent": 1, "todo": true}, false)
-	text(t, runDone, map[string]any{"id": 2}, false)
+	text(t, runDone, map[string]any{"id": []string{"2"}}, false)
 	text(t, runAdd, map[string]any{"title": "related", "body": "see #1 for context"}, false)
 
 	page := show(t, 1)
@@ -975,9 +979,9 @@ func TestShowIgnoresSelfReferences(t *testing.T) {
 func TestReopenUndoesDone(t *testing.T) {
 	setup(t)
 	addTodo(t, "ship it")
-	text(t, runDone, map[string]any{"id": 1}, false)
+	text(t, runDone, map[string]any{"id": []string{"1"}}, false)
 
-	body := text(t, runReopen, map[string]any{"id": 1}, false)
+	body := text(t, runReopen, map[string]any{"id": []string{"1"}}, false)
 	if !strings.Contains(body, "re-opened") {
 		t.Errorf("reopen said %q", body)
 	}
@@ -986,11 +990,11 @@ func TestReopenUndoesDone(t *testing.T) {
 		t.Errorf("note still carries completion: %+v", s.Items[0])
 	}
 	// Re-opening an open note is a no-op, not an error.
-	if _, err := runReopen(context.Background(), req(map[string]any{"id": 1}, false)); err != nil {
+	if _, err := runReopen(context.Background(), req(map[string]any{"id": []string{"1"}}, false)); err != nil {
 		t.Errorf("second reopen: %v", err)
 	}
 	// …and an unknown id is still an error.
-	if _, err := runReopen(context.Background(), req(map[string]any{"id": 99}, false)); err == nil {
+	if _, err := runReopen(context.Background(), req(map[string]any{"id": []string{"99"}}, false)); err == nil {
 		t.Error("reopening a note that does not exist was accepted")
 	}
 }
@@ -998,8 +1002,8 @@ func TestReopenUndoesDone(t *testing.T) {
 func TestReopenDryRunChangesNothing(t *testing.T) {
 	setup(t)
 	addTodo(t, "ship it")
-	text(t, runDone, map[string]any{"id": 1}, false)
-	text(t, runReopen, map[string]any{"id": 1}, true)
+	text(t, runDone, map[string]any{"id": []string{"1"}}, false)
+	text(t, runReopen, map[string]any{"id": []string{"1"}}, true)
 	if s, _ := load(); !s.Items[0].Done {
 		t.Error("a dry run re-opened the note")
 	}

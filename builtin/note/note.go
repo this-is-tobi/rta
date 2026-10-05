@@ -217,36 +217,42 @@ func Plugin() plugin.Plugin {
 				Prefill: prefillEdit,
 			},
 			{
-				ID: "note.done", Summary: "Check a note off", Safety: plugin.Write, Idempotent: true,
+				ID: "note.done", Summary: "Check notes off", Safety: plugin.Write, Idempotent: true,
 				Flash: true,
 				Description: "Done for a task, filed for a note: either way it leaves the default " +
-					"list and stays findable through note.list's `all`, and in note.search.",
+					"list and stays findable through note.list's `all`, and in note.search. Several " +
+					"ids check off several notes in one call, all or none: an id that is not a note " +
+					"refuses the call before anything changes. A plain note is made a to-do and checked " +
+					"off in the same call, since asking to be done with it says what it is.",
 				Inputs: []plugin.Field{
 					// Checking off is something you do to an open note, so the
 					// done ones stay out of the way here.
-					{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "note id",
-						Suggest: suggestOpenIDs},
+					{Name: "id", Type: plugin.StringSlice, Positional: true, Required: true,
+						Help: "note id, or several", Suggest: suggestOpenIDs},
 				},
 				Run: runDone,
 			},
 			{
-				ID: "note.reopen", Summary: "Reopen a checked note", Safety: plugin.Write, Idempotent: true,
-				Flash:       true,
-				Description: "The undo for `note.done`. Re-opening an already-open note is a no-op, not an error.",
+				ID: "note.reopen", Summary: "Reopen checked notes", Safety: plugin.Write, Idempotent: true,
+				Flash: true,
+				Description: "The undo for `note.done`, for one id or several. Re-opening an " +
+					"already-open note is a no-op, not an error.",
 				Inputs: []plugin.Field{
-					{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "note id",
-						Suggest: suggestDoneIDs},
+					{Name: "id", Type: plugin.StringSlice, Positional: true, Required: true,
+						Help: "note id, or several", Suggest: suggestDoneIDs},
 				},
 				Run: runReopen,
 			},
 			{
-				ID: "note.rm", Summary: "Remove a note permanently", Safety: plugin.Destructive,
-				Flash:       true,
-				Scope:       "id",
-				Description: "Sub-notes are re-parented to the removed note's parent, never deleted silently.",
+				ID: "note.rm", Summary: "Remove notes permanently", Safety: plugin.Destructive,
+				Flash: true,
+				Scope: "id",
+				Description: "Sub-notes are re-parented to the removed note's parent, never deleted silently. " +
+					"Several ids remove several notes in one call, all or none, each one a record a grant " +
+					"or a consent has to cover.",
 				Inputs: []plugin.Field{
-					{Name: "id", Type: plugin.Int, Positional: true, Required: true, Help: "note id",
-						Suggest: suggestAnyID},
+					{Name: "id", Type: plugin.StringSlice, Positional: true, Required: true,
+						Help: "note id, or several", Suggest: suggestAnyID},
 				},
 				Run: runRemove,
 			},
@@ -803,7 +809,50 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	return view.Text{Body: fmt.Sprintf("updated note %d: %s", id, s.Items[i].Title)}, nil
 }
 
+// namedIDs reads the ids a verb that takes several was given. Each is the
+// number as strconv writes it and nothing else — no "#3", no padding, no sign,
+// no leading zero — so that the record a grant or a consent was judged on
+// (internal/grant reads the value as it arrived) is the note the handler then
+// acts on, and a spelling the gate has never seen is refused rather than read
+// as a note it was not about: a grant for "3" would otherwise not cover "03",
+// which would still remove note 3. Repeats are one note.
+func namedIDs(sf plugin.Surface, req plugin.Request) ([]int, *view.Error) {
+	var ids []int
+	seen := map[int]bool{}
+	for _, raw := range req.StringSlice("id") {
+		n, err := strconv.Atoi(raw)
+		if err != nil || strconv.Itoa(n) != raw || n < 1 {
+			return nil, view.Errorf("note.id.invalid", "%q is not a note id", raw).
+				WithHint("an id is a whole number — " + sf.CapabilityWith("note.list", "all") + " shows them")
+		}
+		if !seen[n] {
+			seen[n] = true
+			ids = append(ids, n)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, view.Errorf("note.id.none", "no note id given").
+			WithHint("name the note, or several: " + sf.Call("note.done", plugin.Arg{Name: "id", Value: []string{"3", "4"}, Positional: true}))
+	}
+	return ids, nil
+}
+
+// findAll is find for every id, before anything is changed: a call over several
+// notes is all or none, so one that is not there refuses it whole.
+func findAll(sf plugin.Surface, s itemstore.Store, ids []int) *view.Error {
+	for _, id := range ids {
+		if _, verr := find(sf, s, id); verr != nil {
+			return verr
+		}
+	}
+	return nil
+}
+
 func runDone(_ context.Context, req plugin.Request) (view.View, error) {
+	ids, verr := namedIDs(req.Surface(), req)
+	if verr != nil {
+		return nil, verr
+	}
 	// Held across the whole load-decide-save below — see itemstore.Lock.
 	unlock, err := itemstore.Lock(storeFile)
 	if err != nil {
@@ -814,30 +863,50 @@ func runDone(_ context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, err
 	}
-	id := req.Int("id")
-	i, verr := find(req.Surface(), s, id)
-	if verr != nil {
+	if verr := findAll(req.Surface(), s, ids); verr != nil {
 		return nil, verr
 	}
-	if !s.Items[i].Todo {
-		return nil, view.Errorf("note.done.notatodo", "note %d is not a to-do: %s", id, s.Items[i].Title).
-			WithHint("`" + req.Surface().Call("note.toggle", idArg(id)) + "` makes it one, then check it off")
+	var lines []string
+	now := time.Now()
+	for _, id := range ids {
+		i, _ := index(s, id)
+		it := &s.Items[i]
+		converted := !it.Todo
+		if req.DryRun {
+			line := fmt.Sprintf("would check off note %d: %s", id, it.Title)
+			if converted {
+				line += " (a note, so it becomes a to-do first)"
+			}
+			lines = append(lines, line)
+			continue
+		}
+		// A note asked to be done is a to-do: either the person meant it as
+		// one, or "done with this" is the only thing they said about it.
+		it.Todo = true
+		if !it.Done {
+			it.Done = true
+			it.DoneAt = &now
+		}
+		line := "done: " + it.Title
+		if converted {
+			line += " (it was a note, now a checked-off to-do)"
+		}
+		lines = append(lines, line)
 	}
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would check off note %d: %s", id, s.Items[i].Title)}, nil
+		return view.Text{Body: strings.Join(lines, "\n")}, nil
 	}
-	if !s.Items[i].Done {
-		now := time.Now()
-		s.Items[i].Done = true
-		s.Items[i].DoneAt = &now
-		if err := save(s); err != nil {
-			return nil, err
-		}
+	if err := save(s); err != nil {
+		return nil, err
 	}
-	return view.Text{Body: fmt.Sprintf("done: %s", s.Items[i].Title)}, nil
+	return view.Text{Body: strings.Join(lines, "\n")}, nil
 }
 
 func runReopen(_ context.Context, req plugin.Request) (view.View, error) {
+	ids, verr := namedIDs(req.Surface(), req)
+	if verr != nil {
+		return nil, verr
+	}
 	// Held across the whole load-decide-save below — see itemstore.Lock.
 	unlock, err := itemstore.Lock(storeFile)
 	if err != nil {
@@ -848,22 +917,31 @@ func runReopen(_ context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, err
 	}
-	id := req.Int("id")
-	i, verr := find(req.Surface(), s, id)
-	if verr != nil {
+	if verr := findAll(req.Surface(), s, ids); verr != nil {
 		return nil, verr
 	}
-	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would re-open note %d: %s", id, s.Items[i].Title)}, nil
+	var lines []string
+	changed := false
+	for _, id := range ids {
+		i, _ := index(s, id)
+		it := &s.Items[i]
+		if req.DryRun {
+			lines = append(lines, fmt.Sprintf("would re-open note %d: %s", id, it.Title))
+			continue
+		}
+		if it.Done {
+			it.Done = false
+			it.DoneAt = nil
+			changed = true
+		}
+		lines = append(lines, "re-opened: "+it.Title)
 	}
-	if s.Items[i].Done {
-		s.Items[i].Done = false
-		s.Items[i].DoneAt = nil
+	if changed {
 		if err := save(s); err != nil {
 			return nil, err
 		}
 	}
-	return view.Text{Body: fmt.Sprintf("re-opened: %s", s.Items[i].Title)}, nil
+	return view.Text{Body: strings.Join(lines, "\n")}, nil
 }
 
 func runToggle(_ context.Context, req plugin.Request) (view.View, error) {
@@ -902,6 +980,10 @@ func runToggle(_ context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
+	ids, verr := namedIDs(req.Surface(), req)
+	if verr != nil {
+		return nil, verr
+	}
 	// Held across the whole load-decide-save below — see itemstore.Lock.
 	unlock, err := itemstore.Lock(storeFile)
 	if err != nil {
@@ -912,15 +994,37 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, err
 	}
-	id := req.Int("id")
-	i, verr := find(req.Surface(), s, id)
-	if verr != nil {
+	if verr := findAll(req.Surface(), s, ids); verr != nil {
 		return nil, verr
 	}
-	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would remove note %d: %s", id, s.Items[i].Title)}, nil
+	var lines []string
+	for _, id := range ids {
+		i, _ := index(s, id)
+		if req.DryRun {
+			lines = append(lines, fmt.Sprintf("would remove note %d: %s", id, s.Items[i].Title))
+			continue
+		}
+		removed, reparented := removeNote(&s, id)
+		line := fmt.Sprintf("removed note %d: %s", id, removed)
+		if reparented > 0 {
+			line += " (" + format.CountOf(reparented, "sub-note") + " moved up)"
+		}
+		lines = append(lines, line)
 	}
-	removed := s.Items[i].Title
+	if !req.DryRun {
+		if err := save(s); err != nil {
+			return nil, err
+		}
+	}
+	return view.Text{Body: strings.Join(lines, "\n")}, nil
+}
+
+// removeNote takes note id out of s and hands its sub-notes to its parent. The
+// note is looked up afresh each time, so a call removing several can name a
+// note and its sub-note in either order.
+func removeNote(s *itemstore.Store, id int) (title string, reparented int) {
+	i, _ := index(*s, id)
+	title = s.Items[i].Title
 	parent := s.Items[i].Parent
 	// A note an old rm left as its own parent has no parent to hand its
 	// sub-notes up to but itself, which is going: they go to the top, or
@@ -930,7 +1034,6 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	// Sub-notes move up to the removed note's parent — never silently
 	// orphaned or deleted along with it.
-	reparented := 0
 	for j := range s.Items {
 		// Not the note removed, which an old rm may have left as its own
 		// parent: it goes, and is no sub-note moved up.
@@ -940,19 +1043,12 @@ func runRemove(_ context.Context, req plugin.Request) (view.View, error) {
 			// removed note's parent can be its own sub-note, and moving
 			// that sub-note up would make it its own parent, or one of a
 			// smaller cycle. The top is where it is seen.
-			if reaches(s, parent, s.Items[j].ID) {
+			if reaches(*s, parent, s.Items[j].ID) {
 				s.Items[j].Parent = 0
 			}
 			reparented++
 		}
 	}
 	s.Items = append(s.Items[:i], s.Items[i+1:]...)
-	if err := save(s); err != nil {
-		return nil, err
-	}
-	msg := fmt.Sprintf("removed note %d: %s", id, removed)
-	if reparented > 0 {
-		msg += " (" + format.CountOf(reparented, "sub-note") + " moved up)"
-	}
-	return view.Text{Body: msg}, nil
+	return title, reparented
 }
