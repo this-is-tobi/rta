@@ -48,6 +48,13 @@ func (h pluginHeader) FilterValue() string { return "" }
 // catalogueItems builds the list: one header per plugin, then its
 // capabilities. Capabilities arrive sorted by ID, which is already grouped by
 // namespace.
+//
+// The plugins that are only for the person at the keyboard — agent, grant,
+// lock, operator, pkg: every capability of them is HumanOnly — come after the
+// rest. The catalogue opens on its first page, and the first page was seven
+// rows of "not for agents" administration, the one set of entries a newcomer
+// browsing for what an agent can reach has no use for. They are all still here,
+// in the same order among themselves, one page-down from the end.
 func catalogueItems(reg *registry.Registry) []list.Item {
 	byNS := map[string][]plugin.Capability{}
 	for _, c := range reg.Capabilities() {
@@ -55,13 +62,30 @@ func catalogueItems(reg *registry.Registry) []list.Item {
 		byNS[ns] = append(byNS[ns], c)
 	}
 	items := make([]list.Item, 0, len(reg.Capabilities())+len(reg.Plugins()))
+	var yours []list.Item
 	for _, p := range reg.Plugins() { // already sorted by name
-		items = append(items, pluginHeader{p: p})
+		section := []list.Item{pluginHeader{p: p}}
 		for _, c := range byNS[p.Name] {
-			items = append(items, capItem{c: c})
+			section = append(section, capItem{c: c})
+		}
+		if onlyForYou(byNS[p.Name]) {
+			yours = append(yours, section...)
+			continue
+		}
+		items = append(items, section...)
+	}
+	return append(items, yours...)
+}
+
+// onlyForYou reports whether no capability of a plugin is one an agent can
+// call. A plugin with nothing in it is not "only for you", just empty.
+func onlyForYou(caps []plugin.Capability) bool {
+	for _, c := range caps {
+		if !c.HumanOnly {
+			return false
 		}
 	}
-	return items
+	return len(caps) > 0
 }
 
 // capDelegate renders the catalogue as a table: one line per capability,
@@ -314,8 +338,10 @@ func permissionText(c plugin.Capability) string {
 	// here, where it would read as a property of the capability.
 	if grant.Required(c, "") {
 		// The second half of the answer: a person has to allow this one at
-		// the time, and it stops being allowed on its own.
-		s += " · grant"
+		// the time, and it stops being allowed on its own. Said as what it is
+		// for the agent: a bare "grant" in a column of permissions reads as
+		// something this reader has been given.
+		s += " · agents need grant"
 	}
 	return s
 }
