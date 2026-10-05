@@ -134,6 +134,25 @@ func TestTheLongSpellingOfAFirstPartyServiceNamesIt(t *testing.T) {
 	}
 }
 
+// `rta explain pg.query`, `rta dashboard add pg.query` and `rta grant allow
+// pg.query` each said the capability was unknown and left the person to work
+// out that the plugin was not installed; the namespace names it.
+func TestACapabilityOfAFirstPartyPluginNamesThePlugin(t *testing.T) {
+	for target, want := range map[string]string{
+		"pg.query": "pg is a first-party plugin", "pg": "pg is a first-party plugin",
+		"kube.pod.list": "kube is a first-party plugin", "k8s.pod.list": "k8s is the first-party plugin kube",
+	} {
+		if hint := FirstPartyHintFor(target); !strings.Contains(hint, want) {
+			t.Errorf("FirstPartyHintFor(%q) = %q, want %q", target, hint, want)
+		}
+	}
+	for _, target := range []string{"", "kv.get", "mongo.find", "pgx.query", ".pg"} {
+		if hint := FirstPartyHintFor(target); hint != "" {
+			t.Errorf("FirstPartyHintFor(%q) = %q, want none", target, hint)
+		}
+	}
+}
+
 // A word that merely resembles a first-party name, or a service rta has no
 // plugin for, is not told it is one: the hint is exact or absent.
 func TestAWordNoPluginAnswersToIsNotTold(t *testing.T) {
