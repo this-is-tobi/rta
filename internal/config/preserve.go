@@ -53,7 +53,9 @@ const (
 	configHeader = "# rta configuration — written by rta.\n" +
 		"# Everything here is optional: rta works with no config at all.\n" +
 		"# Comments you add by hand stay when rta changes this file (`rta profile set`,\n" +
-		"# `rta dashboard add`, the TUI).\n"
+		"# `rta dashboard add`, the TUI). `rta config edit` opens it and keeps the schema\n" +
+		"# below beside it, so an editor completes and checks what you write.\n" +
+		"# yaml-language-server: $schema=" + SchemaFile + "\n"
 	legacyHeader = "# rta configuration — written by rta.\n" +
 		"# Everything here is optional: rta works with no config at all.\n" +
 		"# rta writes this whole file again when it changes something (`rta profile set`,\n" +
