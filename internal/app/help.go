@@ -59,13 +59,17 @@ const (
 )
 
 // helpWidth is how wide help is laid out: the terminal's, or COLUMNS, up to a
-// line length that is still readable — and a fixed width for a pipe or a file,
-// which must not depend on who asked.
+// line length that is still readable — and, for a pipe or a file, the width
+// every terminal has had. Fixed, since the output must not depend on who asked,
+// and eighty because a pipe is most often a pager (`rta kv set --help | less`)
+// on a terminal that is: a wider line is broken by the pager at the edge,
+// mid-word and with no hanging indent, which is the failure this renderer
+// exists to avoid.
 func helpWidth() int {
-	const readable, floor = 100, 40
+	const readable, floor, piped = 100, 40, 80
 	w := termWidth()
 	if w == 0 {
-		return readable
+		return piped
 	}
 	return min(max(w, floor), readable)
 }
