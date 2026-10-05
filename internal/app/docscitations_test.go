@@ -1,6 +1,9 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -36,6 +39,35 @@ func TestAPointerThatMovedNamesThePageThatHoldsItsTopic(t *testing.T) {
 		}
 		if !strings.Contains(strings.ToLower(readDoc(t, root, c.page)), strings.ToLower(c.topic)) {
 			t.Errorf("%s is named by %s for %q and does not hold it", c.page, c.source, c.topic)
+		}
+	}
+}
+
+// AGENTS.md and SECURITY.md send a reader to the design reasoning of the MCP
+// server, and that reasoning is on four pages: the gate, the page for a server
+// that is hosted, the one for the operator channel and the one for containers.
+// A pointer to the first alone sends a reader about a hosted server to a page
+// that says it is somewhere else, so both documents name all four and every
+// docs link either holds is a page.
+func TestThePolicyDocumentsPointAtEveryPageOfTheMCPReasoning(t *testing.T) {
+	root := repoRoot(t)
+	link := regexp.MustCompile(`\]\((docs/[^)#\s]+)`)
+	for _, doc := range []string{"AGENTS.md", "SECURITY.md"} {
+		body := readDoc(t, root, doc)
+		for _, page := range []string{
+			"docs/30-boundary/20-mcp.md",
+			"docs/30-boundary/65-hosting-a-server.md",
+			"docs/30-boundary/66-operators.md",
+			"docs/30-boundary/67-containers-and-images.md",
+		} {
+			if !strings.Contains(body, "("+page+")") {
+				t.Errorf("%s does not link %s, which holds part of the MCP design reasoning", doc, page)
+			}
+		}
+		for _, m := range link.FindAllStringSubmatch(body, -1) {
+			if _, err := os.Stat(filepath.Join(root, m[1])); err != nil {
+				t.Errorf("%s links %s, which is not a page", doc, m[1])
+			}
 		}
 	}
 }
