@@ -115,6 +115,8 @@ Two things the block will not do, whatever you write in it:
 
 Every capability as a table grouped by plugin — one row each, with its ID, its safety class and its summary. The filter stays live, every pane is bounded by the terminal and scrolls inside it, and the mouse wheel works. `enter` runs the row; `+` puts it on the dashboard.
 
+The permission column says what an AI agent needs for the row, after its safety class: nothing more than the class (`read`) is a capability an agent can call at once, `agents need grant` is one it can call only once you have issued a grant, and `not for agents` is one it can never call — yours alone. The plugins that are all of the last kind (`agent`, `grant`, `lock`, `operator`, `pkg`) come after the others, so the first page is what you or an agent can run.
+
 `/` opens the filter, and while its box has the keyboard `q`, `/` and `+` are letters of the query: `enter` applies it, `esc` clears it and `ctrl+c` quits. It finds IDs that start with what you typed first, then anything with every word of the query in its ID or summary, which is the dashboard search's rule, so `gen` leads with the `gen` capabilities and `hosts list` finds `net.hosts.list`.
 
 ## Running something
