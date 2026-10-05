@@ -312,15 +312,26 @@ func LoadFile() (Config, error) {
 	// Capped and opened without waiting: the file is the operator's, but the
 	// working-directory fallback is whatever a directory somebody else filled
 	// holds, and a named pipe there held every command for good.
+	data, err := ReadText()
+	if err != nil {
+		return Config{}, err
+	}
+	// No file is zero-config mode, and Parse of nothing is the zero Config.
+	return Parse(data)
+}
+
+// ReadText is the config file's bytes as the loader reads them, capped and
+// opened without waiting, and nil when there is no file. What `rta config edit`
+// and `rta config check` hold the file to is this text, not a reading of it.
+func ReadText() ([]byte, error) {
 	data, err := atomicfile.ReadCapped(Path(), maxConfigBytes)
 	switch {
 	case os.IsNotExist(err):
-		// Zero-config mode.
-		return Parse(nil)
+		return nil, nil
 	case err != nil:
-		return Config{}, view.Errorf("config.unreadable", "reading %s: %v", Path(), err)
+		return nil, view.Errorf("config.unreadable", "reading %s: %v", Path(), err)
 	}
-	return Parse(data)
+	return data, nil
 }
 
 // Parse reads configuration text as the loader reads the file: the same

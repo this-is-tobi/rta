@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -11,9 +10,7 @@ import (
 	"github.com/goccy/go-yaml/ast"
 	"github.com/goccy/go-yaml/parser"
 
-	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/near"
-	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Finding is one key in the config file that rta does not read.
@@ -48,12 +45,9 @@ func (f Finding) String() string {
 // with the parser's own line, and listing every key of a file nothing could
 // read would be noise beside it.
 func Check() ([]Finding, error) {
-	data, err := atomicfile.ReadCapped(Path(), maxConfigBytes)
-	switch {
-	case os.IsNotExist(err):
-		return nil, nil
-	case err != nil:
-		return nil, view.Errorf("config.unreadable", "reading %s: %v", Path(), err)
+	data, err := ReadText()
+	if err != nil || data == nil {
+		return nil, err
 	}
 	return CheckText(data), nil
 }
@@ -243,3 +237,40 @@ var keyHomes = sync.OnceValue(func() map[string]string {
 	}
 	return homes
 })
+
+// KeyLines is the line each key of the text is written on, by its dotted path:
+// output, dashboard.columns, plugins.http.timeout, and dashboard.add[1].id for
+// a key inside a list. A key written flat, with a dot in its name, has the
+// path it spells. What a reader that keeps no position of its own — the
+// palette, a plugin's declaration — names a problem by, to be given a line.
+func KeyLines(data []byte) map[string]int {
+	lines := map[string]int{}
+	file, err := parser.ParseBytes(data, 0)
+	if err != nil || len(file.Docs) == 0 || file.Docs[0].Body == nil {
+		return lines
+	}
+	var walk func(n ast.Node, path string)
+	walk = func(n ast.Node, path string) {
+		switch v := n.(type) {
+		case *ast.MappingNode:
+			for _, pair := range v.Values {
+				walk(pair, path)
+			}
+		case *ast.MappingValueNode:
+			key := v.Key.GetToken().Value
+			if path != "" {
+				key = path + "." + key
+			}
+			if _, seen := lines[key]; !seen {
+				lines[key] = v.Key.GetToken().Position.Line
+			}
+			walk(v.Value, key)
+		case *ast.SequenceNode:
+			for i, e := range v.Values {
+				walk(e, fmt.Sprintf("%s[%d]", path, i))
+			}
+		}
+	}
+	walk(file.Docs[0].Body, "")
+	return lines
+}

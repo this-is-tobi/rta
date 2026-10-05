@@ -34,6 +34,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/near"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
@@ -58,8 +59,12 @@ type Resolver struct {
 // to start over it would make config a liability. `rta doctor` prints these.
 type Problem struct {
 	Section string
-	Reason  string
-	Hint    string
+	// Key is the config key the problem is about, as the section states it,
+	// and "" for a problem with the section as a whole. What a caller finds the
+	// line of the key by.
+	Key    string
+	Reason string
+	Hint   string
 }
 
 func (p Problem) String() string {
@@ -256,9 +261,12 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 		readers := Readers(reg, ns)
 		for _, key := range flatten(r.sections[ns], "") {
 			if len(readers[key]) == 0 {
-				problems = append(problems, Problem{Section: ns,
-					Reason: fmt.Sprintf("nothing in %q reads %q", ns, key),
-					Hint:   "`rta explain` lists the inputs a capability takes"})
+				hint := "`rta explain` lists the inputs a capability takes"
+				if guess := near.Word(key, sortedKeys(readers)); guess != "" {
+					hint = fmt.Sprintf("did you mean %q?", guess)
+				}
+				problems = append(problems, Problem{Section: ns, Key: key,
+					Reason: fmt.Sprintf("nothing in %q reads %q", ns, key), Hint: hint})
 				continue
 			}
 			f := SharedField(readers[key])
@@ -268,7 +276,7 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 				// with a dot in it: nothing reads it, because the section is
 				// nested. Said as what it is — reported as "no value" it sent the
 				// operator to fill in a key that already had one.
-				problems = append(problems, Problem{Section: ns,
+				problems = append(problems, Problem{Section: ns, Key: key,
 					Reason: fmt.Sprintf("%s is written as one key, and the section nests it", key),
 					Hint:   "write it as `" + nestedSpelling(key) + "`, or `rta config set plugins." + ns + "." + key + " <value>` does it"})
 				continue
@@ -281,7 +289,7 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 			// every call reading it now; this says so once, before any
 			// call does.
 			if problem, hint := plugin.StatedTypeProblem(f, v); problem != "" {
-				problems = append(problems, Problem{Section: ns,
+				problems = append(problems, Problem{Section: ns, Key: key,
 					Reason: key + " " + problem, Hint: hint})
 				continue
 			}
@@ -291,7 +299,7 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 			// says anywhere. Not echoed, like the type problem above.
 			if bounds := f.Bounds(); bounds != "" {
 				if _, ok := f.Range(v); !ok {
-					problems = append(problems, Problem{Section: ns,
+					problems = append(problems, Problem{Section: ns, Key: key,
 						Reason: key + " is outside what every capability reading it takes, " +
 							"so each runs with its own nearest bound instead",
 						Hint: "write a value " + bounds})
@@ -306,7 +314,7 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 			// fix a file every call already reads correctly.
 			for _, got := range OptionValues(v) {
 				if _, named := f.CanonicalOption(got); got != "" && !named {
-					problems = append(problems, Problem{Section: ns,
+					problems = append(problems, Problem{Section: ns, Key: key,
 						Reason: fmt.Sprintf("%s = %q is not one of the values %q accepts", key, got, f.Name),
 						Hint:   "one of: " + strings.Join(f.Options, ", ")})
 					break
@@ -334,6 +342,15 @@ func Readers(reg *registry.Registry, ns string) map[string][]plugin.Field {
 		}
 	}
 	return readers
+}
+
+func sortedKeys(readers map[string][]plugin.Field) []string {
+	keys := make([]string, 0, len(readers))
+	for k := range readers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // nestedSpelling is a dotted key as the block that states it, in the one-line

@@ -76,10 +76,18 @@ func DeleteSectionValue(section map[string]any, key string) bool {
 	return true
 }
 
-// SectionKeys lists the dotted keys of a plugins: section that hold a value,
-// sorted: the leaves, however deep.
-func SectionKeys(section map[string]any) []string {
-	var out []string
+// SectionLeaf is one value of a plugins: section, by the dotted path to it.
+type SectionLeaf struct {
+	Key   string
+	Value any
+}
+
+// SectionLeaves lists every key of a plugins: section that holds a value,
+// sorted by its dotted path: the leaves, however deep. A key written flat, with
+// a dot in its name, is listed under that name — it is what the file says, even
+// though nothing reads it.
+func SectionLeaves(section map[string]any) []SectionLeaf {
+	var out []SectionLeaf
 	var walk func(m map[string]any, prefix string)
 	walk = func(m map[string]any, prefix string) {
 		for k, v := range m {
@@ -87,11 +95,21 @@ func SectionKeys(section map[string]any) []string {
 				walk(inner, prefix+k+".")
 				continue
 			}
-			out = append(out, prefix+k)
+			out = append(out, SectionLeaf{Key: prefix + k, Value: v})
 		}
 	}
 	walk(section, "")
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
+}
+
+// SectionKeys is SectionLeaves without the values.
+func SectionKeys(section map[string]any) []string {
+	leaves := SectionLeaves(section)
+	out := make([]string, len(leaves))
+	for i, l := range leaves {
+		out[i] = l.Key
+	}
 	return out
 }
 
