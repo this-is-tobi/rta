@@ -35,7 +35,7 @@ Both are generated from each plugin's own declared inputs — the same declarati
 
 Everything below is what they write, and is worth reading whether or not you use them: the file is yours to edit, and a profile is the thing a grant names.
 
-Profiles live in your config (`rta init` creates it; `rta doctor` prints its path):
+Profiles live in your config (`rta doctor` prints its path):
 
 ```yaml
 profiles:
