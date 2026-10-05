@@ -41,6 +41,15 @@ func InputSchema(c plugin.Capability, profiles []string, config map[string]any) 
 			// running rta. Saying so is the difference between a relative path
 			// that works and one that quietly means something else.
 			prop["description"] = strings.TrimSpace(f.Help + " (a path on the machine running rta)")
+		case plugin.Duration:
+			prop["type"] = "string"
+			// A string with a grammar, and a range that no schema keyword can
+			// hold for text, so it is said in the description: a model
+			// reading "timeout: string" sends 30, which is refused for its
+			// missing unit, and a client enforcing the pattern catches that
+			// before the round trip.
+			prop["pattern"] = plugin.DurationPattern
+			prop["description"] = strings.TrimSpace(f.Help + " (" + durationText(f) + ")")
 		case plugin.Int:
 			prop["type"] = "integer"
 		case plugin.Bool:
@@ -185,6 +194,16 @@ func emptyDefault(v any) bool {
 	return false
 }
 
+// durationText is how a Duration input says what it takes: the unit every
+// value carries and the range it is held to, when it declares one.
+func durationText(f plugin.Field) string {
+	text := "a duration with its unit, such as 30s, 5m or 2h"
+	if bounds := f.Bounds(); bounds != "" {
+		text += "; " + bounds
+	}
+	return text
+}
+
 // SchemaTypeName names a Field.Type the way InputSchema described it, so the
 // hint matches what the schema actually says.
 func SchemaTypeName(t plugin.FieldType) string {
@@ -197,6 +216,8 @@ func SchemaTypeName(t plugin.FieldType) string {
 		return "a boolean"
 	case plugin.StringSlice, plugin.SecretSlice:
 		return "an array of strings"
+	case plugin.Duration:
+		return "a string with its unit, such as 30s, 5m or 2h"
 	default:
 		return "a string"
 	}

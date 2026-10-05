@@ -458,3 +458,45 @@ func TestJSONKindNamesValuesTheWayAReaderThinksOfThem(t *testing.T) {
 		}
 	}
 }
+
+// A duration is a string with a grammar and a range, and a schema has a
+// keyword for the first and only the description for the second.
+func TestADurationIsPublishedAsAStringWithItsGrammarAndRange(t *testing.T) {
+	c := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{
+		{Name: "wait", Type: plugin.Duration, Help: "how long to wait", Min: "1s", Max: "5m", Default: "30s"},
+		{Name: "age", Type: plugin.Duration, Help: "oldest to show"},
+	}}
+	props := InputSchema(c, nil, nil)["properties"].(map[string]any)
+	wait := props["wait"].(map[string]any)
+	if wait["type"] != "string" || wait["pattern"] != plugin.DurationPattern {
+		t.Errorf("wait is %v, want a string with the duration pattern", wait)
+	}
+	for _, want := range []string{"how long to wait", "with its unit", "from 1s to 5m"} {
+		if !strings.Contains(wait["description"].(string), want) {
+			t.Errorf("the description of wait never says %q: %q", want, wait["description"])
+		}
+	}
+	age := props["age"].(map[string]any)
+	if strings.Contains(age["description"].(string), "from ") || age["pattern"] != plugin.DurationPattern {
+		t.Errorf("age is %v, want the pattern and no range", age)
+	}
+}
+
+// A number reaching a duration is told what it lacks, a unit, and not that a
+// string was wanted: 30 is the spelling every reader has a different default
+// for, and an agent that sends it cannot tell which one it was refused for.
+func TestANumberForADurationIsToldItNeedsAUnit(t *testing.T) {
+	c := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{
+		{Name: "wait", Type: plugin.Duration, Help: "how long to wait"},
+	}}
+	verr := Validate(c, map[string]any{"wait": int64(30)})
+	if verr == nil || verr.Code != "core.mcp.badargs" {
+		t.Fatalf("a number for a duration: %v", verr)
+	}
+	if !strings.Contains(verr.Message, "with its unit") || !strings.Contains(verr.Hint, "30s") {
+		t.Errorf("message %q, hint %q: neither says a unit is missing", verr.Message, verr.Hint)
+	}
+	if verr := Validate(c, map[string]any{"wait": "30s"}); verr != nil {
+		t.Errorf("a duration with its unit was refused: %v", verr)
+	}
+}
