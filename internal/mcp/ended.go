@@ -115,6 +115,16 @@ func (e *endedGrants) knows(caller string) bool {
 // The latest grant used among those covering the call is the one asked: a
 // grant used up and then issued again is the second one's story, and a
 // sentence about the first would explain a refusal it did not cause.
+//
+// **A spent grant says how many uses; a lapsed one says only that it ended.**
+// The uses are counted up from what the file held at each call and never
+// fall back, so "2 of 2" is something this server watched happen. The
+// deadline is not: it is the one the grant had at the last call, and an
+// operator who renewed it afterwards moved it without this server seeing.
+// "It expired" would then be false for a grant renewed and later taken
+// back, and it would sit in the record as the reason the operator revoked
+// something. "Ended" is true however the grant went, which is all that
+// separates it from one nobody ever issued.
 func (e *endedGrants) ended(caller string, c plugin.Capability, scope string, by grant.Caller, now time.Time) string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -134,7 +144,7 @@ func (e *endedGrants) ended(caller string, c plugin.Capability, scope string, by
 		return fmt.Sprintf("the grant for %s ended (%d of %d %s)",
 			g.Named(), g.MaxUses, g.MaxUses, format.Plural(g.MaxUses, "use", "uses"))
 	case !now.Before(g.Expires) || !now.Before(g.Issued.Add(grant.MaxTTL)):
-		return fmt.Sprintf("the grant for %s ended (it expired)", g.Named())
+		return fmt.Sprintf("the grant for %s ended", g.Named())
 	}
 	return ""
 }
