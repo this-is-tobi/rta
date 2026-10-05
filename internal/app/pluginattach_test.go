@@ -17,8 +17,8 @@ import (
 // A manifest whose only build is one nobody runs rta on, so an install that
 // reaches it is refused for the platform: deterministic, offline, and proof
 // that the install went on past the attach and read the index.
-var windowsOnlyPG = "name: pg\nversion: 0.1.0\nsummary: PostgreSQL toolkit\nplatforms:\n  - os: windows\n    arch: amd64\n" +
-	"    url: https://example.test/pg.zip\n    sha256: " + strings.Repeat("b", 64) +
+var noBuildHerePG = "name: pg\nversion: 0.1.0\nsummary: PostgreSQL toolkit\nplatforms:\n  - os: freebsd\n    arch: amd64\n" +
+	"    url: https://example.test/pg_freebsd_amd64\n    sha256: " + strings.Repeat("b", 64) +
 	"\ncapabilities:\n  - id: pg.status\n    safety: read\n"
 
 // offerSession is a session in which the first-party index is a directory
@@ -44,7 +44,7 @@ func newOfferSession(t *testing.T) *offerSession {
 	}
 	attachFirstPartyIndex = func(context.Context) *view.Error {
 		s.attached++
-		return writeIndex("official", windowsOnlyPG)
+		return writeIndex("official", noBuildHerePG)
 	}
 	return s
 }
