@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -306,6 +307,7 @@ func doctorTable(reg *registry.Registry, detail bool) view.Table {
 	doctorTerminal(add)
 	doctorConfig(add)
 	doctorConfigKeys(add)
+	doctorDashboardTiles(reg, add)
 	doctorOutput(add)
 	doctorPluginConfig(reg, add)
 	doctorProfiles(reg, add)
@@ -470,6 +472,25 @@ func doctorConfigKeys(add func(check, status, detail string)) {
 	}
 	for _, f := range found {
 		add("config", "warn", f.String())
+	}
+}
+
+// doctorDashboardTiles is a warning for each tile the config states or adds
+// whose capability the registry does not have: one that was renamed or removed,
+// a plugin no longer installed, or a typo. The dashboard draws such a tile as
+// nothing at all, so the config row's "1 dashboard tile" was true and the
+// screen still missed it.
+func doctorDashboardTiles(reg *registry.Registry, add func(check, status, detail string)) {
+	cfg, err := config.LoadFile()
+	if err != nil {
+		return
+	}
+	for _, t := range append(slices.Clone(cfg.Dashboard.Tiles), cfg.Dashboard.Add...) {
+		if _, ok := reg.Capability(t.ID); ok {
+			continue
+		}
+		e := capabilityNotFound(reg, t.ID)
+		add("dashboard", "warn", "tile "+t.ID+" draws nothing: "+e.Message+" — "+e.Hint)
 	}
 }
 

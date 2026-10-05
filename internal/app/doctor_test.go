@@ -394,3 +394,28 @@ func TestDoctorNamesEachKeyTheConfigHasThatRtaDoesNotRead(t *testing.T) {
 		t.Errorf("config warnings = %q, want one naming dashbord and its line", warns)
 	}
 }
+
+// A tile whose capability is gone is drawn as nothing; the config row said the
+// tile was there. It names the tile and what it may have meant.
+func TestDoctorNamesADashboardTileWhoseCapabilityIsGone(t *testing.T) {
+	_, configDir := isolate(t)
+	cfg := "dashboard:\n  tiles:\n    - id: demo.item.list\n    - id: demo.item.lst\n  add:\n    - id: net.info\n"
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var warns []string
+	for _, r := range doctorTable(testRegistry(t), false).Rows {
+		if r[0] == "dashboard" && r[1] == "warn" {
+			warns = append(warns, r[2])
+		}
+	}
+	if len(warns) != 2 {
+		t.Fatalf("dashboard warnings = %q, want one for demo.item.lst and one for net.info", warns)
+	}
+	if !strings.Contains(warns[0], "demo.item.lst") || !strings.Contains(warns[0], "did you mean: demo.item.list") {
+		t.Errorf("first warning = %q, want the typo and the id it nearly is", warns[0])
+	}
+	if !strings.Contains(warns[1], "net.info") {
+		t.Errorf("second warning = %q, want net.info", warns[1])
+	}
+}
