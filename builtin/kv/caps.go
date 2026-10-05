@@ -930,8 +930,12 @@ func runInit(_ context.Context, req plugin.Request) (view.View, error) {
 func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 	sf := req.Surface()
 	if !fileExists(storePath()) {
+		// Both locks are offered, the key first: whoever reached for a re-key was
+		// choosing how the store is locked, and `kv set` alone would answer a
+		// `--generate` with the one lock they were not asking for.
 		return nil, view.Errorf("kv.rekey.nostore", "no store yet — nothing to re-key").
-			WithHint(NoStoreNext(sf, "<key>"))
+			WithHint(sf.CapabilityWith("kv.init", "generate") + " makes one locked to a key — or " +
+				NoStoreNext(sf, "<key>"))
 	}
 	generate := req.Bool("generate")
 	adding := req.StringSlice("recipient")
