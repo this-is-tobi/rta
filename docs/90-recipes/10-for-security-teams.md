@@ -86,7 +86,7 @@ The chain makes an edit visible, not impossible: anything running as the person 
 ## Stop an agent now
 
 ```bash
-rta lock add claude --note "paused while we read the refusals"
+rta lock add claude --note "paused while we read the refusals"   # or --all, when you cannot tell which agent
 rta grant revoke --all
 rta lock list
 rta lock rm claude
