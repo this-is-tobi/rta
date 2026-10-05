@@ -297,14 +297,14 @@ func remoteRevoke(ctx context.Context, req plugin.Request, server string, spec o
 					"` shows what a revoke without it would match")
 		}
 		if spec.DryRun {
-			return view.Text{Body: revokeBody(req.Surface(), spec, server, seen, true)}, nil
+			return view.Text{Body: revokeBody(req.Surface(), spec, server, seen, nil, true)}, nil
 		}
 	}
 	var out operatorid.RevokeOutcome
 	if verr := client.Call(ctx, operatorid.VerbGrantRevoke, spec, &out); verr != nil {
 		return nil, verr
 	}
-	return view.Text{Body: revokeBody(req.Surface(), spec, server, out, req.DryRun)}, nil
+	return view.Text{Body: revokeBody(req.Surface(), spec, server, out, nil, req.DryRun)}, nil
 }
 
 // filterWords says what a roster was narrowed to: "the role dev", "the agent

@@ -625,7 +625,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	if verr := guard.RefuseArgv(req); verr != nil {
 		return nil, verr
 	}
-	known := knownAgents()
+	seen := agentsSeen()
 	// The guard, before anything is written: prove the passphrase, sign the
 	// authority. After the Grant is fully built — the signature covers the
 	// struct as issued, and signing a draft that a later field-set would
@@ -664,8 +664,8 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// is running, and a 15-minute grant issued and then noticed is most of a
 	// grant wasted. Said on a dry run too: finding this out is what the dry
 	// run was for.
-	for _, n := range []string{cappedNote(notes), inactiveProfileNote(g), unknownAgentNote(known, g.Agent),
-		olderServerNote()} {
+	for _, n := range []string{cappedNote(notes), breadthNote(catalog, g), inactiveProfileNote(g),
+		unknownAgentNote(seen, g.Agent), olderServerNote()} {
 		if n != "" {
 			msg += "\n" + n
 		}
@@ -909,7 +909,7 @@ func runRenew(_ context.Context, req plugin.Request, artifact func(string) (stri
 	}
 
 	now := time.Now()
-	var renewed []string
+	var renewed, kept []string
 	var stale, unbound []string
 	// The renewed grants on a changed connection, counted apart from the
 	// connections stale names once each: the note is about the grants.
@@ -937,7 +937,7 @@ func runRenew(_ context.Context, req plugin.Request, artifact func(string) (stri
 		signer = &s
 	}
 	if verr := core.Mutate(func(stored []core.Grant) ([]core.Grant, bool) {
-		renewed = nil
+		renewed, kept = nil, nil
 		stale, unbound = nil, nil
 		staleGrants = 0
 		clear(seenStale)
@@ -974,6 +974,20 @@ func runRenew(_ context.Context, req plugin.Request, artifact func(string) (stri
 			}
 			if ceiling := g.Issued.Add(limit); expires.After(ceiling) {
 				expires, capped = ceiling, true
+			}
+			// **Renew extends time and nothing else, and that includes never
+			// taking it away.** `renew --ttl 2h` on a grant with eight hours
+			// left set it to two and said "renewed", the way a grant allow
+			// with a shorter window would have: a deadline moved in the
+			// direction renewing is not for, under the word for the opposite.
+			// A grant that already runs at least that long is left as it is and
+			// listed as left, so the receipt does not claim a renewal that did
+			// not happen. Shortening is a revoke and a fresh grant, which ask
+			// for what they are.
+			if !expires.After(g.Expires) {
+				kept = append(kept, fmt.Sprintf("  %s may %s until %s",
+					subject(g), describe(g), format.Clock(g.Expires)))
+				continue
 			}
 			// The deadline, and nothing else. **ProfilePin is deliberately not
 			// touched**, and its absence here is load-bearing: a renewal that
@@ -1020,7 +1034,7 @@ func runRenew(_ context.Context, req plugin.Request, artifact func(string) (stri
 	}); verr != nil {
 		return nil, verr
 	}
-	if len(renewed) == 0 {
+	if len(renewed)+len(kept) == 0 {
 		if sel.exact {
 			return view.Text{Body: "Nothing to renew — no active grant is exactly " + sel.described() + "."}, nil
 		}
@@ -1030,7 +1044,23 @@ func runRenew(_ context.Context, req plugin.Request, artifact func(string) (stri
 	if req.DryRun {
 		verb = "would renew"
 	}
-	body := fmt.Sprintf("%s %s:\n%s", verb, format.Count(len(renewed), "grant", "grants"), strings.Join(renewed, "\n"))
+	var head string
+	switch {
+	case len(kept) == 0:
+		head = fmt.Sprintf("%s %s", verb, format.Count(len(renewed), "grant", "grants"))
+	case len(renewed) == 0:
+		head = "nothing renewed"
+		if req.DryRun {
+			head = "nothing would be renewed"
+		}
+		head += " — " + format.Plural(len(kept), "this grant already runs", "every grant already runs") + " at least that long"
+	default:
+		head = fmt.Sprintf("%s %d of %s", verb, len(renewed), format.Count(len(renewed)+len(kept), "grant", "grants"))
+		for i := range kept {
+			kept[i] += " — unchanged, it already runs that long"
+		}
+	}
+	body := head + ":\n" + strings.Join(slices.Concat(renewed, kept), "\n")
 	if n := staleGrants; n > 0 {
 		body += fmt.Sprintf("\nnote: %d of these %s a connection that has changed since %s "+
 			"issued (%s), so the deadline moved and %s nothing — "+
@@ -1748,13 +1778,18 @@ func runRevoke(ctx context.Context, req plugin.Request) (view.View, error) {
 	// The matching rules and the locked-snapshot discipline live in
 	// revokeOutcome, shared with the operator channel's revoke verb; the
 	// sentences live in revokeBody, shared with the remote flow's rendering.
-	out, verr := revokeOutcome(spec, !req.DryRun)
+	out, gone, verr := revokeDetailed(spec, !req.DryRun)
 	if verr != nil {
 		return nil, verr
 	}
-	body := revokeBody(req.Surface(), spec, "", out, req.DryRun)
+	body := revokeBody(req.Surface(), spec, "", out, gone, req.DryRun)
 	if spec.Role != "" && !req.DryRun {
 		body += "\n" + stillStanding(req.Surface(), spec.Agent)
+	}
+	if !req.DryRun && (out.Revoked > 0 || out.NoneActive) {
+		if running := stillConnected(req.Surface()); running != "" {
+			body += "\n" + running
+		}
 	}
 	return view.Text{Body: body}, nil
 }
