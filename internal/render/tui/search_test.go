@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -111,5 +113,28 @@ func TestTheDashboardSearchAnswersWhatTheDocsQuote(t *testing.T) {
 			}
 			t.Errorf("%q finds %v, want %s first", query, ids, want)
 		}
+	}
+}
+
+// A word that names a first-party plugin nobody has installed gets the
+// install command, as it does at the command line: for "postgres" the box
+// would otherwise say "no matches", and for "pg" it would offer only the
+// package upgrade whose name happens to contain the letters.
+func TestTheSearchNamesTheInstallForAFirstPartyPluginThatIsNotHere(t *testing.T) {
+	m, _ := realModel(t, 100, 40)
+	for _, query := range []string{"postgres", "pg"} {
+		m.query = query
+		box := ansi.Strip(m.renderSearchTile(100, false))
+		if !strings.Contains(box, "`rta plugin install pg` installs it") {
+			t.Errorf("%q: the search box does not name the install:\n%s", query, box)
+		}
+	}
+	m.query = "zzzq"
+	if box := ansi.Strip(m.renderSearchTile(100, false)); !strings.Contains(box, "no matches") || strings.Contains(box, "install") {
+		t.Errorf("a word that is no plugin name changed:\n%s", box)
+	}
+	m.query = "ports"
+	if box := ansi.Strip(m.renderSearchTile(100, false)); strings.Contains(box, "install") {
+		t.Errorf("a query for something that is here is told to install:\n%s", box)
 	}
 }
