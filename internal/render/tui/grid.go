@@ -525,6 +525,13 @@ func renderTile(t tile, width, height int, selected, heavy bool) string {
 	// production is the one panel whose name must not be the first thing
 	// to go.
 	head := panelHead{Title: t.cap.ID, Note: t.profile, NoteColor: t.color, Heavy: heavy}
+	// A tile that says calls are parked is the one panel on the screen with a
+	// clock on it, and it is not always on the first row of a dashboard somebody
+	// arranged: the badge is in the border, where the eye is on the way past, and
+	// not only in a line the tile has to be read to find.
+	if n := waitingCalls(t.view); n > 0 {
+		head.Right, head.Attention = fmt.Sprintf("● %d waiting", n), true
+	}
 	return panel(head, strings.Join(lines, "\n"), width, height, selected)
 }
 

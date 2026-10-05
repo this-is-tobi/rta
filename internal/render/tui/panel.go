@@ -31,6 +31,13 @@ type panelHead struct {
 	// does anything that is not a #rrggbb colour.
 	NoteColor string
 	Right     string // muted, right-aligned in the top border: a cost, a count
+	// Attention says the panel is asking for something: its border and its
+	// Right text are drawn in the warning colour instead of the quiet ones. The
+	// text carries the meaning, so a terminal that shows no colour loses the
+	// emphasis and not the message; focus still paints the border in the
+	// primary colour, because the selection has to stay visible on the panel
+	// somebody is looking at.
+	Attention bool
 	// Heavy draws a focused panel in heavy lines. Focus is otherwise the
 	// border's primary colour and nothing else, so on a terminal that shows no
 	// colour (NO_COLOR, TERM=dumb) the selected tile of the dashboard was
@@ -71,6 +78,9 @@ func panel(h panelHead, body string, width, height int, focus bool) string {
 	h.Title, h.Note, h.Right = textclean.Terminal(h.Title),
 		textclean.Terminal(h.Note), textclean.Terminal(h.Right)
 	border := theme.Border
+	if h.Attention {
+		border = lipgloss.NewStyle().Foreground(theme.Warn)
+	}
 	box := roundedBox
 	if focus {
 		border = lipgloss.NewStyle().Foreground(theme.Primary)
@@ -84,7 +94,11 @@ func panel(h panelHead, body string, width, height int, focus bool) string {
 	// 6 cells. Drop right when it would starve the title, then truncate.
 	rightSeg := ""
 	if h.Right != "" {
-		rightSeg = " " + theme.Subtle.Render(h.Right) + " "
+		right := theme.Subtle
+		if h.Attention {
+			right = theme.WarnText
+		}
+		rightSeg = " " + right.Render(h.Right) + " "
 	}
 	if rightSeg != "" && width-lipgloss.Width(rightSeg)-7 < 8 {
 		rightSeg = ""

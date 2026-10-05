@@ -1,5 +1,12 @@
 package tui
 
+import (
+	"strconv"
+	"strings"
+
+	"github.com/this-is-tobi/rta/pkg/view"
+)
+
 // What a tile says about its own state, read from what it returned.
 
 // notHere names the error codes that mean a tile has nothing to say from where
@@ -29,4 +36,31 @@ func quietSentence(t tile) (string, bool) {
 	}
 	say, ok := notHere[t.err.Code]
 	return say, ok
+}
+
+// waitingKey is the label of the line agent.overview puts a count of parked
+// calls under. The dashboard reads the number off it rather than asking the
+// agent plugin, which it knows nothing else about; TestTheAgentTilesWaitingLineIsTheOneTheDashboardReads
+// holds the two spellings together.
+const waitingKey = "waiting on you"
+
+// waitingCalls is how many calls the tile says are parked waiting for an
+// answer, 0 for a tile that says none, says nothing about it, or cannot read
+// the queue — "unreadable — …" is not a count, and a badge for it would be the
+// dashboard asserting what the tile did not.
+func waitingCalls(v view.View) int {
+	kv, ok := v.(view.KeyValue)
+	if !ok {
+		return 0
+	}
+	for _, p := range kv.Pairs {
+		if p.Key != waitingKey {
+			continue
+		}
+		digits, _, _ := strings.Cut(p.Value, " ")
+		if n, err := strconv.Atoi(digits); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
 }
