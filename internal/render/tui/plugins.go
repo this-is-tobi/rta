@@ -17,6 +17,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/plugintrust"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
@@ -78,6 +79,16 @@ type pluginRow struct {
 	// stated job is "which plugins do I actually have?", was the one that did
 	// not, while also printing a confident count that left them out.
 	waiting bool
+	// failed is what discovery recorded of an artifact that was approved,
+	// launched and did not come up, nil for every other row.
+	//
+	// **The other way an installed plugin is absent**, and the one the startup
+	// line says once and the alternate screen then covers: `rta plugin list`
+	// and `rta doctor` carry a row for it, and a pane that did not made a
+	// plugin that was installed, approved and broken look like one that was
+	// never installed. It has no capabilities to browse for the reason a
+	// waiting one has none: nothing of it is registered.
+	failed *pluginhost.Failed
 	// decided records a trust decision taken in this session, which is a
 	// third state and not a fourth flag: the file has changed and the
 	// process has not, so the row must say something neither "trusted" nor
@@ -146,6 +157,7 @@ const (
 	groupBuiltin pluginGroup = iota
 	groupManaged
 	groupPath
+	groupFailed
 	groupWaiting
 )
 
@@ -158,6 +170,8 @@ func (g pluginGroup) title() string {
 		return "built in"
 	case groupManaged:
 		return "installed by rta"
+	case groupFailed:
+		return "failed to start"
 	case groupWaiting:
 		return "not run"
 	}
@@ -170,6 +184,8 @@ func (g pluginGroup) caption() string {
 		return "compiled into the rta binary you chose to run, which is why they need no digest"
 	case groupManaged:
 		return "rta placed these bytes and recorded where from — the version is the index's claim, not a guarantee"
+	case groupFailed:
+		return "approved and launched, and did not come up — the reason is on each row, and the way out beside it"
 	case groupWaiting:
 		return "discovered and never launched — approving one is a decision about that exact artifact, not its name"
 	}
@@ -185,6 +201,8 @@ func (r pluginRow) group() pluginGroup {
 	switch {
 	case r.waiting:
 		return groupWaiting
+	case r.failed != nil:
+		return groupFailed
 	case !r.external():
 		return groupBuiltin
 	case underStore(r.origin.Path):
@@ -220,8 +238,9 @@ func (r pluginRow) canTile() bool { return r.tile != "" }
 
 // usable reports whether this row is a plugin rta can actually do anything
 // with. An untrusted artifact has no capabilities to browse, no config to
-// edit and nothing to put on a dashboard, because it was never asked.
-func (r pluginRow) usable() bool { return !r.waiting }
+// edit and nothing to put on a dashboard, because it was never asked, and one
+// that did not start has registered none of it.
+func (r pluginRow) usable() bool { return !r.waiting && r.failed == nil }
 
 // external reports whether this plugin came from a binary on $PATH.
 func (r pluginRow) external() bool { return r.origin.External() }
@@ -314,15 +333,45 @@ func pluginRows(reg *registry.Registry, dash config.Dashboard, untrusted []plugi
 		}
 		rows = append(rows, row)
 	}
-	// Stable within a group, by name, so the pane an operator learned the
-	// shape of yesterday has the same shape today.
+	sortPluginRows(rows)
+	return rows
+}
+
+// sortPluginRows puts the rows in the pane's order: stable within a group, by
+// name, so the pane an operator learned the shape of yesterday has the same
+// shape today.
+func sortPluginRows(rows []pluginRow) {
 	sort.SliceStable(rows, func(i, j int) bool {
 		if a, b := rows[i].group(), rows[j].group(); a != b {
 			return a < b
 		}
 		return rows[i].plugin.Name < rows[j].plugin.Name
 	})
+}
+
+// withFailed adds a row for each artifact that was approved and did not start,
+// in its place among the others. Held apart from pluginRows, which every
+// caller that has no host to ask passes nothing to.
+func withFailed(rows []pluginRow, failed []pluginhost.Failed) []pluginRow {
+	if len(failed) == 0 {
+		return rows
+	}
+	for i := range failed {
+		f := failed[i]
+		rows = append(rows, pluginRow{
+			plugin: plugin.Plugin{Name: f.Name},
+			origin: registry.Origin{Path: f.Path, Digest: f.Digest},
+			failed: &f,
+		})
+	}
+	sortPluginRows(rows)
 	return rows
+}
+
+// pluginInventory is the pane's rows: what is registered, then what discovery
+// refused to launch and what it launched and could not start.
+func (m Model) pluginInventory() []pluginRow {
+	return withFailed(pluginRows(m.reg, m.dash, m.untrusted), m.failed)
 }
 
 // pluginGroups counts the distinct bands the current list falls into.
@@ -402,8 +451,22 @@ func withoutID(list []string, id string) []string {
 // row answers with. One function, because a row that browses, configures and
 // profiles differently is a row where two of the three explanations drift.
 func untrustedNote(row pluginRow) string {
+	if row.failed != nil {
+		return failedNote(row)
+	}
 	return row.plugin.Name + " has not been run: `rta plugin trust " + row.plugin.Name +
 		"` approves this artifact, and the next rta loads it"
+}
+
+// failedNote is what a plugin that did not start answers every key with: how
+// it ended, and the way out when there is one. Cleaned, because the reason
+// carries the last thing the plugin wrote and that is its own text.
+func failedNote(row pluginRow) string {
+	note := row.plugin.Name + " did not start: " + textclean.Terminal(row.failed.Reason)
+	if row.failed.Remedy != "" {
+		note += " — " + textclean.Terminal(row.failed.Remedy)
+	}
+	return note
 }
 
 // pluginRowHeight is how many lines one plugin occupies: a band naming it,
@@ -552,6 +615,9 @@ func (m Model) pluginsView() string {
 			// stating a fact it does not have.
 			right = " " + theme.WarnText.Render("not run") + " "
 		}
+		if row.failed != nil {
+			right = " " + theme.BadText.Render("failed to start") + " "
+		}
 		if row.decided == decidedTrust {
 			right = " " + theme.GoodText.Render("approved") + " "
 		}
@@ -576,6 +642,9 @@ func (m Model) pluginsView() string {
 		}
 		if row.waiting {
 			summary = theme.WarnText.Render("installed and not run — nothing has trusted this artifact")
+		}
+		if row.failed != nil {
+			summary = theme.WarnText.Render(textclean.Terminal(row.failed.Reason))
 		}
 		switch row.decided {
 		case decidedTrust:
@@ -644,6 +713,12 @@ func pluginOrigin(row pluginRow) string {
 
 func pluginDetail(row pluginRow) string {
 	origin := pluginOrigin(row)
+	if row.failed != nil {
+		if row.failed.Remedy == "" {
+			return origin
+		}
+		return origin + " · " + textclean.Terminal(row.failed.Remedy)
+	}
 	if row.decided == decidedTrust {
 		return origin + " · approved — it loads when rta restarts"
 	}
@@ -718,6 +793,9 @@ func (m *Model) trustSelected() string {
 		return ""
 	}
 	row := m.plugins[m.pluginSel]
+	if row.failed != nil {
+		return failedNote(row)
+	}
 	if !row.external() && !row.waiting {
 		return row.plugin.Name + " is built into rta — there is no artifact to approve"
 	}

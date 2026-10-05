@@ -63,6 +63,9 @@ func (m Model) startAllowForm(row pluginRow) (tea.Model, tea.Cmd) {
 	// Ordered from the most fundamental refusal outwards, so the message names
 	// the first thing that is actually in the way rather than the last.
 	switch {
+	case row.failed != nil:
+		m.refuse(failedNote(row))
+		return m, nil
 	case !row.external() && !row.waiting:
 		m.refuse(row.plugin.Name + " is built into rta — it reads what rta reads, " +
 			"and there is no separate artifact to allow")
@@ -122,7 +125,7 @@ func (m Model) saveAllowForm() (tea.Model, tea.Cmd) {
 	// build, so the row's granted/ungranted split is stale the moment this
 	// writes, and a screen still showing the old answer after a permission
 	// change is the worst possible time to be out of date.
-	m.plugins = pluginRows(m.reg, m.dash, m.untrusted)
+	m.plugins = m.pluginInventory()
 	m.flash = allowFlash(name, locations)
 	return m, nil
 }

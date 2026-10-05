@@ -250,7 +250,7 @@ func (m Model) saveConfigForm() (tea.Model, tea.Cmd) {
 	}
 	resolver, _ := pluginconf.Resolve(written, m.reg.Origin)
 	m.pluginCfg = resolver
-	m.plugins = pluginRows(m.reg, m.dash, m.untrusted)
+	m.plugins = m.pluginInventory()
 
 	m.flash = "saved plugins." + heading
 	return m.closeToOrigin()
