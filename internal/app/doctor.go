@@ -74,9 +74,12 @@ func newDoctorCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 			verdict := judge(report)
 			// Pretty only: it is the reading a person gets, and the other
 			// formats are a program's, which counts the status column and takes
-			// the exit status.
+			// the exit status. Drawn by the renderer and not painted here: it
+			// breaks the line to the screen, and the writer it hands the table to
+			// is the one that drops colour for NO_COLOR and TERM=dumb, which a
+			// line styled and written past it does not.
 			if format == cli.Pretty {
-				if _, err := fmt.Fprintln(out, verdict.styled(!renderOpts.NoColor)); err != nil {
+				if err := cli.Render(out, view.Text{Body: verdict.line()}, renderOpts); err != nil {
 					return err
 				}
 			}

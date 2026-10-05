@@ -4,7 +4,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -123,14 +122,6 @@ func (v doctorVerdict) line() string {
 		line += "; " + strings.Join(v.agent, " and ") + " bear most on what an agent can reach"
 	}
 	return line
-}
-
-// styled is line, painted the colour of the worst row when the output takes colour.
-func (v doctorVerdict) styled(color bool) string {
-	if !color {
-		return v.line()
-	}
-	return theme.StatusStyle(v.status()).Render(v.line())
 }
 
 // failure is the error doctor exits with when what it found says to, and nil
