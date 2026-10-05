@@ -560,3 +560,46 @@ func TestConfigSetRefusesWhatAWorkingDirectoryFileWouldNotHonour(t *testing.T) {
 		t.Errorf(".rta.yaml:\n%s", b)
 	}
 }
+
+// What `rta config show` withholds, `rta config get` does not print either: a
+// credential stated in a `plugins:` section, whether one a profile could fill
+// (net's token) or one nothing in the file reads (web's bearer, which is
+// declared a secret and no config key), by the whole section, the whole block or
+// the key itself.
+//
+// Fails without redactCredentials and credentialInputs: get printed the value
+// and show printed the bearer.
+func TestConfigGetNeverPrintsACredentialThatShowWithholds(t *testing.T) {
+	reg := configRegistry(t)
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	if err := reg.Register(plugin.Plugin{Name: "web", Summary: "web", Capabilities: []plugin.Capability{
+		{ID: "web.get", Summary: "get", Safety: plugin.Read, Run: run, Inputs: []plugin.Field{
+			{Name: "bearer", Type: plugin.Secret, Help: "bearer token"},
+			{Name: "timeout", Type: plugin.Int, Default: 5, Min: 1, Max: 60, Config: "timeout"},
+		}},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	text := "plugins:\n  net:\n    token: hunter2\n  web:\n    bearer: hunter3\n    timeout: 7\n"
+	for _, args := range [][]string{
+		{"config", "get", "plugins"},
+		{"config", "get", "plugins.net"},
+		{"config", "get", "plugins.net.token"},
+		{"config", "get", "plugins.web"},
+		{"config", "get", "plugins.web.bearer"},
+		{"config", "show", "-o", "pretty"},
+	} {
+		out, errOut, _, _ := configRun(t, reg, text, args...)
+		if strings.Contains(out+errOut, "hunter") {
+			t.Errorf("%v printed a credential:\n%s\n%s", args, out, errOut)
+		}
+	}
+	out, _, _, err := configRun(t, reg, text, "config", "get", "plugins.web")
+	if err != nil || !strings.Contains(out, "timeout: 7") || !strings.Contains(out, "bearer: (redacted") {
+		t.Errorf("the rest of the section was not printed beside the redaction: %q, %v", out, err)
+	}
+	_, errOut, _, err := configRun(t, reg, text, "config", "get", "plugins.web.bearer")
+	if err == nil || !strings.Contains(errOut, "core.config.key.secret") {
+		t.Errorf("asking for a credential by name is not refused as one: %q, %v", errOut, err)
+	}
+}
