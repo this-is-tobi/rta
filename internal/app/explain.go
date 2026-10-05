@@ -395,6 +395,9 @@ func cliForm(c plugin.Capability) string {
 func capabilityNotFound(reg *registry.Registry, id string) *view.Error {
 	caps := reg.Capabilities()
 	e := view.Errorf("core.capability.unknown", "unknown capability %q", id)
+	if hint, ok := missingPluginHint(caps, id); ok {
+		return e.WithHint(hint)
+	}
 	var ids []string
 	for _, r := range match.Nearest(id, capabilityItems(caps)) {
 		// Only what is worth offering: below the floor is a word found inside

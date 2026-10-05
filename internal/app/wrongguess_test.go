@@ -108,9 +108,9 @@ func TestAWordThatOnlyBeginsLikeACommandIsNotOfferedIt(t *testing.T) {
 		if strings.Contains(ve.Hint, not) || strings.Contains(ve.Message, "closest") {
 			t.Errorf("`rta %s` was offered %q: %s / %s", word, not, ve.Message, ve.Hint)
 		}
-		if !strings.Contains(ve.Hint, "`rta plugin install "+word+"`") {
-			t.Errorf("`rta %s` was told %q, which does not say it may be a service", word, ve.Hint)
-		}
+	}
+	if ve := hintFor(t, "postgres"); !strings.Contains(ve.Hint, "`rta plugin install pg`") {
+		t.Errorf("`rta postgres` was told %q, which does not say it is the pg plugin", ve.Hint)
 	}
 }
 

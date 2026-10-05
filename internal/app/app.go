@@ -729,6 +729,11 @@ func unknownWord(cmd *cobra.Command, arg string, rest []string, topic bool) erro
 	// a trip through --help: `rta sy cpu` suggested `sys` while `rta sys
 	// cpuu` only said unknown, until every group came through here.
 	near := plausibleSuggestions(arg, cmd.SuggestionsFor(arg))
+	// A word that is a plugin's name is not a typo for a command that shares
+	// its length: `rta pg` is not "pkg", and `rta docker` is not "doctor".
+	if _, isPlugin := pluginWordHint(commandsOf(cmd), arg); isPlugin && !cmd.HasParent() {
+		near = nil
+	}
 	if len(near) > 0 {
 		quoted := make([]string, len(near))
 		for i, n := range near {
@@ -819,9 +824,10 @@ func undoes(typed, name string) bool {
 // `rta version`, which every tool they have used before this one answers, and
 // the name of a service — `rta pg`, `rta vault` — which is a plugin and is
 // installed, not built in. The plugin case reads only what is already on the
-// machine: an attached index's manifests, which are local files. With none
-// attached the hint is how to get one, since the first-party index is where
-// that service lives and the person has not been told yet.
+// machine: the first-party names rta ships, and an attached index's manifests,
+// which are local files. A first-party name is answered with the install, which
+// attaches the first-party index itself; any other word with nothing attached
+// is not guessed to be a service.
 //
 // A plugin found on the machine and not yet approved comes first, since it is
 // the one answer that is about this machine rather than a guess: the word is
@@ -857,14 +863,16 @@ func notACommandHint(cmd *cobra.Command, arg string, near []string) string {
 				"`rta plugin trust " + arg + "` approves that build"
 		}
 	}
+	// A first-party plugin that is not here, or one here that did not start,
+	// is said as that: the one answer about this machine that is not a guess.
+	// The install attaches the first-party index itself when it has to.
+	if hint, ok := pluginWordHint(commandsOf(cmd), arg); ok {
+		return hint
+	}
 	if len(near) > 0 && (len([]rune(arg)) > 3 || slices.ContainsFunc(near, func(n string) bool {
 		return strings.HasPrefix(strings.ToLower(n), strings.ToLower(arg))
 	})) {
 		return ""
-	}
-	if len(plugindist.Indexes()) == 0 {
-		return "if " + arg + " is a service rather than a typo, it comes from a plugin — " +
-			"`rta plugin index add official` attaches the first-party index, then `rta plugin install " + arg + "`"
 	}
 	if listed, verr := plugindist.Resolve(arg); verr == nil {
 		return arg + " is a plugin in the " + listed.Index + " index — `rta plugin install " + arg + "` installs it"

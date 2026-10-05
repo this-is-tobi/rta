@@ -209,8 +209,11 @@ func refuseUnhonouredDashboard() *view.Error {
 func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryRun bool) (view.View, *view.Error) {
 	c, ok := reg.Capability(id)
 	if !ok {
-		return nil, view.Errorf("core.dashboard.unknown", "no capability named %q", id).
-			WithHint("`rta explain` lists every one")
+		hint := "`rta explain` lists every one"
+		if missing, ok := missingPluginHint(reg.Capabilities(), id); ok {
+			hint = missing
+		}
+		return nil, view.Errorf("core.dashboard.unknown", "no capability named %q", id).WithHint(hint)
 	}
 	if c.Safety != plugin.Read {
 		return nil, view.Errorf("core.dashboard.notread",
