@@ -214,6 +214,27 @@ func TestNobodyAnsweringIsToldSo(t *testing.T) {
 	}
 }
 
+// A wait shorter than a second is a request window of zero or one whole
+// seconds, depending on where the clock sat, and the agent is never told the
+// operator had no time at all.
+func TestAWaitUnderASecondIsNeverReportedAsNoTime(t *testing.T) {
+	s := connect(t, Options{
+		Consent:     true,
+		ConsentWait: 300 * time.Millisecond,
+	})
+	res := callTool(t, s, "demo_item_reveal", map[string]any{"key": "db-password"})
+	if !res.IsError {
+		t.Fatal("a call nobody answered went through")
+	}
+	text := res.Content[0].(*sdk.TextContent).Text
+	if !strings.Contains(text, "the operator did not answer within 1s") {
+		t.Fatalf("a wait under a second was not worded as the shortest window: %s", text)
+	}
+	if rec := lastRecord(t); rec.Reason != "nobody answered within 1s" {
+		t.Fatalf("the record does not match the agent's refusal: %+v", rec)
+	}
+}
+
 func TestAFullQueueRefusesAtOnceInsteadOfAskingAgain(t *testing.T) {
 	// Consent fatigue, through the bridge. Once the queue is full the agent
 	// gets the refusal it would have got with consent off — immediately,
