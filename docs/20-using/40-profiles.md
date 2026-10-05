@@ -112,7 +112,7 @@ That is reported, and it matters most in the direction you would actually hit it
 `set:` holds values and `secrets:` holds references, and putting a credential in the first one is the mistake this grammar invites. It is inert — nothing reads it, and `profile show` says so:
 
 ```
-problem   nothing in pg reads "password" — `rta explain <capability>` lists the config keys it reads
+problem   under pg: nothing in pg reads "password" — `rta explain <capability>` lists the config keys it reads
 ```
 
 The value itself is redacted in that output, because the config file is written world-readable on the documented basis that it holds no secrets. Move it:
@@ -212,12 +212,12 @@ rta doctor
 ```
 
 ```
-profile   ok     staging → pg@685186a7f1c2, s3@a586c1f19b04 — pg.password from kv:staging-db-password
 profile   info   staging is switched on with no deadline — while it is,
                  `rta mcp serve` refuses every other profile, whatever grants exist
+profile   ok     staging → pg@685186a7f1c2, s3@a586c1f19b04 — pg.password from kv:staging-db-password
 ```
 
-That second line is the one to read. A profile switched on with no deadline is a state you chose; rta just makes sure you know you are in it.
+The first line is the one to read, and doctor puts it first for that reason. A profile switched on with no deadline is a state you chose; rta just makes sure you know you are in it.
 
 ## Related
 
