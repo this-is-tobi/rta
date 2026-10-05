@@ -135,3 +135,15 @@ func TestOverviewDetailedComposesStatusLogAndBranches(t *testing.T) {
 		}
 	}
 }
+
+// The page a dashboard tile opens on enter, asked about a directory that is no
+// repository, used to say "nothing to report" and drop the one fact every
+// section had failed with: that the directory is not inside one.
+func TestTheDetailPageOutsideARepositoryNamesWhy(t *testing.T) {
+	dir := t.TempDir()
+	_, err := runOverview(context.Background(), req(t, dir, map[string]any{"detail": true}))
+	verr := view.AsError(err, "x")
+	if err == nil || verr.Code != "git.notarepo" || verr.Hint == "" {
+		t.Errorf("git.overview detail outside a repository = %v, want git.notarepo with its hint", err)
+	}
+}
