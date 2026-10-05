@@ -472,7 +472,7 @@ func TestDNSServersReadsNoFurtherThanTheResolverCap(t *testing.T) {
 // TestInfoIsWellFormed runs against the real host: shape only, values are
 // machine-dependent.
 func TestInfoIsWellFormed(t *testing.T) {
-	v, err := runInfo(context.Background(), req(nil))
+	v, err := runOverview(context.Background(), req(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -561,12 +561,12 @@ func TestThePortScanDoesNotSpawnAGoroutinePerPort(t *testing.T) {
 // that could not be read (a --file pointing somewhere unreadable, a
 // permission change on /etc/hosts) left the page with one fewer heading.
 // A report missing a section reads exactly like a report whose hosts file
-// was empty, and net.info --detail is the page somebody opens to find out
+// was empty, and net.overview --detail is the page somebody opens to find out
 // why a name resolves the way it does.
 func TestTheDetailedInfoPageSaysWhenTheHostsFileCouldNotBeRead(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "no-such-hosts")
 
-	v, err := detailedInfo(context.Background(), req(map[string]any{"file": missing, "detail": true}))
+	v, err := detailedOverview(context.Background(), req(map[string]any{"file": missing, "detail": true}))
 	if err != nil {
 		t.Fatal(err)
 	}
