@@ -293,13 +293,13 @@ func nearScore(w string, parts []idPart, tokens []text) int {
 }
 
 // extendsByALetterOrTwo says whether w is have with a slip at its end: one more
-// letter, or two on a word long enough to take a plural in -es. A longer tail
+// letter, or the plural -es on a word long enough to take it. Any other tail
 // is another word that happens to begin the same way — `postgres` begins with
-// `post`, `login` with `log` — and offering the shorter one for it is a wrong
-// answer given with confidence.
+// `post`, `login` with `log`, `backup` with `back` — and offering the shorter
+// one for it is a wrong answer given with confidence.
 func extendsByALetterOrTwo(w, have string) bool {
 	extra := len(w) - len(have)
-	return extra <= 1 || (extra == 2 && len(have) >= 4)
+	return extra <= 1 || (extra == 2 && len(have) >= 4 && strings.HasSuffix(w, "es"))
 }
 
 // Distance is the optimal-string-alignment distance between two words:

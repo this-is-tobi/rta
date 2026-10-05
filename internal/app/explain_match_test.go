@@ -55,3 +55,20 @@ func TestExplainOffersNothingThatOnlyContainsTheWord(t *testing.T) {
 		t.Errorf("`rta explain ports` hints %q, which offers a capability for a word inside another", ve.Hint)
 	}
 }
+
+// `backup` is not `audit.why` for a summary that says "back": a word a person
+// types that only begins like a word of a summary is another word.
+func TestExplainDoesNotOfferWhatOnlyBeginsLikeTheWordTyped(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = run(t, reg, "explain", "backup")
+	var ve *view.Error
+	if !errors.As(err, &ve) {
+		t.Fatalf("`rta explain backup` answered %v", err)
+	}
+	if strings.Contains(ve.Hint, "audit.why") || strings.Contains(ve.Hint, "grant.revoke") {
+		t.Errorf("`rta explain backup` hints %q, which offers a capability for a word it only begins like", ve.Hint)
+	}
+}
