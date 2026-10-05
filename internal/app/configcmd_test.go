@@ -642,3 +642,27 @@ func TestConfigSetOutputSaysWhenTheEnvironmentOutranksIt(t *testing.T) {
 		t.Errorf("nothing is exported, and the receipt warns:\n%s", got)
 	}
 }
+
+// Where the config directory came from is said as what chose it: a trailing
+// slash on $XDG_CONFIG_HOME is still that variable, and a relative one, which
+// is ignored, is not.
+//
+// Fails without the filepath.IsAbs check: a value ending in a slash names a
+// directory that never equals the variable plus "/rta", and the path printed
+// beside the line was labelled as the default one.
+func TestConfigSourceNamesTheVariableThatChoseTheDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("RTA_CONFIG", "")
+	for _, c := range []struct{ xdg, want string }{
+		{filepath.Join(home, "cfg"), "$XDG_CONFIG_HOME/rta"},
+		{filepath.Join(home, "cfg") + "/", "$XDG_CONFIG_HOME/rta"},
+		{"relative/dir", "the default, ~/.config/rta"},
+		{"", "the default, ~/.config/rta"},
+	} {
+		t.Setenv("XDG_CONFIG_HOME", c.xdg)
+		if got := configSource(); got != c.want {
+			t.Errorf("XDG_CONFIG_HOME=%q: %q, want %q", c.xdg, got, c.want)
+		}
+	}
+}

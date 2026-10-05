@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -63,7 +64,7 @@ func configSource() string {
 		return "the working directory, because there is no config directory — its plugins, " +
 			"profiles and dashboard are not honoured"
 	}
-	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" && paths.OwnConfigDir() == x+"/rta" {
+	if filepath.IsAbs(os.Getenv("XDG_CONFIG_HOME")) {
 		return "$XDG_CONFIG_HOME/rta"
 	}
 	return "the default, ~/.config/rta"
