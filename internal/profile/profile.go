@@ -32,6 +32,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/near"
 	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/tunnel"
@@ -851,6 +852,17 @@ func noteSet(name, key string, conn config.Connection, ns string, inst Installed
 	return notes
 }
 
+// readerKeys is the config keys a map of readers holds, sorted: the closed set a
+// misspelt one is matched against.
+func readerKeys(readers map[string][]plugin.Field) []string {
+	keys := make([]string, 0, len(readers))
+	for k := range readers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // fillableReaders is every input in ns a profile may fill, by config key: a
 // key serves each capability in the namespace that declares it, and they
 // need not agree about what it takes (pluginconf.SharedField has the cases).
@@ -1067,6 +1079,9 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 		if len(readers[k]) == 0 {
 			reason := fmt.Sprintf("nothing in %s reads %q", ns, k)
 			hint := "`rta explain <capability>` lists the config keys it reads"
+			if guess := near.Word(k, readerKeys(readers)); guess != "" {
+				hint = fmt.Sprintf("did you mean %q?", guess)
+			}
 			if declared[k] {
 				// Declared but refused: a Path, or the capability's own Scope.
 				// Worth its own sentence — the operator's key is not a typo,

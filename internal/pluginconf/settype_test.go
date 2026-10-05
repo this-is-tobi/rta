@@ -161,3 +161,16 @@ func TestADottedKeyWrittenFlatIsToldToNestNotThatItHasNoValue(t *testing.T) {
 		t.Errorf("the nested spelling was reported: %v", problems)
 	}
 }
+
+// A key one slip from a declared one is told what it was meant to be.
+func TestAMisspeltSectionKeyIsToldWhatItWasMeantFor(t *testing.T) {
+	problems := checkOf(t, map[string]any{"prot": 80})
+	if len(problems) != 1 || problems[0].Key != "prot" ||
+		!strings.Contains(problems[0].Hint, `did you mean "port"?`) {
+		t.Fatalf("got %+v", problems)
+	}
+	problems = checkOf(t, map[string]any{"zzzzzzzz": 1})
+	if len(problems) != 1 || !strings.Contains(problems[0].Hint, "rta explain") {
+		t.Fatalf("a key nothing resembles lost the pointer to explain: %+v", problems)
+	}
+}
