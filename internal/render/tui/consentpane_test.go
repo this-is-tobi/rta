@@ -86,7 +86,7 @@ func TestTheRowUnderTheCursorIsTheRequestThatGetsAnswered(t *testing.T) {
 		t.Fatal("no agent.pending")
 	}
 	allow, _ := reg.Capability("agent.allow")
-	keys, _ := keyFields(allow)
+	keys := firstPositional(allow)
 	if len(keys) != 1 || keys[0].Name != "id" {
 		t.Fatalf("agent.allow's identity is %+v, want a single positional id", keys)
 	}
