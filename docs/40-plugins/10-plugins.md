@@ -63,7 +63,7 @@ rta plugin index add official
 rta plugin install pg
 ```
 
-That is the whole path — [Indexes](./12-indexes-and-upgrades.md#indexes) and [Installing](./12-indexes-and-upgrades.md#installing) are what happens inside it. Building from source instead is `make install` in [rta-plugins](https://github.com/this-is-tobi/rta-plugins), which puts `rta-plugin-<name>` beside your `rta` and approves nothing — which is the next section.
+That is the whole path — [Indexes](./12-indexes-and-upgrades.md#indexes) and [Installing](./12-indexes-and-upgrades.md#installing) are what happens inside it. At a terminal, `rta plugin install pg` with nothing attached asks `Attach the first-party index https://github.com/this-is-tobi/rta-plugins? [y/N]` first, and a yes is the saying so; `--yes` answers it there. Without a terminal, or under `--dry-run`, it refuses with `plugin.index.none` and names `rta plugin index add official`, and nothing is fetched. Building from source instead is `make install` in [rta-plugins](https://github.com/this-is-tobi/rta-plugins), which puts `rta-plugin-<name>` beside your `rta` and approves nothing — which is the next section.
 
 ## Trust
 
@@ -77,6 +77,8 @@ rta plugin trust pg          # approve this artifact
 rta plugin untrust pg        # withdraw approval
 rta plugin untrust --all     # withdraw every approval you have recorded
 ```
+
+`untrust` answers with `approvals withdrawn` and `approvals left`, or `approvals to withdraw` and `approvals left after` under `--dry-run`. An approved plugin that cannot start has a `failed to start` row in `rta plugin list` and in `rta doctor`, and the message it failed with ends with the way out, `rta plugin untrust <name>`. `rta plugin rm` is `rta plugin remove`.
 
 There is deliberately no `rta plugin trust --all`. Approving is the decision the whole boundary exists to make somebody take one artifact at a time, and a flag that approved everything discovered on a `$PATH` would approve whatever appeared there this morning. The withdrawing direction has no such problem, which is why `--all` exists on that side alone — the same reason `rta plugin allow` has no bulk form either.
 

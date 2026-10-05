@@ -28,7 +28,8 @@ docker run --rm ghcr.io/this-is-tobi/rta:latest --version
 ```bash
 rta sys overview          # your machine at a glance: cpu, memory, disk, load
 rta                       # the interactive dashboard, with a search over every capability
-rta init                 # find the AI clients on this machine and offer to connect each, one question each
+rta doctor                # what rta can reach from here, the rows that need you first
+rta init                  # find the AI clients on this machine and offer to connect each, one question each
 rta mcp install claude    # or connect one by name: it reads what is local and is refused anything else
 ```
 
