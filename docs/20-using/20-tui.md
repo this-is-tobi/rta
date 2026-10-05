@@ -88,7 +88,7 @@ The agent tile says the same, and opens the queue and the record. From it, and f
 
 `a` stops for a confirmation because granting access is the direction that cannot be taken back once a secret has been read, and what it stops on is the call itself, in one line, rather than a form that never said which call it was about. Any key but `enter` and `A` cancels it and says the call is still waiting. The line holds the call that was named when `a` was pressed, so the queue refreshing under the cursor cannot change which one `enter` allows. The form asks for the guard's passphrase only when the grant guard is on.
 
-The grant roster answers the same way. Open it from its tile — the key on the tile opens the list, with a row to stand on, and says so — and:
+The grant [roster](../95-reference/10-glossary.md#terms) answers the same way. Open it from its tile — the key on the tile opens the list, with a row to stand on, and says so — and:
 
 | Key | What it does |
 | --- | --- |
@@ -100,7 +100,7 @@ On the lock list `x` lifts the lock under the cursor. The queue refreshes itself
 
 ## The catalogue
 
-Every capability as a table grouped by plugin — one row each, with its ID, its safety class and its summary. The filter stays live, every pane is bounded by the terminal and scrolls inside it, and the mouse wheel works. `enter` runs the row; `+` puts it on the dashboard.
+Every capability as a table grouped by plugin — one row each, with its ID, its [safety class](../95-reference/10-glossary.md#terms) and its summary. The filter stays live, every pane is bounded by the terminal and scrolls inside it, and the mouse wheel works. `enter` runs the row; `+` puts it on the dashboard.
 
 The permission column says what an AI agent needs for the row, after its safety class: nothing more than the class (`read`) is a capability an agent can call at once, `agents need grant` is one it can call only once you have issued a grant, and `not for agents` is one it can never call — yours alone. The plugins that are all of the last kind (`agent`, `grant`, `lock`, `operator`, `pkg`) come after the others, so the first page is what you or an agent can run.
 

@@ -22,7 +22,7 @@ profiles:
         set: {bucket: shop-logs}
 ```
 
-A call picks one with the same string everywhere — the flag, the MCP argument, the grant:
+A call picks one with the same string everywhere — the flag, the [MCP](../95-reference/10-glossary.md#acronyms) argument, the grant:
 
 ```bash
 rta pg query --profile staging "select 1"             # the default instance
@@ -44,7 +44,7 @@ Two things follow from an instance being *one connection*:
 
 ## Writing one from a script
 
-`rta profile set` states a profile from flags. Nothing about it needs a terminal, which is the point: before it existed the only alternatives were a TTY form and hand-written YAML, and a team that cannot script its setup ships the YAML — the path where nothing checks the block until something tries to use it.
+`rta profile set` states a profile from flags. Nothing about it needs a terminal, which is the point: before it existed the only alternatives were a [TTY](../95-reference/10-glossary.md#acronyms) form and hand-written YAML, and a team that cannot script its setup ships the YAML — the path where nothing checks the block until something tries to use it.
 
 ```bash
 rta profile set <name> [--note ...] [--ttl 8h|none] [--color "#dd3333"|none]
@@ -110,7 +110,7 @@ user=       role to connect as
 
 ### Adding a forward to an existing connection
 
-A forward fills the endpoint inputs itself, so a stated host beside a coordinate is a line no run reads. A host given *on the call* — typed into the form, or passed as a flag — is different: it connects directly and no forward is opened, which is the override for a coordinate that is wrong. A TLS switch on the call — `--sslmode`, `--tls` — says how to talk, never where, so it opens no such way out: the call still goes through the forward, which turns that switch off, and a value asking for TLS is refused as `core.profile.tls.forward` before the forward opens, rather than dropped or taken somewhere else. Leave the switch out to go through the forward, or give the host and port as well to reach the server directly with it — the only place TLS you ask for is negotiated end to end. `--kube` on a connection that already sets one drops the keys it replaces and says so:
+A forward fills the endpoint inputs itself, so a stated host beside a coordinate is a line no run reads. A host given *on the call* — typed into the form, or passed as a flag — is different: it connects directly and no forward is opened, which is the override for a coordinate that is wrong. A [TLS](../95-reference/10-glossary.md#acronyms) switch on the call — `--sslmode`, `--tls` — says how to talk, never where, so it opens no such way out: the call still goes through the forward, which turns that switch off, and a value asking for TLS is refused as `core.profile.tls.forward` before the forward opens, rather than dropped or taken somewhere else. Leave the switch out to go through the forward, or give the host and port as well to reach the server directly with it — the only place TLS you ask for is negotiated end to end. `--kube` on a connection that already sets one drops the keys it replaces and says so:
 
 ```
 removed  set.host, set.port — the forward fills those, so nothing read them

@@ -54,7 +54,7 @@ rta kube serviceaccount provision agent-payments --profile payments-staging \
 ```
 
 - **Each `--grant` is a capability the agent will call**, and costs exactly the rules that capability's reads need. The bare words it also takes — `logs`, `workloads`, `services`, `rollout` — are permissions for a client other than rta, and an agent that reaches the cluster only through rta has no capability that would use them. A cluster-wide read such as `kube.node.list` cannot be put in a namespaced Role at all, and is refused rather than half-granted.
-- **The file holds no credential of yours**: the cluster's address as your context names it, the cluster's CA, and the new token, at `0600`. `--out` refuses a file that already exists — before anything is created on the cluster — unless `--force` says to replace it.
+- **The file holds no credential of yours**: the cluster's address as your context names it, the cluster's [CA](../95-reference/10-glossary.md#acronyms), and the new token, at `0600`. `--out` refuses a file that already exists — before anything is created on the cluster — unless `--force` says to replace it.
 - **The answer's `actual token expiry` is the one that counts.** A cluster may cap a token below what `--ttl` asked for, silently, and the token is the only place that shows. `--ttl` takes ten minutes at the least, the TokenRequest API's own floor.
 - **An agent cannot do this for itself.** Provisioning is for the person at the terminal, and is on no agent's tool list, however the server is started.
 
@@ -136,7 +136,7 @@ claude mcp add --transport http rta-payments https://rta-tobi.example.com/ \
 
 with `RTA_PAYMENTS_TOKEN` holding the token on the `laptop` line of `rta-tobi-tokens.txt` in the environment Claude Code starts from — your shell profile, or a secret manager that exports it.
 
-Any client that speaks MCP over HTTP takes the same two things: the instance's URL, and the token as a bearer header. Ask the agent which pods in `payments` are not ready: it calls `kube_pod_list`, and the call is in the instance's record under the agent `tobi` and the credential `laptop`:
+Any client that speaks [MCP](../95-reference/10-glossary.md#acronyms) over HTTP takes the same two things: the instance's URL, and the token as a bearer header. Ask the agent which pods in `payments` are not ready: it calls `kube_pod_list`, and the call is in the instance's record under the agent `tobi` and the credential `laptop`:
 
 ```bash
 kubectl -n rta exec deploy/rta-rta-chart-tobi -- rta agent log --limit 20
@@ -144,7 +144,7 @@ kubectl -n rta exec deploy/rta-rta-chart-tobi -- rta agent log --limit 20
 
 The agent's tool list carries the `kube` reads and no way to mint an identity, and nothing that describes the machine the instance runs on — a remote transport never registers those.
 
-**The header is the whole credential on this transport**, so the command writes it as a reference: the single quotes keep the shell from expanding it, Claude Code expands it from the environment it starts in, and its configuration, which every process you run can read, names the variable and never holds the token. Pasted in as the token itself, the header is one `rta audit clients` fails, and `--fix` says where it belongs instead — the environment that launches the client, named from the file the way that client reads it, or the client's own credential helper. A static token names whoever holds it; [Kubernetes](../30-boundary/80-kubernetes.md#decisions-to-make-first) weighs it against OIDC for an instance a person uses.
+**The header is the whole credential on this transport**, so the command writes it as a reference: the single quotes keep the shell from expanding it, Claude Code expands it from the environment it starts in, and its configuration, which every process you run can read, names the variable and never holds the token. Pasted in as the token itself, the header is one `rta audit clients` fails, and `--fix` says where it belongs instead — the environment that launches the client, named from the file the way that client reads it, or the client's own credential helper. A static token names whoever holds it; [Kubernetes](../30-boundary/80-kubernetes.md#decisions-to-make-first) weighs it against [OIDC](../95-reference/10-glossary.md#acronyms) for an instance a person uses.
 
 ## When the token runs out
 

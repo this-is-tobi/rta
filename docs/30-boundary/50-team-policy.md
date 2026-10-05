@@ -41,7 +41,7 @@ Read that table again and notice what it is about: a forged **line**. It says no
 | It is deleted | *(without the setting below)* runs with no ceiling |
 | Its contents are replaced with `{}` | *(without the setting below)* runs with no ceiling |
 
-The clumsy edit fails closed. The clean ones fail open, and quietly — because a machine whose policy vanished is indistinguishable from a machine that never had one. Deletion is not exotic either: a branch that predates the file, a bad merge, a `git clean -xdf`, a sparse checkout, or an MCP client that launched rta from your home directory rather than the repository.
+The clumsy edit fails closed. The clean ones fail open, and quietly — because a machine whose policy vanished is indistinguishable from a machine that never had one. Deletion is not exotic either: a branch that predates the file, a bad merge, a `git clean -xdf`, a sparse checkout, or an [MCP](../95-reference/10-glossary.md#acronyms) client that launched rta from your home directory rather than the repository.
 
 **A file in the repository cannot defend against this**, because a policy demanding a policy is deleted along with its own demand. So the demand lives somewhere else:
 
@@ -207,7 +207,7 @@ If that line reads `none in force`, the policy you committed is not the one boun
 
 **It is not a substitute for the startup gate.** A policy cannot expose a write capability, and cannot widen a path root. It only ever narrows what a grant may say.
 
-**It is not RBAC.** There are no subjects and no allow rules, and that is a deliberate refusal: a role here is a list a person issues, under the ceiling, never a rule that grants. A policy engine that can grant has to be trusted, distributed and verified; one that can only refuse needs none of that. The cost is that it cannot express "these five people may do this" — and the benefit is everything in the table at the top of this page.
+**It is not [RBAC](../95-reference/10-glossary.md#acronyms).** There are no subjects and no allow rules, and that is a deliberate refusal: a role here is a list a person issues, under the ceiling, never a rule that grants. A policy engine that can grant has to be trusted, distributed and verified; one that can only refuse needs none of that. The cost is that it cannot express "these five people may do this" — and the benefit is everything in the table at the top of this page.
 
 **It is not a control over a machine somebody else owns.** An operator owns their binary, their config and their filesystem, so they can always unset `requireRepoPolicy` and delete the file. Saying so is the point rather than a caveat: a bound that reports itself without being enforced is worse than no bound at all.
 

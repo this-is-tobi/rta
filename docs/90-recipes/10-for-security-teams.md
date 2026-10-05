@@ -18,7 +18,7 @@ helm install rta oci://ghcr.io/this-is-tobi/rta/rta-chart \
   --namespace rta --create-namespace --values rta-values.yaml
 ```
 
-The chart runs rta as an HTTP MCP server, one entry under `servers:` per person, each authenticating as that person — the shape where an agent holds nothing and rta is the only route. Verify the chart before the first install ([Verify a download](../95-reference/30-verify-a-download.md#the-helm-chart) has the commands), pin the image by digest, and make the decisions [Kubernetes](../30-boundary/80-kubernetes.md) lists before setting a value. The image is the plugin allowlist: [An agent in a cluster](./30-an-agent-in-a-cluster.md) builds one that carries `kube` and nothing else, and hands it a minted, expiring identity instead of a ClusterRole.
+The chart runs rta as an HTTP [MCP](../95-reference/10-glossary.md#acronyms) server, one entry under `servers:` per person, each authenticating as that person — the shape where an agent holds nothing and rta is the only route. Verify the chart before the first install ([Verify a download](../95-reference/30-verify-a-download.md#the-helm-chart) has the commands), pin the image by digest, and make the decisions [Kubernetes](../30-boundary/80-kubernetes.md) lists before setting a value. The image is the plugin allowlist: [An agent in a cluster](./30-an-agent-in-a-cluster.md) builds one that carries `kube` and nothing else, and hands it a minted, expiring identity instead of a ClusterRole.
 
 ## Commit a ceiling, and make machines require it
 
@@ -103,7 +103,7 @@ rta audit kube podsecurity     # pods privileged, in a host namespace, or free t
 rta audit web example.com      # TLS, headers, cookies, exposure
 ```
 
-Each check is graded against a named OWASP or CWE control, so a report is reviewable by somebody who was not in the room. The recipes turn these into [a release gate](./01-readme.md#dependency-review-before-a-release), [a sweep of every repository a team owns](./01-readme.md#audit-every-repository-a-team-owns), [a cluster's end-of-life report](./01-readme.md#what-in-the-cluster-is-out-of-support) and [a review to paste into an issue](./01-readme.md#a-security-review-you-can-paste-into-an-issue).
+Each check is graded against a named [OWASP](../95-reference/10-glossary.md#acronyms) or [CWE](../95-reference/10-glossary.md#acronyms) control, so a report is reviewable by somebody who was not in the room. The recipes turn these into [a release gate](./01-readme.md#dependency-review-before-a-release), [a sweep of every repository a team owns](./01-readme.md#audit-every-repository-a-team-owns), [a cluster's end-of-life report](./01-readme.md#what-in-the-cluster-is-out-of-support) and [a review to paste into an issue](./01-readme.md#a-security-review-you-can-paste-into-an-issue).
 
 ## Related
 

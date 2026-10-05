@@ -24,7 +24,7 @@ Worked examples. Each one is a real shape rather than a demonstration of a flag.
 | [Check a machine is set up, without unlocking anything](#check-a-machine-is-set-up-without-unlocking-anything) | everyday | nothing | 1 |
 | [Back up a datastore, and put the backup somewhere else](#back-up-a-datastore-and-put-the-backup-somewhere-else) | operator | a datastore plugin and an S3 profile | 15 |
 
-Three have pages of their own. [For a security team](./10-for-security-teams.md) and [For a developer](./20-for-developers.md) walk one role's tasks through the chapters that explain them, and [An agent in a cluster](./30-an-agent-in-a-cluster.md) goes end to end: a profile, a ServiceAccount token the `kube` plugin mints, an instance holding it, and an agent connected over MCP.
+Three have pages of their own. [For a security team](./10-for-security-teams.md) and [For a developer](./20-for-developers.md) walk one role's tasks through the chapters that explain them, and [An agent in a cluster](./30-an-agent-in-a-cluster.md) goes end to end: a profile, a ServiceAccount token the `kube` plugin mints, an instance holding it, and an agent connected over [MCP](../95-reference/10-glossary.md#acronyms).
 
 ## Pair with an agent on a staging database, for an hour
 
@@ -133,7 +133,7 @@ rta audit deps -o md >> release-notes.md
 rta audit why some-package
 ```
 
-`audit deps` checks what you already declare against OSV, and each hit says whether **you** asked for that package or something else pulled it in — which is the difference between a fix you make and a fix you wait for. `audit why` draws the whole route from the lockfile.
+`audit deps` checks what you already declare against [OSV](../95-reference/10-glossary.md#acronyms), and each hit says whether **you** asked for that package or something else pulled it in — which is the difference between a fix you make and a fix you wait for. `audit why` draws the whole route from the lockfile.
 
 ## Audit every repository a team owns
 
@@ -150,7 +150,7 @@ Nothing is installed, resolved or built — a lockfile is a list a package manag
 
 **It is refused over MCP, and that is not an oversight.** `audit deps` is read-only and needs no grant, which is what puts it on an agent's tool list with nothing asked. A URL an agent composes is a request rta makes on its behalf, to a host the agent chose, with the reply landing in its context — the thing `http.get` carries a grant for. Point an agent at a checkout you made.
 
-The rows grade each advisory and name the versions that fix it, from osv.dev's own records. `--detail` ends with the tools that answer what this cannot, with the target already substituted in — a full scan of what a lockfile reader never sees, the ecosystem's own auditor, the dependencies nothing imports, and an SBOM worth committing:
+The rows grade each advisory and name the versions that fix it, from osv.dev's own records. `--detail` ends with the tools that answer what this cannot, with the target already substituted in — a full scan of what a lockfile reader never sees, the ecosystem's own auditor, the dependencies nothing imports, and an [SBOM](../95-reference/10-glossary.md#acronyms) worth committing:
 
 ```
 a full scan         `trivy fs .` or `grype dir:.` — OS packages, vendored code, images, and every advisory graded
@@ -183,7 +183,7 @@ The same question about the machine you are sitting at is `rta pkg outdated`; ab
 } > review.md
 ```
 
-Every finding cites the OWASP Top 10 category and the CWE it comes from, so the output is reviewable by somebody who was not in the room.
+Every finding cites the [OWASP](../95-reference/10-glossary.md#acronyms) Top 10 category and the [CWE](../95-reference/10-glossary.md#acronyms) it comes from, so the output is reviewable by somebody who was not in the room.
 
 ## Fill a shell with credentials, without them touching disk
 
@@ -384,7 +384,7 @@ export RTA_CONFIG="$HOME/dev/infra/rta.yaml"
 Two facts carry the whole arrangement:
 
 - **`RTA_CONFIG` is the trust decision.** A config path somebody named is honoured in full; a `.rta.yaml` merely sitting in a cloned repository is not — its profiles are ignored, so a repository cannot ship a `prod` profile pointing at your cluster and wait for you to `cd` into it. Exporting the variable *is* the moment a person chooses to trust the team's file.
-- **Credentials stay personal even though the map is shared.** `kv:shop-staging-s3` names an entry in each member's own encrypted store — the file says *which* entry, each person runs `rta kv set shop-staging-s3` once with their own value. `kube:` references go further: the Secret is read from the cluster at call time with each member's own kubectl credentials, so RBAC keeps deciding who can actually resolve the profile, and offboarding is the cluster access removal the team already does.
+- **Credentials stay personal even though the map is shared.** `kv:shop-staging-s3` names an entry in each member's own encrypted store — the file says *which* entry, each person runs `rta kv set shop-staging-s3` once with their own value. `kube:` references go further: the Secret is read from the cluster at call time with each member's own kubectl credentials, so [RBAC](../95-reference/10-glossary.md#acronyms) keeps deciding who can actually resolve the profile, and offboarding is the cluster access removal the team already does.
 
 New machine, whole setup:
 

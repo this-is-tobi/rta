@@ -1,6 +1,6 @@
 # Start here
 
-**RTA**, short for *Rule Them All* and written `rta` on the command line, is one binary over the tools you already juggle: databases, object storage, secrets, networking, certificates, host telemetry, HTTP APIs. Every capability is written once and rendered on three surfaces: a scriptable CLI, an interactive TUI, and an MCP server for AI agents.
+**RTA**, short for *Rule Them All* and written `rta` on the command line, is one binary over the tools you already juggle: databases, object storage, secrets, networking, certificates, host telemetry, HTTP APIs. Every capability is written once and rendered on three surfaces: a scriptable CLI, an interactive TUI, and an [MCP](./95-reference/10-glossary.md#acronyms) server for AI agents.
 
 It is also the layer underneath the agent you already use. rta is not another AI CLI and does not want to be the thing you talk to: it is the part that decides what Claude Code, Codex, Cursor, Copilot or Gemini may actually touch. Handing an agent a shell is **one decision that covers everything it will ever do**. Pointing it at rta is a different shape: read-only by default, everything else granted per capability, narrowed to one record, expiring on its own, and written down.
 
@@ -51,11 +51,11 @@ When you want more of the everyday surface, these stand alone and read well in t
 
 Start from the work instead of the feature. [For a security team](./90-recipes/10-for-security-teams.md) deploys rta, commits a ceiling, hands out roles and reviews the record. [For a developer](./90-recipes/20-for-developers.md) is a day's work with environments, secrets and a bounded agent. [An agent in a cluster](./90-recipes/30-an-agent-in-a-cluster.md) is the whole path end to end, from a profile to an agent connected over MCP, and [Recipes](./90-recipes/01-readme.md) has the rest, each with its level and what it needs.
 
-A word that seems to mean something particular — a grant, the record, a roster, a profile — is defined once in the [glossary](./95-reference/10-glossary.md), with the acronyms these pages assume.
+A word that seems to mean something particular — a grant, the record, a profile, a role — is defined once in the [glossary](./95-reference/10-glossary.md), with the acronyms these pages assume.
 
 ## What you are about to use
 
-Everything in rta is a **capability**: a small, declared unit of work with typed inputs, a safety class and one implementation. `sys.cpu` is a capability, and so are `kv.get`, `pg.query` and `net.dns`. A capability declares itself once, and the three surfaces are generated from that declaration:
+Everything in rta is a **capability**: a small, declared unit of work with typed inputs, a [safety class](./95-reference/10-glossary.md#terms) and one implementation. `sys.cpu` is a capability, and so are `kv.get`, `pg.query` and `net.dns`. A capability declares itself once, and the three surfaces are generated from that declaration:
 
 ```mermaid
 flowchart LR

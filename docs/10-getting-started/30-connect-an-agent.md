@@ -6,7 +6,7 @@ If your agent can run shell commands, read [What rta actually bounds](../30-boun
 
 ## How an agent reaches rta
 
-An MCP client — Claude Code, VS Code, Cursor, Codex, Gemini, Copilot — launches `rta mcp serve` and gets every capability as a tool, with typed schemas, safety annotations and structured results. Over stdio, the default, there is no daemon, no port and nothing to start: the server is a child process of the client, speaking JSON-RPC over its own stdin and stdout, and it lives exactly as long as the client does. Two clients mean two processes and one set of grants:
+An [MCP](../95-reference/10-glossary.md#acronyms) client — Claude Code, VS Code, Cursor, Codex, Gemini, Copilot — launches `rta mcp serve` and gets every capability as a tool, with typed schemas, safety annotations and structured results. Over stdio, the default, there is no daemon, no port and nothing to start: the server is a child process of the client, speaking JSON-RPC over its own stdin and stdout, and it lives exactly as long as the client does. Two clients mean two processes and one set of grants:
 
 ```mermaid
 flowchart LR

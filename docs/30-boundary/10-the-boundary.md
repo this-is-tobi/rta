@@ -93,7 +93,7 @@ The question people arrive with is "can we run one MCP server for everyone" — 
 
 But the *instinct* behind it is right, and it is World C. If team members' agents run somewhere that has no credentials and no rta binary of its own, then rta really is the only route, and everything those pages describe becomes enforceable rather than advisory.
 
-The way to get there today is [one instance per person from a shared image](./67-containers-and-images.md#a-team-share-the-configuration-not-the-process): the profiles are baked in, the credentials are `kube:` references resolved with each person's own RBAC, and the agent's container holds nothing.
+The way to get there today is [one instance per person from a shared image](./67-containers-and-images.md#a-team-share-the-configuration-not-the-process): the profiles are baked in, the credentials are `kube:` references resolved with each person's own [RBAC](../95-reference/10-glossary.md#acronyms), and the agent's container holds nothing.
 
 **A remote server, one per person, is stronger still, and [`rta mcp serve --http`](./65-hosting-a-server.md) is that shape.** Grants live on the server's disk; an agent with a shell on its own machine can run `rta grant allow` all it likes and be writing to a file the server never reads. There is no shell on the server, so the only way in is the protocol, and `grant allow` refuses over MCP. That closes the seam this whole chapter is about — and it closes the other one too, because with no local CLI there is no unrecorded path: every call is an MCP call, and every MCP call is in the record.
 

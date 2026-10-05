@@ -1,6 +1,6 @@
 # OIDC
 
-`rta mcp serve --http` refuses to start without a way to verify who is calling. There are two, and they answer different questions. A static token from `--token-file` names whoever holds the string. An OIDC issuer names a person your identity provider already knows, which is what makes "one instance per person, authenticating as that person" mean anything — the record then carries a subject your IdP can resolve back to a human, not a label somebody chose.
+`rta mcp serve --http` refuses to start without a way to verify who is calling. There are two, and they answer different questions. A static token from `--token-file` names whoever holds the string. An [OIDC](../95-reference/10-glossary.md#acronyms) issuer names a person your identity provider already knows, which is what makes "one instance per person, authenticating as that person" mean anything — the record then carries a subject your IdP can resolve back to a human, not a label somebody chose.
 
 This page is what rta actually verifies, a Keycloak walkthrough because it is the provider with the sharpest edge, and the failure messages, which go somewhere you might not look.
 
@@ -121,7 +121,7 @@ rta: mcp http: oidc token subject "9c1a…" is not in the allowed list
 rta: mcp http: bearer token rejected by every configured verifier: …
 ```
 
-In Kubernetes that is `kubectl logs`. If you are looking at a 401 and the logs say nothing at all, the request never reached the verifier — check that you sent `Authorization: Bearer …` and that you are talking to the MCP port rather than the observation one.
+In Kubernetes that is `kubectl logs`. If you are looking at a 401 and the logs say nothing at all, the request never reached the verifier — check that you sent `Authorization: Bearer …` and that you are talking to the [MCP](../95-reference/10-glossary.md#acronyms) port rather than the observation one.
 
 | Message | Cause |
 | --- | --- |

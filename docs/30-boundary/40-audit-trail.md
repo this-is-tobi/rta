@@ -1,6 +1,6 @@
 # The record
 
-Grants say what may happen next. The record says what already did — one line per call that arrived over MCP, one per authority change an operator made over [the remote channel](./66-operators.md), refusals included.
+Grants say what may happen next. The record says what already did — one line per call that arrived over [MCP](../95-reference/10-glossary.md#acronyms), one per authority change an operator made over [the remote channel](./66-operators.md), refusals included.
 
 ```bash
 rta agent overview    # the last hour at a glance
@@ -95,7 +95,7 @@ rta agent log --refused -o json          # the refusals, as data
 rta agent log -o csv >> ~/audit/$(date +%F).csv
 ```
 
-Every refused or failed row carries the cause twice, deliberately split: a `code` column holding just the dotted, stable code (`core.grant.required`, `agent.surface`), and a `why` column holding the sentence. Match on the code — it is the contract a SIEM or jq rule can rely on across versions; the wording is not.
+Every refused or failed row carries the cause twice, deliberately split: a `code` column holding just the dotted, stable code (`core.grant.required`, `agent.surface`), and a `why` column holding the sentence. Match on the code — it is the contract a [SIEM](../95-reference/10-glossary.md#acronyms) or jq rule can rely on across versions; the wording is not.
 
 Which makes "ship the record somewhere durable" a cron line rather than a feature request.
 
