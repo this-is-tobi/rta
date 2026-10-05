@@ -46,6 +46,10 @@ type initPlan struct {
 	offers  []initOffer
 	already []string
 	notes   []view.Pair
+	// noClient is a machine on which none of the clients rta knows is to be
+	// found. It is said apart from the notes: it is not something to do, and a
+	// machine with nothing to do is a good outcome that init reports as one.
+	noClient bool
 }
 
 // planInit looks at the machine: which clients are on it and whether rta is
@@ -59,11 +63,12 @@ type initPlan struct {
 func planInit(ctx context.Context) initPlan {
 	home, _ := os.UserHomeDir()
 	wd, _ := os.Getwd()
-	var plan initPlan
+	plan := initPlan{noClient: true}
 	for _, seen := range seenClients(home) {
 		if !seen.present() {
 			continue
 		}
+		plan.noClient = false
 		c := seen.client
 		if registeredWith(c, home, wd) {
 			plan.already = append(plan.already, c.label)
