@@ -29,17 +29,17 @@ import (
 // durationUnits are the suffixes a Duration is written with: Go's, and the two
 // a person reaches for when a time spans days. A day is twenty-four hours and a
 // week seven of them, as a TTL means it; neither is a calendar unit.
-var durationUnits = map[string]time.Duration{
-	"ns": time.Nanosecond,
-	"us": time.Microsecond,
-	"µs": time.Microsecond, // U+00B5 MICRO SIGN
-	"μs": time.Microsecond, // U+03BC GREEK SMALL LETTER MU
-	"ms": time.Millisecond,
-	"s":  time.Second,
-	"m":  time.Minute,
-	"h":  time.Hour,
-	"d":  24 * time.Hour,
-	"w":  7 * 24 * time.Hour,
+var durationUnits = map[string]uint64{
+	"ns": uint64(time.Nanosecond),
+	"us": uint64(time.Microsecond),
+	"µs": uint64(time.Microsecond), // U+00B5 MICRO SIGN
+	"μs": uint64(time.Microsecond), // U+03BC GREEK SMALL LETTER MU
+	"ms": uint64(time.Millisecond),
+	"s":  uint64(time.Second),
+	"m":  uint64(time.Minute),
+	"h":  uint64(time.Hour),
+	"d":  uint64(24 * time.Hour),
+	"w":  uint64(7 * 24 * time.Hour),
 }
 
 // ParseDuration reads a length of time as a Duration input is written: a
@@ -61,7 +61,7 @@ func ParseDuration(s string) (time.Duration, error) {
 	rest := s
 	for rest != "" {
 		i := 0
-		for i < len(rest) && (rest[i] >= '0' && rest[i] <= '9' || rest[i] == '.') {
+		for i < len(rest) && isNumberByte(rest[i]) {
 			i++
 		}
 		if i == 0 {
@@ -70,7 +70,7 @@ func ParseDuration(s string) (time.Duration, error) {
 		number := rest[:i]
 		rest = rest[i:]
 		j := 0
-		for j < len(rest) && !(rest[j] >= '0' && rest[j] <= '9' || rest[j] == '.') {
+		for j < len(rest) && !isNumberByte(rest[j]) {
 			j++
 		}
 		unit := rest[:j]
@@ -92,10 +92,10 @@ func ParseDuration(s string) (time.Duration, error) {
 		} else if frac == "" {
 			return 0, fmt.Errorf("expected a number at %q", number)
 		}
-		if n > math.MaxInt64/uint64(scale) {
+		if n > math.MaxInt64/scale {
 			return 0, errors.New("too large")
 		}
-		total += n * uint64(scale)
+		total += n * scale
 		if frac != "" {
 			f, err := strconv.ParseFloat("0."+frac, 64)
 			if err != nil {
@@ -109,6 +109,8 @@ func ParseDuration(s string) (time.Duration, error) {
 	}
 	return time.Duration(total), nil
 }
+
+func isNumberByte(b byte) bool { return b >= '0' && b <= '9' || b == '.' }
 
 // FormatDuration is d written the way a person writes one: whole days as
 // "2d", otherwise Go's spelling without the zero units it pads with ("1h", not

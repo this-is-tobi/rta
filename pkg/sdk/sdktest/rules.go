@@ -349,7 +349,7 @@ func checkKeywords(t reporter, p plugin.Plugin, cfg config) {
 // wordsOf splits text into the lowercase words search matches by.
 func wordsOf(text string) []string {
 	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
 	})
 }
 

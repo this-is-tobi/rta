@@ -700,7 +700,7 @@ func checkReveals(c Capability) error {
 			"withholds is not a read — declare it %s or %s, so a caller needs a grant for it",
 			c.ID, Read, Write, Destructive)
 	}
-	if !c.HumanOnly && !(c.NeedsGrant && c.Scope != "") {
+	if !c.HumanOnly && (!c.NeedsGrant || c.Scope == "") {
 		return fmt.Errorf("capability %q: declares Reveals without a gate that names the record — "+
 			"declare NeedsGrant with a Scope (the input naming what is revealed), or HumanOnly if only the "+
 			"person at the terminal may see it; a reveal with no Scope makes every grant on it cover every "+
@@ -890,7 +890,7 @@ func checkDurationBounds(id string, f Field) error {
 		}
 		d, err := ParseDuration(text)
 		if err != nil {
-			return fmt.Errorf("capability %q: input %q has a %s of %q, which is not a duration (%v); %s",
+			return fmt.Errorf("capability %q: input %q has a %s of %q, which is not a duration (%w); %s",
 				id, f.Name, b.what, text, err, durationHint)
 		}
 		*b.d, *b.ok = d, true
