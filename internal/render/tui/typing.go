@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
@@ -85,4 +86,39 @@ func (m Model) typedIntoSearch(msg tea.KeyPressMsg) (string, bool) {
 		return "", true
 	}
 	return msg.Text, true
+}
+
+// maxPastedQuery is as much of a paste as the bar takes: a capability ID or a
+// phrase from a note is well inside it, and a pasted file is not a search.
+const maxPastedQuery = 120
+
+// pasteIntoSearch is a paste onto the dashboard while the bar holds the
+// keyboard or the selection: the text becomes the query, exactly as if it had
+// been typed. A box that takes `kv.get` typed and drops it pasted is the one
+// place a person copying an ID from a message would not look for the reason,
+// and the terminal sends a paste as one event that no key handler sees.
+//
+// Line breaks and runs of space collapse to one space and anything that does
+// not print is dropped, so a paste cannot put a control sequence in a query
+// that is drawn back on screen.
+func (m Model) pasteIntoSearch(msg tea.PasteMsg) (Model, bool) {
+	if m.mode != modeDashboard || m.help || (!m.searchEditing && !m.lettersAreQuery()) {
+		return m, false
+	}
+	clean := strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) || unicode.IsSpace(r) {
+			return r
+		}
+		return -1
+	}, msg.Content)
+	text := strings.Join(strings.Fields(clean), " ")
+	if r := []rune(text); len(r) > maxPastedQuery {
+		text = string(r[:maxPastedQuery])
+	}
+	if text == "" {
+		return m, true
+	}
+	m.searchEditing, m.searchSel = true, 0
+	m.query += text
+	return m, true
 }

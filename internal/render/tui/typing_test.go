@@ -112,3 +112,43 @@ func TestADashboardWithNoTileKeepsItsLettersAsCommands(t *testing.T) {
 		t.Errorf("the footer teaches typing where typing opens panes:\n%s", bar)
 	}
 }
+
+func pasted(t *testing.T, m Model, content string) Model {
+	t.Helper()
+	out, _ := m.Update(tea.PasteMsg{Content: content})
+	return out.(Model)
+}
+
+// The terminal delivers a paste as one event, which no key handler sees, so a
+// capability ID copied from a message was dropped by the box that takes it typed.
+func TestAPasteOnTheLandingScreenIsASearch(t *testing.T) {
+	base, _ := realModel(t, 120, 40)
+	m := pasted(t, base, "gen.password")
+	if !m.searchEditing || m.query != "gen.password" {
+		t.Fatalf("the paste left editing=%v with %q in the bar, want gen.password", m.searchEditing, m.query)
+	}
+	m = pasted(t, m, "x\ny")
+	if m.query != "gen.passwordx y" {
+		t.Errorf("a second paste made %q, want it appended with the line break collapsed", m.query)
+	}
+}
+
+func TestAPasteIsCleanedAndBoundedBeforeItIsDrawnBack(t *testing.T) {
+	base, _ := realModel(t, 120, 40)
+	m := pasted(t, base, "dns\x1b[31m\a\tmx\r\n")
+	if m.query != "dns[31m mx" {
+		t.Errorf("the paste made %q, want the escape and the bell dropped and the tab a space", m.query)
+	}
+	long := pasted(t, base, strings.Repeat("a", 500))
+	if got := len([]rune(long.query)); got != maxPastedQuery {
+		t.Errorf("a 500-character paste made a %d-character query, want %d", got, maxPastedQuery)
+	}
+}
+
+func TestAPasteGoesToTheTileOrFormThatHasTheKeyboard(t *testing.T) {
+	base, _ := realModel(t, 120, 40)
+	selected := press(t, base, "down")
+	if m := pasted(t, selected, "dns"); m.query != "" || m.searchEditing {
+		t.Errorf("a paste with a tile selected started a search: editing=%v %q", m.searchEditing, m.query)
+	}
+}
