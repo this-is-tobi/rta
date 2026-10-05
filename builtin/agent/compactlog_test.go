@@ -310,6 +310,24 @@ func TestTheOverviewFiltersByAgent(t *testing.T) {
 	if got := overviewPair(t, v, "needs your grant"); got != "0" {
 		t.Errorf("claude's refusal is in cursor's overview: %q", got)
 	}
+	if got := overviewPair(t, v, "last call"); !strings.HasPrefix(got, "sys.cpu ran,") {
+		t.Errorf("cursor's last call = %q, want its own sys.cpu rather than the newest call of anybody", got)
+	}
+	appendRow(t, agentlog.Entry{Cap: "kv.get", Agent: "claude", Outcome: agentlog.Refused, Auth: agentlog.Blocked})
+	v, err = run(t, "agent.overview", map[string]any{"agent": "cursor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := overviewPair(t, v, "last call"); !strings.HasPrefix(got, "sys.cpu ran,") {
+		t.Errorf("claude's newer call is cursor's last call: %q", got)
+	}
+	v, err = run(t, "agent.overview", map[string]any{"agent": "nobody"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := overviewPair(t, v, "last call"); got != "nothing recorded yet from nobody" {
+		t.Errorf("an agent with no calls: last call = %q", got)
+	}
 }
 
 func TestSeveralServersUnderOneNameAreOneEntry(t *testing.T) {

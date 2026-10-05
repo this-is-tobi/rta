@@ -566,12 +566,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 				Value: "cannot be written — a call that needs a grant is refused until it can, and the rest are not recorded"})
 		}
 	}
-	if last, err := agentlog.Read(1); err == nil && len(last) > 0 {
-		pairs = append(pairs, view.Pair{Key: "last call",
-			Value: fmt.Sprintf("%s %s, %s", last[0].Cap, last[0].Outcome, format.Ago(last[0].At))})
-	} else {
-		pairs = append(pairs, view.Pair{Key: "last call", Value: "nothing recorded yet"})
-	}
+	pairs = append(pairs, view.Pair{Key: "last call", Value: lastCall(agent)})
 	if !req.Bool("detail") {
 		return view.KeyValue{Pairs: pairs}, nil
 	}
@@ -583,6 +578,26 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 		{ID: "record", Title: "The record", View: view.KeyValue{Pairs: recordPairs(rep, verr)}},
 		{ID: "waiting", Title: "Waiting on you", View: waitingView(req.Surface(), waiting, pendingErr)},
 	}}, nil
+}
+
+// lastCall is the newest call on the record, or the newest one an agent made
+// when the overview is that agent's: a line about another agent's call, under
+// a heading that says whose overview this is, reads as the answer to it.
+func lastCall(agent string) string {
+	if agent == "" {
+		if last, err := agentlog.Read(1); err == nil && len(last) > 0 {
+			return fmt.Sprintf("%s %s, %s", last[0].Cap, last[0].Outcome, format.Ago(last[0].At))
+		}
+		return "nothing recorded yet"
+	}
+	if all, err := agentlog.Read(maxRows); err == nil {
+		for i := len(all) - 1; i >= 0; i-- {
+			if e := all[i]; e.Agent == agent {
+				return fmt.Sprintf("%s %s, %s", e.Cap, e.Outcome, format.Ago(e.At))
+			}
+		}
+	}
+	return "nothing recorded yet from " + agent
 }
 
 // refusalCount is how many refusals of one kind the hour held, which calls they
