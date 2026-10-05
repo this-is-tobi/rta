@@ -22,8 +22,10 @@ type declChange struct {
 	widens bool
 }
 
-// declarationDiff lists what changed between two declarations, in the four
-// dimensions an authorization hangs off. A capability changing safety class,
+// declarationDiff lists what changed between two declarations, in the
+// dimensions an authorization hangs off: each capability's safety class and
+// grant, whether it reveals a value a masked view withholds, and the
+// credential locations the plugin asks to read. A capability changing safety class,
 // or a destructive one appearing, is the supply-chain event that matters —
 // and precisely what a signature does not tell you.
 func declarationDiff(old, next plugin.Plugin) []string {
@@ -47,6 +49,10 @@ func widenings(old, next plugin.Plugin) []string {
 	return lines
 }
 
+// revealsText is how the diff says a capability's answer is the value a
+// masked view elsewhere withholds (plugin.Capability.Reveals).
+const revealsText = "reveals a masked value"
+
 func declarationChanges(old, next plugin.Plugin) []declChange {
 	was := map[string]plugin.Capability{}
 	for _, c := range old.Capabilities {
@@ -60,13 +66,16 @@ func declarationChanges(old, next plugin.Plugin) []declChange {
 			if c.NeedsGrant {
 				line += ", needs a grant"
 			}
+			if c.Reveals {
+				line += ", " + revealsText
+			}
 			// A new read capability behind no grant is the ordinary way a
 			// plugin grows, and a gate that stopped for it would be a gate
 			// operators route around — which costs more than it buys, because
 			// the flag they reach for turns off the destructive case too.
 			// Everything else new is authority that did not exist when they
 			// last looked.
-			caps = append(caps, declChange{line, c.Safety != plugin.Read || c.NeedsGrant})
+			caps = append(caps, declChange{line, c.Safety != plugin.Read || c.NeedsGrant || c.Reveals})
 			continue
 		}
 		if prev.Safety != c.Safety {
@@ -82,6 +91,19 @@ func declarationChanges(old, next plugin.Plugin) []declChange {
 			// side: what stood between the plugin and the operation is gone,
 			// and nothing will ask the operator again.
 			caps = append(caps, declChange{"! " + c.ID + "  no longer needs a grant", true})
+		}
+		// What a capability says its answer is is what the operator reads in a
+		// consent and what the host tells a caller about the call, so a plugin
+		// that starts saying the answer is a masked value has put the value
+		// into somebody's context under an id they approved as something
+		// else, and one that stops saying it has taken the warning off a call
+		// that still returns it. Both are a decision, in the direction of
+		// the gate, not news.
+		if !prev.Reveals && c.Reveals {
+			caps = append(caps, declChange{"! " + c.ID + "  now " + revealsText, true})
+		}
+		if prev.Reveals && !c.Reveals {
+			caps = append(caps, declChange{"! " + c.ID + "  no longer declares that it " + revealsText, true})
 		}
 		delete(was, c.ID)
 	}
