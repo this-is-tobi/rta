@@ -269,7 +269,7 @@ func TestAnExplicitPreferredTileBeatsTheOverviewConvention(t *testing.T) {
 // The shipped dashboard, pinned as a whole.
 //
 // This replaces the preferredTile entries that used to name note.list,
-// note.list, net.info, fs.tree, sys.overview and gen.overview: five of the
+// note.list, net.overview, fs.tree, sys.overview and gen.overview: five of the
 // seven were restating what the rules already resolve to, which made the map
 // look like the mechanism when it was only ever the exception list. Asserting
 // the outcome instead covers every plugin by the same rules a third-party one
