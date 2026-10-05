@@ -34,6 +34,10 @@ const (
 	// squeezed to before a column is dropped instead: narrower and the text in
 	// it is a stub nobody can read, which is no better than the column gone.
 	glanceFlexMin = 10
+	// glanceProse is how wide a text column's widest cell has to be to count as
+	// prose, which is what is worth cutting. A column of short words is not cut
+	// to ten cells, it is kept or dropped whole.
+	glanceProse = 16
 )
 
 // tileBody draws a tile's view at the width its box leaves for content.
@@ -65,14 +69,15 @@ func tileRenderOptions(inner int) cli.Options {
 // mask did not reach.
 //
 // Which columns survive when there is not room for all of them is decided from
-// the table alone, by three rules a reader can predict. The first column is the
-// row's name and stays. A column that says nothing — empty in every row, or the
-// same in every row of several — goes first: "open" down a list of open notes
-// is not a thing to glance at. After that columns are dropped from the left,
-// next to the name and away from the last, because what a row ends in is its
-// state or what it says, and a column that grades itself (status, usage) is
-// the last to go. The rightmost text column is the one that gives: it takes the
-// slack, and it is cut with an ellipsis before anything else is dropped.
+// the table alone, by rules a reader can predict. The first column is the row's
+// name and stays. A column that says nothing — empty in every row, or the same
+// in every row of several — goes first: "open" down a list of open notes is not
+// a thing to glance at. Then the mostly empty ones, which are an annotation on a
+// row and not the row. Then the plain ones, last to first, because the columns
+// at the end of a table are the secondary facts. Then the ones that say when (a
+// duration, a timestamp), then the ones that grade themselves (status, usage):
+// a glance is for a verdict. The rightmost column of prose takes the slack and
+// is cut with an ellipsis before anything else is dropped.
 func glanceTable(v view.View, inner int) ([]string, bool) {
 	t, ok := view.Redact(v).(view.Table)
 	if !ok || len(t.Rows) == 0 || len(t.Columns) < 2 || inner < glanceFlexMin*2 {
@@ -147,20 +152,22 @@ func glanceKept(t view.Table, rows [][]string, widths []int, inner int) (kept []
 	}
 	flex = 0
 	for _, i := range kept[1:] {
-		if t.Columns[i].Kind == view.KindText {
+		if t.Columns[i].Kind == view.KindText && !sparse(t, rows, i) && widths[i] >= glanceProse {
 			flex = i
 		}
 	}
-	// Dropped in this order: the columns that do not grade themselves, left to
-	// right after the name, then the ones that do. The flex column is never on
-	// the list; it is squeezed instead.
 	var droppable []int
-	for _, graded := range []bool{false, true} {
+	for _, tier := range []int{dropSparse, dropPlain, dropTimed, dropGraded} {
+		var of []int
 		for _, i := range kept[1:] {
-			if i != flex && graded == isGraded(t.Columns[i].Kind) {
-				droppable = append(droppable, i)
+			if i != flex && dropTier(t, rows, i) == tier {
+				of = append(of, i)
 			}
 		}
+		if tier != dropGraded {
+			slices.Reverse(of)
+		}
+		droppable = append(droppable, of...)
 	}
 	for glanceSpan(kept, widths, flex) > inner && len(droppable) > 0 {
 		kept = slices.DeleteFunc(kept, func(i int) bool { return i == droppable[0] })
@@ -170,6 +177,43 @@ func glanceKept(t view.Table, rows [][]string, widths []int, inner int) (kept []
 		return nil, 0, false
 	}
 	return kept, flex, true
+}
+
+// How reluctantly a column is dropped, the least first.
+const (
+	dropSparse = iota // mostly empty: an annotation on a row, not the row
+	dropPlain         // says something of every row, and is neither a time nor a verdict
+	dropTimed         // says when
+	dropGraded        // grades itself
+)
+
+func dropTier(t view.Table, rows [][]string, col int) int {
+	switch k := t.Columns[col].Kind; {
+	case isGraded(k):
+		return dropGraded
+	case k == view.KindDuration || k == view.KindTimestamp:
+		return dropTimed
+	case sparse(t, rows, col):
+		return dropSparse
+	}
+	return dropPlain
+}
+
+// sparse reports whether fewer than half the rows have anything in a column that
+// does not grade itself: a grant's note, which most grants do not have, is on
+// the screen for the one that does and costs the other rows nothing, while the
+// text of a notebook is on every row and is what the notebook is for.
+func sparse(t view.Table, rows [][]string, col int) bool {
+	if isGraded(t.Columns[col].Kind) {
+		return false
+	}
+	full := 0
+	for _, r := range rows {
+		if r[col] != "" {
+			full++
+		}
+	}
+	return 2*full < len(rows)
 }
 
 // saysNothing reports whether a column tells a glance nothing: empty in every
