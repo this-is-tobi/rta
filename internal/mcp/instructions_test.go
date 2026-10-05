@@ -34,3 +34,25 @@ func TestADescriptionDoesNotRepeatTheEnvelope(t *testing.T) {
 		t.Errorf("the description does not end on its safety class:\n%s", desc)
 	}
 }
+
+// A capability that wrote a text for the model is read by the model in place
+// of the Description a person reads at a terminal, and one that wrote none is
+// read as before.
+func TestAToolShowsTheAgentTextWhenTheCapabilityWroteOne(t *testing.T) {
+	c := plugin.Capability{
+		ID: "demo.thing.get", Summary: "get a thing", Safety: plugin.Read,
+		Description: "Pass --long at the terminal to see every column.",
+		Agent:       "Returns one row per thing.",
+	}
+	desc := toolDef(c, Options{}).Description
+	if !strings.Contains(desc, "Returns one row per thing.") {
+		t.Errorf("the agent text is not what the tool says:\n%s", desc)
+	}
+	if strings.Contains(desc, "--long") {
+		t.Errorf("the terminal's description reached the tool:\n%s", desc)
+	}
+	c.Agent = ""
+	if desc := toolDef(c, Options{}).Description; !strings.Contains(desc, "--long") {
+		t.Errorf("a capability with no agent text lost its description:\n%s", desc)
+	}
+}

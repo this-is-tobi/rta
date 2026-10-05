@@ -58,8 +58,8 @@ func agentText(c plugin.Capability, profiles []string, tools map[string]bool) st
 	var b strings.Builder
 	b.WriteString(plugin.AuthoredOpen)
 	b.WriteString("\n" + nameTools(c.Summary, tools))
-	if c.Description != "" {
-		b.WriteString("\n\n" + nameTools(c.Description, tools))
+	if text := c.AgentText(); text != "" {
+		b.WriteString("\n\n" + nameTools(text, tools))
 	}
 	b.WriteString("\n" + plugin.AuthoredClose)
 
