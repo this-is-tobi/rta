@@ -147,23 +147,28 @@ rta --version
 rta doctor
 ```
 
-`doctor` is worth running now and worth running again whenever something behaves oddly. It reports what rta can see and — more usefully — what it can *reach*:
+`doctor` is worth running now and worth running again whenever something behaves oddly. It reports what rta can see and — more usefully — what it can *reach*, with the rows that need you first: `error`, then `warn`, then `info`, then `ok`.
 
 ```
 CHECK                STATUS  DETAIL
-capabilities         ok      20 plugins, 128 capabilities
-data                 ok      ~/.local/share/rta
-config               ok      ~/.config/rta/config.yaml
 kv store             info    unlocks from this environment — an MCP server
                              started here can read secrets, bounded only by grants
-plugin confinement   ok      sandbox-exec: 2 paths denied read+write (rta's own
-                             state), 10 denied read (credential locations), 15
-                             directories pinned in place so a rename cannot move
-                             either out of its rule; …
+grant guard          info    off — anything that can run commands as you can issue
+                             a grant; `rta grant guard on` puts a passphrase in front of that
+capabilities         ok      20 plugins, 128 capabilities
+data                 ok      ~/.local/share/rta
+config               ok      no config file — rta runs on its defaults
+plugin confinement   ok      sandbox-exec: 2 paths denied read+write, 10 denied read,
+                             15 directories pinned; everything else is readable —
+                             one exception, which --detail names
 agent log            ok      12 agent calls recorded, chain intact — `rta agent log` reads it
+
+all ok — 2 notes worth reading; kv store and grant guard bear most on what an agent can reach
 ```
 
-Those `info` rows are not noise. "The store unlocks from this environment" is a real statement about what an agent started from this shell inherits, and it is the kind of thing worth knowing before you connect one.
+An `info` row is a note: a fact worth reading, not a failure, and the line under the table counts them. Those two are the ones that decide what an agent can reach, so they come first among the notes and the last line names them. "The store unlocks from this environment" is a real statement about what an agent started from this shell inherits, and it is the kind of thing worth knowing before you connect one. `rta doctor --detail` gives the rows that keep part of what they say to a line — the sandbox's full deny set among them — all of it.
+
+The exit status is `0` unless a row is an `error`, when it is `1`; `rta doctor --strict` fails on a `warn` too, so a dotfiles check, a pre-commit hook or a CI step can gate on it, and the report is printed first either way.
 
 ## Shell completion
 

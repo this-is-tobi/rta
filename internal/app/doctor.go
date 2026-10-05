@@ -43,10 +43,17 @@ import (
 // environment and reports actionable state. Checks grow
 // with the features that need them (config, plugins, keyring...).
 func newDoctorCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
-	return &cobra.Command{
-		Use:               "doctor",
-		Annotations:       outputExempt(),
-		Short:             "Check rta's environment and report actionable findings",
+	var detail, strict bool
+	cmd := &cobra.Command{
+		Use:         "doctor",
+		Annotations: outputExempt(),
+		Short:       "Check rta's environment and report actionable findings",
+		Long: "Checks what rta can see on this machine and what an agent could reach through it.\n\n" +
+			"Rows are ordered by what needs you: error, then warn, then info, then ok. An info row is a " +
+			"note, a fact worth reading and not a failure, and the line under the table counts them. " +
+			"Each row is kept to a line; --detail gives the rows that have more to say all of it.\n\n" +
+			"The exit status is 1 when any row is an error, and with --strict when any is a warn, so " +
+			"a script, a pre-commit hook or a CI step can gate on it. The report is printed first either way.",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -59,9 +66,26 @@ func newDoctorCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 				format = cli.Pretty
 			}
 			renderOpts := renderOptions(cmd, format, opts.noColor)
-			return cli.Render(cmd.OutOrStdout(), doctorReport(reg), renderOpts)
+			report := doctorTable(reg, detail)
+			out := cmd.OutOrStdout()
+			if err := cli.Render(out, report, renderOpts); err != nil {
+				return err
+			}
+			verdict := judge(report)
+			// Pretty only: it is the reading a person gets, and the other
+			// formats are a program's, which counts the status column and takes
+			// the exit status.
+			if format == cli.Pretty {
+				if _, err := fmt.Fprintln(out, verdict.styled(!renderOpts.NoColor)); err != nil {
+					return err
+				}
+			}
+			return verdict.failure(strict)
 		},
 	}
+	cmd.Flags().BoolVar(&detail, "detail", false, "show the whole of every row, not its one-line summary")
+	cmd.Flags().BoolVar(&strict, "strict", false, "exit 1 on a warn row too, not only an error row")
+	return cmd
 }
 
 // loadedPlugins is what LoadPlugins registered, for the doctor rows above.
@@ -306,7 +330,14 @@ func hintTail(hint string) string {
 	return " — " + hint
 }
 
-func doctorReport(reg *registry.Registry) view.View {
+// doctorReport is the report the registry hands to whatever shows it beside the
+// capabilities, which asks for the summary form.
+func doctorReport(reg *registry.Registry) view.View { return doctorTable(reg, false) }
+
+// doctorTable is the report: every group's rows, put in the order a person
+// reads them. detail asks the rows that keep part of what they say for --detail
+// to say all of it.
+func doctorTable(reg *registry.Registry, detail bool) view.Table {
 	t := view.Table{Columns: []view.Column{
 		{Name: "Check"},
 		{Name: "Status", Kind: view.KindStatus},
@@ -335,9 +366,9 @@ func doctorReport(reg *registry.Registry) view.View {
 	doctorRoles(add)
 	doctorGrants(reg, add)
 	doctorLocks(add)
-	doctorGuard(add)
-	doctorStore(add)
-	doctorConfinement(add)
+	doctorGuard(add, detail)
+	doctorStore(add, detail)
+	doctorConfinement(add, detail)
 	doctorLoadedPlugins(add)
 	doctorUntrustedPlugins(add)
 	doctorRecord(add)
@@ -345,7 +376,8 @@ func doctorReport(reg *registry.Registry) view.View {
 	doctorConsent(add)
 	doctorManagedPlugins(add)
 	doctorSystemPlugins(add)
-	doctorClients(add)
+	doctorClients(add, detail)
+	orderRows(t.Rows)
 	t.Total = len(t.Rows)
 	return t
 }
@@ -395,7 +427,7 @@ func doctorDataDir(add func(check, status, detail string)) {
 	dataDir := paths.Data()
 	switch info, err := os.Stat(dataDir); {
 	case err != nil:
-		add("data", "info", dataDir+" (nothing written yet)")
+		add("data", "ok", dataDir+" (nothing written yet)")
 	case info.Mode().Perm()&0o077 != 0:
 		add("data", "warn", fmt.Sprintf("%s is mode %04o — other accounts on this machine can list "+
 			"what is in it; chmod 700 %s", dataDir, info.Mode().Perm(), dataDir))
@@ -443,24 +475,26 @@ func doctorTerminal(add func(check, status, detail string)) {
 	if isTTY() {
 		add("terminal", "ok", "stdout is a TTY — styled output enabled"+shaped)
 	} else {
-		add("terminal", "info", "stdout is piped — plain output"+shaped)
+		add("terminal", "ok", "stdout is piped — plain output"+shaped)
 	}
 }
 
 // Config: zero-config is healthy; a broken file is an actionable error.
+//
+// The row says where output= came from when it is set, because the two places
+// it can come from are one shell apart: `RTA_OUTPUT=json` in a shell rc looks
+// exactly like `output: json` in the file until something says which is which,
+// and the file is the one that can be edited.
 func doctorConfig(add func(check, status, detail string)) {
 	cfgPath := config.Path()
 	if _, statErr := os.Stat(cfgPath); statErr != nil {
-		add("config", "info", "no config file — zero-config mode (`rta init` creates "+cfgPath+")")
+		add("config", "ok", "no config file — rta runs on its defaults; one at "+cfgPath+
+			" would change them"+outputSource(config.Config{}))
 	} else if cfg, err := config.Load(); err != nil {
 		add("config", "error", err.Error())
 	} else {
-		detail := cfgPath
-		// One that renders nothing is doctorOutput's row, an error, and not
-		// also a detail of this one, which is ok.
-		if _, perr := cli.ParseFormat(cfg.Output); cfg.Output != "" && perr == nil {
-			detail += fmt.Sprintf(" (output=%s)", cfg.Output)
-		}
+		onDisk, _ := config.LoadFile()
+		detail := cfgPath + outputSource(onDisk)
 		switch n := len(cfg.Dashboard.Tiles); {
 		case n > 0:
 			detail += ", " + format.Count(n, "dashboard tile", "dashboard tiles")
@@ -473,6 +507,26 @@ func doctorConfig(add func(check, status, detail string)) {
 		add("config", "ok", detail)
 	}
 	doctorLegacyConfig(add)
+}
+
+// outputSource is the default output format and where it comes from, for the
+// config row, or "" when nothing sets one. A default that names no format is
+// doctorOutput's error row and not also a detail here, which is ok.
+func outputSource(onDisk config.Config) string {
+	if env := os.Getenv("RTA_OUTPUT"); env != "" {
+		if _, err := cli.ParseFormat(env); err != nil {
+			return ""
+		}
+		out := fmt.Sprintf(" (output=%s from RTA_OUTPUT", env)
+		if onDisk.Output != "" && onDisk.Output != env {
+			out += fmt.Sprintf(", over the file's output=%s", onDisk.Output)
+		}
+		return out + ")"
+	}
+	if _, err := cli.ParseFormat(onDisk.Output); onDisk.Output != "" && err == nil {
+		return fmt.Sprintf(" (output=%s)", onDisk.Output)
+	}
+	return ""
 }
 
 // The default output format, when it names nothing rta renders. Every other
@@ -1003,7 +1057,7 @@ func doctorLocks(add func(check, status, detail string)) {
 // row when off rather than a warn: ungated issuance is the default and a
 // legitimate posture — the row exists so the stronger one is discoverable
 // exactly where an operator already reads about grants.
-func doctorGuard(add func(check, status, detail string)) {
+func doctorGuard(add func(check, status, detail string), detail bool) {
 	if guard.Enabled() && guard.Fingerprint() == "" {
 		// Enabled is a stat, Fingerprint needs a parse: together they mean
 		// the state file exists and does not read. Authorization already
@@ -1012,12 +1066,14 @@ func doctorGuard(add func(check, status, detail string)) {
 		add("grant guard", "warn", "guard state present but unreadable — modified or truncated; "+
 			"no grant is honoured until it is removed and re-enabled")
 	} else if guard.Remote() {
-		add("grant guard", "ok", "remote (key "+guard.Fingerprint()+", for "+guard.BoundServer()+") — "+
-			"a grant is honoured only when signed by an enrolled operator's key, and no key material "+
-			"lives on this machine at all")
+		add("grant guard", "ok", said(detail,
+			"remote (key "+guard.Fingerprint()+", for "+guard.BoundServer()+") — a grant is honoured "+
+				"only when an enrolled operator signed it",
+			", and no key material lives on this machine at all"))
 	} else if guard.Enabled() {
-		add("grant guard", "ok", "on (key "+guard.Fingerprint()+") — issuing or renewing a grant "+
-			"asks for the operator passphrase, so a process running as you cannot mint authority alone")
+		add("grant guard", "ok", said(detail,
+			"on (key "+guard.Fingerprint()+") — issuing or renewing a grant asks for the operator passphrase",
+			", so a process running as you cannot mint authority alone"))
 	} else {
 		add("grant guard", "info", "off — anything that can run commands as you can issue a grant; "+
 			"`rta grant guard on` puts a passphrase in front of that")
@@ -1028,15 +1084,15 @@ func doctorGuard(add func(check, status, detail string)) {
 // encrypted, but encryption only helps while the key is somewhere the
 // reader is not — and a server started from here starts with this
 // environment.
-func doctorStore(add func(check, status, detail string)) {
+func doctorStore(add func(check, status, detail string), detail bool) {
 	if unlockable, from := kv.Unlockable(); from == "no store" {
 		add("kv store", "ok", "none yet — `rta kv init --generate` sets one up")
 	} else if unlockable {
 		add("kv store", "info", "unlocks from this environment ("+from+
 			") — an MCP server started here can read secrets, bounded only by grants")
 	} else if locked := kv.LockedIdentity(); locked != "" {
-		add("kv store", "ok", "locked to "+locked+", which is itself passphrase-protected — "+
-			"an MCP server started here would be asked for a passphrase it cannot answer")
+		add("kv store", "ok", said(detail, "locked to "+locked+", which is itself passphrase-protected",
+			" — an MCP server started here would be asked for a passphrase it cannot answer"))
 	} else {
 		add("kv store", "ok", "no key material here — an MCP server started from this shell could not open it")
 	}
@@ -1050,7 +1106,7 @@ func doctorStore(add func(check, status, detail string)) {
 // contract is
 // blunt about the bound, and so is this: every attack found in the
 // confinement review succeeds identically on a confined macOS host.
-func doctorConfinement(add func(check, status, detail string)) {
+func doctorConfinement(add func(check, status, detail string), detail bool) {
 	deny, denyErr := pluginhost.Resolve()
 	switch {
 	case denyErr != nil:
@@ -1065,14 +1121,36 @@ func doctorConfinement(add func(check, status, detail string)) {
 		// assuming — a report that states a denial the launch then relaxes
 		// is the page-versus-run drift this codebase keeps finding, in the
 		// direction that overstates what is protected.
-		add("plugin confinement", "ok", sandboxDetail(deny))
+		add("plugin confinement", "ok", sandboxDetail(deny, detail))
 	}
+}
+
+// said is a row's one-line summary and, under --detail, the rest of it. The
+// rest starts with the punctuation that joins it to the summary, so the two
+// read as one sentence when both are shown.
+func said(detail bool, summary, rest string) string {
+	if detail {
+		return summary + rest
+	}
+	return summary
 }
 
 // sandboxDetail is the confinement row for a machine that confines, over the
 // deny set it resolved.
-func sandboxDetail(deny pluginhost.DenySet) string {
+//
+// The summary keeps every number and the bound — "everything else is readable"
+// — and points at the one exception it leaves out, so that it never overstates
+// what is protected; the exception itself, and why it is there, is what
+// --detail adds.
+func sandboxDetail(deny pluginhost.DenySet, detail bool) string {
 	noRead := len(deny.NoRead)
+	if !detail {
+		return fmt.Sprintf(
+			"sandbox-exec: %s denied read+write, %d denied read, %s pinned; everything else is "+
+				"readable — one exception, which --detail names",
+			format.Count(len(deny.NoAccess), "path", "paths"), noRead,
+			format.Count(len(deny.NoMove), "directory", "directories"))
+	}
 	return fmt.Sprintf(
 		"sandbox-exec: %s denied read+write (rta's own state), %d denied read (%s), "+
 			"%s pinned in place so a rename cannot move either out of its rule; "+
@@ -1345,7 +1423,7 @@ func doctorSystemPlugins(add func(check, status, detail string)) {
 }
 
 // MCP clients we can install into.
-func doctorClients(add func(check, status, detail string)) {
+func doctorClients(add func(check, status, detail string), detail bool) {
 	if _, err := exec.LookPath("claude"); err == nil {
 		add("claude CLI", "ok", "found — `rta mcp install claude` available")
 	} else {
@@ -1353,7 +1431,7 @@ func doctorClients(add func(check, status, detail string)) {
 	}
 	// Presence and registration, right after the CLI they are about.
 	_, claudeInstalled := exec.LookPath("claude")
-	for _, r := range clientRows(claudeInstalled == nil, agentsession.Self()) {
+	for _, r := range clientRows(claudeInstalled == nil, agentsession.Self(), detail) {
 		add(r[0], r[1], r[2])
 	}
 	home, _ := os.UserHomeDir()

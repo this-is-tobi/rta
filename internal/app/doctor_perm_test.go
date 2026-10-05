@@ -25,5 +25,5 @@ func TestDoctorNamesADataDirectoryThatDoesNotExistYet(t *testing.T) {
 	if err := os.Remove(dataDir); err != nil {
 		t.Fatal(err)
 	}
-	check(t, report(t), "data", "info", "nothing written yet")
+	check(t, report(t), "data", "ok", "nothing written yet")
 }

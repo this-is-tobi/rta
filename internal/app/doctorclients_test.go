@@ -63,7 +63,7 @@ func TestAConnectedServerOnAnotherBuildIsCalledOut(t *testing.T) {
 		}
 	}
 	var warn string
-	for _, row := range clientRows(false, "v0.22.0") {
+	for _, row := range clientRows(false, "v0.22.0", false) {
 		if row[0] == "agents connected" && row[1] == "warn" {
 			warn = row[2]
 		}
@@ -97,7 +97,7 @@ func TestServersOnThisBuildDrawNoWarning(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	for _, row := range clientRows(false, "v0.22.0") {
+	for _, row := range clientRows(false, "v0.22.0", false) {
 		if row[0] == "agents connected" && row[1] == "warn" {
 			t.Errorf("warned about a server on this very build: %s", row[2])
 		}
@@ -125,7 +125,7 @@ func TestAgentsConnectedWarnsWhenItCannotCheck(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(agentsession.Dir(), 0o700) })
 
 	var row [3]string
-	for _, r := range clientRows(false, "v0.22.0") {
+	for _, r := range clientRows(false, "v0.22.0", false) {
 		if r[0] == "agents connected" {
 			row = r
 		}

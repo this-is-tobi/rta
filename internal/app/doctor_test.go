@@ -70,19 +70,24 @@ func isolate(t *testing.T) (dataDir, configDir string) {
 }
 
 // report returns doctor's rows keyed by check name.
-func report(t *testing.T) map[string][2]string {
+func report(t *testing.T) map[string][2]string { return reportFor(t, false) }
+
+// reportFor is report for the rows as --detail gives them, or as they are
+// without it.
+func reportFor(t *testing.T, detail bool) map[string][2]string {
 	t.Helper()
-	v := doctorReport(testRegistry(t))
-	tbl, ok := v.(view.Table)
-	if !ok {
-		t.Fatalf("doctor returned %s, want a table", view.TypeOf(v))
-	}
+	tbl := doctorTable(testRegistry(t), detail)
 	rows := map[string][2]string{}
 	for _, r := range tbl.Rows {
 		if len(r) != 3 {
 			t.Fatalf("row %v: want check, status, detail", r)
 		}
-		rows[r[0]] = [2]string{r[1], r[2]}
+		// The worst row of a check, which is the first now that the report is
+		// in the order of what needs reading: a check with two rows keeps the
+		// one that says the most.
+		if _, seen := rows[r[0]]; !seen {
+			rows[r[0]] = [2]string{r[1], r[2]}
+		}
 	}
 	if tbl.Total != len(tbl.Rows) {
 		t.Errorf("Total = %d, rows = %d", tbl.Total, len(tbl.Rows))
@@ -108,7 +113,7 @@ func TestDoctorReportsAHealthyEmptyMachine(t *testing.T) {
 	isolate(t)
 	rows := report(t)
 	check(t, rows, "capabilities", "ok", "capabilities")
-	check(t, rows, "config", "info", "zero-config")
+	check(t, rows, "config", "ok", "no config file")
 	check(t, rows, "agent grants", "ok", "none active")
 	check(t, rows, "kv store", "ok", "none yet")
 }
