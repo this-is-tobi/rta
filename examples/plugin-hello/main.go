@@ -103,6 +103,11 @@ func Plugin() plugin.Plugin {
 					"type. rta renders it as a bordered table in a terminal, as rows in the " +
 					"TUI, as CSV when that is the format asked for, and as structured JSON to an " +
 					"agent — from this one value.",
+				// Description above is for the person reading `rta explain` and
+				// --help, and talks about how the screens draw it. An agent has
+				// a tool list and no screen, and pays for every word it is
+				// shown on every connection, so it gets text of its own.
+				Agent: "The language codes this plugin greets in, each with its greeting.",
 				Run: func(context.Context, plugin.Request) (view.View, error) {
 					t := view.Table{Columns: []view.Column{
 						{Name: "Code"},
