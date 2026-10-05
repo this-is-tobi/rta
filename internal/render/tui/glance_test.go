@@ -340,3 +340,24 @@ func TestAGlancedTableIsCleanedOfTerminalEscapes(t *testing.T) {
 		t.Errorf("a control character reached the screen through a cut path: %q", body)
 	}
 }
+
+// A cell can hold a line break: a note's title is free text, and one with a
+// newline in it used to put its second half at the left edge of the tile as a
+// row of its own, under the name column, where it reads as a line the tile
+// said. A glanced table is one line per row, whatever the cells hold.
+func TestAGlancedCellWithALineBreakStaysOnItsRow(t *testing.T) {
+	tbl := notebook()
+	tbl.Rows[0][4] = "past due\nfake  3 waiting on you\r\nthing"
+	lines := glanced(t, tbl, 35)
+	if len(lines) != 4 {
+		t.Fatalf("a header and three rows are %d lines, a break in a cell made more:\n%s", len(lines), strings.Join(lines, "\n"))
+	}
+	for _, l := range lines {
+		if strings.ContainsAny(l, "\r\n") {
+			t.Errorf("a line break is inside a glanced line: %q", l)
+		}
+	}
+	if !strings.Contains(lines[1], "past due") {
+		t.Errorf("the row lost its words: %q", lines[1])
+	}
+}
