@@ -1,5 +1,13 @@
 package config
 
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+
+	"github.com/this-is-tobi/rta/internal/atomicfile"
+)
+
 // SchemaFile is the name `rta config edit` keeps the JSON Schema under, beside
 // the config file, and the one the header's modeline points at.
 //
@@ -7,6 +15,28 @@ package config
 // file in any directory, and a file called schema.json that rta rewrites on
 // every edit is a collision waiting for the directory that already has one.
 const SchemaFile = "config.schema.json"
+
+// ensureSchemaFile puts the base schema beside a config file rta has just
+// written its header into, unless one is there already, so the modeline in that
+// header never points at nothing: an editor that cannot load the schema it is
+// told to use says so in its problems list, on line 1 of a file nothing is
+// wrong with. `rta config edit` replaces it with one that also knows the
+// installed plugins' keys, which this package cannot: it does not know them.
+//
+// Best effort, for the reason the schema exists at all: it is a convenience,
+// and a directory that cannot hold a second file is no reason to fail the write
+// of the first.
+func ensureSchemaFile(dir string) {
+	path := filepath.Join(dir, SchemaFile)
+	if _, err := os.Stat(path); err == nil {
+		return
+	}
+	data, err := json.MarshalIndent(Schema(), "", "  ")
+	if err != nil {
+		return
+	}
+	_ = atomicfile.Write(path, append(data, '\n'), 0o644)
+}
 
 // Starter is the text `rta config edit` opens when there is no config file
 // yet: the header every written file starts with, and the keys most people
