@@ -150,6 +150,26 @@ func TestStoreStampChangesWhenTheStoreDoes(t *testing.T) {
 	}
 }
 
+// The four capabilities that put a stored value in front of somebody declare
+// it, so the host can say so to a caller and a masked view can point at them
+// (plugin.Capability.Reveals). Declaring it is coupled to the gate at
+// registration, so a reveal that dropped its grant or its scope would fail to
+// load, and one that stopped declaring it would fail here: what the other
+// capabilities in the namespace show — a list of names, a status, the history
+// of a key — is deliberately not a value.
+func TestTheCapabilitiesThatShowAStoredValueDeclareThatTheyReveal(t *testing.T) {
+	reveals := map[string]bool{"kv.get": true, "kv.env": true, "kv.copy": true, "kv.edit": true}
+	for _, c := range Plugin().Capabilities {
+		if c.Reveals != reveals[c.ID] {
+			t.Errorf("%s declares Reveals = %v, want %v", c.ID, c.Reveals, reveals[c.ID])
+		}
+		delete(reveals, c.ID)
+	}
+	if len(reveals) > 0 {
+		t.Errorf("capabilities that were expected and are not declared: %v", reveals)
+	}
+}
+
 func TestStoreStampOfAMissingStoreIsEmpty(t *testing.T) {
 	setup(t)
 	if got := StoreStamp(); got != "" {
