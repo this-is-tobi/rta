@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -164,6 +165,49 @@ func TestOnlyPrettyDoctorEndsWithTheVerdict(t *testing.T) {
 	}
 	if !json.Valid([]byte(asJSON)) {
 		t.Errorf("-o json is not one document: %q", asJSON)
+	}
+}
+
+// The verdict is longer than 80 columns the moment it names an agent-facing
+// note, and a terminal cuts a line where the screen ends, inside a word. It is
+// broken on spaces at the width the table was drawn to, like every row above it.
+func TestTheVerdictIsBrokenOnSpacesToTheWidthOfTheScreen(t *testing.T) {
+	t.Setenv("RTA_OUTPUT", "")
+	t.Setenv("COLUMNS", "60")
+	out, _, err := runWith(t, testRegistry(t), "", "doctor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	verdict := ""
+	for i := len(lines) - 1; i >= 0 && !strings.HasPrefix(lines[i], "╰"); i-- {
+		if n := utf8.RuneCountInString(lines[i]); n > 60 {
+			t.Errorf("line %q is %d columns on a 60-column screen", lines[i], n)
+		}
+		verdict = lines[i] + " " + verdict
+	}
+	if !strings.Contains(verdict, "worth reading") {
+		t.Errorf("the verdict, read back from the lines under the table, is %q", verdict)
+	}
+}
+
+// The renderer's writer is what drops colour for NO_COLOR and TERM=dumb, and the
+// table goes through it. A verdict painted by the command and written past it
+// was coloured on a terminal that had said it shows none, under a table that was
+// not.
+func TestTheVerdictCarriesNoColourOfItsOwn(t *testing.T) {
+	t.Setenv("RTA_OUTPUT", "")
+	saved := isTTY
+	t.Cleanup(func() { isTTY = saved })
+	isTTY = func() bool { return true }
+	out, _, err := runWith(t, testRegistry(t), "", "doctor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	last := lines[len(lines)-1]
+	if !strings.Contains(last, "worth reading") || strings.Contains(last, "\x1b") {
+		t.Errorf("the last line of doctor is %q, want the verdict with no escape sequence of its own", last)
 	}
 }
 
