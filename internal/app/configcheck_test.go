@@ -128,14 +128,14 @@ func TestStartupNoticeNamesTheKeysRtaIgnores(t *testing.T) {
 	sys, _, _ := root.Find([]string{"gen"})
 
 	var buf bytes.Buffer
-	WarnIgnoredConfigKeys(&buf, sys, false)
+	WarnConfigProblems(&buf, sys, false)
 	if buf.Len() != 0 {
 		t.Errorf("a machine with no file was told something: %q", buf.String())
 	}
 	if err := os.WriteFile(path, []byte("oputput: json\ncolumns: 3\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	WarnIgnoredConfigKeys(&buf, sys, false)
+	WarnConfigProblems(&buf, sys, false)
 	got := buf.String()
 	if !strings.Contains(got, "2 keys rta does not read are in "+path) || !strings.Contains(got, "rta config check") {
 		t.Errorf("notice = %q", got)
@@ -160,13 +160,13 @@ func TestStartupNoticeIsForAPersonAtATerminalOnly(t *testing.T) {
 		return c
 	}
 	var buf bytes.Buffer
-	WarnIgnoredConfigKeys(&buf, cmd("gen"), true)
+	WarnConfigProblems(&buf, cmd("gen"), true)
 	if buf.Len() != 0 {
 		t.Errorf("machine-readable output got a notice: %q", buf.String())
 	}
 	// The commands that report the file in full do not say it twice.
 	for _, words := range [][]string{{"config"}, {"config", "check"}, {"doctor"}, {"init"}} {
-		WarnIgnoredConfigKeys(&buf, cmd(words...), false)
+		WarnConfigProblems(&buf, cmd(words...), false)
 	}
 	if buf.Len() != 0 {
 		t.Errorf("a command that reports the file itself was told too: %q", buf.String())

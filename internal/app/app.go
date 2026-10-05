@@ -897,7 +897,7 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 			// environment carries a `color:`; see WarnActiveProfile.
 			WarnActiveProfile(cmd.ErrOrStderr(), cfg, opts.output != "pretty", opts.noColor)
 			WarnUntrustedPlugins(cmd.ErrOrStderr(), opts.output != "pretty")
-			WarnIgnoredConfigKeys(cmd.ErrOrStderr(), cmd, opts.output != "pretty")
+			WarnConfigProblems(cmd.ErrOrStderr(), cmd, opts.output != "pretty")
 			return nil
 		},
 		Long:          "rta is a single extendable binary offering one consistent interface\nover the tools you juggle daily — scriptable CLI, TUI, and MCP for AI agents.",
