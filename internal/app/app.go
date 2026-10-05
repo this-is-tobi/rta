@@ -777,11 +777,27 @@ func plausibleSuggestions(arg string, near []string) []string {
 	allowed := max(1, len([]rune(arg))/3)
 	var kept []string
 	for _, n := range near {
-		if strings.HasPrefix(strings.ToLower(n), arg) || match.Distance(arg, strings.ToLower(n)) <= allowed {
+		lower := strings.ToLower(n)
+		if undoes(arg, lower) {
+			continue
+		}
+		if strings.HasPrefix(lower, arg) || match.Distance(arg, lower) <= allowed {
 			kept = append(kept, n)
 		}
 	}
 	return kept
+}
+
+// undoes says whether typed is name with a prefix that reverses it: `uninstall`
+// is two letters from `install` and the opposite of it, so a closest match
+// that offers one for the other is a wrong answer given with a straight face.
+func undoes(typed, name string) bool {
+	for _, prefix := range []string{"un", "de"} {
+		if typed == prefix+name {
+			return true
+		}
+	}
+	return false
 }
 
 // notACommandHint says where a word typed at the root may live when it is no

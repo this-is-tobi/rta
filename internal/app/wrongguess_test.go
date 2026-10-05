@@ -114,6 +114,20 @@ func TestAWordThatOnlyBeginsLikeACommandIsNotOfferedIt(t *testing.T) {
 	}
 }
 
+// A word that reverses a command is not a typo of it: `rta mcp uninstall` was
+// told the closest match was install, which does the opposite of what it asks.
+func TestAWordThatUndoesACommandIsNotOfferedIt(t *testing.T) {
+	for _, line := range []string{"mcp uninstall", "kv unset", "net hosts unadd"} {
+		ve := hintFor(t, strings.Fields(line)...)
+		if strings.Contains(ve.Message, "closest") {
+			t.Errorf("`rta %s` was told %q", line, ve.Message)
+		}
+	}
+	if ve := hintFor(t, "mcp", "instal"); !strings.Contains(ve.Message, `"install"`) {
+		t.Errorf("a typo of install was told %q", ve.Message)
+	}
+}
+
 // What the tables name has to exist, or a hint points at nothing.
 func TestTheSuggestionTablesNameRealCommands(t *testing.T) {
 	reg, err := NewRegistry()
