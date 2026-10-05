@@ -271,9 +271,10 @@ func catalogueFilter(term string, targets []string) []list.Rank {
 	for i, target := range targets {
 		items[i].ID, items[i].Summary, _ = strings.Cut(target, " ")
 	}
-	var ranks []list.Rank
-	for _, i := range rankItems(term, items) {
-		ranks = append(ranks, list.Rank{Index: i})
+	found := rankItems(term, items)
+	ranks := make([]list.Rank, len(found))
+	for n, i := range found {
+		ranks[n] = list.Rank{Index: i}
 	}
 	return ranks
 }
