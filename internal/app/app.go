@@ -635,6 +635,10 @@ type globalOpts struct {
 	// external says whether a capability comes from a plugin outside this
 	// binary, which the confirmation question does not run a preview of.
 	external func(plugin.Capability) bool
+	// nothingToDo is set by a sweep whose dry run came up empty, so the
+	// question that precedes the real one is not asked about nothing
+	// (confirmByPreview).
+	nothingToDo bool
 }
 
 // groupRunE is what a command that only groups other commands does with its

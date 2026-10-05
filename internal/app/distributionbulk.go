@@ -159,10 +159,16 @@ func runPluginUpgradeAll(cmd *cobra.Command, opts *globalOpts, index string) err
 // load, rather than that none of them will.
 func runPluginUntrustAll(cmd *cobra.Command, opts *globalOpts) error {
 	if !opts.dryRun && !opts.yes {
-		return &view.Error{
-			Code:    CodeConfirmRequired,
-			Message: "withdrawing trust from every plugin artifact needs confirmation",
-			Hint:    "re-run with --yes to confirm, or --dry-run to preview",
+		proceed, err := confirmByPreview(cmd.Context(), cmd, opts, func() error { return runPluginUntrustAll(cmd, opts) })
+		if err != nil {
+			return err
+		}
+		if !proceed {
+			return &view.Error{
+				Code:    CodeConfirmRequired,
+				Message: "withdrawing trust from every plugin artifact needs confirmation",
+				Hint:    "re-run with --yes to confirm, or --dry-run to preview",
+			}
 		}
 	}
 	remove := plugintrust.Remove
@@ -204,6 +210,7 @@ func runPluginUntrustAll(cmd *cobra.Command, opts *globalOpts) error {
 		"; a session already running keeps what it loaded — restart `rta mcp serve` or the TUI to be rid of "+them
 	switch {
 	case total == 0:
+		opts.nothingToDo = true
 		what, next = "nothing", "no approval of your own is recorded, so there was nothing to withdraw"
 	case opts.dryRun && still > 0:
 		next = "run without --dry-run to withdraw " + them + "; " +
@@ -234,14 +241,21 @@ func runPluginUntrustAll(cmd *cobra.Command, opts *globalOpts) error {
 // happened.
 func runPluginRemoveAll(cmd *cobra.Command, opts *globalOpts) error {
 	if !opts.dryRun && !opts.yes {
-		return &view.Error{
-			Code:    CodeConfirmRequired,
-			Message: "uninstalling every managed plugin withdraws trust from every stored artifact and needs confirmation",
-			Hint:    "re-run with --yes to confirm, or --dry-run to preview",
+		proceed, err := confirmByPreview(cmd.Context(), cmd, opts, func() error { return runPluginRemoveAll(cmd, opts) })
+		if err != nil {
+			return err
+		}
+		if !proceed {
+			return &view.Error{
+				Code:    CodeConfirmRequired,
+				Message: "uninstalling every managed plugin withdraws trust from every stored artifact and needs confirmation",
+				Hint:    "re-run with --yes to confirm, or --dry-run to preview",
+			}
 		}
 	}
 	locked := plugindist.ReadLock()
 	if len(locked) == 0 {
+		opts.nothingToDo = true
 		return renderView(cmd, opts, view.Text{Body: "no plugin is installed"})
 	}
 	remove := plugindist.Remove
