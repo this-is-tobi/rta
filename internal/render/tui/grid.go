@@ -546,9 +546,10 @@ func (m Model) searchResults() []plugin.Capability {
 	for i, c := range caps {
 		items[i] = itemOf(c)
 	}
-	var out []plugin.Capability
-	for _, i := range rankItems(m.query, items) {
-		out = append(out, caps[i])
+	found := rankItems(m.query, items)
+	out := make([]plugin.Capability, len(found))
+	for n, i := range found {
+		out[n] = caps[i]
 	}
 	return out
 }
