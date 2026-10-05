@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -81,5 +82,23 @@ func TestAPluginThatIsRunningIsNotToldToInstallIt(t *testing.T) {
 	withFailedPlugins(t, helloFailed)
 	if got, ok := missingPluginHint(pg, "hello.greet"); !ok || !strings.Contains(got, "failed to start") {
 		t.Errorf("missingPluginHint(hello.greet) = %q, %v, want the failure said", got, ok)
+	}
+}
+
+// The help of `rta profile set` shows `--plugin pg`, and on a machine without
+// the plugin the first thing that happened was "not a registered plugin" and a
+// pointer at `plugin list`, which cannot show what is not there.
+func TestAProfileNamingAFirstPartyPluginThatIsNotInstalledNamesTheInstall(t *testing.T) {
+	withFailedPlugins(t)
+	run := session(t, registry.New())
+	_, _, err := run("profile", "set", "staging", "--plugin", "pg", "--set", "host=db.internal")
+	verr := coded(t, err)
+	if verr.Code != "core.profile.unusable" || !strings.Contains(verr.Hint, "`rta plugin install pg`") {
+		t.Errorf("err = %v (hint %q), want the install of pg", err, verr.Hint)
+	}
+
+	_, _, err = run("profile", "set", "staging", "--plugin", "ghost", "--set", "host=db.internal")
+	if hint := coded(t, err).Hint; !strings.Contains(hint, "`rta plugin list`") || strings.Contains(hint, "first-party") {
+		t.Errorf("a plugin rta has never heard of was answered with %q, want the generic pointer", hint)
 	}
 }

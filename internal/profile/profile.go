@@ -79,6 +79,17 @@ type withheld interface {
 	Untrusted(namespace string) bool
 }
 
+// advising is implemented by an Installed that can say what to do about a
+// plugin it does not have: that the name is one rta ships and `rta plugin
+// install` gets it, or that the plugin is there and failed to start.
+//
+// Optional for the reason withheld is: the wording is the only thing that
+// changes, and the registry knows nothing of where plugins come from. "" is
+// no advice, and the generic pointer stands.
+type advising interface {
+	MissingHint(namespace string) string
+}
+
 // Lookup finds the profile called name and confirms it may be used for c.
 //
 // Every failure is the same shape and, over MCP, the same *text*: an unknown
@@ -329,10 +340,14 @@ func checkPin(key string, inst Installed) *view.Error {
 				WithHint("`rta plugin trust " + ns + "` approves the artifact; rebuilding a " +
 					"plugin changes it, so it needs approving again")
 		}
+		hint := "`rta plugin list` shows what is installed, including anything found and not run"
+		if a, ok := inst.(advising); ok {
+			if advice := a.MissingHint(ns); advice != "" {
+				hint = advice
+			}
+		}
 		return view.Errorf("core.profile.unknownplugin",
-			"profile names %q, which is not a registered plugin", ns).
-			WithHint("`rta plugin list` shows what is installed, including anything " +
-				"found and not run")
+			"profile names %q, which is not a registered plugin", ns).WithHint(hint)
 	case !o.External():
 		if pinned {
 			return view.Errorf("core.profile.pinned",

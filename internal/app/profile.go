@@ -154,6 +154,14 @@ func (w withTrust) Untrusted(namespace string) bool {
 	return false
 }
 
+// MissingHint is what a profile naming a plugin that is not registered is
+// told to do: install it when it is one rta ships, read why it did not start
+// when it is installed and failed.
+func (w withTrust) MissingHint(namespace string) string {
+	hint, _ := missingPluginHint(w.Capabilities(), namespace)
+	return hint
+}
+
 // bindProfile is resolveProfile without the fetching: what the environment
 // contributes, from the config file and the process environment only.
 //
