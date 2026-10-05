@@ -20,6 +20,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
@@ -30,6 +31,7 @@ import (
 	"golang.org/x/term"
 
 	rtagrant "github.com/this-is-tobi/rta/builtin/grant"
+	"github.com/this-is-tobi/rta/builtin/internal/compact"
 	"github.com/this-is-tobi/rta/builtin/internal/timefmt"
 	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/consent"
@@ -60,12 +62,15 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 			{
 				ID:      "agent.overview",
 				Summary: "Agent activity at a glance: recent calls, refusals, anything waiting",
-				Description: "The last hour of calls that arrived over MCP, how many were refused, " +
+				Description: "The last hour of calls that arrived over MCP, the refusals told apart " +
+					"by who can act on them — what needs your grant, what the agent got wrong — " +
 					"and how many requests are parked waiting for you to answer right now. With " +
+					"`agent`: one agent's part of it. With " +
 					"`detail`: the chain's integrity, where the record lives and how big it is.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
+				Inputs:     []plugin.Field{agentField("only this agent's calls, servers and waiting requests")},
 				HumanOnly:  true,
 				// The tile says how many calls are waiting; these are the places to go
 				// from there. `g` because l is navigation and every other letter in "log"
@@ -88,7 +93,9 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Description: "Every call that arrived over MCP: the capability, the records it named, " +
 					"exactly as the call spelled them, the arguments (secrets masked), the profile, " +
 					"what happened, and how it was authorized — no " +
-					"grant needed, a standing grant, or you answering live. The file is chained, so " +
+					"grant needed, a standing grant, or you answering live. At a terminal each call " +
+					"is one line — when, what, the record, what became of it; `detail`, a pipe or a " +
+					"machine format gives every field of every call. The file is chained, so " +
 					"an edited or missing line is visible: `detail` verifies it and says where it " +
 					"breaks. This is history and not policy; `grant.list` is what may happen next.",
 				Safety:     plugin.Read,
@@ -99,6 +106,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					{Name: "limit", Type: plugin.Int, Default: 30, Min: 1, Max: maxRows,
 						Help: "how many of the most recent calls to show"},
 					{Name: "refused", Type: plugin.Bool, Help: "only the calls rta would not make"},
+					agentField("only this agent's calls"),
 					{Name: "role", Type: plugin.String,
 						Help: "only calls a grant of this role covered — what the dev role did today"},
 					{Name: "session", Type: plugin.String,
@@ -111,8 +119,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 							}
 							return out
 						}},
-					{Name: "since", Type: plugin.String,
-						Help: "only calls after this: a duration like `2h`, or a date like 2026-08-30"},
+					{Name: "since", Type: plugin.String, Suggest: suggestSince,
+						Help: "only calls after this: `today`, `yesterday`, a span like `2h` or `3d`, or a date like 2026-08-30"},
 					{Name: "after", Type: plugin.Int, Min: 0,
 						Help: "only calls after this `seq` — an exact cursor, for shipping the record somewhere"},
 				},
@@ -284,6 +292,23 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 	}
 }
 
+// agentField is the filter every listing of this namespace offers for "what
+// did claude do", completing from the names this machine has seen.
+func agentField(help string) plugin.Field {
+	return plugin.Field{Name: "agent", Type: plugin.String, Suggest: rtagrant.SuggestAgents, Help: help}
+}
+
+// suggestSince offers the spans a person asks the record for, beside the
+// spellings the flag's help describes.
+func suggestSince(context.Context, plugin.Request) []string {
+	return []string{
+		"1h\tthe last hour",
+		"today\tsince midnight",
+		"yesterday\tsince the start of yesterday",
+		"3d\tthe last three days",
+	}
+}
+
 func suggestPending(context.Context, plugin.Request) []string {
 	reqs, err := consent.Pending()
 	if err != nil {
@@ -310,17 +335,48 @@ func suggestPending(context.Context, plugin.Request) []string {
 // permissions changed, a transient I/O error) and it succeeding with no
 // server open are not the same fact, and "is anything attached" is the one
 // question an operator opens this during an incident to ask.
-func Connected() (string, int, error) {
+func Connected() (string, int, error) { return connectedFor("") }
+
+// connectedFor is Connected narrowed to one agent's servers, or to all of them
+// for an empty name.
+//
+// Servers that run under one name are one entry: three windows of the same
+// client are `claude ×3`, which is what an operator counting their clients
+// means, and their session ids are the detail page's table. Written one
+// "claude (1 call)" after another it read as three agents, or as one repeated
+// by mistake.
+func connectedFor(agent string) (string, int, error) {
 	open, calls, err := openSessions()
 	if err != nil {
 		return "", 0, err
 	}
+	if agent != "" {
+		open = slices.DeleteFunc(open, func(s session.Record) bool { return s.Agent != agent })
+	}
 	if len(open) == 0 {
 		return "", 0, nil
 	}
-	parts := make([]string, 0, len(open))
+	type group struct{ servers, calls int }
+	var order []string
+	by := map[string]*group{}
 	for _, s := range open {
-		parts = append(parts, fmt.Sprintf("%s (%d %s)", agentOf(s), calls[s.ID], format.Plural(calls[s.ID], "call", "calls")))
+		name := agentOf(s)
+		g := by[name]
+		if g == nil {
+			g = &group{}
+			by[name] = g
+			order = append(order, name)
+		}
+		g.servers++
+		g.calls += calls[s.ID]
+	}
+	parts := make([]string, 0, len(order))
+	for _, name := range order {
+		g := by[name]
+		if g.servers > 1 {
+			name += " ×" + strconv.Itoa(g.servers)
+		}
+		parts = append(parts, fmt.Sprintf("%s (%d %s)", name, g.calls, format.Plural(g.calls, "call", "calls")))
 	}
 	return fmt.Sprintf("%d — %s", len(open), strings.Join(parts, "; ")), len(open), nil
 }
@@ -357,10 +413,13 @@ func agentOf(s session.Record) string {
 // connectedTable is presence in full, one row per open server. The record
 // column is the file that server writes to: when it is not the one this
 // process reads, that is the whole explanation for an empty log.
-func connectedTable() (view.Table, error) {
+func connectedTable(agent string) (view.Table, error) {
 	open, calls, err := openSessions()
 	if err != nil {
 		return view.Table{}, err
+	}
+	if agent != "" {
+		open = slices.DeleteFunc(open, func(s session.Record) bool { return s.Agent != agent })
 	}
 	t := view.Table{Columns: []view.Column{
 		{Name: "agent"}, {Name: "client"}, {Name: "since", Kind: view.KindTimestamp},
@@ -396,8 +455,8 @@ func nothingWaiting(sf plugin.Surface) string {
 // empty bordered table under a heading reads as a screen that failed to load.
 // The tables carry that sentence themselves (view.Table.Empty), so a parser
 // reading the page still meets a table.
-func connectedView() view.View {
-	t, err := connectedTable()
+func connectedView(agent string) view.View {
+	t, err := connectedTable(agent)
 	if err != nil {
 		return view.Text{Body: "unreadable — " + err.Error()}
 	}
@@ -412,6 +471,7 @@ func waitingView(sf plugin.Surface, reqs []consent.Request, err error) view.View
 }
 
 func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
+	agent := strings.TrimSpace(req.String("agent"))
 	hour := time.Now().Add(-time.Hour)
 	// Bounded by time, not by a display-sized window: a busy hour has more
 	// than five hundred calls, and the tile said 500.
@@ -420,12 +480,29 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("agent.log.unreadable", "%v", err)
 	}
 	waiting, pendingErr := consent.Pending()
+	if agent != "" {
+		entries = slices.DeleteFunc(entries, func(e agentlog.Entry) bool { return e.Agent != agent })
+		waiting = slices.DeleteFunc(waiting, func(r consent.Request) bool { return r.Agent != agent })
+	}
 
-	var recent, refused, approved int
+	// The refusals told apart by who can act on them, because "refused 6" mixed
+	// the three kinds a person reads three different ways: a call waiting on a
+	// grant only they can issue, a call the agent got wrong and will fix, and a
+	// gate that did its job. The split is read from the codes the record already
+	// carries (kindOf), never stored.
+	var recent, approved int
+	var needsGrant, malformed, other []agentlog.Entry
 	for _, e := range entries {
 		recent++
 		if e.Outcome == agentlog.Refused {
-			refused++
+			switch kindOf(codeOf(e)) {
+			case refusedNeedsGrant:
+				needsGrant = append(needsGrant, e)
+			case refusedMalformed:
+				malformed = append(malformed, e)
+			default:
+				other = append(other, e)
+			}
 		}
 		if e.Auth == agentlog.Live {
 			approved++
@@ -450,22 +527,34 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	// Presence before activity: "is anything attached" is the question
 	// every zero below raises, and it is the one the ledger cannot answer.
-	connected, n, connErr := Connected()
+	connected, n, connErr := connectedFor(agent)
 	switch {
 	case connErr != nil:
 		connected = "unreadable — " + connErr.Error()
+	case n == 0 && agent != "":
+		connected = "none — no server named " + agent + " has an rta server open"
 	case n == 0:
 		connected = "none — no client has an rta server open; `rta mcp install claude`, then restart the client"
 	}
+	sf := req.Surface()
+	listed := sf.CapabilityWith("agent.log", "refused") + " lists them"
 	pairs := []view.Pair{
 		{Key: "waiting on you", Value: nowWaiting},
 		{Key: "connected now", Value: connected},
-		{Key: "locked", Value: lockedLine(req.Surface())},
+		{Key: "locked", Value: lockedLine(sf)},
 		{Key: "roles in force", Value: rolesLine()},
 		{Key: "calls in the last hour", Value: fmt.Sprintf("%d", recent)},
-		{Key: "refused", Value: fmt.Sprintf("%d", refused)},
-		{Key: "you approved live", Value: fmt.Sprintf("%d", approved)},
+		{Key: "needs your grant", Value: refusalCount(needsGrant, listed)},
 	}
+	// Only when there are some: a zero on a tile is read as a thing that is
+	// watched, and these are not what an operator watches for.
+	if len(malformed) > 0 {
+		pairs = append(pairs, view.Pair{Key: "malformed or unknown calls", Value: refusalCount(malformed, "")})
+	}
+	if len(other) > 0 {
+		pairs = append(pairs, view.Pair{Key: "refused otherwise", Value: refusalCount(other, "")})
+	}
+	pairs = append(pairs, view.Pair{Key: "you approved live", Value: fmt.Sprintf("%d", approved)})
 	if agentlog.Started() {
 		if err := agentlog.Writable(); err != nil {
 			pairs = append(pairs, view.Pair{Key: "recording",
@@ -485,10 +574,24 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	rep, verr := agentlog.Verify()
 	return view.Sections{Items: []view.Section{
 		{ID: "activity", Title: "Activity", View: view.KeyValue{Pairs: pairs}},
-		{ID: "connected", Title: "Connected now", View: connectedView()},
+		{ID: "connected", Title: "Connected now", View: connectedView(agent)},
 		{ID: "record", Title: "The record", View: view.KeyValue{Pairs: recordPairs(rep, verr)}},
 		{ID: "waiting", Title: "Waiting on you", View: waitingView(req.Surface(), waiting, pendingErr)},
 	}}, nil
+}
+
+// refusalCount is how many refusals of one kind the hour held, which calls they
+// were, and — beside the first kind only, the one that is the operator's to
+// act on — where to read them.
+func refusalCount(entries []agentlog.Entry, where string) string {
+	if len(entries) == 0 {
+		return "0"
+	}
+	line := fmt.Sprintf("%d — %s", len(entries), callList(entries))
+	if where != "" {
+		line += "; " + where
+	}
+	return line
 }
 
 // lockedLine says which principals are frozen, on the one screen an
@@ -580,19 +683,57 @@ func recordPairs(rep agentlog.Report, verr error) []view.Pair {
 	return pairs
 }
 
+// logFilter is what `agent log` keeps of the calls it read.
+type logFilter struct {
+	refused              bool
+	agent, session, role string
+	since                time.Time
+	after                int64
+}
+
+// picks reports whether the filter keeps a scattered subset of the record, as
+// opposed to a suffix of it. --after and --since keep a suffix: the newest
+// thirty that pass them are the newest thirty that pass them, whether thirty
+// or five hundred were read to find them. The others can come up short.
+func (f logFilter) picks() bool {
+	return f.refused || f.agent != "" || f.session != "" || f.role != ""
+}
+
+func (f logFilter) any() bool {
+	return f.picks() || f.after > 0 || !f.since.IsZero()
+}
+
+func (f logFilter) keeps(e agentlog.Entry) bool {
+	switch {
+	case f.refused && e.Outcome != agentlog.Refused:
+	case f.agent != "" && e.Agent != f.agent:
+	case f.session != "" && e.Session != f.session:
+	case f.role != "" && !roleCovers(e.Role, f.role):
+	case e.Seq <= f.after:
+	case !f.since.IsZero() && e.At.Before(f.since):
+	default:
+		return true
+	}
+	return false
+}
+
 func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	limit := req.Int("limit")
 	if limit <= 0 {
 		limit = 30
 	}
-	onlyRefused := req.Bool("refused")
-	after := int64(req.Int("after"))
 	since, sinceNote, sinceErr := parseSince(req.String("since"))
 	if sinceErr != nil {
 		return nil, sinceErr
 	}
-	sess := strings.TrimSpace(req.String("session"))
-	roleWant := strings.TrimSpace(req.String("role"))
+	f := logFilter{
+		refused: req.Bool("refused"),
+		agent:   strings.TrimSpace(req.String("agent")),
+		session: strings.TrimSpace(req.String("session")),
+		role:    strings.TrimSpace(req.String("role")),
+		since:   since,
+		after:   int64(req.Int("after")),
+	}
 	// Read more than asked for when filtering, so `--refused --limit 10`
 	// answers with ten refusals rather than the refusals among the last ten
 	// calls — which is the same number for a quiet server and nothing at
@@ -612,168 +753,106 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	// latest call and the eye walks up into the past, and the TUI opens on
 	// the last row for the same reason (view.Table.Tail).
 	want := limit
-	if onlyRefused || sess != "" || roleWant != "" {
+	if f.picks() {
 		want = maxRows
 	}
 	var entries []agentlog.Entry
 	var err error
-	if after > 0 {
+	more := false
+	switch {
+	case f.after > 0:
 		// A cursor reads forward: the rows just past it, not the newest
 		// rows that happen to be past it. The difference is the whole
 		// shipping recipe — an archive appended from the newest end skips
-		// whatever a burst wrote between two runs.
-		entries, err = agentlog.ReadAfter(after, want)
-	} else {
+		// whatever a burst wrote between two runs. One more than wanted is
+		// read, which is how a page knows there is another.
+		entries, err = agentlog.ReadAfter(f.after, want+1)
+		if more = len(entries) > want; more {
+			entries = entries[:want]
+		}
+	case !since.IsZero():
+		// Bounded by the clock, not by a count: the calls since a time are all
+		// of them, whatever else is asked of them, and the footer can then say
+		// how many there are.
+		entries, err = agentlog.Recent(since)
+	default:
 		entries, err = agentlog.Read(want)
 	}
 	if err != nil {
 		return nil, view.Errorf("agent.log.unreadable", "%v", err)
 	}
-	filtered := onlyRefused || sess != "" || roleWant != "" || after > 0 || !since.IsZero()
-	// Both columns appear only once a row can fill them, which for a record
-	// written before agents were named — or before rta could serve over
-	// HTTP at all — is never, and a column of em dashes on the screen an
-	// operator opens in a hurry is a column they learn to skip.
-	named, namedCred, coded, sessioned, roled, recorded := false, false, false, false, false, false
-	for _, e := range entries {
-		if e.Agent != "" || e.Client != "" {
-			named = true
-		}
-		// The same rule for the records a call named: a record
-		// written before the ledger kept them, or one whose calls named no
-		// record, shows no column for them.
-		if len(e.Records) > 0 {
-			recorded = true
-		}
-		// Same rule again: a record from before servers had ids shows no
-		// session column, and one where they do shows which of several
-		// same-named clients each call came from.
-		if e.Session != "" {
-			sessioned = true
-		}
-		if e.Role != "" {
-			roled = true
-		}
-		if e.Credential != "" {
-			namedCred = true
-		}
-		// Same appears-when-filled rule as the two above: a record written
-		// before the code/reason split — or one where nothing has gone wrong
-		// — shows no code column at all, rather than a column of blanks. Old
-		// rows keep their glued "code: message" in why; new rows carry the
-		// code here, exactly, which is the cell a shipped copy of this table
-		// gets matched on.
-		if e.Code != "" {
-			coded = true
+	matched := make([]agentlog.Entry, 0, min(len(entries), limit))
+	for i := len(entries) - 1; i >= 0; i-- {
+		if e := entries[i]; f.keeps(e) {
+			matched = append(matched, e)
 		}
 	}
-	// Filtered first, rendered second, because two of the rendering decisions
-	// below are about the set rather than the row.
-	shown := make([]agentlog.Entry, 0, limit)
-	for i := len(entries) - 1; i >= 0 && len(shown) < limit; i-- {
-		e := entries[i]
-		switch {
-		case onlyRefused && e.Outcome != agentlog.Refused:
-		case sess != "" && e.Session != sess:
-		case roleWant != "" && !roleCovers(e.Role, roleWant):
-		case e.Seq <= after:
-		case !since.IsZero() && e.At.Before(since):
-		default:
-			shown = append(shown, e)
-		}
-	}
+	shown := slices.Clone(matched[:min(limit, len(matched))])
 	slices.Reverse(shown)
+
+	// How many calls the rows were chosen from. A listing that stops at its
+	// limit and does not say so reads as the whole record, and for an audit
+	// view "I do not see it" reads as "it did not happen".
+	//
+	// The newest-first read is bounded by what it was asked for, so when it
+	// came back full there may be more behind it: the record is counted then,
+	// a line at a time and without keeping any, and only then.
+	total, reachedBack := len(matched), true
+	behind := f.after == 0 && since.IsZero() && len(entries) >= want
+	if behind {
+		reachedBack = false
+		if !f.picks() {
+			if n, err := agentlog.Calls(func(agentlog.Call) {}); err == nil {
+				total, reachedBack = n, true
+			}
+		}
+	}
+
+	terse := compact.For(req)
+	cols := logColumns(shown, terse, req.Bool("detail"))
 	stamp := stampFormat(shown, time.Now())
 	rows := make([][]string, 0, len(shown))
 	for _, e := range shown {
-		row := []string{
-			strconv.FormatInt(e.Seq, 10),
-			e.At.Local().Format(stamp),
-			e.Cap,
-			argsLine(e.Args),
-			e.Profile,
-			string(e.Outcome),
-			string(e.Auth),
-			whyLine(e),
-		}
-		if coded {
-			row = slices.Insert(row, len(row)-1, e.Code)
-		}
-		if named {
-			row = slices.Insert(row, 3, whoCalled(e))
-		}
-		if namedCred {
-			pos := 3
-			if named {
-				pos = 4
-			}
-			row = slices.Insert(row, pos, credentialCell(e))
-		}
-		if sessioned {
-			row = slices.Insert(row, whoColumns(named, namedCred), sessionCell(e))
-		}
-		if roled {
-			row = slices.Insert(row, roleColumn(named, namedCred, sessioned), dashed(e.Role))
-		}
-		// The records as the call named them, shown as every other surface
-		// shows a record (textclean.Record): the arguments beside them are
-		// kept cleaned, and a record padded with a zero-width character read
-		// there as the bare one.
-		if recorded {
-			row = slices.Insert(row, recordColumn(named, namedCred, sessioned, roled), recordsCell(e.Records))
+		row := make([]string, len(cols))
+		for i, c := range cols {
+			row[i] = c.cell(e, stamp)
 		}
 		rows = append(rows, row)
 	}
-	// seq is first because it is the join key and the cursor: `--after` takes
-	// it, and an archive without it cannot be appended to twice without
-	// duplicating everything — which is what the documented way of shipping
-	// this record actually did.
-	cols := []view.Column{
-		{Name: "seq"},
-		{Name: "at", Kind: view.KindTimestamp}, {Name: "capability"}, {Name: "arguments"},
-		{Name: "profile"}, {Name: "outcome", Kind: view.KindStatus},
-		{Name: "authorized"}, {Name: "why"},
+	columns := make([]view.Column, len(cols))
+	for i, c := range cols {
+		columns[i] = c.Column
 	}
-	if coded {
-		cols = slices.Insert(cols, len(cols)-1, view.Column{Name: "code"})
+	table := view.Table{Columns: columns, Rows: rows, Total: total, Tail: true}
+	if more && len(shown) > 0 {
+		table.Page = &view.Cursor{Next: strconv.FormatInt(shown[len(shown)-1].Seq, 10)}
 	}
-	if named {
-		cols = slices.Insert(cols, 3, view.Column{Name: "agent"})
-	}
-	if namedCred {
-		pos := 3
-		if named {
-			pos = 4
-		}
-		cols = slices.Insert(cols, pos, view.Column{Name: "credential"})
-	}
-	if sessioned {
-		cols = slices.Insert(cols, whoColumns(named, namedCred), view.Column{Name: "session"})
-	}
-	if roled {
-		cols = slices.Insert(cols, roleColumn(named, namedCred, sessioned), view.Column{Name: "role"})
-	}
-	if recorded {
-		cols = slices.Insert(cols, recordColumn(named, namedCred, sessioned, roled), view.Column{Name: "record"})
-	}
-	// Total is what the rows were chosen from; under a filter that is the
-	// rows themselves — `0 of 500 rows` under --refused read as five
-	// hundred refusals.
-	total := len(entries)
-	if filtered {
-		total = len(shown)
-	}
-	table := view.Table{Columns: cols, Rows: rows, Total: total, Tail: true}
 	if sinceNote != "" {
 		table.Warnings = append(table.Warnings, view.Error{Code: "agent.log.since", Message: sinceNote})
 	}
+	sf := req.Surface()
+	matching := ""
+	if f.any() {
+		matching = "matching "
+	}
+	if hidden := total - len(shown); hidden > 0 && reachedBack && f.after == 0 {
+		table.Warnings = append(table.Warnings, view.Error{Code: "agent.log.older", Advisory: true,
+			Message: format.Count(hidden, "older "+matching+"call is", "older "+matching+"calls are") + " not shown",
+			Hint:    moreHint(sf, total)})
+	}
+	if !reachedBack && f.picks() {
+		table.Warnings = append(table.Warnings, view.Error{Code: "agent.log.window", Advisory: true,
+			Message: fmt.Sprintf("only the newest %d calls were searched, so an older one that matches is not here", len(entries)),
+			Hint:    sf.InputName("since") + " searches as far back as it names"})
+	}
+
 	// A sentence for a screen, as `agent pending` has: the record's columns
 	// with nothing under them read as a listing that failed, and what a filter
 	// matched nothing of is not the same news as a record with nothing in it.
 	switch {
 	case len(rows) > 0:
-	case filtered:
-		table.Empty = "no recorded call matches the filters given"
+	case f.any():
+		table.Empty = "no recorded call matches the filters given" + unknownAgentClause(f.agent)
 	default:
 		table.Empty = "no call has arrived over MCP yet — what an agent asks of rta appears here, refusals included"
 	}
@@ -785,6 +864,160 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		{ID: "calls", Title: "Calls", View: table},
 		{ID: "integrity", Title: "The record itself", View: view.KeyValue{Pairs: recordPairs(rep, verr)}},
 	}}, nil
+}
+
+// moreHint is how to see what a listing left out: the limit that shows it, as
+// far as a limit goes, and the filters that make the rest smaller.
+func moreHint(sf plugin.Surface, total int) string {
+	ask := min(total, maxRows)
+	hint := sf.InputTo("limit", ask) + " shows "
+	if total > maxRows {
+		hint += "the newest " + strconv.Itoa(maxRows)
+	} else {
+		hint += "all of them"
+	}
+	narrow := []string{sf.InputName("since"), sf.InputName("agent"), sf.InputName("refused")}
+	return hint + "; " + strings.Join(narrow[:len(narrow)-1], ", ") + " and " + narrow[len(narrow)-1] + " narrow it"
+}
+
+// unknownAgentClause says, when --agent matched nothing, which agents the
+// record does know: a name mistyped reads as an agent that did nothing.
+func unknownAgentClause(agent string) string {
+	if agent == "" {
+		return ""
+	}
+	seen := map[string]bool{}
+	if entries, err := agentlog.Read(maxRows); err == nil {
+		for _, e := range entries {
+			if e.Agent != "" {
+				seen[e.Agent] = true
+			}
+		}
+	}
+	if seen[agent] {
+		return ""
+	}
+	if len(seen) == 0 {
+		return " — the record holds no call from an agent named " + strconv.Quote(agent)
+	}
+	return " — the record holds no call from an agent named " + strconv.Quote(agent) +
+		", it knows " + strings.Join(slices.Sorted(maps.Keys(seen)), ", ")
+}
+
+// logColumn is one column of the log with the way to fill it.
+type logColumn struct {
+	view.Column
+	cell func(e agentlog.Entry, stamp string) string
+}
+
+// logColumns decides which columns the rows shown carry, and in which order.
+//
+// Every column but the always-there ones appears only once a row can fill it,
+// which for a record written before agents were named, or before rta could
+// serve over HTTP at all, is never: a column of em dashes on the screen an
+// operator opens in a hurry is a column they learn to skip.
+//
+// **Two shapes.** The whole table, every field of the entry, is what a script
+// and `--detail` read, and its columns are the record's own. The compact one
+// is what a person scans on a terminal: when, what, the record it named and
+// what became of it, in a row that fits eighty cells. The columns that say
+// who — agent, credential, session — join it only when the rows shown have
+// more than one to tell apart, because a column of one constant value says
+// nothing and takes a fifth of the width.
+func logColumns(shown []agentlog.Entry, terse, detail bool) []logColumn {
+	has := func(f func(agentlog.Entry) bool) bool { return slices.ContainsFunc(shown, f) }
+	several := func(f func(agentlog.Entry) string) bool {
+		var first string
+		for i, e := range shown {
+			if i == 0 {
+				first = f(e)
+			} else if f(e) != first {
+				return true
+			}
+		}
+		return false
+	}
+	recorded := has(func(e agentlog.Entry) bool { return len(e.Records) > 0 })
+
+	at := logColumn{view.Column{Name: "at", Kind: view.KindTimestamp},
+		func(e agentlog.Entry, stamp string) string { return e.At.Local().Format(stamp) }}
+	capability := logColumn{view.Column{Name: "capability"},
+		func(e agentlog.Entry, _ string) string { return e.Cap }}
+	agent := logColumn{view.Column{Name: "agent"},
+		func(e agentlog.Entry, _ string) string { return whoCalled(e) }}
+	credential := logColumn{view.Column{Name: "credential"},
+		func(e agentlog.Entry, _ string) string { return credentialCell(e) }}
+	session := logColumn{view.Column{Name: "session"},
+		func(e agentlog.Entry, _ string) string { return sessionCell(e) }}
+	record := logColumn{view.Column{Name: "record"},
+		func(e agentlog.Entry, _ string) string { return recordsCell(e.Records) }}
+
+	if terse {
+		cols := []logColumn{at, capability}
+		if several(whoCalled) {
+			cols = append(cols, agent)
+		}
+		if several(credentialCell) {
+			cols = append(cols, credential)
+		}
+		if several(sessionCell) {
+			cols = append(cols, session)
+		}
+		if recorded {
+			cols = append(cols, record)
+		}
+		return append(cols, logColumn{view.Column{Name: "result", Kind: view.KindStatus},
+			func(e agentlog.Entry, _ string) string { return resultPhrase(e) }})
+	}
+
+	cols := []logColumn{
+		{view.Column{Name: "seq"}, func(e agentlog.Entry, _ string) string { return strconv.FormatInt(e.Seq, 10) }},
+		at, capability,
+	}
+	if has(func(e agentlog.Entry) bool { return e.Agent != "" || e.Client != "" }) {
+		cols = append(cols, agent)
+		// What the client called itself, beside the name the operator gave it:
+		// the pair the docs describe, one a person chose and one that only the
+		// client asserts. Only on the full page, so that the exact rows a log
+		// shipper reads do not grow a field they were not written against.
+		if detail && has(func(e agentlog.Entry) bool { return e.Client != "" }) {
+			cols = append(cols, logColumn{view.Column{Name: "client"},
+				func(e agentlog.Entry, _ string) string { return dashed(e.Client) }})
+		}
+	}
+	if has(func(e agentlog.Entry) bool { return e.Credential != "" }) {
+		cols = append(cols, credential)
+	}
+	if has(func(e agentlog.Entry) bool { return e.Session != "" }) {
+		cols = append(cols, session)
+	}
+	if has(func(e agentlog.Entry) bool { return e.Role != "" }) {
+		cols = append(cols, logColumn{view.Column{Name: "role"},
+			func(e agentlog.Entry, _ string) string { return dashed(e.Role) }})
+	}
+	// The records as the call named them, shown as every other surface
+	// shows a record (textclean.Record): the arguments beside them are
+	// kept cleaned, and a record padded with a zero-width character read
+	// there as the bare one.
+	if recorded {
+		cols = append(cols, record)
+	}
+	cols = append(cols,
+		logColumn{view.Column{Name: "arguments"}, func(e agentlog.Entry, _ string) string { return argsLine(e.Args) }},
+		logColumn{view.Column{Name: "profile"}, func(e agentlog.Entry, _ string) string { return e.Profile }},
+		logColumn{view.Column{Name: "outcome", Kind: view.KindStatus},
+			func(e agentlog.Entry, _ string) string { return string(e.Outcome) }},
+		logColumn{view.Column{Name: "authorized"}, func(e agentlog.Entry, _ string) string { return string(e.Auth) }},
+	)
+	// Same appears-when-filled rule as the columns above: a record written
+	// before the code/reason split — or one where nothing has gone wrong —
+	// shows no code column at all, rather than a column of blanks. Old rows
+	// keep their glued "code: message" in why; new rows carry the code here,
+	// exactly, which is the cell a shipped copy of this table gets matched on.
+	if has(func(e agentlog.Entry) bool { return e.Code != "" }) {
+		cols = append(cols, logColumn{view.Column{Name: "code"}, func(e agentlog.Entry, _ string) string { return e.Code }})
+	}
+	return append(cols, logColumn{view.Column{Name: "why"}, func(e agentlog.Entry, _ string) string { return whyLine(e) }})
 }
 
 func runPending(ctx context.Context, req plugin.Request) (view.View, error) {
@@ -827,7 +1060,7 @@ func pendingTable(sf plugin.Surface, reqs []consent.Request) view.Table {
 		// operator reads the bare record while answering for another
 		// (textclean.Record).
 		row := []string{
-			r.ID, r.Cap, textclean.Records(r.Scopes), r.Safety, r.Profile,
+			r.ID, r.Cap, recordsCell(r.Scopes), r.Safety, r.Profile,
 			clip(what), format.Duration(left),
 		}
 		if asking {
@@ -850,48 +1083,6 @@ func pendingTable(sf plugin.Surface, reqs []consent.Request) view.Table {
 		t.Empty = nothingWaiting(sf)
 	}
 	return t
-}
-
-// whoCalled is the one cell that answers "which agent was this".
-//
-// **Two fields, and the rendering keeps them apart.** e.Agent is the operator's
-// own name for this server and is what the grant was compared against; e.Client
-// is what the caller announced for itself, which anything speaking the protocol
-// can set to anything. So a name the operator chose is printed plainly, and a
-// name only the client asserts is printed in parentheses — the parentheses mean
-// "nobody checked this". Printing them the same way would be the more readable
-// table and the dishonest one.
-// whoColumns is where the session column goes: after whichever of the
-// agent and credential columns are on screen, and before the arguments.
-func whoColumns(named, namedCred bool) int {
-	pos := 3
-	if named {
-		pos++
-	}
-	if namedCred {
-		pos++
-	}
-	return pos
-}
-
-// roleColumn is where the role sits: after whoever called and the session
-// that carried the call, before what was called.
-func roleColumn(named, namedCred, sessioned bool) int {
-	pos := whoColumns(named, namedCred)
-	if sessioned {
-		pos++
-	}
-	return pos
-}
-
-// recordColumn is where the records sit: after the role, right before the
-// arguments they were read from — the order agent pending shows them in.
-func recordColumn(named, namedCred, sessioned, roled bool) int {
-	pos := roleColumn(named, namedCred, sessioned)
-	if roled {
-		pos++
-	}
-	return pos
 }
 
 // recordsCell is a row's records, each as textclean.Record shows one, or a
@@ -928,6 +1119,15 @@ func sessionCell(e agentlog.Entry) string {
 	return e.Session
 }
 
+// whoCalled is the one cell that answers "which agent was this".
+//
+// **Two fields, and the rendering keeps them apart.** e.Agent is the operator's
+// own name for this server and is what the grant was compared against; e.Client
+// is what the caller announced for itself, which anything speaking the protocol
+// can set to anything. So a name the operator chose is printed plainly, and a
+// name only the client asserts is printed in parentheses — the parentheses mean
+// "nobody checked this". Printing them the same way would be the more readable
+// table and the dishonest one.
 func whoCalled(e agentlog.Entry) string {
 	switch {
 	case e.Agent != "":
@@ -1549,12 +1749,12 @@ func clip(line string) string {
 	return line
 }
 
-// parseSince reads what "since" means to a person: a duration back from now,
-// or a day, or an exact instant.
+// parseSince reads what "since" means to a person: a span back from now, a
+// day by its name or its date, or an exact instant.
 //
-// Three spellings because three questions ask it — "the last two hours" while
-// something is going wrong, "today" when writing it up, and an exact
-// timestamp when joining this record against another system's. Refused rather
+// Several spellings because several questions ask it — "the last two hours"
+// while something is going wrong, "today" or "yesterday" when writing it up,
+// and an exact timestamp when joining this record against another system's. Refused rather
 // than guessed at when it is none of them: a filter that silently matched
 // everything would report an empty record as a quiet one.
 //
@@ -1570,7 +1770,19 @@ func parseSince(raw string) (time.Time, string, *view.Error) {
 	if raw == "" {
 		return time.Time{}, "", nil
 	}
-	if d, err := time.ParseDuration(raw); err == nil {
+	// A day by its name starts at the midnight the clock showed, so the
+	// calls of yesterday evening are in "yesterday" and not in a span
+	// counted back from this minute. Built from the date and not by
+	// subtracting a day's hours, which a clock change makes an hour out.
+	switch strings.ToLower(raw) {
+	case "today", "yesterday":
+		y, m, d := time.Now().Date()
+		if strings.EqualFold(raw, "yesterday") {
+			d--
+		}
+		return time.Date(y, m, d, 0, 0, 0, 0, time.Local), "", nil
+	}
+	if d, err := format.ParseWindow(raw); err == nil {
 		if d < 0 {
 			d = -d
 		}
@@ -1596,7 +1808,7 @@ func parseSince(raw string) (time.Time, string, *view.Error) {
 	}
 	return time.Time{}, "", view.Errorf("agent.log.since",
 		"%q is not a time this understands", raw).
-		WithHint("a duration back from now (`2h`, `15m`), a day (`2026-08-30`), " +
+		WithHint("`today` or `yesterday`, a span back from now (`2h`, `15m`, `3d`), a day (`2026-08-30`), " +
 			"or an exact instant (`2026-08-30T14:00:00Z`)")
 }
 
