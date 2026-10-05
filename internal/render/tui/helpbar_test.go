@@ -12,6 +12,11 @@ import (
 func TestANarrowFooterAlwaysSaysHowToLeave(t *testing.T) {
 	for _, width := range []int{60, 50, 40, 30} {
 		m, _ := realModel(t, width, 30)
+		cold := footerOf(m.dashboardView(), footerMaxLines)
+		if !strings.Contains(cold, "ctrl+c quit") {
+			t.Errorf("the search bar at %d columns does not say how to quit:\n%s", width, cold)
+		}
+		m.selected = 1
 		for name, bar := range map[string]string{
 			"dashboard": footerOf(m.dashboardView(), footerMaxLines),
 			"plugins":   footerOf(m.pluginsView(), footerMaxLines),
@@ -44,6 +49,7 @@ func TestANarrowFooterKeepsTheFlashAndHowToLeave(t *testing.T) {
 	const long = "saved profile proj1-staging — covers pg, s3 and vault, and the switch lapses in 8h"
 	for _, width := range []int{80, 60, 40} {
 		m, _ := realModel(t, width, 30)
+		m.selected = 1
 		m.flash = long
 		bar := footerOf(m.dashboardView(), footerMaxLines)
 		if !strings.Contains(bar, "✓ saved profile") || !strings.Contains(bar, "q quit") {

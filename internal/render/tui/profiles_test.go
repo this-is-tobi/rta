@@ -571,6 +571,7 @@ func TestOpeningTheProfilesPaneLoadsThePluginInventory(t *testing.T) {
 	if len(m.plugins) != 0 {
 		t.Fatalf("the inventory was already loaded, so this proves nothing")
 	}
+	m.selected = 1
 	opened := press(t, m, "f")
 	if len(opened.plugins) == 0 {
 		t.Fatal("the profiles pane opened without the inventory its editor is built from")
@@ -624,6 +625,7 @@ func TestTheProfilesPanesOpenFromTheDashboard(t *testing.T) {
 	}
 	tm := newTestModel(t, New(reg, config.Dashboard{}, nil),
 		teatest.WithInitialTermSize(100, 40))
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyDown})
 	tm.Send(tea.KeyPressMsg{Code: 'f', Text: "f"})
 	waitFor(t, tm, "STAGING")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})

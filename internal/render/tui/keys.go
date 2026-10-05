@@ -185,6 +185,10 @@ type hintItem struct {
 	display, label string
 	rank           int
 	keys           []string
+	// typed says the entry teaches typing: every printable key the screen has
+	// not claimed for something else is a letter of a text. No list of keys can
+	// say that, and a test that held a footer to its keys needs to be told.
+	typed bool
 	// style renders the whole entry when it is not a key hint. Only the flash
 	// uses it: a confirmation is an answer rather than something to press, and
 	// it has read green since it existed.

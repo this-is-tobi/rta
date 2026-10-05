@@ -151,7 +151,7 @@ func TestPathFieldCompletesWhileTyping(t *testing.T) {
 		t.Fatal(err)
 	}
 	tm := newTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
-	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	tm.Send(tea.KeyPressMsg{Code: ':', Text: ":"})
 	waitFor(t, tm, "demo.save")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 	waitFor(t, tm, "tab completes paths")

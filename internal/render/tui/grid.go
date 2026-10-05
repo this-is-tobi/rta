@@ -586,11 +586,22 @@ func (m Model) searchHeight() int {
 // colour, and not a border, because there is none to move — the glyph is what
 // carries the selection on a terminal that shows no colour.
 func (m Model) renderSearchBar(width int, selected bool) string {
-	glyph, text := theme.AccentTxt.Render(" ⌕ "), theme.Subtle.Render(m.searchInfo)
+	info := m.searchInfo + " — " + m.searchStartHint()
+	glyph, text := theme.AccentTxt.Render(" ⌕ "), theme.Subtle.Render(info)
 	if selected {
-		glyph, text = theme.AccentTxt.Render(" ❯ "), theme.Key.Render(m.searchInfo)
+		glyph, text = theme.AccentTxt.Render(" ❯ "), theme.Key.Render(info)
 	}
 	return ansi.Truncate(glyph+text, max(width, 1), "…")
+}
+
+// searchStartHint says what starts a search from where the selection is: a
+// letter when the bar holds it (typing.go hands letters to the bar only then),
+// the slash otherwise, because on a tile a letter is that tile's command.
+func (m Model) searchStartHint() string {
+	if m.lettersAreQuery() {
+		return "type to search"
+	}
+	return "press / to search"
 }
 
 // renderSearchTile draws the full-width live search box: a query line and a
@@ -638,7 +649,13 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 		lines = append(lines, theme.Subtle.Render("  no matches"))
 	}
 
+	// What starts a search depends on whether the bar holds the selection:
+	// typed letters are the query only then (typing.go), and on a tile they are
+	// that tile's commands, so the hint says the key that works from there.
 	right := "press /"
+	if m.lettersAreQuery() {
+		right = "type to search"
+	}
 	if m.searchEditing {
 		right = "↑↓ pick · enter run · + add tile · esc clear"
 	}
@@ -656,6 +673,9 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 func (m Model) dashFooterItems() []hintItem {
 	if m.searchEditing {
 		return searchEditingItems()
+	}
+	if m.lettersAreQuery() {
+		return searchIdleItems()
 	}
 	items := []hintItem{}
 	own := dashOwnItems()

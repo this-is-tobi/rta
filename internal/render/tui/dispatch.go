@@ -65,6 +65,11 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		nm, cmd := m.updateSearch(msg)
 		return nm, cmd, true
 	}
+	if text, ok := m.typedIntoSearch(msg); ok {
+		m.searchEditing, m.searchSel = true, 0
+		m.query += text
+		return m, nil, true
+	}
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit, true

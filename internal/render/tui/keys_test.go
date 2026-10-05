@@ -92,6 +92,9 @@ func TestTheDocsTableOfTheDashboardsKeysHasEveryKeyTheFooterOffers(t *testing.T)
 
 	m, _ := realModel(t, 200, 40)
 	for _, it := range m.footerItems(modeDashboard) {
+		if it.typed {
+			continue
+		}
 		for _, key := range strings.Fields(it.display) {
 			if strings.ContainsAny(key, "↑↓←→") || documented[key] {
 				continue
@@ -119,7 +122,13 @@ func TestEveryTileOffersTheSameNavigation(t *testing.T) {
 		if !m.tiles[i].search {
 			id = m.tiles[i].cap.ID
 		}
-		for _, want := range []string{"move", "hide", "select", "plugins", "quit"} {
+		// The bar holds the letters while it holds the selection, so what
+		// moves or hides a tile is not among its keys until a tile is selected.
+		wants := []string{"move", "hide", "select", "plugins", "quit"}
+		if m.tiles[i].search {
+			wants = []string{"select", "plugins", "quit"}
+		}
+		for _, want := range wants {
 			if !strings.Contains(footer, want) {
 				t.Errorf("tile %s: footer is missing %q\n  %s", id, want, footer)
 			}
@@ -220,8 +229,16 @@ func advertisedScreens() map[string]func(*testing.T) (Model, mode) {
 			m.selected = 1 // a real tile, so its own actions are in play
 			return m, modeDashboard
 		},
+		// The landing screen before anything is selected: the bar holds the
+		// selection and takes letters, so what it advertises is typing and the
+		// few keys it keeps for itself (typing.go).
+		"search bar": func(t *testing.T) (Model, mode) {
+			m, _ := realModel(t, 120, 40)
+			return m, modeDashboard
+		},
 		"plugins": func(t *testing.T) (Model, mode) {
 			m, _ := realModel(t, 120, 40)
+			m.selected = 1
 			return press(t, m, "p"), modePlugins
 		},
 		"profiles": func(t *testing.T) (Model, mode) {
@@ -282,16 +299,20 @@ func TestEveryKeyAScreenAnswersToIsAdvertised(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			base, screen := build(t)
 			advertised := map[string]bool{}
+			typed := false
 			for _, it := range base.footerItems(screen) {
+				typed = typed || it.typed
 				for _, k := range it.keys {
 					advertised[k] = true
 				}
 			}
-			if len(advertised) == 0 {
+			if len(advertised) == 0 && !typed {
 				t.Fatalf("%s advertises nothing at all", name)
 			}
 			for _, key := range everyKey() {
-				if advertised[key] {
+				// What a screen that says "type" does with a printable key is
+				// type it, which is the whole of what that hint teaches.
+				if advertised[key] || (typed && len([]rune(key)) == 1) {
 					continue
 				}
 				// Rebuilt per key: `d` deletes a profile, and a screen that
@@ -453,6 +474,9 @@ func TestDeclaredAliasesActuallyDoTheSameThing(t *testing.T) {
 	}
 	for _, tc := range cases {
 		base, _ := realModel(t, 120, 40)
+		// On a tile, where the letters are commands: the search bar holds the
+		// selection at a cold start and takes them as a query (typing.go).
+		base.selected = 1
 		want := tc.observe(press(t, base, tc.primary))
 		for _, alias := range tc.aliases {
 			if got := tc.observe(press(t, base, alias)); got != want {
@@ -468,6 +492,7 @@ func TestDeclaredAliasesActuallyDoTheSameThing(t *testing.T) {
 // it on the next.
 func TestEscapeGoesBackFromEveryScreenThatHasABack(t *testing.T) {
 	base, _ := realModel(t, 120, 40)
+	base.selected = 1
 	plugins := press(t, base, "p")
 	if plugins.mode != modePlugins {
 		t.Fatalf("p did not open the plugin inventory: %v", plugins.mode)
@@ -513,6 +538,7 @@ func TestEscapeGoesBackFromEveryScreenThatHasABack(t *testing.T) {
 // up is the one that gets you out.
 func TestQuitWorksFromEveryScreen(t *testing.T) {
 	base, _ := realModel(t, 120, 40)
+	base.selected = 1
 	screens := map[string]Model{
 		"dashboard": base,
 		"plugins":   press(t, base, "p"),

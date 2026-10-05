@@ -944,6 +944,7 @@ func TestPluginPaneListsPluginsWithoutTiles(t *testing.T) {
 // `p` opens the pane and `esc` closes it, restarting the tile refresh.
 func TestPluginPaneOpensAndCloses(t *testing.T) {
 	m := dashboardModel(t)
+	m.selected = 1
 	opened, _ := m.Update(tea.KeyPressMsg{Code: 'p', Text: "p"})
 	om := opened.(Model)
 	if om.mode != modePlugins {

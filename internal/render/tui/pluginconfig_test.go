@@ -401,6 +401,7 @@ func TestShiftEnterSavesThePluginConfigForm(t *testing.T) {
 		t.Fatal(err)
 	}
 	tm := newTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyDown})
 	tm.Send(tea.KeyPressMsg{Code: 'p', Text: "p"})
 	waitFor(t, tm, "db")
 	tm.Send(tea.KeyPressMsg{Code: 'c', Text: "c"})
