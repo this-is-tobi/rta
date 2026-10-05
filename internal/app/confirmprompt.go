@@ -2,6 +2,7 @@ package app
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -150,6 +151,48 @@ func confirmCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capabil
 		return declinedConfirmation(w)
 	}
 	return nil
+}
+
+// confirmByPreview is the same question for a destructive command that is not a
+// capability — `plugin remove`, `plugin prune`, `profile rm` — and so has no
+// dry run of the registry's to run. The command is its own preview: it is run
+// again with --dry-run on, its answer drawn on standard error as a capability's
+// is, and then the question is asked.
+//
+// It reports proceed when a person said yes. With nobody to ask it reports
+// neither a yes nor an error, and the caller refuses as it always did, with
+// exit 3 and the flag to pass. A preview that fails — a plugin nothing manages —
+// is that failure, before any question, for the reason confirmCapability finds
+// the target first.
+//
+// A preview that finds nothing to do (opts.nothingToDo, set by the sweeps that
+// can come up empty) is not drawn and not asked about: "no plugin is installed"
+// followed by "Go ahead?" is a question about nothing. It proceeds, and the real
+// run says the same thing to standard output and changes nothing.
+func confirmByPreview(ctx context.Context, cmd *cobra.Command, opts *globalOpts, preview func() error) (bool, error) {
+	if !confirmTerminal() {
+		return false, nil
+	}
+	w := cmd.ErrOrStderr()
+	stdout := cmd.OutOrStdout()
+	var drawn bytes.Buffer
+	cmd.SetOut(&drawn)
+	opts.dryRun, opts.nothingToDo = true, false
+	err := preview()
+	opts.dryRun = false
+	cmd.SetOut(stdout)
+	if err != nil {
+		return false, err
+	}
+	if opts.nothingToDo {
+		opts.nothingToDo = false
+		return true, nil
+	}
+	_, _ = w.Write(drawn.Bytes())
+	if !askToProceed(ctx, w) {
+		return false, declinedConfirmation(w)
+	}
+	return true, nil
 }
 
 // inputsOnly is what a call will run with, for a confirmation that has no

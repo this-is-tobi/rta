@@ -279,10 +279,16 @@ func newPluginRemoveCommand(opts *globalOpts) *cobra.Command {
 				if _, verr := plugindist.PreviewRemove(name); verr != nil {
 					return verr
 				}
-				return &view.Error{
-					Code:    CodeConfirmRequired,
-					Message: "removing " + name + " withdraws trust from every stored artifact and needs confirmation",
-					Hint:    "re-run with --yes to confirm, or --dry-run to preview",
+				proceed, err := confirmByPreview(cmd.Context(), cmd, opts, func() error { return cmd.RunE(cmd, args) })
+				if err != nil {
+					return err
+				}
+				if !proceed {
+					return &view.Error{
+						Code:    CodeConfirmRequired,
+						Message: "removing " + name + " withdraws trust from every stored artifact and needs confirmation",
+						Hint:    "re-run with --yes to confirm, or --dry-run to preview",
+					}
 				}
 			}
 			remove := plugindist.Remove
@@ -350,12 +356,18 @@ func newPluginPruneCommand(opts *globalOpts) *cobra.Command {
 		Example: "  rta plugin prune --dry-run\n" +
 			"  rta plugin prune --yes",
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if !opts.dryRun && !opts.yes {
-				return &view.Error{
-					Code:    CodeConfirmRequired,
-					Message: "pruning withdraws trust from every stored artifact it removes and needs confirmation",
-					Hint:    "re-run with --yes to confirm, or --dry-run to preview",
+				proceed, err := confirmByPreview(cmd.Context(), cmd, opts, func() error { return cmd.RunE(cmd, args) })
+				if err != nil {
+					return err
+				}
+				if !proceed {
+					return &view.Error{
+						Code:    CodeConfirmRequired,
+						Message: "pruning withdraws trust from every stored artifact it removes and needs confirmation",
+						Hint:    "re-run with --yes to confirm, or --dry-run to preview",
+					}
 				}
 			}
 			prune := plugindist.Prune
@@ -367,6 +379,7 @@ func newPluginPruneCommand(opts *globalOpts) *cobra.Command {
 				return verr
 			}
 			if len(pruned) == 0 {
+				opts.nothingToDo = true
 				return renderView(cmd, opts, view.Text{Body: "nothing to prune — every stored version is the one its plugin runs"})
 			}
 			freed := "Freed"

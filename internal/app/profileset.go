@@ -222,6 +222,18 @@ func profileRemoveCommand(reg *registry.Registry, render renderFn, opts *globalO
 		ValidArgsFunction: completeProfiles,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			v, verr := runProfileRemove(cmd, args[0], reg, opts.dryRun, opts.yes)
+			if verr != nil && verr.Code == CodeConfirmRequired {
+				proceed, err := confirmByPreview(cmd.Context(), cmd, opts, func() error {
+					preview, perr := runProfileRemove(cmd, args[0], reg, true, false)
+					return render(cmd, preview, perr)
+				})
+				if err != nil {
+					return err
+				}
+				if proceed {
+					v, verr = runProfileRemove(cmd, args[0], reg, false, true)
+				}
+			}
 			return render(cmd, v, verr)
 		},
 	}
