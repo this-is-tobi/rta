@@ -193,6 +193,32 @@
                   "description": "kubeconfig context to audit \u2014 the current one when omitted (read by audit.kube.eol, audit.kube.netpol, audit.kube.podsecurity, audit.kube.quotas, audit.kube.rbac)",
                   "type": "string"
                 },
+                "deps": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "timeout": {
+                      "default": 30,
+                      "description": "query timeout in seconds (read by audit.deps)",
+                      "maximum": 300,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "mail": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "timeout": {
+                      "default": 15,
+                      "description": "lookup timeout in seconds (read by audit.mail)",
+                      "maximum": 300,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
                 "namespace": {
                   "description": "audit one namespace instead of the whole cluster (read by audit.kube.eol, audit.kube.netpol, audit.kube.podsecurity, audit.kube.quotas, audit.kube.rbac)",
                   "type": "string"
@@ -205,17 +231,23 @@
                   "description": "walk subdirectories too, for a monorepo with a manifest per package (read by audit.deps, audit.why)",
                   "type": "boolean"
                 },
-                "timeout": {
-                  "default": 30,
-                  "description": "query timeout in seconds (read by audit.deps, audit.mail, audit.web)",
-                  "maximum": 300,
-                  "minimum": 1,
-                  "type": "integer"
-                },
                 "warn-days": {
                   "default": 90,
                   "description": "warn about a release within this many days of its end-of-life date (read by audit.kube.eol)",
                   "type": "integer"
+                },
+                "web": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "timeout": {
+                      "default": 15,
+                      "description": "request timeout in seconds (read by audit.web)",
+                      "maximum": 300,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
                 }
               },
               "type": "object"
@@ -301,18 +333,44 @@
                   "description": "count each file by its length rather than the disk it takes (read by fs.usage)",
                   "type": "boolean"
                 },
-                "depth": {
-                  "default": 2,
-                  "description": "how many levels to show (read by fs.tree, fs.usage)",
-                  "minimum": 0,
-                  "type": "integer"
+                "tree": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "depth": {
+                      "default": 2,
+                      "description": "how many levels to show (read by fs.tree)",
+                      "maximum": 12,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "default": 12,
+                      "description": "entries to show per directory (read by fs.tree)",
+                      "maximum": 500,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
                 },
-                "limit": {
-                  "default": 12,
-                  "description": "entries to show per directory (read by fs.tree, fs.usage)",
-                  "maximum": 1000,
-                  "minimum": 1,
-                  "type": "integer"
+                "usage": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "depth": {
+                      "default": 0,
+                      "description": "how deep to descend when totalling (0 = no limit) (read by fs.usage)",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "default": 20,
+                      "description": "how many entries to rank (read by fs.usage)",
+                      "maximum": 1000,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
                 }
               },
               "type": "object"
@@ -423,6 +481,13 @@
                     "server": {
                       "description": "resolver to query, e.g. 1.1.1.1 or 9.9.9.9:53 (default: the system resolver) (read by net.dns)",
                       "type": "string"
+                    },
+                    "timeout": {
+                      "default": 5,
+                      "description": "query timeout in seconds (read by net.dns)",
+                      "maximum": 120,
+                      "minimum": 1,
+                      "type": "integer"
                     }
                   },
                   "type": "object"
@@ -436,16 +501,55 @@
                       "maximum": 100,
                       "minimum": 1,
                       "type": "integer"
+                    },
+                    "timeout": {
+                      "default": 10,
+                      "description": "overall timeout in seconds (read by net.ping)",
+                      "maximum": 300,
+                      "minimum": 1,
+                      "type": "integer"
                     }
                   },
                   "type": "object"
                 },
-                "timeout": {
-                  "default": 5,
-                  "description": "query timeout in seconds (read by net.dns, net.ping, net.port, net.probe, net.send, net.trace)",
-                  "maximum": 300,
-                  "minimum": 1,
-                  "type": "integer"
+                "port": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "timeout": {
+                      "default": 2,
+                      "description": "timeout per port, in seconds (read by net.port)",
+                      "maximum": 60,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "probe": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "timeout": {
+                      "default": 5,
+                      "description": "connect timeout in seconds (read by net.probe)",
+                      "maximum": 120,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "send": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "timeout": {
+                      "default": 5,
+                      "description": "connect timeout in seconds (read by net.send)",
+                      "maximum": 120,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
                 },
                 "trace": {
                   "additionalProperties": false,
@@ -468,6 +572,13 @@
                       "default": true,
                       "description": "resolve hop addresses back to names (read by net.trace)",
                       "type": "boolean"
+                    },
+                    "timeout": {
+                      "default": 2,
+                      "description": "timeout per probe, in seconds (read by net.trace)",
+                      "maximum": 60,
+                      "minimum": 1,
+                      "type": "integer"
                     }
                   },
                   "type": "object"

@@ -500,8 +500,8 @@ func TestSetHintsAValueTheKeyTakesAndNamesTheKeyTyped(t *testing.T) {
 	}
 	for _, tc := range []struct{ pair, code, want string }{
 		{"ping.count=101", "core.profile.set.range", "ping.count takes a value from 1 to 100"},
-		{"timeout=abc", "core.profile.set.type", "timeout is declared int, and takes a whole number from 1 to 300"},
-		{"timeout=9223372036854775808", "core.profile.set.type", "from 1 to 300"},
+		{"ping.timeout=abc", "core.profile.set.type", "ping.timeout is declared int, and takes a whole number from 1 to 300"},
+		{"ping.timeout=9223372036854775808", "core.profile.set.type", "from 1 to 300"},
 	} {
 		_, errOut, err := runWith(t, reg, "", "profile", "set", "p", "--plugin", "net", "--set", tc.pair)
 		if err == nil || !strings.Contains(errOut, tc.code) || !strings.Contains(errOut, tc.want) {
