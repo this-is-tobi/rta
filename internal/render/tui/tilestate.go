@@ -17,7 +17,7 @@ import (
 // from wherever the shell happens to be, which is usually not a repository, and
 // the first thing a newcomer saw was a red ERROR badge and a hint about bare
 // repositories on a tile they never asked for. The sentence is muted, the way an
-// empty notebook's is, and the full error, with its hint, is what enter opens.
+// empty notebook's is.
 //
 // Host-side, with the rest of what the landing screen decides (leftOff,
 // preferredTile): the capability's error is right for `rta git overview`, which
