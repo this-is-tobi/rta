@@ -67,12 +67,20 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 		opts.pace = newPacer(openBurst, openRate, openQueue)
 	}
 	opts.ended = &endedGrants{}
+	offered := make([]plugin.Capability, 0, len(reg.Capabilities()))
+	opts.tools = map[string]bool{}
+	for _, c := range reg.Capabilities() {
+		if opts.exposed(c) && opts.remoteExposed(c) {
+			offered = append(offered, c)
+			opts.tools[c.ID] = true
+		}
+	}
 	server := sdk.NewServer(&sdk.Implementation{
 		Name:    "rta",
 		Title:   "RTA",
 		Version: version,
 	}, &sdk.ServerOptions{
-		Instructions: instructions,
+		Instructions: handshakeInstructions(offered, opts),
 		// The handshake is the moment a client exists: before it there is
 		// a process nobody has spoken to, after it an agent that may call.
 		InitializedHandler: func(_ context.Context, req *sdk.InitializedRequest) {
@@ -89,14 +97,6 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 		},
 	})
 
-	offered := make([]plugin.Capability, 0, len(reg.Capabilities()))
-	opts.tools = map[string]bool{}
-	for _, c := range reg.Capabilities() {
-		if opts.exposed(c) && opts.remoteExposed(c) {
-			offered = append(offered, c)
-			opts.tools[c.ID] = true
-		}
-	}
 	known := map[string]bool{}
 	for _, c := range offered {
 		server.AddTool(toolDef(c, opts), handler(c, opts, reg))
