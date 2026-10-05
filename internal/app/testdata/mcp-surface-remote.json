@@ -1479,15 +1479,18 @@
   },
   {
     "name": "note_done",
-    "description": "── the text below is written by the plugin, not by rta ──\nCheck a note off\n\nDone for a task, filed for a note: either way it leaves the default list and stays findable through note_list's `all`, and in note_search.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.done`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nCheck notes off\n\nDone for a task, filed for a note: either way it leaves the default list and stays findable through note_list's `all`, and in note_search. Several ids check off several notes in one call, all or none: an id that is not a note refuses the call before anything changes. A plain note is made a to-do and checked off in the same call, since asking to be done with it says what it is.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.done`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "id": {
-          "description": "note id",
-          "type": "integer"
+          "description": "note id, or several",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -1574,15 +1577,18 @@
   },
   {
     "name": "note_reopen",
-    "description": "── the text below is written by the plugin, not by rta ──\nReopen a checked note\n\nThe undo for `note_done`. Re-opening an already-open note is a no-op, not an error.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.reopen`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nReopen checked notes\n\nThe undo for `note_done`, for one id or several. Re-opening an already-open note is a no-op, not an error.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.reopen`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "id": {
-          "description": "note id",
-          "type": "integer"
+          "description": "note id, or several",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -1593,14 +1599,17 @@
   },
   {
     "name": "note_rm",
-    "description": "── the text below is written by the plugin, not by rta ──\nRemove a note permanently\n\nSub-notes are re-parented to the removed note's parent, never deleted silently.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"id\"). You cannot issue one yourself — ask the operator to run `rta grant allow note.rm`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nRemove notes permanently\n\nSub-notes are re-parented to the removed note's parent, never deleted silently. Several ids remove several notes in one call, all or none, each one a record a grant or a consent has to cover.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"id\"). You cannot issue one yourself — ask the operator to run `rta grant allow note.rm`.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "id": {
-          "description": "note id",
-          "type": "integer"
+          "description": "note id, or several",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
