@@ -11,7 +11,7 @@ Nothing needs configuring to begin, and nothing needs reading in order. Pick wha
 | Track | You want to | Read | Afterwards you can |
 | --- | --- | --- | --- |
 | **A. Try it** | See what rta does on your own machine | Installation, Quick start: about 15 minutes | Ask your machine anything in five formats, search every capability from the TUI, read any capability's card, and watch an agent be refused and then allowed |
-| **B. Give an agent access safely** | Let an agent use rta, and know exactly what it can do | Five pages: about 45 minutes | Have an agent that reads freely, is refused a write, and holds a 15-minute grant you issued, with the record of all three calls and a way to stop it now |
+| **B. Give an agent access safely** | Let an agent use rta, and know exactly what it can do | Five pages: about 40 minutes | Have an agent that reads freely, is refused a write, and holds a 15-minute grant you issued, with the record of all three calls and a way to stop it now |
 | **C. Run it for a team** | Share a boundary: environments, a ceiling nobody can raise, a server per person | Eight pages: about an hour | Have named environments, secrets in an encrypted store, a committed team ceiling, and a hosted instance each person's agent reaches |
 | **D. Extend it** | Add a capability rta does not have | Writing a plugin: 15 minutes, then the rest as you need it | Have a plugin that runs, passes the conformance suite and installs from an index of your own |
 
@@ -30,7 +30,7 @@ When you want more of the everyday surface, these stand alone and read well in t
 4. [The record](./30-boundary/40-audit-trail.md) — what agents asked for, what they got, and what is waiting on you.
 5. [Stop an agent now](./30-boundary/45-stop-an-agent-now.md) — a lock, the instant no.
 
-[MCP and the safety gate](./30-boundary/20-mcp.md) is the reference for what a connected agent can reach and what every call is held to, and [Connecting your AI tool](./30-boundary/60-ai-clients.md) has the detail for each client.
+[MCP and the safety gate](./30-boundary/20-mcp.md) is the reference for what a connected agent can reach and what every call is held to, [Roles, consent and the guard](./30-boundary/35-roles-consent-and-the-guard.md) is what to add once grants are routine, and [Connecting your AI tool](./30-boundary/60-ai-clients.md) has the detail for each client.
 
 ### C. Run it for a team
 
@@ -45,7 +45,7 @@ When you want more of the everyday surface, these stand alone and read well in t
 
 ### D. Extend it
 
-[Using plugins](./40-plugins/10-plugins.md) first, for how a plugin is found, trusted and installed. Then [Writing a plugin](./40-plugins/20-writing-a-plugin.md), which takes fifteen minutes from `plugin new` to a plugin that runs, and four pages for what comes after: [Declaring inputs](./40-plugins/21-declaring-inputs.md), [Answers, errors and hints](./40-plugins/22-answers-errors-and-hints.md), [Safety, credentials and what rta does to your process](./40-plugins/23-safety-and-credentials.md), and [Testing, conventions and publishing](./40-plugins/24-testing-and-publishing.md).
+[Using plugins](./40-plugins/10-plugins.md) first, for how a plugin is found, trusted and confined, and [Indexes and upgrades](./40-plugins/12-indexes-and-upgrades.md) for how one arrives. Then [Writing a plugin](./40-plugins/20-writing-a-plugin.md), which takes fifteen minutes from `plugin new` to a plugin that runs, and four pages for what comes after: [Declaring inputs](./40-plugins/21-declaring-inputs.md), [Answers, errors and hints](./40-plugins/22-answers-errors-and-hints.md), [Safety, credentials and what rta does to your process](./40-plugins/23-safety-and-credentials.md), and [Testing, conventions and publishing](./40-plugins/24-testing-and-publishing.md).
 
 ## If you arrive with a job
 

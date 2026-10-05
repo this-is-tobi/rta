@@ -59,6 +59,7 @@ Ask Claude Code to add a note and the refusal carries the exact line that would 
 - [What rta actually bounds](./docs/30-boundary/10-the-boundary.md) *- Read this first before giving an agent access: an agent with a shell is not bounded by rta, and this is how to be in the configuration where it is*
 - [MCP and the safety gate](./docs/30-boundary/20-mcp.md) *- What a connected agent can reach before you grant anything, and what every call is checked against*
 - [Grants](./docs/30-boundary/30-grants.md) *- Time-boxed permission for one capability, optionally one record*
+- [Roles, consent and the guard](./docs/30-boundary/35-roles-consent-and-the-guard.md) *- A day of grants under one word, answering a parked call, and a passphrase in front of issuance*
 - [The record](./docs/30-boundary/40-audit-trail.md) *- What agents asked for, what they got, and what is waiting on you*
 - [Stop an agent now](./docs/30-boundary/45-stop-an-agent-now.md) *- Locks: the instant no, ahead of any expiry or revocation*
 - [Team policy](./docs/30-boundary/50-team-policy.md) *- A ceiling a repository can commit, which can only ever subtract*
@@ -70,7 +71,8 @@ Ask Claude Code to add a note and the refusal carries the exact line that would 
 - [Kubernetes](./docs/30-boundary/80-kubernetes.md) *- Deploying the boundary as a chart, one instance per person: the decisions to make before setting a value, the posture worth choosing, and day two*
 
 *Plugins*
-- [Using plugins](./docs/40-plugins/10-plugins.md) *- Discovery, trust, indexes, install and upgrade*
+- [Using plugins](./docs/40-plugins/10-plugins.md) *- Discovery, trust and what a plugin may touch*
+- [Indexes and upgrades](./docs/40-plugins/12-indexes-and-upgrades.md) *- Attaching an index, searching and installing from it, and upgrading what you installed*
 - [The plugin inventory](./docs/40-plugins/15-the-plugin-inventory.md) *- What the TUI's plugin pane shows, and the plugins rta found and refused to run*
 - [Writing a plugin](./docs/40-plugins/20-writing-a-plugin.md) *- Fifteen minutes from `plugin new` to a plugin that runs: the loop, what an answer is, and worked examples*
 - [Declaring inputs](./docs/40-plugins/21-declaring-inputs.md) *- What a capability takes, and how a connection is declared once for every capability of a plugin*

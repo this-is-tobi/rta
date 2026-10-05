@@ -25,7 +25,7 @@ rta grant allow note.rm --agent claude --ttl 5m # one destructive capability, fo
 
 **One gate, and a grant is it.** `rta mcp serve` has no switch that allows writes or destructive calls for the life of the server. A call that changes anything is decided when it is made, by a grant, so one vocabulary answers one question and the grant you issued is the thing that decides.
 
-That is stronger than a standing allowlist, and it is worth being plain about why. A flag typed into a client's config file months earlier would reach a write for a whole server's lifetime, with nothing per call and no expiry, and a standing allowlist is precisely what consent should not be. A write costs a grant a person issued, which [the guard](./30-grants.md#the-guard-a-passphrase-in-front-of-issuance) can price, a [team ceiling](./50-team-policy.md) can cap, [the record](./40-audit-trail.md) shows being spent, and the clock takes back.
+That is stronger than a standing allowlist, and it is worth being plain about why. A flag typed into a client's config file months earlier would reach a write for a whole server's lifetime, with nothing per call and no expiry, and a standing allowlist is precisely what consent should not be. A write costs a grant a person issued, which [the guard](./35-roles-consent-and-the-guard.md#the-guard-a-passphrase-in-front-of-issuance) can price, a [team ceiling](./50-team-policy.md) can cap, [the record](./40-audit-trail.md) shows being spent, and the clock takes back.
 
 An agent can *see* every capability that is not [reserved for you](#never-a-tool), and call none that changes anything. That is deliberate: a tool it can see and is refused produces a refusal naming the exact command you would run, and a tool that is simply absent produces a model guessing at a different spelling.
 
@@ -94,7 +94,7 @@ This chapter is what a connected agent can reach and what every call is held to.
 | If you came for… | Read |
 | --- | --- |
 | Registering a client, naming the agent | [Connect an agent](../10-getting-started/30-connect-an-agent.md) |
-| Live consent, and how a grant is bound to a task | [Grants](./30-grants.md#live-consent-when-you-would-rather-be-asked) |
+| Live consent, and how a grant is bound to a task | [Grants](./35-roles-consent-and-the-guard.md#live-consent-when-you-would-rather-be-asked) |
 | The kv store opening from the environment a server inherits | [Secrets](../20-using/50-secrets.md#what-this-means-for-agents) |
 | The working directory a client chooses, and the team policy | [Team policy](./50-team-policy.md#where-an-mcp-server-looks-and-why-it-may-surprise-you) |
 | Locks: the instant no | [Stop an agent now](./45-stop-an-agent-now.md) |
