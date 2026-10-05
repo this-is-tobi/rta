@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // knownIndexIsLocal points the one known name at a repository on this
@@ -113,7 +115,7 @@ func TestAFirstPartyPluginIsKnownByName(t *testing.T) {
 		if !ok || got != name {
 			t.Errorf("FirstParty(%q) = %q, %v", name, got, ok)
 		}
-		if hint := FirstPartyHint(name); !strings.Contains(hint, "`rta plugin install "+name+"`") ||
+		if hint := FirstPartyHint(name, nil); !strings.Contains(hint, "`rta plugin install "+name+"`") ||
 			!strings.Contains(hint, name+" is a first-party plugin") {
 			t.Errorf("FirstPartyHint(%q) = %q", name, hint)
 		}
@@ -128,7 +130,7 @@ func TestTheLongSpellingOfAFirstPartyServiceNamesIt(t *testing.T) {
 			t.Errorf("FirstParty(%q) = %q, %v, want %q", word, got, ok, want)
 		}
 	}
-	if hint := FirstPartyHint("k8s"); !strings.Contains(hint, "k8s is the first-party plugin kube") ||
+	if hint := FirstPartyHint("k8s", nil); !strings.Contains(hint, "k8s is the first-party plugin kube") ||
 		!strings.Contains(hint, "`rta plugin install kube`") {
 		t.Errorf("an alias was answered with %q", hint)
 	}
@@ -142,14 +144,33 @@ func TestACapabilityOfAFirstPartyPluginNamesThePlugin(t *testing.T) {
 		"pg.query": "pg is a first-party plugin", "pg": "pg is a first-party plugin",
 		"kube.pod.list": "kube is a first-party plugin", "k8s.pod.list": "k8s is the first-party plugin kube",
 	} {
-		if hint := FirstPartyHintFor(target); !strings.Contains(hint, want) {
+		if hint := FirstPartyHintFor(target, nil); !strings.Contains(hint, want) {
 			t.Errorf("FirstPartyHintFor(%q) = %q, want %q", target, hint, want)
 		}
 	}
 	for _, target := range []string{"", "kv.get", "mongo.find", "pgx.query", ".pg"} {
-		if hint := FirstPartyHintFor(target); hint != "" {
+		if hint := FirstPartyHintFor(target, nil); hint != "" {
 			t.Errorf("FirstPartyHintFor(%q) = %q, want none", target, hint)
 		}
+	}
+}
+
+// The words that tell a person to install a plugin are wrong about one that is
+// already running: `explain pg.qury` with pg installed is a typo, `rta
+// postgres` is a way of asking for `rta pg`, and neither is answered with the
+// install. Said of the name the word resolves to, so an alias is covered.
+func TestAPluginThatIsRunningIsNotTold(t *testing.T) {
+	pg := []plugin.Capability{{ID: "pg.status"}, {ID: "pg.query"}}
+	for _, target := range []string{"pg.qury", "pg", "postgres.query", "pg.query"} {
+		if hint := FirstPartyHintFor(target, pg); hint != "" {
+			t.Errorf("FirstPartyHintFor(%q) with pg running = %q, want none", target, hint)
+		}
+	}
+	if hint := FirstPartyHintFor("redis.get", pg); !strings.Contains(hint, "`rta plugin install redis`") {
+		t.Errorf("another plugin's capability was answered with %q, want its install", hint)
+	}
+	if hint := FirstPartyHint("k8s", func(name string) bool { return name == "kube" }); hint != "" {
+		t.Errorf("FirstPartyHint(k8s) with kube running = %q, want none", hint)
 	}
 }
 
@@ -161,7 +182,7 @@ func TestAWordNoPluginAnswersToIsNotTold(t *testing.T) {
 		if name, ok := FirstParty(word); ok {
 			t.Errorf("FirstParty(%q) = %q", word, name)
 		}
-		if hint := FirstPartyHint(word); hint != "" {
+		if hint := FirstPartyHint(word, nil); hint != "" {
 			t.Errorf("FirstPartyHint(%q) = %q", word, hint)
 		}
 	}

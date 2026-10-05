@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -86,12 +87,19 @@ func FirstParty(word string) (name string, ok bool) {
 // installed: that it is one, and the command that gets it. "" for any other
 // word.
 //
+// loaded says whether a plugin of that name is on this machine and running,
+// and a word whose plugin is loaded gets nothing: `rta postgres` and `explain
+// pg.qury` are typos for something that is there, and "`rta plugin install pg`
+// installs it" would send the person to fetch what they already have. A nil
+// loaded knows of nothing running, for a caller that has already established
+// the plugin is absent.
+//
 // The command is the install and not the index attach, because the install is
 // the whole of what the person wants and attaches the index itself when it has
 // to (a terminal is asked first; anything else is told how).
-func FirstPartyHint(word string) string {
+func FirstPartyHint(word string, loaded func(namespace string) bool) string {
 	name, ok := FirstParty(word)
-	if !ok {
+	if !ok || (loaded != nil && loaded(name)) {
 		return ""
 	}
 	install := "`rta plugin install " + name + "` installs it"
@@ -103,10 +111,15 @@ func FirstPartyHint(word string) string {
 
 // FirstPartyHintFor is FirstPartyHint for a capability ID or a target that may
 // be one: `pg.query` is missing for the reason `pg` is, and the namespace
-// before the first dot is the plugin to name. "" when it is none.
-func FirstPartyHintFor(target string) string {
+// before the first dot is the plugin to name. registered is every capability
+// the caller can see, which is how it knows whether that plugin is there.
+func FirstPartyHintFor(target string, registered []plugin.Capability) string {
 	namespace, _, _ := strings.Cut(target, ".")
-	return FirstPartyHint(namespace)
+	return FirstPartyHint(namespace, func(name string) bool {
+		return slices.ContainsFunc(registered, func(c plugin.Capability) bool {
+			return plugin.Namespace(c.ID) == name
+		})
+	})
 }
 
 // KnownIndexURL is the repository rta ships for name, if it ships one.
