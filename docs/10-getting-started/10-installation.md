@@ -69,7 +69,7 @@ rta is built for macOS and Linux, on `amd64` and `arm64`, and the two systems di
 | --- | --- | --- |
 | Packages | none: the release archive | a `.deb`, `.rpm` or `.apk` as well as the archive |
 | Plugin confinement | applied: each plugin runs under `sandbox-exec`, with rta's own state and your credential locations denied | none: a plugin runs with your user's access, and `rta doctor` says `none on linux`; process groups and the environment allowlist still apply |
-| A port forward a killed rta left behind | stopped by the next rta that starts | ended by the kernel along with the server that started it |
+| A port forward a killed `rta mcp serve` left behind | stopped by the next `rta mcp serve` | ended by the kernel along with the server that started it |
 | Copying a value (`kv copy`) | `pbcopy` | `wl-copy`, `xclip` or `xsel`, whichever the session has |
 | Desktop notifications (`--consent-notify`) | `osascript` | `notify-send` |
 | The system plugin root, where an image or a package puts plugins for everyone | none until `RTA_SYSTEM_DIR` names one | `/usr/local/lib/rta` unless `RTA_SYSTEM_DIR` says otherwise |
