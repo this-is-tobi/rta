@@ -63,13 +63,18 @@ const (
 // which is the operator's decision to make when they launch it — not a
 // question to put in front of a model.
 var (
-	// The help says what a first store commits to because this box is the one
-	// place a store is born that does not ask twice: a terminal's prompt
-	// repeats itself for a store not made yet (askPassphrase), while a form —
-	// the TUI's, or a --passphrase flag — hands over one answer and nothing
-	// can ask again. The box is the same for every operation on the store, so
-	// the sentence has to serve the one that opens it as well.
 	passphraseField = plugin.Field{
+		Name: "passphrase", Type: plugin.Secret, Local: true, EnvFallback: true,
+		Help: "the passphrase this store is locked with",
+	}
+	// kv.set is the one operation that makes a store, and says what that commits
+	// to because its box is the one place a store is born that does not ask
+	// twice: a terminal's prompt repeats itself for a store not made yet
+	// (askPassphrase), while a form — the TUI's, or a --passphrase flag — hands
+	// over one answer and nothing can ask again. Every other operation opens a
+	// store that exists, and a sentence about one not made yet would only be
+	// read as something it has to do with it.
+	newStorePassphraseField = plugin.Field{
 		Name: "passphrase", Type: plugin.Secret, Local: true, EnvFallback: true,
 		Help: "the store's passphrase; a store not made yet is locked with it, and nothing recovers it",
 	}
@@ -85,6 +90,11 @@ var (
 // unlockFields are the inputs every store operation accepts.
 func unlockFields(extra ...plugin.Field) []plugin.Field {
 	return append(extra, passphraseField, identityField)
+}
+
+// creatingFields are unlockFields for the operation that can make the store.
+func creatingFields(extra ...plugin.Field) []plugin.Field {
+	return append(extra, newStorePassphraseField, identityField)
 }
 
 // Plugin returns the kv plugin declaration.
@@ -241,7 +251,7 @@ func Plugin() plugin.Plugin {
 					"secret and keeps the old one, the last " + strconv.Itoa(maxRevisions) + " values listed by `kv.history` and brought back " +
 					"by `kv.restore` with a `revision`. It still needs a per-key grant: an agent that can " +
 					"overwrite a secret can break what reads it, undo or not.",
-				Inputs: unlockFields([]plugin.Field{
+				Inputs: creatingFields([]plugin.Field{
 					{Name: "key", Type: plugin.String, Positional: true, Required: true, Help: "key to set",
 						Suggest: suggestKeys},
 					{Name: "value", Type: plugin.Secret, Positional: true, Help: "value to store"},
