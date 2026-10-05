@@ -108,6 +108,21 @@ func (m Model) armedKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	case "ctrl+c":
 		return m.quit()
 	case "enter":
+		// The call is read again before it is allowed, so that the line the
+		// operator confirmed is the call that gets answered: whatever the file
+		// says now has to be what was shown. The decision itself is bound to
+		// the call's digest and cannot authorize a different one (internal/
+		// consent), so this is about the operator's picture, not about what runs.
+		id, _ := armed.base["id"].(string)
+		call, ok := waitingByID(id)
+		switch {
+		case !ok:
+			m.refuse("that call is not waiting any more — it was answered, or it ran out")
+			return m, nil, true
+		case call.allowLine() != armed.line:
+			m.refuse("that call changed after it was shown — look at it again")
+			return m, nil, true
+		}
 		armed.act.bare = true
 		m.said = armed.done
 		nm, cmd := m.runSeeded(armed.act, armed.base)
