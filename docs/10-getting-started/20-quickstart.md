@@ -175,3 +175,8 @@ Read the `info` rows rather than skipping to the failures. Lines like *"the stor
 | Add postgres, S3, Vault, Kubernetes | [Using plugins](../40-plugins/10-plugins.md) |
 | See it all working together | [Recipes](../90-recipes/01-readme.md) |
 | Start from your job rather than a feature | [For a security team](../90-recipes/10-for-security-teams.md) · [For a developer](../90-recipes/20-for-developers.md) |
+| See every track laid out | [Start here](../01-readme.md) |
+
+## Next
+
+[Connect an agent](./30-connect-an-agent.md) — the connection from step 5 done on purpose: naming, every client, and what to do when nothing shows up.

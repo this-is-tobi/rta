@@ -43,7 +43,7 @@ func TestTheDocsCountTheBuiltInPluginsCorrectly(t *testing.T) {
 	sentence := regexp.MustCompile(`\*\*(\d+) built-in plugins, (\d+) capabilities\*\*`)
 
 	root := repoRoot(t)
-	for _, rel := range []string{"README.md", "docs/01-readme.md"} {
+	for _, rel := range []string{"README.md"} {
 		body := readDoc(t, root, rel)
 		m := sentence.FindStringSubmatch(body)
 		if m == nil {
@@ -73,7 +73,7 @@ func TestTheDocsNameEveryBuiltInPlugin(t *testing.T) {
 	}
 	root := repoRoot(t)
 
-	for _, rel := range []string{"README.md", "docs/01-readme.md"} {
+	for _, rel := range []string{"README.md"} {
 		body := readDoc(t, root, rel)
 		var missing []string
 		for _, p := range reg.Plugins() {

@@ -8,11 +8,30 @@ rta is not another AI CLI, and it does not want to be the thing you talk to. It 
 
 That is the whole proposition. Handing an agent a shell is **one decision that covers everything it will ever do**. Pointing it at rta is a different shape: read-only by default, everything else granted per capability, narrowed to one record, expiring on its own, and written down. You keep your agent; it gets a smaller blast radius and you get a record.
 
-Which is why the security chapters below are not an appendix, and why every one of them is also usable by a person at a terminal. The same capability serves both — nothing here is an agent-only feature bolted on.
+Which is why the security pages below are not an appendix, and why every one of them is also usable by a person at a terminal. The same capability serves both — nothing here is an agent-only feature bolted on.
 
-## Platforms
+## Install
 
-rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run natively on Windows; a person on Windows can use the Linux build under the Windows Subsystem for Linux, version 2, which has not been tested.
+```bash
+# a release binary, with the gh CLI (macOS or Linux, amd64 or arm64)
+gh release download --repo this-is-tobi/rta --pattern "rta_*_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" && tar -xzf rta_*.tar.gz rta && install -m 0755 rta /usr/local/bin/rta
+# or from source, with Go 1.26 or newer
+git clone https://github.com/this-is-tobi/rta.git && cd rta && make install
+# or the container image
+docker run --rm ghcr.io/this-is-tobi/rta:latest --version
+```
+
+[Installation](./docs/10-getting-started/10-installation.md) has the curl form, the Linux packages and how to verify a download. rta runs on macOS and Linux, on both `amd64` and `arm64`, and [Supported platforms](./docs/10-getting-started/10-installation.md#supported-platforms) lists where the two differ. It does not run natively on Windows; the Linux build under the Windows Subsystem for Linux, version 2, has not been tested.
+
+## Try it
+
+```bash
+rta sys overview          # your machine at a glance: cpu, memory, disk, load
+rta                       # the interactive dashboard, with a search over every capability
+rta mcp install claude    # give Claude Code rta's tools: it reads freely and is refused anything else
+```
+
+Ask Claude Code to add a note and the refusal carries the exact line that would allow it, which is the loop the rest of rta is built around. [Quick start](./docs/10-getting-started/20-quickstart.md) walks it in ten minutes, and [Start here](./docs/01-readme.md) lays out four tracks: try it, give an agent access safely, run it for a team, and extend it.
 
 ## Documentation
 
@@ -36,7 +55,7 @@ rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run native
 - [Reaching private services](./docs/20-using/42-reaching-private-services.md) *- A connection through `kubectl port-forward` or `ssh`, and the TLS rules that come with it*
 - [Secrets (`kv`)](./docs/20-using/50-secrets.md) *- An encrypted local store for passwords, certificates and key files*
 
-*The boundary* — worth reading in this order: each chapter is a smaller blast radius than the one before it
+*The boundary*
 - [What rta actually bounds](./docs/30-boundary/10-the-boundary.md) *- Read this first before giving an agent access: an agent with a shell is not bounded by rta, and this is how to be in the configuration where it is*
 - [MCP and the safety gate](./docs/30-boundary/20-mcp.md) *- What a connected agent can reach before you grant anything, and what every call is checked against*
 - [Grants](./docs/30-boundary/30-grants.md) *- Time-boxed permission for one capability, optionally one record*
@@ -79,23 +98,3 @@ rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run native
 `sys` · `net` · `http` · `cert` · `fs` · `kv` · `note` · `gen` · `codec` · `time` · `audit` · `grant` · `agent` · `operator` · `lock` · `pkg` · `debug` · `keys` · `git` · `eol`
 
 Plus anything you install. Twelve first-party plugins live in [rta-plugins](https://github.com/this-is-tobi/rta-plugins) as proof the contract works — `pg`, `mysql`, `mariadb`, `etcd`, `qdrant`, `redis`, `s3`, `vault`, `kube`, `cnpg`, `docker` and `keycloak` — each a separate binary from a separate module, so the ones you skip cost you nothing, and `rta plugin index add official` is how they arrive.
-
-## The shape of the thing
-
-Everything in rta is a **capability** — a small, declared unit of work with typed inputs, a safety class, and one implementation. `sys.cpu` is a capability. So is `kv.get`, `pg.query` and `net.dns`.
-
-A capability declares itself once, and the surfaces are generated from that declaration:
-
-```mermaid
-flowchart LR
-    C["capability<br/>declared once"]
-    C --> CLI["CLI<br/>rta sys cpu --cores"]
-    C --> TUI["TUI<br/>a form, a table, a chart"]
-    C --> MCP["MCP<br/>a tool an agent can call"]
-```
-
-Which means three things worth knowing early:
-
-- **`rta explain <capability>`** prints the same card the TUI and the MCP schema are built from. It is the authoritative reference for any command, and it is never out of date.
-- **A safety class travels with the capability**, not with the surface. `read`, `write` and `destructive` mean the same thing whoever is asking — the difference is what each surface does about it.
-- **Adding a plugin adds capabilities to all three surfaces at once.** There is no separate MCP registration step, and no way for a plugin to appear on one surface and not another.

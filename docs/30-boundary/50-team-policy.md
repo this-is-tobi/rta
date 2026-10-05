@@ -213,7 +213,11 @@ If that line reads `none in force`, the policy you committed is not the one boun
 
 What all of this defends against is the failure teams actually have — the 3am "allow everything for twenty-four hours so it stops failing", and the quieter version where a ceiling somebody committed months ago stopped applying and nobody noticed. Neither of those is an attacker. Both of them are Tuesday.
 
-## Next
+## Related
 
 - [Grants](./30-grants.md) — what the ceiling is bounding
 - [The record](./40-audit-trail.md) — what happened inside those bounds
+
+## Next
+
+[Hosting a server](./65-hosting-a-server.md) — `--http`, tokens, probes, and what a remote server leaves out.

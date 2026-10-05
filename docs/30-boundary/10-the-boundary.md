@@ -1,6 +1,6 @@
 # What rta actually bounds
 
-Read this before the three chapters after it, because it decides what they are worth.
+Read this before [Connect an agent](../10-getting-started/30-connect-an-agent.md), [MCP and the safety gate](./20-mcp.md), [Grants](./30-grants.md) and [the record](./40-audit-trail.md), because it decides what they are worth.
 
 ## The short answer
 
@@ -58,7 +58,7 @@ flowchart TD
 
 **World A — an unrestricted shell.** rta is hygiene and visibility. It reduces mistakes, gives you a record of what came through the front door, and takes credentials out of the agent's context. It does not contain anything. Most people setting up an agent for the first time are here and do not know it.
 
-**World B — restricted tools.** The agent's tool list is the MCP server plus whatever else you allowed, and `Bash` is not on it. Now every gate in the next three chapters is load-bearing: a grant is the reach, a deadline is the deadline, and the record is complete. **This is achievable today** — it is a setting in your agent, not a feature request in rta.
+**World B — restricted tools.** The agent's tool list is the MCP server plus whatever else you allowed, and `Bash` is not on it. Now every gate in [MCP and the safety gate](./20-mcp.md), [Grants](./30-grants.md) and [the record](./40-audit-trail.md) is load-bearing: a grant is the reach, a deadline is the deadline, and the record is complete. **This is achievable today** — it is a setting in your agent, not a feature request in rta.
 
 **World C — somewhere else entirely.** The agent runs in a container or on another machine, with no credentials of its own, and reaches your environments only through rta. Containment by construction, because there is no other route to take.
 
@@ -91,7 +91,7 @@ That is the honest hierarchy: your agent's permission settings are the outer bou
 
 The question people arrive with is "can we run one MCP server for everyone" — [answered with the containers](./67-containers-and-images.md#why-not-one-server-for-everyone), and the answer is no, because a shared process holds the union of every environment's credentials and its record can no longer say who.
 
-But the *instinct* behind it is right, and it is World C. If team members' agents run somewhere that has no credentials and no rta binary of its own, then rta really is the only route, and everything in the next three chapters becomes enforceable rather than advisory.
+But the *instinct* behind it is right, and it is World C. If team members' agents run somewhere that has no credentials and no rta binary of its own, then rta really is the only route, and everything those pages describe becomes enforceable rather than advisory.
 
 The way to get there today is [one instance per person from a shared image](./67-containers-and-images.md#a-team-share-the-configuration-not-the-process): the profiles are baked in, the credentials are `kube:` references resolved with each person's own RBAC, and the agent's container holds nothing.
 
@@ -138,8 +138,12 @@ All three unattended cases are legitimate and only you know which one ran, so th
 
 **It can be defeated.** A shell can allocate a pseudo-terminal and be recorded as `terminal` — the tests for this feature do exactly that, with `script`, to check the other branch. It is worth having anyway: the case it catches is the ordinary one, and the ordinary one is what actually happens.
 
-## Next
+## Related
 
 - [MCP and the safety gate](./20-mcp.md) — what an agent reaches before you decide anything
 - [Grants](./30-grants.md) — per-capability, time-boxed consent
 - [The record](./40-audit-trail.md) — what actually happened, and shipping it somewhere
+
+## Next
+
+[Connect an agent](../10-getting-started/30-connect-an-agent.md) — register a client, name it, and check that it reached rta.

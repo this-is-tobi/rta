@@ -134,6 +134,10 @@ The transport was the smaller problem, and smaller than it first looked: [Hostin
 
 None of that is an argument against rta running somewhere other than a laptop. Run it in your dev platform, in a Codespace, in a per-user pod — **one instance per person, authenticating as that person**, built from the shared image. That is the same convenience with none of the collapse.
 
+## Related
+
+- [Kubernetes](./80-kubernetes.md) — the same idea as a chart: one instance per person, the decisions to make before setting a value, and day two.
+
 ## Next
 
-[Kubernetes](./80-kubernetes.md) — the same idea as a chart: one instance per person, the decisions to make before setting a value, and day two.
+[OIDC](./70-oidc.md) — naming the person behind a call with the identity provider you already have.

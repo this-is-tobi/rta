@@ -187,8 +187,11 @@ So of those four, an agent reaches every `audit` check but four: the two about t
 
 Everything else is a grant a person issues — for a plugin, one capability, or one record of it — and that is [MCP and the safety gate](./20-mcp.md) and [Grants](./30-grants.md).
 
-## Next
+## Related
 
 - [MCP and the safety gate](./20-mcp.md) — what is exposed before you decide anything
-- [Grants](./30-grants.md) — time-boxed permission for one capability
 - [The record](./40-audit-trail.md) — what the agent actually asked for
+
+## Next
+
+[Grants](./30-grants.md) — time-boxed permission for one capability.

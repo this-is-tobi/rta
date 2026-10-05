@@ -130,7 +130,10 @@ Four further bounds worth knowing:
 - **A key is written as the call names it.** A grant is compared with the name a call sends, white space included, so `kv set` and `kv rename` refuse a name with white space around it rather than write the name without it: the key an agent was allowed to write is the key written.
 - **Values are masked in the record.** [`rta agent log`](../30-boundary/40-audit-trail.md) shows that `kv.get db-password` happened, not what came back.
 
+## Related
+
+- [Profiles](./40-profiles.md) — pointing connection credentials at stored entries
+
 ## Next
 
-- [Grants](../30-boundary/30-grants.md) — bounding what an agent can read
-- [Profiles](./40-profiles.md) — pointing connection credentials at stored entries
+[Grants](../30-boundary/30-grants.md) — bounding what an agent can read.

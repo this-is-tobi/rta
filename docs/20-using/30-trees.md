@@ -117,8 +117,12 @@ One request, like S3's, and it passes `WithKeysOnly`. That is not decoration: wi
 
 That matters more here than elsewhere. A Kubernetes cluster keeps every object it has in etcd, and its Secrets are stored base64-encoded rather than encrypted unless somebody turned encryption at rest on.
 
-## Next
+## Related
 
 - [Using plugins](../40-plugins/10-plugins.md) — where `s3`, `vault` and `etcd` come from
 - [Grants](../30-boundary/30-grants.md) — why the matching `get` needs one and the tree does not
 - [The record](../30-boundary/40-audit-trail.md) — what one call looks like versus two hundred
+
+## Next
+
+[Profiles](./40-profiles.md) — naming an environment once and pointing every plugin at it.

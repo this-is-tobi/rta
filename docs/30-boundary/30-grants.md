@@ -185,8 +185,11 @@ For a machine whose humans are not at its terminal — an `rta mcp serve --http`
 - **It does not authorize a profile you have not configured.** `--profile staging` matches the connection named `staging`, exactly.
 - **It does not blur instances.** When an environment holds several connections to one plugin — `pg` and `pg/analytics` — a grant names exactly one (`--profile staging/analytics`), and asking for the bare name is refused with the list rather than resolved into a consent you did not give. Each grant pins the instance it was issued against, so re-aiming that one connection revokes exactly that grant.
 
-## Next
+## Related
 
-- [The record](./40-audit-trail.md) — what agents actually did with what you granted
 - [Team policy](./50-team-policy.md) — a ceiling nobody on the team can raise
 - [Profiles](../20-using/40-profiles.md) — what `--profile` is naming
+
+## Next
+
+[The record](./40-audit-trail.md) — what agents actually did with what you granted.
