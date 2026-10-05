@@ -2,12 +2,12 @@ package app
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"testing"
 	"unicode"
 
 	"github.com/this-is-tobi/rta/internal/mcp"
+	"github.com/this-is-tobi/rta/pkg/sdk/spelling"
 )
 
 // What a tool's words may say, and how many of them there are.
@@ -27,13 +27,34 @@ const (
 	inputBudget = 160
 )
 
-// terminalWording is how a description speaks to a person at a command line,
-// which over MCP is nobody: a flag, an `rta ...` command, what a pipe does,
-// what happens from a terminal. Where a capability behaves differently over
+// terminalWording is spelling.TerminalWording, which sdktest holds a
+// plugin's agent text to, and what a built-in adds to it: its own `rta ...`
+// command lines, which are the operator's to type and which an agent that
+// reads one has no terminal for. Where a capability behaves differently over
 // MCP the text says that, and says it once.
-var terminalWording = regexp.MustCompile("(?i)\\bfrom a terminal\\b|\\b(?:at|on) (?:a|the) terminal\\b|" +
-	"\\bon the CLI\\b|\\bread from a pipe\\b|\\bpiping\\b|\\bshell history\\b|`rta |" +
-	"\\bfull-page surface\\b|\\bdashboard\\b|\\btile\\b")
+func terminalWording(text string) string {
+	if m := spelling.TerminalWording(text); m != "" {
+		return m
+	}
+	if strings.Contains(text, "`rta ") {
+		return "`rta "
+	}
+	return ""
+}
+
+func TestTheBuiltInWordingRuleIsTheSDKsAndTheCommandLine(t *testing.T) {
+	for text, want := range map[string]string{
+		"Read from a pipe when left out.": "Read from a pipe",
+		"see it on the dashboard":         "on the dashboard",
+		"run `rta kv init` first":         "`rta ",
+		"a map tile of the region":        "",
+		"Returns one row per host":        "",
+	} {
+		if got := terminalWording(text); got != want {
+			t.Errorf("terminalWording(%q) = %q, want %q", text, got, want)
+		}
+	}
+}
 
 func TestNoToolSpeaksToAPersonAtACommandLine(t *testing.T) {
 	for _, tl := range surface(t, mcp.Options{}) {
@@ -45,7 +66,7 @@ func TestNoToolSpeaksToAPersonAtACommandLine(t *testing.T) {
 		}
 		var found []string
 		for where, text := range texts {
-			if m := terminalWording.FindString(text); m != "" {
+			if m := terminalWording(text); m != "" {
 				found = append(found, fmt.Sprintf("%s says %q", where, m))
 			}
 		}
@@ -109,10 +130,11 @@ func TestADescriptionDoesNotOpenByRestatingItsSummary(t *testing.T) {
 		return out
 	}
 	for _, c := range capabilities(t) {
-		if c.Description == "" {
+		text := c.AgentText()
+		if text == "" {
 			continue
 		}
-		first, _, _ := strings.Cut(c.Description, ". ")
+		first, _, _ := strings.Cut(text, ". ")
 		sentence, summary := words(first), words(c.Summary)
 		shared := 0
 		for w := range sentence {
