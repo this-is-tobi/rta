@@ -16,6 +16,35 @@ The search is one line until you use it: `/` (or `enter` on the line) opens it t
 
 A tile is a glance, so it is drawn smaller than the page `enter` opens. A table too wide for its box becomes a borderless line per row under its headings. The first column stays; the columns that say the same in every row, or nothing, go first, then the mostly empty ones, then the plain ones from the last back, then the ones that say when, and the ones that grade themselves are the last of all. The column of prose is cut with an ellipsis before any of them is dropped, and a long path is cut in the middle, where its end still names the file. A tile with nothing to say from where you started rta is a muted sentence and not an error: `git.overview` outside a repository says so, and `enter` opens the error with its hint. When calls are parked waiting for you, the `agent.overview` tile says `● N waiting` in its own border, in the warning colour.
 
+On a machine that has just been set up, at 80 columns by 24 rows, it looks like this, with your own machine's figures in the tiles:
+
+```
+ rta  dashboard  ↓ more
+ ❯ 20 plugins · 128 capabilities — type to search
+╭─ sys.overview ──────────────────────╮ ╭─ agent.overview ─────────────────────╮
+│ host  laptop.home · darwin 26.5.2   │ │ waiting on you          0            │
+│       (arm64) · up 4d 19h 5m        │ │ connected now                        │
+│ cpu   10.9% of 14 cores             │ │   none — no client has an rta server │
+│ mem   25.7 GiB / 36.0 GiB (71.5%)   │ │   open; `rta mcp install claude`,    │
+│ swap  20.9 GiB / 22.0 GiB (95.2%)   │ │   then restart the client            │
+│ load  3.05 · 3.74 · 4.56 (22%/core, │ │ locked                  nothing      │
+│       ok)                           │ │ roles in force          none         │
+│ … enter for details                 │ │ … enter for details                  │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ grant.list ────────────────────────╮ ╭─ net.overview ───────────────────────╮
+│ guard  off — any process running as │ │ en0         192.168.1.20 ·           │
+│ you can issue a grant               │ │             2001:db8:b23:68c0:14cd:  │
+│ (grant.guard.on)                    │ │             1a1e:1cea:bc2f           │
+│                                     │ │ dns         192.168.1.99 · 9.9.9.9 · │
+│ No grant is standing — agents reach │ │             9.9.9.10 · 192.168.1.254 │
+│ only what needs none.               │ │             · 8.8.8.8 ·              │
+│ Allow one with: grant.allow         │ │             fd0f:ee:b0::1            │
+│ target=<capability> ttl=15m         │ │ … enter for details                  │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse · + add tile
+ p f t plugins, profiles, theme on a tile · ctrl+c quit · ? help
+```
+
 | Key | What it does |
 | --- | --- |
 | `/` | Search |
@@ -39,78 +68,35 @@ The selected tile is the one with the coloured border. On a terminal that shows 
 
 What a key did is said in the footer, beside the keys: a green `✓` for something done and a red `✗` for something that did not happen, such as a save the file refused or an approval that was turned down. The mark carries the difference where colour does not show.
 
-### Stating the dashboard yourself
+Stating the whole dashboard in the config file, and the colours it draws in, are on [Dashboard and theme](./25-dashboard-and-theme.md).
 
-With no `dashboard:` block, rta builds one: a tile per plugin that has a capability which is `Read`, needs no input, and is cheap enough to run unasked. Plugins installed later appear on their own.
+## Answering agents
 
-There are three ways to change that, and the difference between the first two and the third is whether tomorrow's plugin still shows up.
+A call parked for you shows on every screen: one line above it, `● 1 call waiting — w to answer`, naming the call when there is exactly one, for as long as it waits and until it is answered or runs out. The line takes a row from the screen below it while it is there, and none on a terminal too short to spare one. `w` opens the queue from the dashboard, with or without a tile selected and from the search bar too — where it is the one letter that is a command while a call waits — and from any screen whose letters are commands; over a form or a filter box the line says `esc, then w`. The queue is read every two seconds, whichever screen is up.
 
-**Adjust the automatic set.** `hidden:` and `order:` bend it without freezing it:
+The agent tile says the same, and opens the queue and the record. From it, and from the queue:
 
-```yaml
-dashboard:
-  hidden:
-  - git.overview
-  order:
-  - sys.overview
-  - note.list
-  columns: 3
-```
+| Key | What it does |
+| --- | --- |
+| `w` | The queue of parked calls |
+| `g` | The record of what agents did, at once with its defaults — `e` on it changes the filters |
+| `enter` | Everything about the call under the cursor, including what it would do |
+| `a` | Allow it once — the footer names the call and what it would do, and `enter` allows exactly that call |
+| `A` | Allow it for a while, or as a role — the `ttl` and `role` form, for the same call |
+| `d` | Deny it — one key, no form |
+| `L` | Lock the agent that asked, its name already filled in from the row; from the agent tile, the agent that is connected when there is only one |
 
-**Add to it.** `add:` joins tiles to the automatic set, and it is the only way to get a capability the automatic dashboard leaves out. Anything that reaches off the box — every `kube`, `pg`, `s3` and `vault` capability — is kept off it deliberately, however cheap it looks: a dashboard runs its tiles on load and again on a timer, and nobody expects opening a TUI to spend an API quota or disclose anything to a third party. An entry here is you asking for it, which is a decision the automatic path can't make for you. Three surfaces write the same entry: this block, `rta dashboard add` from a shell, and `+` in the TUI on a catalogue row (`b`) or a search match (`/`), which asks which connection the tile is about when the capability takes one — a profile, one of its labelled instances, or the switch — and lands on the dashboard with the new tile selected. `+` refuses what `add` refuses, in the same words, and on an automatic tile `H` took off it shows the tile again rather than writing a twin. A tile added from another terminal reaches an open dashboard on its next refresh.
+`a` stops for a confirmation because granting access is the direction that cannot be taken back once a secret has been read, and what it stops on is the call itself, in one line, rather than a form that never said which call it was about. Any key but `enter` and `A` cancels it and says the call is still waiting. The line holds the call that was named when `a` was pressed, so the queue refreshing under the cursor cannot change which one `enter` allows. The form asks for the guard's passphrase only when the grant guard is on.
 
-```yaml
-dashboard:
-  add:
-  - id: eol.watch
-  - id: kube.overview
-    profile: prod
-  - id: kube.overview
-    profile: staging
-  - id: pg.overview
-    profile: staging/analytics
-    span: 2
-```
+The grant roster answers the same way. Open it from its tile — the key on the tile opens the list, with a row to stand on, and says so — and:
 
-`profile:` pins a tile to one connection — a profile, or `name/instance` for one of several connections to the same plugin — and the tile is about that connection whatever `rta use` switched on, with the name on its panel. That is what lets one capability sit on the dashboard twice, once per cluster. Without it a tile follows the switched-on environment: switch to staging and the pg tile is about staging. `with:` fills the capability's inputs. `span:` widens a tile past what its own declared width works out to — for the one you actually read.
+| Key | What it does |
+| --- | --- |
+| `x` | Revoke the grant under the cursor, at once, and only that grant: a row that does not name exactly one grant opens the form instead |
+| `X` | Revoke every grant, behind the dry run that says how many — `enter` on it is the consent |
+| `n` | Renew the grant under the cursor — a form |
 
-**One entry, one panel per connection.** A profile can hold several connections to the same plugin — `cnpg/gitea`, `cnpg/keycloak`, three more — and a tile whose profile names no instance becomes one panel per connection that profile holds for its plugin, each named on its panel. `{id: cnpg.overview, profile: ohmlab}` is every cnpg database ohmlab knows, and one added to the profile next month gets its panel on its own, the same rule the automatic set follows for a plugin installed next month. A tile that follows the switch expands the same way, into whatever environment is on: under ohmlab it is ohmlab's databases, under mirai-prod that environment's own. Name the instance, `profile: ohmlab/gitea`, for one panel. This is the one place a bare profile over several connections is not refused with "your call", as `--profile ohmlab` is on a single command: a dashboard is not a choice, showing every one is the glance, and no wrong pick is possible.
-
-The same from a script, or without opening the file:
-
-```bash
-rta dashboard add kube.overview --profile prod
-rta dashboard add kube.overview --profile staging
-rta dashboard add cnpg.overview --profile ohmlab               # one panel per cnpg connection ohmlab holds
-rta dashboard add pg.overview --profile staging/analytics --span 2
-rta dashboard add cert.expiry --set host=example.com
-rta dashboard list                                             # every panel bare rta would draw, where each came from, and what is hidden
-rta dashboard hide cnpg.overview --profile ohmlab/keycloak     # that one panel; its siblings stay
-rta dashboard unhide cnpg.overview --profile ohmlab/keycloak
-rta dashboard rm kube.overview --profile staging
-```
-
-`add` refuses what the file would have quietly got wrong: a capability that is not a read, an input it does not declare, a credential under `--set`, a `--set` value of a type the input cannot hold (`core.dashboard.set.type`) or outside its options or range (`core.input.option`, `core.input.range` — the codes a run would refuse it with, on every refresh), a required input nothing fills, a profile that does not cover the plugin. Adding the same tile again replaces it, so the command is safe in a script that runs on every boot. In the TUI, `H` on an added tile withdraws its entry rather than hiding the capability — hiding by name would take both kube tiles down — and the footer says the command that puts it back; `H` on one panel of an entry that expanded hides that connection's panel by its key and leaves the rest, and `unhide` is the way back. `hide` and `unhide` are what `H` and the inventory pane do, from a script. Adding a capability the automatic dashboard already shows makes the entry that tile: `rta dashboard add sys.overview --span 2` widens it rather than doubling it, and the bare form is refused, with the way back when the tile is hidden. `[` and `]` move an entry that expanded as one, its panels together, because the file can place the entry and nothing finer.
-
-**Or state it exactly.** `tiles:` replaces the automatic set outright — `hidden:` and `order:` are not consulted, because the list is already both, except for a `hidden:` key naming one panel of an entry that expanded, which is a panel and not an entry the list could drop. Its entries take the same `profile:`, `with:` and `span:`, and `add:` entries follow the list:
-
-```yaml
-dashboard:
-  tiles:
-  - id: kube.overview
-    profile: prod
-  - id: note.list
-    span: 2
-```
-
-Worth knowing what a tile costs before you add one: it refreshes on a timer for as long as the TUI is open, so a cluster-wide `kube.overview` tile is a round of `kubectl` calls at every refresh, for every hour the terminal stays open. `rta explain kube.overview` prints what a capability actually reads, which is not always only what its name suggests, and its `dashboard` row says how often a tile of it re-runs.
-
-A capability can set its own pace. The dashboard's timer runs every few seconds, and that is what a tile gets unless its capability declared a longer interval — `eol.watch`, `eol.check` and `eol.products` re-run every two hours, `pkg.overview`, `pkg.outdated` and `pkg.os` every hour — because their answers move by the day and a run costs a request per product or a dozen subprocesses. A plugin's capability declares one the same way: `kube.overview` re-runs every minute, since a run is five cluster-wide lists at once and nothing it reports moves faster than the cluster's own controllers decide it. So `rta dashboard add eol.watch` is the version watchlist on your landing screen at a pace endoflife.date would not notice. Switching environments re-runs every tile that follows the switch, since its inputs just changed, and leaves a pinned tile inside its pace, since its did not.
-
-Two things the block will not do, whatever you write in it:
-
-- **A tile that is not `Read` is dropped.** Otherwise `{id: kv.rm, with: {key: old-token}}` would delete that key on startup and keep deleting it — on a timer, with no form and no confirmation, since the destructive gate lives on the CLI and the browse path and a tile goes through neither.
-- **The whole block is ignored unless the config is one you named** — your user config directory, or `RTA_CONFIG`. rta falls back to `./.rta.yaml` when there is no user config directory (ordinary under `env -i`, in a container, in CI), and a cloned repository does not get to arrange your screen: `{id: http.get, with: {url: …}}` there would be a beacon that starts the moment you open the TUI in that directory. `hidden:` is the same hazard pointed the other way — it can take the agent tile off the screen, and that tile is where you notice a parked consent request before its clock runs out.
+On the lock list `x` lifts the lock under the cursor. The queue refreshes itself every few seconds while it is on screen, so a call that parks while you are reading appears, and one that expires leaves. A form opened from one of these screens asks only about this machine: the `--server` box that aims the same command at a remote queue, and the operator passphrase that signs it, are offered when you type the command's name, not when you act on a row.
 
 ## The catalogue
 
@@ -166,40 +152,6 @@ password for the role — staging fills it from kv:staging-db-password (secret)
 
 A destructive capability never runs from its form. What opens instead is its own dry run — what the call would do with the values you gave, the same preview an operator sees on a [parked agent call](../30-boundary/30-grants.md#live-consent-when-you-would-rather-be-asked) — and `enter` on that screen is the consent. `e` reopens the inputs, `esc` runs nothing. A plugin from outside the binary gets no dry run before you confirm, because rta does not run a plugin's own claim about itself before anyone has said yes; its screen shows the inputs the call will run with, and says so.
 
-## The plugin inventory
-
-`p` opens what is installed, what each plugin puts on the dashboard, and — the part worth having a pane for — **any artifact rta found on `$PATH` and refused to run**. A trust gate's failure mode is silence: a plugin that is installed and doing nothing looks exactly like one that was never installed.
-
-| Key | What it does |
-| --- | --- |
-| `p` | Open the inventory (and close it) |
-| `space` | Show or hide its dashboard tile |
-| `t` | Approve an artifact, or take an approval back |
-| `a` | Choose which credential locations it may read |
-| `c` | Configure it |
-| `enter` | Its capabilities, in the search bar |
-
-### Grouped by where the bytes came from
-
-The pane bands its rows by provenance, because that is the fact that changes how every other fact on a row reads. "13 capabilities, one of them destructive" means one thing about code compiled into the binary you chose to run and something else about a file that appeared on your `$PATH`, and a list sorted by name buried the two or three you did not compile among a dozen you did.
-
-| Band | What it means |
-| --- | --- |
-| **built in** | Compiled into the rta binary you are running, which is why these need no digest |
-| **installed by rta** | rta placed these bytes from an index you attached; the row carries the version, the index and what the signature check found |
-| **found on $PATH** | Binaries rta did not place and holds no record of |
-| **not run** | Discovered and never launched, because nothing has approved them yet |
-
-A stock install is entirely built in, so no bands are drawn at all — one band separates nothing.
-
-**There is no "official" band, and that is a fact about rta rather than an omission.** The bands say how the bytes arrived, and the first-party index is only one place they can arrive from: a plugin installed from it is *installed by rta* like any other, with the index named on its row. rta attaches no index until you ask — `rta plugin index add official` attaches the first-party one, the only name it reserves — and a band named for an index would put rta's voice behind a source instead of behind the bytes. What rta genuinely knows is whether it placed the bytes itself, and that is what the bands say. Trust here binds to a digest, never to a name — which is also why an `rta.lock` record is matched to a row by digest: an entry naming this plugin and describing different bytes belongs to a half-finished upgrade, not to what you are running.
-
-`t` is the decision made where the evidence is: the digest and the path are on the screen while you take it, which the command line shows you only afterwards. Neither direction takes effect on the process you are in — trust is read once, before anything is launched — so approving says it loads when rta restarts, and withdrawing says the plugin already running stays running until rta exits.
-
-`a` is the permission after that one. Approving says these bytes may run; allowing says what they may read — a kubeconfig, an SSH directory, whatever the plugin declares it needs. The row shows both sides: what it has been allowed, and what it is still asking for.
-
-**`a` opens a form where `t` is a keypress, and the difference is deliberate.** Approving is one yes/no about one thing already named on the row. Allowing is plural — a plugin can declare several locations, and a bare key would hand over every one of them from a cursor position. The form is also what makes taking access back expressible: the list you submit *is* the whole grant, so clearing a box withdraws that location and there is no second command to learn. A plugin you have not approved yet cannot be allowed anything — running at all is the decision that comes first, and the pane says so rather than opening a form that could not succeed.
-
 ## Working with results
 
 | Key | What it does |
@@ -215,34 +167,6 @@ A stock install is entirely built in, so no bands are drawn at all — one band 
 A log — `agent log`, or any table that declares its newest row last — opens on that row, scrolled to the end, so what just happened is under the cursor and the past is a key up.
 
 Views are actionable rather than static, and what a view offers is the plugin's own declaration rather than a list the TUI keeps: each capability says which keys its result answers, what they open and what they read off the row, and `rta explain <capability>` prints the same. In the notebook, `t` turns a note into a to-do or back, `d` checks one off and `x` removes; on the consent queue, `L` opens the lock form beside the call that made you want it, and on the lock list `x` lifts the lock under the cursor — from the list *and* from a record's own page, refreshing as it goes. A third-party plugin's list gets exactly the same treatment for exactly the same declaration. Detail pages are composed from other capabilities' views rather than rebuilt, so a record page shows metadata, prose and relations as separate sections.
-
-## Answering agents
-
-A call parked for you shows on every screen: one line above it, `● 1 call waiting — w to answer`, naming the call when there is exactly one, for as long as it waits and until it is answered or runs out. The line takes a row from the screen below it while it is there, and none on a terminal too short to spare one. `w` opens the queue from the dashboard, with or without a tile selected and from the search bar too — where it is the one letter that is a command while a call waits — and from any screen whose letters are commands; over a form or a filter box the line says `esc, then w`. The queue is read every two seconds, whichever screen is up.
-
-The agent tile says the same, and opens the queue and the record. From it, and from the queue:
-
-| Key | What it does |
-| --- | --- |
-| `w` | The queue of parked calls |
-| `g` | The record of what agents did, at once with its defaults — `e` on it changes the filters |
-| `enter` | Everything about the call under the cursor, including what it would do |
-| `a` | Allow it once — the footer names the call and what it would do, and `enter` allows exactly that call |
-| `A` | Allow it for a while, or as a role — the `ttl` and `role` form, for the same call |
-| `d` | Deny it — one key, no form |
-| `L` | Lock the agent that asked, its name already filled in from the row; from the agent tile, the agent that is connected when there is only one |
-
-`a` stops for a confirmation because granting access is the direction that cannot be taken back once a secret has been read, and what it stops on is the call itself, in one line, rather than a form that never said which call it was about. Any key but `enter` and `A` cancels it and says the call is still waiting. The line holds the call that was named when `a` was pressed, so the queue refreshing under the cursor cannot change which one `enter` allows. The form asks for the guard's passphrase only when the grant guard is on.
-
-The grant roster answers the same way. Open it from its tile — the key on the tile opens the list, with a row to stand on, and says so — and:
-
-| Key | What it does |
-| --- | --- |
-| `x` | Revoke the grant under the cursor, at once, and only that grant: a row that does not name exactly one grant opens the form instead |
-| `X` | Revoke every grant, behind the dry run that says how many — `enter` on it is the consent |
-| `n` | Renew the grant under the cursor — a form |
-
-On the lock list `x` lifts the lock under the cursor. The queue refreshes itself every few seconds while it is on screen, so a call that parks while you are reading appears, and one that expires leaves. A form opened from one of these screens asks only about this machine: the `--server` box that aims the same command at a remote queue, and the operator passphrase that signs it, are offered when you type the command's name, not when you act on a row.
 
 ## Profiles
 
@@ -280,25 +204,12 @@ rta net ping example.com --graph
 
 Markdown bodies — notes, `audit` findings, anything returning prose — are rendered rather than dumped.
 
-## Colours
+## Related
 
-`t` opens the theme editor, a form with one box per colour and a preview beside it, and saves what you changed into the config file. The same block can be written by hand, and the CLI draws with it too:
-
-```yaml
-theme:
-  primary: "#D97757"     # identity: keys, titles, the selection
-  good: "#3ED598"        # a status that is fine
-```
-
-There are ten colours to name — `primary`, `accent`, `muted`, `faint`, `label`, `good`, `warn`, `bad`, `inverse` and `ink` — each as `#rrggbb`, and one you leave out keeps the built-in. `faint` is structure (borders, chart fills), `muted` is secondary text, `label` is the name of a pane, `good`, `warn` and `bad` are the three status colours, and `inverse` and `ink` are the text on a coloured badge. Anything else, or a colour that is not that form, is left out and costs only its own line: the rest apply and `rta doctor` reports the entry. `rta config schema` describes the block to an editor, so a name or colour that will not apply is marked as you type it.
-
-## Untrusted plugins
-
-If rta found an `rta-plugin-*` binary it has not been told to run, the TUI says so in a pane rather than a startup line. The line would be written to the primary buffer, and the TUI opens on the alternate one — so it would be covered before anyone could read it. The pane is the only place a person inside the TUI can learn a decision is pending.
-
-See [Using plugins](../40-plugins/10-plugins.md#trust).
+- [Dashboard and theme](./25-dashboard-and-theme.md) — stating the dashboard in the config file, and the colours
+- [The plugin inventory](../40-plugins/15-the-plugin-inventory.md) — what `p` shows, and the plugins rta found and refused to run
+- [The CLI](./10-cli.md) — the same capabilities, scriptable
 
 ## Next
 
-- [The CLI](./10-cli.md) — the same capabilities, scriptable
-- [Profiles](./40-profiles.md) — what the `f` pane manages
+[Seeing the shape of things](./30-trees.md) — mapping a directory, a bucket, a Vault mount or an etcd keyspace in one call.

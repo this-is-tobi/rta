@@ -589,14 +589,15 @@ func TestADigestTheDocsQuoteIsSpelledAtTheLengthRtaPrintsIt(t *testing.T) {
 
 // `theme:` is a config key like any other, and the only place a reader could
 // learn its ten names was the theme editor on `t` and an error from `rta
-// doctor` after a wrong one: no page said the block exists. The TUI chapter
-// names each colour now, so a colour added to the palette fails here until the
-// chapter does too.
-func TestTheTUIChapterNamesEveryColourAThemeBlockTakes(t *testing.T) {
-	chapter := readDoc(t, repoRoot(t), "docs/20-using/20-tui.md")
+// doctor` after a wrong one: no page said the block exists. The dashboard and
+// theme page names each colour now, so a colour added to the palette fails
+// here until the page does too.
+func TestTheThemePageNamesEveryColourAThemeBlockTakes(t *testing.T) {
+	const rel = "docs/20-using/25-dashboard-and-theme.md"
+	chapter := readDoc(t, repoRoot(t), rel)
 	for _, name := range theme.Fields() {
 		if !strings.Contains(chapter, "`"+name+"`") {
-			t.Errorf("docs/20-using/20-tui.md does not name the theme colour `%s`", name)
+			t.Errorf("%s does not name the theme colour `%s`", rel, name)
 		}
 	}
 }
