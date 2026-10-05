@@ -155,10 +155,10 @@ rta cert expiry --help
     targets  hosts to check (host[:port], or an https:// URL)
 
   USAGE
-    rta cert expiry <targets> [--flags]
+    rta cert expiry <targets...> [--flags]
 ```
 
-The arguments are read from the same declaration as the flags below them, so a capability cannot take one without documenting it — `<targets>` alone would never tell you it accepts a port.
+The arguments are read from the same declaration as the flags below them, so a capability cannot take one without documenting it — `<targets...>` alone would never tell you it accepts a port, and the dots say it takes several.
 
 The commands you type every day — `grant allow`, `lock add`, `agent log`, `kv set`, `mcp install` and the rest of the operator's verbs — carry an `EXAMPLES` block of two to four lines that run as written, so the first usable command is on the screen and not in a paragraph. `--yes` and `--dry-run` are listed on the commands that write, and `--profile` on the ones with a connection to point it at; every command accepts them all the same. `rta --help` opens with the four commands to type first, and bare `rta` opens the dashboard.
 
@@ -201,6 +201,10 @@ See [Installation](../10-getting-started/10-installation.md#shell-completion) to
 A verb answers to the spellings you would guess for it, in every namespace and in plugins' as well: `ls` for `list`; `rm`, `remove` and `delete` for one another; and `get` for `show` wherever there is no `get` of its own — `kv get` reveals a value and `kv show` does not, so each stays itself, and never the other way round: `show` is the look that leaves a value out, so it is no spelling of a `get`. The verbs of `http` are request methods and have no synonyms. `rta grant rm` takes a grant back, and `rta lock claude` is `rta lock add claude`, with its flags. A word after `rta lock` that is a typo of one of its verbs, or that reads as a verb it does not have (`unlock`, `status`, `show`), is refused as one, never taken for a name to freeze; `rta lock add <name>` freezes any name. None of these is listed in `--help`, which shows each command once, under its own name. A verb that [the deny list `rta audit clients --fix` prints](../30-boundary/20-mcp.md) names by itself keeps the one spelling it is denied by, since a harness matches that list as a string; a namespace denied whole covers its aliases.
 
 A word that is no command at all is answered with the command that most likely means it, before anything else: `rta revoke` with `rta grant revoke`, `rta ps` with `rta sys ps`, `rta uuid` with `rta gen uuid`, `rta settings` or `rta theme` with `rta config`, `rta freeze claude` with `rta lock add claude`. It is the same matcher `rta explain` and the TUI's search use, so a word finds the same thing wherever it is typed. A flag after the wrong word does not hide it, a mistyped flag is answered with the nearest one (`--core` with `--cores`), an argument a command has no place for names the flags that take a value, and inside a namespace the refusal lists its verbs on the line.
+
+## Several at once, and a date
+
+A command that takes more than one id says so with dots in its usage — `rta note done <id...>` — and takes them in one call: `rta note done 1 2`, or `rta note rm 1 2 --yes`. Completion offers the ids the command can still act on, and leaves out one already on the line. A due date is written the way it is said: `today`, `tomorrow`, a weekday, `+3d`, `2w`, `next-week`, `10-20` for the next 20 October, or `2026-10-20`, as in `rta note add "renew the certificate" --due +3d`; a due date makes the note a to-do, and `rta explain note.add` has the whole list.
 
 ## Piping in
 
