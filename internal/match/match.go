@@ -67,6 +67,19 @@ const (
 	typo          = 45  // an item's word one or two letters from the query's
 )
 
+// Whole is the least that Find scores a single word found as a whole: the last
+// segment of an ID, an earlier one, or a keyword. A caller that has to say "the
+// word is this thing's name" rather than "this thing mentions the word" — the
+// unknown-command hint, which names a command, never one whose summary happens
+// to contain what was typed — asks for at least this.
+const Whole = keywordExact
+
+// Likely is the least that Nearest scores a single word for an item worth
+// offering a person who typed it: a start of a segment, a whole word of the
+// summary, a word one typo away. A word found only inside another, or only as
+// the start of a summary word, scores below it.
+const Likely = typo + 30
+
 // idPrefixBonus is what a query that is literally the start of the ID earns on
 // top: `net.hosts.l` is not a bag of words, it is a place in the tree.
 const idPrefixBonus = 50
