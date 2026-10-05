@@ -18,7 +18,7 @@ helm install rta oci://ghcr.io/this-is-tobi/rta/rta-chart \
   --namespace rta --create-namespace --values rta-values.yaml
 ```
 
-The chart runs rta as an HTTP MCP server, one entry under `servers:` per person, each authenticating as that person — the shape where an agent holds nothing and rta is the only route. Verify the chart before the first install ([Installation](../10-getting-started/10-installation.md#kubernetes) has the commands), pin the image by digest, and make the decisions [Kubernetes](../30-boundary/80-kubernetes.md) lists before setting a value. The image is the plugin allowlist: [An agent in a cluster](./30-an-agent-in-a-cluster.md) builds one that carries `kube` and nothing else, and hands it a minted, expiring identity instead of a ClusterRole.
+The chart runs rta as an HTTP MCP server, one entry under `servers:` per person, each authenticating as that person — the shape where an agent holds nothing and rta is the only route. Verify the chart before the first install ([Verify a download](../95-reference/30-verify-a-download.md#the-helm-chart) has the commands), pin the image by digest, and make the decisions [Kubernetes](../30-boundary/80-kubernetes.md) lists before setting a value. The image is the plugin allowlist: [An agent in a cluster](./30-an-agent-in-a-cluster.md) builds one that carries `kube` and nothing else, and hands it a minted, expiring identity instead of a ClusterRole.
 
 ## Commit a ceiling, and make machines require it
 

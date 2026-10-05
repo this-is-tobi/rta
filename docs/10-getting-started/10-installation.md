@@ -1,8 +1,8 @@
 # Installation
 
-rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run natively on Windows; a person on Windows can use the Linux build under the Windows Subsystem for Linux, version 2, which has not been tested.
+rta runs on macOS and Linux, on both `amd64` and `arm64`; [Supported platforms](#supported-platforms) lists where the two differ. It is one binary with nothing else to install first.
 
-## From a release
+## Install a release
 
 Every release ships a prebuilt binary for macOS and Linux on both `amd64` and `arm64`, as `rta_<version>_<os>_<arch>.tar.gz`, plus `.deb`/`.rpm`/`.apk` packages for Linux. With the [gh CLI](https://cli.github.com):
 
@@ -21,23 +21,7 @@ curl -fsSLO "https://github.com/this-is-tobi/rta/releases/download/v${tag}/rta_$
 curl -fsSLO "https://github.com/this-is-tobi/rta/releases/download/v${tag}/checksums.txt"
 ```
 
-**Verify before you extract.** The checksum proves the download is intact; the attestation proves the archive was built by this repository's release workflow from the tagged commit — provenance, not just integrity:
-
-```bash
-os=$(uname -s | tr A-Z a-z); arch=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-shasum -a 256 -c checksums.txt --ignore-missing     # sha256sum on Linux
-gh attestation verify rta_*_"${os}"_"${arch}".tar.gz --owner this-is-tobi
-```
-
-The release also carries a keyless cosign signature over `checksums.txt`, whose sha256 lines are what tie every archive to it. It is bound to the workflow that made it, and that workflow is the reusable attestation step in [this-is-tobi/github-workflows](https://github.com/this-is-tobi/github-workflows) at its `v0` tag — the certificate names the workflow that ran the signing step, not the repository that called it — which is why the identity below names that repository rather than this one:
-
-```bash
-cosign verify-blob checksums.txt --bundle checksums.txt.cosign.bundle \
-  --certificate-identity-regexp '^https://github.com/this-is-tobi/github-workflows/\.github/workflows/attest-go\.yml@refs/tags/v0$' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-```
-
-Then put the binary on your `$PATH`:
+Check what you downloaded before you extract it: [Verify a download](../95-reference/30-verify-a-download.md) takes a minute and proves the archive was built by this repository's release workflow from the tagged commit. Then put the binary on your `$PATH`:
 
 ```bash
 tar -xzf rta_*.tar.gz rta
@@ -47,128 +31,50 @@ rta --version
 
 On a Debian, RPM or Alpine machine the package does the `$PATH` half for you: download the matching `.deb`, `.rpm` or `.apk` the same way and hand it to `dpkg -i` / `rpm -i` / `apk add --allow-untrusted`.
 
-Upgrading is the same download again — the new binary replaces the old one, and your config, store and grants live in your own directories, untouched (see "Where rta keeps things" below). Run `rta doctor` after an upgrade: when a release starts refusing a config value an older one accepted, doctor names each such value before a command runs into it, and the release notes list those changes under breaking changes.
+Upgrading is the same download again — the new binary replaces the old one, and your config, store and grants live in your own directories, untouched (see [Where rta keeps things](../95-reference/50-where-rta-keeps-things.md)). Run `rta doctor` after an upgrade: when a release starts refusing a config value an older one accepted, doctor names each such value before a command runs into it, and the release notes list those changes under breaking changes.
 
-## From source
-
-You need Go 1.26 or newer. The checkout carries a `mise.toml` naming the exact version the pipeline builds with, so with [mise](https://mise.jdx.dev) installed, `mise trust && mise install` fetches it and nothing else has to be on the machine.
-
-```bash
-git clone https://github.com/this-is-tobi/rta.git
-cd rta
-make install
-```
-
-That runs `go install ./cmd/rta`, putting `rta` in `$(go env GOPATH)/bin`. If that directory is not on your `$PATH`:
-
-```bash
-export PATH="$(go env GOPATH)/bin:$PATH"
-```
-
-To build into the current directory instead of installing:
-
-```bash
-make build      # ./rta
-```
-
-`make help` lists every target the repository has — building, formatting, the test gates, a release rehearsal, and the plugin equivalent of each.
-
-## Installing plugins from an index
-
-`rta` is one binary and every plugin is a separate module, so neither `go install` nor a release archive brings them along. An **index** is how one arrives: a git repository of `index/<name>.yaml` manifests, each generated from a plugin binary's own declaration. Attach one, search it, install from it.
-
-```bash
-rta plugin index add official
-rta plugin search vault
-rta plugin install vault
-```
-
-Install is where the claim meets the evidence: rta fetches the artifact, hashes it, launches it in the same sandbox any load uses, and refuses it if what it declares is not what the index said — naming the index that got it wrong. Installing *is* the trust decision, so there is no separate approval step afterwards.
-
-**Nothing is attached until you say so.** `official` is the one index rta knows by name — [rta-plugins](https://github.com/this-is-tobi/rta-plugins), where the first-party plugins are built, released and described — and the name is reserved for it, so `rta plugin index add official <elsewhere>` is refused. Any other index is `rta plugin index add <name> <repository>`, and a repository with no `index/` is not one — a source tree keeps a directory per plugin under `plugins/`, an index keeps a manifest per plugin under `index/` — so `rta plugin index add` reads what it cloned and says so rather than attaching something that would answer every search with silence.
-
-Two ways to skip the index entirely. **From source**, `make install` in [rta-plugins](https://github.com/this-is-tobi/rta-plugins) puts `rta-plugin-<name>` beside your `rta` and `make trust` there approves the ones built — a binary on your `$PATH` is not consent, and [Trust](../40-plugins/10-plugins.md#trust) is why. **Already in an image**, `ghcr.io/this-is-tobi/rta-full` carries every first-party plugin already trusted; [Container image](#container-image) has the tradeoff.
-
-[Plugins](../40-plugins/10-plugins.md#indexes) is the whole model.
-
-## Container image
-
-```bash
-docker run --rm ghcr.io/this-is-tobi/rta:latest --version
-```
-
-Distroless, non-root, multi-arch (`amd64`/`arm64`), published with every release alongside SLSA provenance, an SBOM and a cosign signature. `latest` tracks the newest release; a release `1.2.3` is also tagged `1.2` and `1`, so you can pin as loosely or as tightly as you want. Verify what you pulled:
-
-```bash
-gh attestation verify oci://ghcr.io/this-is-tobi/rta:latest --owner this-is-tobi
-```
-
-The cosign signature is the one an admission controller can enforce. It is bound to the reusable attestation workflow that signed the digest, at its `v0` tag, for the reason the binaries section gives:
-
-```bash
-cosign verify ghcr.io/this-is-tobi/rta:latest \
-  --certificate-identity-regexp '^https://github.com/this-is-tobi/github-workflows/\.github/workflows/attest-docker\.yml@refs/tags/v0$' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-```
-
-Two shapes of use:
-
-- **An MCP server** — [In a container, for a hardened server](../30-boundary/67-containers-and-images.md#in-a-container-for-a-hardened-server) has the full `docker run` recipe: read-only root, dropped capabilities, no network by default.
-- **A one-shot command**, anywhere `docker run` reaches, including inside a cluster: `kubectl run --rm -it rta-debug --image=ghcr.io/this-is-tobi/rta:latest -- net probe db.internal 5432`.
-
-## Kubernetes
-
-```bash
-helm install rta oci://ghcr.io/this-is-tobi/rta/rta-chart \
-  --namespace rta --create-namespace \
-  --values rta-values.yaml
-```
-
-The chart deploys rta as an MCP server that other machines reach — one instance per person, each authenticating as that person. It is published the way the image is: with every release, to the same registry, with SLSA provenance and a cosign signature bound to its digest. It moves on its own version stream, and the rta it deploys is its `appVersion`. Verify it the way you verify the image:
-
-```bash
-gh attestation verify oci://ghcr.io/this-is-tobi/rta/rta-chart:<version> --owner this-is-tobi
-```
-
-And its cosign signature, bound to the chart attestation workflow the same way:
-
-```bash
-cosign verify ghcr.io/this-is-tobi/rta/rta-chart:<version> \
-  --certificate-identity-regexp '^https://github.com/this-is-tobi/github-workflows/\.github/workflows/attest-helm\.yml@refs/tags/v0$' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-```
-
-This is the third of the three worlds [What rta actually bounds](../30-boundary/10-the-boundary.md) describes — the agent runs somewhere else, holds no credentials of its own, and reaches your environments only through rta — and unlike the other two it is a deployment rather than a setting. [Kubernetes](../30-boundary/80-kubernetes.md) is that deployment: the decisions to make before setting any value, the posture worth deploying, and what changes on day two. The chart's own README is the values reference.
-
-## Verify
+## Check that it works
 
 ```bash
 rta --version
 rta doctor
 ```
 
-`doctor` is worth running now and worth running again whenever something behaves oddly. It reports what rta can see and — more usefully — what it can *reach*, with the rows that need you first: `error`, then `warn`, then `info`, then `ok`.
+`doctor` reports what rta can see and, more usefully, what it can *reach*, with the rows that need you first: `error`, then `warn`, then `info`, then `ok`. On a machine that has never run rta these are the rows that matter, abridged:
 
 ```
-CHECK                STATUS  DETAIL
-kv store             info    unlocks from this environment — an MCP server
-                             started here can read secrets, bounded only by grants
-grant guard          info    off — anything that can run commands as you can issue
-                             a grant; `rta grant guard on` puts a passphrase in front of that
-capabilities         ok      20 plugins, 128 capabilities
-data                 ok      ~/.local/share/rta
-config               ok      no config file — rta runs on its defaults
-plugin confinement   ok      sandbox-exec: 2 paths denied read+write, 10 denied read,
-                             15 directories pinned; everything else is readable —
-                             one exception, which --detail names
-agent log            ok      12 agent calls recorded, chain intact — `rta agent log` reads it
-
-all ok — 2 notes worth reading; kv store and grant guard bear most on what an agent can reach
+CHECK            STATUS  DETAIL
+grant guard      info    off — anything that can run commands as you can issue a grant; `rta grant guard on` puts a passphrase in front of that
+capabilities     ok      20 plugins, 128 capabilities
+agent grants     ok      none active — agents cannot write or destroy anything
+locks            ok      none — nothing is frozen
+kv store         ok      none yet — `rta kv init --generate` sets one up
 ```
 
-An `info` row is a note: a fact worth reading, not a failure, and the line under the table counts them. Those two are the ones that decide what an agent can reach, so they come first among the notes and the last line names them. "The store unlocks from this environment" is a real statement about what an agent started from this shell inherits, and it is the kind of thing worth knowing before you connect one. `rta doctor --detail` gives the rows that keep part of what they say to a line — the sandbox's full deny set among them — all of it.
+An `info` row is a note: a fact worth reading, not a failure, and a line under the table counts them and names the ones that bear most on what an agent can reach. Read the `info` rows rather than skipping to the failures. After you set a store up with `rta kv init --generate`, the `kv store` row changes to the one worth knowing about before you connect an agent:
+
+```
+kv store         info    unlocks from this environment (<your key file>) — an MCP server started here can read secrets, bounded only by grants
+```
+
+That is a real statement about what an agent started from this shell inherits. [Connect an agent](./30-connect-an-agent.md) says what to do about it, and `rta doctor` is worth running again whenever something behaves oddly. `rta doctor --detail` gives the rows that keep part of what they say to a line all of it.
 
 The exit status is `0` unless a row is an `error`, when it is `1`; `rta doctor --strict` fails on a `warn` too, so a dotfiles check, a pre-commit hook or a CI step can gate on it, and the report is printed first either way.
+
+## Supported platforms
+
+rta is built for macOS and Linux, on `amd64` and `arm64`, and the two systems differ in the places this table lists. The rest behaves the same on both, apart from what the host itself reports: `sys` reads the machine it runs on, and `pkg` drives the package managers that machine has.
+
+| | macOS | Linux |
+| --- | --- | --- |
+| Packages | none: the release archive | a `.deb`, `.rpm` or `.apk` as well as the archive |
+| Plugin confinement | applied: each plugin runs under `sandbox-exec`, with rta's own state and your credential locations denied | none: a plugin runs with your user's access, and `rta doctor` says `none on linux`; process groups and the environment allowlist still apply |
+| A port forward a killed rta left behind | stopped by the next rta that starts | ended by the kernel along with the server that started it |
+| Copying a value (`kv copy`) | `pbcopy` | `wl-copy`, `xclip` or `xsel`, whichever the session has |
+| Desktop notifications (`--consent-notify`) | `osascript` | `notify-send` |
+| The system plugin root, where an image or a package puts plugins for everyone | none until `RTA_SYSTEM_DIR` names one | `/usr/local/lib/rta` unless `RTA_SYSTEM_DIR` says otherwise |
+
+There is no native Windows build. The Linux build runs under the Windows Subsystem for Linux, version 2, which has not been tested, so expect the Linux column there.
 
 ## Shell completion
 
@@ -193,69 +99,10 @@ Restart your shell afterwards. Homebrew users can write the zsh file to `$(brew 
 
 The recipe every tool's own help prints, `rta completion zsh > "${fpath[1]}/_rta"`, is worth avoiding: `fpath[1]` is whatever directory happens to be first on your machine, and it is often one you cannot write. kitty's shell integration, for one, puts its own completions directory there, owned by root, and the command fails with "permission denied".
 
-## External tools
+## Other ways to install
 
-The binary is self-contained and the core needs nothing. Some capabilities shell out to a tool you already have, rather than linking a client library — that is a deliberate trade, and it is why your existing credentials, proxies, contexts and credential helpers keep working without rta learning about any of them.
-
-Nothing here is required to install or run rta. A missing tool costs you exactly the capabilities that use it, and the refusal names the tool.
-
-| Tool                      | Needed for                                                                                                                                | If it is missing                                                                                                             |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `git`                     | `rta plugin index add/update`, the `git.*` capabilities                                                                                   | Indexes cannot be attached; `git.*` is unavailable                                                                           |
-| `kubectl`                 | the `kube` and `cnpg` plugins, `audit.kube.*`, and `kube:` tunnel targets                                                                 | Those capabilities refuse, naming kubectl                                                                                    |
-| `pg_dump`                 | `pg.dump` only — `pg.query` and the rest of the `pg` plugin connect in-process and need nothing                                           | `pg.dump` refuses; every other `pg.*` capability is unaffected                                                               |
-| `pg_restore`, `psql`      | `pg.restore` — `pg_restore` reads custom and directory dumps, `psql` replays plain SQL                                                    | `pg.restore` refuses, naming whichever one the dump's format needs                                                           |
-| `mysqldump`, `mysql`      | `mysql.dump` and `mysql.restore` only — every other `mysql.*` capability connects in-process                                              | Those two refuse; the rest of the plugin is unaffected                                                                       |
-| `mariadb-dump`, `mariadb` | `mariadb.dump` and `mariadb.restore`, same split. The legacy `mysqldump`/`mysql` symlinks every distribution still ships are accepted too | Those two refuse, naming both spellings                                                                                      |
-| `docker`                  | the `docker` plugin                                                                                                                       | Those capabilities refuse                                                                                                    |
-| `ssh`                     | `ssh:` tunnel targets                                                                                                                     | Those targets cannot be resolved                                                                                             |
-| `cosign`                  | verifying a plugin artifact's signature, when an index states one                                                                         | The outcome is recorded as unverifiable; **an install is never blocked, because a signature is recorded and never required** |
-
-Version policy is the same for all of them: rta uses what is on your `$PATH` and adopts none of their maintenance. There is no preflight check — a capability looks its tool up when you run it, and refuses by name if it is not there.
-
-**MySQL and MariaDB share tool names, and that is the one place having a tool is not enough.** MariaDB ships `mysqldump` and `mysql` as symlinks onto its own binaries, so a lookup by name succeeds against either fork and the flags decide what happens next: `mysql.dump` passes MySQL 8 spellings (`--ssl-mode`, `--set-gtid-purged`, `--no-tablespaces`) that MariaDB's client refuses by name, and `mariadb.dump` passes the `--ssl` family that MySQL's client refuses the same way. Neither produces a worse dump — it is a refusal at the first flag, graded as `*.dump.toolskew`, and its hint tells you which client you really have and which plugin drives it. Point each plugin at its own fork and this never comes up.
-
-Two consequences worth knowing. The primary container image is distroless, so it carries none of these — a containerised `rta mcp serve` covers the capabilities that need no external tool, and [Containers and images](../30-boundary/67-containers-and-images.md) says which. And a plugin that reads a credential location, such as kubectl's `~/.kube/config`, still needs `rta plugin allow` before it may: having the tool is not being granted the file.
-
-`ghcr.io/this-is-tobi/rta-full` is the same rta with every first-party plugin and the tools from the table above already in it, for a person at a terminal who wants them rather than the narrowness; what it costs, and why an agent should never be pointed at it, is on [Containers and images](../30-boundary/67-containers-and-images.md#rta-full-the-console).
-
-## Configuration
-
-rta runs with no configuration at all, and a fresh machine needs none. What is worth doing once is connecting the agent clients that are on it, and that is what `rta init` is for:
-
-```bash
-rta init
-```
-
-It looks at the machine. For each client it finds — Claude Code, VS Code, Codex, Gemini — it offers to register rta with it, as the command it would run, one question each, Enter to skip; it prints the line that turns on tab completion for your shell, and names the command that attaches the first-party plugin index. It writes no config file, and run again it offers only what is not done yet. A client that already has a registration, with whatever options, is left as it is, and one it can run nothing for (Cursor, GitHub Copilot CLI) is named with the command that prints what to add. On a machine with none of the clients it knows it says so, because `rta mcp install <name>` prints the standard block for any other client that speaks MCP. The questions are asked on your terminal whatever stdout is, so `rta init -o json > answer.json` asks them there and leaves the answer alone in the file. On a terminal that cannot redraw (`TERM=dumb`, a serial console) each is a plain `[y/N]` line under the same text — where it registers and the command it runs — so a yes is never given blind.
-
-`rta init --yes` registers every client it lists without asking, which is what a dotfiles script or a devcontainer wants, and `--dry-run` shows what that would run. With neither a terminal nor `--yes` it stops with exit code `3` and changes nothing.
-
-When you do want a setting, the config file is `~/.config/rta/config.yaml` (or the platform equivalent: `rta doctor` prints the real path), and `rta config schema` describes every key. `RTA_CONFIG` overrides the location, which is what portable setups and test harnesses use.
-
-Nothing in the config grants anything. It holds connection profiles, dashboard preferences and theme — see [Profiles](../20-using/40-profiles.md).
-
-## Where rta keeps things
-
-| What | Where | Notes |
-| --- | --- | --- |
-| Config | `~/.config/rta/config.yaml`, or `~/Library/Application Support/rta/config.yaml` on macOS | `RTA_CONFIG` overrides. Beside it: `policy.yaml` (your own [team policy](../30-boundary/50-team-policy.md)), `remotes.yaml` (the servers you operate) and the `kv.identity` key `kv init --generate` makes |
-| Data directory | `$RTA_DATA_DIR`, else `$XDG_DATA_HOME/rta`, else `~/.local/share/rta` — on macOS as well as Linux | Everything rta writes below is in it, owner-only. `rta doctor` prints it |
-| Encrypted store | `kv.age` and `kv.recipients` | [Secrets](../20-using/50-secrets.md) |
-| Grants | `grants.json`, with its seal key `grants.key` | Sealed against tampering |
-| Agent record | `agent-log.jsonl`, with its seal key `agent-log.key` | Hash-chained; [The record](../30-boundary/40-audit-trail.md) |
-| Locks | `lockdown.json`, with `lockdown.key` | Sealed like the grants; [Locks](../30-boundary/45-stop-an-agent-now.md) |
-| Switched-on profile | `profile.json` | Which profile `rta use` switched on, and until when. Not sealed, because all it can do is remove a bound: a file that goes missing leaves the grants alone deciding, which the sealed grants are the answer to; [Profiles](../20-using/40-profiles.md) |
-| Plugins | `trusted.json` (what you approved), `plugins/store/` and `plugins/bin/` (what an index installed, and the links that find it), `plugin-cache/` with `plugin-cache.key` (what each plugin build declared, sealed, so a run does not start every plugin to ask), `indexes/` (the clones) | [Using plugins](../40-plugins/10-plugins.md) |
-| Notebook and shortlists | `notes.json`, `recent.json` | [The CLI](../20-using/10-cli.md) |
-| Team policy | `.rta-policy.yaml`, walking up from the working directory | [Team policy](../30-boundary/50-team-policy.md) |
-
-Exact paths differ per platform. `rta doctor` prints the real ones rather than the documented ones, which is the answer to use when they disagree.
-
-A machine whose environment names no home — a service started without `HOME`, a container run as a uid with no environment — is asked its account database first. When that has none either, rta keeps its state in `rta-<uid>` under the temporary directory, which does not outlast a reboot or a container, says so on stderr once per run, and refuses to use that directory when it is not a private directory of the account. Set `HOME` or `RTA_DATA_DIR` to keep grants, the record and the store: a state directory that vanishes with the container is an audit trail that does too. A config path that falls back to `./.rta.yaml` for want of a config directory is not honoured for profiles, plugin settings or the dashboard, which is why a container sets `RTA_CONFIG` as [the MCP chapter](../30-boundary/67-containers-and-images.md#in-a-container-for-a-hardened-server) shows.
+[Other ways to install](./40-other-ways-to-install.md) has building from source, the container image and the Helm chart. The plugins that talk to a service, such as `pg`, `redis`, `s3` and `vault`, are separate from the binary and arrive from an index: [Using plugins](../40-plugins/10-plugins.md#getting-the-first-party-ones) is the two commands. Some capabilities shell out to a tool you already have, and [External tools](../95-reference/40-external-tools.md) says which.
 
 ## Next
 
-- [Quick start](./20-quickstart.md) — the first ten minutes
-- [MCP and the safety gate](../30-boundary/20-mcp.md) — if you came here to connect an agent
-- [Kubernetes](../30-boundary/80-kubernetes.md) — if the agent runs somewhere else and reaches you only through rta
+[Quick start](./20-quickstart.md) — ten minutes: ask a question, open the shell, connect an agent, refuse a call and allow it.

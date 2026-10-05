@@ -534,13 +534,13 @@ func TestThePluginChapterNamesEveryRuleTheSuiteCanBeToldToSkip(t *testing.T) {
 	}
 }
 
-// `rta doctor`'s confinement row is quoted on two pages as a sample — the
-// installation page, where it is the first thing a new reader runs, and the
-// plugins page, where it is explained — and the two said different numbers of
-// pinned directories, 15 and 9. The figure is per machine, which is why both
-// pages tell the reader to read their own row, but two samples of one row on
-// one site that disagree read as one of them being stale. They are held to the
-// same number, so a future edit to one has to take the other with it.
+// `rta doctor`'s confinement row is quoted as a sample where it is explained,
+// the plugins page, and it was once quoted on the installation page too — the
+// two said different numbers of pinned directories, 15 and 9. The figure is
+// per machine, which is why the page tells the reader to read their own row,
+// but two samples of one row on one site that disagree read as one of them
+// being stale. Every quote is held to the same number, so a sample added to
+// another page has to take the first with it.
 func TestTheDocsQuoteTheConfinementRowAlike(t *testing.T) {
 	root := repoRoot(t)
 	pinned := regexp.MustCompile(`(\d+)\s+directories\s+pinned`)
@@ -552,9 +552,9 @@ func TestTheDocsQuoteTheConfinementRowAlike(t *testing.T) {
 			quotes++
 		}
 	}
-	if quotes < 2 {
-		t.Fatalf("found %d quotes of the confinement row's pinned directories, want the two pages that sample it; "+
-			"if the sample moved, move this test with it", quotes)
+	if quotes < 1 {
+		t.Fatal("found no quote of the confinement row's pinned directories, which the plugins page samples; " +
+			"if the sample moved, move this test with it")
 	}
 	if len(pagesByCount) > 1 {
 		t.Errorf("the docs quote the confinement row with different numbers of pinned directories: %v", pagesByCount)
@@ -610,12 +610,13 @@ func TestTheTUIChapterNamesEveryColourAThemeBlockTakes(t *testing.T) {
 // test, which is how rta spells a path it builds. Looser than resolving the
 // path, as the check on cited pages is, and for the same reason: it cannot say
 // where a file is, only that nothing in rta could have made one by that name.
-func TestTheFilesTheInstallationPageSaysRtaKeepsAreNamesRtaUses(t *testing.T) {
+func TestTheFilesThePagesSayRtaKeepsAreNamesRtaUses(t *testing.T) {
 	root := repoRoot(t)
-	page := readDoc(t, root, "docs/10-getting-started/10-installation.md")
-	_, section, ok := strings.Cut(page, "## Where rta keeps things")
+	const rel = "docs/95-reference/50-where-rta-keeps-things.md"
+	page := readDoc(t, root, rel)
+	_, section, ok := strings.Cut(page, "## The files")
 	if !ok {
-		t.Fatal("docs/10-getting-started/10-installation.md no longer has a `Where rta keeps things` section; if it moved, move this test with it")
+		t.Fatal(rel + " no longer has a `The files` section; if it moved, move this test with it")
 	}
 	section, _, _ = strings.Cut(section, "\n## ")
 
@@ -650,7 +651,7 @@ func TestTheFilesTheInstallationPageSaysRtaKeepsAreNamesRtaUses(t *testing.T) {
 			}
 			checked++
 			if !strings.Contains(src.String(), `"`+segment+`"`) {
-				t.Errorf("the installation page says rta keeps `%s`, and nothing in rta's source spells %q", name, segment)
+				t.Errorf("%s says rta keeps `%s`, and nothing in rta's source spells %q", rel, name, segment)
 			}
 		}
 		// A directory under another is built as Join(data, "plugins", "store"),
@@ -659,7 +660,7 @@ func TestTheFilesTheInstallationPageSaysRtaKeepsAreNamesRtaUses(t *testing.T) {
 		if len(segments) > 1 {
 			joined := `"` + strings.Join(segments, `",\s*"`) + `"`
 			if !regexp.MustCompile(joined).MatchString(src.String()) && !strings.Contains(src.String(), strings.Trim(name, "/")) {
-				t.Errorf("the installation page says rta keeps `%s`, and nothing in rta's source builds that path", name)
+				t.Errorf("%s says rta keeps `%s`, and nothing in rta's source builds that path", rel, name)
 			}
 		}
 	}
