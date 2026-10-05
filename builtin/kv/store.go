@@ -188,7 +188,7 @@ func lookupPassphrase(req plugin.Request) string {
 
 // promptPassphrase is overridable in tests; it reads from the terminal.
 var promptPassphrase = func() (string, error) {
-	secret, err := stdio.ReadSecret("Passphrase: ")
+	secret, err := readSecret("Passphrase: ")
 	return string(secret), err
 }
 
@@ -214,13 +214,19 @@ func newStoreNote() string {
 // Overridable in tests.
 var promptNewPassphrase = func() (first, again string, err error) {
 	fmt.Fprintln(os.Stderr, newStoreNote())
-	f, err := stdio.ReadSecret("New passphrase: ")
-	if err != nil {
+	f, err := readSecret("New passphrase: ")
+	// Nothing typed is no choice: asking it a second time would have a person
+	// who pressed ^D, or enter, confirm an answer they had just withdrawn.
+	if err != nil || len(f) == 0 {
 		return "", "", err
 	}
-	a, err := stdio.ReadSecret("Once more: ")
+	a, err := readSecret("Once more: ")
 	return string(f), string(a), err
 }
+
+// readSecret is the terminal's masked read, a var so a test can answer the
+// prompts without one.
+var readSecret = stdio.ReadSecret
 
 // promptKeyPassphrase asks for a private key's own passphrase, naming the file
 // so it is clear which secret is wanted: the key's, not the store's. Also

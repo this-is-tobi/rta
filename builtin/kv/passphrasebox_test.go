@@ -24,3 +24,20 @@ func TestOnlyTheBoxOfTheOperationThatMakesTheStoreSaysItIsLockedWithWhatIsTyped(
 		}
 	}
 }
+
+func TestAnEmptyFirstAnswerForANewPassphraseIsNotAskedAgain(t *testing.T) {
+	orig := readSecret
+	t.Cleanup(func() { readSecret = orig })
+	var asked []string
+	readSecret = func(prompt string) ([]byte, error) {
+		asked = append(asked, prompt)
+		return nil, nil
+	}
+	first, again, err := promptNewPassphrase()
+	if err != nil || first != "" || again != "" {
+		t.Fatalf("got %q, %q, %v", first, again, err)
+	}
+	if len(asked) != 1 {
+		t.Errorf("asked %q, want the first prompt only: an empty answer is no choice to confirm", asked)
+	}
+}
