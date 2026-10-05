@@ -56,7 +56,7 @@ func withFirstPartyOffer(install *cobra.Command, opts *globalOpts) {
 			return err
 		}
 		if aliasedFirstParty(args[0]) {
-			return verr.WithHint(plugindist.FirstPartyHint(args[0]))
+			return verr.WithHint(plugindist.FirstPartyHint(args[0], nil))
 		}
 		name, wants := wantsFirstPartyIndex(args[0], verr)
 		if !wants || opts.dryRun || !indexOfferTerminal() {
