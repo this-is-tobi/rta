@@ -234,6 +234,38 @@ func TestAFlagOfTheVerbWithNoNameIsMissingTheName(t *testing.T) {
 	}
 }
 
+// `show` leaves the value out and `get` is where it comes out, so `get` may stand
+// for a show and a show may never stand for a get: a person who types `rta vault
+// kv show` for a secret would be handed it by a word that promises not to.
+func TestAShowNeverRevealsWhatAGetDoes(t *testing.T) {
+	reg := registry.New()
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	key := []plugin.Field{{Name: "key", Type: plugin.String, Positional: true, Required: true}}
+	if err := reg.Register(plugin.Plugin{
+		Name: "vaultish", Summary: "a store with a value behind a get",
+		Capabilities: []plugin.Capability{
+			{ID: "vaultish.entry.get", Summary: "reveal the value", Safety: plugin.Write, Inputs: key, Run: run},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Register(plugin.Plugin{
+		Name: "plain", Summary: "a store with a look and no value",
+		Capabilities: []plugin.Capability{
+			{ID: "plain.entry.show", Summary: "describe it", Safety: plugin.Read, Inputs: key, Run: run},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	root := NewRoot(reg, "test")
+	if cmd, rest, _ := root.Find([]string{"vaultish", "entry", "show", "a"}); cmd.CommandPath() == "rta vaultish entry get" {
+		t.Errorf("`rta vaultish entry show a` reaches the get that reveals the value (rest %v)", rest)
+	}
+	if cmd, _, err := root.Find([]string{"plain", "entry", "get", "a"}); err != nil || cmd.CommandPath() != "rta plain entry show" {
+		t.Errorf("`get` for a show is %v (err %v), want rta plain entry show", cmd.CommandPath(), err)
+	}
+}
+
 // The deny list `audit clients --fix` prints names a verb by its spelling —
 // "Bash(rta keys add:*)" — and a string match is blind to a second spelling of
 // the same command. A whole namespace is denied whole, so an alias inside it is

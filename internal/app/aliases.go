@@ -29,7 +29,17 @@ import (
 var verbSynonyms = [][]string{
 	{"list", "ls"},
 	{"rm", "remove", "delete"},
-	{"show", "get"},
+}
+
+// lookAliases are spellings that a verb answers to in one direction only: a
+// command named show also answers to get, and a command named get does not
+// answer to show. In this tool `show` is the look that leaves the value out
+// (`kv show`, `s3 object show`) and `get` is where a value comes out, so a
+// person who types `get` for a show sees less than they asked for, and one who
+// types `show` for a get — `rta vault kv show`, with a secret behind it — would
+// be handed the value by a word that promises not to. The second is not an alias.
+var lookAliases = map[string][]string{
+	"show": {"get"},
 }
 
 // extraAliases are the spellings one command answers to beyond the sets above:
@@ -110,6 +120,9 @@ func addVerbAliases(cmd *cobra.Command, deniedAlone map[string]bool) {
 				claimVerb(cmd, verb)
 			}
 		}
+	}
+	for _, verb := range lookAliases[cmd.Name()] {
+		claimVerb(cmd, verb)
 	}
 	for _, verb := range extraAliases[cmd.CommandPath()] {
 		claimVerb(cmd, verb)
