@@ -13,6 +13,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -28,6 +29,14 @@ import (
 // Only the local queue. A remote server's answer is signed over the digest of
 // what the operator's own machine read (remoteAnswer), and reading the queue
 // to pick the one request would cost the operator key's passphrase twice.
+//
+// **An allow that nothing shows the call for needs its id.** The one call that
+// is parked when the command is typed is not necessarily the one parked when a
+// script's `--yes` runs, and with the card skipped nothing ever puts the
+// call that was meant beside the call that was answered. So a bare allow is
+// for the person at a terminal, who is shown the call and asked, and for a dry
+// run; `--yes` and anything that is not a terminal name the request, as
+// they always had to. Showing and denying are never a release, so they guess.
 //
 // target is the capability being answered, for the call the list names.
 func requestNamed(req plugin.Request, target string) (string, *view.Error) {
@@ -45,7 +54,15 @@ func requestNamed(req plugin.Request, target string) (string, *view.Error) {
 	}
 	switch len(q.Waiting) {
 	case 1:
-		return q.Waiting[0].ID, nil
+		only := q.Waiting[0]
+		if target == "agent.allow" && !req.DryRun && (req.Yes || !atTerminal(req)) {
+			return "", view.Errorf("agent.request.unnamed",
+				"%s is waiting, and nothing here would show it to you before it is allowed, so name it",
+				callNamed(only.Cap, only.Scopes)).
+				WithHint("`" + sf.Call(target, plugin.Arg{Name: "id", Value: only.ID, Positional: true}) +
+					"` allows it; at a terminal `" + sf.Call(target) + "` alone shows the call and asks")
+		}
+		return only.ID, nil
 	case 0:
 		if len(q.Tampered) > 0 {
 			return "", unknownRequest(sf, q.Tampered[0])
@@ -104,7 +121,11 @@ var putQuestion = func(card, prompt string) (string, error) {
 // Anything but y or yes is no, a closed input included: the call stays parked,
 // and the person is told how to refuse it now or leave it to expire.
 func confirmAllow(r consent.Request, question string) bool {
-	answer, _ := putQuestion(allowCard(r), question+" [y/N] ")
+	// Written to the terminal directly, past the renderer that cleans everything
+	// else a person reads here, so the card is cleaned on the way out: a record or
+	// a preview carrying a cursor movement must not be able to redraw the card
+	// above the question it is the subject of.
+	answer, _ := putQuestion(textclean.Terminal(allowCard(r)), question+" [y/N] ")
 	switch strings.ToLower(answer) {
 	case "y", "yes":
 		return true

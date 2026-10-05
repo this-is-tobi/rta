@@ -41,12 +41,48 @@ func TestWithOneCallParkedAnswersNeedNoId(t *testing.T) {
 		t.Error("the one parked call was denied with no id and is still waiting")
 	}
 	again := park(t, "note.rm", "4")
-	v, err := run(t, "agent.allow", nil)
+	q := terminal(t, "y")
+	v, err := allowAt(t, nil, false, false)
 	if err != nil {
-		t.Fatalf("agent allow with no id: %v", err)
+		t.Fatalf("agent allow with no id at a terminal: %v", err)
+	}
+	if q.count != 1 || !strings.Contains(q.card, "note.rm 4") {
+		t.Errorf("the one parked call was allowed without being shown: asked %d times, card %q", q.count, q.card)
 	}
 	if got := v.(view.KeyValue).Pairs[0].Value; got != "note.rm 4" {
 		t.Errorf("allowed %q, want the call that was parked (%s)", got, again.ID)
+	}
+}
+
+// A bare allow guesses the one call that is parked only for a person who is
+// shown it. --yes and a script skip the card, so nothing would ever put the call
+// they meant beside the call they answered: they name it, and the refusal says
+// which call is waiting and how to allow it.
+func TestABareAllowThatNothingShowsTheCallForNamesTheCallInstead(t *testing.T) {
+	isolate(t)
+	r := parkedRemoval(t)
+	for name, run := range map[string]func() error{
+		"no terminal": func() error { _, err := allowAt(t, nil, false, false); return err },
+		"--yes": func() error {
+			terminal(t, "y")
+			_, err := allowAt(t, nil, false, true)
+			return err
+		},
+	} {
+		err := run()
+		if err == nil || codeOfErr(t, err) != "agent.request.unnamed" {
+			t.Fatalf("%s: err = %v, want agent.request.unnamed", name, err)
+		}
+		verr := err.(*view.Error)
+		if !strings.Contains(verr.Message, "note.rm 3") || !strings.Contains(verr.Hint, "rta agent allow "+r.ID) {
+			t.Errorf("%s: the refusal does not name the call and the command: %+v", name, verr)
+		}
+		if _, ok := consent.Find(r.ID); !ok {
+			t.Fatalf("%s: a call nobody named was answered", name)
+		}
+	}
+	if _, err := allowAt(t, nil, true, false); err != nil {
+		t.Errorf("a dry run names the call it would allow and needs no id: %v", err)
 	}
 }
 
@@ -170,6 +206,27 @@ func TestAtATerminalAllowShowsTheCallAndWaitsForAYes(t *testing.T) {
 
 // Anything but a yes is a no, a closed input included, and a no leaves the call
 // where it was, so the person can still refuse it now or let it run out.
+// The card is written straight to the terminal, and what is in it came from the
+// agent: a cursor movement in a preview must reach the screen as nothing.
+func TestTheCardCarriesNoControlSequence(t *testing.T) {
+	isolate(t)
+	p, err := consent.Ask(consent.Call{
+		Cap: "note.rm", Safety: "destructive", Scopes: []string{"3"}, Agent: "claude",
+		Why: "no active grant", Preview: "would remove note 3\x1b[2J\x1b[1;1Hnothing at all\rallowed",
+	}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+	q := terminal(t, "n")
+	if _, err := allowAt(t, map[string]any{"id": p.Request.ID}, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.ContainsAny(q.card, "\x1b\r") {
+		t.Errorf("the card reached the terminal with a control character in it: %q", q.card)
+	}
+}
+
 func TestAnythingButYesLeavesTheCallWaiting(t *testing.T) {
 	for _, answer := range []string{"", "n", "N", "no", "yep", "ye", "y please"} {
 		t.Run("answer "+answer, func(t *testing.T) {
