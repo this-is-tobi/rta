@@ -371,15 +371,18 @@ func curlFileForm(req plugin.Request, data string) *view.Error {
 	if !found || name == "" || req.Surface() == plugin.SurfaceMCP {
 		return nil
 	}
-	if name != "-" {
-		if info, err := pathin.Stat(req, name); err != nil || info.IsDir() {
-			return nil
-		}
-	} else {
+	if name == "-" {
 		name = "/dev/stdin"
+	} else if !namesAFile(req, name) {
+		return nil
 	}
 	return view.Errorf("http.data.atfile", "the body %q is how curl names a file, and %s sends text as written", data, req.Surface().InputName("data")).
 		WithHint("to send the file, give it to " + req.Surface().InputName("data-file") + ": " + name)
+}
+
+func namesAFile(req plugin.Request, name string) bool {
+	info, err := pathin.Stat(req, name)
+	return err == nil && !info.IsDir()
 }
 
 // maxRequestBody is more than any JSON payload somebody keeps in a file and
