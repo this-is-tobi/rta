@@ -1205,11 +1205,7 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 	positionals := c.Arguments()
 	use := leaf
 	for _, f := range positionals {
-		if f.Required {
-			use += fmt.Sprintf(" <%s>", f.Name)
-		} else {
-			use += fmt.Sprintf(" [%s]", f.Name)
-		}
+		use += " " + argumentSlot(f)
 	}
 
 	cmd := &cobra.Command{
@@ -1485,7 +1481,8 @@ func declareCompletion(cmd *cobra.Command, c plugin.Capability, positionals []pl
 			if !ok || !completable(f) {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
-			return candidates(cmd, c, f, args)
+			out, directive := candidates(cmd, c, f, args)
+			return withoutTyped(out, f, positionals, args), directive
 		}
 	} else {
 		// A capability that takes no argument offers none, rather than
@@ -1519,6 +1516,44 @@ func positionalAt(positionals []plugin.Field, idx int) (plugin.Field, bool) {
 		return last, true
 	}
 	return plugin.Field{}, false
+}
+
+// argumentSlot is how a positional is written in a usage line: <name> when it
+// is required and [name] when it is not, with the dots inside when it repeats.
+// `note done <id>` read as one id, and it takes several, all or none.
+func argumentSlot(f plugin.Field) string {
+	name := f.Name
+	if f.Type.Repeatable() {
+		name += "..."
+	}
+	if f.Required {
+		return "<" + name + ">"
+	}
+	return "[" + name + "]"
+}
+
+// withoutTyped drops, for a positional that takes several values, the ones
+// already on the line: `rta note done 3 <tab>` offering 3 again is a choice that
+// can only be a mistake.
+func withoutTyped(out []cobra.Completion, f plugin.Field, positionals []plugin.Field, args []string) []cobra.Completion {
+	if !f.Type.Repeatable() {
+		return out
+	}
+	start := slices.IndexFunc(positionals, func(p plugin.Field) bool { return p.Name == f.Name })
+	if start < 0 || start >= len(args) {
+		return out
+	}
+	typed := make(map[string]bool, len(args)-start)
+	for _, a := range args[start:] {
+		typed[a] = true
+	}
+	kept := make([]cobra.Completion, 0, len(out))
+	for _, o := range out {
+		if !typed[plugin.CandidateValue(o)] {
+			kept = append(kept, o)
+		}
+	}
+	return kept
 }
 
 // candidates asks the field what it can be completed to, with everything the
@@ -1648,9 +1683,14 @@ var remembered = sync.OnceValue(recent.Load)
 // under a habit would be the wrong way round. For the inputs this matters most
 // for (a bucket, a database, a vault path) there is no declared list at all
 // and the shortlist is the whole of it.
+//
+// Not behind a field that lists what exists right now (Suggest, not Live): that
+// list is the whole answer, and what was used before is by definition not in it
+// any more or already is. A note id checked off last week came back as a
+// candidate to check off again.
 func offering(f plugin.Field, c plugin.Capability, declared []cobra.Completion) []cobra.Completion {
 	used := remembered().For(c.ID, f.Name)
-	if len(used) == 0 {
+	if len(used) == 0 || (f.Suggest != nil && !f.Live) {
 		return declared
 	}
 	seen := make(map[string]bool, len(declared))
