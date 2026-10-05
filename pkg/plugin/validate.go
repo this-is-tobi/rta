@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Registration-time validation: the closed sets a declaration may draw
@@ -28,7 +29,7 @@ var (
 	safeties = []Safety{Read, Write, Destructive}
 	// fieldTypes is the closed set an input may declare, in the order the
 	// rejection message lists them.
-	fieldTypes = []FieldType{String, Int, Bool, Float, StringSlice, Text, Path, Secret, SecretSlice}
+	fieldTypes = []FieldType{String, Int, Bool, Float, StringSlice, Text, Path, Secret, SecretSlice, Duration}
 )
 
 // maxIdentifier bounds a plugin name, a capability ID, a field name and a
@@ -832,9 +833,12 @@ func checkBounds(id string, f Field) error {
 	if f.Min == nil && f.Max == nil {
 		return nil
 	}
-	if f.Type != Int && f.Type != Float {
-		return fmt.Errorf("capability %q: input %q is %s and declares Min/Max, which apply only to %s and %s",
-			id, f.Name, f.Type, Int, Float)
+	if f.Type != Int && f.Type != Float && f.Type != Duration {
+		return fmt.Errorf("capability %q: input %q is %s and declares Min/Max, which apply only to %s, %s and %s",
+			id, f.Name, f.Type, Int, Float, Duration)
+	}
+	if f.Type == Duration {
+		return checkDurationBounds(id, f)
 	}
 	lo, loOK := toFloat(f.Min)
 	hi, hiOK := toFloat(f.Max)
@@ -857,6 +861,43 @@ func checkBounds(id string, f Field) error {
 	if f.Type == Int && (fractional(f.Min) || fractional(f.Max)) {
 		return fmt.Errorf("capability %q: input %q is an Int with a fractional bound (Min %v, Max %v); "+
 			"an Int's bounds are whole numbers", id, f.Name, f.Min, f.Max)
+	}
+	return nil
+}
+
+// checkDurationBounds is checkBounds for a Duration: the bounds are text with
+// a unit like the value they bound, and the same three quiet failures apply — a
+// bound the host cannot read (a bare number, or the time.Duration a Go author
+// reaches for, which every surface would print as nanoseconds), and a Min
+// above a Max.
+func checkDurationBounds(id string, f Field) error {
+	var lo, hi time.Duration
+	var loOK, hiOK bool
+	for _, b := range []struct {
+		what string
+		v    any
+		d    *time.Duration
+		ok   *bool
+	}{{"Min", f.Min, &lo, &loOK}, {"Max", f.Max, &hi, &hiOK}} {
+		if b.v == nil {
+			continue
+		}
+		text, isText := b.v.(string)
+		if !isText {
+			return fmt.Errorf("capability %q: input %q has a %s of %#v; a %s's bounds are text with a unit, "+
+				"as in %q, because that is what --help prints and the schema publishes",
+				id, f.Name, b.what, b.v, Duration, "30s")
+		}
+		d, err := ParseDuration(text)
+		if err != nil {
+			return fmt.Errorf("capability %q: input %q has a %s of %q, which is not a duration (%v); %s",
+				id, f.Name, b.what, text, err, durationHint)
+		}
+		*b.d, *b.ok = d, true
+	}
+	if loOK && hiOK && lo > hi {
+		return fmt.Errorf("capability %q: input %q has Min %v above Max %v, so no value could ever be accepted",
+			id, f.Name, f.Min, f.Max)
 	}
 	return nil
 }

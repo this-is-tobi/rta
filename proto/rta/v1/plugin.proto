@@ -66,6 +66,12 @@ enum FieldType {
   // A repeatable credential: everything FIELD_TYPE_SECRET says about
   // masking, and everything FIELD_TYPE_STRING_SLICE says about shape.
   FIELD_TYPE_SECRET_SLICE = 9;
+  // A length of time, carried as text with its unit - "30s", "5m", "2h",
+  // "1d" - on every surface and on this wire: string_value, never a number.
+  // A bare number says nothing about its unit, and a host that read one as
+  // seconds would be guessing for the plugin that meant milliseconds. Bounds
+  // and the default are written the same way.
+  FIELD_TYPE_DURATION = 10;
 }
 
 // Surface is the renderer a request arrived through.

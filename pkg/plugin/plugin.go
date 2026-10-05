@@ -85,6 +85,23 @@ const (
 	// not a list; an author who needs several values from the environment
 	// wants several inputs.
 	SecretSlice FieldType = "secretSlice"
+	// Duration is a length of time written with its unit — "30s", "5m", "2h",
+	// "1d" (ParseDuration) — and carried as that text on every surface and on
+	// the wire. A handler reads it with Request.Duration.
+	//
+	// It exists because an Int called `timeout` never said whether it counted
+	// seconds or milliseconds, and the answer lived in a Help string: the same
+	// `--timeout 30` was half a minute in one capability and thirty
+	// milliseconds in another. A number with its unit attached cannot be
+	// misread. A bare number is refused, not read as seconds — the host would be
+	// guessing for the plugin that meant something else.
+	//
+	// Default, Min and Max are written the same way, as text (`Default: "30s"`),
+	// because that is what `--help` prints and the schema publishes. Bounds are
+	// enforced as they are on an Int: a value the caller sends outside them is
+	// refused with the range named, and one from the operator's config is held
+	// inside it.
+	Duration FieldType = "duration"
 )
 
 // Sensitive reports whether a value of this type is a credential — the
