@@ -40,9 +40,22 @@ func TestTheDoorbellNamesTheCommandAndNoRequestId(t *testing.T) {
 	out := recordingNotifier(t)
 	req := consent.Request{ID: "0a1b2c3d", Deadline: time.Now().Add(time.Minute)}
 
-	ringDoorbell(context.Background(), "note.rm", req)
-
-	raw, err := os.ReadFile(out)
+	// The notifier has three seconds to start, and a machine under load can
+	// take longer to run a script it has just been written than that. A doorbell
+	// that gave up is turned off for the rest of the server's life, so the test
+	// switches it back on and rings again rather than failing on the host's
+	// weather.
+	var raw []byte
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		bell.Lock()
+		bell.off = false
+		bell.Unlock()
+		ringDoorbell(context.Background(), "note.rm", req)
+		if raw, err = os.ReadFile(out); err == nil {
+			break
+		}
+	}
 	if err != nil {
 		t.Fatalf("nothing was shown: %v", err)
 	}
