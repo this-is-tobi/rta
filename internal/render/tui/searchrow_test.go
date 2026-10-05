@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/this-is-tobi/rta/internal/config"
 )
@@ -119,5 +122,66 @@ func TestAShortTerminalGivesEachOfTwoRowsHalfTheRoom(t *testing.T) {
 	}
 	if got := strings.Count(tall, "╭"); got != 4 {
 		t.Errorf("a 60-line terminal shows %d tiles, want 4:\n%s", got, tall)
+	}
+}
+
+// The geometry the idle search line, the half-room rows and the glanced tables
+// all lean on has to hold at every size, not at the three the tests above name:
+// a frame never taller than the terminal, the footer kept where there is room
+// for it, and no tile drawn with a border that does not close. Answers are taken
+// once from the real tiles and delivered to a model at each size, so the sweep
+// is of the layout and not of how fast sys.overview reads the machine.
+func TestTheLandingDashboardHoldsTogetherAtEverySize(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	_, reg := realModel(t, 100, 40)
+	seed := filled(t, New(reg, config.Dashboard{}, nil), 100, 40)
+	answers := map[string]tileMsg{}
+	for i, tl := range seed.tiles {
+		if !tl.search {
+			answers[tl.key()] = tileMsg{key: tl.key(), idx: i, v: seed.tileReturned(i), err: tl.err}
+		}
+	}
+	closed := map[string]string{"╭": "╮", "│": "│", "╰": "╯"}
+	for _, searching := range []bool{false, true} {
+		for w := 40; w <= 200; w += 20 {
+			for h := 8; h <= 60; h += 4 {
+				m := New(reg, config.Dashboard{}, nil)
+				next, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: h})
+				m = next.(Model)
+				for i, tl := range m.tiles {
+					if msg, ok := answers[tl.key()]; ok {
+						msg.idx = i
+						next, _ = m.Update(msg)
+						m = next.(Model)
+					}
+				}
+				if searching {
+					m = press(t, m, "/")
+				}
+				frame := frameLines(m)
+				where := fmt.Sprintf("%dx%d searching=%v", w, h, searching)
+				if len(frame) > h {
+					t.Errorf("%s: the frame is %d lines", where, len(frame))
+				}
+				if h >= 9 && !strings.Contains(strings.Join(frame, "\n"), "quit") {
+					t.Errorf("%s: the footer is gone", where)
+				}
+				for n, line := range frame {
+					if line == "" {
+						continue
+					}
+					first := string([]rune(line)[:1])
+					want, boxed := closed[first]
+					if !boxed {
+						continue
+					}
+					runes := []rune(strings.TrimRight(line, " "))
+					if last := string(runes[len(runes)-1]); last != want {
+						t.Errorf("%s line %d opens with %s and ends with %s: %q", where, n, first, last, line)
+						break
+					}
+				}
+			}
+		}
 	}
 }
