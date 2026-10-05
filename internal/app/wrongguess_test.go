@@ -277,3 +277,18 @@ func TestAnUnknownProfileSaysHowToCreateOne(t *testing.T) {
 		t.Errorf("hint = %q, which does not say how to create the profile", ve.Hint)
 	}
 }
+
+// An empty word is an unset variable in a script, not a misspelling of every
+// command there is: the refusal names the verbs in its hint and lists none of
+// them as the closest matches.
+func TestAnEmptyWordIsNotNearEveryCommand(t *testing.T) {
+	for _, args := range [][]string{{""}, {"sys", ""}, {"kv", " "}} {
+		ve := hintFor(t, args...)
+		if strings.Contains(ve.Message, "closest") {
+			t.Errorf("`rta %q` says %q, which offers every command as a near miss", args, ve.Message)
+		}
+		if ve.Hint == "" {
+			t.Errorf("`rta %q` has no hint", args)
+		}
+	}
+}

@@ -690,7 +690,10 @@ func unknownCommand(cmd *cobra.Command, arg string, rest ...string) error {
 // answer, and past them the documentation.
 func unknownWord(cmd *cobra.Command, arg string, rest []string, topic bool) error {
 	msg := fmt.Sprintf("unknown command %q for %q", arg, cmd.CommandPath())
-	if cmd.DisableSuggestions {
+	// An empty word is an unset variable in a script (`rta kv "$ACTION"`), and
+	// every command begins with nothing: listing them all as the closest
+	// matches answers a question nobody asked.
+	if cmd.DisableSuggestions || strings.TrimSpace(arg) == "" {
 		return errors.New(msg)
 	}
 	// cobra sets the distance on the root alone, inside Execute, and leaves
