@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Inputs are the layers Resolve merges, listed highest-precedence first — in
@@ -279,6 +280,12 @@ func resolve(c Capability, in Inputs) (map[string]any, map[string]origin) {
 				}
 				out[name] = n
 			}
+		case Duration:
+			if d, ok := toDuration(v); ok {
+				if _, stated := from[name]; stated {
+					out[name] = clampDuration(v, d, f)
+				}
+			}
 		case String:
 			if s, ok := v.(string); ok {
 				out[name] = canonicalOption(f, s)
@@ -400,6 +407,19 @@ func clampInt(n int, f Field) int {
 		n = hi
 	}
 	return n
+}
+
+// clampDuration is clampInt for a Duration. A value inside the range is left as
+// it was written; one outside it becomes the bound it crossed, as its author
+// wrote that.
+func clampDuration(v any, d time.Duration, f Field) any {
+	if lo, ok := toDuration(f.Min); ok && d < lo {
+		return f.Min
+	}
+	if hi, ok := toDuration(f.Max); ok && d > hi {
+		return f.Max
+	}
+	return v
 }
 
 func clampFloat(n float64, f Field) float64 {
@@ -624,6 +644,18 @@ func StatedTypeProblem(f Field, v any) (problem, hint string) {
 		return statedRefusal(v, "a boolean"),
 			"write it unquoted as `true` or `false` — a quoted `\"true\"` is a string, " +
 				"and so is a bare `yes`"
+	case Duration:
+		if _, ok := v.(time.Duration); ok {
+			return "is a Go time.Duration, which every surface would show as a count of nanoseconds",
+				"declare it as text with its unit, as `\"30s\"`"
+		}
+		if _, ok := toDuration(v); ok {
+			return "", ""
+		}
+		if text, isText := v.(string); isText && text != "" {
+			return "is text that is not a duration — every call reading it is refused", durationHint
+		}
+		return statedRefusal(v, "a duration"), durationHint + " — a bare number does not say its unit"
 	case StringSlice, SecretSlice:
 		switch v.(type) {
 		case []string, []any, string:

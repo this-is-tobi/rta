@@ -199,6 +199,8 @@ func checkShape(c Capability, f Field, v any, s Surface) (verr *view.Error, how 
 	switch f.Type {
 	case Int, Float:
 		return checkNumber(c, f, v, s)
+	case Duration:
+		return checkDuration(c, f, v, s)
 	case String, Text, Path, Secret:
 		if _, ok := v.(string); ok {
 			return nil, ""
@@ -279,6 +281,45 @@ func checkNumber(c Capability, f Field, v any, s Surface) (verr *view.Error, how
 		WithHint("give it as " + bare), "write it there as " + bare
 }
 
+// checkDuration refuses a value for a Duration that is not a length of time
+// with its unit, which Request.Duration would hand the handler as zero. A bare
+// number is the common one — `timeout: 30` in a config file, YAML reading it as
+// a number — and is named as what it is, never echoed back, for checkShape's
+// reason: this runs over a file that is one mistyped block from a credential.
+//
+// how is fromSource's: what to write in the file instead.
+func checkDuration(c Capability, f Field, v any, s Surface) (verr *view.Error, how string) {
+	if _, ok := toDuration(v); ok {
+		return nil, ""
+	}
+	code, want := "core.input.type", "a duration"
+	if bounds := f.Bounds(); bounds != "" {
+		code, want = "core.input.range", want+" "+bounds
+	}
+	capability, input := s.CapabilityName(c.ID), refusedInput(s, f)
+	if statedShape(v) == "a number" {
+		return view.Errorf(code, "%s takes %s for %s, not a bare number", capability, want, input).
+				WithHint("a number does not say its unit — " + durationHint),
+			"write it there with a unit, as `" + exampleDuration(f) + "`"
+	}
+	return view.Errorf(code, "%s takes %s for %s, not %s", capability, want, input, statedShape(v)).
+			WithHint(durationHint),
+		"write it there with a unit, as `" + exampleDuration(f) + "`"
+}
+
+// exampleDuration is a duration for a hint to show, one the field takes: its
+// default, or an edge of its range, or "30s".
+func exampleDuration(f Field) string {
+	for _, v := range []any{f.Default, f.Min, f.Max} {
+		if _, ok := f.Range(v); v != nil && ok {
+			if text, isText := v.(string); isText {
+				return text
+			}
+		}
+	}
+	return "30s"
+}
+
 func checkOptions(c Capability, f Field, given any, s Surface) *view.Error {
 	if len(f.Options) == 0 {
 		return nil
@@ -315,8 +356,11 @@ func optionValues(f Field, v any) []string {
 
 // numberOf is what an Int or a Float takes, as a refusal says it.
 func numberOf(t FieldType) string {
-	if t == Float {
+	switch t {
+	case Float:
 		return "a number"
+	case Duration:
+		return "a duration"
 	}
 	return "a whole number"
 }
@@ -352,6 +396,8 @@ func (f Field) Range(v any) (want string, ok bool) {
 	}
 	var n float64
 	switch f.Type {
+	case Duration:
+		return f.rangeOfDuration(v, bounds)
 	case Int:
 		i, isInt := toInt(v)
 		if !isInt {
@@ -378,6 +424,9 @@ func (f Field) Range(v any) (want string, ok bool) {
 // declares neither. `rta explain` prints it beside the input, which is where
 // every range refusal sends the person reading it.
 func (f Field) Bounds() string {
+	if f.Type == Duration {
+		return f.durationBounds()
+	}
 	if f.Type != Int && f.Type != Float {
 		return ""
 	}
@@ -577,4 +626,37 @@ func GuardInputs(c Capability) Handler {
 		}
 		return run(ctx, req)
 	}
+}
+
+// durationBounds is Bounds for a Duration: the declared text of each bound as
+// its author wrote it, so a refusal quotes "from 1s to 1h" and not the
+// nanoseconds they are.
+func (f Field) durationBounds() string {
+	lo, hasLo := f.Min.(string)
+	hi, hasHi := f.Max.(string)
+	switch {
+	case hasLo && hasHi:
+		return "from " + lo + " to " + hi
+	case hasLo:
+		return "of at least " + lo
+	case hasHi:
+		return "of at most " + hi
+	}
+	return ""
+}
+
+// rangeOfDuration is Range for a Duration. A value that is no duration is
+// outside a bounded field's range, as a value no accessor reads as a number is.
+func (f Field) rangeOfDuration(v any, bounds string) (string, bool) {
+	d, ok := toDuration(v)
+	if !ok {
+		return bounds, false
+	}
+	if lo, ok := toDuration(f.Min); ok && d < lo {
+		return bounds, false
+	}
+	if hi, ok := toDuration(f.Max); ok && d > hi {
+		return bounds, false
+	}
+	return "", true
 }

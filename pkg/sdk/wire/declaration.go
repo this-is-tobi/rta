@@ -34,6 +34,7 @@ var fieldTypes = []struct {
 	{plugin.Path, rtav1.FieldType_FIELD_TYPE_PATH},
 	{plugin.Secret, rtav1.FieldType_FIELD_TYPE_SECRET},
 	{plugin.SecretSlice, rtav1.FieldType_FIELD_TYPE_SECRET_SLICE},
+	{plugin.Duration, rtav1.FieldType_FIELD_TYPE_DURATION},
 }
 
 var endpointRoles = []struct {
