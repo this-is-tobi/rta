@@ -487,13 +487,7 @@ func tileContentLines(t tile, width int) []string {
 		_ = cli.RenderError(&buf, t.err, cli.Options{Format: cli.Pretty, Width: inner})
 		body = buf.String()
 	case t.view != nil:
-		var buf bytes.Buffer
-		// Fill: a tile is drawn at the grid's width whether its content wants
-		// it or not, so the slack belongs to the content rather than to the
-		// space beside it.
-		if err := cli.Render(&buf, t.view, cli.Options{Format: cli.Pretty, Width: inner, Fill: true, Screen: true}); err == nil {
-			body = buf.String()
-		}
+		body = tileBody(t.view, inner)
 	default:
 		body = theme.Subtle.Render("loading…")
 	}
