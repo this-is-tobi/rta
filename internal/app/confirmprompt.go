@@ -61,10 +61,36 @@ var confirmTerminal = func() bool {
 // end of input is an error, which the caller reads as no.
 //
 // A variable, so a test can answer without a terminal.
-var askLine = func(prompt string) (string, error) {
+var askLine = func(ctx context.Context, prompt string) (string, error) {
 	defer shutdown.Prompting()()
 	fmt.Fprint(os.Stderr, prompt)
-	return bufio.NewReader(stdio.Real()).ReadString('\n')
+	return readLineOrDone(ctx, bufio.NewReader(stdio.Real()).ReadString)
+}
+
+// readLineOrDone is the line read, or ctx's error as soon as ctx is cancelled.
+//
+// A read on a terminal does not return when a signal arrives, so a question
+// that waited on it alone made ^C — the natural way to say no — cost the whole
+// three seconds rta gives a command to stop, and end in an error saying the
+// command had not returned. Racing the read against the context lets the answer
+// to ^C be the answer to anything else that is not a yes. The goroutine left
+// blocked on the descriptor goes when the process does, which is what follows.
+func readLineOrDone(ctx context.Context, read func(delim byte) (string, error)) (string, error) {
+	type reply struct {
+		line string
+		err  error
+	}
+	got := make(chan reply, 1)
+	go func() {
+		line, err := read('\n')
+		got <- reply{line, err}
+	}()
+	select {
+	case r := <-got:
+		return r.line, r.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 // declinedConfirmation is what a person who answered no, or nothing, gets: the
@@ -78,10 +104,15 @@ func declinedConfirmation(w io.Writer) error {
 
 // askToProceed asks the question and reports whether the answer was yes. Only
 // "y" and "yes" are: anything else, an empty line and ^D included, is no.
-func askToProceed() bool {
-	answer, err := askLine("Go ahead? [y/N] ")
-	if err != nil && answer == "" {
-		return false
+func askToProceed(ctx context.Context, w io.Writer) bool {
+	answer, err := askLine(ctx, "Go ahead? [y/N] ")
+	if err != nil {
+		// The question's line is still open: ^D and ^C are not a newline, and what
+		// comes next would run on from the prompt.
+		fmt.Fprintln(w)
+		if answer == "" {
+			return false
+		}
 	}
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "y", "yes":
@@ -115,7 +146,7 @@ func confirmCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capabil
 			_ = cli.Render(w, v, preview)
 		}
 	}
-	if !askToProceed() {
+	if !askToProceed(ctx, w) {
 		return declinedConfirmation(w)
 	}
 	return nil
