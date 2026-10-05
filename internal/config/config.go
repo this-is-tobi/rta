@@ -324,7 +324,7 @@ func LoadFile() (Config, error) {
 // opened without waiting, and nil when there is no file. What `rta config edit`
 // and `rta config check` hold the file to is this text, not a reading of it.
 func ReadText() ([]byte, error) {
-	data, err := atomicfile.ReadCapped(Path(), maxConfigBytes)
+	data, err := readFile(Path())
 	switch {
 	case os.IsNotExist(err):
 		return nil, nil
@@ -334,6 +334,23 @@ func ReadText() ([]byte, error) {
 	return data, nil
 }
 
+// byteOrderMark is what some editors put in front of a UTF-8 file. The YAML
+// decoder keeps it as part of the first key, so `output: json` behind one is a
+// key named "\ufeffoutput" that nothing reads and that prints exactly like the
+// one that was meant.
+const byteOrderMark = "\ufeff"
+
+// trimBOM is text without a byte-order mark at its start.
+func trimBOM(data []byte) []byte { return bytes.TrimPrefix(data, []byte(byteOrderMark)) }
+
+// readFile is the file at path as every reader here sees it: capped, opened
+// without waiting, and without a byte-order mark, so the text a writer compares
+// and splices is the text the loader read.
+func readFile(path string) ([]byte, error) {
+	data, err := atomicfile.ReadCapped(path, maxConfigBytes)
+	return trimBOM(data), err
+}
+
 // Parse reads configuration text as the loader reads the file: the same
 // refusals, the same stamping of where it came from, the same errors naming
 // the config path. It is what `rta config edit` holds the editor's result to
@@ -341,6 +358,7 @@ func ReadText() ([]byte, error) {
 // every later command is refused while the person is still looking at it.
 func Parse(data []byte) (Config, error) {
 	var cfg Config
+	data = trimBOM(data)
 	if len(data) > 0 {
 		if err := yamlguard.RefuseAnchors(data); err != nil {
 			return cfg, view.Errorf("config.invalid", "parsing %s: %v", Path(), err).
@@ -508,7 +526,7 @@ func write(cfg Config) error {
 	// A missing file is a new one. Anything else that stops it being read is
 	// reported rather than written over: LoadFile has just failed the same way
 	// for every caller that reads before it writes.
-	old, err := atomicfile.ReadCapped(path, maxConfigBytes)
+	old, err := readFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return view.Errorf("config.unreadable", "reading %s: %v", path, err)
 	}
@@ -547,7 +565,7 @@ func Replace(original, edited []byte) error {
 	defer release()
 
 	path := Path()
-	current, err := atomicfile.ReadCapped(path, maxConfigBytes)
+	current, err := readFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return view.Errorf("config.unreadable", "reading %s: %v", path, err)
 	}

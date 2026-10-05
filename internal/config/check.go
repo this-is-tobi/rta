@@ -63,7 +63,7 @@ func Check() ([]Finding, error) {
 // each role — and the shape of a plugins: section, whose own keys are what each
 // plugin declares and so are internal/pluginconf's to judge.
 func CheckText(data []byte) []Finding {
-	file, err := parser.ParseBytes(data, 0)
+	file, err := parser.ParseBytes(trimBOM(data), 0)
 	if err != nil || len(file.Docs) == 0 || file.Docs[0].Body == nil {
 		return nil
 	}
@@ -245,7 +245,7 @@ var keyHomes = sync.OnceValue(func() map[string]string {
 // palette, a plugin's declaration — names a problem by, to be given a line.
 func KeyLines(data []byte) map[string]int {
 	lines := map[string]int{}
-	file, err := parser.ParseBytes(data, 0)
+	file, err := parser.ParseBytes(trimBOM(data), 0)
 	if err != nil || len(file.Docs) == 0 || file.Docs[0].Body == nil {
 		return lines
 	}
