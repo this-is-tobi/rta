@@ -121,3 +121,43 @@ func TestTheSectionReportDoesNotEchoTheStatedValue(t *testing.T) {
 		}
 	}
 }
+
+// A key a plugin declares as a dotted path — `password.symbols` — is read
+// through a nested block. Written as one key with a dot in it nothing reads it,
+// and the report said it had "no value", which sent the operator to fill in a
+// key that already had one. It says what it is, and that without echoing the
+// value that was written.
+func TestADottedKeyWrittenFlatIsToldToNestNotThatItHasNoValue(t *testing.T) {
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{
+		Name: "sys", Summary: "sys", Capabilities: []plugin.Capability{{
+			ID: "sys.password", Summary: "password", Safety: plugin.Read,
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+			Inputs: []plugin.Field{
+				{Name: "symbols", Type: plugin.Bool, Config: "password.symbols"},
+			},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	flat := config.Config{Plugins: map[string]map[string]any{"sys": {"password.symbols": true}}}
+	r, _ := Resolve(trusted(t, flat), installed)
+	problems := r.Check(reg)
+	if len(problems) != 1 {
+		t.Fatalf("want one problem, got %v", problems)
+	}
+	got := problems[0].Reason + " / " + problems[0].Hint
+	if strings.Contains(got, "no value") {
+		t.Errorf("a key that has a value was reported as having none: %s", got)
+	}
+	if !strings.Contains(got, "written as one key") || !strings.Contains(got, "password: {symbols: <value>}") ||
+		!strings.Contains(got, "rta config set plugins.sys.password.symbols") {
+		t.Errorf("the report does not say how to nest it: %s", got)
+	}
+
+	nested := config.Config{Plugins: map[string]map[string]any{"sys": {"password": map[string]any{"symbols": true}}}}
+	r, _ = Resolve(trusted(t, nested), installed)
+	if problems := r.Check(reg); len(problems) != 0 {
+		t.Errorf("the nested spelling was reported: %v", problems)
+	}
+}

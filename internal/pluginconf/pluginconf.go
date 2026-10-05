@@ -253,17 +253,7 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 	sort.Strings(namespaces)
 
 	for _, ns := range namespaces {
-		readers := map[string][]plugin.Field{}
-		for _, c := range reg.Capabilities() {
-			if !strings.HasPrefix(c.ID, ns+".") {
-				continue
-			}
-			for _, f := range c.Inputs {
-				if f.Config != "" {
-					readers[f.Config] = append(readers[f.Config], f)
-				}
-			}
-		}
+		readers := Readers(reg, ns)
 		for _, key := range flatten(r.sections[ns], "") {
 			if len(readers[key]) == 0 {
 				problems = append(problems, Problem{Section: ns,
@@ -272,7 +262,17 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 				continue
 			}
 			f := SharedField(readers[key])
-			v, _ := lookup(r.sections[ns], key)
+			v, found := lookup(r.sections[ns], key)
+			if !found && strings.Contains(key, ".") {
+				// A key the plugin declares as a dotted path, written as one key
+				// with a dot in it: nothing reads it, because the section is
+				// nested. Said as what it is — reported as "no value" it sent the
+				// operator to fill in a key that already had one.
+				problems = append(problems, Problem{Section: ns,
+					Reason: fmt.Sprintf("%s is written as one key, and the section nests it", key),
+					Hint:   "write it as `" + nestedSpelling(key) + "`, or `rta config set plugins." + ns + "." + key + " <value>` does it"})
+				continue
+			}
 			// Before the Options check, and reported here for the reason the
 			// rest of this function exists: a value whose type the handler
 			// cannot read was not ignored, it was read as the zero — a
@@ -315,6 +315,40 @@ func (r *Resolver) Check(reg *registry.Registry) []Problem {
 		}
 	}
 	return problems
+}
+
+// Readers is every input of a namespace's capabilities that reads a config
+// key, by that key: what a plugins: section may state for it, and the one
+// answer to "what does this key mean" that doctor, `rta config set` and the
+// schema all hold a stated value to.
+func Readers(reg *registry.Registry, ns string) map[string][]plugin.Field {
+	readers := map[string][]plugin.Field{}
+	for _, c := range reg.Capabilities() {
+		if !strings.HasPrefix(c.ID, ns+".") {
+			continue
+		}
+		for _, f := range c.Inputs {
+			if f.Config != "" {
+				readers[f.Config] = append(readers[f.Config], f)
+			}
+		}
+	}
+	return readers
+}
+
+// nestedSpelling is a dotted key as the block that states it, in the one-line
+// form that can be pasted: `password: {symbols: <value>}`. The value is a
+// placeholder and never the stated one, which this report does not echo.
+func nestedSpelling(key string) string {
+	parts := strings.Split(key, ".")
+	nest := "<value>"
+	for i := len(parts) - 1; i >= 0; i-- {
+		nest = parts[i] + ": " + nest
+		if i > 0 {
+			nest = "{" + nest + "}"
+		}
+	}
+	return nest
 }
 
 // OptionValues is a stated value as the option strings a run compares: one

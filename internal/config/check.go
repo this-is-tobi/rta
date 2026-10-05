@@ -194,17 +194,15 @@ func unknownKey(pair *ast.MappingValueNode, s *shape, path, full string) Finding
 	return f
 }
 
-// nestedForm spells a dotted key's value as the block that states it, in the
-// one-line form a person can paste, and the command that writes it.
+// nestedForm spells a dotted key as the block that states it, in the one-line
+// form a person can paste, and the command that writes it. The value is a
+// placeholder and never the one in the file: this runs over a file somebody
+// else may have written, and a misplaced `plugins.pg.password: …` is exactly
+// the line whose value must not be printed into a report.
 func nestedForm(pair *ast.MappingValueNode, path string) string {
-	value := "<value>"
-	switch pair.Value.(type) {
-	case *ast.StringNode, *ast.IntegerNode, *ast.FloatNode, *ast.BoolNode:
-		value = pair.Value.String()
-	}
 	dotted := pair.Key.GetToken().Value
 	parts := strings.Split(dotted, ".")
-	nest := value
+	nest := "<value>"
 	for i := len(parts) - 1; i >= 0; i-- {
 		nest = parts[i] + ": " + nest
 		if i > 0 {
@@ -213,7 +211,7 @@ func nestedForm(pair *ast.MappingValueNode, path string) string {
 	}
 	line := "write it nested, `" + nest + "`"
 	if path == "" {
-		line += ", or let `rta config set " + dotted + " " + value + "` do it"
+		line += ", or let `rta config set " + dotted + " <value>` do it"
 	}
 	return line
 }
