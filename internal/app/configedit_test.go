@@ -54,6 +54,20 @@ func TestConfigEditOpensAStarterWhenThereIsNoFileAndKeepsNothingUntilALineIsUnco
 	}
 }
 
+func TestConfigEditOpensAFileWithNothingInItOnTheStarterToo(t *testing.T) {
+	opened := editing(t, leave)
+	_, errOut, file, err := configRun(t, configRegistry(t), "\n", "config", "edit", "-o", "pretty")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, errOut)
+	}
+	if (*opened)[0] != config.Starter() {
+		t.Errorf("the editor was shown:\n%s", (*opened)[0])
+	}
+	if file != "\n" {
+		t.Errorf("leaving the starter alone changed the file: %q", file)
+	}
+}
+
 func TestConfigEditSavesWhatWasUncommentedAndKeepsTheSchemaBesideTheFile(t *testing.T) {
 	editing(t, func(shown string) string {
 		return strings.Replace(shown, "# output: json ", "output: json ", 1)
