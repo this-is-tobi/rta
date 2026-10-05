@@ -296,7 +296,7 @@ func parseHint(err error) string {
 			"second connection for the same plugin replaces that key rather than adding to " +
 			"it — give each one its own profile instead of repeating the key"
 	}
-	return "fix the file or re-create it with `rta init`"
+	return "fix it — `rta config edit` opens the file and says what is wrong when you save — or re-create it with `rta init`"
 }
 
 // maxConfigBytes is far beyond any configuration an operator writes by hand and

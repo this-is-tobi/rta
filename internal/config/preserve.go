@@ -255,6 +255,7 @@ func withComments(old []byte, cfg Config, fresh []byte, edges bool) ([]byte, err
 	cm := yaml.CommentMap{}
 	var rawOld any
 	if err := yaml.UnmarshalWithOptions(old, &rawOld, yaml.CommentToMap(cm)); err != nil || len(cm) == 0 {
+		//nolint:nilerr // a comment that cannot be read is left out, and refusing the write over it is the worse answer
 		return append([]byte(configHeader), fresh...), nil
 	}
 	var rawNew any
@@ -264,6 +265,7 @@ func withComments(old []byte, cfg Config, fresh []byte, edges bool) ([]byte, err
 	kept := remapComments(cm, rawOld, rawNew, edges)
 	out, err := yaml.MarshalWithOptions(cfg, yaml.WithComment(kept))
 	if err != nil {
+		//nolint:nilerr // the same: comments that cannot be placed cost the comments, not the write
 		return append([]byte(configHeader), fresh...), nil
 	}
 	return out, nil
