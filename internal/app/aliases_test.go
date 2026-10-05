@@ -215,19 +215,21 @@ func TestAWordThatReadsAsAVerbIsNotFrozenAsAName(t *testing.T) {
 }
 
 // A flag of the verb with no name beside it is not a request for help: the
-// verb says what it is missing, instead of an answer that ignores the flag.
+// verb says what it is missing, instead of an answer that ignores the flag, and
+// says the same thing `rta lock add --ttl 30m` does. The name is not a required
+// positional since `--all` stands in for it, so the refusal is the capability's
+// own and names both ways out.
 func TestAFlagOfTheVerbWithNoNameIsMissingTheName(t *testing.T) {
 	reg, err := NewRegistry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = run(t, reg, "lock", "--ttl", "30m")
-	var ve *view.Error
-	if !errors.As(err, &ve) || ve.Code != CodeUsage || !strings.Contains(ve.Message, "missing <name>") {
-		t.Errorf("`rta lock --ttl 30m` answered %v, want a missing name", err)
-	}
-	if err != nil && ExitCode(err) != 2 {
-		t.Errorf("`rta lock --ttl 30m` exits %d, want 2", ExitCode(err))
+	for _, args := range [][]string{{"lock", "--ttl", "30m"}, {"lock", "add", "--ttl", "30m"}} {
+		_, _, err = run(t, reg, args...)
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != "core.lock.name" || !strings.Contains(ve.Hint, "--all") {
+			t.Errorf("`rta %s` answered %v, want the missing name and the way to take in every agent", strings.Join(args, " "), err)
+		}
 	}
 	if out, _, err := run(t, reg, "lock", "-o", "json"); err != nil || !strings.Contains(out, "USAGE") {
 		t.Errorf("a flag every command has turned bare `rta lock` into %q %v", out, err)

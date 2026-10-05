@@ -596,8 +596,15 @@ func (m Model) actionSeed(a capAction, tbl view.Table) (map[string]any, bool) {
 	case srcSelf:
 		// The page already knows its subject: a seeded key from the line the
 		// page shows under that name, the rest from the identity it ran with.
+		// The first positional stands in when none is required, as on a row:
+		// `lock add` takes its agent or --all, and the agent's own page still
+		// names the agent. It seeds what the page knows and requires nothing.
+		seedKeys := keys
+		if len(seedKeys) == 0 {
+			seedKeys = firstPositional(a.cap)
+		}
 		if kv, ok := m.result.raw.(view.KeyValue); ok {
-			for _, f := range keys {
+			for _, f := range seedKeys {
 				if key := a.seed[f.Name]; key != "" {
 					if raw := pairNamed(kv, key); raw != "" {
 						if v, err := rowKey(f, raw); err == nil {
@@ -607,7 +614,7 @@ func (m Model) actionSeed(a capAction, tbl view.Table) (map[string]any, bool) {
 				}
 			}
 		}
-		for _, f := range keys {
+		for _, f := range seedKeys {
 			if _, done := base[f.Name]; done {
 				continue
 			}
@@ -615,8 +622,10 @@ func (m Model) actionSeed(a capAction, tbl view.Table) (map[string]any, bool) {
 				base[f.Name] = v
 			}
 		}
-		if len(base) != len(keys) {
-			return nil, false
+		for _, f := range keys {
+			if _, done := base[f.Name]; !done {
+				return nil, false
+			}
 		}
 	}
 	return base, true

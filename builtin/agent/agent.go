@@ -622,11 +622,7 @@ func lockedLine(sf plugin.Surface) string {
 	}
 	names := make([]string, 0, len(locks))
 	for _, l := range locks {
-		name := l.Name
-		if l.Kind != lockdown.KindAgent {
-			name += " (" + string(l.Kind) + ")"
-		}
-		names = append(names, name)
+		names = append(names, l.Label())
 	}
 	return strings.Join(names, ", ") + " — " + sf.CapabilityName("lock.list") + " says why"
 }
