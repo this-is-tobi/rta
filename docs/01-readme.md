@@ -4,7 +4,7 @@
 
 It is also the layer underneath the agent you already use. rta is not another AI CLI and does not want to be the thing you talk to: it is the part that decides what Claude Code, Codex, Cursor, Copilot or Gemini may actually touch. Handing an agent a shell is **one decision that covers everything it will ever do**. Pointing it at rta is a different shape: read-only by default, everything else granted per capability, narrowed to one record, expiring on its own, and written down.
 
-Nothing needs configuring to begin, and nothing needs reading in order. Pick what you came to do. Each track lists its pages in reading order, and every page ends by naming the one that follows it.
+Nothing needs configuring to begin, and nothing needs reading in order. Pick what you came to do. Each track lists its pages in reading order, and every page outside the reference section ends by naming the one that follows it.
 
 ## Four tracks
 
