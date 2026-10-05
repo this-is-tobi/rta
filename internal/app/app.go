@@ -281,9 +281,14 @@ func (o *globalOpts) format() (cli.Format, error) {
 // to: a terminal gets output shaped for a person, a pipe or a file bytes that
 // do not depend on who ran the command. A nil cmd — a failure reported before
 // a command was found — has no stderr of its own to put a note on.
+//
+// The characters follow the locale instead (cli.ASCIIOnly), whichever stream
+// it is: LC_ALL=C says the session cannot show a box, and a CI log captured
+// under it cannot either.
 func renderOptions(cmd *cobra.Command, format cli.Format, noColor bool) cli.Options {
 	screen := isTTY()
-	o := cli.Options{Format: format, NoColor: noColor || !screen, Width: termWidth(), Screen: screen}
+	o := cli.Options{Format: format, NoColor: noColor || !screen, Width: termWidth(), Screen: screen,
+		ASCII: cli.ASCIIOnly(os.Getenv)}
 	if cmd != nil {
 		o.Notes = cmd.ErrOrStderr()
 	}
