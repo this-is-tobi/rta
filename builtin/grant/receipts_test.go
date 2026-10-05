@@ -254,10 +254,29 @@ func TestAnUnknownTargetHintsTheInstallWhenItLooksLikeAService(t *testing.T) {
 	if !ok || verr.Code != "grant.unknowntarget" {
 		t.Fatalf("got %v, want grant.unknowntarget", err)
 	}
-	for _, want := range []string{"check for a typo", "`rta plugin index add official`", "`rta plugin install pg`"} {
+	for _, want := range []string{"check for a typo", "pg is a first-party plugin", "`rta plugin install pg`"} {
 		if !strings.Contains(verr.Hint, want) {
 			t.Errorf("the hint does not say %q: %q", want, verr.Hint)
 		}
+	}
+	if strings.Contains(verr.Hint, "index add") {
+		t.Errorf("the hint sends the install through an index command: %q", verr.Hint)
+	}
+}
+
+// A word that names no first-party plugin and no attached index is a typo as
+// likely as a service, and is not told it may be one.
+func TestAnUnknownTargetOfNoKnownPluginIsNotGuessedToBeAService(t *testing.T) {
+	setup(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	_, err := allowH(context.Background(), req(map[string]any{"target": "mongo.query", "ttl": "1h"}))
+	verr, ok := err.(*view.Error)
+	if !ok || verr.Code != "grant.unknowntarget" {
+		t.Fatalf("got %v, want grant.unknowntarget", err)
+	}
+	if strings.Contains(verr.Hint, "plugin install") || strings.Contains(verr.Hint, "index add") {
+		t.Errorf("a word that is no known plugin was sent to an install: %q", verr.Hint)
 	}
 }
 

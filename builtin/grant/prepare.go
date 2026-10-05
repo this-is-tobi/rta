@@ -160,23 +160,20 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 // notInstalledHint answers the other reading of an unknown target: not a typo
 // of a capability but a plugin that is not here yet — `pg.query` on a machine
 // that has not installed pg. Read from what is already on the machine, the
-// attached indexes' manifests, so a grant never reaches a network to find out;
-// with no index attached the hint is how to get one, hedged, since a word
-// that names nothing is as often a typo as a service.
+// attached indexes' manifests, so a grant never reaches a network to find out.
+// A first-party name no index is attached for is named as that, and the install
+// attaches the index itself; any other word is as often a typo as a service, and
+// gets no guess.
 func notInstalledHint(catalog func() []plugin.Capability, target string) string {
 	ns := core.Namespace(target)
 	if targetExists(catalog, ns) || !plugin.ValidName(ns) {
 		return ""
 	}
-	if len(plugindist.Indexes()) == 0 {
-		return "if " + ns + " is a service rather than a typo, it comes from a plugin — " +
-			"`rta plugin index add official` attaches the first-party index, then `rta plugin install " + ns + "`"
-	}
 	if listed, verr := plugindist.Resolve(ns); verr == nil {
 		return ns + " is a plugin in the " + listed.Index + " index, not installed here — `rta plugin install " + ns +
 			"` installs it, and then it can be granted"
 	}
-	return ""
+	return plugindist.FirstPartyHintFor(target, catalog())
 }
 
 // breadthNote says how much a plugin-wide grant covers. `grant allow kv` reads
