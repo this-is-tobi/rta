@@ -361,7 +361,7 @@ rta use                          # what is on
 rta use --off
 ```
 
-While a profile is on, every later command for a plugin it covers runs against it with no `--profile` at all, and says so first: at a terminal each prints ` ● staging · 59m left` on stderr before its result, in step with the TUI's header. A pipe, `-o json` and the other machine-readable formats never get the line, and a command that names its own `--profile` has already said which environment it means.
+While a profile is on, every later command for a plugin it covers runs against it with no `--profile` at all, and says so first: at a terminal each prints `● staging 59m left` on stderr before its result, the bullet the TUI's header draws for it. A pipe, `-o json` and the other machine-readable formats never get the line, and a command that names its own `--profile` has already said which environment it means.
 
 **The deadline is real.** `--for` overrides it, a profile's own `ttl:` supplies it, and when it lapses everything falls back to the base configuration on its own. A deadline that depended on a process staying alive would not be a deadline.
 
