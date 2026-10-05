@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -96,6 +97,14 @@ func glanceTable(v view.View, inner int) ([]string, bool) {
 		return nil, false
 	}
 	rows := evenRows(t)
+	for _, r := range rows {
+		for i := range r {
+			r[i] = oneLine(r[i])
+		}
+	}
+	for i := range t.Columns {
+		t.Columns[i].Name = oneLine(t.Columns[i].Name)
+	}
 	widths := glanceWidths(t, rows)
 	if gridWidth(widths) <= inner {
 		return nil, false
@@ -116,6 +125,22 @@ func glanceTable(v view.View, inner int) ([]string, bool) {
 		}))
 	}
 	return append(lines, glanceFooter(t, inner)...), true
+}
+
+// lineBreaks is the whitespace that moves a cursor to another line or another
+// column, with the spaces around it.
+var lineBreaks = regexp.MustCompile(`[ \t]*[\r\n\v\f\t][ \t\r\n\v\f]*`)
+
+// oneLine is a cell on a single line. The renderer lets a cell take several
+// lines of a row, which a borderless table has no way to show: a note title
+// with a newline in it, free text an agent with a grant can write, put its
+// second half at the left edge of the tile where it reads as a line of the
+// tile's own.
+func oneLine(s string) string {
+	if !strings.ContainsAny(s, "\r\n\v\f\t") {
+		return s
+	}
+	return lineBreaks.ReplaceAllString(s, " ")
 }
 
 // evenRows is every row at exactly one cell per column, the way the renderer
