@@ -954,9 +954,9 @@ func (c Capability) Words() []string { return strings.Split(c.ID, ".") }
 // completion and `rta explain` all read this one order, and Validate holds a
 // list argument to being the last of it.
 //
-// It is the order the usage line shows, and the only one it can show: fang
-// draws every optional slot after the rest of the line, whatever order the
-// line was written in. The binder filled the slots in declaration order, so
+// It is the order the usage line shows, and the only one it can show: a
+// required slot after an optional one would not say which of the two a lone
+// argument fills. The binder filled the slots in declaration order, so
 // git.blame, which declares its optional repository before the file, read
 // `rta git blame README` as the repository README and no file, and refused
 // it as core.input.missing under a --help reading `rta git blame <file>

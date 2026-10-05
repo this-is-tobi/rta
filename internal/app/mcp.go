@@ -246,9 +246,10 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			// Required, not defaulted. Every MCP client on this machine reads
 			// the same grant file, so an unnamed server is one that shares
 			// every grant with every other client — and, worse, one nobody
-			// can stop: `rta lock add <name>` matches on the name, and
-			// lockdown.match refuses to match an empty one, so the emergency
-			// brake had no handle to pull. Defaulting it would pick a name on
+			// can stop by name: `rta lock add <name>` matches on the name,
+			// and lockdown.match refuses to match an empty one, so the only
+			// brake such a server would have is the one on every agent at
+			// once (`rta lock add --all`). Defaulting it would pick a name on
 			// the operator's behalf and attach their consent to it, which is
 			// the one thing a name must not be.
 			agentName = strings.TrimSpace(agentName)
@@ -375,7 +376,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 					return serveUsage("--consent over --http needs --operators",
 						"a parked call waits for a person, and enrolled operators answering with "+
 							"`rta agent allow --server` are the only people positioned to; see "+
-							"\"The operator channel\" in docs/30-boundary/20-mcp.md")
+							"docs/30-boundary/66-operators.md")
 				}
 				if tokenFile == "" && oidcIssuer == "" {
 					return serveUsage("serving over --http needs --token-file or --oidc-issuer",

@@ -276,7 +276,7 @@ const minTokenLen = 16
 //   - Group *read* leaks the tokens that exist, which is worse than 0600 and
 //     better than the alternative of refusing to start: a shared-group file
 //     is how some deployments hand a credential to a service account, and
-//     docs/30-boundary/20-mcp.md promises only that world-readable files are refused.
+//     docs/30-boundary/65-hosting-a-server.md promises only that world-readable files are refused.
 //     internal/app/mcp.go prints the warning, and the operator decides.
 //
 // This file is the entire trust anchor for the static-token path, and unlike
