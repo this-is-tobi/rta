@@ -122,7 +122,7 @@ The permission column says what an AI agent needs for the row, after its safety 
 
 ## Running something
 
-`enter` on a read that needs nothing runs it at once with its defaults — `sys.cpu`, `gen.password`, `time.at` — from a search match, a catalogue row or a tile's action key, and `e` on the result opens the inputs when you want to change one. That is every read with no required input, except one holding a credential nothing has supplied yet: the `kv` unlock, for one, still asks, because a run without it would only come back refused. A write opens its form, because the values are the consent, and a destructive capability goes through its dry run.
+`enter` on a read that needs nothing runs it at once with its defaults — `sys.cpu`, `gen.password`, `time.at` — from a search match, a catalogue row, a tile's action key or an action key on a result, and `e` on the result opens the inputs when you want to change one. That is every read with nothing left to ask once the row or tile it was reached from has said what it knows, except one holding a credential nothing has supplied yet: the `kv` unlock, for one, still asks, because a run without it would only come back refused. A passphrase that only signs a request to another server is not that — `grant.list` runs, and asks for its operator passphrase when you give it a `server`. A write opens its form, because the values are the consent, and a destructive capability goes through its dry run.
 
 A capability with a required input, or a write, opens a form built from its declaration:
 
@@ -225,7 +225,7 @@ The agent tile says the same, and opens the queue and the record. From it, and f
 | Key | What it does |
 | --- | --- |
 | `w` | The queue of parked calls |
-| `g` | The record of what agents did |
+| `g` | The record of what agents did, at once with its defaults — `e` on it changes the filters |
 | `enter` | Everything about the call under the cursor, including what it would do |
 | `a` | Allow it once — the footer names the call and what it would do, and `enter` allows exactly that call |
 | `A` | Allow it for a while, or as a role — the `ttl` and `role` form, for the same call |

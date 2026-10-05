@@ -428,6 +428,11 @@ func (m Model) runSeeded(a capAction, base map[string]any) (tea.Model, tea.Cmd) 
 	// whether or not a form came first: with inputs still to ask, the form
 	// collects them and hands over; with nothing left to ask, the screen
 	// opens directly on what the call would do.
+	if !a.bare {
+		if values, quick := m.quickRunFrom(cap, base); quick {
+			base, a.bare = values, true
+		}
+	}
 	if !a.bare && len(fieldsAfter(cap, base)) > 0 {
 		return m.startFormWith(cap, base, prev)
 	}
