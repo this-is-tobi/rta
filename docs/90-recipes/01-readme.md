@@ -350,7 +350,7 @@ A team that names its deployments consistently can write the whole map once — 
 `infra/rta.yaml`, in the repository the team already owns:
 
 ```yaml
-# yaml-language-server: $schema=schema.json    # `rta config schema > schema.json`, committed beside it
+# yaml-language-server: $schema=config.schema.json    # `rta config schema > config.schema.json`, committed beside it
 profiles:
   shop-staging:
     note: "shop, staging — safe to hand to an agent"

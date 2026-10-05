@@ -20,7 +20,7 @@ Nothing needs configuring to begin, and nothing needs reading in order. Pick wha
 1. [Installation](./10-getting-started/10-installation.md) — one binary, on your `$PATH`, and a check that it works.
 2. [Quick start](./10-getting-started/20-quickstart.md) — ask a question, get it in the shape you need, open the shell, read a capability's card, and connect an agent, refuse a call and allow it.
 
-When you want more of the everyday surface, these stand alone and read well in this order: [The CLI](./20-using/10-cli.md), [The TUI](./20-using/20-tui.md), [Seeing the shape of things](./20-using/30-trees.md), [Profiles](./20-using/40-profiles.md) and [Secrets](./20-using/50-secrets.md).
+When you want more of the everyday surface, these stand alone and read well in this order: [The CLI](./20-using/10-cli.md), [The TUI](./20-using/20-tui.md), [Your config file](./20-using/22-your-config-file.md), [Dashboard and theme](./20-using/25-dashboard-and-theme.md), [Seeing the shape of things](./20-using/30-trees.md), [Profiles](./20-using/40-profiles.md) and [Secrets](./20-using/50-secrets.md).
 
 ### B. Give an agent access safely
 

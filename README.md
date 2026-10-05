@@ -50,6 +50,7 @@ Ask Claude Code to add a note and the refusal carries the exact line that would 
 *Using it*
 - [The CLI](./docs/20-using/10-cli.md) *- Output formats, exit codes, `--dry-run`, `explain`, scripting*
 - [The TUI](./docs/20-using/20-tui.md) *- The dashboard, answering agents, the catalogue, forms and confirmations*
+- [Your config file](./docs/20-using/22-your-config-file.md) *- Where it lives, `rta config set`, `edit` and `check`, and a first file worth having*
 - [Dashboard and theme](./docs/20-using/25-dashboard-and-theme.md) *- Stating the dashboard in the config file, and the colours*
 - [Seeing the shape of things](./docs/20-using/30-trees.md) *- Mapping a directory, a bucket, a Vault mount or an etcd keyspace in one call*
 - [Profiles](./docs/20-using/40-profiles.md) *- Naming an environment once and pointing every plugin at it*

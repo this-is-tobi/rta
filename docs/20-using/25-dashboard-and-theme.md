@@ -90,7 +90,8 @@ There are ten colours to name — `primary`, `accent`, `muted`, `faint`, `label`
 ## Related
 
 - [The TUI](./20-tui.md) — the keys that do the same from the dashboard
+- [Your config file](./22-your-config-file.md) — where the file is and `rta config set`, which writes a colour or a column count for you
 
 ## Next
 
-[Profiles](./40-profiles.md) — naming an environment once and pointing every plugin at it.
+[Seeing the shape of things](./30-trees.md) — mapping a directory, a bucket, a Vault mount or an etcd keyspace in one call.
