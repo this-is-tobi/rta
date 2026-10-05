@@ -8,9 +8,11 @@ import (
 // `rta --help` used to be one alphabetical list of thirty-odd commands,
 // `agent` beside `audit` beside `cert`, with nothing saying that a third of
 // them are the boundary — what an agent may reach — and another third are
-// setup. Every root command now sits under one of three headings, and a
+// setup. Every root command now sits under one of four headings, and a
 // command left out of them lands back in cobra's unnamed group, which is the
-// old list coming back one entry at a time.
+// old list coming back one entry at a time. The fourth holds what a person
+// reaches for later — the lock, the team ceiling, the operator identity — so
+// the consent heading is the three a newcomer meets first.
 func TestEveryRootCommandIsGrouped(t *testing.T) {
 	reg, err := NewRegistry()
 	if err != nil {
@@ -28,9 +30,15 @@ func TestEveryRootCommandIsGrouped(t *testing.T) {
 		t.Errorf("commands under no heading: %v", orphans)
 	}
 	agents := strings.Join(groups[groupAgents], " ")
-	for _, want := range []string{"mcp", "grant", "agent", "lock", "operator", "policy"} {
+	for _, want := range []string{"mcp", "grant", "agent"} {
 		if !strings.Contains(" "+agents+" ", " "+want+" ") {
 			t.Errorf("%s is not under the agents heading: %v", want, groups[groupAgents])
+		}
+	}
+	advanced := strings.Join(groups[groupAdvanced], " ")
+	for _, want := range []string{"lock", "operator", "policy"} {
+		if !strings.Contains(" "+advanced+" ", " "+want+" ") {
+			t.Errorf("%s is not under the advanced heading: %v", want, groups[groupAdvanced])
 		}
 	}
 	for _, want := range []string{"sys", "net", "kv", "audit", "git"} {
@@ -46,15 +54,16 @@ func TestEveryRootCommandIsGrouped(t *testing.T) {
 }
 
 // And the headings actually reach the screen, in the order the product tells
-// its story: what it can do, what it lets an agent do, how to set it up.
-func TestTheRootHelpShowsTheThreeHeadings(t *testing.T) {
+// its story: what it can do, what it lets an agent do, how to set it up, and
+// what comes later.
+func TestTheRootHelpShowsTheFourHeadings(t *testing.T) {
 	out, _, err := run(t, testRegistry(t), "--help")
 	if err != nil {
 		t.Fatal(err)
 	}
 	lower := strings.ToLower(out)
 	last := -1
-	for _, heading := range []string{"capabilities", "agents and consent", "setup"} {
+	for _, heading := range []string{"capabilities", "agents and consent", "setup", "advanced"} {
 		at := strings.Index(lower, heading)
 		if at < 0 {
 			t.Errorf("--help has no %q heading:\n%s", heading, out)

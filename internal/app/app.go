@@ -316,8 +316,8 @@ func formatNames() string {
 
 // RenderTopLevelError writes a failure the way a success would have been
 // written: in the format the caller asked for. It reports whether it handled
-// the error, so the caller can fall back to fang's styling for an error
-// nothing coded — a mistake on the command line is not one (see CodeUsage).
+// the error, so the caller can draw an error nothing coded under a
+// code of its own (see Execute) — a mistake on the command line is not one (see CodeUsage).
 //
 // The bug it fixes is narrow and bad. main printed an unrendered view.Error
 // with fmt.Fprintf, ignoring --output entirely, so `rta plugin dev -o json`
@@ -340,8 +340,8 @@ func RenderTopLevelError(w io.Writer, root *cobra.Command, err error) bool {
 	// errors.As rather than a type assertion, here and in asViewError: the
 	// exit-code contract is documented as stable, and a direct assertion made
 	// it hold only for as long as nobody wrapped a view.Error with %w on its
-	// way up — a wrapped one exited 2 and was styled by fang as a usage
-	// mistake. Nothing wraps one today; the contract should not depend on
+	// way up — a wrapped one exited 2 and was drawn as a failure nothing
+	// coded. Nothing wraps one today; the contract should not depend on
 	// that staying true.
 	var rendered RenderedError
 	if errors.As(err, &rendered) {
@@ -873,7 +873,9 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 			WarnConfigProblems(cmd.ErrOrStderr(), cmd, opts.output != "pretty")
 			return nil
 		},
-		Long:          "rta is a single extendable binary offering one consistent interface\nover the tools you juggle daily — scriptable CLI, TUI, and MCP for AI agents.",
+		Long: "rta is a single extendable binary offering one consistent interface over the tools you juggle daily — " +
+			"scriptable CLI, TUI, and MCP for AI agents. What an agent may reach is yours to decide: it starts with reads only, " +
+			"and every grant beyond that is narrowed, expires on its own and is written to a record.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		// Rather than cobra's legacyArgs, which is the same refusal in a
@@ -962,6 +964,7 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 	root.AddCommand(newDashboardCommand(reg, opts))
 	root.AddCommand(newConfigCommand(reg, opts))
 	groupRoot(root, reg)
+	root.SetHelpFunc(helpFunc(opts))
 	describeGroups(root)
 	documentArguments(root)
 	// Last, over the whole tree: see CodeUsage. A capability command sets a
@@ -970,7 +973,7 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 	root.SetFlagErrorFunc(flagError)
 	// cobra's own help and completion commands, which it would otherwise add
 	// inside Execute, after this point: a command the walk below never saw
-	// refused `rta completion zsh extra` as a plain error fang styled, under
+	// refused `rta completion zsh extra` as a plain, uncoded error under
 	// any -o. Added here they are in the tree the walk codes. completion is
 	// a group like any other, so it refuses a shell it does not know rather
 	// than printing its help and exiting 0 (see groupRunE).
@@ -999,7 +1002,7 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 // reports it as "program was killed: context canceled", which reached the
 // screen the TUI had just handed back as a box nothing coded. Anything else
 // it returns — a terminal it could not take, a panic it recovered — is coded,
-// so it is rendered like every other failure rather than styled by fang.
+// so it is rendered like every other failure rather than as one nothing coded.
 func tuiExit(err error) error {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, tea.ErrInterrupted) {
 		return nil
@@ -1007,29 +1010,35 @@ func tuiExit(err error) error {
 	return view.AsError(err, "core.tui")
 }
 
-// The root help's three headings. `rta --help` used to be one alphabetical
+// The root help's four headings. `rta --help` used to be one alphabetical
 // list of thirty-odd entries, `agent` beside `audit` beside `cert`, with
 // nothing saying that a third of them are the product's second half — the
 // commands that decide what an agent may reach — and another third are
-// setup. The docs tell the story in three parts; the help now does too.
+// setup. The docs tell the story in three parts; the help does too, and keeps
+// what comes later under a fourth.
 const (
 	groupCapabilities = "capabilities"
 	groupAgents       = "agents"
 	groupSetup        = "setup"
+	groupAdvanced     = "advanced"
 )
 
 // agentCommands are the root commands about agents and consent: the built-in
-// namespaces whose every verb answers to the person at the terminal, the
-// server that exposes everything else to an agent, and the ceiling over the
-// grants. Named here rather than derived, because this is rta's own
-// vocabulary — a plugin installed tomorrow is a capability by definition.
-var agentCommands = map[string]bool{
-	"mcp": true, "grant": true, "agent": true, "lock": true, "operator": true, "policy": true,
-}
+// namespaces whose every verb answers to the person at the terminal, and the
+// server that exposes everything else to an agent. Named here rather than
+// derived, because this is rta's own vocabulary — a plugin installed tomorrow
+// is a capability by definition.
+var agentCommands = map[string]bool{"mcp": true, "grant": true, "agent": true}
 
-// groupRoot files every root command under one of the three headings:
+// advancedCommands are the ones a person reaches for later: the incident
+// control, the team ceiling over every grant, and the identity that manages
+// remote servers. Beside the three above they were half of one heading, and
+// the heading is what a newcomer reads to learn what consent is.
+var advancedCommands = map[string]bool{"lock": true, "policy": true, "operator": true}
+
+// groupRoot files every root command under one of the four headings:
 // registry namespaces are capabilities unless they are about agents, and
-// everything rta adds itself is setup. cobra's own help and completion
+// everything rta adds itself is setup unless it is advanced. cobra's own help and completion
 // commands are setup too; they are attached at the end of NewRoot, after
 // this, so they are named by their group id here rather than by command.
 func groupRoot(root *cobra.Command, reg *registry.Registry) {
@@ -1037,6 +1046,7 @@ func groupRoot(root *cobra.Command, reg *registry.Registry) {
 		&cobra.Group{ID: groupCapabilities, Title: "capabilities"},
 		&cobra.Group{ID: groupAgents, Title: "agents and consent"},
 		&cobra.Group{ID: groupSetup, Title: "setup"},
+		&cobra.Group{ID: groupAdvanced, Title: "advanced"},
 	)
 	namespaces := map[string]bool{}
 	for _, p := range reg.Plugins() {
@@ -1046,6 +1056,8 @@ func groupRoot(root *cobra.Command, reg *registry.Registry) {
 		switch name := c.Name(); {
 		case agentCommands[name]:
 			c.GroupID = groupAgents
+		case advancedCommands[name]:
+			c.GroupID = groupAdvanced
 		case namespaces[name]:
 			c.GroupID = groupCapabilities
 		default:
@@ -1103,7 +1115,8 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 			strings.TrimSpace(c.Summary+"\n\n"+c.Description),
 			capabilityArgs(c, positionals),
 		),
-		Args: positionalArgsValidator(positionals),
+		Args:        positionalArgsValidator(positionals),
+		Annotations: capabilityAnnotations(c),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCapability(cmd.Context(), cmd, c, args, opts)
 		},
@@ -1125,6 +1138,9 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 	if plugin.Profilable(c) && cmd.Flags().Lookup("profile") == nil {
 		cmd.Flags().String("profile", "", "run against one of the connections in your config "+
 			"(name, or name/instance when an environment holds several)")
+		if !hasConnection(c) {
+			_ = cmd.Flags().SetAnnotation("profile", annotUnlisted, []string{"true"})
+		}
 		completeFlag(cmd, "profile",
 			func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 				cfg, err := config.Load()

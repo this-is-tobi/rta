@@ -19,26 +19,18 @@ type argDoc struct {
 
 // argWrapWidth is where a row breaks, chosen to be narrower than the terminal
 // widths lipgloss will re-wrap this text at rather than to match any of them.
-// fang hands Long to lipgloss with the terminal's width; a row that already
-// fits is left alone and keeps its hang indent, while one that does not is
-// re-wrapped flush and loses the column. Wrapping short is what makes the
-// first case the usual one. A terminal narrower than this still degrades to
-// flush prose, which is legible and not worth forking fang's renderer to
-// avoid.
+// The help renderer hangs these rows again at the terminal's own width
+// (helper.arguments), so this is the width they are written at, not the one
+// they are read at.
 const argWrapWidth = 88
 
 // argumentsBlock renders the section that documents a command's positional
 // arguments, for appending to its Long text.
 //
-// Long, rather than a section of its own, because there is nowhere else to put
-// it. Help is rendered by fang, whose layout is fixed — long text, usage,
-// examples, then the command and flag groups — and which exposes no hook to
-// add a group. Its Example field renders after usage, in the right place, but
-// truncates each line to the code block's width with an ellipsis, which is
-// fine for an example and destroys a description. Reimplementing fang's
-// renderer to gain one section would fork a moving target for every command in
-// the tree. So the block goes at the end of Long and renders immediately above
-// the usage line instead of below it.
+// Long, rather than a section of its own, because it travels with the text:
+// the same sentences are what a person reads under --help and what an agent
+// reads in the tool's description. The block goes at the end of Long, so it
+// renders immediately above the usage line.
 func argumentsBlock(args []argDoc) string {
 	described := make([]argDoc, 0, len(args))
 	width := 0
@@ -88,7 +80,7 @@ func withArguments(long string, args []argDoc) string {
 // documentArgs gives one hand-written command the arguments section a
 // capability command gets from its Inputs.
 //
-// Seeded from Short when there is no Long, because fang renders
+// Seeded from Short when there is no Long, because help draws
 // cmp.Or(Long, Short): a command that had only a summary would otherwise trade
 // it for the block, documenting the argument by deleting the sentence saying
 // what the command is.

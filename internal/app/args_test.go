@@ -345,13 +345,16 @@ func TestARequiredFlagIsSaidToBeRequiredWhereItIsDescribed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Lower-cased: help starts a description with a capital, which is not what
+	// this is about.
+	lower := strings.ToLower(out)
 	for _, want := range []string{"which way (required)", "where"} {
-		if !strings.Contains(out, want) {
+		if !strings.Contains(lower, want) {
 			t.Errorf("--help does not say %q:\n%s", want, out)
 		}
 	}
 	for _, notRequired := range []string{"where (required)", "who you are (required)"} {
-		if strings.Contains(out, notRequired) {
+		if strings.Contains(lower, notRequired) {
 			t.Errorf("--help calls a flag something other than the line can fill required on it: %q\n%s", notRequired, out)
 		}
 	}

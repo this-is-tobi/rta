@@ -12,8 +12,8 @@ import (
 // column somebody wrapped them at when they wrote the text.
 //
 // **A line break inside a paragraph is the author's editor, not the author's
-// meaning.** Help is rendered by fang, which wraps long text to the terminal's
-// width and leaves a line break where it finds one: text broken at seventy
+// meaning.** Help wraps long text to the terminal's width and leaves a line
+// break where it finds one: text broken at seventy
 // characters came out ragged on a wide terminal, each line stopping short of
 // the edge, and as a long line and a short stub on a narrow one, where the
 // terminal wrapped a line the author had already wrapped. About a hundred and
