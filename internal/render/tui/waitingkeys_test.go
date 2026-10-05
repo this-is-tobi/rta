@@ -100,3 +100,32 @@ func TestTheQueueIsReadOffDiskAndCleanedOnTheWay(t *testing.T) {
 		t.Errorf("the preview came through as %q, want one clean line", got[0].would)
 	}
 }
+
+// The key is the capability's to declare, and the queue does not take it from
+// a tile that has given it a meaning of its own.
+func TestWIsLeftToATileThatDeclaresItForSomethingElse(t *testing.T) {
+	m, _ := realModel(t, 100, 30)
+	m = learn(t, m, oneCall())
+	tile := -1
+	for i, tl := range m.tiles {
+		if !tl.search && tl.cap.ID == "agent.overview" {
+			tile = i
+		}
+	}
+	if tile < 0 {
+		t.Fatal("no agent tile in this catalogue")
+	}
+	m.selected = tile
+	if !m.answersWaiting() {
+		t.Fatal("the agent tile's own w is the queue, which is what answers")
+	}
+	m.tiles[tile].actions = append([]capAction{}, m.tiles[tile].actions...)
+	for i := range m.tiles[tile].actions {
+		if m.tiles[tile].actions[i].key == "w" {
+			m.tiles[tile].actions[i].cap.ID = "demo.whois"
+		}
+	}
+	if m.answersWaiting() {
+		t.Error("the queue took w from a tile that declares it for another capability")
+	}
+}
