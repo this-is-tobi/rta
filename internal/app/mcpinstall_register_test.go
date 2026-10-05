@@ -397,6 +397,92 @@ func TestAServerThatIsNotRtaUnderRtasNameIsNotReplaced(t *testing.T) {
 	}
 }
 
+// claudeHasWithEnv is claudeHas for an entry the operator added variables to:
+// `claude mcp add -e`, or an edit of ~/.claude.json, either of which rta
+// registers none of.
+func claudeHasWithEnv(t *testing.T, scope claudeScope, env map[string]any, args ...string) {
+	t.Helper()
+	wd, _ := os.Getwd()
+	self, err := registeredBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := map[string]any{"type": "stdio", "command": self, "args": args, "env": env}
+	servers := map[string]any{"rta": entry}
+	doc := map[string]any{}
+	if scope == scopeUser {
+		doc["mcpServers"] = servers
+	} else {
+		doc["projects"] = map[string]any{wd: map[string]any{"mcpServers": servers}}
+	}
+	body, _ := json.Marshal(doc)
+	if err := os.WriteFile(filepath.Join(os.Getenv("HOME"), ".claude.json"), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Replacing a registration is the client's remove and then an add of what rta
+// passes it, so what the operator put on the old entry beyond that does not come
+// back. One of those variables is usually where the server keeps its data, and
+// a server that quietly starts looking somewhere else is the "registered and no
+// traffic" report again. It is refused, naming the variables and never their
+// values, with the line that takes the entry out; the same registration is
+// still "nothing to do", variables or not.
+func TestAReplacementThatWouldDropTheOperatorsVariablesIsRefused(t *testing.T) {
+	calls := loggingClient(t, "claude", "exit 0")
+	claudeHasWithEnv(t, scopeLocal, map[string]any{"XDG_DATA_HOME": "/custom/data", "TOKEN": "hunter2"},
+		"mcp", "serve", "--as", "claude")
+
+	_, _, err := run(t, testRegistry(t), "mcp", "install", "claude", "--consent")
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "core.mcp.install.env" {
+		t.Fatalf("err = %#v, want core.mcp.install.env", err)
+	}
+	if !strings.Contains(ve.Message, "TOKEN, XDG_DATA_HOME") || !strings.Contains(ve.Hint, "claude mcp remove rta --scope local") {
+		t.Errorf("the refusal names %q and hints %q, want the variables and the remove line", ve.Message, ve.Hint)
+	}
+	if strings.Contains(ve.Message+ve.Hint, "hunter2") || strings.Contains(ve.Message+ve.Hint, "/custom/data") {
+		t.Errorf("the refusal printed a value: %q %q", ve.Message, ve.Hint)
+	}
+	if len(calls()) != 0 {
+		t.Errorf("claude was run despite the refusal: %v", calls())
+	}
+
+	out, errOut, err := run(t, testRegistry(t), "mcp", "install", "claude", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if answerPairs(t, out)["already registered"] != "Claude Code" || len(calls()) != 0 {
+		t.Errorf("the same registration with variables on it was not left alone: %s %v", out, calls())
+	}
+}
+
+// --global takes out the directory-only entry that would override it, and for
+// the same reason a replacement is refused it leaves one that sets variables
+// where it is: the answer says which, by name, and what takes it out.
+func TestGlobalLeavesADirectoryOnlyEntryThatSetsVariablesInPlace(t *testing.T) {
+	calls := loggingClient(t, "claude", "exit 0")
+	claudeHasWithEnv(t, scopeLocal, map[string]any{"XDG_DATA_HOME": "/custom/data"}, "mcp", "serve", "--as", "claude")
+
+	out, errOut, err := run(t, testRegistry(t), "mcp", "install", "claude", "--global", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	got := calls()
+	if len(got) != 1 || !strings.HasPrefix(got[0], "mcp add rta --scope user -- ") {
+		t.Errorf("claude was run as %v, want the user-level add and no removal", got)
+	}
+	pairs := answerPairs(t, out)
+	kept := pairs["kept"]
+	if !strings.Contains(kept, "XDG_DATA_HOME") || strings.Contains(kept, "/custom/data") ||
+		!strings.Contains(kept, "claude mcp remove rta --scope local") {
+		t.Errorf("kept = %q, want the variable's name, not its value, and the line that takes it out", kept)
+	}
+	if pairs["removed"] != "" {
+		t.Errorf("removed = %q, want nothing taken out", pairs["removed"])
+	}
+}
+
 // Every other client that keeps a file rta can read says "nothing to do" for
 // the registration that is already in it, the way Claude Code does.
 func TestAnIdenticalRegistrationInAClientsFileIsLeftAlone(t *testing.T) {

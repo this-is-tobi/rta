@@ -667,6 +667,9 @@ func installClient(ctx context.Context, said io.Writer, req installRequest) (ins
 
 	home, _ := os.UserHomeDir()
 	plan := planInstall(c, req, self, serve, argsFn, home, wd)
+	if plan.refuse != nil {
+		return installOutcome{}, plan.refuse
+	}
 	line := plan.commandLine(bin)
 	receipt := installReceipt{client: c, req: req, wd: wd, plan: plan, line: line}
 
@@ -808,11 +811,17 @@ type installPlan struct {
 	// redundant is a directory-only registration that --global makes
 	// pointless, and worse than pointless: it overrides the new one here.
 	redundant *claudeRegistration
+	// kept is a directory-only registration that --global would have taken out
+	// as redundant, left in place because it sets variables of the operator's
+	// that nothing would bring back.
+	kept *claudeRegistration
 	// same is the registration already in place, identical to the one asked
 	// for, when there is one.
 	same bool
 	// changed says how a replaced registration differs.
 	changed string
+	// refuse is why the registration that is there cannot be replaced.
+	refuse *view.Error
 }
 
 func (p installPlan) nothingToDo() bool { return len(p.steps) == 0 }
@@ -863,6 +872,19 @@ func planInstall(c mcpClient, req installRequest, self string, serve []string,
 	switch {
 	case here != nil && here.command == self && slices.Equal(here.args, serve):
 		plan.same = true
+	case here != nil && len(here.env) > 0:
+		// Taking an entry out and adding it again is the client's own pair of
+		// commands, and the add makes a new entry from what rta passes it: the
+		// variables the operator set on the old one do not come back, and rta
+		// registers none of its own. One of them is usually where the server
+		// keeps its data (XDG_DATA_HOME), and an entry that quietly starts
+		// looking in another place is the "registered, and no traffic" report
+		// again. So it is theirs to replace, with the variables in front of them.
+		plan.refuse = view.Errorf("core.mcp.install.env",
+			"the registration %s holds sets %s, which replacing it would drop",
+			c.label, strings.Join(here.env, ", ")).
+			WithHint("take it out with `" + manualRemove(c, target == scopeUser) + "` and add it again with the " +
+				"options you want and your own variables, or leave it as it is")
 	case here != nil:
 		plan.replaces = here
 		plan.changed = describeChange(*here, self, serve, req.as)
@@ -871,7 +893,12 @@ func planInstall(c mcpClient, req installRequest, self string, serve []string,
 	default:
 		plan.steps = append(plan.steps, add)
 	}
-	if req.global && local != nil {
+	switch {
+	case req.global && local != nil && len(local.env) > 0:
+		// What the replacement above refuses for the same reason: a removal
+		// is the client's own command, and it takes the variables with it.
+		plan.kept = local
+	case req.global && local != nil:
 		plan.redundant = local
 		plan.steps = append(plan.steps, installStep{args: c.removeArgs(scopeLocal), remove: true, scope: scopeLocal})
 	}
@@ -993,6 +1020,15 @@ func (r installReceipt) answer() view.KeyValue {
 			what += " (started with " + orNone(tail) + ", which this one does not carry)"
 		}
 		pairs = append(pairs, view.Pair{Key: drop, Value: what + ", which would have overridden this one there"})
+	}
+	if kept := r.plan.kept; kept != nil {
+		keep := "kept"
+		if strings.HasPrefix(r.verb, "would") {
+			keep = "would keep"
+		}
+		pairs = append(pairs, view.Pair{Key: keep, Value: "the directory-only registration for " + r.wd +
+			" sets " + strings.Join(kept.env, ", ") + ", which removing it would drop, so it stays and " +
+			"overrides this one there — `" + manualRemove(r.client, false) + "` takes it out"})
 	}
 	pairs = append(pairs, r.req.serve.pairs()...)
 	next, reach := r.nextAndReach()
