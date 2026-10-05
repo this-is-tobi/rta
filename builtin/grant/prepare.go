@@ -15,6 +15,7 @@ import (
 	core "github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/internal/lockdown"
+	"github.com/this-is-tobi/rta/internal/near"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	profiles "github.com/this-is-tobi/rta/internal/profile"
@@ -633,39 +634,11 @@ func nearestName(name string, names []string) string {
 	allowed := max(1, len([]rune(name))/3)
 	best, bestDistance := "", allowed+1
 	for _, n := range names {
-		if d := editDistance(name, strings.ToLower(n)); d < bestDistance {
+		if d := near.Distance(name, strings.ToLower(n)); d < bestDistance {
 			best, bestDistance = n, d
 		}
 	}
 	return best
-}
-
-// editDistance is the optimal-string-alignment distance between two words:
-// insertions, deletions and substitutions, and a swap of two neighbouring
-// letters as one edit.
-func editDistance(a, b string) int {
-	ra, rb := []rune(a), []rune(b)
-	d := make([][]int, len(ra)+1)
-	for i := range d {
-		d[i] = make([]int, len(rb)+1)
-		d[i][0] = i
-	}
-	for j := range d[0] {
-		d[0][j] = j
-	}
-	for i := 1; i <= len(ra); i++ {
-		for j := 1; j <= len(rb); j++ {
-			cost := 1
-			if ra[i-1] == rb[j-1] {
-				cost = 0
-			}
-			d[i][j] = min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
-			if i > 1 && j > 1 && ra[i-1] == rb[j-2] && ra[i-2] == rb[j-1] {
-				d[i][j] = min(d[i][j], d[i-2][j-2]+1)
-			}
-		}
-	}
-	return d[len(ra)][len(rb)]
 }
 
 // olderServerNote warns when a server that is open right now is running a
