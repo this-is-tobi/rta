@@ -256,7 +256,7 @@ type Connection struct {
 	// is 127.0.0.1, which a certificate issued for the service does not name:
 	// it is refused for its name, as the forward's doing. The plugins that
 	// speak TLS through a forward take a `tls-server-name` setting, the name
-	// to check the certificate for instead (docs/20-using/40-profiles.md), so
+	// to check the certificate for instead (docs/20-using/42-reaching-private-services.md), so
 	// the check stays whole rather than being given up for the hop.
 	TunnelTLS bool `yaml:"tunnelTLS,omitempty" json:"tunnelTLS,omitempty"`
 
