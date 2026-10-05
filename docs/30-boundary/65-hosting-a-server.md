@@ -81,4 +81,4 @@ Consent now has exactly one place to go. `--consent` combines with `--http` only
 
 ## Next
 
-[Operators](./66-operators.md) — how the people who run a hosted server issue grants and answer consent without a shell on it. [OIDC](./70-oidc.md) names the person behind a call with the identity provider you already have.
+[The operator channel](./66-operators.md) — how the people who run a hosted server issue grants and answer consent without a shell on it.

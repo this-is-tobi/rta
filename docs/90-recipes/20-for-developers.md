@@ -91,8 +91,11 @@ rta use --off
 
 Grants lapse on their own. Revoking is for a task that ended early, or for walking away from a machine with a server still running.
 
-## Next
+## Related
 
 - [For a security team](./10-for-security-teams.md) — the same boundary, from the side that owns it
-- [An agent in a cluster](./30-an-agent-in-a-cluster.md) — when the agent should run somewhere else and hold nothing
 - [Profiles](../20-using/40-profiles.md) · [Grants](../30-boundary/30-grants.md) · [The TUI](../20-using/20-tui.md)
+
+## Next
+
+[An agent in a cluster](./30-an-agent-in-a-cluster.md) — when the agent should run somewhere else and hold nothing.

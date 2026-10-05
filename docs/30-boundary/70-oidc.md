@@ -161,3 +161,7 @@ servers:
 The chart refuses to render an issuer with no audience or no subject, so those two startup refusals arrive at `helm install` time instead of as a CrashLoopBackOff.
 
 One deployment note that follows from discovery happening at startup: if your IdP and rta start together, rta can lose the race and refuse to start. It restarts, and a `startupProbe` with room to retry covers it — but a NetworkPolicy that never lets the pod reach the IdP produces the same symptom permanently, so check egress before blaming the ordering.
+
+## Next
+
+[Kubernetes](./80-kubernetes.md) — the same idea as a chart: one instance per person, the decisions to make before setting a value, and day two.

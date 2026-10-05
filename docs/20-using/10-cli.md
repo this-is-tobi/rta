@@ -234,7 +234,10 @@ A body that is a JSON object or array goes out as `Content-Type: application/jso
 - **Setup itself is scriptable.** `rta profile set` and `rta policy` state an environment and a ceiling from flags, and `rta dashboard add` puts a tile on the TUI's landing screen, all idempotent, so provisioning does not have to fall back to writing YAML by hand — see [Profiles](./41-profiles-in-depth.md#writing-one-from-a-script) and [The TUI](./25-dashboard-and-theme.md#stating-the-dashboard-yourself).
 - **Never pass a credential on a command line.** Store it (`rta kv set <entry>`, which asks for it at a terminal, `--file <path>`, or `--file /dev/stdin` from a pipe) and reference it: `--secret password=kv:<entry>`. A value in argv is in `ps`, in your shell history, and in most CI logs. `rta profile set` refuses one rather than writing it.
 
+## Related
+
+- [Recipes](../90-recipes/01-readme.md) — worked examples
+
 ## Next
 
-- [The TUI](./20-tui.md) — the same capabilities, interactively
-- [Recipes](../90-recipes/01-readme.md) — worked examples
+[The TUI](./20-tui.md) — the same capabilities, interactively.

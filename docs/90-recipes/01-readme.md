@@ -446,7 +446,11 @@ It is refused outright for a cluster that configures no backup. CloudNativePG ac
 | `vault.snapshot` | the unseal keys, and the snapshot is **sealed with the source cluster's** — a restore without them is a file you cannot open | wherever `operator init` output was stashed, never Vault itself |
 | `etcd.snapshot` | the cluster's own identity — membership, peer URLs and TLS material. The restore mints a new cluster ID and takes the topology from its own flags | your etcd configuration, wherever that is kept |
 
-## Next
+## Related
 
 - [Grants](../30-boundary/30-grants.md) · [Team policy](../30-boundary/50-team-policy.md) · [The record](../30-boundary/40-audit-trail.md)
 - [Writing a plugin](../40-plugins/20-writing-a-plugin.md) — if the capability you want does not exist yet
+
+## Next
+
+[For a security team](./10-for-security-teams.md) — deploying rta, committing a ceiling, handing out roles, reviewing grants and the record, stopping an agent.

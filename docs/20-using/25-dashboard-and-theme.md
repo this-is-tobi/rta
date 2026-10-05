@@ -90,7 +90,6 @@ There are ten colours to name — `primary`, `accent`, `muted`, `faint`, `label`
 ## Related
 
 - [The TUI](./20-tui.md) — the keys that do the same from the dashboard
-- [Profiles](./40-profiles.md) — what a tile's `profile:` names
 
 ## Next
 

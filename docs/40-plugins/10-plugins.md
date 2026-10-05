@@ -281,8 +281,11 @@ rta plugin dev -- mytool greet world
 
 See [Writing a plugin](./20-writing-a-plugin.md) for the SDK and the `sdktest` conformance suite.
 
-## Next
+## Related
 
 - [Profiles](../20-using/40-profiles.md) — configuring a plugin per environment
 - [Grants](../30-boundary/30-grants.md) — bounding what an agent reaches through one
-- [Writing a plugin](./20-writing-a-plugin.md)
+
+## Next
+
+[Writing a plugin](./20-writing-a-plugin.md) — fifteen minutes from `plugin new` to a plugin that runs.

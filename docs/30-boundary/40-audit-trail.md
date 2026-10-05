@@ -99,7 +99,11 @@ Every refused or failed row carries the cause twice, deliberately split: a `code
 
 Which makes "ship the record somewhere durable" a cron line rather than a feature request.
 
-## Next
+## Related
 
 - [Grants](./30-grants.md) — what the record is a record of
 - [Team policy](./50-team-policy.md) — bounds nobody on the team can raise
+
+## Next
+
+[Stop an agent now](./45-stop-an-agent-now.md) — a lock, the instant no, ahead of any expiry or revocation.

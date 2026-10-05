@@ -188,3 +188,7 @@ Note this is a different mechanism from `kube:` credential references in a profi
 **Upgrading rta** is the image tag or digest, and the `Recreate` strategy means a short gap rather than an overlap — deliberately, since two processes briefly sharing one data directory is the thing being avoided.
 
 **When a pod will not start**, the useful order is: `kubectl logs` first, because every credential failure prints there and returns a generic 401 to the caller; then `rta doctor` in the pod; then the two log lines above that are not problems.
+
+## Next
+
+[An agent in a cluster](../90-recipes/30-an-agent-in-a-cluster.md) — the whole path end to end, from a profile to an agent connected over MCP.

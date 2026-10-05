@@ -105,7 +105,10 @@ rta audit web example.com      # TLS, headers, cookies, exposure
 
 Each check is graded against a named OWASP or CWE control, so a report is reviewable by somebody who was not in the room. The recipes turn these into [a release gate](./01-readme.md#dependency-review-before-a-release), [a sweep of every repository a team owns](./01-readme.md#audit-every-repository-a-team-owns), [a cluster's end-of-life report](./01-readme.md#what-in-the-cluster-is-out-of-support) and [a review to paste into an issue](./01-readme.md#a-security-review-you-can-paste-into-an-issue).
 
+## Related
+
+- [What rta actually bounds](../30-boundary/10-the-boundary.md) · [Team policy](../30-boundary/50-team-policy.md) · [The record](../30-boundary/40-audit-trail.md)
+
 ## Next
 
-- [For a developer](./20-for-developers.md) — the same boundary, from the side that works inside it
-- [What rta actually bounds](../30-boundary/10-the-boundary.md) · [Team policy](../30-boundary/50-team-policy.md) · [The record](../30-boundary/40-audit-trail.md)
+[For a developer](./20-for-developers.md) — the same boundary, from the side that works inside it.
