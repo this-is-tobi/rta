@@ -83,7 +83,7 @@ flowchart TD
     Q2 -->|no| C["C — contained<br/>rta is the only<br/>route that exists"]
 ```
 
-The `shell` row is the one to read: `Bash` allowed unrestricted puts you in A. Connecting is still worth doing from there, and [What rta actually bounds](../30-boundary/10-the-boundary.md) says what A gives you and how to reach B.
+The `shell` row is the one to read: `Bash` allowed unrestricted puts you in A. No `shell` row means no config pre-approves it, not that the agent has no shell: Claude Code asks before each command by default, which is you approving them one by one rather than a restriction, so you are in A until `Bash` is off the agent's tools or scoped. Connecting is still worth doing from there, and [What rta actually bounds](../30-boundary/10-the-boundary.md) says what A gives you and how to reach B.
 
 ```bash
 rta mcp install claude
