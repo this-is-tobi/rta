@@ -195,7 +195,7 @@ func TestLiftingTheLockOnEveryAgentLeavesTheOnesOnSingleAgents(t *testing.T) {
 		t.Error("cursor is still frozen")
 	}
 	again := receipt(t, "lock.rm", map[string]any{"all": true})
-	if _, ok := again["nothing to lift"]; !ok {
+	if got := again["nothing to lift"]; got != "no lock on every agent stands" {
 		t.Errorf("lifting what is not there says %v", again)
 	}
 }
@@ -257,5 +257,17 @@ func TestALockWindowCanBeGivenInDays(t *testing.T) {
 	if _, err := call(t, "lock.add", map[string]any{"name": "claude", "ttl": "tomorrow"}); err == nil ||
 		codeOf(t, err) != "core.lock.ttl" {
 		t.Errorf("a window that is none: %v", err)
+	}
+}
+
+// A `*` offered as a name to lift is a glob the shell expands before rta reads it;
+// the row on every agent is lifted by --all, which is what the receipt says.
+func TestTheLocksOfferedToLiftDoNotIncludeTheOneOnEveryAgent(t *testing.T) {
+	isolated(t)
+	receipt(t, "lock.add", map[string]any{"all": true})
+	receipt(t, "lock.add", map[string]any{"name": "claude"})
+	got := suggestLockedNames(context.Background(), plugin.NewRequest(map[string]any{"kind": "agent"}, false, false))
+	if len(got) != 1 || got[0] != "claude" {
+		t.Errorf("offered %v to lift, want claude alone", got)
 	}
 }

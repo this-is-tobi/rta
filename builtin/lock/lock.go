@@ -299,7 +299,9 @@ func suggestLockedNames(_ context.Context, req plugin.Request) []string {
 	}
 	var out []string
 	for _, l := range locks {
-		if l.Kind == kind {
+		// Not the row on every agent: `*` completed onto a command line is a
+		// glob the shell expands before rta sees it, and `--all` is how it is lifted.
+		if l.Kind == kind && l.Name != lockdown.Everyone {
 			out = append(out, l.Name)
 		}
 	}
@@ -356,9 +358,11 @@ func lockedView(sf plugin.Surface, l lockdown.Lock, where, unknown string) view.
 func rmView(sf plugin.Surface, kind lockdown.Kind, name string, removed bool, where string) view.View {
 	who := said(kind, name)
 	if !removed {
-		return view.KeyValue{Pairs: []view.Pair{
-			{Key: "nothing to lift", Value: who + where + " was not locked"},
-		}}
+		was := who + where + " was not locked"
+		if name == lockdown.Everyone && kind == lockdown.KindAgent {
+			was = "no lock on every agent stands" + where
+		}
+		return view.KeyValue{Pairs: []view.Pair{{Key: "nothing to lift", Value: was}}}
 	}
 	pairs := []view.Pair{
 		{Key: "unlocked", Value: who + where},
