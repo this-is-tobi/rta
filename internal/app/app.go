@@ -952,9 +952,10 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 			// because it frames whatever follows it. Before every command for
 			// an environment with a `color:`, and before the ones it can
 			// change for any other; see WarnActiveProfile.
-			WarnActiveProfile(cmd.ErrOrStderr(), cmd, cfg, BadgeStyle{
+			badgeOut, plain := badgeStream(cmd.ErrOrStderr(), os.Environ())
+			WarnActiveProfile(badgeOut, cmd, cfg, BadgeStyle{
 				MachineReadable: opts.output != "pretty",
-				NoColor:         opts.noColor,
+				NoColor:         opts.noColor || plain,
 				ASCII:           cli.ASCIIOnly(os.Getenv),
 			})
 			WarnUntrustedPlugins(cmd.ErrOrStderr(), opts.output != "pretty")

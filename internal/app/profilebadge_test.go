@@ -316,3 +316,62 @@ func TestTheRootCommandNamesTheEnvironmentBeforeACommandItActsOn(t *testing.T) {
 		t.Errorf("the environment was announced on a stream nobody is watching: %q", errOut)
 	}
 }
+
+// The result of a command follows the terminal's colour profile, and so does
+// the line above it: under NO_COLOR or TERM=dumb it is the bracketed text and
+// not a green bullet, and on a terminal of sixteen colours it is not a truecolor
+// escape the terminal would print as noise.
+func TestTheBadgeFollowsWhatTheTerminalCanShow(t *testing.T) {
+	on(t, "shop-dev", nil)
+	for name, c := range map[string]struct {
+		environ []string
+		plain   bool
+	}{
+		"a terminal with colour":   {[]string{"TTY_FORCE=1", "TERM=xterm-256color"}, false},
+		"NO_COLOR":                 {[]string{"TTY_FORCE=1", "TERM=xterm-256color", "NO_COLOR=1"}, true},
+		"a dumb terminal":          {[]string{"TTY_FORCE=1", "TERM=dumb"}, true},
+		"a terminal of 16 colours": {[]string{"TTY_FORCE=1", "TERM=xterm-color"}, false},
+	} {
+		var out bytes.Buffer
+		stream, plain := badgeStream(&out, c.environ)
+		if plain != c.plain {
+			t.Errorf("%s: plain = %v, want %v", name, plain, c.plain)
+		}
+		WarnActiveProfile(stream, capability("sys", "cpu", true), marked(), BadgeStyle{NoColor: plain})
+		switch {
+		case c.plain && (strings.Contains(out.String(), "\x1b") || !strings.Contains(out.String(), "[ shop-dev ]")):
+			t.Errorf("%s: %q, want the bracketed text and no escape", name, out.String())
+		case !c.plain && !strings.Contains(out.String(), "\x1b["):
+			t.Errorf("%s: %q, want it painted", name, out.String())
+		}
+	}
+
+	var sixteen bytes.Buffer
+	stream, _ := badgeStream(&sixteen, []string{"TTY_FORCE=1", "TERM=xterm-color"})
+	WarnActiveProfile(stream, capability("sys", "cpu", true), marked(), BadgeStyle{})
+	if strings.Contains(sixteen.String(), "38;2;") {
+		t.Errorf("a truecolor escape on a terminal of sixteen colours: %q", sixteen.String())
+	}
+}
+
+// And through the root command, which is where NO_COLOR is read from.
+func TestTheRootCommandHonoursNoColorForTheBadge(t *testing.T) {
+	saved := stderrIsTerminal
+	t.Cleanup(func() { stderrIsTerminal = saved })
+	stderrIsTerminal = func() bool { return true }
+	t.Setenv("TTY_FORCE", "1")
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("LC_ALL", "C.UTF-8")
+	const cfg = "profiles:\n  staging:\n    plugins:\n      db:\n        set:\n          host: db.staging\n"
+	reg := setRegistry(t)
+	on(t, "staging", nil)
+
+	t.Setenv("NO_COLOR", "")
+	if _, errOut := runSwitched(t, reg, cfg, "db", "status"); !strings.Contains(errOut, "\x1b[") || !strings.Contains(errOut, "● staging") {
+		t.Errorf("a terminal with colour: %q, want the painted bullet", errOut)
+	}
+	t.Setenv("NO_COLOR", "1")
+	if _, errOut := runSwitched(t, reg, cfg, "db", "status"); strings.Contains(errOut, "\x1b") || !strings.Contains(errOut, "[ staging ]") {
+		t.Errorf("NO_COLOR: %q, want the bracketed text", errOut)
+	}
+}

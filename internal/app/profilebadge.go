@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/colorprofile"
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/config"
@@ -88,6 +89,20 @@ func WarnActiveProfile(w io.Writer, cmd *cobra.Command, cfg config.Config, style
 		label += " " + profile.ShortDuration(left) + " left"
 	}
 	fmt.Fprintln(w, label)
+}
+
+// badgeStream is where the badge is written and whether that stream shows
+// colour at all.
+//
+// The result of a command is written through colorprofile, which is what makes
+// it follow NO_COLOR, TERM=dumb and a terminal of sixteen colours. The badge
+// used to go to stderr as it was drawn, a truecolor escape on a stream whose
+// terminal had asked for none, so a session under NO_COLOR got a plain result
+// under a green bullet. Where there is no colour the badge keeps its brackets,
+// as it does for --no-color: it is the only thing left to tell it from text.
+func badgeStream(w io.Writer, environ []string) (out io.Writer, plain bool) {
+	cw := colorprofile.NewWriter(w, environ)
+	return cw, cw.Profile <= colorprofile.ASCII
 }
 
 func badgeLabel(name, color string, marked bool, style BadgeStyle) string {
