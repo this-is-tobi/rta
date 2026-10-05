@@ -104,6 +104,9 @@ func checkExamples(c Capability) error {
 			if problem, hint := StatedTypeProblem(f, v); problem != "" {
 				return fmt.Errorf("%s (%q) gives input %q a value that %s; %s", where, e.Title, name, problem, hint)
 			}
+			if err := checkExampleText(where, e.Title, name, v); err != nil {
+				return err
+			}
 			if len(f.Options) > 0 {
 				for _, o := range optionValues(f, v) {
 					if o != "" && !slices.Contains(f.Options, o) {
@@ -124,6 +127,27 @@ func checkExamples(c Capability) error {
 			if v, given := e.Inputs[f.Name]; !given || empty(v) {
 				return fmt.Errorf("%s (%q) leaves out input %q, which the capability cannot run without; "+
 					"give it a value%s", where, e.Title, f.Name, localNote(f))
+			}
+		}
+	}
+	return nil
+}
+
+// checkExampleText holds an example's text values to what a Default is held
+// to, because an example is displayed text on the same terms: printed in every
+// help page and published in a tool listing, and a value the plugin chose is as
+// much the plugin's words as its Help is. Only the string and list shapes can
+// carry text; the others (numbers, booleans) were refused by the type check
+// before this runs.
+func checkExampleText(where, title, name string, v any) error {
+	what := fmt.Sprintf("%s (%q) input %q", where, title, name)
+	switch d := v.(type) {
+	case string:
+		return checkLine(what, d, maxHelp)
+	case []string:
+		for i, e := range d {
+			if err := checkLine(fmt.Sprintf("%s value[%d]", what, i), e, maxHelp); err != nil {
+				return err
 			}
 		}
 	}
