@@ -8,6 +8,8 @@ rta agent log         # one line per call, oldest first — the latest is at the
 rta agent pending     # anything parked, waiting on you — see Grants for live consent
 ```
 
+`agent overview` keeps two kinds of refusal apart, because only one is yours to answer: `needs your grant` names the capabilities an agent asked for that only a grant would let through, and `malformed or unknown calls` names the ones that asked for an argument or a tool that does not exist, which the agent has to fix and no grant would change.
+
 ## What a line carries
 
 Every call that arrived over MCP is written down: the capability, the records it named, the arguments with every input declared `Secret` or `SecretSlice` masked, the profile it resolved through, what happened, and **how it was authorized** — no grant needed, a standing grant, or you answering live.

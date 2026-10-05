@@ -26,7 +26,7 @@ Restarting a server changes none of what you allowed, and running one somewhere 
 rta mcp install claude
 ```
 
-Supported clients: `claude`, `vscode`, `codex`, `gemini`, `cursor`, `copilot`. Anything else that speaks MCP works too — [Connecting your AI tool](../30-boundary/60-ai-clients.md) has the per-client detail, including where each keeps its configuration.
+Supported clients: `claude`, `vscode`, `codex`, `gemini`, `cursor`, `copilot`. `rta mcp install` with none named exits `2` and lists them, marking the ones found on this machine. Anything else that speaks MCP works too — [Connecting your AI tool](../30-boundary/60-ai-clients.md) has the per-client detail, including where each keeps its configuration.
 
 Where a client ships its own command for editing its own configuration, rta runs that. Where it does not, rta prints what to add and where, and stops:
 
@@ -148,7 +148,7 @@ Every call is there with the name you registered the client under. If the agent 
 - **Not connected.** Claude Code's `claude mcp add` registers rta for the current directory by default, so a session opened in another directory has no rta server at all. `rta doctor` says which it is — `every project`, `this project`, or `this directory only` — and prints the `--scope user` command that makes it global.
 - **Connected, calls made, and the record is empty.** The server and the TUI are reading different data directories. The server prints `record: <path>` when it starts, in the client's MCP log; `rta agent overview --detail` shows the file the TUI reads. A `RTA_DATA_DIR` or `XDG_DATA_HOME` set in one shell profile and not the other is the usual cause.
 
-Several sessions under the same name are one principal — grants and the team ceiling apply to `claude`, not to a window — and the record tells them apart by session: each server has an id, shown on the detail page and as a column in `rta agent log`, and `rta agent log --session <id>` narrows to one.
+Several sessions under the same name are one principal — grants and the team ceiling apply to `claude`, not to a window — and the record tells them apart by session: each server has an id, shown on the detail page, in `rta agent log --detail`, and in a column of the one-line log once one agent's servers have called in turn, and `rta agent log --session <id>` narrows to one.
 
 ## Next
 
