@@ -155,9 +155,13 @@ func (h *helper) render(cmd *cobra.Command) string {
 		h.rows(&b, flags, keyWidth)
 	}
 	if root {
+		// The start block is at the top, and the top is what a terminal of
+		// twenty-four rows has already scrolled away by the time this much help
+		// has been written: the last screen is the one a newcomer reads, so the
+		// first thing to type is said again at the foot of it.
 		b.WriteString("\n")
-		h.prose(&b, "`rta <command> --help` shows a command's examples, and `rta explain` lists every "+
-			"capability with what it needs. Documentation: "+docsURL)
+		h.prose(&b, "New here? `rta sys overview` shows it working. `rta <command> --help` shows a command's "+
+			"examples, and `rta explain` lists every capability with what it needs. Documentation: "+docsURL)
 	}
 	return b.String()
 }
