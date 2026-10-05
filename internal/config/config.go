@@ -558,6 +558,30 @@ func Replace(original, edited []byte) error {
 	return persist(path, current, edited)
 }
 
+// writeTarget is the file a write to path lands in: path itself, or the file a
+// symlink at path points to.
+//
+// The config is the one file rta keeps that people put in a dotfiles
+// repository, linked into place by stow or chezmoi. An atomic write is a
+// rename over the name, and a rename over a symlink replaces the link: the
+// repository's copy stopped changing and the next checkout of it would have
+// put the old text back over what `rta config set` wrote. Only a link that
+// resolves to a regular file is followed; anything else is written where it
+// is, as it was before.
+func writeTarget(path string) string {
+	if info, err := os.Lstat(path); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return path
+	}
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+	if info, err := os.Stat(target); err != nil || !info.Mode().IsRegular() {
+		return path
+	}
+	return target
+}
+
 // persist writes data as the file at path, whose present text is old.
 func persist(path string, old, data []byte) error {
 	// Owner-only, the same as the data directory: this directory holds the
@@ -578,7 +602,7 @@ func persist(path string, old, data []byte) error {
 	if info, err := os.Stat(path); err == nil {
 		perm = info.Mode().Perm()
 	}
-	if err := atomicfile.Write(path, data, perm); err != nil {
+	if err := atomicfile.Write(writeTarget(path), data, perm); err != nil {
 		return view.Errorf("config.write", "writing %s: %v", path, err)
 	}
 	return nil
