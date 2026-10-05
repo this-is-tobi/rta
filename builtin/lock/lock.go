@@ -23,10 +23,12 @@ import (
 
 	"golang.org/x/term"
 
+	rtagrant "github.com/this-is-tobi/rta/builtin/grant"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/lockdown"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
 	"github.com/this-is-tobi/rta/internal/stdio"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -56,7 +58,9 @@ func Plugin() plugin.Plugin {
 					"ungated read tier included, which is what `grant.revoke` alone never covered — " +
 					"and a locked operator key gets no verb on the operator channel. Running servers " +
 					"pick it up on their next request, no restart. Re-locking the same principal " +
-					"replaces the row, so a new note or window needs no rm first. Asks for no " +
+					"replaces the row, so a new note or window needs no rm first. With `all`: every " +
+					"agent at once, the ones that have not connected yet included — the stop for an " +
+					"incident whose agent has not been named yet. Asks for no " +
 					"passphrase: a lock only subtracts, and an incident is the wrong moment to " +
 					"demand a secret. With `server`: places the lock on a remote rta server, " +
 					"as a signed operator call. Never reachable over MCP.",
@@ -66,12 +70,14 @@ func Plugin() plugin.Plugin {
 				Inputs: []plugin.Field{
 					{Name: "kind", Type: plugin.String,
 						Default: string(lockdown.KindAgent), Options: kindNames(), Help: kindHelp},
-					{Name: "name", Type: plugin.String, Positional: true, Required: true,
+					{Name: "name", Type: plugin.String, Positional: true, Suggest: suggestAgentsToLock,
 						Help: "the principal to freeze, exactly as the surface verifies it"},
+					{Name: "all", Type: plugin.Bool,
+						Help: "freeze every agent, the ones that have not connected yet included"},
 					{Name: "note", Type: plugin.String,
 						Help: "shown to the locked party on every refusal — write it for them"},
 					{Name: "ttl", Type: plugin.String,
-						Help: "lift itself after this window (30m, 2h); omit for a lock that stands until removed"},
+						Help: "lift itself after this window (30m, 2h, 1d); omit for a lock that stands until removed"},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "place the lock on this remote server (a name from remotes.yaml)"},
 					operatorid.PassphraseField.OnlyWith("server"),
@@ -111,7 +117,9 @@ func Plugin() plugin.Plugin {
 				Description: "Removes a lock so the principal's next call is judged by the ordinary " +
 					"gates again. This is the expanding direction — the one an agent must never " +
 					"hold, which is why the harness deny list from `audit.clients` with `fix` covers " +
-					"`rta lock` and why this is never reachable over MCP. With `server`: " +
+					"`rta lock` and why this is never reachable over MCP. With `all`: lifts the " +
+					"lock `lock.add` placed on every agent, and only that one — a lock on one " +
+					"agent stands until it is lifted by name. With `server`: " +
 					"lifts a lock on a remote server, as a signed operator call.",
 				Safety:     plugin.Write,
 				Idempotent: true,
@@ -119,8 +127,10 @@ func Plugin() plugin.Plugin {
 				Inputs: []plugin.Field{
 					{Name: "kind", Type: plugin.String,
 						Default: string(lockdown.KindAgent), Options: kindNames(), Help: kindHelp},
-					{Name: "name", Type: plugin.String, Positional: true, Required: true,
+					{Name: "name", Type: plugin.String, Positional: true,
 						Help: "the principal to unfreeze", Suggest: suggestLockedNames},
+					{Name: "all", Type: plugin.Bool,
+						Help: "lift the lock on every agent; locks on single agents stay"},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "lift the lock on this remote server (a name from remotes.yaml)"},
 					operatorid.PassphraseField.OnlyWith("server"),
@@ -137,6 +147,9 @@ func Plugin() plugin.Plugin {
 // somebody can make, and handing `--kind agent` back would teach an input
 // nobody needs.
 func liftCall(sf plugin.Surface, l lockdown.Lock) string {
+	if l.Kind == lockdown.KindAgent && l.Name == lockdown.Everyone {
+		return sf.Call("lock.rm", plugin.Arg{Name: "all", Value: true})
+	}
 	args := []plugin.Arg{{Name: "name", Value: l.Name, Positional: true}}
 	if l.Kind != lockdown.KindAgent {
 		args = append(args, plugin.Arg{Name: "kind", Value: string(l.Kind)})
@@ -156,8 +169,47 @@ func kindNames() []string {
 	return out
 }
 
+// principal is the kind and name a request freezes or lifts.
+//
+// **`all` is a spelling of one name, and the agent kind's alone.** It stands
+// for the row on lockdown.Everyone, so a lock on every agent is placed, listed
+// and lifted as any other lock is, and nothing downstream has a second kind of
+// thing to learn. A name beside it is refused rather than ignored: "lock
+// claude --all" read as the one agent by somebody who meant everyone, or the
+// other way round, is the misreading a lock must not allow, and both are cheap
+// to retype. A credential or an operator label has no "every" — freezing every
+// operator would lock out the one person who can lift it from afar.
+func principal(req plugin.Request, ask string) (kind, name string, verr *view.Error) {
+	sf := req.Surface()
+	kind, name = strings.TrimSpace(req.String("kind")), req.String("name")
+	if kind == "" {
+		kind = string(lockdown.KindAgent)
+	}
+	if !req.Bool("all") {
+		if strings.TrimSpace(name) == "" {
+			return "", "", view.Errorf("core.lock.name", "a lock needs the principal's name").
+				WithHint(fmt.Sprintf(ask, sf.InputName("all")))
+		}
+		return kind, name, nil
+	}
+	if strings.TrimSpace(name) != "" {
+		return "", "", view.Errorf("core.lock.all",
+			"%s is every agent, so a name beside it says nothing", sf.InputName("all")).
+			WithHint("drop the name to take in every agent, or drop " + sf.InputName("all") + " for just that one")
+	}
+	if kind != string(lockdown.KindAgent) {
+		return "", "", view.Errorf("core.lock.all",
+			"%s is every agent — there is no every %s", sf.InputName("all"), kind).
+			WithHint("a credential or an operator label is named one at a time")
+	}
+	return kind, lockdown.Everyone, nil
+}
+
 func runAdd(ctx context.Context, req plugin.Request) (view.View, error) {
-	kind, name := req.String("kind"), req.String("name")
+	kind, name, verr := principal(req, "name the agent to freeze, or %s for every agent")
+	if verr != nil {
+		return nil, verr
+	}
 	if server := req.String("server"); server != "" {
 		return remoteAdd(ctx, req, server, kind, name)
 	}
@@ -169,15 +221,55 @@ func runAdd(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
+	// Measured before the row is written, as a grant's is: a lock on a name no
+	// agent has ever used freezes nobody while the screen says locked, and a
+	// slip of the keyboard in an incident is the likeliest way to get one.
+	unknown := unknownAgent(l)
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would lock %s %s — every call it makes to this "+
-			"machine's network surfaces is then refused until %s%s", kind, name,
-			req.Surface().CapabilityName("lock.rm"), windowText(l))}, nil
+		body := fmt.Sprintf("would lock %s — every call it makes to this "+
+			"machine's network surfaces is then refused until `%s`%s", said(l.Kind, l.Name),
+			liftCall(req.Surface(), l), windowText(l))
+		if unknown != "" {
+			body += "\nnote: " + unknown
+		}
+		return view.Text{Body: body}, nil
 	}
 	if verr := lockdown.Add(l); verr != nil {
 		return nil, verr
 	}
-	return lockedView(req.Surface(), l, ""), nil
+	return lockedView(req.Surface(), l, "", unknown), nil
+}
+
+// said is a principal as a receipt names it: its kind and its name, or "every
+// agent" for the row on all of them, which a bare "*" would leave a person to
+// decode.
+func said(kind lockdown.Kind, name string) string {
+	if kind == lockdown.KindAgent && name == lockdown.Everyone {
+		return "every agent"
+	}
+	return string(kind) + " " + name
+}
+
+// unknownAgent is what a lock on an agent name nobody has used says about it,
+// with the nearest name this machine has seen, or "" for a name it knows, for
+// the row on every agent, and for the other two kinds, whose names the machine
+// cannot list.
+func unknownAgent(l lockdown.Lock) string {
+	if l.Kind != lockdown.KindAgent || l.Name == lockdown.Everyone {
+		return ""
+	}
+	return strings.TrimPrefix(rtagrant.UnknownAgentNote(l.Name), "note: ")
+}
+
+// suggestAgentsToLock completes an agent name from the ones this machine has
+// seen — connected now, granted, or in the record — for the kind whose names
+// it can list. The other two kinds are typed exactly, as the surface that
+// verifies them shows them.
+func suggestAgentsToLock(ctx context.Context, req plugin.Request) []string {
+	if kind := strings.TrimSpace(req.String("kind")); kind != "" && kind != string(lockdown.KindAgent) {
+		return nil
+	}
+	return rtagrant.SuggestAgents(ctx, req)
 }
 
 func runList(ctx context.Context, req plugin.Request) (view.View, error) {
@@ -188,7 +280,7 @@ func runList(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	return lockTable(locks), nil
+	return lockTable(req.Surface(), locks), nil
 }
 
 // suggestLockedNames completes from the principals actually frozen right
@@ -215,7 +307,10 @@ func suggestLockedNames(_ context.Context, req plugin.Request) []string {
 }
 
 func runRm(ctx context.Context, req plugin.Request) (view.View, error) {
-	kindRaw, name := req.String("kind"), req.String("name")
+	kindRaw, name, verr := principal(req, "name the lock to lift, or %s for the one on every agent")
+	if verr != nil {
+		return nil, verr
+	}
 	if server := req.String("server"); server != "" {
 		return remoteRm(ctx, req, server, kindRaw, name)
 	}
@@ -224,21 +319,28 @@ func runRm(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	if req.DryRun {
-		return view.Text{Body: fmt.Sprintf("would lift the lock on %s %s, if one stands", kind, name)}, nil
+		return view.Text{Body: fmt.Sprintf("would lift the lock on %s, if one stands", said(kind, name))}, nil
 	}
 	removed, verr := lockdown.Remove(kind, name)
 	if verr != nil {
 		return nil, verr
 	}
-	return rmView(kind, name, removed, ""), nil
+	return rmView(req.Surface(), kind, name, removed, ""), nil
 }
 
 // lockedView confirms one placed lock; where names the server for the
 // remote flow, empty locally.
-func lockedView(sf plugin.Surface, l lockdown.Lock, where string) view.View {
+func lockedView(sf plugin.Surface, l lockdown.Lock, where, unknown string) view.View {
+	effect := "refused on its next call — running servers need no restart"
+	if l.Kind == lockdown.KindAgent && l.Name == lockdown.Everyone {
+		effect = "every agent is refused on its next call, the ones running now and any that connects later"
+	}
 	pairs := []view.Pair{
-		{Key: "locked", Value: string(l.Kind) + " " + l.Name + where},
-		{Key: "effect", Value: "refused on its next call — running servers need no restart"},
+		{Key: "locked", Value: said(l.Kind, l.Name) + where},
+		{Key: "effect", Value: effect},
+	}
+	if unknown != "" {
+		pairs = append(pairs, view.Pair{Key: "note", Value: unknown})
 	}
 	if l.Note != "" {
 		pairs = append(pairs, view.Pair{Key: "shown to them", Value: l.Note})
@@ -251,21 +353,60 @@ func lockedView(sf plugin.Surface, l lockdown.Lock, where string) view.View {
 	return view.KeyValue{Pairs: pairs}
 }
 
-func rmView(kind lockdown.Kind, name string, removed bool, where string) view.View {
+func rmView(sf plugin.Surface, kind lockdown.Kind, name string, removed bool, where string) view.View {
+	who := said(kind, name)
 	if !removed {
 		return view.KeyValue{Pairs: []view.Pair{
-			{Key: "nothing to lift", Value: string(kind) + " " + name + where + " was not locked"},
+			{Key: "nothing to lift", Value: who + where + " was not locked"},
 		}}
 	}
-	return view.KeyValue{Pairs: []view.Pair{
-		{Key: "unlocked", Value: string(kind) + " " + name + where},
+	pairs := []view.Pair{
+		{Key: "unlocked", Value: who + where},
 		{Key: "effect", Value: "its next call is judged by the ordinary gates again"},
-	}}
+	}
+	if name == lockdown.Everyone && kind == lockdown.KindAgent {
+		pairs[1].Value = "every agent's next call is judged by the ordinary gates again"
+		if left := agentsStillLocked(where); left != "" {
+			pairs = append(pairs, view.Pair{Key: "still locked", Value: left + " — " + sf.CapabilityName("lock.list") + " says why"})
+		}
+	}
+	return view.KeyValue{Pairs: pairs}
 }
 
-func lockTable(locks []lockdown.Lock) view.View {
-	rows := make([][]string, 0, len(locks))
+// agentsStillLocked names the agents with a lock of their own, which lifting
+// the one on every agent leaves standing: they were frozen by name, on
+// purpose, and an operator who sees the stop lifted should not have to
+// wonder whether those were lifted with it. Empty for a remote server, whose
+// locks are not read from here.
+func agentsStillLocked(where string) string {
+	if where != "" {
+		return ""
+	}
+	locks, verr := lockdown.Load()
+	if verr != nil {
+		return ""
+	}
+	var names []string
 	for _, l := range locks {
+		if l.Kind == lockdown.KindAgent {
+			names = append(names, l.Name)
+		}
+	}
+	return strings.Join(names, ", ")
+}
+
+func lockTable(sf plugin.Surface, locks []lockdown.Lock) view.View {
+	rows := make([][]string, 0, len(locks))
+	var warnings []view.Error
+	for _, l := range locks {
+		if l.Kind == lockdown.KindAgent && l.Name == lockdown.Everyone {
+			// The row's name is the `*` lock.rm takes, which is what a row
+			// action lifts it by; what it means is said beside the table, where
+			// a person reading a column of names would not have to know it.
+			warnings = append(warnings, view.Error{Code: "lock.everyone", Advisory: true,
+				Message: "the row on * freezes every agent, the ones that have not connected yet included",
+				Hint:    "`" + liftCall(sf, l) + "` lifts it, and locks on single agents stay"})
+		}
 		until := "until removed"
 		if !l.Expires.IsZero() {
 			until = "until " + l.Expires.Local().Format("2006-01-02 15:04")
@@ -279,6 +420,9 @@ func lockTable(locks []lockdown.Lock) view.View {
 		// columns to inputs by name.
 		Columns: []view.Column{{Name: "kind"}, {Name: "name"}, {Name: "note"}, {Name: "by"}, {Name: "stands"}},
 		Rows:    rows,
+		// Advisory, for the reason a grant on a replaced plugin is: the rows are
+		// all here, and one of them means more than its cells say.
+		Warnings: warnings,
 		// The table even when nothing is locked, with the sentence beside it
 		// for a screen: see view.Table.Empty.
 		Empty: "nothing is locked",
@@ -324,15 +468,21 @@ func remoteAdd(ctx context.Context, req plugin.Request, server, kind, name strin
 		return nil, verr
 	}
 	if req.DryRun {
-		return view.Text{Body: "would lock " + kind + " " + name + " on " + server +
+		return view.Text{Body: "would lock " + said(lockdown.Kind(kind), name) + " on " + server +
 			" as a signed operator call — the passphrase is asked first"}, nil
 	}
 	client, verr := remoteClient(req, server)
 	if verr != nil {
 		return nil, verr
 	}
-	spec := operatorid.LockSpec{Kind: kind, Name: name,
-		Note: req.String("note"), TTL: strings.TrimSpace(req.String("ttl"))}
+	// The window as Go spells one, so a server that has not learned days yet
+	// reads "1d" as the 24h it means; Build above has already refused what is
+	// no window.
+	ttl := strings.TrimSpace(req.String("ttl"))
+	if d, err := format.ParseWindow(ttl); err == nil {
+		ttl = d.String()
+	}
+	spec := operatorid.LockSpec{Kind: kind, Name: name, Note: req.String("note"), TTL: ttl}
 	var placed lockdown.Lock
 	if verr := client.Call(ctx, operatorid.VerbLockAdd, spec, &placed); verr != nil {
 		return nil, verr
@@ -351,7 +501,7 @@ func remoteAdd(ctx context.Context, req plugin.Request, server, kind, name strin
 	// "until somebody runs rta lock rm". The principal is the operator's
 	// word now; the window is still the server's.
 	placed.Kind, placed.Name, placed.Note = lockdown.Kind(kind), name, strings.TrimSpace(spec.Note)
-	return lockedView(req.Surface(), placed, " on "+server), nil
+	return lockedView(req.Surface(), placed, " on "+server, ""), nil
 }
 
 func remoteList(ctx context.Context, req plugin.Request, server string) (view.View, error) {
@@ -367,7 +517,7 @@ func remoteList(ctx context.Context, req plugin.Request, server string) (view.Vi
 	if verr := client.Call(ctx, operatorid.VerbLockList, nil, &list); verr != nil {
 		return nil, verr
 	}
-	return lockTable(list.Locks), nil
+	return lockTable(req.Surface(), list.Locks), nil
 }
 
 func remoteRm(ctx context.Context, req plugin.Request, server, kindRaw, name string) (view.View, error) {
@@ -376,7 +526,7 @@ func remoteRm(ctx context.Context, req plugin.Request, server, kindRaw, name str
 		return nil, verr
 	}
 	if req.DryRun {
-		return view.Text{Body: "would lift the lock on " + kindRaw + " " + name + " on " + server +
+		return view.Text{Body: "would lift the lock on " + said(kind, name) + " on " + server +
 			" as a signed operator call — the passphrase is asked first"}, nil
 	}
 	client, verr := remoteClient(req, server)
@@ -387,5 +537,5 @@ func remoteRm(ctx context.Context, req plugin.Request, server, kindRaw, name str
 	if verr := client.Call(ctx, operatorid.VerbLockRm, operatorid.LockRmSpec{Kind: kindRaw, Name: name}, &out); verr != nil {
 		return nil, verr
 	}
-	return rmView(kind, name, out.Removed, " on "+server), nil
+	return rmView(req.Surface(), kind, name, out.Removed, " on "+server), nil
 }
