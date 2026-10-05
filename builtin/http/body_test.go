@@ -177,6 +177,26 @@ func TestABodyGivenTwiceOrUnreadableIsRefused(t *testing.T) {
 	}
 }
 
+// `-` is what curl and most of what a person has typed before read a pipe from,
+// and "open -: no such file or directory" gave no way from there to /dev/stdin,
+// which is how every Path input of rta takes one.
+func TestADashForAPipeIsToldTheSpellingRtaTakes(t *testing.T) {
+	_, err := sentBy(t, "POST", map[string]any{"data-file": "-"})
+	verr := view.AsError(err, "x")
+	if err == nil || verr.Code != "http.data.file" || !strings.Contains(verr.Hint, "/dev/stdin") {
+		t.Errorf("--data-file -: %v, hint %q", err, verr.Hint)
+	}
+	_, err = sentBy(t, "POST", map[string]any{"bearer-file": "-"})
+	verr = view.AsError(err, "x")
+	if err == nil || verr.Code != "http.auth.file" || !strings.Contains(verr.Hint, "/dev/stdin") {
+		t.Errorf("--bearer-file -: %v, hint %q", err, verr.Hint)
+	}
+	_, err = sentBy(t, "POST", map[string]any{"data-file": filepath.Join(t.TempDir(), "absent")})
+	if verr := view.AsError(err, "x"); err == nil || verr.Hint != "" {
+		t.Errorf("a file that is not there got the pipe hint: %v", err)
+	}
+}
+
 // A path is a place on this machine, and an agent that could name one would
 // send any file the server can read to a host of its own choosing: the input is
 // Local, so no agent's schema offers it. Only the capabilities that take a
