@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,5 +95,43 @@ func TestDoctorDoesNotOfferToOverwriteAFileTheNewDirectoryHolds(t *testing.T) {
 	}
 	if strings.Contains(row[1], "mv ") {
 		t.Errorf("the row hands over a move across a clash: %s", row[1])
+	}
+}
+
+// The doctor row is for a person who runs `rta doctor`; the config that stops
+// applying after the move belongs to everyone else too, so any interactive
+// command says so in one line, and says it only while something is left.
+//
+// Fails without the notice in WarnConfigProblems: nothing is printed, and a
+// config left at the old location is silent outside the doctor report.
+func TestStartupNoticeNamesAConfigLeftAtTheOldMacOSLocation(t *testing.T) {
+	_, old, own := macOSMachine(t)
+	root := NewRoot(configRegistry(t), "test")
+	gen, _, _ := root.Find([]string{"gen"})
+	doctor, _, _ := root.Find([]string{"doctor"})
+
+	var buf bytes.Buffer
+	WarnConfigProblems(&buf, gen, false)
+	if buf.Len() != 0 {
+		t.Fatalf("nothing is left behind, and a notice was printed: %q", buf.String())
+	}
+
+	put(t, old, "config.yaml", "kv.identity")
+	WarnConfigProblems(&buf, gen, false)
+	got := buf.String()
+	for _, want := range []string{old, own, "config.yaml, kv.identity", "rta doctor"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the notice lacks %q: %q", want, got)
+		}
+	}
+	if strings.Count(got, "\n") != 1 {
+		t.Errorf("the notice is not one line: %q", got)
+	}
+
+	buf.Reset()
+	WarnConfigProblems(&buf, gen, true)
+	WarnConfigProblems(&buf, doctor, false)
+	if buf.Len() != 0 {
+		t.Errorf("machine-readable output, or the report that says it itself, got the notice: %q", buf.String())
 	}
 }

@@ -158,8 +158,15 @@ func configCheckCommand(reg *registry.Registry, render renderFn) *cobra.Command 
 	}
 }
 
-// WarnIgnoredConfigKeys says once, at startup on a terminal, that the config
-// file holds keys rta ignores.
+// WarnConfigProblems says once, at startup on a terminal, that the config rta
+// reads has something wrong with it: keys it ignores, or a file left where
+// earlier builds kept it.
+//
+// The second is the notice the doctor row is not enough for. The directory moved
+// and nothing reads the old one, so a person who never runs `rta doctor` has a
+// config that silently stopped applying, and the one line is what makes that
+// not silent. It says where to look rather than how to move, which is the
+// row's to do.
 //
 // The decoder drops a key it has no field for without a word, so a typo in the
 // file is a setting that quietly does nothing, and nothing in a command that
@@ -167,9 +174,13 @@ func configCheckCommand(reg *registry.Registry, render renderFn) *cobra.Command 
 // conditions as the other startup notices, a terminal on the stream and prose
 // asked for. Not for the commands that report the file in full, where it would
 // say the same thing twice.
-func WarnIgnoredConfigKeys(w io.Writer, cmd *cobra.Command, machineReadable bool) {
+func WarnConfigProblems(w io.Writer, cmd *cobra.Command, machineReadable bool) {
 	if machineReadable || reportsConfigItself(cmd) {
 		return
+	}
+	if left := findLegacyConfig(); left != nil {
+		fmt.Fprintf(w, "rta: %s is left in %s, which rta no longer reads (it reads %s now) — `rta doctor` says how to move %s\n",
+			strings.Join(left.held, ", "), left.old, left.own, format.Plural(len(left.held), "it", "them"))
 	}
 	found, err := config.Check()
 	if err != nil || len(found) == 0 {

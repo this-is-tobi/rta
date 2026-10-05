@@ -34,32 +34,47 @@ var legacyConfigDir = paths.LegacyConfigDir
 // is in both, it says so instead, since which of the two is right is the one
 // thing only the person knows.
 func doctorLegacyConfig(add func(check, status, detail string)) {
-	old := legacyConfigDir()
-	if old == "" {
+	left := findLegacyConfig()
+	if left == nil {
 		return
 	}
-	var held, both []string
-	own := paths.OwnConfigDir()
+	detail := left.old + " holds " + strings.Join(left.held, ", ") + ", and rta reads " + left.own +
+		" now, so nothing in it applies"
+	if len(left.both) > 0 {
+		add("old config", "warn", detail+" — "+strings.Join(left.both, ", ")+" "+
+			format.Plural(len(left.both), "is", "are")+" in both: keep the one you mean in "+left.own+
+			", and remove the other")
+		return
+	}
+	add("old config", "warn", detail+" — `mkdir -p -m 700 "+shellquote.Arg(left.own)+" && mv -n "+
+		shellquote.Arg(left.old)+"/* "+shellquote.Arg(left.own)+"/` moves "+format.Plural(len(left.held), "it", "them"))
+}
+
+// legacyConfig is what the directory earlier builds kept the configuration in
+// still holds.
+type legacyConfig struct {
+	old, own   string
+	held, both []string
+}
+
+// findLegacyConfig is nil when nothing of rta's is left in the old directory.
+func findLegacyConfig() *legacyConfig {
+	old := legacyConfigDir()
+	if old == "" {
+		return nil
+	}
+	left := &legacyConfig{old: old, own: paths.OwnConfigDir()}
 	for _, name := range configDirFiles {
 		if _, err := os.Lstat(filepath.Join(old, name)); err != nil {
 			continue
 		}
-		held = append(held, name)
-		if _, err := os.Lstat(filepath.Join(own, name)); err == nil {
-			both = append(both, name)
+		left.held = append(left.held, name)
+		if _, err := os.Lstat(filepath.Join(left.own, name)); err == nil {
+			left.both = append(left.both, name)
 		}
 	}
-	if len(held) == 0 {
-		return
+	if len(left.held) == 0 {
+		return nil
 	}
-	detail := old + " holds " + strings.Join(held, ", ") + ", and rta reads " + own +
-		" now, so nothing in it applies"
-	if len(both) > 0 {
-		add("old config", "warn", detail+" — "+strings.Join(both, ", ")+" "+
-			format.Plural(len(both), "is", "are")+" in both: keep the one you mean in "+own+
-			", and remove the other")
-		return
-	}
-	add("old config", "warn", detail+" — `mkdir -p -m 700 "+shellquote.Arg(own)+" && mv -n "+
-		shellquote.Arg(old)+"/* "+shellquote.Arg(own)+"/` moves "+format.Plural(len(held), "it", "them"))
+	return left
 }
