@@ -435,7 +435,9 @@ func TestDetailedOverviewComposesCapabilities(t *testing.T) {
 //
 // Skipped where everything happens to be readable, which is the ordinary
 // case in a root container: the fix is that an unreadable process is
-// *reported*, not that one always exists.
+// *reported*, not that one always exists. It is reported as a note — advisory,
+// one short line with the count out of the whole — because the condition is
+// the ordinary one on any machine with another user's processes on it.
 func TestPSSaysHowManyProcessesItCouldNotRead(t *testing.T) {
 	v, err := runPS(context.Background(), plugin.NewRequest(map[string]any{"limit": 5}, false, false))
 	if err != nil {
@@ -449,16 +451,26 @@ func TestPSSaysHowManyProcessesItCouldNotRead(t *testing.T) {
 		t.Skip("every process on this machine is readable, so there is nothing to report")
 	}
 	w := table.Warnings[0]
-	if w.Code != "sys.ps.partial" {
-		t.Errorf("code = %q, want sys.ps.partial", w.Code)
+	if w.Code != "sys.ps.unread" {
+		t.Errorf("code = %q, want sys.ps.unread", w.Code)
 	}
-	if !strings.Contains(w.Message, "could not be read") {
-		t.Errorf("message = %q, want it to say what happened", w.Message)
+	if !w.Advisory {
+		t.Errorf("the note is not advisory, so a surface heads the table partial: %+v", w)
+	}
+	if w.Hint != "" || len(w.Message) > 80 {
+		t.Errorf("the note is %q with hint %q, want one short line", w.Message, w.Hint)
 	}
 	// The count has to be a count, not "some": it is the difference between
 	// the table in front of the reader and the machine behind it.
-	if !regexp.MustCompile(`\d+ process`).MatchString(w.Message) {
-		t.Errorf("message = %q, want it to say how many", w.Message)
+	if !regexp.MustCompile(`^\d+ of \d+ processes not shown`).MatchString(w.Message) {
+		t.Errorf("message = %q, want how many of how many", w.Message)
+	}
+}
+
+func TestTheProcessNoteCountsOutOfEveryProcessSeen(t *testing.T) {
+	w := unreadProcesses(135, 456)
+	if w.Message != "135 of 456 processes not shown: other users', or gone during the scan" || !w.Advisory {
+		t.Errorf("note = %+v", w)
 	}
 }
 
