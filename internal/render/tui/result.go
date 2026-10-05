@@ -619,7 +619,7 @@ func (m Model) actionSeed(a capAction, tbl view.Table) (map[string]any, bool) {
 				continue
 			}
 			if v, ok := m.lastValues[f.Name]; ok {
-				base[f.Name] = v
+				base[f.Name] = carried(f, v)
 			}
 		}
 		for _, f := range keys {
@@ -629,6 +629,21 @@ func (m Model) actionSeed(a capAction, tbl view.Table) (map[string]any, bool) {
 		}
 	}
 	return base, true
+}
+
+// carried is a value the page ran with, in the type of the input it fills on
+// the capability a key opens. A note's page takes its id as a number, and the
+// verbs on that note take one id or several as text, which is what a row's cell
+// already gives them (rowKey): the number would be refused as no list.
+func carried(f plugin.Field, v any) any {
+	if f.Type != plugin.StringSlice {
+		return v
+	}
+	switch v.(type) {
+	case string, []string:
+		return v
+	}
+	return fmt.Sprint(v)
 }
 
 func pairNamed(kv view.KeyValue, key string) string {
