@@ -169,7 +169,7 @@ Use an absolute path. A client launches this months from now, from a working dir
 
 ## What the agent can do once it is connected
 
-**Reads that stay on this machine, and nothing else.** That holds with no flags, no config and no decisions. `rta plugin list` is where you check what that covers — the `CAN` column is the highest [safety class](../95-reference/10-glossary.md#terms) each plugin declares, and only the `read` half of it is reachable over MCP until you issue a grant — some of it not even then:
+**Reads that aim nowhere the agent chooses, and nothing else.** That holds with no flags, no config and no decisions. `rta plugin list` is where you check what that covers — the `CAN` column is the highest [safety class](../95-reference/10-glossary.md#terms) each plugin declares, and only the `read` half of it is reachable over MCP until you issue a grant — some of it not even then:
 
 ```bash
 rta plugin list

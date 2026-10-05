@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -201,6 +203,66 @@ func TestTheTreesPageShowsWhatFsTreePrints(t *testing.T) {
 	for i := 1; i < len(quoted); i++ {
 		if quoted[i] != printed[i] {
 			t.Errorf("%s quotes %q, rta prints %q", rel, quoted[i], printed[i])
+		}
+	}
+}
+
+// The rule the docs give an agent's day one is that a read is free unless an
+// argument it sends can aim it somewhere, and that is two lists the pages
+// have to carry whole. The reads that cost a grant are every read the
+// registry marks as needing one, which a reader checks with `rta explain` and
+// finds on the card. The free reads that still leave the machine, to a
+// service nobody chose per call or to the cluster `kubectl` has current, are
+// named on the MCP page so that "stays on this machine" is never the whole
+// sentence: this test keeps each of them a free read, and when one starts
+// costing a grant it fails here and the capability moves to the other list.
+func TestTheDocsNameTheReadsThatCostAGrantAndTheFreeOnesThatLeaveTheMachine(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("building the built-in registry: %v", err)
+	}
+	root := repoRoot(t)
+	quickstart := readDoc(t, root, "docs/10-getting-started/20-quickstart.md")
+	mcp := readDoc(t, root, "docs/30-boundary/20-mcp.md")
+
+	for _, page := range markdownPages(t, root) {
+		for i, line := range strings.Split(readDoc(t, root, page), "\n") {
+			if strings.Contains(line, "stay on this machine") || strings.Contains(line, "stays on this machine") {
+				t.Errorf("%s:%d says a read stays on this machine; a few free reads ask a fixed service or the current cluster, so say that it aims nowhere the agent chooses", page, i+1)
+			}
+		}
+	}
+
+	costly := 0
+	for _, c := range reg.Capabilities() {
+		if c.HumanOnly || c.Safety != plugin.Read || !grant.Required(c, "") {
+			continue
+		}
+		costly++
+		for rel, page := range map[string]string{"the quickstart": quickstart, "the MCP page": mcp} {
+			if !strings.Contains(page, "`"+c.ID+"`") {
+				t.Errorf("%s does not name %s, a read that costs a grant", rel, c.ID)
+			}
+		}
+	}
+	if costly < 10 {
+		t.Fatalf("found %d reads that cost a grant; has the rule moved?", costly)
+	}
+
+	for _, id := range []string{
+		"eol.check", "eol.products", "eol.watch", "audit.deps",
+		"audit.kube.eol", "audit.kube.netpol", "audit.kube.podsecurity", "audit.kube.quotas", "audit.kube.rbac",
+	} {
+		c, ok := reg.Capability(id)
+		if !ok {
+			t.Errorf("%s is named on the MCP page as a free read that leaves the machine, and is not a capability", id)
+			continue
+		}
+		if grant.Required(c, "") {
+			t.Errorf("%s costs a grant now; move it from the free reads that leave the machine to the reads that cost one, on the MCP page and the quickstart", id)
+		}
+		if !strings.Contains(mcp, "`"+id+"`") {
+			t.Errorf("the MCP page does not name %s, a free read that leaves the machine", id)
 		}
 	}
 }

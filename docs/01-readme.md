@@ -11,7 +11,7 @@ Nothing needs configuring to begin, and nothing needs reading in order. Pick wha
 | Track | You want to | Read | Afterwards you can |
 | --- | --- | --- | --- |
 | **A. Try it** | See what rta does on your own machine | Installation, Quick start: about 15 minutes | Ask your machine anything in five formats, search every capability from the TUI, read any capability's card, and watch an agent be refused and then allowed |
-| **B. Give an agent access safely** | Let an agent use rta, and know exactly what it can do | Five pages: about 40 minutes | Have an agent that reads freely, is refused a write, and holds a 15-minute grant you issued, with the record of all three calls and a way to stop it now |
+| **B. Give an agent access safely** | Let an agent use rta, and know exactly what it can do | Five pages: about 40 minutes | Have an agent that reads what is local, is refused a write, and holds a 15-minute grant you issued, with the record of all three calls and a way to stop it now |
 | **C. Run it for a team** | Share a boundary: environments, a ceiling nobody can raise, a server per person | Eight pages: about an hour | Have named environments, secrets in an encrypted store, a committed team ceiling, and a hosted instance each person's agent reaches |
 | **D. Extend it** | Add a capability rta does not have | Writing a plugin: 15 minutes, then the rest as you need it | Have a plugin that runs, passes the conformance suite and installs from an index of your own |
 

@@ -37,7 +37,7 @@ Three things, all of them real, and all of them conditional on the agent going t
 
 | What MCP buys | Why |
 | --- | --- |
-| **A narrower interface** | With no grant, an MCP client can run reads that stay on this machine and nothing else. The same agent at a shell has everything you have. The tool list *is* the smaller surface |
+| **A narrower interface** | With no grant, an MCP client can run reads that aim nowhere it chooses, and nothing else. The same agent at a shell has everything you have. The tool list *is* the smaller surface |
 | **A record** | Every call over MCP is written to a chained, sealed record — arguments, outcome, and how it was authorized. Nothing else in rta writes to it |
 | **Consent** | Grants, scopes, deadlines, budgets, rates, `rta use`, live consent and dry-run previews are all enforced in the MCP bridge. They exist nowhere else |
 
