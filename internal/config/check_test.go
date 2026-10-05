@@ -43,11 +43,15 @@ func TestCheckNamesTheKeysOfTheFileRtaIgnores(t *testing.T) {
 			[]string{"zzzzzz (line 1): is not a key rta reads (keys here: output, dashboard, plugins, profiles, theme, roles)"}},
 		{"a dotted path written as one key", "dashboard.columns: 3\n",
 			[]string{"dashboard.columns (line 1): is a dotted path written as one key, and the file nests it " +
-				"(write it nested, `dashboard: {columns: 3}`, or let `rta config set dashboard.columns 3` do it)"}},
+				"(write it nested, `dashboard: {columns: <value>}`, or let `rta config set dashboard.columns <value>` do it)"}},
 		{"a long dotted path", "plugins.gen.password.symbols: true\n",
 			[]string{"plugins.gen.password.symbols (line 1): is a dotted path written as one key, and the file nests it " +
-				"(write it nested, `plugins: {gen: {password: {symbols: true}}}`, " +
-				"or let `rta config set plugins.gen.password.symbols true` do it)"}},
+				"(write it nested, `plugins: {gen: {password: {symbols: <value>}}}`, " +
+				"or let `rta config set plugins.gen.password.symbols <value>` do it)"}},
+		{"a misplaced credential is not echoed", "plugins.pg.password: hunter2\n",
+			[]string{"plugins.pg.password (line 1): is a dotted path written as one key, and the file nests it " +
+				"(write it nested, `plugins: {pg: {password: <value>}}`, " +
+				"or let `rta config set plugins.pg.password <value>` do it)"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got := findings(t, c.file)
