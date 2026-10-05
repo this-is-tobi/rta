@@ -19,8 +19,8 @@ func TestRankItemsPutsAnIDThatStartsWithTheQueryFirst(t *testing.T) {
 	if len(got) != 4 || got[0] != 1 || got[1] != 3 {
 		t.Fatalf("rankItems(gen) = %v, want gen.password and gen.uuid first, then the other two", got)
 	}
-	if rest := got[2:]; !(rest[0] == 0 && rest[1] == 2) && !(rest[0] == 2 && rest[1] == 0) {
-		t.Errorf("rankItems(gen) ends %v, want agent.deny and git.log, which only have it inside", rest)
+	if inside := map[int]bool{got[2]: true, got[3]: true}; !inside[0] || !inside[2] {
+		t.Errorf("rankItems(gen) ends %v, want agent.deny and git.log, which only have it inside", got[2:])
 	}
 }
 
