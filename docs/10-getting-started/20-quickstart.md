@@ -104,7 +104,7 @@ That registers rta with Claude Code for the directory you ran it in, under the n
 
 Start Claude Code in this directory and ask it two things.
 
-First, *"Call the rta `sys_overview` tool."* It runs. A read that stays on this machine needs no grant.
+First, *"Call the rta `sys_overview` tool."* It runs. A read that aims nowhere the agent chooses needs no grant.
 
 Second, *"Use the rta `note_add` tool to add a note titled remember the milk."* It is refused, because a write costs a grant, and the refusal carries the exact line to run:
 
@@ -144,7 +144,7 @@ That loop is the whole product: the agent asks, rta refuses what it was never gi
 
 ### What the agent can reach now
 
-**Reads that stay on this machine, and nothing else.** `sys.cpu`, `git status`, `fs usage` and the other reads that describe this machine run without asking. A read aimed at a destination the agent chooses does not: `net.dns`, `net.ping`, `net.port`, `net.probe`, `net.trace`, `http.get`, `http.head`, `cert.expiry`, `audit.web` and `audit.mail` need a grant as a write does, and the grant can name the one host — `rta grant allow net.dns example.org --agent claude`. `rta explain net.dns` shows `grant required (mcp)` on its card, and so does any capability run against a configured connection. Writes and deletes are listed as tools, so the agent can ask for them, and every one is refused until you allow it. The secret store is no exception: `kv.get` is a write, and there is no store to read until you create one.
+**Reads that aim nowhere the agent chooses, and nothing else.** `sys.cpu`, `git status`, `fs usage` and the other reads that describe this machine run without asking, and so do a few that ask a fixed service or your own cluster, which [MCP and the safety gate](../30-boundary/20-mcp.md#what-is-exposed-before-you-decide-anything) lists. A read aimed at a destination the agent chooses does not: `net.dns`, `net.ping`, `net.port`, `net.probe`, `net.trace`, `http.get`, `http.head`, `cert.expiry`, `audit.web` and `audit.mail` need a grant as a write does, and the grant can name the one host — `rta grant allow net.dns example.org --agent claude`. `rta explain net.dns` shows `grant required (mcp)` on its card, and so does any capability run against a configured connection. Writes and deletes are listed as tools, so the agent can ask for them, and every one is refused until you allow it. The secret store is no exception: `kv.get` is a write, and there is no store to read until you create one.
 
 That is the default with no configuration, no flags, and no decisions from you.
 

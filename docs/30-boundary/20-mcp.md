@@ -8,7 +8,7 @@ Everything in this chapter assumes the agent goes through the server. An agent t
 
 ## What is exposed, before you decide anything
 
-**Only reads, and only the ones that stay on this machine.** That is the default, and it holds with no flags, no config and no decisions.
+**Only reads, and only the ones that aim nowhere the agent chooses.** That is the default, and it holds with no flags, no config and no decisions.
 
 | Safety class | What an agent needs |
 | --- | --- |
@@ -17,6 +17,8 @@ Everything in this chapter assumes the agent goes through the server. An agent t
 | `destructive` | a grant a person issued |
 
 Ten reads name a destination the agent chooses, and a destination is a request rta makes on its behalf: `net.dns`, `net.ping`, `net.port`, `net.probe`, `net.trace`, `http.get`, `http.head`, `cert.expiry`, `audit.web` and `audit.mail`. They cost a grant like a write, and the grant can name the one host. `rta explain` shows `grant required (mcp)` on each card, and so on any capability run against a configured connection.
+
+A free read is one no argument an agent sends can aim, which is not the same as one that never leaves the machine. `eol.check`, `eol.products` and `eol.watch` ask endoflife.date, and `audit.deps` sends the names and versions of the dependencies it finds to osv.dev. `audit.kube.eol`, `audit.kube.netpol`, `audit.kube.podsecurity`, `audit.kube.quotas` and `audit.kube.rbac` run `kubectl` against whichever context is current, which is an input an agent is never offered. A team ceiling's `never:` list does not reach these, since it caps what a grant can do and a free read has none; [a lock](./45-stop-an-agent-now.md) is what stops an agent from calling them.
 
 ```bash
 rta grant allow note --agent claude --ttl 30m   # every write in the note plugin, for half an hour

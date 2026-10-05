@@ -2,7 +2,7 @@
 
 A grant is permission for **one capability**, optionally **one record**, that **expires on its own**.
 
-It is the whole of the model. A read that stays on this machine is free; **everything that changes anything costs a grant**, and so does a read aimed at a destination the agent names — a host, a URL, a port. There is no flag that stands in for one. A grant is decided when you need it, for as little as you need, and then stops being true without anybody remembering to revoke it.
+It is the whole of the model. A read that aims nowhere the agent chooses is free; **everything that changes anything costs a grant**, and so does a read aimed at a destination the agent names — a host, a URL, a port. There is no flag that stands in for one. A grant is decided when you need it, for as little as you need, and then stops being true without anybody remembering to revoke it.
 
 ## Issuing one
 

@@ -116,7 +116,7 @@ The name is your word, not the agent's. A client announces itself in the protoco
 
 ## What it can reach on day one
 
-With no grant, an agent can run the reads that stay on this machine and nothing else. Everything that writes or deletes, and every read aimed at a destination the agent names, is refused until you allow it, and the refusal carries the exact command to run. [MCP and the safety gate](../30-boundary/20-mcp.md#what-is-exposed-before-you-decide-anything) is the whole rule, and [Grants](../30-boundary/30-grants.md) is how to allow one thing narrowly.
+With no grant, an agent can run the reads that aim nowhere it chooses, and nothing else. Everything that writes or deletes, and every read aimed at a destination the agent names, is refused until you allow it, and the refusal carries the exact command to run. [MCP and the safety gate](../30-boundary/20-mcp.md#what-is-exposed-before-you-decide-anything) is the whole rule, and [Grants](../30-boundary/30-grants.md) is how to allow one thing narrowly.
 
 ## Check that it is working
 

@@ -28,7 +28,7 @@ docker run --rm ghcr.io/this-is-tobi/rta:latest --version
 ```bash
 rta sys overview          # your machine at a glance: cpu, memory, disk, load
 rta                       # the interactive dashboard, with a search over every capability
-rta mcp install claude    # give Claude Code rta's tools: it reads freely and is refused anything else
+rta mcp install claude    # give Claude Code rta's tools: it reads what is local and is refused anything else
 ```
 
 Ask Claude Code to add a note and the refusal carries the exact line that would allow it, which is the loop the rest of rta is built around. [Quick start](./docs/10-getting-started/20-quickstart.md) walks it in ten minutes, and [Start here](./docs/01-readme.md) lays out four tracks: try it, give an agent access safely, run it for a team, and extend it.
