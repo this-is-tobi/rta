@@ -1,6 +1,7 @@
 package app
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -69,5 +70,51 @@ func TestThePolicyDocumentsPointAtEveryPageOfTheMCPReasoning(t *testing.T) {
 				t.Errorf("%s links %s, which is not a page", doc, m[1])
 			}
 		}
+	}
+}
+
+// A code a page quotes is the contract a script or a SIEM rule matches on, and
+// a page that quotes one that was renamed or never existed sends that rule to
+// match on nothing. Every backticked `core.` code of three parts or more in
+// the docs, which leaves out git's `core.worktree`, is spelled in the source as
+// a string, so a code that is dropped, or typed wrong on a page, fails here
+// with the page that has it.
+func TestEveryCoreCodeTheDocsNameIsOneRtaRaises(t *testing.T) {
+	root := repoRoot(t)
+	var source strings.Builder
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if name := d.Name(); name == ".git" || name == "node_modules" || name == "docs" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			source.Write(body)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := regexp.MustCompile("`(core\\.[a-z0-9-]+\\.[a-z0-9.-]*[a-z0-9])`")
+	named := 0
+	for _, page := range markdownPages(t, root) {
+		for _, m := range code.FindAllStringSubmatch(readDoc(t, root, page), -1) {
+			named++
+			if !strings.Contains(source.String(), `"`+m[1]) {
+				t.Errorf("%s quotes the code %s, which no part of rta raises", page, m[1])
+			}
+		}
+	}
+	if named < 20 {
+		t.Fatalf("found %d codes in the docs; has the way they are quoted changed?", named)
 	}
 }

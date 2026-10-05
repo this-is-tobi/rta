@@ -17,12 +17,16 @@ The records are the ones a grant is compared with, kept exactly as the call spel
 ```bash
 rta agent log --limit 50
 rta agent log --refused        # only the calls rta would not make
+rta agent log --since today    # a day, a span like 3d, or a date
+rta agent log --agent claude   # one agent's calls
 rta agent log --detail         # the full view, and the chain's integrity
 ```
 
+At a terminal each call is one line: when, which capability, the record it named once any call named one, and what became of it — `ran`, `ran · by grant`, `ran · you approved`, `refused · no grant`, `refused · nobody answered`, `failed · <code>`. The agent joins the line when more than one agent is in what is shown, and the session when one agent's servers were calling in turn. The line leaves the arguments, the profile and the sentence for `--detail`, a pipe or `-o json`, which carry every field of every call. Past what the limit shows, a line under the table says how many older calls are not shown and what shows them.
+
 `--refused` is the one to reach for first when something is not working. A refusal is a normal, designed outcome here, not an error condition — an agent asking for something it does not have is the system behaving correctly, and the log is where you find out what it wanted.
 
-Refusals come from two depths, and the authorization column tells them apart: `blocked` means the call never cleared rta's own gates — a missing grant, a bad argument, a locked principal — while `open` or `grant` on a refused row means the gates allowed it and something past them still said no: the capability's own policy (the way `agent.*` and `lock.*` refuse any caller over MCP, or `pg.dump` refuses to hand a whole database to an agent), or a value your config or the profile supplies that the capability does not take, whose reason names the key it came from and whose grant use is given back. Both are refusals, not failures: `failed` is reserved for calls that were allowed and then broke.
+Refusals come from two depths, and the authorization column, which `--detail` and every machine format carry, tells them apart: `blocked` means the call never cleared rta's own gates — a missing grant, a bad argument, a locked principal — while `open` or `grant` on a refused row means the gates allowed it and something past them still said no: the capability's own policy (the way `agent.*` and `lock.*` refuse any caller over MCP, or `pg.dump` refuses to hand a whole database to an agent), or a value your config or the profile supplies that the capability does not take, whose reason names the key it came from and whose grant use is given back. Both are refusals, not failures: `failed` is reserved for calls that were allowed and then broke.
 
 ## Who asked
 
@@ -95,7 +99,7 @@ rta agent log --refused -o json          # the refusals, as data
 rta agent log -o csv >> ~/audit/$(date +%F).csv
 ```
 
-Every refused or failed row carries the cause twice, deliberately split: a `code` column holding just the dotted, stable code (`core.grant.required`, `agent.surface`), and a `why` column holding the sentence. Match on the code — it is the contract a [SIEM](../95-reference/10-glossary.md#acronyms) or jq rule can rely on across versions; the wording is not.
+Every refused or failed row carries the cause twice, deliberately split: a `code` column holding just the dotted, stable code (`core.grant.required`, `agent.surface`), and a `why` column holding the sentence — for a call refused because a grant it ran on is spent or has lapsed, `the grant for <target> ended (1 of 1 use)`, and for any other missing grant `no active grant for <target>`. Match on the code — it is the contract a [SIEM](../95-reference/10-glossary.md#acronyms) or jq rule can rely on across versions; the wording is not.
 
 Which makes "ship the record somewhere durable" a cron line rather than a feature request.
 

@@ -60,7 +60,7 @@ safety       read
 cli          rta sys cpu [--cores <bool>]
 ```
 
-Those are the rows to read first: what it is, what it does, whether it can change anything (`read` cannot), and the command line. The full card has a few more around them, such as whether the call is idempotent, the MCP tool name, the config keys the capability reads and what the dashboard does with it. They mean more once you use those parts, and `rta explain sys.cpu` prints them all.
+Those are the rows to read first: what it is, what it does, whether it can change anything (`read` cannot), and the command line. The full card has a few more around them, such as whether the call is idempotent, the MCP tool name, the config keys the capability reads, where the config file is and the command that sets one, and what the dashboard does with it. They mean more once you use those parts, and `rta explain sys.cpu` prints them all.
 
 That card is not documentation *about* the capability — it is generated from the same declaration the CLI, the TUI and the MCP schema are built from, so it cannot drift. `rta explain` with no argument lists everything.
 
@@ -131,18 +131,16 @@ rta agent log
 ```
 
 ```
-╭─────┬──────────┬──────────────┬────────┬──────────┬─────────────────────────┬─────────┬─────────┬────────────┬─────────────────────┬─────────────────────────╮
-│ SEQ │ AT       │ CAPABILITY   │ AGENT  │ SESSION  │ ARGUMENTS               │ PROFILE │ OUTCOME │ AUTHORIZED │ CODE                │ WHY                     │
-├─────┼──────────┼──────────────┼────────┼──────────┼─────────────────────────┼─────────┼─────────┼────────────┼─────────────────────┼─────────────────────────┤
-│ 1   │ 01:31:07 │ sys.overview │ claude │ cce732bf │                         │         │ ran     │ open       │                     │                         │
-│ 2   │ 01:31:07 │ note.add     │ claude │ cce732bf │ title="remember the     │         │ refused │ blocked    │ core.grant.required │ no active grant for     │
-│     │          │              │        │          │ milk"                   │         │         │            │                     │ note.add                │
-│ 3   │ 01:31:07 │ note.add     │ claude │ cce732bf │ title="remember the     │         │ ran     │ grant      │                     │                         │
-│     │          │              │        │          │ milk"                   │         │         │            │                     │                         │
-╰─────┴──────────┴──────────────┴────────┴──────────┴─────────────────────────┴─────────┴─────────┴────────────┴─────────────────────┴─────────────────────────╯
+╭──────────┬──────────────┬────────────────────╮
+│ AT       │ CAPABILITY   │ RESULT             │
+├──────────┼──────────────┼────────────────────┤
+│ 01:31:07 │ sys.overview │ ran                │
+│ 01:31:07 │ note.add     │ refused · no grant │
+│ 01:31:12 │ note.add     │ ran · by grant     │
+╰──────────┴──────────────┴────────────────────╯
 ```
 
-That loop is the whole product: the agent asks, rta refuses what it was never given, you decide in one line, and everything is written down. `rta grant list` shows what is allowed right now, and the grant is gone by itself in fifteen minutes.
+That loop is the whole product: the agent asks, rta refuses what it was never given, you decide in one line, and everything is written down. At a terminal the record is one line per call, with a column for the agent only once there is more than one to tell apart and one for the record a call named only once a call named one; `rta agent log --detail`, a pipe or `-o json` gives every field of every call, the arguments and the reason a refusal gave included. `rta grant list` shows what is allowed right now, and the grant is gone by itself in fifteen minutes.
 
 ### What the agent can reach now
 
@@ -158,7 +156,7 @@ That is the default with no configuration, no flags, and no decisions from you.
 rta doctor
 ```
 
-Read the `info` rows rather than skipping to the failures. Lines like *"the store unlocks from this environment — an MCP server started here can read secrets, bounded only by grants"* are the ones that tell you what an agent started from this shell inherits.
+The rows that need you come first (`error`, then `warn`, then `info`, then `ok`), and the line under the table counts the notes and names the one that bears most on what an agent can reach. Read the `info` rows rather than skipping to the failures. Lines like *"the store unlocks from this environment — an MCP server started here can read secrets, bounded only by grants"* are the ones that tell you what an agent started from this shell inherits.
 
 ## Where to go next
 

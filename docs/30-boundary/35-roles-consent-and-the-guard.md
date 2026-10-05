@@ -45,10 +45,12 @@ rta mcp install claude --consent --consent-notify
 
 ```bash
 rta agent pending
-rta agent show 5473aa62        # everything about it, including what it would do
-rta agent allow 5473aa62
-rta agent deny 5473aa62
+rta agent show                 # everything about the parked call, including what it would do
+rta agent allow                # shows the call, asks `Allow once? [y/N]`, and runs it on a y
+rta agent deny
 ```
+
+With one call parked the id is optional at a terminal: `rta agent allow` shows what the call is and asks, and anything but `y` or `yes` — an empty line, `n`, a closed input — leaves it parked and says how to deny it. With several parked, `show`, `allow` and `deny` list them and answer none: name one, as in `rta agent allow 5473aa62`. Where there is no terminal, under `--yes` or in a script, the id is always required, so a script never answers a call it did not look at.
 
 A destructive call is previewed before it parks: rta runs the capability's own `--dry-run` and shows the result on the request, which changes the question from *"may this agent call `note.rm`"* to *"may it remove **this note**"*. The preview is not optional, and it is bounded to built-in capabilities, whose dry runs are cheap and honest about `DryRun` by test — a plugin's handler is never run to answer a question about it.
 
@@ -56,7 +58,7 @@ Answering `allow` runs that one call. It does not create a standing grant — if
 
 `rta agent allow <id> --ttl 1h` also issues the grant the call was missing, for the record it named and no wider — a grant for each record when it names several, as a `kv.rename` names the key and where it goes. A call naming a record ending in `/` — a folder to a grant, `https://` included, and the agent chose it — is released on its own and no grant is issued; the answer names the `rta grant allow` calls that issue them on purpose, if every record under the folder is what you mean. A call naming a record that is only white space is released on its own too, since no grant can name that record: `grant allow` refuses it, and `grant revoke` and `grant renew` could never take one back by it. The team's ceiling holds the answer record by record, as it would hold each grant.
 
-`--consent-wait` bounds how long a call waits before it is refused anyway (default 90s).
+`--consent-wait` bounds how long a call waits before it is refused anyway (default 90s). The agent is then refused as `core.consent.expired`, told that the operator did not answer within the wait and to retry if they are at the machine, and the record says `nobody answered within 90s`. `--consent-notify` rings the desktop with the capability and `rta agent allow`, never an id: it tells you what is waiting, and the command to run does the rest.
 
 **The default is off on purpose.** A call parked in a server nobody is watching is worse than a refusal: the agent hangs, you never see it, and the timeout is the only thing that resolves it. Turn consent on when you are actually at the machine — or, for a remote server, when [the operator channel](./66-operators.md) gives its enrolled operators a way to answer with `--server`.
 

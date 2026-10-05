@@ -121,8 +121,11 @@ Detection rather than prevention, which is what the record's hash chain already 
 A grant records whether anybody was there when it was issued, and `rta grant list` shows it:
 
 ```
-CAPABILITY  PROFILE  AGENT   RECORD  ORIGIN   EXPIRES IN  BUDGET LEFT
-kv.get      —        claude  any     command      59m43s  unlimited
+╭────────────┬────────┬────────┬─────────┬────────────┬─────────────╮
+│ CAPABILITY │ RECORD │ AGENT  │ ORIGIN  │ EXPIRES IN │ BUDGET LEFT │
+├────────────┼────────┼────────┼─────────┼────────────┼─────────────┤
+│ kv.get     │ any    │ claude │ command │     59m43s │ unlimited   │
+╰────────────┴────────┴────────┴─────────┴────────────┴─────────────╯
 ```
 
 | Origin | What it means |
