@@ -243,7 +243,7 @@ func TestValidateFailures(t *testing.T) {
 			p.Capabilities[1].Reveals = true
 			p.Capabilities[1].Safety = Write
 			p.Capabilities[1].NeedsGrant = true
-		}, "every grant on it cover every record"},
+		}, "declare NeedsGrant with a Scope"},
 		{"reveals with a scope and no grant", func(p *Plugin) {
 			p.Capabilities[1].Reveals = true
 			p.Capabilities[1].Safety = Write

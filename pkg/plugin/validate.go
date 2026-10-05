@@ -703,8 +703,7 @@ func checkReveals(c Capability) error {
 	if !c.HumanOnly && (!c.NeedsGrant || c.Scope == "") {
 		return fmt.Errorf("capability %q: declares Reveals without a gate that names the record — "+
 			"declare NeedsGrant with a Scope (the input naming what is revealed), or HumanOnly if only the "+
-			"person at the terminal may see it; a reveal with no Scope makes every grant on it cover every "+
-			"record it can reach", c.ID)
+			"person at the terminal may see it", c.ID)
 	}
 	return nil
 }
