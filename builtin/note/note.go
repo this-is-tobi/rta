@@ -822,8 +822,14 @@ func namedIDs(sf plugin.Surface, req plugin.Request) ([]int, *view.Error) {
 	for _, raw := range req.StringSlice("id") {
 		n, err := strconv.Atoi(raw)
 		if err != nil || strconv.Itoa(n) != raw || n < 1 {
-			return nil, view.Errorf("note.id.invalid", "%q is not a note id", raw).
-				WithHint("an id is a whole number — " + sf.CapabilityWith("note.list", "all") + " shows them")
+			hint := "an id is a whole number — " + sf.CapabilityWith("note.list", "all") + " shows them"
+			if strings.ContainsAny(raw, ", ") {
+				// "1,2" is the way several are written in most places, and the gate
+				// judges each id on its own, so they are separate arguments here.
+				hint = "several ids are separate arguments, not one joined: `" +
+					sf.Call("note.done", plugin.Arg{Name: "id", Value: []string{"1", "2"}, Positional: true}) + "`"
+			}
+			return nil, view.Errorf("note.id.invalid", "%q is not a note id", raw).WithHint(hint)
 		}
 		if !seen[n] {
 			seen[n] = true

@@ -87,6 +87,26 @@ func TestIDsAreWrittenAsNumbersOrRefused(t *testing.T) {
 	}
 }
 
+// Several ids joined into one argument are the likeliest way to get this wrong,
+// and the refusal says what to type instead of only what was wrong.
+func TestIDsJoinedIntoOneArgumentAreToldToBeSeparate(t *testing.T) {
+	setup(t)
+	addNotes(t, "a", "b")
+
+	for _, joined := range []string{"1,2", "1, 2", "1 2"} {
+		_, err := runDone(context.Background(), req(ids(joined), false))
+		ve := view.AsError(err, "x")
+		if ve.Code != "note.id.invalid" || !strings.Contains(ve.Hint, "separate arguments") ||
+			!strings.Contains(ve.Hint, "rta note done 1 2") {
+			t.Errorf("id %q = %+v, want a hint that says to give them apart", joined, ve)
+		}
+	}
+	_, err := runDone(context.Background(), req(ids("one"), false))
+	if ve := view.AsError(err, "x"); strings.Contains(ve.Hint, "separate arguments") {
+		t.Errorf("a word that is no id is told about separate arguments: %q", ve.Hint)
+	}
+}
+
 // A dry run says what each note would get, and changes none.
 func TestSeveralIDsDryRun(t *testing.T) {
 	setup(t)
