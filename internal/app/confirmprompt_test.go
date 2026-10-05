@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -20,7 +21,7 @@ func askedOf(t *testing.T, answer string, err error) *[]string {
 	t.Cleanup(func() { confirmTerminal, askLine = savedTerminal, savedAsk })
 	confirmTerminal = func() bool { return true }
 	var asked []string
-	askLine = func(prompt string) (string, error) {
+	askLine = func(_ context.Context, prompt string) (string, error) {
 		asked = append(asked, prompt)
 		return answer, err
 	}
@@ -140,6 +141,10 @@ func TestAnythingButYesLeavesTheTargetAlone(t *testing.T) {
 			if !strings.Contains(errOut, "Not confirmed") {
 				t.Errorf("stderr = %q, want the line saying nothing was changed", errOut)
 			}
+			// ^D is no newline: the question's line is closed before the next.
+			if opened := strings.Contains(errOut, "\n\nNot confirmed"); opened != (c.err != nil) {
+				t.Errorf("stderr = %q, the line the question was on was closed: %v, want %v", errOut, opened, c.err != nil)
+			}
 		})
 	}
 }
@@ -222,5 +227,41 @@ func TestAnExternalPluginIsConfirmedOnItsInputsAlone(t *testing.T) {
 	}
 	if strings.Join(ran, ",") != "far remove" {
 		t.Errorf("ran %v, want the removal alone", ran)
+	}
+}
+
+// ^C is the natural way to say no, and a read on a terminal does not return for
+// a signal: the question stops waiting when the command's context ends, and the
+// answer is the one anything that is not a yes gets.
+func TestAQuestionStopsWaitingWhenTheCommandIsInterrupted(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	blocked := make(chan struct{})
+	defer close(blocked)
+	done := make(chan error, 1)
+	go func() {
+		_, err := readLineOrDone(ctx, func(byte) (string, error) { <-blocked; return "", nil })
+		done <- err
+	}()
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("err = %v, want the context's", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the question went on waiting for a read after the command was interrupted")
+	}
+
+	line, err := readLineOrDone(context.Background(), func(byte) (string, error) { return "y\n", nil })
+	if line != "y\n" || err != nil {
+		t.Errorf("an answer was %q %v", line, err)
+	}
+
+	var ran []string
+	reg := confirmRegistry(t, &ran)
+	askedOf(t, "", context.Canceled)
+	_, errOut, err := run(t, reg, "demo", "item", "rm", "6", "--no-color")
+	if ExitCode(err) != 3 || !strings.Contains(errOut, "Not confirmed") || strings.Join(ran, ",") != "preview" {
+		t.Errorf("an interrupted question: exit %d, stderr %q, ran %v", ExitCode(err), errOut, ran)
 	}
 }
