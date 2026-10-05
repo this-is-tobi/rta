@@ -1014,7 +1014,11 @@ func tunnelledPairs(ns string, reg *registry.Registry) []view.Pair {
 }
 
 func unknownProfile(cfg config.Config, name string) *view.Error {
-	hint := "no profiles are configured — see `rta profile list`"
+	create := "<name>"
+	if base, _ := config.SplitRef(name); config.ValidRef(base) {
+		create = base
+	}
+	hint := "no profiles are configured — `rta profile set " + create + " --plugin <plugin> --set <key>=<value>` creates one"
 	if all := cfg.ProfileNames(); len(all) > 0 {
 		hint = "configured: " + strings.Join(all, ", ")
 	}
