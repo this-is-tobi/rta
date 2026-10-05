@@ -26,6 +26,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/this-is-tobi/rta/internal/near"
 )
 
 // Item is one thing a query can find.
@@ -302,30 +304,7 @@ func extendsByALetterOrTwo(w, have string) bool {
 	return extra <= 1 || (extra == 2 && len(have) >= 4 && strings.HasSuffix(w, "es"))
 }
 
-// Distance is the optimal-string-alignment distance between two words:
-// insertions, deletions and substitutions, and a swap of two neighbouring
-// letters as one edit, since that is the typo (`lsit`).
-func Distance(a, b string) int {
-	ra, rb := []rune(a), []rune(b)
-	d := make([][]int, len(ra)+1)
-	for i := range d {
-		d[i] = make([]int, len(rb)+1)
-		d[i][0] = i
-	}
-	for j := range d[0] {
-		d[0][j] = j
-	}
-	for i := 1; i <= len(ra); i++ {
-		for j := 1; j <= len(rb); j++ {
-			cost := 1
-			if ra[i-1] == rb[j-1] {
-				cost = 0
-			}
-			d[i][j] = min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
-			if i > 1 && j > 1 && ra[i-1] == rb[j-2] && ra[i-2] == rb[j-1] {
-				d[i][j] = min(d[i][j], d[i-2][j-2]+1)
-			}
-		}
-	}
-	return d[len(ra)][len(rb)]
-}
+// Distance is the optimal-string-alignment distance between two words, one
+// function with the one internal/near answers "did you mean" by, so a typo is
+// the same distance away wherever it is asked.
+func Distance(a, b string) int { return near.Distance(a, b) }
