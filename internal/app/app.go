@@ -1411,6 +1411,9 @@ func refuseFlagValue(cmd *cobra.Command, err error, c *plugin.Capability) *view.
 		want = "true or false"
 	case "duration":
 		want = "a duration such as 30s, 15m or 2h"
+		if _, declared := flag.Value.(*durationValue); declared {
+			want = "a duration such as 30s, 15m, 2h or 1d"
+		}
 	default:
 		return nil
 	}
@@ -1770,19 +1773,22 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 			continue
 		}
 		usage := flagUsage(c, f)
+		// The one-letter form the capability declared, on every kind of flag:
+		// the *P variants take it and an empty one is no shorthand at all.
+		short := f.Short
 		switch f.Type {
 		case plugin.Int:
 			def, _ := f.Default.(int)
-			cmd.Flags().Int(f.Name, def, usage)
+			cmd.Flags().IntP(f.Name, short, def, usage)
 		case plugin.Bool:
 			def, _ := f.Default.(bool)
-			cmd.Flags().Bool(f.Name, def, usage)
+			cmd.Flags().BoolP(f.Name, short, def, usage)
 		case plugin.Float:
 			def, _ := f.Default.(float64)
-			cmd.Flags().Float64(f.Name, def, usage)
+			cmd.Flags().Float64P(f.Name, short, def, usage)
 		case plugin.StringSlice:
 			def, _ := f.Default.([]string)
-			cmd.Flags().Var(newListFlag(def), f.Name, usage)
+			cmd.Flags().VarP(newListFlag(def), f.Name, short, usage)
 		case plugin.SecretSlice:
 			// StringArray, never StringSlice, and this is the same ruling
 			// profileset.go's `--set` already made: StringSlice splits its
@@ -1792,10 +1798,13 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 			// fragment under another, with nothing said. StringSlice keeps
 			// its splitting because callers of the existing type rely on it.
 			def, _ := f.Default.([]string)
-			cmd.Flags().StringArray(f.Name, def, usage)
+			cmd.Flags().StringArrayP(f.Name, short, def, usage)
+		case plugin.Duration:
+			def, _ := f.Default.(string)
+			cmd.Flags().VarP(newDurationValue(def), f.Name, short, usage)
 		default:
 			def, _ := f.Default.(string)
-			cmd.Flags().String(f.Name, def, usage)
+			cmd.Flags().StringP(f.Name, short, def, usage)
 		}
 		// A required input that config can fill is not required on the
 		// command line: cobra enforces MarkFlagRequired during parsing, which
@@ -2053,6 +2062,12 @@ func collectValues(cmd *cobra.Command, c plugin.Capability, args []string) (map[
 				return nil, fmt.Errorf("flag --%s is not a list", f.Name)
 			}
 			values[f.Name] = list.GetSlice()
+		case plugin.Duration:
+			d, ok := cmd.Flags().Lookup(f.Name).Value.(*durationValue)
+			if !ok {
+				return nil, fmt.Errorf("flag --%s is not a duration", f.Name)
+			}
+			values[f.Name] = d.value
 		case plugin.SecretSlice:
 			// Declared as a StringArray above, so it must be read back as
 			// one: GetStringSlice on an array flag returns an error rather
