@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // examples are what `rta <command> --help` shows under EXAMPLES, for the
@@ -142,4 +144,22 @@ func attachExamples(cmd *cobra.Command) {
 	for _, sub := range cmd.Commands() {
 		attachExamples(sub)
 	}
+}
+
+// exampleLine is one of a capability's declared examples as it is shown at a
+// terminal: the command line the declaration's values spell, and what the call
+// is for (every example has a title) as a trailing comment, drawn dimmed like the comments above.
+func exampleLine(c plugin.Capability, e plugin.Example) string {
+	return c.ExampleCall(plugin.SurfaceCLI, e) + "   # " + e.Title
+}
+
+// capabilityExamples is what `rta <command> --help` shows under EXAMPLES for a
+// capability that declares calls of its own: the plugin's, in the order it
+// wrote them, spelled for this surface.
+func capabilityExamples(c plugin.Capability) string {
+	lines := make([]string, len(c.Examples))
+	for i, e := range c.Examples {
+		lines[i] = exampleLine(c, e)
+	}
+	return strings.Join(lines, "\n")
 }

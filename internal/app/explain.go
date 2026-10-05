@@ -138,6 +138,9 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 	if c.Description != "" {
 		pairs = append(pairs, view.Pair{Key: "description", Value: c.Description})
 	}
+	for _, e := range c.Examples {
+		pairs = append(pairs, view.Pair{Key: "example", Value: exampleLine(c, e)})
+	}
 	for _, f := range c.Inputs {
 		detail := string(f.Type)
 		switch {

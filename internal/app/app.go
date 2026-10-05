@@ -1215,6 +1215,7 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 			strings.TrimSpace(c.Summary+"\n\n"+c.Description),
 			capabilityArgs(c, positionals),
 		),
+		Example:     capabilityExamples(c),
 		Args:        positionalArgsValidator(positionals),
 		Annotations: capabilityAnnotations(c),
 		RunE: func(cmd *cobra.Command, args []string) error {
