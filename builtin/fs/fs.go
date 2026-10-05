@@ -53,12 +53,12 @@ func Plugin() plugin.Plugin {
 					"does not draw as itself is shown quoted with it written out, never cleaned into another name.",
 				Inputs: []plugin.Field{
 					pathField("directory to measure"),
-					{Name: "limit", Type: plugin.Int, Config: "limit", Default: 20, Min: 1, Max: 1000, Help: "how many entries to rank"},
+					{Name: "limit", Type: plugin.Int, Config: "usage.limit", Default: 20, Min: 1, Max: 1000, Help: "how many entries to rank"},
 					// Min 0 because 0 is the one value below 1 with a meaning
 					// — no limit — and -1 was taken as the same thing by
 					// accident, while every surface that reads the
 					// declaration said any integer would do.
-					{Name: "depth", Type: plugin.Int, Config: "depth", Default: 0, Min: 0,
+					{Name: "depth", Type: plugin.Int, Config: "usage.depth", Default: 0, Min: 0,
 						Help: "how deep to descend when totalling (0 = no limit)"},
 					{Name: "apparent", Type: plugin.Bool, Config: "apparent",
 						Help: "count each file by its length rather than the disk it takes"},
@@ -88,8 +88,8 @@ func Plugin() plugin.Plugin {
 					"cleaned into another name.",
 				Inputs: []plugin.Field{
 					pathField("directory to show"),
-					{Name: "depth", Type: plugin.Int, Config: "depth", Default: 2, Min: 1, Max: 12, Help: "how many levels to show"},
-					{Name: "limit", Type: plugin.Int, Config: "limit", Default: 12, Min: 1, Max: 500, Help: "entries to show per directory"},
+					{Name: "depth", Type: plugin.Int, Config: "tree.depth", Default: 2, Min: 1, Max: 12, Help: "how many levels to show"},
+					{Name: "limit", Type: plugin.Int, Config: "tree.limit", Default: 12, Min: 1, Max: 500, Help: "entries to show per directory"},
 					{Name: "all", Type: plugin.Bool, Config: "all", Help: "include hidden entries"},
 				},
 				Run: runTree,

@@ -84,7 +84,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"host volunteers, plus the one Origin header the CORS probe adds.",
 				Inputs: []plugin.Field{
 					{Name: "host", Type: plugin.String, Positional: true, Required: true, Help: "host or URL to audit"},
-					{Name: "timeout", Type: plugin.Int, Config: "timeout", Default: 15, Min: 1, Max: 300, Help: "request timeout in seconds"},
+					{Name: "timeout", Type: plugin.Int, Config: "web.timeout", Default: 15, Min: 1, Max: 300, Help: "request timeout in seconds"},
 				},
 				Run: runWeb,
 			},
@@ -122,7 +122,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Inputs: []plugin.Field{
 					{Name: "domain", Type: plugin.String, Positional: true, Required: true, Help: "domain to audit"},
 					{Name: "selector", Type: plugin.String, Help: "DKIM selector to check (the s= tag of a DKIM-Signature)"},
-					{Name: "timeout", Type: plugin.Int, Config: "timeout", Default: 15, Min: 1, Max: 300, Help: "lookup timeout in seconds"},
+					{Name: "timeout", Type: plugin.Int, Config: "mail.timeout", Default: 15, Min: 1, Max: 300, Help: "lookup timeout in seconds"},
 				},
 				Run: runMail,
 			},
@@ -153,7 +153,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					{Name: "recursive", Type: plugin.Bool, Config: "recursive",
 						Help: "walk subdirectories too, for a monorepo with a manifest per package"},
 					{Name: "offline", Type: plugin.Bool, Config: "offline", Help: "inventory the dependencies without querying osv.dev"},
-					{Name: "timeout", Type: plugin.Int, Config: "timeout", Default: 30, Min: 1, Max: 300, Help: "query timeout in seconds"},
+					{Name: "timeout", Type: plugin.Int, Config: "deps.timeout", Default: 30, Min: 1, Max: 300, Help: "query timeout in seconds"},
 				},
 				// A finding names a package, and the question it raises second is what
 				// pulled that package in — which decides whether the fix is a version bump
