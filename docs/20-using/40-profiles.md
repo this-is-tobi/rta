@@ -17,7 +17,7 @@ rta profile set staging --note "the shared staging stack" --ttl 8h \
 
 It is idempotent — running it twice is running it once — so it belongs in a provisioning script, a Dockerfile, or a dotfiles repository as easily as in a terminal. `rta profile rm` is the other half.
 
-**Or from the form, which is the shortest path at a keyboard.** Open the TUI, press `f` for profiles, then `n`:
+**Or from the form, which is the shortest path at a keyboard.** Open the TUI, press an arrow to select a tile, press `f` for profiles, then `n`:
 
 ```bash
 rta
