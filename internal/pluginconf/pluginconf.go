@@ -434,9 +434,21 @@ func SharedField(readers []plugin.Field) plugin.Field {
 }
 
 // widest is the looser of two bounds: nil, which is none, beats anything.
+//
+// A Duration's bounds are text with a unit ("5m"), so they are compared as the
+// lengths of time they are: left as text number reads nothing of, a shared
+// duration key lost its range and `rta profile set` stored a value no reader
+// accepts and each then clamped, silently, on every call.
 func widest(a, b any, upper bool) any {
 	x, okA := number(a)
 	y, okB := number(b)
+	if ta, ok := a.(string); ok {
+		if tb, ok := b.(string); ok {
+			da, errA := plugin.ParseDuration(ta)
+			db, errB := plugin.ParseDuration(tb)
+			x, y, okA, okB = float64(da), float64(db), errA == nil, errB == nil
+		}
+	}
 	if !okA || !okB {
 		return nil
 	}
