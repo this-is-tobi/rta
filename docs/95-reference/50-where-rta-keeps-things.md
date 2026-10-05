@@ -12,9 +12,9 @@ It looks at the machine. For each client it finds — Claude Code, VS Code, Code
 
 `rta init --yes` registers every client it lists without asking, which is what a dotfiles script or a devcontainer wants, and `--dry-run` shows what that would run. With neither a terminal nor `--yes` it stops with exit code `3` and changes nothing.
 
-When you do want a setting, the config file is `~/.config/rta/config.yaml` (`$XDG_CONFIG_HOME/rta/config.yaml` when that is set, on macOS as well as Linux; `rta config` prints the real path), and `rta config schema` describes every key. `RTA_CONFIG` overrides the location, which is what portable setups and test harnesses use.
+When you do want a setting, the config file is `~/.config/rta/config.yaml` (`$XDG_CONFIG_HOME/rta/config.yaml` when that is set, on macOS as well as Linux; `rta config path` prints the real one), and `rta config schema` describes every key. `RTA_CONFIG` overrides the location, which is what portable setups and test harnesses use.
 
-Nothing in the config grants anything. It holds connection profiles, dashboard preferences and theme — see [Profiles](../20-using/40-profiles.md).
+Nothing in the config grants anything. It holds connection profiles, dashboard preferences and theme — see [Your config file](../20-using/22-your-config-file.md) for the commands that change it and [Profiles](../20-using/40-profiles.md) for the environments.
 
 ## The files
 
