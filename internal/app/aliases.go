@@ -7,6 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/this-is-tobi/rta/builtin/audit"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // verbSynonyms are the verbs that mean the same thing to the person typing them.
@@ -67,9 +70,23 @@ var readAsVerbs = map[string]bool{
 	"block": true, "ban": true, "kill": true, "stop": true, "all": true,
 }
 
-// shapeVerbs applies the four rules above to the finished tree.
-func shapeVerbs(root *cobra.Command) {
-	addVerbAliases(root)
+// shapeVerbs applies the four rules above to the finished tree. catalog is what
+// the deny list is derived from.
+//
+// A verb the deny list names on its own — `audit doctor`, a plugin's human-only
+// `show` beside verbs an agent may call — gets no alias. The harness matches
+// that list by spelling (`Bash(rta myplugin show:*)`), a string match is blind
+// to `rta myplugin get`, and an alias would be a way round a refusal the
+// operator wrote down. A namespace denied whole covers its aliases and keeps
+// them. Taken from the same derivation `audit clients --fix` prints, so a
+// plugin's declaration is held to it as the built-in ones are, which a test
+// over the built-in ones alone could not do.
+func shapeVerbs(root *cobra.Command, catalog func() []plugin.Capability) {
+	deniedAlone := map[string]bool{}
+	for _, verb := range audit.HumanOnlyVerbs(catalog) {
+		deniedAlone["rta "+verb] = true
+	}
+	addVerbAliases(root, deniedAlone)
 	for path := range duplicates {
 		if cmd := commandAt(root, path); cmd != nil {
 			cmd.Hidden = true
@@ -80,11 +97,11 @@ func shapeVerbs(root *cobra.Command) {
 	}
 }
 
-func addVerbAliases(cmd *cobra.Command) {
+func addVerbAliases(cmd *cobra.Command, deniedAlone map[string]bool) {
 	for _, sub := range cmd.Commands() {
-		addVerbAliases(sub)
+		addVerbAliases(sub, deniedAlone)
 	}
-	if !cmd.HasParent() || protocolNamespaces[cmd.Parent().Name()] {
+	if !cmd.HasParent() || protocolNamespaces[cmd.Parent().Name()] || deniedAlone[cmd.CommandPath()] {
 		return
 	}
 	for _, set := range verbSynonyms {

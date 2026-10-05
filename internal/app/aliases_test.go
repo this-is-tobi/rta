@@ -1,11 +1,14 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/builtin/audit"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -147,6 +150,38 @@ func TestTheLockNounTakesTheArgumentsOfAdd(t *testing.T) {
 	}
 	if cmd, _, _ := NewRoot(reg, "test").Find([]string{"lock", "list"}); cmd.CommandPath() != "rta lock list" {
 		t.Errorf("`rta lock list` is %s, not the command that lists", cmd.CommandPath())
+	}
+}
+
+// The deny list names a verb that only the person may run by its spelling, and
+// a plugin can declare one. TestAVerbTheDenyListNamesAloneHasNoAlias reads the
+// built-in catalogue; this is the same rule held to a plugin that mixes a
+// human-only `show` with a `list` an agent may call: the list keeps `ls`, and
+// the show gets no `get` that the harness's `Bash(rta mix thing show:*)` would
+// not match.
+func TestAHumanOnlyVerbOfAPluginHasNoAlias(t *testing.T) {
+	reg := registry.New()
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	if err := reg.Register(plugin.Plugin{
+		Name: "mix", Summary: "a plugin that mixes",
+		Capabilities: []plugin.Capability{
+			{ID: "mix.thing.list", Summary: "list things", Safety: plugin.Read, Run: run},
+			{ID: "mix.thing.show", Summary: "show a thing", Safety: plugin.Read, HumanOnly: true, Run: run,
+				Inputs: []plugin.Field{{Name: "id", Type: plugin.String, Positional: true, Required: true}}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	root := NewRoot(reg, "test")
+	list, show := commandAt(root, "rta mix thing list"), commandAt(root, "rta mix thing show")
+	if list == nil || show == nil {
+		t.Fatalf("the plugin's commands are not in the tree: %v %v", list, show)
+	}
+	if len(list.Aliases) == 0 {
+		t.Error("the verb an agent may call lost its alias")
+	}
+	if len(show.Aliases) != 0 {
+		t.Errorf("a human-only verb the deny list names alone answers to %v as well", show.Aliases)
 	}
 }
 
