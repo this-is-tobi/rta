@@ -1193,7 +1193,7 @@ func TestTheFirstColumnIsTheIdAnAnswerIsAimedBy(t *testing.T) {
 		c := capability(t, id)
 		var positional string
 		for _, f := range c.Inputs {
-			if f.Positional && f.Required {
+			if f.Positional {
 				positional = f.Name
 				break
 			}

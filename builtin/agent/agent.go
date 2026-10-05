@@ -213,12 +213,14 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"connection, every argument, and — for a destructive call rta could preview — " +
 					"what running it would actually do, taken from the capability's own dry run. " +
 					"That last part is the difference between approving an intention and approving " +
-					"an outcome. Answer with `agent.allow` or `agent.deny`.",
+					"an outcome. For a kv call it also says when this shell has nothing that opens the " +
+					"store, since allowing would then release a call that fails. Answer with " +
+					"`agent.allow` or `agent.deny`.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Inputs: []plugin.Field{
-					{Name: "id", Type: plugin.String, Positional: true, Required: true,
-						Help: "the request id from `agent.pending`", Suggest: suggestPending},
+					{Name: "id", Type: plugin.String, Positional: true, Suggest: suggestPending,
+						Help: "the request id from `agent.pending`; left out when exactly one call is waiting"},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
 					operatorid.PassphraseField.OnlyWith("server"),
@@ -238,7 +240,10 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Flash:   true,
 				Summary: "Allow one parked call",
 				Description: "Authorizes exactly the call the request names, and nothing else — " +
-					"the agent's call proceeds, and no standing state is created. With `ttl` it " +
+					"the agent's call proceeds, and no standing state is created. At a terminal it " +
+					"shows the call first — the capability, the record, the arguments and what its " +
+					"dry run says it would do — and asks; `yes` and anything that is not a " +
+					"terminal answer without asking. With `ttl` it " +
 					"also issues the grants you would have typed (same target, same connection, one " +
 					"for each record the call names and none wider), which is worth doing when the " +
 					"same question is about to be asked five more times. Never reachable over MCP: " +
@@ -250,8 +255,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Safety: plugin.Write,
 				Scope:  "id",
 				Inputs: []plugin.Field{
-					{Name: "id", Type: plugin.String, Positional: true, Required: true,
-						Help: "the request id from `agent.pending`", Suggest: suggestPending},
+					{Name: "id", Type: plugin.String, Positional: true, Suggest: suggestPending,
+						Help: "the request id from `agent.pending`; left out when exactly one call is waiting"},
 					{Name: "ttl", Type: plugin.String,
 						Help: "also issue a standing grant for this long, e.g. 15m (max 24h)"},
 					{Name: "role", Type: plugin.String, Suggest: rtagrant.SuggestRoles,
@@ -279,8 +284,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Safety: plugin.Write,
 				Scope:  "id",
 				Inputs: []plugin.Field{
-					{Name: "id", Type: plugin.String, Positional: true, Required: true,
-						Help: "the request id from `agent.pending`", Suggest: suggestPending},
+					{Name: "id", Type: plugin.String, Positional: true, Suggest: suggestPending,
+						Help: "the request id from `agent.pending`; left out when exactly one call is waiting"},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "the request is parked on this remote server (a name from remotes.yaml)"},
 					operatorid.PassphraseField.OnlyWith("server"),
@@ -1149,7 +1154,10 @@ func credentialCell(e agentlog.Entry) string {
 }
 
 func runShow(ctx context.Context, req plugin.Request) (view.View, error) {
-	id := req.String("id")
+	id, verr := requestNamed(req, "agent.show")
+	if verr != nil {
+		return nil, verr
+	}
 	if server := strings.TrimSpace(req.String("server")); server != "" {
 		return remoteShow(ctx, req, server, id)
 	}
@@ -1157,14 +1165,20 @@ func runShow(ctx context.Context, req plugin.Request) (view.View, error) {
 	if !ok {
 		return nil, unknownRequest(req.Surface(), id)
 	}
-	return showView(req.Surface(), r), nil
+	var local []view.Pair
+	if w := kvWarning(r); w != "" {
+		local = append(local, view.Pair{Key: "warning", Value: w})
+	}
+	return showView(req.Surface(), r, local...), nil
 }
 
 // showView renders one request in full, wherever it was fetched from — the
 // local queue and a remote server's answer the same question, and two
 // renderings would drift apart exactly where an operator compares them. sf
-// is the surface showing it, for the calls the page names.
-func showView(sf plugin.Surface, r consent.Request) view.View {
+// is the surface showing it, for the calls the page names; extra is what only
+// the machine holding the queue can say about it, which a remote server's
+// answer has no way to carry.
+func showView(sf plugin.Surface, r consent.Request, extra ...view.Pair) view.View {
 	left := time.Until(r.Deadline).Truncate(time.Second)
 	if left < 0 {
 		left = 0
@@ -1193,6 +1207,7 @@ func showView(sf plugin.Surface, r consent.Request) view.View {
 		view.Pair{Key: "asked", Value: format.Ago(r.AskedAt)},
 		view.Pair{Key: "expires in", Value: format.Duration(left)},
 	)
+	pairs = append(pairs, extra...)
 	sections := []view.Section{
 		{ID: "request", Title: "The request", View: view.KeyValue{Pairs: pairs}},
 	}
@@ -1253,7 +1268,10 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// in an answer that says which question it answers, and allow and deny
 	// declare it their record. An id is eight hex digits, so one with white
 	// space around it names nothing waiting, and unknownRequest says so.
-	id := req.String("id")
+	id, verr := requestNamed(req, "agent.allow")
+	if verr != nil {
+		return nil, verr
+	}
 	if server := strings.TrimSpace(req.String("server")); server != "" {
 		return remoteAnswer(ctx, req, server, id, true)
 	}
@@ -1269,6 +1287,18 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	if roleName != "" && strings.TrimSpace(req.String("ttl")) != "" {
 		return nil, view.Errorf("agent.allow.either", "%s issues the whole role; %s issues this one line — pick one",
 			req.Surface().InputName("role"), req.Surface().InputName("ttl"))
+	}
+	ttl := strings.TrimSpace(req.String("ttl"))
+	// A person at a terminal is shown what they are about to release, and asked
+	// (confirmAllow). After the refusals that need no answer from anybody, so a
+	// yes is never followed by a no the ceiling already knew.
+	if !req.DryRun && !req.Yes && atTerminal(req) {
+		if verr := checkCeiling(r); verr != nil {
+			return nil, verr
+		}
+		if !confirmAllow(r, allowQuestion(roleName, ttl, r.Agent)) {
+			return declined(req.Surface(), r), nil
+		}
 	}
 	var issued view.View
 	if roleName != "" {
@@ -1316,7 +1346,6 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// Nor is the passphrase asked for a grant that will not be issued: whether one
 	// narrow grant can stand for this call is known before anybody types
 	// anything, and a passphrase spent on a refusal buys nothing.
-	ttl := strings.TrimSpace(req.String("ttl"))
 	var unissued *view.Error
 	if ttl != "" {
 		unissued = noNarrowGrant(req.Surface(), r, ttl)
@@ -1341,13 +1370,21 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// "allowed" on the operator's screen and "refused" on the agent's is
 	// the one disagreement between the two that nothing else explains.
 	if l, _ := lockdown.NewPin().Frozen(lockdown.KindAgent, r.Agent); l != nil {
-		but := fmt.Sprintf("agent %s is locked, so the call is refused anyway until `%s`", r.Agent,
-			req.Surface().Call("lock.rm", plugin.Arg{Name: "name", Value: r.Agent, Positional: true}))
+		lift := plugin.Arg{Name: "name", Value: r.Agent, Positional: true}
+		who := "agent " + r.Agent
+		if l.Name == lockdown.Everyone {
+			lift, who = plugin.Arg{Name: "all", Value: true}, "every agent"
+		}
+		but := fmt.Sprintf("%s is locked, so the call is refused anyway until `%s`", who,
+			req.Surface().Call("lock.rm", lift))
 		if l.Held() {
 			but = fmt.Sprintf("the locks rta keeps cannot be read or do not verify, so the call is refused anyway until `%s` "+
 				"has been looked at", req.Surface().Call("lock.list"))
 		}
 		pairs = append(pairs, view.Pair{Key: "but", Value: but})
+	}
+	if w := kvWarning(r); w != "" {
+		pairs = append(pairs, view.Pair{Key: "warning", Value: w})
 	}
 	if ttl != "" {
 		note, verr := "", unissued
@@ -1588,7 +1625,10 @@ func alsoGrant(r consent.Request, ttl, from string, signer *guard.Signer) (strin
 }
 
 func runDeny(ctx context.Context, req plugin.Request) (view.View, error) {
-	id := req.String("id")
+	id, verr := requestNamed(req, "agent.deny")
+	if verr != nil {
+		return nil, verr
+	}
 	if server := strings.TrimSpace(req.String("server")); server != "" {
 		return remoteAnswer(ctx, req, server, id, false)
 	}
