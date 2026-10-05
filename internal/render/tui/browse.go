@@ -267,22 +267,15 @@ func (m Model) catalogueCount() string {
 // space and the summary. A section header's target is empty and matches
 // nothing, which is what drops it from a filtered list.
 func catalogueFilter(term string, targets []string) []list.Rank {
-	q := strings.ToLower(strings.TrimSpace(term))
-	if q == "" {
-		return nil
-	}
-	var lead, rest []list.Rank
+	items := make([]searchItem, len(targets))
 	for i, target := range targets {
-		id, summary, _ := strings.Cut(target, " ")
-		switch tier, ok := matchCapability(id, summary, q); {
-		case !ok:
-		case tier == matchPrefix:
-			lead = append(lead, list.Rank{Index: i})
-		default:
-			rest = append(rest, list.Rank{Index: i})
-		}
+		items[i].ID, items[i].Summary, _ = strings.Cut(target, " ")
 	}
-	return append(lead, rest...)
+	var ranks []list.Rank
+	for _, i := range rankItems(term, items) {
+		ranks = append(ranks, list.Rank{Index: i})
+	}
+	return ranks
 }
 
 // browseView frames the catalogue: column headings, the list, and the same
