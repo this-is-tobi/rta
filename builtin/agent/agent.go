@@ -905,6 +905,27 @@ func unknownAgentClause(agent string) string {
 		", it knows " + strings.Join(slices.Sorted(maps.Keys(seen)), ", ")
 }
 
+// severalWithin reports whether rows that share a first value differ in a
+// second: one agent's calls from more than one server, say.
+//
+// It is the question the compact log asks of its session column. Two agents
+// each running one server have two sessions, and the agent column already says
+// which is which; the session id only earns its eight cells on the day one
+// agent has several servers open and the agent column cannot tell them apart.
+// Asked as "are there several sessions" it was always yes beside a second
+// agent, and the row then no longer fit eighty cells.
+func severalWithin(shown []agentlog.Entry, outer, inner func(agentlog.Entry) string) bool {
+	last := map[string]string{}
+	for _, e := range shown {
+		o, i := outer(e), inner(e)
+		if seen, ok := last[o]; ok && seen != i {
+			return true
+		}
+		last[o] = i
+	}
+	return false
+}
+
 // logColumn is one column of the log with the way to fill it.
 type logColumn struct {
 	view.Column
@@ -961,7 +982,7 @@ func logColumns(shown []agentlog.Entry, terse, detail bool) []logColumn {
 		if several(credentialCell) {
 			cols = append(cols, credential)
 		}
-		if several(sessionCell) {
+		if severalWithin(shown, whoCalled, sessionCell) {
 			cols = append(cols, session)
 		}
 		if recorded {
