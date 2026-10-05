@@ -54,6 +54,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/seal"
 	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -89,6 +90,24 @@ func CheckKind(k string) (Kind, *view.Error) {
 		"%q is not something a lock can freeze — agent, credential and operator are", k)
 }
 
+// Everyone is the agent name that stands for every agent: a lock on it
+// freezes whichever server asks, the ones running now and the ones that have
+// not been started yet.
+//
+// **It only refuses more, which is what lets it exist at all.** A lock never
+// widens anything, so a name that matches every caller moves the worst case
+// in one direction: an agent that connects after an operator started typing
+// `lock add` per name is frozen when it arrives, rather than served for as
+// long as it takes to learn its name. It is spelled so that no real agent can
+// carry it — an agent name is letters, digits, `-`, `_` and `.`
+// (grant.CheckAgent) — and it is the agent kind's alone: a credential or an
+// operator label named "*" is not a wildcard, because freezing every
+// operator would lock out the one person who can lift it from afar.
+//
+// Lifted as it was placed, by name: `lock rm` on this row removes this row,
+// and a lock on one agent is neither covered by it nor taken with it.
+const Everyone = "*"
+
 // Lock is one frozen principal.
 type Lock struct {
 	Kind Kind   `json:"kind"`
@@ -113,6 +132,20 @@ type Lock struct {
 
 func (l Lock) expired(at time.Time) bool {
 	return !l.Expires.IsZero() && !l.Expires.After(at)
+}
+
+// Label is the principal as a sentence says it: the name, the kind beside it
+// when it is not an agent's, and "every agent" for the row on all of them,
+// which a bare "*" in a line about what is frozen would read as a glob nobody
+// typed.
+func (l Lock) Label() string {
+	switch {
+	case l.Kind == KindAgent && l.Name == Everyone:
+		return "every agent"
+	case l.Kind != KindAgent:
+		return l.Name + " (" + string(l.Kind) + ")"
+	}
+	return l.Name
 }
 
 // now is overridable in tests, which move it past a lock's window rather than
@@ -153,6 +186,9 @@ const (
 // about. So the credential rule is the bridge's own: terminal-clean,
 // trimmed, and within the bound the ledger's credential column enforces.
 func checkName(kind Kind, name string) *view.Error {
+	if kind == KindAgent && name == Everyone {
+		return nil
+	}
 	if kind == KindCredential {
 		if name == "" || name != textclean.Terminal(strings.TrimSpace(name)) || len(name) > maxCredentialName {
 			return view.Errorf("core.lock.name",
@@ -382,10 +418,10 @@ func Build(kind, name, note, ttl, by string) (Lock, *view.Error) {
 	}
 	l := Lock{Kind: k, Name: name, Note: trimmed, By: by, At: now()}
 	if s := strings.TrimSpace(ttl); s != "" {
-		d, err := time.ParseDuration(s)
+		d, err := format.ParseWindow(s)
 		if err != nil || d <= 0 {
 			return Lock{}, view.Errorf("core.lock.ttl",
-				"%q is not a lock window — 30m, 2h; leave it off for a lock that stands until removed", ttl)
+				"%q is not a lock window — 30m, 2h, 1d; leave it off for a lock that stands until removed", ttl)
 		}
 		l.Expires = l.At.Add(d)
 	}
@@ -558,17 +594,28 @@ func (p *Pin) Check(agent, credential string) (*Lock, string) {
 	return nil, alarm
 }
 
+// match is the lock covering (kind, name). A lock on the name itself wins over
+// the one on every agent, so the sentence a frozen agent reads is the note
+// somebody wrote for it. The row on every agent covers any agent that asks,
+// even one that gives no name: a name that matched nothing is the reason
+// `mcp serve` will not start without one, and a lock whose purpose is to stop
+// everything has no reason to let that one through.
 func match(locks []Lock, kind Kind, name string) *Lock {
-	if name == "" {
-		return nil
-	}
 	at := now()
+	var everyone *Lock
 	for i := range locks {
-		if locks[i].Kind == kind && locks[i].Name == name && !locks[i].expired(at) {
-			return &locks[i]
+		l := &locks[i]
+		if l.Kind != kind || l.expired(at) {
+			continue
+		}
+		if name != "" && l.Name == name {
+			return l
+		}
+		if kind == KindAgent && l.Name == Everyone && everyone == nil {
+			everyone = l
 		}
 	}
-	return nil
+	return everyone
 }
 
 // Refusal is the sentence a frozen principal reads, with the note the
