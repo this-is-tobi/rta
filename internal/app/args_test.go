@@ -111,9 +111,9 @@ func TestAnUnknownWordAtTheRootPointsAtWhereItMayLive(t *testing.T) {
 		t.Errorf("`rta version` was sent to %q", hint)
 	}
 
-	// A service, with no index attached: how to get the one it lives in.
+	// A first-party service: the install, which attaches the index it lives in when it has to.
 	msg, hint := hintOf("vault")
-	if !strings.Contains(hint, "`rta plugin index add official`") || !strings.Contains(hint, "`rta plugin install vault`") {
+	if !strings.Contains(hint, "`rta plugin install vault`") {
 		t.Errorf("`rta vault` was sent to %q", hint)
 	}
 	if strings.Contains(msg, "closest") {
@@ -130,20 +130,20 @@ func TestAnUnknownWordAtTheRootPointsAtWhereItMayLive(t *testing.T) {
 	}
 
 	// With an index attached that carries it, the exact command.
-	manifest := "name: pg\nversion: 0.1.0\nsummary: PostgreSQL\nplatforms:\n  - os: linux\n    arch: amd64\n" +
-		"    url: https://example.com/pg\n    sha256: " + strings.Repeat("a", 64) + "\ncapabilities:\n  - id: pg.status\n    safety: read\n"
+	manifest := "name: weather\nversion: 0.1.0\nsummary: Forecasts\nplatforms:\n  - os: linux\n    arch: amd64\n" +
+		"    url: https://example.com/weather\n    sha256: " + strings.Repeat("a", 64) + "\ncapabilities:\n  - id: weather.today\n    safety: read\n"
 	indexDir := filepath.Join(dataDir, "indexes", "lab", "index")
 	if err := os.MkdirAll(indexDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(indexDir, "pg.yaml"), []byte(manifest), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(indexDir, "weather.yaml"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, hint := hintOf("pg"); !strings.Contains(hint, "plugin in the lab index") || !strings.Contains(hint, "`rta plugin install pg`") {
-		t.Errorf("`rta pg` with an index that carries it was sent to %q", hint)
+	if _, hint := hintOf("weather"); !strings.Contains(hint, "plugin in the lab index") || !strings.Contains(hint, "`rta plugin install weather`") {
+		t.Errorf("`rta weather` with an index that carries it was sent to %q", hint)
 	}
-	// An index that does not carry it has nothing better to say than the help.
-	if _, hint := hintOf("vault"); hint != "" {
+	// A word that is neither first-party nor carried by an attached index has nothing better to say than the help.
+	if _, hint := hintOf("mongo"); hint != "" {
 		t.Errorf("a word no attached index carries was sent to %q", hint)
 	}
 
