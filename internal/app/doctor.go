@@ -305,6 +305,7 @@ func doctorTable(reg *registry.Registry, detail bool) view.Table {
 	doctorSystemRoot(add)
 	doctorTerminal(add)
 	doctorConfig(add)
+	doctorConfigKeys(add)
 	doctorOutput(add)
 	doctorPluginConfig(reg, add)
 	doctorProfiles(reg, add)
@@ -456,6 +457,20 @@ func doctorConfig(add func(check, status, detail string)) {
 		add("config", "ok", detail)
 	}
 	doctorLegacyConfig(add)
+}
+
+// doctorConfigKeys is a warning for each key the config file has that rta does
+// not read. The decoder drops such a key without a word, so the config row
+// above reads "ok" for a file whose setting does nothing; the startup notice
+// counts them, and this is where each is named, with its line.
+func doctorConfigKeys(add func(check, status, detail string)) {
+	found, err := config.Check()
+	if err != nil {
+		return
+	}
+	for _, f := range found {
+		add("config", "warn", f.String())
+	}
 }
 
 // outputSource is the default output format and where it comes from, for the

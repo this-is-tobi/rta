@@ -375,3 +375,22 @@ func TestDoctorSaysNothingAboutThemeWhenNothingWasOverridden(t *testing.T) {
 		t.Errorf("theme row = %v, want none", rows["theme"])
 	}
 }
+
+// A key rta does not read is a setting that quietly does nothing, and the
+// config row beside it said ok.
+func TestDoctorNamesEachKeyTheConfigHasThatRtaDoesNotRead(t *testing.T) {
+	_, configDir := isolate(t)
+	cfg := "output: json\ndashbord:\n  columns: 2\n"
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var warns []string
+	for _, r := range doctorTable(testRegistry(t), false).Rows {
+		if r[0] == "config" && r[1] == "warn" {
+			warns = append(warns, r[2])
+		}
+	}
+	if len(warns) != 1 || !strings.Contains(warns[0], "dashbord") || !strings.Contains(warns[0], "line 2") {
+		t.Errorf("config warnings = %q, want one naming dashbord and its line", warns)
+	}
+}
