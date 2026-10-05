@@ -247,6 +247,8 @@ type Model struct {
 	// on the Model rather than read from a package variable so two TUIs in one
 	// test do not share it.
 	untrusted []pluginhost.Untrusted
+	// failed is what discovery approved and could not start, held the same way.
+	failed    []pluginhost.Failed
 	pluginSel int
 	// pluginScroll is the first plugin drawn. The pane used to clip instead
 	// of scroll, so at 80x24 the last plugin was invisible while `j` still
@@ -291,6 +293,13 @@ type Option func(*Model)
 // person to wonder where a plugin they installed went.
 func WithUntrusted(us []pluginhost.Untrusted) Option {
 	return func(m *Model) { m.untrusted = us }
+}
+
+// WithFailed supplies the plugins discovery launched and could not start, so
+// the inventory shows them with the reason instead of leaving the one line
+// that said so under the screen the dashboard opened on.
+func WithFailed(fs []pluginhost.Failed) Option {
+	return func(m *Model) { m.failed = fs }
 }
 
 // New builds the shell over a registry. dash configures the dashboard; its

@@ -1014,13 +1014,15 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 			// terminal back on the way out; a deadline cutting that short
 			// would leave the shell in raw mode on the alternate screen.
 			ownShutdown()
-			// The untrusted artifacts go in too. The startup line naming them
-			// is written to the primary buffer and the TUI opens on the
-			// alternate one, so it is covered before it can be read and does
-			// not come back until the session ends — which makes the pane the
-			// only place a person in the TUI can learn a decision is pending.
+			// The untrusted artifacts go in too, and the plugins that were
+			// approved and did not start. The startup line naming them is
+			// written to the primary buffer and the TUI opens on the alternate
+			// one, so it is covered before it can be read and does not come
+			// back until the session ends — which makes the pane the only
+			// place a person in the TUI can learn a decision is pending, or
+			// that a plugin they installed is not being provided.
 			return tuiExit(tui.Run(cmd.Context(), reg, cfg.TrustedDashboard(), pluginConfig,
-				tui.WithUntrusted(untrustedPluginsFound)))
+				tui.WithUntrusted(untrustedPluginsFound), tui.WithFailed(failedPluginsFound)))
 		},
 	}
 	pf := root.PersistentFlags()

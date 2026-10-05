@@ -113,7 +113,7 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	case "p":
 		// What is installed, and what it puts on the dashboard —
 		// including the way back for anything H took off.
-		m.plugins = pluginRows(m.reg, m.dash, m.untrusted)
+		m.plugins = m.pluginInventory()
 		m.pluginSel, m.pluginScroll = 0, 0
 		m.mode = modePlugins
 		return m, nil, true
@@ -128,7 +128,7 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// completions and every config field it offers. Opening the
 		// profiles pane without passing through `p` first used to reach
 		// an editor with no fields and nothing to complete.
-		m.plugins = pluginRows(m.reg, m.dash, m.untrusted)
+		m.plugins = m.pluginInventory()
 		m.profileSel, m.profileScroll = 0, 0
 		m.mode = modeProfiles
 		return m, nil, true

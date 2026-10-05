@@ -24,6 +24,7 @@ The pane bands its rows by provenance, because that is the fact that changes how
 | **built in** | Compiled into the rta binary you are running, which is why these need no digest |
 | **installed by rta** | rta placed these bytes from an index you attached; the row carries the version, the index and what the signature check found |
 | **found on $PATH** | Binaries rta did not place and holds no record of |
+| **failed to start** | Approved and launched, and did not come up: the row carries how it ended and the command that takes it out of the way, and no key acts on it, because nothing of it is registered |
 | **not run** | Discovered and never launched, because nothing has approved them yet |
 
 A stock install is entirely built in, so no bands are drawn at all — one band separates nothing.
