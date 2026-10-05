@@ -332,7 +332,7 @@ func New(reg *registry.Registry, dash config.Dashboard,
 		dash:       dash,
 		dashOnDisk: dashStamp(dash),
 		mode:       modeDashboard,
-		searchInfo: fmt.Sprintf("%d plugins · %d capabilities — press / to search",
+		searchInfo: fmt.Sprintf("%d plugins · %d capabilities",
 			len(reg.Plugins()), len(reg.Capabilities())),
 	}
 	for _, opt := range opts {

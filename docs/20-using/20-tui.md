@@ -10,7 +10,7 @@ It is the same capabilities as the CLI — the same declarations, the same safet
 
 ## The landing dashboard
 
-A search line across the top, and one tile per plugin that has something to show at a glance, in the order that matters on a first run: the machine (`sys`), what agents asked of it (`agent`) and the grants standing under it (`grant`), then the network, the secret store and the notebook. Typing filters every capability in the catalogue on the fly. `gen.overview` and `fs.tree` qualify as tiles and are left off on purpose, because a table of freshly generated secrets is not a status and the working directory says nothing about the machine; each is one `rta dashboard add` away.
+A search line across the top, and one tile per plugin that has something to show at a glance, in the order that matters on a first run: the machine (`sys`), what agents asked of it (`agent`) and the grants standing under it (`grant`), then the network, the secret store and the notebook. The search line holds the selection when the TUI opens, so a word typed into it — `password`, `dns`, `trust` — is a search over every capability in the catalogue, filtering as you type, and not a run of one-letter commands. The single letters below belong to a tile: press an arrow to select one and they are commands again. `/`, `enter`, `:`, `+` and `?` work from the line either way and `ctrl+c` quits from anywhere; `q` is a letter in the line, so quitting from a cold start is `ctrl+c`, or an arrow and then `q`. `gen.overview` and `fs.tree` qualify as tiles and are left off on purpose, because a table of freshly generated secrets is not a status and the working directory says nothing about the machine; each is one `rta dashboard add` away.
 
 The search is one line until you use it: `/` (or `enter` on the line) opens it to a box with the first matches, and `esc` gives the lines back to the tiles. On a short terminal each row of tiles is drawn at half the room under the search line and cut at `… enter for details`, so an 80x24 screen holds the machine, the agents, the grants and the network, and `enter` opens the rest of any of them.
 
@@ -29,7 +29,7 @@ A tile is a glance, so it is drawn smaller than the page `enter` opens. A table 
 | `p` | Plugin inventory — where a hidden automatic tile comes back |
 | `t` | Theme |
 | `f` | Profiles — your configured environments, which one is on |
-| `b` | Browse the whole catalogue |
+| `b` or `:` | Browse the whole catalogue |
 | `c` | Copy the selected tile's value, on a tile that offers one |
 
 Tiles are yours to arrange. `H` hides one you never look at, and `p` opens the inventory where it comes back; one panel of an entry that expanded into several connections is hidden by its own key, which the inventory has no row for, so it comes back with the `rta dashboard unhide <id> --profile <profile/instance>` line its note prints. On a tile you added, `H` removes the entry instead — the footer says `remove` there, and the note prints the `rta dashboard add` line that puts it back; `+` on a catalogue row or a search match adds one the automatic set left out, asking which connection when the capability takes one.

@@ -133,7 +133,7 @@ func TestTheSearchBarAndTheCatalogueRunAReadOnEnter(t *testing.T) {
 		t.Fatalf("enter on a search match left the shell in mode %v, want the run", got.mode)
 	}
 
-	browsing := press(t, base, "b")
+	browsing := press(t, base, ":")
 	if !browsing.onCapability() {
 		t.Fatal("the catalogue opened with the cursor on a section label")
 	}
@@ -172,7 +172,7 @@ func TestCtrlSSubmitsAFormWhereverFastSubmitDoes(t *testing.T) {
 		},
 		Run: ranText("CTRL-S-RAN")}
 	tm := newTestModel(t, New(quickPlugin(t, c), config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
-	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	tm.Send(tea.KeyPressMsg{Code: ':', Text: ":"})
 	waitFor(t, tm, "demo.write")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 	waitFor(t, tm, "ctrl+s submit")

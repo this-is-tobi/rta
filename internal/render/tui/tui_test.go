@@ -149,7 +149,7 @@ func newTestModel(t *testing.T, m tea.Model, opts ...teatest.TestOption) *teates
 func newTest(t *testing.T) *teatest.TestModel {
 	t.Helper()
 	tm := newDashboard(t)
-	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	tm.Send(tea.KeyPressMsg{Code: ':', Text: ":"})
 	return tm
 }
 
@@ -210,7 +210,10 @@ func TestDashboardIsTheLanding(t *testing.T) {
 func TestDashboardBKeyOpensBrowse(t *testing.T) {
 	tm := newDashboard(t)
 	waitFor(t, tm, "dashboard")
-	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	// On a tile: at a cold start the search bar holds the selection and `b` is
+	// a letter of a query, which `:` is not.
+	tm.Send(tea.KeyPressMsg{Code: tea.KeyRight})
+	tm.Send(tea.KeyPressMsg{Code: ':', Text: ":"})
 	waitFor(t, tm, "capabilities") // browse status bar
 	quit(t, tm)
 }
@@ -231,7 +234,7 @@ func TestDashboardEnterOpensTileDetail(t *testing.T) {
 
 func TestDashboardLiveSearchOpensMatch(t *testing.T) {
 	tm := newDashboard(t)
-	waitFor(t, tm, "press / to search")
+	waitFor(t, tm, "type to search")
 	// Selection starts on the search bar: enter focuses it, typing filters
 	// on the fly, enter opens the selected match.
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -609,7 +612,7 @@ func TestPrefillTwoStageForm(t *testing.T) {
 		t.Fatal(err)
 	}
 	tm := newTestModel(t, New(reg, config.Dashboard{}, nil), teatest.WithInitialTermSize(100, 40))
-	tm.Send(tea.KeyPressMsg{Code: 'b', Text: "b"})
+	tm.Send(tea.KeyPressMsg{Code: ':', Text: ":"})
 	waitFor(t, tm, "rec.edit")
 	// Sorted: demo.boom, demo.hello, demo.needy, rec.edit.
 	for i := 0; i < 3; i++ {
