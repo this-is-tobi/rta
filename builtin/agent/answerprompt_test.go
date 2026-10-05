@@ -62,15 +62,21 @@ func TestWithOneCallParkedAnswersNeedNoId(t *testing.T) {
 func TestABareAllowThatNothingShowsTheCallForNamesTheCallInstead(t *testing.T) {
 	isolate(t)
 	r := parkedRemoval(t)
-	for name, run := range map[string]func() error{
-		"no terminal": func() error { _, err := allowAt(t, nil, false, false); return err },
-		"--yes": func() error {
+	// In this order, and not a map's: the --yes case stands a terminal up that
+	// stays up, which the case without one must not run after.
+	for _, c := range []struct {
+		name string
+		run  func() error
+	}{
+		{"no terminal", func() error { _, err := allowAt(t, nil, false, false); return err }},
+		{"--yes", func() error {
 			terminal(t, "y")
 			_, err := allowAt(t, nil, false, true)
 			return err
-		},
+		}},
 	} {
-		err := run()
+		name := c.name
+		err := c.run()
 		if err == nil || codeOfErr(t, err) != "agent.request.unnamed" {
 			t.Fatalf("%s: err = %v, want agent.request.unnamed", name, err)
 		}
