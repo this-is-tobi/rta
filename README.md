@@ -31,6 +31,8 @@ rta runs on macOS and Linux, on both `amd64` and `arm64`. It does not run native
 - [The TUI](./docs/20-using/20-tui.md) *- The dashboard, the catalogue, forms and confirmations*
 - [Seeing the shape of things](./docs/20-using/30-trees.md) *- Mapping a directory, a bucket, a Vault mount or an etcd keyspace in one call*
 - [Profiles](./docs/20-using/40-profiles.md) *- Naming an environment once and pointing every plugin at it*
+- [Profiles in depth](./docs/20-using/41-profiles-in-depth.md) *- Several connections to one plugin, a profile from a script, types, and editor completion*
+- [Reaching private services](./docs/20-using/42-reaching-private-services.md) *- A connection through `kubectl port-forward` or `ssh`, and the TLS rules that come with it*
 - [Secrets (`kv`)](./docs/20-using/50-secrets.md) *- An encrypted local store for passwords, certificates and key files*
 
 *The boundary* — worth reading in this order: each chapter is a smaller blast radius than the one before it
