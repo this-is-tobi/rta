@@ -329,6 +329,10 @@ const (
 	// safety class: what separates one that reads from a hand-written command
 	// that is not in readOnlyCommands.
 	annotSafety = "rta.help.safety"
+	// annotKeywords carries a capability's Keywords, space-separated, on the
+	// command made from it, for the search that finds a command by a word its
+	// name does not hold (commandItems).
+	annotKeywords = "rta.search.keywords"
 	// annotUnlisted marks a flag the command accepts and its help does not
 	// list: the generic --profile of a capability with no connection to point
 	// it at. On the flag, not on the command, because `grant allow` and
@@ -344,7 +348,11 @@ const (
 // capabilityAnnotations is what attach records about a capability for
 // commandWrites.
 func capabilityAnnotations(c plugin.Capability) map[string]string {
-	return map[string]string{annotSafety: string(c.Safety)}
+	notes := map[string]string{annotSafety: string(c.Safety)}
+	if len(c.Keywords) > 0 {
+		notes[annotKeywords] = strings.Join(c.Keywords, " ")
+	}
+	return notes
 }
 
 // hasConnection says whether a capability reads an endpoint or a credential a

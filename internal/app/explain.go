@@ -418,7 +418,7 @@ func capabilityNotFound(reg *registry.Registry, id string) *view.Error {
 func capabilityItems(caps []plugin.Capability) []match.Item {
 	items := make([]match.Item, len(caps))
 	for i, c := range caps {
-		items[i] = match.Item{ID: c.ID, Summary: c.Summary}
+		items[i] = match.Item{ID: c.ID, Summary: c.Summary, Keywords: c.Keywords}
 	}
 	return items
 }
