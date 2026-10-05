@@ -17,11 +17,8 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// A roster with a role in force is a page: the roles above the table, and
-// the policy's note below it when the team's ceiling holds grants back. Its
-// rows were not navigable and x and n were not offered on them, since only
-// a bare table was a list to act on, so the roster lost its row actions the
-// moment somebody issued a role. They act on the table inside the page.
+// A roster with a role in force is still one table, so its rows are walked and
+// x and n are offered on them the same as when no role was ever issued.
 func TestTheRowActionsWorkOnARosterLedByARole(t *testing.T) {
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
@@ -42,22 +39,18 @@ func TestTheRowActionsWorkOnARosterLedByARole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, ok := v.(view.Sections)
+	tbl, ok := v.(view.Table)
 	if !ok {
-		t.Fatalf("grant.list with a role in force answered %s, want a page", view.TypeOf(v))
+		t.Fatalf("grant.list with a role in force answered %s, want one table", view.TypeOf(v))
 	}
 	want := -1
-	for _, it := range page.Items {
-		if tbl, isTable := it.View.(view.Table); isTable {
-			for i, row := range tbl.Rows {
-				if record, _ := cellNamed(tbl, row, "Record"); record == "api" {
-					want = i
-				}
-			}
+	for i, row := range tbl.Rows {
+		if record, _ := cellNamed(tbl, row, "Record"); record == "api" {
+			want = i
 		}
 	}
 	if want < 0 {
-		t.Fatalf("no row of the page names the grant on api: %+v", page)
+		t.Fatalf("no row of the roster names the grant on api: %+v", tbl)
 	}
 
 	m := New(reg, config.Dashboard{}, nil)

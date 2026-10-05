@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/builtin/internal/compact"
 	"github.com/this-is-tobi/rta/internal/config"
 	core "github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
@@ -210,7 +211,10 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Safety:    plugin.Read, Idempotent: true,
 				Detailed: true,
 				Description: "Readable without unlocking anything, so the question stays answerable " +
-					"in a hurry. Expired grants are dropped on read. A grant whose plugin has been " +
+					"in a hurry. Expired grants are dropped on read. At a terminal each grant is one " +
+					"line — what, which record, for whom, how long, how much budget; `detail`, a pipe " +
+					"or a machine format gives every field, the deadline as an RFC 3339 instant " +
+					"among them. With `agent` or `role`: only that agent's or role's grants. A grant whose plugin has been " +
 					"replaced since it was issued — upgraded, rebuilt — covers nothing, and is marked so. " +
 					"With `detail`: what is currently allowed, with the plugin artifact each grant is " +
 					"bound to, then everything an agent can reach with no grant at all, and everything " +
@@ -224,6 +228,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Inputs: []plugin.Field{
 					{Name: "role", Type: plugin.String, Suggest: suggestStandingRoles,
 						Help: "only the grants `grant.issue` issued under this role"},
+					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
+						Help: "only the grants for this named agent"},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "read a remote server's roster instead of this machine's (a name from remotes.yaml)"},
 					operatorid.PassphraseField,
@@ -441,8 +447,10 @@ func suggestHeldProfiles(context.Context, plugin.Request) []string {
 // those files. The names it has seen are the ones it was told about, so this
 // completes what has been used and never claims to enumerate what exists. The
 // first grant for a new agent is typed in full, which is the honest behaviour
-// for a name only the operator knows.
-func suggestHeldAgents(context.Context, plugin.Request) []string { return knownAgents() }
+// for a name only the operator knows. The record counts as having used a name:
+// the agent a revoke or a filter is about called an hour ago as often as it
+// is connected now.
+func suggestHeldAgents(context.Context, plugin.Request) []string { return agentsSeen() }
 
 // suggestConfiguredProfiles completes from the operator's own config, which is
 // the set `grant allow` can issue against — unlike revoke and renew, which act
@@ -1066,12 +1074,16 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 	if server := req.String("server"); server != "" {
 		return remoteList(ctx, req, server)
 	}
-	held, verr := heldTable(req.Surface(), strings.TrimSpace(req.String("role")), req.Bool("detail"), artifact)
+	opts := rosterOpts{
+		role: strings.TrimSpace(req.String("role")), agent: strings.TrimSpace(req.String("agent")),
+		detail: req.Bool("detail"), terse: compact.For(req),
+	}
+	r, verr := heldRoster(req.Surface(), opts, artifact)
 	if verr != nil {
 		return nil, verr
 	}
-	if !req.Bool("detail") {
-		return held, nil
+	if !opts.detail {
+		return r.table, nil
 	}
 	// "What did I allow" is only half of "what can an agent do here". The
 	// other half is what needs no allowing, and the page is only useful if
@@ -1084,7 +1096,25 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 	// table it has to be — it is what the dashboard tile refreshes.
 	stored, storedErr := core.Load()
 	p.PutAs("guard", "the guard", view.Text{Body: "guard  " + guardLine(req.Surface(), stored, storedErr)})
-	p.PutAs("granted", "granted", held)
+	// The roles in force above the rows, where the docs send people before
+	// they walk away from a machine: one line per role and agent, with the
+	// suppression count carried in so a summary never claims authority the
+	// gate would not honour. On the page and not in the roster, which is one
+	// table whatever is in force — the roles' own column says which row is
+	// whose.
+	if r.roles != "" {
+		p.PutAs("roles", "Roles in force", view.Text{Body: r.roles})
+	}
+	p.PutAs("granted", "granted", r.table)
+	if r.suppressed > 0 {
+		// A partial suppression is the confusing one: some rows are here, the one
+		// being looked for is not, and nothing on the screen accounts for it.
+		// A whole one is no better: a grant that is on disk and held back by
+		// the team's ceiling is not "no grant", and somebody certain they
+		// issued one has to be told why it is not here.
+		p.PutAs("policy", "Your team's policy",
+			view.Text{Body: strings.TrimPrefix(suppressedNote(req.Surface(), r.suppressed), "\n\n")})
+	}
 	for _, tier := range reachTiers {
 		p.PutAs(tier.id, tier.title, reachTable(catalog(), tier.holds))
 	}
@@ -1136,9 +1166,38 @@ func reachTable(caps []plugin.Capability, holds func(plugin.Capability) bool) vi
 	return t
 }
 
-// heldTable is the roster, or one role's part of it.
+// rosterOpts is what narrows and shapes the roster: the role and the agent it
+// is read for, whether it is `grant list --detail`'s page, and whether it is
+// drawn compact (compact.For).
+type rosterOpts struct {
+	role, agent   string
+	detail, terse bool
+}
+
+// roster is the table, and the two facts about the grants standing that a
+// table of rows does not carry and the detail page gives their own sections:
+// the roles in force and how many grants the team's ceiling is holding back.
+type roster struct {
+	table      view.Table
+	roles      string
+	suppressed int
+}
+
+// heldTable is the roster as a view: always the one table, however many roles
+// are in force and whatever a ceiling is holding back, so that `grant list -o
+// json` has one shape that a script written on the first day still reads on
+// the day a role is issued.
+func heldTable(sf plugin.Surface, opts rosterOpts, artifact func(string) (string, bool)) (view.View, *view.Error) {
+	r, verr := heldRoster(sf, opts, artifact)
+	if verr != nil {
+		return nil, verr
+	}
+	return r.table, nil
+}
+
+// heldRoster is the roster, or one role's or one agent's part of it.
 //
-// detail says the page it goes on is `grant list --detail`'s. That page
+// opts.detail says the page it goes on is `grant list --detail`'s. That page
 // already leads with the guard's state, so the roster does not state it
 // again — an empty one drew the guard line twice there on a terminal, once
 // as the page's first section and once in its own sentence — and it shows
@@ -1146,13 +1205,13 @@ func reachTable(caps []plugin.Capability, holds func(plugin.Capability) bool) vi
 // the calls its sentences offer; artifact is the registry's lookup of the
 // plugin answering for a namespace now (registry.Artifact), which a grant's
 // Digest is judged against.
-func heldTable(sf plugin.Surface, role string, detail bool, artifact func(string) (string, bool)) (view.View, *view.Error) {
+func heldRoster(sf plugin.Surface, opts rosterOpts, artifact func(string) (string, bool)) (roster, *view.Error) {
 	grants, verr := core.Load()
 	standing := len(grants)
-	if verr == nil && role != "" {
+	if verr == nil && (opts.role != "" || opts.agent != "") {
 		kept := grants[:0]
 		for _, g := range grants {
-			if g.Role == role {
+			if (opts.role == "" || g.Role == opts.role) && (opts.agent == "" || g.Agent == opts.agent) {
 				kept = append(kept, g)
 			}
 		}
@@ -1168,7 +1227,7 @@ func heldTable(sf plugin.Surface, role string, detail bool, artifact func(string
 			// text view when no guard section led the page, so `jq '.rows[]'`
 			// met a view with no rows in the state somebody most needs a
 			// script to catch, and -o csv a text cell where a header was.
-			t := grantsTable(nil, func(core.Grant) bool { return false }, nil, detail)
+			t := grantsTable(nil, func(core.Grant) bool { return false }, nil, opts.detail, opts.terse)
 			t.Empty = "No grant is honoured while the guard is orphaned."
 			// Under the guard's own line (--detail), which says the same
 			// thing and how to recover, that is all it needs. Without one,
@@ -1176,12 +1235,12 @@ func heldTable(sf plugin.Surface, role string, detail bool, artifact func(string
 			// error, coded, so it reaches json and the csv notes: an empty
 			// sentence is for a screen, and "no rows" alone reads as a
 			// roster nobody has issued anything into.
-			if !detail {
+			if !opts.detail {
 				t.Warnings = append(t.Warnings, *verr)
 			}
-			return t, nil
+			return roster{table: t}, nil
 		}
-		return nil, verr
+		return roster{}, verr
 	}
 	states := judged(grants, boundBy(artifact))
 	cfg, cfgErr := config.Load()
@@ -1196,7 +1255,7 @@ func heldTable(sf plugin.Surface, role string, detail bool, artifact func(string
 		// profile exists and that consent was once given for it — so the person
 		// has to be able to find out here instead.
 		return cfgErr == nil && g.Stale(profiles.ConnStampFor(cfg, g.Profile, core.Namespace(g.Target)))
-	}, states, detail)
+	}, states, opts.detail, opts.terse)
 	if w := olderServerWarning(); w != nil {
 		t.Warnings = append(t.Warnings, *w)
 	}
@@ -1204,36 +1263,18 @@ func heldTable(sf plugin.Surface, role string, detail bool, artifact func(string
 	// changed connection is here: the refusal an agent gets says only what
 	// an ungranted call is told.
 	t.Warnings = append(t.Warnings, artifactWarnings(sf, grants, states, "")...)
+	suppressed := core.Suppressed()
+	if suppressed > 0 {
+		t.Warnings = append(t.Warnings, suppressedWarning(sf, suppressed))
+	}
 	// An empty roster is still the table, with what a person is told in
 	// place of it beside it (view.Table.Empty). It answered with the
 	// sentence as a Text view, which every format carried: `jq '.rows[]'`
 	// met a view with no rows, and -o csv a text cell where a header was.
 	if len(grants) == 0 {
-		t.Empty = emptyRoster(sf, !detail, role, standing)
+		t.Empty = emptyRoster(sf, !opts.detail, opts, standing)
 	}
-	// The roles in force above the rows, where the docs send people before
-	// they walk away from a machine: one line per role and agent, with the
-	// suppression count carried in so a summary never claims authority the
-	// gate would not honour.
-	var items []view.Section
-	if force := rolesInForce(grants); force != "" {
-		items = append(items, view.Section{ID: "roles", Title: "Roles in force", View: view.Text{Body: force}})
-	}
-	n := core.Suppressed()
-	if len(items) == 0 && n == 0 {
-		return t, nil
-	}
-	items = append(items, view.Section{ID: "grants", Title: "Allowed", View: t})
-	if n > 0 {
-		// A partial suppression is the confusing one: some rows are here, the one
-		// being looked for is not, and nothing on the screen accounts for it.
-		// A whole one is no better: a grant that is on disk and held back by
-		// the team's ceiling is not "no grant", and somebody certain they
-		// issued one has to be told why it is not here.
-		items = append(items, view.Section{ID: "policy", Title: "Your team's policy",
-			View: view.Text{Body: strings.TrimPrefix(suppressedNote(sf, n), "\n\n")}})
-	}
-	return view.Sections{Items: items}, nil
+	return roster{table: t, roles: rolesInForce(grants), suppressed: suppressed}, nil
 }
 
 // emptyRoster is what a person is told in place of a roster with no grant in
@@ -1246,7 +1287,7 @@ func heldTable(sf plugin.Surface, role string, detail bool, artifact func(string
 // only what needs none, while every grant issued outside that role stood.
 // This is the screen somebody reads to learn what an agent may do right
 // now, the one place that sentence must not be wrong.
-func emptyRoster(sf plugin.Surface, withGuard bool, role string, standing int) string {
+func emptyRoster(sf plugin.Surface, withGuard bool, opts rosterOpts, standing int) string {
 	head := ""
 	if withGuard {
 		head = "guard  " + guardLine(sf, nil, nil) + "\n\n"
@@ -1263,10 +1304,22 @@ func emptyRoster(sf plugin.Surface, withGuard bool, role string, standing int) s
 			"what you still need. Removing the file clears this notice:\n" +
 			"  rm " + core.Path() + "\n\n" + allowOne
 	}
-	if role != "" && standing > 0 {
+	if standing > 0 && (opts.role != "" || opts.agent != "") {
+		what := "under the role " + opts.role
+		if opts.role == "" {
+			what = "for the agent " + opts.agent
+		} else if opts.agent != "" {
+			what += " for " + opts.agent
+		}
+		note := ""
+		if opts.agent != "" {
+			if n := unknownAgentNote(agentsSeen(), opts.agent); n != "" {
+				note = "\n" + n
+			}
+		}
 		return head +
-			"No standing grant was issued under the role " + role + ".\n" +
-			"Every grant standing: " + sf.Call("grant.list")
+			"No standing grant was issued " + what + ".\n" +
+			"Every grant standing: " + sf.Call("grant.list") + note
 	}
 	return head +
 		"No grant is standing — agents reach only what needs none.\n" + allowOne
@@ -1326,8 +1379,20 @@ func rolesInForce(grants []core.Grant) string {
 // that holds the rows against its own (remoteStates), since the plugins
 // that answer there are the server's; nil judges nothing. detail is `grant
 // list --detail`'s page.
+//
+// **Two shapes.** The whole table, a column for every field a grant has, is
+// what a script and `--detail` read: eight columns drawn at eighty cells are
+// a card of seven lines for every grant, and the roster is the screen
+// somebody opens to see, at a glance, what they have allowed and for how
+// long. terse is what a terminal gets instead (compact.For): the capability,
+// the record, the agent, the time left and the budget, in a row of its own.
+// What it drops is what is constant or what is a note — the connection when
+// no grant names one, where the grant came from when a person typed every
+// one, the note — and it keeps, whatever the width, the columns whose
+// arrival is the finding: a grant on a connection, one issued with nobody at
+// the terminal, one whose plugin has been replaced.
 func grantsTable(grants []core.Grant, stale func(core.Grant) bool, states []core.ArtifactState,
-	detail bool,
+	detail, terse bool,
 ) view.Table {
 	// The Agent column appears only once something has one, and that is the
 	// point rather than a saving. An operator who has never named an agent has
@@ -1336,13 +1401,9 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool, states []core
 	// moment they name one, the column's arrival is itself the news: there is
 	// now more than one caller, and which one a grant is for is the most
 	// important thing on the row.
-	named := false
-	for _, g := range grants {
-		if g.Agent != "" {
-			named = true
-			break
-		}
-	}
+	has := func(f func(core.Grant) bool) bool { return slices.ContainsFunc(grants, f) }
+	named := has(func(g core.Grant) bool { return g.Agent != "" })
+	roled := has(func(g core.Grant) bool { return g.Role != "" })
 	// The Origin column follows the Agent column's rule and for a sharper
 	// version of its reason: it appears only when a grant was issued with
 	// nobody at the terminal, so the column's arrival *is* the finding. On a
@@ -1352,20 +1413,9 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool, states []core
 	// Not a warning, because all three of the things that issue one
 	// unattended — a provisioning script, a CI job, an agent's shell tool —
 	// are legitimate, and only the operator knows which of them ran.
-	roled := false
-	for _, g := range grants {
-		if g.Role != "" {
-			roled = true
-			break
-		}
-	}
-	unwatched := false
-	for _, g := range grants {
-		if g.From == core.FromCommand || strings.HasPrefix(g.From, core.FromOperatorPrefix) {
-			unwatched = true
-			break
-		}
-	}
+	unwatched := has(func(g core.Grant) bool {
+		return g.From == core.FromCommand || strings.HasPrefix(g.From, core.FromOperatorPrefix)
+	})
 	// The Artifact column is the plugin build each grant is bound to
 	// (Grant.Digest), on the detail page always and on the compact one only
 	// once a grant's plugin is no longer what answers — the Origin column's
@@ -1382,74 +1432,78 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool, states []core
 			artifacts = true
 		}
 	}
-	t := view.Table{Columns: []view.Column{
-		{Name: "Capability"},
-		// Which connection this grant is about. Without it the operator cannot
-		// see what they consented to: two grants on the same capability, one for
-		// staging and one for production, render as identical rows — and the
-		// screen whose entire job is "what is the agent allowed to do right
-		// now?" answers a question narrower than the one it was asked.
-		{Name: "Profile"},
-		{Name: "Record"},
-		{Name: "Expires In", Kind: view.KindDuration},
-		{Name: "Budget Left"},
-		{Name: "Note"},
-	}}
-	if unwatched {
-		t.Columns = slices.Insert(t.Columns, 3, view.Column{Name: "Origin"})
+	// Which connection this grant is about. Without it the operator cannot
+	// see what they consented to: two grants on the same capability, one for
+	// staging and one for production, render as identical rows — and the
+	// screen whose entire job is "what is the agent allowed to do right
+	// now?" answers a question narrower than the one it was asked.
+	profiled := !terse || has(func(g core.Grant) bool { return g.Profile != "" })
+
+	type column struct {
+		view.Column
+		cell func(i int, g core.Grant, now time.Time) string
 	}
-	if roled {
-		t.Columns = slices.Insert(t.Columns, 2, view.Column{Name: "Role"})
+	var cols []column
+	add := func(show bool, c view.Column, cell func(i int, g core.Grant, now time.Time) string) {
+		if show {
+			cols = append(cols, column{c, cell})
+		}
 	}
-	if named {
-		t.Columns = slices.Insert(t.Columns, 2, view.Column{Name: "Agent"})
+	add(true, view.Column{Name: "Capability"}, func(_ int, g core.Grant, _ time.Time) string { return g.Target })
+	add(artifacts, view.Column{Name: "Artifact"}, func(i int, g core.Grant, _ time.Time) string {
+		return core.RosterArtifact(g.Digest, states[i])
+	})
+	add(profiled, view.Column{Name: "Profile"}, func(_ int, g core.Grant, _ time.Time) string {
+		return core.RosterProfile(g.Profile, stale != nil && stale(g))
+	})
+	// An em dash for the same reason the Profile column uses one: an
+	// empty agent is not a wildcard. It is the server launched without a
+	// name, and beside a row that names one the difference is exactly what the
+	// operator needs to see.
+	agent := func(_ int, g core.Grant, _ time.Time) string { return dash(g.Agent) }
+	role := func(_ int, g core.Grant, _ time.Time) string { return dash(g.Role) }
+	// As the gate compares it, byte for byte: a record holding a no-break
+	// space, or a space at its end, is shown quoted with the character named,
+	// never as the record it looks like (textclean.Record). It is the one
+	// screen that answers "what may the agent do right now?", and a grant on
+	// the look-alike covers nothing the operator meant. Drawn by internal/grant,
+	// beside the reading a row action seeds its command from (RecordOfRoster),
+	// so the two cannot drift apart.
+	record := func(_ int, g core.Grant, _ time.Time) string { return core.RosterRecord(g.Scope) }
+	if terse {
+		add(true, view.Column{Name: "Record"}, record)
+		add(named, view.Column{Name: "Agent"}, agent)
+		add(roled, view.Column{Name: "Role"}, role)
+	} else {
+		add(named, view.Column{Name: "Agent"}, agent)
+		add(roled, view.Column{Name: "Role"}, role)
+		add(true, view.Column{Name: "Record"}, record)
 	}
-	// Inserted last, beside the capability it is the build of, so the
-	// positions the columns above are inserted at stay what they say.
-	if artifacts {
-		t.Columns = slices.Insert(t.Columns, 1, view.Column{Name: "Artifact"})
+	add(unwatched, view.Column{Name: "Origin"}, func(_ int, g core.Grant, _ time.Time) string { return originLabel(g) })
+	add(true, view.Column{Name: "Expires In", Kind: view.KindDuration}, func(_ int, g core.Grant, now time.Time) string {
+		return format.Duration(g.Expires.Sub(now))
+	})
+	// The deadline as a clock reads it, beside the time left. "29m55s" is for
+	// the person watching and changes between two reads; the instant is what a
+	// script alerts on, in the one spelling every tool parses.
+	add(!terse, view.Column{Name: "Expires At", Kind: view.KindTimestamp}, func(_ int, g core.Grant, _ time.Time) string {
+		return g.Expires.UTC().Format(time.RFC3339)
+	})
+	add(true, view.Column{Name: "Budget Left"}, func(_ int, g core.Grant, now time.Time) string { return budgetLeft(g, now) })
+	add(!terse, view.Column{Name: "Note"}, func(_ int, g core.Grant, _ time.Time) string { return g.Note })
+
+	t := view.Table{Columns: make([]view.Column, len(cols))}
+	for i, c := range cols {
+		t.Columns[i] = c.Column
 	}
 	now := time.Now()
 	for i, g := range grants {
-		// As the gate compares it, byte for byte: a record holding a
-		// no-break space, or a space at its end, is shown quoted with the
-		// character named, never as the record it looks like
-		// (textclean.Record). It is the one screen that answers "what may
-		// the agent do right now?", and a grant on the look-alike covers
-		// nothing the operator meant. Drawn by internal/grant, beside the
-		// reading a row action seeds its command from (RecordOfRoster), so
-		// the two cannot drift apart.
-		row := []string{
-			g.Target,
-			core.RosterProfile(g.Profile, stale != nil && stale(g)),
-			core.RosterRecord(g.Scope),
-			format.Duration(g.Expires.Sub(now)),
-			budgetLeft(g, now),
-			g.Note,
-		}
-		if unwatched {
-			row = slices.Insert(row, 3, originLabel(g))
-		}
-		if roled {
-			row = slices.Insert(row, 2, dash(g.Role))
-		}
-		if named {
-			// An em dash for the same reason the Profile column uses one: an
-			// empty agent is not a wildcard. It is the server launched without
-			// a name, and beside a row that names one the difference is
-			// exactly what the operator needs to see.
-			who := g.Agent
-			if who == "" {
-				who = "—"
-			}
-			row = slices.Insert(row, 2, who)
-		}
-		if artifacts {
-			row = slices.Insert(row, 1, core.RosterArtifact(g.Digest, states[i]))
+		row := make([]string, len(cols))
+		for j, c := range cols {
+			row[j] = c.cell(i, g, now)
 		}
 		t.Rows = append(t.Rows, row)
 	}
-
 	t.Total = len(t.Rows)
 	return t
 }
@@ -1590,14 +1644,34 @@ func remoteStates(gl operatorid.GrantList) []core.ArtifactState {
 // sentence ends at "policy" when there are none: it ended at a dash with
 // nothing after it, which reads as a name the screen lost.
 func suppressedNote(sf plugin.Surface, n int) string {
-	where := ""
-	if c, verr := core.Ceiling(); verr == nil && c.Where() != "" {
-		where = " — " + c.Where()
-	}
-	return fmt.Sprintf("\n\n%s suppressed by your team's policy%s\n"+
-		"%s not deleted: relaxing the policy brings %s back, and %s says what it forbids.",
-		format.Count(n, "grant on disk is", "grants on disk are"), where,
+	return fmt.Sprintf("\n\n%s suppressed by your team's policy%s\n%s not deleted: relaxing the policy brings %s back, and %s says what it forbids.",
+		format.Count(n, "grant on disk is", "grants on disk are"), policyWhere(),
 		format.Plural(n, "It is", "They are"), format.Plural(n, "it", "them"), sf.CapabilityName("audit.doctor"))
+}
+
+// suppressedWarning is suppressedNote beside the rows, coded: the roster is
+// one table whatever a ceiling is holding back, and a table that shows fewer
+// grants than are on disk says so under itself rather than in a section a
+// script reading the rows would have to know to look for. Advisory: the rows
+// are all there, it is the ones that are not rows it accounts for.
+func suppressedWarning(sf plugin.Surface, n int) view.Error {
+	return view.Error{
+		Code: "grant.policy.suppressed",
+		Message: fmt.Sprintf("%s suppressed by your team's policy%s",
+			format.Count(n, "grant on disk is", "grants on disk are"), policyWhere()),
+		Hint: fmt.Sprintf("%s not deleted: relaxing the policy brings %s back, and %s says what it forbids",
+			format.Plural(n, "it is", "they are"), format.Plural(n, "it", "them"), sf.CapabilityName("audit.doctor")),
+		Advisory: true,
+	}
+}
+
+// policyWhere names the policy files after a dash, or nothing when none is
+// known.
+func policyWhere() string {
+	if c, verr := core.Ceiling(); verr == nil && c.Where() != "" {
+		return " — " + c.Where()
+	}
+	return ""
 }
 
 // budgetLeft is the one cell that answers "how much of this is left", across

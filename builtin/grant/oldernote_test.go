@@ -88,7 +88,7 @@ func TestTheRosterWarnsWhenAServerOnAnotherBuildWillDecide(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	quiet, verr := heldTable(plugin.SurfaceCLI, "", false, builtIn)
+	quiet, verr := heldTable(plugin.SurfaceCLI, rosterOpts{}, builtIn)
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -105,7 +105,7 @@ func TestTheRosterWarnsWhenAServerOnAnotherBuildWillDecide(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	loud, verr := heldTable(plugin.SurfaceCLI, "", false, builtIn)
+	loud, verr := heldTable(plugin.SurfaceCLI, rosterOpts{}, builtIn)
 	if verr != nil {
 		t.Fatal(verr)
 	}

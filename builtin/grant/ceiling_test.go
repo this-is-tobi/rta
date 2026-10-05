@@ -160,29 +160,23 @@ func TestHeldTableEmptyStateNotesCeilingSuppressedGrants(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	v, verr := heldTable(plugin.SurfaceCLI, "", false, builtIn)
+	v, verr := heldTable(plugin.SurfaceCLI, rosterOpts{}, builtIn)
 	if verr != nil {
 		t.Fatal(verr)
 	}
-	// The empty roster is still the table, and the suppression its own
-	// section beside it, the shape a partly suppressed roster already has.
-	page, ok := v.(view.Sections)
-	if !ok {
-		t.Fatalf("held table = %s, want the roster and the policy's section", view.TypeOf(v))
-	}
-	tbl := listed(t, page)
+	// The empty roster is still the table, and the suppression beside it as a
+	// warning under it, the shape a partly suppressed roster has.
+	tbl := listed(t, v)
 	if len(tbl.Rows) != 0 || !strings.Contains(tbl.Empty, "No grant is standing") {
 		t.Errorf("roster = %+v, want no rows and the ordinary empty-state sentence", tbl)
 	}
 	if !strings.Contains(tbl.Empty, "guard  off") {
 		t.Errorf("empty = %q, want the guard's state above it", tbl.Empty)
 	}
-	var note string
-	for _, s := range page.Items {
-		if s.ID == "policy" {
-			note = s.View.(view.Text).Body
-		}
+	if len(tbl.Warnings) != 1 || tbl.Warnings[0].Code != "grant.policy.suppressed" || !tbl.Warnings[0].Advisory {
+		t.Fatalf("warnings = %+v, want the suppression, advisory", tbl.Warnings)
 	}
+	note := tbl.Warnings[0].Message + " " + tbl.Warnings[0].Hint
 	if !strings.Contains(note, "1 grant on disk is suppressed by your team's policy") {
 		t.Errorf("policy = %q, want the suppression note naming the count", note)
 	}
@@ -193,9 +187,9 @@ func TestHeldTableEmptyStateNotesCeilingSuppressedGrants(t *testing.T) {
 
 // Partial suppression is the confusing case: some grants are shown, one is
 // not, and the screen has to account for the gap rather than simply omitting
-// the row. heldTable switches shape to say so — a Sections view splitting
-// what is allowed from what the policy is holding back.
-func TestHeldTablePartialSuppressionSplitsAllowedFromSuppressed(t *testing.T) {
+// the row. The table says so under itself, so the roster stays one table for
+// whatever reads its rows.
+func TestHeldTablePartialSuppressionAccountsForTheGap(t *testing.T) {
 	setup(t)
 	withPolicy(t, "never: [pg.dump]\n")
 	now := time.Now()
@@ -206,41 +200,25 @@ func TestHeldTablePartialSuppressionSplitsAllowedFromSuppressed(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	v, verr := heldTable(plugin.SurfaceCLI, "", false, builtIn)
+	v, verr := heldTable(plugin.SurfaceCLI, rosterOpts{}, builtIn)
 	if verr != nil {
 		t.Fatal(verr)
 	}
-	sections, ok := v.(view.Sections)
+	allowed, ok := v.(view.Table)
 	if !ok {
-		t.Fatalf("held table = %s, want Sections once some grants are suppressed", view.TypeOf(v))
-	}
-	if len(sections.Items) != 2 {
-		t.Fatalf("sections = %+v, want exactly Allowed and the policy note", sections.Items)
-	}
-	allowed, ok := sections.Items[0].View.(view.Table)
-	if !ok || sections.Items[0].Title != "Allowed" {
-		t.Fatalf("first section = %+v, want the Allowed table", sections.Items[0])
+		t.Fatalf("held table = %s, want the one table", view.TypeOf(v))
 	}
 	if len(allowed.Rows) != 1 || allowed.Rows[0][0] != "kv.get" {
 		t.Errorf("allowed rows = %v, want only kv.get — pg.dump is suppressed", allowed.Rows)
 	}
-	note, ok := sections.Items[1].View.(view.Text)
-	if !ok || sections.Items[1].Title != "Your team's policy" {
-		t.Fatalf("second section = %+v, want the policy note", sections.Items[1])
-	}
-	if !strings.Contains(note.Body, "1 grant on disk is suppressed") {
-		t.Errorf("policy note = %q, want it to count the one suppressed grant", note.Body)
+	if len(allowed.Warnings) != 1 || !strings.Contains(allowed.Warnings[0].Message, "1 grant on disk is suppressed") {
+		t.Errorf("warnings = %+v, want the one suppressed grant counted", allowed.Warnings)
 	}
 }
 
-// The detail page assembles "granted" from whatever heldTable returns, and
-// heldTable can return a Sections view rather than a plain Table once the
-// ceiling is suppressing something. plugin.Page.PutAs takes a view.View and
-// nests it as-is — Sections composing Sections is a documented, supported
-// shape — but the composition is worth pinning here: it is the one place a
-// future change to either side could quietly assume "granted" is always a
-// flat table and truncate or panic on this one.
-func TestDetailedListHandlesHeldTableReturningSections(t *testing.T) {
+// The detail page keeps the policy's note as a section of its own, beside the
+// roster, and the reach tiers beside both.
+func TestTheDetailPageAccountsForWhatThePolicyHoldsBack(t *testing.T) {
 	setup(t)
 	withPolicy(t, "never: [kv.get]\n")
 	now := time.Now()
@@ -256,39 +234,23 @@ func TestDetailedListHandlesHeldTableReturningSections(t *testing.T) {
 	if !ok {
 		t.Fatalf("detailed list = %s, want Sections", view.TypeOf(v))
 	}
-	var granted *view.Section
-	for i := range page.Items {
-		if page.Items[i].Key() == "granted" {
-			granted = &page.Items[i]
-		}
+	byID := map[string]view.View{}
+	for _, item := range page.Items {
+		byID[item.Key()] = item.View
 	}
-	if granted == nil {
-		t.Fatal("no \"granted\" section on the detail page")
+	granted, ok := byID["granted"].(view.Table)
+	if !ok || len(granted.Rows) != 1 || granted.Rows[0][0] != "todo.rm" {
+		t.Fatalf("the allowed grant did not survive the page assembly: %+v", byID["granted"])
 	}
-	nested, ok := granted.View.(view.Sections)
-	if !ok {
-		t.Fatalf("granted section = %s, want the nested Allowed/policy Sections heldTable returns",
-			view.TypeOf(granted.View))
-	}
-	if len(nested.Items) != 2 || nested.Items[0].Title != "Allowed" {
-		t.Fatalf("nested sections = %+v", nested.Items)
-	}
-	allowedTbl, ok := nested.Items[0].View.(view.Table)
-	if !ok || len(allowedTbl.Rows) != 1 || allowedTbl.Rows[0][0] != "todo.rm" {
-		t.Fatalf("the allowed grant did not survive the page assembly: %+v", nested.Items[0].View)
+	note, ok := byID["policy"].(view.Text)
+	if !ok || !strings.Contains(note.Body, "1 grant on disk is suppressed") {
+		t.Fatalf("policy section = %+v", byID["policy"])
 	}
 	// The reach tiers beside it have to survive too — a page that lost them
-	// the moment "granted" became a Sections would answer only half of
-	// "what can an agent do here".
+	// would answer only half of "what can an agent do here".
 	for _, id := range []string{"default", "grant", "human"} {
-		found := false
-		for _, item := range page.Items {
-			if item.Key() == id {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("reach tier %q missing from the page once granted was a Sections view", id)
+		if _, found := byID[id]; !found {
+			t.Errorf("reach tier %q missing from the page", id)
 		}
 	}
 }
