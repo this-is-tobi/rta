@@ -71,6 +71,24 @@ func TestEveryHelpScreenFitsTheTerminal(t *testing.T) {
 	}
 }
 
+// Help sent to a pipe is laid out for the terminal a pipe most often ends in, a
+// pager, which is eighty columns whatever the one that ran the command was: a
+// wider layout is broken again by the pager at the edge, mid-word, with no
+// hanging indent. COLUMNS, which says a width was asked for, still wins.
+func TestHelpToAPipeIsEightyColumnsWide(t *testing.T) {
+	savedTTY := isTTY
+	t.Cleanup(func() { isTTY = savedTTY })
+	isTTY = func() bool { return false }
+	t.Setenv("COLUMNS", "")
+	if got := helpWidth(); got != 80 {
+		t.Errorf("help to a pipe is %d columns wide, want 80", got)
+	}
+	t.Setenv("COLUMNS", "100")
+	if got := helpWidth(); got != 100 {
+		t.Errorf("COLUMNS=100 gave %d columns, want 100", got)
+	}
+}
+
 // A description that wraps hangs under its own first line, so the column of
 // descriptions reads as a column.
 func TestAWrappedDescriptionHangsUnderItsFirstLine(t *testing.T) {
