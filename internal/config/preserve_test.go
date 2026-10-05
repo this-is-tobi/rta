@@ -395,3 +395,33 @@ func TestANewBlockIsSetApartFromTheNoteOfTheBlockItGoesAheadOf(t *testing.T) {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// A file kept with CRLF line endings comes back with them on every line, the
+// ones rta wrote as much as the ones it left.
+//
+// Fails without the conversion in render: the block written again ends its
+// lines with a bare LF among CRLF ones.
+func TestAFileWithCRLFLineEndingsKeepsThemWhenABlockIsWritten(t *testing.T) {
+	p := seed(t, "output: pretty\r\n# about the dashboard\r\ndashboard:\r\n  columns: 2\r\n")
+	mutate(t, func(c *Config) { c.Dashboard.Columns = 4 })
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if strings.Count(text, "\n") != strings.Count(text, "\r\n") {
+		t.Errorf("a line ends without the carriage return the others have:\n%q", text)
+	}
+	if !strings.Contains(text, "columns: 4") || !strings.Contains(text, "# about the dashboard") {
+		t.Errorf("the write was not made, or lost the note:\n%q", text)
+	}
+	if again, err := LoadFile(); err != nil || again.Dashboard.Columns != 4 {
+		t.Errorf("what was written does not read back: %+v, %v", again, err)
+	}
+
+	lf := seed(t, "output: pretty\ndashboard:\n  columns: 2\n")
+	mutate(t, func(c *Config) { c.Dashboard.Columns = 4 })
+	if raw, _ := os.ReadFile(lf); strings.Contains(string(raw), "\r") {
+		t.Errorf("a file with LF endings gained carriage returns: %q", raw)
+	}
+}
