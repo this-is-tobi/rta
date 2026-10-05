@@ -38,6 +38,13 @@ func resolveConfigKey(reg *registry.Registry, raw string) (configKey, *view.Erro
 	if rest, ok := strings.CutPrefix(raw, "plugins."); ok {
 		return resolvePluginKey(reg, rest)
 	}
+	if raw == "plugins" {
+		return blockKey("plugins", "every plugin's settings", func(c *config.Config) bool {
+			had := len(c.Plugins) > 0
+			c.Plugins = nil
+			return had
+		}), nil
+	}
 	return configKey{}, unknownConfigKey(reg, raw)
 }
 

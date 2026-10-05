@@ -192,6 +192,9 @@ func runConfigGet(reg *registry.Registry, raw string) (view.View, *view.Error) {
 		return nil, verr
 	}
 	hint := "`rta config set " + key.Name + " " + exampleArg(key.Example) + "` states it"
+	if key.Example == "" {
+		hint = key.Name + " is a block of keys: `rta config set --help` lists the ones it holds"
+	}
 	if key.Default != "" {
 		hint = "it is " + key.Default + " until then — " + hint
 	}
