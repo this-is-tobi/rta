@@ -57,14 +57,10 @@ rta explain sys.cpu
 id           sys.cpu
 summary      Show CPU model, core count and current usage
 safety       read
-idempotent   true
 cli          rta sys cpu [--cores <bool>]
-mcp-tool     sys_cpu
-profiles     --profile <name> runs this against a configured connection; over MCP that always needs `rta grant allow sys --profile <name>`
-input:cores  bool, from config plugins.sys.cpu.cores — per-core usage as a bar chart
-config file  ~/.config/rta/config.yaml
-dashboard    a tile when added (`rta dashboard add sys.cpu`, or + on it in the TUI), re-run every few seconds; the automatic dashboard shows sys.overview for this plugin
 ```
+
+Those are the rows to read first: what it is, what it does, whether it can change anything (`read` cannot), and the command line. The full card has a few more around them, such as whether the call is idempotent, the MCP tool name, the config keys the capability reads and what the dashboard does with it. They mean more once you use those parts, and `rta explain sys.cpu` prints them all.
 
 That card is not documentation *about* the capability — it is generated from the same declaration the CLI, the TUI and the MCP schema are built from, so it cannot drift. `rta explain` with no argument lists everything.
 

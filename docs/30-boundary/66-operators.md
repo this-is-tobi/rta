@@ -38,6 +38,20 @@ Issuing remotely takes one more provisioning step, because a grant is authority 
 rta grant allow kv.get db-password --agent claude --ttl 15m --server work
 ```
 
+```mermaid
+sequenceDiagram
+    participant You as Your machine<br/>(rta and your operator key)
+    participant Srv as The server<br/>(rta mcp serve --operators)
+    participant Ag as The agent
+    You->>Srv: grant allow … --server work
+    Srv-->>You: the prepared grant and a one-time challenge
+    Note over You: checks the draft against what you asked,<br/>unlocks the key with your passphrase, signs
+    You->>Srv: the grant, signed over the server's URL,<br/>the challenge, the verb and its payload
+    Note over Srv: verifies the signature against the roster,<br/>stores the grant as operator:tobi
+    Ag->>Srv: a tool call
+    Srv-->>Ag: runs, because a grant covers it
+```
+
 `--agent` is the name the server's own `--as` was given, and it is always typed here: the agents this machine knows are this machine's, so none is filled in for a grant that is for the server's, and the call is refused before the passphrase is asked for. `rta operator status --server work` says what the server runs as.
 
 The server *prepares* the grant — validation, TTL clamping against its policy, profile pinning, attribution — under its own config and catalogue; your rta then checks the draft against what you asked before anything is signed, field by field, with the server licensed only to clamp the lifetime downward — a compromised server must not be a signing oracle for authority nobody requested. Your passphrase unlocks the operator key; what survived the check is signed byte-for-byte and submitted; and the stored row carries `operator:<label>` in its Origin column, so a multi-operator server's listing names who issued what. The server re-checks everything on submission — attribution against the caller the envelope proved, untouched consumption bookkeeping, clock skew, expiry, both TTL ceilings — and the guard's own load-time enforcement then verifies the signature and its server binding on every read, like any other guard-signed row.
