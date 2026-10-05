@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	stdnet "net"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
@@ -133,10 +134,8 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 		}
 	}
 
-	if info, err := host.InfoWithContext(ctx); err == nil {
-		add("host", fmt.Sprintf("%s · %s %s (%s) · up %s",
-			info.Hostname, info.Platform, info.PlatformVersion, info.KernelArch,
-			humanDuration(uptimeOf(info.Uptime))))
+	if info, err := hostInfo(ctx); err == nil {
+		add("host", hostLine(info))
 	}
 	cores, _ := cpu.CountsWithContext(ctx, true)
 	if s, err := sampleCPU(ctx); err == nil {
@@ -678,22 +677,100 @@ func uptimeOf(secs uint64) time.Duration {
 }
 
 func runHost(ctx context.Context, _ plugin.Request) (view.View, error) {
-	info, err := host.InfoWithContext(ctx)
+	info, err := hostInfo(ctx)
 	if err != nil {
 		return nil, view.Errorf("sys.host.read", "reading host info: %v", err)
 	}
-	uptime := uptimeOf(info.Uptime)
-	pairs := []view.Pair{
-		{Key: "hostname", Value: info.Hostname},
-		{Key: "os", Value: fmt.Sprintf("%s %s (%s)", info.Platform, info.PlatformVersion, info.KernelArch)},
-		{Key: "kernel", Value: info.KernelVersion},
-		{Key: "uptime", Value: humanDuration(uptime)},
-		{Key: "procs", Value: fmt.Sprintf("%d", info.Procs)},
+	var pairs []view.Pair
+	add := func(key, value string) {
+		if strings.TrimSpace(value) != "" {
+			pairs = append(pairs, view.Pair{Key: key, Value: value})
+		}
+	}
+	add("hostname", info.Hostname)
+	add("os", osLine(info))
+	add("kernel", info.KernelVersion)
+	if info.Uptime > 0 {
+		add("uptime", humanDuration(uptimeOf(info.Uptime)))
+	}
+	if info.Procs > 0 {
+		add("procs", fmt.Sprintf("%d", info.Procs))
 	}
 	if ips := hostAddrs(); len(ips) > 0 {
-		pairs = append(pairs, view.Pair{Key: "addresses", Value: strings.Join(ips, ", ")})
+		add("addresses", strings.Join(ips, ", "))
 	}
 	return view.KeyValue{Pairs: pairs}, nil
+}
+
+// hostInfo is host.InfoWithContext without the host id, and with each piece
+// allowed to fail on its own.
+//
+// **The answer used to be all or nothing over a field nothing here shows.**
+// InfoWithContext reads the host id last, on macOS by running ioreg, which
+// lives in /usr/sbin and is found through PATH. Under cron, launchd or a bare
+// environment it is not found, and the whole call came back as an error, so
+// `sys host` said "getting host ID: exec: ioreg: executable file not found"
+// and printed nothing of the hostname, the kernel or the uptime it had read
+// fine — and `sys overview` lost its host line with no word of why. The id is
+// not displayed anywhere, so it is not read; and a piece that cannot be read
+// (the platform's version comes from sw_vers, also through PATH) leaves its
+// row out rather than the page. The call fails only when none of the pieces
+// could be read, which is a host there is nothing to say about.
+func hostInfo(ctx context.Context) (*host.InfoStat, error) {
+	info := &host.InfoStat{OS: runtime.GOOS}
+	var first error
+	keep := func(err error) {
+		if err != nil && first == nil {
+			first = err
+		}
+	}
+	var err error
+	info.Hostname, err = os.Hostname()
+	keep(err)
+	info.Platform, info.PlatformFamily, info.PlatformVersion, err = host.PlatformInformationWithContext(ctx)
+	keep(err)
+	info.KernelVersion, err = host.KernelVersionWithContext(ctx)
+	keep(err)
+	info.KernelArch, err = host.KernelArch()
+	keep(err)
+	info.Uptime, err = host.UptimeWithContext(ctx)
+	keep(err)
+	pids, err := process.PidsWithContext(ctx)
+	keep(err)
+	info.Procs = uint64(len(pids))
+	if info.Hostname == "" && info.Platform == "" && info.KernelVersion == "" && info.Uptime == 0 {
+		if first == nil {
+			first = errors.New("nothing readable")
+		}
+		return nil, first
+	}
+	return info, nil
+}
+
+// osLine is the platform, its version and the architecture, as far as each
+// could be read.
+func osLine(info *host.InfoStat) string {
+	line := strings.TrimSpace(info.Platform + " " + info.PlatformVersion)
+	if info.KernelArch != "" {
+		line = strings.TrimSpace(line + " (" + info.KernelArch + ")")
+	}
+	return line
+}
+
+// hostLine is the overview's one line for the host: its name, what it runs and
+// how long it has been up, each only if it was read.
+func hostLine(info *host.InfoStat) string {
+	var parts []string
+	if info.Hostname != "" {
+		parts = append(parts, info.Hostname)
+	}
+	if platform := osLine(info); platform != "" {
+		parts = append(parts, platform)
+	}
+	if info.Uptime > 0 {
+		parts = append(parts, "up "+humanDuration(uptimeOf(info.Uptime)))
+	}
+	return strings.Join(parts, " · ")
 }
 
 // hostAddrs returns up to four non-loopback unicast addresses, IPv4 first —
