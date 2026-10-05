@@ -399,3 +399,24 @@ func TestASetNumberOutsideEveryReadersRangeIsNotedNotRefused(t *testing.T) {
 		}
 	}
 }
+
+// The same for a profile's set: key, which `rta profile set --set limit=5`
+// writes and nothing reads when the plugin takes it once per capability.
+func TestASetKeyThatIsTheEndOfADottedOneIsToldTheSpelling(t *testing.T) {
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{
+		Name: "db", Summary: "db", Capabilities: []plugin.Capability{
+			{ID: "db.usage", Summary: "usage", Safety: plugin.Read, Run: run,
+				Inputs: []plugin.Field{{Name: "limit", Type: plugin.Int, Config: "usage.limit", Local: true}}},
+			{ID: "db.tree", Summary: "tree", Safety: plugin.Read, Run: run,
+				Inputs: []plugin.Field{{Name: "limit", Type: plugin.Int, Config: "tree.limit", Local: true}}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := load(t, "profiles:\n  staging:\n    plugins:\n      db:\n        set:\n          limit: 5\n")
+	problems := Check(cfg, reg)
+	if len(problems) != 1 || !strings.Contains(problems[0].Hint, "tree.limit or usage.limit") {
+		t.Fatalf("problems = %v, want one that names tree.limit and usage.limit", problems)
+	}
+}

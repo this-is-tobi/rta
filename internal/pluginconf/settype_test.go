@@ -174,3 +174,26 @@ func TestAMisspeltSectionKeyIsToldWhatItWasMeantFor(t *testing.T) {
 		t.Fatalf("a key nothing resembles lost the pointer to explain: %+v", problems)
 	}
 }
+
+// A key stated for the whole plugin when the plugin takes it once for each
+// capability is told where it went, since a word that is only the end of two
+// keys is nothing an edit distance finds.
+func TestAKeyThatIsTheEndOfADottedOneIsToldTheSpelling(t *testing.T) {
+	reg := registry.New()
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	if err := reg.Register(plugin.Plugin{
+		Name: "sys", Summary: "sys", Capabilities: []plugin.Capability{
+			{ID: "sys.usage", Summary: "usage", Safety: plugin.Read, Run: run,
+				Inputs: []plugin.Field{{Name: "limit", Type: plugin.Int, Config: "usage.limit"}}},
+			{ID: "sys.tree", Summary: "tree", Safety: plugin.Read, Run: run,
+				Inputs: []plugin.Field{{Name: "limit", Type: plugin.Int, Config: "tree.limit"}}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{"sys": {"limit": 5}}}), installed)
+	problems := r.Check(reg)
+	if len(problems) != 1 || !strings.Contains(problems[0].Hint, "tree.limit or usage.limit") {
+		t.Fatalf("problems = %v, want one that names tree.limit and usage.limit", problems)
+	}
+}
