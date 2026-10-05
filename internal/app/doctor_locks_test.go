@@ -2,6 +2,7 @@ package app
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/lockdown"
@@ -21,6 +22,24 @@ func TestDoctorNamesWhatIsLocked(t *testing.T) {
 		t.Fatal(verr)
 	}
 	check(t, report(t), "locks", "info", "claude")
+}
+
+// A lock on every agent is stored under the name "*", which a line about what
+// is frozen would read as a glob nobody typed. The row says what it means.
+func TestDoctorNamesALockOnEveryAgentAsSuch(t *testing.T) {
+	isolate(t)
+	l, verr := lockdown.Build("agent", lockdown.Everyone, "incident", "", "terminal")
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := lockdown.Add(l); verr != nil {
+		t.Fatal(verr)
+	}
+	rows := report(t)
+	check(t, rows, "locks", "info", "every agent")
+	if got := rows["locks"][1]; strings.Contains(got, "*") {
+		t.Errorf("locks detail = %q, want no bare *", got)
+	}
 }
 
 // A lock file that is gone while its seal key remains is not a clean
