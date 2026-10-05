@@ -961,3 +961,40 @@ profiles:
 		t.Errorf("the ledger recorded %+v (%v), want the profile's encoding", entries, err)
 	}
 }
+
+// What is true of every tool that takes a profile is said once, at the
+// handshake, and only when some tool does: the paragraph was in the
+// description of each of them, word for word.
+func TestTheProfileSentenceIsSaidOnceAtTheHandshake(t *testing.T) {
+	describe := func(f *profileFixture) string {
+		tools, err := f.session.ListTools(context.Background(), &sdk.ListToolsParams{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tool := range tools.Tools {
+			if tool.Name == "pg_query" {
+				return tool.Description
+			}
+		}
+		t.Fatal("pg_query was not exposed")
+		return ""
+	}
+	const said = "naming one needs a grant a person issued for that exact profile"
+
+	with := newProfileFixture(t, twoProfiles)
+	got := with.session.InitializeResult().Instructions
+	if strings.Count(got, said) != 1 {
+		t.Errorf("the handshake does not say the profile sentence once:\n%s", got)
+	}
+	if len(got) > 1024 {
+		t.Errorf("the instructions are %d bytes with profiles, over the 1024 they are held to", len(got))
+	}
+	if desc := describe(with); strings.Contains(desc, "profile") && strings.Contains(desc, "operator configured") {
+		t.Errorf("the tool description repeats the handshake's sentence:\n%s", desc)
+	}
+
+	without := newProfileFixture(t, "plugins:\n  pg:\n    host: base.internal\n")
+	if got := without.session.InitializeResult().Instructions; strings.Contains(got, "profile") {
+		t.Errorf("an install with no profile is told about them:\n%s", got)
+	}
+}

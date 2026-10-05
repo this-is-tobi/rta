@@ -31,6 +31,32 @@ const instructions = "rta is a security boundary in front of this machine, not a
 	"is needed and ask the operator rather than retrying. A tool that needs a grant is refused until a person issues one " +
 	"for you. A path argument names a file on the machine running rta, under the roots the operator started it with."
 
+// profileInstructions is the one sentence about the "profile" argument, said
+// at the handshake when any tool offers it. It sat at the end of the
+// description of every tool that takes one, a paragraph repeated word for word
+// in each, which is the kind of sentence that is the same in all of them and
+// chooses nothing. Naming a profile always needs a grant of its own, whatever
+// the safety class, so it is said rather than left for a model to discover by
+// being refused; the names are not listed — see InputSchema on why an
+// inventory is not something an ungranted caller gets — but the fact that
+// "profile" is optional and gated is what stops a model ignoring it or
+// guessing at it. The argument's own description in each schema says the
+// same of that tool in one line.
+const profileInstructions = "A tool with a \"profile\" argument reaches connections the operator configured: " +
+	"naming one needs a grant a person issued for that exact profile, so ask the operator which to use."
+
+// handshakeInstructions is what the server says once about every tool: the
+// fixed text, and the profile sentence only when a tool offered here takes the
+// argument, so a server with no profile configured says nothing about them.
+func handshakeInstructions(offered []plugin.Capability, opts Options) string {
+	for _, c := range offered {
+		if plugin.Profilable(c) && len(opts.Profiles.ProfilesFor(plugin.Namespace(c.ID))) > 0 {
+			return instructions + " " + profileInstructions
+		}
+	}
+	return instructions
+}
+
 // What an agent is shown: the tool name a capability maps onto, the text
 // that describes it, and the JSON Schema its inputs publish. The schema is
 // the agent-facing half of the declaration — what it says a field accepts
@@ -54,7 +80,7 @@ const instructions = "rta is a security boundary in front of this machine, not a
 // The frame is only worth anything because Validate refuses both literals in
 // declared text (pkg/plugin/text.go). A plugin that could write the closing
 // line would close the untrusted block early and continue as rta.
-func agentText(c plugin.Capability, profiles []string, tools map[string]bool) string {
+func agentText(c plugin.Capability, tools map[string]bool) string {
 	var b strings.Builder
 	b.WriteString(plugin.AuthoredOpen)
 	b.WriteString("\n" + nameTools(c.Summary, tools))
@@ -79,17 +105,6 @@ func agentText(c plugin.Capability, profiles []string, tools map[string]bool) st
 			b.WriteString(")")
 		}
 		b.WriteString(". You cannot issue one yourself — " + plugin.AskOperator("grant allow "+c.ID) + ".")
-	}
-	// Same reasoning one layer along: naming a profile always needs a grant of
-	// its own, whatever the safety class, so say it rather than let a model
-	// discover it by being refused. The names are not listed — see
-	// InputSchema on why an inventory is not something an ungranted caller
-	// gets — but the fact that "profile" is optional-and-gated is exactly what
-	// stops a model either ignoring it or guessing at it.
-	if len(profiles) > 0 && plugin.Profilable(c) {
-		b.WriteString("\n\nThis capability reaches connections the operator configured. " +
-			"Naming one with \"profile\" requires a grant a person issued for that exact " +
-			"profile; ask the operator which one to use.")
 	}
 	return b.String()
 }
@@ -122,7 +137,7 @@ func toolDef(c plugin.Capability, opts Options) *sdk.Tool {
 
 	return &sdk.Tool{
 		Name:        plugin.ToolName(c.ID),
-		Description: agentText(c, opts.Profiles.ProfilesFor(plugin.Namespace(c.ID)), opts.tools),
+		Description: agentText(c, opts.tools),
 		Annotations: ann,
 		InputSchema: toolcall.InputSchema(c, opts.Profiles.ProfilesFor(plugin.Namespace(c.ID)), opts.pluginConfig(c)),
 	}
