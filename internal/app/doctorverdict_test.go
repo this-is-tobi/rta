@@ -198,3 +198,25 @@ func TestTheConfigRowNamesRTAOutputWhenThereIsNoFile(t *testing.T) {
 	check(t, report(t), "config", "ok", "no config file")
 	check(t, report(t), "config", "ok", "(output=json from RTA_OUTPUT)")
 }
+
+// --detail gives a row the rest of what it has to say, and the summary is a
+// prefix of it: nothing the summary claims is taken back by the longer text.
+func TestDetailGivesARowItsWholeTextAndTheSummaryIsAPrefixOfIt(t *testing.T) {
+	isolate(t)
+	short, long := report(t)["agents connected"], reportFor(t, true)["agents connected"]
+	if short[0] != "ok" || long[0] != "ok" {
+		t.Fatalf("agents connected: %q and %q, want ok in both", short, long)
+	}
+	if strings.Contains(short[1], "looks exactly like this") {
+		t.Errorf("the summary carries the explanation, which is --detail's: %q", short[1])
+	}
+	if !strings.HasPrefix(long[1], short[1]) || !strings.Contains(long[1], "looks exactly like this") {
+		t.Errorf("--detail = %q, want the summary %q and then the rest", long[1], short[1])
+	}
+	if got := said(false, "a", ", b"); got != "a" {
+		t.Errorf("said(false) = %q", got)
+	}
+	if got := said(true, "a", ", b"); got != "a, b" {
+		t.Errorf("said(true) = %q", got)
+	}
+}
