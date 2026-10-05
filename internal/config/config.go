@@ -1,6 +1,6 @@
 // Package config loads rta's configuration. Zero config is a valid config:
-// everything works without a file, and rta init writes one interactively when
-// the user wants persistent choices.
+// everything works without a file, and `rta config set` and `rta config edit`
+// write one when the user wants persistent choices.
 //
 // Loading is deliberately small — goccy-yaml, already a dependency, plus the
 // RTA_* environment overrides — and stays so on purpose: the file's shape is
@@ -280,8 +280,8 @@ func Path() string { return paths.ConfigFile() }
 // parseHint turns the YAML parser's own message into a next step.
 //
 // A repeated mapping key earns its own sentence because the general advice is
-// actively wrong for it: the file is not corrupt, and re-creating it with
-// `rta init` would throw away every profile in it to fix one duplicated line.
+// wrong for it: the file is not corrupt, and starting it over would throw away
+// every profile in it to fix one duplicated line.
 //
 // It is also the one parse error rta's own writers cannot produce — a
 // profile's plugins: block is a Go map, so marshalling it can only ever emit a
@@ -296,7 +296,7 @@ func parseHint(err error) string {
 			"second connection for the same plugin replaces that key rather than adding to " +
 			"it — give each one its own profile instead of repeating the key"
 	}
-	return "fix it — `rta config edit` opens the file and says what is wrong when you save — or re-create it with `rta init`"
+	return "fix it — `rta config edit` opens the file and says what is wrong when you save; `rta config schema` lists every key it reads"
 }
 
 // maxConfigBytes is far beyond any configuration an operator writes by hand and
@@ -435,9 +435,10 @@ const lockFile = ".lock"
 // Mutate applies f to the configuration under a lock and writes the result,
 // so a read-modify-write cannot lose another writer's.
 //
-// **Every writer has to use this, and the reason is measured.** Config is
-// edited by nine places — five in the profile forms, the plugin and theme
-// forms, the dashboard arrangement, `rta init` — and each of them was doing
+// **Every writer has to use this, and the reason is measured.** Config was
+// first edited by nine places — five in the profile forms, the plugin and theme
+// forms, the dashboard arrangement, and the first-run setup, which no longer
+// writes it — and each of them was doing
 // LoadFile, mutate, Write with nothing in between stopping a second writer
 // from doing the same and one of them silently losing. That was survivable
 // while every writer was a keystroke in a form: a person cannot press two

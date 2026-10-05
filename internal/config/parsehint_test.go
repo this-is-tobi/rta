@@ -10,11 +10,11 @@ import (
 )
 
 // The duplicate-key message is the one parse failure whose general advice is
-// actively harmful: "re-create it with `rta init`" would throw away every
+// actively harmful: a hint to start the file over would throw away every
 // profile in the file to fix one repeated line. It is also the failure a
 // person is most likely to hit, because a second connection for the same
 // plugin looks like it should be a second block and is not.
-func TestARepeatedPluginKeyExplainsItselfInsteadOfSuggestingRtaInit(t *testing.T) {
+func TestARepeatedPluginKeyExplainsItselfInsteadOfSuggestingAFreshFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	t.Setenv("RTA_CONFIG", path)
 	// Two connections for one plugin, the shape somebody reaches by copying a
@@ -40,7 +40,7 @@ func TestARepeatedPluginKeyExplainsItselfInsteadOfSuggestingRtaInit(t *testing.T
 	if verr.Code != "config.invalid" {
 		t.Errorf("code = %q, want config.invalid", verr.Code)
 	}
-	if strings.Contains(verr.Hint, "rta init") {
+	if strings.Contains(verr.Hint, "re-create") {
 		t.Errorf("hint tells them to re-create the file, which discards every profile: %q", verr.Hint)
 	}
 	if !strings.Contains(verr.Hint, "one connection per plugin") {
@@ -62,7 +62,7 @@ func TestAnOrdinarilyBrokenFileKeepsTheGeneralAdvice(t *testing.T) {
 	if !ok {
 		t.Fatalf("err = %#v, want a *view.Error", err)
 	}
-	if !strings.Contains(verr.Hint, "rta init") {
-		t.Errorf("hint = %q, want the general advice for a genuinely malformed file", verr.Hint)
+	if !strings.Contains(verr.Hint, "`rta config edit`") || strings.Contains(verr.Hint, "rta init") {
+		t.Errorf("hint = %q, want the general advice for a genuinely malformed file, and rta init writes no file", verr.Hint)
 	}
 }
