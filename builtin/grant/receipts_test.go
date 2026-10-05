@@ -168,6 +168,23 @@ func TestAPluginWideGrantSaysHowMuchItCovers(t *testing.T) {
 	}
 }
 
+func TestTheDestructiveSummaryNeverSaysAndOneOther(t *testing.T) {
+	for _, c := range []struct {
+		ids  []string
+		want string
+	}{
+		{nil, "none destructive"},
+		{[]string{"a.rm"}, "1 destructive (a.rm)"},
+		{[]string{"a", "b", "c"}, "3 destructive (a, b, c)"},
+		{[]string{"a", "b", "c", "d"}, "4 destructive (a, b, c, d)"},
+		{[]string{"a", "b", "c", "d", "e"}, "5 destructive (a, b, c and 2 others)"},
+	} {
+		if got := destructiveSummary(c.ids); got != c.want {
+			t.Errorf("destructiveSummary(%v) = %q, want %q", c.ids, got, c.want)
+		}
+	}
+}
+
 // Renew extends time and nothing else, and that includes never taking it away:
 // `renew --ttl 2h` on a grant with eight hours left set it to two and said
 // renewed.
