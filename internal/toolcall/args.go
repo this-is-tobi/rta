@@ -316,6 +316,14 @@ func checkFieldType(f plugin.Field, v any) error {
 		if err := checkStringSlice(v); err != nil {
 			return err
 		}
+	case plugin.Duration:
+		// The shape is a string, and a number is the one mistake common
+		// enough to be told what is missing rather than what the type is:
+		// 30 says nothing about seconds or milliseconds, which is why the
+		// value carries its unit.
+		if _, ok := v.(string); !ok {
+			return fmt.Errorf("must be a duration written with its unit, got %s", JSONKind(v))
+		}
 	default: // String, Text, Secret, Path
 		if _, ok := v.(string); !ok {
 			return fmt.Errorf("must be a string, got %s", JSONKind(v))
