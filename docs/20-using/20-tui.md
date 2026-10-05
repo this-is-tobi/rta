@@ -227,12 +227,22 @@ The agent tile says the same, and opens the queue and the record. From it, and f
 | `w` | The queue of parked calls |
 | `g` | The record of what agents did |
 | `enter` | Everything about the call under the cursor, including what it would do |
-| `a` | Allow it — stops to confirm |
+| `a` | Allow it once — the footer names the call and what it would do, and `enter` allows exactly that call |
+| `A` | Allow it for a while, or as a role — the `ttl` and `role` form, for the same call |
 | `d` | Deny it — one key, no form |
-| `L` | Lock the agent that asked, its name already filled in from the row |
-| `x` | On the lock list: lift the lock under the cursor |
+| `L` | Lock the agent that asked, its name already filled in from the row; from the agent tile, the agent that is connected when there is only one |
 
-The queue refreshes itself every few seconds while it is on screen, so a call that parks while you are reading appears, and one that expires leaves. A form opened from one of these screens asks only about this machine: the `--server` box that aims the same command at a remote queue, and the operator passphrase that signs it, are offered when you type the command's name, not when you act on a row.
+`a` stops for a confirmation because granting access is the direction that cannot be taken back once a secret has been read, and what it stops on is the call itself, in one line, rather than a form that never said which call it was about. Any key but `enter` and `A` cancels it and says the call is still waiting. The line holds the call that was named when `a` was pressed, so the queue refreshing under the cursor cannot change which one `enter` allows. The form asks for the guard's passphrase only when the grant guard is on.
+
+The grant roster answers the same way. Open it from its tile — the key on the tile opens the list, with a row to stand on, and says so — and:
+
+| Key | What it does |
+| --- | --- |
+| `x` | Revoke the grant under the cursor, at once, and only that grant: a row that does not name exactly one grant opens the form instead |
+| `X` | Revoke every grant, behind the dry run that says how many — `enter` on it is the consent |
+| `n` | Renew the grant under the cursor — a form |
+
+On the lock list `x` lifts the lock under the cursor. The queue refreshes itself every few seconds while it is on screen, so a call that parks while you are reading appears, and one that expires leaves. A form opened from one of these screens asks only about this machine: the `--server` box that aims the same command at a remote queue, and the operator passphrase that signs it, are offered when you type the command's name, not when you act on a row.
 
 ## Profiles
 

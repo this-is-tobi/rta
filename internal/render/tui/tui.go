@@ -165,6 +165,12 @@ type Model struct {
 	// confirmation stage. Holds the profile name in modeProfiles and the
 	// plugin key in modeProfilePlugins; "" when nothing is armed.
 	armedDelete string
+	// armed is a one-key answer that has said what it would do and waits for
+	// the key that confirms it (answers.go); nil when nothing waits.
+	armed *armedAnswer
+	// said is what the footer says when the answer that was just given
+	// finishes, in place of the capability's own "done" (answers.go).
+	said string
 	// help is the key overlay (help.go), open over whatever m.mode is.
 	help bool
 	// width and height are the room a screen has, not the terminal's: the
@@ -717,6 +723,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.refreshPending && msg.err == nil && !m.isTop(msg.cap) {
 			m.refreshPending = false
 			m.flash = flashText(msg)
+			if m.said != "" {
+				m.flash = m.said
+			}
+			m.said = ""
 			if m.subjectGone {
 				m.subjectGone = false
 				m.trail = m.trail[:len(m.trail)-1]
@@ -727,6 +737,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.closeToOrigin()
 		}
 		m.refreshPending, m.subjectGone = false, false
+		m.said = ""
 		m.mode = modeResult
 		m.current = msg.cap
 		m.result = msg

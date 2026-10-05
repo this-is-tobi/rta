@@ -344,6 +344,18 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
+	if nm, cmd, answered := m.answer(a, base); answered {
+		return nm, cmd
+	}
+	return m.runSeeded(a, base)
+}
+
+// runSeeded is the rest of an action once the record it acts on is known: what
+// the form opens with, whether it opens at all, and the run. Split from
+// runAction so that a one-key answer can arm itself on the record it was
+// pressed on and run on that one later, whatever the list under it has become
+// by then.
+func (m Model) runSeeded(a capAction, base map[string]any) (tea.Model, tea.Cmd) {
 	// What the action opens is the capability without the inputs that point
 	// it at another machine — see hereOnly — unless the view it was pressed
 	// in was itself pointed at one.
@@ -371,6 +383,7 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 	if len(aim) == 0 {
 		cap.Inputs = hereOnly(cap.Inputs)
 	}
+	cap.Inputs = guardIdle(cap)
 	for name, v := range aim {
 		base[name] = v
 	}
@@ -391,7 +404,7 @@ func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
 	// Read before m.current moves: an action carries on from the view it was
 	// pressed in, so the form has to open on that view's inputs and not on
 	// the declared defaults of the capability replacing it.
-	prev := m.continuing(cap)
+	prev := over(m.suggested(cap), m.continuing(cap))
 	// The environment travels with it, and it is not one of those inputs:
 	// `profile` is reserved on a capability a profile can fill, so `asked`
 	// filters it out by construction. Without this, a row from a listing run
@@ -748,6 +761,10 @@ func (m Model) resultFooterItems() []hintItem {
 				continue
 			}
 			keys = append(keys, action(a.key, a.label))
+			keys = append(keys, m.answerHints(a)...)
+		}
+		if m.current.ID == rosterCapability && len(m.aimedElsewhere(m.current)) == 0 {
+			keys = append(keys, action("X", "revoke all"))
 		}
 		for _, t := range m.toggles() {
 			// A toggle says which way it is pointing, or half the time it

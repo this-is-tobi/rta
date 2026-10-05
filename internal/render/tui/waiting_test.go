@@ -66,7 +66,7 @@ func TestAParkedCallPutsOneLineAboveEveryScreenAndTakesItsRow(t *testing.T) {
 func TestTheLineNamesTheCallWhenThereIsOneAndCountsWhenThereAreMore(t *testing.T) {
 	m, _ := realModel(t, 120, 30)
 	one := firstLine(learn(t, m, oneCall()).View().Content)
-	for _, want := range []string{"1 call waiting", "w to answer", "claude: note.rm 2", "would remove note 2: third note"} {
+	for _, want := range []string{"1 call waiting", "w to answer", "claude asks note.rm 2", "would remove note 2: third note"} {
 		if !strings.Contains(one, want) {
 			t.Errorf("the line for one call lacks %q: %s", want, one)
 		}

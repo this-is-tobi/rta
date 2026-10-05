@@ -27,6 +27,9 @@ func (m Model) keyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	// Before the pane's own handler, and after the delete gate's claim on
 	// every key: while a removal is armed any key but `y` disarms it, and
 	// `?` is any key. helpOffered is the same predicate the footer asks.
+	if m.armed != nil {
+		return m.armedKeys(msg)
+	}
 	if msg.String() == "?" && m.armedDelete == "" && m.helpOffered(m.mode) {
 		m.help = true
 		return m, nil, true
@@ -160,6 +163,10 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		if a, ok := m.selectedAction(msg.String()); ok {
 			m.origin = modeDashboard
 			m.trail = nil
+			if a.src != srcNone {
+				nm, cmd := m.rowActionOnATile(a)
+				return nm, cmd, true
+			}
 			if a.bare && a.cap.Safety == plugin.Read {
 				m.current = a.cap
 				m.lastValues, m.lastYes = nil, false
@@ -167,7 +174,7 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 				m.refreshPending = false
 				return m, m.startRun(a.cap, nil, false), true
 			}
-			nm, cmd := m.open(a.cap)
+			nm, cmd := m.openAction(a.cap)
 			return nm, cmd, true
 		}
 	}
@@ -521,6 +528,9 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 				return nm, cmd, true
 			}
 		}
+		if nm, cmd, ok := m.answerKeys(msg.String(), tbl); ok {
+			return nm, cmd, true
+		}
 		if t, ok := m.toggleFor(msg.String()); ok {
 			nm, cmd := m.toggleView(t)
 			return nm, cmd, true
@@ -629,6 +639,7 @@ func (m Model) runningKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		}
 		m.runSeq++ // whatever arrives now belongs to nobody
 		m.refreshPending, m.subjectGone = false, false
+		m.said = ""
 		m.previewing = false
 		m.flash = "cancelled"
 		if len(m.trail) > 0 {
