@@ -10,7 +10,7 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// recipeArgs is the container recipe from docs/30-boundary/20-mcp.md, verbatim.
+// recipeArgs is the container recipe from docs/30-boundary/67-containers-and-images.md, verbatim.
 // Tests start from it and remove one thing at a time, so each case says exactly
 // which part of the documented shape it is about.
 func recipeArgs() []string {

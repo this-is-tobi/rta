@@ -1306,10 +1306,10 @@ func connAddress(conn config.Connection, fallback string) string {
 // inputs are positional, so the error can say which one and show the form
 // that works.
 //
-// The wording leads with a word rather than the input name on purpose: fang
-// sentence-cases a plain error before printing it, so a message starting with
-// an identifier renders it capitalised — "name" became "Name", which is a
-// different field as far as the reader is concerned.
+// The wording leads with a word rather than the input name on purpose: a message
+// that starts with an identifier reads as a sentence about a different field the
+// moment anything capitalises it — "name" became "Name" once — and a word that
+// is already a word cannot be misread.
 //
 // Coded as CodeUsage like every other flag mistake: this is the capability
 // command's flag-error function, so the root's, which codes the rest, never

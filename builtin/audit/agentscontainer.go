@@ -9,7 +9,7 @@ import (
 
 // Grading a containerised rta against the recipe it was copied from.
 //
-// docs/30-boundary/20-mcp.md prints a `docker run` line with six deliberate
+// docs/30-boundary/67-containers-and-images.md prints a `docker run` line with six deliberate
 // parts and a table explaining each, and nothing checked whether the line in
 // front of you still had them. An operator who containerised rta got the same
 // silence as one who had not — which is the wrong way round, because they are
@@ -255,8 +255,8 @@ func gradeContainer(r *agentReport, f agentFile, name string, d serverDecl) {
 		r.addFix("container-image", name+" — narrow the image to the plugins this job needs",
 			"rta-full exists for a person at a terminal who wants a console. For an agent, use "+
 				"`ghcr.io/this-is-tobi/rta` in "+shortPath(f.path)+", or build your own image "+
-				"carrying only the plugins this job needs — see the \"share the image\" recipe in "+
-				"docs/30-boundary/20-mcp.md. A plugin that is not in the image is one the agent "+
+				"carrying only the plugins this job needs — see "+
+				"docs/30-boundary/67-containers-and-images.md. A plugin that is not in the image is one the agent "+
 				"cannot reach at all, which is a cheaper boundary than any number of grants.")
 	}
 

@@ -308,3 +308,21 @@ func TestServeRefusalsAreCodedInTheFormatAskedFor(t *testing.T) {
 		}
 	}
 }
+
+// The refusal of --consent over --http without a roster sends the person to the
+// page about the operator channel, which is a page that exists and says it; it
+// named a chapter section that has moved.
+func TestTheConsentOverHTTPRefusalPointsAtThePageAboutOperators(t *testing.T) {
+	_, _, err := run(t, testRegistry(t), "mcp", "serve", "--as", "claude", "--http", "127.0.0.1:0", "--consent")
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != CodeUsage {
+		t.Fatalf("err = %#v, want a usage error", err)
+	}
+	const page = "docs/30-boundary/66-operators.md"
+	if !strings.Contains(ve.Hint, page) {
+		t.Fatalf("hint = %q, want it to name %s", ve.Hint, page)
+	}
+	if doc := readDoc(t, repoRoot(t), page); !strings.HasPrefix(doc, "# The operator channel") {
+		t.Errorf("%s does not open on the operator channel: %.60q", page, doc)
+	}
+}
