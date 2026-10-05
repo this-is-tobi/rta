@@ -859,6 +859,15 @@ func typedSetValue(f plugin.Field, key string, values []string) (any, *view.Erro
 			return nil, badSetValue(f, key, want, setExample(f, "1.5"))
 		}
 		return n, nil
+	case plugin.Duration:
+		if _, err := plugin.ParseDuration(raw); err != nil {
+			want := "a duration"
+			if bounds := f.Bounds(); bounds != "" {
+				want += " " + bounds
+			}
+			return nil, badSetValue(f, key, want, setExample(f, "30s"))
+		}
+		return raw, nil
 	case plugin.Bool:
 		b, err := strconv.ParseBool(raw)
 		if err != nil {
