@@ -444,6 +444,16 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 			t.Empty = fmt.Sprintf("Note %d has no sub-notes yet — `%s` adds one", parent,
 				sf.Call("note.add", titleArg, plugin.Arg{Name: "parent", Value: parent}))
 		}
+		// On a screen the list's own key is the way to add, and it is on the
+		// screen the sentence is read on: a capability's ID names nothing a
+		// person there can press.
+		if sf == plugin.SurfaceTUI {
+			t.Empty = "Nothing here yet — press a to add one"
+			if parent != 0 {
+				t.Empty = fmt.Sprintf("Note %d has no sub-notes yet — press a to add one, with %s", parent,
+					sf.InputTo("parent", parent))
+			}
+		}
 	}
 	return t, nil
 }
