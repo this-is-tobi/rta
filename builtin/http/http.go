@@ -377,14 +377,23 @@ func requestBody(req plugin.Request) (string, *view.Error) {
 // https, except for a host that is a service of one's own, which a person who
 // asked for the local network (own) is almost never reaching over TLS.
 //
-// Decided from the text alone — localhost, anything under it, or an address
-// that is loopback or private — and never by looking the name up: the scheme is
-// fixed before the connection is made, and a name that answers with a private
-// address now and a public one a moment later (a rebinding record) must not be
-// able to turn a request meant to be encrypted into a plain one carrying its
-// credentials. A name that merely might be private, grafana.internal, keeps
-// https, and the one who knows better writes http://. Port 443 keeps https as
-// well: nobody means plain text there.
+// Decided from the text alone — localhost, or an address that is loopback or
+// private — and never by looking the name up: the scheme is fixed before the
+// connection is made, and a name that answers with a private address now and a
+// public one a moment later (a rebinding record) must not be able to turn a
+// request meant to be encrypted into a plain one carrying its credentials. A
+// name that merely might be private, grafana.internal, keeps https, and the one
+// who knows better writes http://. Port 443 keeps https as well: nobody means
+// plain text there.
+//
+// Only the one name, and not the ones under it. RFC 6761 asks a resolver to
+// answer every name under .localhost with the loopback address, and asks no
+// more than that: this binary has no resolver of its own that does, so what
+// svc.localhost means is whatever the DNS server it reaches says, and one that
+// answers every name that does not exist with a public address, as an ISP's
+// does, would have been sent the request in plain text with its bearer token.
+// localhost itself is in the hosts file of every machine, which is read before
+// any server is asked.
 func withScheme(url string, own bool) string {
 	if strings.Contains(url, "://") {
 		return url
@@ -399,7 +408,7 @@ func withScheme(url string, own bool) string {
 
 func namesOwnHost(host string) bool {
 	host = strings.ToLower(host)
-	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+	if host == "localhost" {
 		return true
 	}
 	addr, err := netip.ParseAddr(host)

@@ -165,7 +165,9 @@ func TestARefusalUnderTheFlagNamesWhatTheFlagDoesNotCover(t *testing.T) {
 // host is, decided from the text alone: a name that merely might resolve
 // somewhere private is not guessed at, because the scheme is chosen before the
 // address is looked up and a name that answers differently a moment later must
-// not turn a request that was meant to be encrypted into a plain one.
+// not turn a request that was meant to be encrypted into a plain one. That
+// includes a name under .localhost, which this binary resolves through whatever
+// DNS server it reaches and not on its own authority.
 func TestASchemeIsDefaultedByWhereTheHostIs(t *testing.T) {
 	for _, c := range []struct {
 		in, want string
@@ -173,7 +175,8 @@ func TestASchemeIsDefaultedByWhereTheHostIs(t *testing.T) {
 	}{
 		{"localhost:8080", "http://localhost:8080", true},
 		{"LocalHost:8080/api?x=1", "http://LocalHost:8080/api?x=1", true},
-		{"svc.localhost", "http://svc.localhost", true},
+		{"svc.localhost", "https://svc.localhost", true},
+		{"a.b.localhost:8080", "https://a.b.localhost:8080", true},
 		{"127.0.0.1:8080", "http://127.0.0.1:8080", true},
 		{"[::1]:8080/x", "http://[::1]:8080/x", true},
 		{"10.0.0.5:3000", "http://10.0.0.5:3000", true},
