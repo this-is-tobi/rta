@@ -215,6 +215,23 @@ func TestTheRootHelpSaysWhereToStart(t *testing.T) {
 	}
 }
 
+// The start block is the top of eighty lines of help, and a terminal that holds
+// twenty-four of them shows the bottom: what a newcomer sees last has to say
+// what to type first.
+func TestTheLastScreenOfTheRootHelpSaysWhatToTypeFirst(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(plainHelp(NewRoot(reg, "test"), 80), "\n"), "\n")
+	last := strings.Join(lines[len(lines)-24:], "\n")
+	for _, want := range []string{"rta sys overview", docsURL} {
+		if !strings.Contains(last, want) {
+			t.Errorf("the last 24 lines of `rta --help` do not say %q:\n%s", want, last)
+		}
+	}
+}
+
 // A subcommand's help does not repeat the root's start block or its footer.
 func TestOnlyTheRootHelpCarriesTheStartBlock(t *testing.T) {
 	reg, err := NewRegistry()
