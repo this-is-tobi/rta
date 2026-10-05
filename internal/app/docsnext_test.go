@@ -84,3 +84,37 @@ func TestTheNextLinksNeverLoop(t *testing.T) {
 func exemptFromNext(page string) bool {
 	return page == "README.md" || page == "docs/01-readme.md" || strings.HasPrefix(page, "docs/95-reference/")
 }
+
+// The recipes page opens with a table of every recipe, its level, what it
+// needs and about how long it takes, because a page of recipes with no index
+// was read by scrolling, and the one it calls the one worth learning first
+// fails on a fresh machine in its first two commands without saying what it
+// presumes. A recipe added without a row in the table is one nobody
+// can see the level or the prerequisites of.
+func TestEveryRecipeIsInTheRecipesIndex(t *testing.T) {
+	const rel = "docs/90-recipes/01-readme.md"
+	page := readDoc(t, repoRoot(t), rel)
+	table, _, _ := strings.Cut(page, "\nThree have pages of their own.")
+	heading := regexp.MustCompile(`(?m)^## (.+)$`)
+	recipes := 0
+	for _, m := range heading.FindAllStringSubmatch(page, -1) {
+		if m[1] == "Related" || m[1] == "Next" {
+			continue
+		}
+		recipes++
+		if !strings.Contains(table, "["+m[1]+"](#") {
+			t.Errorf("%s has the recipe %q and the index at its head has no row for it", rel, m[1])
+		}
+	}
+	if recipes < 15 {
+		t.Fatalf("found %d recipes; has the page changed shape?", recipes)
+	}
+	for _, row := range strings.Split(table, "\n") {
+		if !strings.HasPrefix(row, "| [") {
+			continue
+		}
+		if cells := strings.Split(strings.Trim(row, "| "), " | "); len(cells) != 4 {
+			t.Errorf("the recipes index row %q has %d cells; a recipe says its level, what it needs and its minutes", row, len(cells))
+		}
+	}
+}

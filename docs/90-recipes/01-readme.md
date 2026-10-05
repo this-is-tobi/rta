@@ -1,12 +1,36 @@
 # Recipes
 
-Worked examples. Each one is a real shape rather than a demonstration of a flag.
+Worked examples. Each one is a real shape rather than a demonstration of a flag. The levels are *everyday* (one person, one machine), *team* (something a repository or a team shares) and *operator* (something you run for others); the minutes are rough, and "needs" is what to have before you start.
+
+| Recipe | Level | Needs | Minutes |
+| --- | --- | --- | --- |
+| [Pair with an agent on a staging database, for an hour](#pair-with-an-agent-on-a-staging-database-for-an-hour) | everyday | an MCP client, the `pg` plugin and a `staging` profile | 5 |
+| [Hand over one secret, once](#hand-over-one-secret-once) | everyday | an MCP client and a `kv` store with the key in it | 2 |
+| [A ceiling a repository carries](#a-ceiling-a-repository-carries) | team | a repository | 5 |
+| [Morning triage](#morning-triage) | everyday | nothing | 3 |
+| [Certificate expiry as a cron job](#certificate-expiry-as-a-cron-job) | everyday | `jq` and a scheduler | 5 |
+| [Dependency review before a release](#dependency-review-before-a-release) | everyday | a project with a lockfile | 3 |
+| [Audit every repository a team owns](#audit-every-repository-a-team-owns) | team | the `gh` CLI and `jq` | 10 |
+| [What in the cluster is out of support](#what-in-the-cluster-is-out-of-support) | everyday | `kubectl` with a context | 3 |
+| [A security review you can paste into an issue](#a-security-review-you-can-paste-into-an-issue) | everyday | a host name | 3 |
+| [Fill a shell with credentials, without them touching disk](#fill-a-shell-with-credentials-without-them-touching-disk) | everyday | a `kv` store | 2 |
+| [Answer "what changed here" without parsing porcelain](#answer-what-changed-here-without-parsing-porcelain) | everyday | a git repository | 2 |
+| [Run an agent against a scratch directory only](#run-an-agent-against-a-scratch-directory-only) | everyday | an MCP client | 3 |
+| [Be asked instead of refused, while you are at the machine](#be-asked-instead-of-refused-while-you-are-at-the-machine) | everyday | an MCP client | 5 |
+| [Ship the record somewhere durable](#ship-the-record-somewhere-durable) | operator | `jq` and a scheduler | 10 |
+| [Put it on a dashboard](#put-it-on-a-dashboard) | operator | Prometheus, and Loki or Grafana | 20 |
+| [Set up a machine with no terminal](#set-up-a-machine-with-no-terminal) | operator | a provisioning script | 10 |
+| [One config for the whole team, in git](#one-config-for-the-whole-team-in-git) | team | a shared repository | 15 |
+| [Check a machine is set up, without unlocking anything](#check-a-machine-is-set-up-without-unlocking-anything) | everyday | nothing | 1 |
+| [Back up a datastore, and put the backup somewhere else](#back-up-a-datastore-and-put-the-backup-somewhere-else) | operator | a datastore plugin and an S3 profile | 15 |
 
 Three have pages of their own. [For a security team](./10-for-security-teams.md) and [For a developer](./20-for-developers.md) walk one role's tasks through the chapters that explain them, and [An agent in a cluster](./30-an-agent-in-a-cluster.md) goes end to end: a profile, a ServiceAccount token the `kube` plugin mints, an instance holding it, and an agent connected over MCP.
 
 ## Pair with an agent on a staging database, for an hour
 
 The common case, and the one worth learning first. You want your editor's agent to help debug a slow query against staging — not production, not forever, and with a record afterwards.
+
+**Before you start**, this recipe needs the `pg` plugin and a profile named `staging`: [Getting the first-party ones](../40-plugins/10-plugins.md#getting-the-first-party-ones) installs the first, and [Profiles](../20-using/40-profiles.md#defining-one) defines the second. On a machine with neither, `rta use staging` stops with `no profile named "staging"`, and the grant is refused because `pg.query` is not a capability there yet.
 
 ```bash
 # 1. Take production off the table entirely, for as long as you are working.
@@ -36,15 +60,7 @@ rta grant allow kv.get deploy-token --agent claude --ttl 5m --max-uses 1
 
 One key, five minutes, one read. The clearest case in the whole model — and the record shows that `kv.get deploy-token` happened without showing what came back.
 
-To make the broad form impossible for everyone on the team, put it in the repository:
-
-```yaml
-# .rta-policy.yaml
-requireScope:
-  - kv.get
-```
-
-Now `rta grant allow kv.get` — which would cover the entire store — is an error. Only a grant naming one key is accepted. See [Team policy](../30-boundary/50-team-policy.md).
+To make the broad form impossible for everyone on the team, put `requireScope: [kv.get]` in the repository's `.rta-policy.yaml`, as [A ceiling a repository carries](#a-ceiling-a-repository-carries) does: `rta grant allow kv.get`, which would cover the entire store, is then an error, and only a grant naming one key is accepted.
 
 ## A ceiling a repository carries
 
@@ -222,9 +238,7 @@ rta agent show 5473aa62       # including what it would do, from its own --dry-r
 rta agent allow 5473aa62
 ```
 
-Answering `allow` runs that one call and creates no standing grant.
-
-**Only turn this on when you are actually present.** A call parked in a server nobody is watching is worse than a refusal: the agent hangs and the timeout is the only thing that resolves it. That is why it is off by default.
+[Grants](../30-boundary/30-grants.md#live-consent-when-you-would-rather-be-asked) says what answering does, that it creates no standing grant, and why this is off by default: only turn it on when you are actually present.
 
 ## Ship the record somewhere durable
 
