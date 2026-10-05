@@ -766,6 +766,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tea.PasteMsg:
+		if nm, ok := m.pasteIntoSearch(msg); ok {
+			return nm, nil
+		}
+
 	case tea.KeyPressMsg:
 		m.flash = ""
 		// Routed per pane (dispatch.go). A key the pane did not consume falls
