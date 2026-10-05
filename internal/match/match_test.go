@@ -184,3 +184,23 @@ func TestTheFloorsSeparateANameFromAMention(t *testing.T) {
 		}
 	}
 }
+
+// A word that only begins like a name is another word: `postgres` is no slip
+// of `post`, and `login` is none of `log`, so neither is offered the shorter
+// one. One letter more, or two on a word that takes a plural, still is.
+func TestAWordThatOnlyBeginsLikeANameIsNotATypoOfIt(t *testing.T) {
+	items := []Item{{ID: "http.post"}, {ID: "agent.log"}, {ID: "sys.process"}}
+	for _, query := range []string{"postgres", "login", "posting"} {
+		for _, r := range Nearest(query, items) {
+			if r.Score >= Likely {
+				t.Errorf("%q is taken for %s (score %d, Likely is %d)", query, items[r.Index].ID, r.Score, Likely)
+			}
+		}
+	}
+	for query, want := range map[string]string{"posts": "http.post", "logs": "agent.log", "processes": "sys.process"} {
+		got := ids(items, Nearest(query, items))
+		if len(got) == 0 || got[0] != want {
+			t.Errorf("%q is nearest %v, want %s", query, got, want)
+		}
+	}
+}
