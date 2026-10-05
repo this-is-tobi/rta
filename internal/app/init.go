@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 
@@ -128,6 +129,9 @@ func formTerminal(in, out *os.File, isTerminal func(*os.File) bool,
 // only be tested if a test can say how it was filled in.
 var askInit = func(ctx context.Context, offers []initOffer, in io.Reader, out io.Writer) ([]bool, error) {
 	accepted := make([]bool, len(offers))
+	if os.Getenv("TERM") == "dumb" {
+		return accepted, askInitPlain(ctx, offers, accepted, in, out)
+	}
 	groups := make([]*huh.Group, len(offers))
 	for i, o := range offers {
 		groups[i] = huh.NewGroup(huh.NewConfirm().
@@ -138,6 +142,30 @@ var askInit = func(ctx context.Context, offers []initOffer, in io.Reader, out io
 	}
 	err := huh.NewForm(groups...).WithInput(in).WithOutput(out).RunWithContext(ctx)
 	return accepted, err
+}
+
+// askInitPlain is askInit for a terminal that cannot redraw, which huh asks in
+// a line prompt. That prompt prints a question's title and nothing of its
+// description, and what yes does is the description: an answer given without it
+// is not a consent. So the question and what yes does are printed here, as the
+// page shows them, and the prompt under them is only the [y/N]. Not in the
+// title instead: a title is drawn as one block padded to its widest line, which
+// is the command, and every shorter line wraps into blank ones.
+//
+// The rule is huh's own, which would have chosen the line prompt for this form
+// anyway; stating it here is what keeps the description from being dropped.
+func askInitPlain(ctx context.Context, offers []initOffer, accepted []bool, in io.Reader, out io.Writer) error {
+	for i, o := range offers {
+		if _, err := fmt.Fprintf(out, "%s\n%s\n", o.question(), o.explain()); err != nil {
+			return err
+		}
+		prompt := huh.NewConfirm().Title("Register it?").Value(&accepted[i])
+		if err := huh.NewForm(huh.NewGroup(prompt)).WithAccessible(true).WithInput(in).WithOutput(out).
+			RunWithContext(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // initFormError codes what ended the assistant before it changed anything. huh's

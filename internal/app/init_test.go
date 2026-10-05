@@ -132,6 +132,34 @@ func TestInitFormErrorsAreCoded(t *testing.T) {
 	}
 }
 
+// A terminal that cannot redraw gets huh's line prompt, which prints a question's
+// title and drops its description. The command and where it registers are the
+// description, so a person on TERM=dumb was asked to say yes to a registration
+// they could not read: a question that does not say what yes does is not a
+// consent. They are printed above the prompt there, and the answer is read as
+// it is typed.
+func TestAQuestionAtATerminalThatCannotRedrawShowsWhatYesDoes(t *testing.T) {
+	t.Setenv("TERM", "dumb")
+	offer := initOffer{
+		client: mcpClient{name: "claude", label: "Claude Code"},
+		scope:  "every project (Claude Code's user scope)",
+		line:   "/usr/local/bin/claude mcp add rta --scope user -- /usr/local/bin/rta mcp serve --as claude",
+	}
+	var out strings.Builder
+	got, err := askInit(context.Background(), []initOffer{offer}, strings.NewReader("y\n"), &out)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if len(got) != 1 || !got[0] {
+		t.Errorf("answered y and got %v", got)
+	}
+	for _, want := range []string{offer.question(), offer.scope, offer.line} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the prompt never said %q:\n%s", want, out.String())
+		}
+	}
+}
+
 // init is a command like the rest on a default output nothing renders: the
 // reason it ran under one was that it rewrote the key, which it no longer does.
 func TestInitRefusesABrokenOutputDefaultLikeEveryOtherCommand(t *testing.T) {
