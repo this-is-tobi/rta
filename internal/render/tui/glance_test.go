@@ -1,11 +1,16 @@
 package tui
 
 import (
+	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -100,23 +105,72 @@ func TestAColumnThatSaysNothingGoesFirst(t *testing.T) {
 	}
 }
 
-// When a column has to go it is the one next to the name and not the last: a
-// row ends in its state or its words. A column that grades itself is the last of
-// the others to go.
-func TestWhenAColumnMustGoTheOneThatDoesNotGradeItselfGoesFirst(t *testing.T) {
-	tbl := notebook()
-	tbl.Rows[2][1] = "note"
-	for _, inner := range []int{34, 28} {
-		header := glanced(t, tbl, inner)[0]
-		if strings.Contains(header, "AGE") {
-			t.Errorf("at %d cells a column that does not grade itself survived: %q", inner, header)
-		}
-		if !strings.Contains(header, "DUE") || !strings.Contains(header, "NOTE") {
-			t.Errorf("at %d cells the graded column or the words were dropped before the plain one: %q", inner, header)
+func services() view.Table {
+	return view.Table{
+		Columns: []view.Column{
+			{Name: "Service"},
+			{Name: "Owner"},
+			{Name: "State", Kind: view.KindStatus},
+			{Name: "Since", Kind: view.KindDuration},
+			{Name: "Summary"},
+		},
+		Rows: [][]string{
+			{"billing", "payments", "ok", "3d", "invoices and refunds for every plan"},
+			{"search", "discovery", "warn", "5h", "the index and its nightly rebuild"},
+			{"mail", "platform", "ok", "9d", "outbound transactional email"},
+		},
+	}
+}
+
+// When a column has to go it is a plain one, from the end of the table back: the
+// columns at the end are the secondary facts. The ones that say when go next and
+// the ones that grade themselves are the last of all, because a glance is for a
+// verdict.
+func TestWhenAColumnMustGoThePlainOnesGoBeforeTheOnesThatDateOrGrade(t *testing.T) {
+	header := glanced(t, services(), 38)[0]
+	if strings.Contains(header, "OWNER") {
+		t.Errorf("a plain column survived where a verdict had to go: %q", header)
+	}
+	for _, want := range []string{"SERVICE", "STATE", "SINCE", "SUMMARY"} {
+		if !strings.Contains(header, want) {
+			t.Errorf("%s was dropped before the plain column: %q", want, header)
 		}
 	}
-	if header := glanced(t, tbl, 28)[0]; strings.Contains(header, "STATUS") {
-		t.Errorf("at 28 cells a graded column was kept over the room it needs: %q", header)
+	tight := glanced(t, services(), 28)[0]
+	if strings.Contains(tight, "SINCE") || !strings.Contains(tight, "STATE") {
+		t.Errorf("at 28 cells the date goes before the verdict: %q", tight)
+	}
+}
+
+// A grant's note is on the screen for the one grant that has one, and costs the
+// other rows a column of nothing: it goes before a full column does. The
+// notebook's text, full on every row, is what it is for, and stays.
+func TestAMostlyEmptyColumnGoesBeforeAFullOne(t *testing.T) {
+	grants := view.Table{
+		Columns: []view.Column{
+			{Name: "Capability"},
+			{Name: "Record"},
+			{Name: "Expires In", Kind: view.KindDuration},
+			{Name: "Budget Left"},
+			{Name: "Note"},
+		},
+		Rows: [][]string{
+			{"note.add", "any", "15m", "unlimited", ""},
+			{"net.dns", "any", "30m", "unlimited", "debugging dns"},
+			{"kv.get", "db-password", "1h", "3 of 3 uses", ""},
+		},
+	}
+	header := glanced(t, grants, 45)[0]
+	if strings.Contains(header, "NOTE") {
+		t.Errorf("a column that is empty on two rows of three outlived a full one: %q", header)
+	}
+	for _, want := range []string{"CAPABILITY", "RECORD", "EXPIRES IN"} {
+		if !strings.Contains(header, want) {
+			t.Errorf("%s was dropped: %q", want, header)
+		}
+	}
+	if kept := glanced(t, notebook(), 35)[0]; !strings.Contains(kept, "NOTE") {
+		t.Errorf("the text of a notebook, full on every row, was dropped as an annotation: %q", kept)
 	}
 }
 
@@ -225,5 +279,38 @@ func TestAValueThatFitsOrIsProseIsNotCut(t *testing.T) {
 	}
 	if got := glanceKeyValue(view.Text{Body: "/a/very/long/path/that/is/not/a/pair"}, 10); got.(view.Text).Body != "/a/very/long/path/that/is/not/a/pair" {
 		t.Error("a text view was cut")
+	}
+}
+
+// On the dashboard itself, at the width of the screen most people open it on:
+// the notebook's tile is the heading and a line per note, not five lines each.
+func TestATableTileOnTheDashboardIsOneLinePerRow(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	reg := registry.New()
+	// Two tiles on the row, so each has half the screen and the notebook has no
+	// room for its grid.
+	for _, p := range []plugin.Plugin{
+		{Name: "aside", Summary: "aside", Capabilities: []plugin.Capability{{
+			ID: "aside.overview", Summary: "beside it", Safety: plugin.Read, Idempotent: true,
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "beside"}, nil },
+		}}},
+		{Name: "pad", Summary: "pad", Capabilities: []plugin.Capability{{
+			ID: "pad.overview", Summary: "the notebook", Safety: plugin.Read, Idempotent: true,
+			Run: func(context.Context, plugin.Request) (view.View, error) { return notebook(), nil },
+		}}},
+	} {
+		if err := reg.Register(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := filled(t, New(reg, config.Dashboard{}, nil), 80, 24)
+	frame := plain(m.View().Content)
+	for _, want := range []string{"OVERDUE", "past due thing", "call the dentist", "write the release"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("%q is not on the first screen:\n%s", want, frame)
+		}
+	}
+	if strings.Contains(frame, "status") || strings.Contains(frame, "┬") {
+		t.Errorf("the tile is drawn as cards or as a bordered grid:\n%s", frame)
 	}
 }
