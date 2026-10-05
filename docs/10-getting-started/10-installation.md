@@ -78,7 +78,7 @@ There is no native Windows build. The Linux build runs under the Windows Subsyst
 
 ## Shell completion
 
-rta's completion is not just subcommands — capabilities that declare `Options` complete to their allowed values, and `Suggest` inputs complete from what actually exists on your machine (your tags, your keys, your hosts file).
+Completion covers subcommands, allowed values and what actually exists on your machine; [The CLI](../20-using/10-cli.md#completion) says how far it goes.
 
 ```bash
 # zsh — a directory you own, put on fpath before compinit runs
