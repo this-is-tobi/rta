@@ -63,7 +63,7 @@ rta plugin index add official
 rta plugin install pg
 ```
 
-That is the whole path — [Indexes](./12-indexes-and-upgrades.md#indexes) and [Installing](./12-indexes-and-upgrades.md#installing) below are what happens inside it. Building from source instead is `make install` in [rta-plugins](https://github.com/this-is-tobi/rta-plugins), which puts `rta-plugin-<name>` beside your `rta` and approves nothing — which is the next section.
+That is the whole path — [Indexes](./12-indexes-and-upgrades.md#indexes) and [Installing](./12-indexes-and-upgrades.md#installing) are what happens inside it. Building from source instead is `make install` in [rta-plugins](https://github.com/this-is-tobi/rta-plugins), which puts `rta-plugin-<name>` beside your `rta` and approves nothing — which is the next section.
 
 ## Trust
 

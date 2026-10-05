@@ -1,6 +1,6 @@
 # Recipes
 
-Worked examples. Each one is a real shape rather than a demonstration of a flag. The levels are *everyday* (one person, one machine), *team* (something a repository or a team shares) and *operator* (something you run for others); the minutes are rough, and "needs" is what to have before you start.
+Worked examples. Each one is a real shape rather than a demonstration of a flag. The levels are *everyday* (one person, one machine), *team* (something a repository or a team shares) and *operator* (something you run for others); the minutes are rough, and "needs" is what to have before you start. With nothing set up yet, [Morning triage](#morning-triage) and [Check a machine is set up, without unlocking anything](#check-a-machine-is-set-up-without-unlocking-anything) need nothing beyond rta.
 
 | Recipe | Level | Needs | Minutes |
 | --- | --- | --- | --- |
