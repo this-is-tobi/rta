@@ -2,7 +2,7 @@ package net
 
 import "testing"
 
-// net.info publishes "Proxy credentials are masked" in its own Description.
+// net.overview publishes "Proxy credentials are masked" in its own Description.
 // The first version leaned on url.Parse, which does not read the schemeless
 // form as a URL at all — `bob:s3cret@proxy.corp:3128` parses with scheme
 // "bob" and no User, so the guard passed the value through untouched and the
@@ -51,7 +51,7 @@ func TestProxyCredentialsAreMaskedInEveryFormThatWorks(t *testing.T) {
 // looks for it — and the userinfo scan, reading the same authority, found no
 // `@` in it and printed the value whole. Whether url.Parse then refuses the
 // value (`bob:s3/…`, whose port is not a number) or reads it as a proxy at
-// bob:2024 with a path, the password in it is the operator's, and net.info
+// bob:2024 with a path, the password in it is the operator's, and net.overview
 // promises to mask it: the value is masked up to its last `@`.
 func TestAPasswordHoldingARawSlashQuestionMarkOrHashIsMasked(t *testing.T) {
 	for _, tc := range []struct{ name, in string }{

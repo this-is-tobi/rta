@@ -290,7 +290,7 @@ func TestTheShippedDashboardIsTheOneWeThinkItIs(t *testing.T) {
 	want := []string{
 		"note.list",
 		"sys.overview",
-		"net.info",
+		"net.overview",
 		"kv.status",
 		"grant.list",
 		// Unranked by pluginOrder, so alphabetical after the ranked six.

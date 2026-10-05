@@ -356,8 +356,8 @@ func TestHostSpecificCoversExactlyTheKnownHostDescribingCapabilities(t *testing.
 		// transport, and refused by the namespace itself on every transport;
 		// this list is the second wall.
 		"pkg.overview": true, "pkg.managers": true, "pkg.outdated": true, "pkg.tools": true, "pkg.os": true, "pkg.upgrade": true,
-		"keys.list": true,
-		"net.info":  true, "net.hosts.list": true, "net.hosts.add": true, "net.hosts.toggle": true,
+		"keys.list":    true,
+		"net.overview": true, "net.hosts.list": true, "net.hosts.add": true, "net.hosts.toggle": true,
 		"net.hosts.rm": true, "net.resolver.list": true, "net.resolver.set": true,
 		// net.listen is the sharpest case on this list rather than a
 		// borderline one: it is a map of what this machine has open and which

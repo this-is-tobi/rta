@@ -917,7 +917,7 @@ func (f scopedConfig) origin(base string) string {
 //
 // A name test, and therefore a heuristic — which is why it is the *second*
 // line here rather than the only one. maskURLCredentials below is the
-// syntactically certain half, the kind net.info's masking relies on, and it
+// syntactically certain half, the kind net.overview's masking relies on, and it
 // catches the shape that actually appears in the wild.
 //
 // **Anywhere in the name, not the name alone.** github.token and
@@ -945,7 +945,7 @@ func secretKey(key string) bool {
 
 // maskConfigValue hides a value that carries a credential.
 //
-// Applied on every surface, not only MCP, for net.info's reason: a person
+// Applied on every surface, not only MCP, for net.overview's reason: a person
 // asking "what is my git config" did not ask for their PAT in a terminal
 // transcript, a tmux scrollback, or `-o json` piped somewhere. The value is
 // still on disk in a file they own, one `git config` away.

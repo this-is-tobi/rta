@@ -37,7 +37,7 @@ func TestExplainListsWhatIsUnderAPluginOrAPrefix(t *testing.T) {
 	for arg, c := range map[string]struct{ want, notWant []string }{
 		"sys":       {[]string{"sys.cpu", "sys.disk", "sys.host", "sys.load", "sys.mem", "sys.overview", "sys.ps", "sys.temp"}, []string{"net.dns", "note.add"}},
 		"sys.":      {[]string{"sys.cpu", "sys.temp"}, []string{"net.dns"}},
-		"net.hosts": {[]string{"net.hosts.add", "net.hosts.list", "net.hosts.rm", "net.hosts.toggle"}, []string{"net.dns", "net.info"}},
+		"net.hosts": {[]string{"net.hosts.add", "net.hosts.list", "net.hosts.rm", "net.hosts.toggle"}, []string{"net.dns", "net.overview"}},
 	} {
 		out, _, err := run(t, reg, "explain", arg)
 		if err != nil {

@@ -36,7 +36,7 @@ func Plugin() plugin.Plugin {
 		Summary: "Network diagnostics: ping, DNS, ports, hosts file",
 		Capabilities: []plugin.Capability{
 			{
-				ID:           "net.info",
+				ID:           "net.overview",
 				Summary:      "Local network overview: interfaces, DNS, proxy, throughput",
 				Safety:       plugin.Read,
 				HostSpecific: true,
@@ -46,7 +46,7 @@ func Plugin() plugin.Plugin {
 					"public-IP lookup. Proxy credentials are masked. Throughput is sampled over 500ms. " +
 					"With `detail`: every interface with MAC, MTU, flags and addresses, per-interface " +
 					"traffic counters, the full resolver list and proxy environment.",
-				Run: runInfo,
+				Run: runOverview,
 			},
 			{
 				ID:      "net.listen",
@@ -54,7 +54,7 @@ func Plugin() plugin.Plugin {
 				// The other half of net.port, pointed inward: that one asks
 				// what a host answers from outside, this one asks what this
 				// host is offering — and nothing in rta joined a port to the
-				// process holding it. sys.ps knows the processes and net.info
+				// process holding it. sys.ps knows the processes and net.overview
 				// knows the interfaces; the socket in between had no reader.
 				Safety:       plugin.Read,
 				HostSpecific: true,
@@ -820,12 +820,12 @@ feed:
 	return t, nil
 }
 
-// runInfo assembles the local network overview. Everything is read from the
+// runOverview assembles the local network overview. Everything is read from the
 // host itself; nothing leaves the machine (this backs an auto-refreshing
 // dashboard tile, which must never phone home).
-func runInfo(ctx context.Context, req plugin.Request) (view.View, error) {
+func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	if req.Bool("detail") {
-		return detailedInfo(ctx, req)
+		return detailedOverview(ctx, req)
 	}
 	kv := view.KeyValue{Pairs: ifacePairs()}
 	kv.Pairs = append(kv.Pairs,
@@ -964,7 +964,7 @@ func maskProxy(raw string) string {
 	// holding a raw `@`, `bob:P@ssw0rd@proxy.corp:3128`, is a working
 	// configuration that authenticates as bob with P@ssw0rd; cut at the first
 	// `@`, this printed `***@ssw0rd@proxy.corp:3128`, most of the password,
-	// underneath net.info's promise that proxy credentials are masked.
+	// underneath net.overview's promise that proxy credentials are masked.
 	//
 	// **And the last in the whole value, not in its authority.** The scan
 	// stopped at the authority's end, the first `/`, `?` or `#`, so that an
@@ -1028,11 +1028,11 @@ func throughput(ctx context.Context) string {
 		format.Bytes(rate(after[0].BytesSent, before[0].BytesSent)))
 }
 
-// detailedInfo is the full-page network report, composed from parts: the
+// detailedOverview is the full-page network report, composed from parts: the
 // same summary the tile shows, the interface detail tree, and the hosts-file
 // table that net.hosts.list already produces. Reusing capabilities keeps one
 // implementation per fact (pkg/view Sections).
-func detailedInfo(ctx context.Context, req plugin.Request) (view.View, error) {
+func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	tree, err := interfaceTree(ctx)
 	if err != nil {
 		return nil, err
@@ -1072,7 +1072,7 @@ func interfaceTree(ctx context.Context) (view.View, error) {
 
 	ifs, err := stdnet.Interfaces()
 	if err != nil {
-		return nil, view.Errorf("net.info.interfaces", "listing interfaces: %v", err)
+		return nil, view.Errorf("net.overview.interfaces", "listing interfaces: %v", err)
 	}
 	var up, down []view.Node
 	addressed := map[string]bool{}

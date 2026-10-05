@@ -60,9 +60,9 @@ const (
 // what the capability is for. Opened under the call's bounds it was judged as
 // a path the call had reached and refused as outside the roots, so over MCP
 // net.hosts.list and net.resolver.list could not read /etc/hosts or
-// /etc/resolv.conf at all, nor net.info list the hosts file. It opens by
+// /etc/resolv.conf at all, nor net.overview list the hosts file. It opens by
 // name, as it did before calls carried bounds, and as the resolver line of
-// net.info reads it (pathin.ReadFile).
+// net.overview reads it (pathin.ReadFile).
 func opening(req plugin.Request) plugin.Request {
 	if strings.TrimSpace(req.String("file")) != "" {
 		return req
