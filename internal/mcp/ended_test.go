@@ -195,7 +195,7 @@ func TestAnExpiredGrantIsToldToHaveEnded(t *testing.T) {
 	e.spentOn("a", []grant.Grant{g})
 	c := plugin.Capability{ID: "demo.item.reveal"}
 
-	if got, want := e.ended("a", c, "staging", grant.Caller{}, time.Now()), "the grant for demo.item.reveal staging ended (it expired)"; got != want {
+	if got, want := e.ended("a", c, "staging", grant.Caller{}, time.Now()), "the grant for demo.item.reveal staging ended"; got != want {
 		t.Errorf("an expired grant: got %q, want %q", got, want)
 	}
 	if got := e.ended("a", c, "staging", grant.Caller{}, g.Expires.Add(-time.Second)); got != "" {
@@ -206,6 +206,30 @@ func TestAnExpiredGrantIsToldToHaveEnded(t *testing.T) {
 	}
 	if got := e.ended("a", c, "staging", grant.Caller{Agent: "other"}, time.Now()); got != "" {
 		t.Errorf("a grant that names no such agent was described to it: %q", got)
+	}
+}
+
+// The deadline this server remembers is the one the grant had at its last call.
+// An operator can renew it afterwards and then take it back, and a refusal
+// past the remembered deadline cannot then say the grant expired: it was
+// revoked, and that sentence would stand in the record as the reason.
+func TestAGrantRenewedAndTakenBackIsNotSaidToHaveExpired(t *testing.T) {
+	s := connect(t, Options{})
+	issue(t, grant.Grant{Target: "demo.item.reveal", Scope: "staging", Expires: time.Now().Add(1200 * time.Millisecond)})
+	if res := callTool(t, s, "demo_item_reveal", map[string]any{"key": "staging"}); res.IsError {
+		t.Fatalf("the grant did not cover its own call: %+v", res.Content)
+	}
+	if verr := grant.Save(nil); verr != nil {
+		t.Fatal(verr)
+	}
+	time.Sleep(1300 * time.Millisecond)
+
+	text := refusalText(t, callTool(t, s, "demo_item_reveal", map[string]any{"key": "staging"}))
+	if strings.Contains(text, "expired") || !strings.Contains(text, "the grant for demo.item.reveal staging ended") {
+		t.Errorf("a grant taken back was described as one that expired: %s", text)
+	}
+	if rec := lastRecord(t); strings.Contains(rec.Reason, "expired") {
+		t.Errorf("the record gives an expiry as the reason: %+v", rec)
 	}
 }
 
