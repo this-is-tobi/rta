@@ -44,6 +44,11 @@ func TestEveryNoStoreHintGivesTheSameNextStep(t *testing.T) {
 	if ve := view.AsError(err, "x"); ve.Code != "kv.rekey.nostore" || !strings.Contains(ve.Hint, "creates one, locked with a passphrase you choose") {
 		t.Errorf("rekey with no store: %+v", ve)
 	}
+	// A re-key is a choice of lock, so it is also told how to make the store
+	// the key-file way it was reaching for.
+	if ve := view.AsError(err, "x"); !strings.HasPrefix(ve.Hint, "`rta kv init --generate` makes one locked to a key — or ") {
+		t.Errorf("rekey with no store leaves out the key: %q", ve.Hint)
+	}
 
 	_, err = runInit(ctx, cliReq(nil))
 	if ve := view.AsError(err, "x"); ve.Code != "kv.init.nokey" || !strings.Contains(ve.Hint, "or skip init: `rta kv set <key>` creates one") {
