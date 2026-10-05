@@ -1160,6 +1160,19 @@ func validatorFor(f plugin.Field) func(string) error {
 			if want, ok := f.Range(x); !ok {
 				return fmt.Errorf("must be %s", strings.TrimPrefix(want, "of "))
 			}
+		case plugin.Duration:
+			// The grammar the host reads (plugin.ParseDuration), so a box says
+			// "30" has no unit the moment it is typed and not after a run
+			// that was always going to be refused.
+			if _, err := plugin.ParseDuration(s); err != nil {
+				if _, readAsNumber := strconv.ParseFloat(s, 64); readAsNumber == nil {
+					return fmt.Errorf("needs a unit, such as %ss, %sm or %sh", s, s, s)
+				}
+				return fmt.Errorf("must be a duration with its unit, such as 30s, 5m or 1d")
+			}
+			if want, ok := f.Range(s); !ok {
+				return fmt.Errorf("must be %s", strings.TrimPrefix(want, "of "))
+			}
 		case plugin.StringSlice, plugin.SecretSlice:
 			// What the list is cannot be told from text with a quote left
 			// open, so the footer says so rather than the run taking a

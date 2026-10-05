@@ -80,3 +80,35 @@ func TestAFormBoxHoldsANumberToItsRange(t *testing.T) {
 		}
 	}
 }
+
+// A duration is held to its grammar and its range as it is typed, the way the
+// host holds a run to them: a bare number is told it lacks its unit, since 30
+// is the one spelling every reader has a different default for.
+func TestAFormBoxHoldsADurationToItsGrammarAndRange(t *testing.T) {
+	wait := plugin.Field{Name: "wait", Type: plugin.Duration, Min: "1s", Max: "5m"}
+	age := plugin.Field{Name: "age", Type: plugin.Duration}
+	for _, tc := range []struct {
+		f    plugin.Field
+		in   string
+		want string
+	}{
+		{wait, "30s", ""},
+		{wait, "1m30s", ""},
+		{wait, "2d", "must be from 1s to 5m"},
+		{wait, "100ms", "must be from 1s to 5m"},
+		{wait, "30", "needs a unit, such as 30s, 30m or 30h"},
+		{wait, "soon", "must be a duration with its unit, such as 30s, 5m or 1d"},
+		{age, "1w", ""},
+		{age, "-5s", "must be a duration with its unit, such as 30s, 5m or 1d"},
+		{wait, "", ""},
+	} {
+		err := validatorFor(tc.f)(tc.in)
+		got := ""
+		if err != nil {
+			got = err.Error()
+		}
+		if got != tc.want {
+			t.Errorf("%s %q: %q, want %q", tc.f.Name, tc.in, got, tc.want)
+		}
+	}
+}
