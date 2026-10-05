@@ -45,7 +45,9 @@ var commandKeywords = map[string][]string{
 	"rta grant allow":    {"permit", "authorize"},
 	"rta lock add":       {"freeze", "block"},
 	"rta lock rm":        {"unlock", "unfreeze", "unblock"},
+	"rta plugin remove":  {"uninstall"},
 	"rta mcp install":    {"connect", "register"},
+	"rta cert":           {"certificate", "certificates"},
 	"rta config":         {"settings", "theme", "colors", "colours", "cfg", "preferences"},
 	"rta dashboard":      {"tiles", "widgets", "layout", "home"},
 	"rta init":           {"setup", "wizard"},
@@ -84,6 +86,16 @@ type suggestion struct {
 // that runs.
 func (s suggestion) namesAGroup() bool {
 	return slices.ContainsFunc(s.commands, func(c *cobra.Command) bool { return c.HasSubCommands() })
+}
+
+// byKeyword is whether word is one of the keywords of every command it was
+// matched to: a synonym of a command that exists, spelled the way operators
+// say it (`theme` for `config`), and so no name a plugin could be hiding under.
+func (s suggestion) byKeyword(word string) bool {
+	word = strings.ToLower(word)
+	return len(s.commands) > 0 && !slices.ContainsFunc(s.commands, func(c *cobra.Command) bool {
+		return !slices.Contains(commandKeywords[c.CommandPath()], word)
+	})
 }
 
 // suggestCommands finds the commands of group that word names, or — with

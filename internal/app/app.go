@@ -704,8 +704,9 @@ func unknownWord(cmd *cobra.Command, arg string, rest []string, topic bool) erro
 		// A word that names a group rather than a verb may as well be a
 		// service: `audit kube` is a command and `kube` is also a plugin, and
 		// the one thing a group's name does not rule out is the other reading.
-		// A verb (`revoke`, `ps`) is never one, and is not told it might be.
-		if !topic && guess.namesAGroup() {
+		// A verb (`revoke`, `ps`) is never one, and is not told it might be;
+		// nor is a synonym the operator's vocabulary gives a command (`theme`).
+		if !topic && guess.namesAGroup() && !guess.byKeyword(arg) {
 			if more := notACommandHint(cmd, arg, nil); more != "" {
 				hint += " · " + more
 			}
