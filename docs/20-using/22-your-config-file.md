@@ -140,6 +140,25 @@ rta config check
 
 A key rta does not read is ignored, which on its own would make a typo look like a setting that does nothing, so every command at a terminal warns about one and `rta doctor` has a `config` row for each with its line. `rta config check` exits `1` when it finds something and says `has nothing rta ignores` when it does not, so it fits a pre-commit hook. A value `output:` cannot take is the one problem that stops commands: every command that renders fails as `core.output.invalid` and names the file, and `rta doctor`, `rta config` and `rta config set output pretty` still run so you can fix it.
 
+## Split it across files
+
+When one file grows long — a profile per environment, a team's roles, the colours — put some of it in `config.d`, the directory beside the file: `~/.config/rta/config.d/` next to `config.yaml`, or `rta.d` next to the file `RTA_CONFIG` names. Every `.yaml` or `.yml` file in it is read after the file, in the order of its name, and says the same keys the file does:
+
+```yaml
+# ~/.config/rta/config.d/20-dashboard.yaml
+dashboard:
+  columns: 3
+  add:
+  - id: kube.overview
+    profile: prod
+```
+
+**Each thing is stated in one file.** A profile, a role, one plugin's settings, the `dashboard:` block, the `theme:` block and `output` each live in a single file, and stating one twice is refused, naming both files, rather than settled by an order nobody wrote down. The alternative is a later file quietly changing where `prod` points for every command that follows, which is the one thing you could not see from either file alone. It costs nothing the split is for: a team's profiles in one file, an environment's in another, the dashboard and the colours in a third.
+
+**A write goes where the thing lives.** `rta profile set prod`, `rta dashboard add`, `rta config set` and the TUI edit the file that states what they change, with your comments kept, and put something nothing states yet in `config.yaml`. The answer names the file it wrote. `rta config` lists the drop-ins and the file each setting is in, `rta config check` checks every file, and `rta config edit 10-prod` opens one of them (a new one is created when you save), holding what you save to the same rule: a profile, role or block that another file already states is refused while you are still looking at it. A first line of `# yaml-language-server: $schema=../config.schema.json` gives a drop-in the completion the file has.
+
+**Only a file somebody named has a directory.** The `./.rta.yaml` rta falls back to when there is no config directory has none, for the reason it has no profiles and no dashboard: a cloned repository does not get to arrange what rta connects to. Only regular files are read, or a link to one, which is what a dotfiles manager makes of this directory; a name that starts with a dot, ends in `~` or is not `.yaml` or `.yml` is left alone, and at most 64 are read. Nothing in a drop-in grants anything, any more than a line of the file does, and the plugins' own sandbox keeps the directory from them as it keeps the file.
+
 ## A first config that is good
 
 Small, and stating only what you chose. The defaults are chosen to be the right ones (the automatic dashboard, the built-in colours, an agent that reaches only what needs no grant), and a key you state is a decision you made and a default that can no longer improve under you. A first file worth having is a few lines:
