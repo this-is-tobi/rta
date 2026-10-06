@@ -1,10 +1,13 @@
 package profile
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // A connection typed on a command line is held to what the same connection
@@ -46,5 +49,39 @@ func TestTheAdHocNameIsNotAProfileReference(t *testing.T) {
 	}
 	if !strings.Contains(AdHocName, " ") {
 		t.Errorf("%q has no space to keep it from being one", AdHocName)
+	}
+}
+
+// The environment channel is a profile's, and the name an env token is made
+// from is not injective: "ad hoc" and a profile called ad-hoc spell the same
+// variable. A call that read it would send what was exported for that profile
+// to whatever the call was aimed at, and Fill ranks a variable above a
+// reference, so it would also replace the credential the call asked for.
+func TestAnAdHocConnectionReadsNoVariableAProfileOwns(t *testing.T) {
+	owned := plugin.ProfileEnvVar("ad-hoc", "password")
+	if plugin.ProfileEnvVar(AdHocName, "password") != owned {
+		t.Fatalf("the premise is gone: %q and ad-hoc no longer spell one variable", AdHocName)
+	}
+	look := func(key string) (string, bool) {
+		if key == owned {
+			return "the-other-profiles-password", true
+		}
+		return "", false
+	}
+	if got := Bind(AdHocName, config.Connection{}, pgCap(), look); len(got) != 0 {
+		t.Errorf("an ad hoc connection read from the environment: %v", got)
+	}
+	if got := Bind("ad-hoc", config.Connection{}, pgCap(), look); got["password"] != "the-other-profiles-password" {
+		t.Errorf("the profile called ad-hoc lost its own variable: %v", got)
+	}
+
+	conn := config.Connection{Secrets: map[string]string{"password": "kv:entry"}}
+	read := func(ref string) (string, *view.Error) { return "from-the-store", nil }
+	got, verr := Fill(context.Background(), AdHocName, conn, pgCap(), nil, look, read)
+	if verr != nil {
+		t.Fatalf("Fill: %v", verr)
+	}
+	if got["password"] != "from-the-store" {
+		t.Errorf("the reference the call stated was replaced by %v", got["password"])
 	}
 }
