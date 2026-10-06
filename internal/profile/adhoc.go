@@ -17,6 +17,24 @@ import (
 // pasted, naming what is wrong, instead of reaching somewhere else.
 const AdHocName = "ad hoc"
 
+// AdHocWords says in a few words where a connection typed for one call sends
+// it: what the line above a CLI result names, and what the TUI's environment
+// picker calls the connection it holds. Taken as the three things a call can
+// state, and not as a Connection, because the CLI reads them from flags as
+// typed — before anything has checked them — so a connection about to be
+// refused still says where it was going.
+func AdHocWords(kube, secretsFrom string, secrets int) string {
+	switch {
+	case kube != "":
+		return "through " + kube
+	case secretsFrom != "":
+		return "credentials from " + secretsFrom
+	case secrets > 0:
+		return "credentials by reference"
+	}
+	return ""
+}
+
 // AdHoc holds a connection typed on one command line — --kube, --secret,
 // --secrets-from — to what the same connection stated in a profile is held to,
 // less the parts that are about a name a file keeps.

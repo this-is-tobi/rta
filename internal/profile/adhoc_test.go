@@ -85,3 +85,24 @@ func TestAnAdHocConnectionReadsNoVariableAProfileOwns(t *testing.T) {
 		t.Errorf("the reference the call stated was replaced by %v", got["password"])
 	}
 }
+
+// The words that say where a call stated for itself went are one sentence for
+// the line above a CLI result and the TUI's picker, said from the three facts a
+// call can state, and in the order that says the most specific first.
+func TestAdHocWordsSayWhereTheCallWentFromWhatItStated(t *testing.T) {
+	for name, tc := range map[string]struct {
+		kube, from string
+		secrets    int
+		want       string
+	}{
+		"a forward":                      {"homelab/databases/svc/postgres:5432", "", 0, "through homelab/databases/svc/postgres:5432"},
+		"a forward and its credential":   {"homelab/databases/svc/postgres:5432", "", 1, "through homelab/databases/svc/postgres:5432"},
+		"only the cluster of the Secret": {"", "homelab/databases", 1, "credentials from homelab/databases"},
+		"only credentials by reference":  {"", "", 2, "credentials by reference"},
+		"nothing":                        {"", "", 0, ""},
+	} {
+		if got := AdHocWords(tc.kube, tc.from, tc.secrets); got != tc.want {
+			t.Errorf("%s: %q, want %q", name, got, tc.want)
+		}
+	}
+}
