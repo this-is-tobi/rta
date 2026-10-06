@@ -135,11 +135,27 @@ func (m Model) runForm(c plugin.Capability, fs []plugin.Field, defaults, base ma
 // they were just on.
 func (m Model) reseedOnPickerMove() (tea.Model, tea.Cmd, bool) {
 	cf := m.form
-	if cf == nil || !cf.final || cf.form.State != huh.StateNormal {
+	if cf == nil || !cf.final {
 		return m, nil, false
 	}
 	b, ok := cf.bindings[profileInput]
 	if !ok || *b == cf.builtOn {
+		return m, nil, false
+	}
+	// Not an environment: the entry that asks for one. The boxes cannot be
+	// seeded from an answer nobody has given yet, so it is asked first, and
+	// the form is rebuilt on what it states (adhoc.go).
+	//
+	// Before the state is looked at, because a form can complete on it: a
+	// fast submit (ctrl+s) accepts every field at the cursor's value, and a
+	// cursor sent to the last entry with End or G does not write the binding
+	// until it is submitted. That form used to run with the entry as its
+	// environment and fail with "not held any more".
+	if *b == adHocPickLabel && cf.form.State != huh.StateAborted {
+		nm, cmd := m.startAdHocForm(cf, nil)
+		return nm, cmd, true
+	}
+	if cf.form.State != huh.StateNormal {
 		return m, nil, false
 	}
 	values := cf.values()
@@ -334,14 +350,14 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 			return previewMsg{cap: c, view: v, err: verr, elapsed: elapsed, seq: seq}
 		}
 		if err != nil {
-			return resultMsg{cap: c, elapsed: elapsed, err: view.AsError(err, c.ID+".failed"), seq: seq}
+			return resultMsg{cap: c, elapsed: elapsed, err: view.AsError(err, c.ID+".failed"), seq: seq, via: via}
 		}
 		// Remembered after it worked, from what the form collected rather than
 		// from the resolved request — see internal/recent. Tile refreshes do
 		// not come through here, which is what keeps a five-second timer from
 		// rewriting the file with the same values forever.
 		recent.Record(plugin.SurfaceTUI, c, collected)
-		return resultMsg{cap: c, view: v, elapsed: elapsed, seq: seq}
+		return resultMsg{cap: c, view: v, elapsed: elapsed, seq: seq, via: via}
 	}
 }
 
@@ -487,6 +503,9 @@ func (m Model) pickedConn(c plugin.Capability, values map[string]any,
 	name, picked := "", false
 	if raw, ok := values[profileInput]; ok {
 		if s, isStr := raw.(string); isStr {
+			if isAdHocPick(s) {
+				return m.adHocPicked(c, s)
+			}
 			picked = true
 			if s != profileNoneLabel {
 				name = s

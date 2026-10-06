@@ -143,6 +143,11 @@ type capForm struct {
 	// connEditing marks the editor for one plugin inside an environment, whose
 	// profileTarget is the plugins: key rather than the profile name.
 	connEditing bool
+	// adHocFrom is the run form this form was opened from, when it is the one
+	// that asks for a connection to state for a single call (adhoc.go). It is
+	// what completing or leaving the form returns to, and what marks the form:
+	// nothing else in this struct says "this writes nothing and goes back".
+	adHocFrom *capForm
 	// seed is what the form opened showing, kept so submit can tell an answer
 	// somebody gave from a value the form displayed. See displayed.
 	seed map[string]any
@@ -1075,7 +1080,7 @@ func (cf *capForm) multiSelect(f plugin.Field) huh.Field {
 // naming), and stripping a prefix nothing declared is a no-op, so this is
 // safe to apply unconditionally rather than only inside profileform.go.
 func fieldTitle(name string) string {
-	for _, prefix := range []string{profileSetPrefix, "profile-", "credential-"} {
+	for _, prefix := range []string{profileSetPrefix, "profile-", "credential-", adHocSecretPrefix, "adhoc-"} {
 		if rest, ok := strings.CutPrefix(name, prefix); ok {
 			return rest
 		}

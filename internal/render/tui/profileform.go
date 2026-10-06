@@ -1059,8 +1059,8 @@ func (m Model) startCredentialForm() (tea.Model, tea.Cmd) {
 	)
 	// Asked only when there is something to choose. Most plugins declare one
 	// credential, and a picker with one entry is a question with one answer —
-	// the same reason the environment picker does not appear when nothing is
-	// configured for the plugin.
+	// the same reason the environment picker is not asked when it has one
+	// answer.
 	if len(inputs) > 1 {
 		fields = append(fields, plugin.Field{Name: credInputField, Type: plugin.String,
 			Options: inputs, Default: inputs[0],

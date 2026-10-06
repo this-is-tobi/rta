@@ -108,6 +108,7 @@ func TestTabAsksTheServiceAndTypingNeverDoes(t *testing.T) {
 	model, _ := m.startForm(c, nil)
 	nm := model.(Model)
 	nm.form.form = startedForm(nm.form)
+	nm = pastThePicker(t, nm)
 
 	// A credential the person already typed, exactly what the listing needs.
 	*nm.form.bindings["secret-key"] = "sk-999"
@@ -183,6 +184,7 @@ func TestALiveAnswerThatWouldDisplayAsSomethingElseIsDropped(t *testing.T) {
 	model, _ := m.startForm(c, nil)
 	nm := model.(Model)
 	nm.form.form = startedForm(nm.form)
+	nm = pastThePicker(t, nm)
 	*nm.form.bindings["secret-key"] = "sk-999"
 	nm = fetchFromCluster(t, nm)
 	if got := nm.form.suggested["bucket"]; len(got) != 1 || got[0] != "media/" {

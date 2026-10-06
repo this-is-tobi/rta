@@ -65,6 +65,8 @@ func (m Model) completionTarget() (field, coord string, ok bool) {
 		return "", "", false
 	}
 	switch {
+	case cf.adHocFrom != nil:
+		return m.adHocCompletionTarget()
 	case cf.connEditing:
 		field = profileKubeField
 	case cf.credentialEditing:
@@ -148,17 +150,26 @@ func (m Model) completeFromCluster(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.completeFromService(msg)
 	}
 	cf := m.form
-	partial := strings.TrimSpace(*cf.bindings[field])
-	if !needsFetch(partial, cf.suggested[field]) {
+	typed := strings.TrimSpace(*cf.bindings[field])
+	// The box of an ad hoc credential holds the whole reference, scheme
+	// included, and only what follows the scheme is a `<secret>/<key>` to
+	// complete — so the offers are put back behind it, and what the box holds
+	// is still what they extend.
+	lead := ""
+	if cf.adHocFrom != nil && field != adHocKubeField {
+		lead = adHocClusterScheme
+	}
+	partial := strings.TrimPrefix(typed, lead)
+	if !needsFetch(typed, cf.suggested[field]) {
 		return m.updateForm(msg)
 	}
-	if cf.settled(field, partial) {
+	if cf.settled(field, typed) {
 		return m.advanceForm()
 	}
 	// Recorded before the fetch rather than after it, so a cluster that
 	// cannot answer costs one press and not every press: the error is
 	// flashed, and the next tab leaves the field instead of asking again.
-	cf.fetchedFor[field] = partial
+	cf.fetchedFor[field] = typed
 	m.flash = "completing…"
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), completeTimeout)
@@ -171,6 +182,11 @@ func (m Model) completeFromCluster(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c, verr = tunnel.CompleteKube(ctx, partial)
 		} else {
 			c, verr = tunnel.CompleteSecretRef(ctx, coord, partial)
+		}
+		if lead != "" {
+			for i, item := range c.Items {
+				c.Items[i] = lead + item
+			}
 		}
 		return completeMsg{form: cf, field: field, c: c, err: verr}
 	}

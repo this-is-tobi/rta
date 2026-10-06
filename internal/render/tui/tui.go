@@ -219,6 +219,15 @@ type Model struct {
 	connSel     int
 	connScroll  int
 
+	// adHoc is the connection each plugin was last given by a run form's "ad hoc
+	// connection…", keyed by namespace and held until the TUI quits, so one
+	// stated once serves the next capability of that plugin and the re-run of
+	// this one (adhoc.go). Never read from or written to a file: it is a
+	// coordinate and references, and what keeps it from being a profile is that
+	// nothing outlives the session. Replaced whole, never edited in place, since
+	// a Model is copied on every message.
+	adHoc map[string]config.Connection
+
 	// active is the environment switched on, refreshed with the tiles rather
 	// than read at paint time. The dashboard has to show it — "am I in
 	// production" is the question a header answers — and paint runs on every

@@ -575,6 +575,13 @@ func (m Model) profileSeed(c plugin.Capability, on string) (string, map[string]a
 	if on == "" || !plugin.Profilable(c) {
 		return "", nil, none
 	}
+	// The connection stated for this session's calls is not in the file, so
+	// nothing below could find it: it is answered from what it states, and
+	// from nothing else.
+	if conn, held := m.heldPick(c, on); held {
+		return profile.AdHocName,
+			withoutSecrets(c, profile.Bind(profile.AdHocName, conn, c, os.LookupEnv)), conn
+	}
 	if bound := m.currentBind(); on == m.active && bound != nil {
 		// Only when the bind actually holds this capability, and falling
 		// through when it does not rather than answering "no environment".

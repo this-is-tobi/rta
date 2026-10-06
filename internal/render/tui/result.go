@@ -33,6 +33,11 @@ type resultMsg struct {
 	// raw is the view as the capability returned it — see cleaned.
 	raw     view.View
 	elapsed time.Duration
+	// via is the forward the run opened, TunnelNone when it opened none — which
+	// is not what the connection said: a box typed over a coordinate is a call
+	// straight to what was typed. The result pane names where a run went from
+	// this, and not from the environment the picker named (adHocNote).
+	via plugin.Tunnel
 	// err is the capability's own, never cleaned here: the one thing that
 	// draws it is cli.RenderError, which cleans its own copy.
 	err *view.Error
@@ -809,6 +814,9 @@ func (m Model) resultView() string {
 	head := capHead(m.current)
 	if m.result.elapsed > 0 {
 		head.Right = m.result.elapsed.Round(time.Millisecond).String()
+	}
+	if where := m.adHocNote(); where != "" {
+		head.Right = m.markedRight(head, where, head.Right)
 	}
 
 	footer := m.footerFor(modeResult)

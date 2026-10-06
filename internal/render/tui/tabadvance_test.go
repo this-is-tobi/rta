@@ -2,6 +2,8 @@ package tui
 
 import (
 	"testing"
+
+	huh "charm.land/huh/v2"
 )
 
 // **Tab has to mean one thing on every field: complete if there is something
@@ -25,6 +27,7 @@ func TestTabMovesOnOnceCompletionHasNothingLeft(t *testing.T) {
 	model, _ := m.startForm(c, nil)
 	nm := model.(Model)
 	nm.form.form = startedForm(nm.form)
+	nm = pastThePicker(t, nm)
 	bucket := c.Inputs[0].Name
 
 	nm = fetchFromCluster(t, nm)                // empty box: fetch
@@ -70,6 +73,7 @@ func TestTabStillStaysWhileThereIsSomethingToTake(t *testing.T) {
 	model, _ := m.startForm(c, nil)
 	nm := model.(Model)
 	nm.form.form = startedForm(nm.form)
+	nm = pastThePicker(t, nm)
 
 	nm = fetchFromCluster(t, nm)
 	before := nm.form.form.GetFocusedField()
@@ -94,6 +98,12 @@ func TestAFailingCompleterDoesNotTrapTheCursor(t *testing.T) {
 	model, _ := m.startForm(c, nil)
 	nm := model.(Model)
 	nm.form.form = startedForm(nm.form)
+	nm = pastThePicker(t, nm)
+	// On the live field: without it this passes on the picker, whose tab moves
+	// on whatever any completer would have said.
+	if nm.form.form.GetFocusedField() != huh.Field(nm.form.inputs[c.Inputs[0].Name]) {
+		t.Fatal("the cursor is not on the live field, so this proves nothing about its completer")
+	}
 	// Answer nothing at all, the shape of a completer that is failing or has
 	// simply run out.
 	nm.form.suggested[c.Inputs[0].Name] = nil

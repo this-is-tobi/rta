@@ -82,6 +82,11 @@ func (m Model) profilePicker(c plugin.Capability, on string) *plugin.Field {
 		// is worse than an absent one.
 		options = append(options, profile.InstanceRefs(cfg.Profiles[name], name, ns)...)
 	}
+	// Last, after every environment the operator keeps: a connection stated for
+	// one call is the exception to the list above and the list is not what it
+	// is the exception to when nothing is configured (adhoc.go).
+	adHoc := m.adHocOptions(c)
+	options = append(options, adHoc...)
 	if len(options) == 1 {
 		// Nothing configured for this plugin: a picker with one entry is a
 		// question with one answer, which is not a question.
@@ -96,9 +101,13 @@ func (m Model) profilePicker(c plugin.Capability, on string) *plugin.Field {
 	if !slices.Contains(options, on) {
 		on = profileNoneLabel
 	}
+	help := "which configured environment to run against"
+	if len(adHoc) > 0 {
+		help += ", or a connection you state here, held until you quit"
+	}
 	return &plugin.Field{
 		Name: profileInput, Type: plugin.String, Options: options, Default: on,
-		Help: "which configured environment to run against",
+		Help: help,
 	}
 }
 
@@ -147,7 +156,10 @@ func (m Model) pickedProfile(c plugin.Capability, base map[string]any) string {
 	}
 	if raw, ok := base[profileInput]; ok {
 		if s, isStr := raw.(string); isStr {
-			if s == profileNoneLabel {
+			// The entry that asks is never an answer to start on: a form that
+			// reopened with the cursor on it (`e` after a run that was refused)
+			// would be built on the entry, and nothing could move it off to ask.
+			if s == profileNoneLabel || s == adHocPickLabel {
 				return ""
 			}
 			return s
@@ -268,8 +280,9 @@ func environmentNote(c plugin.Capability, f plugin.Field, seed map[string]any,
 	}
 	row := credentialRow{input: f.Name, ref: refs[f.Name]}
 	// No environment channel for a labeled instance — see Bind, and
-	// credentialRows, which reads the same emptiness the same way.
-	if config.RefInstance(name) == "" {
+	// credentialRows, which reads the same emptiness the same way. Nor for a
+	// connection stated for one call, which Bind gives none for the same reason.
+	if config.RefInstance(name) == "" && name != profile.AdHocName {
 		row.env = plugin.ProfileEnvVar(name, f.Name)
 		_, row.exported = os.LookupEnv(row.env)
 	}
@@ -523,8 +536,33 @@ func (m Model) credentialRows(name, key string, conn config.Connection) []creden
 	for _, r := range conn.SecretRefs() {
 		refs[r.Input] = r
 	}
-	ns := config.PluginNamespace(key)
-	var out []credentialRow
+	inputs := m.credentialInputs(config.PluginNamespace(key))
+	out := make([]credentialRow, 0, len(inputs))
+	for _, input := range inputs {
+		// A labeled instance has no environment channel — see Bind: a
+		// variable for `staging/analytics` would be forgeable by naming
+		// a profile carefully, so none exists, and showing one here
+		// would teach an export that fills the default instead. The
+		// empty env is what tells source() and the export-line copy to
+		// steer at `secrets:` references.
+		env, exported := "", false
+		if _, instance, _ := config.SplitKey(key); instance == "" {
+			env = plugin.ProfileEnvVar(name, input)
+			_, exported = os.LookupEnv(env)
+		}
+		out = append(out, credentialRow{
+			input: input, env: env, exported: exported, ref: refs[input],
+		})
+	}
+	return out
+}
+
+// credentialInputs is every Secret input a profile may carry a credential for,
+// across the capabilities of one plugin, sorted — what the credentials band of
+// the profile pane lists and what an ad hoc connection asks a reference for.
+// One question, so the two cannot disagree about which inputs are credentials.
+func (m Model) credentialInputs(ns string) []string {
+	var out []string
 	seen := map[string]bool{}
 	for _, c := range m.reg.Capabilities() {
 		if plugin.Namespace(c.ID) != ns {
@@ -535,23 +573,10 @@ func (m Model) credentialRows(name, key string, conn config.Connection) []creden
 				continue
 			}
 			seen[f.Name] = true
-			// A labeled instance has no environment channel — see Bind: a
-			// variable for `staging/analytics` would be forgeable by naming
-			// a profile carefully, so none exists, and showing one here
-			// would teach an export that fills the default instead. The
-			// empty env is what tells source() and the export-line copy to
-			// steer at `secrets:` references.
-			env, exported := "", false
-			if _, instance, _ := config.SplitKey(key); instance == "" {
-				env = plugin.ProfileEnvVar(name, f.Name)
-				_, exported = os.LookupEnv(env)
-			}
-			out = append(out, credentialRow{
-				input: f.Name, env: env, exported: exported, ref: refs[f.Name],
-			})
+			out = append(out, f.Name)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].input < out[j].input })
+	sort.Strings(out)
 	return out
 }
 
