@@ -1238,6 +1238,7 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 	// teaches people it is decoration. `rta sys cpu --profile x` should say
 	// "unknown flag", which names the fact, instead of accepting a value that
 	// no input could ever receive.
+	addAdHocFlags(cmd, c)
 	if plugin.Profilable(c) && cmd.Flags().Lookup("profile") == nil {
 		cmd.Flags().String("profile", "", "run against one of the connections in your config "+
 			"(name, or name/instance when an environment holds several)")

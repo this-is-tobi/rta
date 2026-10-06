@@ -66,8 +66,10 @@ func ForPlugin(p plugin.Plugin) Speller {
 }
 
 // HostSwitches are the flags rta gives a capability's command whatever the
-// capability declares: the ones every command inherits, and --detail and
-// --profile, which it adds to a capability of the kind that takes them. A
+// capability declares: the ones every command inherits, and --detail,
+// --profile and the three that state a connection for one call (--kube,
+// --secret, --secrets-from), which it adds to a capability of the kind that
+// takes them. A
 // flag in a code span after a capability's words is rta's command line when
 // the capability declares it or when it is one of these — `kv list
 // --dry-run` is as much the CLI's spelling as `kv list --match`.
@@ -81,7 +83,7 @@ func HostSwitches() []string { return slices.Clone(hostSwitches) }
 
 var hostSwitches = func() []string {
 	out := plugin.ReservedInputs()
-	out = append(out, "profile")
+	out = append(out, "profile", "kube", "secret", "secrets-from")
 	slices.Sort(out)
 	return out
 }()

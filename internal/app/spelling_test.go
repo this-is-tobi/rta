@@ -14,6 +14,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/sdk/spelling"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // newSpeller is the SDK's speller over rta's own registry: every capability
@@ -110,6 +111,18 @@ func TestTheSpellerTellsATerminalsSpellingFromEveryoneElses(t *testing.T) {
 func TestTheHostSwitchesAreTheFlagsTheHostGivesACapability(t *testing.T) {
 	reg, err := NewRegistry()
 	if err != nil {
+		t.Fatal(err)
+	}
+	// The built-ins reach nothing a forward could replace, so the flags that
+	// state a connection belong to a plugin's capability: one that declares
+	// the address it dials, which is what a forward fills.
+	if err := reg.Register(plugin.Plugin{Name: "dbfix", Summary: "a plugin with a connection",
+		Capabilities: []plugin.Capability{{
+			ID: "dbfix.status", Summary: "status", Safety: plugin.Read,
+			Inputs: []plugin.Field{{Name: "address", Type: plugin.String, Default: "localhost:5432", Config: "address",
+				Local: true, Endpoint: plugin.EndpointAddress, Help: "address"}},
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+		}}}); err != nil {
 		t.Fatal(err)
 	}
 	root := NewRoot(reg, "test")
