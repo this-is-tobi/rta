@@ -130,6 +130,15 @@ func refusalWords(code string) string {
 // is short and is what a search for the cause starts from; the sentence is in
 // `--detail`.
 func resultPhrase(e agentlog.Entry) string {
+	if e.Outcome == agentlog.Ran && e.Revealed {
+		// The one thing a log of reads is searched for, said where the eye
+		// already is: a stored value went to the agent on this call.
+		return outcomePhrase(e) + " · revealed"
+	}
+	return outcomePhrase(e)
+}
+
+func outcomePhrase(e agentlog.Entry) string {
 	switch e.Outcome {
 	case agentlog.Ran:
 		switch e.Auth {
