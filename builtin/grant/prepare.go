@@ -204,6 +204,41 @@ func breadthNote(catalog func() []plugin.Capability, g core.Grant) string {
 		g.Target, format.Count(len(gated), "capability", "capabilities"), which)
 }
 
+// revealNote says what a grant with no record named lets an agent read. A
+// capability that reveals a stored value is gated by the grant alone, so the
+// grant is the whole consent: named to one record it hands over that record's
+// value, and left without one it hands over every record the capability
+// reaches, which is the sentence a person typing `grant allow kv.get` needs in
+// front of them before the clock starts. A plugin-wide grant counts the ones it
+// carries, since "kv" does not read like a grant to read every secret in it.
+//
+// HumanOnly capabilities are left out: an agent never reaches them, so no
+// grant lets one read anything.
+func revealNote(catalog func() []plugin.Capability, g core.Grant) string {
+	if g.Scope != "" {
+		return ""
+	}
+	var ids []string
+	for _, c := range catalog() {
+		if !c.Reveals || c.HumanOnly || !core.Required(c, g.Profile) {
+			continue
+		}
+		if c.ID == g.Target || (!strings.Contains(g.Target, ".") && core.Namespace(c.ID) == g.Target) {
+			ids = append(ids, c.ID)
+		}
+	}
+	sort.Strings(ids)
+	switch len(ids) {
+	case 0:
+		return ""
+	case 1:
+		return "note: " + ids[0] + " reveals the stored value itself, and with no record named it does so for every " +
+			"record it reaches — name one to allow only that record"
+	}
+	return "note: " + g.Target + " covers " + format.Count(len(ids), "capability", "capabilities") +
+		" that reveal stored values (" + strings.Join(ids, ", ") + "), each for every record it reaches — name one to allow only it"
+}
+
 // destructiveSummary counts the destructive capabilities and names the first
 // few. Never "and 1 other": the fourth name is shorter than saying there is one.
 func destructiveSummary(ids []string) string {
@@ -764,6 +799,9 @@ func PrepareRemote(catalog func() []plugin.Capability,
 			p.Notes = append(p.Notes, n)
 		}
 		if n := inactiveProfileNote(g); n != "" {
+			p.Notes = append(p.Notes, n)
+		}
+		if n := revealNote(catalog, g); n != "" {
 			p.Notes = append(p.Notes, n)
 		}
 		return p, nil
