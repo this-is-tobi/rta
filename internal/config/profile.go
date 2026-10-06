@@ -103,6 +103,18 @@ type Profile struct {
 	// inventing an outage.
 	Color string `yaml:"color,omitempty" json:"color,omitempty"`
 
+	// Dashboard names the dashboard view drawn while this profile is switched
+	// on: one of `dashboard: views:`, a whole arrangement of its own. Empty,
+	// the dashboard: block draws, as it always has. The view is the profile's
+	// screen and not its connection — the tiles in it pin themselves to
+	// whichever profiles they name, so a profile can show the screen that is
+	// about every database, and several can show the same one.
+	//
+	// A name that is not a view is `rta doctor`'s to say, never a reason to
+	// refuse the profile: a screen that fails over a name is a worse outage
+	// than the default one.
+	Dashboard string `yaml:"dashboard,omitempty" json:"dashboard,omitempty"`
+
 	// unknown is every key in this profile that no field above claims,
 	// computed by the loader against the raw document.
 	//
@@ -346,7 +358,7 @@ func (p Profile) Trusted() bool { return p.trusted }
 // unknown by the very next test run rather than silently accepted.
 var (
 	profileKeys = map[string]bool{"plugins": true, "note": true, "ttl": true,
-		"color": true}
+		"color": true, "dashboard": true}
 	connectionKeys = map[string]bool{"set": true, "secrets": true, "kube": true, "ssh": true,
 		"secrets-from": true, "tunnelTLS": true}
 )

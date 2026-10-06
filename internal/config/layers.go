@@ -205,13 +205,18 @@ func (s *stack) index() error {
 // merged is the configuration the files state together.
 func (s *stack) merged() Config {
 	out := Config{trusted: s.layers[0].cfg.trusted}
+	var base Dashboard
+	views := map[string]View{}
 	for _, l := range s.layers {
 		c := l.cfg
 		if c.Output != "" {
 			out.Output = c.Output
 		}
 		if dashboardSet(c.Dashboard) {
-			out.Dashboard = c.Dashboard
+			base = c.Dashboard
+		}
+		for name, v := range c.Dashboard.Views {
+			views[name] = v
 		}
 		if len(c.Theme) > 0 {
 			out.Theme = c.Theme
@@ -235,6 +240,11 @@ func (s *stack) merged() Config {
 			out.Roles[k] = v
 		}
 	}
+	out.Dashboard = base
+	out.Dashboard.Views = nil
+	if len(views) > 0 {
+		out.Dashboard.Views = views
+	}
 	return out
 }
 
@@ -256,7 +266,16 @@ func (s *stack) split(next Config) []Config {
 		parts[place("output")].Output = next.Output
 	}
 	if dashboardSet(next.Dashboard) {
-		parts[place("dashboard")].Dashboard = next.Dashboard
+		base := next.Dashboard
+		base.Views = nil
+		parts[place("dashboard")].Dashboard = base
+	}
+	for name, v := range next.Dashboard.Views {
+		p := &parts[place("views/"+name)]
+		if p.Dashboard.Views == nil {
+			p.Dashboard.Views = map[string]View{}
+		}
+		p.Dashboard.Views[name] = v
 	}
 	if len(next.Theme) > 0 {
 		parts[place("theme")].Theme = next.Theme
@@ -319,7 +338,8 @@ func writeErr(path string, err error) error {
 	return view.Errorf("config.encode", "encoding %s: %v", path, err)
 }
 
-// dashboardSet reports whether a dashboard block states anything.
+// dashboardSet reports whether a dashboard block states anything of its own: the
+// views it holds are units of their own, each in one file.
 func dashboardSet(d Dashboard) bool {
 	return len(d.Tiles)+len(d.Add)+len(d.Hidden)+len(d.Order) > 0 || d.Columns != 0
 }
@@ -346,6 +366,9 @@ func unitsOf(c Config) []string {
 	for k := range c.Roles {
 		units = append(units, "roles/"+k)
 	}
+	for k := range c.Dashboard.Views {
+		units = append(units, "views/"+k)
+	}
 	sort.Strings(units)
 	return units
 }
@@ -366,6 +389,8 @@ func describeUnit(unit string) string {
 		return "profile " + name
 	case "roles":
 		return "role " + name
+	case "views":
+		return "dashboard view " + name
 	default:
 		return fmt.Sprintf("the settings of plugin %s", name)
 	}

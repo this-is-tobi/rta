@@ -157,6 +157,10 @@ type Dashboard struct {
 	// was two columns at every size, so a 200-cell terminal drew two
 	// 100-cell tiles of a six-line summary and called it a screen.
 	Columns int `yaml:"columns,omitempty" json:"columns,omitempty"`
+	// Views are named arrangements of the same five fields, each a whole
+	// dashboard of its own, and a profile selects one (Profile.Dashboard): the
+	// screen that is drawn while it is switched on. See views.go.
+	Views map[string]View `yaml:"views,omitempty" json:"views,omitempty"`
 }
 
 // Config is the persisted configuration.
@@ -266,12 +270,7 @@ func (c Config) Stamp(p Profile) Profile {
 // rather than only `tiles:`: it can take the agent tile off the screen, and
 // that tile is where a person notices a parked consent request before its
 // clock runs out.
-func (c Config) TrustedDashboard() Dashboard {
-	if !c.trusted {
-		return Dashboard{}
-	}
-	return c.Dashboard
-}
+func (c Config) TrustedDashboard() Dashboard { return c.TrustedDashboardFor("") }
 
 // Path returns the config file location. RTA_CONFIG overrides it (tests,
 // portable setups).
