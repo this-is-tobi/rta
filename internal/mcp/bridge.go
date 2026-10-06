@@ -742,6 +742,9 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		if err != nil {
 			return nil, err
 		}
+		// After the limit, so a value the operator's cap held back is not
+		// recorded as one that went out.
+		rec.Revealed = c.Reveals
 		return res, nil
 	}
 }

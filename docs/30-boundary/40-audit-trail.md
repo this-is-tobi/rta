@@ -21,12 +21,15 @@ rta agent log --limit 50
 rta agent log --refused        # only the calls rta would not make
 rta agent log --since today    # a day, a span like 3d, or a date
 rta agent log --agent claude   # one agent's calls
+rta agent log --revealed       # only the calls that handed an agent a stored value
 rta agent log --detail         # the full view, and the chain's integrity
 ```
 
 At a terminal each call is one line: when, which capability, the record it named once any call named one, and what became of it — `ran`, `ran · by grant`, `ran · you approved`, `refused · no grant`, `refused · nobody answered`, `failed · <code>`. The agent joins the line when more than one agent is in what is shown, and the session when one agent's servers were calling in turn. The line leaves the arguments, the profile and the sentence for `--detail`, a pipe or `-o json`, which carry every field of every call. Past what the limit shows, a line under the table says how many older calls are not shown and what shows them.
 
 `--refused` is the one to reach for first when something is not working. A refusal is a normal, designed outcome here, not an error condition — an agent asking for something it does not have is the system behaving correctly, and the log is where you find out what it wanted.
+
+`--revealed` answers the other question an operator asks of a record: what an agent was actually allowed to read. A call that ran a capability whose answer is a stored value, such as `kv.get`, says `revealed` beside what became of it, and `--detail` and every machine format carry a `revealed` column. The row says that a value went out and never what it was: the value is in the answer and nowhere else in the file. A call the same capability refused, and one whose answer the size cap held back, are not marked.
 
 Refusals come from two depths, and the authorization column, which `--detail` and every machine format carry, tells them apart: `blocked` means the call never cleared rta's own gates — a missing grant, a bad argument, a locked principal — while `open` or `grant` on a refused row means the gates allowed it and something past them still said no: the capability's own policy (the way `agent.*` and `lock.*` refuse any caller over MCP, or `pg.dump` refuses to hand a whole database to an agent), or a value your config or the profile supplies that the capability does not take, whose reason names the key it came from and whose grant use is given back. Both are refusals, not failures: `failed` is reserved for calls that were allowed and then broke.
 

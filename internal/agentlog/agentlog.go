@@ -249,6 +249,15 @@ type Entry struct {
 	// omitempty, which keeps every seal written before the field existed
 	// verifying — see Note — and leaves it off a call that named no record.
 	Records []string `json:"records,omitempty"`
+	// Revealed marks a call that ran a capability whose answer is a stored
+	// value (plugin.Capability.Reveals): what the row says is that the value
+	// went to the agent, never the value, which is in the answer and nowhere
+	// else in this file. Set only on a call that ran, so a refusal of the
+	// same capability reads as the refusal it was, and an operator asking
+	// "what did my agent actually get to read" filters on it rather than
+	// guessing from capability names. omitempty, like Records, so every seal
+	// written before the field existed still verifies.
+	Revealed bool `json:"revealed,omitempty"`
 	// Args are the values the call runs with — what the caller sent, laid
 	// over the operator's config and the declared defaults, and the
 	// profile's once it is filled — not only what the agent typed, so an

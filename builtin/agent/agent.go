@@ -97,7 +97,9 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"is one line — when, what, the record, what became of it; `detail`, a pipe or a " +
 					"machine format gives every field of every call. The file is chained, so " +
 					"an edited or missing line is visible: `detail` verifies it and says where it " +
-					"breaks. This is history and not policy; `grant.list` is what may happen next.",
+					"breaks. A call that handed the agent a stored value says `revealed`, never the " +
+					"value, and `revealed` keeps only those. This is history and not policy; " +
+					"`grant.list` is what may happen next.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
@@ -106,6 +108,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					{Name: "limit", Type: plugin.Int, Default: 30, Min: 1, Max: maxRows,
 						Help: "how many of the most recent calls to show"},
 					{Name: "refused", Type: plugin.Bool, Help: "only the calls rta would not make"},
+					{Name: "revealed", Type: plugin.Bool, Help: "only the calls that handed the agent a stored value"},
 					agentField("only this agent's calls"),
 					{Name: "role", Type: plugin.String,
 						Help: "only calls a grant of this role covered — what the dev role did today"},
@@ -701,7 +704,7 @@ func recordPairs(rep agentlog.Report, verr error) []view.Pair {
 
 // logFilter is what `agent log` keeps of the calls it read.
 type logFilter struct {
-	refused              bool
+	refused, revealed    bool
 	agent, session, role string
 	since                time.Time
 	after                int64
@@ -712,7 +715,7 @@ type logFilter struct {
 // thirty that pass them are the newest thirty that pass them, whether thirty
 // or five hundred were read to find them. The others can come up short.
 func (f logFilter) picks() bool {
-	return f.refused || f.agent != "" || f.session != "" || f.role != ""
+	return f.refused || f.revealed || f.agent != "" || f.session != "" || f.role != ""
 }
 
 func (f logFilter) any() bool {
@@ -722,6 +725,7 @@ func (f logFilter) any() bool {
 func (f logFilter) keeps(e agentlog.Entry) bool {
 	switch {
 	case f.refused && e.Outcome != agentlog.Refused:
+	case f.revealed && !e.Revealed:
 	case f.agent != "" && e.Agent != f.agent:
 	case f.session != "" && e.Session != f.session:
 	case f.role != "" && !roleCovers(e.Role, f.role):
@@ -743,12 +747,13 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, sinceErr
 	}
 	f := logFilter{
-		refused: req.Bool("refused"),
-		agent:   strings.TrimSpace(req.String("agent")),
-		session: strings.TrimSpace(req.String("session")),
-		role:    strings.TrimSpace(req.String("role")),
-		since:   since,
-		after:   int64(req.Int("after")),
+		refused:  req.Bool("refused"),
+		revealed: req.Bool("revealed"),
+		agent:    strings.TrimSpace(req.String("agent")),
+		session:  strings.TrimSpace(req.String("session")),
+		role:     strings.TrimSpace(req.String("role")),
+		since:    since,
+		after:    int64(req.Int("after")),
 	}
 	// Read more than asked for when filtering, so `--refused --limit 10`
 	// answers with ten refusals rather than the refusals among the last ten
@@ -1055,6 +1060,17 @@ func logColumns(shown []agentlog.Entry, terse, detail bool) []logColumn {
 			func(e agentlog.Entry, _ string) string { return string(e.Outcome) }},
 		logColumn{view.Column{Name: "authorized"}, func(e agentlog.Entry, _ string) string { return string(e.Auth) }},
 	)
+	// Appears when filled, like role and code: a column that is empty on every
+	// call of a record with no reveal in it says nothing, and one that is there
+	// says which calls put a stored value in front of the agent.
+	if has(func(e agentlog.Entry) bool { return e.Revealed }) {
+		cols = append(cols, logColumn{view.Column{Name: "revealed"}, func(e agentlog.Entry, _ string) string {
+			if e.Revealed {
+				return "yes"
+			}
+			return "-"
+		}})
+	}
 	// Same appears-when-filled rule as the columns above: a record written
 	// before the code/reason split — or one where nothing has gone wrong —
 	// shows no code column at all, rather than a column of blanks. Old rows
