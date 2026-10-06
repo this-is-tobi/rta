@@ -114,16 +114,8 @@ func adHocWords(cmd *cobra.Command) (string, bool) {
 	if cmd == nil || cmd.Flags().Lookup("kube") == nil || cmd.Flags().Lookup("secret") == nil {
 		return "", false
 	}
-	kube := strings.TrimSpace(mustString(cmd, "kube"))
-	from := strings.TrimSpace(mustString(cmd, "secrets-from"))
 	secrets, _ := cmd.Flags().GetStringArray("secret")
-	switch {
-	case kube != "":
-		return "through " + kube, true
-	case from != "":
-		return "credentials from " + from, true
-	case len(secrets) > 0:
-		return "credentials by reference", true
-	}
-	return "", false
+	words := profile.AdHocWords(strings.TrimSpace(mustString(cmd, "kube")),
+		strings.TrimSpace(mustString(cmd, "secrets-from")), len(secrets))
+	return words, words != ""
 }

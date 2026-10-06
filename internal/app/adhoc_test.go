@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -155,6 +157,35 @@ func TestTheConnectionFlagsAreOnlyOnACapabilityThatHasAConnection(t *testing.T) 
 			if other.Flags().Lookup(name) != nil {
 				t.Errorf("%v has a --%s it cannot use", args, name)
 			}
+		}
+	}
+}
+
+// The line above a result names where the connection typed on its command line
+// goes, from the flags as typed — before any check has run, so a connection
+// about to be refused still says where it was going.
+func TestTheLineAboveAResultSaysWhereTheFlagsSendTheCall(t *testing.T) {
+	for name, tc := range map[string]struct {
+		set  map[string]string
+		want string
+	}{
+		"nothing typed":         {nil, ""},
+		"a coordinate":          {map[string]string{"kube": "homelab/databases/svc/postgres:5432"}, "through homelab/databases/svc/postgres:5432"},
+		"the cluster of Secret": {map[string]string{"secrets-from": "homelab/databases", "secret": "password=kube:pg/password"}, "credentials from homelab/databases"},
+		"a reference only":      {map[string]string{"secret": "password=kv:entry"}, "credentials by reference"},
+	} {
+		cmd := &cobra.Command{Use: "whoami"}
+		cmd.Flags().String("kube", "", "")
+		cmd.Flags().String("secrets-from", "", "")
+		cmd.Flags().StringArray("secret", nil, "")
+		for k, v := range tc.set {
+			if err := cmd.Flags().Set(k, v); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, stated := adHocWords(cmd)
+		if got != tc.want || stated != (tc.want != "") {
+			t.Errorf("%s: %q (stated %v), want %q", name, got, stated, tc.want)
 		}
 	}
 }
