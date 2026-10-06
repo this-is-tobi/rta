@@ -63,6 +63,13 @@ func WarnActiveProfile(w io.Writer, cmd *cobra.Command, cfg config.Config, style
 	if style.MachineReadable {
 		return
 	}
+	// A connection typed on this command line is where the call goes, over
+	// whatever is switched on: the badge says that one, so the line above a
+	// result never names an environment the result did not come from.
+	if words, stated := adHocWords(cmd); stated {
+		fmt.Fprintln(w, badgeLabel(profile.AdHocName+" — "+words, "", false, style))
+		return
+	}
 	sel := profile.LoadSelection()
 	now := time.Now()
 	name := sel.Name(now)

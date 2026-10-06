@@ -305,6 +305,16 @@ func (c Capability) validate(ns string) error {
 				"a profile can fill (the host resolves which configured connection a call runs "+
 				"against, before the grant gate); rename it", c.ID, f.Name)
 		}
+		// The three flags that state a connection for one call are reserved on
+		// the same condition and for the same reason as "profile": the host adds
+		// them exactly where a forward has an address to fill, so that is where a
+		// declared input of the name would be shadowed by the host's flag and
+		// never reach the handler.
+		if connectionFlags[f.Name] && Tunnellable([]Capability{c}) {
+			return fmt.Errorf("capability %q: input %q is reserved by the host on any capability "+
+				"a forward can fill (it is the flag that states a connection for one call); rename it",
+				c.ID, f.Name)
+		}
 		if f.Endpoint != EndpointNone {
 			if !slices.Contains(endpointRoles, f.Endpoint) {
 				return fmt.Errorf("capability %q: input %q declares endpoint role %q, which the host "+
@@ -972,6 +982,13 @@ var reservedInputs = map[string]string{
 	"no-color": "disables styling, which is what makes rta's output safe to pipe",
 	"help":     "cobra's; shadowing it makes `rta <ns> <cap> --help` unreachable",
 }
+
+// connectionFlags are the flags the host adds to a capability whose inputs a
+// forward can fill, to state a connection on one command line: --kube,
+// --secret and --secrets-from. Reserved where the host would own them, as
+// "profile" is, and nowhere else, so that a capability with no address for a
+// forward to fill keeps every name it had.
+var connectionFlags = map[string]bool{"kube": true, "secret": true, "secrets-from": true}
 
 // reservedShorts are the one-letter flags the host owns on every command, so
 // an input may not also take one. The same silence as reservedInputs, with the

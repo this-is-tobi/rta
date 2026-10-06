@@ -70,28 +70,40 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 	if f := cmd.Flags().Lookup("profile"); f != nil {
 		explicit = strings.TrimSpace(f.Value.String())
 	}
-	active := profile.Active()
-	if explicit == "" && active == "" {
-		return boundProfile{}, noop, nil
+	// A connection typed on this command line (adhoc.go) is what the call
+	// reaches, over whatever is switched on and instead of --profile, which it
+	// cannot be combined with: two answers to where this goes, and no way to
+	// rank them that a person would not have to look up.
+	adHoc, stated, verr := adHocConnection(cmd, c, explicit)
+	if verr != nil {
+		return boundProfile{}, noop, verr
 	}
-	cfg, err := config.Load()
-	if err != nil {
-		return boundProfile{}, noop, view.AsError(err, "core.profile.config")
+	active := profile.Active()
+	if explicit == "" && active == "" && !stated {
+		return boundProfile{}, noop, nil
 	}
 
 	var (
 		name string
 		conn config.Connection
-		verr *view.Error
 	)
-	if explicit != "" {
-		name = explicit
-		conn, verr = profile.Lookup(cfg, c, explicit, installed)
-	} else {
-		name, conn, verr = profile.Ambient(cfg, c, active, installed)
-	}
-	if verr != nil {
-		return boundProfile{}, noop, verr
+	switch {
+	case stated:
+		name, conn = profile.AdHocName, adHoc
+	default:
+		cfg, err := config.Load()
+		if err != nil {
+			return boundProfile{}, noop, view.AsError(err, "core.profile.config")
+		}
+		if explicit != "" {
+			name = explicit
+			conn, verr = profile.Lookup(cfg, c, explicit, installed)
+		} else {
+			name, conn, verr = profile.Ambient(cfg, c, active, installed)
+		}
+		if verr != nil {
+			return boundProfile{}, noop, verr
+		}
 	}
 	if name == "" {
 		return boundProfile{}, noop, nil

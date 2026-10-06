@@ -114,12 +114,13 @@ func TestTheSpellerTellsATerminalsSpellingFromEveryoneElses(t *testing.T) {
 	}
 }
 
-// The host's switches are the names it reserves, and --profile, which it
-// reserves only where it adds it. rta's own tests hold the list to the flags
-// its command tree gives a capability.
+// The host's switches are the names it reserves, and --profile with the three
+// that state a connection for one call, which it adds only where there is a
+// connection to state. rta's own tests hold the list to the flags its command
+// tree gives a capability.
 func TestTheHostSwitchesAreTheNamesTheHostReserves(t *testing.T) {
 	got := HostSwitches()
-	want := append(plugin.ReservedInputs(), "profile")
+	want := append(plugin.ReservedInputs(), "profile", "kube", "secret", "secrets-from")
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("HostSwitches() = %q, want %q", got, want)
