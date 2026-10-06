@@ -748,7 +748,7 @@ func dashOwnItems() []hintItem {
 	return []hintItem{
 		item(bindSelect), labelled(bindOpen, "details"),
 		item(bindProfile), item(bindPlugin), item(bindTheme),
-		item(bindMove), item(bindHide), item(bindAdd),
+		item(bindMove), item(bindHide), item(bindView), item(bindAdd),
 		item(bindBrowse), item(bindSearch), item(bindQuit),
 	}
 }
@@ -809,6 +809,11 @@ func (m Model) dashboardView() string {
 	// after the command.
 	if badge := m.activeBadge(); badge != "" {
 		header += " " + m.paintBadge(badge)
+	}
+	// And which screen of the dashboard this is, when it is not the one every
+	// machine has: tiles below are the view's, and H, + and [ ] write to it.
+	if m.view != "" {
+		header += theme.Subtle.Render("  view " + m.view)
 	}
 	// And whether the secret store is open in this process — the other fact
 	// about "where am I" that changes what the next keystroke can reach.

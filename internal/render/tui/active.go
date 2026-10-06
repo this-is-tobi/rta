@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -104,6 +105,13 @@ func (m *Model) syncActive() tea.Cmd {
 	}
 	m.active, m.bound, m.activeUntil, m.boundStamp = name, nil, nil, stamp
 	m.activeColor = profileColor(name)
+	// The screen follows the switch too: the environment's own view, unless
+	// this session picked one, which a switch undoes.
+	m.viewPick = ""
+	if cfg, err := config.LoadFile(); err == nil {
+		want := m.wantView(cfg)
+		m.dash, m.view, m.dashOnDisk = cfg.TrustedDashboardFor(want), want, dashStamp(want, cfg.TrustedDashboardFor(want))
+	}
 	// The tiles follow the switch in shape as well as in values: one that
 	// expanded into the previous environment's connections is one panel
 	// again, or this environment's own set — so the arrangement is resolved
@@ -361,26 +369,41 @@ func (m *Model) syncDashboard(s stamps) bool {
 	if s.err != nil {
 		return false
 	}
-	dash := s.cfg.TrustedDashboard()
-	stamp := dashStamp(dash)
+	want := m.wantView(s.cfg)
+	dash := s.cfg.TrustedDashboardFor(want)
+	stamp := dashStamp(want, dash)
 	if stamp == m.dashOnDisk {
 		return false
 	}
-	m.dash, m.dashOnDisk = dash, stamp
+	m.dash, m.view, m.dashOnDisk = dash, want, stamp
 	return true
 }
 
-// dashStamp fingerprints a dashboard block as the file states it: the JSON
-// form, whose omitempty makes a nil list and an empty one the same text,
-// and an integer read from YAML the same as one typed on the CLI — the
-// differences a block round-tripped through this session's own save
-// carries, and that are not edits.
-func dashStamp(d config.Dashboard) string {
+// wantView is the view this session should be drawing: the one it picked with
+// V, if the file still states it, else the one the switched-on profile selects.
+func (m Model) wantView(cfg config.Config) string {
+	switch {
+	case m.viewPick == config.DefaultView:
+		return ""
+	case m.viewPick != "":
+		if _, ok := cfg.Dashboard.Views[m.viewPick]; ok {
+			return m.viewPick
+		}
+	}
+	return cfg.ViewFor(m.active)
+}
+
+// dashStamp fingerprints a dashboard block as the file states it, with the
+// view it is the block of: the JSON form, whose omitempty makes a nil list
+// and an empty one the same text, and an integer read from YAML the same as
+// one typed on the CLI — the differences a block round-tripped through this
+// session's own save carries, and that are not edits.
+func dashStamp(view string, d config.Dashboard) string {
 	b, err := json.Marshal(d)
 	if err != nil {
 		return ""
 	}
-	return string(b)
+	return view + "\x00" + string(b)
 }
 
 // pinsMoved reports whether any pinned profile no longer stands at the
@@ -678,4 +701,29 @@ func colorOf(cfg config.Config, name string) string {
 		return ""
 	}
 	return p.Color
+}
+
+// cycleView draws the next view: the dashboard: block, then each view by name,
+// and round again. Which one is drawn is this session's own (viewPick) until a
+// switch, and nothing is written, since a picture is not an edit.
+func (m *Model) cycleView() (string, tea.Cmd) {
+	cfg, err := config.LoadFile()
+	if err != nil {
+		return "the config cannot be read, so there are no views to show: " + err.Error(), nil
+	}
+	names := cfg.ViewNames()
+	if len(names) == 0 {
+		return "no views yet — `rta dashboard add <capability> --view <name>` makes one", nil
+	}
+	order := append([]string{config.DefaultView}, names...)
+	current := m.view
+	if current == "" {
+		current = config.DefaultView
+	}
+	next := order[(slices.Index(order, current)+1)%len(order)]
+	m.viewPick = next
+	want := m.wantView(cfg)
+	m.dash, m.view, m.dashOnDisk = cfg.TrustedDashboardFor(want), want, dashStamp(want, cfg.TrustedDashboardFor(want))
+	m.rebuildTiles()
+	return "view: " + next, m.syncTiles()
 }

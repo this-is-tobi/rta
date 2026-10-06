@@ -74,6 +74,7 @@ var (
 	bindCopy   = binding{display: "y", keys: []string{"y"}, label: "copy json", rank: rankExtra}
 	bindMove   = binding{display: "[ ]", keys: []string{"[", "]", "<", ">"}, label: "move", rank: rankExtra}
 	bindHide   = binding{display: "H", keys: []string{"H"}, label: "hide", rank: rankExtra}
+	bindView   = binding{display: "V", keys: []string{"V"}, label: "view", rank: rankExtra}
 	bindPlugin = binding{display: "p", keys: []string{"p"}, label: "plugins", rank: rankExtra}
 	bindTheme  = binding{display: "t", keys: []string{"t"}, label: "theme", rank: rankExtra}
 	bindConfig = binding{display: "c", keys: []string{"c"}, label: "configure", rank: rankAction}

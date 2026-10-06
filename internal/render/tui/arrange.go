@@ -224,17 +224,19 @@ func (m *Model) save() error {
 			"arrangement was not written — set $RTA_CONFIG to name it deliberately")
 	}
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
-		cfg.Dashboard.Hidden = m.dash.Hidden
-		cfg.Dashboard.Order = m.dash.Order
-		cfg.Dashboard.Tiles = m.dash.Tiles
-		cfg.Dashboard.Add = m.dash.Add
+		block, _ := cfg.Block(m.view)
+		block.Hidden = m.dash.Hidden
+		block.Order = m.dash.Order
+		block.Tiles = m.dash.Tiles
+		block.Add = m.dash.Add
+		cfg.SetBlock(m.view, block)
 		return cfg, true
 	}); err != nil {
 		return err
 	}
 	// What the file says now is what this session wrote, so the next tick
 	// reads it as its own rather than as an edit to adopt (syncDashboard).
-	m.dashOnDisk = dashStamp(m.dash)
+	m.dashOnDisk = dashStamp(m.view, m.dash)
 	return nil
 }
 

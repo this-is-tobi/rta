@@ -144,11 +144,19 @@ type Model struct {
 	tiles      []tile
 	// tileRaw is what each tile's capability last returned, by rawKey,
 	// beside the cleaned copy the tile itself holds — see asReturned.
-	tileRaw    map[string]returned
-	dash       config.Dashboard // the arrangement, edited in place and saved
-	selected   int              // selected dashboard tile
-	scroll     int              // first visible dashboard tile row
-	origin     mode             // where the current result/form was opened from
+	tileRaw map[string]returned
+	dash    config.Dashboard // the arrangement, edited in place and saved
+	// view is the dashboard view dash is: "" for the dashboard: block, else
+	// one of its views. Every write of the arrangement goes to it, so what a
+	// person hides, moves or adds is what they are looking at.
+	view string
+	// viewPick is the view this session chose with V, or "" to follow the
+	// switched-on profile's. A switch clears it: switching is asking for that
+	// environment's screen.
+	viewPick   string
+	selected   int  // selected dashboard tile
+	scroll     int  // first visible dashboard tile row
+	origin     mode // where the current result/form was opened from
 	mode       mode
 	current    plugin.Capability // capability being viewed/run
 	lastValues map[string]any    // inputs of the last run, reused by re-run
@@ -288,6 +296,15 @@ type Model struct {
 // sites which need none of them say nothing.
 type Option func(*Model)
 
+// WithView says which dashboard view dash is, so a session that opens on one
+// writes to it and not to the dashboard: block.
+func WithView(view string) Option {
+	return func(m *Model) {
+		m.view = view
+		m.dashOnDisk = dashStamp(view, m.dash)
+	}
+}
+
 // WithUntrusted supplies the plugin artifacts discovery found on $PATH and
 // refused to launch, so the inventory can show them instead of leaving a
 // person to wonder where a plugin they installed went.
@@ -356,7 +373,7 @@ func New(reg *registry.Registry, dash config.Dashboard,
 		spinner:    sp,
 		tiles:      buildTiles(reg, dash),
 		dash:       dash,
-		dashOnDisk: dashStamp(dash),
+		dashOnDisk: dashStamp("", dash),
 		mode:       modeDashboard,
 		searchInfo: fmt.Sprintf("%d plugins · %d capabilities",
 			len(reg.Plugins()), len(reg.Capabilities())),

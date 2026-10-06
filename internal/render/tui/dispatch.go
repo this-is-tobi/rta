@@ -104,6 +104,13 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// text editor: the arrangement is a visual thing.
 		m.flash = m.hideSelected()
 		return m, nil, true
+	case "V":
+		// Another screen of the dashboard: the default, then each view in
+		// turn. Session-only, so looking at the databases' screen does not
+		// switch environment, and a switch (u) undoes it.
+		flash, cmd := m.cycleView()
+		m.flash = flash
+		return m, cmd, true
 	case "+":
 		// The other half of H, from the screen it is about: what to add
 		// is chosen in the catalogue, where + on a row is the add itself.
