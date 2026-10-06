@@ -54,6 +54,7 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 | `?` | Every key the screen answers, aliases included — what the footer had no room for |
 | `[` `]` | Move a tile |
 | `H` | Hide a tile — or remove it, when it is one you added |
+| `V` | Draw another screen of the dashboard: the default, then each [view](./25-dashboard-and-theme.md#views-a-screen-per-environment) in turn. For this session only — nothing is written — and switching environment undoes it |
 | `+` | Add a tile — on the dashboard it opens the catalogue; on a catalogue row or a search match it adds that one |
 | `p` | Plugin inventory — where a hidden automatic tile comes back |
 | `t` | Theme |

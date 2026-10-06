@@ -246,7 +246,7 @@ func TestPlusOnATileAlreadyThereWritesNothing(t *testing.T) {
 			if m.mode != modeDashboard || m.flash != tc.want {
 				t.Errorf("mode %v flash %q, want the dashboard and %q", m.mode, m.flash, tc.want)
 			}
-			if after := savedConfig(t).Dashboard; dashStamp(after) != dashStamp(before) {
+			if after := savedConfig(t).Dashboard; dashStamp("", after) != dashStamp("", before) {
 				t.Errorf("the file changed: %+v -> %+v", before, after)
 			}
 		})
