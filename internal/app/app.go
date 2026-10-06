@@ -1021,8 +1021,10 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 			// back until the session ends — which makes the pane the only
 			// place a person in the TUI can learn a decision is pending, or
 			// that a plugin they installed is not being provided.
-			return tuiExit(tui.Run(cmd.Context(), reg, cfg.TrustedDashboard(), pluginConfig,
-				tui.WithUntrusted(untrustedPluginsFound), tui.WithFailed(failedPluginsFound)))
+			// The screen of the switched-on profile, when it selects one.
+			drawn := drawnView(cfg)
+			return tuiExit(tui.Run(cmd.Context(), reg, cfg.TrustedDashboardFor(drawn), pluginConfig,
+				tui.WithView(drawn), tui.WithUntrusted(untrustedPluginsFound), tui.WithFailed(failedPluginsFound)))
 		},
 	}
 	pf := root.PersistentFlags()

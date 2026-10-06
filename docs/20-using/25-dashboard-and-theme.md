@@ -75,6 +75,49 @@ Two things the block will not do, whatever you write in it:
 - **A tile that is not `Read` is dropped.** Otherwise `{id: kv.rm, with: {key: old-token}}` would delete that key on startup and keep deleting it — on a timer, with no form and no confirmation, since the destructive gate lives on the CLI and the browse path and a tile goes through neither.
 - **The whole block is ignored unless the config is one you named** — your user config directory, or `RTA_CONFIG`. rta falls back to `./.rta.yaml` when there is no user config directory (ordinary under `env -i`, in a container, in CI), and a cloned repository does not get to arrange your screen: `{id: http.get, with: {url: …}}` there would be a beacon that starts the moment you open the TUI in that directory. `hidden:` is the same hazard pointed the other way — it can take the agent tile off the screen, and that tile is where you notice a parked consent request before its clock runs out.
 
+## Views: a screen per environment
+
+A person who works against three environments wants three screens: staging's cluster and database, production's tiles and nothing else, and one that is about every database there is. A profile is a set of connections and not an arrangement, so the arrangement is named on its own, as a **view**, and a profile says which one it shows:
+
+```yaml
+dashboard:
+  columns: 2
+  views:
+    ops:
+      columns: 3
+      tiles:
+      - id: kube.overview
+        profile: prod
+      - id: cnpg.overview
+        profile: prod
+    databases:
+      add:
+      - id: cnpg.overview
+        profile: prod
+      - id: cnpg.overview
+        profile: staging
+      - id: pg.overview
+        profile: analytics
+profiles:
+  prod:
+    dashboard: ops
+    plugins:
+      cnpg: {}
+```
+
+Switching to `prod` draws `ops`; any other environment, and no environment, draws the `dashboard:` block as it always has. A view is a whole arrangement of the same five keys the block has — `tiles`, `add`, `hidden`, `order`, `columns` — and it **replaces** the block while it is drawn rather than laying over it, so what a screen shows is the fields of one place and not an answer to which of two lists wins. Its tiles pin themselves to whichever profiles they name, which is what makes the `databases` view possible: it belongs to no environment, shows every database of every one, and any profile can select it. A profile that names a view nothing states draws the default and `rta doctor` says so, since a screen that fails to draw over a name is a worse outage than the usual one.
+
+From a shell, `--view` names the view on every `rta dashboard` command, and without it a command acts on the view that is drawn now, so what you add, hide or list is what you are looking at:
+
+```bash
+rta dashboard add kube.overview --profile prod --view ops    # creates the view when it is new
+rta dashboard views                                          # every view, who selects it, and the one drawn now
+rta dashboard list --view databases
+rta profile set prod --dashboard ops                         # the screen prod shows; `--dashboard none` goes back
+```
+
+`--view default` names the `dashboard:` block when that is the one you mean. In the TUI the header says `view ops` when it is not the default, `H`, `+` and `[` `]` write to the view that is drawn, and `V` draws the next one — the default, then each view by name — for this session only, which is how you look at the databases screen without switching environment. A switch (`u`) undoes it, since switching is asking for that environment's screen. Each view is a unit of its own when the configuration is [split across files](./22-your-config-file.md#split-it-across-files): a drop-in can hold one view and nothing else.
+
 ## Colours
 
 `t` opens the theme editor, a form with one box per colour and a preview beside it, and saves what you changed into the config file. The same block can be written by hand, and the CLI draws with it too:
