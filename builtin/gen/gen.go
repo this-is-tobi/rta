@@ -117,7 +117,9 @@ func Plugin() plugin.Plugin {
 				// A generated value exists only in the result on screen — there is no
 				// store to re-read it from — so `c` copies it from there.
 				Copy: "Password",
-				Run:  runPassword,
+				// The value alone when the answer goes to a pipe: `gen password | pbcopy`.
+				Primary: "Password",
+				Run:     runPassword,
 			},
 			{
 				ID:      "gen.token",
@@ -132,8 +134,9 @@ func Plugin() plugin.Plugin {
 					{Name: "encoding", Type: plugin.String, Config: "encoding", Default: "hex",
 						Options: []string{"hex", "base64", "base64url", "base32"}, Help: "output encoding"},
 				},
-				Copy: "token",
-				Run:  runToken,
+				Copy:    "token",
+				Primary: "token",
+				Run:     runToken,
 			},
 			{
 				ID:      "gen.uuid",
@@ -148,8 +151,9 @@ func Plugin() plugin.Plugin {
 					// Bounded for the reason gen.password's count is.
 					{Name: "count", Type: plugin.Int, Default: 1, Min: 1, Max: maxCount, Help: "how many to generate"},
 				},
-				Copy: "UUID",
-				Run:  runUUID,
+				Copy:    "UUID",
+				Primary: "UUID",
+				Run:     runUUID,
 			},
 		},
 	}

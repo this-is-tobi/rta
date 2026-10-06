@@ -2001,6 +2001,11 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	if v == nil {
 		return nil
 	}
+	// A dry run's view is the request that was not sent, and a body in it is
+	// the one that would have been: never the answer a pipe is asking for.
+	if !opts.dryRun && cli.PrintPrimary(cmd.OutOrStdout(), v, c.Primary, renderOpts) {
+		return nil
+	}
 	return cli.Render(cmd.OutOrStdout(), v, renderOpts)
 }
 
