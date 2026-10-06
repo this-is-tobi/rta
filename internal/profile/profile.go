@@ -503,7 +503,14 @@ func Bind(name string, conn config.Connection, c plugin.Capability, look func(st
 	// carefully — a repoint by spelling. Labeled instances carry credentials
 	// the way multi-database setups already do, through `secrets:`
 	// references, where nothing is derived from a string.
-	if config.RefInstance(name) != "" {
+	//
+	// A connection typed on one command line has none either, for the same
+	// reason from the other side: "ad hoc" and a profile somebody calls ad-hoc
+	// spell one variable, so a call that read it would send what was exported
+	// for that profile to whatever the call was aimed at — and a variable
+	// outranks a `secrets:` reference, so it would also replace the credential
+	// the call asked for.
+	if config.RefInstance(name) != "" || name == AdHocName {
 		return out
 	}
 	for _, f := range c.Inputs {
