@@ -157,7 +157,10 @@ func Plugin() plugin.Plugin {
 				Safety: plugin.Read, Idempotent: true,
 				NeedsGrant: true, Scope: "url",
 				Inputs: common,
-				Run:    runMethod(stdhttp.MethodGet),
+				// The body alone when the answer goes to a pipe, so
+				// `http get URL | jq .` is handed the document and the status stays on stderr.
+				Primary: "body",
+				Run:     runMethod(stdhttp.MethodGet),
 			},
 			{
 				ID: "http.head", Summary: "HEAD a URL and show status, timing, type and declared size",
@@ -181,21 +184,30 @@ func Plugin() plugin.Plugin {
 				Safety:     plugin.Write,
 				NeedsGrant: true, Scope: "url",
 				Inputs: withBody,
-				Run:    runMethod(stdhttp.MethodPost),
+				// The body alone when the answer goes to a pipe, so
+				// `http get URL | jq .` is handed the document and the status stays on stderr.
+				Primary: "body",
+				Run:     runMethod(stdhttp.MethodPost),
 			},
 			{
 				ID: "http.put", Summary: "PUT to a URL with an optional body",
 				Safety: plugin.Write, Idempotent: true,
 				NeedsGrant: true, Scope: "url",
 				Inputs: withBody,
-				Run:    runMethod(stdhttp.MethodPut),
+				// The body alone when the answer goes to a pipe, so
+				// `http get URL | jq .` is handed the document and the status stays on stderr.
+				Primary: "body",
+				Run:     runMethod(stdhttp.MethodPut),
 			},
 			{
 				ID: "http.delete", Summary: "DELETE a URL",
 				Safety: plugin.Write, Idempotent: true,
 				NeedsGrant: true, Scope: "url",
 				Inputs: common,
-				Run:    runMethod(stdhttp.MethodDelete),
+				// The body alone when the answer goes to a pipe, so
+				// `http get URL | jq .` is handed the document and the status stays on stderr.
+				Primary: "body",
+				Run:     runMethod(stdhttp.MethodDelete),
 			},
 			statusCapability(),
 		},

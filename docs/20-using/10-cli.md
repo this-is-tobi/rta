@@ -39,6 +39,8 @@ export RTA_OUTPUT=json
 
 The config file's `output:` key sets it too, under `RTA_OUTPUT`, and a typed `-o` wins over both. A default that names no format stops every command that renders, before it runs, as `core.output.invalid`: the error names `RTA_OUTPUT` or the key and its file, lists the formats, and is written in `pretty`, since the format asked for is the broken thing. `rta doctor` still runs and reports it as a failing `output` row, and answers in `pretty`; `rta mcp serve`, which renders nothing, is unaffected.
 
+**A command whose answer is one value prints that value into a pipe.** `rta gen password | pbcopy` copies the password and not the table drawn around it, `rta gen uuid` and `rta gen token` print the identifier and the token, and `rta http get URL | jq .` is handed the response body. One value to a line, so `--count 3` is three lines. What else the answer says, such as the entropy of a password or the status and size of a response, goes to standard error, each line marked `#`, so a script keeps the data and a person still sees whether the request was a 404. A terminal, `-o json` and the other formats are unchanged, and so is a response with no body, such as a `HEAD`.
+
 **Say what you want in a script.** `pretty` is a rendering choice made for humans, and it is the one format whose shape is allowed to change.
 
 ### The shape of a result
