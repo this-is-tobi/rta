@@ -51,6 +51,7 @@ func TestAFetchLandingBetweenAKeystrokeAndItsReloadLeavesTheReloadItsFunction(t 
 	model, _ := m.startForm(c, nil)
 	nm := model.(Model)
 	nm.form.form = startedForm(nm.form)
+	nm = pastThePicker(t, nm)
 
 	_, held := nm.form.form.Update(tea.KeyPressMsg{Code: 'b', Text: "b"})
 	if held == nil {
@@ -70,6 +71,7 @@ func TestALandedFetchReachesTheBoxWithoutAnotherKeystroke(t *testing.T) {
 	model, _ := m.startForm(c, nil)
 	nm := model.(Model)
 	nm.form.form = startedForm(nm.form)
+	nm = pastThePicker(t, nm)
 	nm.form.form = typeInto(nm.form.form, "ba")
 	if strings.Contains(plain(nm.form.form.View()), "backups") {
 		t.Fatal("the box shows backups before any fetch, so this proves nothing about landing one")

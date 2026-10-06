@@ -340,14 +340,24 @@ func TestThePickerOffersConfiguredEnvironments(t *testing.T) {
 	if f.Options[0] != profileNoneLabel {
 		t.Errorf("options = %v, want the base configuration first", f.Options)
 	}
-	if len(f.Options) != 3 {
-		t.Errorf("options = %v, want base + two profiles", f.Options)
+	// The entry that states a connection for one call ends the list wherever a
+	// forward has an input to fill (adhoc.go).
+	if len(f.Options) != 4 || f.Options[3] != adHocPickLabel {
+		t.Errorf("options = %v, want base + two profiles + the entry that states a connection", f.Options)
 	}
 
-	// Nothing configured: a picker with one entry is a question with one
-	// answer, which is not a question.
+	// Nothing configured: base, and the connection one can state — a question
+	// with two answers, which is why it is still asked.
 	empty := profileModel(t, config.Config{})
-	if f := empty.profilePicker(c, ""); f != nil {
+	f = empty.profilePicker(c, "")
+	if f == nil || len(f.Options) != 2 || f.Options[1] != adHocPickLabel {
+		t.Errorf("nothing configured offered %+v, want base and the ad hoc entry", f)
+	}
+
+	// A capability no forward can fill has nothing to state a connection for,
+	// and with nothing configured nothing to pick either.
+	cfg := adHocModel(t, configOnlyPlugin())
+	if f := cfg.profilePicker(cfg.reg.Capabilities()[0], ""); f != nil {
 		t.Errorf("a picker was offered with nothing to pick: %v", f.Options)
 	}
 }

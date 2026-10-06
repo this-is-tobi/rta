@@ -71,7 +71,7 @@ func (m Model) startForm(c plugin.Capability, prev map[string]any) (tea.Model, t
 	}
 	m.fitForm()
 	m.mode = modeForm
-	return m, m.form.form.Init()
+	return m, m.firstFocus()
 }
 
 // startFormWith opens a form for the fields base does not cover, seeded by
@@ -100,7 +100,7 @@ func (m Model) startFormWith(c plugin.Capability, base, prev map[string]any) (te
 	m.form.about = aboutCall(c, base)
 	m.fitForm()
 	m.mode = modeForm
-	return m, m.form.form.Init()
+	return m, m.firstFocus()
 }
 
 // firstPositional returns the leading positional input, if there is one.
@@ -319,6 +319,9 @@ func (m Model) afterFormUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	}
 	switch m.form.form.State {
 	case huh.StateCompleted:
+		if m.form.adHocFrom != nil {
+			return m.saveAdHocForm()
+		}
 		if m.form.configTarget != "" {
 			return m.saveConfigForm()
 		}
@@ -396,6 +399,11 @@ func (m Model) formView() string {
 // closeForm dismisses the current form: back to the actionable view it was
 // opened from, or to the origin.
 func (m Model) closeForm() (tea.Model, tea.Cmd) {
+	// The form that asks for an ad hoc connection was opened from a run form,
+	// and leaving it is going back to that one, not out of the run.
+	if m.form != nil && m.form.adHocFrom != nil {
+		return m.leaveAdHocForm()
+	}
 	m.form = nil
 	m.refreshPending, m.subjectGone = false, false
 	if len(m.trail) > 0 {
