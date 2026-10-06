@@ -23,6 +23,8 @@ That reads as: allow the agent `claude` to call `kv.get`, but only on the key `d
 | `--rate` | Bound how *fast*, as calls/window — `10/1h` |
 | `--note` | Why, shown by `grant list` |
 
+Leaving the scope out of a grant on a capability that reveals a stored value, such as `kv.get`, covers every record it reaches, so the receipt says so while the clock is running: `note: kv.get reveals the stored value itself, and with no record named it does so for every record it reaches — name one to allow only that record`. A plugin name counts the capabilities of that kind it carries.
+
 **Only a person at a terminal can issue one.** An agent that could grant itself access would be no gate at all, so there is no [MCP](../95-reference/10-glossary.md#acronyms) tool for this and no flag that makes one.
 
 ## The four bounds, and what each is for

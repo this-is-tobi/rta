@@ -664,7 +664,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// is running, and a 15-minute grant issued and then noticed is most of a
 	// grant wasted. Said on a dry run too: finding this out is what the dry
 	// run was for.
-	for _, n := range []string{cappedNote(notes), breadthNote(catalog, g), inactiveProfileNote(g),
+	for _, n := range []string{cappedNote(notes), breadthNote(catalog, g), revealNote(catalog, g), inactiveProfileNote(g),
 		unknownAgentNote(seen, g.Agent), olderServerNote()} {
 		if n != "" {
 			msg += "\n" + n
