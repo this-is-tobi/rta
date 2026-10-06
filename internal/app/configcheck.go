@@ -3,7 +3,9 @@ package app
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +26,9 @@ import (
 // says: a key rta ignores, a value no call would accept, a section that
 // reaches no plugin.
 type configProblem struct {
+	// File is the file the problem is in, when the configuration is read from
+	// more than one.
+	File string
 	// Line is where the key is written, or 0 for a problem found by a reader
 	// that does not keep one (the palette, a plugin's declaration).
 	Line int
@@ -32,6 +37,9 @@ type configProblem struct {
 	// Fatal marks the two that stop every command rather than one setting: a
 	// file that does not parse, and an output format nothing renders.
 	Fatal bool
+	// Together marks a fault of the files taken together — a unit two of them
+	// state — which every one of them is part of and none of them alone has.
+	Together bool
 }
 
 var parseSpot = regexp.MustCompile(`^\[(\d+):\d+\] `)
@@ -44,12 +52,12 @@ var parseSpot = regexp.MustCompile(`^\[(\d+):\d+\] `)
 // questions are the ones `rta doctor` asks of the config, in the same words:
 // that is deliberate, so a problem reads the same wherever it is found, and
 // this is what doctor is to be shown by the keys rta ignores.
-func configProblems(reg *registry.Registry, data []byte) []configProblem {
-	cfg, err := config.Parse(data)
+func configProblems(reg *registry.Registry, path string, data []byte) []configProblem {
+	cfg, err := config.Validate(path, data)
 	if err != nil {
 		verr := view.AsError(err, "config.invalid")
 		msg, _, _ := strings.Cut(verr.Message, "\n")
-		p := configProblem{Text: msg, Fatal: true}
+		p := configProblem{Text: msg, Fatal: true, Together: verr.Code == "config.duplicate"}
 		if at := strings.Index(msg, ": "); at >= 0 {
 			if m := parseSpot.FindStringSubmatch(msg[at+2:]); m != nil {
 				p.Line, _ = strconv.Atoi(m[1])
@@ -111,12 +119,26 @@ func configProblems(reg *registry.Registry, data []byte) []configProblem {
 
 func problemsTable(problems []configProblem, empty string) view.Table {
 	t := view.Table{Columns: []view.Column{{Name: "Line", Kind: view.KindNumber}, {Name: "Key"}, {Name: "Problem"}}}
+	// A file column only when the configuration is more than one file: a
+	// problem is no use without the file to open, and the one-file case reads
+	// as it always did.
+	named := false
+	for _, p := range problems {
+		named = named || p.File != ""
+	}
+	if named {
+		t.Columns = append([]view.Column{{Name: "File"}}, t.Columns...)
+	}
 	for _, p := range problems {
 		line := ""
 		if p.Line > 0 {
 			line = strconv.Itoa(p.Line)
 		}
-		t.Rows = append(t.Rows, []string{line, p.Key, p.Text})
+		row := []string{line, p.Key, p.Text}
+		if named {
+			row = append([]string{configFileName(p.File)}, row...)
+		}
+		t.Rows = append(t.Rows, row)
 	}
 	t.Total = len(t.Rows)
 	t.Empty = empty
@@ -128,7 +150,8 @@ func configCheckCommand(reg *registry.Registry, render renderFn) *cobra.Command 
 		Use:         "check",
 		Annotations: outputExempt(),
 		Short:       "Name what in the config file rta ignores or cannot use",
-		Long: "Holds the file to everything rta reads it for and lists what does not apply: a key\n" +
+		Long: "Holds the file, and each file of its config.d beside it, to everything rta reads it for\n" +
+			"and lists what does not apply: a key\n" +
 			"rta has no use for, with the line it is on and the one it was probably meant to be,\n" +
 			"a value no call would take, a colour that is not one, a section that reaches no plugin.\n" +
 			"Exits 1 when it finds anything, so it can gate a dotfiles repository or a CI step.\n" +
@@ -136,23 +159,48 @@ func configCheckCommand(reg *registry.Registry, render renderFn) *cobra.Command 
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			data, err := config.ReadText()
+			files, err := config.FilePaths()
 			if err != nil {
 				return render(cmd, nil, view.AsError(err, "core.config.read"))
 			}
-			if data == nil {
+			var problems []configProblem
+			read := len(files)
+			for _, f := range files {
+				data, err := config.ReadFile(f)
+				if err != nil {
+					return render(cmd, nil, view.AsError(err, "core.config.read"))
+				}
+				for _, p := range configProblems(reg, f, data) {
+					switch {
+					case p.Together:
+						// Every file in the clash reports it, and it is the
+						// files', not any one's: once, with no file named.
+						if slices.ContainsFunc(problems, func(q configProblem) bool { return q.Together && q.Text == p.Text }) {
+							continue
+						}
+					case len(files) > 1:
+						p.File = f
+					}
+					problems = append(problems, p)
+				}
+			}
+			where := config.Path()
+			if len(files) > 1 {
+				where = format.Count(read, "configuration file", "configuration files") + " (" + config.Path() +
+					" and " + config.DropInDir() + ")"
+			}
+			if read == 0 {
 				return render(cmd, problemsTable(nil, "No config file at "+config.Path()+
 					", so there is nothing to check: every key is at its default."), nil)
 			}
-			problems := configProblems(reg, data)
 			if len(problems) == 0 {
-				return render(cmd, problemsTable(nil, config.Path()+" has nothing rta ignores."), nil)
+				return render(cmd, problemsTable(nil, where+" has nothing rta ignores."), nil)
 			}
 			if err := render(cmd, problemsTable(problems, ""), nil); err != nil {
 				return err
 			}
 			return render(cmd, nil, view.Errorf("core.config.check", "%s in %s",
-				format.Count(len(problems), "problem", "problems"), config.Path()).
+				format.Count(len(problems), "problem", "problems"), where).
 				WithHint("`rta config edit` opens the file and checks it again on save"))
 		},
 	}
@@ -186,8 +234,15 @@ func WarnConfigProblems(w io.Writer, cmd *cobra.Command, machineReadable bool) {
 	if err != nil || len(found) == 0 {
 		return
 	}
+	where := config.Path()
+	for _, f := range found {
+		if f.File != config.Path() {
+			where = "the configuration"
+			break
+		}
+	}
 	fmt.Fprintf(w, "rta: %s in %s — `rta config check` names %s\n",
-		format.Count(len(found), "key rta does not read is", "keys rta does not read are"), config.Path(),
+		format.Count(len(found), "key rta does not read is", "keys rta does not read are"), where,
 		format.Plural(len(found), "it", "them"))
 }
 
@@ -203,4 +258,14 @@ func reportsConfigItself(cmd *cobra.Command) bool {
 		}
 	}
 	return false
+}
+
+// configFileName is a file of the configuration as a column shows it: the
+// config file by its name, a drop-in with the directory it is in, which is what
+// tells two files called alike apart.
+func configFileName(path string) string {
+	if path == config.Path() {
+		return filepath.Base(path)
+	}
+	return filepath.Join(filepath.Base(filepath.Dir(path)), filepath.Base(path))
 }

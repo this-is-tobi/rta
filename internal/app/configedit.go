@@ -27,8 +27,8 @@ import (
 const noteMark = "#!rta "
 
 func configEditCommand(reg *registry.Registry, render renderFn, opts *globalOpts) *cobra.Command {
-	return &cobra.Command{
-		Use:         "edit",
+	cmd := &cobra.Command{
+		Use:         "edit [drop-in]",
 		Annotations: outputExempt(),
 		Short:       "Open the config file in $EDITOR, and check it on save",
 		Long: "Opens the config file in $VISUAL, then $EDITOR, then vi, and holds what you save to\n" +
@@ -39,14 +39,46 @@ func configEditCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 			"is stated until you uncomment it. It keeps config.schema.json beside the file, which\n" +
 			"the file's first lines point an editor at: completion and a warning on a wrong key\n" +
 			"as you type. An editor that returns before you have saved loses the edit, so a\n" +
-			"windowed one needs its wait flag: `EDITOR='code --wait'`.",
-		Args:              cobra.NoArgs,
-		ValidArgsFunction: cobra.NoFileCompletions,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			v, verr := runConfigEdit(reg, opts.dryRun)
+			"windowed one needs its wait flag: `EDITOR='code --wait'`.\n\n" +
+			"Name a file of the config.d directory beside it to edit that one instead — an\n" +
+			"existing one, or a new one, which is created when you save. It is held to the same\n" +
+			"checks, and to one more: a profile, a role, a plugin's settings or a block that\n" +
+			"another file already states is refused, since each lives in one file.",
+		Example: "  rta config edit              # the config file\n" +
+			"  rta config edit 10-prod      # config.d/10-prod.yaml",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeDropIns,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := ""
+			if len(args) > 0 {
+				name = args[0]
+			}
+			v, verr := runConfigEdit(reg, opts.dryRun, name)
 			return render(cmd, v, verr)
 		},
 	}
+	documentArgs(cmd, argDoc{"drop-in", "a file of the config.d directory beside the config file, by name — " +
+		"`10-prod` is config.d/10-prod.yaml; left out, the config file itself"})
+	return cmd
+}
+
+// completeDropIns offers the files of the drop-in directory by name, without
+// their extension, as `rta config edit` takes them.
+func completeDropIns(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	files, err := config.Files()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var names []string
+	for _, f := range files {
+		if !f.Main {
+			names = append(names, strings.TrimSuffix(filepath.Base(f.Path), filepath.Ext(f.Path)))
+		}
+	}
+	return names, cobra.ShellCompDirectiveNoFileComp
 }
 
 // editorTerminal is whether a person is here to edit a file, a var so a test
@@ -55,24 +87,36 @@ var editorTerminal = func() bool {
 	return term.IsTerminal(int(stdio.Real().Fd())) && isTTY()
 }
 
-func runConfigEdit(reg *registry.Registry, dryRun bool) (view.View, *view.Error) {
+func runConfigEdit(reg *registry.Registry, dryRun bool, name string) (view.View, *view.Error) {
 	if !editorTerminal() {
 		return nil, view.Errorf("core.config.edit.noterminal", "an editor needs a terminal, and there is none here").
 			WithHint("`rta config set <key> <value>` changes one key without one, and `rta config path` " +
 				"names the file for whatever does the editing")
 	}
+	target := config.Path()
+	if name != "" {
+		var err error
+		if target, err = config.DropInFile(name); err != nil {
+			return nil, view.AsError(err, "core.config.edit.dropin")
+		}
+	}
 	argv := editor.Command()
 	if dryRun {
-		return view.Text{Body: "would open " + config.Path() + " in " + argv[0]}, nil
+		return view.Text{Body: "would open " + target + " in " + argv[0]}, nil
 	}
-	original, err := config.ReadText()
+	original, err := config.ReadFile(target)
 	if err != nil {
 		return nil, view.AsError(err, "core.config.read")
 	}
-	// A file with nothing in it is opened as no file is: on the starter.
+	// A file with nothing in it is opened as no file is: on the starter. A
+	// drop-in starts on the one line an editor needs to check it, since what it
+	// holds is whole units and the starter's commented keys are the file's own.
 	body := original
 	if len(bytes.TrimSpace(body)) == 0 {
 		body = []byte(config.Starter())
+		if name != "" {
+			body = []byte("# yaml-language-server: $schema=../" + config.SchemaFile + "\n")
+		}
 	}
 
 	// Held until the copy is gone, so a process asked to stop lets the edit end
@@ -87,6 +131,14 @@ func runConfigEdit(reg *registry.Registry, dryRun bool) (view.View, *view.Error)
 	}
 	defer os.RemoveAll(dir)
 	path := filepath.Join(dir, "config.yaml")
+	if name != "" {
+		// Beside a schema one directory up, which is where the header of a
+		// drop-in says to look.
+		path = filepath.Join(dir, "config.d", filepath.Base(target))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			return nil, view.Errorf("core.config.edit.notemp", "making a private directory to edit in: %v", err)
+		}
+	}
 	writeSchemaFile(reg, dir, body)
 
 	note := ""
@@ -107,21 +159,21 @@ func runConfigEdit(reg *registry.Registry, dryRun bool) (view.View, *view.Error)
 		if bytes.Equal(edited, body) {
 			if note != "" {
 				return view.KeyValue{Pairs: []view.Pair{{Key: "cancelled",
-					Value: "the file was left as it was, so nothing was written to " + config.Path()}}}, nil
+					Value: "the file was left as it was, so nothing was written to " + target}}}, nil
 			}
 			return view.KeyValue{Pairs: []view.Pair{{Key: "unchanged",
-				Value: "nothing was changed in " + config.Path()}}}, nil
+				Value: "nothing was changed in " + target}}}, nil
 		}
-		problems := configProblems(reg, edited)
+		problems := configProblems(reg, target, edited)
 		if fatal := fatalOnly(problems); len(fatal) > 0 {
 			body, note = edited, editNote(fatal)
 			continue
 		}
-		if err := config.Replace(original, edited); err != nil {
+		if err := config.ReplaceAt(target, original, edited); err != nil {
 			return nil, view.AsError(err, "core.config.write")
 		}
 		writeSchemaFile(reg, filepath.Dir(config.Path()), edited)
-		saved := view.Pair{Key: "wrote", Value: "saved " + config.Path()}
+		saved := view.Pair{Key: "wrote", Value: "saved " + target}
 		if len(problems) == 0 {
 			return view.KeyValue{Pairs: []view.Pair{saved}}, nil
 		}
@@ -183,7 +235,7 @@ func stripNote(raw []byte) []byte {
 // edited and after. Best effort: a schema is a convenience, and failing to
 // write one is no reason to refuse the edit it was for.
 func writeSchemaFile(reg *registry.Registry, dir string, text []byte) {
-	if !bytes.Contains(text, []byte("$schema="+config.SchemaFile)) {
+	if !bytes.Contains(text, []byte(config.SchemaFile)) {
 		return
 	}
 	out, err := json.MarshalIndent(configSchemaFor(reg), "", "  ")

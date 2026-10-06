@@ -343,11 +343,11 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 	switch {
 	case unchanged:
 		pairsOut = append(pairsOut, view.Pair{Key: "unchanged",
-			Value: entry.Key() + " is already on the dashboard this way — nothing written to " + config.Path()})
+			Value: entry.Key() + " is already on the dashboard this way — nothing written to " + config.Where("dashboard", "")})
 	case dryRun:
-		pairsOut = append(pairsOut, view.Pair{Key: "would write", Value: verb + " " + entry.Key() + " in " + config.Path()})
+		pairsOut = append(pairsOut, view.Pair{Key: "would write", Value: verb + " " + entry.Key() + " in " + config.Where("dashboard", "")})
 	default:
-		pairsOut = append(pairsOut, view.Pair{Key: "wrote", Value: verb + " " + entry.Key() + " in " + config.Path()})
+		pairsOut = append(pairsOut, view.Pair{Key: "wrote", Value: verb + " " + entry.Key() + " in " + config.Where("dashboard", "")})
 	}
 	pairsOut = append(pairsOut, view.Pair{Key: "tile", Value: id})
 	if automatic {
@@ -533,7 +533,7 @@ func runDashboardRemove(cmd *cobra.Command, id string, dryRun bool) (view.View, 
 		label, verb = "would write", "would have removed"
 	}
 	return view.KeyValue{Pairs: []view.Pair{
-		{Key: label, Value: verb + " " + key + " from the dashboard in " + config.Path()},
+		{Key: label, Value: verb + " " + key + " from the dashboard in " + config.Where("dashboard", "")},
 		{Key: "back", Value: "`rta dashboard add " + removed.AddArgs() + "`"},
 	}}, nil
 }
@@ -609,14 +609,14 @@ func runDashboardHide(cmd *cobra.Command, id string, reg *registry.Registry, hid
 		case found.Source == "stated" && !found.Expanded:
 			return nil, view.Errorf("core.dashboard.notautomatic",
 				"%s is stated in `tiles:`, and a stated list is edited rather than hidden", key).
-				WithHint("take it out of `dashboard: tiles:` in " + config.Path() + " — H on it in the TUI does that")
+				WithHint("take it out of `dashboard: tiles:` in " + config.Where("dashboard", "") + " — H on it in the TUI does that")
 		case found.Source != "automatic" && !found.Expanded:
 			return nil, view.Errorf("core.dashboard.notautomatic",
 				"%s is an added tile, and an entry is withdrawn rather than hidden", key).
 				WithHint("`rta dashboard rm " + removeLine(config.Tile{ID: id, Profile: ref}) + "` takes it down")
 		case slices.Contains(cfg.Dashboard.Hidden, key):
 			return view.KeyValue{Pairs: []view.Pair{{Key: "unchanged",
-				Value: key + " is already hidden — nothing written to " + config.Path()}}}, nil
+				Value: key + " is already hidden — nothing written to " + config.Where("dashboard", "")}}}, nil
 		}
 	}
 	var (
@@ -661,7 +661,7 @@ func runDashboardHide(cmd *cobra.Command, id string, reg *registry.Registry, hid
 		label, verb = "would write", "would have "+verb
 	}
 	return view.KeyValue{Pairs: []view.Pair{
-		{Key: label, Value: verb + " " + key + " in " + config.Path()},
+		{Key: label, Value: verb + " " + key + " in " + config.Where("dashboard", "")},
 		{Key: "back", Value: back},
 	}}, nil
 }

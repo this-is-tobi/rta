@@ -426,14 +426,14 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 		label = "would write"
 	}
 	head := make([]view.Pair, 0, 1+len(receipts)+len(card.Pairs))
-	head = append(head, view.Pair{Key: label, Value: what + " in " + config.Path()})
+	head = append(head, view.Pair{Key: label, Value: what + " in " + config.Where("profiles", name)})
 	if unchanged {
 		already := name + " already reads this way"
 		if key != "" {
 			already = key + " in " + name + " already reads this way"
 		}
 		head = []view.Pair{{Key: "unchanged",
-			Value: already + " — nothing written to " + config.Path()}}
+			Value: already + " — nothing written to " + config.Where("profiles", name)}}
 	}
 	head = append(head, receipts...)
 	card.Pairs = append(head, card.Pairs...)
@@ -1088,7 +1088,7 @@ func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry, d
 		return card, nil
 	}
 
-	pairs := []view.Pair{{Key: removeLabel, Value: "profile " + name + " from " + config.Path()}}
+	pairs := []view.Pair{{Key: removeLabel, Value: "profile " + name + " from " + config.Where("profiles", name)}}
 	// The switch follows, or this machine stays switched on to a name nothing
 	// can look up — and because the selection also bounds agents, every agent
 	// call would then be refused against it.
