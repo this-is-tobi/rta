@@ -891,7 +891,7 @@
   },
   {
     "name": "kv_env",
-    "description": "── the text below is written by the plugin, not by rta ──\nPrint stored values as shell exports\n\nOutput for a shell to evaluate, which loads secrets into its session without ever writing them to a file. Key names become environment names (db-password → DB_PASSWORD). A `format` of dotenv writes .env syntax instead. Same grant requirement as kv_get: this reveals values. Naming no key means every key, which is a wider ask and needs a grant for kv_env itself rather than one per key.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.env`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nPrint stored values as shell exports\n\nOutput for a shell to evaluate, which loads secrets into its session without ever writing them to a file. Key names become environment names (db-password → DB_PASSWORD). A `format` of dotenv writes .env syntax instead. Same grant requirement as kv_get: this reveals values. Naming no key means every key, which is a wider ask and needs a grant for kv_env itself rather than one per key.\n── end of plugin-written text ──\n\nSafety: write.\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.env`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -923,7 +923,7 @@
   },
   {
     "name": "kv_get",
-    "description": "── the text below is written by the plugin, not by rta ──\nReveal a stored value\n\nClassified as a write, because revealing a secret is the sensitive act: an agent needs a grant naming the key it may read, issued by a person. A grant authorizes revealing a value, not choosing where on this machine it gets written, so the value comes back in the response.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.get`.",
+    "description": "── the text below is written by the plugin, not by rta ──\nReveal a stored value\n\nClassified as a write, because revealing a secret is the sensitive act: an agent needs a grant naming the key it may read, issued by a person. A grant authorizes revealing a value, not choosing where on this machine it gets written, so the value comes back in the response.\n── end of plugin-written text ──\n\nSafety: write.\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.get`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {

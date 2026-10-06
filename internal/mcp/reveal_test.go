@@ -170,3 +170,39 @@ func TestAWithheldRevealIsNotRecordedAsRevealed(t *testing.T) {
 		t.Errorf("a withheld answer is recorded as %+v, want ran and not revealed", entries[0])
 	}
 }
+
+// What the answer is, said by the host and after the plugin's own words, where
+// a plugin cannot imitate it: the stored value itself, in the agent's context.
+// The masked sibling says no such thing, because its answer is not one.
+func TestTheDescriptionOfARevealSaysWhatItReturnsInTheHostsVoice(t *testing.T) {
+	reg := revealRegistry(t)
+	get, _ := reg.Capability("vault.item.get")
+	show, _ := reg.Capability("vault.item.show")
+	text := agentText(get, nil)
+	const said = "Returns the stored value itself, not a masked copy, and it becomes part of your context."
+	i := strings.Index(text, said)
+	if i < 0 {
+		t.Fatalf("a reveal does not say what it returns:\n%s", text)
+	}
+	if !strings.Contains(text[:i], plugin.AuthoredClose) {
+		t.Errorf("the sentence stands inside the plugin's block, where the plugin could write it:\n%s", text)
+	}
+	if strings.Contains(agentText(show, nil), "stored value itself") {
+		t.Errorf("a masked read says it returns the value itself:\n%s", agentText(show, nil))
+	}
+}
+
+// Said once, and only to a server that offers a tool which needs it: a server
+// with no reveal in its catalogue has nothing to say about repeating one.
+func TestTheHandshakeSaysWhatToDoWithARevealedValueOnlyWhenOneIsOffered(t *testing.T) {
+	reg := revealRegistry(t)
+	get, _ := reg.Capability("vault.item.get")
+	show, _ := reg.Capability("vault.item.show")
+	if got := handshakeInstructions([]plugin.Capability{show}, Options{}); strings.Contains(got, revealInstructions) {
+		t.Errorf("a server with no reveal tells a model what to do with a revealed value: %s", got)
+	}
+	got := handshakeInstructions([]plugin.Capability{show, get}, Options{})
+	if strings.Count(got, revealInstructions) != 1 {
+		t.Errorf("a server that offers a reveal says it %d times, want once: %s", strings.Count(got, revealInstructions), got)
+	}
+}

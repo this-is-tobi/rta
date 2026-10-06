@@ -45,16 +45,34 @@ const instructions = "rta is a security boundary in front of this machine, not a
 const profileInstructions = "A tool with a \"profile\" argument reaches connections the operator configured: " +
 	"naming one needs a grant a person issued for that exact profile, so ask the operator which to use."
 
+// revealInstructions is the one sentence about what to do with a value a tool
+// hands back from a store, said at the handshake when any tool offered here
+// does. A masked answer is safe to repeat and an unmasked one is not: it has
+// entered a context that a reply, another tool's arguments or a file the agent
+// writes can carry on, and nothing the host checks reaches that far. So the
+// instruction is said once, where the description of each such tool points at
+// it rather than repeating it (agentText).
+const revealInstructions = "A tool that returns a stored value puts it in your context: use it for what you were " +
+	"asked, and do not repeat it in a reply, another tool's arguments or a file unless the person asked for it."
+
 // handshakeInstructions is what the server says once about every tool: the
 // fixed text, and the profile sentence only when a tool offered here takes the
 // argument, so a server with no profile configured says nothing about them.
 func handshakeInstructions(offered []plugin.Capability, opts Options) string {
+	text := instructions
 	for _, c := range offered {
 		if plugin.Profilable(c) && len(opts.Profiles.ProfilesFor(plugin.Namespace(c.ID))) > 0 {
-			return instructions + " " + profileInstructions
+			text += " " + profileInstructions
+			break
 		}
 	}
-	return instructions
+	for _, c := range offered {
+		if c.Reveals {
+			text += " " + revealInstructions
+			break
+		}
+	}
+	return text
 }
 
 // What an agent is shown: the tool name a capability maps onto, the text
@@ -90,6 +108,12 @@ func agentText(c plugin.Capability, tools map[string]bool) string {
 	b.WriteString("\n" + plugin.AuthoredClose)
 
 	fmt.Fprintf(&b, "\n\nSafety: %s.", c.Safety)
+	if c.Reveals {
+		// rta's words, not the plugin's: what the answer is, said by the
+		// host, so a plugin cannot word it as a masked read. The handshake
+		// says what to do with it (revealInstructions).
+		b.WriteString("\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.")
+	}
 	if grant.Required(c, "") {
 		// Said here as well as enforced in the gate, so a model asks the
 		// person for a grant instead of retrying a call that cannot work.
