@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,6 +15,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/tui"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -84,21 +86,39 @@ func newDashboardCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comman
 			if err != nil {
 				return render(cmd, nil, view.AsError(err, "core.dashboard.config"))
 			}
-			return render(cmd, dashboardTable(reg, cfg), nil)
+			v, verr := viewOf(cmd, cfg, false)
+			if verr != nil {
+				return render(cmd, nil, verr)
+			}
+			return render(cmd, dashboardTable(reg, cfg, v), nil)
 		},
 	}
-	cmd.AddCommand(list, dashboardAddCommand(reg, render, opts), dashboardRemoveCommand(render, opts),
+	addViewFlag(list, "list the tiles of this view")
+	views := &cobra.Command{
+		Use:               "views",
+		Short:             "The dashboard's views, which profiles select them, and the one drawn now",
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := config.LoadFile()
+			if err != nil {
+				return render(cmd, nil, view.AsError(err, "core.dashboard.config"))
+			}
+			return render(cmd, viewsTable(cfg), nil)
+		},
+	}
+	cmd.AddCommand(list, views, dashboardAddCommand(reg, render, opts), dashboardRemoveCommand(render, opts),
 		dashboardHideCommand(reg, render, opts, true), dashboardHideCommand(reg, render, opts, false))
 	return cmd
 }
 
 // layoutNow is what bare `rta` would draw at this moment: this config's
 // arrangement, expanded into the switched-on environment's connections.
-func layoutNow(reg *registry.Registry, cfg config.Config) []tui.Placement {
-	return tui.Layout(reg, cfg.TrustedDashboard(), tui.InstancesOf(cfg, profile.Active()))
+func layoutNow(reg *registry.Registry, cfg config.Config, v string) []tui.Placement {
+	return tui.Layout(reg, cfg.TrustedDashboardFor(v), tui.InstancesOf(cfg, profile.Active()))
 }
 
-func dashboardTable(reg *registry.Registry, cfg config.Config) view.View {
+func dashboardTable(reg *registry.Registry, cfg config.Config, v string) view.View {
 	t := view.Table{Columns: []view.Column{
 		{Name: "Tile"},
 		{Name: "Profile"},
@@ -107,7 +127,7 @@ func dashboardTable(reg *registry.Registry, cfg config.Config) view.View {
 		{Name: "Re-runs"},
 		{Name: "With"},
 	}}
-	for _, p := range layoutNow(reg, cfg) {
+	for _, p := range layoutNow(reg, cfg, v) {
 		every := "every few seconds"
 		if p.Refresh > 0 {
 			every = "every " + pace(p.Refresh)
@@ -168,6 +188,7 @@ func dashboardAddCommand(reg *registry.Registry, render renderFn, opts *globalOp
 	// could be stated at all. A list-shaped input is one --set per element.
 	cmd.Flags().StringArray("set", nil, "an input for the run, `key=value`; repeat for several")
 	cmd.Flags().Int("span", 0, "grid columns the tile occupies; 0 leaves it to the capability")
+	addViewFlag(cmd, "put the tile on this view, creating it when it is new")
 	completeFlag(cmd, "profile", completeProfiles)
 	completeFlag(cmd, "set", completeTileInputs(reg))
 	return cmd
@@ -189,6 +210,7 @@ func dashboardRemoveCommand(render renderFn, opts *globalOpts) *cobra.Command {
 		},
 	}
 	cmd.Flags().String("profile", "", "the pinned tile to take down, when the capability was added against several")
+	addViewFlag(cmd, "take the tile off this view")
 	completeFlag(cmd, "profile", completeProfiles)
 	return cmd
 }
@@ -226,6 +248,10 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 	cfg, err := config.LoadFile()
 	if err != nil {
 		return nil, view.AsError(err, "core.dashboard.config")
+	}
+	drawn, verr := viewOf(cmd, cfg, true)
+	if verr != nil {
+		return nil, verr
 	}
 	ref := strings.TrimSpace(mustString(cmd, "profile"))
 	var expandsTo []string
@@ -290,14 +316,14 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 	// a hidden one back, and the hint says so.
 	var automatic bool
 	if ref == "" {
-		for _, p := range layoutNow(reg, cfg) {
+		for _, p := range layoutNow(reg, cfg, drawn) {
 			automatic = automatic || (p.ID == id && p.Source == "automatic")
 		}
 	}
 	if automatic && len(with) == 0 && span == 0 {
 		hint := "`--profile <name>` pins a second one to a connection; `--set` and `--span` say how this one runs"
-		if slices.Contains(cfg.Dashboard.Hidden, id) {
-			hint = "it is hidden — `rta dashboard unhide " + id + "` brings it back"
+		if slices.Contains(blockOf(cfg, drawn).Hidden, id) {
+			hint = "it is hidden — `rta dashboard unhide " + id + inViewFlag(drawn) + "` brings it back"
 		}
 		return nil, view.Errorf("core.dashboard.automatic",
 			"%s is already on the automatic dashboard", id).WithHint(hint)
@@ -305,7 +331,8 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 
 	var existed, unchanged bool
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
-		add := cfg.Dashboard.Add
+		block := blockOf(cfg, drawn)
+		add := block.Add
 		at := -1
 		for i, t := range add {
 			if t.Key() == entry.Key() {
@@ -326,7 +353,8 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 			}
 			add = append(add, entry)
 		}
-		cfg.Dashboard.Add = add
+		block.Add = add
+		cfg.SetBlock(drawn, block)
 		return cfg, true
 	}); err != nil {
 		return nil, view.AsError(err, "core.dashboard.write")
@@ -343,11 +371,14 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 	switch {
 	case unchanged:
 		pairsOut = append(pairsOut, view.Pair{Key: "unchanged",
-			Value: entry.Key() + " is already on the dashboard this way — nothing written to " + config.Where("dashboard", "")})
+			Value: entry.Key() + " is already on the dashboard this way — nothing written to " + dashboardFile(drawn)})
 	case dryRun:
-		pairsOut = append(pairsOut, view.Pair{Key: "would write", Value: verb + " " + entry.Key() + " in " + config.Where("dashboard", "")})
+		pairsOut = append(pairsOut, view.Pair{Key: "would write", Value: verb + " " + entry.Key() + " in " + dashboardFile(drawn)})
 	default:
-		pairsOut = append(pairsOut, view.Pair{Key: "wrote", Value: verb + " " + entry.Key() + " in " + config.Where("dashboard", "")})
+		pairsOut = append(pairsOut, view.Pair{Key: "wrote", Value: verb + " " + entry.Key() + " in " + dashboardFile(drawn)})
+	}
+	if drawn != "" {
+		pairsOut = append(pairsOut, view.Pair{Key: "view", Value: drawn + " — drawn while a profile that selects it is switched on, or with `--view " + drawn + "`"})
 	}
 	pairsOut = append(pairsOut, view.Pair{Key: "tile", Value: id})
 	if automatic {
@@ -377,7 +408,7 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 	pairsOut = append(pairsOut,
 		view.Pair{Key: "re-runs", Value: every + ", for as long as the TUI is open"},
 		view.Pair{Key: "on screen", Value: "bare `rta` opens on it; H on the tile or `rta dashboard rm " +
-			removeLine(entry) + "` takes it down"})
+			removeLine(entry) + inViewFlag(drawn) + "` takes it down"})
 	return view.KeyValue{Pairs: pairsOut}, nil
 }
 
@@ -503,9 +534,18 @@ func runDashboardRemove(cmd *cobra.Command, id string, dryRun bool) (view.View, 
 		removed config.Tile
 		keys    []string
 	)
+	now, err := config.LoadFile()
+	if err != nil {
+		return nil, view.AsError(err, "core.dashboard.config")
+	}
+	drawn, verr := viewOf(cmd, now, false)
+	if verr != nil {
+		return nil, verr
+	}
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
-		kept := make([]config.Tile, 0, len(cfg.Dashboard.Add))
-		for _, t := range cfg.Dashboard.Add {
+		block := blockOf(cfg, drawn)
+		kept := make([]config.Tile, 0, len(block.Add))
+		for _, t := range block.Add {
 			if t.Key() == key {
 				found, removed = true, t
 				continue
@@ -516,7 +556,8 @@ func runDashboardRemove(cmd *cobra.Command, id string, dryRun bool) (view.View, 
 		if !found || dryRun {
 			return cfg, false
 		}
-		cfg.Dashboard.Add = kept
+		block.Add = kept
+		cfg.SetBlock(drawn, block)
 		return cfg, true
 	}); err != nil {
 		return nil, view.AsError(err, "core.dashboard.write")
@@ -533,8 +574,8 @@ func runDashboardRemove(cmd *cobra.Command, id string, dryRun bool) (view.View, 
 		label, verb = "would write", "would have removed"
 	}
 	return view.KeyValue{Pairs: []view.Pair{
-		{Key: label, Value: verb + " " + key + " from the dashboard in " + config.Where("dashboard", "")},
-		{Key: "back", Value: "`rta dashboard add " + removed.AddArgs() + "`"},
+		{Key: label, Value: verb + " " + key + " from the dashboard" + inView(drawn) + " in " + dashboardFile(drawn)},
+		{Key: "back", Value: "`rta dashboard add " + removed.AddArgs() + inViewFlag(drawn) + "`"},
 	}}, nil
 }
 
@@ -564,6 +605,7 @@ func dashboardHideCommand(reg *registry.Registry, render renderFn, opts *globalO
 		},
 	}
 	cmd.Flags().String("profile", "", "the connection whose panel to hide or bring back, for an entry that expanded into several")
+	addViewFlag(cmd, "hide it on, or bring it back to, this view")
 	completeFlag(cmd, "profile", completeProfiles)
 	return cmd
 }
@@ -578,6 +620,10 @@ func runDashboardHide(cmd *cobra.Command, id string, reg *registry.Registry, hid
 	if err != nil {
 		return nil, view.AsError(err, "core.dashboard.config")
 	}
+	drawn, verr := viewOf(cmd, cfg, false)
+	if verr != nil {
+		return nil, verr
+	}
 	if hide {
 		// Only what H would hide: an automatic tile by its capability —
 		// every panel of it, when the switched-on environment expanded it
@@ -588,7 +634,7 @@ func runDashboardHide(cmd *cobra.Command, id string, reg *registry.Registry, hid
 			found *tui.Placement
 			there []string
 		)
-		for _, p := range layoutNow(reg, cfg) {
+		for _, p := range layoutNow(reg, cfg, drawn) {
 			if p.ID == id {
 				there = append(there, config.TileKey(p.ID, p.Profile))
 			}
@@ -609,14 +655,14 @@ func runDashboardHide(cmd *cobra.Command, id string, reg *registry.Registry, hid
 		case found.Source == "stated" && !found.Expanded:
 			return nil, view.Errorf("core.dashboard.notautomatic",
 				"%s is stated in `tiles:`, and a stated list is edited rather than hidden", key).
-				WithHint("take it out of `dashboard: tiles:` in " + config.Where("dashboard", "") + " — H on it in the TUI does that")
+				WithHint("take it out of `tiles:` in " + dashboardFile(drawn) + " — H on it in the TUI does that")
 		case found.Source != "automatic" && !found.Expanded:
 			return nil, view.Errorf("core.dashboard.notautomatic",
 				"%s is an added tile, and an entry is withdrawn rather than hidden", key).
 				WithHint("`rta dashboard rm " + removeLine(config.Tile{ID: id, Profile: ref}) + "` takes it down")
-		case slices.Contains(cfg.Dashboard.Hidden, key):
+		case slices.Contains(blockOf(cfg, drawn).Hidden, key):
 			return view.KeyValue{Pairs: []view.Pair{{Key: "unchanged",
-				Value: key + " is already hidden — nothing written to " + config.Where("dashboard", "")}}}, nil
+				Value: key + " is already hidden — nothing written to " + dashboardFile(drawn)}}}, nil
 		}
 	}
 	var (
@@ -624,15 +670,16 @@ func runDashboardHide(cmd *cobra.Command, id string, reg *registry.Registry, hid
 		hiddenBefore []string
 	)
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
-		hiddenBefore = cfg.Dashboard.Hidden
-		kept := make([]string, 0, len(cfg.Dashboard.Hidden)+1)
-		for _, h := range cfg.Dashboard.Hidden {
+		block := blockOf(cfg, drawn)
+		hiddenBefore = block.Hidden
+		kept := make([]string, 0, len(block.Hidden)+1)
+		for _, h := range block.Hidden {
 			if h == key {
 				continue
 			}
 			kept = append(kept, h)
 		}
-		changed = len(kept) != len(cfg.Dashboard.Hidden)
+		changed = len(kept) != len(block.Hidden)
 		if hide {
 			kept = append(kept, key)
 			changed = true
@@ -640,7 +687,8 @@ func runDashboardHide(cmd *cobra.Command, id string, reg *registry.Registry, hid
 		if !changed || dryRun {
 			return cfg, false
 		}
-		cfg.Dashboard.Hidden = kept
+		block.Hidden = kept
+		cfg.SetBlock(drawn, block)
 		return cfg, true
 	}); err != nil {
 		return nil, view.AsError(err, "core.dashboard.write")
@@ -652,16 +700,16 @@ func runDashboardHide(cmd *cobra.Command, id string, reg *registry.Registry, hid
 		}
 		return nil, view.Errorf("core.dashboard.nothidden", "%s is not hidden", key).WithHint(hint)
 	}
-	verb, back := "hid", "`rta dashboard unhide "+removeLine(config.Tile{ID: id, Profile: ref})+"` brings it back"
+	verb, back := "hid", "`rta dashboard unhide "+removeLine(config.Tile{ID: id, Profile: ref})+inViewFlag(drawn)+"` brings it back"
 	if !hide {
-		verb, back = "brought back", "`rta dashboard hide "+removeLine(config.Tile{ID: id, Profile: ref})+"` hides it again"
+		verb, back = "brought back", "`rta dashboard hide "+removeLine(config.Tile{ID: id, Profile: ref})+inViewFlag(drawn)+"` hides it again"
 	}
 	label := "wrote"
 	if dryRun {
 		label, verb = "would write", "would have "+verb
 	}
 	return view.KeyValue{Pairs: []view.Pair{
-		{Key: label, Value: verb + " " + key + " in " + config.Where("dashboard", "")},
+		{Key: label, Value: verb + " " + key + inView(drawn) + " in " + dashboardFile(drawn)},
 		{Key: "back", Value: back},
 	}}, nil
 }
@@ -676,8 +724,9 @@ func completeHideable(reg *registry.Registry, hide bool) func(*cobra.Command, []
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 		var out []cobra.Completion
+		now := drawnView(cfg)
 		if !hide {
-			for _, h := range cfg.Dashboard.Hidden {
+			for _, h := range blockOf(cfg, now).Hidden {
 				id, ref, _ := strings.Cut(h, "@")
 				desc := "hidden"
 				if ref != "" {
@@ -687,7 +736,7 @@ func completeHideable(reg *registry.Registry, hide bool) func(*cobra.Command, []
 			}
 			return out, cobra.ShellCompDirectiveNoFileComp
 		}
-		for _, p := range layoutNow(reg, cfg) {
+		for _, p := range layoutNow(reg, cfg, now) {
 			if p.Hidden || (p.Source != "automatic" && !p.Expanded) {
 				continue
 			}
@@ -722,7 +771,7 @@ func completeAddedTiles(*cobra.Command, []string, string) ([]cobra.Completion, c
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	var out []cobra.Completion
-	for _, t := range cfg.Dashboard.Add {
+	for _, t := range blockOf(cfg, drawnView(cfg)).Add {
 		desc := "follows the switch"
 		if t.Profile != "" {
 			desc = "--profile " + t.Profile
@@ -752,4 +801,134 @@ func completeTileInputs(reg *registry.Registry) func(*cobra.Command, []string, s
 		}
 		return out, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
 	}
+}
+
+// The views a dashboard command acts on.
+//
+// Without --view a command acts on the view that is drawn: the one the
+// switched-on profile selects, or the dashboard: block itself. Whatever a
+// person adds, hides or lists is then what they are looking at in the TUI,
+// and `--view default` names the block when that is not.
+
+// drawnView is the view bare `rta` draws now, "" for the dashboard: block.
+func drawnView(cfg config.Config) string { return cfg.ViewFor(profile.Active()) }
+
+// blockOf is the arrangement of a view as a command reads it.
+func blockOf(cfg config.Config, v string) config.Dashboard {
+	d, _ := cfg.Block(v)
+	return d
+}
+
+func addViewFlag(cmd *cobra.Command, help string) {
+	cmd.Flags().String("view", "", help+" — one of `rta dashboard views`, or `default` for the dashboard: block; "+
+		"left out, the view that is drawn now")
+	completeFlag(cmd, "view", completeViews)
+}
+
+// viewOf is the view the command acts on: --view, else the one drawn now. A
+// view that is not stated is refused unless the command may create it, which is
+// `add`, so that a typo in a name does not hide the tile somewhere nobody looks.
+func viewOf(cmd *cobra.Command, cfg config.Config, mayCreate bool) (string, *view.Error) {
+	name := strings.TrimSpace(mustString(cmd, "view"))
+	switch {
+	case name == "":
+		return drawnView(cfg), nil
+	case name == config.DefaultView:
+		return "", nil
+	case !config.ValidViewName(name):
+		return "", viewNameRefusal("core.dashboard.view", name)
+	}
+	if _, stated := cfg.Dashboard.Views[name]; !stated && !mayCreate {
+		return "", missingViewRefusal(cfg, name)
+	}
+	return name, nil
+}
+
+// inView names a view in a receipt, and says nothing of the block itself.
+func inView(v string) string {
+	if v == "" {
+		return ""
+	}
+	return " (view " + v + ")"
+}
+
+// inViewFlag is the flag that names the view in the command a receipt offers
+// as the way back.
+func inViewFlag(v string) string {
+	if v == "" {
+		return ""
+	}
+	return " --view " + v
+}
+
+// dashboardFile is the file that states a view's arrangement, or the dashboard:
+// block's.
+func dashboardFile(v string) string {
+	if v == "" {
+		return config.Where("dashboard", "")
+	}
+	return config.Where("views", v)
+}
+
+func completeViews(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	cfg, err := config.LoadFile()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	out := []cobra.Completion{cobra.CompletionWithDesc(config.DefaultView, "the dashboard: block")}
+	for _, name := range cfg.ViewNames() {
+		out = append(out, cobra.CompletionWithDesc(name, format.Count(len(cfg.Dashboard.Views[name].Tiles)+
+			len(cfg.Dashboard.Views[name].Add), "tile", "tiles")))
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp
+}
+
+// viewsTable is every view the configuration states: which profiles select it,
+// what it holds, which file states it, and the one that is drawn now.
+func viewsTable(cfg config.Config) view.View {
+	t := view.Table{Columns: []view.Column{
+		{Name: "View"}, {Name: "Selected by"}, {Name: "Tiles", Kind: view.KindNumber}, {Name: "File"}, {Name: "Drawn now"},
+	}}
+	now := drawnView(cfg)
+	selectors := map[string][]string{}
+	for _, name := range cfg.ProfileNames() {
+		if v := cfg.Profiles[name].Dashboard; v != "" {
+			selectors[v] = append(selectors[v], name)
+		}
+	}
+	row := func(name, file string, tiles int, selected []string) {
+		drawn := ""
+		if name == now || (name == config.DefaultView && now == "") {
+			drawn = "yes"
+			if active := profile.Active(); active != "" && name == now && now != "" {
+				drawn = "yes — " + active + " is switched on"
+			}
+		}
+		t.Rows = append(t.Rows, []string{name, strings.Join(selected, ", "), strconv.Itoa(tiles), configFileName(file), drawn})
+	}
+	base := cfg.Dashboard
+	row(config.DefaultView, config.Where("dashboard", ""), len(base.Tiles)+len(base.Add), nil)
+	for _, name := range cfg.ViewNames() {
+		v := cfg.Dashboard.Views[name]
+		row(name, config.Where("views", name), len(v.Tiles)+len(v.Add), selectors[name])
+	}
+	t.Total = len(t.Rows)
+	return t
+}
+
+// viewNameRefusal is the refusal for a name no view can have.
+func viewNameRefusal(code, name string) *view.Error {
+	return view.Errorf(code, "%q is not a name a view can have", name).
+		WithHint("a view is named in lower case, digits and hyphens, starting with a letter, at most 32 long — " +
+			"and `default` is the dashboard: block, not a view")
+}
+
+// missingViewRefusal is the refusal for a view nothing states, naming the ones
+// that are, or the command that states the first.
+func missingViewRefusal(cfg config.Config, name string) *view.Error {
+	hint := "no view is stated yet — `rta dashboard add <capability> --view " + name + "` creates one"
+	if names := cfg.ViewNames(); len(names) > 0 {
+		hint = "views: " + strings.Join(names, ", ") + " — `rta dashboard add <capability> --view " + name + "` creates a new one"
+	}
+	return view.Errorf("core.dashboard.noview", "there is no view named %q", name).WithHint(hint)
 }

@@ -93,6 +93,7 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 	cmd.Flags().String("note", "", "why this environment exists")
 	cmd.Flags().String("ttl", "", "how long a switch to it lasts (`30m`, `8h`, or `none`)")
 	cmd.Flags().String("color", "", "badge colour every command prints while it is on (`#rrggbb`, or `none`)")
+	cmd.Flags().String("dashboard", "", "the dashboard view drawn while it is on — one of `rta dashboard views` (or `none`)")
 	cmd.Flags().String("plugin", "", "which plugin the connection flags below are about — "+
 		"`pg`, or `pg/analytics` to state one of several connections to it")
 	// StringArray, never StringSlice: StringSlice splits its argument on
@@ -114,6 +115,7 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 		"the far side of the forward speaks TLS on its own — fill the endpoint as https, not http")
 	completeFlag(cmd, "plugin", completeInstalledPlugins)
 	completeFlag(cmd, "ttl", completeWindow)
+	completeFlag(cmd, "dashboard", completeViews)
 	completeFlag(cmd, "set", completeSetKeys)
 	completeFlag(cmd, "secret", completeSecretInputs)
 	return cmd
@@ -334,6 +336,21 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 				return cfg, false
 			}
 			p.TTL = ttl
+		}
+		if cmd.Flags().Changed("dashboard") {
+			named := strings.TrimSpace(mustString(cmd, "dashboard"))
+			if named == "none" || named == config.DefaultView {
+				named = ""
+			}
+			if named != "" && !config.ValidViewName(named) {
+				verr = viewNameRefusal("core.profile.dashboard", named)
+				return cfg, false
+			}
+			if _, stated := cfg.Dashboard.Views[named]; named != "" && !stated {
+				verr = missingViewRefusal(cfg, named)
+				return cfg, false
+			}
+			p.Dashboard = named
 		}
 		if cmd.Flags().Changed("color") {
 			color := strings.TrimSpace(mustString(cmd, "color"))

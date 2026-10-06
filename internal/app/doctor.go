@@ -492,13 +492,41 @@ func doctorDashboardTiles(reg *registry.Registry, add func(check, status, detail
 	if err != nil {
 		return
 	}
-	for _, t := range append(slices.Clone(cfg.Dashboard.Tiles), cfg.Dashboard.Add...) {
-		if _, ok := reg.Capability(t.ID); ok {
-			continue
-		}
-		e := capabilityNotFound(reg, t.ID)
-		add("dashboard", "warn", "tile "+t.ID+" draws nothing: "+e.Message+" — "+e.Hint)
+	blocks := map[string]config.Dashboard{"": blockOf(cfg, "")}
+	for _, name := range cfg.ViewNames() {
+		blocks[name] = blockOf(cfg, name)
 	}
+	for _, name := range append([]string{""}, cfg.ViewNames()...) {
+		for _, t := range append(slices.Clone(blocks[name].Tiles), blocks[name].Add...) {
+			if _, ok := reg.Capability(t.ID); ok {
+				continue
+			}
+			e := capabilityNotFound(reg, t.ID)
+			add("dashboard", "warn", "tile "+t.ID+inView(name)+" draws nothing: "+e.Message+" — "+e.Hint)
+		}
+	}
+	for _, line := range danglingViews(cfg) {
+		add("dashboard", "warn", line)
+	}
+}
+
+// danglingViews names each profile that selects a dashboard view nothing
+// states. Not a reason to refuse the profile — the dashboard: block draws
+// instead, which is the screen every machine has — but a name somebody typed
+// and believes is in effect, which is what the rest of this file reports.
+func danglingViews(cfg config.Config) []string {
+	var out []string
+	for _, name := range cfg.ProfileNames() {
+		v := cfg.Profiles[name].Dashboard
+		if _, ok := cfg.Dashboard.Views[v]; v != "" && !ok {
+			hint := "`rta dashboard add <capability> --view " + v + "` states it"
+			if names := cfg.ViewNames(); len(names) > 0 {
+				hint = "the views are " + strings.Join(names, ", ")
+			}
+			out = append(out, "profile "+name+" selects dashboard view "+v+", which is not stated, so the dashboard: block draws ("+hint+")")
+		}
+	}
+	return out
 }
 
 // outputSource is the default output format and where it comes from, for the

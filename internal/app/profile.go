@@ -705,6 +705,10 @@ func profileCard(name string, p config.Profile, reg *registry.Registry) view.Key
 	if p.TTL != "" {
 		pairs = append(pairs, view.Pair{Key: "ttl", Value: p.TTL + " per switch"})
 	}
+	if p.Dashboard != "" {
+		pairs = append(pairs, view.Pair{Key: "dashboard", Value: p.Dashboard +
+			" — the view drawn while this is switched on; `rta dashboard views` lists them"})
+	}
 	for _, key := range p.PluginKeys() {
 		conn := p.Plugins[key]
 		pairs = append(pairs, view.Pair{Key: "plugin", Value: key})

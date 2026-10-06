@@ -110,6 +110,9 @@ func configProblems(reg *registry.Registry, path string, data []byte) []configPr
 	for _, line := range groupedProblems(profile.Check(cfg, withTrust{reg})) {
 		out = append(out, configProblem{Key: "profiles", Text: line})
 	}
+	for _, line := range danglingViews(cfg) {
+		out = append(out, configProblem{Key: "profiles", Text: line})
+	}
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i].Line, out[j].Line
 		return (a != 0 && b == 0) || (a != 0 && b != 0 && a < b)
