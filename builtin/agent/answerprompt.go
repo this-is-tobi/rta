@@ -131,12 +131,12 @@ func askLine(in io.Reader, out io.Writer, card, prompt string) (string, error) {
 //
 // Anything but y or yes is no, a closed input included: the call stays parked,
 // and the person is told how to refuse it now or leave it to expire.
-func confirmAllow(r consent.Request, question string) bool {
+func confirmAllow(r consent.Request, question string, reveals bool) bool {
 	// Written to the terminal directly, past the renderer that cleans everything
 	// else a person reads here, so the card is cleaned on the way out: a record or
 	// a preview carrying a cursor movement must not be able to redraw the card
 	// above the question it is the subject of.
-	answer, _ := putQuestion(textclean.Terminal(allowCard(r)), question+" [y/N] ")
+	answer, _ := putQuestion(textclean.Terminal(allowCard(r, reveals)), question+" [y/N] ")
 	switch strings.ToLower(answer) {
 	case "y", "yes":
 		return true
@@ -167,7 +167,7 @@ func agentOr(agent string) string {
 }
 
 // allowCard is what the question is about, in lines.
-func allowCard(r consent.Request) string {
+func allowCard(r consent.Request, reveals bool) string {
 	var b strings.Builder
 	head := callNamed(r.Cap, r.Scopes)
 	if r.Agent != "" {
@@ -180,6 +180,9 @@ func allowCard(r consent.Request) string {
 	}
 	if args := argsOf(r); args != "" {
 		row("arguments", args)
+	}
+	if reveals {
+		row("reveals", revealsLine)
 	}
 	body := r.Preview
 	if body == "" {
@@ -230,6 +233,26 @@ func declined(sf plugin.Surface, r consent.Request) view.View {
 		{Key: "not allowed", Value: callNamed(r.Cap, r.Scopes) + " is still waiting"},
 		{Key: "to refuse it now", Value: "`" + sf.Call("agent.deny", id) + "`; left alone it expires and the agent is told"},
 	}}
+}
+
+// revealsLine is what a person allowing a call that reveals is told: the
+// answer is the stored value, and it goes where the agent's answers go.
+const revealsLine = "the stored value itself, not a masked copy — it becomes part of the agent's context"
+
+// revealsValue reports whether the capability a parked call names reveals a
+// stored value, from this machine's own catalogue and never from the request,
+// which is a file the agent's server wrote: a request that said it revealed
+// nothing would have left the page quiet about the one thing it is for.
+func revealsValue(catalog func() []plugin.Capability, id string) bool {
+	if catalog == nil {
+		return false
+	}
+	for _, c := range catalog() {
+		if c.ID == id {
+			return c.Reveals
+		}
+	}
+	return false
 }
 
 // kvWarning is what a person allowing a kv call is told before the agent finds

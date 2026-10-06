@@ -52,6 +52,8 @@ rta agent deny
 
 With one call parked the id is optional at a terminal: `rta agent allow` shows what the call is and asks, and anything but `y` or `yes` — an empty line, `n`, a closed input — leaves it parked and says how to deny it. With several parked, `show`, `allow` and `deny` list them and answer none: name one, as in `rta agent allow 5473aa62`. Where there is no terminal, under `--yes` or in a script, the id is always required, so a script never answers a call it did not look at.
 
+A call to a capability whose answer is a stored value, such as `kv.get`, says so on the page and on the card above the question, in a `reveals` row: the stored value itself, not a masked copy, which becomes part of the agent's context. The row comes from this machine's own catalogue and not from the request, which the agent's server wrote.
+
 A destructive call is previewed before it parks: rta runs the capability's own `--dry-run` and shows the result on the request, which changes the question from *"may this agent call `note.rm`"* to *"may it remove **this note**"*. The preview is not optional, and it is bounded to built-in capabilities, whose dry runs are cheap and honest about `DryRun` by test — a plugin's handler is never run to answer a question about it.
 
 Answering `allow` runs that one call. It does not create a standing grant — if the agent asks again, you are asked again. That is the difference between consent and permission, and rta keeps them separate.

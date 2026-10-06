@@ -236,7 +236,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					{Key: "d", Label: "deny", Target: "agent.deny", Source: plugin.ActionSelf, Bare: true},
 					{Key: "L", Label: "lock", Target: "lock.add", Source: plugin.ActionSelf, Seed: map[string]string{"name": "agent"}},
 				},
-				Run: runShow,
+				Run: runShow(catalog),
 			},
 			{
 				ID:      "agent.allow",
@@ -1214,23 +1214,28 @@ func credentialCell(e agentlog.Entry) string {
 	return e.Credential
 }
 
-func runShow(ctx context.Context, req plugin.Request) (view.View, error) {
-	id, verr := requestNamed(req, "agent.show")
-	if verr != nil {
-		return nil, verr
+func runShow(catalog func() []plugin.Capability) plugin.Handler {
+	return func(ctx context.Context, req plugin.Request) (view.View, error) {
+		id, verr := requestNamed(req, "agent.show")
+		if verr != nil {
+			return nil, verr
+		}
+		if server := strings.TrimSpace(req.String("server")); server != "" {
+			return remoteShow(ctx, req, server, id)
+		}
+		r, ok := consent.Find(id)
+		if !ok {
+			return nil, unknownRequest(req.Surface(), id)
+		}
+		var local []view.Pair
+		if revealsValue(catalog, r.Cap) {
+			local = append(local, view.Pair{Key: "reveals", Value: revealsLine})
+		}
+		if w := kvWarning(r); w != "" {
+			local = append(local, view.Pair{Key: "warning", Value: w})
+		}
+		return showView(req.Surface(), r, local...), nil
 	}
-	if server := strings.TrimSpace(req.String("server")); server != "" {
-		return remoteShow(ctx, req, server, id)
-	}
-	r, ok := consent.Find(id)
-	if !ok {
-		return nil, unknownRequest(req.Surface(), id)
-	}
-	var local []view.Pair
-	if w := kvWarning(r); w != "" {
-		local = append(local, view.Pair{Key: "warning", Value: w})
-	}
-	return showView(req.Surface(), r, local...), nil
 }
 
 // showView renders one request in full, wherever it was fetched from — the
@@ -1357,7 +1362,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 		if verr := checkCeiling(r); verr != nil {
 			return nil, verr
 		}
-		if !confirmAllow(r, allowQuestion(roleName, ttl, r.Agent)) {
+		if !confirmAllow(r, allowQuestion(roleName, ttl, r.Agent), revealsValue(catalog, r.Cap)) {
 			return declined(req.Surface(), r), nil
 		}
 	}
