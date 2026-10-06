@@ -227,7 +227,7 @@ func TestPressingCThenEnterCopiesTheDefaultChoice(t *testing.T) {
 	waitFor(t, tm, "first-pw")
 
 	tm.Send(tea.KeyPressMsg{Code: 'c', Text: "c"})
-	waitFor(t, tm, "copy which value?")
+	waitForCopyPicker(t, tm, "1: first-pw")
 
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 	waitFor(t, tm, "copied value") // back in modeResult, flash visible
@@ -425,7 +425,7 @@ func TestPressingCOnTheRealGenTileEndToEnd(t *testing.T) {
 	// when the tile answered first.
 	waitFor(t, tm, "copy which value?")
 	tm.Send(tea.KeyPressMsg{Code: 'c', Text: "c"})
-	waitFor(t, tm, "copy which value?")
+	waitForCopyPicker(t, tm, "1: ")
 
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 	waitFor(t, tm, "copied value")

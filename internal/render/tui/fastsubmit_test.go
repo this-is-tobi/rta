@@ -404,7 +404,7 @@ func TestShiftEnterOnTheCopyPickerAcceptsTheDefaultChoice(t *testing.T) {
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
 	waitFor(t, tm, "first-pw")
 	tm.Send(tea.KeyPressMsg{Code: 'c', Text: "c"})
-	waitFor(t, tm, "copy which value?")
+	waitForCopyPicker(t, tm, "1: first-pw")
 
 	tm.Send(shiftEnter)
 	waitFor(t, tm, "copied value")

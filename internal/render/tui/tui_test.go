@@ -186,6 +186,17 @@ func waitFor(t *testing.T, tm *teatest.TestModel, wants ...string) {
 	}, teatest.WithDuration(framePatience))
 }
 
+// waitForCopyPicker waits for the picker itself, by the first of its choices,
+// and not for its title. "copy which value?" is also the footer hint of the
+// result a picker opens over, drawn with the result and so on screen before the
+// c that opens the picker has been answered: waiting on those words returned at
+// once, and the key sent next met a form whose Init had not run, which a loaded
+// runner showed as a thirty-second wait for a copy that never happened.
+func waitForCopyPicker(t *testing.T, tm *teatest.TestModel, firstChoice string) {
+	t.Helper()
+	waitFor(t, tm, firstChoice)
+}
+
 func quit(t *testing.T, tm *teatest.TestModel) {
 	t.Helper()
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
