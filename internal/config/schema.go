@@ -67,44 +67,7 @@ func Schema() map[string]any {
 					"one tile per registered plugin, and plugins installed later still appear.",
 				"type":                 "object",
 				"additionalProperties": false,
-				"properties": map[string]any{
-					"tiles": map[string]any{
-						"description": "States the dashboard exactly, replacing the automatic " +
-							"set; hidden and order are then not consulted. Only Read " +
-							"capabilities run as tiles.",
-						"type":  "array",
-						"items": map[string]any{"$ref": "#/$defs/tile"},
-					},
-					"add": map[string]any{
-						"description": "Tiles joined to the automatic set without freezing it: " +
-							"a capability the automatic dashboard leaves out, or one " +
-							"capability several times, each pinned to its own profile. " +
-							"`rta dashboard add` writes an entry here.",
-						"type":  "array",
-						"items": map[string]any{"$ref": "#/$defs/tile"},
-					},
-					"hidden": map[string]any{
-						"description": "What to leave off the screen: a capability ID hides an " +
-							"automatic tile and every panel it expanded into; a tile key, " +
-							"capability@profile or capability@profile/instance, hides that one " +
-							"panel of an entry that expanded into several connections.",
-						"type":  "array",
-						"items": map[string]any{"type": "string"},
-					},
-					"order": map[string]any{
-						"description": "Tile keys to place first, in this order — a capability " +
-							"ID, or capability@profile for a pinned tile; anything not " +
-							"named keeps its natural position after them.",
-						"type":  "array",
-						"items": map[string]any{"type": "string"},
-					},
-					"columns": map[string]any{
-						"description": "Fixes the grid width instead of deriving it from the " +
-							"terminal; 0 means automatic.",
-						"type":    "integer",
-						"minimum": 0,
-					},
-				},
+				"properties":           withViews(dashboardFields()),
 			},
 			"plugins": map[string]any{
 				"description": "Each plugin's own settings, stated once instead of retyped per " +
@@ -160,6 +123,11 @@ func Schema() map[string]any {
 						"type": "string",
 					},
 				},
+			},
+			"view": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties":           dashboardFields(),
 			},
 			"tile": map[string]any{
 				"type":                 "object",
@@ -217,6 +185,12 @@ func Schema() map[string]any {
 							"empty means no deadline. `rta use --for` overrides it.",
 						"type":    "string",
 						"pattern": schemaDuration,
+					},
+					"dashboard": map[string]any{
+						"description": "The dashboard view drawn while this profile is switched on: " +
+							"one of `dashboard: views:`. Left out, the `dashboard:` block draws.",
+						"type":    "string",
+						"pattern": viewName.String(),
 					},
 					"color": map[string]any{
 						"description": "Marks this environment, so which one is switched on " +
@@ -280,4 +254,62 @@ func Schema() map[string]any {
 			},
 		},
 	}
+}
+
+// dashboardFields are the five keys of a dashboard arrangement, which the
+// `dashboard:` block states and so does each of its views.
+func dashboardFields() map[string]any {
+	return map[string]any{
+		"tiles": map[string]any{
+			"description": "States the dashboard exactly, replacing the automatic " +
+				"set; hidden and order are then not consulted. Only Read " +
+				"capabilities run as tiles.",
+			"type":  "array",
+			"items": map[string]any{"$ref": "#/$defs/tile"},
+		},
+		"add": map[string]any{
+			"description": "Tiles joined to the automatic set without freezing it: " +
+				"a capability the automatic dashboard leaves out, or one " +
+				"capability several times, each pinned to its own profile. " +
+				"`rta dashboard add` writes an entry here.",
+			"type":  "array",
+			"items": map[string]any{"$ref": "#/$defs/tile"},
+		},
+		"hidden": map[string]any{
+			"description": "What to leave off the screen: a capability ID hides an " +
+				"automatic tile and every panel it expanded into; a tile key, " +
+				"capability@profile or capability@profile/instance, hides that one " +
+				"panel of an entry that expanded into several connections.",
+			"type":  "array",
+			"items": map[string]any{"type": "string"},
+		},
+		"order": map[string]any{
+			"description": "Tile keys to place first, in this order — a capability " +
+				"ID, or capability@profile for a pinned tile; anything not " +
+				"named keeps its natural position after them.",
+			"type":  "array",
+			"items": map[string]any{"type": "string"},
+		},
+		"columns": map[string]any{
+			"description": "Fixes the grid width instead of deriving it from the " +
+				"terminal; 0 means automatic.",
+			"type":    "integer",
+			"minimum": 0,
+		},
+	}
+}
+
+// withViews is the dashboard block's keys with `views:`, the one key a view
+// does not have: a view is a whole arrangement and holds no views.
+func withViews(fields map[string]any) map[string]any {
+	fields["views"] = map[string]any{
+		"description": "Named dashboards, each a whole arrangement of its own with the same five " +
+			"keys, and a profile selects one with `dashboard:` — drawn while that profile is " +
+			"switched on, in place of this block. A view's tiles pin themselves to whichever " +
+			"profiles they name, so one view can show every database of every environment.",
+		"type":                 "object",
+		"propertyNames":        map[string]any{"pattern": viewName.String(), "not": map[string]any{"const": DefaultView}},
+		"additionalProperties": map[string]any{"$ref": "#/$defs/view"},
+	}
+	return fields
 }

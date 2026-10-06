@@ -51,6 +51,11 @@
               "pattern": "^#[0-9a-fA-F]{6}$",
               "type": "string"
             },
+            "dashboard": {
+              "description": "The dashboard view drawn while this profile is switched on: one of `dashboard: views:`. Left out, the `dashboard:` block draws.",
+              "pattern": "^[a-z][a-z0-9-]{0,31}$",
+              "type": "string"
+            },
             "note": {
               "description": "Why this environment exists \u2014 printed by `rta profile list`, `rta use` and `rta doctor`.",
               "type": "string"
@@ -123,6 +128,45 @@
             "id"
           ],
           "type": "object"
+        },
+        "view": {
+          "additionalProperties": false,
+          "properties": {
+            "add": {
+              "description": "Tiles joined to the automatic set without freezing it: a capability the automatic dashboard leaves out, or one capability several times, each pinned to its own profile. `rta dashboard add` writes an entry here.",
+              "items": {
+                "$ref": "#/$defs/rtaConfig/$defs/tile"
+              },
+              "type": "array"
+            },
+            "columns": {
+              "description": "Fixes the grid width instead of deriving it from the terminal; 0 means automatic.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "hidden": {
+              "description": "What to leave off the screen: a capability ID hides an automatic tile and every panel it expanded into; a tile key, capability@profile or capability@profile/instance, hides that one panel of an entry that expanded into several connections.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "order": {
+              "description": "Tile keys to place first, in this order \u2014 a capability ID, or capability@profile for a pinned tile; anything not named keeps its natural position after them.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "tiles": {
+              "description": "States the dashboard exactly, replacing the automatic set; hidden and order are then not consulted. Only Read capabilities run as tiles.",
+              "items": {
+                "$ref": "#/$defs/rtaConfig/$defs/tile"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
         }
       },
       "additionalProperties": false,
@@ -164,6 +208,19 @@
                 "$ref": "#/$defs/rtaConfig/$defs/tile"
               },
               "type": "array"
+            },
+            "views": {
+              "additionalProperties": {
+                "$ref": "#/$defs/rtaConfig/$defs/view"
+              },
+              "description": "Named dashboards, each a whole arrangement of its own with the same five keys, and a profile selects one with `dashboard:` \u2014 drawn while that profile is switched on, in place of this block. A view's tiles pin themselves to whichever profiles they name, so one view can show every database of every environment.",
+              "propertyNames": {
+                "not": {
+                  "const": "default"
+                },
+                "pattern": "^[a-z][a-z0-9-]{0,31}$"
+              },
+              "type": "object"
             }
           },
           "type": "object"
