@@ -20,6 +20,9 @@ import (
 // Naming it is the whole job: the operator's file looks right to them, and a
 // setting that silently does nothing is the failure a typo is.
 type Finding struct {
+	// File is the file the key is in: the config file or one of its drop-ins.
+	// Empty for a finding of text that is not on disk yet (CheckText).
+	File string
 	// Key is the dotted path as `rta config get` spells it: dashboard.colums.
 	Key string
 	// Line is where the key is written, counted from 1.
@@ -39,17 +42,24 @@ func (f Finding) String() string {
 	return fmt.Sprintf("%s: %s (%s)", where, f.Reason, f.Hint)
 }
 
-// Check reads the config file as it is now and reports the keys in it that
-// rta ignores, in the order the file has them. A file that does not exist has
-// none, and one that does not parse has none either: LoadFile names that fault
-// with the parser's own line, and listing every key of a file nothing could
-// read would be noise beside it.
+// Check reads the config file and its drop-ins as they are now and reports the
+// keys in them that rta ignores, file by file and in the order each file has
+// them. A file that does not exist has none, and a set that does not parse has
+// none either: LoadFile names that fault with the parser's own line, and
+// listing every key of files nothing could read would be noise beside it.
 func Check() ([]Finding, error) {
-	data, err := ReadText()
-	if err != nil || data == nil {
+	s, err := readStack()
+	if err != nil {
 		return nil, err
 	}
-	return CheckText(data), nil
+	var found []Finding
+	for _, l := range s.layers {
+		for _, f := range CheckText(l.text) {
+			f.File = l.path
+			found = append(found, f)
+		}
+	}
+	return found, nil
 }
 
 // CheckText is Check over text already in hand: what `rta config edit` holds

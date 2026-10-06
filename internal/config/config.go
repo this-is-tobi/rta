@@ -303,33 +303,38 @@ func parseHint(err error) string {
 // short of what a file put there to exhaust memory would be.
 const maxConfigBytes = 8 << 20
 
-// LoadFile reads the config file alone (missing file = defaults), without
-// applying environment overrides. Anything that reads the config in order to
+// LoadFile reads the config file and the drop-ins beside it (missing file =
+// defaults), without applying environment overrides. Anything that reads the config in order to
 // write it back must start here: Load would fold this session's RTA_* into
 // the value, and saving that would bake one shell's environment into the
 // file for every future run.
 func LoadFile() (Config, error) {
-	// Capped and opened without waiting: the file is the operator's, but the
-	// working-directory fallback is whatever a directory somebody else filled
-	// holds, and a named pipe there held every command for good.
-	data, err := ReadText()
+	// Every file is capped and opened without waiting: the config file is the
+	// operator's, but the working-directory fallback is whatever a directory
+	// somebody else filled holds, and a named pipe there held every command for
+	// good. No file is zero-config mode, and a stack of nothing is the zero
+	// Config.
+	s, err := readStack()
 	if err != nil {
 		return Config{}, err
 	}
-	// No file is zero-config mode, and Parse of nothing is the zero Config.
-	return Parse(data)
+	return s.merged(), nil
 }
 
 // ReadText is the config file's bytes as the loader reads them, capped and
 // opened without waiting, and nil when there is no file. What `rta config edit`
 // and `rta config check` hold the file to is this text, not a reading of it.
-func ReadText() ([]byte, error) {
-	data, err := readFile(Path())
+func ReadText() ([]byte, error) { return ReadFile(Path()) }
+
+// ReadFile is the text of the file at path as the loader reads it — a config
+// file or one of its drop-ins — and nil when there is none.
+func ReadFile(path string) ([]byte, error) {
+	data, err := readFile(path)
 	switch {
 	case os.IsNotExist(err):
 		return nil, nil
 	case err != nil:
-		return nil, view.Errorf("config.unreadable", "reading %s: %v", Path(), err)
+		return nil, view.Errorf("config.unreadable", "reading %s: %v", path, err)
 	}
 	return data, nil
 }
@@ -356,16 +361,39 @@ func readFile(path string) ([]byte, error) {
 // the config path. It is what `rta config edit` holds the editor's result to
 // before anything of it reaches the file, so a save that would have broken
 // every later command is refused while the person is still looking at it.
-func Parse(data []byte) (Config, error) {
+func Parse(data []byte) (Config, error) { return parse(Path(), data) }
+
+// Validate is data as the text of the file at path — the config file or one of
+// its drop-ins, an existing one or a new one — read together with the others as
+// they are now: the same refusals as Parse, and the one Parse cannot make, that
+// a unit data states is not stated by another file too. What `rta config edit`
+// holds the editor's result to, so that a save that would have made every later
+// command fail with config.duplicate is refused while the person is still
+// looking at it.
+func Validate(path string, data []byte) (Config, error) {
+	cfg, err := parse(path, data)
+	if err != nil {
+		return cfg, err
+	}
+	if _, err := readStackWith(path, data, cfg, true); err != nil {
+		return cfg, err
+	}
+
+	return cfg, nil
+}
+
+// parse reads the configuration text of the file at path, naming that file in
+// what it refuses.
+func parse(path string, data []byte) (Config, error) {
 	var cfg Config
 	data = trimBOM(data)
 	if len(data) > 0 {
 		if err := yamlguard.RefuseAnchors(data); err != nil {
-			return cfg, view.Errorf("config.invalid", "parsing %s: %v", Path(), err).
+			return cfg, view.Errorf("config.invalid", "parsing %s: %v", path, err).
 				WithHint(parseHint(err))
 		}
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
-			return cfg, view.Errorf("config.invalid", "parsing %s: %v", Path(), err).
+			return cfg, view.Errorf("config.invalid", "parsing %s: %v", path, err).
 				WithHint(parseHint(err))
 		}
 	}
@@ -467,18 +495,21 @@ func Mutate(f func(Config) (Config, bool)) error {
 	}
 	defer release()
 
-	// LoadFile, not Load: Load folds this session's RTA_* over the file, and
+	// The files, not Load: Load folds this session's RTA_* over them, and
 	// writing that back would bake one shell's environment into the file for
-	// every future run.
-	cfg, err := LoadFile()
+	// every future run. f is handed what the files state together, and a write
+	// goes back to the file that states each unit (layers.go), so a profile in
+	// a drop-in is edited in the drop-in and nothing of one is copied into the
+	// config file.
+	s, err := readStack()
 	if err != nil {
 		return err
 	}
-	next, save := f(cfg)
+	next, save := f(s.merged())
 	if !save {
 		return nil
 	}
-	return write(next)
+	return s.writeBack(next)
 }
 
 // lock serializes access to the config file.
@@ -558,14 +589,17 @@ func write(cfg Config) error {
 // the write alone, never across the editor: serialising every writer behind a
 // person reading their file is a worse regression than the race it closes.
 // edited is validated by the caller (Parse); nothing here judges it.
-func Replace(original, edited []byte) error {
+func Replace(original, edited []byte) error { return ReplaceAt(Path(), original, edited) }
+
+// ReplaceAt is Replace for the file at path: the config file, or one of its
+// drop-ins, under the same lock the config file's writers take.
+func ReplaceAt(path string, original, edited []byte) error {
 	release, err := lock()
 	if err != nil {
 		return err
 	}
 	defer release()
 
-	path := Path()
 	current, err := readFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return view.Errorf("config.unreadable", "reading %s: %v", path, err)
