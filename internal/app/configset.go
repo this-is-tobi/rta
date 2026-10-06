@@ -58,7 +58,7 @@ func runConfigSet(reg *registry.Registry, raw string, values []string, dryRun bo
 	}
 	if had == has && strings.Join(configValueLines(before), "\n") == strings.Join(configValueLines(after), "\n") {
 		return view.KeyValue{Pairs: slices.Concat([]view.Pair{{Key: "unchanged",
-			Value: key.Name + " " + configStated(key, after, has) + " — nothing written to " + config.Path()}},
+			Value: key.Name + " " + configStated(key, after, has) + " — nothing written to " + configFileOf(key.Name)}},
 			outputOutranked(key, strings.Join(configValueLines(after), "")))}, nil
 	}
 
@@ -71,7 +71,7 @@ func runConfigSet(reg *registry.Registry, raw string, values []string, dryRun bo
 		verb = "would " + verb
 	}
 	return view.KeyValue{Pairs: slices.Concat([]view.Pair{
-		{Key: label, Value: verb + " in " + config.Path()},
+		{Key: label, Value: verb + " in " + configFileOf(key.Name)},
 		{Key: "back", Value: configBack(key, before, had)},
 	}, outputOutranked(key, strings.Join(configValueLines(after), "")))}, nil
 }
@@ -146,15 +146,30 @@ func runConfigUnset(reg *registry.Registry, raw string, dryRun bool) (view.View,
 	}
 	if !removed {
 		return view.KeyValue{Pairs: []view.Pair{{Key: "unchanged",
-			Value: key.Name + " is not set — nothing written to " + config.Path()}}}, nil
+			Value: key.Name + " is not set — nothing written to " + configFileOf(key.Name)}}}, nil
 	}
-	label, verb := "wrote", "removed "+key.Name+" from "+config.Path()
+	label, verb := "wrote", "removed "+key.Name+" from "+configFileOf(key.Name)
 	if dryRun {
-		label, verb = "would write", "would remove "+key.Name+" from "+config.Path()
+		label, verb = "would write", "would remove "+key.Name+" from "+configFileOf(key.Name)
 	}
 	pairs := []view.Pair{{Key: label, Value: verb + ", so it is back to " + defaultWords(key)}}
 	if had {
 		pairs = append(pairs, view.Pair{Key: "back", Value: configBack(key, before, true)})
 	}
 	return view.KeyValue{Pairs: append(pairs, outputOutranked(key, "")...)}, nil
+}
+
+// configFileOf is the file a write to a key lands in: the one that states the
+// unit the key is part of — the plugin's section, the dashboard block, the
+// theme, `output` — and the config file when nothing does yet.
+func configFileOf(key string) string {
+	unit, rest, _ := strings.Cut(key, ".")
+	switch unit {
+	case "plugins":
+		heading, _, _ := strings.Cut(rest, ".")
+		return config.Where("plugins", heading)
+	case "output", "theme", "dashboard":
+		return config.Where(unit, "")
+	}
+	return config.Path()
 }

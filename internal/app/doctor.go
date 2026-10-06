@@ -439,7 +439,11 @@ func doctorTerminal(add func(check, status, detail string)) {
 // and the file is the one that can be edited.
 func doctorConfig(add func(check, status, detail string)) {
 	cfgPath := config.Path()
-	if _, statErr := os.Stat(cfgPath); statErr != nil {
+	dropIns := 0
+	if files, err := config.Files(); err == nil {
+		dropIns = len(files) - 1
+	}
+	if _, statErr := os.Stat(cfgPath); statErr != nil && dropIns == 0 {
 		add("config", "ok", "no config file — rta runs on its defaults; one at "+cfgPath+
 			" would change them"+outputSource(config.Config{}))
 	} else if cfg, err := config.Load(); err != nil {
@@ -447,6 +451,9 @@ func doctorConfig(add func(check, status, detail string)) {
 	} else {
 		onDisk, _ := config.LoadFile()
 		detail := cfgPath + outputSource(onDisk)
+		if dropIns > 0 {
+			detail += ", with " + format.Count(dropIns, "drop-in", "drop-ins") + " in " + config.DropInDir()
+		}
 		switch n := len(cfg.Dashboard.Tiles); {
 		case n > 0:
 			detail += ", " + format.Count(n, "dashboard tile", "dashboard tiles")

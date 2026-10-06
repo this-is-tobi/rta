@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -43,6 +44,14 @@ func runConfigShow(reg *registry.Registry) (view.View, *view.Error) {
 		{Key: "exists", Value: state},
 		{Key: "from", Value: configSource()},
 	}
+	if files, err := config.Files(); err == nil && len(files) > 1 {
+		var names []string
+		for _, f := range files[1:] {
+			names = append(names, filepath.Base(f.Path))
+		}
+		pairs = append(pairs, view.Pair{Key: "drop-ins", Value: config.DropInDir() + " — " +
+			format.Count(len(names), "file", "files") + " read after it, in this order: " + strings.Join(names, ", ")})
+	}
 	if len(ignored) > 0 {
 		pairs = append(pairs, view.Pair{Key: "ignored",
 			Value: format.Count(len(ignored), "key rta does not read", "keys rta does not read") +
@@ -75,11 +84,21 @@ func configSource() string {
 func configTable(reg *registry.Registry, file config.Config) view.Table {
 	t := view.Table{Columns: []view.Column{{Name: "Key"}, {Name: "Value"}, {Name: "Source"}}}
 	add := func(key, value, source string) { t.Rows = append(t.Rows, []string{key, value, source}) }
+	// "file" is the config file; a unit a drop-in states is named by that
+	// drop-in, which is the answer to "where do I change it".
+	owner := config.Owners()
+	from := func(kind, name string) string {
+		if path := owner(kind, name); path != config.Path() {
+			return configFileName(path)
+		}
+		return "file"
+	}
 
 	if env := os.Getenv("RTA_OUTPUT"); env != "" {
 		source := "RTA_OUTPUT"
 		if file.Output != "" && file.Output != env {
-			source += " (the file says " + file.Output + ")"
+			says := "the " + from("output", "")
+			source += " (" + says + " says " + file.Output + ")"
 		}
 		add("output", env, source)
 	}
@@ -88,14 +107,15 @@ func configTable(reg *registry.Registry, file config.Config) view.Table {
 			continue
 		}
 		if v, ok := k.read(file); ok {
-			add(k.Name, strings.Join(configValueLines(v), ", "), "file")
+			unit, _, _ := strings.Cut(k.Name, ".")
+			add(k.Name, strings.Join(configValueLines(v), ", "), from(unit, ""))
 		}
 	}
 	if n := len(file.Dashboard.Tiles); n > 0 {
-		add("dashboard.tiles", format.Count(n, "tile", "tiles")+" — `rta dashboard list`", "file")
+		add("dashboard.tiles", format.Count(n, "tile", "tiles")+" — `rta dashboard list`", from("dashboard", ""))
 	}
 	if n := len(file.Dashboard.Add); n > 0 {
-		add("dashboard.add", format.Count(n, "tile", "tiles")+" — `rta dashboard list`", "file")
+		add("dashboard.add", format.Count(n, "tile", "tiles")+" — `rta dashboard list`", from("dashboard", ""))
 	}
 	headings := make([]string, 0, len(file.Plugins))
 	for h := range file.Plugins {
@@ -109,21 +129,21 @@ func configTable(reg *registry.Registry, file config.Config) view.Table {
 		credentials := credentialInputs(reg, ns)
 		for _, leaf := range config.SectionLeaves(file.Plugins[h]) {
 			value := strings.Join(configValueLines(leaf.Value), ", ")
-			source := "file"
+			source := from("plugins", h)
 			switch {
 			case credentials[leaf.Key] || credentials[leaf.Key[strings.LastIndex(leaf.Key, ".")+1:]]:
 				value = redactedCredential
-				source = "file (nothing reads it)"
+				source += " (nothing reads it)"
 			case !registered:
-				source = "file (no plugin named " + ns + " is registered)"
+				source += " (no plugin named " + ns + " is registered)"
 			case len(readers[leaf.Key]) == 0:
-				source = "file (nothing in " + ns + " reads it)"
+				source += " (nothing in " + ns + " reads it)"
 			}
 			add("plugins."+h+"."+leaf.Key, value, source)
 		}
 	}
 	if names := file.ProfileNames(); len(names) > 0 {
-		add("profiles", strings.Join(names, ", ")+" — `rta profile list`", "file")
+		add("profiles", strings.Join(names, ", ")+" — `rta profile list`", fromAll(from, "profiles", names))
 	}
 	if len(file.Roles) > 0 {
 		roles := make([]string, 0, len(file.Roles))
@@ -131,7 +151,7 @@ func configTable(reg *registry.Registry, file config.Config) view.Table {
 			roles = append(roles, name)
 		}
 		sort.Strings(roles)
-		add("roles", strings.Join(roles, ", ")+" — `rta grant roles`", "file")
+		add("roles", strings.Join(roles, ", ")+" — `rta grant roles`", fromAll(from, "roles", roles))
 	}
 	t.Total = len(t.Rows)
 	t.Empty = "Nothing is set, so every key is at its default. `rta config set <key> <value>` states one."
@@ -300,4 +320,16 @@ func configBlock(cfg config.Config, name string) (any, bool) {
 		}
 	}
 	return tree, true
+}
+
+// fromAll is where a set of units is stated: "file" when the config file states
+// them all, and otherwise the files that do, once each.
+func fromAll(from func(kind, name string) string, kind string, names []string) string {
+	var files []string
+	for _, name := range names {
+		if f := from(kind, name); !slices.Contains(files, f) {
+			files = append(files, f)
+		}
+	}
+	return strings.Join(files, ", ")
 }
