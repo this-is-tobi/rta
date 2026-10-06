@@ -180,9 +180,19 @@ jobs:
   # release-created false, and all three jobs here skip. The alternative — a
   # pull request nobody is waiting on, gating a release that already happened —
   # is the worse end of that trade.
+  #
+  # **The chart waits for the image it installs.** values.yaml leaves
+  # image.tag empty, so the tag a release of the chart pulls is its appVersion,
+  # the rta release this run just made. Needing only `release`, the chart was
+  # published beside the image build, and for however long that build took a
+  # `helm install` of the newest chart was an ImagePullBackOff; if the build
+  # failed, the chart stayed published naming a tag that was never pushed.
+  # Needing `docker` as well means the bump, the chart and its attestation all
+  # skip when the image did not ship, which is the order they could only ever
+  # have been useful in.
   bump-chart:
     name: Bump chart version
-    needs: [release]
+    needs: [release, docker]
     if: ${{ needs.release.outputs.release-created == 'true' }}
     uses: this-is-tobi/github-workflows/.github/workflows/update-helm-chart.yml@v0
     permissions:
