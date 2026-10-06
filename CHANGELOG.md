@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.37.0](https://github.com/this-is-tobi/rta/compare/v0.36.0...v0.37.0) (2026-10-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** the pretty output of gen password, gen token, gen uuid and http get, post, put and delete is the bare value when stdout is not a terminal; -o json gives the whole view.
+
+### Features
+
+* **agent:** the page and the card an operator answers on say when the call reveals a value ([e51a2f5](https://github.com/this-is-tobi/rta/commit/e51a2f54f501500d7dc05157123322a8dad69efc))
+* **agent:** the record says when a call handed the agent a stored value, and the log filters on it ([63e52c7](https://github.com/this-is-tobi/rta/commit/63e52c7b343cf2fe90b57b08d48daeff5a0c8e14))
+* **cli:** a command whose answer is one value prints that value into a pipe ([3515c45](https://github.com/this-is-tobi/rta/commit/3515c45db27ab15db8cfbbd9ba0061ed6cdeba5c))
+* **grant:** allowing a reveal with no record named says it reveals every record it reaches ([03668f1](https://github.com/this-is-tobi/rta/commit/03668f1d017237ea72a717567aa97efd47b1742c))
+* **mcp:** a reveal says what it returns in rta's words, and the handshake says what to do with it ([287d071](https://github.com/this-is-tobi/rta/commit/287d071913b06518169ab12d5aefd4a84e247ac4))
+
 ## [0.36.0](https://github.com/this-is-tobi/rta/compare/v0.35.0...v0.36.0) (2026-10-05)
 
 
