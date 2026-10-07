@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.38.0](https://github.com/this-is-tobi/rta/compare/v0.37.0...v0.38.0) (2026-10-07)
+
+
+### Features
+
+* **app:** --kube, --secret and --secrets-from state a connection for one call ([a282abb](https://github.com/this-is-tobi/rta/commit/a282abb211ba474db1512887d3d1c5f71917b2cc))
+* **app:** config, check, edit and doctor know the files, and a receipt names the one it wrote ([2731640](https://github.com/this-is-tobi/rta/commit/2731640ee5fd5cdb0d0b6bb228d9d66fd361a472))
+* **app:** dashboard commands take --view, a profile selects a view, and views are listed ([4fd1fb0](https://github.com/this-is-tobi/rta/commit/4fd1fb0c1facd22a6e9247943d1e97daa60afd7e))
+* **config:** a dashboard can have named views, and a profile selects the one it shows ([f3db61a](https://github.com/this-is-tobi/rta/commit/f3db61a4fc33c29c64b3494cdddd7204255e371a))
+* **config:** the configuration is a file and the config.d directory beside it ([6952db5](https://github.com/this-is-tobi/rta/commit/6952db5f7214385e8078d6e96817bac5674c509c))
+* **profile:** a connection typed on one command line is held to what a stored one is ([5e5f490](https://github.com/this-is-tobi/rta/commit/5e5f4908eeada2a411a4aeb8da90590c8f61854a))
+* **tui:** the environment picker ends in an ad hoc connection stated in the form ([974eed4](https://github.com/this-is-tobi/rta/commit/974eed4e3b95771b19364b2de4fe5f5bd883dee1))
+* **tui:** the V key draws another view, and the arrangement is written to the view on screen ([111d524](https://github.com/this-is-tobi/rta/commit/111d52465db66bbdddb9bbe354880a448f745648))
+
+
+### Bug Fixes
+
+* **profile:** an ad hoc connection reads no variable a profile owns ([1f83a74](https://github.com/this-is-tobi/rta/commit/1f83a74927e8b6181f99c7773683f5c9a2b1c523))
+
+
+### Code Refactoring
+
+* **profile:** one sentence says where an ad hoc call went ([eb0566a](https://github.com/this-is-tobi/rta/commit/eb0566a36d59ffa07d1f0206b551266dce5a948c))
+
 ## [0.37.0](https://github.com/this-is-tobi/rta/compare/v0.36.0...v0.37.0) (2026-10-06)
 
 
