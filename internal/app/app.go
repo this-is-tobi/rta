@@ -1825,6 +1825,9 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 		if f.Type.Sensitive() {
 			_ = cmd.Flags().SetAnnotation(f.Name, annotCredential, []string{"true"})
 		}
+		if f.Config != "" && plugin.ProfileFillable(c, f) {
+			_ = cmd.Flags().SetAnnotation(f.Name, annotFills, []string{f.Config})
+		}
 	}
 }
 

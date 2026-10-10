@@ -3,11 +3,13 @@ package app
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/colorprofile"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/profile"
@@ -88,7 +90,18 @@ func WarnActiveProfile(w io.Writer, cmd *cobra.Command, cfg config.Config, style
 		return
 	}
 
-	label := badgeLabel(name, p.Color, marked, style)
+	// A value typed on the command line wins over the environment's own
+	// (plugin.Resolve ranks the caller first), and the rest of the environment
+	// still applies: its user, its database, its credential. So the line names
+	// both halves, and a call typed `--context lab` under `rta use staging`
+	// does not read as one that went to staging.
+	shown := name
+	if actsOn(cmd, p) {
+		if replaced := typedOverEnvironment(cmd, p); replaced != "" {
+			shown += ", except " + replaced
+		}
+	}
+	label := badgeLabel(shown, p.Color, marked, style)
 	// The deadline rides along because it is the other half of the same
 	// question — being on production and being on it for six more minutes are
 	// different situations, and both are decided before the command runs.
@@ -125,6 +138,73 @@ func badgeLabel(name, color string, marked bool, style BadgeStyle) string {
 		return theme.GoodText.Render("* " + name)
 	}
 	return theme.GoodText.Render("● " + name)
+}
+
+// badgeValueWidth is how much of a typed value the badge prints.
+const badgeValueWidth = 40
+
+// typedOverEnvironment says which values typed on cmd replace ones p states for
+// the plugin it belongs to, as the flags a person typed ("--host other
+// --port 5433"), or "" when there are none.
+//
+// What counts is a value the environment *states* and the line *changes*: a
+// flag typed that the environment never set replaced nothing, and one typed
+// with the very value it holds says nothing new. Only inputs a profile can fill
+// and a config key backs carry the annotation this reads (declareFlags), which
+// leaves credentials out by construction: config is refused on a Secret input,
+// so what a person typed as a password is never part of this line.
+//
+// The environment's connection is the one a call with no instance named would
+// bind (Profile.For). An environment holding several, none of them the default,
+// has no such connection, and the call is refused before there is anything to
+// name.
+func typedOverEnvironment(cmd *cobra.Command, p config.Profile) string {
+	words := strings.Fields(cmd.CommandPath())
+	if len(words) < 2 {
+		return ""
+	}
+	_, conn, ok := p.For(words[1])
+	if !ok {
+		return ""
+	}
+	var replaced []string
+	// Visit walks the flags that were set, in name order, which keeps the line
+	// the same from one run of the same command to the next.
+	cmd.Flags().Visit(func(f *pflag.Flag) {
+		keys := f.Annotations[annotFills]
+		if len(keys) == 0 {
+			return
+		}
+		stated, ok := conn.Set[keys[0]]
+		if !ok {
+			return
+		}
+		typed := f.Value.String()
+		if fmt.Sprint(stated) == typed {
+			return
+		}
+		replaced = append(replaced, strings.TrimSpace("--"+f.Name+" "+badgeValue(typed)))
+	})
+	return strings.Join(replaced, " ")
+}
+
+// badgeValue is a typed value as the badge may print it. The badge goes to a
+// stream that may be logged somewhere the command line is not, and what a
+// person types after a flag can be an address with credentials in it: an
+// address keeps its scheme, host and path and loses the userinfo and the query,
+// and one that does not parse is not printed at all. A long value is cut.
+func badgeValue(v string) string {
+	if strings.Contains(v, "://") {
+		u, err := url.Parse(v)
+		if err != nil || u.Host == "" {
+			return ""
+		}
+		v = u.Scheme + "://" + u.Host + u.Path
+	}
+	if r := []rune(v); len(r) > badgeValueWidth {
+		v = string(r[:badgeValueWidth-1]) + "…"
+	}
+	return v
 }
 
 // actsOn reports whether p can change what cmd does: a leaf command of a plugin
