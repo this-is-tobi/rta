@@ -16,4 +16,4 @@
 # moves both in its "Go toolchain" group (renovate.json) so they cannot
 # disagree for long.
 [tools]
-go = "1.26.6"
+go = "1.26.9"
