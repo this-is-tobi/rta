@@ -42,3 +42,24 @@ func TestTheSameNamesAreOrdinaryOnACapabilityNoForwardCanFill(t *testing.T) {
 		}
 	}
 }
+
+// --no-profile is the host's wherever --profile is, since it is the flag that
+// leaves the environment --profile would name: a plugin's own input of the name
+// would be shadowed by it and never reach the handler. Anywhere else the name
+// is ordinary.
+func TestNoProfileIsReservedWhereAProfileCanFillTheCapability(t *testing.T) {
+	c := connectionCap(Field{Name: "no-profile", Type: Bool, Help: "a switch"})
+	err := Plugin{Name: "db", Summary: "db", Capabilities: []Capability{c}}.Validate()
+	if err == nil || !strings.Contains(err.Error(), "reserved by the host") {
+		t.Errorf("input no-profile beside something a profile fills: %v, want it reserved", err)
+	}
+
+	c = Capability{
+		ID: "db.status", Summary: "status", Safety: Read,
+		Inputs: []Field{{Name: "no-profile", Type: Bool, Help: "a switch"}},
+		Run:    func(context.Context, Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+	}
+	if err := (Plugin{Name: "db", Summary: "db", Capabilities: []Capability{c}}).Validate(); err != nil {
+		t.Errorf("input no-profile on a capability no profile can fill: %v", err)
+	}
+}

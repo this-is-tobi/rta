@@ -305,6 +305,14 @@ func (c Capability) validate(ns string) error {
 				"a profile can fill (the host resolves which configured connection a call runs "+
 				"against, before the grant gate); rename it", c.ID, f.Name)
 		}
+		// --no-profile is the flag that leaves the environment --profile would
+		// name, added on the same condition and shadowing an input of its name
+		// the same way: the handler would never be sent it.
+		if f.Name == "no-profile" && profilable(c.Inputs, c.Scope, c.ScopeAlso) {
+			return fmt.Errorf("capability %q: input %q is reserved by the host on any capability "+
+				"a profile can fill (it is the flag that leaves the environment that is switched on "+
+				"for one call); rename it", c.ID, f.Name)
+		}
 		// The three flags that state a connection for one call are reserved on
 		// the same condition and for the same reason as "profile": the host adds
 		// them exactly where a forward has an address to fill, so that is where a

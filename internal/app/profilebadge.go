@@ -82,6 +82,15 @@ func WarnActiveProfile(w io.Writer, cmd *cobra.Command, cfg config.Config, style
 	if !ok {
 		return
 	}
+	// A call that leaves the environment is said to have, and which one: it
+	// runs on the base configuration, so a line naming the environment as the
+	// one in use — painted in its colour, or as the plain bullet — would be the
+	// lie this line exists to prevent. Where the environment says nothing about
+	// the command there is nothing to have left.
+	if leaves(cmd, p) {
+		fmt.Fprintln(w, badgeLabel(profile.AdHocName+" — without "+name, "", false, style))
+		return
+	}
 	// A colour that is not a colour marks nothing, rather than falling back to
 	// one nobody chose: the default bullet below says "this environment is on",
 	// which is true of it, and `rta doctor` is where the colour is reported.
@@ -205,6 +214,20 @@ func badgeValue(v string) string {
 		v = string(r[:badgeValueWidth-1]) + "…"
 	}
 	return v
+}
+
+// leaves reports whether cmd leaves p for this call: --no-profile on a leaf
+// command of a plugin p covers, with no --profile of its own. A command that
+// also names an environment is refused when it runs, and says nothing here.
+func leaves(cmd *cobra.Command, p config.Profile) bool {
+	if cmd == nil || cmd.HasSubCommands() || !noProfile(cmd) {
+		return false
+	}
+	if flag := cmd.Flags().Lookup("profile"); flag == nil || strings.TrimSpace(flag.Value.String()) != "" {
+		return false
+	}
+	words := strings.Fields(cmd.CommandPath())
+	return len(words) > 1 && p.Covers(words[1])
 }
 
 // actsOn reports whether p can change what cmd does: a leaf command of a plugin

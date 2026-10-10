@@ -120,7 +120,7 @@ func TestTheSpellerTellsATerminalsSpellingFromEveryoneElses(t *testing.T) {
 // tree gives a capability.
 func TestTheHostSwitchesAreTheNamesTheHostReserves(t *testing.T) {
 	got := HostSwitches()
-	want := append(plugin.ReservedInputs(), "profile", "kube", "secret", "secrets-from")
+	want := append(plugin.ReservedInputs(), "profile", "no-profile", "kube", "secret", "secrets-from")
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("HostSwitches() = %q, want %q", got, want)
