@@ -346,6 +346,11 @@ const (
 	// sentence offered to somebody who typed an extra word is no place to
 	// suggest putting a secret on the command line, where it is in argv.
 	annotCredential = "rta.help.credential"
+	// annotFills carries, on a flag whose input a profile can fill, the config
+	// key the profile writes that value under. It is how the line above a result
+	// (WarnActiveProfile) tells a value typed over the environment's from one
+	// the environment never stated, without a second lookup of the capability.
+	annotFills = "rta.profile.fills"
 )
 
 // capabilityAnnotations is what attach records about a capability for

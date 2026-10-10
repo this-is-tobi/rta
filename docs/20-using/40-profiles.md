@@ -166,11 +166,12 @@ hostname   db.internal
 
 The badge prints above the result while that environment is on, in the colour you gave it, with the deadline beside it when there is one. The TUI's dashboard header carries the same badge.
 
-Three things about it are deliberate:
+Four things about it are deliberate:
 
 - **It paints the profile's name and nothing else.** A profile that could repaint the palette would put its colour on keys, labels and selection — right beside the ones that mean ok, warn and failed — and an environment marked red would draw healthy rows in the colour of a failure. That is worse than no marking at all, because it teaches the eye to ignore red.
 - **A colour is what makes it louder, not what makes it appear.** An environment without a `color:` prints a plain green bullet before the commands it acts on — a command of a plugin it covers, run without a `--profile` of its own — and stays out of `rta use`, `rta doctor` and the plugins it says nothing about, which is what keeps the line meaning something. Marking one is you saying *this* is the environment worth interrupting you about, wherever you are, so a marked one prints before every command.
 - **It never reaches machine-readable output.** `-o json` and `-o yaml` get exactly what they got before, because the output you read off your screen is the output you paste into a parser.
+- **It says what you typed over.** A value typed on the command line wins over the environment's own, and the rest of the environment — its user, its database, its credential — still applies. So `rta kube pod list --context lab` under `rta use staging` prints `● staging, except --context lab`: it went to `lab`, with whatever else `staging` says, and the line no longer names an environment the result did not come from. Only a value the environment states and the command changes is listed. An address is shown without its credentials or its query, a long value is cut, and a credential typed never appears: config is refused on one, so it is not part of where a call went. A command that names its own environment with `--profile` prints no line, since it has said so itself.
 
 `--no-color` keeps the badge and drops the paint: `[ shop-prod ]`, which is also what a session under `NO_COLOR` or `TERM=dumb` gets. A colour rta cannot read marks nothing, so the environment announces itself as an unmarked one does, rather than in one you did not choose; it is reported by `rta profile list`, `rta profile show` and `rta doctor`, and never stops the environment from being switched to or used. Under a locale that does not name `UTF-8` the bullet is an asterisk, as everything rta draws is plain ASCII there (see [the CLI](./10-cli.md)).
 
