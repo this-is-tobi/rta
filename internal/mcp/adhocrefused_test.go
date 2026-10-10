@@ -29,7 +29,7 @@ func TestTheConnectionFlagsAreOnNoToolAnAgentIsOffered(t *testing.T) {
 		},
 	}
 	props, _ := toolcall.InputSchema(c, nil, nil)["properties"].(map[string]any)
-	for _, name := range []string{"kube", "secret", "secrets-from", "ssh"} {
+	for _, name := range []string{"kube", "secret", "secrets-from", "ssh", "no-profile"} {
 		if _, offered := props[name]; offered {
 			t.Errorf("the tool offers %q, which is a flag of a person's command line", name)
 		}
@@ -38,7 +38,7 @@ func TestTheConnectionFlagsAreOnNoToolAnAgentIsOffered(t *testing.T) {
 
 func TestACallThatSendsAConnectionFlagIsRefusedAsAnyNameTheToolDoesNotHave(t *testing.T) {
 	s := connect(t, Options{})
-	for _, name := range []string{"kube", "secret", "secrets-from"} {
+	for _, name := range []string{"kube", "secret", "secrets-from", "no-profile"} {
 		res, err := s.CallTool(context.Background(), &sdk.CallToolParams{
 			Name:      "demo_item_local",
 			Arguments: map[string]any{"name": "x", name: "prod/databases/svc/postgres:5432"},

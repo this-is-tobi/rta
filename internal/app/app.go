@@ -1244,6 +1244,17 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 		if !hasConnection(c) {
 			_ = cmd.Flags().SetAnnotation("profile", annotUnlisted, []string{"true"})
 		}
+		// The way one call leaves the environment `rta use` has switched on: the
+		// per-call twin of `rta use --off`, and of the TUI picker's base entry.
+		// Added exactly where --profile is, and listed where it is. Looked up
+		// first, as every flag here is: pflag panics on a redefined one.
+		if cmd.Flags().Lookup("no-profile") == nil {
+			cmd.Flags().Bool("no-profile", false, "ignore the environment that is switched on, for this call: "+
+				"it runs on the flags you type and the base configuration")
+			if !hasConnection(c) {
+				_ = cmd.Flags().SetAnnotation("no-profile", annotUnlisted, []string{"true"})
+			}
+		}
 		completeFlag(cmd, "profile",
 			func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
 				cfg, err := config.Load()

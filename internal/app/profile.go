@@ -70,6 +70,14 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 	if f := cmd.Flags().Lookup("profile"); f != nil {
 		explicit = strings.TrimSpace(f.Value.String())
 	}
+	// Two answers to which environment, and no ranking a reader of the command
+	// could use without looking it up: refused, as a connection typed beside
+	// --profile is.
+	if noProfile(cmd) && explicit != "" {
+		return boundProfile{}, noop, view.Errorf("core.noprofile.both",
+			"--profile and --no-profile say opposite things").
+			WithHint("name the environment to run against, or leave the one that is switched on — not both")
+	}
 	// A connection typed on this command line (adhoc.go) is what the call
 	// reaches, over whatever is switched on and instead of --profile, which it
 	// cannot be combined with: two answers to where this goes, and no way to
@@ -80,6 +88,14 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 	}
 	active := profile.Active()
 	if explicit == "" && active == "" && !stated {
+		return boundProfile{}, noop, nil
+	}
+	// The call leaves the environment that is on: no value of it, no credential
+	// of it, and no instance of it to choose among. What it runs on is the base
+	// configuration and the flags typed, as if nothing were switched on. A
+	// connection typed on the line (stated, above) is already that, and says
+	// where the call goes in more words, so it is the one that stands.
+	if noProfile(cmd) && !stated {
 		return boundProfile{}, noop, nil
 	}
 
@@ -100,6 +116,13 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 			conn, verr = profile.Lookup(cfg, c, explicit, installed)
 		} else {
 			name, conn, verr = profile.Ambient(cfg, c, active, installed)
+			// A call that named no environment is refused for the one that is
+			// on holding several connections to this plugin, and the refusal
+			// lists them. It did not ask for that environment, so the list is
+			// not the only way on: the call can leave it.
+			if verr != nil && verr.Code == "core.profile.instance.required" {
+				verr = verr.WithHint(verr.Hint + " — or --no-profile, to leave " + active + " for this call")
+			}
 		}
 		if verr != nil {
 			return boundProfile{}, noop, verr
@@ -175,6 +198,14 @@ func (w withTrust) MissingHint(namespace string) string {
 	return hint
 }
 
+// noProfile reports whether the command line leaves the environment that is
+// switched on, for this call: --no-profile, which only a capability a profile
+// can fill has. A command with no such flag leaves nothing.
+func noProfile(cmd *cobra.Command) bool {
+	f := cmd.Flags().Lookup("no-profile")
+	return f != nil && f.Value.String() == "true"
+}
+
 // bindProfile is resolveProfile without the fetching: what the environment
 // contributes, from the config file and the process environment only.
 //
@@ -188,7 +219,7 @@ func (w withTrust) MissingHint(namespace string) string {
 // Silent on every failure. A completion that refuses to answer until the
 // command line is valid is a completion nobody sees.
 func bindProfile(cmd *cobra.Command, c plugin.Capability) (string, map[string]any) {
-	if !plugin.Profilable(c) {
+	if !plugin.Profilable(c) || noProfile(cmd) {
 		return "", nil
 	}
 	explicit := ""
