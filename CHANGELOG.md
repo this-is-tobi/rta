@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.38.1](https://github.com/this-is-tobi/rta/compare/v0.38.0...v0.38.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **profile:** the badge says which typed values replace the environment's ([c7a1790](https://github.com/this-is-tobi/rta/commit/c7a1790cad194aa049f2896b3b76b2b8358d8c7c))
+
+
+### Dependencies
+
+* **deps:** move to Go 1.26.9 and golang.org/x/net v0.60.0, fixing twelve reachable advisories ([35eef7a](https://github.com/this-is-tobi/rta/commit/35eef7a773503ab2f9d700e3a0ad6be8bb30f50f))
+
 ## [0.38.0](https://github.com/this-is-tobi/rta/compare/v0.37.0...v0.38.0) (2026-10-07)
 
 
