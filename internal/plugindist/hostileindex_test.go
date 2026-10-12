@@ -97,6 +97,37 @@ func TestResolveRefusesAnOversizedManifest(t *testing.T) {
 	}
 }
 
+// A name one edit from one an index carries is a typo before it is anything
+// else, and the answer for it says which: `plugin install pgg` was told only
+// that no index carries it. A symlink in an index is no candidate, as it is no
+// manifest.
+func TestAMistypedPluginNameIsAnsweredWithTheNameItWasNear(t *testing.T) {
+	testData(t)
+	repo := gitFixture(t, map[string]string{"pg": goodManifest})
+	if verr := AddIndex(context.Background(), "typo", repo); verr != nil {
+		t.Fatal(verr)
+	}
+	ix, ok := IndexByName("typo")
+	if !ok {
+		t.Fatal("the index was not attached")
+	}
+	if err := os.Symlink(filepath.Join(t.TempDir(), "nowhere"), filepath.Join(ix.Dir, "index", "pgx.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	for word, want := range map[string]string{"pgg": "pg", "redsi": "redis"} {
+		_, verr := Resolve(word)
+		if verr == nil || verr.Code != "plugin.install.unknown" || !strings.Contains(verr.Hint, "did you mean "+want+"?") {
+			t.Errorf("Resolve(%q) = %v, want a hint naming %s", word, verr, want)
+		}
+	}
+	if _, verr := Resolve("zzzzzz"); verr == nil || strings.Contains(verr.Hint, "did you mean") {
+		t.Errorf("a word near nothing was guessed at: %v", verr)
+	}
+	if _, verr := Resolve("pgxx"); verr != nil && strings.Contains(verr.Hint, "pgx") {
+		t.Errorf("a symlinked file was offered as a plugin: %q", verr.Hint)
+	}
+}
+
 func TestASymlinkedManifestIsNotFollowed(t *testing.T) {
 	testData(t)
 	ix := placeIndex(t, "hostile", map[string]string{"pg": goodManifest})

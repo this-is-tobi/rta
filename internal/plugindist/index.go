@@ -10,12 +10,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/near"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/internal/textclean"
@@ -1072,9 +1074,16 @@ func Resolve(spec string) (Listed, *view.Error) {
 	}
 	switch len(found) {
 	case 0:
+		hint := "`rta plugin search` lists what they do carry; `rta plugin index update` refreshes them"
+		// A name one edit from one an index carries, or that a first-party
+		// plugin goes by, is a typo before it is anything else: `plugin install
+		// pgg` was answered as though the person had asked for something
+		// nobody makes, with no word about pg.
+		if guess := near.Word(name, nameCandidates(search)); guess != "" {
+			hint = "did you mean " + guess + "? `rta plugin install " + guess + "` installs it; " + hint
+		}
 		return Listed{}, view.Errorf("plugin.install.unknown", "no attached index carries %q", name).
-			WithHint("`rta plugin search` lists what they do carry; " +
-				"`rta plugin index update` refreshes them")
+			WithHint(hint)
 	case 1:
 		return found[0], nil
 	default:
@@ -1097,4 +1106,26 @@ func firstLine(s, fallback string) string {
 		s = s[:i]
 	}
 	return s
+}
+
+// nameCandidates are the plugin names a mistyped one is held against: the
+// first-party ones, and the manifests the searched indexes hold, read as file
+// names and never opened — a manifest's name is the file's, and a symlink or
+// anything but a regular file is not one (ReadDir does not follow them).
+func nameCandidates(search []Index) []string {
+	names := slices.Clone(firstParty)
+	for _, ix := range search {
+		entries, err := os.ReadDir(filepath.Join(ix.Dir, "index"))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			base, ok := strings.CutSuffix(e.Name(), ".yaml")
+			if !ok || !e.Type().IsRegular() || !plugin.ValidName(base) || slices.Contains(names, base) {
+				continue
+			}
+			names = append(names, base)
+		}
+	}
+	return names
 }
