@@ -157,8 +157,14 @@ func resolve(c Capability, in Inputs) (map[string]any, map[string]origin) {
 	// the base `plugins:` section, the one layer a profile does not own, still
 	// beats it and is then held to the list like any other value: a fence
 	// narrows what the layers say and never rewrites them.
+	//
+	// Not for an input a profile may never fill (ProfileFillable): the one a
+	// grant names as its scope is checked against the record the call names,
+	// before this runs, and a default filled in afterwards would be a record
+	// the gate never saw. Left unset it reads blank, and blank is outside the
+	// list, so the call has to name the value and the gate sees it.
 	for _, f := range c.Inputs {
-		if allowed, fenced := in.Fence.of(f); fenced && len(allowed) == 1 {
+		if allowed, fenced := in.Fence.of(f); fenced && len(allowed) == 1 && ProfileFillable(c, f) {
 			out[f.Name] = fenceDefault(f, allowed[0])
 		}
 	}
