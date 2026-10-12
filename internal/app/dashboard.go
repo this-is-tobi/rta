@@ -378,7 +378,7 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		pairsOut = append(pairsOut, view.Pair{Key: "wrote", Value: verb + " " + entry.Key() + " in " + dashboardFile(drawn)})
 	}
 	if drawn != "" {
-		pairsOut = append(pairsOut, view.Pair{Key: "view", Value: drawn + " — drawn while a profile that selects it is switched on, or with `--view " + drawn + "`"})
+		pairsOut = append(pairsOut, view.Pair{Key: "view", Value: drawn + " — drawn while a profile that selects it is switched on (`rta profile set <name> --dashboard " + drawn + "`), or with `--view " + drawn + "`"})
 	}
 	pairsOut = append(pairsOut, view.Pair{Key: "tile", Value: id})
 	if automatic {
