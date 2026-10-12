@@ -201,6 +201,13 @@ message Field {
   // collides with a flag the host owns or one of the capability's own. Only
   // the CLI has flags; every other surface ignores it.
   string short = 21;
+  // The sibling input this boolean switch widens: `all-namespaces` for
+  // `namespace`. Carried so the host can refuse a call that sets the switch
+  // while an operator's profile has fenced the input it names to an allowlist
+  // — a switch reading past a pinned value is a second way to reach what the
+  // list excludes, and only the plugin knows which of its inputs does that.
+  // Must be a bool naming another input of the same capability.
+  string widens = 22;
 }
 
 // EndpointRole is which part of a resolved tunnel an input takes.

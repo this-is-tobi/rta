@@ -173,6 +173,12 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 		if f.With != "" {
 			detail += ", only with --" + f.With
 		}
+		// Said on the switch because it is the page an operator reads when a
+		// profile fenced to an allowlist refuses a call: the refusal names this
+		// input, and the reason is a fact about it that no other line states.
+		if f.Widens != "" {
+			detail += ", widens --" + f.Widens + " (refused while a profile fences it)"
+		}
 		if f.Local {
 			// Worth stating plainly: this input exists here and not over MCP,
 			// which is otherwise a surprising asymmetry to discover by hand.

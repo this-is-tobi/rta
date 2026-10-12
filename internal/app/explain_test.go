@@ -345,3 +345,29 @@ func TestExplainNamesAnEnvironmentVariableOnlyWhereOneIsRead(t *testing.T) {
 		t.Errorf("card no longer says where --host does come from:\n%s", out)
 	}
 }
+
+// A fenced input refuses the call that sets its switch, and the refusal names
+// the switch, so the card an operator is sent to says what it widens.
+func TestExplainCardSaysWhichInputASwitchWidens(t *testing.T) {
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{
+		Name: "svc", Summary: "svc plugin",
+		Capabilities: []plugin.Capability{{
+			ID: "svc.list", Summary: "list", Safety: plugin.Read,
+			Inputs: []plugin.Field{
+				{Name: "namespace", Type: plugin.String, Config: "namespace", Help: "namespace"},
+				{Name: "all-namespaces", Type: plugin.Bool, Widens: "namespace", Help: "every namespace"},
+			},
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := run(t, reg, "explain", "svc.list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "widens --namespace") {
+		t.Errorf("the card does not say what --all-namespaces widens:\n%s", out)
+	}
+}

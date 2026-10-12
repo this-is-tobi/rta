@@ -422,6 +422,10 @@ func fullDeclaration() plugin.Plugin {
 				// put the remote server's box back on every local form.
 				{Name: "server", Type: plugin.String, Help: "server", Local: true, Remote: true},
 				{Name: "passphrase", Type: plugin.Secret, Help: "pass", Local: true, With: "server"},
+				// Widens crosses as data: a host that lost it would let a
+				// switch read past the input a profile fenced, with the
+				// plugin believing it had said so.
+				{Name: "all-buckets", Type: plugin.Bool, Help: "all", Widens: "bucket"},
 			},
 		}},
 	}

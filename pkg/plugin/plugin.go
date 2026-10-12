@@ -326,6 +326,31 @@ type Field struct {
 	// passphrase that signs a request to `server`. The TUI form omits it
 	// wherever it omits the sibling, and the card says "only with".
 	With string
+	// Widens names the sibling input this Bool switch widens — the
+	// `all-namespaces` that makes a call read every namespace the `namespace`
+	// input would otherwise have confined it to.
+	//
+	// **It exists for the fence a profile can put around an input** (an `only:`
+	// list in the profile entry, which restricts what the input may resolve
+	// to). A switch that reads past a value the operator pinned is a second way
+	// to name something outside the list that never passes through the value the
+	// host checks: the call says `all-namespaces: true`, `namespace` stays
+	// whatever it was, and the handler lists everything. The host cannot read a
+	// handler to find that out, so the plugin says it here, and a call that sets
+	// the switch while the input it widens is fenced is refused before anything
+	// is dialled.
+	//
+	// Declared by the plugin and honoured by the host, which is the direction
+	// that cannot widen anything: naming a sibling here can only make the host
+	// refuse more calls, and a plugin that leaves it out has fenced nothing it
+	// did not already leave open. An author who ships a switch of this kind
+	// without declaring it is the author whose profile fence has a hole, which
+	// is why the doc page for declaring inputs lists it beside Config.
+	//
+	// A Bool only, naming another input of the same capability — refused at
+	// registration otherwise, for the reason With is: a name that points at
+	// nothing is a rule that holds for no call.
+	Widens string
 	// EnvFallback lets a Local field also be resolved from this plugin's own
 	// environment (RTA_<NAMESPACE>_<FIELD>) when nothing else supplied a
 	// value — the passphrase or identity that unlocks a store, handed to an
