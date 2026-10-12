@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.38.1](https://github.com/this-is-tobi/rta/compare/v0.38.0...v0.38.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **cli:** a flag given no value names the options it takes ([363a07e](https://github.com/this-is-tobi/rta/commit/363a07ebbbb5384c99e930e277bf18aeed05153c))
+* **cli:** a plugin's integer default shows in --help ([a893acf](https://github.com/this-is-tobi/rta/commit/a893acfff858d05c322a3e4c2d8348e03de7984f))
+* **cli:** a word that is a flag's name is told it takes two dashes ([4216dbd](https://github.com/this-is-tobi/rta/commit/4216dbd2732340d505cc3f9fb980b1dcd9346e97))
+* **dashboard:** the view receipt says how a profile selects it ([fb43386](https://github.com/this-is-tobi/rta/commit/fb43386c1043bc2d11176ac3f655c50036d8ab19))
+* **doctor:** a profile that reads the store says when there is no store ([7311841](https://github.com/this-is-tobi/rta/commit/73118417fa175589f6cf65eb2e7f2812190c36e4))
+* **doctor:** the capabilities row says installed plugins as well as $PATH ([59fcf53](https://github.com/this-is-tobi/rta/commit/59fcf537ddea4958c83ee0f12b470c84b078ee20))
+* **explain:** the card shows no default for an input that has none ([e8ab349](https://github.com/this-is-tobi/rta/commit/e8ab34906d4a4ee8e4c72188cd379a65d46c8307))
+* **fs:** a missing path and invalid base64 say what to change ([cde27b0](https://github.com/this-is-tobi/rta/commit/cde27b0bd7a022a95ce42a450965f3efe4ffae7e))
+* **grant:** the receipt says when a grant names no profile for a plugin that has some ([f1fd32d](https://github.com/this-is-tobi/rta/commit/f1fd32d6a8e989f8fc5a044744d9a3e42e2fad21))
+* **kv:** a credential mapped onto an entry says when there is no store ([02ae481](https://github.com/this-is-tobi/rta/commit/02ae481a00915f38ef5aeb97c6036d8e4df594cf))
+* **kv:** the call that makes the store says so ([93693d8](https://github.com/this-is-tobi/rta/commit/93693d886b5303f2f5b105ab441b4ca38d38c613))
+* **mcp:** a credential or tunnel failure is recorded with its code and cause ([04f7911](https://github.com/this-is-tobi/rta/commit/04f7911b210aac0c48fe692386675333473ec9ed))
+* **mcp:** a tool's text names its siblings and the covering grant as a model needs them ([12d757d](https://github.com/this-is-tobi/rta/commit/12d757dbe14edbd217649490b9bc8e3d1282b9ee))
+* **mcp:** the accepted-arguments hint names profile ([369aaba](https://github.com/this-is-tobi/rta/commit/369aaba35e729de4e761961d6f986c6a54f0c437))
+* **mcp:** the handshake says a safety class is what the gate asks ([3fb17ce](https://github.com/this-is-tobi/rta/commit/3fb17ce62551b9a579c12228dde8a9702f93bd73))
+* **plugin:** a capability of a plugin waiting for approval is told to trust it ([74b5ac5](https://github.com/this-is-tobi/rta/commit/74b5ac56d33772c5bd9163dd3010ee29ada9948a))
+* **plugin:** a mistyped plugin name is answered with the name it was near ([24456f4](https://github.com/this-is-tobi/rta/commit/24456f4a6583d631db9e101af0140ce42c2e931c))
+* **plugin:** the install and search lines count what the gate asks a grant for ([b83d3cc](https://github.com/this-is-tobi/rta/commit/b83d3cc284c648d669a844c8a1715631b35e948e))
+* **profile:** an ad hoc refusal names the flags the call typed ([3356eac](https://github.com/this-is-tobi/rta/commit/3356eacc3f64f8db2e0546fcb739274d48058cc3))
+* **profile:** the badge says which typed values replace the environment's ([c7a1790](https://github.com/this-is-tobi/rta/commit/c7a1790cad194aa049f2896b3b76b2b8358d8c7c))
+* **tui:** a fast submit goes back to the box tab left with an error ([fc80180](https://github.com/this-is-tobi/rta/commit/fc801809d195ca569daddee5fb666a592f8443cf))
+* **tui:** a write that succeeded is not repeated by the refresh key ([aa01340](https://github.com/this-is-tobi/rta/commit/aa013408556372f84b3cde8c1af35c17dfa3fa4f))
+* **tui:** guidance is not drawn as a success ([c2ee412](https://github.com/this-is-tobi/rta/commit/c2ee4126b373d80877403d3b88da45c2f9c10089))
+* **tui:** the allow form says nothing changed when nothing was granted ([8547e62](https://github.com/this-is-tobi/rta/commit/8547e624264955445f0eac518fd30d3750ec6aff))
+* **tui:** the search names the install for a plugin typed as part of a capability ([aef5905](https://github.com/this-is-tobi/rta/commit/aef5905a7559f1d9b345e06350a0cd3cbb678aae))
+
+
+### Dependencies
+
+* **deps:** move to Go 1.26.9 and golang.org/x/net v0.60.0, fixing twelve reachable advisories ([35eef7a](https://github.com/this-is-tobi/rta/commit/35eef7a773503ab2f9d700e3a0ad6be8bb30f50f))
+
 ## [0.38.0](https://github.com/this-is-tobi/rta/compare/v0.37.0...v0.38.0) (2026-10-07)
 
 
