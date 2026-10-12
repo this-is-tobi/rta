@@ -105,6 +105,17 @@ func agentText(c plugin.Capability, tools map[string]bool, profiled bool) string
 	if text := c.AgentText(); text != "" {
 		b.WriteString("\n\n" + nameTools(text, tools))
 	}
+	if len(c.Keywords) > 0 {
+		// Inside the frame, because they are the plugin's words like the
+		// summary: Validate holds each to a single lowercase word, so none
+		// can carry a frame literal or an instruction, and rta's own lines
+		// after the frame keep the last word. They are here for a search,
+		// not for a reader: a client that defers its tools finds one by the
+		// words of its name, description and arguments, and the word a task
+		// is said in is often none of them ("hot" for sys.temp, "process" for
+		// sys.ps).
+		b.WriteString("\n\nAlso called: " + strings.Join(c.Keywords, ", ") + ".")
+	}
 	b.WriteString("\n" + plugin.AuthoredClose)
 
 	fmt.Fprintf(&b, "\n\nSafety: %s.", c.Safety)
