@@ -747,6 +747,25 @@ func rowKey(f plugin.Field, raw string) (any, error) {
 	}
 }
 
+// canRerun says whether `r` does anything on this result, for the key and for
+// the footer that advertises it, which have to agree.
+//
+// A result that came back is refreshed by running it again, and a call that
+// failed is retried by it. What it is not is a way to do a thing twice: a
+// write that is not idempotent and succeeded, `note.add` among them, was
+// repeated by a second press of the key the footer calls "refresh" — two
+// notes, with nothing asked. Doing it again is `e`, which opens the boxes on
+// what the result was made with and runs on a submit, so it is a decision.
+func (m Model) canRerun() bool {
+	if m.current.Run == nil || (m.result.view == nil && m.result.err == nil) {
+		return false
+	}
+	if m.result.err == nil && m.current.Safety != plugin.Read && !m.current.Idempotent {
+		return false
+	}
+	return true
+}
+
 // resultFooterItems is the result pane's bar: only the keys that apply right
 // now. Actionable views lead with their actions; row actions stay hidden until
 // there is a row to act on.
@@ -758,7 +777,7 @@ func rowKey(f plugin.Field, raw string) (any, error) {
 // could.
 func (m Model) resultFooterItems() []hintItem {
 	var keys []hintItem
-	rerunnable := m.current.Run != nil && (m.result.view != nil || m.result.err != nil)
+	rerunnable := m.canRerun()
 	if m.atTop() {
 		if m.interactive() {
 			keys = append(keys, labelled(bindColumn, "row"))

@@ -561,7 +561,7 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		nm, cmd := m.closeToOrigin()
 		return nm, cmd, true
 	case "r":
-		if m.current.Run != nil && (m.result.view != nil || m.result.err != nil) {
+		if m.canRerun() {
 			// Re-run with the same inputs; destructive confirmation
 			// carries over from the original explicit approval.
 			return m, m.startRun(m.current, m.lastValues, m.lastYes), true

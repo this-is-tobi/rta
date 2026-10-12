@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -149,5 +150,42 @@ func TestANarrowResultLineKeepsItsWarning(t *testing.T) {
 	m.viewport.SetWidth(200)
 	if got := plain(m.resultMeta()); !strings.Contains(got, "read · idempotent · 2 of 463 rows") {
 		t.Errorf("a wide pane lost its counts: %q", got)
+	}
+}
+
+// `r` is advertised as "refresh" and ran the call again, so on a result that
+// said "added note 2" a second press made note 3 with nothing asked. A write
+// that is not idempotent is not re-run once it has succeeded; a failure is
+// retried, and a read or an idempotent write is refreshed as before.
+func TestAWriteThatSucceededIsNotRerunByTheRefreshKey(t *testing.T) {
+	m := storeModel(t)
+	run := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	done := view.Text{Body: "added note 2: dup test"}
+	for name, tc := range map[string]struct {
+		cap  plugin.Capability
+		res  resultMsg
+		want bool
+	}{
+		"a read":                         {plugin.Capability{ID: "note.list", Safety: plugin.Read, Run: run}, resultMsg{view: done}, true},
+		"an idempotent write":            {plugin.Capability{ID: "kv.set", Safety: plugin.Write, Idempotent: true, Run: run}, resultMsg{view: done}, true},
+		"a write that is not":            {plugin.Capability{ID: "note.add", Safety: plugin.Write, Run: run}, resultMsg{view: done}, false},
+		"a destructive call that is not": {plugin.Capability{ID: "docker.container.rm", Safety: plugin.Destructive, Run: run}, resultMsg{view: done}, false},
+		"the same write, failed":         {plugin.Capability{ID: "note.add", Safety: plugin.Write, Run: run}, resultMsg{err: view.Errorf("note.add.failed", "no")}, true},
+		"nothing yet":                    {plugin.Capability{ID: "note.list", Safety: plugin.Read, Run: run}, resultMsg{}, false},
+	} {
+		m.current = tc.cap
+		m.result = tc.res
+		if got := m.canRerun(); got != tc.want {
+			t.Errorf("%s: canRerun = %v, want %v", name, got, tc.want)
+		}
+		offered := false
+		for _, it := range m.resultFooterItems() {
+			if it.label == "refresh" || it.label == "re-run" {
+				offered = true
+			}
+		}
+		if offered != tc.want {
+			t.Errorf("%s: the footer offers the key = %v, want %v", name, offered, tc.want)
+		}
 	}
 }
