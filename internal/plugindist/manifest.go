@@ -369,7 +369,11 @@ func (m Manifest) SafetyLine() string {
 	grants := 0
 	for _, c := range m.Capabilities {
 		counts[c.Safety]++
-		if c.Grant {
+		// The gate's own rule (grant.Required): a capability that is not a
+		// read needs a grant whether or not its declaration says so. Counting
+		// only the claim read "3 write · 1 destructive · none needs a grant"
+		// of a plugin whose every write is refused an agent until one is issued.
+		if c.Grant || c.Safety != "read" {
 			grants++
 		}
 	}
