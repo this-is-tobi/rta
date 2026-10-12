@@ -199,6 +199,21 @@ func TestAWordNamingAPluginWaitingForApprovalSaysSo(t *testing.T) {
 	}
 }
 
+// The same plugin named as a capability — `rta explain weather.greet`, a grant
+// target — said to install it, and the install answers "already installed": the
+// trust answer came from the root's unknown-word path alone.
+func TestACapabilityOfAPluginWaitingForApprovalIsToldToTrustIt(t *testing.T) {
+	prev := untrustedPluginsFound
+	t.Cleanup(func() { untrustedPluginsFound = prev })
+	SetUntrustedPlugins([]pluginhost.Untrusted{
+		{Name: "weather", Path: "/home/you/.local/bin/rta-plugin-weather", Digest: strings.Repeat("a", 64)},
+	})
+	hint, ok := missingPluginHint(nil, "weather.greet")
+	if !ok || !strings.Contains(hint, "`rta plugin trust weather`") || strings.Contains(hint, "plugin install") {
+		t.Errorf("a capability of a plugin waiting for approval was answered %q (ok %v)", hint, ok)
+	}
+}
+
 // A value a flag cannot hold was refused with the name of a standard-library
 // function: `invalid argument "abc" for "--count" flag: strconv.ParseInt:
 // parsing "abc": invalid syntax`. It is now the sentence the same mistake gets

@@ -858,16 +858,11 @@ func notACommandHint(cmd *cobra.Command, arg string, near []string) string {
 	// built it and typed its name needs told. The startup notice that names
 	// it is printed by the root command's pre-run, which an unknown word
 	// never reaches, so without this the answer to `rta weather greet` right
-	// after the build is a pointer at an index the plugin was never in.
-	for _, u := range untrustedPluginsFound {
-		if u.Name == arg && !u.Taken {
-			return arg + " is installed at " + u.Path + " and has not been approved to run — " +
-				"`rta plugin trust " + arg + "` approves that build"
-		}
-	}
-	// A first-party plugin that is not here, or one here that did not start,
-	// is said as that: the one answer about this machine that is not a guess.
-	// The install attaches the first-party index itself when it has to.
+	// after the build is a pointer at an index the plugin was never in. That
+	// one, a first-party plugin that is not here and one here that did not
+	// start are said as what they are, the answers about this machine that
+	// are not a guess. The install attaches the first-party index itself when
+	// it has to.
 	if hint, ok := pluginWordHint(commandsOf(cmd), arg); ok {
 		return hint
 	}

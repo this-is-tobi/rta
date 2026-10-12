@@ -22,10 +22,19 @@ import (
 // whose plugin is gives no answer: `rta k8s` with kube installed is a typo for
 // `rta kube`, and being told to install it is the one answer that is wrong.
 //
-// After the check for a plugin that is on $PATH and waiting for approval, never
-// before it: a first-party name that is installed and untrusted is not a plugin
-// to install, and the one-line answer for it is `rta plugin trust`.
+// A plugin that is on $PATH and waiting for approval is answered first, here
+// and not by each caller: a first-party name that is installed and untrusted is
+// not a plugin to install, and the one-line answer for it is `rta plugin
+// trust`. The root's unknown-word path said so and `rta explain pg.status`, a
+// grant target and a profile's plugin key, which come through here, sent the
+// person to an install that answers "already installed".
 func pluginWordHint(loaded func(namespace string) bool, word string) (hint string, ok bool) {
+	for _, u := range untrustedPluginsFound {
+		if u.Name == word && !u.Taken {
+			return word + " is installed at " + u.Path + " and has not been approved to run — " +
+				"`rta plugin trust " + word + "` approves that build", true
+		}
+	}
 	for _, f := range failedPluginsFound {
 		if f.Name == word {
 			return word + " is installed and failed to start — `rta plugin list` says why", true
