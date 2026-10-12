@@ -53,6 +53,8 @@ A profile's [`only:`](./40-profiles.md#only-fences-an-input-to-the-values-a-conn
 - **The refusal is worded for whoever can act on it.** At a terminal or in a form it names the input, what the connection reaches and the ways across — another profile that reaches the value, or `rta profile set <profile> --plugin <plugin> --only <key>=…`. Over MCP it names the input and nothing else: an allowlist is an inventory of your cluster, and an agent that could read it from a refusal could map it one call at a time. The call is recorded as `core.profile.fenced`, or `core.profile.fenced.switch` for a widening switch, and it is given back to a grant that counts uses, since it never reached the handler.
 - **It is checked after the grant gate**, so a call nobody granted is refused exactly as an unknown profile is, and a fence is no way to learn that one exists.
 
+- **Completion offers what the connection reaches and nothing else.** On the command line the profile on the line, or the one switched on, narrows what `--namespace <tab>` offers — a declared list, a suggestion, a closed set, the shortlist of what you used before — to the allowlist, and an input with nothing to complete from offers the allowlist itself. A form built for a fenced environment does the same, picker included, and so does what a tab fetches from the service. Shell completion never asks a service, so for an input that does, the allowlist is the whole answer there.
+
 Every surface holds a call to it, because a rule one of them forgets is the one that gets used: the CLI, the TUI's forms, the switched-on environment and a dashboard tile, and the MCP server.
 
 ## Writing one from a script

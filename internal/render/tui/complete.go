@@ -289,7 +289,11 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Held to the rule every other Suggest answer is (candidateValues):
 		// these strings come from a service, go onto a terminal, and are
 		// typed into the box as they are offered.
-		raw := suggest(ctx, req)
+		//
+		// And to the connection's fence: the listing is the service's whole
+		// answer, which is every namespace or bucket the connection can see,
+		// and the connection says it reaches fewer.
+		raw := cf.fence.Filter(f, suggest(ctx, req))
 		items := make([]string, 0, len(raw))
 		for _, entry := range raw {
 			if v := plugin.CandidateValue(entry); !textclean.Deceives(v) {

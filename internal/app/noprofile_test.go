@@ -223,13 +223,13 @@ func TestCompletionReadsTheBaseConfigurationUnderNoProfile(t *testing.T) {
 	}
 	c, _ := reg.Capability("db.status")
 
-	if name, bound := bindProfile(cmd, c); name != "staging" || bound["host"] != "db.staging" {
+	if name, bound, _ := bindProfile(cmd, c); name != "staging" || bound["host"] != "db.staging" {
 		t.Fatalf("the environment was not bound: %q %v", name, bound)
 	}
 	if err := cmd.Flags().Set("no-profile", "true"); err != nil {
 		t.Fatal(err)
 	}
-	if name, bound := bindProfile(cmd, c); name != "" || len(bound) != 0 {
+	if name, bound, _ := bindProfile(cmd, c); name != "" || len(bound) != 0 {
 		t.Errorf("completion read %q (%v) under --no-profile", name, bound)
 	}
 }

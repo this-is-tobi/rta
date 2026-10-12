@@ -167,6 +167,10 @@ type capForm struct {
 	// reads to learn the same thing. A form is short-lived, so a run that
 	// happens while one is open shows up in the next one.
 	used recent.Values
+	// fence is the allowlist of the connection this form's answers will be held
+	// to, nil for a form about no connection. Completion narrows to it
+	// (withFence).
+	fence plugin.Fence
 	// show holds the fields that are only asked about under some condition,
 	// keyed by field name. Empty for every form that does not branch, which is
 	// all of them but one. See hideUnless.
@@ -181,7 +185,23 @@ type capForm struct {
 }
 
 // formOption tunes a form beyond the fields it collects.
-type formOption func(*capForm)
+//
+// early options say what the form is about rather than what it asks, and are
+// applied before any field is built: the fields are built differently for them
+// (a box that has an allowlist to offer is a box with suggestions). The rest
+// read a binding, and wait until the bindings exist.
+type formOption struct {
+	apply func(*capForm)
+	early bool
+}
+
+// withFence tells the form which connection's allowlist its answers will be
+// held to, so completion offers what that connection reaches and nothing it
+// would refuse (plugin.Fence.Narrow). The fence is the environment's, resolved
+// when the form was built, and a form rebuilds when its picker moves.
+func withFence(fence plugin.Fence) formOption {
+	return formOption{early: true, apply: func(cf *capForm) { cf.fence = fence }}
+}
 
 // withCheck holds a field to a rule its declaration cannot say, as it is
 // typed: the message lands in the footer beside the key just pressed, and the
@@ -194,12 +214,12 @@ type formOption func(*capForm)
 // corrected from: everything typed was gone. Said at the box, it is the one
 // field to fix.
 func withCheck(name string, check func(string) error) formOption {
-	return func(cf *capForm) {
+	return formOption{apply: func(cf *capForm) {
 		if cf.checks == nil {
 			cf.checks = map[string]func(string) error{}
 		}
 		cf.checks[name] = check
-	}
+	}}
 }
 
 // hideUnless asks about a field only while want holds.
@@ -220,12 +240,12 @@ func withCheck(name string, check func(string) error) formOption {
 // grouping changes how the whole form paginates, and that is a decision about
 // the form.
 func hideUnless(name string, want func(*capForm) bool) formOption {
-	return func(cf *capForm) {
+	return formOption{apply: func(cf *capForm) {
 		if cf.show == nil {
 			cf.show = map[string]func(*capForm) bool{}
 		}
 		cf.show[name] = want
-	}
+	}}
 }
 
 // withSection puts a heading above one field, and by doing so puts every
@@ -244,12 +264,12 @@ func hideUnless(name string, want func(*capForm) bool) formOption {
 // the cursor moves (charm.land/huh/v2, NewNote defaults skip: true), so the
 // heading is passed over rather than tabbed into.
 func withSection(field, title string) formOption {
-	return func(cf *capForm) {
+	return formOption{apply: func(cf *capForm) {
 		if cf.heads == nil {
 			cf.heads = map[string]string{}
 		}
 		cf.heads[field] = title
-	}
+	}}
 }
 
 // sectioned splices the headings in, keeping fields and names index-aligned —
@@ -523,6 +543,11 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 		syncs:      map[string]*syncString{},
 		used:       recent.Load(),
 	}
+	for _, opt := range opts {
+		if opt.early {
+			opt.apply(cf)
+		}
+	}
 	var (
 		fields []huh.Field
 		// names[i] is the plugin field fields[i] was built from, which is what
@@ -630,7 +655,9 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 	}
 	// After the bindings exist, because a condition reads one of them.
 	for _, opt := range opts {
-		opt(cf)
+		if !opt.early {
+			opt.apply(cf)
+		}
 	}
 	// huh's own help line is off: the footer under the frame speaks for the
 	// focused field instead (fieldHints), in the one vocabulary every other
@@ -792,7 +819,10 @@ func (cf *capForm) completing(in *huh.Input, f plugin.Field, typed *syncString, 
 	// which is exactly the set internal/recent exists for, a bucket and a
 	// database and a schema and a vault path — so the values were recorded on
 	// every run and offered on none of them.
-	if how == wholeBox && f.Suggest == nil && len(cf.used.For(cf.cap.ID, f.Name)) == 0 {
+	//
+	// Nor for a field the connection's fence names: the operator already wrote
+	// down what it reaches, which is a list to offer even when nothing else is.
+	if how == wholeBox && f.Suggest == nil && len(cf.used.For(cf.cap.ID, f.Name)) == 0 && !cf.fence.Fenced(f) {
 		return in
 	}
 	offer := func() []string {
@@ -842,17 +872,28 @@ func (cf *capForm) candidates(f plugin.Field) []string {
 	// answer anything, and a Suggest that would otherwise prompt or take a
 	// visible moment must be able to tell the difference.
 	req := plugin.CompletionRequest(cf.cap, cf.snapshot())
-	out := candidateValues(f, ctx, req)
+	// Narrowed to the connection's fence — and for a field with nothing of its
+	// own to offer, the fence is the offer. Everything that joins it below is
+	// narrowed too: a listing from the service and a shortlist of what was used
+	// before are exactly where the connection's other namespaces would come from.
+	out := cf.fence.Narrow(f, candidateValues(f, ctx, req))
 	// A listing arrives on the deliberate channel and lands in fetched
 	// (applyCompletion); this merge is what puts it on the widget, and keeps
 	// it there when the keystroke channel re-evaluates. In front of the
 	// recents, because it is what the service said exists right now.
-	out = append(out, cf.fetchedItems(f.Name)...)
 	seen := make(map[string]bool, len(out))
 	for _, v := range out {
 		seen[v] = true
 	}
-	for _, v := range cf.used.For(cf.cap.ID, f.Name) {
+	// Said once: a listing that holds what the fence offers beside it is the
+	// same entry, and the box would draw it twice.
+	for _, v := range cf.fence.Filter(f, cf.fetchedItems(f.Name)) {
+		if !seen[v] {
+			out = append(out, v)
+			seen[v] = true
+		}
+	}
+	for _, v := range cf.fence.Filter(f, cf.used.For(cf.cap.ID, f.Name)) {
 		if !seen[v] {
 			out = append(out, v)
 		}
@@ -1000,7 +1041,7 @@ func (cf *capForm) selectOne(f plugin.Field) huh.Field {
 	if _, named := f.CanonicalOption(seed); seed != "" && !named {
 		opts = append(opts, huh.NewOption(textclean.Terminal(seed)+notAnOption, seed))
 	}
-	for _, o := range f.Options {
+	for _, o := range cf.fence.Filter(f, f.Options) {
 		opts = append(opts, huh.NewOption(o, o))
 	}
 	return huh.NewSelect[string]().
@@ -1047,7 +1088,7 @@ func (cf *capForm) multiSelect(f plugin.Field) huh.Field {
 	for _, e := range unlisted {
 		opts = append(opts, huh.NewOption(textclean.Terminal(e)+notAnOption, e).Selected(true))
 	}
-	for _, o := range f.Options {
+	for _, o := range cf.fence.Filter(f, f.Options) {
 		opts = append(opts, huh.NewOption(o, o).Selected(slices.Contains(v, o)))
 	}
 	return huh.NewMultiSelect[string]().
