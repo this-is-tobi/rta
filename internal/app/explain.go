@@ -151,7 +151,10 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 			// looks up why an agent's call or a form insists on it.
 			detail += ", read from a pipe on the CLI when left out, required everywhere else"
 		}
-		if f.Default != nil {
+		// An empty string is no default: the card said "string, default ,
+		// local" for every input that takes nothing unless asked to, a blank
+		// where "none" belongs on 334 of the first-party plugins' inputs.
+		if f.Default != nil && fmt.Sprint(f.Default) != "" {
 			detail += fmt.Sprintf(", default %v", f.Default)
 		}
 		if len(f.Options) > 0 {
