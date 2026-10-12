@@ -771,10 +771,12 @@ type Capability struct {
 	// surfaces matches them as it matches the ID's words, so a query written in
 	// the person's vocabulary finds the capability written in the catalogue's.
 	//
-	// Single lowercase words, a dozen at most. Never published to a model,
-	// which picks a tool by its description and would only be spent context by
-	// more words; and a keyword that is already a word of the ID is noise,
-	// which sdktest says.
+	// Single lowercase words, a dozen at most. An agent is shown them after
+	// the summary, inside the plugin's block, as "Also called": a client that
+	// defers its tools finds one by a search over its name, description and
+	// arguments, and the word a task is said in is often none of them. Each one
+	// costs the model's context, which is what the dozen is for; and a keyword
+	// that is already a word of the ID is noise, which sdktest says.
 	Keywords []string
 	// Agent is what an agent is told about this capability beyond its Summary,
 	// in place of Description (AgentText).

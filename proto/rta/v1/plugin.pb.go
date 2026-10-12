@@ -961,8 +961,9 @@ type Capability struct {
 	Primary string `protobuf:"bytes,25,opt,name=primary,proto3" json:"primary,omitempty"`
 	// Words a person would search for that the id and summary do not contain
 	// ("todo" for a note list, "ssl" for a certificate check). Lowercase single
-	// words; used by search on the human surfaces and never published to a
-	// model, which chooses a tool by its description.
+	// words; search on every surface matches them as it matches the id's
+	// words, and an agent is shown them as "Also called", since a client that
+	// defers its tools finds one by the words of its description.
 	Keywords []string `protobuf:"bytes,23,rep,name=keywords,proto3" json:"keywords,omitempty"`
 	// Calls worth showing beside the declaration: what a person pastes first.
 	// Each is checked against the inputs this capability declares, so an example
