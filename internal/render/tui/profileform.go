@@ -777,10 +777,18 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 		return m.closeToOrigin()
 	}
 	if refusal != "" {
-		// Stays on the form, as it did before: the operator has a coordinate
-		// to correct and the boxes are still in front of them.
-		m.refuse(refusal)
-		return m, nil
+		// Stays on the form: the operator has a coordinate to correct and the
+		// boxes are in front of them. The form that was submitted is finished —
+		// huh will not take another answer from a completed one, and this method
+		// dropped it before it knew the save would be refused — so what comes
+		// back is the editor rebuilt on what was typed, the way a change of
+		// plugin rebuilds it (reseedOnConnPluginChange).
+		rebuilt, cmd := m.connForm(was, key, values)
+		if nm, ok := rebuilt.(Model); ok {
+			nm.refuse(refusal)
+			return nm, cmd
+		}
+		return rebuilt, cmd
 	}
 	m.profiles = m.profileRows()
 	m.flash = "saved " + key + " in " + m.profileOpen
