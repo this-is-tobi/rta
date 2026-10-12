@@ -332,11 +332,26 @@ func (s selector) matches(g core.Grant) bool {
 	}
 	switch {
 	case s.scope != "" && g.Scope != s.scope,
-		s.profile != "" && g.Profile != s.profile,
+		s.profile != "" && !profileNamed(s.profile, g.Profile),
 		s.agent != "" && g.Agent != s.agent:
 		return false
 	}
 	return true
+}
+
+// profileNamed reports whether a selector's --profile reaches a grant held on
+// held. A connection's whole reference names that connection, and an
+// environment's bare name names every connection inside it: a grant on
+// `staging/analytics` is a grant on staging, as the ceiling reads
+// `neverProfile: [staging]` and as deleting a profile revokes every instance
+// grant in it. Without that, `grant revoke --profile staging` answered "no
+// active grant" beside a roster of `staging/main` and `staging/scratch` rows,
+// and the one command that takes an environment back left every instance of
+// it standing. Never widened past the environment: `staging/main` names that
+// instance alone, and --exact, which does not come through here, names
+// exactly what it is given.
+func profileNamed(asked, held string) bool {
+	return held == asked || (!strings.Contains(asked, "/") && config.RefName(held) == asked)
 }
 
 // check refuses an exact selector that can name no grant: one with no

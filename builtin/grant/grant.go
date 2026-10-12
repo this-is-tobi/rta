@@ -191,7 +191,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					{Name: "scope", Type: plugin.String, Positional: true, Suggest: suggestHeldScopes,
 						Help: "only the grant for this record"},
 					{Name: "profile", Type: plugin.String, Suggest: suggestHeldProfiles,
-						Help: "only grants on this connection"},
+						Help: "only grants on this connection — an environment's name takes every connection in it"},
 					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
 						Help: "only grants for this named agent"},
 					{Name: "role", Type: plugin.String, Suggest: suggestStandingRoles,
@@ -263,7 +263,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					{Name: "scope", Type: plugin.String, Positional: true, Suggest: suggestHeldScopes,
 						Help: "only the grant for this record"},
 					{Name: "profile", Type: plugin.String, Suggest: suggestHeldProfiles,
-						Help: "only the grant for this connection"},
+						Help: "only the grants for this connection — an environment's name takes every connection in it"},
 					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
 						Help: "only the grant for this named agent"},
 					{Name: "role", Type: plugin.String, Suggest: suggestStandingRoles,
@@ -395,7 +395,7 @@ func suggestHeldScopes(_ context.Context, req plugin.Request) []string {
 		if g.Scope == "" || (target != "" && g.Target != target) {
 			continue
 		}
-		if profile != "" && g.Profile != profile {
+		if profile != "" && !profileNamed(profile, g.Profile) {
 			continue
 		}
 		// A tab ends a candidate's value (plugin.CandidateValue), so a
@@ -419,7 +419,9 @@ func suggestHeldScopes(_ context.Context, req plugin.Request) []string {
 }
 
 // suggestHeldProfiles completes from the profiles that grants actually name —
-// the set revoke and renew can act on.
+// the set revoke and renew can act on. A connection held as `staging/analytics`
+// is offered beside the environment `staging`, which names every connection of
+// it held (profileNamed).
 func suggestHeldProfiles(context.Context, plugin.Request) []string {
 	grants, verr := core.Load()
 	if verr != nil {
@@ -428,11 +430,13 @@ func suggestHeldProfiles(context.Context, plugin.Request) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, g := range grants {
-		if g.Profile == "" || seen[g.Profile] {
-			continue
+		for _, ref := range []string{g.Profile, config.RefName(g.Profile)} {
+			if ref == "" || seen[ref] {
+				continue
+			}
+			seen[ref] = true
+			out = append(out, ref)
 		}
-		seen[g.Profile] = true
-		out = append(out, g.Profile)
 	}
 	sort.Strings(out)
 	return out
