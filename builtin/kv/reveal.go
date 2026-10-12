@@ -75,6 +75,18 @@ func Reveal(key string) (string, *view.Error) {
 		// enumerating. `rta kv list` answers it for the person who can, and the
 		// hint hands it on as theirs to run, since whoever made the call may be
 		// an agent with no terminal.
+		if !fileExists(storePath()) {
+			// A profile maps a credential onto an entry on a machine that has no
+			// store at all — a config copied from another machine is the commonest
+			// way here. "In the store" says one exists, and the `kv list` the hint
+			// would then send a person to prints an empty table; what is missing
+			// is the store, and one `kv set` makes it and the entry together. Says
+			// nothing an agent could not already read off the profile it was
+			// refused on: whether a store exists is not what the comment above
+			// keeps from it, which is what the entries in it are called.
+			return "", view.Errorf("kv.notfound", "no entry %s: there is no store on this machine yet", textclean.Record(key)).
+				WithHint(plugin.AskOperator("kv set "+textclean.Record(key)) + " — it creates the store, locked with a passphrase you choose, and the entry")
+		}
 		return "", view.Errorf("kv.notfound", "no entry %s in the store", textclean.Record(key)).
 			WithHint(plugin.AskOperator("kv list") + " to see what is there")
 	}

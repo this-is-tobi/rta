@@ -53,6 +53,26 @@ func TestRevealDoesNotEnumerateOnNotFound(t *testing.T) {
 // the mechanism: with no passphrase available anywhere, Reveal must fail
 // fast, and must never be the thing that calls the (blocking, real
 // terminal) prompt.
+// A profile can map a credential onto an entry on a machine with no store at
+// all, and "no entry in the store" then sends a person to `kv list`, which
+// shows an empty table. The refusal says what is missing, and the command that
+// makes it.
+func TestRevealWithNoStoreSaysThereIsNoneAndHowOneIsMade(t *testing.T) {
+	setup(t)
+	t.Setenv(passphraseEnv, "correct horse battery staple")
+
+	_, verr := Reveal("staging-db-password")
+	if verr == nil {
+		t.Fatal("Reveal found a key in a store that does not exist")
+	}
+	if !strings.Contains(verr.Message, "no store on this machine yet") {
+		t.Errorf("the refusal does not say there is no store: %q", verr.Message)
+	}
+	if !strings.HasPrefix(verr.Hint, plugin.AskOperator("kv set staging-db-password")) {
+		t.Errorf("the hint does not hand on the command that makes the store, as the operator's: %q", verr.Hint)
+	}
+}
+
 func TestRevealNeverPrompts(t *testing.T) {
 	setup(t)                                                         // passphraseEnv and identityEnv both cleared
 	text(t, runSet, map[string]any{"key": "k", "value": "v"}, false) // creates the store under req()'s own default passphrase
