@@ -439,12 +439,15 @@ rta pg restore restored/shop-2026-08-01.dump --profile shop-staging --yes
 
 Two gated commands rather than one capability reaching into two services, which is on purpose: each half is separately consented, separately scoped, and separately in the record.
 
-**`cnpg` is the exception, and it is a different shape on purpose.** A CloudNativePG cluster already knows where its backups go — an object store, or a volume snapshot class, configured on the cluster itself — so there is no file for rta to write and no destination for it to choose:
+**`cnpg` is the exception, and it is a different shape on purpose.** A CloudNativePG cluster already knows where its backups go — an object store, the barman-cloud plugin's `ObjectStore` that the cluster names, or a volume snapshot class, configured on the cluster itself — so there is no file for rta to write and no destination for it to choose:
 
 ```bash
-rta cnpg backup request --cluster shop-prod-db   # ask the operator to take one now
+rta cnpg backup show --cluster shop-prod-db      # how it is set up, where backups land, and the schedules
+rta cnpg backup request --cluster shop-prod-db   # ask the operator to take one now, by the method the cluster is set up for
 rta cnpg backup list --cluster shop-prod-db      # what it did, and where it went
 ```
+
+`show` follows the cluster to the object store it names and reads what the resource states: the destination, the retention, the recovery window and the names of the Secrets it references, never a Secret. `request` says which method it used when the cluster has only one, and refuses with the list when it has several.
 
 The request carries a cluster reference and nothing else. Destination, credentials, retention and encryption all come from the cluster, which is what makes this the one mutating capability in an otherwise read-only plugin: there is no place for a caller to point it at. It is `Write`, so an agent needs a grant for it — one that names the cluster, so consent is about *this* database rather than about the plugin.
 
