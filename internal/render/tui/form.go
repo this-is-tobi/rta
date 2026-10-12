@@ -1228,11 +1228,34 @@ const settleLimit = 64
 // function to have advanced through — the caller drives it again,
 // separately, against whatever afterFormUpdate swapped in.
 func advanceFormBySyntheticEnter(f *huh.Form) *huh.Form {
+	f = refocusLeftBehindError(f)
 	for i := 0; i < formAdvanceLimit && f.State == huh.StateNormal; i++ {
 		f = settleForm(f, tea.KeyPressMsg{Code: tea.KeyEnter})
-		if len(f.Errors()) > 0 {
+		// The focused field's own error, which is what Enter on it would have
+		// shown. Form.Errors is every field's in the group, so an error left on
+		// a field behind the cursor stopped this after one step, and then
+		// after the last, with nothing focused and the form where it began.
+		if f.State == huh.StateNormal && f.GetFocusedField().Error() != nil {
 			break
 		}
+	}
+	return f
+}
+
+// refocusLeftBehindError takes the cursor back to a field that was left with an
+// error, before a fast submit advances from where it stands. Tab moves on
+// whatever the field holds: `Bad Name` in a profile's name box, then the note,
+// and ctrl+s submitted one field per press and ended unfocused over the same
+// footer line. The submit that stops where Enter would have stopped is the one
+// that stops on the box holding the problem.
+func refocusLeftBehindError(f *huh.Form) *huh.Form {
+	for i := 0; i < formAdvanceLimit && f.State == huh.StateNormal &&
+		len(f.Errors()) > 0 && f.GetFocusedField().Error() == nil; i++ {
+		cmd := f.PrevField()
+		if cmd == nil {
+			break
+		}
+		f = settleForm(f, cmd())
 	}
 	return f
 }
