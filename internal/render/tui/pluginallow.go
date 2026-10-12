@@ -117,6 +117,7 @@ func (m Model) saveAllowForm() (tea.Model, tea.Cmd) {
 			locations = append(locations, f.Name)
 		}
 	}
+	before := plugintrust.Load().Allowed(digest)
 	if verr := plugintrust.Allow(digest, locations); verr != nil {
 		m.refuse("not changed: " + verr.Message)
 		return m, nil
@@ -126,7 +127,7 @@ func (m Model) saveAllowForm() (tea.Model, tea.Cmd) {
 	// writes, and a screen still showing the old answer after a permission
 	// change is the worst possible time to be out of date.
 	m.plugins = m.pluginInventory()
-	m.flash = allowFlash(name, locations)
+	m.flash = allowFlash(name, locations, before)
 	return m, nil
 }
 
@@ -136,8 +137,15 @@ func (m Model) saveAllowForm() (tea.Model, tea.Cmd) {
 // actually written: Allow replaces, so "added kubeconfig" would describe an
 // operation that did not happen and hide the locations that were dropped by
 // being left unchecked.
-func allowFlash(name string, locations []string) string {
+//
+// Nothing to withdraw is not a withdrawal: submitting the form with every box
+// empty over a plugin that was allowed none said "may no longer read", of a
+// plugin that never could, and "stays loaded", of one that may not be loaded.
+func allowFlash(name string, locations, before []string) string {
 	if len(locations) == 0 {
+		if len(before) == 0 {
+			return name + " may read no credential location — nothing changed"
+		}
 		return name + " may no longer read any credential location — " +
 			"it stays loaded until rta exits"
 	}
