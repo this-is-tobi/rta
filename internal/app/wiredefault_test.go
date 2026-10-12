@@ -38,3 +38,30 @@ func TestAPluginIntDefaultThatArrivedAsAFloatIsShownInHelp(t *testing.T) {
 		t.Errorf("the default is not in --help:\n%s", out)
 	}
 }
+
+// An input whose default is the empty string takes nothing unless asked to,
+// and the card said "default ," with nothing after it.
+func TestTheCardSaysNoDefaultForAnEmptyOne(t *testing.T) {
+	reg := registry.New()
+	c := plugin.Capability{
+		ID: "wire.show", Summary: "show", Safety: plugin.Read,
+		Inputs: []plugin.Field{
+			{Name: "cert", Type: plugin.String, Default: "", Help: "a certificate"},
+			{Name: "limit", Type: plugin.Int, Default: float64(200), Help: "how many"},
+		},
+		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+	}
+	if err := reg.Register(plugin.Plugin{Name: "wire", Summary: "wire", Capabilities: []plugin.Capability{c}}); err != nil {
+		t.Fatal(err)
+	}
+	card, ok := cardView(reg, c).(view.KeyValue)
+	if !ok {
+		t.Fatal("the card is not key-value pairs")
+	}
+	if got := pairValue(card, "input:cert"); strings.Contains(got, "default") {
+		t.Errorf("an empty default is shown: %q", got)
+	}
+	if got := pairValue(card, "input:limit"); !strings.Contains(got, "default 200") {
+		t.Errorf("a real default is not shown: %q", got)
+	}
+}
