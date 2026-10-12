@@ -317,3 +317,17 @@ func TestAnEmptyWordIsNotNearEveryCommand(t *testing.T) {
 		}
 	}
 }
+
+// `rta mysql status --tls` was told "flag needs an argument" and to read --help,
+// for a flag whose five values the capability declares. They are the answer.
+func TestAFlagGivenNoValueNamesTheOptionsItTakes(t *testing.T) {
+	ve := hintFor(t, "net", "dns", "example.org", "--type")
+	if !strings.Contains(ve.Message, "flag needs an argument: --type") || !strings.Contains(ve.Hint, "--type takes one of") ||
+		!strings.Contains(ve.Hint, "AAAA") {
+		t.Errorf("`rta net dns example.org --type` was told %q / %q, which does not list the record types", ve.Message, ve.Hint)
+	}
+	// A flag with no declared options keeps the answer it had.
+	if ve := hintFor(t, "net", "dns", "example.org", "--server"); strings.Contains(ve.Hint, "takes one of") {
+		t.Errorf("a free-text flag was told it takes one of a list: %q", ve.Hint)
+	}
+}

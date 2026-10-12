@@ -1349,6 +1349,9 @@ func flagValueError(cmd *cobra.Command, err error, c *plugin.Capability) error {
 	if refused := refuseDashedValue(cmd, err); refused != nil {
 		return refused
 	}
+	if refused := refuseMissingOption(err, c); refused != nil {
+		return refused
+	}
 	if typed, unknown := unknownFlagName(err); unknown {
 		if refused := unknownBeforeFlag(cmd); refused != nil {
 			return refused
@@ -1359,6 +1362,28 @@ func flagValueError(cmd *cobra.Command, err error, c *plugin.Capability) error {
 		}
 	}
 	return usageError(cmd, err)
+}
+
+// missingFlagValue is pflag's refusal of a flag given with nothing after it.
+var missingFlagValue = regexp.MustCompile(`^flag needs an argument: --([a-z0-9-]+)$`)
+
+// refuseMissingOption says which values a flag takes when it was given none and
+// takes one of a declared few: `rta mysql status --tls` was told "flag needs an
+// argument" under a hint to read --help, for an input whose answer is five
+// words long and already declared. nil for any other flag, which keeps pflag's
+// sentence and the usage hint.
+func refuseMissingOption(err error, c *plugin.Capability) *view.Error {
+	m := missingFlagValue.FindStringSubmatch(err.Error())
+	if m == nil || c == nil {
+		return nil
+	}
+	for _, f := range c.Inputs {
+		if f.Name == m[1] && len(f.Options) > 0 {
+			return &view.Error{Code: CodeUsage, Message: err.Error(),
+				Hint: "--" + f.Name + " takes one of " + strings.Join(f.Options, ", ")}
+		}
+	}
+	return nil
 }
 
 // shorthandRun is pflag's refusal of a word that opens on a dash and is not a
