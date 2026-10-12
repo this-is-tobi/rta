@@ -259,7 +259,7 @@ func TestAFormOffersWhatWasUsedBefore(t *testing.T) {
 		t.Fatalf("candidates = %v before anything was used", got)
 	}
 
-	recent.Record(plugin.SurfaceCLI, c, map[string]any{"bucket": "mine"})
+	recent.Record(plugin.SurfaceCLI, c, "", map[string]any{"bucket": "mine"})
 	got := newCapForm(c, c.Inputs, nil, true, nil).candidates(c.Inputs[0])
 	if len(got) != 1 || got[0] != "mine" {
 		t.Errorf("candidates = %v, want the bucket this operator used", got)
@@ -275,8 +275,8 @@ func TestWhatTheFieldDeclaresComesFirst(t *testing.T) {
 			Suggest: func(context.Context, plugin.Request) []string { return []string{"declared", "shared"} }}},
 		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
 	}
-	recent.Record(plugin.SurfaceCLI, c, map[string]any{"name": "shared"})
-	recent.Record(plugin.SurfaceCLI, c, map[string]any{"name": "remembered"})
+	recent.Record(plugin.SurfaceCLI, c, "", map[string]any{"name": "shared"})
+	recent.Record(plugin.SurfaceCLI, c, "", map[string]any{"name": "remembered"})
 
 	got := newCapForm(c, c.Inputs, nil, true, nil).candidates(c.Inputs[0])
 	if len(got) != 3 {

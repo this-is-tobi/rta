@@ -147,7 +147,7 @@ func TestAPlainFieldStillOffersWhatWasUsed(t *testing.T) {
 		Inputs: []plugin.Field{{Name: "bucket", Type: plugin.String}},
 		Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
 	}
-	recent.Record(plugin.SurfaceCLI, c, map[string]any{"bucket": "my-prod-bucket"})
+	recent.Record(plugin.SurfaceCLI, c, "", map[string]any{"bucket": "my-prod-bucket"})
 
 	cf := newCapForm(c, c.Inputs, nil, true, nil)
 	m := formModel(t, cf)

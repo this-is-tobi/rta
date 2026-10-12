@@ -110,7 +110,7 @@ func (m Model) runForm(c plugin.Capability, fs []plugin.Field, defaults, base ma
 	}
 	shown = environmentNotes(c, shown, seed, env.name, env.conn)
 	cf := newCapForm(c, m.withPicker(c, shown, on, forwarded, env.conn), seed, true, base,
-		withFence(profile.FenceOf(env.conn)))
+		withEnvironment(env.name, profile.FenceOf(env.conn)))
 	cf.derived = derived
 	cf.offered = fs
 	if b, ok := cf.bindings[profileInput]; ok {
@@ -357,7 +357,7 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 		// from the resolved request — see internal/recent. Tile refreshes do
 		// not come through here, which is what keeps a five-second timer from
 		// rewriting the file with the same values forever.
-		recent.Record(plugin.SurfaceTUI, c, collected)
+		recent.Record(plugin.SurfaceTUI, c, profileName, collected)
 		return resultMsg{cap: c, view: v, elapsed: elapsed, seq: seq, via: via}
 	}
 }

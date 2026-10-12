@@ -66,7 +66,7 @@ func TestCompletingSeveralIDsDoesNotOfferOneAlreadyTyped(t *testing.T) {
 // came back as a candidate to check off again, behind the list of the ones that
 // are open. A field that lists what exists is the whole answer.
 func TestAListOfWhatExistsIsNotPaddedWithWhatWasUsedBefore(t *testing.T) {
-	withHistory(t, recent.Values{recent.Key("tidy.done", "id"): {"9", "2"}})
+	withHistory(t, recent.Values{recent.Key("", "tidy.done", "id"): {"9", "2"}})
 	got := values(complete(t, tidyRegistry(t), "tidy", "done", ""))
 	if !slices.Equal(got, []string{"1", "2", "3"}) {
 		t.Errorf("the offer is %v, want only 1, 2 and 3", got)

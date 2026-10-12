@@ -65,13 +65,22 @@ const (
 	maxValue = 128
 )
 
-// Values is what has been used, keyed by "<namespace>.<input>", most recent
-// first.
+// Values is what has been used, keyed by "<profile>|<namespace>.<input>", most
+// recent first.
 //
 // Keyed by namespace rather than by capability, because `s3 object list
 // --bucket` and `s3 object get --bucket` name the same bucket — the same
 // assumption `Field.Config` already makes when one plugin's capabilities share
 // a config key.
+//
+// **And by the profile the value was typed under**, which is the connection it
+// was a value *of*. A bucket named under `staging` is a statement about
+// staging's storage, and offered under `prod` it is a suggestion to read the
+// wrong bucket one keystroke from accepting it — and, beside a profile that
+// fences that input, the shortlist was the one list that did not know about the
+// fence. The base configuration, with no profile at all, is a shortlist of its
+// own, written `|<namespace>.<input>`; a connection typed on one command line
+// is the one called "ad hoc".
 type Values map[string][]string
 
 // file is the on-disk shape. A separate type so the format can gain a field
@@ -103,21 +112,55 @@ func Load() Values {
 	if f.Inputs == nil {
 		return Values{}
 	}
+	for key := range f.Inputs {
+		if !current(key) {
+			delete(f.Inputs, key)
+		}
+	}
 	return f.Inputs
 }
 
-// For is what has been used for one input of one capability, cleaned of
-// anything that has since become unusable.
-func (v Values) For(capID, input string) []string {
-	return v[Key(capID, input)]
+// For is what has been used for one input of one capability under one profile,
+// "" for none.
+func (v Values) For(profile, capID, input string) []string {
+	return v[Key(profile, capID, input)]
 }
 
-// Key is the shortlist a capability's input reads and writes.
-func Key(capID, input string) string {
-	return plugin.Namespace(capID) + "." + input
+// Used reports whether anything has been remembered for an input under any
+// profile: the question the command tree asks while it is built, before there
+// is a command line to say which profile it is about.
+func (v Values) Used(capID, input string) bool {
+	suffix := keySeparator + plugin.Namespace(capID) + "." + input
+	for key, list := range v {
+		if len(list) > 0 && strings.HasSuffix(key, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
-// Record files away what a run was given, for the inputs worth offering back.
+// Key is the shortlist a capability's input reads and writes under a profile —
+// the profile as the call named it, instance included, since two connections of
+// one environment are two places a value can be a value of.
+//
+// The separator is a character no profile reference, namespace or input name
+// can contain (they are lowercase letters, digits, dashes and one slash), so
+// two shortlists cannot be made to share a key by choosing the names.
+func Key(profile, capID, input string) string {
+	return profile + keySeparator + plugin.Namespace(capID) + "." + input
+}
+
+const keySeparator = "|"
+
+// current reports whether a key is in the shape Key writes. The file this
+// replaced held "<namespace>.<input>" and nothing says which environment those
+// values were typed under, so they are dropped rather than adopted by whichever
+// one asks first: reading them as the base configuration's would offer a value
+// typed under staging to every command that names no profile.
+func current(key string) bool { return strings.Contains(key, keySeparator) }
+
+// Record files away what a run was given, for the inputs worth offering back,
+// under the profile the run went through ("" for the base configuration).
 //
 // values is what the caller actually supplied, never the resolved request: a
 // declared default is not a choice anybody made, and a value the environment
@@ -126,11 +169,11 @@ func Key(capID, input string) string {
 //
 // Silent on every failure, and a no-op when nothing changed, which is what
 // keeps a repeated command from rewriting the file on every invocation.
-func Record(surface plugin.Surface, c plugin.Capability, values map[string]any) {
+func Record(surface plugin.Surface, c plugin.Capability, profile string, values map[string]any) {
 	if !records(surface) {
 		return
 	}
-	fresh := offerable(c, values)
+	fresh := offerable(c, profile, values)
 	if len(fresh) == 0 {
 		return
 	}
@@ -186,7 +229,7 @@ func records(s plugin.Surface) bool {
 }
 
 // offerable is the subset of a run's values worth keeping, keyed for storage.
-func offerable(c plugin.Capability, values map[string]any) map[string][]string {
+func offerable(c plugin.Capability, profile string, values map[string]any) map[string][]string {
 	out := map[string][]string{}
 	for _, f := range c.Inputs {
 		v, given := values[f.Name]
@@ -214,7 +257,7 @@ func offerable(c plugin.Capability, values map[string]any) map[string][]string {
 			if s == "" || len(s) > maxValue || textclean.Deceives(s) || credentialHeader(s) || urlCarriesCredential(s) {
 				continue
 			}
-			key := Key(c.ID, f.Name)
+			key := Key(profile, c.ID, f.Name)
 			out[key] = append(out[key], s)
 		}
 	}
@@ -380,6 +423,14 @@ func touch(order []string, key string) []string {
 
 // prune drops the least recently touched keys once the file is too wide.
 func prune(f *file) {
+	// A key of the shape the file had before it knew about profiles is dropped
+	// on the first write that sees one: see current.
+	for key := range f.Inputs {
+		if !current(key) {
+			delete(f.Inputs, key)
+		}
+	}
+	f.Order = slices.DeleteFunc(f.Order, func(key string) bool { return !current(key) })
 	// Anything in the map but not in the order is from a file written before
 	// the order existed, or by a writer that lost a race. Ordered first so
 	// pruning has something to go on.

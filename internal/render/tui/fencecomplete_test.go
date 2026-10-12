@@ -47,11 +47,11 @@ func TestAFormForAFencedEnvironmentOffersOnlyWhatItReaches(t *testing.T) {
 	noHistory(t)
 	var live bool
 	c := fencedCap(&live)
-	recent.Record(plugin.SurfaceCLI, c, map[string]any{"bucket": "prod-assets"})
-	recent.Record(plugin.SurfaceCLI, c, map[string]any{"bucket": "shop-logs"})
-	recent.Record(plugin.SurfaceCLI, c, map[string]any{"free": "mine"})
+	recent.Record(plugin.SurfaceCLI, c, "", map[string]any{"bucket": "prod-assets"})
+	recent.Record(plugin.SurfaceCLI, c, "", map[string]any{"bucket": "shop-logs"})
+	recent.Record(plugin.SurfaceCLI, c, "", map[string]any{"free": "mine"})
 
-	cf := newCapForm(c, c.Inputs, nil, true, nil, withFence(fenceOfTheEnvironment))
+	cf := newCapForm(c, c.Inputs, nil, true, nil, withEnvironment("", fenceOfTheEnvironment))
 	field := func(name string) plugin.Field {
 		for _, f := range c.Inputs {
 			if f.Name == name {
@@ -110,7 +110,7 @@ func TestTheFencedPickerListsOnlyWhatTheEnvironmentReaches(t *testing.T) {
 		cf.form = startedForm(cf)
 		return ansi.Strip(cf.form.View())
 	}
-	fenced := shown(newCapForm(c, []plugin.Field{c.Inputs[3]}, nil, true, nil, withFence(fenceOfTheEnvironment)))
+	fenced := shown(newCapForm(c, []plugin.Field{c.Inputs[3]}, nil, true, nil, withEnvironment("", fenceOfTheEnvironment)))
 	if !strings.Contains(fenced, "safe") || strings.Contains(fenced, "fast") || strings.Contains(fenced, "slow") {
 		t.Errorf("the fenced picker shows:\n%s", fenced)
 	}

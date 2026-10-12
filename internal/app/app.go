@@ -1522,7 +1522,7 @@ func declareCompletion(cmd *cobra.Command, c plugin.Capability, positionals []pl
 		// has one never being offered to a shell that was told there was
 		// nothing to ask.
 		return len(f.Options) > 0 || f.Suggest != nil || f.Type == plugin.Path ||
-			len(remembered().For(c.ID, f.Name)) > 0 || fenceable(c, f)
+			remembered().Used(c.ID, f.Name) || fenceable(c, f)
 	}
 
 	if len(positionals) > 0 {
@@ -1653,7 +1653,7 @@ func candidates(cmd *cobra.Command, c plugin.Capability, f plugin.Field, args []
 	// input with nothing of its own to offer offers what the fence allows.
 	// Shell completion never runs a Live Suggest, so for such an input that is
 	// the whole of the answer here.
-	out := offering(f, c, fence, fence.Narrow(f, f.Candidates(ctx, req)))
+	out := offering(f, c, name, fence, fence.Narrow(f, f.Candidates(ctx, req)))
 	if len(out) == 0 {
 		return nil, directive
 	}
@@ -1744,8 +1744,8 @@ var remembered = sync.OnceValue(recent.Load)
 // list is the whole answer, and what was used before is by definition not in it
 // any more or already is. A note id checked off last week came back as a
 // candidate to check off again.
-func offering(f plugin.Field, c plugin.Capability, fence plugin.Fence, declared []cobra.Completion) []cobra.Completion {
-	used := fence.Filter(f, remembered().For(c.ID, f.Name))
+func offering(f plugin.Field, c plugin.Capability, profile string, fence plugin.Fence, declared []cobra.Completion) []cobra.Completion {
+	used := fence.Filter(f, remembered().For(profile, c.ID, f.Name))
 	if len(used) == 0 || (f.Suggest != nil && !f.Live) {
 		return declared
 	}
@@ -2049,7 +2049,7 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	// the environment filled in is already offered by the environment. What
 	// this keeps is what the person typed and it worked.
 	if !opts.dryRun {
-		recent.Record(plugin.SurfaceCLI, c, values)
+		recent.Record(plugin.SurfaceCLI, c, bound.name, values)
 	}
 	if v == nil {
 		return nil
