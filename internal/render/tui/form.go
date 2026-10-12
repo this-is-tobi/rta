@@ -167,10 +167,12 @@ type capForm struct {
 	// reads to learn the same thing. A form is short-lived, so a run that
 	// happens while one is open shows up in the next one.
 	used recent.Values
-	// fence is the allowlist of the connection this form's answers will be held
-	// to, nil for a form about no connection. Completion narrows to it
-	// (withFence).
-	fence plugin.Fence
+	// profile is the connection this form's answers are about, "" for the base
+	// configuration, and fence the allowlist it states, nil for none: what was
+	// used is offered under the profile it was used under, and completion
+	// narrows to the fence (withEnvironment).
+	profile string
+	fence   plugin.Fence
 	// show holds the fields that are only asked about under some condition,
 	// keyed by field name. Empty for every form that does not branch, which is
 	// all of them but one. See hideUnless.
@@ -195,12 +197,14 @@ type formOption struct {
 	early bool
 }
 
-// withFence tells the form which connection's allowlist its answers will be
-// held to, so completion offers what that connection reaches and nothing it
-// would refuse (plugin.Fence.Narrow). The fence is the environment's, resolved
-// when the form was built, and a form rebuilds when its picker moves.
-func withFence(fence plugin.Fence) formOption {
-	return formOption{early: true, apply: func(cf *capForm) { cf.fence = fence }}
+// withEnvironment tells the form which connection its answers are about: the
+// profile as the call will name it, and the allowlist that connection states.
+// Completion offers what was used under that profile and nothing the fence
+// would refuse (internal/recent, plugin.Fence.Narrow). Both are the
+// environment's, resolved when the form was built, and a form rebuilds when its
+// picker moves.
+func withEnvironment(profile string, fence plugin.Fence) formOption {
+	return formOption{early: true, apply: func(cf *capForm) { cf.profile, cf.fence = profile, fence }}
 }
 
 // withCheck holds a field to a rule its declaration cannot say, as it is
@@ -822,7 +826,7 @@ func (cf *capForm) completing(in *huh.Input, f plugin.Field, typed *syncString, 
 	//
 	// Nor for a field the connection's fence names: the operator already wrote
 	// down what it reaches, which is a list to offer even when nothing else is.
-	if how == wholeBox && f.Suggest == nil && len(cf.used.For(cf.cap.ID, f.Name)) == 0 && !cf.fence.Fenced(f) {
+	if how == wholeBox && f.Suggest == nil && len(cf.used.For(cf.profile, cf.cap.ID, f.Name)) == 0 && !cf.fence.Fenced(f) {
 		return in
 	}
 	offer := func() []string {
@@ -893,7 +897,7 @@ func (cf *capForm) candidates(f plugin.Field) []string {
 			seen[v] = true
 		}
 	}
-	for _, v := range cf.fence.Filter(f, cf.used.For(cf.cap.ID, f.Name)) {
+	for _, v := range cf.fence.Filter(f, cf.used.For(cf.profile, cf.cap.ID, f.Name)) {
 		if !seen[v] {
 			out = append(out, v)
 		}

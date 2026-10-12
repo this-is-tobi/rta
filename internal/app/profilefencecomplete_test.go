@@ -81,8 +81,8 @@ func TestShellCompletionIsNarrowedToTheFenceOfTheProfileOnTheLine(t *testing.T) 
 	prior := remembered
 	remembered = func() recent.Values {
 		return recent.Values{
-			recent.Key("app.status", "namespace"): {"prod", "staging", "other"},
-			recent.Key("app.status", "bucket"):    {"prod-assets", "shop-assets"},
+			recent.Key("staging", "app.status", "namespace"): {"prod", "staging", "other"},
+			recent.Key("staging", "app.status", "bucket"):    {"prod-assets", "shop-assets"},
 		}
 	}
 	t.Cleanup(func() { remembered = prior })

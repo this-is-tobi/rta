@@ -27,11 +27,11 @@ func path(name string) plugin.Field { return plugin.Field{Name: name, Type: plug
 func TestWhatWasUsedComesBack(t *testing.T) {
 	isolated(t)
 	c := capWith("s3.object.list", str("bucket"))
-	Record(plugin.SurfaceCLI, c, map[string]any{"bucket": "first"})
-	Record(plugin.SurfaceCLI, c, map[string]any{"bucket": "second"})
-	Record(plugin.SurfaceCLI, c, map[string]any{"bucket": "first"})
+	Record(plugin.SurfaceCLI, c, "", map[string]any{"bucket": "first"})
+	Record(plugin.SurfaceCLI, c, "", map[string]any{"bucket": "second"})
+	Record(plugin.SurfaceCLI, c, "", map[string]any{"bucket": "first"})
 
-	got := Load().For("s3.object.list", "bucket")
+	got := Load().For("", "s3.object.list", "bucket")
 	if len(got) != 2 || got[0] != "first" || got[1] != "second" {
 		t.Errorf("shortlist = %v, want the most recent first with no duplicate", got)
 	}
@@ -42,12 +42,12 @@ func TestWhatWasUsedComesBack(t *testing.T) {
 func TestAShortlistIsSharedAcrossOnePluginsCapabilities(t *testing.T) {
 	isolated(t)
 	Record(plugin.SurfaceCLI, capWith("s3.object.list", str("bucket")),
-		map[string]any{"bucket": "mine"})
+		"", map[string]any{"bucket": "mine"})
 
-	if got := Load().For("s3.object.get", "bucket"); len(got) != 1 || got[0] != "mine" {
+	if got := Load().For("", "s3.object.get", "bucket"); len(got) != 1 || got[0] != "mine" {
 		t.Errorf("s3.object.get sees %v, want the bucket the listing used", got)
 	}
-	if got := Load().For("pg.table.list", "bucket"); len(got) != 0 {
+	if got := Load().For("", "pg.table.list", "bucket"); len(got) != 0 {
 		t.Errorf("another plugin sees %v, want nothing", got)
 	}
 }
@@ -63,7 +63,7 @@ func TestACredentialIsNeverRecorded(t *testing.T) {
 		plugin.Field{Name: "body", Type: plugin.Text},
 		plugin.Field{Name: "force", Type: plugin.Bool},
 	)
-	Record(plugin.SurfaceCLI, c, map[string]any{
+	Record(plugin.SurfaceCLI, c, "", map[string]any{
 		"path":  "secret/data/app",
 		"token": "hvs.CAESIJ-not-a-real-token",
 		"body":  "a long body somebody wrote in an editor",
@@ -71,11 +71,11 @@ func TestACredentialIsNeverRecorded(t *testing.T) {
 	})
 
 	values := Load()
-	if got := values.For("vault.kv.get", "path"); len(got) != 1 {
+	if got := values.For("", "vault.kv.get", "path"); len(got) != 1 {
 		t.Fatalf("the path was not recorded: %v", got)
 	}
 	for _, name := range []string{"token", "body", "force"} {
-		if got := values.For("vault.kv.get", name); len(got) != 0 {
+		if got := values.For("", "vault.kv.get", name); len(got) != 0 {
 			t.Errorf("%s was recorded as %v", name, got)
 		}
 	}
@@ -94,11 +94,11 @@ func TestACredentialIsNeverRecorded(t *testing.T) {
 func TestAnAgentNeverWritesTheShortlist(t *testing.T) {
 	isolated(t)
 	c := capWith("s3.object.list", str("bucket"))
-	Record(plugin.SurfaceMCP, c, map[string]any{"bucket": "attacker-chosen"})
-	Record(plugin.SurfaceCompletion, c, map[string]any{"bucket": "also-no"})
-	Record(plugin.SurfaceUnknown, c, map[string]any{"bucket": "still-no"})
+	Record(plugin.SurfaceMCP, c, "", map[string]any{"bucket": "attacker-chosen"})
+	Record(plugin.SurfaceCompletion, c, "", map[string]any{"bucket": "also-no"})
+	Record(plugin.SurfaceUnknown, c, "", map[string]any{"bucket": "still-no"})
 
-	if got := Load().For("s3.object.list", "bucket"); len(got) != 0 {
+	if got := Load().For("", "s3.object.list", "bucket"); len(got) != 0 {
 		t.Errorf("shortlist = %v, want nothing an agent supplied", got)
 	}
 	if _, err := os.Stat(Path()); !os.IsNotExist(err) {
@@ -111,7 +111,7 @@ func TestAnAgentNeverWritesTheShortlist(t *testing.T) {
 func TestTheFileIsPrivate(t *testing.T) {
 	isolated(t)
 	Record(plugin.SurfaceCLI, capWith("s3.object.list", str("bucket")),
-		map[string]any{"bucket": "mine"})
+		"", map[string]any{"bucket": "mine"})
 
 	info, err := os.Stat(Path())
 	if err != nil {
@@ -136,14 +136,14 @@ func TestADeceptiveValueIsNotRemembered(t *testing.T) {
 		"clean\x1b[2Kname", // an escape sequence a terminal acts on
 		"tag\u200bged",     // a zero-width space
 	} {
-		Record(plugin.SurfaceCLI, c, map[string]any{"name": hostile})
+		Record(plugin.SurfaceCLI, c, "", map[string]any{"name": hostile})
 	}
-	if got := Load().For("demo.run", "name"); len(got) != 0 {
+	if got := Load().For("", "demo.run", "name"); len(got) != 0 {
 		t.Errorf("shortlist = %q, want nothing that reads as one thing and is another", got)
 	}
 	// An ordinary value alongside them is still kept.
-	Record(plugin.SurfaceCLI, c, map[string]any{"name": "ordinary"})
-	if got := Load().For("demo.run", "name"); len(got) != 1 || got[0] != "ordinary" {
+	Record(plugin.SurfaceCLI, c, "", map[string]any{"name": "ordinary"})
+	if got := Load().For("", "demo.run", "name"); len(got) != 1 || got[0] != "ordinary" {
 		t.Errorf("shortlist = %q, want the ordinary value", got)
 	}
 }
@@ -153,9 +153,9 @@ func TestADeceptiveValueIsNotRemembered(t *testing.T) {
 func TestAnEnormousValueIsNotKept(t *testing.T) {
 	isolated(t)
 	c := capWith("pg.query", str("sql"))
-	Record(plugin.SurfaceCLI, c, map[string]any{"sql": strings.Repeat("select 1; ", 40)})
+	Record(plugin.SurfaceCLI, c, "", map[string]any{"sql": strings.Repeat("select 1; ", 40)})
 
-	if got := Load().For("pg.query", "sql"); len(got) != 0 {
+	if got := Load().For("", "pg.query", "sql"); len(got) != 0 {
 		t.Errorf("kept %d chars", len(got[0]))
 	}
 }
@@ -165,9 +165,9 @@ func TestTheShortlistStaysShort(t *testing.T) {
 	isolated(t)
 	c := capWith("s3.object.list", str("bucket"))
 	for i := range perInput + 5 {
-		Record(plugin.SurfaceCLI, c, map[string]any{"bucket": string(rune('a' + i))})
+		Record(plugin.SurfaceCLI, c, "", map[string]any{"bucket": string(rune('a' + i))})
 	}
-	got := Load().For("s3.object.list", "bucket")
+	got := Load().For("", "s3.object.list", "bucket")
 	if len(got) != perInput {
 		t.Errorf("shortlist = %d entries, want %d", len(got), perInput)
 	}
@@ -182,9 +182,9 @@ func TestTheShortlistStaysShort(t *testing.T) {
 func TestAPathIsRemembered(t *testing.T) {
 	isolated(t)
 	Record(plugin.SurfaceCLI, capWith("net.hosts.list", path("file")),
-		map[string]any{"file": "./container/etc/hosts"})
+		"", map[string]any{"file": "./container/etc/hosts"})
 
-	if got := Load().For("net.hosts.rm", "file"); len(got) != 1 || got[0] != "./container/etc/hosts" {
+	if got := Load().For("", "net.hosts.rm", "file"); len(got) != 1 || got[0] != "./container/etc/hosts" {
 		t.Errorf("shortlist = %v, want the file the listing used", got)
 	}
 }
@@ -194,9 +194,9 @@ func TestAPathIsRemembered(t *testing.T) {
 func TestEachItemOfAListIsRemembered(t *testing.T) {
 	isolated(t)
 	Record(plugin.SurfaceCLI, capWith("todo.add", plugin.Field{Name: "tag", Type: plugin.StringSlice}),
-		map[string]any{"tag": []string{"recipe", "italian"}})
+		"", map[string]any{"tag": []string{"recipe", "italian"}})
 
-	got := Load().For("todo.add", "tag")
+	got := Load().For("", "todo.add", "tag")
 	if len(got) != 2 {
 		t.Fatalf("shortlist = %v, want both tags", got)
 	}
@@ -208,9 +208,9 @@ func TestAClosedSetIsNotRemembered(t *testing.T) {
 	isolated(t)
 	Record(plugin.SurfaceCLI, capWith("net.dns",
 		plugin.Field{Name: "type", Type: plugin.String, Options: []string{"a", "aaaa", "mx"}}),
-		map[string]any{"type": "mx"})
+		"", map[string]any{"type": "mx"})
 
-	if got := Load().For("net.dns", "type"); len(got) != 0 {
+	if got := Load().For("", "net.dns", "type"); len(got) != 0 {
 		t.Errorf("shortlist = %v, want nothing for a closed set", got)
 	}
 }
@@ -222,13 +222,13 @@ func TestAnUnreadableStoreIsSilent(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "recent.json"), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := Load().For("s3.object.list", "bucket"); got != nil {
+	if got := Load().For("", "s3.object.list", "bucket"); got != nil {
 		t.Errorf("shortlist = %v, want nothing", got)
 	}
 	// And writing over it still works rather than failing the run.
 	Record(plugin.SurfaceCLI, capWith("s3.object.list", str("bucket")),
-		map[string]any{"bucket": "mine"})
-	if got := Load().For("s3.object.list", "bucket"); len(got) != 1 {
+		"", map[string]any{"bucket": "mine"})
+	if got := Load().For("", "s3.object.list", "bucket"); len(got) != 1 {
 		t.Errorf("shortlist = %v after a rewrite", got)
 	}
 }
@@ -242,17 +242,17 @@ func TestACredentialShapedNameIsRefused(t *testing.T) {
 		plugin.Field{Name: "id", Type: plugin.String, Config: "secret-key"},
 		str("bucket"),
 	)
-	Record(plugin.SurfaceCLI, c, map[string]any{
+	Record(plugin.SurfaceCLI, c, "", map[string]any{
 		"bearer": "ghp_notarealtoken", "api-token": "t", "password": "p", "auth": "a",
 		"id": "also-a-credential", "bucket": "mine",
 	})
 	values := Load()
 	for _, name := range []string{"bearer", "api-token", "password", "auth", "id"} {
-		if got := values.For("demo.call", name); len(got) != 0 {
+		if got := values.For("", "demo.call", name); len(got) != 0 {
 			t.Errorf("%s was remembered as %v", name, got)
 		}
 	}
-	if got := values.For("demo.call", "bucket"); len(got) != 1 {
+	if got := values.For("", "demo.call", "bucket"); len(got) != 1 {
 		t.Errorf("an ordinary input was refused as well: %v", got)
 	}
 }
@@ -262,11 +262,11 @@ func TestACredentialShapedNameIsRefused(t *testing.T) {
 func TestAnAuthorizationHeaderIsRefused(t *testing.T) {
 	isolated(t)
 	c := capWith("http.get", plugin.Field{Name: "header", Type: plugin.StringSlice})
-	Record(plugin.SurfaceCLI, c, map[string]any{"header": []string{
+	Record(plugin.SurfaceCLI, c, "", map[string]any{"header": []string{
 		"Accept: application/json",
 		"Authorization: Bearer ghp_notarealtoken",
 	}})
-	got := Load().For("http.get", "header")
+	got := Load().For("", "http.get", "header")
 	if len(got) != 1 || got[0] != "Accept: application/json" {
 		t.Errorf("shortlist = %v, want only the header that is not a credential", got)
 	}
@@ -280,7 +280,7 @@ func TestAnAuthorizationHeaderIsRefused(t *testing.T) {
 func TestAHeaderThatCarriesACredentialIsRefusedWhateverItIsCalled(t *testing.T) {
 	isolated(t)
 	c := capWith("http.get", plugin.Field{Name: "header", Type: plugin.StringSlice})
-	Record(plugin.SurfaceCLI, c, map[string]any{"header": []string{
+	Record(plugin.SurfaceCLI, c, "", map[string]any{"header": []string{
 		"Accept: application/json",
 		"X-Api-Key: sk_live_notreal",
 		"x-auth-token: notreal",
@@ -291,7 +291,7 @@ func TestAHeaderThatCarriesACredentialIsRefusedWhateverItIsCalled(t *testing.T) 
 		"X-Signature: notreal",
 		"Content-Type: application/json",
 	}})
-	got := Load().For("http.get", "header")
+	got := Load().For("", "http.get", "header")
 	want := []string{"Content-Type: application/json", "Accept: application/json"}
 	if !slices.Equal(got, want) {
 		t.Errorf("shortlist = %v, want only the headers that are not credentials: %v", got, want)
@@ -313,16 +313,16 @@ func TestAURLThatCarriesACredentialIsRefused(t *testing.T) {
 		"https://store.blob.example.net/c?sv=2024&sig=notreal",
 		"https://api.example.com/v1?X-Amz-Signature=notreal",
 	} {
-		Record(plugin.SurfaceCLI, c, map[string]any{"url": bad})
+		Record(plugin.SurfaceCLI, c, "", map[string]any{"url": bad})
 	}
 	for _, good := range []string{
 		"https://example.com/path?page=2&q=search",
 		"https://example.com:8443/healthz",
 		"example.com",
 	} {
-		Record(plugin.SurfaceCLI, c, map[string]any{"url": good})
+		Record(plugin.SurfaceCLI, c, "", map[string]any{"url": good})
 	}
-	got := Load().For("http.get", "url")
+	got := Load().For("", "http.get", "url")
 	want := []string{"example.com", "https://example.com:8443/healthz", "https://example.com/path?page=2&q=search"}
 	if !slices.Equal(got, want) {
 		t.Errorf("shortlist = %v, want only the URLs with no credential in them: %v", got, want)
@@ -333,9 +333,9 @@ func TestAURLThatCarriesACredentialIsRefused(t *testing.T) {
 func TestAMultiLineValueIsNotRemembered(t *testing.T) {
 	isolated(t)
 	c := capWith("demo.run", str("name"))
-	Record(plugin.SurfaceCLI, c, map[string]any{"name": "prod-backups\nrm -rf ~/.ssh"})
-	Record(plugin.SurfaceCLI, c, map[string]any{"name": "prod\tbackups"})
-	if got := Load().For("demo.run", "name"); len(got) != 0 {
+	Record(plugin.SurfaceCLI, c, "", map[string]any{"name": "prod-backups\nrm -rf ~/.ssh"})
+	Record(plugin.SurfaceCLI, c, "", map[string]any{"name": "prod\tbackups"})
+	if got := Load().For("", "demo.run", "name"); len(got) != 0 {
 		t.Errorf("shortlist = %q, want nothing that is not one line", got)
 	}
 }
@@ -347,11 +347,11 @@ func TestAMultiLineValueIsNotRemembered(t *testing.T) {
 func TestAHeaderWithCommasInItsValueIsRememberedWhole(t *testing.T) {
 	isolated(t)
 	c := capWith("http.get", plugin.Field{Name: "header", Type: plugin.StringSlice})
-	Record(plugin.SurfaceCLI, c, map[string]any{"header": []string{
+	Record(plugin.SurfaceCLI, c, "", map[string]any{"header": []string{
 		"Accept: text/html", " application/json",
 		"X-Api-Key: sk_one", " sk_two",
 	}})
-	got := Load().For("http.get", "header")
+	got := Load().For("", "http.get", "header")
 	want := []string{"Accept: text/html, application/json"}
 	if !slices.Equal(got, want) {
 		t.Errorf("shortlist = %q, want %q", got, want)
