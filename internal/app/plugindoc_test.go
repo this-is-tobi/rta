@@ -168,3 +168,16 @@ func rowFor(t *testing.T, tbl view.Table, col, want string) []string {
 	t.Fatalf("no row with %s = %q", col, want)
 	return nil
 }
+
+// The page every plugin's README is generated from said a configured value is
+// "a default, never a lock", which stopped being the whole truth the day a
+// profile could fence an input: the sentence says where it can.
+func TestPluginDocSaysWhereAProfileCanLockAConfiguredValue(t *testing.T) {
+	cfg := docSection(t, docPage(t, docFixture()), "Configuration").(view.Sections)
+	note := cfg.Items[0].View.(view.Text).Body
+	for _, want := range []string{"a default, never a lock", "`only:`", "refused"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("the configuration note does not say %q:\n%s", want, note)
+		}
+	}
+}

@@ -2,7 +2,7 @@
 
 A profile is a **named environment across every plugin that has something in it**. `staging` points `pg`, `s3` and `vault` at staging at once, rather than three sets of flags you retype.
 
-It is also the unit of consent. `rta grant allow pg.query --profile staging` lets an agent reach that one environment and no other. Both halves name the same thing on purpose.
+It is also the unit of consent. `rta grant allow pg.query --profile staging` lets an agent reach that one environment and no other — down to the one namespace or database, where the profile [fences it](#only-fences-an-input-to-the-values-a-connection-reaches). Both halves name the same thing on purpose.
 
 ## Defining one
 
@@ -178,6 +178,25 @@ Four things about it are deliberate:
 - **It says what you typed over.** A value typed on the command line wins over the environment's own, and the rest of the environment — its user, its database, its credential — still applies. So `rta kube pod list --context lab` under `rta use staging` prints `● staging, except --context lab`: it went to `lab`, with whatever else `staging` says, and the line no longer names an environment the result did not come from. Only a value the environment states and the command changes is listed. An address is shown without its credentials or its query, a long value is cut, and a credential typed never appears: config is refused on one, so it is not part of where a call went. A command that names its own environment with `--profile` prints no line, since it has said so itself. A call that wants none of the environment says `--no-profile`, and its line reads `● ad hoc — without staging`.
 
 `--no-color` keeps the badge and drops the paint: `[ shop-prod ]`, which is also what a session under `NO_COLOR` or `TERM=dumb` gets. A colour rta cannot read marks nothing, so the environment announces itself as an unmarked one does, rather than in one you did not choose; it is reported by `rta profile list`, `rta profile show` and `rta doctor`, and never stops the environment from being switched to or used. Under a locale that does not name `UTF-8` the bullet is an asterisk, as everything rta draws is plain ASCII there (see [the CLI](./10-cli.md)).
+
+## `only:` fences an input to the values a connection reaches
+
+`set:` is a default, and the caller always wins: `rta pg query --profile staging --database elsewhere` connects to `elsewhere`. That is the right rule for a person who typed it and the wrong one for "this environment is that database and no other", because an agent granted `staging` could name any database the connection can see — one a sibling profile pins among them — or send an empty string over the one `set:` states. `only:` is the other half. Per config key, the values the connection reaches:
+
+```yaml
+profiles:
+  staging:
+    plugins:
+      pg:
+        set:
+          database: app
+        only:
+          database: [app, app-jobs]
+```
+
+Whatever a call resolves `database` to — what was typed or sent, the profile's own `set:`, an exported `RTA_PROFILE_STAGING_DATABASE`, the plugin's section, the default — has to be one of those, or the call is refused before anything is fetched, opened or dialled. `rta profile set` states it with `--only database=app --only database=app-jobs` and takes it off with `--unfence`; `rta profile show` prints it, and `rta profile list`, `show` and `rta doctor` report a list the host could not hold a call to. [Profiles in depth](./41-profiles-in-depth.md#what-a-fence-holds-exactly) has the exact rules.
+
+A fence only ever narrows. It is a key of the profile, so the grant that names the profile is a grant on the connection *as fenced*: editing the list is a different connection, and a standing grant asks again, the way it does for a changed host. Over [MCP](../95-reference/10-glossary.md#acronyms) an agent is told that the call went outside what the connection reaches and which input did, and nothing else — not the list, not the profile's name — and the record carries the sentence a person would have been given.
 
 ## Switching authorizes nothing
 

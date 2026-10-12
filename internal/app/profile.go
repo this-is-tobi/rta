@@ -28,6 +28,10 @@ type boundProfile struct {
 	name   string
 	filled map[string]any
 	tunnel plugin.Tunnel
+	// fence is the allowlist the connection states, which the run resolves
+	// with: the check made here is about what the values are, and a one-entry
+	// list is also the value of an input nobody filled.
+	fence plugin.Fence
 }
 
 // resolveProfile decides which environment this CLI invocation runs against,
@@ -131,6 +135,17 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 	if name == "" {
 		return boundProfile{}, noop, nil
 	}
+	// Held to the connection's fence before anything is fetched or opened — a
+	// credential is not read and a forward is not raised for a call that is
+	// about to be refused. A person at a terminal needs no grant, but a profile
+	// that says "this environment is that namespace and no other" says it to
+	// whoever is typing, and the flag they typed is still a value the profile
+	// has an answer to.
+	if verr := profile.Fenced(name, conn, c, plugin.Inputs{
+		Caller: caller, Config: PluginConfig(c), ConfigSection: PluginConfigSection(c),
+	}, os.LookupEnv, plugin.SurfaceCLI); verr != nil {
+		return boundProfile{}, noop, verr
+	}
 	// Fill, not Bind: this is a real run with a person waiting, so a `secrets:`
 	// reference is fetched here. kv.Reveal is injected rather than imported by
 	// internal/profile, which is reached from the completion path on every
@@ -155,7 +170,7 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 	for input, v := range dialled {
 		filled[input] = v
 	}
-	return boundProfile{name: name, filled: filled, tunnel: via}, closeTunnel, nil
+	return boundProfile{name: name, filled: filled, tunnel: via, fence: profile.FenceOf(conn)}, closeTunnel, nil
 }
 
 // installed is what this machine has registered, for profile resolution.

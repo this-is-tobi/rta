@@ -1991,6 +1991,7 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		Profile:     bound.filled,
 		ProfileName: bound.name,
 		Tunnel:      bound.tunnel,
+		Fence:       bound.fence,
 		Config:      PluginConfig(c),
 		// The heading Config sits under, for a refusal to name the line.
 		ConfigSection: PluginConfigSection(c),

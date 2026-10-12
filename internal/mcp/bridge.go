@@ -548,6 +548,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// "no such profile" for a name that does not exist and "needs a grant"
 		// for one that does, which is the whole inventory one call at a time.
 		var filled map[string]any
+		var fence plugin.Fence
 		via := plugin.TunnelNone
 		if profileName != "" {
 			conn, verr := profile.Lookup(opts.profiles(), c, profileName, reg)
@@ -570,6 +571,26 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				// exactly that.
 				return errResult(ungranted(c, profileName, opts.Agent)), nil
 			}
+			// The connection's fence, held to the values the call resolves to —
+			// after the grant gate, so a call nobody granted is refused exactly
+			// as an unknown profile is and the fence is no way to learn a
+			// profile exists, and before anything is fetched or opened, so a
+			// call that is about to be refused costs the operator's cluster no
+			// forward and their store no unlock.
+			//
+			// A grant says the agent may reach this connection; it does not say
+			// every namespace, database or bucket the connection can see. The
+			// operator who wrote `only:` said that, and `set:` could not: it
+			// supplies a default and the caller wins, so an agent granted
+			// `staging` could name the namespace a sibling profile pins, or send
+			// an empty string over the one this one does.
+			if breach := profile.FenceBreached(profileName, conn, c, plugin.Inputs{
+				Caller: values, Config: opts.pluginConfig(c), ConfigSection: opts.configSection(c),
+			}, os.LookupEnv); breach != nil {
+				release()
+				return errResult(fencedRefusal(rec, c, profileName, breach)), nil
+			}
+			fence = profile.FenceOf(conn)
 			// After the gate, never before: a secret must not be fetched, and a
 			// port-forward must not be opened into the operator's cluster, for
 			// a call that is about to be refused.
@@ -633,6 +654,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			Profile:     filled,
 			ProfileName: profileName,
 			Tunnel:      via,
+			Fence:       fence,
 			Config:      opts.pluginConfig(c),
 			// The heading Config sits under, for a refusal to name the line.
 			ConfigSection: opts.configSection(c),
@@ -766,6 +788,39 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 // the answer.
 func withheld(e *agentlog.Entry, verr *view.Error) {
 	e.Outcome, e.Code, e.Reason = agentlog.Ran, cut(verr.Code, maxCode), cut(textclean.Credentials(verr.Message), maxReason)
+}
+
+// fencedRefusal is what an agent is told when a call goes outside the fence of
+// the connection it names, and the record of it.
+//
+// **The agent hears that the call went outside and which input did, and
+// nothing else.** Not what the connection reaches: an allowlist is the
+// operator's inventory — the namespaces of a cluster, the databases of a
+// server — and a refusal that listed it would hand an agent the map one call
+// at a time, which is exactly what `ungranted` refuses to do for profile names.
+// Not the profile's name either, though the agent supplied it: the rule is
+// that this surface says nothing about a connection that it did not have to.
+// Which input is named, because the agent chose it and the schema publishes
+// it, and a refusal that did not say which would be a refusal it could only
+// answer by guessing.
+//
+// The row says what the agent was not told, in Note, where only a person reads
+// it: the sentence the operator would have been given at a terminal, with the
+// profile and what it reaches. That is the half of the ledger that lets
+// somebody see an agent probing a boundary — a call that was refused here has
+// spent no grant (the caller released it) and reached nothing.
+func fencedRefusal(rec *agentlog.Entry, c plugin.Capability, ref string, breach *plugin.FenceBreach) *view.Error {
+	person := profile.FenceRefusal(ref, c, breach, plugin.SurfaceCLI)
+	input := profile.FenceInput(breach.Input, plugin.SurfaceMCP)
+	agent := view.Errorf(person.Code, "%s was not run: %s lies outside what the connection it names reaches", c.ID, input)
+	if breach.Widened() {
+		agent = view.Errorf(person.Code, "%s was not run: %s reads past what the connection it names reaches in %s",
+			c.ID, profile.FenceInput(breach.Switch, plugin.SurfaceMCP), input)
+	}
+	agent = agent.WithHint("name only what that connection covers, or ask the operator what it covers and for a grant on another one")
+	refusedBy(rec, agent)
+	rec.Note = cut(textclean.Credentials(person.Message), maxReason)
+	return agent
 }
 
 // takeProfile removes the host-owned "profile" argument from what the caller

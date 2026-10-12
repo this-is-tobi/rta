@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/pluginconf"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // This file is the fence a profile can put around a connection: the `only:`
@@ -191,6 +194,145 @@ func fencedWideners(name, key string, conn config.Connection, ns string, inst In
 	}
 	sort.Slice(problems, func(i, j int) bool { return problems[i].Reason < problems[j].Reason })
 	return problems
+}
+
+// FenceOf is the allowlist a connection states, in the form the host holds a
+// call to (plugin.Inputs.Fence). nil for a connection that fences nothing.
+//
+// Total, and failing closed: an entry that is not a list — which Lookup refuses
+// before anything reaches here, so this is the second wall and not the first —
+// becomes a fence that allows nothing, never one that is not there. A reader
+// that dropped what it could not parse would turn a line the operator wrote to
+// restrict a connection into silence about it.
+func FenceOf(conn config.Connection) plugin.Fence {
+	if len(conn.Only) == 0 {
+		return nil
+	}
+	fence := make(plugin.Fence, len(conn.Only))
+	for key, written := range conn.Only {
+		list, isList := plugin.FenceList(written)
+		if !isList {
+			list = []any{}
+		}
+		fence[key] = list
+	}
+	return fence
+}
+
+// Fenced holds a call to the allowlist its connection states, before anything
+// is fetched or opened for it, and returns the refusal when the call goes
+// outside — nil when it does not, and always nil for a connection that fences
+// nothing.
+//
+// **One check for the three places that hold the resolved values** — the CLI,
+// the TUI and the MCP bridge — because the rule is only as good as the weakest
+// surface that forgot it, and this repo has recorded that failure five times.
+// in carries what the call itself knows: the caller's values, and the
+// operator's own config and the heading it sits under. The profile's layer is
+// bound here from conn, by Bind, which is also what makes the environment
+// variable a profile can read for an input one of the values the check sees: a
+// fence that held `set:` and not `RTA_PROFILE_<P>_<INPUT>` would be a fence the
+// next export walked through.
+//
+// Bind and never Fill: a credential a `secrets:` block fetches fills an input
+// the fence cannot see, which is why such a mapping onto a fenced input is a
+// configuration error (checkOnly) and not something this has to cover.
+//
+// The refusal is written for a person at a terminal or a form: it names the
+// input, what the connection reaches and the ways across. A caller that must
+// not say so — over MCP an agent cannot enumerate what an operator's profile
+// reaches, and `ungranted` is the precedent for saying nothing about it —
+// uses the code and says its own sentence.
+func Fenced(name string, conn config.Connection, c plugin.Capability, in plugin.Inputs,
+	look func(string) (string, bool), sf plugin.Surface,
+) *view.Error {
+	breach := FenceBreached(name, conn, c, in, look)
+	if breach == nil {
+		return nil
+	}
+	return FenceRefusal(name, c, breach, sf)
+}
+
+// FenceBreached is Fenced's check without its words: how the call goes outside
+// the connection's fence, or nil. For the caller that has to say it in its own
+// — the MCP bridge, whose reader must not be told what the fence holds.
+func FenceBreached(name string, conn config.Connection, c plugin.Capability, in plugin.Inputs,
+	look func(string) (string, bool),
+) *plugin.FenceBreach {
+	fence := FenceOf(conn)
+	if len(fence) == 0 {
+		return nil
+	}
+	in.Fence = fence
+	in.Profile = Bind(name, conn, c, look)
+	in.ProfileName = name
+	return plugin.CheckFence(c, in)
+}
+
+// FenceInput names a fenced input the way a reader on sf gives it: the flag, the
+// box, the argument — and for an input only the operator sets, the operator's
+// setting, which an agent cannot be told to pass.
+func FenceInput(f plugin.Field, sf plugin.Surface) string {
+	if f.Local {
+		return sf.SettingName(f.Name)
+	}
+	return sf.InputName(f.Name)
+}
+
+// FenceRefusal words a breach for the person who can act on it. ref is the
+// profile as the call named it, instance included.
+func FenceRefusal(ref string, c plugin.Capability, b *plugin.FenceBreach, sf plugin.Surface) *view.Error {
+	profileName, instance := config.SplitRef(ref)
+	entry := plugin.Namespace(c.ID)
+	if instance != "" {
+		entry += "/" + instance
+	}
+	// The names a fence is written under, which is not the names a call uses:
+	// the key is the Config key and a person at a terminal types the flag.
+	named := func(f plugin.Field) string { return FenceInput(f, sf) }
+	reaches := fenceList(b.Allowed)
+	cross := "name another profile that reaches it, or change what " + ref + " reaches: `rta profile set " +
+		profileName + " --plugin " + entry + " --only " + b.Input.Config + "=…`"
+	switch {
+	case b.Widened():
+		return view.Errorf("core.profile.fenced.switch",
+			"%s reads past %s, which profile %q fences to: %s",
+			named(b.Switch), named(b.Input), ref, reaches).
+			WithHint("leave " + named(b.Switch) + " out, or " + cross)
+	case b.Blank:
+		return view.Errorf("core.profile.fenced",
+			"%s is blank, and profile %q reaches only: %s", named(b.Input), ref, reaches).
+			WithHint("give it one of those, or " + cross)
+	}
+	return view.Errorf("core.profile.fenced",
+		"%s is outside what profile %q reaches: %s", named(b.Input), ref, reaches).
+		WithHint("give it one of those, or " + cross)
+}
+
+// maxFenceShown is how many allowed values a refusal lists before it counts the
+// rest: enough to see what a connection reaches, few enough that a fence of two
+// hundred namespaces is not two hundred words on a terminal.
+const maxFenceShown = 10
+
+// fenceList is an allowlist as a sentence quotes it, cleaned for a terminal —
+// the entries are the operator's, but the file is also written by scripts and
+// a terminal acts on an escape in it whoever wrote it.
+func fenceList(allowed []any) string {
+	shown := make([]string, 0, min(len(allowed), maxFenceShown))
+	for i, e := range allowed {
+		if i == maxFenceShown {
+			break
+		}
+		shown = append(shown, textclean.Terminal(fmt.Sprint(e)))
+	}
+	text := strings.Join(shown, ", ")
+	if rest := len(allowed) - len(shown); rest > 0 {
+		text += fmt.Sprintf(" … and %d more", rest)
+	}
+	if text == "" {
+		text = "nothing"
+	}
+	return text
 }
 
 // declaredKeys is every config key the namespace declares on any input, a

@@ -239,3 +239,134 @@ func TestEditingAFenceMovesTheConnectionStamp(t *testing.T) {
 		t.Error("the same fence stamped differently twice")
 	}
 }
+
+func appCapability(t *testing.T) plugin.Capability {
+	t.Helper()
+	c, ok := fenceRegistry(t).Capability("app.status")
+	if !ok {
+		t.Fatal("the fixture registers no app.status")
+	}
+	return c
+}
+
+// The refusal a person gets names the input as they would type it, what the
+// connection reaches, and the ways across.
+func TestFencedWordsTheRefusalForWhoeverCanActOnIt(t *testing.T) {
+	c := appCapability(t)
+	conn := config.Connection{Only: map[string]any{"namespace": []any{"staging", "staging-jobs"}}}
+	in := plugin.Inputs{Caller: map[string]any{"namespace": "prod"}}
+
+	for _, tc := range []struct {
+		surface plugin.Surface
+		input   string
+	}{
+		{plugin.SurfaceCLI, "--namespace"},
+		{plugin.SurfaceTUI, "the namespace box"},
+		{plugin.SurfaceMCP, `the "namespace" argument`},
+	} {
+		verr := Fenced("staging", conn, c, in, noEnv, tc.surface)
+		if verr == nil {
+			t.Fatalf("%v: a value outside the fence was let through", tc.surface)
+		}
+		if verr.Code != "core.profile.fenced" {
+			t.Errorf("%v: code = %q", tc.surface, verr.Code)
+		}
+		if !strings.Contains(verr.Message, tc.input+" is outside what profile \"staging\" reaches: staging, staging-jobs") {
+			t.Errorf("%v: message = %q", tc.surface, verr.Message)
+		}
+		if !strings.Contains(verr.Hint, "rta profile set staging --plugin app --only namespace=") ||
+			!strings.Contains(verr.Hint, "another profile") {
+			t.Errorf("%v: hint = %q, want the ways across", tc.surface, verr.Hint)
+		}
+	}
+
+	// A blank is told apart from a wrong value, because the fix differs.
+	blank := Fenced("staging", conn, c, plugin.Inputs{Caller: map[string]any{"namespace": ""}}, noEnv, plugin.SurfaceCLI)
+	if blank == nil || !strings.Contains(blank.Message, "--namespace is blank, and profile \"staging\" reaches only: staging, staging-jobs") {
+		t.Errorf("a blank = %v", blank)
+	}
+
+	// A labeled instance is written under its own entry.
+	instance := Fenced("staging/analytics", conn, c, in, noEnv, plugin.SurfaceCLI)
+	if instance == nil || !strings.Contains(instance.Hint, "--plugin app/analytics --only namespace=") {
+		t.Errorf("an instance's hint = %v", instance)
+	}
+
+	// And the switch.
+	widened := Fenced("staging", conn, c, plugin.Inputs{Caller: map[string]any{"namespace": "staging", "all-namespaces": true}},
+		noEnv, plugin.SurfaceCLI)
+	if widened == nil || widened.Code != "core.profile.fenced.switch" ||
+		!strings.Contains(widened.Message, "--all-namespaces reads past --namespace, which profile \"staging\" fences to: staging, staging-jobs") {
+		t.Errorf("a widening switch = %v", widened)
+	}
+
+	// Inside the fence, and a connection with none, say nothing.
+	if verr := Fenced("staging", conn, c, plugin.Inputs{Caller: map[string]any{"namespace": "staging"}}, noEnv, plugin.SurfaceCLI); verr != nil {
+		t.Errorf("a call inside the fence was refused: %v", verr)
+	}
+	if verr := Fenced("staging", config.Connection{}, c, in, noEnv, plugin.SurfaceCLI); verr != nil {
+		t.Errorf("a connection with no fence refused a call: %v", verr)
+	}
+}
+
+// What a profile reads from the environment for an input is one of the values
+// the check sees: a fence that held `set:` and not `RTA_PROFILE_<P>_<INPUT>`
+// would be one the next export walks through.
+func TestTheFenceSeesWhatTheEnvironmentFillsIn(t *testing.T) {
+	c := appCapability(t)
+	conn := config.Connection{Only: map[string]any{"namespace": []any{"staging"}}}
+	env := func(name string) (string, bool) {
+		if name == "RTA_PROFILE_STAGING_NAMESPACE" {
+			return "prod", true
+		}
+		return "", false
+	}
+	if verr := Fenced("staging", conn, c, plugin.Inputs{}, env, plugin.SurfaceCLI); verr == nil {
+		t.Error("an environment variable carried a value past the fence")
+	}
+	if verr := Fenced("staging", conn, c, plugin.Inputs{}, noEnv, plugin.SurfaceCLI); verr != nil {
+		t.Errorf("the one value the fence allows was refused when nothing said otherwise: %v", verr)
+	}
+}
+
+// A list the loader would refuse, if it ever got this far, is a fence that
+// allows nothing — not silence about the connection.
+func TestAnAllowlistThatIsNotAListFailsClosed(t *testing.T) {
+	c := appCapability(t)
+	for name, written := range map[string]any{
+		"a scalar":      "staging",
+		"nothing":       nil,
+		"a block":       map[string]any{"a": "b"},
+		"an empty list": []any{},
+	} {
+		conn := config.Connection{Only: map[string]any{"namespace": written}}
+		if fence := FenceOf(conn); fence == nil || len(fence["namespace"]) != 0 {
+			t.Errorf("%s: FenceOf = %#v, want a fence that allows nothing", name, fence)
+		}
+		if verr := Fenced("staging", conn, c, plugin.Inputs{Caller: map[string]any{"namespace": "staging"}}, noEnv, plugin.SurfaceCLI); verr == nil {
+			t.Errorf("%s: a call was let through a fence that could not be read", name)
+		}
+	}
+	if FenceOf(config.Connection{}) != nil {
+		t.Error("a connection that fences nothing has a fence")
+	}
+}
+
+// A list of two hundred namespaces is not two hundred words on a terminal, and
+// a terminal acts on an escape in a file whoever wrote it.
+func TestARefusalCountsWhatItDoesNotList(t *testing.T) {
+	c := appCapability(t)
+	var many []any
+	for i := range 13 {
+		many = append(many, "ns-"+string(rune('a'+i)))
+	}
+	many[0] = "ns-\x1b]0;x\x07a"
+	verr := Fenced("staging", config.Connection{Only: map[string]any{"namespace": many}}, c,
+		plugin.Inputs{Caller: map[string]any{"namespace": "other"}}, noEnv, plugin.SurfaceCLI)
+	if verr == nil || !strings.Contains(verr.Message, "and 3 more") {
+		t.Fatalf("the refusal does not count the rest: %v", verr)
+	}
+	if strings.ContainsRune(verr.Message, '\x1b') {
+		t.Errorf("the refusal carries an escape from the file: %q", verr.Message)
+	}
+}

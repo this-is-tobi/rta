@@ -69,7 +69,7 @@ func (m Model) formSeed(c plugin.Capability, defaults map[string]any, on string)
 	cfg := m.configFor(c)
 	seed := plugin.Resolve(c, plugin.Inputs{
 		Caller: defaults, Profile: filled, ProfileName: name, Config: cfg.values,
-		ConfigSection: cfg.section,
+		ConfigSection: cfg.section, Fence: profile.FenceOf(conn),
 	})
 	derived := map[string]bool{}
 	for input := range seed {
@@ -327,7 +327,7 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 		// a caller who supplies one value must not lose the other defaults.
 		req := plugin.ResolveRequest(c, plugin.Inputs{
 			Caller: values, Profile: filled, ProfileName: profileName, Tunnel: via, Config: cfg.values,
-			ConfigSection: cfg.section,
+			ConfigSection: cfg.section, Fence: profile.FenceOf(conn),
 		}, dryRun, yes).WithSurface(plugin.SurfaceTUI)
 		// A default, not an override. Forcing detail on unconditionally made
 		// the D toggle on kv.list dead: toggleView set detail=false, this put
@@ -472,8 +472,20 @@ func (m *Model) startRun(c plugin.Capability, values map[string]any, yes bool) t
 func (m Model) resolveProfile(c plugin.Capability, values map[string]any,
 ) (string, map[string]any, config.Connection, *view.Error) {
 	name, conn, filled, verr := m.pickedConn(c, values)
-	if verr != nil || name == "" || filled != nil {
+	if verr != nil || name == "" {
 		return name, filled, conn, verr
+	}
+	// Held to the connection's fence on every run, the cached bind included —
+	// the cache is what the environment *is*, and the fence is about what this
+	// call asks of it — and before anything is fetched or opened for it.
+	cfg := m.configFor(c)
+	if verr := profile.Fenced(name, conn, c, plugin.Inputs{
+		Caller: withoutPicker(c, values), Config: cfg.values, ConfigSection: cfg.section,
+	}, os.LookupEnv, plugin.SurfaceTUI); verr != nil {
+		return "", nil, config.Connection{}, verr
+	}
+	if filled != nil {
+		return name, filled, conn, nil
 	}
 	filled, verr = m.fillConn(name, conn, c, values)
 	if verr != nil {
