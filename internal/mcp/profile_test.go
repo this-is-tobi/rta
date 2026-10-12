@@ -299,6 +299,53 @@ func TestAnAgentNeedsAGrantForEveryConnectionItNames(t *testing.T) {
 	}
 }
 
+// A call that clears the gate and then cannot resolve the connection's
+// credential left a row with no code and no reason: the grant read as spent on
+// nothing, and the doctor the agent was pointed at checks the file, not whether
+// an entry is there. The row says what the agent heard, and carries on the
+// record what it was not told.
+func TestACredentialThatCannotBeReadIsRecordedWithItsCause(t *testing.T) {
+	const withSecret = `
+profiles:
+  staging:
+    plugins:
+      pg:
+        set:
+          host: staging.internal
+        secrets:
+          password: kv:staging-db-password
+`
+	f := newProfileFixture(t, withSecret, func(o *Options) {
+		o.Secrets = func(key string) (string, *view.Error) {
+			return "", view.Errorf("kv.notfound", "no entry %s: there is no store on this machine yet", key)
+		}
+	})
+	now := time.Now()
+	if verr := grant.Save([]grant.Grant{{
+		Target: "pg", Profile: "staging", ProfilePin: f.pin("staging", "pg"), Issued: now, Expires: now.Add(time.Hour),
+	}}); verr != nil {
+		t.Fatal(verr)
+	}
+
+	res := f.call(t, map[string]any{"profile": "staging", "sql": "select 1"})
+	assertCode(t, res, "core.profile.secret.unavailable")
+	if text := contentText(t, res); strings.Contains(text, "staging-db-password") {
+		t.Errorf("the agent was told which entry the operator mapped: %s", text)
+	}
+
+	entries, err := agentlog.Read(1)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("ledger = %v, %v", entries, err)
+	}
+	e := entries[0]
+	if e.Code != "core.profile.secret.unavailable" || e.Reason == "" {
+		t.Errorf("the row does not say what happened: code %q, reason %q", e.Code, e.Reason)
+	}
+	if !strings.Contains(e.Note, "staging-db-password") || !strings.Contains(e.Note, "no store") {
+		t.Errorf("the row does not carry the cause for the operator: note %q", e.Note)
+	}
+}
+
 // A grant for one connection does not open another.
 func TestAGrantForOneProfileDoesNotOpenAnother(t *testing.T) {
 	f := newProfileFixture(t, twoProfiles)

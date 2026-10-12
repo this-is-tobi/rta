@@ -1760,14 +1760,26 @@ func unknownRequest(sf plugin.Surface, id string) *view.Error {
 // operator reading down this column to find out what happened at 14:32 has
 // to be able to see that something at 14:32 is missing.
 func whyLine(e agentlog.Entry) string {
+	why := e.Reason
+	// What the host knew and did not say to the agent (agentlog.Entry.Note),
+	// beside the sentence the agent heard: it is written for the person who
+	// reads this column, and a column that drops it leaves the only place that
+	// says why a grant that looks healthy was refused as a field of the file.
+	if e.Note != "" {
+		if why == "" {
+			why = e.Note
+		} else {
+			why += " — " + e.Note
+		}
+	}
 	if e.Missed == 0 {
-		return e.Reason
+		return why
 	}
 	note := "(" + format.CountOf(int(e.Missed), "call") + " before this one could not be recorded)"
-	if e.Reason == "" {
+	if why == "" {
 		return note
 	}
-	return e.Reason + " " + note
+	return why + " " + note
 }
 
 // callNamed is a call as an answer names it: the capability, and each
