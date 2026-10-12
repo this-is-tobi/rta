@@ -73,6 +73,24 @@ func TestRevealWithNoStoreSaysThereIsNoneAndHowOneIsMade(t *testing.T) {
 	}
 }
 
+// The form's box and --passphrase hand over one answer for a store not made
+// yet, so the call that makes it says so: the receipt for the first entry was
+// the same line as for the tenth, and the person learned there was a store
+// whose passphrase nothing recovers from the first call that would not open it.
+func TestTheCallThatMakesTheStoreSaysSo(t *testing.T) {
+	setup(t)
+	t.Setenv(passphraseEnv, "correct horse battery staple")
+
+	first := text(t, runSet, map[string]any{"key": "db-password", "value": "s3cr3t"}, false)
+	if !strings.Contains(first, "made a new store") || !strings.Contains(first, "nothing recovers it") {
+		t.Errorf("the call that made the store says nothing of it: %q", first)
+	}
+	second := text(t, runSet, map[string]any{"key": "other-key", "value": "x"}, false)
+	if strings.Contains(second, "new store") {
+		t.Errorf("a later call claims to have made the store: %q", second)
+	}
+}
+
 func TestRevealNeverPrompts(t *testing.T) {
 	setup(t)                                                         // passphraseEnv and identityEnv both cleared
 	text(t, runSet, map[string]any{"key": "k", "value": "v"}, false) // creates the store under req()'s own default passphrase

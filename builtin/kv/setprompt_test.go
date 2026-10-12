@@ -49,7 +49,7 @@ func TestSetAtATerminalAsksForTheValue(t *testing.T) {
 	if len(*asked) != 1 || (*asked)[0] != "db-password" {
 		t.Fatalf("asked for %q, want db-password once", *asked)
 	}
-	if body := v.(view.Text).Body; body != `set db-password (string, 20 B)` {
+	if body := v.(view.Text).Body; !strings.HasPrefix(body, "set db-password (string, 20 B)\n") {
 		t.Errorf("answer = %q", body)
 	}
 	got, err := runGet(context.Background(), req(map[string]any{"key": "db-password"}, false))
@@ -125,7 +125,7 @@ func TestSetAsksForTheValueOfANewKeyGivenALabel(t *testing.T) {
 	if len(*asked) != 1 || (*asked)[0] != "api-token" {
 		t.Fatalf("asked for %q, want api-token once", *asked)
 	}
-	if body := v.(view.Text).Body; body != `set api-token (string, 6 B)` {
+	if body := v.(view.Text).Body; !strings.HasPrefix(body, "set api-token (string, 6 B)\n") {
 		t.Errorf("answer = %q", body)
 	}
 	tbl := table(t, runList, map[string]any{"detail": true})

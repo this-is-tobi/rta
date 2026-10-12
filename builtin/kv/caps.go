@@ -571,6 +571,13 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	defer unlock()
+	// Read before the load: whether this call is the one that makes the store.
+	// The form's box and the --passphrase flag hand over one answer for a store
+	// not made yet (newStorePassphraseField), and the receipt was the same line
+	// as for a tenth entry, so a person who mistyped it learned there was a
+	// store, and that nothing recovers its passphrase, from the first call that
+	// would not open it.
+	madeStore := !fileExists(storePath())
 	s, verr := load(req)
 	if verr != nil {
 		return nil, verr
@@ -657,6 +664,9 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		msg = fmt.Sprintf("updated %s (%s, %s)", textclean.Record(key), kind, format.Bytes(len(value)))
 	default:
 		msg = fmt.Sprintf("set %s (%s, %s)", textclean.Record(key), kind, format.Bytes(len(value)))
+	}
+	if madeStore {
+		msg += "\nmade a new store — locked with the passphrase this call used, and nothing recovers it"
 	}
 	if specs := req.StringSlice("recipient"); len(specs) > 0 {
 		msg += "\nstore re-encrypted — " + req.Surface().CapabilityName("kv.recipients") + " lists who can read it"
