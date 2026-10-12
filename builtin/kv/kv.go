@@ -172,7 +172,7 @@ func Plugin() plugin.Plugin {
 				Run:     runList,
 			},
 			{
-				ID: "kv.get", Summary: "Reveal a stored value", Safety: plugin.Write, Idempotent: true,
+				ID: "kv.get", Summary: "Reveal a stored value", Keywords: []string{"secret", "password", "read", "retrieve", "credential", "decrypt"}, Safety: plugin.Write, Idempotent: true,
 				NeedsGrant: true, Scope: "key", Reveals: true,
 				Description: "Classified as a write, because revealing a secret is the " +
 					"sensitive act: an agent needs a grant naming the key it may read, issued by a person. A " +
@@ -239,7 +239,7 @@ func Plugin() plugin.Plugin {
 				Run: runEnv,
 			},
 			{
-				ID: "kv.set", Summary: "Set (or overwrite) a stored value", Safety: plugin.Write, Idempotent: true,
+				ID: "kv.set", Summary: "Set (or overwrite) a stored value", Keywords: []string{"secret", "password", "save", "write", "credential", "encrypt"}, Safety: plugin.Write, Idempotent: true,
 				Flash:      true,
 				NeedsGrant: true, Scope: "key",
 				Description: "The value is given as `value`; a call with none is refused unless " +

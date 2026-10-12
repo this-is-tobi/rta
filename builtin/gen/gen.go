@@ -123,7 +123,7 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID:      "gen.token",
-				Summary: "Generate random bytes, formatted as hex/base64/base32",
+				Summary: "Generate random bytes, formatted as hex/base64/base32", Keywords: []string{"api", "secret", "bearer", "key", "create"},
 				Description: "crypto/rand bytes, formatted by `encoding`. base32 at the right length " +
 					"is already a TOTP secret (RFC 4648/6238) — there is no separate gen.totp.",
 				Safety: plugin.Read,

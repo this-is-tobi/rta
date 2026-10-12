@@ -330,8 +330,8 @@ func Plugin() plugin.Plugin {
 				Run: runHostsRemove,
 			},
 			{
-				ID:           "net.resolver.list",
-				Summary:      "Show the system resolver, and who controls it",
+				ID:      "net.resolver.list",
+				Summary: "Show the system resolver, and who controls it", Keywords: []string{"dns", "nameserver", "nameservers", "servers", "resolv"},
 				Safety:       plugin.Read,
 				HostSpecific: true,
 				Idempotent:   true,
