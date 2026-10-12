@@ -110,6 +110,16 @@ func ConnStamp(key string, c config.Connection) string {
 	for _, k := range sortedKeys(c.Set) {
 		write("set", k, canonical(c.Set[k]))
 	}
+	// The fence is part of what a grant consents to, in the direction that
+	// matters: a grant issued against a connection that reached `staging` and
+	// nothing else was issued against a narrower thing than the same connection
+	// with the list removed, and one with `staging-jobs` added reaches somewhere
+	// the person never saw. Either edit re-asks, the way a changed host does.
+	// Order within a list is part of what is written and moves the stamp too —
+	// the conservative direction, which costs one extra question.
+	for _, k := range sortedKeys(c.Only) {
+		write("only", k, canonical(c.Only[k]))
+	}
 	for _, k := range sortedKeys(c.Secrets) {
 		// The reference, not the value.
 		write("secret", k, c.Secrets[k])

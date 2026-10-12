@@ -202,7 +202,7 @@ func Lookup(cfg config.Config, c plugin.Capability, ref string, inst Installed) 
 		return none, view.Errorf("core.profile.unknownkey",
 			"profile %q, under %s, has %s, which nothing reads",
 			name, key, strings.Join(unknown, ", ")).
-			WithHint("a plugin entry takes set, secrets, secrets-from, kube, ssh and tunnelTLS")
+			WithHint("a plugin entry takes set, only, secrets, secrets-from, kube, ssh and tunnelTLS")
 	}
 	if bad := conn.BadSecretRefs(); len(bad) > 0 {
 		return none, view.Errorf("core.profile.secret.scheme",
@@ -269,6 +269,14 @@ func Lookup(cfg config.Config, c plugin.Capability, ref string, inst Installed) 
 	// the connection they meant.
 	if problems := checkSet(name, key, conn, ns, inst); len(problems) > 0 {
 		return none, view.Errorf("core.profile.set",
+			"profile %q: %s", name, problems[0].Reason).WithHint(problems[0].Hint)
+	}
+	// And the fence beside it. A list that cannot hold what it says — an entry
+	// of the wrong type, a `set:` value outside it — is a boundary the operator
+	// believes is drawn and no call is held to, so it is refused rather than
+	// applied in part.
+	if problems := checkOnly(name, key, conn, ns, inst); len(problems) > 0 {
+		return none, view.Errorf("core.profile.only",
 			"profile %q: %s", name, problems[0].Reason).WithHint(problems[0].Hint)
 	}
 	// And the `secrets:` block, for the same reason: a mapping that can never
@@ -923,7 +931,7 @@ func CheckConnection(name, key string, conn config.Connection, inst Installed) [
 	}
 	if unknown := conn.UnknownKeys(); len(unknown) > 0 {
 		at("has "+strings.Join(unknown, ", ")+", which nothing reads",
-			"a plugin entry takes set, secrets, secrets-from, kube, ssh and tunnelTLS")
+			"a plugin entry takes set, only, secrets, secrets-from, kube, ssh and tunnelTLS")
 		return problems
 	}
 	// The same refusal Lookup makes for a label that does not parse, in the
@@ -968,6 +976,7 @@ func CheckConnection(name, key string, conn config.Connection, inst Installed) [
 		return problems
 	}
 	problems = append(problems, checkSet(name, key, conn, config.PluginNamespace(key), inst)...)
+	problems = append(problems, checkOnly(name, key, conn, config.PluginNamespace(key), inst)...)
 	problems = append(problems, checkSecretRefs(name, key, conn, config.PluginNamespace(key), inst)...)
 	return problems
 }
@@ -1099,22 +1108,7 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 	var problems []Problem
 	for _, k := range set {
 		if len(readers[k]) == 0 {
-			reason := fmt.Sprintf("nothing in %s reads %q", ns, k)
-			hint := "`rta explain <capability>` lists the config keys it reads"
-			if guess := near.Word(k, readerKeys(readers)); guess != "" {
-				hint = fmt.Sprintf("did you mean %q?", guess)
-			} else if where := near.Qualified(k, readerKeys(readers)); len(where) > 0 {
-				hint = "it is spelled with the capability that reads it: " + strings.Join(where, " or ")
-			}
-			if declared[k] {
-				// Declared but refused: a Path, or the capability's own Scope.
-				// Worth its own sentence — the operator's key is not a typo,
-				// the rule is deliberate, and "nothing reads it" would send
-				// them looking for a spelling mistake that is not there.
-				reason = fmt.Sprintf("%q is a config key in %s, but a profile may not fill it", k, ns)
-				hint = "a profile chooses where a call goes, never what it reads or where it writes"
-			}
-			problems = append(problems, Problem{Name: name, Plugin: key, Reason: reason, Hint: hint})
+			problems = append(problems, unreadKey(name, key, k, ns, "", readers, declared))
 			continue
 		}
 		f := pluginconf.SharedField(readers[k])
@@ -1172,6 +1166,36 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 		}
 	}
 	return problems
+}
+
+// unreadKey is the problem of a key a profile block names and no capability in
+// the namespace lets a profile fill: a misspelling, or a key that is declared
+// and refused.
+//
+// One sentence for every block that is keyed by Field.Config, so `set:` and
+// `only:` cannot come to disagree about what a key that reads nothing means.
+// block names the one that held it — "" for `set:`, whose wording this is, and
+// "only" for the allowlist, whose reader is told which block to look in.
+func unreadKey(name, key, k, ns, block string, readers map[string][]plugin.Field, declared map[string]bool) Problem {
+	reason := fmt.Sprintf("nothing in %s reads %q", ns, k)
+	hint := "`rta explain <capability>` lists the config keys it reads"
+	if guess := near.Word(k, readerKeys(readers)); guess != "" {
+		hint = fmt.Sprintf("did you mean %q?", guess)
+	} else if where := near.Qualified(k, readerKeys(readers)); len(where) > 0 {
+		hint = "it is spelled with the capability that reads it: " + strings.Join(where, " or ")
+	}
+	if declared[k] {
+		// Declared but refused: a Path, or the capability's own Scope.
+		// Worth its own sentence — the operator's key is not a typo,
+		// the rule is deliberate, and "nothing reads it" would send
+		// them looking for a spelling mistake that is not there.
+		reason = fmt.Sprintf("%q is a config key in %s, but a profile may not fill it", k, ns)
+		hint = "a profile chooses where a call goes, never what it reads or where it writes"
+	}
+	if block != "" {
+		reason += ", named under `" + block + ":`"
+	}
+	return Problem{Name: name, Plugin: key, Reason: reason, Hint: hint}
 }
 
 // checkSecretRefs reports a well-formed `secrets:` mapping that can never

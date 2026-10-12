@@ -73,12 +73,17 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 			"the flags state and a block no flag mentions is left alone, so `--set` restates\n" +
 			"one plugin's configuration without disturbing its credentials.\n\n" +
 			"`--set` refuses a declared credential outright: a value belongs in the store and\n" +
-			"a profile carries the reference. `--secret` is that reference — never a value.",
+			"a profile carries the reference. `--secret` is that reference — never a value.\n\n" +
+			"`--set` states a default, which a caller can override. `--only` fences an input:\n" +
+			"once per allowed value, it states what the connection reaches, and a call whose\n" +
+			"value falls outside it is refused. `--unfence` takes the fences off.",
 		Example: "  rta kv set staging-db-password --file /run/secrets/db\n" +
 			"  rta profile set staging --note 'shared staging' --ttl 8h\n" +
 			"  rta profile set staging --plugin pg \\\n" +
 			"      --set host=db.staging.internal --set port=5432 \\\n" +
 			"      --secret password=kv:staging-db-password\n" +
+			"  rta profile set staging --plugin pg \\\n" +
+			"      --only dbname=app --only dbname=app-jobs\n" +
 			"  rta profile set staging --plugin pg/analytics \\\n" +
 			"      --set host=analytics.staging.internal \\\n" +
 			"      --secret password=kv:staging-analytics-password\n" +
@@ -100,6 +105,9 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 	// commas, so `--set search-path=public,app` would silently become two
 	// malformed pairs. A configuration value is not a list of flags.
 	cmd.Flags().StringArray("set", nil, "a `key=value` this plugin reads; repeat for more")
+	cmd.Flags().StringArray("only", nil,
+		"fence an input to the values this connection reaches: a `key=value`, once per allowed value")
+	cmd.Flags().Bool("unfence", false, "remove every `only:` fence from this plugin's entry")
 	cmd.Flags().StringArray("secret", nil,
 		"an `input=kv:entry` reference — never the value itself; repeat for more")
 	cmd.Flags().String("kube", "", "reach it through a port-forward: `context/namespace/kind/name:port`")
@@ -117,6 +125,7 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 	completeFlag(cmd, "ttl", completeWindow)
 	completeFlag(cmd, "dashboard", completeViews)
 	completeFlag(cmd, "set", completeSetKeys)
+	completeFlag(cmd, "only", completeSetKeys)
 	completeFlag(cmd, "secret", completeSecretInputs)
 	return cmd
 }
@@ -464,7 +473,7 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 	reg *registry.Registry,
 ) (key string, receipts []view.Pair, verr *view.Error) {
 	stated := make([]string, 0, 5)
-	for _, f := range []string{"set", "secret", "kube", "ssh", "direct", "tunnel-tls"} {
+	for _, f := range []string{"set", "only", "unfence", "secret", "kube", "ssh", "direct", "tunnel-tls"} {
 		if cmd.Flags().Changed(f) {
 			stated = append(stated, "--"+f)
 		}
@@ -487,6 +496,11 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 	if cmd.Flags().Changed("direct") && (cmd.Flags().Changed("kube") || cmd.Flags().Changed("ssh")) {
 		return "", nil, view.Errorf("core.profile.tunnel.direct",
 			"--direct removes the forward that --kube or --ssh states").
+			WithHint("state one or the other")
+	}
+	if cmd.Flags().Changed("unfence") && cmd.Flags().Changed("only") {
+		return "", nil, view.Errorf("core.profile.only.both",
+			"--unfence removes the fence that --only states").
 			WithHint("state one or the other")
 	}
 
@@ -558,7 +572,7 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 	// and stops a script being the source of truth for what it states. It is
 	// a reason to say so, the same way the forward repair below does. A loss
 	// an operator can see is a different thing from one they cannot.
-	var dropped []string
+	var dropped, removedFence []string
 	if cmd.Flags().Changed("set") {
 		pairs, _ := cmd.Flags().GetStringArray("set")
 		set, verr := parseSetFlags(pairs, ns, reg)
@@ -567,6 +581,23 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 		}
 		dropped = append(dropped, missingKeys(conn.Set, set, "set.")...)
 		conn.Set = set
+	}
+	// The fence states the whole block as `--set` does, for the same reason: a
+	// script is the source of truth for what it states, and a fence is the one
+	// block where a key quietly left behind is a wall nobody remembers writing —
+	// so what a restatement drops is said, as it is for `set:`.
+	if cmd.Flags().Changed("only") {
+		pairs, _ := cmd.Flags().GetStringArray("only")
+		only, verr := parseOnlyFlags(pairs, ns, reg)
+		if verr != nil {
+			return "", nil, verr
+		}
+		dropped = append(dropped, missingKeys(conn.Only, only, "only.")...)
+		conn.Only = only
+	}
+	if unfenced, _ := cmd.Flags().GetBool("unfence"); unfenced {
+		removedFence = missingKeys(conn.Only, nil, "only.")
+		conn.Only = nil
 	}
 	if cmd.Flags().Changed("secret") {
 		pairs, _ := cmd.Flags().GetStringArray("secret")
@@ -605,7 +636,7 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 	// discarding a flag somebody just typed. The two cases are exactly
 	// "did this run restate the block", which is what Changed answers.
 	freed := freeEndpointKeys(&conn, ns, reg,
-		!cmd.Flags().Changed("set"), !cmd.Flags().Changed("secret"))
+		!cmd.Flags().Changed("set"), !cmd.Flags().Changed("only"), !cmd.Flags().Changed("secret"))
 
 	// **The same rules the report uses, before the write rather than after
 	// it.** internal/profile.CheckConnection is what `rta profile list`,
@@ -638,6 +669,10 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 		receipts = append(receipts, view.Pair{Key: "removed",
 			Value: strings.Join(freed, ", ") + " — the forward fills those, so nothing read them"})
 	}
+	if len(removedFence) > 0 {
+		receipts = append(receipts, view.Pair{Key: "unfenced",
+			Value: strings.Join(removedFence, ", ") + " — calls through this connection are no longer held to those lists"})
+	}
 	return key, receipts, nil
 }
 
@@ -659,7 +694,7 @@ func missingKeys(before, after map[string]any, prefix string) []string {
 // forward, which is why `--direct` needs no counterpart — clearing the
 // coordinate simply makes those keys live again.
 func freeEndpointKeys(conn *config.Connection, ns string, reg *registry.Registry,
-	setCarried, secretsCarried bool,
+	setCarried, onlyCarried, secretsCarried bool,
 ) []string {
 	if !conn.Tunnelled() {
 		return nil
@@ -682,6 +717,14 @@ func freeEndpointKeys(conn *config.Connection, ns string, reg *registry.Registry
 					freed = append(freed, "set."+f.Config)
 				}
 			}
+			// A fence on a value the forward fills is dead the same way, and
+			// repaired the same way when this run did not restate it.
+			if onlyCarried && f.Config != "" {
+				if _, fenced := conn.Only[f.Config]; fenced {
+					delete(conn.Only, f.Config)
+					freed = append(freed, "only."+f.Config)
+				}
+			}
 			if secretsCarried {
 				if _, mapped := conn.Secrets[f.Name]; mapped {
 					delete(conn.Secrets, f.Name)
@@ -692,6 +735,9 @@ func freeEndpointKeys(conn *config.Connection, ns string, reg *registry.Registry
 	}
 	if len(conn.Set) == 0 {
 		conn.Set = nil
+	}
+	if len(conn.Only) == 0 {
+		conn.Only = nil
 	}
 	if len(conn.Secrets) == 0 {
 		conn.Secrets = nil
@@ -721,46 +767,28 @@ func freeEndpointKeys(conn *config.Connection, ns string, reg *registry.Registry
 func parseSetFlags(pairs []string, ns string, reg *registry.Registry) (map[string]any, *view.Error) {
 	byConfig, secrets := declaredFor(ns, reg)
 
-	// Collected first, because a StringSlice input is stated by repeating the
-	// key and the whole list has to be in hand before any of it is typed.
-	order := make([]string, 0, len(pairs))
-	raw := map[string][]string{}
-	for _, pair := range pairs {
-		k, v, ok := strings.Cut(pair, "=")
-		if !ok {
-			// The argument is deliberately not echoed. Somebody who typed a
-			// value where a pair belongs has already put it on a command
-			// line; rta will not put it anywhere else.
-			return nil, view.Errorf("core.profile.set.shape",
-				"one --set argument is not a `key=value` pair").
-				WithHint("write it as `--set host=db.internal`")
-		}
-		k = strings.TrimSpace(k)
-		if k == "" {
-			return nil, view.Errorf("core.profile.set.shape", "one --set argument names no key").
-				WithHint("write it as `--set host=db.internal`")
-		}
-		if secrets[k] {
-			return nil, view.Errorf("core.profile.set.secret",
+	order, raw, verr := collectPairs(pairs, secrets, flagWords{
+		flag: "set", example: "host=db.internal", shape: "core.profile.set.shape",
+		secret: func(k string) *view.Error {
+			return view.Errorf("core.profile.set.secret",
 				"%q is a credential, and `--set` writes values into %s in plaintext",
 				k, config.Path()).
 				WithHint("store it and reference it instead: `rta kv set " + ns + "-" + k +
 					" --file <path>` then `--secret " + k + "=kv:" + ns + "-" + k + "`")
-		}
-		if v == "" {
-			// Never silently dropped. `--set` states the whole block, so an
-			// empty value is either a key meant to be removed — which is done
-			// by omitting it — or a variable that expanded to nothing in the
-			// script that called this, which is worth finding out about.
-			return nil, view.Errorf("core.profile.set.empty",
+		},
+		// Never silently dropped. `--set` states the whole block, so an empty
+		// value is either a key meant to be removed — which is done by
+		// omitting it — or a variable that expanded to nothing in the script
+		// that called this, which is worth finding out about.
+		empty: func(k string) *view.Error {
+			return view.Errorf("core.profile.set.empty",
 				"`--set %s=` states no value", k).
 				WithHint("`--set` states the whole block, so leave a key out to remove it — " +
 					"and check the variable this came from expanded")
-		}
-		if _, seen := raw[k]; !seen {
-			order = append(order, k)
-		}
-		raw[k] = append(raw[k], v)
+		},
+	})
+	if verr != nil {
+		return nil, verr
 	}
 
 	set := make(map[string]any, len(order))
@@ -793,6 +821,138 @@ func parseSetFlags(pairs []string, ns string, reg *registry.Registry) (map[strin
 		return nil, nil
 	}
 	return set, nil
+}
+
+// flagWords is what differs between the two flags that state a block of
+// `key=value` pairs — `--set` and `--only`: how they name themselves, and the
+// two refusals whose words are about what the block is.
+type flagWords struct {
+	flag, example, shape string
+	secret, empty        func(key string) *view.Error
+}
+
+// collectPairs splits `key=value` arguments into the keys in the order they
+// were first stated and the values each was given, refusing the shapes neither
+// block can hold.
+//
+// Collected before any of it is typed, because a StringSlice input is stated by
+// repeating the key and the whole list has to be in hand first — and an
+// allowlist is stated the same way, one argument per allowed value.
+func collectPairs(pairs []string, secrets map[string]bool, w flagWords) ([]string, map[string][]string, *view.Error) {
+	order := make([]string, 0, len(pairs))
+	raw := map[string][]string{}
+	for _, pair := range pairs {
+		k, v, ok := strings.Cut(pair, "=")
+		if !ok {
+			// The argument is deliberately not echoed. Somebody who typed a
+			// value where a pair belongs has already put it on a command
+			// line; rta will not put it anywhere else.
+			return nil, nil, view.Errorf(w.shape,
+				"one --%s argument is not a `key=value` pair", w.flag).
+				WithHint("write it as `--" + w.flag + " " + w.example + "`")
+		}
+		k = strings.TrimSpace(k)
+		if k == "" {
+			return nil, nil, view.Errorf(w.shape, "one --%s argument names no key", w.flag).
+				WithHint("write it as `--" + w.flag + " " + w.example + "`")
+		}
+		if secrets[k] {
+			return nil, nil, w.secret(k)
+		}
+		if v == "" {
+			return nil, nil, w.empty(k)
+		}
+		if _, seen := raw[k]; !seen {
+			order = append(order, k)
+		}
+		raw[k] = append(raw[k], v)
+	}
+	return order, raw, nil
+}
+
+// parseOnlyFlags turns `--only key=value` into the `only:` block: for each key
+// the list of values the connection reaches, each typed against the declaration
+// and held to it as `--set` holds its value.
+//
+// A key is stated by repeating it, one argument per allowed value, which is the
+// way a list-shaped `--set` is stated and for the same reason: a value is not a
+// list of flags, and splitting on a comma would turn `--only name=a,b` into one
+// value nobody listed. Every entry is typed as one element of the input — a
+// list-shaped input is fenced a name at a time (plugin.FenceElement) — so
+// `--only port=5432 --only port=5433` is two integers, not a list as a value.
+func parseOnlyFlags(pairs []string, ns string, reg *registry.Registry) (map[string]any, *view.Error) {
+	byConfig, secrets := declaredFor(ns, reg)
+	order, raw, verr := collectPairs(pairs, secrets, flagWords{
+		flag: "only", example: "namespace=staging", shape: "core.profile.only.shape",
+		secret: func(k string) *view.Error {
+			return view.Errorf("core.profile.only.secret",
+				"%q is a credential, and an allowlist for it would be written into %s in plaintext",
+				k, config.Path()).
+				WithHint("a fence is for a value the profile states; a credential is mapped " +
+					"with `--secret " + k + "=kv:<entry>`")
+		},
+		empty: func(k string) *view.Error {
+			return view.Errorf("core.profile.only.empty",
+				"`--only %s=` lists no value", k).
+				WithHint("`--only` states the whole block, so leave a key out to remove its fence — " +
+					"and check the variable this came from expanded")
+		},
+	})
+	if verr != nil {
+		return nil, verr
+	}
+	only := make(map[string]any, len(order))
+	for _, k := range order {
+		f, declared := byConfig[k]
+		if !declared {
+			// Left as text for CheckConnection to refuse in its own words, as
+			// `--set` leaves a key nothing reads.
+			entries := make([]any, len(raw[k]))
+			for i, v := range raw[k] {
+				entries[i] = v
+			}
+			only[k] = entries
+			continue
+		}
+		ef := plugin.FenceElement(f)
+		entries := make([]any, 0, len(raw[k]))
+		for _, v := range raw[k] {
+			typed, verr := typedSetValue(ef, k, []string{v})
+			if verr != nil {
+				return nil, asOnly(verr)
+			}
+			if typed, verr = heldToDeclaration(ef, typed); verr != nil {
+				return nil, asOnly(verr)
+			}
+			entries = append(entries, typed)
+		}
+		only[k] = entries
+	}
+	if len(only) == 0 {
+		return nil, nil
+	}
+	return only, nil
+}
+
+// asOnly rewords a refusal typedSetValue and heldToDeclaration worded for
+// `--set`: the same rule about what a value of that type may be, said about the
+// flag the person actually typed.
+func asOnly(verr *view.Error) *view.Error {
+	out := *verr
+	if code, known := onlyCodes[out.Code]; known {
+		out.Code = code
+	}
+	out.Hint = strings.ReplaceAll(out.Hint, "`--set ", "`--only ")
+	return &out
+}
+
+// onlyCodes is the code each of `--set`'s typing refusals has when `--only`
+// raises it — spelled out, because a code a script matches on is one somebody
+// has to be able to find by searching for it.
+var onlyCodes = map[string]string{
+	"core.profile.set.type":   "core.profile.only.type",
+	"core.profile.set.range":  "core.profile.only.range",
+	"core.profile.set.option": "core.profile.only.option",
 }
 
 // heldToDeclaration refuses a value no capability reading the key would run

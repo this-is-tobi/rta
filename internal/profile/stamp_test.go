@@ -150,6 +150,14 @@ func TestConnStampDistinguishesWhatAGrantMustNotConflate(t *testing.T) {
 			Secrets:   map[string]string{"password": "kv:staging-db"},
 			TunnelTLS: true,
 		}},
+		// A fence is what narrows what a call may reach, so adding one, widening
+		// one and removing one are each a different thing to have consented to —
+		// the same connection otherwise, byte for byte.
+		{"a fence added", "pg@1b6093cf90ce", config.Connection{
+			Set:     map[string]any{"host": "staging.internal", "port": 5432},
+			Only:    map[string]any{"dbname": []any{"app"}},
+			Secrets: map[string]string{"password": "kv:staging-db"},
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := stamp(tc.key, tc.conn); got == origin {
@@ -312,6 +320,7 @@ func TestConnStampIsConfrontedWithEveryConnectionField(t *testing.T) {
 	// writes it, and a false entry documents why not rather than being absent.
 	decided := map[string]bool{
 		"Set":         true,
+		"Only":        true, // the fence narrows what a connection reaches — see ConnStamp's doc
 		"Secrets":     true, // the reference, never the value — see ConnStamp's doc
 		"Kube":        true,
 		"SSH":         true,

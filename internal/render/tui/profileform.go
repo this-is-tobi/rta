@@ -678,6 +678,13 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 					delete(conn.Set, f.Name)
 					freed = append(freed, "set."+f.Name)
 				}
+				// A fence on the same key is as dead — it fences a value the
+				// forward fills for every call — and the form has no box to
+				// empty it with, so the repair is the same one.
+				if _, fenced := conn.Only[f.Name]; fenced {
+					delete(conn.Only, f.Name)
+					freed = append(freed, "only."+f.Name)
+				}
 			}
 			// A prior key no declared field offered a box for vanishes through
 			// the rebuild whatever this save was about — it is a key nothing
@@ -727,6 +734,34 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 		if len(conn.Set) == 0 {
 			conn.Set = nil
 		}
+		// The fence belongs to the plugin it was written for, as the `set:` block
+		// does: its keys are that plugin's config keys, and an entry re-aimed at
+		// another one would carry a list the new plugin reads nothing from —
+		// which Lookup then refuses whole.
+		if was != "" && config.PluginNamespace(was) != config.PluginNamespace(key) {
+			for _, k := range sortedOnlyKeys(conn.Only) {
+				unread = append(unread, "only."+k)
+			}
+			conn.Only = nil
+		}
+		if len(conn.Only) == 0 {
+			conn.Only = nil
+		}
+		// **This form edits `set:` and keeps `only:` as it found it**, so the
+		// one thing it can do to a fence is write a default the fence refuses on
+		// every call. Refused here, where the person is looking at the box,
+		// rather than saved and refused by every run — and said with the way
+		// out, since a form has no box for the list. Only for a plugin it could
+		// read: an unknown one offered no `set.` boxes and wrote nothing new.
+		if known {
+			if outside := profile.SetOutsideFence(conn, config.PluginNamespace(key), m.installed()); len(outside) > 0 {
+				refusal = "set." + outside[0] + " is outside the `only:` list of this entry, which this form " +
+					"does not edit — pick one the list holds, or change the list with " +
+					"`rta profile set " + m.profileOpen + " --plugin " + config.PluginNamespace(key) +
+					" --only " + outside[0] + "=…`"
+				return cfg, false
+			}
+		}
 		if was != "" && was != key {
 			delete(p.Plugins, was)
 		}
@@ -769,6 +804,16 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 		}
 	}
 	return m.closeToOrigin()
+}
+
+// sortedOnlyKeys is the keys of an entry's `only:` block, sorted.
+func sortedOnlyKeys(only map[string]any) []string {
+	keys := make([]string, 0, len(only))
+	for k := range only {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // credentialAfterAdding opens the credential editor on an entry that has just

@@ -936,14 +936,39 @@ func connSummary(c connRow) string {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	if len(keys) == 0 {
+	fenced := make([]string, 0, len(c.conn.Only))
+	for k := range c.conn.Only {
+		fenced = append(fenced, k)
+	}
+	sort.Strings(fenced)
+	if len(keys) == 0 && len(fenced) == 0 {
 		return theme.Subtle.Render("sets nothing — the plugin's own configuration applies")
 	}
-	parts := make([]string, 0, len(keys))
+	parts := make([]string, 0, len(keys)+len(fenced))
 	for _, k := range keys {
 		parts = append(parts, textclean.Terminal(fmt.Sprintf("%s=%v", k, c.conn.Set[k])))
 	}
+	// After the defaults and said as what it is: a list nothing outside can be
+	// named from. Shown because the form beside this pane does not edit it, so
+	// the pane is the one place in the TUI that says a connection is fenced.
+	for _, k := range fenced {
+		parts = append(parts, textclean.Terminal("only "+k+"="+fenceText(c.conn.Only[k])))
+	}
 	return theme.Faded.Render(strings.Join(parts, " "))
+}
+
+// fenceText is an allowlist as the pane prints it: its entries joined by a
+// bar, so "staging|staging-jobs" reads as the alternatives it is.
+func fenceText(list any) string {
+	entries, isList := plugin.FenceList(list)
+	if !isList {
+		return fmt.Sprint(list)
+	}
+	parts := make([]string, len(entries))
+	for i, e := range entries {
+		parts[i] = fmt.Sprint(e)
+	}
+	return strings.Join(parts, "|")
 }
 
 // connDetail is the credential line under one plugin, or why the entry does

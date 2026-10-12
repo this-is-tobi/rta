@@ -65,7 +65,8 @@ profiles:
 | --- | --- |
 | `note` | What this environment is, shown by `profile list` |
 | `ttl` | A deadline the profile brings with it when switched on |
-| `plugins.<name>.set` | Overlays that plugin's own configuration |
+| `plugins.<name>.set` | Overlays that plugin's own configuration — a default, which a caller can override |
+| `plugins.<name>.only` | Fences an input to the values this connection reaches, per config key — a list a call cannot go outside |
 | `plugins.<name>.secrets` | Maps a declared input onto **where its value comes from** |
 | `plugins.<name>.kube` | Reach it through a `kubectl port-forward` |
 | `plugins.<name>.ssh` | Reach it through an SSH jump host |

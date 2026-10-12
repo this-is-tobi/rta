@@ -146,6 +146,35 @@ type Connection struct {
 	// "mount" stay distinguishable as kv-mount and transit-mount.
 	Set map[string]any `yaml:"set,omitempty" json:"set,omitempty"`
 
+	// Only fences inputs to an allowlist: per Field.Config key, the values this
+	// connection reaches.
+	//
+	//	only:
+	//	  namespace: [staging, staging-jobs]
+	//
+	// **It is the one thing in a profile that narrows rather than defaults.**
+	// Everything under `set:` is a default and the caller always wins, which is
+	// the right rule for a connection's host and the wrong one for "this
+	// environment is that namespace and no other": an agent granted `staging`
+	// could name any namespace the connection can see — a sibling profile's
+	// among them — or send an empty string over the one `set:` pinned. A fence
+	// is checked against the value a call *resolves to*, after the layering, so
+	// neither works, and a call outside it is refused before anything is
+	// dialled (internal/profile.Fenced).
+	//
+	// It adds no authority and takes none: it can only make the host refuse a
+	// call it would have run, which is why it is a key of the profile — the
+	// object a grant is already issued against — and not a second policy block.
+	// Held to the same keys `set:` takes and refused the same way when it names
+	// nothing, and a `set:` value outside the list of its own key is a
+	// configuration error rather than a default nobody could use.
+	//
+	// Values are `any` for the reason Set's are: a list of what the input's
+	// declared type is — text, whole numbers, booleans, durations — and the type
+	// is the declaration's to say, which this package does not read. The loader
+	// keeps what was written and internal/profile holds it to the plugin.
+	Only map[string]any `yaml:"only,omitempty" json:"only,omitempty"`
+
 	// Secrets maps a declared input onto where its value comes from.
 	//
 	//	secrets:
@@ -359,7 +388,7 @@ func (p Profile) Trusted() bool { return p.trusted }
 var (
 	profileKeys = map[string]bool{"plugins": true, "note": true, "ttl": true,
 		"color": true, "dashboard": true}
-	connectionKeys = map[string]bool{"set": true, "secrets": true, "kube": true, "ssh": true,
+	connectionKeys = map[string]bool{"set": true, "only": true, "secrets": true, "kube": true, "ssh": true,
 		"secrets-from": true, "tunnelTLS": true}
 )
 

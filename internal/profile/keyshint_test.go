@@ -22,7 +22,7 @@ profiles:
 	if verr == nil || verr.Code != "core.profile.unknownkey" {
 		t.Fatalf("a misspelt key under a plugin entry was not refused as one nothing reads: %v", verr)
 	}
-	for _, key := range []string{"set", "secrets", "secrets-from", "kube", "ssh", "tunnelTLS"} {
+	for _, key := range []string{"set", "only", "secrets", "secrets-from", "kube", "ssh", "tunnelTLS"} {
 		if !strings.Contains(verr.Hint, key) {
 			t.Errorf("the hint does not name %s among the keys an entry takes: %q", key, verr.Hint)
 		}

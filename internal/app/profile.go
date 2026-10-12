@@ -788,6 +788,7 @@ func profileCard(name string, p config.Profile, reg *registry.Registry) view.Key
 			}
 			pairs = append(pairs, view.Pair{Key: "  set:" + k, Value: value})
 		}
+		pairs = append(pairs, fencePairs(conn)...)
 		pairs = append(pairs, credentialPairs(name, key, conn, reg)...)
 	}
 	// withTrust rather than the bare registry, so this page distinguishes
@@ -800,6 +801,35 @@ func profileCard(name string, p config.Profile, reg *registry.Registry) view.Key
 	pairs = append(pairs, saidOnce("warning", profile.Notes(
 		config.Config{Profiles: map[string]config.Profile{name: p}}, withTrust{reg}))...)
 	return view.KeyValue{Pairs: pairs}
+}
+
+// fencePairs is a connection's `only:` block as the page prints it: one row per
+// fenced key, with what the connection reaches through it.
+//
+// Said as a different kind of row from `set:`'s, because it is a different kind
+// of statement: a `set:` row is where the call goes unless somebody says
+// otherwise, and an `only:` row is the list nobody can go outside. A list that
+// is not a list is printed as what it is, beside the problem row that refuses
+// it, so the page does not hide the line the problem is about.
+func fencePairs(conn config.Connection) []view.Pair {
+	keys := make([]string, 0, len(conn.Only))
+	for k := range conn.Only {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	pairs := make([]view.Pair, 0, len(keys))
+	for _, k := range keys {
+		value := fmt.Sprint(conn.Only[k]) + " (written as something other than a list)"
+		if list, isList := plugin.FenceList(conn.Only[k]); isList {
+			entries := make([]string, len(list))
+			for i, e := range list {
+				entries[i] = fmt.Sprint(e)
+			}
+			value = strings.Join(entries, ", ") + " (and nothing else)"
+		}
+		pairs = append(pairs, view.Pair{Key: "  only:" + k, Value: value})
+	}
+	return pairs
 }
 
 // saidOnce is the problem rows of a profile's page, or its warning rows,

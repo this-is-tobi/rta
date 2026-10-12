@@ -211,6 +211,21 @@ func Schema() map[string]any {
 							"same Field.Config keys legal under plugins.<ns>.",
 						"type": "object",
 					},
+					"only": map[string]any{
+						"description": "Fences inputs to an allowlist: per config key, a list " +
+							"of the values this connection reaches. A call whose value " +
+							"for the input falls outside it is refused before anything " +
+							"is dialled — unlike set:, which only supplies a default the " +
+							"caller can override. A set: value must be in its own list.",
+						"type": "object",
+						"additionalProperties": map[string]any{
+							"type":     "array",
+							"minItems": 1,
+							"items": map[string]any{
+								"type": []string{"string", "integer", "number", "boolean"},
+							},
+						},
+					},
 					"secrets": map[string]any{
 						"description": "Where each credential input's value comes from — a " +
 							"reference, never a value: kv:<entry> for the local " +

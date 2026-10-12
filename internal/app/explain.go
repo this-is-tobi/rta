@@ -133,6 +133,10 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 			profiles += "; over MCP that always needs `rta grant allow " +
 				plugin.Namespace(c.ID) + " --profile <name>`"
 		}
+		// And that a profile can do more than supply a default: `set:` is one the
+		// caller can override, `only:` is the list a call cannot go outside, and
+		// the keys of both are the config keys printed on the inputs below.
+		profiles += "; `only:` in a profile's entry fences an input to the values it reaches"
 		pairs = append(pairs, view.Pair{Key: "profiles", Value: profiles})
 	}
 	if c.Description != "" {

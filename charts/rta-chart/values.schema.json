@@ -15,6 +15,22 @@
               "pattern": "^[^/]+/[^/]+/[^/]+/[^/:]+:[0-9]+$",
               "type": "string"
             },
+            "only": {
+              "additionalProperties": {
+                "items": {
+                  "type": [
+                    "string",
+                    "integer",
+                    "number",
+                    "boolean"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "description": "Fences inputs to an allowlist: per config key, a list of the values this connection reaches. A call whose value for the input falls outside it is refused before anything is dialled \u2014 unlike set:, which only supplies a default the caller can override. A set: value must be in its own list.",
+              "type": "object"
+            },
             "secrets": {
               "additionalProperties": {
                 "pattern": "^(kv|kube):.+$",
