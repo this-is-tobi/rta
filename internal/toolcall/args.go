@@ -253,6 +253,13 @@ func acceptedHint(c plugin.Capability) string {
 	if c.Detailed {
 		names = append(names, "detail")
 	}
+	// Accepted whether or not the schema published it (Validate takes it for
+	// any capability that can run against a connection), and the one name an
+	// agent that has just been told "unknown argument" most needs to know is
+	// not what is wrong.
+	if plugin.Profilable(c) {
+		names = append(names, "profile")
+	}
 	if len(names) == 0 {
 		return "this tool takes no arguments"
 	}

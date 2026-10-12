@@ -33,6 +33,25 @@ func TestValidateAcceptsDeclaredFieldsAndRejectsUnknownOnes(t *testing.T) {
 	}
 }
 
+// The list of what a tool takes is the answer to "unknown argument", and a tool
+// that can run against a connection takes `profile` whether or not this server
+// published it: left out, the one argument an agent most often needs was the
+// one the refusal did not mention.
+func TestTheAcceptedArgumentsNameProfileForAToolThatTakesOne(t *testing.T) {
+	c := plugin.Capability{ID: "db.status", Inputs: []plugin.Field{
+		{Name: "schema", Type: plugin.String},
+		{Name: "host", Type: plugin.String, Default: "localhost", Config: "host", Local: true},
+	}}
+	verr := Validate(c, map[string]any{"bogus": 1})
+	if verr == nil || !strings.Contains(verr.Hint, "accepted arguments: schema, profile") {
+		t.Errorf("hint = %v, want schema and profile named", verr)
+	}
+	plain := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{{Name: "host", Type: plugin.String}}}
+	if verr := Validate(plain, map[string]any{"bogus": 1}); verr == nil || strings.Contains(verr.Hint, "profile") {
+		t.Errorf("a tool that takes no profile was told it does: %v", verr)
+	}
+}
+
 // Tool names are snake_case and argument names kebab-case, and the other
 // spelling is the one a model reaches for: it is refused still, and told which
 // declared argument it is a spelling of rather than only the whole list. A
