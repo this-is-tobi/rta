@@ -33,6 +33,32 @@ Each line is in the grammar `rta grant allow` takes — a target, an optional re
 
 **A role from the team's file is somebody else's list.** `.rta-policy.yaml` may carry `roles:` beside the ceiling that bounds them, so a team shares the bundle and the limit in one committed file. That file grants nothing by existing — a person issues the role, at a terminal — but an edit could widen a role a person then issues with one word. So a team's role is issued at the command line only, where its lines are printed before the passphrase asks for them, and with the guard off it wants `--yes` after `rta grant roles <name>` has been read. Your own roles, in your config or your policy file or a file you named with `RTA_POLICY`, ask nothing extra: you wrote them. The same name in two files is refused rather than resolved by precedence, and `rta doctor` says so ahead of time.
 
+### Everything an environment covers, without writing the role
+
+A role is a list somebody wrote. When the list is "everything this environment covers", `grant issue` reads it for you:
+
+```bash
+rta grant issue --profile staging --agent claude                  # its reads, on every connection
+rta grant issue --profile staging --agent claude --safety write   # and its writes
+rta grant revoke --profile staging --agent claude                 # the whole bundle back
+```
+
+Give a role or `--profile`, never both and never neither. The grants are the ordinary ones: one capability on one connection each, built and checked as `grant allow` builds them, listed before the passphrase and signed under one. They last `--ttl`, else twelve hours.
+
+**It is expanded when you issue it, and never stored as a pattern.** A grant row binds one capability to one connection and one plugin build, with no wildcard for any of them, because a stored "everything staging covers" would follow the name to whatever the environment holds next month — a plugin it gains, a connection it is repointed at. So the environment is read once, when you ask, and what is signed is the rows. A plugin added to it tomorrow is covered by nothing until you issue the bundle again. An environment holding two connections to one plugin, `pg` and `pg/analytics`, is two rows of each capability, each pinned to its own connection, and every connection is in the listing.
+
+**Reads unless you say more.** `--safety read` is the default, `write` takes in the writes and `destructive` what destroys, each class taking in the ones before it; the class is how far the bundle reaches and never a target. A capability that reveals a stored value is classed a write, so the default bundle hands over no secret, and `--safety write` names each one beside what it means with no record named: every record it reaches. The receipt names every destructive capability too, and what the next class up would add.
+
+**What the ceiling forbids is skipped, and named.** A role is somebody's list, so one forbidden line refuses the whole role. Here nobody meant any one row, so a capability the [team's ceiling](./50-team-policy.md) forbids on a connection — `never`, `neverProfile`, or `requireScope`, which a row naming no record cannot satisfy — is left out and listed with the rule and the file, and the rest is issued. Only a bundle with nothing left is refused, in the ceiling's own words.
+
+**What it cannot cover, it counts.** A capability for the person at the terminal is never a tool, and one that takes no profile cannot be a grant on a connection; both are counted in the receipt, and the ones among the second that need a grant of their own are named, since those are what somebody may think the bundle gave. A plugin the environment configures and this machine has not installed is said too.
+
+**`--max-uses` and `--rate` bound each grant on its own, not the bundle**, so ten uses on a bundle of twenty is up to two hundred calls, and the receipt says so beside the number.
+
+**The grants carry no role**, so the bundle is named by what it is: the agent's grants on that environment. `rta grant revoke --profile staging --agent claude` takes them back, every connection of the environment included, and `rta grant renew` with the same two moves their deadline — and both take whatever else that agent holds there, however it was issued, which the receipt's last line says with the exact commands. Issuing the bundle again replaces the grants it matches, and the receipt says how many were standing and where they came from.
+
+**It is local.** The [operator channel](./66-operators.md) signs one grant per envelope, and a bundle is read from the config and policy of the machine it is issued on, so `grant issue` takes no `--server`, for a role as for an environment. To issue to a remote server, `grant allow --server` issues one grant at a time.
+
 ## Live consent, when you would rather be asked
 
 Off by default, and an option of the server, so it goes into the registration:

@@ -976,10 +976,14 @@ func CheckCeiling(target, scope, profile string) *view.Error {
 	if why == "" {
 		return nil
 	}
-	return view.Errorf("grant.policy.refused", "%s — %s", why, c.Where()).
-		WithHint("this is a ceiling, and a ceiling only ever narrows: edit that " +
-			"file, or ask whoever shares it")
+	return view.Errorf("grant.policy.refused", "%s — %s", why, c.Where()).WithHint(CeilingHint)
 }
+
+// CeilingHint is what a refusal by the team's ceiling tells its reader to do,
+// for the callers that word the refusal themselves — an issue that skips what
+// the ceiling forbids and refuses only when nothing is left.
+const CeilingHint = "this is a ceiling, and a ceiling only ever narrows: edit that " +
+	"file, or ask whoever shares it"
 
 // ClampTTL brings a requested window under the team's ceiling, and reports
 // whether it had to. Returning the fact rather than only the value is the

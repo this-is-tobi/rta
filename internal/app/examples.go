@@ -41,6 +41,8 @@ var examples = map[string][]string{
 	"rta grant issue": {
 		"rta grant issue dev --agent claude   # every line of the role at once",
 		"rta grant issue dev --agent claude --ttl 4h",
+		"rta grant issue --profile staging --agent claude   # all its reads",
+		"rta grant issue --profile staging --agent claude --safety write",
 	},
 	"rta grant list": {
 		"rta grant list               # what is allowed right now",
