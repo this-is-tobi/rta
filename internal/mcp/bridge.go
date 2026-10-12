@@ -585,9 +585,18 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				// would undo that from the other side. The operator gets the
 				// real message from `rta doctor` and from the same call at a
 				// terminal.
-				return errResult(view.Errorf("core.profile.secret.unavailable",
+				agentErr := view.Errorf("core.profile.secret.unavailable",
 					"%s could not resolve a credential for profile %q", c.ID, profileName).
-					WithHint(plugin.AskOperator("doctor"))), nil
+					WithHint(plugin.AskOperator("doctor"))
+				// On the record, where only a person reads it: the sentence the
+				// agent heard in the row's own fields, and in Note what it was
+				// not told. A row with neither said a grant was spent on a call
+				// that failed and nothing about why, and the doctor the agent's
+				// hint points at checks the file's structure, not whether an
+				// entry is there.
+				refusedBy(rec, agentErr)
+				rec.Note = cut(textclean.Credentials(verr2.Message), maxReason)
+				return errResult(agentErr), nil
 			}
 			// The forward, if this connection names a cluster. Last, because it
 			// is the only step that opens something, and a refusal from any step
@@ -607,9 +616,12 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				// read "service postgres not found in namespace databases" can map
 				// the cluster one refusal at a time. The operator gets the real
 				// message from the same call at a terminal and from `rta doctor`.
-				return errResult(view.Errorf("core.profile.tunnel.unavailable",
+				agentErr := view.Errorf("core.profile.tunnel.unavailable",
 					"%s could not reach the connection profile %q names", c.ID, profileName).
-					WithHint(plugin.AskOperator("doctor"))), nil
+					WithHint(plugin.AskOperator("doctor"))
+				refusedBy(rec, agentErr)
+				rec.Note = cut(textclean.Credentials(verr3.Message), maxReason)
+				return errResult(agentErr), nil
 			}
 			for input, v := range dialled {
 				filled[input] = v

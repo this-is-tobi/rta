@@ -773,6 +773,18 @@ func TestALostCallIsShownOnTheRowThatFollowsIt(t *testing.T) {
 	}
 }
 
+// What the host knew about a refusal and did not tell the agent is on the row
+// that is read to find out why, beside the sentence the agent heard.
+func TestTheWhyColumnCarriesWhatTheAgentWasNotTold(t *testing.T) {
+	e := agentlog.Entry{Reason: "pg.query could not resolve a credential", Note: "no entry staging-db-password: there is no store on this machine yet"}
+	if got := whyLine(e); got != "pg.query could not resolve a credential — no entry staging-db-password: there is no store on this machine yet" {
+		t.Errorf("whyLine = %q", got)
+	}
+	if got := whyLine(agentlog.Entry{Note: "only a note"}); got != "only a note" {
+		t.Errorf("a note with no reason = %q", got)
+	}
+}
+
 func TestTheDetailedLogSaysWhenHistoryWasRetired(t *testing.T) {
 	// A reader who is not told that history was dropped reads "no calls
 	// before the 14th" as "nothing happened before the 14th", which is the
