@@ -555,6 +555,12 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			if verr != nil {
 				release()
 				rec.Outcome, rec.Code = agentlog.Refused, "core.profile.unusable"
+				// What the agent is not told goes in the row's Note, which the
+				// operator reads: a key the plugin stopped reading after an
+				// upgrade, or a set: value outside its own only: list, leaves a
+				// profile every call of which is refused, and a row that says only
+				// "unusable" sends the operator to a ledger that has nothing in it.
+				rec.Note = cut(textclean.Credentials(verr.Message), maxReason)
 				// The reason is deliberately discarded on this surface. A person
 				// at a terminal gets profile.Lookup's real message and its list
 				// of what would have worked; an agent gets one sentence for
