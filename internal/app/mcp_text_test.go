@@ -21,7 +21,8 @@ import (
 
 const (
 	// authoredBudget bounds the plugin-written text of one tool: its summary
-	// and its description, without rta's lines. About two hundred tokens.
+	// and its description, without rta's lines or its keywords. About two
+	// hundred tokens.
 	authoredBudget = 800
 	// inputBudget bounds one input's description.
 	inputBudget = 160
@@ -96,10 +97,26 @@ func TestNoDescriptionNamesAnInputTheToolDoesNotTake(t *testing.T) {
 	}
 }
 
+// withoutKeywords is a tool's authored text less the line of search words a
+// capability's keywords become ("Also called: ..."). The budget is held to the
+// prose a plugin writes; the words are bounded by their own rule, a dozen
+// single words (checkKeywords), and counting them against the prose would make
+// a long description unfindable.
+func withoutKeywords(text string) string {
+	if at := strings.Index(text, "\n\nAlso called: "); at >= 0 {
+		end := strings.Index(text[at+2:], "\n")
+		if end < 0 {
+			return text[:at]
+		}
+		return text[:at] + text[at+2+end:]
+	}
+	return text
+}
+
 func TestToolTextStaysInBudget(t *testing.T) {
 	for _, tl := range surface(t, mcp.Options{}) {
 		var over []string
-		if n := len(authored(t, tl.Description)); n > authoredBudget {
+		if n := len(withoutKeywords(authored(t, tl.Description))); n > authoredBudget {
 			over = append(over, fmt.Sprintf("the description is %d bytes, over the %d it is held to", n, authoredBudget))
 		}
 		props, _ := tl.Schema["properties"].(map[string]any)

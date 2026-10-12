@@ -96,8 +96,8 @@ func Plugin() plugin.Plugin {
 				Run:          runHost,
 			},
 			{
-				ID:           "sys.ps",
-				Summary:      "List top processes by CPU or memory",
+				ID:      "sys.ps",
+				Summary: "List top processes by CPU or memory", Keywords: []string{"process", "pid", "hog", "task", "running"},
 				Safety:       plugin.Read,
 				HostSpecific: true,
 				Idempotent:   true,
@@ -112,8 +112,8 @@ func Plugin() plugin.Plugin {
 				Run: runPS,
 			},
 			{
-				ID:           "sys.temp",
-				Summary:      "Show sensor temperatures",
+				ID:      "sys.temp",
+				Summary: "Show sensor temperatures", Keywords: []string{"temperature", "thermal", "hot", "heat", "celsius", "overheating", "fan"},
 				Safety:       plugin.Read,
 				HostSpecific: true,
 				Idempotent:   true,

@@ -153,7 +153,7 @@ func Plugin() plugin.Plugin {
 			// CLI and TUI nothing: grants are enforced only in the MCP bridge,
 			// because a person at a terminal is never gated.
 			{
-				ID: "http.get", Summary: "GET a URL and show status, timing and body",
+				ID: "http.get", Summary: "GET a URL and show status, timing and body", Keywords: []string{"api", "endpoint", "request", "fetch", "curl", "download"},
 				Safety: plugin.Read, Idempotent: true,
 				NeedsGrant: true, Scope: "url",
 				Inputs: common,
@@ -163,7 +163,7 @@ func Plugin() plugin.Plugin {
 				Run:     runMethod(stdhttp.MethodGet),
 			},
 			{
-				ID: "http.head", Summary: "HEAD a URL and show status, timing, type and declared size",
+				ID: "http.head", Summary: "HEAD a URL and show status, timing, type and declared size", Keywords: []string{"api", "endpoint", "request"},
 				Safety: plugin.Read, Idempotent: true,
 				NeedsGrant: true, Scope: "url",
 				Inputs: common,
@@ -180,7 +180,7 @@ func Plugin() plugin.Plugin {
 			// larger egress channel than the one two capabilities above are
 			// gated for.
 			{
-				ID: "http.post", Summary: "POST to a URL with an optional body",
+				ID: "http.post", Summary: "POST to a URL with an optional body", Keywords: []string{"api", "endpoint", "request", "submit"},
 				Safety:     plugin.Write,
 				NeedsGrant: true, Scope: "url",
 				Inputs: withBody,
@@ -190,7 +190,7 @@ func Plugin() plugin.Plugin {
 				Run:     runMethod(stdhttp.MethodPost),
 			},
 			{
-				ID: "http.put", Summary: "PUT to a URL with an optional body",
+				ID: "http.put", Summary: "PUT to a URL with an optional body", Keywords: []string{"api", "endpoint", "request"},
 				Safety: plugin.Write, Idempotent: true,
 				NeedsGrant: true, Scope: "url",
 				Inputs: withBody,
@@ -200,7 +200,7 @@ func Plugin() plugin.Plugin {
 				Run:     runMethod(stdhttp.MethodPut),
 			},
 			{
-				ID: "http.delete", Summary: "DELETE a URL",
+				ID: "http.delete", Summary: "DELETE a URL", Keywords: []string{"api", "endpoint", "request"},
 				Safety: plugin.Write, Idempotent: true,
 				NeedsGrant: true, Scope: "url",
 				Inputs: common,

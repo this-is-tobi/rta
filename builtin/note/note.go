@@ -104,7 +104,7 @@ func Plugin() plugin.Plugin {
 		Summary: "Local notebook: capture, tag, cross-link, schedule, break down, check off",
 		Capabilities: []plugin.Capability{
 			{
-				ID: "note.list", Summary: "List notes", Safety: plugin.Read, Idempotent: true,
+				ID: "note.list", Summary: "List notes", Keywords: []string{"todo", "tasks"}, Safety: plugin.Read, Idempotent: true,
 				Detailed: true,
 				Description: "Open notes, the ones with a due date first — soonest on top — then the " +
 					"rest in the order they were written. Checked-off notes are hidden unless `all`. " +
@@ -161,7 +161,7 @@ func Plugin() plugin.Plugin {
 				Run: runShow,
 			},
 			{
-				ID: "note.search", Summary: "Search notes by title, body or tag", Safety: plugin.Read, Idempotent: true,
+				ID: "note.search", Summary: "Search notes by title, body or tag", Keywords: []string{"find", "todo", "lookup"}, Safety: plugin.Read, Idempotent: true,
 				Description: "Searches every note regardless of parent/child, done or open.",
 				Inputs: []plugin.Field{
 					{Name: "query", Type: plugin.String, Positional: true, Required: true, Help: "search terms"},
@@ -173,7 +173,7 @@ func Plugin() plugin.Plugin {
 				Run: runTags,
 			},
 			{
-				ID: "note.add", Summary: "Add a note", Safety: plugin.Write,
+				ID: "note.add", Summary: "Add a note", Keywords: []string{"remember", "reminder", "todo", "task", "jot", "later"}, Safety: plugin.Write,
 				Flash: true,
 				Description: "A title is enough. `todo` (or a due date, which implies it) makes it " +
 					"something to do; a parent makes it part of something bigger; markdown in the " +
@@ -188,7 +188,7 @@ func Plugin() plugin.Plugin {
 				Run: runAdd,
 			},
 			{
-				ID: "note.toggle", Summary: "Turn a note into a to-do, or a to-do back into a note",
+				ID: "note.toggle", Summary: "Turn a note into a to-do, or a to-do back into a note", Keywords: []string{"todo"},
 				Flash:  true,
 				Safety: plugin.Write,
 				Description: "The switch between the two kinds of thing in the notebook. A note " +

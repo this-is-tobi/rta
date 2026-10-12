@@ -340,8 +340,8 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Run:    runKubeNetworkPolicy,
 			},
 			{
-				ID:         "audit.kube.eol",
-				Summary:    "Software past or near its end of life: the control plane, the kubelets, and every image's release",
+				ID:      "audit.kube.eol",
+				Summary: "Software past or near its end of life: the control plane, the kubelets, and every image's release", Keywords: []string{"kubernetes", "outdated", "unsupported", "upgrade", "stale", "components"},
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
