@@ -48,12 +48,13 @@ Two things follow from an instance being *one connection*:
 
 ```bash
 rta profile set <name> [--note ...] [--ttl 8h|none] [--color "#dd3333"|none]
-                       [--plugin <name> [--set k=v ...] [--secret input=kv:entry ...]
+                       [--plugin <name> [--set k=v ...] [--only k=v ...] [--unfence]
+                                        [--secret input=kv:entry ...]
                                         [--kube ...] [--ssh ...] [--direct] [--tunnel-tls]]
 rta profile rm  <name> [--plugin <name>]
 ```
 
-**Each block is replaced by what the flags state, and a block no flag mentions is left alone.** So `--set` states that plugin's whole `set:` block — omit a key to remove it — while its `secrets:` stays exactly as it was, and a run with neither touches neither. That is the only reading under which running the command twice and running it once are the same thing, which is what makes it safe in a script that runs on every boot.
+**Each block is replaced by what the flags state, and a block no flag mentions is left alone.** So `--set` states that plugin's whole `set:` block — omit a key to remove it — while its `secrets:` stays exactly as it was, and a run with neither touches neither. That is the only reading under which running the command twice and running it once are the same thing, which is what makes it safe in a script that runs on every boot. `--only` states the `only:` block the same way — one argument per allowed value, repeating the key for a list: `--only namespace=staging --only namespace=staging-jobs` — and `--unfence` takes every fence off that plugin's entry.
 
 **Anything a restatement leaves out is named.** Changing one key of four is also how `sslmode: require` disappears from the line beside it, so the loss is reported rather than assumed to be intended:
 
@@ -75,6 +76,10 @@ One plugin per invocation. A profile spanning three plugins is three lines, and 
 | `--set encoding=b64` on an input with a closed set | no call would accept it — `core.profile.set.option`. A listed value in another case is written the way the plugin declares it |
 | `--set ping.count=0` | it is outside the widest range of any capability reading the key — `core.profile.set.range`. Inside it, each capability holds the value to its own range |
 | `--set hsot=…` | nothing in that plugin reads the key |
+| `--only password=…` on a declared credential | an allowlist for a credential would be the credential, written into the file it is kept out of |
+| `--only port=six-thousand`, `--only port=70000` | each entry is typed and range-checked like a `--set` value — `core.profile.only.type`, `core.profile.only.range`, `core.profile.only.option` |
+| `--set namespace=prod` beside `--only namespace=staging` | a default the fence refuses on every call is not a default — the same sentence the loader uses |
+| `--only …` together with `--unfence` | one states the fence and the other removes it |
 | `--kube …` and `--ssh …` together | a call opens one forward |
 | `--tunnel-tls` with neither `--kube` nor `--ssh` in effect (this run or already stored) | it states something about the far side of a forward that does not exist — `--direct` clears a stored `tunnelTLS: true` for the same reason |
 | a profile named after an installed plugin | a profile name and a namespace share a command line |
@@ -97,7 +102,7 @@ rta profile repin staging --plugin pg/analytics   # just one instance of it
 
 Name a profile, or pass `--all` — one or the other is required, so a repin's scope is always stated rather than assumed. `--dry-run` reports what would change without writing it. An entry already pinned to what is installed is reported and left alone.
 
-**Tab completion knows the keys.** With `--plugin` on the line, `--set <tab>` offers exactly what that plugin reads, with its help text and — for a closed set — its accepted values. `--secret <tab>` offers the inputs a mapping may target, marking which of them are credentials. A credential never appears under `--set`, because it cannot be a config key at all:
+**Tab completion knows the keys.** With `--plugin` on the line, `--set <tab>` and `--only <tab>` offer exactly what that plugin reads, with its help text and — for a closed set — its accepted values. `--secret <tab>` offers the inputs a mapping may target, marking which of them are credentials. A credential never appears under `--set`, because it cannot be a config key at all:
 
 ```
 $ rta profile set staging --plugin pg --set <tab>
