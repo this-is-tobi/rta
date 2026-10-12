@@ -545,8 +545,11 @@ func (m Model) footerFor(screen mode) string {
 		// back to two. Ahead of the hints, the rest of the bar and its "…"
 		// share the second line.
 		mark, style := "✓", theme.GoodText
-		if m.flash == m.flashBad {
+		switch m.flash {
+		case m.flashBad:
 			mark, style = "✗", theme.BadText
+		case m.flashGuide:
+			mark, style = "→", theme.Subtle
 		}
 		// Truncated as well as packed. Every other entry is two words and is
 		// never split — "a half-rendered key is worse than a missing one" —
@@ -578,6 +581,14 @@ func (m Model) footerFor(screen mode) string {
 // and a key clears it, so a refusal can never colour what replaced it.
 func (m *Model) refuse(msg string) {
 	m.flash, m.flashBad = msg, msg
+}
+
+// guide is a flash that says what to do next and reports nothing done: "pick a
+// row, then d done". It wore the green check of a success, which read as the
+// confirmation of a press that had only opened a list; the same rule as refuse,
+// that the mark follows the text.
+func (m *Model) guide(msg string) {
+	m.flash, m.flashGuide = msg, msg
 }
 
 // formErrors is what the form on screen refuses to accept right now: huh's

@@ -115,7 +115,7 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// The other half of H, from the screen it is about: what to add
 		// is chosen in the catalogue, where + on a row is the add itself.
 		m.mode = modeBrowse
-		m.flash = "pick a capability — + on its row puts it on the dashboard"
+		m.guide("pick a capability — + on its row puts it on the dashboard")
 		return m, nil, true
 	case "p":
 		// What is installed, and what it puts on the dashboard —
