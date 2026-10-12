@@ -41,6 +41,51 @@ func TestAnAdHocConnectionIsHeldToWhatAStoredOneIs(t *testing.T) {
 	}
 }
 
+// A refusal on a command line tells the person which flag to change. The checks
+// are the ones a profile's file is held to, whose words are keys — `kube:`,
+// `secrets-from:`, `secrets: <input>` — and a person who typed --kube has no
+// such line. Every refusal a command line can reach is driven here, so a new
+// sentence in the shared checks that speaks the file's words fails this and not
+// a reader.
+func TestAnAdHocRefusalNamesTheFlagsNotTheKeysOfAFile(t *testing.T) {
+	reg := tunnelledRegistry(t)
+	c := tunnelCap()
+	for name, tc := range map[string]struct {
+		conn config.Connection
+		want []string
+	}{
+		"a forward and a second cluster": {
+			config.Connection{Kube: "homelab/databases/svc/postgres:5432", SecretsFrom: "homelab/databases"},
+			[]string{"`--kube`", "`--secrets-from`"}},
+		"a secrets-from that is not one": {
+			config.Connection{SecretsFrom: "homelab"},
+			[]string{"`--kube`"}},
+		"a cluster reference, no cluster": {
+			config.Connection{Secrets: map[string]string{"password": "kube:pg-creds/password"}},
+			[]string{"--secret password", "--secrets-from <context>/<namespace>", "--kube <context>/<namespace>/svc/<name>:<port>"}},
+		"a credential onto the endpoint a forward fills": {
+			config.Connection{Kube: "homelab/databases/svc/postgres:5432", Secrets: map[string]string{"host": "kv:entry"}},
+			[]string{"`--secret host`", "`--kube`"}},
+	} {
+		verr := AdHoc(c, tc.conn, reg)
+		if verr == nil {
+			t.Errorf("%s: accepted", name)
+			continue
+		}
+		text := verr.Message + " | " + verr.Hint
+		for _, key := range []string{"`kube:`", "`secrets-from:`", "secrets:", "secrets.", "the mapping"} {
+			if strings.Contains(text, key) {
+				t.Errorf("%s: speaks the file's words (%s): %s", name, key, text)
+			}
+		}
+		for _, want := range tc.want {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s: does not say %s: %s", name, want, text)
+			}
+		}
+	}
+}
+
 // The name is not one a profile can have, so a hint that carries it does not
 // reach a profile a person later called that.
 func TestTheAdHocNameIsNotAProfileReference(t *testing.T) {
