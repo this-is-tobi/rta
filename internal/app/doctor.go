@@ -701,6 +701,7 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 			bad[p.Name] = true
 		}
 		fromStore := 0
+		var storeEntries []string
 		for _, name := range cfg.ProfileNames() {
 			if bad[name] {
 				continue
@@ -714,6 +715,9 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 						" from "+r.Scheme+":"+r.Ref)
 					if r.Scheme == "kv" {
 						fromStore++
+						if !slices.Contains(storeEntries, r.Ref) {
+							storeEntries = append(storeEntries, r.Ref)
+						}
 					}
 				}
 			}
@@ -756,6 +760,17 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 				add("profile", "info", note+" — while it is, `rta mcp serve` refuses "+
 					"every other profile, whatever grants exist")
 			}
+		}
+		// A credential mapped onto an entry on a machine with no store at all —
+		// a config copied from another machine is the usual way here — is a
+		// mapping that is valid and cannot resolve. Said here because every row
+		// above reads ok, and the first the person hears of it is a call that
+		// fails on the credential. Only the store's absence is known without
+		// a passphrase; whether an entry is in one that exists is not.
+		if len(storeEntries) > 0 && !kv.HasStore() {
+			add("profile", "warn", fmt.Sprintf("%s from the store (%s), and there is no store on this machine yet — `rta kv set %s` creates it",
+				format.Count(len(storeEntries), "profile credential comes", "profile credentials come"),
+				strings.Join(storeEntries, ", "), storeEntries[0]))
 		}
 		// The widening, said out loud. A profile that maps a credential out of
 		// the store means an agent holding a grant for that profile can cause

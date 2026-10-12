@@ -592,6 +592,11 @@ func operatorsCall(sf plugin.Surface, id string, args ...plugin.Arg) string {
 // keyArg is a key given to a kv call Surface.Call spells, by its place.
 func keyArg(key string) plugin.Arg { return plugin.Arg{Name: "key", Value: key, Positional: true} }
 
+// HasStore reports whether a store has been made on this machine. The one
+// fact about it that needs no passphrase, and the one that tells "that entry
+// is not in it" from "there is nothing for it to be in".
+func HasStore() bool { return fileExists(storePath()) }
+
 // Unlockable reports whether this environment alone can open the store: no
 // flags, no prompt, nothing typed.
 //
