@@ -665,9 +665,20 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 			Value: strings.Join(dropped, ", ") + " — the flags state the whole block, " +
 				"and these were not among them"})
 	}
-	if len(freed) > 0 {
+	// A fence a forward made dead is not a value nothing read: it was a
+	// boundary, and "nothing read them" would say it cost nothing. It goes
+	// where a fence taken off by hand goes, and says what to hold in its place.
+	var freedValues []string
+	for _, k := range freed {
+		if strings.HasPrefix(k, "only.") {
+			removedFence = append(removedFence, k)
+		} else {
+			freedValues = append(freedValues, k)
+		}
+	}
+	if len(freedValues) > 0 {
 		receipts = append(receipts, view.Pair{Key: "removed",
-			Value: strings.Join(freed, ", ") + " — the forward fills those, so nothing read them"})
+			Value: strings.Join(freedValues, ", ") + " — the forward fills those, so nothing read them"})
 	}
 	if len(removedFence) > 0 {
 		receipts = append(receipts, view.Pair{Key: "unfenced",
