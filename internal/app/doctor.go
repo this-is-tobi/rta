@@ -355,7 +355,7 @@ func doctorCatalogue(reg *registry.Registry, add func(check, status, detail stri
 	detail := format.Count(len(reg.Plugins()), "plugin", "plugins") + ", " +
 		format.CountOf(len(caps), "capability")
 	if external > 0 {
-		detail += fmt.Sprintf(" (%d built in, %d from $PATH)", len(reg.Plugins())-external, external)
+		detail += fmt.Sprintf(" (%d built in, %d installed or on $PATH)", len(reg.Plugins())-external, external)
 	}
 	add("capabilities", "ok", detail)
 }
