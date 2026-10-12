@@ -1033,8 +1033,12 @@ func TestTheProfileSentenceIsSaidOnceAtTheHandshake(t *testing.T) {
 	if strings.Count(got, said) != 1 {
 		t.Errorf("the handshake does not say the profile sentence once:\n%s", got)
 	}
-	if len(got) > 1024 {
-		t.Errorf("the instructions are %d bytes with profiles, over the 1024 they are held to", len(got))
+	// Claude Code keeps the first 2048 characters of a server's instructions and
+	// cuts the rest, so that is the most the worst case — areas, profiles and a
+	// reveal together — may come to; the case with none of those is held to
+	// 1024 (TestTheHandshakeCarriesWhatIsTrueOfEveryTool).
+	if len(got) > 2048 {
+		t.Errorf("the instructions are %d bytes with profiles, over the 2048 a client keeps", len(got))
 	}
 	if desc := describe(with); strings.Contains(desc, "profile") && strings.Contains(desc, "operator configured") {
 		t.Errorf("the tool description repeats the handshake's sentence:\n%s", desc)
