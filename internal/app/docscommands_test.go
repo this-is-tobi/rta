@@ -487,8 +487,10 @@ func TestEveryFlagAGoStringTellsAPersonToTypeExists(t *testing.T) {
 	walk(NewRoot(reg, "test"))
 	// Cobra adds --help when a command runs, not when the tree is built, and
 	// the plugins from other repositories bring flags of their own which a
-	// string here may name when it explains one.
-	for _, f := range []string{"help", "bucket", "cluster", "namespace", "database", "collection"} {
+	// string here may name when it explains one. --secrets-from is the host's,
+	// but it is added per capability that has an endpoint a forward can fill
+	// (addAdHocFlags), and no capability in the default build has one.
+	for _, f := range []string{"help", "bucket", "cluster", "namespace", "database", "collection", "secrets-from"} {
 		flags[f] = true
 	}
 

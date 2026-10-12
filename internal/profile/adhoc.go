@@ -1,6 +1,9 @@
 package profile
 
 import (
+	"regexp"
+	"strings"
+
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -70,7 +73,7 @@ func AdHoc(c plugin.Capability, conn config.Connection, inst Installed) *view.Er
 				"a bare name would be ambiguous the day a second source exists")
 	}
 	if verr := checkTunnel(conn); verr != nil {
-		return view.Errorf("core.adhoc.tunnel", "%s", verr.Message).WithHint(verr.Hint)
+		return view.Errorf("core.adhoc.tunnel", "%s", inFlags(verr.Message)).WithHint(inFlags(verr.Hint))
 	}
 	if fillable, declRead := tunnellable(ns, inst); conn.Tunnelled() && declRead && !fillable {
 		return view.Errorf("core.adhoc.untunnellable",
@@ -79,7 +82,41 @@ func AdHoc(c plugin.Capability, conn config.Connection, inst Installed) *view.Er
 				"a plugin that predates endpoint roles needs rebuilding")
 	}
 	if problems := checkSecretRefs(AdHocName, ns, conn, ns, inst); len(problems) > 0 {
-		return view.Errorf("core.adhoc.secrets", "%s", problems[0].Reason).WithHint(problems[0].Hint)
+		return view.Errorf("core.adhoc.secrets", "%s", inFlags(problems[0].Reason)).WithHint(inFlags(problems[0].Hint))
 	}
 	return nil
+}
+
+// secretKeyWord matches how a profile's file names a credential's mapping in a
+// sentence — `secrets.password`, "`secrets: host`" — and captures the input.
+var secretKeyWord = regexp.MustCompile(`secrets[.:] ?(\w+)`)
+
+// flagSpelling is the rest of what the shared checks say in a file's words:
+// the keys a profile states a connection with, and the sentences that tell a
+// reader which line to remove. Longest first, because a Replacer takes the
+// first of its pairs that matches where it stands.
+var flagSpelling = strings.NewReplacer(
+	"`secrets-from: <context>/<namespace>`", "`--secrets-from <context>/<namespace>`",
+	"`kube: <context>/<namespace>/svc/<name>:<port>`", "`--kube <context>/<namespace>/svc/<name>:<port>`",
+	"`secrets-from:`", "`--secrets-from`",
+	"`kube:`", "`--kube`",
+	"states both ", "the call states both ",
+	"remove the mapping, or remove", "drop that --secret, or drop",
+)
+
+// inFlags says in the command line's words a refusal the checks shared with a
+// profile wrote in the file's. A person who typed --kube and --secret has no
+// `kube:` line to drop and no `secrets:` block to edit, and a hint that says
+// "drop `secrets-from:`" to them is one they cannot follow without first
+// working out which flag it means. The checks stay one function, so a profile
+// and a command line still cannot disagree about what is valid; only the
+// words differ, and a test drives every refusal a command line can reach and
+// fails on a spelling that is the file's.
+//
+// Here and not in the checks because the checks serve the file, the doctor and
+// the profile editor, where these are the right words. The TUI form reaches
+// few of these refusals — it has no secrets-from box, and its own check
+// answers the cluster-reference case in the form's words before this runs.
+func inFlags(s string) string {
+	return flagSpelling.Replace(secretKeyWord.ReplaceAllString(s, "--secret $1"))
 }
