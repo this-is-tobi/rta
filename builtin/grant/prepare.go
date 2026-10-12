@@ -763,6 +763,44 @@ func cappedNote(n buildNotes) string {
 	return fmt.Sprintf("capped at the %s maximum (you asked for %s)", format.Duration(core.MaxTTL), format.Duration(n.asked))
 }
 
+// profilelessNote warns when a grant names no connection for a plugin that has
+// some. A call on a namespace with profiles has to name one, and covers() matches
+// the profile exactly, so the grant is issued, listed healthy and never matches a
+// call — the same dead end refuseMissing's hint closes from the refusal's side.
+// Said on the receipt, where the person is looking while the clock runs, and only
+// when a capability the grant reaches could be called on a profile at all: a
+// namespace's other capabilities take no profile and are covered as ever.
+func profilelessNote(catalog func() []plugin.Capability, g core.Grant) string {
+	if g.Profile != "" {
+		return ""
+	}
+	ns := core.Namespace(g.Target)
+	reaches := false
+	for _, c := range catalog() {
+		if core.Namespace(c.ID) != ns || c.HumanOnly || !plugin.Profilable(c) || !core.Required(c, "") {
+			continue
+		}
+		if g.Target == ns || g.Target == c.ID {
+			reaches = true
+			break
+		}
+	}
+	if !reaches {
+		return ""
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return ""
+	}
+	names := cfg.ProfilesFor(ns)
+	if len(names) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("note: %s has %s (%s), and an agent's call on it must name one — a grant naming none covers no such call; "+
+		"`rta grant allow %s --profile %s` does", ns, format.Count(len(names), "profile", "profiles"),
+		strings.Join(names, ", "), ns, names[0])
+}
+
 // inactiveProfileNote warns when a grant names an environment that is not
 // the one switched on: the MCP bound refuses every profile but the active
 // one, so the grant does nothing until `rta use` — and the clock is running.
@@ -799,6 +837,9 @@ func PrepareRemote(catalog func() []plugin.Capability,
 			p.Notes = append(p.Notes, n)
 		}
 		if n := inactiveProfileNote(g); n != "" {
+			p.Notes = append(p.Notes, n)
+		}
+		if n := profilelessNote(catalog, g); n != "" {
 			p.Notes = append(p.Notes, n)
 		}
 		if n := revealNote(catalog, g); n != "" {

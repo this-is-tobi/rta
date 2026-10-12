@@ -2,6 +2,7 @@ package grant
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -64,5 +65,37 @@ func TestGrantAllowSaysSoOnTheReceipt(t *testing.T) {
 	}
 	if body := v.(view.Text).Body; !strings.Contains(body, "reveals the stored value itself") {
 		t.Errorf("the receipt of an unscoped reveal grant says %q", body)
+	}
+}
+
+// A grant that names no connection covers no call that names one, and a call on
+// a plugin with connections has to name one: the receipt says so while the clock
+// is running, and names the command that does cover the call.
+func TestAGrantNamingNoProfileOnAPluginWithProfilesSaysItCoversNoCall(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("RTA_CONFIG", dir+"/config.yaml")
+	const yaml = "profiles:\n  staging:\n    plugins:\n      pg:\n        set:\n          host: staging.internal\n"
+	if err := os.WriteFile(dir+"/config.yaml", []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	catalog := func() []plugin.Capability {
+		return []plugin.Capability{
+			{ID: "pg.query", Summary: "run a query", Safety: plugin.Read, NeedsGrant: true,
+				Inputs: []plugin.Field{{Name: "host", Type: plugin.String, Default: "localhost", Config: "host", Local: true}}},
+			{ID: "kv.get", Summary: "a value", Safety: plugin.Read, NeedsGrant: true},
+		}
+	}
+	got := profilelessNote(catalog, core.Grant{Target: "pg.query"})
+	if !strings.Contains(got, "pg has 1 profile (staging)") || !strings.Contains(got, "`rta grant allow pg --profile staging`") {
+		t.Errorf("a profile-less grant on a profiled plugin was not warned: %q", got)
+	}
+	for name, g := range map[string]core.Grant{
+		"names its profile":              {Target: "pg", Profile: "staging"},
+		"a plugin that has no profiles":  {Target: "kv.get"},
+		"a capability that takes no one": {Target: "pg.other"},
+	} {
+		if n := profilelessNote(catalog, g); n != "" {
+			t.Errorf("%s: warned anyway: %q", name, n)
+		}
 	}
 }
