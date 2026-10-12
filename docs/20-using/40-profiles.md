@@ -2,7 +2,7 @@
 
 A profile is a **named environment across every plugin that has something in it**. `staging` points `pg`, `s3` and `vault` at staging at once, rather than three sets of flags you retype.
 
-It is also the unit of consent. `rta grant allow pg.query --profile staging` lets an agent reach that one environment and no other — down to the one namespace or database, where the profile [fences it](#only-fences-an-input-to-the-values-a-connection-reaches). Both halves name the same thing on purpose.
+It is also the unit of consent. `rta grant allow pg.query --profile staging` lets an agent reach that one environment and no other — down to the one namespace or database, where the profile [fences it](#only-fences-an-input-to-the-values-a-connection-reaches), for the inputs a call carries ([what a fence does not hold](./41-profiles-in-depth.md#what-a-fence-does-not-hold)). Both halves name the same thing on purpose.
 
 ## Defining one
 
