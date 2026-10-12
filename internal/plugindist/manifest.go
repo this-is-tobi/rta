@@ -387,14 +387,11 @@ func (m Manifest) SafetyLine() string {
 			}
 		}
 	}
-	switch grants {
-	case 0:
-		parts = append(parts, "none needs a grant")
-	case 1:
-		parts = append(parts, "1 needs a grant")
-	default:
-		parts = append(parts, fmt.Sprintf("%d need a grant", grants))
-	}
+	// A manifest claims no inputs, so it cannot say whether a capability takes
+	// a profile, and "none needs a grant" is said with the clause that makes
+	// it true of the one that does: a person choosing a plugin from this line
+	// is told the cautious thing about a plugin that may talk to a service.
+	parts = append(parts, plugin.GrantNeedLine(grants, true))
 	if len(m.Needs) > 0 {
 		asks := make([]string, len(m.Needs))
 		for i, n := range m.Needs {

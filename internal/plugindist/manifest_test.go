@@ -172,12 +172,30 @@ func TestTheSearchLineSaysWhatAPluginAsksToRead(t *testing.T) {
 		Capabilities: []CapabilityClaim{{ID: "lab.get", Safety: "read"}},
 		Needs:        []plugin.Need{plugin.NeedKubeconfig, plugin.NeedSSH},
 	}
-	if got := m.SafetyLine(); got != "all read · none needs a grant · asks for kubeconfig, ssh" {
+	if got := m.SafetyLine(); got != "all read · none needs a grant until a profile names one · asks for kubeconfig, ssh" {
 		t.Fatalf("SafetyLine = %q", got)
 	}
 	m.Needs = nil
-	if got := m.SafetyLine(); got != "all read · none needs a grant" {
+	if got := m.SafetyLine(); got != "all read · none needs a grant until a profile names one" {
 		t.Fatalf("SafetyLine = %q, want no clause when nothing is asked for", got)
+	}
+}
+
+// "None needs a grant" is a sentence about a call that names no profile. A
+// manifest claims no inputs, so it cannot say that a plugin of reads takes
+// none, and the line a person chooses a plugin from says the cautious thing:
+// a read costs a grant the moment it names a connection.
+func TestTheSearchLineSaysNoneNeedsAGrantOnlyUntilAProfileNamesOne(t *testing.T) {
+	reads := Manifest{Capabilities: []CapabilityClaim{
+		{ID: "dir.user.list", Safety: "read"}, {ID: "dir.group.list", Safety: "read"},
+	}}
+	if got := reads.SafetyLine(); got != "all read · none needs a grant until a profile names one" {
+		t.Errorf("SafetyLine = %q", got)
+	}
+	// What counts is unchanged above zero, where the sentence was true.
+	reads.Capabilities = append(reads.Capabilities, CapabilityClaim{ID: "dir.user.rm", Safety: "destructive"})
+	if got := reads.SafetyLine(); strings.Contains(got, "until a profile") || !strings.HasSuffix(got, "1 needs a grant") {
+		t.Errorf("SafetyLine = %q, want the count and no clause", got)
 	}
 }
 

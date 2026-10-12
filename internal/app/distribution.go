@@ -174,6 +174,7 @@ func declaresLine(p plugin.Plugin) string {
 	ids := make([]string, 0, len(p.Capabilities))
 	counts := map[plugin.Safety]int{}
 	grants := 0
+	takesProfile := false
 	for _, c := range p.Capabilities {
 		ids = append(ids, c.ID)
 		counts[c.Safety]++
@@ -183,6 +184,7 @@ func declaresLine(p plugin.Plugin) string {
 		if grant.Required(c, "") && !c.HumanOnly {
 			grants++
 		}
+		takesProfile = takesProfile || (!c.HumanOnly && plugin.Profilable(c))
 	}
 	sort.Strings(ids)
 	var classes []string
@@ -195,14 +197,7 @@ func declaresLine(p plugin.Plugin) string {
 			}
 		}
 	}
-	switch grants {
-	case 0:
-		classes = append(classes, "none needs a grant")
-	case 1:
-		classes = append(classes, "1 needs a grant")
-	default:
-		classes = append(classes, fmt.Sprintf("%d need a grant", grants))
-	}
+	classes = append(classes, plugin.GrantNeedLine(grants, takesProfile))
 	return strings.Join(ids, ", ") + " — " + strings.Join(classes, " · ")
 }
 

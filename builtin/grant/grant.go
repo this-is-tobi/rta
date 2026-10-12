@@ -1245,8 +1245,15 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 		p.PutAs("policy", "Your team's policy",
 			view.Text{Body: strings.TrimPrefix(suppressedNote(req.Surface(), r.suppressed), "\n\n")})
 	}
+	caps := catalog()
 	for _, tier := range reachTiers {
-		p.PutAs(tier.id, tier.title, reachTable(catalog(), tier.holds))
+		title := tier.title
+		if tier.endsAtAProfile && slices.ContainsFunc(caps, func(c plugin.Capability) bool {
+			return tier.holds(c) && plugin.Profilable(c)
+		}) {
+			title += ", " + plugin.UntilAProfile
+		}
+		p.PutAs(tier.id, title, reachTable(caps, tier.holds))
 	}
 	return p.View(), nil
 }
@@ -1260,15 +1267,21 @@ var reachTiers = []struct {
 	// improvement a silent break for whoever had scripted the old one —
 	// see view.Section.
 	id, title string
-	holds     func(plugin.Capability) bool
+	// endsAtAProfile marks the tier whose reach is true of a call that names
+	// no profile and stops being true of one that does: a read costs no grant
+	// until it names a connection (core.Required). The title says so when a
+	// capability in it takes a profile, and not before — a page of reads that
+	// can never name one has nothing to qualify.
+	endsAtAProfile bool
+	holds          func(plugin.Capability) bool
 }{
-	{"default", "reachable by default", func(c plugin.Capability) bool {
+	{"default", "reachable by default", true, func(c plugin.Capability) bool {
 		return !c.HumanOnly && !core.Required(c, "") && c.Safety == plugin.Read
 	}},
-	{"grant", "needs a grant a person issues", func(c plugin.Capability) bool {
+	{"grant", "needs a grant a person issues", false, func(c plugin.Capability) bool {
 		return !c.HumanOnly && core.Required(c, "")
 	}},
-	{"human", "never a tool — for the person at the terminal", func(c plugin.Capability) bool {
+	{"human", "never a tool — for the person at the terminal", false, func(c plugin.Capability) bool {
 		return c.HumanOnly
 	}},
 }
