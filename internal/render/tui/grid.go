@@ -563,8 +563,16 @@ func (m Model) searchResults() []plugin.Capability {
 // plugindist.FirstPartyHint), so the two surfaces cannot disagree, and it
 // reads the registry for what is running, so an installed plugin never gets
 // told to install itself.
+//
+// The plugin is the first word of the query, or the part before its first dot:
+// a person reaching for a capability types `redis.key.list` or `mysql query`,
+// and only the bare name was recognised, so those were answered with fuzzy
+// matches for unrelated capabilities and, for `mysql query`, "no matches".
 func (m Model) searchPluginHint() string {
 	word := strings.TrimSpace(m.query)
+	if i := strings.IndexAny(word, " ."); i > 0 {
+		word = word[:i]
+	}
 	if word == "" {
 		return ""
 	}
