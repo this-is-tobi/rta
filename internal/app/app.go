@@ -1786,8 +1786,7 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 		short := f.Short
 		switch f.Type {
 		case plugin.Int:
-			def, _ := f.Default.(int)
-			cmd.Flags().IntP(f.Name, short, def, usage)
+			cmd.Flags().IntP(f.Name, short, f.DefaultInt(), usage)
 		case plugin.Bool:
 			def, _ := f.Default.(bool)
 			cmd.Flags().BoolP(f.Name, short, def, usage)

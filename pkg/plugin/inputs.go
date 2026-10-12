@@ -391,6 +391,16 @@ func checkBoundsOf(c Capability, f Field, v any, s Surface) *view.Error {
 	return nil
 }
 
+// DefaultInt is the default of an integer input as a number, whatever shape it
+// arrived in: a plugin's declaration crosses the wire as JSON, where every
+// number is a float64, and a bare `f.Default.(int)` on one is a confident zero —
+// which is how seventy defaults were left out of --help, since a flag whose
+// default is zero shows none. 0 when there is no default or it is not a number.
+func (f Field) DefaultInt() int {
+	n, _ := toInt(f.Default)
+	return n
+}
+
 // Range reports whether v is inside f's Min and Max, and when it is not, what
 // the declaration allows — "from 1 to 65535", "of at least 1". A field that is
 // not numeric or declares no bound is in range: there is nothing here to hold
