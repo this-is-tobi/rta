@@ -11,6 +11,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -176,7 +177,10 @@ func declaresLine(p plugin.Plugin) string {
 	for _, c := range p.Capabilities {
 		ids = append(ids, c.ID)
 		counts[c.Safety]++
-		if c.NeedsGrant {
+		// What the gate asks, not what the declaration marked: a write needs
+		// a grant whether or not it says so, and a capability no agent ever
+		// reaches needs none.
+		if grant.Required(c, "") && !c.HumanOnly {
 			grants++
 		}
 	}

@@ -81,6 +81,16 @@ func TestAnInstallReportDescribesWhatAPluginDeclares(t *testing.T) {
 		!strings.Contains(got, "1 destructive") || !strings.HasSuffix(got, "1 needs a grant") {
 		t.Errorf("declaresLine(mixed) = %q", got)
 	}
+	// A write needs a grant without saying so, and a capability only a person
+	// can run needs none: the line counts what the gate asks.
+	gated := plugin.Plugin{Name: "db", Capabilities: []plugin.Capability{
+		{ID: "db.status", Safety: plugin.Read},
+		{ID: "db.insert", Safety: plugin.Write},
+		{ID: "db.edit", Safety: plugin.Write, HumanOnly: true},
+	}}
+	if got := declaresLine(gated); !strings.HasSuffix(got, "1 needs a grant") {
+		t.Errorf("declaresLine(gated) = %q, want one capability that needs a grant", got)
+	}
 	if firstCapability(mixed) != "db.drop" || firstCapability(plugin.Plugin{Name: "empty"}) != "empty" {
 		t.Error("firstCapability")
 	}

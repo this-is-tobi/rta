@@ -181,6 +181,21 @@ func TestTheSearchLineSaysWhatAPluginAsksToRead(t *testing.T) {
 	}
 }
 
+// A write is refused an agent until a grant is issued, whether or not the
+// plugin marked it, so a line reading "none needs a grant" over a plugin of
+// writes told the person choosing it the opposite of what the gate does.
+func TestTheSearchLineCountsEveryCapabilityTheGateAsksAGrantFor(t *testing.T) {
+	m := Manifest{Capabilities: []CapabilityClaim{
+		{ID: "db.list", Safety: "read"},
+		{ID: "db.insert", Safety: "write"},
+		{ID: "db.drop", Safety: "destructive", Grant: true},
+		{ID: "db.dump", Safety: "read", Grant: true},
+	}}
+	if got := m.SafetyLine(); !strings.HasSuffix(got, "3 need a grant") {
+		t.Fatalf("SafetyLine = %q, want the write, the destructive one and the marked read counted", got)
+	}
+}
+
 // A location rta has no way to allow cannot be claimed: `rta plugin allow`
 // works from a closed set, so an entry naming something outside it would be
 // asking the operator to approve a word.
