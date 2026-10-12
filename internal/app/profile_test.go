@@ -385,7 +385,9 @@ func TestDoctorAsksALabeledInstanceForAMappingNotAVariable(t *testing.T) {
 	}
 	var row, status string
 	for _, r := range doctorReport(connRegistry(t)).(view.Table).Rows {
-		if r[0] == "profile" {
+		// Not the row about the store: the config maps a credential onto an
+		// entry of one, and the isolated data directory has none.
+		if r[0] == "profile" && !strings.Contains(r[2], "no store on this machine yet") {
 			status, row = r[1], r[2]
 		}
 	}

@@ -206,6 +206,47 @@ func TestDoctorNamesACredentialLocationGrantedAndWithheld(t *testing.T) {
 	}
 }
 
+// A profile that maps a credential onto an entry of the store is valid, and on
+// a machine with no store at all it cannot resolve: a config copied from
+// another machine reads ok in every row and fails on the first call. Doctor
+// says so while only the store's absence is knowable, which is without a
+// passphrase; once a store is there the row goes, because whether an entry is
+// in it is a question only its owner's passphrase answers.
+func TestDoctorSaysWhenAProfileReadsTheStoreAndThereIsNone(t *testing.T) {
+	_, configDir := isolate(t)
+	const cfg = `profiles:
+  staging:
+    plugins:
+      db:
+        set: {host: db.internal}
+        secrets:
+          password: kv:staging-db-password
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rows := func() []string {
+		var found []string
+		for _, r := range doctorReport(connRegistry(t)).(view.Table).Rows {
+			if r[0] == "profile" && strings.Contains(r[2], "no store on this machine yet") {
+				found = append(found, r[1]+" "+r[2])
+			}
+		}
+		return found
+	}
+	got := rows()
+	if len(got) != 1 || !strings.HasPrefix(got[0], "warn ") || !strings.Contains(got[0], "staging-db-password") ||
+		!strings.Contains(got[0], "`rta kv set staging-db-password` creates it") {
+		t.Fatalf("no store: rows = %q", got)
+	}
+
+	t.Setenv("RTA_KV_PASSPHRASE", "correct horse battery staple")
+	writeStore(t)
+	if got := rows(); len(got) != 0 {
+		t.Errorf("a store exists and doctor still says there is none: %q", got)
+	}
+}
+
 // Doctor says a thing once.
 //
 // A config naming plugins this build does not have is an ordinary state —
