@@ -1394,7 +1394,7 @@
           "type": "string"
         },
         "removed": {
-          "description": "list what `kv.rm` set aside instead — restorable until purged",
+          "description": "list what `kv_rm` set aside instead — restorable until purged",
           "type": "boolean"
         }
       },
@@ -1466,7 +1466,7 @@
           "type": "string"
         },
         "revision": {
-          "description": "an earlier value to restore, as `kv.history` numbers them; omit to restore a removed key",
+          "description": "an earlier value to restore, as `kv_history` numbers them; omit to restore a removed key",
           "type": "integer"
         }
       },
@@ -1507,7 +1507,7 @@
       "additionalProperties": false,
       "properties": {
         "description": {
-          "description": "what this is for — shown by kv.list",
+          "description": "what this is for — shown by kv_list",
           "type": "string"
         },
         "key": {

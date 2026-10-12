@@ -1,9 +1,12 @@
 package mcp
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -43,5 +46,52 @@ func TestTheGrantCommandKeepsTheCapabilityID(t *testing.T) {
 	}
 	if !strings.Contains(desc, "rta grant allow demo.thing.get") {
 		t.Errorf("the operator's command lost its ID:\n%s", desc)
+	}
+}
+
+// An input's help is the plugin's text, written once with the capability's ID,
+// and it reaches a model in the schema, where the rename the description gets
+// did not reach it: "`kube.context.list` shows them" named a tool that is
+// called kube_context_list.
+func TestAnInputsHelpNamesOtherToolsByTheirToolNames(t *testing.T) {
+	c := plugin.Capability{
+		ID: "demo.context.set", Summary: "switch", Safety: plugin.Write,
+		Inputs: []plugin.Field{{Name: "name", Type: plugin.String, Help: "a context from `demo.context.list`, not demo.context.set.timeout"}},
+	}
+	tool := toolDef(c, Options{tools: map[string]bool{"demo.context.list": true, "demo.context.set": true}})
+	raw, err := json.Marshal(tool.InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "a context from `demo_context_list`, not demo.context.set.timeout") {
+		t.Errorf("the schema still names a tool by its ID, or renamed an error code:\n%s", raw)
+	}
+}
+
+// A namespace with connections takes only calls that name one, and a grant
+// that names none covers none of them: the command the description hands the
+// operator has to name a profile, or it is run, succeeds and changes nothing.
+func TestAProfiledToolsGrantCommandNamesTheNamespaceAndAProfile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("RTA_CONFIG", dir+"/config.yaml")
+	const yaml = "profiles:\n  staging:\n    plugins:\n      demo:\n        set:\n          host: staging.internal\n"
+	if err := os.WriteFile(dir+"/config.yaml", []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := plugin.Capability{
+		ID: "demo.query", Summary: "run a query", Safety: plugin.Read, NeedsGrant: true,
+		Inputs: []plugin.Field{{Name: "host", Type: plugin.String, Default: "localhost", Config: "host", Local: true}},
+	}
+	with := toolDef(c, Options{Profiles: cfg}).Description
+	if !strings.Contains(with, "ask the operator to run `rta grant allow demo --profile <profile>`") {
+		t.Errorf("a profiled namespace is handed a grant command that covers no call:\n%s", with)
+	}
+	without := toolDef(c, Options{}).Description
+	if !strings.Contains(without, "ask the operator to run `rta grant allow demo.query`") || strings.Contains(without, "--profile") {
+		t.Errorf("a namespace with no connections lost its capability command:\n%s", without)
 	}
 }
