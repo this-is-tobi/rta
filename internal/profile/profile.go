@@ -202,7 +202,7 @@ func Lookup(cfg config.Config, c plugin.Capability, ref string, inst Installed) 
 		return none, view.Errorf("core.profile.unknownkey",
 			"profile %q, under %s, has %s, which nothing reads",
 			name, key, strings.Join(unknown, ", ")).
-			WithHint("a plugin entry takes set, secrets, kube, ssh and tunnelTLS")
+			WithHint("a plugin entry takes set, secrets, secrets-from, kube, ssh and tunnelTLS")
 	}
 	if bad := conn.BadSecretRefs(); len(bad) > 0 {
 		return none, view.Errorf("core.profile.secret.scheme",
