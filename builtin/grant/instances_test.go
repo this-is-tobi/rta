@@ -4,8 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rta/internal/config"
 	core "github.com/this-is-tobi/rta/internal/grant"
@@ -123,5 +125,81 @@ func TestProfileCompletionOffersInstanceRefs(t *testing.T) {
 	}
 	if _, err := config.Load(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// An environment's name is every connection in it, for the commands that take
+// grants back or move them. `grant revoke --profile staging` answered "no
+// active grant" beside a roster of staging/main and staging/scratch rows, so
+// the one command that takes an environment back left every instance of it
+// standing. A connection's whole reference still names that connection alone,
+// a neighbour whose name merely begins the same way is not inside it, and
+// --exact names exactly what it is given.
+func TestAnEnvironmentNameTakesEveryConnectionInIt(t *testing.T) {
+	setup(t)
+	instancedConfig(t)
+	now := time.Now()
+	held := func(profile string) core.Grant {
+		return core.Grant{Target: "kv.get", Profile: profile, Agent: "test", Issued: now, Expires: now.Add(time.Hour)}
+	}
+	reissue := func() {
+		t.Helper()
+		if verr := core.Save([]core.Grant{held("staging/main"), held("staging/scratch"), held("staging-db"), held("")}); verr != nil {
+			t.Fatal(verr)
+		}
+	}
+	profiles := func() []string {
+		var out []string
+		for _, g := range standing(t) {
+			out = append(out, g.Profile)
+		}
+		slices.Sort(out)
+		return out
+	}
+
+	reissue()
+	run(t, runRevoke, map[string]any{"profile": "staging/main", "agent": "test"})
+	if got := profiles(); !slices.Equal(got, []string{"", "staging-db", "staging/scratch"}) {
+		t.Fatalf("revoking one connection left %q, want only staging/main gone", got)
+	}
+
+	reissue()
+	body := run(t, runRevoke, map[string]any{"profile": "staging", "agent": "test"}).(view.Text).Body
+	if !strings.HasPrefix(body, "revoked 2 grants") {
+		t.Errorf("revoking the environment said %q, want both of its connections", body)
+	}
+	if got := profiles(); !slices.Equal(got, []string{"", "staging-db"}) {
+		t.Fatalf("revoking the environment left %q, want every staging connection gone and its neighbours kept", got)
+	}
+
+	reissue()
+	run(t, runRevoke, map[string]any{"target": "kv.get", "profile": "staging", "agent": "test", "exact": true})
+	if got := profiles(); len(got) != 4 {
+		t.Fatalf("an exact revoke of the bare environment name took %q, want none: it names no grant", got)
+	}
+
+	body = run(t, renewH, map[string]any{"profile": "staging", "ttl": "3h"}).(view.Text).Body
+	if !strings.HasPrefix(body, "renewed 2 grants") {
+		t.Errorf("renewing the environment said %q, want both of its connections", body)
+	}
+	for _, g := range standing(t) {
+		extended := time.Until(g.Expires) > 2*time.Hour
+		if want := config.RefName(g.Profile) == "staging"; extended != want {
+			t.Errorf("after renewing staging, %q has %s left", g.Profile, time.Until(g.Expires).Round(time.Minute))
+		}
+	}
+}
+
+// Completion offers the environment beside the connections held in it.
+func TestHeldProfileCompletionOffersTheEnvironmentToo(t *testing.T) {
+	setup(t)
+	now := time.Now()
+	if verr := core.Save([]core.Grant{{Target: "kv.get", Profile: "staging/main", Agent: "test",
+		Issued: now, Expires: now.Add(time.Hour)}}); verr != nil {
+		t.Fatal(verr)
+	}
+	got := suggestHeldProfiles(context.Background(), plugin.NewRequest(nil, false, false))
+	if !slices.Equal(got, []string{"staging", "staging/main"}) {
+		t.Errorf("completion = %q, want the environment and the connection held in it", got)
 	}
 }
