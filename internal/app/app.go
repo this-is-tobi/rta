@@ -91,7 +91,9 @@ func usageError(cmd *cobra.Command, err error) error {
 	case cmd.HasSubCommands():
 		hint = "`" + cmd.CommandPath() + " --help` lists its commands"
 	case strings.HasPrefix(err.Error(), "unexpected argument"):
-		if flags := valueFlagsHint(cmd); flags != "" {
+		if word := flagWordHint(cmd); word != "" {
+			hint = word
+		} else if flags := valueFlagsHint(cmd); flags != "" {
 			hint = flags
 		}
 	}

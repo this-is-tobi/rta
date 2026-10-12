@@ -2,6 +2,7 @@ package app
 
 import (
 	"cmp"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -296,6 +297,36 @@ func valueFlagsHint(cmd *cobra.Command) string {
 	}
 	return "its other values go behind a flag: " + strings.Join(names, ", ") + more +
 		" — `" + cmd.CommandPath() + " --help` says which"
+}
+
+// plainWord is a word a shell passes through untouched, so a command line
+// built from words that are all one can be shown for pasting without quoting.
+var plainWord = regexp.MustCompile(`^[A-Za-z0-9_./:=@%+,-]+$`)
+
+// flagWordHint answers an argument that is the name of one of cmd's own flags:
+// `rta codec hex decode 68656c6c6f` takes "decode" for the value, accepts it,
+// and then refuses the hex string as the unexpected one. The person wrote the
+// verb they meant, in the place the flag goes, and the sentence blamed the
+// word they had right. The flag, with its dashes, is the answer; a command
+// line is shown only when every word is plain enough to paste without quotes.
+// "" when no argument is a flag's name.
+func flagWordHint(cmd *cobra.Command) string {
+	words := cmd.Flags().Args()
+	flags := cmd.LocalNonPersistentFlags()
+	for i, w := range words {
+		f := flags.Lookup(w)
+		if f == nil || f.Hidden || f.Name == "help" {
+			continue
+		}
+		hint := "`" + w + "` is a flag, so it takes two dashes"
+		fixed := slices.Clone(words)
+		fixed[i] = "--" + w
+		if !slices.ContainsFunc(fixed, func(s string) bool { return !plainWord.MatchString(s) }) {
+			hint += ": `" + cmd.CommandPath() + " " + strings.Join(fixed, " ") + "`"
+		}
+		return hint
+	}
+	return ""
 }
 
 // verbsHint lists the commands of a group inline, so a person who typed the
