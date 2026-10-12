@@ -117,6 +117,22 @@ func TestClearingEveryBoxWithdrawsAndSaysWhatThatDoesNotDo(t *testing.T) {
 	}
 }
 
+// Submitting the form untouched over a plugin that was allowed nothing is not
+// a withdrawal: it said the plugin "may no longer read" what it never could,
+// and that it "stays loaded", of one that may not be.
+func TestSubmittingTheAllowFormOverNothingGrantedSaysNothingChanged(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	trustWeather(t)
+
+	m := New(registry.New(), config.Dashboard{}, nil)
+	next, _ := m.startAllowForm(needyRow("kubeconfig"))
+	next, _ = next.(Model).saveAllowForm()
+	flash := next.(Model).flash
+	if !strings.Contains(flash, "nothing changed") || strings.Contains(flash, "no longer") || strings.Contains(flash, "stays loaded") {
+		t.Errorf("flash = %q, want it to say nothing changed", flash)
+	}
+}
+
 // Three refusals, each naming the first thing actually in the way rather than
 // opening a form that cannot succeed. The untrusted case matters most:
 // plugintrust.Allow refuses it too, but its error would arrive only after
