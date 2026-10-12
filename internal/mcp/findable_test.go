@@ -35,3 +35,21 @@ func TestAToolShowsTheWordsItIsAlsoCalled(t *testing.T) {
 		t.Errorf("a capability with no keywords is said to be also called something:\n%s", desc)
 	}
 }
+
+// The handshake names what a server offers and how a tool is named, from the
+// tools offered and no others: an area a server does not offer is not one an
+// agent should search for, and one it hides over HTTP is not one to advertise.
+func TestTheHandshakeNamesTheAreasOfferedAndOnlyThose(t *testing.T) {
+	offered := []plugin.Capability{
+		{ID: "kv.get", Safety: plugin.Read},
+		{ID: "kube.pod.list", Safety: plugin.Read},
+		{ID: "kv.set", Safety: plugin.Write},
+	}
+	got := handshakeInstructions(offered, Options{})
+	if want := areasInstructions + "kube, kv."; !strings.Contains(got, want) {
+		t.Errorf("the handshake does not name the areas, once each and sorted, want %q:\n%s", want, got)
+	}
+	if got := handshakeInstructions(nil, Options{}); strings.Contains(got, "area_thing_action") {
+		t.Errorf("a server offering nothing names areas:\n%s", got)
+	}
+}

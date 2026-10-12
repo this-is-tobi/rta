@@ -3,6 +3,7 @@ package mcp
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -55,11 +56,39 @@ const profileInstructions = "A tool with a \"profile\" argument reaches connecti
 const revealInstructions = "A tool that returns a stored value puts it in your context: use it for what you were " +
 	"asked, and do not repeat it in a reply, another tool's arguments or a file unless the person asked for it."
 
+// areasInstructions leads the one sentence that says what a server offers and
+// how a tool is named. A client that defers its tools loads their names and
+// these instructions at session start and finds the rest by searching, and the
+// names are the only part of a tool that says where it lives: area_thing_action
+// is a pattern a search can be written against (`kv_` for all of the store,
+// `_list` for every listing), and the list of areas says what there is to ask
+// for before a single search is made. It is built from what is offered here, so
+// a server with a plugin installed names the plugin's area and a server over
+// HTTP does not name one it hides.
+const areasInstructions = "Tools are named for what they act on, as area_thing_action (kv_get); the areas offered here are "
+
+// offeredAreas is the namespaces of the tools offered, once each and sorted.
+func offeredAreas(offered []plugin.Capability) []string {
+	seen := map[string]bool{}
+	var areas []string
+	for _, c := range offered {
+		if area := plugin.Namespace(c.ID); !seen[area] {
+			seen[area] = true
+			areas = append(areas, area)
+		}
+	}
+	sort.Strings(areas)
+	return areas
+}
+
 // handshakeInstructions is what the server says once about every tool: the
 // fixed text, and the profile sentence only when a tool offered here takes the
 // argument, so a server with no profile configured says nothing about them.
 func handshakeInstructions(offered []plugin.Capability, opts Options) string {
 	text := instructions
+	if areas := offeredAreas(offered); len(areas) > 0 {
+		text += " " + areasInstructions + strings.Join(areas, ", ") + "."
+	}
 	for _, c := range offered {
 		if plugin.Profilable(c) && len(opts.Profiles.ProfilesFor(plugin.Namespace(c.ID))) > 0 {
 			text += " " + profileInstructions
