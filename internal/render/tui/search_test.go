@@ -129,6 +129,14 @@ func TestTheSearchNamesTheInstallForAFirstPartyPluginThatIsNotHere(t *testing.T)
 			t.Errorf("%q: the search box does not name the install:\n%s", query, box)
 		}
 	}
+	// The plugin is the first word, or what comes before the first dot: a
+	// person reaching for a capability types it whole.
+	for _, query := range []string{"pg.query", "pg status", "postgres query"} {
+		m.query = query
+		if m.searchPluginHint() == "" {
+			t.Errorf("%q: the query is a capability of a plugin that is not here, and says nothing about installing it", query)
+		}
+	}
 	m.query = "zzzq"
 	if box := ansi.Strip(m.renderSearchTile(100, false)); !strings.Contains(box, "no matches") || strings.Contains(box, "install") {
 		t.Errorf("a word that is no plugin name changed:\n%s", box)
