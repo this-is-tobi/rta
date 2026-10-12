@@ -1513,8 +1513,16 @@ func declareCompletion(cmd *cobra.Command, c plugin.Capability, positionals []pl
 		// is exactly the set internal/recent exists for — a bucket, a
 		// database, a schema — so the values were recorded on every run and
 		// offered on none of them.
+		//
+		// And so is an input a profile can fence. Whether one does is a fact
+		// about the command line — which profile it names, or which one is
+		// switched on — and the tree is built before any line exists, so an
+		// input is completable when it *could* be fenced and says nothing when
+		// no fence applies, rather than the allowlist of the one profile that
+		// has one never being offered to a shell that was told there was
+		// nothing to ask.
 		return len(f.Options) > 0 || f.Suggest != nil || f.Type == plugin.Path ||
-			len(remembered().For(c.ID, f.Name)) > 0
+			len(remembered().For(c.ID, f.Name)) > 0 || fenceable(c, f)
 	}
 
 	if len(positionals) > 0 {
@@ -1624,9 +1632,9 @@ func candidates(cmd *cobra.Command, c plugin.Capability, f plugin.Field, args []
 	// Through the environment as well, so a suggestion is computed against the
 	// connection the command would actually reach. Bind, never Fill: this runs
 	// on every keystroke and must not open a store — see bindProfile.
-	name, bound := bindProfile(cmd, c)
+	name, bound, fence := bindProfile(cmd, c)
 	req := plugin.CompletionRequest(c, plugin.Resolve(c, plugin.Inputs{
-		Caller: values, Profile: bound, ProfileName: name, Config: PluginConfig(c),
+		Caller: values, Profile: bound, ProfileName: name, Config: PluginConfig(c), Fence: fence,
 	}))
 
 	// A path keeps file completion alongside whatever was declared: zsh offers
@@ -1639,7 +1647,13 @@ func candidates(cmd *cobra.Command, c plugin.Capability, f plugin.Field, args []
 	}
 	// Held to shown's rule by the producer this is called from, like every
 	// other completion (see completion).
-	out := offering(f, c, f.Candidates(ctx, req))
+	//
+	// Narrowed to the connection's fence before the shortlist joins it, and
+	// the shortlist narrowed too: what a fence refuses is not offered, and an
+	// input with nothing of its own to offer offers what the fence allows.
+	// Shell completion never runs a Live Suggest, so for such an input that is
+	// the whole of the answer here.
+	out := offering(f, c, fence, fence.Narrow(f, f.Candidates(ctx, req)))
 	if len(out) == 0 {
 		return nil, directive
 	}
@@ -1730,8 +1744,8 @@ var remembered = sync.OnceValue(recent.Load)
 // list is the whole answer, and what was used before is by definition not in it
 // any more or already is. A note id checked off last week came back as a
 // candidate to check off again.
-func offering(f plugin.Field, c plugin.Capability, declared []cobra.Completion) []cobra.Completion {
-	used := remembered().For(c.ID, f.Name)
+func offering(f plugin.Field, c plugin.Capability, fence plugin.Fence, declared []cobra.Completion) []cobra.Completion {
+	used := fence.Filter(f, remembered().For(c.ID, f.Name))
 	if len(used) == 0 || (f.Suggest != nil && !f.Live) {
 		return declared
 	}

@@ -109,7 +109,8 @@ func (m Model) runForm(c plugin.Capability, fs []plugin.Field, defaults, base ma
 		}
 	}
 	shown = environmentNotes(c, shown, seed, env.name, env.conn)
-	cf := newCapForm(c, m.withPicker(c, shown, on, forwarded, env.conn), seed, true, base)
+	cf := newCapForm(c, m.withPicker(c, shown, on, forwarded, env.conn), seed, true, base,
+		withFence(profile.FenceOf(env.conn)))
 	cf.derived = derived
 	cf.offered = fs
 	if b, ok := cf.bindings[profileInput]; ok {

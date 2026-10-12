@@ -233,9 +233,13 @@ func noProfile(cmd *cobra.Command) bool {
 //
 // Silent on every failure. A completion that refuses to answer until the
 // command line is valid is a completion nobody sees.
-func bindProfile(cmd *cobra.Command, c plugin.Capability) (string, map[string]any) {
+//
+// The third answer is the connection's fence, which completion narrows what it
+// offers to: a list that named everything the connection can see would offer,
+// one keystroke from accepting, what the fence will then refuse.
+func bindProfile(cmd *cobra.Command, c plugin.Capability) (string, map[string]any, plugin.Fence) {
 	if !plugin.Profilable(c) || noProfile(cmd) {
-		return "", nil
+		return "", nil, nil
 	}
 	explicit := ""
 	if f := cmd.Flags().Lookup("profile"); f != nil {
@@ -243,11 +247,11 @@ func bindProfile(cmd *cobra.Command, c plugin.Capability) (string, map[string]an
 	}
 	active := profile.Active()
 	if explicit == "" && active == "" {
-		return "", nil
+		return "", nil, nil
 	}
 	cfg, err := config.Load()
 	if err != nil {
-		return "", nil
+		return "", nil, nil
 	}
 	name := explicit
 	var conn config.Connection
@@ -258,9 +262,9 @@ func bindProfile(cmd *cobra.Command, c plugin.Capability) (string, map[string]an
 		name, conn, verr = profile.Ambient(cfg, c, active, installed)
 	}
 	if verr != nil || name == "" {
-		return "", nil
+		return "", nil, nil
 	}
-	return name, profile.Bind(name, conn, c, os.LookupEnv)
+	return name, profile.Bind(name, conn, c, os.LookupEnv), profile.FenceOf(conn)
 }
 
 // newUseCommand implements `rta use [profile]`: the switch.
@@ -1218,4 +1222,11 @@ func registeredNamespace(ns string, reg *registry.Registry) bool {
 		}
 	}
 	return false
+}
+
+// fenceable reports whether a profile can put an allowlist on f: the inputs it
+// may fill that carry a config key, which are the keys `only:` is written
+// under — and never a credential, which has no config key and no list.
+func fenceable(c plugin.Capability, f plugin.Field) bool {
+	return f.Config != "" && !f.Type.Sensitive() && plugin.ProfileFillable(c, f)
 }

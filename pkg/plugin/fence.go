@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -231,6 +232,97 @@ func fenceDefault(f Field, only any) any {
 		return stringSlice(only)
 	}
 	return only
+}
+
+// Fenced reports whether the fence has an allowlist for f.
+func (fn Fence) Fenced(f Field) bool {
+	_, fenced := fn.of(f)
+	return fenced
+}
+
+// Filter narrows a completion list for f to what the fence allows, each entry
+// kept as it came — a description after a tab included. An input the fence
+// does not name keeps its list whole.
+//
+// Completion that offered what the fence will refuse is a screen that lists
+// everything the connection can see — every namespace of a cluster, the
+// databases of a server — beside a profile that says it reaches one: the
+// operator's own inventory on offer to whoever is typing, and a suggestion
+// accepted with one keystroke into a call that is then refused.
+func (fn Fence) Filter(f Field, entries []string) []string {
+	allowed, fenced := fn.of(f)
+	if !fenced {
+		return entries
+	}
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if fenceAllowsText(f, allowed, CandidateValue(entry)) {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+// Offer is the allowlist as a list of completions: what an input offers when
+// it has nothing to complete from of its own, since the operator already wrote
+// down what the connection reaches. nil for an input the fence does not name.
+func (fn Fence) Offer(f Field) []string {
+	allowed, fenced := fn.of(f)
+	if !fenced {
+		return nil
+	}
+	out := make([]string, 0, len(allowed))
+	for _, entry := range allowed {
+		out = append(out, fmt.Sprint(entry))
+	}
+	return out
+}
+
+// Narrow is what a completion list for f comes to under the fence, given what
+// the field offers of its own: the closed set or the suggestions, narrowed to
+// the allowlist — and the allowlist itself when the field has nothing to offer
+// on this channel, which is a field with no Suggest and no Options, and a Live
+// one, whose Suggest never answers per keystroke or in a shell.
+func (fn Fence) Narrow(f Field, declared []string) []string {
+	if !fn.Fenced(f) {
+		return declared
+	}
+	if len(f.Options) == 0 && (f.Suggest == nil || f.Live) {
+		return fn.Offer(f)
+	}
+	return fn.Filter(f, declared)
+}
+
+// fenceAllowsText is FenceAllows for a completion entry, which is text whatever
+// the input's type: an integer's entry is read as the number it spells, and one
+// that spells none is not in the list.
+func fenceAllowsText(f Field, allowed []any, text string) bool {
+	var v any = text
+	switch FenceElement(f).Type {
+	case Int:
+		n, err := strconv.Atoi(text)
+		if err != nil {
+			return false
+		}
+		v = n
+	case Float:
+		x, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			return false
+		}
+		v = x
+	case Bool:
+		b, err := strconv.ParseBool(text)
+		if err != nil || (text != "true" && text != "false") {
+			return false
+		}
+		v = b
+	}
+	ef := FenceElement(f)
+	if f.Type == StringSlice {
+		return FenceAllows(ef, allowed, v)
+	}
+	return FenceAllows(f, allowed, v)
 }
 
 // FenceBreach is how a call went outside a Fence: the input it went outside

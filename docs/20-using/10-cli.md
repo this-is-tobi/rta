@@ -194,7 +194,7 @@ This is generated from the same declaration the CLI parser, the TUI form and the
 
 ## Completion
 
-rta's completion goes further than subcommand names. A capability that declares `Options` completes to its allowed values; one that declares `Suggest` completes from **what actually exists on your machine** — your tags, your keys, your hosts file — and only on human surfaces. `Path` inputs complete filesystem paths.
+rta's completion goes further than subcommand names. A capability that declares `Options` completes to its allowed values; one that declares `Suggest` completes from **what actually exists on your machine** — your tags, your keys, your hosts file — and only on human surfaces. `Path` inputs complete filesystem paths. Under a profile that [fences](./41-profiles-in-depth.md#what-a-fence-holds-exactly) an input, what completes is narrowed to the values the connection reaches — and an input with nothing of its own to offer offers them.
 
 See [Installation](../10-getting-started/10-installation.md#shell-completion) to turn it on.
 
