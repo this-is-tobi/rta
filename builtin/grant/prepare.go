@@ -181,13 +181,20 @@ func notInstalledHint(catalog func() []plugin.Capability, target string) string 
 // like one grant and is every capability in kv that needs one, destructive
 // ones included, and the receipt used to say the same as it did for a single
 // key: "claude may call kv for 1h".
+//
+// Counted as the grant will cover them (reachedBy): a grant that names a
+// profile covers only the capabilities a call can name one on, so `grant
+// allow http --profile staging` said it covered six where the same grant
+// with no profile covered five, the sixth being a capability that takes no
+// profile at all. And when none does, it says that rather than nothing: the
+// grant is issued, listed healthy, and covers no call.
 func breadthNote(catalog func() []plugin.Capability, g core.Grant) string {
 	if strings.Contains(g.Target, ".") {
 		return ""
 	}
 	var gated, destructive []string
 	for _, c := range catalog() {
-		if core.Namespace(c.ID) != g.Target || c.HumanOnly || !core.Required(c, g.Profile) {
+		if !reachedBy(g, c) {
 			continue
 		}
 		gated = append(gated, c.ID)
@@ -196,6 +203,10 @@ func breadthNote(catalog func() []plugin.Capability, g core.Grant) string {
 		}
 	}
 	if len(gated) == 0 {
+		if g.Profile != "" && targetExists(catalog, g.Target) {
+			return fmt.Sprintf("note: no capability of %s takes a profile, so a grant naming %s covers no call — "+
+				"leave the profile out", g.Target, g.Profile)
+		}
 		return ""
 	}
 	sort.Strings(destructive)
@@ -220,10 +231,7 @@ func revealNote(catalog func() []plugin.Capability, g core.Grant) string {
 	}
 	var ids []string
 	for _, c := range catalog() {
-		if !c.Reveals || c.HumanOnly || !core.Required(c, g.Profile) {
-			continue
-		}
-		if c.ID == g.Target || (!strings.Contains(g.Target, ".") && core.Namespace(c.ID) == g.Target) {
+		if c.Reveals && reachedBy(g, c) {
 			ids = append(ids, c.ID)
 		}
 	}
@@ -237,6 +245,21 @@ func revealNote(catalog func() []plugin.Capability, g core.Grant) string {
 	}
 	return "note: " + g.Target + " covers " + format.Count(len(ids), "capability", "capabilities") +
 		" that reveal stored values (" + strings.Join(ids, ", ") + "), each for every record it reaches — name one to allow only it"
+}
+
+// reachedBy reports whether a grant covers calls of c: c is the capability it
+// names, or inside the plugin it names; it is one an agent can call at all, and
+// one that needs this grant (core.Required); and a grant that names a profile
+// covers only a capability a call can name one on (plugin.Profilable), since
+// the grant matches the connection exactly and no call of the others has any.
+func reachedBy(g core.Grant, c plugin.Capability) bool {
+	if c.HumanOnly || !core.Required(c, g.Profile) {
+		return false
+	}
+	if g.Profile != "" && !plugin.Profilable(c) {
+		return false
+	}
+	return c.ID == g.Target || (!strings.Contains(g.Target, ".") && core.Namespace(c.ID) == g.Target)
 }
 
 // destructiveSummary counts the destructive capabilities and names the first
