@@ -299,6 +299,6 @@ func (m Model) rowActionOnATile(a capAction) (tea.Model, tea.Cmd) {
 	m.lastValues, m.lastYes = values, false
 	m.trail = nil
 	m.row = 0
-	m.flash = fmt.Sprintf("pick a row, then %s %s", a.key, a.label)
+	m.guide(fmt.Sprintf("pick a row, then %s %s", a.key, a.label))
 	return m, m.startRun(t.cap, values, false)
 }

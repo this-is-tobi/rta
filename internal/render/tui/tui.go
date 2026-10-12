@@ -164,6 +164,7 @@ type Model struct {
 	result     resultMsg
 	flash      string // one-shot footer notice (e.g. "copied"), cleared on next key
 	flashBad   string // the flash when it reports what did not happen (see refuse)
+	flashGuide string // the flash when it says what to do next and reports nothing done (see guide)
 	// armedDelete is the two-press gate on the profile panes' `d`: the first
 	// press names what would be removed, the next `y` removes it, and any
 	// other key disarms. It exists because `d` sat one mispress from the
