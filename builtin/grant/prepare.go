@@ -639,6 +639,7 @@ func grantNeeded(sf plugin.Surface, catalog func() []plugin.Capability, target, 
 		}
 	}
 	human := 0
+	takesProfile := false
 	for _, c := range caps {
 		if c.HumanOnly {
 			human++
@@ -647,8 +648,19 @@ func grantNeeded(sf plugin.Surface, catalog func() []plugin.Capability, target, 
 		if core.Required(c, profile) {
 			return nil
 		}
+		takesProfile = takesProfile || plugin.Profilable(c)
 	}
 	hint := sf.CapabilityWith("grant.list", "detail") + " shows what needs a grant, what needs none, and what is never a tool"
+	// A read needs none on the base connection and one on every other, so
+	// "agents can already call it" is true only of a call that names no
+	// profile — and a grant that names one is the one somebody who reached
+	// this refusal with a service's name in hand was after.
+	until := ""
+	if takesProfile {
+		until = " " + plugin.UntilAProfile
+		hint += "; a call that names a connection needs one: `" + sf.Call("grant.allow",
+			plugin.Arg{Name: "target", Value: target, Positional: true}, plugin.Arg{Name: "profile", Value: "<name>"}) + "`"
+	}
 	switch {
 	case human == len(caps) && len(caps) == 1:
 		return view.Errorf("grant.needless",
@@ -660,11 +672,11 @@ func grantNeeded(sf plugin.Surface, catalog func() []plugin.Capability, target, 
 			WithHint(hint)
 	case len(caps) == 1:
 		return view.Errorf("grant.needless",
-			"%s needs no grant — it is a read, and agents can already call it", target).
+			"%s needs no grant — it is a read, and agents can already call it%s", target, until).
 			WithHint(hint)
 	default:
 		return view.Errorf("grant.needless",
-			"%s needs no grant — everything in it is a read, and agents can already call those", target).
+			"%s needs no grant — everything in it is a read, and agents can already call those%s", target, until).
 			WithHint(hint)
 	}
 }

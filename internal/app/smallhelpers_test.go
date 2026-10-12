@@ -72,6 +72,24 @@ func TestAnInstallReportDescribesWhatAPluginDeclares(t *testing.T) {
 	if got := declaresLine(reads); got != "db.list, db.status — all read · none needs a grant" {
 		t.Errorf("declaresLine(all read) = %q", got)
 	}
+	// Reads that take a profile need a grant the moment a call names one, and
+	// "none needs a grant" said otherwise of a plugin that talks to a service.
+	conn := []plugin.Field{{Name: "dsn", Type: plugin.String, Config: "dsn"}}
+	connected := plugin.Plugin{Name: "dir", Capabilities: []plugin.Capability{
+		{ID: "dir.user.list", Safety: plugin.Read, Inputs: conn},
+		{ID: "dir.group.list", Safety: plugin.Read},
+		{ID: "dir.dump", Safety: plugin.Write, HumanOnly: true, Inputs: conn},
+	}}
+	if got, want := declaresLine(connected), "dir.dump, dir.group.list, dir.user.list — 2 read · 1 write · none needs a grant until a profile names one"; got != want {
+		t.Errorf("declaresLine(reads that take a profile) = %q, want %q", got, want)
+	}
+	humanOnly := plugin.Plugin{Name: "dir", Capabilities: []plugin.Capability{
+		{ID: "dir.user.list", Safety: plugin.Read},
+		{ID: "dir.dump", Safety: plugin.Read, HumanOnly: true, Inputs: conn},
+	}}
+	if got := declaresLine(humanOnly); strings.Contains(got, "until a profile") {
+		t.Errorf("declaresLine = %q: the only capability that takes a profile is never a tool, so none names one", got)
+	}
 	mixed := plugin.Plugin{Name: "db", Capabilities: []plugin.Capability{
 		{ID: "db.status", Safety: plugin.Read},
 		{ID: "db.drop", Safety: plugin.Destructive, NeedsGrant: true},
