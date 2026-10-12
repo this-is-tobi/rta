@@ -3,6 +3,8 @@ package tui
 import (
 	"bytes"
 	"context"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,6 +124,46 @@ func TestAdvanceFormBySyntheticEnterStopsAtAnIntFieldHoldingText(t *testing.T) {
 	}
 	if len(f.Errors()) == 0 {
 		t.Error("no error reported for the unparsable int field")
+	}
+}
+
+// Tab moves on whatever a field holds, so a box can be left behind with its
+// error: `Bad Name` in a profile's name, then the note. The fast submit used to
+// read the whole group's errors, which stopped it after one field and then
+// after the last, unfocused, over the same footer line. It takes the cursor
+// back to the box with the problem, which is where Enter would have stopped.
+func TestAFastSubmitReturnsToAFieldLeftBehindWithAnError(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	m, _ := realModel(t, 100, 30)
+	next, _ := m.startProfileForm("")
+	m = next.(Model)
+	typed := func(text string) {
+		for _, r := range text {
+			next, _ := m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+			m = next.(Model)
+		}
+	}
+	typed("Bad Name")
+	m = pressTab(t, m)
+	typed("my note")
+	f := m.form.form
+	if f.GetFocusedField().Error() != nil || len(f.Errors()) == 0 {
+		t.Fatalf("the premise did not hold: the focused box has error %v and the form %d, want it moved on with the name's error left behind",
+			f.GetFocusedField().Error(), len(f.Errors()))
+	}
+
+	next, _ = m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	m = next.(Model)
+	f = m.form.form
+	if f.State != huh.StateNormal {
+		t.Fatalf("State = %v, want the form still open on the field with the problem", f.State)
+	}
+	err := f.GetFocusedField().Error()
+	if err == nil || !strings.Contains(err.Error(), "not a valid profile name") {
+		t.Errorf("focus is on a box with error %v, want the name box and its error", err)
+	}
+	if got := f.GetFocusedField().GetValue(); got != "Bad Name" {
+		t.Errorf("the focused box holds %v, want the name that was refused", got)
 	}
 }
 
