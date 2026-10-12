@@ -61,8 +61,12 @@ func TestB64DecodeAcceptsUnpaddedAndURLSafeVariants(t *testing.T) {
 }
 
 func TestB64DecodeInvalidInputIsRefused(t *testing.T) {
-	if _, err := runB64(context.Background(), req(map[string]any{"value": "not valid base64!!", "decode": true})); err == nil {
+	_, err := runB64(context.Background(), req(map[string]any{"value": "not valid base64!!", "decode": true}))
+	if err == nil {
 		t.Fatal("expected invalid base64 to be refused")
+	}
+	if verr := view.AsError(err, "test"); verr.Hint == "" {
+		t.Errorf("invalid base64 is refused with nothing to change: %+v", verr)
 	}
 }
 

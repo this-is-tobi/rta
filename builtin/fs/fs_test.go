@@ -222,6 +222,11 @@ func TestUsageOnAMissingPath(t *testing.T) {
 	if !strings.Contains(err.Error(), "no such path") {
 		t.Errorf("error should name the problem plainly: %v", err)
 	}
+	// An agent reads the refusal and has no terminal to look for itself: what
+	// to change is in the answer, as it is for every other refusal.
+	if verr := view.AsError(err, "test"); verr.Hint == "" {
+		t.Errorf("a missing path is refused with nothing to change: %+v", verr)
+	}
 }
 
 func TestUsageDetailIsASectionedPage(t *testing.T) {

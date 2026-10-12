@@ -154,7 +154,8 @@ func runB64(_ context.Context, req plugin.Request) (view.View, error) {
 	if req.Bool("decode") {
 		raw, err := decodeB64(value)
 		if err != nil {
-			return nil, view.Errorf("codec.b64.invalid", "not valid base64: %v", err)
+			return nil, view.Errorf("codec.b64.invalid", "not valid base64: %v", err).
+				WithHint("base64 is letters, digits, + and / (- and _ in the URL form); a character outside those, or a value cut short, fails")
 		}
 		return decoded(raw), nil
 	}
