@@ -39,14 +39,16 @@ import (
 // a binary and not to a name — see core.Grant.Digest. Both accessors are
 // lazy: the registry is still being filled when this is called.
 func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, bool)) plugin.Plugin {
-	suggestGatedTargets := func(context.Context, plugin.Request) []string {
+	suggestGatedTargets := func(_ context.Context, req plugin.Request) []string {
 		var out []string
 		seen := map[string]bool{}
+		grantable := grantableUnder(req.String("profile"))
 		for _, c := range catalog() {
-			// Only what a grant can cover: a read needs none, and a
-			// capability for the person at the terminal is never a tool, so
-			// offering either hands over a command that refuses as needless.
-			if !core.Required(c, "") || c.HumanOnly {
+			// Only what a grant can cover: a read that names no profile needs
+			// none, and a capability for the person at the terminal is never a
+			// tool, so offering either hands over a command that refuses as
+			// needless.
+			if c.HumanOnly || !grantable(c) {
 				continue
 			}
 			out = append(out, c.ID+"\t"+c.Summary)
@@ -383,6 +385,51 @@ func suggestEnvironments(context.Context, plugin.Request) []string {
 		out = append(out, name+"\t"+strings.Join(cfg.Profiles[name].Namespaces(), ", "))
 	}
 	return out
+}
+
+// grantableUnder is which capabilities a grant could be spent on, given the
+// profile typed so far — "" when none is.
+//
+// **Whether a capability needs a grant depends on the profile**, and asking
+// without one was the completion's blind spot: a read needs none until a call
+// names a profile (core.Required), so a plugin of nothing but reads was never
+// offered, however many environments configured it, and `grant allow` could
+// not be tab-completed to the one thing that most needs it. A target is
+// completed before the flag that names its profile as often as after, so with
+// none typed a capability counts when it needs a grant outright, or takes a
+// profile and an environment configures its plugin — the environment is what
+// would make it need one. With one typed the answer is that environment's:
+// what it configures and a call can name it on, and nothing a grant naming
+// the profile could never be spent on (a capability that takes none).
+//
+// A profile that is not configured, or that nothing honours, is a typo or a
+// working-directory file, and answers as no profile does rather than as
+// nothing at all.
+func grantableUnder(profile string) func(plugin.Capability) bool {
+	needsOne := func(c plugin.Capability) bool { return core.Required(c, "") }
+	cfg, err := config.Load()
+	if err != nil {
+		return needsOne
+	}
+	if p, ok := cfg.Profiles[config.RefName(strings.TrimSpace(profile))]; ok && profile != "" && p.Trusted() {
+		return func(c plugin.Capability) bool {
+			return plugin.Profilable(c) && p.Covers(core.Namespace(c.ID))
+		}
+	}
+	return func(c plugin.Capability) bool {
+		if needsOne(c) {
+			return true
+		}
+		if !plugin.Profilable(c) {
+			return false
+		}
+		for _, name := range cfg.ProfilesFor(core.Namespace(c.ID)) {
+			if cfg.Profiles[name].Trusted() {
+				return true
+			}
+		}
+		return false
+	}
 }
 
 // suggestHeldTargets completes from the grants that exist: revoking is
