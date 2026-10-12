@@ -129,7 +129,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				},
 			},
 			{
-				ID: "grant.issue", Summary: "Issue every grant of a role to one agent, under one passphrase",
+				ID: "grant.issue", Summary: "Issue a role, or everything an environment covers, to one agent under one passphrase",
 				HumanOnly: true,
 				Safety:    plugin.Write,
 				Description: "A role is a named list of grant lines — `kv.get db-password`, `pg.query --profile " +
@@ -140,14 +140,35 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"own ttl keeps the shorter. What a line replaces — a grant issued by hand with time left " +
 					"— is shown before anything is signed. A role from a repository's file is somebody else's " +
 					"list: it is issued at the command line only, and with the guard off wants a confirmation " +
-					"after `grant.roles` has shown it. `grant.revoke` given the `role` takes it back.",
+					"after `grant.roles` has shown it. `grant.revoke` given the `role` takes it back.\n\n" +
+					"With `profile` instead of a role, the list is read out of an environment: one grant for " +
+					"every capability of every plugin it configures, on every connection it holds for that plugin " +
+					"— `pg` and `pg/analytics` are two rows of each capability, and every one is listed before " +
+					"the passphrase. `safety` is how far it reaches: read, the default, is the reads; write adds " +
+					"the writes, and a capability that reveals a stored value is one of them; destructive adds " +
+					"what destroys. A capability the team ceiling forbids is skipped and named rather than " +
+					"refusing the rest, and the ones that are for the person at the terminal or take no profile " +
+					"are counted as left out. `max-uses` and `rate` bound each grant on its own and not the " +
+					"bundle. The grants carry no role: `grant.revoke` and `grant.renew` given the same `profile` " +
+					"and `agent` take back or move every grant that agent holds on it.\n\n" +
+					"Local only: the operator channel signs one grant per envelope, so a bundle cannot be issued " +
+					"to a remote server (`grant.allow --server` issues one grant at a time).",
 				Inputs: []plugin.Field{
-					{Name: "role", Type: plugin.String, Positional: true, Required: true, Suggest: suggestRoles,
-						Help: "the role to issue — `grant.roles` lists them"},
+					{Name: "role", Type: plugin.String, Positional: true, Suggest: suggestRoles,
+						Help: "the role to issue — `grant.roles` lists them; give this or profile, not both"},
+					{Name: "profile", Type: plugin.String, Suggest: suggestEnvironments,
+						Help: "issue everything this environment covers instead of a role — its name, not one connection of it; give this or a role, not both"},
+					{Name: "safety", Type: plugin.String, Options: bundleClassOptions(),
+						Help: "with profile: how far to reach — read (the default), write, or destructive"},
 					{Name: "agent", Type: plugin.String, Suggest: suggestHeldAgents,
 						Help: "which agent it is for — the name a server is started as (`rta mcp serve --as`); omit only when this machine knows exactly one"},
 					{Name: "ttl", Type: plugin.String, Suggest: suggestRoleTTL,
 						Help: "how long the grants last: 4h, 12h (the role's ttl, else " + DefaultRoleTTL + ")"},
+					{Name: "max-uses", Type: plugin.Int,
+						Help: "with profile: expire each grant after this many successful calls (0 = unlimited) — each grant, not the bundle"},
+					{Name: "rate", Type: plugin.String, Suggest: suggestRate,
+						Help: "with profile: how fast each grant may be used, as calls/window — each grant, not the bundle"},
+					{Name: "note", Type: plugin.String, Help: "with profile: why — shown by grant.list"},
 					guard.PassphraseField,
 				},
 				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
@@ -349,6 +370,21 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 	}
 }
 
+// suggestEnvironments completes an environment for `grant issue --profile`,
+// each with the plugins it configures: a name alone does not say what issuing
+// it would cover.
+func suggestEnvironments(context.Context, plugin.Request) []string {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, name := range cfg.ProfileNames() {
+		out = append(out, name+"\t"+strings.Join(cfg.Profiles[name].Namespaces(), ", "))
+	}
+	return out
+}
+
 // suggestHeldTargets completes from the grants that exist: revoking is
 // something you do to a grant you already have.
 func suggestHeldTargets(context.Context, plugin.Request) []string {
@@ -509,16 +545,9 @@ func checkProfile(target, ref string) (string, string, *view.Error) {
 		return "", "", view.AsError(err, "grant.config")
 	}
 	name, instance := config.SplitRef(ref)
-	p, ok := cfg.Profiles[name]
-	if !ok {
-		return "", "", view.Errorf("grant.unknownprofile", "no profile named %q", name).
-			WithHint(profileHint(cfg, core.Namespace(target)))
-	}
-	if !p.Trusted() {
-		return "", "", view.Errorf("grant.untrustedprofile",
-			"profile %q comes from a working-directory config file, so nothing honours it", name).
-			WithHint("set $RTA_CONFIG to name that file deliberately, or move the profile to " +
-				config.Path())
+	p, verr := configuredEnvironment(cfg, name, core.Namespace(target))
+	if verr != nil {
+		return "", "", verr
 	}
 	// A profile spans plugins now, so the question is whether this one says
 	// anything about the target's — not whether the whole profile is that
@@ -538,6 +567,7 @@ func checkProfile(target, ref string) (string, string, *view.Error) {
 	var (
 		key  string
 		conn config.Connection
+		ok   bool
 	)
 	switch {
 	case instance != "":
@@ -562,6 +592,25 @@ func checkProfile(target, ref string) (string, string, *view.Error) {
 			"%q does not name a plugin, so there is no connection to grant against", target)
 	}
 	return ref, profiles.ConnStamp(key, conn), nil
+}
+
+// configuredEnvironment is the profile a grant is about: one that exists, and
+// one the config says nothing in a working directory wrote. ns names the plugin
+// the grant is for, so the refusal can list the profiles configured for it;
+// empty when the grant is for the whole environment.
+func configuredEnvironment(cfg config.Config, name, ns string) (config.Profile, *view.Error) {
+	p, ok := cfg.Profiles[name]
+	if !ok {
+		return config.Profile{}, view.Errorf("grant.unknownprofile", "no profile named %q", name).
+			WithHint(profileHint(cfg, ns))
+	}
+	if !p.Trusted() {
+		return config.Profile{}, view.Errorf("grant.untrustedprofile",
+			"profile %q comes from a working-directory config file, so nothing honours it", name).
+			WithHint("set $RTA_CONFIG to name that file deliberately, or move the profile to " +
+				config.Path())
+	}
+	return p, nil
 }
 
 func profileCovers(p config.Profile, name string) string {

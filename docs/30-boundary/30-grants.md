@@ -25,6 +25,8 @@ That reads as: allow the agent `claude` to call `kv.get`, but only on the key `d
 
 Leaving the scope out of a grant on a capability that reveals a stored value, such as `kv.get`, covers every record it reaches, so the receipt says so while the clock is running: `note: kv.get reveals the stored value itself, and with no record named it does so for every record it reaches — name one to allow only that record`. A plugin name counts the capabilities of that kind it carries.
 
+A whole environment at once is `rta grant issue --profile staging --agent claude`: one grant per capability per connection, reads unless you say more, under one passphrase. [Roles](./35-roles-consent-and-the-guard.md#everything-an-environment-covers-without-writing-the-role) says what it covers and what it leaves out.
+
 **Only a person at a terminal can issue one.** An agent that could grant itself access would be no gate at all, so there is no [MCP](../95-reference/10-glossary.md#acronyms) tool for this and no flag that makes one.
 
 ## The four bounds, and what each is for

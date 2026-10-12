@@ -197,6 +197,8 @@ The selection is sealed like the grants are, with a key beside it in the data di
 rta grant allow pg.query --profile staging --agent claude --ttl 1h
 ```
 
+Everything an environment covers can be allowed at once with `rta grant issue --profile staging --agent claude`, which issues one grant for each capability on each connection the environment holds, reads unless `--safety` says more. See [roles](../30-boundary/35-roles-consent-and-the-guard.md#everything-an-environment-covers-without-writing-the-role).
+
 Profile matching is **exact in both directions**. A grant naming `staging` matches a call resolving through `staging`, and nothing else. An empty profile on a grant is not a wildcard — it matches a call that resolved through no profile.
 
 A [team policy](../30-boundary/50-team-policy.md) can forbid a connection outright, which is the blunt instrument for "not production, ever":
