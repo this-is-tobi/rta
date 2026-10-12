@@ -165,9 +165,14 @@ rules:
     resources: ["pods", "nodes"]
     verbs: ["get", "list"]
   - apiGroups: ["postgresql.cnpg.io"]
-    resources: ["clusters", "backups"]
+    resources: ["clusters", "backups", "scheduledbackups"]
     verbs: ["get", "list"]
+  - apiGroups: ["barmancloud.cnpg.io"]
+    resources: ["objectstores"]
+    verbs: ["get"]
 ```
+
+The last two rules are for `cnpg backup show`, which follows a cluster to the object store it archives to and to the schedules that back it up. Without them the capability still answers, and says which half it could not read. Nothing here reads a `secrets` resource and the plugin refuses to: what it shows of a credential is the name of the Secret an object references, which the object itself states.
 
 Bind it to the instance's ServiceAccount — `<release>-<chart>-<instance>` — with a ClusterRoleBinding, and remember that this is the one place the per-person story leaks: a ClusterRole is cluster-wide, so two instances bound to the same one can see the same things. Narrow it per instance if that matters, and prefer a namespaced Role wherever the capability allows it.
 
