@@ -230,6 +230,31 @@ func TestAnUnexpectedArgumentNamesTheFlagsThatTakeAValue(t *testing.T) {
 	}
 }
 
+// `rta codec hex decode 68656c6c6f` took "decode" for the value and refused the
+// hex string, so the sentence blamed the word the person had right. The verb
+// they wrote is a flag of the command, and the hint says so with the line to
+// run.
+func TestAnArgumentThatIsAFlagsNameIsToldItTakesTwoDashes(t *testing.T) {
+	for line, want := range map[string]string{
+		"codec hex decode 68656c6c6f": "`decode` is a flag, so it takes two dashes: `rta codec hex --decode 68656c6c6f`",
+		"codec b64 decode aGVsbG8=":   "`rta codec b64 --decode aGVsbG8=`",
+		"fs hash f expect 5891abcd":   "`rta fs hash f --expect 5891abcd`",
+	} {
+		ve := hintFor(t, strings.Fields(line)...)
+		if !strings.Contains(ve.Hint, want) {
+			t.Errorf("`rta %s` was told %q, which does not say %s", line, ve.Hint, want)
+		}
+	}
+	// A word that is not a flag's name keeps the answer it had.
+	if ve := hintFor(t, "fs", "hash", "f", "5891abcd"); !strings.Contains(ve.Hint, "--expect") || strings.Contains(ve.Hint, "two dashes") {
+		t.Errorf("`rta fs hash f 5891abcd` was told %q", ve.Hint)
+	}
+	// A word a shell would change is named, and no line is built from it.
+	if ve := hintFor(t, "codec", "hex", "decode", "a b", "c"); !strings.Contains(ve.Hint, "`decode` is a flag") || strings.Contains(ve.Hint, "rta codec hex --decode") {
+		t.Errorf("a word with a space was shown in a pasteable line: %q", ve.Hint)
+	}
+}
+
 // "lists its commands" sent the person to another command to read the names of
 // the first: inside a namespace they are the answer.
 func TestAWrongVerbInANamespaceListsTheVerbsInline(t *testing.T) {
