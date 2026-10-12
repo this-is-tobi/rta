@@ -21,6 +21,11 @@ func TestAddWithAViewCreatesItAndLeavesTheBlockAlone(t *testing.T) {
 	if !strings.Contains(out, "dbs") || !strings.Contains(out, "--view dbs") {
 		t.Errorf("the receipt does not name the view or the way back:\n%s", out)
 	}
+	// The flag that makes a profile select it is not the one that created it:
+	// `profile set` says --dashboard where every dashboard command says --view.
+	if !strings.Contains(out, "rta profile set <name> --dashboard dbs") {
+		t.Errorf("the receipt does not say how a profile selects the view:\n%s", out)
+	}
 	cfg := loadedConfig(t)
 	if len(cfg.Dashboard.Add) != 1 || cfg.Dashboard.Add[0].With["dbname"] != "main" {
 		t.Errorf("the block changed: %+v", cfg.Dashboard.Add)
