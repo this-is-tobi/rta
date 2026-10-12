@@ -819,11 +819,17 @@ func profilelessNote(catalog func() []plugin.Capability, g core.Grant) string {
 // inactiveProfileNote warns when a grant names an environment that is not
 // the one switched on: the MCP bound refuses every profile but the active
 // one, so the grant does nothing until `rta use` — and the clock is running.
+//
+// The environment is what is switched on, never one connection of it: a
+// grant on `staging/analytics` said `rta use staging/analytics`, which `rta
+// use` refuses by name, so the one command the note offered was the one that
+// could not be run.
 func inactiveProfileNote(g core.Grant) string {
-	if on := profiles.Active(); on != "" && g.Profile != "" && config.RefName(g.Profile) != on {
+	environment := config.RefName(g.Profile)
+	if on := profiles.Active(); on != "" && g.Profile != "" && environment != on {
 		return fmt.Sprintf("note: %s is switched on, so this grant does nothing until "+
 			"`rta use %s` — no agent can reach %s while you are working elsewhere",
-			on, g.Profile, g.Profile)
+			on, environment, environment)
 	}
 	return ""
 }
