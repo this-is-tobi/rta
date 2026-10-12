@@ -277,6 +277,9 @@ func (c Capability) validate(ns string) error {
 					c.ID, f.Name, f.With)
 			}
 		}
+		if err := checkWidens(c, f); err != nil {
+			return err
+		}
 		seenInputs[f.Name] = true
 		if err := checkShort(c.ID, f, seenShorts); err != nil {
 			return err
@@ -818,6 +821,36 @@ func checkEndpoints(c Capability) error {
 			"a tunnel fills an address, and half of one would point the call at %s on this machine "+
 			"— declare both, or use the address role for a single input holding host:port",
 			c.ID, have, missing, map[bool]string{true: "the plugin's default port", false: "127.0.0.1"}[hasHost])
+	}
+	return nil
+}
+
+// checkWidens holds a Widens declaration to what the host can act on: a Bool
+// naming another input of the same capability.
+//
+// Each rule is one a call would otherwise break in silence. A Widens that
+// names nothing is a fence the author believes is closed and no call ever
+// consults — the failure Field.Widens exists to remove, so it is refused where
+// the author is. One that names itself would read "this switch widens this
+// switch". And one on anything but a Bool describes a value rather than a
+// switch: a number or a name that widens another input is a second input to
+// pin, which is what a fence on it already does, and Widens would then refuse
+// calls on a value the fence could have checked.
+func checkWidens(c Capability, f Field) error {
+	if f.Widens == "" {
+		return nil
+	}
+	if f.Type != Bool {
+		return fmt.Errorf("capability %q: input %q declares Widens but is a %s; "+
+			"only a Bool switch widens another input — a value is fenced as itself",
+			c.ID, f.Name, f.Type)
+	}
+	if f.Widens == f.Name {
+		return fmt.Errorf("capability %q: input %q is declared to widen itself", c.ID, f.Name)
+	}
+	if !slices.ContainsFunc(c.Inputs, func(o Field) bool { return o.Name == f.Widens }) {
+		return fmt.Errorf("capability %q: input %q is declared to widen %q, which it does not declare",
+			c.ID, f.Name, f.Widens)
 	}
 	return nil
 }
