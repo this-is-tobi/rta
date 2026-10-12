@@ -1,0 +1,322 @@
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/this-is-tobi/rta/internal/agentlog"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
+	"github.com/this-is-tobi/rta/internal/profile"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
+)
+
+// A grant says an agent may reach a connection. It does not say every
+// namespace the connection can see, and `set:` could not say it: it supplies a
+// default and the caller wins. These tests drive a profile with an `only:`
+// fence through the real bridge, grant gate and ledger, with a plugin shaped
+// like cnpg — a scope an agent may name, and the switch that reads past it.
+
+type fenceFixture struct {
+	session  *sdk.ClientSession
+	profiles config.Config
+	dir      string
+	ran      *int
+	sawNS    *string
+	sawAll   *bool
+}
+
+func newFenceFixture(t *testing.T, yaml, dir string) *fenceFixture {
+	t.Helper()
+	var ran int
+	var ns string
+	var all bool
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{Name: "app", Summary: "app", Capabilities: []plugin.Capability{{
+		ID: "app.status", Summary: "status", Safety: plugin.Read,
+		Inputs: []plugin.Field{
+			{Name: "namespace", Type: plugin.String, Config: "namespace"},
+			{Name: "all-namespaces", Type: plugin.Bool, Config: "all-namespaces", Widens: "namespace"},
+		},
+		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+			ran++
+			ns, all = req.String("namespace"), req.Bool("all-namespaces")
+			return view.Text{Body: "ok"}, nil
+		},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_DATA_DIR", dir)
+	path := dir + "/config.yaml"
+	if err := writeFile(path, yaml); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_CONFIG", path)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, _ := pluginconf.Resolve(cfg, reg.Origin)
+	server := NewServer(reg, "test", Options{
+		Origin: reg.Origin, Config: resolver.For, Profiles: cfg, Reload: config.Load,
+	})
+	st, ct := sdk.NewInMemoryTransports()
+	if _, err := server.Connect(context.Background(), st, nil); err != nil {
+		t.Fatal(err)
+	}
+	session, err := sdk.NewClient(&sdk.Implementation{Name: "agent", Version: "0"}, nil).Connect(context.Background(), ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { session.Close() })
+	return &fenceFixture{session: session, profiles: cfg, dir: dir, ran: &ran, sawNS: &ns, sawAll: &all}
+}
+
+// messageOf is the sentence of a refusal, decoded: contentText is the JSON
+// envelope, in which every quotation mark of the sentence is escaped.
+func messageOf(t *testing.T, res *sdk.CallToolResult) string {
+	t.Helper()
+	var e struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(contentText(t, res)), &e); err != nil {
+		t.Fatalf("not a refusal envelope: %v", err)
+	}
+	return e.Message
+}
+
+func (f *fenceFixture) call(t *testing.T, args map[string]any) *sdk.CallToolResult {
+	t.Helper()
+	res, err := f.session.CallTool(context.Background(), &sdk.CallToolParams{Name: "app_status", Arguments: args})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res
+}
+
+func (f *fenceFixture) grantFor(t *testing.T, name string, maxUses int) {
+	t.Helper()
+	now := time.Now()
+	if verr := grant.Save([]grant.Grant{{
+		Target: "app", Profile: name, ProfilePin: profile.ConnStampFor(f.profiles, name, "app"),
+		Issued: now, Expires: now.Add(time.Hour), MaxUses: maxUses,
+	}}); verr != nil {
+		t.Fatal(verr)
+	}
+}
+
+const fenced = `
+profiles:
+  staging:
+    plugins:
+      app:
+        set:
+          namespace: staging
+        only:
+          namespace: [staging, staging-jobs]
+  prod:
+    plugins:
+      app:
+        set:
+          namespace: prod
+        only:
+          namespace: [prod]
+  shared:
+    plugins:
+      app:
+        only:
+          namespace: [alpha, beta]
+  pinned:
+    plugins:
+      app:
+        only:
+          namespace: [only-this]
+`
+
+// **The hole this closes**: an agent granted `staging` named any namespace the
+// connection could see — including the one `prod` pins in the same config — and
+// the host passed it through, because a profile's `set:` is a default and the
+// caller wins. Refused before the handler runs, recorded with a code of its
+// own, and without telling the agent what the connection does reach.
+func TestAnAgentGrantedOneProfileCannotNameAnotherValueOfAFencedInput(t *testing.T) {
+	f := newFenceFixture(t, fenced, t.TempDir())
+	f.grantFor(t, "staging", 0)
+
+	res := f.call(t, map[string]any{"profile": "staging", "namespace": "prod"})
+	assertCode(t, res, "core.profile.fenced")
+	if *f.ran != 0 {
+		t.Fatalf("the handler ran with namespace %q on a connection fenced to staging", *f.sawNS)
+	}
+
+	// The agent is told which input and nothing the operator wrote: neither the
+	// list, nor the profile it named, nor the values a sibling pins.
+	text := contentText(t, res)
+	for _, leaked := range []string{"staging", "staging-jobs", "alpha", "only-this"} {
+		if strings.Contains(text, leaked) {
+			t.Errorf("the refusal tells the agent %q:\n%s", leaked, text)
+		}
+	}
+	if message := messageOf(t, res); !strings.Contains(message, `the "namespace" argument`) {
+		t.Errorf("the refusal does not say which input went outside: %q", message)
+	}
+
+	// And the row is what lets an operator see an agent probing a boundary: the
+	// code, the sentence the agent heard, and in the note what it was not told.
+	entries, err := agentlog.Read(1)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("ledger = %v, %v", entries, err)
+	}
+	e := entries[0]
+	if e.Outcome != agentlog.Refused || e.Code != "core.profile.fenced" || e.Profile != "staging" {
+		t.Errorf("the row = outcome %q code %q profile %q", e.Outcome, e.Code, e.Profile)
+	}
+	if !strings.Contains(e.Note, "staging-jobs") {
+		t.Errorf("the row does not carry what the connection reaches, for the operator: note %q", e.Note)
+	}
+	if strings.Contains(e.Reason, "staging-jobs") {
+		t.Errorf("the reason column carries the list the agent must not see: %q", e.Reason)
+	}
+}
+
+// Nothing about a call that stays inside the fence changes.
+func TestACallInsideTheFenceBehavesAsItDid(t *testing.T) {
+	f := newFenceFixture(t, fenced, t.TempDir())
+	f.grantFor(t, "staging", 0)
+
+	for _, tc := range []struct {
+		args map[string]any
+		want string
+	}{
+		{map[string]any{"profile": "staging"}, "staging"},
+		{map[string]any{"profile": "staging", "namespace": "staging"}, "staging"},
+		{map[string]any{"profile": "staging", "namespace": "staging-jobs"}, "staging-jobs"},
+	} {
+		if res := f.call(t, tc.args); res.IsError {
+			t.Fatalf("%v was refused: %s", tc.args, contentText(t, res))
+		}
+		if *f.sawNS != tc.want {
+			t.Errorf("%v ran with namespace %q, want %q", tc.args, *f.sawNS, tc.want)
+		}
+	}
+}
+
+// The empty string is a value, and the caller's layer beats the profile's — so
+// a fence that checked what `set:` says would let a blank lift the pin.
+func TestABlankCannotLiftAPinnedValue(t *testing.T) {
+	f := newFenceFixture(t, fenced, t.TempDir())
+	f.grantFor(t, "staging", 0)
+
+	assertCode(t, f.call(t, map[string]any{"profile": "staging", "namespace": ""}), "core.profile.fenced")
+	if *f.ran != 0 {
+		t.Fatalf("a blank namespace reached the handler: %q", *f.sawNS)
+	}
+}
+
+// The switch the plugin declares widens the input is a second way past the
+// list that never passes through the input's own value.
+func TestAWideningSwitchCannotReadPastAFencedInput(t *testing.T) {
+	f := newFenceFixture(t, fenced, t.TempDir())
+	f.grantFor(t, "staging", 0)
+
+	res := f.call(t, map[string]any{"profile": "staging", "all-namespaces": true})
+	assertCode(t, res, "core.profile.fenced.switch")
+	if *f.ran != 0 {
+		t.Fatal("the switch reached the handler on a fenced connection")
+	}
+	if message := messageOf(t, res); !strings.Contains(message, `"all-namespaces"`) ||
+		!strings.Contains(message, `"namespace"`) || strings.Contains(message, "staging") {
+		t.Errorf("the refusal names the switch and the input and nothing else: %q", message)
+	}
+	// Off is the same statement as not saying it.
+	if res := f.call(t, map[string]any{"profile": "staging", "all-namespaces": false}); res.IsError {
+		t.Errorf("the switch left off was refused: %s", contentText(t, res))
+	}
+}
+
+// A one-entry list is the whole of the input, and a longer one asks the caller
+// to say which — a blank is not an answer.
+func TestAFenceWithOneValueFillsTheInputAndWithSeveralAsksWhich(t *testing.T) {
+	f := newFenceFixture(t, fenced, t.TempDir())
+	now := time.Now()
+	if verr := grant.Save([]grant.Grant{
+		{Target: "app", Profile: "pinned", ProfilePin: profile.ConnStampFor(f.profiles, "pinned", "app"), Issued: now, Expires: now.Add(time.Hour)},
+		{Target: "app", Profile: "shared", ProfilePin: profile.ConnStampFor(f.profiles, "shared", "app"), Issued: now, Expires: now.Add(time.Hour)},
+	}); verr != nil {
+		t.Fatal(verr)
+	}
+
+	if res := f.call(t, map[string]any{"profile": "pinned"}); res.IsError {
+		t.Fatalf("a connection fenced to one value was refused: %s", contentText(t, res))
+	}
+	if *f.sawNS != "only-this" {
+		t.Errorf("the input resolved to %q, want the single allowed value", *f.sawNS)
+	}
+
+	*f.ran = 0
+	assertCode(t, f.call(t, map[string]any{"profile": "shared"}), "core.profile.fenced")
+	if *f.ran != 0 {
+		t.Fatal("a call that named none of two allowed values ran")
+	}
+	if res := f.call(t, map[string]any{"profile": "shared", "namespace": "beta"}); res.IsError {
+		t.Fatalf("an allowed value was refused: %s", contentText(t, res))
+	}
+}
+
+// A call that never reached the handler is not a use: a one-use grant survives
+// the probe, which is what the other refusals before the handler do.
+func TestAFencedRefusalDoesNotSpendTheGrant(t *testing.T) {
+	f := newFenceFixture(t, fenced, t.TempDir())
+	f.grantFor(t, "staging", 1)
+
+	assertCode(t, f.call(t, map[string]any{"profile": "staging", "namespace": "prod"}), "core.profile.fenced")
+	if res := f.call(t, map[string]any{"profile": "staging"}); res.IsError {
+		t.Fatalf("the one use was spent on a call that never ran: %s", contentText(t, res))
+	}
+}
+
+// The fence is checked after the grant gate, so a call nobody granted is
+// refused the way an unknown profile is: the fence is no way to learn that a
+// profile exists, or what it reaches.
+func TestTheFenceIsNoWayToLearnWhatAProfileReaches(t *testing.T) {
+	f := newFenceFixture(t, fenced, t.TempDir())
+	f.grantFor(t, "staging", 0)
+
+	granted := f.call(t, map[string]any{"profile": "prod", "namespace": "anything"})
+	unknown := f.call(t, map[string]any{"profile": "nowhere", "namespace": "anything"})
+	assertCode(t, granted, "core.grant.required")
+	assertCode(t, unknown, "core.grant.required")
+}
+
+// Editing the list changes what the grant was issued against, so it asks
+// again — the same way editing `set:` does.
+func TestEditingTheFenceStopsTheGrantThatNamedTheConnection(t *testing.T) {
+	dir := t.TempDir()
+	f := newFenceFixture(t, fenced, dir)
+	f.grantFor(t, "staging", 0)
+	if res := f.call(t, map[string]any{"profile": "staging"}); res.IsError {
+		t.Fatalf("the connection that was consented to was refused: %s", contentText(t, res))
+	}
+
+	widened := strings.Replace(fenced, "[staging, staging-jobs]", "[staging, staging-jobs, prod]", 1)
+	after := newFenceFixture(t, widened, dir)
+	res := after.call(t, map[string]any{"profile": "staging"})
+	assertCode(t, res, "core.grant.required")
+	if *after.ran != 0 {
+		t.Fatal("a grant issued against a narrower fence covered a wider one")
+	}
+
+	// Re-consent to the connection as it now is restores the call, and the
+	// widened list is then what the call is held to.
+	after.grantFor(t, "staging", 0)
+	if res := after.call(t, map[string]any{"profile": "staging", "namespace": "prod"}); res.IsError {
+		t.Fatalf("re-consent did not restore the call: %s", contentText(t, res))
+	}
+}

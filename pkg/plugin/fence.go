@@ -201,3 +201,127 @@ func fenceZero(t FieldType) any {
 	}
 	return ""
 }
+
+// Fence is the allowlist a connection states, by Field.Config key: the values
+// each fenced input may resolve to. It rides on Inputs, beside the layers, and
+// is not one of them — it supplies a value only where nothing else does and a
+// list holds exactly one (see Resolve), and otherwise it is what CheckFence
+// holds the layers' answer to.
+//
+// A key present with no entries is a fence that allows nothing, which refuses
+// every call, and that is the point of keeping the two apart: an allowlist that
+// cannot be read must not become "no allowlist".
+type Fence map[string][]any
+
+// of is the list that fences f, and whether one does. By Config key, which is
+// the spelling an operator writes and the only one an input can be fenced by.
+func (fn Fence) of(f Field) ([]any, bool) {
+	if f.Config == "" {
+		return nil, false
+	}
+	list, fenced := fn[f.Config]
+	return list, fenced
+}
+
+// fenceDefault is what an input a fence allows exactly one value of resolves to
+// when nobody supplied one: that value, in the shape the input reads — a
+// list-shaped input holds a list of one.
+func fenceDefault(f Field, only any) any {
+	if f.Type == StringSlice {
+		return stringSlice(only)
+	}
+	return only
+}
+
+// FenceBreach is how a call went outside a Fence: the input it went outside
+// of, what the fence allows there, and — when the way was a switch the plugin
+// declares widens that input (Field.Widens) — the switch.
+//
+// A description and not an error, because the three surfaces that hold a call
+// to a fence word the refusal for three different readers, and one of them
+// must not be told what the fence holds.
+type FenceBreach struct {
+	// Input is the fenced input the call is outside, whether by its own value
+	// or because a switch reads past it.
+	Input Field
+	// Switch is the widening switch the call set, the zero Field when the
+	// breach is the input's own value (Widened says which).
+	Switch Field
+	// Allowed is what the fence allows for Input.
+	Allowed []any
+	// Blank is true when the input resolved to nothing — left out, or sent as
+	// the empty string or an empty list — and nothing the fence holds is that.
+	Blank bool
+}
+
+// CheckFence holds the values a call resolves to against the connection's
+// fence, and reports the first way it is outside — nil when it is not.
+//
+// **Asked of the resolved value, after every layer.** The caller wins every
+// layer, an empty string included, so a check of what a profile's `set:`
+// states, or of what the caller sent, is a check of the wrong thing: `--namespace
+// ""` resolves to the empty string, which a fence that does not list it
+// refuses, and a call that sends nothing resolves to whatever the layers
+// below give it, which the fence holds just the same. That is also why this
+// takes the whole Inputs rather than a value: the single value of a one-entry
+// list is a layer of Resolve's, and the answer for an input nobody filled is
+// whatever it fills.
+//
+// And the switches. A Bool the plugin declares widens a fenced input is a
+// second way to reach what the list leaves out that never passes through the
+// input's own value — `all-namespaces` beside a pinned `namespace` — so a call
+// that resolves one to true while the input it widens is fenced is outside the
+// fence, whatever the input says. The host cannot read a handler to find that
+// out; the declaration is how it knows.
+//
+// Pure, and made before anything is fetched or opened: a credential is not
+// read and a forward is not raised for a call that is about to be refused.
+func CheckFence(c Capability, in Inputs) *FenceBreach {
+	if len(in.Fence) == 0 {
+		return nil
+	}
+	resolved := Resolve(c, in)
+	for _, f := range c.Inputs {
+		allowed, fenced := in.Fence.of(f)
+		if !fenced {
+			continue
+		}
+		if !FenceAllows(f, allowed, resolved[f.Name]) {
+			return &FenceBreach{Input: f, Allowed: allowed, Blank: fenceBlank(f, resolved[f.Name])}
+		}
+	}
+	for _, w := range c.Inputs {
+		if w.Widens == "" {
+			continue
+		}
+		if on, _ := resolved[w.Name].(bool); !on {
+			continue
+		}
+		for _, target := range c.Inputs {
+			if target.Name != w.Widens {
+				continue
+			}
+			if allowed, fenced := in.Fence.of(target); fenced {
+				return &FenceBreach{Input: target, Switch: w, Allowed: allowed}
+			}
+		}
+	}
+	return nil
+}
+
+// Widened reports whether the call went outside the fence by a switch rather
+// than by the input's own value.
+func (b *FenceBreach) Widened() bool { return b.Switch.Name != "" }
+
+// fenceBlank reports whether v is nothing at all as f reads it: not supplied,
+// the empty string, or an empty list.
+func fenceBlank(f Field, v any) bool {
+	if v == nil {
+		return true
+	}
+	if f.Type == StringSlice {
+		return len(stringSlice(v)) == 0
+	}
+	s, isText := v.(string)
+	return isText && s == ""
+}

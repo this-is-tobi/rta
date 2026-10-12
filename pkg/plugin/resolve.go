@@ -42,6 +42,19 @@ type Inputs struct {
 	// handler that names the connection again (Request.Profile).
 	Tunnel Tunnel
 
+	// Fence is the allowlist the profile's connection states, keyed by
+	// Field.Config key. Not a layer, though it sits in this struct: it never
+	// overrides a value anybody supplied. It does two things, and Resolve does
+	// only the first — an input a fence allows exactly one value of resolves to
+	// that value when no layer and no config key states one, which is what
+	// lets `only: {namespace: [staging]}` be the whole of a profile's
+	// namespace — and CheckFence holds the answer to the list.
+	//
+	// It is carried on every surface that resolves for a connection, whether or
+	// not that surface checks, because a surface that checks the fence and then
+	// runs without it would run the input blank.
+	Fence Fence
+
 	// Config is the operator's plugins:<ns@pin> section, keyed by Field.Config.
 	Config map[string]any
 
@@ -132,6 +145,21 @@ func resolve(c Capability, in Inputs) (map[string]any, map[string]origin) {
 	for _, f := range c.Inputs {
 		if f.Default != nil {
 			out[f.Name] = f.Default
+		}
+	}
+	// An input the connection's fence allows one value of is that value, when
+	// nothing above this says otherwise. Over the declared default and under
+	// every layer that states something: the operator who wrote a one-entry list
+	// has said where this connection goes, and the plugin's own default is the
+	// one answer that statement is there to replace — but a value somebody
+	// supplied is theirs, and is held to the list afterwards (CheckFence), not
+	// replaced by it. Written as a default and not as a profile value so that
+	// the base `plugins:` section, the one layer a profile does not own, still
+	// beats it and is then held to the list like any other value: a fence
+	// narrows what the layers say and never rewrites them.
+	for _, f := range c.Inputs {
+		if allowed, fenced := in.Fence.of(f); fenced && len(allowed) == 1 {
+			out[f.Name] = fenceDefault(f, allowed[0])
 		}
 	}
 	// Between the defaults and the caller's values, so it beats the first and

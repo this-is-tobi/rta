@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"os"
 	"slices"
 	"sort"
 	"time"
@@ -879,6 +880,15 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 				"%s did not answer within %s", t.cap.ID, deadline).
 				WithHint("enter opens it on its own screen, where a run is not on the dashboard's clock")
 		}
+		// A tile is a call too: the fence a profile states is about what is
+		// asked of the connection, whoever wrote the tile, and a refused tile is
+		// a visible error in its panel rather than a quiet read of somewhere
+		// the profile says it does not reach.
+		if verr := profile.Fenced(profileName, conn, t.cap, plugin.Inputs{
+			Caller: t.values, Config: cfg.values, ConfigSection: cfg.section,
+		}, os.LookupEnv, plugin.SurfaceTUI); verr != nil {
+			return tileMsg{key: key, idx: idx, err: verr}
+		}
 		dialled, via, closeTunnel, verr := profile.Dial(ctx, profileName, conn, t.cap, t.values, plugin.SurfaceTUI)
 		defer closeTunnel()
 		if verr != nil {
@@ -905,7 +915,7 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 		}
 		req := plugin.ResolveRequest(t.cap, plugin.Inputs{
 			Caller: t.values, Profile: filled, ProfileName: profileName, Tunnel: via, Config: cfg.values,
-			ConfigSection: cfg.section,
+			ConfigSection: cfg.section, Fence: profile.FenceOf(conn),
 		}, false, false).WithSurface(plugin.SurfaceTUI)
 		v, err := t.cap.Run(ctx, req)
 		if err != nil {
