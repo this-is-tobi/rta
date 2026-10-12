@@ -98,7 +98,7 @@ func handshakeInstructions(offered []plugin.Capability, opts Options) string {
 // The frame is only worth anything because Validate refuses both literals in
 // declared text (pkg/plugin/text.go). A plugin that could write the closing
 // line would close the untrusted block early and continue as rta.
-func agentText(c plugin.Capability, tools map[string]bool) string {
+func agentText(c plugin.Capability, tools map[string]bool, profiled bool) string {
 	var b strings.Builder
 	b.WriteString(plugin.AuthoredOpen)
 	b.WriteString("\n" + nameTools(c.Summary, tools))
@@ -128,7 +128,17 @@ func agentText(c plugin.Capability, tools map[string]bool) string {
 			}
 			b.WriteString(")")
 		}
-		b.WriteString(". You cannot issue one yourself — " + plugin.AskOperator("grant allow "+c.ID) + ".")
+		// A grant that names no connection covers no call that names one, and
+		// a call on a namespace with connections has to name one: the command
+		// for the capability alone would be run, succeed, and leave every
+		// call refused (grant.refuseMissing says the same of the refusal).
+		if profiled {
+			b.WriteString(". You cannot issue one yourself — " +
+				plugin.AskOperator("grant allow "+plugin.Namespace(c.ID)+" --profile <profile>") +
+				", naming the profile you call it with.")
+		} else {
+			b.WriteString(". You cannot issue one yourself — " + plugin.AskOperator("grant allow "+c.ID) + ".")
+		}
 	}
 	return b.String()
 }
@@ -159,12 +169,32 @@ func toolDef(c plugin.Capability, opts Options) *sdk.Tool {
 		ann.DestructiveHint = &trueHint
 	}
 
+	profiles := opts.Profiles.ProfilesFor(plugin.Namespace(c.ID))
 	return &sdk.Tool{
 		Name:        plugin.ToolName(c.ID),
-		Description: agentText(c, opts.tools),
+		Description: agentText(c, opts.tools, plugin.Profilable(c) && len(profiles) > 0),
 		Annotations: ann,
-		InputSchema: toolcall.InputSchema(c, opts.Profiles.ProfilesFor(plugin.Namespace(c.ID)), opts.pluginConfig(c)),
+		InputSchema: nameInSchema(toolcall.InputSchema(c, profiles, opts.pluginConfig(c)), opts.tools),
 	}
+}
+
+// nameInSchema says, in the words of every input's description, what a model
+// calls the capabilities they mention: `kube.context.list` there is the
+// kube_context_list tool, the same rename the tool's own description gets.
+// An input's help is the plugin's text like the summary, written once with the
+// ID, and it reaches a model in the schema where no other line translates it.
+func nameInSchema(schema map[string]any, tools map[string]bool) map[string]any {
+	props, _ := schema["properties"].(map[string]any)
+	for _, p := range props {
+		prop, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+		if text, ok := prop["description"].(string); ok {
+			prop["description"] = nameTools(text, tools)
+		}
+	}
+	return schema
 }
 
 // dotted is a run of words joined by dots, as a capability ID is written.
