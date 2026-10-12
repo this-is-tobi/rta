@@ -11,6 +11,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/config"
 	core "github.com/this-is-tobi/rta/internal/grant"
+	profiles "github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -201,5 +202,24 @@ func TestHeldProfileCompletionOffersTheEnvironmentToo(t *testing.T) {
 	got := suggestHeldProfiles(context.Background(), plugin.NewRequest(nil, false, false))
 	if !slices.Equal(got, []string{"staging", "staging/main"}) {
 		t.Errorf("completion = %q, want the environment and the connection held in it", got)
+	}
+}
+
+// A grant on one connection of an environment that is not switched on says to
+// switch the environment on. It said `rta use staging/main`, which `rta use`
+// refuses by name: a note's one command has to be one that can be run.
+func TestTheNoteOnAnInactiveEnvironmentNamesTheSwitchNotTheConnection(t *testing.T) {
+	setup(t)
+	instancedConfig(t)
+	if verr := profiles.SaveSelection(profiles.Selection{Active: "prod"}); verr != nil {
+		t.Fatal(verr)
+	}
+	body, verr := allowing(t, map[string]any{"target": "kv.get", "scope": "db-password", "profile": "staging/main"})
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	want := "note: prod is switched on, so this grant does nothing until `rta use staging` — no agent can reach staging while you are working elsewhere"
+	if !strings.Contains(body, want) {
+		t.Errorf("the receipt said %q, want %q", body, want)
 	}
 }
