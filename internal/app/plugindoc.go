@@ -92,21 +92,40 @@ func pluginDocView(p plugin.Plugin) (view.View, *view.Error) {
 // configKeysView lists every key the plugin reads from its config block, with
 // the capabilities that read it — the table an operator setting up a profile
 // wants and no card can give, since a card is one capability wide.
+//
+// **A key is a row for each wording its capabilities give it.** One config key
+// feeds one input in several capabilities, and each states what that input
+// means to it: a listing's "cluster" narrows the list and is every cluster's
+// when it is left out, a status's names the one cluster to read and is
+// required. The table took the first capability's help for the whole row, so
+// the key read as the first's for all of them, and a sentence nobody wrote
+// about the others was put in their mouths. Grouped by help, so a key whose
+// capabilities agree is still one row, as it always was, and one they differ
+// on says to which each wording applies — the "Read by" column is what makes a
+// repeated key legible. A neutral sentence for the key as a whole was the
+// other way, and it is one the plugin would have to write and no declaration
+// holds.
 func configKeysView(reg *registry.Registry, p plugin.Plugin) view.View {
 	type use struct {
 		help string
 		caps []string
 	}
-	byKey := map[string]*use{}
+	byKey := map[string][]*use{}
 	for _, c := range reg.Capabilities() {
 		for _, f := range c.Inputs {
 			if f.Config == "" {
 				continue
 			}
-			u, ok := byKey[f.Config]
-			if !ok {
+			var u *use
+			for _, seen := range byKey[f.Config] {
+				if seen.help == f.Help {
+					u = seen
+					break
+				}
+			}
+			if u == nil {
 				u = &use{help: f.Help}
-				byKey[f.Config] = u
+				byKey[f.Config] = append(byKey[f.Config], u)
 			}
 			u.caps = append(u.caps, c.ID)
 		}
@@ -125,8 +144,9 @@ func configKeysView(reg *registry.Registry, p plugin.Plugin) view.View {
 		{Name: "Help"},
 	}}
 	for _, k := range keys {
-		u := byKey[k]
-		t.Rows = append(t.Rows, []string{k, strings.Join(u.caps, ", "), u.help})
+		for _, u := range byKey[k] {
+			t.Rows = append(t.Rows, []string{k, strings.Join(u.caps, ", "), u.help})
+		}
 	}
 	t.Total = len(t.Rows)
 	note := "Under `plugins: " + p.Name + ":` in rta's configuration, or in a profile's `set:`. An installed " +
