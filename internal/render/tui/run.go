@@ -139,6 +139,17 @@ func (m Model) reseedOnPickerMove() (tea.Model, tea.Cmd, bool) {
 	if cf == nil || !cf.final {
 		return m, nil, false
 	}
+	// **Only where the box named `profile` is rta's picker.** A capability no
+	// profile can fill is free to declare an input of that name for itself — it
+	// is the data grant.issue, grant.allow, grant.renew and grant.revoke work
+	// on, and withoutPicker, pickedProfile and profilePicker already ask
+	// Profilable before treating the name as theirs. Without the question here,
+	// the first character typed into that box read as the picker having moved:
+	// the form was rebuilt on an "environment" called `s`, the cursor went back
+	// to the first field, and the rest of the word was typed into it.
+	if !plugin.Profilable(cf.cap) {
+		return m, nil, false
+	}
 	b, ok := cf.bindings[profileInput]
 	if !ok || *b == cf.builtOn {
 		return m, nil, false
