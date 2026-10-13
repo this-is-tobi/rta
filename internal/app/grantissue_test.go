@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -131,5 +132,64 @@ func TestGrantIssueIsLocalAndTakesOneOfARoleAndAnEnvironment(t *testing.T) {
 	}
 	if got := heldTargets(t); len(got) != 0 {
 		t.Errorf("a refusal left %q", got)
+	}
+}
+
+// The passphrase of a guard-gated command is asked at a prompt on the CLI and
+// refused as a flag on every run, so nothing that lists flags offers it: not
+// --help, not completion, not the usage line of the explain card. The flag is
+// still parsed, so a person who types it learns why and what to do, and the
+// masked box of the form — which is what the input is declared for — is
+// untouched. A passphrase the CLI does take (kv's, keys add's) is listed as
+// ever.
+func TestAPassphraseTheCommandLineRefusesIsNotOfferedThere(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	for _, command := range [][]string{{"grant", "issue"}, {"grant", "allow"}, {"grant", "renew"}, {"agent", "allow"}} {
+		help, err := runIn(t, stagingOfBuiltIns, append(command, "--help")...)
+		if err != nil || strings.Contains(help, "--passphrase") {
+			t.Errorf("%v --help lists the passphrase flag (%v):\n%s", command, err, help)
+		}
+		offered, _ := runIn(t, stagingOfBuiltIns, append(append([]string{"__complete"}, command...), "--pass")...)
+		if strings.Contains(offered, "--passphrase") {
+			t.Errorf("completion of %v offers --passphrase:\n%s", command, offered)
+		}
+	}
+	for _, command := range [][]string{{"kv", "get"}, {"keys", "add"}} {
+		help, err := runIn(t, stagingOfBuiltIns, append(command, "--help")...)
+		if err != nil || !strings.Contains(help, "--passphrase") {
+			t.Errorf("%v --help lost a passphrase flag the command line takes (%v):\n%s", command, err, help)
+		}
+	}
+
+	card, err := runIn(t, stagingOfBuiltIns, "explain", "grant.issue", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env struct {
+		Pairs []view.Pair `json:"pairs"`
+	}
+	if err := json.Unmarshal([]byte(card), &env); err != nil {
+		t.Fatalf("explain answered %q: %v", card, err)
+	}
+	for _, p := range env.Pairs {
+		switch p.Key {
+		case "cli":
+			if strings.Contains(p.Value, "passphrase") {
+				t.Errorf("the usage line offers the passphrase: %s", p.Value)
+			}
+		case "input:passphrase":
+			if !strings.Contains(p.Value, "asked at a prompt on the CLI, which refuses it as a flag") {
+				t.Errorf("the input line does not say how the passphrase arrives: %s", p.Value)
+			}
+		}
+	}
+
+	_, err = runIn(t, stagingOfBuiltIns, "grant", "issue", "--profile", "staging", "--agent", "claude", "--passphrase", "hunter2")
+	var verr *view.Error
+	if !errors.As(err, &verr) || verr.Code != "core.guard.passphrase.argv" {
+		t.Errorf("a passphrase typed anyway = %v, want core.guard.passphrase.argv", err)
+	}
+	if len(heldTargets(t)) != 0 {
+		t.Errorf("a refused run issued %q", heldTargets(t))
 	}
 }
