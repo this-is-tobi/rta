@@ -10,6 +10,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/this-is-tobi/rta/builtin/kv"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/profile"
@@ -346,6 +347,19 @@ type credentialRow struct {
 	exported bool
 	// ref is the `secrets:` mapping, empty when there is none.
 	ref config.SecretRef
+	// noStore is true when ref names the store and this machine has none yet —
+	// the one thing about a mapping the pane can know without a passphrase
+	// (kv.HasStore), and the doctor row's own question. Whether an entry is in a
+	// store that exists is not, which is why the pane says a credential is
+	// mapped and never that it is resolved: only Fill resolves a reference.
+	noStore bool
+}
+
+// unreadable reports whether the reference this environment would read the
+// credential from points at a store that does not exist, with nothing exported
+// to read it from instead.
+func (c credentialRow) unreadable() bool {
+	return c.noStore && !c.exported && c.ref.Scheme == "kv"
 }
 
 // winner names the channel this environment actually reads the credential
@@ -381,6 +395,8 @@ func (c credentialRow) source() string {
 		return won + " (set — wins over " + beaten + ")"
 	case c.exported:
 		return won + " (set)"
+	case c.unreadable():
+		return won + " — no store on this machine yet"
 	case won != "":
 		return won
 	case c.env == "":
@@ -396,6 +412,9 @@ func (c credentialRow) formNote(name string) string {
 	won, beaten := c.winner()
 	if won == "" {
 		return ""
+	}
+	if c.unreadable() {
+		return name + " maps it to " + won + ", and there is no store on this machine yet"
 	}
 	note := name + " fills it from " + won
 	if beaten != "" {
@@ -538,6 +557,12 @@ func (m Model) credentialRows(name, key string, conn config.Connection) []creden
 	}
 	inputs := m.credentialInputs(config.PluginNamespace(key))
 	out := make([]credentialRow, 0, len(inputs))
+	// Asked once, and only when a reference names the store: a stat of one file,
+	// the only thing the store will say with no passphrase.
+	storeless := false
+	for _, r := range refs {
+		storeless = storeless || (r.Scheme == "kv" && !kv.HasStore())
+	}
 	for _, input := range inputs {
 		// A labeled instance has no environment channel — see Bind: a
 		// variable for `staging/analytics` would be forgeable by naming
@@ -551,7 +576,7 @@ func (m Model) credentialRows(name, key string, conn config.Connection) []creden
 			_, exported = os.LookupEnv(env)
 		}
 		out = append(out, credentialRow{
-			input: input, env: env, exported: exported, ref: refs[input],
+			input: input, env: env, exported: exported, ref: refs[input], noStore: storeless,
 		})
 	}
 	return out
@@ -644,6 +669,20 @@ func (r profileRow) missing() (needed, unset int) {
 		}
 	}
 	return needed, unset
+}
+
+// storeless counts the credentials whose only source is a reference into a store
+// this machine does not have.
+func (r profileRow) storeless() int {
+	n := 0
+	for _, c := range r.conns {
+		for _, cr := range c.credentials {
+			if cr.satisfied() && cr.unreadable() {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // openProfile is the row the inner pane is showing, or the zero value.
@@ -862,11 +901,21 @@ func profileDetail(row profileRow) string {
 		return theme.BadText.Render(textclean.Terminal(row.problem))
 	}
 	needed, unset := row.missing()
+	storeless := row.storeless()
+	// **Mapped, never resolved.** This pane is offline by design — a reference is
+	// fetched by Fill and by nothing that draws a screen — so what it can say is
+	// that every credential has a source named, and that a reference into the
+	// store has somewhere to point. It said "resolved", and one pointing at a
+	// store this machine does not have read as ready beside a call that then
+	// failed on it.
 	switch {
 	case needed == 0:
 		return theme.Faded.Render("no credential needed")
+	case unset == 0 && storeless == 0:
+		return theme.Faded.Render(format.CountOf(needed, "credential") + " mapped")
 	case unset == 0:
-		return theme.Faded.Render(format.CountOf(needed, "credential") + " resolved")
+		return theme.WarnText.Render(fmt.Sprintf("%s mapped · no store on this machine yet",
+			format.CountOf(needed, "credential")))
 	default:
 		return theme.WarnText.Render(fmt.Sprintf("%s · %d not set",
 			format.CountOf(needed, "credential"), unset))
@@ -991,7 +1040,7 @@ func connDetail(c connRow) string {
 	parts := make([]string, 0, len(c.credentials))
 	for _, cr := range c.credentials {
 		text := textclean.Terminal(cr.input + ": " + cr.source())
-		if !cr.satisfied() {
+		if !cr.satisfied() || cr.unreadable() {
 			parts = append(parts, theme.WarnText.Render(text))
 			continue
 		}
