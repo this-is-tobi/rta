@@ -341,7 +341,7 @@ func TestARepeatedScopeInOneCallSpendsOnlyOnce(t *testing.T) {
 
 // The refusal names the record as the gate compared it. Its sentence is also
 // why a parked call is being asked, on the page the operator answers from,
-// and "no active grant for kv.get db-password" read the same for the key and
+// and "no active grant for kv_get db-password" read the same for the key and
 // for the key with a no-break space after it, which no grant on the key
 // covers.
 func TestARefusalNamesTheRecordAsItWasCompared(t *testing.T) {
@@ -352,7 +352,7 @@ func TestARefusalNamesTheRecordAsItWasCompared(t *testing.T) {
 	if verr == nil || verr.Code != "core.grant.required" {
 		t.Fatalf("a padded record went through: %v", verr)
 	}
-	if want := "no active grant for kv.get " + strconv.Quote(padded); verr.Message != want {
+	if want := "no active grant for kv_get " + strconv.Quote(padded); verr.Message != want {
 		t.Errorf("message = %q, want %q", verr.Message, want)
 	}
 }

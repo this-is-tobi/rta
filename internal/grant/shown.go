@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // Named is a grant as a line of prose names it: its target, then its record
@@ -17,11 +18,19 @@ import (
 // read as the grant on db-password beside it, and trimming the pair to tidy
 // it made a padded record and the bare one the same words. rta doctor listed
 // grants that way after every other listing had stopped.
-func (g Grant) Named() string {
+func (g Grant) Named() string { return g.named(g.Target) }
+
+// NamedTool is Named for a sentence an agent reads: a grant on a capability is
+// named by the tool that capability is (plugin.ToolName), as every other
+// sentence that server says to the agent names it, and one on a whole
+// namespace by the namespace, which has no dot to change.
+func (g Grant) NamedTool() string { return g.named(plugin.ToolName(g.Target)) }
+
+func (g Grant) named(target string) string {
 	if g.Scope == "" {
-		return g.Target
+		return target
 	}
-	return g.Target + " " + textclean.Record(g.Scope)
+	return target + " " + textclean.Record(g.Scope)
 }
 
 // The roster's own words, beside the records and connections it lists: none

@@ -29,13 +29,16 @@ const DefaultResultLimit = 8 << 20
 // the bridge measuring a built-in's — so an agent reads the same sentence
 // wherever it was caught. The call ran: what a write or a destroy did is done,
 // and it is the answer that is withheld.
+//
+// The call is named as the tool the agent called (ToolName): the limit is an
+// MCP one, so the only reader is an agent.
 func ResultTooLarge(id string, size, limit int) *view.Error {
 	was := "more than the limit"
 	if size > 0 {
 		was = format.Bytes(size)
 	}
 	return view.Errorf("core.result.toolarge",
-		"%s ran and its result, %s, is over the %s a result may be over MCP", id, was, format.Bytes(limit)).
+		"%s ran and its result, %s, is over the %s a result may be over MCP", ToolName(id), was, format.Bytes(limit)).
 		WithHint(fmt.Sprintf("narrow what the call asks for — a smaller limit, a tighter filter, a narrower path — "+
 			"and ask again; %s if the whole result is needed",
 			AskOperator("mcp serve --max-result <MiB>")))

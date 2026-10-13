@@ -275,6 +275,9 @@ func TestABlankFencedInputIsToldApartFromOneOutsideTheList(t *testing.T) {
 				!strings.Contains(message, "has to be told which one") {
 				t.Errorf("a blank is not said as one: %q", message)
 			}
+			if !strings.HasPrefix(message, "app_status was not run:") {
+				t.Errorf("a blank names %q, want the app_status tool the agent called", message)
+			}
 			if strings.Contains(message, "lies outside") {
 				t.Errorf("a blank is told it lies outside: %q", message)
 			}

@@ -42,6 +42,11 @@ func TestAPaceIsSpentAndThenRefuses(t *testing.T) {
 	if !strings.Contains(verr.Hint, "try again in") {
 		t.Fatalf("the refusal does not say when to come back: %q", verr.Hint)
 	}
+	// The grant is named as the tool the agent called, like every other
+	// sentence it is told, and not by the dotted ID of the capability.
+	if !strings.HasPrefix(verr.Message, "the grant for kv_get allows 2 calls per 1h") {
+		t.Errorf("the pace is not said in the tool's name: %q", verr.Message)
+	}
 	// The grant is still there and still active: this is a pace, not an end.
 	grants, gerr := Load()
 	if gerr != nil || len(grants) != 1 {

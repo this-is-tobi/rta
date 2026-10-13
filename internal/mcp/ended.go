@@ -142,9 +142,9 @@ func (e *endedGrants) ended(caller string, c plugin.Capability, scope string, by
 	switch {
 	case g.MaxUses > 0 && latest.uses >= g.MaxUses:
 		return fmt.Sprintf("the grant for %s ended (%d of %d %s)",
-			g.Named(), g.MaxUses, g.MaxUses, format.Plural(g.MaxUses, "use", "uses"))
+			g.NamedTool(), g.MaxUses, g.MaxUses, format.Plural(g.MaxUses, "use", "uses"))
 	case !now.Before(g.Expires) || !now.Before(g.Issued.Add(grant.MaxTTL)):
-		return fmt.Sprintf("the grant for %s ended", g.Named())
+		return fmt.Sprintf("the grant for %s ended", g.NamedTool())
 	}
 	return ""
 }
