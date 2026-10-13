@@ -314,10 +314,10 @@ func TestProfileShowAndListSayWhatScreenAProfileShows(t *testing.T) {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	rows := strings.Split(strings.TrimSpace(list), "\n")
-	if rows[0] != "Profile,Plugins,Status,Screen,Note" {
+	if rows[0] != "Profile,Plugins,Status,Screen,Theme,Note" {
 		t.Errorf("the list's columns = %q", rows[0])
 	}
-	for _, want := range []string{"prod,db,ok,ops,", "staging,db,ok,inline: 1 tile,shared"} {
+	for _, want := range []string{"prod,db,ok,ops,,", "staging,db,ok,inline: 1 tile,,shared"} {
 		if !slices.Contains(rows, want) {
 			t.Errorf("the list lacks the row %q:\n%s", want, list)
 		}

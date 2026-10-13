@@ -1350,7 +1350,7 @@ profiles:
 		t.Fatal(err)
 	}
 	if rows := profileTable(loaded, setRegistry(t)).Rows; len(rows) != 1 || rows[0][2] != "on" ||
-		!strings.Contains(rows[0][4], "outside what every capability") {
+		!strings.Contains(rows[0][5], "outside what every capability") {
 		t.Errorf("switched on: %v", rows)
 	}
 }

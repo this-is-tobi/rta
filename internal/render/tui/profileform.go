@@ -99,9 +99,13 @@ func (m Model) startProfileForm(name string) (tea.Model, tea.Cmd) {
 			Help: "how long switching to it lasts before it lapses on its own"},
 		// The badge colour, offered here because a profile's colour is the
 		// thing that makes "which environment am I in" legible, and a field
-		// the editor does not offer is a field people never learn exists.
+		// the editor does not offer is a field people never learn exists. It is
+		// also the primary of the screen while the profile is on, so the help
+		// says so: a colour that changed more than the badge is one a person
+		// should hear about where they type it. The palette beyond the primary
+		// is `t`'s, one picker away.
 		{Name: profileColorField, Type: plugin.String,
-			Help: "badge colour every command prints while it is on — #rrggbb, empty for none"},
+			Help: "badge and primary colour while it is on — #rrggbb, empty for none; more colours: t"},
 	}
 	synth := plugin.Capability{
 		ID:      "profile.edit",

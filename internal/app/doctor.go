@@ -571,6 +571,26 @@ func withoutShadowedScreens(cfg config.Config, notes []profile.Problem) []profil
 	return kept
 }
 
+// withoutThemeNotes leaves out of the profile notes the ones about an entry of
+// a profile's palette, for the page that names each of them by its key and the
+// line it is written on (`rta config check`): the entry is told once, where
+// there is a line to go to.
+func withoutThemeNotes(cfg config.Config, notes []profile.Problem) []profile.Problem {
+	said := map[[2]string]bool{}
+	for _, name := range cfg.ProfileNames() {
+		for _, n := range profile.ThemeNotes(cfg, name) {
+			said[[2]string{n.Name, n.Reason}] = true
+		}
+	}
+	kept := make([]profile.Problem, 0, len(notes))
+	for _, n := range notes {
+		if !said[[2]string{n.Name, n.Reason}] {
+			kept = append(kept, n)
+		}
+	}
+	return kept
+}
+
 // outputSource is the default output format and where it comes from, for the
 // config row, or "" when nothing sets one. A default that names no format is
 // doctorOutput's error row and not also a detail here, which is ok.

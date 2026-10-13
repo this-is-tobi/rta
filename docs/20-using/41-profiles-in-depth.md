@@ -67,13 +67,14 @@ It holds the inputs a call carries. A capability that has no such input — a li
 
 ```bash
 rta profile set <name> [--note ...] [--ttl 8h|none] [--color "#dd3333"|none]
+                       [--theme slot=#rrggbb ... | --untheme]
                        [--plugin <name> [--set k=v ...] [--only k=v ...] [--unfence]
                                         [--secret input=kv:entry ...]
                                         [--kube ...] [--ssh ...] [--direct] [--tunnel-tls]]
 rta profile rm  <name> [--plugin <name>]
 ```
 
-**Each block is replaced by what the flags state, and a block no flag mentions is left alone.** So `--set` states that plugin's whole `set:` block — omit a key to remove it — while its `secrets:` stays exactly as it was, and a run with neither touches neither. That is the only reading under which running the command twice and running it once are the same thing, which is what makes it safe in a script that runs on every boot. `--only` states the `only:` block the same way — one argument per allowed value, repeating the key for a list: `--only namespace=staging --only namespace=staging-jobs` — and `--unfence` takes every fence off that plugin's entry.
+**Each block is replaced by what the flags state, and a block no flag mentions is left alone.** So `--set` states that plugin's whole `set:` block — omit a key to remove it — while its `secrets:` stays exactly as it was, and a run with neither touches neither. That is the only reading under which running the command twice and running it once are the same thing, which is what makes it safe in a script that runs on every boot. `--only` states the `only:` block the same way — one argument per allowed value, repeating the key for a list: `--only namespace=staging --only namespace=staging-jobs` — and `--unfence` takes every fence off that plugin's entry. `--theme` states the profile's palette the same way — one `slot=#rrggbb` per colour, quoted since `#` starts a comment in a shell: `--theme label='#C792EA' --theme warn='#FFB000'` — and is the profile's whole `theme:` block; `--untheme` takes the block off, and a run that states neither leaves it alone. It belongs to the profile and not to a plugin's entry, so it needs no `--plugin`, and a slot or a colour the palette does not have is refused before anything is written. `--theme` completes the ten slots, each with the colour it has when nothing states one. [A palette per environment](./25-dashboard-and-theme.md#a-palette-per-environment) says what the block does.
 
 **Anything a restatement leaves out is named.** Changing one key of four is also how `sslmode: require` disappears from the line beside it, so the loss is reported rather than assumed to be intended:
 
@@ -105,6 +106,8 @@ One plugin per invocation. A profile spanning three plugins is three lines, and 
 | `--only port=six-thousand`, `--only port=70000` | each entry is typed and range-checked like a `--set` value — `core.profile.only.type`, `core.profile.only.range`, `core.profile.only.option` |
 | `--set namespace=prod` beside `--only namespace=staging` | a default the fence refuses on every call is not a default — the same sentence the loader uses |
 | `--only …` together with `--unfence` | one states the fence and the other removes it |
+| `--theme primry=#112233`, `--theme primary=red` | the palette has ten slots and each takes `#rrggbb`; a typo is answered with the nearest slot — `core.profile.theme.slot`, `core.profile.theme.color` |
+| `--theme …` together with `--untheme`, or a slot given twice | one states the block and the other removes it, and two colours for a slot have no order to rank them by |
 | `--kube …` and `--ssh …` together | a call opens one forward |
 | `--tunnel-tls` with neither `--kube` nor `--ssh` in effect (this run or already stored) | it states something about the far side of a forward that does not exist — `--direct` clears a stored `tunnelTLS: true` for the same reason |
 | a profile named after an installed plugin | a profile name and a namespace share a command line |

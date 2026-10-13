@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -341,6 +342,98 @@ profiles:
 	}
 	if live["accent"] != "#6688AA" {
 		t.Errorf("accent = %s, want the block that file has always been able to state", live["accent"])
+	}
+}
+
+// The profiles pane says which environments change what the screen looks like,
+// and what is wrong with a palette that cannot be used — as a warning, since the
+// profile is still one to switch to.
+func TestTheProfilesPaneShowsWhichEnvironmentsHaveColoursOfTheirOwn(t *testing.T) {
+	cfg := themedProfiles()
+	staging := cfg.Profiles["staging"]
+	// Two entries that stand, a status colour and one that is no colour: the pane
+	// counts what is applied, and the warning is what says the rest was not.
+	staging.Theme = map[string]string{"faint": "#00aa66", "accent": "#6688AA", "good": "#00aa66", "bad": "red"}
+	cfg.Profiles["staging"] = staging
+	m := profileModel(t, cfg)
+	m.mode = modeProfiles
+	pane := plain(m.profilesView())
+	if !strings.Contains(pane, "2 theme colours") {
+		t.Errorf("the pane does not say staging has two colours of its own, and not the four it states:\n%s", pane)
+	}
+	// prod states one colour, its primary, and is said in the singular.
+	if !regexp.MustCompile(`\b1 theme colour\b`).MatchString(pane) {
+		t.Errorf("the pane does not say prod has one:\n%s", pane)
+	}
+	for _, row := range m.profiles {
+		switch row.name {
+		case "staging":
+			if !row.valid() || !strings.Contains(row.note, "theme.bad") {
+				t.Errorf("staging: valid = %v, note = %q, want a warning that names the line and not a refusal", row.valid(), row.note)
+			}
+		case "prod":
+			if row.note != "" {
+				t.Errorf("prod has a note: %q", row.note)
+			}
+		}
+	}
+}
+
+// A block whose entries are all left out is not a palette of its own, and the
+// pane must not say it is above a warning that says it is not.
+func TestAProfileWhoseThemeIsAllLeftOutIsNotSaidToHaveColours(t *testing.T) {
+	cfg := themedProfiles()
+	staging := cfg.Profiles["staging"]
+	staging.Theme = map[string]string{"good": "#229F6C", "bad": "#229F6C", "inverse": "#FF4357"}
+	cfg.Profiles["staging"] = staging
+	prod := cfg.Profiles["prod"]
+	prod.Theme = nil
+	cfg.Profiles["prod"] = prod
+	m := profileModel(t, cfg)
+	m.mode = modeProfiles
+	if pane := plain(m.profilesView()); strings.Contains(pane, "theme colour") {
+		t.Errorf("a pane of environments none of which applies a colour counts some:\n%s", pane)
+	}
+	for _, row := range m.profiles {
+		if row.name == "staging" && (!row.valid() || !strings.Contains(row.note, "theme.")) {
+			t.Errorf("staging: valid = %v, note = %q, want the warning kept", row.valid(), row.note)
+		}
+	}
+}
+
+// A name that is nearly a slot is met with the one it nearly is on the pane as
+// it is in every report of the file: the note is cut to its reason, so the
+// guess is in the reason.
+func TestTheProfilesPaneNoteMeetsAMiscasedSlotWithTheOneItNearlyIs(t *testing.T) {
+	cfg := themedProfiles()
+	staging := cfg.Profiles["staging"]
+	staging.Theme = map[string]string{"Label": "#C792EA"}
+	cfg.Profiles["staging"] = staging
+	m := profileModel(t, cfg)
+	m.mode = modeProfiles
+	for _, row := range m.profiles {
+		if row.name == "staging" && (!row.valid() || !strings.Contains(row.note, "did you mean `label`?")) {
+			t.Errorf("staging: valid = %v, note = %q, want a warning that says what Label nearly is", row.valid(), row.note)
+		}
+	}
+	if pane := plain(m.profilesView()); !strings.Contains(pane, "did you mean `label`?") {
+		t.Errorf("the pane does not say what Label nearly is:\n%s", pane)
+	}
+}
+
+// The colour is more than a badge now, and the box where it is typed says so.
+func TestTheProfileEditorSaysWhatTheColourIs(t *testing.T) {
+	m := profileModel(t, themedProfiles())
+	next, _ := m.startProfileForm("staging")
+	nm := next.(Model)
+	var help string
+	for _, f := range nm.form.fields {
+		if f.Name == profileColorField {
+			help = f.Help
+		}
+	}
+	if !strings.Contains(help, "primary") {
+		t.Errorf("the colour box says %q, which does not say it is the screen's primary", help)
 	}
 }
 

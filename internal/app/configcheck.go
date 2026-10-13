@@ -87,19 +87,27 @@ func configProblems(reg *registry.Registry, path string, data []byte) []configPr
 		out = append(out, configProblem{Key: "output", Line: lines["output"], Fatal: true,
 			Text: fmt.Sprintf("%q is not an output format (it takes %s)", cfg.Output, formatNames())})
 	}
-	// Apply resets the palette to what it is told, and this process has already
-	// applied the file's own: put that back, so a check of one file does not
-	// leave another's colours on the screen.
-	was := theme.Current()
-	for _, p := range theme.Apply(cfg.Theme) {
+	// The palette's own questions, asked of this file's text and without painting
+	// anything: a check of one file must not leave its colours on the screen,
+	// and the answer is the same one the screen would get. The operator's own
+	// block first, then what each profile states, judged over it — a profile's
+	// entry that is no colour, or that would make one status read as another,
+	// is a line like any other here. Over the colours of this file alone: a
+	// profile in a drop-in is judged against the block of the file it is in,
+	// and `rta doctor` is the one that sees them all together.
+	_, own := theme.Resolve(profile.ThemeLayers(cfg, "")...)
+	var painted []theme.Problem
+	for _, name := range cfg.ProfileNames() {
+		painted = append(painted, profile.ThemeProblems(cfg, name)...)
+	}
+	for _, p := range append(own, painted...) {
 		text := p.Reason
 		if p.Hint != "" {
 			text += " (" + p.Hint + ")"
 		}
-		key := "theme." + p.Field
+		key := p.Key()
 		out = append(out, configProblem{Key: key, Line: lines[key], Text: text})
 	}
-	theme.Apply(was)
 
 	resolver, problems := pluginconf.Resolve(cfg, reg.Origin)
 	problems = append(problems, resolver.Check(reg)...)
@@ -123,8 +131,11 @@ func configProblems(reg *registry.Registry, path string, data []byte) []configPr
 	// its scope, a number outside what its capabilities take, a colour that is not
 	// one. A line the file states and rta does not apply is what this command
 	// exists to name, and a check that passed a file while those three said
-	// otherwise would be the page and the run disagreeing about one file.
-	for _, line := range groupedProblems(withoutShadowedScreens(cfg, profile.Notes(cfg, withTrust{reg}))) {
+	// otherwise would be the page and the run disagreeing about one file. The
+	// entries of a palette are named above by their key and line, and a screen
+	// in doubt below, so the notes about those are left out of this loop.
+	notes := withoutThemeNotes(cfg, withoutShadowedScreens(cfg, profile.Notes(cfg, withTrust{reg})))
+	for _, line := range groupedProblems(notes) {
 		out = append(out, configProblem{Key: "profiles", Text: line})
 	}
 	// Read against every file, since a view is as likely to be in another one as

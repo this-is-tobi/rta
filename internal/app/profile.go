@@ -691,6 +691,9 @@ func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 		{Name: "Plugins"},
 		{Name: "Status", Kind: view.KindStatus},
 		{Name: "Screen"},
+		// Whether the profile has colours of its own, and how many: the one place
+		// the list says that switching to it changes what the screen looks like.
+		{Name: "Theme"},
 		{Name: "Note"},
 	}}
 	for _, name := range cfg.ProfileNames() {
@@ -714,7 +717,13 @@ func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 		} else if name == active {
 			status = "on"
 		}
-		t.Rows = append(t.Rows, []string{plugin.ListedName(name), strings.Join(p.Namespaces(), " "), status, p.Dashboard.Describe(), note})
+		// Counted as applied: an entry the palette leaves out paints nothing, and
+		// a count that includes it says the opposite of the warning in Note.
+		colours := ""
+		if n := len(profile.ThemeStanding(cfg, name)); n > 0 {
+			colours = format.CountOf(n, "colour")
+		}
+		t.Rows = append(t.Rows, []string{plugin.ListedName(name), strings.Join(p.Namespaces(), " "), status, p.Dashboard.Describe(), colours, note})
 	}
 	t.Total = len(t.Rows)
 	return t
@@ -738,7 +747,7 @@ func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 // this is where they read what it says.
 func showProfile(cfg config.Config, ref string, reg *registry.Registry) (view.View, *view.Error) {
 	if p, ok := cfg.Profiles[ref]; ok {
-		return profileCard(ref, p, cfg.Dashboard.Views, reg), nil
+		return profileCard(cfg, ref, p, reg), nil
 	}
 	name, instance := config.RefName(ref), config.RefInstance(ref)
 	if instance == "" {
@@ -768,22 +777,32 @@ func showProfile(cfg config.Config, ref string, reg *registry.Registry) (view.Vi
 		return nil, view.Errorf("core.profile.instance", "profile %q has no instance called %q", name, instance).
 			WithHint(hint)
 	}
-	card := profileCard(name, only, cfg.Dashboard.Views, reg)
+	card := profileCard(cfg, name, only, reg)
 	card.Pairs = slices.Insert(card.Pairs, 1, view.Pair{Key: "instance",
 		Value: instance + " — `rta profile show " + name + "` shows every connection in " + name})
 	return card, nil
 }
 
-// profileCard is the page for one environment. views are the ones the
-// configuration states under `dashboard: views:`, which a profile's own screen
-// has to be read against: whether its name is taken is not in the profile.
-func profileCard(name string, p config.Profile, views map[string]config.View, reg *registry.Registry) view.KeyValue {
+// alongside is scope with the one profile p under name and no other: the
+// configuration an environment is judged in on its own page, which is the
+// operator's own palette and views and not the other profiles.
+func alongside(scope config.Config, name string, p config.Profile) config.Config {
+	scope.Profiles = map[string]config.Profile{name: p}
+	return scope
+}
+
+// profileCard is the page for one environment, read in the configuration
+// around it: what it lies over is part of what it says, since a colour that
+// would make a status read as another is judged against the operator's own
+// block, and whether a profile's own screen has a name that is taken is in the
+// views that configuration states under `dashboard: views:`, not in the profile.
+func profileCard(scope config.Config, name string, p config.Profile, reg *registry.Registry) view.KeyValue {
 	pairs := []view.Pair{{Key: "profile", Value: name}}
 	if p.Note != "" {
 		pairs = append(pairs, view.Pair{Key: "note", Value: p.Note})
 	}
 	if p.Color != "" {
-		what := p.Color + " — the badge every command prints while this is switched on"
+		what := p.Color + " — the badge every command prints while this is switched on, and the screen's primary colour"
 		if p.BadColor() {
 			// Shown rather than hidden. An operator who wrote a colour and
 			// sees no badge is owed the reason here, where they are looking at
@@ -791,6 +810,23 @@ func profileCard(name string, p config.Profile, views map[string]config.View, re
 			what = p.Color + " — not a colour, so nothing is painted; the form is #rrggbb"
 		}
 		pairs = append(pairs, view.Pair{Key: "color", Value: what})
+	}
+	alone := alongside(scope, name, p)
+	if standing := profile.ThemeStanding(alone, name); len(standing) > 0 {
+		// What stands, and not what was written: a line the palette leaves out
+		// paints nothing, and this row says what the palette is while the profile is
+		// on. The warning rows below say which entries were left out and why, so
+		// nothing a person wrote is missing from the page.
+		slots := make([]string, 0, len(standing))
+		for slot := range standing {
+			slots = append(slots, slot)
+		}
+		sort.Strings(slots)
+		for i, slot := range slots {
+			slots[i] = slot + "=" + standing[slot]
+		}
+		pairs = append(pairs, view.Pair{Key: "theme", Value: strings.Join(slots, " ") +
+			" — the palette while this is switched on, over yours"})
 	}
 	if p.TTL != "" {
 		pairs = append(pairs, view.Pair{Key: "ttl", Value: p.TTL + " per switch"})
@@ -859,7 +895,6 @@ func profileCard(name string, p config.Profile, views map[string]config.View, re
 	// does. The two are one command apart and the second is what a rebuild
 	// produces every time; `rta use` was taught the difference and the page
 	// beside it was not, which is this file's recorded failure mode.
-	alone := config.Config{Profiles: map[string]config.Profile{name: p}, Dashboard: config.Dashboard{Views: views}}
 	pairs = append(pairs, saidOnce("problem", profile.Check(alone, withTrust{reg}))...)
 	pairs = append(pairs, saidOnce("warning", profile.Notes(alone, withTrust{reg}))...)
 	return view.KeyValue{Pairs: pairs}
