@@ -18,7 +18,7 @@ import (
 
 func revokeAt(t *testing.T, values map[string]any, dry bool) string {
 	t.Helper()
-	v, err := runRevoke(context.Background(),
+	v, err := revokeH(context.Background(),
 		plugin.NewRequest(values, dry, true).WithSurface(plugin.SurfaceCLI))
 	if err != nil {
 		t.Fatal(err)

@@ -108,6 +108,12 @@ func renewH(ctx context.Context, req plugin.Request) (view.View, error) {
 	return runRenew(ctx, req, builtIn)
 }
 
+// revokeH adapts runRevoke the same way, closed over the test catalog, which
+// is what a revoke asks whether a set of grants is a bundle's.
+func revokeH(ctx context.Context, req plugin.Request) (view.View, error) {
+	return runRevoke(ctx, req, catalog)
+}
+
 // allowH adapts runAllow (now closed over catalog, like every other target
 // lookup in this package) to the plugin.Handler shape the rest of this file
 // drives its capabilities through.
@@ -408,7 +414,7 @@ func TestRevokingAPluginTakesBackItsCapabilities(t *testing.T) {
 	run(t, allowH, map[string]any{"target": "kv.env"})
 	run(t, allowH, map[string]any{"target": "todo.rm"})
 
-	run(t, runRevoke, map[string]any{"target": "kv"})
+	run(t, revokeH, map[string]any{"target": "kv"})
 	grants, _ := core.Load()
 	if len(grants) != 1 || grants[0].Target != "todo.rm" {
 		t.Errorf("after revoking kv: %+v", grants)
@@ -419,7 +425,7 @@ func TestRevokeAll(t *testing.T) {
 	setup(t)
 	run(t, allowH, map[string]any{"target": "kv.get"})
 	run(t, allowH, map[string]any{"target": "todo.rm"})
-	run(t, runRevoke, map[string]any{"all": true})
+	run(t, revokeH, map[string]any{"all": true})
 	if grants, _ := core.Load(); len(grants) != 0 {
 		t.Errorf("--all left %+v", grants)
 	}
@@ -439,7 +445,7 @@ func TestRevokeAllWithAgentNarrowsToThatAgent(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	body := run(t, runRevoke, map[string]any{"all": true, "agent": "ci"}).(view.Text).Body
+	body := run(t, revokeH, map[string]any{"all": true, "agent": "ci"}).(view.Text).Body
 	if !strings.Contains(body, "revoked 1 grant") {
 		t.Errorf("body = %q, want exactly one grant revoked", body)
 	}
@@ -461,7 +467,7 @@ func TestRevokeAllWithProfileNarrowsToThatProfile(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	body := run(t, runRevoke, map[string]any{"all": true, "profile": "staging"}).(view.Text).Body
+	body := run(t, revokeH, map[string]any{"all": true, "profile": "staging"}).(view.Text).Body
 	if !strings.Contains(body, "revoked 1 grant") {
 		t.Errorf("body = %q, want exactly one grant revoked", body)
 	}
@@ -484,7 +490,7 @@ func TestRevokeAllWithAgentAndProfileNarrowsToBoth(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	run(t, runRevoke, map[string]any{"all": true, "agent": "ci", "profile": "staging"})
+	run(t, revokeH, map[string]any{"all": true, "agent": "ci", "profile": "staging"})
 
 	grants, _ := core.Load()
 	if len(grants) != 2 {
@@ -507,7 +513,7 @@ func TestRevokeSaysWhenAWiderGrantStillCoversTheTarget(t *testing.T) {
 	setup(t)
 	run(t, allowH, map[string]any{"target": "kv"})
 
-	body := run(t, runRevoke, map[string]any{"target": "kv.get"}).(view.Text).Body
+	body := run(t, revokeH, map[string]any{"target": "kv.get"}).(view.Text).Body
 	if !strings.Contains(body, "still covered") || !strings.Contains(body, "kv") {
 		t.Errorf("no warning about the surviving namespace grant: %q", body)
 	}
@@ -519,11 +525,11 @@ func TestRevokeSaysWhenAWiderGrantStillCoversTheTarget(t *testing.T) {
 
 	// Take the namespace grant too, and the warning must go away — kv.get is
 	// genuinely uncovered now.
-	body = run(t, runRevoke, map[string]any{"target": "kv"}).(view.Text).Body
+	body = run(t, revokeH, map[string]any{"target": "kv"}).(view.Text).Body
 	if strings.Contains(body, "still covered") {
 		t.Errorf("warned about coverage after removing the only covering grant: %q", body)
 	}
-	body = run(t, runRevoke, map[string]any{"target": "kv.get"}).(view.Text).Body
+	body = run(t, revokeH, map[string]any{"target": "kv.get"}).(view.Text).Body
 	if strings.Contains(body, "still covered") {
 		t.Errorf("false warning with nothing left to cover it: %q", body)
 	}
@@ -535,7 +541,7 @@ func TestRevokeDryRunAlsoWarnsAboutCoverage(t *testing.T) {
 	setup(t)
 	run(t, allowH, map[string]any{"target": "kv"})
 
-	dry, err := runRevoke(context.Background(),
+	dry, err := revokeH(context.Background(),
 		plugin.NewRequest(map[string]any{"target": "kv.get"}, true, true).WithSurface(plugin.SurfaceCLI))
 	if err != nil {
 		t.Fatal(err)
@@ -564,7 +570,7 @@ func TestARevokeWithNoTargetThatMatchesNothingSaysWhatItNamed(t *testing.T) {
 		{map[string]any{"all": true, "profile": "prod"}, "No active grant via profile prod."},
 	} {
 		// The first line: a revoke by role goes on to say what still stands.
-		body := run(t, runRevoke, c.values).(view.Text).Body
+		body := run(t, revokeH, c.values).(view.Text).Body
 		if first, _, _ := strings.Cut(body, "\n"); first != c.want {
 			t.Errorf("%v: said %q, want %q", c.values, body, c.want)
 		}
@@ -591,7 +597,7 @@ func TestARevokeOfATargetNarrowedToSomethingThatMatchesNothingSaysWhatItWasNarro
 		{map[string]any{"target": "kv.set", "agent": "claude"}, "No active grant for kv.set, for agent claude."},
 		{map[string]any{"target": "kv.set"}, "No active grant for kv.set."},
 	} {
-		body := run(t, runRevoke, c.values).(view.Text).Body
+		body := run(t, revokeH, c.values).(view.Text).Body
 		if first, _, _ := strings.Cut(body, "\n"); first != c.want {
 			t.Errorf("%v: said %q, want %q", c.values, body, c.want)
 		}
@@ -603,7 +609,7 @@ func TestARevokeOfATargetNarrowedToSomethingThatMatchesNothingSaysWhatItWasNarro
 
 func TestRevokeNeedsATarget(t *testing.T) {
 	setup(t)
-	if _, err := runRevoke(context.Background(), req(nil)); err == nil {
+	if _, err := revokeH(context.Background(), req(nil)); err == nil {
 		t.Error("revoke with no target and no --all was accepted")
 	}
 }
@@ -855,7 +861,7 @@ func TestRevokeIsNotUndoneByAConcurrentReserve(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := runRevoke(context.Background(), req(map[string]any{"target": "kv.get"})); err != nil {
+			if _, err := revokeH(context.Background(), req(map[string]any{"target": "kv.get"})); err != nil {
 				t.Errorf("revoke: %v", err)
 			}
 		}()
@@ -891,7 +897,7 @@ func TestRevokingOneTargetKeepsTheSpentGrantAnotherCallCanStillRefund(t *testing
 		t.Fatal(verr)
 	}
 
-	run(t, runRevoke, map[string]any{"target": "kv.get"})
+	run(t, revokeH, map[string]any{"target": "kv.get"})
 
 	data, err := os.ReadFile(core.Path())
 	if err != nil {
@@ -926,7 +932,7 @@ func TestALapsedGrantIsNotReportedAsStillCovering(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	body := run(t, runRevoke, map[string]any{"target": "kv.get", "scope": "db-password"}).(view.Text).Body
+	body := run(t, revokeH, map[string]any{"target": "kv.get", "scope": "db-password"}).(view.Text).Body
 	if strings.Contains(body, "still covered") {
 		t.Errorf("an expired namespace grant was reported as covering kv.get: %q", body)
 	}

@@ -99,19 +99,19 @@ func TestAnExactRevokeTakesBackTheOneGrantNamed(t *testing.T) {
 	setup(t)
 	neighbours(t)
 	before := standingNames(t)
-	body := run(t, runRevoke, map[string]any{"target": "kv", "agent": "claude", "exact": true}).(view.Text).Body
+	body := run(t, revokeH, map[string]any{"target": "kv", "agent": "claude", "exact": true}).(view.Text).Body
 	if !strings.HasPrefix(body, "revoked 1 grant") {
 		t.Errorf("an exact revoke said %q", body)
 	}
 	if got := standingNames(t); len(got) != len(before)-1 || slices.Contains(got, "kv|||claude") {
 		t.Errorf("an exact revoke of kv left %q, want only the grant on the whole plugin gone", got)
 	}
-	run(t, runRevoke, map[string]any{"target": "kv.get", "agent": "claude", "exact": true})
+	run(t, revokeH, map[string]any{"target": "kv.get", "agent": "claude", "exact": true})
 	if got := standingNames(t); slices.Contains(got, "kv.get|||claude") || !slices.Contains(got, "kv.get|db-password||claude") ||
 		!slices.Contains(got, "kv.get||staging|claude") || !slices.Contains(got, "kv.get|||cursor") {
 		t.Errorf("an exact revoke of the grant naming no record left %q", got)
 	}
-	body = run(t, runRevoke, map[string]any{"target": "kv.get", "agent": "claude", "exact": true}).(view.Text).Body
+	body = run(t, revokeH, map[string]any{"target": "kv.get", "agent": "claude", "exact": true}).(view.Text).Body
 	if want := "No active grant is exactly kv.get on no record, on the base connection, for claude."; body != want {
 		t.Errorf("revoking it again said %q, want %q", body, want)
 	}
@@ -123,7 +123,7 @@ func TestAnExactRevokeTakesBackTheOneGrantNamed(t *testing.T) {
 	// on db-password stands, under no role, and "no active grant is exactly
 	// kv.get on db-password" beside it on the roster read as a revoke that
 	// could not see it.
-	body = run(t, runRevoke, map[string]any{"target": "kv.get", "scope": "db-password", "agent": "claude",
+	body = run(t, revokeH, map[string]any{"target": "kv.get", "scope": "db-password", "agent": "claude",
 		"role": "dev", "exact": true}).(view.Text).Body
 	if want := "No active grant is exactly kv.get on db-password, on the base connection, for claude, " +
 		"under role dev."; !strings.HasPrefix(body, want) {
@@ -141,12 +141,12 @@ func TestAnExactRevokeTakesBackTheOneGrantNamed(t *testing.T) {
 func TestAnExactRevokeNamesTheGrantStillCoveringExactly(t *testing.T) {
 	setup(t)
 	neighbours(t)
-	body := run(t, runRevoke, map[string]any{"target": "kv.get", "agent": "claude", "exact": true}).(view.Text).Body
+	body := run(t, revokeH, map[string]any{"target": "kv.get", "agent": "claude", "exact": true}).(view.Text).Body
 	if want := "still covered by an active grant on kv (record: any) — revoke that too: " +
 		"`rta grant revoke kv --agent claude --exact`"; !strings.Contains(body, want) {
 		t.Errorf("an exact revoke said %q, want %q", body, want)
 	}
-	body = run(t, runRevoke, map[string]any{"target": "kv.get", "scope": "db-password"}).(view.Text).Body
+	body = run(t, revokeH, map[string]any{"target": "kv.get", "scope": "db-password"}).(view.Text).Body
 	if want := "revoke that too: `rta grant revoke kv.get`"; !strings.Contains(body, want) {
 		t.Errorf("a revoke without exact said %q, want %q", body, want)
 	}
@@ -191,9 +191,9 @@ func TestAnExactSelectorThatCanNameNoGrantIsRefused(t *testing.T) {
 		values map[string]any
 		code   string
 	}{
-		"revoke with no target": {runRevoke, map[string]any{"agent": "claude", "exact": true}, "grant.exact.target"},
+		"revoke with no target": {revokeH, map[string]any{"agent": "claude", "exact": true}, "grant.exact.target"},
 		"renew with no target":  {renewH, map[string]any{"exact": true}, "grant.exact.target"},
-		"revoke with all":       {runRevoke, map[string]any{"target": "kv.get", "all": true, "exact": true}, "grant.exact.all"},
+		"revoke with all":       {revokeH, map[string]any{"target": "kv.get", "all": true, "exact": true}, "grant.exact.all"},
 	} {
 		_, err := c.h(context.Background(), req(c.values))
 		if got := code(t, err); got != c.code {

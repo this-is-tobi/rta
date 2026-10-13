@@ -141,7 +141,7 @@ func TestARoleIsIssuedWholeAndTakenBackWhole(t *testing.T) {
 		t.Fatalf("--role nope listed something, or said the roster is empty: %+v", only)
 	}
 
-	rv := run(t, runRevoke, map[string]any{"role": "dev"})
+	rv := run(t, revokeH, map[string]any{"role": "dev"})
 	body := rv.(view.Text).Body
 	if !strings.Contains(body, "2") || !strings.Contains(body, "nothing else stands") {
 		t.Fatalf("revoke said %q", body)
@@ -189,7 +189,7 @@ func TestALineThatReplacesAHandGrantSaysSo(t *testing.T) {
 	if !strings.HasPrefix(replaces, "by hand") {
 		t.Fatalf("plan says kv.get replaces %q, want the hand grant named", replaces)
 	}
-	rv := run(t, runRevoke, map[string]any{"role": "dev", "agent": "test"})
+	rv := run(t, revokeH, map[string]any{"role": "dev", "agent": "test"})
 	if body := rv.(view.Text).Body; !strings.Contains(body, "nothing else stands for test") {
 		t.Fatalf("revoke said %q; the hand grant went with the role and the sentence must say so", body)
 	}

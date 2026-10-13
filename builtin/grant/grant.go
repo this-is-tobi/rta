@@ -298,7 +298,9 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 							"signed operator call"},
 					operatorid.PassphraseField,
 				},
-				Run: runRevoke,
+				Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
+					return runRevoke(ctx, req, catalog)
+				},
 			},
 			{
 				ID: "grant.guard.on", Summary: "Require a passphrase to issue or renew a grant",
@@ -1863,7 +1865,7 @@ func budgetLeft(g core.Grant, now time.Time) string {
 // is supposed to be a reliable record of what they decided, not something an
 // agent can rewrite. Consent state belongs to the person at the terminal in
 // both directions, not to whoever is currently being granted or denied.
-func runRevoke(ctx context.Context, req plugin.Request) (view.View, error) {
+func runRevoke(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability) (view.View, error) {
 	// One spec for both paths, so a selector cannot be read here and left
 	// off the envelope: --role once was, and the server, matching on the
 	// selectors it was sent, took back every grant the agent held.
@@ -1906,7 +1908,11 @@ func runRevoke(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	body := revokeBody(req.Surface(), spec, "", out, gone, req.DryRun)
+	bundle := ""
+	if !req.DryRun {
+		bundle = issuedAsABundle(req.Surface(), catalog, gone)
+	}
+	body := revokeBody(req.Surface(), spec, "", out, gone, bundle, req.DryRun)
 	if spec.Role != "" && !req.DryRun {
 		body += "\n" + stillStanding(req.Surface(), spec.Agent)
 	}

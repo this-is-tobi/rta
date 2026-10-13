@@ -630,13 +630,71 @@ func TestTheBundleGoesBackAndMovesAsOneUnit(t *testing.T) {
 		}
 	}
 
-	body = run(t, runRevoke, map[string]any{"profile": "staging", "agent": "test"}).(view.Text).Body
+	body = run(t, revokeH, map[string]any{"profile": "staging", "agent": "test"}).(view.Text).Body
 	if !strings.HasPrefix(body, "revoked 8 grants") {
 		t.Errorf("revoke said %q, want the whole bundle", body)
 	}
 	if got := held(t); !slices.Equal(got, []string{"db.query@prod", "vault.list@staging"}) {
 		t.Errorf("after the revoke %q stand, want only the neighbours", got)
 	}
+}
+
+func envRevokeH(ctx context.Context, req plugin.Request) (view.View, error) {
+	return runRevoke(ctx, req, envCatalog)
+}
+
+// A bundle carries no id of its own, so a revoke of the environment and the
+// agent printed a line to put back each grant and none naming the command that
+// issued them all. It says that command once when the set revoked is exactly
+// what the command issues — with the class, window, bound and note it was given
+// — and every per-grant line carries the note, which `grant list` shows and
+// they dropped. Anything less than the whole set, or a set somebody issued by
+// hand, is not what that command would put back, and gets the lines alone.
+func TestTheRevokeOfABundleNamesTheCallThatIssuedItAndKeepsTheNote(t *testing.T) {
+	envSetup(t)
+	bundleIssue(t, map[string]any{"profile": "staging", "agent": "test", "safety": "write", "ttl": "2h",
+		"max-uses": 3, "rate": "10/1h", "note": "audit run"})
+	body := run(t, envRevokeH, map[string]any{"profile": "staging", "agent": "test"}).(view.Text).Body
+	issued := "rta grant issue --profile staging --agent test --safety write --ttl 2h --max-uses 3 --rate 10/1h --note 'audit run'"
+	if !strings.Contains(body, "all of them are what `"+issued+"` issues: one call puts the set back, for a new window") {
+		t.Errorf("the revoke of a whole bundle reads:\n%s\nwant the call that issued it", body)
+	}
+	for _, line := range strings.Split(body, "\n") {
+		if strings.Contains(line, "re-issue: ") && !strings.Contains(line, "--note 'audit run'") {
+			t.Errorf("a re-issue line drops the note: %s", line)
+		}
+	}
+	if got := held(t); len(got) != 0 {
+		t.Errorf("%q still stand", got)
+	}
+
+	// The reads of an environment are the default class, and need not be said.
+	bundleIssue(t, map[string]any{"profile": "staging", "agent": "test"})
+	body = run(t, envRevokeH, map[string]any{"profile": "staging", "agent": "test"}).(view.Text).Body
+	if !strings.Contains(body, "`rta grant issue --profile staging --agent test --ttl 12h` issues") {
+		t.Errorf("the revoke of a default bundle reads:\n%s\nwant the call without a class", body)
+	}
+
+	// Less than the whole set is not what the call would put back.
+	bundleIssue(t, map[string]any{"profile": "staging", "agent": "test"})
+	run(t, envRevokeH, map[string]any{"target": "db.status", "profile": "staging", "agent": "test"})
+	body = run(t, envRevokeH, map[string]any{"profile": "staging", "agent": "test"}).(view.Text).Body
+	if strings.Contains(body, "rta grant issue") {
+		t.Errorf("a bundle with a grant gone is named as one:\n%s", body)
+	}
+
+	// Nor is a set issued by hand.
+	for _, target := range []string{"db.status", "db.query"} {
+		run(t, allowEnvH, map[string]any{"target": target, "profile": "staging", "agent": "test", "ttl": "1h"})
+	}
+	body = run(t, envRevokeH, map[string]any{"profile": "staging", "agent": "test"}).(view.Text).Body
+	if !strings.HasPrefix(body, "revoked 2 grants") || strings.Contains(body, "rta grant issue") {
+		t.Errorf("two grants issued by hand read as a bundle:\n%s", body)
+	}
+}
+
+func allowEnvH(ctx context.Context, req plugin.Request) (view.View, error) {
+	return runAllow(ctx, req, envCatalog, builtIn)
 }
 
 // The passphrase is asked for once however many grants are signed with it, and

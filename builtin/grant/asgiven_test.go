@@ -56,7 +56,7 @@ func TestAllowRenewAndRevokeTakeTheRecordAsGiven(t *testing.T) {
 		}
 	}
 
-	run(t, runRevoke, map[string]any{"target": "kv.get", "scope": padded})
+	run(t, revokeH, map[string]any{"target": "kv.get", "scope": padded})
 	if got := scopesOn(t, "kv.get"); !slices.Equal(got, []string{"db-password"}) {
 		t.Errorf("revoke on the padded record left %q, want the bare grant alone", got)
 	}
@@ -79,7 +79,7 @@ func TestARecordOfWhiteSpaceAloneIsRefused(t *testing.T) {
 				return err
 			},
 			"revoke": func() error {
-				_, err := runRevoke(context.Background(), req(map[string]any{"target": "kv.get", "scope": blank}))
+				_, err := revokeH(context.Background(), req(map[string]any{"target": "kv.get", "scope": blank}))
 				return err
 			},
 		} {

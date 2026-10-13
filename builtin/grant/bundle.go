@@ -244,6 +244,71 @@ func connectionsIn(p config.Profile, name string) []string {
 	return slices.Compact(refs)
 }
 
+// issuedAsABundle is the `grant issue --profile` call that issues exactly the
+// grants given, or "" when none does. A bundle's grants carry no role or bundle
+// id — the bookkeeping is the agent and the environment — so a revoke cannot
+// know a set came from one; it can ask whether the set is what a call would
+// issue, and say so only when it is, set for set: grants that were issued by
+// hand, or a bundle some of whose grants have expired or been taken back one
+// at a time, are not what the call would put back, and the per-grant lines
+// stand.
+//
+// The call carries what issued it where every grant says the same — the
+// class, and the window, the bound and the note — so that running it
+// gives the set back as it was and not as a default would.
+func issuedAsABundle(sf plugin.Surface, catalog func() []plugin.Capability, gone []core.Grant) string {
+	if len(gone) < 2 || catalog == nil {
+		return ""
+	}
+	first := gone[0]
+	env := config.RefName(first.Profile)
+	held := make(map[string]bool, len(gone))
+	for _, g := range gone {
+		if env == "" || config.RefName(g.Profile) != env || g.Agent != first.Agent || g.Role != "" || g.Scope != "" ||
+			g.TTL != first.TTL || g.MaxUses != first.MaxUses || g.RateMax != first.RateMax ||
+			g.RateWindow != first.RateWindow || g.Note != first.Note {
+			return ""
+		}
+		held[g.Target+"@"+g.Profile] = true
+	}
+	for _, class := range bundleClasses {
+		b, verr := expandEnvironment(sf, catalog, env, class)
+		if verr != nil || len(b.rows) != len(held) {
+			continue
+		}
+		if !slices.ContainsFunc(b.rows, func(r bundleRow) bool { return !held[r.capability.ID+"@"+r.ref] }) {
+			return sf.Call("grant.issue", b.call(first)...)
+		}
+	}
+	return ""
+}
+
+// call is the arguments that issue this bundle, as the grants of g say it was
+// issued: the environment, the agent, the class when it is not the default
+// one, and the window, bound and note where the grants carry them.
+func (b environmentBundle) call(g core.Grant) []plugin.Arg {
+	args := []plugin.Arg{{Name: "profile", Value: b.name}}
+	if g.Agent != "" {
+		args = append(args, plugin.Arg{Name: "agent", Value: g.Agent})
+	}
+	if b.class != plugin.Read {
+		args = append(args, plugin.Arg{Name: "safety", Value: string(b.class)})
+	}
+	if g.TTL != "" {
+		args = append(args, plugin.Arg{Name: "ttl", Value: g.TTL})
+	}
+	if g.MaxUses > 0 {
+		args = append(args, plugin.Arg{Name: "max-uses", Value: g.MaxUses})
+	}
+	if g.RateMax > 0 && g.RateWindow != "" {
+		args = append(args, plugin.Arg{Name: "rate", Value: fmt.Sprintf("%d/%s", g.RateMax, g.RateWindow)})
+	}
+	if g.Note != "" {
+		args = append(args, plugin.Arg{Name: "note", Value: g.Note})
+	}
+	return args
+}
+
 // nothingToIssue is the refusal when the expansion is empty, and says why.
 // The ceiling's reasons lead when it is what emptied it: that is the one a
 // person can act on, and the rest is only a smaller everything.

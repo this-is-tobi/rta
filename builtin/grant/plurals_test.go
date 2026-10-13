@@ -30,14 +30,14 @@ func TestOneGrantIsCountedInTheSingular(t *testing.T) {
 	var all []said
 	all = append(all,
 		said{"renew", run(t, renewH, map[string]any{"target": "kv.get"}).(view.Text).Body, "renewed 1 grant:"},
-		said{"dry revoke", dry(runRevoke, map[string]any{"target": "kv.get"}), "would revoke 1 grant"},
+		said{"dry revoke", dry(revokeH, map[string]any{"target": "kv.get"}), "would revoke 1 grant"},
 		said{"guard on", dry(guardCap(t, "grant.guard.on").Run, nil),
 			"the 1 grant currently held is cleared — it was issued without one"},
 		said{"suppressed", suppressedNote(plugin.SurfaceCLI, 1), "1 grant on disk is suppressed by your team's policy"},
 		said{"remote suppressed", remoteSuppressedNote("lab", 1),
 			"1 grant on lab is suppressed by its team's policy.\nIt is not deleted"},
 	)
-	all = append(all, said{"revoke", run(t, runRevoke, map[string]any{"target": "kv.get"}).(view.Text).Body, "revoked 1 grant"})
+	all = append(all, said{"revoke", run(t, revokeH, map[string]any{"target": "kv.get"}).(view.Text).Body, "revoked 1 grant"})
 	for _, s := range all {
 		if strings.Contains(s.body, "(s)") || !strings.Contains(s.body, s.want) {
 			t.Errorf("%s said %q, want %q", s.name, s.body, s.want)
