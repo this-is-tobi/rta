@@ -24,7 +24,9 @@ import (
 
 	"github.com/this-is-tobi/rta/builtin/all"
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/internal/match"
+	operatorid "github.com/this-is-tobi/rta/internal/operator"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/profile"
@@ -1871,10 +1873,33 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 		if f.Type.Sensitive() {
 			_ = cmd.Flags().SetAnnotation(f.Name, annotCredential, []string{"true"})
 		}
+		if argvRefused(f) {
+			_ = cmd.Flags().MarkHidden(f.Name)
+		}
 		if f.Config != "" && plugin.ProfileFillable(c, f) {
 			_ = cmd.Flags().SetAnnotation(f.Name, annotFills, []string{f.Config})
 		}
 	}
+}
+
+// argvRefused is whether an input is one of the passphrases the command line
+// refuses outright (passkey.Argv): the guard's and the operator key's, which
+// arrive at a prompt on the CLI and in the masked box of a form. The flag is
+// still parsed, so a person who types it is told why and what to do instead
+// rather than that it does not exist — but nothing lists it, because a flag
+// that is refused on every run reads in `--help`, in completion and on the
+// explain card as one to try.
+//
+// Told by the declaration itself, the way the TUI picks these two out for its
+// masked box (answers.go, quick.go), and not by shape: keys.add's --passphrase
+// is a Local secret with no environment variable too, and the CLI takes it.
+func argvRefused(f plugin.Field) bool {
+	for _, refused := range []plugin.Field{guard.PassphraseField, operatorid.PassphraseField} {
+		if f.Name == refused.Name && f.Help == refused.Help {
+			return true
+		}
+	}
+	return false
 }
 
 // requiredOnCommandLine is whether the line itself has to carry the input as a

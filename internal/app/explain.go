@@ -187,6 +187,9 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 			// Worth stating plainly: this input exists here and not over MCP,
 			// which is otherwise a surprising asymmetry to discover by hand.
 			detail += ", local (never offered to MCP callers)"
+			if argvRefused(f) {
+				detail += ", asked at a prompt on the CLI, which refuses it as a flag"
+			}
 			// The variable name too — but only for the inputs that actually
 			// read one. A Local input is the way a plugin gets a credential and
 			// "how do I give this thing its password" must be answerable from
@@ -385,7 +388,7 @@ func cliForm(c plugin.Capability) string {
 	}
 	for _, f := range c.Inputs {
 		switch {
-		case f.Positional:
+		case f.Positional, argvRefused(f):
 		case requiredOnCommandLine(f):
 			parts = append(parts, fmt.Sprintf("--%s <%s>", f.Name, f.Type))
 		default:
