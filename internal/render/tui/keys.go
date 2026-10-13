@@ -413,6 +413,11 @@ func (m Model) screenItems(screen mode) []hintItem {
 		)
 	case modeTheme:
 		var hints []hintItem
+		if m.themePick != nil {
+			return append(fieldHints(m.themePick.form, 1, nil),
+				labelled(bindOpen, "edit"), item(bindFastSubmit), labelled(bindBack, "cancel"),
+			)
+		}
 		if m.themeForm != nil {
 			// Every box in the theme editor completes — the palette names
 			// and the current values — so the predicate is a constant.
@@ -600,6 +605,9 @@ func (m Model) formErrors(screen mode) []error {
 			return m.form.form.Errors()
 		}
 	case modeTheme:
+		if m.themePick != nil && m.themePick.form != nil {
+			return m.themePick.form.Errors()
+		}
 		if m.themeForm != nil && m.themeForm.form != nil {
 			return m.themeForm.form.Errors()
 		}

@@ -236,6 +236,36 @@ func TestEditingTheProfileInForceRepaintsTheScreen(t *testing.T) {
 	}
 }
 
+// The theme is the whole screen's, not a tile's: a tile pinned to another
+// profile keeps that profile's name in that profile's colour on its panel, and
+// the palette stays the environment in force's.
+func TestATilePinnedToAnotherProfileDoesNotMoveThePalette(t *testing.T) {
+	resetTheme(t)
+	cfg := themedProfiles()
+	cfg.Dashboard.Add = []config.Tile{{ID: "db.status", Profile: "prod"}}
+	base := profileModel(t, cfg)
+	t.Cleanup(func() { _ = profile.SaveSelection(profile.Selection{}) })
+	m := New(base.reg, cfg.Dashboard, nil)
+	switchOn(t, &m, "staging")
+
+	pinned := false
+	for _, tl := range m.tiles {
+		if tl.profile == "prod" {
+			pinned = true
+		}
+	}
+	if !pinned {
+		t.Fatal("no tile is pinned to prod")
+	}
+	live := theme.Current()
+	if live["primary"] != "#dd3333" || live["faint"] != "#00aa66" {
+		t.Errorf("primary = %s, faint = %s: the palette is not staging's, the environment in force", live["primary"], live["faint"])
+	}
+	if live["primary"] == "#445566" {
+		t.Error("a tile pinned to prod painted prod's primary over the whole screen")
+	}
+}
+
 // A profile's theme survives the saves that rewrite the profile — the editor
 // keeps what it does not collect, as it keeps the plugins.
 func TestSavingTheProfileFormKeepsItsTheme(t *testing.T) {

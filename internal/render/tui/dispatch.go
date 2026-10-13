@@ -475,6 +475,22 @@ func (m Model) formKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 }
 
 func (m Model) themeKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
+	// The choice of whose palette comes first, and answers to the keys a
+	// picker does: it has no box to complete or browse.
+	if m.themePick != nil {
+		switch msg.String() {
+		case "esc":
+			m.themePick = nil
+			m.mode = modeDashboard
+			return m, nil, true
+		case "ctrl+c":
+			return m.quit()
+		case "shift+enter", "alt+enter", "ctrl+s":
+			nm, cmd := m.fastSubmitThemePick()
+			return nm, cmd, true
+		}
+		return m, nil, false
+	}
 	switch msg.String() {
 	case "esc":
 		m.themeForm = nil

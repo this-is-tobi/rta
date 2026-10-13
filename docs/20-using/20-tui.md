@@ -57,7 +57,7 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 | `V` | Draw another screen of the dashboard: the default, then each [view](./25-dashboard-and-theme.md#views-a-screen-per-environment) in turn, [a screen an environment writes in its own entry](./25-dashboard-and-theme.md#a-screen-written-in-the-profile) among them. For this session only — nothing is written — and switching environment undoes it |
 | `+` | Add a tile — on the dashboard it opens the catalogue; on a catalogue row or a search match it adds that one |
 | `p` | Plugin inventory — where a hidden automatic tile comes back |
-| `t` | Theme |
+| `t` | Theme — a choice of whose palette (yours, or one profile's; the environment that is on is already chosen), then one box per colour with the palette it produces drawn above |
 | `f` | Profiles — your configured environments, which one is on |
 | `b` or `:` | Browse the whole catalogue |
 | `w` | The queue of calls parked for you, while one waits |

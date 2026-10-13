@@ -133,6 +133,9 @@ type Model struct {
 	spinner   spinner.Model
 	form      *capForm
 	themeForm *themeForm
+	// themePick is the choice of whose palette the theme editor is on, which
+	// it opens on when there is more than one; nil once it has been made.
+	themePick *themePicker
 	copyPick  *copyPickForm
 	addPick   *addPickForm
 	// dashOnDisk fingerprints the dashboard block as the file last stated
@@ -843,6 +846,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case modeForm:
 		return m.updateForm(msg)
 	case modeTheme:
+		if m.themePick != nil {
+			return m.updateThemePick(msg)
+		}
 		return m.updateThemeForm(msg)
 	case modeCopyPick:
 		return m.updateCopyPick(msg)

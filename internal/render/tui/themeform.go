@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -9,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -49,6 +51,115 @@ var themeFieldHelp = map[string]string{
 	"ink":     "text on a Warn background (the HINT badge)",
 }
 
+// themeTarget is a place the palette is written down: the top-level `theme:`
+// block, or one profile's.
+//
+// The editor opens on a choice between them, because there are now several
+// palettes and a person has to say whose they are editing — and defaults to the
+// one in force, since that is the screen they are looking at and the one they
+// most often want to change.
+type themeTarget struct {
+	// name is the profile whose block this is, "" for the top-level one.
+	name string
+	// stored is the block as the file holds it now: what the form is seeded
+	// from, for the reason themeForm gives.
+	stored map[string]string
+	// floor is what the block is laid over, lowest first: nothing for the
+	// top-level block, whose floor is the built-in palette, and for a profile
+	// the operator's own block and the profile's colour as its primary.
+	floor []theme.Layer
+	// guarded says the block is held to the rule an environment's colours are
+	// (theme.Resolve): a profile's always, the top-level block of a file
+	// nobody named.
+	guarded bool
+	// source is how a problem names the block: `theme`, `profiles.prod.theme`.
+	source string
+	// standing is how many of the entries stored are applied: the count a
+	// picker may say, and not the block as written (profile.ThemeStanding).
+	standing int
+}
+
+// fields are the boxes this place offers, in the form's own order: every colour
+// for the operator's own block, and for a guarded one all but the status
+// colours, which only the operator's own named config file can state
+// (theme.Resolve). A box that saves a line the palette always leaves out is the
+// wrong thing to offer.
+func (t themeTarget) fields() []string {
+	if !t.guarded {
+		return themeFieldOrder
+	}
+	return slices.DeleteFunc(slices.Clone(themeFieldOrder), theme.IsStatus)
+}
+
+// droppedStatuses are the status colours stored in a block that has no box for
+// them, which a save of the form leaves behind: sorted, for the notice.
+func (t themeTarget) droppedStatuses() []string {
+	if !t.guarded {
+		return nil
+	}
+	var out []string
+	for slot := range t.stored {
+		if theme.IsStatus(slot) {
+			out = append(out, slot)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// layers is the palette this place makes of colours typed into it: the floor
+// beneath, and the colours over it as the one block this place writes.
+func (t themeTarget) layers(colors map[string]string) []theme.Layer {
+	return append(slices.Clone(t.floor), theme.Layer{Source: t.source, Colors: colors, Guarded: t.guarded})
+}
+
+// palette is every slot's colour as this place would draw it with colours typed
+// into it, and why each typed one that could not be used is left out — not a
+// colour, no such slot, one too dim to be seen, or a primary that is a status.
+// The picture the editor shows is this and not the live palette, which is
+// another place's as often as not: the environment in force is a different
+// screen from the one being edited.
+func (t themeTarget) palette(typed map[string]string) (colours map[string]string, left map[string]theme.Problem) {
+	overrides, problems := theme.Resolve(t.layers(typed)...)
+	left = map[string]theme.Problem{}
+	for _, p := range problems {
+		if p.Source == t.source {
+			left[p.Field] = p
+		}
+	}
+	return theme.Effective(overrides), left
+}
+
+// themeTargetFor is the target for a profile, or for the top-level block with
+// "" — false for a profile that is not there, or that this configuration is not
+// entitled to name (profile.ThemeFloor says why that matters).
+func themeTargetFor(cfg config.Config, name string) (themeTarget, bool) {
+	if name == "" {
+		return themeTarget{stored: cfg.Theme, guarded: !cfg.Trusted(), source: "theme"}, true
+	}
+	p, ok := cfg.Profiles[name]
+	if !ok || !p.Trusted() {
+		return themeTarget{}, false
+	}
+	return themeTarget{
+		name: name, stored: p.Theme, floor: profile.ThemeFloor(cfg, name),
+		guarded: true, source: "profiles." + name + ".theme",
+		standing: len(profile.ThemeStanding(cfg, name)),
+	}, true
+}
+
+// themeTargets is every place the palette can be written, the top-level block
+// first and then each profile that exists, by name.
+func themeTargets(cfg config.Config) []themeTarget {
+	out := make([]themeTarget, 0, 1+len(cfg.Profiles))
+	for _, name := range append([]string{""}, cfg.ProfileNames()...) {
+		if target, ok := themeTargetFor(cfg, name); ok {
+			out = append(out, target)
+		}
+	}
+	return out
+}
+
 // themeForm collects one hex string per palette field.
 //
 // Seeded from the config file's own theme: section, not from theme.Current().
@@ -60,8 +171,15 @@ var themeFieldHelp = map[string]string{
 // ever opened this screen and pressed enter. An empty box means "no
 // override" and stays empty until the operator types something; what it
 // currently resolves to is shown beside it, not written into it.
+//
+// The same holds for a profile's block, with one more reason: the colours
+// under it are the operator's own and the profile's, and a box seeded from
+// them would write the operator's palette into the profile, where it would
+// stop following the operator's edits to their own.
 type themeForm struct {
-	form     *huh.Form
+	form   *huh.Form
+	target themeTarget
+	// bindings holds what each box says.
 	bindings map[string]*string
 	// The three things tab's rule needs, for the same reasons capForm keeps
 	// them: the widget the cursor is in, what that box can be completed to,
@@ -73,20 +191,31 @@ type themeForm struct {
 	listed map[string]bool
 	// browsed is the candidate the arrows last placed in each box (offerbrowse.go).
 	browsed map[string]browsed
+	// validators is what each box holds a typed value to, kept so a test can ask
+	// a box what it would say.
+	validators map[string]func(string) error
 }
 
-func newThemeForm(existing map[string]string) *themeForm {
+func newThemeForm(target themeTarget) *themeForm {
 	tf := &themeForm{
+		target:   target,
 		bindings: map[string]*string{},
 		inputs:   map[string]*huh.Input{},
 		offers:   map[string][]string{},
 		listed:   map[string]bool{},
 		browsed:  map[string]browsed{},
+
+		validators: map[string]func(string) error{},
 	}
-	live := theme.Current()
-	fields := make([]huh.Field, 0, len(themeFieldOrder))
-	for _, key := range themeFieldOrder {
-		v := existing[key] // "" when this field has no override on disk
+	// What each box resolves to in this place, from what is on disk: the
+	// "currently" beside it and what tab offers. Not the live palette, which is
+	// the environment in force's, and is not what this block lies over unless
+	// that is the place being edited.
+	live, _ := target.palette(target.stored)
+	offered := target.fields()
+	fields := make([]huh.Field, 0, len(offered))
+	for _, key := range offered {
+		v := target.stored[key] // "" when this field has no override on disk
 		tf.bindings[key] = &v
 		tf.offers[key] = paletteFor(key, live)
 		in := huh.NewInput().
@@ -95,7 +224,8 @@ func newThemeForm(existing map[string]string) *themeForm {
 				themeFieldHelp[key], live[key])).
 			Suggestions(tf.offers[key]).
 			Value(&v).
-			Validate(hexOrEmpty)
+			Validate(tf.validator(key))
+		tf.validators[key] = tf.validator(key)
 		tf.inputs[key] = in
 		fields = append(fields, in)
 	}
@@ -185,6 +315,33 @@ func hexOrEmpty(s string) error {
 	return nil
 }
 
+// validator is what box key holds a typed value to: a colour, or nothing, and a
+// colour the palette would leave out is refused at the box with the reason the
+// palette gives (theme.Resolve), instead of saved as a line the preview had
+// already drawn a cross for. Judged with everything else typed in the form, since
+// whether a colour can stand is a question of the palette it lies in.
+//
+// The reason is told in the footer, which holds it to one line: it is the first
+// words that matter, the fact and not the instruction, and the instruction is
+// what the preview's cross and `rta doctor` say.
+func (tf *themeForm) validator(key string) func(string) error {
+	return func(s string) error {
+		if err := hexOrEmpty(s); err != nil {
+			return err
+		}
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return nil
+		}
+		typed := tf.overrides()
+		typed[key] = s
+		if _, left := tf.target.palette(typed); left[key].Reason != "" {
+			return fmt.Errorf("would be left out: it %s", left[key].Reason)
+		}
+		return nil
+	}
+}
+
 // overrides collects the non-empty fields into what config.Theme should
 // hold.
 func (tf *themeForm) overrides() map[string]string {
@@ -202,6 +359,14 @@ func (tf *themeForm) overrides() map[string]string {
 // stray keystroke mid-edit cannot recolor the rest of the running app out
 // from under whatever else is on screen behind this form.
 //
+// **The merged palette this place would produce, not the typed colours alone.**
+// A box left empty shows what the place beneath it gives that field — the
+// built-in for the top-level block, and for a profile the operator's own colour
+// or the profile's colour as its primary — which is what it will be once saved,
+// and a colour that cannot be used is a cross instead of a swatch, whether it is
+// not a colour at all or the palette would leave it out (a status stated as
+// another: theme.Resolve). The swatch is the one the screen will draw.
+//
 // One compact strip rather than a column beside the form. A huh field is
 // title, description and input across two to four lines depending on how its
 // description wraps, and ten of them make a form far taller than ten fixed
@@ -211,20 +376,16 @@ func (tf *themeForm) overrides() map[string]string {
 // description text of some field three rows away. A strip above the form has
 // no height to disagree about.
 func (tf *themeForm) preview(width int) string {
-	live := theme.Current()
+	palette, left := tf.target.palette(tf.overrides())
 	parts := make([]string, 0, len(themeFieldOrder))
 	for _, key := range themeFieldOrder {
-		v := strings.TrimSpace(*tf.bindings[key])
 		var swatch string
-		switch {
-		case v == "":
-			// Built-in: shown as the live color, since that is what this
-			// field will actually resolve to if the form is submitted as is.
-			swatch = lipgloss.NewStyle().Foreground(lipgloss.Color(live[key])).Render("████")
-		case theme.HexColor.MatchString(v):
-			swatch = lipgloss.NewStyle().Foreground(lipgloss.Color(v)).Render("████")
-		default:
+		if _, out := left[key]; out {
 			swatch = theme.WarnText.Render("××××")
+		} else {
+			// Blank is what the place beneath gives, and a colour that was
+			// typed and used is itself: either way, what the palette says.
+			swatch = lipgloss.NewStyle().Foreground(lipgloss.Color(palette[key])).Render("████")
 		}
 		parts = append(parts, swatch+" "+key)
 	}
@@ -254,15 +415,88 @@ func packParts(parts []string, sep string, width int) string {
 	return strings.Join(append(lines, line), "\n")
 }
 
-// startThemeForm opens the editor, seeded from what is actually written down
-// — not from what is running, for the reason themeForm's own doc gives.
+// themePicker is the choice of whose palette is edited, which the editor opens
+// on whenever there is more than one to edit.
+type themePicker struct {
+	form *huh.Form
+	// value is the profile chosen, "" for the top-level block.
+	value string
+	// targets are the places offered, as they were when the picker opened.
+	targets []themeTarget
+}
+
+// newThemePicker offers every target, with the environment in force chosen:
+// the screen somebody is looking at is the one they most often mean, and
+// "global" when nothing is on, which is the only palette there is then.
+func newThemePicker(targets []themeTarget, active string) *themePicker {
+	tp := &themePicker{targets: targets}
+	opts := make([]huh.Option[string], 0, len(targets))
+	for _, target := range targets {
+		label := "global — the top-level theme:, under every environment"
+		if target.name != "" {
+			label = target.name
+			if target.name == active {
+				label += " — switched on"
+			}
+			if n := target.standing; n > 0 {
+				label += " — " + format.CountOf(n, "colour") + " of its own"
+			}
+		}
+		opts = append(opts, huh.NewOption(label, target.name))
+		if target.name == active {
+			tp.value = active
+		}
+	}
+	tp.form = huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().
+			Title("whose palette is this?").
+			Options(opts...).
+			Value(&tp.value),
+	)).WithShowHelp(false).WithShowErrors(false)
+	return tp
+}
+
+// startThemeForm opens the theme editor: on a choice of whose palette when
+// there is more than one, and on the top-level block's colours when that is all
+// there is. A picker with one entry is a question with one answer, which
+// profilePicker already declines to ask, and every machine with no profile —
+// which is most of them — opens the editor it always had.
+//
+// Seeded from what is actually written down — not from what is running, for the
+// reason themeForm's own doc gives.
 func (m Model) startThemeForm() (tea.Model, tea.Cmd) {
 	cfg, err := config.LoadFile()
 	if err != nil {
 		m.refuse("theme not opened: " + err.Error())
 		return m, nil
 	}
-	m.themeForm = newThemeForm(cfg.Theme)
+	targets := themeTargets(cfg)
+	if len(targets) < 2 {
+		return m.openThemeEditor("")
+	}
+	m.themePick = newThemePicker(targets, m.active)
+	m.mode = modeTheme
+	m.fitThemeForm()
+	return m, m.themePick.form.Init()
+}
+
+// openThemeEditor is the editor on one place, read again from the file: a
+// profile can have gone, or its block changed, since the picker offered it.
+func (m Model) openThemeEditor(name string) (tea.Model, tea.Cmd) {
+	m.themePick = nil
+	cfg, err := config.LoadFile()
+	if err != nil {
+		m.mode = modeDashboard
+		m.refuse("theme not opened: " + err.Error())
+		return m, nil
+	}
+	target, ok := themeTargetFor(cfg, name)
+	if !ok {
+		m.mode = modeDashboard
+		m.refuse("theme not opened: no profile " + name + " any more")
+		return m, nil
+	}
+	m.themeForm = newThemeForm(target)
 	m.mode = modeTheme
 	m.fitThemeForm()
 	return m, m.themeForm.form.Init()
@@ -273,6 +507,14 @@ func (m Model) startThemeForm() (tea.Model, tea.Cmd) {
 // beside it, so it costs the form no width of its own, only the two lines
 // themeView adds above it.
 func (m *Model) fitThemeForm() {
+	if m.themePick != nil {
+		if m.width > 0 {
+			m.themePick.form = m.themePick.form.WithWidth(formWidth(m.width))
+		}
+		if m.height > 0 {
+			m.themePick.form = m.themePick.form.WithHeight(max(m.height-5, 6))
+		}
+	}
 	if m.themeForm == nil {
 		return
 	}
@@ -284,47 +526,140 @@ func (m *Model) fitThemeForm() {
 	}
 }
 
-// saveTheme writes the submitted overrides and applies them to this process
+// saveTheme writes the submitted overrides into the place that was picked — the
+// top-level block, or that profile's — and applies them to this process
 // immediately — an operator editing colors wants to see the result, not
 // restart rta to find out whether they got it right.
+//
+// Only the block that was edited is written. The load-modify-write is under the
+// lock like every writer's, the profile's other keys are carried as they were,
+// and an untouched form writes the same block it read, which the file's own
+// writer sees is no change and leaves the text alone. A profile that has gone
+// since the picker offered it is not recreated by a save: it is refused.
 func (m Model) saveTheme() (tea.Model, tea.Cmd) {
+	target := m.themeForm.target
 	overrides := m.themeForm.overrides()
 	m.themeForm = nil
 	m.mode = modeDashboard
 
+	gone := false
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
-		cfg.Theme = overrides
+		if target.name == "" {
+			cfg.Theme = overrides
+			return cfg, true
+		}
+		p, ok := cfg.Profiles[target.name]
+		if !ok {
+			gone = true
+			return cfg, false
+		}
+		p.Theme = overrides
+		cfg.Profiles[target.name] = p
 		return cfg, true
 	}); err != nil {
 		m.refuse("theme not saved: " + err.Error())
+		return m, nil
+	}
+	if gone {
+		m.refuse("theme not saved: no profile " + target.name + " any more")
 		return m, nil
 	}
 
 	// The palette of the environment in force, not the block just saved on its
 	// own: the colours a person sees after a save are the ones the file now
 	// says for where they are, and the next tick would otherwise paint them
-	// over a screen that had briefly shown something else.
+	// over a screen that had briefly shown something else. What is reported is
+	// the block that was saved: another profile's mistake is not this save's.
 	var problems []theme.Problem
 	if cfg, err := config.LoadFile(); err == nil {
 		for _, p := range m.paint(cfg) {
-			if !strings.HasPrefix(p.Source, "profiles.") {
+			if p.Source == target.source {
 				problems = append(problems, p)
 			}
 		}
+		if target.name != "" {
+			// Not the one in force: nothing was painted for it, and what it
+			// would do is judged against its own place all the same.
+			problems = append(problems, otherPlace(cfg, target, m.active)...)
+		}
+	}
+	place := ""
+	if target.name != "" {
+		place = " for " + target.name
 	}
 	switch {
-	case len(problems) == 1:
-		m.flash = "saved, but " + problems[0].String()
-	case len(problems) > 1:
+	// What is said after a save that left something out is that it did, and the
+	// command that prints which and why in full. It was the reason itself, and
+	// the footer holds a notice to one line: at sixty columns it ended before the
+	// words that said what to change. Short enough to end on the command at the
+	// narrowest terminal, which is the one part that must not be cut.
+	case len(problems) > 0:
 		m.flash = "saved, but " + format.CountOf(len(problems), "field") +
-			" could not be applied — see `" + plugin.SurfaceTUI.Call("audit.doctor") + "`"
-	case len(overrides) == 0:
+			" not applied — see `" + plugin.SurfaceTUI.Call("audit.doctor") + "`"
+	case len(overrides) == 0 && target.name == "":
 		m.flash = "reset to the built-in theme"
+	case len(overrides) == 0:
+		m.flash = "removed " + target.name + "'s theme — it draws in your own colours again"
 	default:
-		m.flash = fmt.Sprintf("saved %d theme %s", len(overrides), format.PluralOf(len(overrides), "override"))
+		m.flash = fmt.Sprintf("saved %d theme %s%s", len(overrides), format.PluralOf(len(overrides), "override"), place)
+		if target.name != "" && target.name != m.active {
+			m.flash += " — drawn while it is switched on"
+		}
+	}
+	// A save writes the boxes the editor offered, so a status colour a hand put in
+	// a block that cannot state one is not carried over: it painted nothing, and
+	// what the palette said of it is gone with it. Said, since a line that
+	// vanishes unannounced is a line somebody looks for. Not after a notice that
+	// ends on a command, which must be the last words on the line.
+	if dropped := target.droppedStatuses(); len(dropped) > 0 && len(problems) == 0 {
+		m.flash += " — dropped " + strings.Join(dropped, ", ") + ": the status colours are only set in your own config file"
 	}
 	m.tickGen++
 	return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor)
+}
+
+// otherPlace is the problems of a block saved for a profile that is not the one
+// in force, which paint did not look at: the profile is judged as if it were.
+func otherPlace(cfg config.Config, target themeTarget, active string) []theme.Problem {
+	if target.name == active {
+		return nil
+	}
+	var out []theme.Problem
+	for _, p := range profile.ThemeProblems(cfg, target.name) {
+		if p.Source == target.source {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// updateThemePick drives the picker's embedded huh form and dispatches on its
+// state, the drive-then-dispatch shape every form-driven mode shares.
+func (m Model) updateThemePick(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := m.themePick.form.Update(msg)
+	if f, ok := model.(*huh.Form); ok {
+		m.themePick.form = f
+	}
+	return m.afterThemePickUpdate(cmd)
+}
+
+func (m Model) afterThemePickUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	switch m.themePick.form.State {
+	case huh.StateCompleted:
+		return m.openThemeEditor(m.themePick.value)
+	case huh.StateAborted:
+		m.themePick = nil
+		m.mode = modeDashboard
+		return m, nil
+	}
+	return m, cmd
+}
+
+// fastSubmitThemePick accepts the highlighted palette, so the shortcut that
+// means "accept what is there" on every form-shaped screen means it here too.
+func (m Model) fastSubmitThemePick() (tea.Model, tea.Cmd) {
+	m.themePick.form = advanceFormBySyntheticEnter(m.themePick.form)
+	return m.afterThemePickUpdate(nil)
 }
 
 // updateThemeForm drives the embedded huh form and dispatches on completion,
@@ -374,8 +709,14 @@ func (m Model) fastSubmitThemeForm() (tea.Model, tea.Cmd) {
 // title, its description and the box itself.
 const themeBoxRows = 5
 
-// themeView frames the editor beside its live preview.
+// themeView frames the editor beside its live preview, or the choice of whose
+// palette it is on the way there.
 func (m Model) themeView() string {
+	if m.themePick != nil {
+		footer := m.footerFor(modeTheme)
+		head := panelHead{Title: "theme", Note: "one palette per environment, over your own"}
+		return panel(head, "\n"+m.themePick.form.View(), m.width, m.height-lipgloss.Height(footer), true) + "\n" + footer
+	}
 	if m.themeForm == nil {
 		return ""
 	}
@@ -395,5 +736,9 @@ func (m Model) themeView() string {
 		body = m.themeForm.form.View()
 	}
 	head := panelHead{Title: "theme", Note: "#rrggbb, or blank for the built-in"}
+	if target := m.themeForm.target; target.name != "" {
+		head = panelHead{Title: "theme · " + target.name,
+			Note: "#rrggbb, or blank for the colours beneath it — yours, then its colour"}
+	}
 	return panel(head, "\n"+body, m.width, m.height-lipgloss.Height(footer), true) + "\n" + footer
 }
