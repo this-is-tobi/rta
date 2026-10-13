@@ -32,8 +32,10 @@ import (
 // overlay it.** An overlay would need a rule for every field — does a view's
 // `hidden:` add to the default's, does its `tiles:` replace or extend — and
 // each answer is one more thing to hold in mind to know what a screen shows.
-// A view is a whole arrangement, the same five fields the block has, and the
-// one that is drawn is the one whose fields apply.
+// A view is a whole arrangement, the same six fields the block has, and the
+// one that is drawn is the one whose fields apply. That includes `sections:`:
+// a section's starting state and width belong to the screen that has the
+// section, so a view states its own and takes none from the block.
 
 // DefaultView is the name that addresses the `dashboard:` block itself, for the
 // commands that take a view: not a view of its own, and not a name one can be
@@ -49,24 +51,34 @@ var viewName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 // addresses the block.
 func ValidViewName(name string) bool { return name != DefaultView && viewName.MatchString(name) }
 
-// View is one named arrangement of the landing screen: the five fields of the
+// View is one named arrangement of the landing screen: the six fields of the
 // `dashboard:` block, and no views of its own.
+//
+// It is also what a profile writes in its own entry (ProfileDashboard), so the
+// keys a view has are the keys that block has, by being the same type: a field
+// added here is read in both from the moment it exists, which is how `sections:`
+// reached the profile's own screen without a line written for it.
 type View struct {
-	Tiles   []Tile   `yaml:"tiles,omitempty" json:"tiles,omitempty"`
-	Add     []Tile   `yaml:"add,omitempty" json:"add,omitempty"`
-	Hidden  []string `yaml:"hidden,omitempty" json:"hidden,omitempty"`
-	Order   []string `yaml:"order,omitempty" json:"order,omitempty"`
-	Columns int      `yaml:"columns,omitempty" json:"columns,omitempty"`
+	Tiles    []Tile                      `yaml:"tiles,omitempty" json:"tiles,omitempty"`
+	Add      []Tile                      `yaml:"add,omitempty" json:"add,omitempty"`
+	Hidden   []string                    `yaml:"hidden,omitempty" json:"hidden,omitempty"`
+	Order    []string                    `yaml:"order,omitempty" json:"order,omitempty"`
+	Columns  int                         `yaml:"columns,omitempty" json:"columns,omitempty"`
+	Sections map[string]DashboardSection `yaml:"sections,omitempty" json:"sections,omitempty"`
 }
 
 // Dashboard is v as the arrangement every reader of one takes.
 func (v View) Dashboard() Dashboard {
-	return Dashboard{Tiles: v.Tiles, Add: v.Add, Hidden: v.Hidden, Order: v.Order, Columns: v.Columns}
+	return Dashboard{
+		Tiles: v.Tiles, Add: v.Add, Hidden: v.Hidden, Order: v.Order, Columns: v.Columns, Sections: v.Sections,
+	}
 }
 
 // View is d as a view, without the views it names.
 func (d Dashboard) View() View {
-	return View{Tiles: d.Tiles, Add: d.Add, Hidden: d.Hidden, Order: d.Order, Columns: d.Columns}
+	return View{
+		Tiles: d.Tiles, Add: d.Add, Hidden: d.Hidden, Order: d.Order, Columns: d.Columns, Sections: d.Sections,
+	}
 }
 
 // ProfileDashboard is what a profile's `dashboard:` says: the name of a view
@@ -223,7 +235,7 @@ func refuseBadDashboards(path string, profiles map[string]Profile) error {
 			"parsing %s: %sprofile %s: dashboard is %s, and takes the name of a view or a block that states the screen",
 			path, spot, name, bad.what).
 			WithHint("write `dashboard: <view>` to show one of `dashboard: views:`, or the screen itself under it, " +
-				"with the keys a view has: tiles, add, hidden, order and columns")
+				"with the keys a view has: tiles, add, hidden, order, columns and sections")
 	}
 	return nil
 }

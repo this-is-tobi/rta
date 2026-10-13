@@ -24,6 +24,10 @@ func TestSchemaCoversEveryClaimedKey(t *testing.T) {
 		yamlTags(t, reflect.TypeOf(Dashboard{})))
 	compare(t, "tile", propNames(t, defs["tile"].(map[string]any)),
 		yamlTags(t, reflect.TypeOf(Tile{})))
+	compare(t, "view", propNames(t, defs["view"].(map[string]any)),
+		yamlTags(t, reflect.TypeOf(View{})))
+	compare(t, "section", propNames(t, defs["section"].(map[string]any)),
+		yamlTags(t, reflect.TypeOf(DashboardSection{})))
 	compare(t, "profile", propNames(t, defs["profile"].(map[string]any)), sortedKeys(profileKeys))
 	compare(t, "connection", propNames(t, defs["connection"].(map[string]any)), sortedKeys(connectionKeys))
 }

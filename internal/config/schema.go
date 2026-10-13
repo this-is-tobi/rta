@@ -175,6 +175,33 @@ func Schema() map[string]any {
 						"type":    "integer",
 						"minimum": 0,
 					},
+					"section": map[string]any{
+						"description": "The group this tile is drawn in, under a header that folds. " +
+							"Tiles that name the same section are drawn together, at the place of the " +
+							"first of them. Left out, the tile is in none — unless it expanded into " +
+							"several panels, which are then in a section of their own named " +
+							"`<plugin> · <profile>`.",
+						"type":      "string",
+						"minLength": 1,
+						"maxLength": MaxSectionName,
+					},
+				},
+			},
+			"section": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties": map[string]any{
+					"collapsed": map[string]any{
+						"description": "Whether the section starts folded to its one header row. " +
+							"z and Z in the TUI fold and unfold for the session and write nothing.",
+						"type": "boolean",
+					},
+					"columns": map[string]any{
+						"description": "The grid width of this section's tile rows, instead of the " +
+							"dashboard's; 0 inherits it.",
+						"type":    "integer",
+						"minimum": 0,
+					},
 				},
 			},
 			"profile": map[string]any{
@@ -208,7 +235,7 @@ func Schema() map[string]any {
 					"dashboard": map[string]any{
 						"description": "The screen drawn while this profile is switched on: the name " +
 							"of one of `dashboard: views:`, or the screen itself written here, with " +
-							"the keys a view has (tiles, add, hidden, order, columns) — addressed as " +
+							"the keys a view has (tiles, add, hidden, order, columns, sections) — addressed as " +
 							"a view named after this profile. Left out, the `dashboard:` block draws.",
 						"oneOf": []any{
 							map[string]any{"type": "string", "pattern": viewName.String()},
@@ -317,7 +344,7 @@ func themeBlock(description string, keys []string) map[string]any {
 	}
 }
 
-// dashboardFields are the five keys of a dashboard arrangement, which the
+// dashboardFields are the six keys of a dashboard arrangement, which the
 // `dashboard:` block states and so does each of its views.
 func dashboardFields() map[string]any {
 	return map[string]any{
@@ -357,6 +384,15 @@ func dashboardFields() map[string]any {
 			"type":    "integer",
 			"minimum": 0,
 		},
+		"sections": map[string]any{
+			"description": "How each section the tiles name starts out and how wide it draws, by " +
+				"section name: `collapsed: true` opens it folded to its header row, `columns` is " +
+				"its own grid width. An automatic group — the panels one entry expanded into — is " +
+				"named `<plugin> · <profile>`. A name no tile is in is reported by `rta config check`.",
+			"type":                 "object",
+			"propertyNames":        map[string]any{"minLength": 1, "maxLength": MaxSectionName},
+			"additionalProperties": map[string]any{"$ref": "#/$defs/section"},
+		},
 	}
 }
 
@@ -364,7 +400,7 @@ func dashboardFields() map[string]any {
 // does not have: a view is a whole arrangement and holds no views.
 func withViews(fields map[string]any) map[string]any {
 	fields["views"] = map[string]any{
-		"description": "Named dashboards, each a whole arrangement of its own with the same five " +
+		"description": "Named dashboards, each a whole arrangement of its own with the same " +
 			"keys, and a profile selects one with `dashboard:` — drawn while that profile is " +
 			"switched on, in place of this block. A view's tiles pin themselves to whichever " +
 			"profiles they name, so one view can show every database of every environment.",

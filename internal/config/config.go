@@ -58,6 +58,17 @@ type Tile struct {
 	// who wants their task list twice as wide as everything else because
 	// that is the one they read.
 	Span int `yaml:"span,omitempty" json:"span,omitempty"`
+	// Section is the group this tile is drawn in, under a header that folds:
+	// `databases`, `staging`. Empty, the tile is in none, which is what every
+	// tile was before this field existed and still draws exactly as it did. An
+	// entry that expands into several panels is in the section this names for
+	// all of them, or in its own automatic one when it names none (sections.go).
+	//
+	// Not part of Key. The section is where the tile sits, not which tile it is,
+	// so two entries that differ only in it are one tile to `order:`, to `rm` and
+	// to a second `add`, which replaces the entry — and so moves it to the section
+	// it now names, or out of every section when it names none.
+	Section string `yaml:"section,omitempty" json:"section,omitempty"`
 }
 
 // Key is how Order refers to a tile and how `rta dashboard rm` addresses
@@ -94,6 +105,9 @@ func (t Tile) AddArgs() string {
 	}
 	if t.Span > 0 {
 		args = append(args, "--span", strconv.Itoa(t.Span))
+	}
+	if t.Section != "" {
+		args = append(args, "--section", t.Section)
 	}
 	keys := make([]string, 0, len(t.With))
 	for k := range t.With {
@@ -157,7 +171,13 @@ type Dashboard struct {
 	// was two columns at every size, so a 200-cell terminal drew two
 	// 100-cell tiles of a six-line summary and called it a screen.
 	Columns int `yaml:"columns,omitempty" json:"columns,omitempty"`
-	// Views are named arrangements of the same five fields, each a whole
+	// Sections states, by name, how each section the tiles name starts out and
+	// how wide it draws (DashboardSection). A tile is in a section by saying so
+	// (Tile.Section), or by being one of the panels an entry expanded into; this
+	// is only the state of the group, so it is read for the names that have tiles
+	// and an entry that names none is the one `rta config check` reports.
+	Sections map[string]DashboardSection `yaml:"sections,omitempty" json:"sections,omitempty"`
+	// Views are named arrangements of the same fields, each a whole
 	// dashboard of its own, and a profile selects one (Profile.Dashboard): the
 	// screen that is drawn while it is switched on. A profile can also write
 	// its screen in its own entry, which is a view named after the profile and

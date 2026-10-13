@@ -68,7 +68,7 @@
               "type": "string"
             },
             "dashboard": {
-              "description": "The screen drawn while this profile is switched on: the name of one of `dashboard: views:`, or the screen itself written here, with the keys a view has (tiles, add, hidden, order, columns) \u2014 addressed as a view named after this profile. Left out, the `dashboard:` block draws.",
+              "description": "The screen drawn while this profile is switched on: the name of one of `dashboard: views:`, or the screen itself written here, with the keys a view has (tiles, add, hidden, order, columns, sections) \u2014 addressed as a view named after this profile. Left out, the `dashboard:` block draws.",
               "oneOf": [
                 {
                   "pattern": "^[a-z][a-z0-9-]{0,31}$",
@@ -142,6 +142,21 @@
           ],
           "type": "object"
         },
+        "section": {
+          "additionalProperties": false,
+          "properties": {
+            "collapsed": {
+              "description": "Whether the section starts folded to its one header row. z and Z in the TUI fold and unfold for the session and write nothing.",
+              "type": "boolean"
+            },
+            "columns": {
+              "description": "The grid width of this section's tile rows, instead of the dashboard's; 0 inherits it.",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
         "tile": {
           "additionalProperties": false,
           "properties": {
@@ -152,6 +167,12 @@
             "profile": {
               "description": "The connection this tile is about \u2014 a profile name, or name/instance \u2014 whatever environment is switched on. Omitted, the tile follows the switched-on environment.",
               "pattern": "^[a-z0-9][a-z0-9-]{0,62}(/[a-z][a-z0-9-]*)?$",
+              "type": "string"
+            },
+            "section": {
+              "description": "The group this tile is drawn in, under a header that folds. Tiles that name the same section are drawn together, at the place of the first of them. Left out, the tile is in none — unless it expanded into several panels, which are then in a section of their own named `<plugin> · <profile>`.",
+              "maxLength": 64,
+              "minLength": 1,
               "type": "string"
             },
             "span": {
@@ -198,6 +219,17 @@
               },
               "type": "array"
             },
+            "sections": {
+              "additionalProperties": {
+                "$ref": "#/$defs/rtaConfig/$defs/section"
+              },
+              "description": "How each section the tiles name starts out and how wide it draws, by section name: `collapsed: true` opens it folded to its header row, `columns` is its own grid width. An automatic group — the panels one entry expanded into — is named `<plugin> · <profile>`. A name no tile is in is reported by `rta config check`.",
+              "propertyNames": {
+                "maxLength": 64,
+                "minLength": 1
+              },
+              "type": "object"
+            },
             "tiles": {
               "description": "States the dashboard exactly, replacing the automatic set; hidden and order are then not consulted. Only Read capabilities run as tiles.",
               "items": {
@@ -242,6 +274,17 @@
               },
               "type": "array"
             },
+            "sections": {
+              "additionalProperties": {
+                "$ref": "#/$defs/rtaConfig/$defs/section"
+              },
+              "description": "How each section the tiles name starts out and how wide it draws, by section name: `collapsed: true` opens it folded to its header row, `columns` is its own grid width. An automatic group — the panels one entry expanded into — is named `<plugin> · <profile>`. A name no tile is in is reported by `rta config check`.",
+              "propertyNames": {
+                "maxLength": 64,
+                "minLength": 1
+              },
+              "type": "object"
+            },
             "tiles": {
               "description": "States the dashboard exactly, replacing the automatic set; hidden and order are then not consulted. Only Read capabilities run as tiles.",
               "items": {
@@ -253,7 +296,7 @@
               "additionalProperties": {
                 "$ref": "#/$defs/rtaConfig/$defs/view"
               },
-              "description": "Named dashboards, each a whole arrangement of its own with the same five keys, and a profile selects one with `dashboard:` \u2014 drawn while that profile is switched on, in place of this block. A view's tiles pin themselves to whichever profiles they name, so one view can show every database of every environment.",
+              "description": "Named dashboards, each a whole arrangement of its own with the same keys, and a profile selects one with `dashboard:` \u2014 drawn while that profile is switched on, in place of this block. A view's tiles pin themselves to whichever profiles they name, so one view can show every database of every environment.",
               "propertyNames": {
                 "not": {
                   "const": "default"
