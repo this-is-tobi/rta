@@ -82,13 +82,16 @@ type Profile struct {
 	// before the command runs rather than after it. `#rrggbb`, the same
 	// grammar `theme:` uses.
 	//
-	// **rta paints exactly one thing with it: the profile's own name.** A
-	// profile that could repaint the palette would put its colour on keys,
-	// labels and selection — beside Good, Warn and Bad, which mean something
-	// — and a production environment marked red would then draw healthy rows
-	// in the colour of a failure. That is worse than no marking at all,
-	// because it teaches the eye to ignore red. One badge, in one place,
-	// cannot be misread as a status.
+	// **It paints the badge, and it is the primary colour of every screen drawn
+	// while this environment is in force** — selection, titles, keys: the one
+	// identity colour (internal/render/theme), under the profile's own `theme:`
+	// when that states a primary of its own. The badge alone was the first
+	// answer, argued on the ground that a profile able to repaint the palette
+	// would put its colour beside Good, Warn and Bad and draw healthy rows in
+	// the colour of a failure. What that argument protects is what the *status*
+	// colours mean, and this key never touches them: the palette refuses a
+	// profile colour that is exactly a status colour (theme.Resolve), which is
+	// the one way an environment's marking could have read as a status.
 	//
 	// Opt-in, and that is what lets the badge print on every command without
 	// becoming noise: writing this line is the operator saying *this* is the
@@ -102,6 +105,27 @@ type Profile struct {
 	// refusing to reach production over a mistyped hex would be the tool
 	// inventing an outage.
 	Color string `yaml:"color,omitempty" json:"color,omitempty"`
+
+	// Theme overrides the palette while this environment is in force: the same
+	// `#rrggbb` as the top-level `theme:` block, for the five text colours of
+	// it — not the status colours, which only the operator's own named config
+	// file sets (theme.Resolve) — laid over it, and over this profile's own
+	// Color as the primary. Switching environments switches the colours the way
+	// it switches the dashboard (Dashboard), so the screen says which
+	// environment it is about before a word of it is read.
+	//
+	// Untyped for the reason Config.Theme is: what a key means and whether a
+	// value is valid is internal/render/theme's decision, which this package
+	// does not import. One bad entry costs its own line and never the profile —
+	// the reasoning Color gives, for the same consequence: a colour that is not
+	// painted — and `rta doctor` reports it.
+	//
+	// Part of the profile and not of a connection, so it travels with the entry
+	// wherever the file holds it (a drop-in states a profile whole), and a
+	// profile in a file nobody named paints nothing: it is not honoured at all
+	// (Trusted), and a repository's own config does not get to recolour an
+	// environment's screen any more than it gets to point one.
+	Theme map[string]string `yaml:"theme,omitempty" json:"theme,omitempty"`
 
 	// Dashboard is the screen drawn while this profile is switched on: the
 	// name of one of `dashboard: views:`, a whole arrangement of its own, or
@@ -389,7 +413,7 @@ func (p Profile) Trusted() bool { return p.trusted }
 // unknown by the very next test run rather than silently accepted.
 var (
 	profileKeys = map[string]bool{"plugins": true, "note": true, "ttl": true,
-		"color": true, "dashboard": true}
+		"color": true, "dashboard": true, "theme": true}
 	connectionKeys = map[string]bool{"set": true, "only": true, "secrets": true, "kube": true, "ssh": true,
 		"secrets-from": true, "tunnelTLS": true}
 )
