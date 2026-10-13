@@ -505,28 +505,70 @@ func doctorDashboardTiles(reg *registry.Registry, add func(check, status, detail
 			add("dashboard", "warn", "tile "+t.ID+inView(name)+" draws nothing: "+e.Message+" — "+e.Hint)
 		}
 	}
-	for _, line := range danglingViews(cfg) {
-		add("dashboard", "warn", line)
+	for _, p := range danglingViews(cfg, cfg) {
+		add("dashboard", "warn", p.text)
 	}
 }
 
-// danglingViews names each profile that selects a dashboard view nothing
-// states. Not a reason to refuse the profile — the dashboard: block draws
-// instead, which is the screen every machine has — but a name somebody typed
-// and believes is in effect, which is what the rest of this file reports.
-func danglingViews(cfg config.Config) []string {
-	var out []string
-	for _, name := range cfg.ProfileNames() {
-		v := cfg.Profiles[name].Dashboard.Name
-		if v != "" && !cfg.HasView(v) {
+// screenProblem is one thing wrong with the screen a profile is meant to show:
+// the profile it is about and the sentence that says it.
+type screenProblem struct{ profile, text string }
+
+// danglingViews names each of own's profiles that selects a dashboard view
+// nothing states. Not a reason to refuse the profile — the dashboard: block
+// draws instead, which is the screen every machine has — but a name somebody
+// typed and believes is in effect, which is what the rest of this file reports.
+//
+// Two configurations, because the profile and the view it names need not be in
+// the same file: own is the file being asked about and whole is everything the
+// files state together, which is where a view is looked for. Asked of the file
+// alone, every profile in a drop-in that selects a view in another file was
+// reported as naming one nothing states.
+func danglingViews(own, whole config.Config) []screenProblem {
+	var out []screenProblem
+	for _, name := range own.ProfileNames() {
+		v := own.Profiles[name].Dashboard.Name
+		if v != "" && !whole.HasView(v) {
 			hint := "`rta dashboard add <capability> --view " + v + "` states it"
-			if names := cfg.ViewNames(); len(names) > 0 {
+			if names := whole.ViewNames(); len(names) > 0 {
 				hint = "the views are " + strings.Join(names, ", ")
 			}
-			out = append(out, "profile "+name+" selects dashboard view "+v+", which is not stated, so the dashboard: block draws ("+hint+")")
+			out = append(out, screenProblem{name, "profile " + name + " selects dashboard view " + v +
+				", which is not stated, so the dashboard: block draws (" + hint + ")"})
 		}
 	}
 	return out
+}
+
+// shadowedScreens names each of own's profiles whose own screen cannot be
+// drawn: a view of the same name is stated beside it, or the profile is called
+// what names the `dashboard:` block. `rta doctor` says the same as a note on
+// the profile (profile.Notes); the check says it here instead, with the line of
+// the `dashboard:` key and read against whole for the reason danglingViews
+// gives, and leaves the note out of what it prints (withoutShadowedScreens).
+func shadowedScreens(own, whole config.Config) []screenProblem {
+	var out []screenProblem
+	for _, name := range own.ProfileNames() {
+		if reason, hint := whole.ShadowedScreen(name); reason != "" {
+			out = append(out, screenProblem{name, "profile " + name + " " + reason + " (" + hint + ")"})
+		}
+	}
+	return out
+}
+
+// withoutShadowedScreens leaves out of the profile notes the one that says a
+// profile's own screen cannot be drawn, for a page that says it another way:
+// the same sentence twice is one problem counted as two, and the first of them
+// carries no line to go to.
+func withoutShadowedScreens(cfg config.Config, notes []profile.Problem) []profile.Problem {
+	kept := make([]profile.Problem, 0, len(notes))
+	for _, n := range notes {
+		if reason, _ := cfg.ShadowedScreen(n.Name); reason != "" && n.Reason == reason {
+			continue
+		}
+		kept = append(kept, n)
+	}
+	return kept
 }
 
 // outputSource is the default output format and where it comes from, for the

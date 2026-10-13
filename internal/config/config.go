@@ -383,6 +383,24 @@ func Validate(path string, data []byte) (Config, error) {
 	return cfg, nil
 }
 
+// Together is the configuration every file states together, with the file at
+// path taken to hold data: what a question that is about one file but has its
+// answer in another is asked of. Whether a profile's view is stated is that
+// kind of question — the profile is in a drop-in, the view in the config file —
+// and read from the profile's own file alone it is "not stated" for every view
+// that is anywhere else.
+func Together(path string, data []byte) (Config, error) {
+	cfg, err := parse(path, data)
+	if err != nil {
+		return cfg, err
+	}
+	s, err := readStackWith(path, data, cfg, true)
+	if err != nil {
+		return cfg, err
+	}
+	return s.merged(), nil
+}
+
 // parse reads the configuration text of the file at path, naming that file in
 // what it refuses.
 func parse(path string, data []byte) (Config, error) {
