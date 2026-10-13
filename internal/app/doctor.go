@@ -205,16 +205,20 @@ func SetPluginConfig(r *pluginconf.Resolver, problems []pluginconf.Problem) {
 	pluginConfig, pluginConfigProblem = r, problems
 }
 
-// themeProblems is what theme.Apply could not honour — an unknown field, a
-// malformed hex — recorded the same way pluginConfigProblem is: not fatal,
-// not printed before every command, reported by `rta doctor`. The palette
-// itself already fell back to the built-in for anything wrong, in
-// theme.Apply, before main ever calls SetThemeProblems; this is only the
-// paper trail explaining why a color an operator wrote down is not the one
-// on screen.
+// themeProblems is what the palette could not honour of the operator's own
+// `theme:` — an unknown field, a malformed hex — recorded the same way
+// pluginConfigProblem is: not fatal, not printed before every command, reported
+// by `rta doctor`. The palette itself already fell back to the colour beneath
+// for anything wrong, in ApplyTheme, before main ever calls anything that
+// reads this; it is only the paper trail explaining why a color an operator
+// wrote down is not the one on screen.
+//
+// An environment's own entries are not here: they are every profile's to
+// report whether or not it is in force, and are profile.Notes', which
+// `rta profile list`, `show` and the row below this one print beside the profile.
 var themeProblems []theme.Problem
 
-// SetThemeProblems records what theme.Apply reported.
+// SetThemeProblems records what the palette reported of the operator's block.
 func SetThemeProblems(problems []theme.Problem) { themeProblems = problems }
 
 // PluginConfig returns the operator's stated values for the plugin a
@@ -888,7 +892,7 @@ func storeCredentialsNote(n int) string {
 }
 
 // Theme overrides that could not be honoured — an unknown field, a
-// malformed hex. theme.Apply already fell back to the built-in for each
+// malformed hex. The palette already fell back to the colour beneath for each
 // one before this row is even reached; what this says is why the color
 // on screen is not the one written down. Nothing configured, or
 // everything applied, earns no row at all — the same quiet-by-default
