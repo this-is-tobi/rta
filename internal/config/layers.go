@@ -348,8 +348,12 @@ func writeErr(path string, err error) error {
 
 // dashboardSet reports whether a dashboard block states anything of its own: the
 // views it holds are units of their own, each in one file.
+//
+// `sections:` counts. A block that states nothing but how a section starts is
+// still the block, and left out here a file holding only `dashboard: sections:`
+// was no unit at all: it was merged into nothing, and a write rendered it away.
 func dashboardSet(d Dashboard) bool {
-	return len(d.Tiles)+len(d.Add)+len(d.Hidden)+len(d.Order) > 0 || d.Columns != 0
+	return len(d.Tiles)+len(d.Add)+len(d.Hidden)+len(d.Order)+len(d.Sections) > 0 || d.Columns != 0
 }
 
 // unitsOf is what a configuration states, one name per unit: `output`,

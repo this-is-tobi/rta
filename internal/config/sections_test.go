@@ -1,0 +1,341 @@
+package config
+
+import (
+	"path/filepath"
+	"reflect"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// Sections group the tiles of a dashboard under a header that folds. What the
+// file can say about them, where, and what a write does to it.
+
+const sectionsYAML = `dashboard:
+  columns: 2
+  sections:
+    databases:
+      collapsed: true
+      columns: 3
+    pg · staging:
+      collapsed: true
+  add:
+  - id: pg.overview
+    profile: staging/orders
+    section: databases
+  - id: pg.overview
+    profile: staging/analytics
+    section: databases
+  - id: sys.overview
+`
+
+func TestATileNamesItsSectionAndTheBlockStatesHowItStarts(t *testing.T) {
+	configAt(t)
+	cfg, err := Parse([]byte(sectionsYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := cfg.Dashboard.Add
+	if len(add) != 3 || add[0].Section != "databases" || add[1].Section != "databases" || add[2].Section != "" {
+		t.Errorf("the entries = %+v: a tile that names no section is in none, one that names it is in it", add)
+	}
+	want := map[string]DashboardSection{
+		"databases":    {Collapsed: true, Columns: 3},
+		"pg · staging": {Collapsed: true},
+	}
+	if !reflect.DeepEqual(cfg.Dashboard.Sections, want) {
+		t.Errorf("sections = %+v, want %+v", cfg.Dashboard.Sections, want)
+	}
+	if got := cfg.Dashboard.SectionOf("databases"); got.Columns != 3 || !got.Collapsed {
+		t.Errorf("SectionOf(databases) = %+v", got)
+	}
+	if got := cfg.Dashboard.SectionOf("nowhere"); got != (DashboardSection{}) {
+		t.Errorf("a section the block does not state starts as %+v, want open at the dashboard's width", got)
+	}
+	if got := cfg.TrustedDashboard(); len(got.Sections) != 2 {
+		t.Errorf("a named config draws %+v", got)
+	}
+}
+
+// A view and a profile's own screen are the same type, so they take the keys
+// by construction; this is the proof that `sections:` and `section:` are read in
+// every place a screen can be stated, and that each one's are its own.
+func TestViewsAndAProfilesOwnScreenTakeSectionsBecauseTheyAreTheSameType(t *testing.T) {
+	configAt(t)
+	cfg, err := Parse([]byte(`dashboard:
+  sections:
+    block-only:
+      collapsed: true
+  views:
+    ops:
+      sections:
+        ops-group:
+          columns: 2
+      add:
+      - id: kube.overview
+        profile: prod
+        section: ops-group
+profiles:
+  staging:
+    dashboard:
+      sections:
+        own-group:
+          collapsed: true
+      add:
+      - id: pg.overview
+        profile: staging
+        section: own-group
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reflect.TypeOf(cfg.Dashboard.Views["ops"]) != reflect.TypeOf(*cfg.Profiles["staging"].Dashboard.Inline) {
+		t.Fatal("a view and a profile's own screen are not one type, so one of them can lack a key the other has")
+	}
+	ops, _ := cfg.Block("ops")
+	if got := ops.SectionOf("ops-group"); got.Columns != 2 || ops.Add[0].Section != "ops-group" {
+		t.Errorf("ops = %+v", ops)
+	}
+	if got := ops.SectionOf("block-only"); got != (DashboardSection{}) {
+		t.Errorf("a view took the dashboard block's section %+v: it replaces the block, it does not overlay it", got)
+	}
+	staging, ok := cfg.Block("staging")
+	if !ok || !staging.SectionOf("own-group").Collapsed || staging.Add[0].Section != "own-group" {
+		t.Errorf("staging's own screen = %+v, %v", staging, ok)
+	}
+	base, _ := cfg.Block("")
+	if !base.SectionOf("block-only").Collapsed || base.SectionOf("ops-group").Columns != 0 {
+		t.Errorf("the block = %+v", base)
+	}
+	// And what a writer reads out and puts back keeps them: a write that went
+	// through Block and SetBlock without them would erase the states a person
+	// wrote the moment a tile was added.
+	cfg.SetBlock("ops", ops)
+	cfg.SetBlock("staging", staging)
+	if got, _ := cfg.Block("ops"); got.SectionOf("ops-group").Columns != 2 {
+		t.Errorf("a view's sections did not survive Block and SetBlock: %+v", got)
+	}
+	if got, _ := cfg.Block("staging"); !got.SectionOf("own-group").Collapsed {
+		t.Errorf("a profile's own screen lost its sections to Block and SetBlock: %+v", got)
+	}
+}
+
+func TestOnlyTheNamedConfigsSectionsAreDrawn(t *testing.T) {
+	cfg := Config{Dashboard: Dashboard{
+		Sections: map[string]DashboardSection{"a": {Collapsed: true}},
+		Views:    map[string]View{"v": {Sections: map[string]DashboardSection{"b": {Collapsed: true}}}},
+	}}
+	for _, view := range []string{"", "v"} {
+		if got := cfg.TrustedDashboardFor(view); len(got.Sections) != 0 {
+			t.Errorf("a file nobody named folded %q: %+v", view, got.Sections)
+		}
+	}
+}
+
+func TestASectionNameIsAHeadingAPersonCanRead(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ok   bool
+	}{
+		{"databases", true},
+		{"pg · staging", true},
+		{"prod: orders (eu)", true},
+		{"données", true},
+		{strings.Repeat("a", 64), true},
+		{strings.Repeat("a", 65), false},
+		{strings.Repeat("é", 64), true},
+		{strings.Repeat("é", 65), false},
+		{"", false},
+		{" databases", false},
+		{"databases ", false},
+		{"two\nlines", false},
+		{"tab\there", false},
+		{"escape" + string(rune(0x1b)) + "[31m", false},
+		{"reorder" + string(rune(0x202e)) + "text", false},
+		{"zero" + string(rune(0x200b)) + "width", false},
+	} {
+		if got := ValidSectionName(tc.name); got != tc.ok {
+			t.Errorf("ValidSectionName(%q) = %v, want %v", tc.name, got, tc.ok)
+		}
+	}
+}
+
+func TestAnAutomaticSectionIsNamedAfterThePluginAndTheProfile(t *testing.T) {
+	if got := AutoSectionName("pg", "staging"); got != "pg · staging" {
+		t.Errorf("AutoSectionName = %q", got)
+	}
+	if !ValidSectionName(AutoSectionName("pg", "staging")) {
+		t.Error("the name the drawing gives a group is not a name `sections:` can state")
+	}
+}
+
+// The section is where a tile sits and not which tile it is, so the key every
+// writer addresses a tile by does not change, and the command that writes the
+// entry again says where.
+func TestASectionIsNotPartOfTheKeyAndIsInTheCommandThatWritesTheEntryAgain(t *testing.T) {
+	a := Tile{ID: "pg.overview", Profile: "staging", Section: "databases"}
+	b := Tile{ID: "pg.overview", Profile: "staging"}
+	if a.Key() != b.Key() {
+		t.Errorf("keys %q and %q: the section changed which tile this is", a.Key(), b.Key())
+	}
+	for _, tc := range []struct {
+		tile Tile
+		want string
+	}{
+		{a, "pg.overview --profile staging --section databases"},
+		{Tile{ID: "pg.overview", Section: "pg · staging", Span: 2}, "pg.overview --span 2 --section 'pg · staging'"},
+		{Tile{ID: "note.list"}, "note.list"},
+	} {
+		if got := tc.tile.AddArgs(); got != tc.want {
+			t.Errorf("AddArgs = %q, want %q", got, tc.want)
+		}
+	}
+}
+
+// A drop-in is a place a screen is stated, and it is read, refused when stated
+// twice and written back like any other: the view's sections go with the view,
+// and a block that states only how its sections start is still a block.
+func TestASectionIsStatedInTheFileThatStatesItsView(t *testing.T) {
+	dir := layout(t, map[string]string{
+		"config.yaml": "output: json\n",
+		"config.d/10-ops.yaml": `# the ops screen
+dashboard:
+  views:
+    ops:
+      sections:
+        databases:
+          collapsed: true  # folded until I need them
+      add:
+      - id: pg.overview
+        profile: staging/orders
+        section: databases
+`,
+		"config.d/20-block.yaml": "dashboard:\n  sections:\n    group:\n      columns: 2\n",
+	})
+	cfg, err := LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := cfg.Block("ops"); !got.SectionOf("databases").Collapsed || got.Add[0].Section != "databases" {
+		t.Errorf("the drop-in's view = %+v", got)
+	}
+	if got := cfg.Dashboard.SectionOf("group"); got.Columns != 2 {
+		t.Errorf("a block that states only sections is not read: %+v", cfg.Dashboard)
+	}
+	if got := Where("dashboard", ""); got != filepath.Join(dir, "config.d", "20-block.yaml") {
+		t.Errorf("the block's file = %s: sections alone did not make it a unit", got)
+	}
+	if got := Where("views", "ops"); got != filepath.Join(dir, "config.d", "10-ops.yaml") {
+		t.Errorf("the view's file = %s", got)
+	}
+
+	// A write adds a tile to the view, in the file that holds it, with the
+	// section its entry names, and leaves the person's comment where it was.
+	err = Mutate(func(c Config) (Config, bool) {
+		block, _ := c.Block("ops")
+		block.Add = append(slices.Clone(block.Add), Tile{ID: "pg.overview", Profile: "staging/analytics", Section: "databases"})
+		c.SetBlock("ops", block)
+		return c, true
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drop := read(t, filepath.Join(dir, "config.d", "10-ops.yaml"))
+	for _, want := range []string{"# the ops screen", "# folded until I need them", "collapsed: true", "profile: staging/analytics"} {
+		if !strings.Contains(drop, want) {
+			t.Errorf("the drop-in after the write lacks %q:\n%s", want, drop)
+		}
+	}
+	if strings.Count(drop, "section: databases") != 2 {
+		t.Errorf("the new entry did not carry its section:\n%s", drop)
+	}
+	if block := read(t, filepath.Join(dir, "config.d", "20-block.yaml")); !strings.Contains(block, "columns: 2") {
+		t.Errorf("a write to the view disturbed the block's file:\n%s", block)
+	}
+	if main := read(t, filepath.Join(dir, "config.yaml")); strings.Contains(main, "sections") {
+		t.Errorf("a section landed in the config file:\n%s", main)
+	}
+}
+
+// Two files stating the dashboard block, one of them only to say how a section
+// starts, is the refusal every unit gets.
+func TestABlockOfOnlySectionsIsAUnitStatedOnce(t *testing.T) {
+	layout(t, map[string]string{
+		"config.yaml":        "dashboard:\n  sections:\n    a:\n      collapsed: true\n",
+		"config.d/10-x.yaml": "dashboard:\n  columns: 3\n",
+	})
+	if _, err := LoadFile(); err == nil || !strings.Contains(err.Error(), "stated in both") {
+		t.Errorf("error = %v, want the dashboard block refused when two files state it", err)
+	}
+}
+
+func TestAProfilesOwnScreenKeepsItsSectionsThroughAWrite(t *testing.T) {
+	dir := layout(t, map[string]string{
+		"config.yaml": "output: json\n",
+		"config.d/20-staging.yaml": `profiles:
+  staging:
+    plugins:
+      db: {}
+    dashboard:
+      sections:
+        mine:
+          collapsed: true
+      add:
+      - id: pg.overview
+        profile: staging
+        section: mine
+`,
+	})
+	err := Mutate(func(c Config) (Config, bool) {
+		block, _ := c.Block("staging")
+		block.Hidden = append(slices.Clone(block.Hidden), "git.overview")
+		c.SetBlock("staging", block)
+		return c, true
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drop := read(t, filepath.Join(dir, "config.d", "20-staging.yaml"))
+	for _, want := range []string{"mine:", "collapsed: true", "section: mine", "- git.overview"} {
+		if !strings.Contains(drop, want) {
+			t.Errorf("the profile's entry after the write lacks %q:\n%s", want, drop)
+		}
+	}
+	if strings.Contains(read(t, filepath.Join(dir, "config.yaml")), "views") {
+		t.Error("the screen was written under views: as well")
+	}
+}
+
+// A key inside a section's entry that is not one is a setting that does nothing,
+// and the check says so with the path a person would write.
+func TestAMisspeltSectionKeyIsReportedWhereverTheSectionIsStated(t *testing.T) {
+	text := `dashboard:
+  sections:
+    databases:
+      collapse: true
+  views:
+    ops:
+      sections:
+        databases:
+          colums: 2
+profiles:
+  staging:
+    dashboard:
+      sections:
+        mine:
+          collapsd: true
+`
+	got := map[string]bool{}
+	for _, f := range CheckText([]byte(text)) {
+		got[f.Key] = true
+	}
+	for _, key := range []string{
+		"dashboard.sections.databases.collapse",
+		"dashboard.views.ops.sections.databases.colums",
+		"profiles.staging.dashboard.sections.mine.collapsd",
+	} {
+		if !got[key] {
+			t.Errorf("%s is not reported; reported: %v", key, got)
+		}
+	}
+}
