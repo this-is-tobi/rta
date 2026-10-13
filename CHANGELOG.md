@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.39.0](https://github.com/this-is-tobi/rta/compare/v0.38.1...v0.39.0) (2026-10-13)
+
+
+### Features
+
+* **builtin:** the words a task is said in are keywords, and a test holds it ([20d0cef](https://github.com/this-is-tobi/rta/commit/20d0cef92d67fcc1878414907aa9623ecbbc861c))
+* **cli:** --no-profile leaves the switched-on environment for one call ([b6810b7](https://github.com/this-is-tobi/rta/commit/b6810b74d6d0f1672cf19ba0c420b435f79c75d9))
+* **grant:** grant issue --profile issues everything an environment covers ([5358bb8](https://github.com/this-is-tobi/rta/commit/5358bb87fe15f66dc8ab88a565fd24c8623e8f08))
+* **mcp:** a tool shows the words it is also called ([0174e13](https://github.com/this-is-tobi/rta/commit/0174e1373be14992f89c5d733de4da5ed47604a3))
+* **mcp:** the handshake names the areas a server offers ([fdf56ab](https://github.com/this-is-tobi/rta/commit/fdf56ab111488ae0fd0997059978e2481615feca))
+* **plugin:** a switch can declare which input it widens ([05767fd](https://github.com/this-is-tobi/rta/commit/05767fdcc153546e3dff3779130ed90ab922e5a6))
+* **profile:** a plugin entry can state an only: allowlist per input ([884e64c](https://github.com/this-is-tobi/rta/commit/884e64c2cedc6d956023d2d392332b5f29df39e7))
+* **profile:** completion offers only what the profile's fence allows ([4edea6d](https://github.com/this-is-tobi/rta/commit/4edea6da836a24f67fc46e4cdcac619bcd183c5a))
+* **profile:** hold every call to the only: list of the connection it resolves through ([f77d5c5](https://github.com/this-is-tobi/rta/commit/f77d5c50e95f15c6e065f3a98d43a42d3c2289b2))
+* **recent:** the shortlist of what was used is kept per profile ([28e2015](https://github.com/this-is-tobi/rta/commit/28e2015419057552d9f06fcc9188cf0501f38e0b))
+
+
+### Bug Fixes
+
+* **cli:** a forward that removes a fence says a fence was removed ([b27a428](https://github.com/this-is-tobi/rta/commit/b27a428541ed55b3970a60a10fc44e1db99308b3))
+* **grant:** a profiled grant counts only the capabilities it can cover ([02924d9](https://github.com/this-is-tobi/rta/commit/02924d93b76c846473899d45a75f676cf004e2ed))
+* **grant:** an environment's name in revoke and renew takes every connection in it ([fe64456](https://github.com/this-is-tobi/rta/commit/fe64456375ee9d7c306afd85ab1d49a8653601e8))
+* **grant:** none needs a grant says until a profile names one, wherever grants are counted ([d8c36f3](https://github.com/this-is-tobi/rta/commit/d8c36f3ee7b97abfa25d4088fd1b7838f0bd28d1))
+* **grant:** target completion offers what a profile makes grantable, reads included ([fbec4c6](https://github.com/this-is-tobi/rta/commit/fbec4c65a3a45f963f3edbd4d00ac582771046e6))
+* **grant:** the inactive-environment note says to switch the environment on, not a connection ([1a0e4dd](https://github.com/this-is-tobi/rta/commit/1a0e4dd59e19a0f532ca5f009ef8c234d9033e42))
+* **mcp:** a profile that cannot be used says why in the row's note ([98d41ab](https://github.com/this-is-tobi/rta/commit/98d41abf59c0a810748357a97eeabf3e90c066e0))
+* **profile:** a fence is not the default of an input a grant names as scope ([7248a80](https://github.com/this-is-tobi/rta/commit/7248a8047acd730cd1521feacfd2e24a7d4f5365))
+* **profile:** lookup names secrets-from among the keys an entry takes ([fa299e5](https://github.com/this-is-tobi/rta/commit/fa299e5b5a2d5aa65596cecd3c5fb9fc46b9e610))
+* **tui:** a refused connection save keeps the form and what was typed ([cfbe9cb](https://github.com/this-is-tobi/rta/commit/cfbe9cb2b7a95836f150ed071fdc758aa84cfdc8))
+
 ## [0.38.1](https://github.com/this-is-tobi/rta/compare/v0.38.0...v0.38.1) (2026-10-12)
 
 
