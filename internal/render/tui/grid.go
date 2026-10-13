@@ -799,7 +799,7 @@ func (m Model) dashFooterItems() []hintItem {
 		return searchIdleItems()
 	}
 	items := []hintItem{}
-	own := dashOwnItems()
+	own := m.dashOwnItems()
 	if m.selected > 0 && m.selected < len(m.tiles) {
 		t := m.tiles[m.selected]
 		for _, a := range m.offeredTileActions(m.selected) {
@@ -839,13 +839,32 @@ func searchEditingItems() []hintItem {
 // moving around, the panes, and the ways out. Separate from dashFooterItems
 // because the claimed-key set in offeredTileActions has to be exactly these
 // and not the tile actions standing beside them.
-func dashOwnItems() []hintItem {
-	return []hintItem{
-		item(bindSelect), labelled(bindOpen, "details"),
-		item(bindProfile), item(bindPlugin), item(bindTheme),
-		item(bindMove), item(bindHide), item(bindView), item(bindAdd),
-		item(bindBrowse), item(bindSearch), item(bindQuit),
+//
+// A dashboard with sections adds the two keys that fold, and nothing else is
+// different about one that has none. On a header, enter folds instead of
+// opening — there is no tile to open — and H is not offered, since it hides a
+// tile and a header is not one.
+func (m Model) dashOwnItems() []hintItem {
+	open := labelled(bindOpen, "details")
+	if m.selected < 0 {
+		open = hintItem{
+			display: bindOpen.display, label: m.foldVerb(m.header), rank: bindOpen.rank,
+			keys: []string{"enter", " ", "space"},
+		}
 	}
+	items := []hintItem{
+		item(bindSelect), open,
+		item(bindProfile), item(bindPlugin), item(bindTheme),
+		item(bindMove),
+	}
+	if m.selected >= 0 {
+		items = append(items, item(bindHide))
+	}
+	items = append(items, item(bindView), item(bindAdd))
+	if m.hasSections() {
+		items = append(items, item(bindFold), item(bindFoldAll))
+	}
+	return append(items, item(bindBrowse), item(bindSearch), item(bindQuit))
 }
 
 // offeredTileActions are the selected tile's actions the dashboard can
@@ -869,7 +888,7 @@ func dashOwnItems() []hintItem {
 // so it cannot drift from the bar when a pane key moves.
 func (m Model) offeredTileActions(i int) []capAction {
 	claimed := map[string]bool{}
-	for _, h := range dashOwnItems() {
+	for _, h := range m.dashOwnItems() {
 		for _, k := range h.keys {
 			claimed[k] = true
 		}

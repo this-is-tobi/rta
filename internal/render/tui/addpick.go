@@ -189,6 +189,11 @@ func (m Model) addTile(c plugin.Capability, ref string) (tea.Model, tea.Cmd) {
 	}
 	for i, t := range m.tiles {
 		if t.entryKey() == key {
+			// What was just added is on screen: the group its panels are in may
+			// start folded, and a tile selected inside a fold is one nobody can see.
+			if t.section != "" && m.collapsed(t.section) {
+				m.setCollapsed(t.section, false)
+			}
 			m.selected = i
 			break
 		}

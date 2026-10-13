@@ -76,6 +76,10 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		m.query += text
 		return m, nil, true
 	}
+	// Before the switch: enter on a header folds it and does not open a tile.
+	if next, handled := m.sectionKeys(msg.String()); handled {
+		return next, nil, true
+	}
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit, true

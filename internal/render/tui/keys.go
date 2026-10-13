@@ -154,6 +154,13 @@ var (
 	// comes to look for a `grant` subcommand that does something else.
 	bindAllow = binding{display: "a", keys: []string{"a"}, label: "allow", rank: rankAction}
 
+	// z folds the section of the selected tile or header and Z every section, on a
+	// dashboard that has some. Letters rather than enter alone, which opens a
+	// tile, and rank extra like H and V: what the arrangement looks like gives way
+	// to running things when the bar is short.
+	bindFold    = binding{display: "z", keys: []string{"z"}, label: "fold", rank: rankExtra}
+	bindFoldAll = binding{display: "Z", keys: []string{"Z"}, label: "fold all", rank: rankExtra}
+
 	// One notation for moving a cursor, everywhere. The dashboard is a grid
 	// and the others are columns, but "the arrow keys move the thing you are
 	// looking at" is one idea and reads worse as three.

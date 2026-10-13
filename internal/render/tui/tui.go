@@ -664,6 +664,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseClickMsg:
 		if m.mode == modeDashboard && msg.Button == tea.MouseLeft {
+			// A click on a header folds the section, anywhere along its line, and
+			// leaves the selection there: the header is what was pressed.
+			if name, ok := m.headerAt(msg.Y - m.banner); ok {
+				m.searchEditing, m.query, m.searchSel = false, "", 0
+				m.selectStop(stop{header: name})
+				m.setCollapsed(name, !m.collapsed(name))
+				m.clampScroll()
+				return m, nil
+			}
 			if idx := m.tileAt(msg.X, msg.Y-m.banner); idx >= 0 {
 				// A click moves focus off the search box as much as a launch
 				// from it does, so its query is spent the same way. Left

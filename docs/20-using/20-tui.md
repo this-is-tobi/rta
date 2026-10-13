@@ -48,12 +48,14 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 | Key | What it does |
 | --- | --- |
 | `/` | Search |
-| `enter` | Open |
+| `enter` | Open — or fold and unfold a [section](./25-dashboard-and-theme.md#sections-group-tiles-and-fold-the-group), on its header (`space` does the same there) |
 | `esc` | Back |
 | `q` or `ctrl+c` | Quit |
 | `?` | Every key the screen answers, aliases included — what the footer had no room for |
-| `[` `]` | Move a tile |
+| `[` `]` | Move a tile — or the whole section, with its header selected |
 | `H` | Hide a tile — or remove it, when it is one you added |
+| `z` | Fold or unfold the section of the selected tile or header. For this session only — nothing is written |
+| `Z` | Fold every section, or unfold them all when none is open |
 | `V` | Draw another screen of the dashboard: the default, then each [view](./25-dashboard-and-theme.md#views-a-screen-per-environment) in turn, [a screen an environment writes in its own entry](./25-dashboard-and-theme.md#a-screen-written-in-the-profile) among them. For this session only — nothing is written — and switching environment undoes it |
 | `+` | Add a tile — on the dashboard it opens the catalogue; on a catalogue row or a search match it adds that one |
 | `p` | Plugin inventory — where a hidden automatic tile comes back |
@@ -66,6 +68,8 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 Tiles are yours to arrange. `H` hides one you never look at, and `p` opens the inventory where it comes back; one panel of an entry that expanded into several connections is hidden by its own key, which the inventory has no row for, so it comes back with the `rta dashboard unhide <id> --profile <profile/instance>` line its note prints. On a tile you added, `H` removes the entry instead — the footer says `remove` there, and the note prints the `rta dashboard add` line that puts it back; `+` on a catalogue row or a search match adds one the automatic set left out, asking which connection when the capability takes one.
 
 A dashboard that groups its tiles draws each group under a header row, `▾ databases ──── 5 tiles · ok`, and a long one is where that earns its place: the panels of an entry that expanded into several connections are a group of their own, `pg · staging`, and the header says the worst thing its tiles say even when they are folded away. [Sections](./25-dashboard-and-theme.md#sections-group-tiles-and-fold-the-group) say how to state them.
+
+The header is somewhere the selection rests, as a tile is: the arrows go to it, `enter`, `space`, `z` or a click on its line fold it or unfold it, and the arrows pass over the tiles of a folded section, which are not drawn. `z` and `Z` are on the bar only when the dashboard has a section, and on a dashboard that has none they are not keys at all. `[` `]` on a header move the section past whatever is beside it; on a tile of a section that holds others they move the tile among them, and at the end of the section they say so rather than do nothing — a tile does not change section by being moved, since the section is part of its entry. `H` on a header says so too, and writes nothing: it takes one tile down at a time, and a section is several that are taken down in different ways. A fold is not written, so it does not follow you into the next terminal; `collapsed:` in the config is how a section starts.
 
 The selected tile is the one with the coloured border. On a terminal that shows no colour (`NO_COLOR`, `TERM=dumb`) its border is drawn in heavy lines instead, so the selection never rests on colour alone. The idle search line has no border to colour: when it is the selection its `⌕` becomes a `❯`.
 
