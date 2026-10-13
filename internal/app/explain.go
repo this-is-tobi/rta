@@ -218,6 +218,15 @@ func cardView(reg *registry.Registry, c plugin.Capability) view.View {
 			// questions, and neither of them needs the value echoed onto a
 			// terminal that may be shared.
 			detail += ", from config " + configSection(reg, c) + "." + f.Config
+			// The line above is the plugin's own section, which fills any input
+			// that names a key. A profile's `set:` is the other source an operator
+			// reads off this card, and for the record this capability works on it
+			// is not one: a grant is checked against what the call names, so the
+			// call names it — `kube.pod.list` under a profile that states a
+			// namespace still reads the context's own.
+			if plugin.IsScope(c, f) && plugin.Profilable(c) {
+				detail += ", the scope — a call names it, and a profile's `set:` never fills it"
+			}
 		}
 		if f.Endpoint != plugin.EndpointNone {
 			// Named on the same page and for the same reason the config key
