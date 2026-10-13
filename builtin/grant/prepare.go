@@ -71,11 +71,9 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 	// grant binds to the binary the operator is consenting about rather than
 	// to the name a replacement would answer to. Empty for a built-in, which
 	// has no artifact separate from the rta the operator chose to run.
-	digest, known := artifact(core.Namespace(target))
-	if !known {
-		return core.Grant{}, notes, view.Errorf("grant.unknownplugin",
-			"%q is registered but rta cannot say which binary answers for it", core.Namespace(target)).
-			WithHint(sf.CapabilityName("audit.doctor") + " reports a plugin whose provenance went missing; a grant must name an artifact")
+	digest, verr := BoundArtifact(sf, artifact, target)
+	if verr != nil {
+		return core.Grant{}, notes, verr
 	}
 	profile, pin, verr := checkProfile(target, spec.Profile)
 	if verr != nil {
@@ -156,6 +154,24 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 		RateMax:    rateMax,
 		RateWindow: rateWindow,
 	}, notes, nil
+}
+
+// BoundArtifact is the artifact a grant on target is issued against: the
+// digest of the plugin answering for target's namespace, empty for a
+// built-in. Every path that builds a grant asks it, because a grant with the
+// wrong answer here covers nothing — the gate compares it exactly (see
+// core.Grant.Digest), so one issued with no digest on a plugin is the row
+// `grant list` shows as live and the call it was issued for is refused. The
+// answer to a parked call (`agent allow --ttl`) once skipped it, and said the
+// next calls were covered.
+func BoundArtifact(sf plugin.Surface, artifact func(string) (string, bool), target string) (string, *view.Error) {
+	digest, known := artifact(core.Namespace(target))
+	if !known {
+		return "", view.Errorf("grant.unknownplugin",
+			"%q is registered but rta cannot say which binary answers for it", core.Namespace(target)).
+			WithHint(sf.CapabilityName("audit.doctor") + " reports a plugin whose provenance went missing; a grant must name an artifact")
+	}
+	return digest, nil
 }
 
 // notInstalledHint answers the other reading of an unknown target: not a typo
