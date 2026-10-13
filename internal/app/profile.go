@@ -125,7 +125,7 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 			// lists them. It did not ask for that environment, so the list is
 			// not the only way on: the call can leave it.
 			if verr != nil && verr.Code == "core.profile.instance.required" {
-				verr = verr.WithHint(verr.Hint + " — or --no-profile, to leave " + active + " for this call")
+				verr = withLeaveHint(cmd, verr, active)
 			}
 		}
 		if verr != nil {
@@ -144,6 +144,16 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 	if verr := profile.Fenced(name, conn, c, plugin.Inputs{
 		Caller: caller, Config: PluginConfig(c), ConfigSection: PluginConfigSection(c),
 	}, os.LookupEnv, plugin.SurfaceCLI); verr != nil {
+		// The ways across that the refusal itself names all change the profile for
+		// good — another profile, or `--only` rewritten — and the one that does
+		// not, for a call that did not ask for this environment, is the one the
+		// person at a terminal needs said. The same offer the instance refusal
+		// makes, to the same calls and for the same reason: an environment named
+		// on the line (`--profile`) was asked for, and a connection typed on it
+		// is the exception already.
+		if explicit == "" && !stated {
+			verr = withLeaveHint(cmd, verr, active)
+		}
 		return boundProfile{}, noop, verr
 	}
 	// Fill, not Bind: this is a real run with a person waiting, so a `secrets:`
@@ -219,6 +229,22 @@ func (w withTrust) MissingHint(namespace string) string {
 func noProfile(cmd *cobra.Command) bool {
 	f := cmd.Flags().Lookup("no-profile")
 	return f != nil && f.Value.String() == "true"
+}
+
+// withLeaveHint adds to a refusal the one way across that costs the profile
+// nothing: --no-profile, which runs this call on the flags typed and the base
+// configuration and leaves active as it is.
+//
+// Only where the command has the flag — a capability no profile can fill has
+// none — and only on the CLI, which is the only surface that has one: an agent
+// cannot send it, and a refusal that offered it over MCP would name a way across
+// that is not there. That is why this lives beside the call to resolveProfile
+// and not in the words internal/profile gives every surface.
+func withLeaveHint(cmd *cobra.Command, verr *view.Error, active string) *view.Error {
+	if cmd.Flags().Lookup("no-profile") == nil {
+		return verr
+	}
+	return verr.WithHint(verr.Hint + " — or --no-profile, to leave " + active + " for this call")
 }
 
 // bindProfile is resolveProfile without the fetching: what the environment

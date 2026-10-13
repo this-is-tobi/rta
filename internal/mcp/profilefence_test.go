@@ -167,6 +167,12 @@ func TestAnAgentGrantedOneProfileCannotNameAnotherValueOfAFencedInput(t *testing
 	if message := messageOf(t, res); !strings.Contains(message, `the "namespace" argument`) {
 		t.Errorf("the refusal does not say which input went outside: %q", message)
 	}
+	// The way across that costs a terminal's user nothing is not one an agent
+	// has: --no-profile is on no tool, so a refusal that offered it would name a
+	// door that is not there.
+	if strings.Contains(text, "no-profile") {
+		t.Errorf("the refusal offers an agent a flag it cannot send:\n%s", text)
+	}
 
 	// And the row is what lets an operator see an agent probing a boundary: the
 	// code, the sentence the agent heard, and in the note what it was not told.
