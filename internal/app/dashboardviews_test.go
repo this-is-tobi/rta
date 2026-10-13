@@ -141,7 +141,7 @@ func TestProfileSetDashboardTakesAViewThatExistsOrNone(t *testing.T) {
 	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal", "--dashboard", "dbs"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	if got := loadedConfig(t).Profiles["prod"].Dashboard; got != "dbs" {
+	if got := loadedConfig(t).Profiles["prod"].Dashboard.Name; got != "dbs" {
 		t.Errorf("the profile selects %q", got)
 	}
 	show, _, _ := run("profile", "show", "prod")
@@ -151,7 +151,7 @@ func TestProfileSetDashboardTakesAViewThatExistsOrNone(t *testing.T) {
 	if _, errOut, err := run("profile", "set", "prod", "--dashboard", "none"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	if got := loadedConfig(t).Profiles["prod"].Dashboard; got != "" {
+	if got := loadedConfig(t).Profiles["prod"].Dashboard.Name; got != "" {
 		t.Errorf("none left the profile selecting %q", got)
 	}
 }

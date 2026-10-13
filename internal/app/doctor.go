@@ -517,7 +517,7 @@ func doctorDashboardTiles(reg *registry.Registry, add func(check, status, detail
 func danglingViews(cfg config.Config) []string {
 	var out []string
 	for _, name := range cfg.ProfileNames() {
-		v := cfg.Profiles[name].Dashboard
+		v := cfg.Profiles[name].Dashboard.Name
 		if _, ok := cfg.Dashboard.Views[v]; v != "" && !ok {
 			hint := "`rta dashboard add <capability> --view " + v + "` states it"
 			if names := cfg.ViewNames(); len(names) > 0 {

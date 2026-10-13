@@ -1,8 +1,15 @@
 package config
 
 import (
+	"encoding/json"
+	"fmt"
 	"regexp"
 	"sort"
+
+	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
+
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Dashboard views: more than one landing screen, and which one a profile shows.
@@ -61,6 +68,151 @@ func (d Dashboard) View() View {
 	return View{Tiles: d.Tiles, Add: d.Add, Hidden: d.Hidden, Order: d.Order, Columns: d.Columns}
 }
 
+// ProfileDashboard is what a profile's `dashboard:` says: the name of a view
+// that lives under `dashboard: views:`, or the screen itself, written in the
+// profile.
+//
+//	profiles:
+//	  prod:
+//	    dashboard: ops              # the view called ops, shared by whoever names it
+//	  staging:
+//	    dashboard:                  # staging's own screen, with the keys a view has
+//	      add:
+//	      - id: kube.metrics.node
+//
+// **Why the screen can be written in place when views exist to be named.** A
+// view earns its name when several environments show it. The commoner case is
+// one environment with a screen of its own, and for that the name is a second
+// stanza to keep beside the profile and a word that has to agree in both: a
+// person arranging staging's screen wants to open staging's entry and find it
+// there, and to move the entry — to another file, to another machine — and have
+// the screen go with it. A profile is already one unit that lives in one file
+// (layers.go), so a block in it is stated exactly where its environment is, and
+// is merged, written and refused by the same rules the rest of the entry is.
+//
+// **A block is a view named after its profile, and nothing more.** Every
+// mechanism there is for views — `rta dashboard views` and `--view`, the TUI
+// drawing it when the environment is switched on and `V` cycling to it, the
+// writers that add, hide and remove a tile — already works on a name, so the
+// block is given one, the profile's, instead of being taught to each of them
+// as a second kind of screen. Views (the Config methods below) is where the
+// two kinds are read as one; a writer asks where the block lives and the
+// answer is the profile's entry rather than a `views:` entry that would then
+// state the same name twice.
+//
+// Exactly one of the two is set. The block wins in MarshalYAML if a caller sets
+// both, which the loader cannot produce: a value is a string or a mapping.
+type ProfileDashboard struct {
+	// Name is the view this profile selects, "" when it names none.
+	Name string
+	// Inline is the profile's own screen, nil when it states none. An empty one
+	// is a screen with nothing arranged, which draws the automatic dashboard:
+	// the way to say that this environment does not show the `dashboard:` block.
+	Inline *View
+
+	// bad is what the loader found where a name or a block belongs, so that the
+	// refusal can name the profile and the file, which the decoder, handed one
+	// value, does not know.
+	bad *badDashboard
+}
+
+// badDashboard is a `dashboard:` that is neither of the two things it can be.
+type badDashboard struct {
+	what      string
+	line, col int
+}
+
+// UnmarshalYAML reads a string as the name of a view and a mapping as the
+// screen. Anything else is kept for the loader to refuse in its own words
+// (refuseBadDashboards) instead of becoming the decoder's sentence about Go
+// types, which names neither the profile nor what would have been accepted.
+func (d *ProfileDashboard) UnmarshalYAML(node ast.Node) error {
+	*d = ProfileDashboard{}
+	switch n := node.(type) {
+	case *ast.NullNode:
+	case *ast.StringNode:
+		d.Name = n.Value
+	case *ast.MappingNode, *ast.MappingValueNode:
+		var v View
+		if err := yaml.NodeToValue(node, &v); err != nil {
+			return err
+		}
+		d.Inline = &v
+	default:
+		bad := &badDashboard{what: describeNode(node)}
+		if tok := node.GetToken(); tok != nil {
+			bad.line, bad.col = tok.Position.Line, tok.Position.Column
+		}
+		d.bad = bad
+	}
+	return nil
+}
+
+// describeNode is what a YAML value is, in the words a person who wrote it
+// would use.
+func describeNode(node ast.Node) string {
+	switch node.(type) {
+	case *ast.SequenceNode:
+		return "a list"
+	case *ast.IntegerNode, *ast.FloatNode, *ast.InfinityNode, *ast.NanNode:
+		return "a number"
+	case *ast.BoolNode:
+		return "true or false"
+	case *ast.LiteralNode:
+		return "a block of text"
+	default:
+		return "not a name or a mapping"
+	}
+}
+
+// MarshalYAML writes the block when there is one and the name otherwise, which
+// is what keeps a profile that names a view written the way it always was.
+func (d ProfileDashboard) MarshalYAML() (any, error) {
+	if d.Inline != nil {
+		return *d.Inline, nil
+	}
+	return d.Name, nil
+}
+
+// MarshalJSON is MarshalYAML's twin, for the callers that print a profile as
+// JSON.
+func (d ProfileDashboard) MarshalJSON() ([]byte, error) {
+	v, _ := d.MarshalYAML()
+	return json.Marshal(v)
+}
+
+// IsZero says the profile states no screen, so that `omitempty` leaves the key
+// out of what a write produces — an empty name and a nil block are the same
+// absence, and an empty block is not.
+func (d ProfileDashboard) IsZero() bool { return d.Name == "" && d.Inline == nil }
+
+// refuseBadDashboards is the loader's refusal of a profile whose `dashboard:`
+// is neither a name nor a block, naming the file, the profile and the spot, the
+// first in profile-name order so that the same file always gives the same one.
+func refuseBadDashboards(path string, profiles map[string]Profile) error {
+	names := make([]string, 0, len(profiles))
+	for name := range profiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		bad := profiles[name].Dashboard.bad
+		if bad == nil {
+			continue
+		}
+		spot := ""
+		if bad.line > 0 {
+			spot = fmt.Sprintf("[%d:%d] ", bad.line, bad.col)
+		}
+		return view.Errorf("config.invalid",
+			"parsing %s: %sprofile %s: dashboard is %s, and takes the name of a view or a block that states the screen",
+			path, spot, name, bad.what).
+			WithHint("write `dashboard: <view>` to show one of `dashboard: views:`, or the screen itself under it, " +
+				"with the keys a view has: tiles, add, hidden, order and columns")
+	}
+	return nil
+}
+
 // ViewNames are the names of the views the configuration states, sorted.
 func (c Config) ViewNames() []string {
 	names := make([]string, 0, len(c.Dashboard.Views))
@@ -77,7 +229,7 @@ func (c Config) ViewNames() []string {
 // default, since a screen that fails to draw over a missing name is worse than
 // the one every machine has).
 func (c Config) ViewFor(profile string) string {
-	name := c.Profiles[profile].Dashboard
+	name := c.Profiles[profile].Dashboard.Name
 	if _, ok := c.Dashboard.Views[name]; ok && name != "" {
 		return name
 	}

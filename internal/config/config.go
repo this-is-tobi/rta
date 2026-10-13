@@ -395,6 +395,9 @@ func parse(path string, data []byte) (Config, error) {
 			return cfg, view.Errorf("config.invalid", "parsing %s: %v", path, err).
 				WithHint(parseHint(err))
 		}
+		if err := refuseBadDashboards(path, cfg.Profiles); err != nil {
+			return cfg, err
+		}
 	}
 	// Stamped here, once, rather than asked at each point of use: a file that
 	// came from the working-directory fallback carries trusted=false for the

@@ -103,17 +103,19 @@ type Profile struct {
 	// inventing an outage.
 	Color string `yaml:"color,omitempty" json:"color,omitempty"`
 
-	// Dashboard names the dashboard view drawn while this profile is switched
-	// on: one of `dashboard: views:`, a whole arrangement of its own. Empty,
-	// the dashboard: block draws, as it always has. The view is the profile's
-	// screen and not its connection — the tiles in it pin themselves to
-	// whichever profiles they name, so a profile can show the screen that is
-	// about every database, and several can show the same one.
+	// Dashboard is the screen drawn while this profile is switched on: the
+	// name of one of `dashboard: views:`, a whole arrangement of its own, or
+	// that arrangement written here, in place (ProfileDashboard says why both).
+	// Empty, the dashboard: block draws, as it always has. A named view is the
+	// profile's screen and not its connection — the tiles in it pin themselves
+	// to whichever profiles they name, so a profile can show the screen that
+	// is about every database, and several can show the same one.
 	//
 	// A name that is not a view is `rta doctor`'s to say, never a reason to
 	// refuse the profile: a screen that fails over a name is a worse outage
-	// than the default one.
-	Dashboard string `yaml:"dashboard,omitempty" json:"dashboard,omitempty"`
+	// than the default one. A value that is neither a name nor a block is
+	// refused by the loader, since nothing about it can be read.
+	Dashboard ProfileDashboard `yaml:"dashboard,omitempty" json:"dashboard,omitzero"`
 
 	// unknown is every key in this profile that no field above claims,
 	// computed by the loader against the raw document.

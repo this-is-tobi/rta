@@ -95,12 +95,27 @@ type shape struct {
 	// each is the shape of every value of a map whose keys are the operator's
 	// own (a role's name, a plugin's namespace); elem is a list's element.
 	each, elem *shape
+	// open says a key the shape does not name is another reader's to judge, so
+	// it is not reported here: a profile's keys are named by the loader
+	// (Profile.UnknownKeys), which also tells a pre-environment shape from a
+	// typo, and only the one block it holds that the loader does not read key
+	// by key is walked.
+	open bool
 }
 
 var checkedElsewhere = map[string]bool{"profiles": true, "theme": true}
 
 var fileShape = sync.OnceValue(func() *shape {
-	return shapeOf(reflect.TypeOf(Config{}), checkedElsewhere)
+	root := shapeOf(reflect.TypeOf(Config{}), checkedElsewhere)
+	// A profile's screen, when it is written in place, is a view and is held to
+	// the keys a view has — `tile:` for `tiles:` is as much a setting that does
+	// nothing there as under `dashboard: views:`. The rest of the entry is the
+	// loader's.
+	root.fields["profiles"] = &shape{each: &shape{
+		open:   true,
+		fields: map[string]*shape{"dashboard": shapeOf(reflect.TypeOf(View{}), nil)},
+	}}
+	return root
 })
 
 func shapeOf(t reflect.Type, opaque map[string]bool) *shape {
@@ -164,7 +179,9 @@ func walkPair(pair *ast.MappingValueNode, s *shape, path string, out *[]Finding)
 	case s.fields != nil:
 		child, known := s.fields[key]
 		if !known {
-			*out = append(*out, unknownKey(pair, s, path, full))
+			if !s.open {
+				*out = append(*out, unknownKey(pair, s, path, full))
+			}
 			return
 		}
 		walkShape(pair.Value, child, full, out)

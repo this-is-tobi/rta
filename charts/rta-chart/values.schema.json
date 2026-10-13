@@ -68,9 +68,16 @@
               "type": "string"
             },
             "dashboard": {
-              "description": "The dashboard view drawn while this profile is switched on: one of `dashboard: views:`. Left out, the `dashboard:` block draws.",
-              "pattern": "^[a-z][a-z0-9-]{0,31}$",
-              "type": "string"
+              "description": "The screen drawn while this profile is switched on: the name of one of `dashboard: views:`, or the screen itself written here, with the keys a view has (tiles, add, hidden, order, columns) \u2014 addressed as a view named after this profile. Left out, the `dashboard:` block draws.",
+              "oneOf": [
+                {
+                  "pattern": "^[a-z][a-z0-9-]{0,31}$",
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/rtaConfig/$defs/view"
+                }
+              ]
             },
             "note": {
               "description": "Why this environment exists \u2014 printed by `rta profile list`, `rta use` and `rta doctor`.",
