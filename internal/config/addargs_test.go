@@ -30,6 +30,21 @@ func TestAddArgsSpellsTheWholeEntry(t *testing.T) {
 	}
 }
 
+// The way back names the view the entry was written to, as one shell word, and
+// none for the dashboard: block, which is where the command writes without it.
+func TestAddCommandNamesTheViewItWasWrittenTo(t *testing.T) {
+	tile := Tile{ID: "pg.overview", Profile: "staging", Section: "databases"}
+	for view, want := range map[string]string{
+		"":        "rta dashboard add pg.overview --profile staging --section databases",
+		"ops":     "rta dashboard add pg.overview --profile staging --section databases --view ops",
+		"Big Ops": "rta dashboard add pg.overview --profile staging --section databases --view 'Big Ops'",
+	} {
+		if got := tile.AddCommand(view); got != want {
+			t.Errorf("AddCommand(%q) = %q, want %q", view, got, want)
+		}
+	}
+}
+
 // The way back is pasted into a shell, so each argument is one word of it.
 // Joined as they came, a value with a space, a ';' or a '$(' made a line that
 // passed a stray argument or ran a second command, and a value holding an

@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"sort"
@@ -15,6 +16,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/tui"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -94,6 +96,24 @@ func newDashboardCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comman
 		},
 	}
 	addViewFlag(list, "list the tiles of this view")
+	sections := &cobra.Command{
+		Use:   "sections",
+		Short: "The dashboard's sections: which view draws them, how each starts, and how many tiles are in it",
+		Long: "A section draws tiles together under one header that folds. This lists each one every view draws or" +
+			" states — its name, how many tiles it holds as bare `rta` would draw them now, whether it starts folded" +
+			" and its own column count — the way `rta dashboard views` lists the views. A group the panels of one" +
+			" entry make, `pg · staging`, is counted for the environment that is switched on, since that is the one" +
+			" it is named after; a section a view states and no tile is in is listed with none.",
+		Args:              cobra.NoArgs,
+		ValidArgsFunction: cobra.NoFileCompletions,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := config.LoadFile()
+			if err != nil {
+				return render(cmd, nil, view.AsError(err, "core.dashboard.config"))
+			}
+			return render(cmd, sectionsTable(reg, cfg), nil)
+		},
+	}
 	views := &cobra.Command{
 		Use:               "views",
 		Short:             "The dashboard's views, which profiles select them, and the one drawn now",
@@ -107,7 +127,7 @@ func newDashboardCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comman
 			return render(cmd, viewsTable(cfg), nil)
 		},
 	}
-	cmd.AddCommand(list, views, dashboardAddCommand(reg, render, opts), dashboardRemoveCommand(render, opts),
+	cmd.AddCommand(list, views, sections, dashboardAddCommand(reg, render, opts), dashboardRemoveCommand(render, opts),
 		dashboardHideCommand(reg, render, opts, true), dashboardHideCommand(reg, render, opts, false))
 	return cmd
 }
@@ -122,6 +142,7 @@ func dashboardTable(reg *registry.Registry, cfg config.Config, v string) view.Vi
 	t := view.Table{Columns: []view.Column{
 		{Name: "Tile"},
 		{Name: "Profile"},
+		{Name: "Section"},
 		{Name: "Source"},
 		{Name: "Screen"},
 		{Name: "Re-runs"},
@@ -140,10 +161,76 @@ func dashboardTable(reg *registry.Registry, cfg config.Config, v string) view.Vi
 		if p.Hidden {
 			screen = "hidden"
 		}
-		t.Rows = append(t.Rows, []string{p.ID, p.Profile, source, screen, every, withLine(p.With)})
+		t.Rows = append(t.Rows, []string{p.ID, p.Profile, nameCell(p.Section), source, screen, every, withLine(p.With)})
 	}
 	t.Total = len(t.Rows)
 	return t
+}
+
+// sectionsTable is every section the configuration draws or states, view by view:
+// the default block first and then each view, in the order its sections are drawn,
+// and after those the ones the view states and no tile is in, which are listed
+// rather than dropped since a name that matches nothing is what a person looks
+// this table up to find.
+//
+// What is counted is what bare `rta` would draw, the way `list` is: a hidden panel
+// is not in its section, and a group named after an environment is the switched-on
+// environment's. How a section starts and how wide it is are what the view states,
+// read from the file whether or not this configuration is one that draws it.
+func sectionsTable(reg *registry.Registry, cfg config.Config) view.View {
+	t := view.Table{Columns: []view.Column{
+		{Name: "View"}, {Name: "Section"}, {Name: "Tiles", Kind: view.KindNumber},
+		{Name: "Starts"}, {Name: "Columns", Kind: view.KindNumber}, {Name: "File"},
+	}}
+	t.Empty = "No section is stated or drawn — `rta dashboard add <capability> --section <name>` puts a tile in one."
+	for _, name := range append([]string{config.DefaultView}, cfg.ViewNames()...) {
+		v, file := name, config.Where("views", name)
+		if name == config.DefaultView {
+			v, file = "", config.Where("dashboard", "")
+		}
+		stated := blockOf(cfg, v).Sections
+		counts := map[string]int{}
+		var drawn []string
+		for _, p := range layoutNow(reg, cfg, v) {
+			if p.Section == "" || p.Hidden {
+				continue
+			}
+			if counts[p.Section] == 0 {
+				drawn = append(drawn, p.Section)
+			}
+			counts[p.Section]++
+		}
+		for _, section := range slices.Sorted(maps.Keys(stated)) {
+			if counts[section] == 0 {
+				drawn = append(drawn, section)
+			}
+		}
+		for _, section := range drawn {
+			starts, columns := "open", ""
+			if stated[section].Collapsed {
+				starts = "folded"
+			}
+			if n := stated[section].Columns; n > 0 {
+				columns = strconv.Itoa(n)
+			}
+			t.Rows = append(t.Rows, []string{nameCell(name), nameCell(section), strconv.Itoa(counts[section]), starts, columns, configFileName(file)})
+		}
+	}
+	t.Total = len(t.Rows)
+	return t
+}
+
+// nameCell is a name a file states — a section's, a view's — as a cell of a table
+// shows it: as it is when it reads as itself, and quoted with what it holds written
+// out otherwise. A section is a heading and a view an identifier, and a file can
+// state either with a line break in it, which made a row of the table of one cell
+// in csv and a second line in the pretty table. Nothing, for no name, so that a
+// tile in no section has an empty cell and not a pair of quotation marks.
+func nameCell(name string) string {
+	if name == "" {
+		return ""
+	}
+	return textclean.Name(name)
 }
 
 // withLine spells a tile's inputs the way `--set` states them.
@@ -172,6 +259,8 @@ func dashboardAddCommand(reg *registry.Registry, render renderFn, opts *globalOp
 			" kube.overview --profile prod` and the same with `--profile staging` are two tiles," +
 			" each named on its own panel. Without it the tile follows whatever `rta use` switched on." +
 			" `--set` fills the capability's inputs, `key=value`, typed the way it declares them." +
+			" `--section` draws the tile in a named group under a header that folds, with the other tiles that" +
+			" name it." +
 			" Adding the same tile again replaces it, so the command is safe to script." +
 			" In the TUI, + on a catalogue row or a search match writes the same entry.",
 		Args:              cobra.ExactArgs(1),
@@ -188,10 +277,53 @@ func dashboardAddCommand(reg *registry.Registry, render renderFn, opts *globalOp
 	// could be stated at all. A list-shaped input is one --set per element.
 	cmd.Flags().StringArray("set", nil, "an input for the run, `key=value`; repeat for several")
 	cmd.Flags().Int("span", 0, "grid columns the tile occupies; 0 leaves it to the capability")
+	cmd.Flags().String("section", "", "draw the tile in this section, under a header that folds; left out, in none")
 	addViewFlag(cmd, "put the tile on this view, creating it when it is new")
 	completeFlag(cmd, "profile", completeProfiles)
 	completeFlag(cmd, "set", completeTileInputs(reg))
+	completeFlag(cmd, "section", completeSections)
 	return cmd
+}
+
+// completeSections offers the sections of the view the command would write to:
+// the ones its tiles name and the ones it states how to start, each with how many
+// tiles name it, so a name is picked rather than spelled — a section is a string,
+// and one letter off is a second section with one tile in it.
+func completeSections(cmd *cobra.Command, _ []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	cfg, err := config.LoadFile()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	drawn, verr := viewOf(cmd, cfg, true)
+	if verr != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	block := blockOf(cfg, drawn)
+	named := map[string]int{}
+	for _, t := range append(slices.Clone(block.Tiles), block.Add...) {
+		if t.Section != "" {
+			named[t.Section]++
+		}
+	}
+	for name := range block.Sections {
+		if _, seen := named[name]; !seen {
+			named[name] = 0
+		}
+	}
+	out := make([]cobra.Completion, 0, len(named))
+	for _, name := range slices.Sorted(maps.Keys(named)) {
+		// A name with a tab or a line break in it would end its candidate early
+		// and begin a description nobody wrote: what cannot be a heading is not offered.
+		if !config.ValidSectionName(name) {
+			continue
+		}
+		desc := format.Count(named[name], "tile", "tiles")
+		if block.Sections[name].Collapsed {
+			desc += ", starts folded"
+		}
+		out = append(out, cobra.CompletionWithDesc(name, desc))
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp
 }
 
 func dashboardRemoveCommand(render renderFn, opts *globalOpts) *cobra.Command {
@@ -308,10 +440,16 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		return nil, view.Errorf("core.dashboard.span", "--span %d is not a number of columns", span).
 			WithHint("0 leaves the width to the capability")
 	}
-	entry := config.Tile{ID: id, With: with, Profile: ref, Span: span}
+	section := strings.TrimSpace(mustString(cmd, "section"))
+	if section != "" && !config.ValidSectionName(section) {
+		return nil, view.Errorf("core.dashboard.section", "%q is not a name a section can have", section).
+			WithHint(fmt.Sprintf("a section is a heading: up to %d characters, no control characters, no space at either end"+
+				" — `databases` and `pg · staging` both are", config.MaxSectionName))
+	}
+	entry := config.Tile{ID: id, With: with, Profile: ref, Span: span, Section: section}
 	// An entry with the key of an automatic tile is that tile (tui.joinTiles):
-	// the one way to give the automatic sys tile a width or an input. One
-	// that says nothing the automatic tile does not already is refused
+	// the one way to give the automatic sys tile a width, an input or a section.
+	// One that says nothing the automatic tile does not already is refused
 	// rather than written, because the person asking is usually asking for
 	// a hidden one back, and the hint says so.
 	var automatic bool
@@ -320,8 +458,8 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 			automatic = automatic || (p.ID == id && p.Source == "automatic")
 		}
 	}
-	if automatic && len(with) == 0 && span == 0 {
-		hint := "`--profile <name>` pins a second one to a connection; `--set` and `--span` say how this one runs"
+	if automatic && len(with) == 0 && span == 0 && section == "" {
+		hint := "`--profile <name>` pins a second one to a connection; `--set`, `--span` and `--section` say how this one runs"
 		if slices.Contains(blockOf(cfg, drawn).Hidden, id) {
 			hint = "it is hidden — `rta dashboard unhide " + id + inViewFlag(drawn) + "` brings it back"
 		}
@@ -400,6 +538,10 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 	}
 	if len(with) > 0 {
 		pairsOut = append(pairsOut, view.Pair{Key: "with", Value: withLine(with)})
+	}
+	if section != "" {
+		pairsOut = append(pairsOut, view.Pair{Key: "section",
+			Value: section + " — drawn with the other tiles that name it, under a header that folds (z in the TUI)"})
 	}
 	every := "every few seconds"
 	if c.Refresh > 0 {
@@ -588,7 +730,7 @@ func runDashboardRemove(cmd *cobra.Command, id string, dryRun bool) (view.View, 
 	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: label, Value: verb + " " + key + " from the dashboard" + inView(drawn) + " in " + dashboardFile(drawn)},
-		{Key: "back", Value: "`rta dashboard add " + removed.AddArgs() + inViewFlag(drawn) + "`"},
+		{Key: "back", Value: "`" + removed.AddCommand(drawn) + "`"},
 	}}, nil
 }
 

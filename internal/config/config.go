@@ -134,6 +134,19 @@ func (t Tile) AddArgs() string {
 	return strings.Join(args, " ")
 }
 
+// AddCommand is the `rta dashboard add` line that puts this entry back where it
+// was: AddArgs, and the view it was written to when that is not the dashboard:
+// block ("" for the block). It is the one place the way back is spelled, for the
+// receipt `rta dashboard rm` prints and for the note H leaves in the TUI, so that
+// a field the entry gains cannot be in one of them and not the other.
+func (t Tile) AddCommand(view string) string {
+	line := "rta dashboard add " + t.AddArgs()
+	if view != "" {
+		line += " --view " + shellquote.Arg(view)
+	}
+	return line
+}
+
 // Dashboard configures the landing screen.
 //
 // With none of these set the dashboard builds itself: one tile per

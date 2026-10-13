@@ -206,6 +206,50 @@ func TestRemovingAnAddedTileWithdrawsItsEntry(t *testing.T) {
 	}
 }
 
+// The way back H names is the one `rta dashboard rm` names for the same entry
+// (config.Tile.AddCommand), whole: its section and span and inputs, and the view
+// it was written to. A section left out put the tile back in none, so the header
+// it was under held one tile fewer than before. The same entry and the same line
+// are in TestDashboardRmNamesTheWholeEntryAsTheWayBack on the other surface.
+func TestHSpellsTheWayBackOfAnEntryWhole(t *testing.T) {
+	entry := config.Tile{ID: "db.status", Profile: "prod", Span: 2, Section: "host", With: map[string]any{"dbname": "shop"}}
+	const line = "rta dashboard add db.status --profile prod --span 2 --section host --set dbname=shop"
+	pressH := func(t *testing.T, m Model) string {
+		t.Helper()
+		m.selected = -1
+		for i, ti := range m.tiles {
+			if ti.key() == "db.status@prod" {
+				m.selected = i
+			}
+		}
+		if m.selected < 0 {
+			t.Fatalf("no db.status@prod in %v", tileKeys(m.tiles))
+		}
+		return m.hideSelected()
+	}
+
+	t.Run("on the dashboard block", func(t *testing.T) {
+		m := pinnedModel(t, twoProfileConfig(), config.Dashboard{Add: []config.Tile{entry}})
+		if note := pressH(t, m); !strings.Contains(note, "`"+line+"`") {
+			t.Errorf("note = %q, want the way back to be %q", note, line)
+		}
+	})
+	t.Run("on a view", func(t *testing.T) {
+		m := pinnedModel(t, twoProfileConfig(), config.Dashboard{
+			Views: map[string]config.View{"ops": {Add: []config.Tile{entry}}},
+		})
+		m.selected = 1
+		next, _ := m.Update(tea.KeyPressMsg{Code: 'V', Text: "V"})
+		m = next.(Model)
+		if m.view != "ops" {
+			t.Fatalf("V drew view %q, want ops", m.view)
+		}
+		if note := pressH(t, m); !strings.Contains(note, "`"+line+" --view ops`") {
+			t.Errorf("note = %q, want the way back to name the view: %q", note, line+" --view ops")
+		}
+	})
+}
+
 // The footer's word for H is what H is about to do to the selected tile. It
 // said "hide" over every tile, and on an entry somebody wrote H withdraws the
 // entry — which the inventory pane, where hidden tiles come back from, has no
