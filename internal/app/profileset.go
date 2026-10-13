@@ -586,17 +586,22 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 	// script is the source of truth for what it states, and a fence is the one
 	// block where a key quietly left behind is a wall nobody remembers writing —
 	// so what a restatement drops is said, as it is for `set:`.
+	//
+	// But not in the same words. A default that goes is a value nobody reads any
+	// more; a fence that goes is a boundary somebody wrote, and a script that
+	// adds a second key by restating only that one loosens the first. It is said
+	// as `--unfence` says it, where a reader looks for a lock coming off.
 	if cmd.Flags().Changed("only") {
 		pairs, _ := cmd.Flags().GetStringArray("only")
 		only, verr := parseOnlyFlags(pairs, ns, reg)
 		if verr != nil {
 			return "", nil, verr
 		}
-		dropped = append(dropped, missingKeys(conn.Only, only, "only.")...)
+		removedFence = append(removedFence, missingKeys(conn.Only, only, "only.")...)
 		conn.Only = only
 	}
 	if unfenced, _ := cmd.Flags().GetBool("unfence"); unfenced {
-		removedFence = missingKeys(conn.Only, nil, "only.")
+		removedFence = append(removedFence, missingKeys(conn.Only, nil, "only.")...)
 		conn.Only = nil
 	}
 	if cmd.Flags().Changed("secret") {
@@ -681,6 +686,7 @@ func applyConnectionFlags(cmd *cobra.Command, name string, p *config.Profile,
 			Value: strings.Join(freedValues, ", ") + " — the forward fills those, so nothing read them"})
 	}
 	if len(removedFence) > 0 {
+		sort.Strings(removedFence)
 		receipts = append(receipts, view.Pair{Key: "unfenced",
 			Value: strings.Join(removedFence, ", ") + " — calls through this connection are no longer held to those lists"})
 	}

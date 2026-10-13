@@ -115,8 +115,11 @@ func TestProfileSetOnlyStatesTheWholeBlockAndUnfenceRemovesIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	if !strings.Contains(out, "dropped") || !strings.Contains(out, "only.sslmode") {
-		t.Errorf("a restatement that dropped a fence did not say so:\n%s", out)
+	if !strings.Contains(out, "unfenced") || !strings.Contains(out, "only.sslmode") {
+		t.Errorf("a restatement that dropped a fence did not say a fence came off:\n%s", out)
+	}
+	if strings.Contains(out, "dropped") {
+		t.Errorf("a fence that came off was reported as a default that was dropped:\n%s", out)
 	}
 	if got := configOf(t); strings.Contains(got, "sslmode") || !strings.Contains(got, "app-jobs") {
 		t.Errorf("the restated block was not written whole:\n%s", got)
@@ -141,6 +144,39 @@ func TestProfileSetOnlyStatesTheWholeBlockAndUnfenceRemovesIt(t *testing.T) {
 	out, _, err = run("profile", "set", "staging", "--plugin", "db", "--unfence")
 	if err != nil || !strings.Contains(out, "already reads this way") {
 		t.Errorf("removing no fence was not a no-op: %v\n%s", err, out)
+	}
+}
+
+// What a restatement leaves out is said in the words for what it was. A default
+// that goes is "dropped"; a fence that goes is a lock coming off and is said as
+// `--unfence` says it, in one row, in an order that does not change between runs
+// — whichever block the key was in, and however many.
+func TestARestatementSaysADroppedDefaultAndAnUnfencedKeyApart(t *testing.T) {
+	run := session(t, setRegistry(t))
+	if _, errOut, err := run("profile", "set", "staging", "--plugin", "db",
+		"--set", "host=db.internal", "--set", "tls=false",
+		"--only", "dbname=app", "--only", "sslmode=require", "--only", "port=5432"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	out, errOut, err := run("profile", "set", "staging", "--plugin", "db",
+		"--set", "host=db.other", "--only", "dbname=app")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	var dropped, unfenced string
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(strings.TrimSpace(line), "dropped"):
+			dropped = line
+		case strings.HasPrefix(strings.TrimSpace(line), "unfenced"):
+			unfenced = line
+		}
+	}
+	if !strings.Contains(dropped, "set.tls") || strings.Contains(dropped, "only.") {
+		t.Errorf("the dropped row = %q, want the default and no fence\n%s", dropped, out)
+	}
+	if !strings.Contains(unfenced, "only.port, only.sslmode") || strings.Contains(unfenced, "set.") {
+		t.Errorf("the unfenced row = %q, want both fences, in order, and no default\n%s", unfenced, out)
 	}
 }
 
