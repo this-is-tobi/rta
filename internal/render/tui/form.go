@@ -413,8 +413,19 @@ func (cf *capForm) displayed(f plugin.Field, current any) bool {
 	if _, given := cf.seed[f.Name]; given {
 		return false
 	}
-	if !cf.final || len(f.Options) > 0 || f.Type == plugin.Bool || f.Type.Repeatable() {
+	if !cf.final || len(f.Options) > 0 || f.Type.Repeatable() {
 		return false
+	}
+	// A toggle nobody seeded and no declaration defaults is showing off, which is
+	// the zero of its type and not something anybody chose: handed back it is a
+	// caller's `false`, and a form rebuilt on another environment (the picker
+	// moved) took it for an answer the person gave — so the environment that
+	// sets it on was shown off, and ran off, over its own statement. Turned on
+	// it is an answer, and a toggle that was seeded or defaulted is judged as it
+	// always was: what it shows is a choice made by entering through it.
+	if f.Type == plugin.Bool {
+		on, _ := current.(bool)
+		return f.Default == nil && !on
 	}
 	return f.Default != nil && seedString(f.Default) == seedString(current)
 }
