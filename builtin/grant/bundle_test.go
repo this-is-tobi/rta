@@ -355,6 +355,32 @@ func TestARoleOrAnEnvironmentButNotBothNorNeither(t *testing.T) {
 	}
 }
 
+// The hint of a flag given beside a role names a way that exists. --safety
+// was told to be written on the role's line, which refuses it in turn
+// (a line has no class), and every other flag was shown on a line of
+// kv.get db-password, whether the role had a kv line or not.
+func TestAFlagGivenBesideARoleIsHintedAtAWayThatExists(t *testing.T) {
+	configDir, _ := envSetup(t)
+	writeFile(t, filepath.Join(configDir, "config.yaml"), envConfig+"roles:\n  dev:\n    grants: [db.vacuum --profile staging]\n")
+
+	safety := bundleRefusal(t, issueReq(map[string]any{"role": "dev", "safety": "write"}, false, false))
+	if !strings.Contains(safety.Message, "names its capabilities itself") ||
+		!strings.Contains(safety.Hint, "rta grant issue --profile <env> --safety write") ||
+		strings.Contains(safety.Hint, "role's line") {
+		t.Errorf("--safety beside a role = %q / %q, want the environment form and no line to write it on", safety.Message, safety.Hint)
+	}
+	for _, flag := range []map[string]any{{"max-uses": 3}, {"rate": "10/1h"}, {"note": "why"}} {
+		values := map[string]any{"role": "dev"}
+		for k, v := range flag {
+			values[k] = v
+		}
+		verr := bundleRefusal(t, issueReq(values, false, false))
+		if !strings.Contains(verr.Hint, "`db.vacuum --") || strings.Contains(verr.Hint, "kv.get db-password") {
+			t.Errorf("%v beside a role is hinted %q, want a line of the role as the example", flag, verr.Hint)
+		}
+	}
+}
+
 func TestAnEnvironmentBundleRefusesWhatItCannotRead(t *testing.T) {
 	envSetup(t)
 	for name, c := range map[string]struct {
