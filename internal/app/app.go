@@ -952,6 +952,12 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 					return err
 				}
 			}
+			// The colours of the environment this call is about, which only
+			// its own flags can say — main painted the one that is switched
+			// on, for help and for everything that never gets here. Before the
+			// terminal check below: stdout can be a terminal when stderr is
+			// not, and the result is drawn in whatever this sets.
+			ApplyTheme(cfg, environmentOf(cmd))
 			if !stderrIsTerminal() {
 				return nil
 			}

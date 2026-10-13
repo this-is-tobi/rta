@@ -164,6 +164,31 @@ theme:
 
 There are ten colours to name — `primary`, `accent`, `muted`, `faint`, `label`, `good`, `warn`, `bad`, `inverse` and `ink` — each as `#rrggbb`, and one you leave out keeps the built-in. `faint` is structure (borders, chart fills), `muted` is secondary text, `label` is the name of a pane, `good`, `warn` and `bad` are the three status colours, and `inverse` and `ink` are the text on a coloured badge. Anything else, or a colour that is not that form, is left out and costs only its own line: the rest apply and `rta doctor` reports the entry. `rta config schema` describes the block to an editor, so a name or colour that will not apply is marked as you type it.
 
+### A palette per environment
+
+An environment can have colours of its own, so that switching to it changes what the screen looks like the way it changes the dashboard. A profile takes the same `theme:` block, and its `color:` is its primary colour:
+
+```yaml
+theme:
+  accent: "#D77015"
+profiles:
+  shop-prod:
+    color: "#FF6B7A"
+    theme:
+      label: "#C792EA"
+    plugins:
+      pg:
+        set: { host: db.internal }
+```
+
+While `shop-prod` is in force what is drawn comes from these, each over the one before: the built-in palette, the top-level `theme:`, the profile's `color:` as its `primary` (titles, keys and headings), and the profile's own `theme:`, which wins over its colour when it states a `primary` of its own. With nothing in force, or with `--no-profile`, the top-level `theme:` alone applies, as it always did. The colour that marks an environment in its badge is therefore also the colour of what you read in it, which is the point: it is on every result, not only the line above one.
+
+**Which environment.** The one a call names with `--profile`, else the one `rta use` switched on, and none for a call that leaves it with `--no-profile` or that goes to a connection typed on its own command line, which is nobody's environment. `shop-prod/analytics` is shop-prod's colours: an instance is one of the places a profile reaches, not a second environment with a screen of its own. A command with no `--profile` of its own takes the one that is switched on. `rta use shop-prod` draws its own receipt in the colours it switched to, and `rta use --off` in yours.
+
+**An environment cannot make one thing read as another.** The statuses — `good`, `warn` and `bad` — and the `primary` the selection is drawn in are what you read a screen by, so a profile that would state two of them as exactly the same colour, or a badge's text (`inverse`, `ink`) as the colour it sits on, has that entry left out: the layer beneath it stands and `rta doctor` names the line. Only an exact match is refused, because "close to" is a question about eyesight that no threshold answers for everybody, and the colours that are decoration (`accent`, `muted`, `faint`, `label`) are the profile's to choose. Your own top-level `theme:` is not held to this, since stating `good` and `bad` alike in a file you edit is a choice about your own screen; a config file you did not name, a `./.rta.yaml` in a repository you cloned, is.
+
+**Whose file.** A profile in a config file you did not name is not honoured at all, and what it says about colour is not either: a repository cannot repaint an environment's screen any more than it can point one at a database. The top-level `theme:` of such a file still applies, as it did before environments had colours of their own. The same holds for a drop-in: a profile's `theme:` lives in the file that states the profile.
+
 ## Related
 
 - [The TUI](./20-tui.md) — the keys that do the same from the dashboard

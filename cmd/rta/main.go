@@ -14,7 +14,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
-	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/stdio"
 )
 
@@ -171,10 +171,14 @@ func main() {
 	app.SetPluginConfig(pluginconf.Resolve(cfg, reg.Origin))
 
 	// Before the command tree, so every renderer — CLI, TUI and help alike —
-	// reads the same palette from its first line of output. Not fatal for the
-	// same reason SetPluginConfig's problems are not: a bad hex costs its own
-	// field a color, never the run.
-	app.SetThemeProblems(theme.Apply(cfg.Theme))
+	// reads the same palette from its first line of output: the one of the
+	// environment that is switched on, since nothing of the command line has
+	// been read yet. The command that runs paints its own again once its flags
+	// are known (the root's PersistentPreRunE), for a `--profile` or a
+	// `--no-profile` that says otherwise. Not fatal for the same reason
+	// SetPluginConfig's problems are not: a bad hex costs its own field a
+	// color, never the run.
+	app.ApplyTheme(cfg, profile.Active())
 
 	root := app.NewRoot(reg, buildVersion(), app.WithConfig(cfg, cfgErr))
 	interrupts.Attach(root, host.CloseAll)

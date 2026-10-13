@@ -111,11 +111,15 @@ func TestConfigCheckNamesAFileThatDoesNotParseWithItsLine(t *testing.T) {
 	}
 }
 
-// Checking one file must not leave its colours on the screen.
+// Checking one file must not leave its colours on the screen. Asked of the
+// check itself and not of the command around it, which paints the palette of
+// the configuration it was started with before it runs.
 func TestConfigCheckLeavesThePaletteAsItFoundIt(t *testing.T) {
 	theme.Apply(map[string]string{"good": "#112233"})
 	t.Cleanup(func() { theme.Apply(nil) })
-	_, _, _, _ = configRun(t, configRegistry(t), "theme:\n  good: \"#aabbcc\"\n  bad: red\n", "config", "check", "-o", "json")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	t.Setenv("RTA_CONFIG", path)
+	configProblems(configRegistry(t), path, []byte("theme:\n  good: \"#aabbcc\"\n  bad: red\n"))
 	if got := theme.Current()["good"]; got != "#112233" {
 		t.Errorf("good = %s after a check of another file", got)
 	}
