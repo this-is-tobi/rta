@@ -89,7 +89,7 @@ func waitingByID(id string) (waitingCall, bool) {
 // before it can reach the terminal.
 func callOf(r consent.Request) waitingCall {
 	call := textclean.Terminal(r.Cap)
-	if records := textclean.Records(r.Scopes); records != "" {
+	if records := textclean.CallRecords(r.Scopes); records != "" {
 		call += " " + records
 	}
 	would, _, _ := strings.Cut(strings.TrimSpace(r.Preview), "\n")

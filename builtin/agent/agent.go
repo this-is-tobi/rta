@@ -324,7 +324,7 @@ func suggestPending(context.Context, plugin.Request) []string {
 	}
 	out := make([]string, 0, len(reqs))
 	for _, r := range reqs {
-		out = append(out, r.ID+"\t"+r.Cap+" "+textclean.Records(r.Scopes))
+		out = append(out, r.ID+"\t"+callNamed(r.Cap, r.Scopes))
 	}
 	return out
 }
@@ -1150,10 +1150,10 @@ func pendingTable(sf plugin.Surface, reqs []consent.Request) view.Table {
 // recordsCell is a row's records, each as textclean.Record shows one, or a
 // dash for a call that named none.
 func recordsCell(records []string) string {
-	if len(records) == 0 {
-		return "—"
+	if shown := textclean.CallRecords(records); shown != "" {
+		return shown
 	}
-	return textclean.Records(records)
+	return "—"
 }
 
 // roleCovers reports whether a row's role column names the role asked
@@ -1253,8 +1253,8 @@ func showView(sf plugin.Surface, r consent.Request, extra ...view.Pair) view.Vie
 		{Key: "capability", Value: r.Cap},
 		{Key: "safety", Value: r.Safety},
 	}
-	if len(r.Scopes) > 0 {
-		pairs = append(pairs, view.Pair{Key: "record", Value: textclean.Records(r.Scopes)})
+	if shown := textclean.CallRecords(r.Scopes); shown != "" {
+		pairs = append(pairs, view.Pair{Key: "record", Value: shown})
 	}
 	if r.Profile != "" {
 		pairs = append(pairs, view.Pair{Key: "connection", Value: r.Profile})
@@ -1381,8 +1381,11 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 		if issued != nil {
 			return issued, nil
 		}
-		return view.Text{Body: fmt.Sprintf("would allow %s (%s) for the agent waiting on request %s",
-			r.Cap, textclean.Records(r.Scopes), id)}, nil
+		what := r.Cap
+		if shown := textclean.CallRecords(r.Scopes); shown != "" {
+			what += " (" + shown + ")"
+		}
+		return view.Text{Body: fmt.Sprintf("would allow %s for the agent waiting on request %s", what, id)}, nil
 	}
 	// The team's ceiling binds a live "yes" exactly as it binds `grant allow`:
 	// `never`/`neverProfile` are documented as needing nobody's agreement, not
@@ -1797,10 +1800,10 @@ func whyLine(e agentlog.Entry) string {
 // trim took a no-break space off the end of the last record, so the answer
 // named the bare record the operator had not answered for.
 func callNamed(capID string, records []string) string {
-	if len(records) == 0 {
-		return capID
+	if shown := textclean.CallRecords(records); shown != "" {
+		return capID + " " + shown
 	}
-	return capID + " " + textclean.Records(records)
+	return capID
 }
 
 // argValue is one argument as a person reads it beside the record: a string
