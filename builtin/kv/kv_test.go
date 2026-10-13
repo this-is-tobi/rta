@@ -2207,109 +2207,49 @@ func TestLockedKeyExplainsThatTheAgentCannotHelp(t *testing.T) {
 	}
 }
 
-// statusSections runs kv.status as a full page.
-func statusSections(t *testing.T, values map[string]any) view.Sections {
-	t.Helper()
-	if values == nil {
-		values = map[string]any{}
-	}
-	values["detail"] = true
-	v, err := runStatus(t.Context(), req(values, false))
-	if err != nil {
+// kv.status is the cheap question and stays one: it reads the file and the
+// recipients, so it answers about a store nothing here could open — and about
+// one that is not an age file at all, which only a decrypt would find out. What
+// is inside is kv.overview's.
+func TestStatusAnswersWithoutOpeningTheStore(t *testing.T) {
+	setup(t)
+	if err := os.WriteFile(storePath(), []byte("this is not an age file"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s, ok := v.(view.Sections)
+
+	v, err := runStatus(t.Context(), req(nil, false))
+	if err != nil {
+		t.Fatalf("status of a store nothing can open: %v", err)
+	}
+	kv, ok := v.(view.KeyValue)
 	if !ok {
-		t.Fatalf("detailed status = %s, want Sections", view.TypeOf(v))
+		t.Fatalf("status = %s, want a KeyValue", view.TypeOf(v))
 	}
-	return s
-}
-
-func section(t *testing.T, s view.Sections, title string) view.View {
-	t.Helper()
-	for _, item := range s.Items {
-		if item.Title == title {
-			return item.View
-		}
-	}
-	t.Fatalf("no %q section: %v", title, sectionTitles(s))
-	return nil
-}
-
-func sectionTitles(s view.Sections) []string {
-	out := make([]string, 0, len(s.Items))
-	for _, item := range s.Items {
-		out = append(out, item.Title)
-	}
-	return out
-}
-
-// The detail page answers "what is in here", which the compact one cannot:
-// the inventory needs the store open, and the compact view promises never to
-// need that.
-func TestDetailedStatusListsWhatIsInTheStore(t *testing.T) {
-	setup(t)
-	text(t, runSet, map[string]any{"key": "db-password", "value": "s3cr3t", "description": "staging"}, false)
-
-	s := statusSections(t, nil)
-	if _, ok := section(t, s, "store").(view.KeyValue); !ok {
-		t.Error("the store section should be the same summary the compact view returns")
-	}
-	tbl, ok := section(t, s, "keys").(view.Table)
-	if !ok {
-		t.Fatalf("keys section = %s, want Table", view.TypeOf(section(t, s, "keys")))
-	}
-	found := false
-	for _, row := range tbl.Rows {
-		if row[0] == "db-password" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("inventory does not list the stored key: %v", tbl.Rows)
-	}
-}
-
-// The inventory is only safe to put on a status page because of what it
-// leaves out. A value reaching this page — in any section, at any depth —
-// turns "where is my store" into "here are my secrets".
-func TestDetailedStatusNeverShowsAValue(t *testing.T) {
-	setup(t)
-	text(t, runSet, map[string]any{"key": "db-password", "value": "s3cr3t-value", "description": "staging"}, false)
-	text(t, runSet, map[string]any{"key": "api-token", "value": "tok-abcdef", "description": "prod"}, false)
-
-	rendered := fmt.Sprintf("%+v", statusSections(t, nil))
-	for _, secret := range []string{"s3cr3t-value", "tok-abcdef"} {
-		if strings.Contains(rendered, secret) {
-			t.Fatalf("the detailed status page leaked %q", secret)
+	for _, want := range []string{"store", "size", "changed", "locked with", "unlocks here"} {
+		if pairValue(kv, want) == "" {
+			t.Errorf("status has no %q line: %v", want, kv.Pairs)
 		}
 	}
 }
 
-// A status page that blocks on a passphrase is not a status page. With no
-// key available the inventory section says so and the rest of the page still
-// renders — the compact answer must never become a prompt.
-func TestDetailedStatusSaysSoWhenItCannotOpenTheStore(t *testing.T) {
+// The detail page moved to kv.overview, with the inventory it composed from
+// kv.list: status declares none, so a caller that still asks for one — a script
+// written for the flag — gets the same short answer rather than a page.
+func TestStatusHasNoDetailPage(t *testing.T) {
 	setup(t)
 	text(t, runSet, map[string]any{"key": "db-password", "value": "s3cr3t"}, false)
 
-	v, err := runStatus(t.Context(), plugin.NewRequest(map[string]any{"detail": true}, false, false))
+	for _, c := range Plugin().Capabilities {
+		if c.ID == "kv.status" && c.Detailed {
+			t.Error("kv.status still declares a detail page")
+		}
+	}
+	v, err := runStatus(t.Context(), req(map[string]any{"detail": true}, false))
 	if err != nil {
-		t.Fatalf("a locked store must still produce a status page: %v", err)
+		t.Fatal(err)
 	}
-	s, ok := v.(view.Sections)
-	if !ok {
-		t.Fatalf("detailed status = %s, want Sections", view.TypeOf(v))
-	}
-	if _, ok := section(t, s, "store").(view.KeyValue); !ok {
-		t.Error("the store section must render even when the inventory cannot")
-	}
-	txt, ok := section(t, s, "keys").(view.Text)
-	if !ok {
-		t.Fatalf("keys section = %s, want an explanation", view.TypeOf(section(t, s, "keys")))
-	}
-	if !strings.Contains(txt.Body, "Locked") {
-		t.Errorf("the explanation should say the store is locked: %q", txt.Body)
+	if _, ok := v.(view.KeyValue); !ok {
+		t.Errorf("status with detail = %s, want the same KeyValue", view.TypeOf(v))
 	}
 }
 

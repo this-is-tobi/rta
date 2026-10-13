@@ -52,13 +52,10 @@ func overviewCapability() plugin.Capability {
 			"question and never decrypts. With `detail`: the biggest top-level folders, and who can open a " +
 			"store locked to keys.",
 		Inputs: unlockFields(),
-		// The kv tile is about the store rather than any entry, so its actions are
-		// the two things you want from there: the list, and a new secret.
-		Actions: []plugin.Action{
-			{Key: "s", Label: "secrets", Target: "kv.list"},
-			{Key: "a", Label: "add", Target: "kv.set"},
-		},
-		Run: runOverview,
+		// The dashboard's kv tile, which is about the store rather than any
+		// entry, so what it offers is the two things you want from there.
+		Actions: storeActions(),
+		Run:     runOverview,
 	}
 }
 

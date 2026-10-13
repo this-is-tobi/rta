@@ -92,6 +92,15 @@ func unlockFields(extra ...plugin.Field) []plugin.Field {
 	return append(extra, passphraseField, identityField)
 }
 
+// storeActions are what a page about the store, rather than about any entry,
+// offers: the list, and a new secret.
+func storeActions() []plugin.Action {
+	return []plugin.Action{
+		{Key: "s", Label: "secrets", Target: "kv.list"},
+		{Key: "a", Label: "add", Target: "kv.set"},
+	}
+}
+
 // creatingFields are unlockFields for the operation that can make the store.
 func creatingFields(extra ...plugin.Field) []plugin.Field {
 	return append(extra, newStorePassphraseField, identityField)
@@ -437,23 +446,17 @@ func Plugin() plugin.Plugin {
 			{
 				ID: "kv.status", Summary: "Where the store is and what can open it",
 				Safety: plugin.Read, HostSpecific: true, Idempotent: true,
-				Detailed: true,
 				Description: "Everything about the store that can be known without unlocking it: " +
 					"whether it exists, how big it is, when it last changed, whether it is locked " +
 					"with a passphrase or to keys, and whether a key is available in this " +
-					"environment. With `detail` it also lists who can open the store and what is " +
-					"in it — names, kinds and sizes, never a value or a preview of one — when a " +
-					"key is already at hand; when none is, it says so instead of asking, so the " +
-					"compact answer never turns into a passphrase prompt nobody expected.",
+					"environment. It reads the file and never decrypts it, so it answers whatever " +
+					"state the store is in; `kv.overview` is the page that also counts what is " +
+					"inside, and begins with these lines.",
 				Inputs: unlockFields(),
-				// The kv tile is `kv status`, which is about the store rather than any
-				// entry — so its actions are the two things you want from there: the
-				// list, and a new secret.
-				Actions: []plugin.Action{
-					{Key: "s", Label: "secrets", Target: "kv.list"},
-					{Key: "a", Label: "add", Target: "kv.set"},
-				},
-				Run: runStatus,
+				// What a page about the store rather than any entry offers, as
+				// kv.overview does: the list, and a new secret.
+				Actions: storeActions(),
+				Run:     runStatus,
 			},
 		},
 	}

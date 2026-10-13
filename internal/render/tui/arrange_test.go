@@ -172,8 +172,8 @@ func TestNoBuiltinTileReachesOffTheMachineUnasked(t *testing.T) {
 //
 // This is the rule that makes a third-party plugin's tile a choice instead of
 // an accident. Before it, the tile was the first previewable capability in
-// the list, and the only way to say otherwise was to be a built-in named in
-// preferredTile — so a plugin whose debug dump sorted first showed the debug
+// the list, and the only way to say otherwise was to be a built-in named in a
+// map inside rta — so a plugin whose debug dump sorted first showed the debug
 // dump on the landing screen and had no way to say otherwise.
 func TestAPluginsOverviewTakesTheTileOverDeclarationOrder(t *testing.T) {
 	reg := registry.New()
@@ -235,45 +235,15 @@ func TestAnOverviewThatDeclinesPreviewDoesNotTakeTheTile(t *testing.T) {
 	}
 }
 
-// An explicit pin outranks the convention, which is the only reason the map
-// still exists: kv.status is the kv tile precisely because the capability
-// that *would* be called an overview is the one that cannot run unattended.
-func TestAnExplicitPreferredTileBeatsTheOverviewConvention(t *testing.T) {
-	reg := registry.New()
-	err := reg.Register(plugin.Plugin{
-		Name: "kv", Summary: "a secret store", Capabilities: []plugin.Capability{
-			{
-				ID: "kv.overview", Summary: "declared first, and would win on the convention alone",
-				Safety: plugin.Read,
-				Run: func(context.Context, plugin.Request) (view.View, error) {
-					return view.Text{Body: "every secret you have"}, nil
-				},
-			},
-			{
-				ID: "kv.status", Summary: "where the store is and what can open it", Safety: plugin.Read,
-				Run: func(context.Context, plugin.Request) (view.View, error) {
-					return view.Text{Body: "locked"}, nil
-				},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ids := tileIDs(buildTiles(reg, config.Dashboard{}))
-	if len(ids) != 1 || ids[0] != "kv.status" {
-		t.Fatalf("tiles = %v, want exactly [kv.status] — the pin must outrank the convention", ids)
-	}
-}
-
 // The shipped dashboard, pinned as a whole.
 //
-// This replaces the preferredTile entries that used to name note.list,
-// note.list, net.overview, fs.tree, sys.overview and gen.overview: five of the
-// seven were restating what the rules already resolve to, which made the map
-// look like the mechanism when it was only ever the exception list. Asserting
-// the outcome instead covers every plugin by the same rules a third-party one
-// gets, and catches the two things the map never could — a plugin that
+// This replaces a table that named a tile for each of note.list, net.overview,
+// fs.tree, sys.overview, gen.overview and kv.status: most of them were
+// restating what the rules already resolve to, which made the table look like
+// the mechanism when it was only ever the exception list, and the last of them
+// went when kv gained an overview that can be asked unattended. Asserting the
+// outcome instead covers every plugin by the same rules a third-party one
+// gets, and catches the two things a table never could — a plugin that
 // silently stopped having a tile, and a new one that silently gained one.
 //
 // gen and fs are the entries worth reading twice, for what is not here.
@@ -296,7 +266,7 @@ func TestTheShippedDashboardIsTheOneWeThinkItIs(t *testing.T) {
 		"agent.overview",
 		"grant.list",
 		"net.overview",
-		"kv.status",
+		"kv.overview",
 		// An empty notebook is the one tile that says nothing on a first run,
 		// so it follows the ones that do.
 		"note.list",
@@ -353,74 +323,6 @@ func TestWhatTheLandingScreenLeavesOffIsStillAddable(t *testing.T) {
 		}
 		if got := NoTileReason(p); !strings.Contains(got, id) || !strings.Contains(got, leftOff[id]) {
 			t.Errorf("NoTileReason(%s) = %q, want it to name %s and say why", p.Name, got, id)
-		}
-	}
-}
-
-// preferredTile is a table of string IDs, so a capability rename or a
-// plugin move breaks it silently: the named tile stops existing, the
-// automatic picker quietly falls back to whatever is first, and the
-// dashboard shows something nobody chose. Checking it against the real
-// registry is what makes that a failing test instead of a surprise.
-func TestEveryPreferredTileNamesACapabilityThatExists(t *testing.T) {
-	reg, err := all.Registry(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	byName := map[string]plugin.Plugin{}
-	for _, p := range reg.Plugins() {
-		byName[p.Name] = p
-	}
-	for name, id := range preferredTile {
-		p, ok := byName[name]
-		if !ok {
-			t.Errorf("preferredTile names plugin %q, which is not registered", name)
-			continue
-		}
-		found := false
-		for _, c := range p.Capabilities {
-			if c.ID == id {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("preferredTile[%q] = %q, which %q does not have", name, id, name)
-		}
-	}
-}
-
-// A pin that is not previewable does not fail loudly — pluginTile skips it
-// and falls through to the convention — so the dashboard would quietly show
-// something nobody chose while the map still claimed otherwise. That is the
-// exact failure the map exists to prevent, so it is worth a test of its own:
-// a pin must be a pin.
-//
-// The three reasons a capability is not previewable are all fatal here. A
-// tile refreshes on a timer with nobody watching, so it must not mutate
-// (Read), must be answerable from its defaults alone — one that needs an
-// argument renders the same "missing input" error forever — and must not have
-// declared NoPreview, which the pin has no standing to overrule.
-func TestEveryPreferredTileIsActuallyUsableAsATile(t *testing.T) {
-	reg, err := all.Registry(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, id := range preferredTile {
-		c, ok := reg.Capability(id)
-		if !ok {
-			continue // reported by the test above
-		}
-		if previewable(c) {
-			continue
-		}
-		switch {
-		case c.Safety != plugin.Read:
-			t.Errorf("%s backs the %s tile but is %s — a tile must not mutate on a timer", id, name, c.Safety)
-		case formNeeded(c):
-			t.Errorf("%s backs the %s tile but needs an input with no default", id, name)
-		default:
-			t.Errorf("%s backs the %s tile but declares NoPreview — the pin is silently ignored", id, name)
 		}
 	}
 }

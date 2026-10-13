@@ -1119,17 +1119,15 @@ func boolToInt(b bool) int {
 
 // runStatus reports on the store without opening it. Every fact here comes
 // from the file's metadata or from the recipients list, which is public by
-// construction — so this is the one kv capability that always works, and the
-// one worth putting on a dashboard.
-func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
-	summary, mode, verr := storeFacts(req)
+// construction — so this is the one kv capability that always works, whatever
+// the store holds and whatever is at hand to open it. What is inside is
+// kv.overview's to count, and it begins with these lines.
+func runStatus(_ context.Context, req plugin.Request) (view.View, error) {
+	facts, _, verr := storeFacts(req)
 	if verr != nil {
 		return nil, verr
 	}
-	if mode == "" || !req.Bool("detail") {
-		return summary, nil
-	}
-	return detailedStatus(ctx, req, summary, mode), nil
+	return facts, nil
 }
 
 // storeFacts is everything that can be said of the store without opening it,
@@ -1169,39 +1167,6 @@ func storeFacts(req plugin.Request) (view.KeyValue, keyMode, *view.Error) {
 	// before you need the secret, not while you need it.
 	pairs = append(pairs, view.Pair{Key: "unlocks here", Value: unlockAvailability(req, mode)})
 	return view.KeyValue{Pairs: pairs}, mode, nil
-}
-
-// detailedStatus is the full-page answer to "what is in this store and who
-// can open it", composed from the capabilities that already answer each half
-// — kv.recipients and kv.list — rather than reaching into the store again.
-//
-// kv.list is safe to embed precisely because of what it does not return: key
-// names, kinds, sizes, descriptions and ages, never a value nor a preview of
-// one. The inventory a person needs at a glance is exactly the part that is
-// not the secret.
-//
-// The store still has to open for that section, which is the one thing the
-// compact view promises never to need. So it is attempted with whatever key
-// the caller already supplied and no more: an --identity, a passphrase in
-// the environment, an unlocked key. Nothing here prompts, and a store that
-// will not open without asking says so and stops, because a status page that
-// blocks on a passphrase is not a status page.
-func detailedStatus(ctx context.Context, req plugin.Request, summary view.KeyValue, mode keyMode) view.View {
-	p := plugin.NewPage(ctx, req)
-	p.PutAs("store", "store", summary)
-	if mode == modeKeys {
-		p.AddAs("recipients", "recipients", runRecipients, plugin.Read, nil)
-	}
-	v, err := p.Run(runList, plugin.Read, nil)
-	if err != nil {
-		ve := view.AsError(err, "kv.status.locked")
-		p.PutAs("keys", "keys", view.Text{Body: "Locked — the inventory needs the store open, and nothing here " +
-			"can open it without asking.\n\n" + ve.Message + "\n\n" + req.Surface().CapabilityName("kv.list") +
-			" answers once a key is at hand."})
-		return p.View()
-	}
-	p.PutAs("keys", "keys", v)
-	return p.View()
 }
 
 // unlockAvailability says whether a key is at hand, naming only where it came

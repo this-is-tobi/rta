@@ -19,9 +19,9 @@ import (
 // repositories on a tile they never asked for. The sentence is muted, the way an
 // empty notebook's is, and the full error, with its hint, is what enter opens.
 //
-// Host-side, with the rest of what the landing screen decides (leftOff,
-// preferredTile): the capability's error is right for `rta git overview`, which
-// is asked about a directory, and wrong for a glance that was never asked.
+// Host-side, with the rest of what the landing screen decides (leftOff): the
+// capability's error is right for `rta git overview`, which is asked about a
+// directory, and wrong for a glance that was never asked.
 var notHere = map[string]string{
 	"git.notarepo": "Not inside a git repository — start rta in a checkout and this tile fills in.",
 }
