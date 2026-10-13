@@ -371,3 +371,26 @@ func TestExplainCardSaysWhichInputASwitchWidens(t *testing.T) {
 		t.Errorf("the card does not say what --all-namespaces widens:\n%s", out)
 	}
 }
+
+// The card is where an operator reads where an input comes from, and "from
+// config plugins.kube.namespace" is true of the plugin's own section and not of a
+// profile's `set:`: the record a capability works on is named by the call. It
+// says so on the input, and only there.
+func TestExplainCardSaysAScopeIsNamedByTheCallAndNotByAProfile(t *testing.T) {
+	reg := clusterishRegistry(t)
+	out, _, err := run(t, reg, "explain", "cluster.pod.list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "the scope — a call names it, and a profile's `set:` never fills it") {
+		t.Errorf("the card does not say a profile never fills the namespace of a read:\n%s", out)
+	}
+	// An input a profile does fill says nothing of the kind.
+	out, _, err = run(t, reg, "explain", "cluster.sa.provision")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "never fills it") {
+		t.Errorf("the card says a profile never fills an input it does fill:\n%s", out)
+	}
+}
