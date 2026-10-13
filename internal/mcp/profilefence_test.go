@@ -220,6 +220,63 @@ func TestABlankCannotLiftAPinnedValue(t *testing.T) {
 	}
 }
 
+// **A blank is not a value outside the list, and the agent is not told it is.**
+// Leaving a fenced input out is the natural call — the schema says the context's
+// own is used — and "lies outside what the connection reaches" says something
+// the agent did not do, with a way out ("a grant on another one") that is no
+// answer to a blank. The two causes need different action: a blank asks which,
+// an outside value is not covered. Nothing the operator wrote is in either.
+func TestABlankFencedInputIsToldApartFromOneOutsideTheList(t *testing.T) {
+	f := newFenceFixture(t, fenced, t.TempDir())
+	now := time.Now()
+	if verr := grant.Save([]grant.Grant{{
+		Target: "app", Profile: "shared", ProfilePin: profile.ConnStampFor(f.profiles, "shared", "app"),
+		Issued: now, Expires: now.Add(time.Hour),
+	}}); verr != nil {
+		t.Fatal(verr)
+	}
+
+	for name, args := range map[string]map[string]any{
+		"left out":   {"profile": "shared"},
+		"sent blank": {"profile": "shared", "namespace": ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			res := f.call(t, args)
+			assertCode(t, res, "core.profile.fenced")
+			message := messageOf(t, res)
+			if !strings.Contains(message, `the "namespace" argument is blank`) ||
+				!strings.Contains(message, "has to be told which one") {
+				t.Errorf("a blank is not said as one: %q", message)
+			}
+			if strings.Contains(message, "lies outside") {
+				t.Errorf("a blank is told it lies outside: %q", message)
+			}
+			text := contentText(t, res)
+			for _, leaked := range []string{"alpha", "beta", "shared"} {
+				if strings.Contains(text, leaked) {
+					t.Errorf("the refusal tells the agent %q:\n%s", leaked, text)
+				}
+			}
+			if strings.Contains(text, "grant on another") {
+				t.Errorf("a blank is sent to ask for a grant on another connection:\n%s", text)
+			}
+			if !strings.Contains(text, "name a value for it") {
+				t.Errorf("the refusal does not say what to do about a blank:\n%s", text)
+			}
+		})
+	}
+
+	// A value that is there and is not covered keeps its own sentence.
+	res := f.call(t, map[string]any{"profile": "shared", "namespace": "gamma"})
+	assertCode(t, res, "core.profile.fenced")
+	if message := messageOf(t, res); !strings.Contains(message, "lies outside what the connection it names reaches") {
+		t.Errorf("a value outside the list lost its sentence: %q", message)
+	}
+	if *f.ran != 0 {
+		t.Fatal("a refused call reached the handler")
+	}
+}
+
 // The switch the plugin declares widens the input is a second way past the
 // list that never passes through the input's own value.
 func TestAWideningSwitchCannotReadPastAFencedInput(t *testing.T) {

@@ -810,6 +810,15 @@ func withheld(e *agentlog.Entry, verr *view.Error) {
 // it, and a refusal that did not say which would be a refusal it could only
 // answer by guessing.
 //
+// **A blank is said as one.** Leaving a fenced input out, or sending it empty,
+// is not a value outside the list — the schema tells the agent an omitted
+// namespace is the context's own, so it is the natural call — and "lies outside"
+// would charge the agent with something it did not do, under a hint ("a grant
+// on another one") that is no answer to it. The two need different action: a
+// blank asks which, a value outside says that one is not covered. Whether the
+// call left the input blank is the agent's own doing and says nothing about what
+// the connection holds, so it costs the operator nothing to say.
+//
 // The row says what the agent was not told, in Note, where only a person reads
 // it: the sentence the operator would have been given at a terminal, with the
 // profile and what it reaches. That is the half of the ledger that lets
@@ -818,12 +827,18 @@ func withheld(e *agentlog.Entry, verr *view.Error) {
 func fencedRefusal(rec *agentlog.Entry, c plugin.Capability, ref string, breach *plugin.FenceBreach) *view.Error {
 	person := profile.FenceRefusal(ref, c, breach, plugin.SurfaceCLI)
 	input := profile.FenceInput(breach.Input, plugin.SurfaceMCP)
+	hint := "name only what that connection covers, or ask the operator what it covers and for a grant on another one"
 	agent := view.Errorf(person.Code, "%s was not run: %s lies outside what the connection it names reaches", c.ID, input)
-	if breach.Widened() {
+	switch {
+	case breach.Widened():
 		agent = view.Errorf(person.Code, "%s was not run: %s reads past what the connection it names reaches in %s",
 			c.ID, profile.FenceInput(breach.Switch, plugin.SurfaceMCP), input)
+	case breach.Blank:
+		agent = view.Errorf(person.Code, "%s was not run: %s is blank, and the connection it names has to be told which one",
+			c.ID, input)
+		hint = "name a value for it, or ask the operator which one that connection covers"
 	}
-	agent = agent.WithHint("name only what that connection covers, or ask the operator what it covers and for a grant on another one")
+	agent = agent.WithHint(hint)
 	refusedBy(rec, agent)
 	rec.Note = cut(textclean.Credentials(person.Message), maxReason)
 	return agent
