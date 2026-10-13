@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -43,6 +44,113 @@ func quietSentence(t tile) (string, bool) {
 // agent plugin, which it knows nothing else about; TestTheAgentTilesWaitingLineIsTheOneTheDashboardReads
 // holds the two spellings together.
 const waitingKey = "waiting on you"
+
+// grade is how much a tile's answer asks for attention, which is the one thing
+// worth carrying out of a tile that is not drawn: a section folded to its header
+// still has to say that something inside it is wrong.
+//
+// **It is read from the answer on demand and not tracked.** A tile holds what its
+// capability returned, kept since the last run (tileRaw), and the status columns
+// and the warnings in it are already what the tile's panel colours. So a header
+// that wants the worst of its tiles reads them as the panel does, when the header
+// is drawn, and there is no second record of a tile's state to keep in step with
+// the first. It costs a pass over each answer's rows per paint of a header, which
+// is nothing next to rendering the panels a folded section does not draw.
+type grade int
+
+const (
+	// gradeNone is an answer that grades nothing: a list of facts, a chart, a table
+	// with no status or usage column. Not the same as fine, and never drawn as
+	// "ok": a header that called a section ok because its tiles had nothing graded
+	// to say would be claiming what no tile said.
+	gradeNone grade = iota
+	gradeGood
+	gradeWarn
+	gradeBad
+)
+
+// gradeOf maps the theme's classification onto the three that count.
+func gradeOf(k theme.StatusKind) grade {
+	switch k {
+	case theme.StatusGood:
+		return gradeGood
+	case theme.StatusWarn:
+		return gradeWarn
+	case theme.StatusBad:
+		return gradeBad
+	}
+	return gradeNone
+}
+
+// tileGrade is the worst a tile says about itself, and whether it has said
+// anything yet. An error is bad, except the ones the panel itself draws as a
+// quiet sentence (notHere): a tile that has nothing to say from here is not a
+// tile with a problem. A tile that has not answered is not graded; the header
+// says it is still loading instead.
+func tileGrade(t tile) (g grade, answered bool) {
+	switch {
+	case t.err != nil:
+		if _, quiet := quietSentence(t); quiet {
+			return gradeNone, true
+		}
+		return gradeBad, true
+	case t.view != nil:
+		return viewGrade(t.view), true
+	}
+	return gradeNone, false
+}
+
+// viewGrade is the worst grade in a view: each status or usage cell, read by the
+// words the table colours them by, a warning that says the answer is partial,
+// the calls the agent tile says are waiting, and everything inside a composite.
+func viewGrade(v view.View) grade {
+	worst := gradeNone
+	switch v := v.(type) {
+	case view.Table:
+		for col, c := range v.Columns {
+			if !isGraded(c.Kind) {
+				continue
+			}
+			for _, row := range v.Rows {
+				if col < len(row) {
+					worst = max(worst, cellGrade(c.Kind, row[col]))
+				}
+			}
+		}
+		worst = max(worst, warningsGrade(v.Warnings))
+	case view.KeyValue:
+		if waitingCalls(v) > 0 {
+			worst = gradeWarn
+		}
+	case view.Sections:
+		for _, s := range v.Items {
+			if s.View != nil {
+				worst = max(worst, viewGrade(s.View))
+			}
+		}
+		worst = max(worst, warningsGrade(v.Warnings))
+	}
+	return worst
+}
+
+// cellGrade grades one cell of a graded column the way the table's own colours do.
+func cellGrade(kind view.ColumnKind, cell string) grade {
+	if kind == view.KindUsage {
+		return gradeOf(theme.ClassifyUsage(cell))
+	}
+	return gradeOf(theme.ClassifyStatus(cell))
+}
+
+// warningsGrade is a warning when the answer says it is partial. An advisory
+// warning sits beside a complete answer, by its own account, so it is not one.
+func warningsGrade(warnings []view.Error) grade {
+	for _, w := range warnings {
+		if !w.Advisory {
+			return gradeWarn
+		}
+	}
+	return gradeNone
+}
 
 // waitingCalls is how many calls the tile says are parked waiting for an
 // answer, 0 for a tile that says none, says nothing about it, or cannot read

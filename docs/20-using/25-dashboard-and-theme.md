@@ -75,6 +75,39 @@ Two things the block will not do, whatever you write in it:
 - **A tile that is not `Read` is dropped.** Otherwise `{id: kv.rm, with: {key: old-token}}` would delete that key on startup and keep deleting it — on a timer, with no form and no confirmation, since the destructive gate lives on the CLI and the browse path and a tile goes through neither.
 - **The whole block is ignored unless the config is one you named** — your user config directory, or `RTA_CONFIG`. rta falls back to `./.rta.yaml` when there is no user config directory (ordinary under `env -i`, in a container, in CI), and a cloned repository does not get to arrange your screen: `{id: http.get, with: {url: …}}` there would be a beacon that starts the moment you open the TUI in that directory. `hidden:` is the same hazard pointed the other way — it can take the agent tile off the screen, and that tile is where you notice a parked consent request before its clock runs out. `rta config check` says the block is ignored, `rta dashboard views` says none of the views it lists is drawn, and `V` has no views to cycle through.
 
+## Sections: group tiles, and fold the group
+
+A dashboard with several connections per plugin gets long: one entry over a profile that holds five Postgres connections is five panels, and the next profile is five more. A **section** draws tiles together under one header row, and the header folds them to that row, so the screen is as long as you want it to be.
+
+A tile is in a section when its entry names one, and `sections:` says how each starts out and how wide it draws:
+
+```yaml
+dashboard:
+  sections:
+    databases:
+      collapsed: true   # starts folded to its header row
+    edge:
+      columns: 3        # its own grid width
+  add:
+  - id: pg.overview
+    profile: staging/orders
+    section: databases
+  - id: pg.overview
+    profile: staging/analytics
+    section: databases
+  - id: kube.overview
+    profile: prod
+    section: edge
+```
+
+A section is drawn together, at the place of its first tile: the tiles that name it come together there, in the order they have, and `order:` and `[` `]` place the section by placing that tile. A tile that names no section keeps its place and is drawn as it always was, with no header — a dashboard that states no section, and has no entry that expanded into several panels, draws exactly as it did before sections. A view and a profile's own screen take the same two keys, each its own: they replace the block while they are drawn, `sections:` included.
+
+**An entry that becomes several panels is a section.** `{id: pg.overview, profile: staging}` over the five connections staging holds is one section named `pg · staging`, unless the entry names a `section:`, which all its panels then share. An entry that yields one panel is in none. The automatic name is an ordinary name in `sections:` — `"pg · staging": {collapsed: true}` starts that group folded — and a tile that follows the switch is named after whatever environment is on, `pg · staging` under staging and `pg · prod` under prod.
+
+**The header says what a fold hides.** `▾` is an open section and `▸` a folded one, followed by its name, how many tiles it holds and the worst of what they say: `● 1 bad` for a tile that is an error or has a status or usage cell in the red, `● 2 warn` for the amber ones — a partial answer, a call waiting for you — `ok` when the tiles that grade themselves are fine, and `N loading` while some have not answered yet. Folding hides the panels and never a problem, at any width: a header that is short of room gives up the count first and then the end of its name, cut with an ellipsis, and keeps what the tiles say. `ok` is said only when a tile said so, since tiles that grade nothing say nothing. What the header reports is what a tile declares: a tile whose answer is a page of key/value pairs, such as a cluster that did not answer, declares nothing, so a section made of them folds to a quiet header and the panel is where to read it.
+
+`columns:` is the grid width of the section's own rows in place of the dashboard's, held to what fits as the dashboard's is, and 0 is the dashboard's. A name is a heading a person reads — up to 64 characters, no control characters — so `databases`, `prod: orders` and `pg · staging` all are.
+
 ## Views: a screen per environment
 
 A person who works against three environments wants three screens: staging's cluster and database, production's tiles and nothing else, and one that is about every database there is. A profile is a set of connections and not an arrangement, so the arrangement is named on its own, as a **view**, and a profile says which one it shows:
@@ -105,7 +138,7 @@ profiles:
       pg: {}
 ```
 
-Switching to `prod` draws `ops`; any other environment, and no environment, draws the `dashboard:` block as it always has. A view is a whole arrangement of the same five keys the block has — `tiles`, `add`, `hidden`, `order`, `columns` — and it **replaces** the block while it is drawn rather than laying over it, so what a screen shows is the fields of one place and not an answer to which of two lists wins. Its tiles pin themselves to whichever profiles they name, which is what makes the `databases` view possible: it belongs to no environment, shows every database of every one, and any profile can select it. A profile that names a view nothing states draws the default and `rta doctor` says so, since a screen that fails to draw over a name is a worse outage than the usual one.
+Switching to `prod` draws `ops`; any other environment, and no environment, draws the `dashboard:` block as it always has. A view is a whole arrangement of the same six keys the block has — `tiles`, `add`, `hidden`, `order`, `columns`, `sections` — and it **replaces** the block while it is drawn rather than laying over it, so what a screen shows is the fields of one place and not an answer to which of two lists wins. Its tiles pin themselves to whichever profiles they name, which is what makes the `databases` view possible: it belongs to no environment, shows every database of every one, and any profile can select it. A profile that names a view nothing states draws the default and `rta doctor` says so, since a screen that fails to draw over a name is a worse outage than the usual one.
 
 From a shell, `--view` names the view on every `rta dashboard` command, and without it a command acts on the view that is drawn now, so what you add, hide or list is what you are looking at:
 
@@ -116,7 +149,7 @@ rta dashboard list --view databases
 rta profile set prod --dashboard ops                         # the screen prod shows; `--dashboard none` goes back
 ```
 
-`--view default` names the `dashboard:` block when that is the one you mean. In the TUI the header says `view ops` when it is not the default, `H`, `+` and `[` `]` write to the view that is drawn, and `V` draws the next one — the default, then each view by name — for this session only, which is how you look at the databases screen without switching environment. A switch (`u`) undoes it, since switching is asking for that environment's screen. Each view is a unit of its own when the configuration is [split across files](./22-your-config-file.md#split-it-across-files): a drop-in can hold one view and nothing else.
+`--view default` names the `dashboard:` block when that is the one you mean. In the TUI the header says `view ops` when it is not the default, `H`, `+` and `[` `]` write to the view that is drawn, and `V` draws the next one — the default, then each view by name — for this session only, which is how you look at the databases screen without switching environment. A selection on a section's header stays on it when the next screen has that section and goes to the screen's first header or tile when it does not, never to the search line, so `V` pressed again draws the one after. A switch (`u`) undoes it, since switching is asking for that environment's screen. Each view is a unit of its own when the configuration is [split across files](./22-your-config-file.md#split-it-across-files): a drop-in can hold one view and nothing else.
 
 ### A screen written in the profile
 

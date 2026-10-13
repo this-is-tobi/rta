@@ -967,7 +967,7 @@ func TestAWideTileTakesARowOfItsOwnAtFullWidth(t *testing.T) {
 		})
 	}
 	var got [][]string
-	for _, row := range m.tileRows() {
+	for _, row := range cellRows(m) {
 		names := []string{}
 		for _, i := range row {
 			names = append(names, m.tiles[i].cap.ID)
@@ -985,7 +985,7 @@ func TestAWideTileTakesARowOfItsOwnAtFullWidth(t *testing.T) {
 	// The row the wide tile broke early is short, and its tiles share out
 	// what is left rather than leaving a hole beside them. Every row is
 	// exactly the screen wide, so the right-hand edge does not wobble.
-	for r, row := range m.tileRows() {
+	for r, row := range cellRows(m) {
 		total := len(row) - 1
 		for _, i := range row {
 			total += m.tileWidth(i)
@@ -1011,7 +1011,7 @@ func TestVerticalMovementKeepsItsColumn(t *testing.T) {
 			view: view.Text{Body: "a\nb"},
 		})
 	}
-	rows := m.tileRows()
+	rows := cellRows(m)
 	if len(rows) < 3 {
 		t.Fatalf("need a few rows to walk: %v", rows)
 	}
@@ -1040,7 +1040,7 @@ func TestVerticalMovementKeepsItsColumn(t *testing.T) {
 // row, the far right of the screen is still that one tile.
 func TestClickingAnywhereOnAWideRowHitsThatTile(t *testing.T) {
 	m := wideRowModel(t)
-	rows := m.tileRows()
+	rows := cellRows(m)
 	heights := m.rowHeights()
 	wideRow, wideIdx := -1, -1
 	for r, row := range rows {
@@ -1070,7 +1070,7 @@ func TestClickingAnywhereOnAWideRowHitsThatTile(t *testing.T) {
 // short row walked straight past it.
 func TestMovingOntoAShorterRowLandsOnATile(t *testing.T) {
 	m := wideRowModel(t)
-	rows := m.tileRows()
+	rows := cellRows(m)
 	if len(rows) < 2 {
 		t.Skip("need at least two rows")
 	}

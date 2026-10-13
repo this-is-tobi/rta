@@ -1,0 +1,1522 @@
+=== automatic 60x20 initial ===
+ rta  dashboard  ↓ more
+ ❯ 5 plugins · 5 capabilities — type to search
+╭─ alpha.overview ─────────────────────────────────────────╮
+│ who   ANSWER-alpha                                       │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij01234567 │
+│       89abcdefghij                                       │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+╭─ beta.overview ──────────────────────────────────────────╮
+│ who   ANSWER-beta                                        │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij01234567 │
+│       89abcdefghij                                       │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse
+ + add tile · ctrl+c quit · ? help · …
+=== automatic 60x20 third-tile-and-a-flash ===
+ rta  dashboard  ↕ more
+ ⌕ 5 plugins · 5 capabilities — press / to search
+╭─ beta.overview ──────────────────────────────────────────╮
+│ who   ANSWER-beta                                        │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij01234567 │
+│       89abcdefghij                                       │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+╭─ delta.overview ─────────────────────────────────────────╮
+│ who   ANSWER-delta                                       │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij01234567 │
+│       89abcdefghij                                       │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details
+ f profiles · p plugins · t theme · q quit · ? help · …
+=== automatic 60x20 last-tile ===
+ rta  dashboard  ↑ more
+ ⌕ 5 plugins · 5 capabilities — press / to search
+╭─ epsilon.overview ───────────────────────────────────────╮
+│ who   ANSWER-epsilon                                     │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij01234567 │
+│       89abcdefghij                                       │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+╭─ gamma.overview ─────────────────────────────────────────╮
+│ who   ANSWER-gamma                                       │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij01234567 │
+│       89abcdefghij                                       │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins
+ t theme · [ ] move · H hide · V view · q quit · ? help · …
+=== automatic 60x20 search-open ===
+ rta  dashboard  ↓ more
+╭─ ⌕ search ───────────────────────────────────────────────╮
+│ ❯ a▌                                                     │
+│ ❯ alpha.overview  what alpha sees                 read   │
+│   beta.overview  what beta sees                   read   │
+│   delta.overview  what delta sees                 read ↓ │
+╰──────────────────────────────────────────────────────────╯
+╭─ alpha.overview ─────────────────────────────────────────╮
+│ who   ANSWER-alpha                                       │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij01234567 │
+│       89abcdefghij                                       │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+╭─ beta.overview ──────────────────────────────────────────╮
+│ who   ANSWER-beta                                        │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij01234567 │
+│       89abcdefghij                                       │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== stated 60x20 initial ===
+ rta  dashboard  ↓ more
+ ❯ 3 plugins · 3 capabilities — type to search
+╭─ short.info ─────────────────────────────────────────────╮
+│ one line                                                 │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+╭─ mid.info ───────────────────────────────────────────────╮
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+╰──────────────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse
+ + add tile · ctrl+c quit · ? help · …
+=== stated 60x20 third-tile-and-a-flash ===
+ rta  dashboard  ↕ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ mid.info ───────────────────────────────────────────────╮
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+╰──────────────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────╮
+│ one line                                                 │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details
+ f profiles · p plugins · t theme · q quit · ? help · …
+=== stated 60x20 last-tile ===
+ rta  dashboard  ↑ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ tall.info ──────────────────────────────────────────────╮
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ … enter for details                                      │
+╰──────────────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────╮
+│ one line                                                 │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins
+ t theme · [ ] move · H remove · q quit · ? help · …
+=== stated 60x20 search-open ===
+ rta  dashboard  ↓ more
+╭─ ⌕ search ───────────────────────────────────────────────╮
+│ ❯ a▌                                                     │
+│ ❯ tall.info  tall                                 read   │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────╮
+│ one line                                                 │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+╭─ mid.info ───────────────────────────────────────────────╮
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ … enter for details                                      │
+╰──────────────────────────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== spanned 60x20 initial ===
+ rta  dashboard  ↓ more
+ ❯ 3 plugins · 3 capabilities — type to search
+╭─ short.info ─────────────────────────────────────────────╮
+│ one line                                                 │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+╭─ mid.info ───────────────────────────────────────────────╮
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+╰──────────────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse
+ + add tile · ctrl+c quit · ? help · …
+=== spanned 60x20 third-tile-and-a-flash ===
+ rta  dashboard  ↕ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ mid.info ───────────────────────────────────────────────╮
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+╰──────────────────────────────────────────────────────────╯
+╭─ short.info  prod ───────────────────────────────────────╮
+│ one line                                                 │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details
+ f profiles · p plugins · t theme · q quit · ? help · …
+=== spanned 60x20 last-tile ===
+ rta  dashboard  ↑ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ short.info ─────────────────────────────────────────────╮
+│ one line                                                 │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+╭─ tall.info ──────────────────────────────────────────────╮
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ … enter for details                                      │
+╰──────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins
+ t theme · [ ] move · H remove · q quit · ? help · …
+=== spanned 60x20 search-open ===
+ rta  dashboard  ↓ more
+╭─ ⌕ search ───────────────────────────────────────────────╮
+│ ❯ a▌                                                     │
+│ ❯ tall.info  tall                                 read   │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────╮
+│ one line                                                 │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+╭─ mid.info ───────────────────────────────────────────────╮
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ … enter for details                                      │
+╰──────────────────────────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== hidden-ordered-added 60x20 initial ===
+ rta  dashboard  ↓ more
+ ❯ 3 plugins · 3 capabilities — type to search
+╭─ tall.info ──────────────────────────────────────────────╮
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ … enter for details                                      │
+╰──────────────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────╮
+│ one line                                                 │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse
+ + add tile · ctrl+c quit · ? help · …
+=== hidden-ordered-added 60x20 third-tile-and-a-flash ===
+ rta  dashboard  ↕ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ short.info ─────────────────────────────────────────────╮
+│ one line                                                 │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+╭─ mid.info  prod ─────────────────────────────────────────╮
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+╰──────────────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details
+ f profiles · p plugins · t theme · q quit · ? help · …
+=== hidden-ordered-added 60x20 last-tile ===
+ rta  dashboard  ↑ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ mid.info  prod ─────────────────────────────────────────╮
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+╰──────────────────────────────────────────────────────────╯
+╭─ tall.info  staging ─────────────────────────────────────╮
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ … enter for details                                      │
+╰──────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins
+ t theme · [ ] move · H remove · q quit · ? help · …
+=== hidden-ordered-added 60x20 search-open ===
+ rta  dashboard  ↓ more
+╭─ ⌕ search ───────────────────────────────────────────────╮
+│ ❯ a▌                                                     │
+│ ❯ tall.info  tall                                 read   │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+╭─ tall.info ──────────────────────────────────────────────╮
+│ line                                                     │
+│ line                                                     │
+│ line                                                     │
+│ … enter for details                                      │
+╰──────────────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────╮
+│ one line                                                 │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== automatic 80x24 initial ===
+ rta  dashboard
+ ❯ 5 plugins · 5 capabilities — type to search
+╭─ alpha.overview ────────────────────╮ ╭─ beta.overview ──────────────────────╮
+│ who   ANSWER-alpha                  │ │ who   ANSWER-beta                    │
+│ blob  ZZ0123456789abcdefghij0123456 │ │ blob  ZZ0123456789abcdefghij01234567 │
+│       789abcdefghij0123456789abcdef │ │       89abcdefghij0123456789abcdefgh │
+│       ghij                          │ │       ij                             │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ delta.overview ────────────────────╮ ╭─ epsilon.overview ───────────────────╮
+│ who   ANSWER-delta                  │ │ who   ANSWER-epsilon                 │
+│ blob  ZZ0123456789abcdefghij0123456 │ │ blob  ZZ0123456789abcdefghij01234567 │
+│       789abcdefghij0123456789abcdef │ │       89abcdefghij0123456789abcdefgh │
+│       ghij                          │ │       ij                             │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ gamma.overview ─────────────────────────────────────────────────────────────╮
+│ who   ANSWER-gamma                                                           │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij         │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse · + add tile
+ p f t plugins, profiles, theme on a tile · ctrl+c quit · ? help
+=== automatic 80x24 third-tile-and-a-flash ===
+ rta  dashboard
+ ⌕ 5 plugins · 5 capabilities — press / to search
+╭─ alpha.overview ────────────────────╮ ╭─ beta.overview ──────────────────────╮
+│ who   ANSWER-alpha                  │ │ who   ANSWER-beta                    │
+│ blob  ZZ0123456789abcdefghij0123456 │ │ blob  ZZ0123456789abcdefghij01234567 │
+│       789abcdefghij0123456789abcdef │ │       89abcdefghij0123456789abcdefgh │
+│       ghij                          │ │       ij                             │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ delta.overview ────────────────────╮ ╭─ epsilon.overview ───────────────────╮
+│ who   ANSWER-delta                  │ │ who   ANSWER-epsilon                 │
+│ blob  ZZ0123456789abcdefghij0123456 │ │ blob  ZZ0123456789abcdefghij01234567 │
+│       789abcdefghij0123456789abcdef │ │       89abcdefghij0123456789abcdefgh │
+│       ghij                          │ │       ij                             │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ gamma.overview ─────────────────────────────────────────────────────────────╮
+│ who   ANSWER-gamma                                                           │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij         │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins
+ t theme · [ ] move · H hide · V view · + add tile · q quit · ? help · …
+=== automatic 80x24 last-tile ===
+ rta  dashboard
+ ⌕ 5 plugins · 5 capabilities — press / to search
+╭─ alpha.overview ────────────────────╮ ╭─ beta.overview ──────────────────────╮
+│ who   ANSWER-alpha                  │ │ who   ANSWER-beta                    │
+│ blob  ZZ0123456789abcdefghij0123456 │ │ blob  ZZ0123456789abcdefghij01234567 │
+│       789abcdefghij0123456789abcdef │ │       89abcdefghij0123456789abcdefgh │
+│       ghij                          │ │       ij                             │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ delta.overview ────────────────────╮ ╭─ epsilon.overview ───────────────────╮
+│ who   ANSWER-delta                  │ │ who   ANSWER-epsilon                 │
+│ blob  ZZ0123456789abcdefghij0123456 │ │ blob  ZZ0123456789abcdefghij01234567 │
+│       789abcdefghij0123456789abcdef │ │       89abcdefghij0123456789abcdefgh │
+│       ghij                          │ │       ij                             │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ gamma.overview ─────────────────────────────────────────────────────────────╮
+│ who   ANSWER-gamma                                                           │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij         │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
+ H hide · V view · + add tile · b browse · / search · q quit · ? help
+=== automatic 80x24 search-open ===
+ rta  dashboard  ↓ more
+╭─ ⌕ search ────────────── 1/5 · ↑↓ pick · enter run · + add tile · esc clear ─╮
+│ ❯ a▌                                                                         │
+│ ❯ alpha.overview  what alpha sees                                     read   │
+│   beta.overview  what beta sees                                       read   │
+│   delta.overview  what delta sees                                     read ↓ │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ alpha.overview ────────────────────╮ ╭─ beta.overview ──────────────────────╮
+│ who   ANSWER-alpha                  │ │ who   ANSWER-beta                    │
+│ blob  ZZ0123456789abcdefghij0123456 │ │ blob  ZZ0123456789abcdefghij01234567 │
+│       789abcdefghij0123456789abcdef │ │       89abcdefghij0123456789abcdefgh │
+│       ghij                          │ │       ij                             │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ delta.overview ────────────────────╮ ╭─ epsilon.overview ───────────────────╮
+│ who   ANSWER-delta                  │ │ who   ANSWER-epsilon                 │
+│ blob  ZZ0123456789abcdefghij0123456 │ │ blob  ZZ0123456789abcdefghij01234567 │
+│       789abcdefghij0123456789abcdef │ │       89abcdefghij0123456789abcdefgh │
+│       ghij                          │ │       ij                             │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== stated 80x24 initial ===
+ rta  dashboard  ↓ more
+ ❯ 3 plugins · 3 capabilities — type to search
+╭─ short.info ────────────────────────╮ ╭─ mid.info ───────────────────────────╮
+│ one line                            │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ short.info ────────────────────────╮ ╭─ tall.info ──────────────────────────╮
+│ one line                            │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ … enter for details                  │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse · + add tile
+ p f t plugins, profiles, theme on a tile · ctrl+c quit · ? help
+=== stated 80x24 third-tile-and-a-flash ===
+ rta  dashboard  ↓ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ short.info ────────────────────────╮ ╭─ mid.info ───────────────────────────╮
+│ one line                            │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ short.info ────────────────────────╮ ╭─ tall.info ──────────────────────────╮
+│ one line                            │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ … enter for details                  │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins
+ t theme · [ ] move · H remove · V view · + add tile · q quit · ? help · …
+=== stated 80x24 last-tile ===
+ rta  dashboard  ↑ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ short.info ────────────────────────╮ ╭─ tall.info ──────────────────────────╮
+│ one line                            │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ … enter for details                  │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────────────────────────╮
+│ one line                                                                     │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
+ H remove · V view · + add tile · b browse · / search · q quit · ? help
+=== stated 80x24 search-open ===
+ rta  dashboard  ↓ more
+╭─ ⌕ search ──────────────────── ↑↓ pick · enter run · + add tile · esc clear ─╮
+│ ❯ a▌                                                                         │
+│ ❯ tall.info  tall                                                     read   │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ short.info ────────────────────────╮ ╭─ mid.info ───────────────────────────╮
+│ one line                            │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ short.info ────────────────────────╮ ╭─ tall.info ──────────────────────────╮
+│ one line                            │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ line                                 │
+│                                     │ │ … enter for details                  │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== spanned 80x24 initial ===
+ rta  dashboard  ↓ more
+ ❯ 3 plugins · 3 capabilities — type to search
+╭─ short.info ─────────────────────────────────────────────────────────────────╮
+│ one line                                                                     │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ mid.info ──────────────────────────╮ ╭─ short.info  prod ───────────────────╮
+│ line                                │ │ one line                             │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse · + add tile
+ p f t plugins, profiles, theme on a tile · ctrl+c quit · ? help
+=== spanned 80x24 third-tile-and-a-flash ===
+ rta  dashboard  ↓ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ short.info ─────────────────────────────────────────────────────────────────╮
+│ one line                                                                     │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ mid.info ──────────────────────────╮ ╭─ short.info  prod ───────────────────╮
+│ line                                │ │ one line                             │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins
+ t theme · [ ] move · H remove · V view · + add tile · q quit · ? help · …
+=== spanned 80x24 last-tile ===
+ rta  dashboard  ↑ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ short.info ─────────────────────────────────────────────────────────────────╮
+│ one line                                                                     │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ tall.info ──────────────────────────────────────────────────────────────────╮
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ … enter for details                                                          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
+ H remove · V view · + add tile · b browse · / search · q quit · ? help
+=== spanned 80x24 search-open ===
+ rta  dashboard  ↓ more
+╭─ ⌕ search ──────────────────── ↑↓ pick · enter run · + add tile · esc clear ─╮
+│ ❯ a▌                                                                         │
+│ ❯ tall.info  tall                                                     read   │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────────────────────────╮
+│ one line                                                                     │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ mid.info ──────────────────────────╮ ╭─ short.info  prod ───────────────────╮
+│ line                                │ │ one line                             │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== hidden-ordered-added 80x24 initial ===
+ rta  dashboard  ↓ more
+ ❯ 3 plugins · 3 capabilities — type to search
+╭─ tall.info ─────────────────────────╮ ╭─ short.info ─────────────────────────╮
+│ line                                │ │ one line                             │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ … enter for details                 │ │                                      │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ mid.info  prod ─────────────────────────────────────────────────────────────╮
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse · + add tile
+ p f t plugins, profiles, theme on a tile · ctrl+c quit · ? help
+=== hidden-ordered-added 80x24 third-tile-and-a-flash ===
+ rta  dashboard  ↓ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ tall.info ─────────────────────────╮ ╭─ short.info ─────────────────────────╮
+│ line                                │ │ one line                             │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ … enter for details                 │ │                                      │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ mid.info  prod ─────────────────────────────────────────────────────────────╮
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins
+ t theme · [ ] move · H remove · V view · + add tile · q quit · ? help · …
+=== hidden-ordered-added 80x24 last-tile ===
+ rta  dashboard  ↑ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ mid.info  prod ─────────────────────────────────────────────────────────────╮
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ tall.info  staging ─────────────────────────────────────────────────────────╮
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ … enter for details                                                          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
+ H remove · V view · + add tile · b browse · / search · q quit · ? help
+=== hidden-ordered-added 80x24 search-open ===
+ rta  dashboard  ↓ more
+╭─ ⌕ search ──────────────────── ↑↓ pick · enter run · + add tile · esc clear ─╮
+│ ❯ a▌                                                                         │
+│ ❯ tall.info  tall                                                     read   │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ tall.info ─────────────────────────╮ ╭─ short.info ─────────────────────────╮
+│ line                                │ │ one line                             │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ line                                │ │                                      │
+│ … enter for details                 │ │                                      │
+╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ mid.info  prod ─────────────────────────────────────────────────────────────╮
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+│ line                                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== automatic 100x30 initial ===
+ rta  dashboard
+ ❯ 5 plugins · 5 capabilities — type to search
+╭─ alpha.overview ──────────────────────────────╮ ╭─ beta.overview ────────────────────────────────╮
+│ who   ANSWER-alpha                            │ │ who   ANSWER-beta                              │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefg │ │ blob  ZZ0123456789abcdefghij0123456789abcdefgh │
+│       hij0123456789abcdefghij                 │ │       ij0123456789abcdefghij                   │
+│                                               │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ delta.overview ──────────────────────────────╮ ╭─ epsilon.overview ─────────────────────────────╮
+│ who   ANSWER-delta                            │ │ who   ANSWER-epsilon                           │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefg │ │ blob  ZZ0123456789abcdefghij0123456789abcdefgh │
+│       hij0123456789abcdefghij                 │ │       ij0123456789abcdefghij                   │
+│                                               │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ gamma.overview ─────────────────────────────────────────────────────────────────────────────────╮
+│ who   ANSWER-gamma                                                                               │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij                             │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse · + add tile
+ p f t plugins, profiles, theme on a tile · ctrl+c quit · ? help
+=== automatic 100x30 third-tile-and-a-flash ===
+ rta  dashboard
+ ⌕ 5 plugins · 5 capabilities — press / to search
+╭─ alpha.overview ──────────────────────────────╮ ╭─ beta.overview ────────────────────────────────╮
+│ who   ANSWER-alpha                            │ │ who   ANSWER-beta                              │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefg │ │ blob  ZZ0123456789abcdefghij0123456789abcdefgh │
+│       hij0123456789abcdefghij                 │ │       ij0123456789abcdefghij                   │
+│                                               │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ delta.overview ──────────────────────────────╮ ╭─ epsilon.overview ─────────────────────────────╮
+│ who   ANSWER-delta                            │ │ who   ANSWER-epsilon                           │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefg │ │ blob  ZZ0123456789abcdefghij0123456789abcdefgh │
+│       hij0123456789abcdefghij                 │ │       ij0123456789abcdefghij                   │
+│                                               │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ gamma.overview ─────────────────────────────────────────────────────────────────────────────────╮
+│ who   ANSWER-gamma                                                                               │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij                             │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
+ H hide · V view · + add tile · b browse · / search · q quit · ? help
+=== automatic 100x30 last-tile ===
+ rta  dashboard
+ ⌕ 5 plugins · 5 capabilities — press / to search
+╭─ alpha.overview ──────────────────────────────╮ ╭─ beta.overview ────────────────────────────────╮
+│ who   ANSWER-alpha                            │ │ who   ANSWER-beta                              │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefg │ │ blob  ZZ0123456789abcdefghij0123456789abcdefgh │
+│       hij0123456789abcdefghij                 │ │       ij0123456789abcdefghij                   │
+│                                               │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ delta.overview ──────────────────────────────╮ ╭─ epsilon.overview ─────────────────────────────╮
+│ who   ANSWER-delta                            │ │ who   ANSWER-epsilon                           │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefg │ │ blob  ZZ0123456789abcdefghij0123456789abcdefgh │
+│       hij0123456789abcdefghij                 │ │       ij0123456789abcdefghij                   │
+│                                               │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ gamma.overview ─────────────────────────────────────────────────────────────────────────────────╮
+│ who   ANSWER-gamma                                                                               │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij                             │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H hide · V view
+ + add tile · b browse · / search · q quit · ? help
+=== automatic 100x30 search-open ===
+ rta  dashboard
+╭─ ⌕ search ────────────────────────────────── 1/5 · ↑↓ pick · enter run · + add tile · esc clear ─╮
+│ ❯ a▌                                                                                             │
+│ ❯ alpha.overview  what alpha sees                                                         read   │
+│   beta.overview  what beta sees                                                           read   │
+│   delta.overview  what delta sees                                                         read ↓ │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ alpha.overview ──────────────────────────────╮ ╭─ beta.overview ────────────────────────────────╮
+│ who   ANSWER-alpha                            │ │ who   ANSWER-beta                              │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefg │ │ blob  ZZ0123456789abcdefghij0123456789abcdefgh │
+│       hij0123456789abcdefghij                 │ │       ij0123456789abcdefghij                   │
+│                                               │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ delta.overview ──────────────────────────────╮ ╭─ epsilon.overview ─────────────────────────────╮
+│ who   ANSWER-delta                            │ │ who   ANSWER-epsilon                           │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefg │ │ blob  ZZ0123456789abcdefghij0123456789abcdefgh │
+│       hij0123456789abcdefghij                 │ │       ij0123456789abcdefghij                   │
+│                                               │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ gamma.overview ─────────────────────────────────────────────────────────────────────────────────╮
+│ who   ANSWER-gamma                                                                               │
+│ blob  ZZ0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij                             │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== stated 100x30 initial ===
+ rta  dashboard
+ ❯ 3 plugins · 3 capabilities — type to search
+╭─ short.info ──────────────────────────────────╮ ╭─ mid.info ─────────────────────────────────────╮
+│ one line                                      │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ short.info ──────────────────────────────────╮ ╭─ tall.info ────────────────────────────────────╮
+│ one line                                      │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ … enter for details                            │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                         │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse · + add tile
+ p f t plugins, profiles, theme on a tile · ctrl+c quit · ? help
+=== stated 100x30 third-tile-and-a-flash ===
+ rta  dashboard
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ short.info ──────────────────────────────────╮ ╭─ mid.info ─────────────────────────────────────╮
+│ one line                                      │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ short.info ──────────────────────────────────╮ ╭─ tall.info ────────────────────────────────────╮
+│ one line                                      │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ … enter for details                            │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                         │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
+ H remove · V view · + add tile · b browse · / search · q quit · ? help
+=== stated 100x30 last-tile ===
+ rta  dashboard
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ short.info ──────────────────────────────────╮ ╭─ mid.info ─────────────────────────────────────╮
+│ one line                                      │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ short.info ──────────────────────────────────╮ ╭─ tall.info ────────────────────────────────────╮
+│ one line                                      │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ … enter for details                            │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                         │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view
+ + add tile · b browse · / search · q quit · ? help
+=== stated 100x30 search-open ===
+ rta  dashboard  ↓ more
+╭─ ⌕ search ──────────────────────────────────────── ↑↓ pick · enter run · + add tile · esc clear ─╮
+│ ❯ a▌                                                                                             │
+│ ❯ tall.info  tall                                                                         read   │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ short.info ──────────────────────────────────╮ ╭─ mid.info ─────────────────────────────────────╮
+│ one line                                      │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ short.info ──────────────────────────────────╮ ╭─ tall.info ────────────────────────────────────╮
+│ one line                                      │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ line                                           │
+│                                               │ │ … enter for details                            │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== spanned 100x30 initial ===
+ rta  dashboard  ↓ more
+ ❯ 3 plugins · 3 capabilities — type to search
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                         │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ mid.info ────────────────────────────────────╮ ╭─ short.info  prod ─────────────────────────────╮
+│ line                                          │ │ one line                                       │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ tall.info ───────────────────────────────────╮ ╭─ mid.info  staging ────────────────────────────╮
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ … enter for details                           │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse · + add tile
+ p f t plugins, profiles, theme on a tile · ctrl+c quit · ? help
+=== spanned 100x30 third-tile-and-a-flash ===
+ rta  dashboard  ↓ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                         │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ mid.info ────────────────────────────────────╮ ╭─ short.info  prod ─────────────────────────────╮
+│ line                                          │ │ one line                                       │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ tall.info ───────────────────────────────────╮ ╭─ mid.info  staging ────────────────────────────╮
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ … enter for details                           │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
+ H remove · V view · + add tile · b browse · / search · q quit · ? help
+=== spanned 100x30 last-tile ===
+ rta  dashboard  ↕ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ tall.info ───────────────────────────────────╮ ╭─ mid.info  staging ────────────────────────────╮
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │ line                                           │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ … enter for details                           │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                         │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view
+ + add tile · b browse · / search · q quit · ? help
+=== spanned 100x30 search-open ===
+ rta  dashboard  ↓ more
+╭─ ⌕ search ──────────────────────────────────────── ↑↓ pick · enter run · + add tile · esc clear ─╮
+│ ❯ a▌                                                                                             │
+│ ❯ tall.info  tall                                                                         read   │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                         │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ mid.info ────────────────────────────────────╮ ╭─ short.info  prod ─────────────────────────────╮
+│ line                                          │ │ one line                                       │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== hidden-ordered-added 100x30 initial ===
+ rta  dashboard  ↓ more
+ ❯ 3 plugins · 3 capabilities — type to search
+╭─ tall.info ───────────────────────────────────╮ ╭─ short.info ───────────────────────────────────╮
+│ line                                          │ │ one line                                       │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ … enter for details                           │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ mid.info  prod ─────────────────────────────────────────────────────────────────────────────────╮
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse · + add tile
+ p f t plugins, profiles, theme on a tile · ctrl+c quit · ? help
+=== hidden-ordered-added 100x30 third-tile-and-a-flash ===
+ rta  dashboard  ↓ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ tall.info ───────────────────────────────────╮ ╭─ short.info ───────────────────────────────────╮
+│ line                                          │ │ one line                                       │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ … enter for details                           │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ mid.info  prod ─────────────────────────────────────────────────────────────────────────────────╮
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
+ H remove · V view · + add tile · b browse · / search · q quit · ? help
+=== hidden-ordered-added 100x30 last-tile ===
+ rta  dashboard  ↑ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ mid.info  prod ─────────────────────────────────────────────────────────────────────────────────╮
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ tall.info  staging ─────────────────────────────────────────────────────────────────────────────╮
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ … enter for details                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view
+ + add tile · b browse · / search · q quit · ? help
+=== hidden-ordered-added 100x30 search-open ===
+ rta  dashboard  ↓ more
+╭─ ⌕ search ──────────────────────────────────────── ↑↓ pick · enter run · + add tile · esc clear ─╮
+│ ❯ a▌                                                                                             │
+│ ❯ tall.info  tall                                                                         read   │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ tall.info ───────────────────────────────────╮ ╭─ short.info ───────────────────────────────────╮
+│ line                                          │ │ one line                                       │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ line                                          │ │                                                │
+│ … enter for details                           │ │                                                │
+╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
+╭─ mid.info  prod ─────────────────────────────────────────────────────────────────────────────────╮
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== automatic 132x45 initial ===
+ rta  dashboard
+ ❯ 5 plugins · 5 capabilities — type to search
+╭─ alpha.overview ────────────────────────╮ ╭─ beta.overview ─────────────────────────╮ ╭─ delta.overview ─────────────────────────╮
+│ who   ANSWER-alpha                      │ │ who   ANSWER-beta                       │ │ who   ANSWER-delta                       │
+│ blob  ZZ0123456789abcdefghij0123456789a │ │ blob  ZZ0123456789abcdefghij0123456789a │ │ blob  ZZ0123456789abcdefghij0123456789ab │
+│       bcdefghij0123456789abcdefghij     │ │       bcdefghij0123456789abcdefghij     │ │       cdefghij0123456789abcdefghij       │
+│                                         │ │                                         │ │                                          │
+╰─────────────────────────────────────────╯ ╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────╯
+╭─ epsilon.overview ──────────────────────╮ ╭─ gamma.overview ─────────────────────────────────────────────────────────────────────╮
+│ who   ANSWER-epsilon                    │ │ who   ANSWER-gamma                                                                   │
+│ blob  ZZ0123456789abcdefghij0123456789a │ │ blob  ZZ0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij                 │
+│       bcdefghij0123456789abcdefghij     │ │                                                                                      │
+│                                         │ │                                                                                      │
+╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse · + add tile · p f t plugins, profiles, theme on a tile · ctrl+c quit
+ ? help
+=== automatic 132x45 third-tile-and-a-flash ===
+ rta  dashboard
+ ⌕ 5 plugins · 5 capabilities — press / to search
+╭─ alpha.overview ────────────────────────╮ ╭─ beta.overview ─────────────────────────╮ ╭─ delta.overview ─────────────────────────╮
+│ who   ANSWER-alpha                      │ │ who   ANSWER-beta                       │ │ who   ANSWER-delta                       │
+│ blob  ZZ0123456789abcdefghij0123456789a │ │ blob  ZZ0123456789abcdefghij0123456789a │ │ blob  ZZ0123456789abcdefghij0123456789ab │
+│       bcdefghij0123456789abcdefghij     │ │       bcdefghij0123456789abcdefghij     │ │       cdefghij0123456789abcdefghij       │
+│                                         │ │                                         │ │                                          │
+╰─────────────────────────────────────────╯ ╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────╯
+╭─ epsilon.overview ──────────────────────╮ ╭─ gamma.overview ─────────────────────────────────────────────────────────────────────╮
+│ who   ANSWER-epsilon                    │ │ who   ANSWER-gamma                                                                   │
+│ blob  ZZ0123456789abcdefghij0123456789a │ │ blob  ZZ0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij                 │
+│       bcdefghij0123456789abcdefghij     │ │                                                                                      │
+│                                         │ │                                                                                      │
+╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H hide · V view · + add tile
+ b browse · / search · q quit · ? help
+=== automatic 132x45 last-tile ===
+ rta  dashboard
+ ⌕ 5 plugins · 5 capabilities — press / to search
+╭─ alpha.overview ────────────────────────╮ ╭─ beta.overview ─────────────────────────╮ ╭─ delta.overview ─────────────────────────╮
+│ who   ANSWER-alpha                      │ │ who   ANSWER-beta                       │ │ who   ANSWER-delta                       │
+│ blob  ZZ0123456789abcdefghij0123456789a │ │ blob  ZZ0123456789abcdefghij0123456789a │ │ blob  ZZ0123456789abcdefghij0123456789ab │
+│       bcdefghij0123456789abcdefghij     │ │       bcdefghij0123456789abcdefghij     │ │       cdefghij0123456789abcdefghij       │
+│                                         │ │                                         │ │                                          │
+╰─────────────────────────────────────────╯ ╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────╯
+╭─ epsilon.overview ──────────────────────╮ ╭─ gamma.overview ─────────────────────────────────────────────────────────────────────╮
+│ who   ANSWER-epsilon                    │ │ who   ANSWER-gamma                                                                   │
+│ blob  ZZ0123456789abcdefghij0123456789a │ │ blob  ZZ0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij                 │
+│       bcdefghij0123456789abcdefghij     │ │                                                                                      │
+│                                         │ │                                                                                      │
+╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H hide · V view · + add tile · b browse · / search
+ q quit · ? help
+=== automatic 132x45 search-open ===
+ rta  dashboard
+╭─ ⌕ search ────────────────────────────────────────────────────────────────── 1/5 · ↑↓ pick · enter run · + add tile · esc clear ─╮
+│ ❯ a▌                                                                                                                             │
+│ ❯ alpha.overview  what alpha sees                                                                                         read   │
+│   beta.overview  what beta sees                                                                                           read   │
+│   delta.overview  what delta sees                                                                                         read ↓ │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ alpha.overview ────────────────────────╮ ╭─ beta.overview ─────────────────────────╮ ╭─ delta.overview ─────────────────────────╮
+│ who   ANSWER-alpha                      │ │ who   ANSWER-beta                       │ │ who   ANSWER-delta                       │
+│ blob  ZZ0123456789abcdefghij0123456789a │ │ blob  ZZ0123456789abcdefghij0123456789a │ │ blob  ZZ0123456789abcdefghij0123456789ab │
+│       bcdefghij0123456789abcdefghij     │ │       bcdefghij0123456789abcdefghij     │ │       cdefghij0123456789abcdefghij       │
+│                                         │ │                                         │ │                                          │
+╰─────────────────────────────────────────╯ ╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────╯
+╭─ epsilon.overview ──────────────────────╮ ╭─ gamma.overview ─────────────────────────────────────────────────────────────────────╮
+│ who   ANSWER-epsilon                    │ │ who   ANSWER-gamma                                                                   │
+│ blob  ZZ0123456789abcdefghij0123456789a │ │ blob  ZZ0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij                 │
+│       bcdefghij0123456789abcdefghij     │ │                                                                                      │
+│                                         │ │                                                                                      │
+╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== stated 132x45 initial ===
+ rta  dashboard
+ ❯ 3 plugins · 3 capabilities — type to search
+╭─ short.info ────────────────────────────╮ ╭─ mid.info ──────────────────────────────╮ ╭─ short.info ─────────────────────────────╮
+│ one line                                │ │ line                                    │ │ one line                                 │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+╰─────────────────────────────────────────╯ ╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────╯
+╭─ tall.info ─────────────────────────────╮ ╭─ short.info ─────────────────────────────────────────────────────────────────────────╮
+│ line                                    │ │ one line                                                                             │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ … enter for details                     │ │                                                                                      │
+╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse · + add tile · p f t plugins, profiles, theme on a tile · ctrl+c quit
+ ? help
+=== stated 132x45 third-tile-and-a-flash ===
+ rta  dashboard
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ short.info ────────────────────────────╮ ╭─ mid.info ──────────────────────────────╮ ╭─ short.info ─────────────────────────────╮
+│ one line                                │ │ line                                    │ │ one line                                 │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+╰─────────────────────────────────────────╯ ╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────╯
+╭─ tall.info ─────────────────────────────╮ ╭─ short.info ─────────────────────────────────────────────────────────────────────────╮
+│ line                                    │ │ one line                                                                             │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ … enter for details                     │ │                                                                                      │
+╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view · + add tile
+ b browse · / search · q quit · ? help
+=== stated 132x45 last-tile ===
+ rta  dashboard
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ short.info ────────────────────────────╮ ╭─ mid.info ──────────────────────────────╮ ╭─ short.info ─────────────────────────────╮
+│ one line                                │ │ line                                    │ │ one line                                 │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+╰─────────────────────────────────────────╯ ╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────╯
+╭─ tall.info ─────────────────────────────╮ ╭─ short.info ─────────────────────────────────────────────────────────────────────────╮
+│ line                                    │ │ one line                                                                             │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ … enter for details                     │ │                                                                                      │
+╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view · + add tile · b browse · / search
+ q quit · ? help
+=== stated 132x45 search-open ===
+ rta  dashboard
+╭─ ⌕ search ──────────────────────────────────────────────────────────────────────── ↑↓ pick · enter run · + add tile · esc clear ─╮
+│ ❯ a▌                                                                                                                             │
+│ ❯ tall.info  tall                                                                                                         read   │
+│                                                                                                                                  │
+│                                                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ short.info ────────────────────────────╮ ╭─ mid.info ──────────────────────────────╮ ╭─ short.info ─────────────────────────────╮
+│ one line                                │ │ line                                    │ │ one line                                 │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+│                                         │ │ line                                    │ │                                          │
+╰─────────────────────────────────────────╯ ╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────╯
+╭─ tall.info ─────────────────────────────╮ ╭─ short.info ─────────────────────────────────────────────────────────────────────────╮
+│ line                                    │ │ one line                                                                             │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ line                                    │ │                                                                                      │
+│ … enter for details                     │ │                                                                                      │
+╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== spanned 132x45 initial ===
+ rta  dashboard  ↓ more
+ ❯ 3 plugins · 3 capabilities — type to search
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                                                         │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ mid.info ────────────────────────────────────────────────────╮ ╭─ short.info  prod ─────────────────────────────────────────────╮
+│ line                                                          │ │ one line                                                       │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
+╭─ tall.info ───────────────────────────────────────────────────╮ ╭─ mid.info  staging ────────────────────────────────────────────╮
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ … enter for details                                           │ │                                                                │
+╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                                                         │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse · + add tile · p f t plugins, profiles, theme on a tile · ctrl+c quit
+ ? help
+=== spanned 132x45 third-tile-and-a-flash ===
+ rta  dashboard  ↓ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                                                         │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ mid.info ────────────────────────────────────────────────────╮ ╭─ short.info  prod ─────────────────────────────────────────────╮
+│ line                                                          │ │ one line                                                       │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
+╭─ tall.info ───────────────────────────────────────────────────╮ ╭─ mid.info  staging ────────────────────────────────────────────╮
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ … enter for details                                           │ │                                                                │
+╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                                                         │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view · + add tile
+ b browse · / search · q quit · ? help
+=== spanned 132x45 last-tile ===
+ rta  dashboard  ↑ more
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ mid.info ────────────────────────────────────────────────────╮ ╭─ short.info  prod ─────────────────────────────────────────────╮
+│ line                                                          │ │ one line                                                       │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
+╭─ tall.info ───────────────────────────────────────────────────╮ ╭─ mid.info  staging ────────────────────────────────────────────╮
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ … enter for details                                           │ │                                                                │
+╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                                                         │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ tall.info ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ … enter for details                                                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view · + add tile · b browse · / search
+ q quit · ? help
+=== spanned 132x45 search-open ===
+ rta  dashboard  ↓ more
+╭─ ⌕ search ──────────────────────────────────────────────────────────────────────── ↑↓ pick · enter run · + add tile · esc clear ─╮
+│ ❯ a▌                                                                                                                             │
+│ ❯ tall.info  tall                                                                                                         read   │
+│                                                                                                                                  │
+│                                                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                                                         │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ mid.info ────────────────────────────────────────────────────╮ ╭─ short.info  prod ─────────────────────────────────────────────╮
+│ line                                                          │ │ one line                                                       │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
+╭─ tall.info ───────────────────────────────────────────────────╮ ╭─ mid.info  staging ────────────────────────────────────────────╮
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │ line                                                           │
+│ line                                                          │ │                                                                │
+│ line                                                          │ │                                                                │
+│ … enter for details                                           │ │                                                                │
+╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
+╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ one line                                                                                                                         │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
+=== hidden-ordered-added 132x45 initial ===
+ rta  dashboard
+ ❯ 3 plugins · 3 capabilities — type to search
+╭─ tall.info ─────────────────────────────╮ ╭─ short.info ────────────────────────────╮ ╭─ mid.info  prod ─────────────────────────╮
+│ line                                    │ │ one line                                │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │                                          │
+│ line                                    │ │                                         │ │                                          │
+│ … enter for details                     │ │                                         │ │                                          │
+╰─────────────────────────────────────────╯ ╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────╯
+╭─ tall.info  staging ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ … enter for details                                                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ type to search · ↑↓←→ select · enter search · : browse · + add tile · p f t plugins, profiles, theme on a tile · ctrl+c quit
+ ? help
+=== hidden-ordered-added 132x45 third-tile-and-a-flash ===
+ rta  dashboard
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ tall.info ─────────────────────────────╮ ╭─ short.info ────────────────────────────╮ ╭─ mid.info  prod ─────────────────────────╮
+│ line                                    │ │ one line                                │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │                                          │
+│ line                                    │ │                                         │ │                                          │
+│ … enter for details                     │ │                                         │ │                                          │
+╰─────────────────────────────────────────╯ ╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────╯
+╭─ tall.info  staging ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ … enter for details                                                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view · + add tile
+ b browse · / search · q quit · ? help
+=== hidden-ordered-added 132x45 last-tile ===
+ rta  dashboard
+ ⌕ 3 plugins · 3 capabilities — press / to search
+╭─ tall.info ─────────────────────────────╮ ╭─ short.info ────────────────────────────╮ ╭─ mid.info  prod ─────────────────────────╮
+│ line                                    │ │ one line                                │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │                                          │
+│ line                                    │ │                                         │ │                                          │
+│ … enter for details                     │ │                                         │ │                                          │
+╰─────────────────────────────────────────╯ ╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────╯
+╭─ tall.info  staging ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ … enter for details                                                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view · + add tile · b browse · / search
+ q quit · ? help
+=== hidden-ordered-added 132x45 search-open ===
+ rta  dashboard
+╭─ ⌕ search ──────────────────────────────────────────────────────────────────────── ↑↓ pick · enter run · + add tile · esc clear ─╮
+│ ❯ a▌                                                                                                                             │
+│ ❯ tall.info  tall                                                                                                         read   │
+│                                                                                                                                  │
+│                                                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ tall.info ─────────────────────────────╮ ╭─ short.info ────────────────────────────╮ ╭─ mid.info  prod ─────────────────────────╮
+│ line                                    │ │ one line                                │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │ line                                     │
+│ line                                    │ │                                         │ │                                          │
+│ line                                    │ │                                         │ │                                          │
+│ … enter for details                     │ │                                         │ │                                          │
+╰─────────────────────────────────────────╯ ╰─────────────────────────────────────────╯ ╰──────────────────────────────────────────╯
+╭─ tall.info  staging ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ line                                                                                                                             │
+│ … enter for details                                                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit

@@ -156,8 +156,18 @@ type Model struct {
 	// viewPick is the view this session chose with V, or "" to follow the
 	// switched-on profile's. A switch clears it: switching is asking for that
 	// environment's screen.
-	viewPick   string
-	selected   int  // selected dashboard tile
+	viewPick string
+	// selected is the dashboard tile that holds the selection: 0 for the search
+	// bar and -1 while the header of a section does, which header names. A header
+	// is not a tile, so everything that reads a tile off the selection finds none
+	// rather than the first one of the section, which is what a header stored as
+	// that tile's index would have handed it.
+	selected int
+	header   string
+	// folds is what this session folded or unfolded, by screen and section name,
+	// on top of how the file starts each one (sections.go says why it is not
+	// written).
+	folds      map[foldKey]fold
 	scroll     int  // first visible dashboard tile row
 	origin     mode // where the current result/form was opened from
 	mode       mode
