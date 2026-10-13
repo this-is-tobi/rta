@@ -168,6 +168,53 @@ func TestShowSaysWhyThereIsNoPreviewRatherThanNothing(t *testing.T) {
 	}
 }
 
+// A call that names no record reaches the queue with the empty one, which is
+// how the gate compares a call about the capability itself. Shown as a record
+// it read `("")` and `""` on every line a person answers by, while the grant it
+// would issue lists as `any` and the receipt as a dash.
+func TestACallNamingNoRecordIsNotShownAsAnEmptyOne(t *testing.T) {
+	isolate(t)
+	r := park(t, "kv.set", "")
+
+	v, err := run(t, "agent.pending", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := v.(view.Table).Rows[0]
+	if got := row[2]; got != "—" {
+		t.Errorf("pending's record cell reads %q, want a dash", got)
+	}
+
+	v, err = run(t, "agent.show", map[string]any{"id": r.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range v.(view.Sections).Items[0].View.(view.KeyValue).Pairs {
+		if p.Key == "record" {
+			t.Errorf("show names the record %q of a call that names none", p.Value)
+		}
+	}
+
+	c := capability(t, "agent.allow")
+	dry, err := c.Run(context.Background(), plugin.NewRequest(
+		plugin.Resolve(c, plugin.Inputs{Caller: map[string]any{"id": r.ID}}), true, false).WithSurface(plugin.SurfaceCLI))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := dry.(view.Text).Body; strings.Contains(body, `""`) || strings.Contains(body, "()") ||
+		!strings.Contains(body, "would allow kv.set for the agent waiting") {
+		t.Errorf("the dry run reads %q, want the capability alone", body)
+	}
+
+	v, err = run(t, "agent.allow", map[string]any{"id": r.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.(view.KeyValue).Pairs[0].Value; got != "kv.set" {
+		t.Errorf("the answer names %q, want the capability alone", got)
+	}
+}
+
 func TestAllowReleasesExactlyOneCall(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.get", "db-password")

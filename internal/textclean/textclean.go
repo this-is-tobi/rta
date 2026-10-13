@@ -19,6 +19,7 @@ package textclean
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -232,6 +233,21 @@ func Records(records []string) string {
 		shown[i] = Record(r)
 	}
 	return strings.Join(shown, " ")
+}
+
+// CallRecords is Records for what a call is said to name, and empty for a
+// call that names none: no records at all, or only the empty one. A call
+// about a capability itself reaches the gate with that empty record — the one
+// a grant that names no record covers — so a parked call or a ledger row
+// carries it, and shown as Records shows it, `pg.query ""` read as a record
+// that had been lost on a line a person was about to answer. A list that is
+// several records with an empty one among them is still said whole: the empty
+// one is then a record the call named and the others did not replace.
+func CallRecords(records []string) string {
+	if !slices.ContainsFunc(records, func(r string) bool { return r != "" }) {
+		return ""
+	}
+	return Records(records)
 }
 
 func readsAsItself(s string) bool {

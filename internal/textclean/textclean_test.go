@@ -339,3 +339,19 @@ func TestARecordThatIsNotWhatItShowsIsQuoted(t *testing.T) {
 		t.Errorf("Records([a b]) and Records([a, b]) both show as %q", one)
 	}
 }
+
+// A call about a capability itself reaches the gate with the empty record, and
+// shown as Records shows it that was `""` on the line a person answers. It is
+// no record to them; a list with a record among them is still said whole.
+func TestCallRecordsSaysNothingForACallThatNamesNone(t *testing.T) {
+	for _, none := range [][]string{nil, {}, {""}, {"", ""}} {
+		if got := CallRecords(none); got != "" {
+			t.Errorf("CallRecords(%q) = %q, want nothing", none, got)
+		}
+	}
+	for _, named := range [][]string{{"db-password"}, {"a", ""}, {"a b"}} {
+		if got, want := CallRecords(named), Records(named); got != want {
+			t.Errorf("CallRecords(%q) = %q, want it as Records shows it: %q", named, got, want)
+		}
+	}
+}

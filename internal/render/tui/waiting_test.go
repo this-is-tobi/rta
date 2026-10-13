@@ -6,6 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/this-is-tobi/rta/internal/consent"
 )
 
 func oneCall() []waitingCall {
@@ -124,5 +126,16 @@ func TestAClickLandsOnTheTileUnderItWhileTheLineIsShown(t *testing.T) {
 	next, _ := m.Update(tea.MouseClickMsg{X: 5, Y: y + m.banner, Button: tea.MouseLeft})
 	if got := next.(Model).selected; got != 1 {
 		t.Errorf("a click on the first tile's cell selected %d", got)
+	}
+}
+
+// A call that names no record reaches the queue with the empty one, and the
+// row said `pg.query ""` for it: the screen a person answers by read as if the
+// record had been lost.
+func TestAWaitingCallThatNamesNoRecordIsSaidWithoutOne(t *testing.T) {
+	for scopes, want := range map[string]string{"": "pg.query", "db-password": "pg.query db-password"} {
+		if got := callOf(consent.Request{Cap: "pg.query", Scopes: []string{scopes}}).call; got != want {
+			t.Errorf("a call naming %q reads %q, want %q", scopes, got, want)
+		}
 	}
 }
