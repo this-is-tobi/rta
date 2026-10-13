@@ -220,6 +220,20 @@ func TestADashboardIsWrittenAsTheNameOrTheBlockItIs(t *testing.T) {
 	}
 }
 
+func TestADashboardIsDescribedByItsNameOrItsTileCount(t *testing.T) {
+	for want, d := range map[string]ProfileDashboard{
+		"ops":             {Name: "ops"},
+		"inline: 1 tile":  {Inline: &View{Add: []Tile{{ID: "sys.overview"}}}},
+		"inline: 3 tiles": {Inline: &View{Tiles: []Tile{{ID: "a"}, {ID: "b"}}, Add: []Tile{{ID: "c"}}}},
+		"inline: 0 tiles": {Inline: &View{Columns: 2}},
+		"":                {},
+	} {
+		if got := d.Describe(); got != want {
+			t.Errorf("%+v is described as %q, want %q", d, got, want)
+		}
+	}
+}
+
 func TestADashboardPrintsAsJSONTheWayItIsWritten(t *testing.T) {
 	for dashboard, want := range map[ProfileDashboard]string{
 		{Name: "ops"}:               `{"dashboard":"ops"}`,

@@ -324,8 +324,12 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 		// run to report against — the closure below returns false rather
 		// than committing it, so there is nothing on disk to read back.
 		finalProfile config.Profile
+		// views are what the card reads a profile's own screen against: whether
+		// its name is taken is a fact of the configuration and not of the profile.
+		views map[string]config.View
 	)
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
+		views = cfg.Dashboard.Views
 		if cfg.Profiles == nil {
 			cfg.Profiles = map[string]config.Profile{}
 		}
@@ -451,9 +455,9 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 		if err != nil {
 			return nil, view.AsError(err, "core.profile.config")
 		}
-		written = after.Profiles[name]
+		written, views = after.Profiles[name], after.Dashboard.Views
 	}
-	card := profileCard(name, written, reg)
+	card := profileCard(name, written, views, reg)
 	verb := "updated"
 	switch {
 	case dryRun && !existed:
@@ -1233,8 +1237,10 @@ func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry, d
 		verr    *view.Error
 		key     string
 		current config.Profile
+		views   map[string]config.View
 	)
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
+		views = cfg.Dashboard.Views
 		p, known := cfg.Profiles[name]
 		if !known {
 			verr = unknownProfile(cfg, name)
@@ -1294,15 +1300,27 @@ func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry, d
 			if err != nil {
 				return nil, view.AsError(err, "core.profile.config")
 			}
-			written = after.Profiles[name]
+			written, views = after.Profiles[name], after.Dashboard.Views
 		}
-		card := profileCard(name, written, reg)
+		card := profileCard(name, written, views, reg)
 		card.Pairs = append([]view.Pair{
 			{Key: removeLabel, Value: key + " from " + name}}, card.Pairs...)
 		return card, nil
 	}
 
 	pairs := []view.Pair{{Key: removeLabel, Value: "profile " + name + " from " + config.Where("profiles", name)}}
+	// A screen written in the entry is part of it and is not kept anywhere
+	// else: said, so removing an environment is not also quietly removing the
+	// tiles somebody arranged for it.
+	if current.Dashboard.Inline != nil {
+		went := "went with it"
+		if dryRun {
+			went = "would go with it"
+		}
+		block := current.Dashboard.Inline
+		pairs = append(pairs, view.Pair{Key: "dashboard", Value: "its own screen, " +
+			format.Count(len(block.Tiles)+len(block.Add), "tile", "tiles") + ", " + went})
+	}
 	// The switch follows, or this machine stays switched on to a name nothing
 	// can look up — and because the selection also bounds agents, every agent
 	// call would then be refused against it.

@@ -873,6 +873,13 @@ func profileCovers(row profileRow) string {
 		styled = append(styled, theme.Faded.Render(textclean.Terminal(key)))
 	}
 	detail := strings.Join(styled, theme.Subtle.Render(" · "))
+	// The screen the environment shows, when it states one, because the pane
+	// that lists what an environment is would otherwise be silent about the one
+	// thing in it that is not a connection — and a block written in the entry
+	// is then a part of the entry nobody can see from here.
+	if screen := profileScreen(row.p.Dashboard); screen != "" {
+		detail += theme.Subtle.Render(" · ") + theme.Faded.Render(textclean.Terminal(screen))
+	}
 	// A note takes the place of the operator's own, as it takes the Note
 	// column in `rta profile list`: the credential line under this one is
 	// still true of an environment that works, where a problem replaces it,
@@ -884,6 +891,19 @@ func profileCovers(row profileRow) string {
 		detail += theme.Subtle.Render(" · " + textclean.Terminal(row.p.Note))
 	}
 	return detail
+}
+
+// profileScreen is what an environment shows on the dashboard, in the words the
+// pane's second line has room for: the view it selects, or the count of tiles on
+// the screen it writes in its own entry. Nothing when it states neither.
+func profileScreen(d config.ProfileDashboard) string {
+	switch {
+	case d.Inline != nil:
+		return "own screen, " + format.Count(len(d.Inline.Tiles)+len(d.Inline.Add), "tile", "tiles")
+	case d.Name != "":
+		return "screen " + d.Name
+	}
+	return ""
 }
 
 // profileDetail is the third line: why this environment does not work, or how

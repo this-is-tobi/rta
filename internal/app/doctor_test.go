@@ -348,7 +348,7 @@ func TestDoctorSaysAProfilePluginIsInstalledButUnapproved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listed := profileTable(cfgLoaded, reg).Rows[0][3]
+	listed := profileTable(cfgLoaded, reg).Rows[0][4]
 
 	var profileRows []string
 	for _, r := range doctorReport(reg).(view.Table).Rows {
