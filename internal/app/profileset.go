@@ -77,13 +77,16 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 			"`--set` states a default, which a caller can override. `--only` fences an input:\n" +
 			"once per allowed value, it states what the connection reaches, and a call whose\n" +
 			"value falls outside it is refused. `--unfence` takes the fences off.",
+		// In the order a person would run them, because a test does: a profile that
+		// configures nothing is refused at creation, so the line that states only
+		// a note and a deadline comes after the one that gives it a plugin.
 		Example: "  rta kv set staging-db-password --file /run/secrets/db\n" +
-			"  rta profile set staging --note 'shared staging' --ttl 8h\n" +
 			"  rta profile set staging --plugin pg \\\n" +
 			"      --set host=db.staging.internal --set port=5432 \\\n" +
 			"      --secret password=kv:staging-db-password\n" +
+			"  rta profile set staging --note 'shared staging' --ttl 8h\n" +
 			"  rta profile set staging --plugin pg \\\n" +
-			"      --only dbname=app --only dbname=app-jobs\n" +
+			"      --only database=app --only database=app-jobs\n" +
 			"  rta profile set staging --plugin pg/analytics \\\n" +
 			"      --set host=analytics.staging.internal \\\n" +
 			"      --secret password=kv:staging-analytics-password\n" +
