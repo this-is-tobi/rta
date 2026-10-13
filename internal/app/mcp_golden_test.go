@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -131,6 +132,37 @@ func TestGoldenSurface(t *testing.T) {
 // capability should be missing from this file and from no other.
 func TestGoldenRemoteSurface(t *testing.T) {
 	golden(t, "mcp-surface-remote.json", surface(t, mcp.Options{Remote: true}))
+}
+
+// The handshake gives the safety class as part of the grant rule and sends a
+// model to a tool's own text for the rest (instructions): some reads need a
+// grant, and nothing but that text says which. Held over the real registry so
+// a read declared NeedsGrant, or a plugin's, cannot cost a grant in silence.
+func TestEveryToolThatNeedsAGrantSaysSoInItsOwnText(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]plugin.Capability{}
+	for _, c := range reg.Capabilities() {
+		byName[plugin.ToolName(c.ID)] = c
+	}
+	reads := 0
+	for _, tl := range surface(t, mcp.Options{}) {
+		c := byName[tl.Name]
+		if !grant.Required(c, "") {
+			continue
+		}
+		if c.Safety == plugin.Read {
+			reads++
+		}
+		if !strings.Contains(tl.Description, "Requires a grant") {
+			t.Errorf("%s costs a grant and its description never says so:\n%s", tl.Name, tl.Description)
+		}
+	}
+	if reads == 0 {
+		t.Error("no read needs a grant any more: the handshake's \"some reads\" is no longer a fact about this catalogue")
+	}
 }
 
 // The gate is the load-bearing part, and there is one of it: everything an
