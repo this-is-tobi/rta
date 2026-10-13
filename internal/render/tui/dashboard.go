@@ -188,36 +188,10 @@ var pluginOrder = []string{"sys", "agent", "grant", "net", "kv", "note"}
 // gen.password, which is the same re-rolled secret as one line. They stay one
 // `rta dashboard add` away. The list lives here, beside the picker, because the
 // declarations are the plugins' and what a landing screen shows is the host's
-// to decide — the same split preferredTile is made of.
+// to decide.
 var leftOff = map[string]string{
 	"gen.overview": "a table of freshly generated secrets is not a status, and it would re-roll on every refresh",
 	"fs.tree":      "it prints the directory rta was started in, which says nothing about the machine",
-}
-
-// preferredTile overrides the tile convention for a plugin whose best glance
-// is not the one the convention lands on.
-//
-// The convention is pluginTile's, and it is open to every plugin equally: a
-// namespace's own `overview` capability takes the tile, and failing that the
-// first capability that can be previewed at all. `overview` is the word the
-// shared vocabulary already uses for exactly this — `dashboard`, `stats` and
-// `summary` all normalise to it (pkg/sdk/sdktest) — so an author who wants to
-// choose their tile chooses it by naming a capability, not by hoping this map
-// learns about them.
-//
-// What is left here is the one built-in that disagrees with the convention,
-// and an entry owes a reason.
-//
-// kv is that entry. `kv list` would be the intuitive glance and is declared
-// first, but it needs the store's passphrase, so on a machine with a store it
-// would spend every refresh cycle rendering the same error. `kv status` needs
-// nothing — it reads the file's metadata, never its contents — and answers
-// the question you actually have at a glance: is the store there, and can
-// this shell open it. It is deliberately not spelled `kv.overview`: an
-// overview of a secret store reads as a summary *of the secrets*, and the
-// whole point of this one is that it never looks at them.
-var preferredTile = map[string]string{
-	"kv": "kv.status",
 }
 
 // autoTiles builds one tile per plugin that has something to show, so nothing
@@ -251,20 +225,20 @@ func autoTiles(reg *registry.Registry) []tile {
 // pluginTile picks how one plugin shows itself, and reports whether it can
 // show anything at all.
 //
-// Three rules, in order: what preferredTile pins, the plugin's own
-// `<namespace>.overview`, then the first capability that can be previewed.
+// Two rules, in order: the plugin's own `<namespace>.overview`, then the first
+// capability that can be previewed.
 //
-// The middle rule is the one a third-party author can reach. Before it, a
-// plugin's tile was whichever previewable capability happened to be declared
-// first — so a plugin with a debug dump at the top of its list showed the
-// debug dump, and the only way to say otherwise was to be a built-in and get
-// named in a map inside rta. `overview` costs no new API to opt into and
-// means, in the vocabulary sdktest already enforces, exactly what the tile is
-// for.
+// The first rule is the one every plugin can reach, the built-ins no more and
+// no less than a third-party one. Before it, a plugin's tile was whichever
+// previewable capability happened to be declared first — so a plugin with a
+// debug dump at the top of its list showed the debug dump, and the only way to
+// say otherwise was to be a built-in and get named in a map inside rta.
+// `overview` costs no new API to opt into and means, in the vocabulary sdktest
+// already enforces, exactly what the tile is for: kv names it for a store it
+// describes in counts and sizes and opens only from what a call already holds.
 //
-// Every rule goes through previewable, including the pinned one: an override
-// is a choice between tiles, never a way to put a capability on a refresh
-// timer that said it did not want to be there.
+// Both rules go through previewable: choosing between tiles is never a way to
+// put a capability on a refresh timer that said it did not want to be there.
 //
 // A dashboard is a place you glance at, so a tile has to answer a question
 // nobody had to ask first. cert needs a hostname and http needs a URL: there
@@ -284,13 +258,8 @@ func pluginTile(reg *registry.Registry, p plugin.Plugin) (tile, bool) {
 	return tile{cap: c}, true
 }
 
-// pickCapability is the three rules of pluginTile, before leftOff has its say.
+// pickCapability is the two rules of pluginTile, before leftOff has its say.
 func pickCapability(reg *registry.Registry, p plugin.Plugin) (plugin.Capability, bool) {
-	if id, ok := preferredTile[p.Name]; ok {
-		if c, ok := reg.Capability(id); ok && previewable(c) {
-			return c, true
-		}
-	}
 	// The namespace's own overview. Not any capability ending in the word:
 	// `net.hosts.overview` would be an overview of the hosts file, which is a
 	// section of the plugin rather than the plugin.
