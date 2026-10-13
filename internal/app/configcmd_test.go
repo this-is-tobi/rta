@@ -553,6 +553,21 @@ func TestConfigSetRefusesWhatAWorkingDirectoryFileWouldNotHonour(t *testing.T) {
 	if err == nil || codeOf(t, errOut) != "core.config.untrusted" {
 		t.Errorf("a plugin key was written to a file nothing honours: %v\n%s", err, errOut)
 	}
+	// The palette is honoured from there, less the status colours: a file nobody
+	// named may not state those (theme.Resolve), so a line written for one would
+	// sit in the file and paint nothing.
+	if errOut, err := run("config", "set", "theme.muted", "#8B8B96"); err != nil {
+		t.Errorf("a text colour is honoured from there: %v\n%s", err, errOut)
+	}
+	for _, slot := range []string{"good", "warn", "bad", "inverse", "ink"} {
+		errOut, err := run("config", "set", "theme."+slot, "#3ED598")
+		if err == nil || codeOf(t, errOut) != "core.config.untrusted" {
+			t.Errorf("theme.%s was written to a file that cannot state it: %v\n%s", slot, err, errOut)
+		}
+	}
+	if b, _ := os.ReadFile(".rta.yaml"); strings.Contains(string(b), "#3ED598") {
+		t.Errorf(".rta.yaml holds a status colour nothing reads:\n%s", b)
+	}
 	if errOut, err := run("config", "set", "output", "json"); err != nil {
 		t.Errorf("the output format is honoured from there: %v\n%s", err, errOut)
 	}

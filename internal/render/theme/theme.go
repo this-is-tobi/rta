@@ -13,10 +13,14 @@
 // TUI output to the terminal's profile, and the CLI wraps stdout/stderr in a
 // colorprofile writer. On 256-color terminals every shade has a near match.
 //
-// The palette is operator-overridable through Apply, called once at startup
-// with whatever config.Config.Theme holds. Every var below stays exactly what
-// it was: a package a renderer reads without knowing whether the value under
-// it is the built-in or something an operator wrote down.
+// The palette is operator-overridable through Apply, which takes the colours
+// of one block, and through ApplyLayers, which folds the blocks that apply while
+// an environment is in force: the top-level `theme:`, the environment's colour
+// and its own `theme:`. It is called at startup and again whenever the
+// environment changes, so nothing may keep a colour it computed earlier — every
+// var below stays exactly what it was, a package a renderer reads without
+// knowing whether the value under it is the built-in or something an operator
+// wrote down, and a style derived from one is derived again (rebuildStyles).
 package theme
 
 import (
@@ -24,12 +28,14 @@ import (
 	"image/color"
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/this-is-tobi/rta/internal/near"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -198,14 +204,33 @@ var HexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 // pluginconf or being imported by it: nothing about color needs to know
 // about plugins, and nothing about plugins needs to know about color.
 type Problem struct {
+	// Source is the config key of the block the entry was written in, "" for
+	// the top-level `theme:` — the one Apply reads — and `profiles.prod.theme`
+	// for an environment's, so a line in a report names the line to open.
+	Source string
+	// Field is the key as it was written: a palette slot, or `color` for the
+	// colour a profile gives its badge.
 	Field, Reason, Hint string
+}
+
+// Key is the entry as the config file spells it: `theme.primary`,
+// `profiles.prod.theme.bad`, `profiles.prod.color`.
+func (p Problem) Key() string {
+	source := p.Source
+	if source == "" {
+		source = "theme"
+	}
+	if p.Field == "" {
+		return source
+	}
+	return source + "." + p.Field
 }
 
 func (p Problem) String() string {
 	if p.Hint == "" {
-		return fmt.Sprintf("theme.%s: %s", p.Field, p.Reason)
+		return fmt.Sprintf("%s: %s", p.Key(), p.Reason)
 	}
-	return fmt.Sprintf("theme.%s: %s (%s)", p.Field, p.Reason, p.Hint)
+	return fmt.Sprintf("%s: %s (%s)", p.Key(), p.Reason, p.Hint)
 }
 
 // Apply sets the palette from overrides, keyed the way Fields lists them,
@@ -218,35 +243,343 @@ func (p Problem) String() string {
 // named keeps its built-in color and every other field is unaffected, the
 // same "one bad entry costs its own line, not the page" rule
 // internal/pluginconf.Resolve already applies to plugin sections.
+//
+// This is the whole palette as one block states it. A palette that depends on
+// which environment is in force is Resolve's, over the layers that make it up.
 func Apply(overrides map[string]string) []Problem {
+	usable, problems := validate("", "", overrides)
 	for _, e := range fields {
 		e.set(e.builtin)
 	}
-
-	var problems []Problem
-	names := make([]string, 0, len(overrides))
-	for k := range overrides {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	for _, k := range names {
-		v := overrides[k]
-		e, known := fields[k]
-		switch {
-		case !known:
-			problems = append(problems, Problem{Field: k,
-				Reason: "not a color this rta understands",
-				Hint:   "one of: " + strings.Join(Fields(), ", ")})
-		case !HexColor.MatchString(v):
-			problems = append(problems, Problem{Field: k,
-				Reason: fmt.Sprintf("%q is not a color", v),
-				Hint:   "the form is #rrggbb, e.g. #D97757"})
-		default:
-			e.set(v)
-		}
+	for k, v := range usable {
+		fields[k].set(v)
 	}
 	rebuildStyles()
 	return problems
+}
+
+// validate is the one place an entry is judged: the colours of a block that a
+// palette can use, and a problem for each it cannot. as names the key a single
+// colour was written under when that is not the slot's own — a profile's
+// `color:` is the primary slot — and is empty for a block of slots.
+func validate(source, as string, colors map[string]string) (map[string]string, []Problem) {
+	names := make([]string, 0, len(colors))
+	for k := range colors {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	usable := make(map[string]string, len(colors))
+	var problems []Problem
+	for _, k := range names {
+		v := colors[k]
+		written := k
+		if as != "" {
+			written = as
+		}
+		_, known := fields[k]
+		switch {
+		case !known:
+			// The guess is in the reason and not the hint: a note on a profile's pane
+			// is cut to its reason, and the mistake it exists to catch is a name
+			// one letter or one case from the right one.
+			reason := "not a color this rta understands"
+			if guess := NearestSlot(k); guess != "" {
+				reason += " — did you mean `" + guess + "`?"
+			}
+			problems = append(problems, Problem{Source: source, Field: written,
+				Reason: reason, Hint: "one of: " + strings.Join(Fields(), ", ")})
+		// **An unquoted # is the likeliest mistake in a colour, and it arrives as
+		// nothing.** `label: #C792EA` is a label with a comment after it, which
+		// YAML reads as no value at all, and "\"\" is not a color" tells a person
+		// they wrote an empty string they did not write.
+		case strings.TrimSpace(v) == "":
+			problems = append(problems, Problem{Source: source, Field: written,
+				Reason: "has no value — a # starts a YAML comment, so an unquoted color reads as nothing",
+				Hint:   "quote it: " + quotedExample(written)})
+		case !HexColor.MatchString(v):
+			problems = append(problems, Problem{Source: source, Field: written,
+				Reason: fmt.Sprintf("%q is not a color", v),
+				Hint:   "the form is #rrggbb, quoted in the file: " + quotedExample(written)})
+		default:
+			usable[k] = v
+		}
+	}
+	return usable, problems
+}
+
+// quotedExample is a line that works, for a hint to show: the key as it was
+// written, and a colour in quotes, which is the form that survives YAML.
+func quotedExample(key string) string { return key + `: "#D97757"` }
+
+// NearestSlot is the palette slot a mistyped name was most likely meant to be,
+// or "" when none is near enough to say. Slot names are lower case only, so a
+// name in another case is the slot it differs from by nothing else.
+//
+// Here and not beside the command that first offered it, since the same
+// mistake is made in the file, where it is read by a check and a doctor with
+// nobody to ask, and in an editor's note: one answer for every place a slot is
+// named.
+func NearestSlot(name string) string { return near.Word(name, Fields()) }
+
+// Layer is one place colours are written down: a block of the config file.
+type Layer struct {
+	// Source is the config key of the block, as a Problem names it: "theme",
+	// "profiles.prod.theme". Empty is the top-level block.
+	Source string
+	Colors map[string]string
+	// As is the key a single colour was written under, when it is not the
+	// slot's own: a profile's `color:` is the primary slot and says so here, so
+	// a report names the line in the file and not a slot the file does not have.
+	As string
+	// Guarded marks a layer an environment brings with it, or a file nobody
+	// named. The palette refuses of a guarded layer what it would not refuse of
+	// the operator's own block: see Resolve.
+	Guarded bool
+}
+
+// written is the key a slot of this layer is spelled as in the file.
+func (l Layer) written(slot string) string {
+	if l.As != "" {
+		return l.As
+	}
+	return slot
+}
+
+// statusSlots are the colours that mean something: ok, needs attention, failed,
+// and the text on the two badges that say the last two. They are the operator's
+// to set, in their own named config file, and no guarded layer may state them.
+var statusSlots = []string{"good", "warn", "bad", "inverse", "ink"}
+
+// IsStatus reports whether slot is one of the status colours, the ones only the
+// operator's own named config file can state. Asked by whatever offers a slot to
+// be written — an editor, a flag, a completion — so that none of them offers a
+// line the palette would always leave out.
+func IsStatus(slot string) bool { return slices.Contains(statusSlots, slot) }
+
+// textSlots are the colours text is drawn in, which a guarded layer may state
+// as long as the text can still be seen.
+var textSlots = []string{"primary", "label", "accent", "muted", "faint"}
+
+// contrastFloor is the contrast ratio a guarded text colour keeps against pure
+// black and against pure white.
+//
+// **A floor against being invisible on either kind of terminal, not a standard
+// for legibility.** The built-in palette is chosen at 3.4:1 against white and
+// 6.2:1 against black, which is a standard; an environment's colours are an
+// outside party's choice on the operator's screen, and what that must not be
+// able to do is paint the whole of it in a colour that is not there — #101010 is
+// 1.1:1 on a black terminal. 3:1, the usual figure for large text, would refuse
+// the built-in faint (2.4:1 on black), which is structure and is meant to recede.
+// 1.5:1 refuses what cannot be seen and nothing a person would choose to see.
+const contrastFloor = 1.5
+
+// contrastOnBlack and contrastOnWhite are WCAG's contrast ratio of a colour
+// against pure black and pure white, from the relative luminance Badge picks its
+// ink by.
+func contrastOnBlack(hex string) float64 { return (relativeLuminance(hex) + 0.05) / 0.05 }
+func contrastOnWhite(hex string) float64 { return 1.05 / (relativeLuminance(hex) + 0.05) }
+
+// distinct is a status the primary may not be, and what it would cost.
+type distinct struct{ status, why string }
+
+// primaryApart is what the primary may not be: the identity colour is where the
+// cursor is, and a cursor drawn in the colour of a status reads as that status.
+// Exact equality and no more — "close to" is a judgement about eyesight that no
+// threshold here would get right for everybody, and a status colour a guarded
+// layer cannot state is not one it can swap or nudge either.
+var primaryApart = []distinct{
+	{"good", "the selection would read as a healthy status"},
+	{"warn", "the selection would read as a warning"},
+	{"bad", "the selection would read as a failure"},
+}
+
+// Resolve folds layers, lowest first, into the overrides a palette is built
+// from, and says what it could not use. The built-in palette sits beneath the
+// first layer, so a slot no layer states is the built-in.
+//
+// **An environment may recolour the screen; it may not make one thing read as
+// another.** The operator's own `theme:` is theirs, the status colours included:
+// stating good and bad the same is a choice about their screen, made once, in
+// the file they edit. An environment's palette is applied by a switch, and the
+// screen is where a person learns what a refusal, a warning and a selection are
+// — so a guarded layer (an environment's colour, an environment's theme, the
+// `theme:` of a file nobody named) is held to three rules, each leaving the
+// entry out, the layer beneath it standing, and a problem naming it:
+//
+//   - it may not state the status colours at all (statusSlots). Nearly equal,
+//     swapped, or the badge's text a digit from its background are all ways of
+//     making one thing read as another, and a threshold would have to guess what
+//     is too near for everybody's eyes; a slot it cannot state needs no guess.
+//   - a colour for text keeps contrastFloor against black and against white, so
+//     that it is not invisible on one of the two kinds of terminal.
+//   - the primary, whether stated or derived from a profile's colour, is not
+//     exactly a status colour that stands. Left out, the colour beneath it is
+//     judged in its turn, since leaving an entry out can bring a lower one into
+//     the way.
+//
+// What collides without any guarded layer's help — the operator's own block, or
+// the built-ins — is not Resolve's to fix.
+func Resolve(layers ...Layer) (map[string]string, []Problem) {
+	kept := make([]map[string]string, len(layers))
+	var problems []Problem
+	for i, l := range layers {
+		colors := l.Colors
+		if l.Guarded {
+			var ps []Problem
+			colors, ps = withoutStatus(l, colors)
+			problems = append(problems, ps...)
+		}
+		var ps []Problem
+		kept[i], ps = validate(l.Source, l.As, colors)
+		problems = append(problems, ps...)
+		if l.Guarded {
+			kept[i], ps = withoutUnseen(l, kept[i])
+			problems = append(problems, ps...)
+		}
+	}
+	left := make([]map[string]bool, len(layers))
+	for i := range left {
+		left[i] = map[string]bool{}
+	}
+	for {
+		palette, owner := fold(kept, left)
+		i := owner["primary"]
+		if i >= 0 && layers[i].Guarded {
+			if apart, same := primaryOfAStatus(palette); same {
+				left[i]["primary"] = true
+				problems = append(problems, Problem{Source: layers[i].Source, Field: layers[i].written("primary"),
+					Reason: fmt.Sprintf("is the same colour as %s, so %s", apart.status, apart.why),
+					Hint:   "left out, so the colour beneath it stands — pick one the status colours do not share"})
+				continue
+			}
+		}
+		overrides := make(map[string]string, len(palette))
+		for slot, i := range owner {
+			if i >= 0 {
+				overrides[slot] = palette[slot]
+			}
+		}
+		return overrides, problems
+	}
+}
+
+// primaryOfAStatus is the status the palette's primary is exactly, without
+// regard to how either is spelled.
+func primaryOfAStatus(palette map[string]string) (distinct, bool) {
+	for _, apart := range primaryApart {
+		if strings.EqualFold(palette["primary"], palette[apart.status]) {
+			return apart, true
+		}
+	}
+	return distinct{}, false
+}
+
+// withoutStatus is the colours a guarded layer states that are not a status
+// colour, and a problem for each that is. Judged before the colour is, so that
+// `good: red` is told it is a status and not that it is not a colour: fixing
+// the second would only find the first.
+func withoutStatus(l Layer, colors map[string]string) (map[string]string, []Problem) {
+	var problems []Problem
+	rest := make(map[string]string, len(colors))
+	for _, slot := range sortedKeys(colors) {
+		if !IsStatus(slot) {
+			rest[slot] = colors[slot]
+			continue
+		}
+		problems = append(problems, Problem{Source: l.Source, Field: l.written(slot),
+			Reason: "is a status colour, which only your own config file sets",
+			Hint: "left out, so the colour beneath it stands — set it under theme: in your own config file, " +
+				"e.g. `rta config set theme." + slot + " '#3ED598'`"})
+	}
+	return rest, problems
+}
+
+// withoutUnseen is the colours a guarded layer states for text that keep
+// contrastFloor against both black and white, and a problem for each that does
+// not, naming the ratio it measured and the fix.
+func withoutUnseen(l Layer, colors map[string]string) (map[string]string, []Problem) {
+	var problems []Problem
+	seen := make(map[string]string, len(colors))
+	for _, slot := range sortedKeys(colors) {
+		hex := colors[slot]
+		if !slices.Contains(textSlots, slot) {
+			seen[slot] = hex
+			continue
+		}
+		ratio, against, terminal := contrastOnBlack(hex), "black", "dark"
+		if white := contrastOnWhite(hex); white < ratio {
+			ratio, against, terminal = white, "white", "light"
+		}
+		if ratio >= contrastFloor {
+			seen[slot] = hex
+			continue
+		}
+		// Truncated and not rounded, so a colour that fails by a hair never
+		// reads as the floor itself.
+		shown := math.Floor(ratio*100) / 100
+		p := Problem{Source: l.Source, Field: l.written(slot),
+			Reason: fmt.Sprintf("is %.2f:1 against %s, so text in it would all but vanish on a %s terminal", shown, against, terminal),
+			Hint: fmt.Sprintf("left out, so the colour beneath it stands — pick one that keeps at least %.1f:1 "+
+				"against both black and white", contrastFloor)}
+		if l.As != "" {
+			p.Reason = fmt.Sprintf("is %.2f:1 against %s, so as the screen's primary it would all but vanish on a %s terminal",
+				shown, against, terminal)
+			p.Hint = fmt.Sprintf("the badge keeps it, and the screen's primary stays as it was beneath — pick one that "+
+				"keeps at least %.1f:1 against both black and white for the screen to follow it", contrastFloor)
+		}
+		problems = append(problems, p)
+	}
+	return seen, problems
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// fold is the palette the layers make, every slot, and which layer each slot's
+// colour came from (-1 for the built-in) — entries named in left do not count.
+func fold(kept []map[string]string, left []map[string]bool) (palette map[string]string, owner map[string]int) {
+	palette = make(map[string]string, len(fields))
+	owner = make(map[string]int, len(fields))
+	for slot, e := range fields {
+		palette[slot], owner[slot] = e.builtin, -1
+	}
+	for i, colors := range kept {
+		for slot, hex := range colors {
+			if !left[i][slot] {
+				palette[slot], owner[slot] = hex, i
+			}
+		}
+	}
+	return palette, owner
+}
+
+// ApplyLayers is Apply for a palette made of layers: Resolve, then the result.
+func ApplyLayers(layers ...Layer) []Problem {
+	overrides, problems := Resolve(layers...)
+	Apply(overrides)
+	return problems
+}
+
+// Effective is every slot's colour once overrides are applied over the
+// built-ins, without touching the live palette: what Current will answer after
+// Apply, for a caller that has to know whether applying would change anything,
+// or what a form would show.
+func Effective(overrides map[string]string) map[string]string {
+	usable, _ := validate("", "", overrides)
+	out := make(map[string]string, len(fields))
+	for slot, e := range fields {
+		out[slot] = e.builtin
+	}
+	for slot, hex := range usable {
+		out[slot] = hex
+	}
+	return out
 }
 
 // Current returns every field's live value, hex-formatted — what a config

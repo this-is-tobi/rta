@@ -13,9 +13,10 @@ import (
 
 // refuseUnhonouredKey stops a write that would land where nothing reads it.
 // config.Path falls back to ./.rta.yaml when there is no config directory, and
-// that file is honoured for the output format and the palette alone: anything
-// else in a file nobody named is ignored, because a cloned repository must not
-// be able to state a plugin's host or arrange a screen.
+// that file is honoured for the output format and the palette alone, less the
+// status colours: anything else in a file nobody named is ignored, because a
+// cloned repository must not be able to state a plugin's host or arrange a
+// screen, or make one status read as another.
 func refuseUnhonouredKey(key configKey) *view.Error {
 	if key.Honoured || config.TrustedPath() {
 		return nil
@@ -23,8 +24,8 @@ func refuseUnhonouredKey(key configKey) *view.Error {
 	return view.Errorf("core.config.untrusted",
 		"%s is not honoured from %s, so writing it there would do nothing", key.Name, config.Path()).
 		WithHint("set $RTA_CONFIG to the file you mean — a config file found in the working " +
-			"directory states nothing but the output format and the colours, because a cloned " +
-			"repository must not")
+			"directory states nothing but the output format and the text colours, because a " +
+			"cloned repository must not")
 }
 
 // runConfigSet is `rta config set`.

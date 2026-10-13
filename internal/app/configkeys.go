@@ -30,8 +30,9 @@ type configKey struct {
 	Options []string
 	// Honoured is true for a key that counts when it is read from the
 	// working-directory ./.rta.yaml, which is only ever the output format and
-	// the theme: everything else is ignored from a file nobody named, so a
-	// write there would change nothing.
+	// the text colours of the theme: everything else, the status colours
+	// included (theme.Resolve), is ignored from a file nobody named, so a write
+	// there would change nothing.
 	Honoured bool
 
 	parse func(values []string) (any, *view.Error)
@@ -174,7 +175,7 @@ func capabilityListKey(reg *registry.Registry, name, help, def string, field fun
 func themeKey(slot string) configKey {
 	return configKey{
 		Name: "theme." + slot, Help: "the " + slot + " colour of the palette", Example: "#D97757",
-		Default: "the built-in colour", Honoured: true,
+		Default: "the built-in colour", Honoured: !theme.IsStatus(slot),
 		parse: func(values []string) (any, *view.Error) {
 			if verr := oneValue("theme."+slot, "'#D97757'", values); verr != nil {
 				return nil, verr
