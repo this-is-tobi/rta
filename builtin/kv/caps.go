@@ -1121,57 +1121,85 @@ func boolToInt(b bool) int {
 // from the file's metadata or from the recipients list, which is public by
 // construction — so this is the one kv capability that always works, whatever
 // the store holds and whatever is at hand to open it. What is inside is
-// kv.overview's to count, and it begins with these lines.
+// kv.overview's to count, and it carries these lines.
 func runStatus(_ context.Context, req plugin.Request) (view.View, error) {
-	facts, _, verr := storeFacts(req)
+	facts, verr := readStoreFacts(req)
 	if verr != nil {
 		return nil, verr
 	}
-	return facts, nil
+	pairs := slices.Clone(facts.where)
+	if facts.mode != "" {
+		pairs = append(pairs, facts.lock(unlockAvailability(req, facts.mode))...)
+	}
+	return view.KeyValue{Pairs: pairs}, nil
 }
 
-// storeFacts is everything that can be said of the store without opening it,
-// as kv.status states it, and how the store is locked — "" while there is no
-// store, which the facts say themselves. The one place these lines are spelled,
-// for the capabilities that begin with them.
-func storeFacts(req plugin.Request) (view.KeyValue, keyMode, *view.Error) {
+// storeFacts is everything that can be said of the store without opening it:
+// where it is, and how it is locked. Whether this environment opens it is a
+// line of its own, which a page words for what it has found out (lock).
+type storeFacts struct {
+	where  []view.Pair
+	locked view.Pair
+	// mode is how the store is locked, "" while there is no store, which where
+	// says itself.
+	mode keyMode
+}
+
+// lock is the lines about the lock — how it is, and what is said of opening it —
+// and none while there is no store. The one place these lines are spelled, for
+// the capabilities that carry them.
+func (f storeFacts) lock(unlocks string) []view.Pair {
+	if f.mode == "" {
+		return nil
+	}
+	return []view.Pair{f.locked, {Key: "unlocks here", Value: unlocks}}
+}
+
+func readStoreFacts(req plugin.Request) (storeFacts, *view.Error) {
 	path := storePath()
-	pairs := []view.Pair{{Key: "store", Value: path}}
+	where := []view.Pair{{Key: "store", Value: path}}
 	info, err := os.Stat(path)
 	switch {
 	case os.IsNotExist(err):
-		return view.KeyValue{Pairs: append(pairs, view.Pair{
+		return storeFacts{where: append(where, view.Pair{
 			Key:   "state",
 			Value: "no store yet — " + NoStoreNext(req.Surface(), "<key>"),
-		})}, "", nil
+		})}, nil
 	case err != nil:
-		return view.KeyValue{}, "", view.Errorf("kv.store.unreadable", "reading %s: %v", path, err)
+		return storeFacts{}, view.Errorf("kv.store.unreadable", "reading %s: %v", path, err)
 	}
-	pairs = append(pairs,
+	where = append(where,
 		view.Pair{Key: "size", Value: format.Bytes(info.Size())},
 		view.Pair{Key: "changed", Value: itemstore.Age(info.ModTime())},
 	)
 
 	mode, specs, verr := currentMode()
 	if verr != nil {
-		return view.KeyValue{}, "", verr
+		return storeFacts{}, verr
 	}
+	locked := view.Pair{Key: "locked with", Value: "a passphrase"}
 	if mode == modeKeys {
-		pairs = append(pairs, view.Pair{Key: "locked to",
-			Value: format.CountOf(len(specs), "key") + " — see " + req.Surface().CapabilityName("kv.recipients")})
-	} else {
-		pairs = append(pairs, view.Pair{Key: "locked with", Value: "a passphrase"})
+		locked = view.Pair{Key: "locked to",
+			Value: format.CountOf(len(specs), "key") + " — see " + req.Surface().CapabilityName("kv.recipients")}
 	}
-	// Whether this shell can open it is the question behind the question: a
-	// store you cannot unlock right now is the thing you want to find out
-	// before you need the secret, not while you need it.
-	pairs = append(pairs, view.Pair{Key: "unlocks here", Value: unlockAvailability(req, mode)})
-	return view.KeyValue{Pairs: pairs}, mode, nil
+	return storeFacts{where: where, locked: locked, mode: mode}, nil
 }
 
 // unlockAvailability says whether a key is at hand, naming only where it came
-// from — never any part of the key itself.
+// from — never any part of the key itself. Whether this shell can open the
+// store is the question behind the question: a store you cannot unlock right now
+// is the thing you want to find out before you need the secret, not while you
+// need it.
+//
+// A key at hand is not a key that fits, which only opening the store can say.
 func unlockAvailability(req plugin.Request, mode keyMode) string {
+	return unlockLine(req, mode, "you will be asked")
+}
+
+// unlockLine is unlockAvailability for a page that says who asks for a key
+// that is not at hand, in the words asks gives: a page that never asks cannot
+// tell its reader that they will be.
+func unlockLine(req plugin.Request, mode keyMode, asks string) string {
 	if mode == modeKeys {
 		p := identityPath(req)
 		switch {
@@ -1192,15 +1220,15 @@ func unlockAvailability(req plugin.Request, mode keyMode) string {
 			// A locked key is not the same as no key, and the difference is a
 			// question you can answer — which is worth distinguishing from the
 			// case where nothing here can open the store at all.
-			return "on request — identity " + p + " is passphrase-protected, you will be asked"
+			return "on request — identity " + p + " is passphrase-protected, " + asks
 		}
 		return "no — identity " + p + " is passphrase-protected (set " + passphraseEnv + ")"
 	}
 	if lookupPassphrase(req) != "" {
-		return "yes — passphrase from the environment"
+		return "yes — passphrase " + passphraseSource(req)
 	}
 	if canPrompt(req) {
-		return "on request — you will be asked for the passphrase"
+		return "on request — " + asks
 	}
 	return "no passphrase available (set " + passphraseEnv + ")"
 }

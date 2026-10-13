@@ -451,7 +451,7 @@ func Plugin() plugin.Plugin {
 					"with a passphrase or to keys, and whether a key is available in this " +
 					"environment. It reads the file and never decrypts it, so it answers whatever " +
 					"state the store is in; `kv.overview` is the page that also counts what is " +
-					"inside, and begins with these lines.",
+					"inside, and carries these lines.",
 				Inputs: unlockFields(),
 				// What a page about the store rather than any entry offers, as
 				// kv.overview does: the list, and a new secret.

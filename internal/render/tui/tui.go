@@ -907,7 +907,11 @@ func (m Model) openTile(idx int) (tea.Model, tea.Cmd) {
 	if t.cap.Safety != plugin.Read {
 		return m.open(t.cap)
 	}
-	values := t.runValues()
+	// The store session answers a kv tile's unlock, as it answers any kv action
+	// opened from a list (withStoreSession). A tile does not use it on its timer,
+	// and says the store is unlocked in this session instead; this is the use that
+	// line promises, a person asking to see, and the one that keeps it warm.
+	values := withStoreSession(t.cap, t.runValues())
 	m.current = t.cap
 	m.lastValues, m.lastYes = values, false
 	m.trail = nil
