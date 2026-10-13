@@ -32,6 +32,24 @@ func TestAnArtifactStateCrossesTheWireAsAWord(t *testing.T) {
 	}
 }
 
+// A sentence an agent reads names a grant on a capability by its tool, and a
+// grant on a whole namespace by the namespace, which has no dot to change.
+func TestNamedToolSpellsACapabilityAsTheAgentCallsIt(t *testing.T) {
+	for _, c := range []struct {
+		g    Grant
+		want string
+	}{
+		{Grant{Target: "kv.get"}, "kv_get"},
+		{Grant{Target: "kv.get", Scope: "db"}, "kv_get db"},
+		{Grant{Target: "kv"}, "kv"},
+		{Grant{Target: "kv", Scope: "db.prod"}, "kv db.prod"},
+	} {
+		if got := c.g.NamedTool(); got != c.want {
+			t.Errorf("NamedTool(%q on %q) = %q, want %q", c.g.Scope, c.g.Target, got, c.want)
+		}
+	}
+}
+
 // A grant is named as the gate compares its record: the bare record as it
 // is, one that does not read as itself quoted, and none at all as the
 // target alone.

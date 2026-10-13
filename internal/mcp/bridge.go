@@ -175,7 +175,7 @@ func handler(c plugin.Capability, opts Options, reg *registry.Registry) sdk.Tool
 		defer func() {
 			if r := recover(); r != nil {
 				fmt.Fprintf(os.Stderr, "rta: %s panicked, recovered: %v\n%s\n", c.ID, r, debug.Stack())
-				verr := view.Errorf("core.mcp.panic", "%s failed unexpectedly", c.ID)
+				verr := view.Errorf("core.mcp.panic", "%s failed unexpectedly", plugin.ToolName(c.ID))
 				refusedBy(&rec, verr)
 				res, err = errResult(verr), nil
 			}
@@ -461,7 +461,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			if err := agentlog.Writable(); err != nil {
 				fmt.Fprintf(os.Stderr, "rta: refusing %s, the record of agent calls cannot be written: %v\n", c.ID, err)
 				verr := view.Errorf("core.record.unwritable",
-					"%s was not run: a call that needs a grant is not run while the record of agent calls cannot be written", c.ID).
+					"%s was not run: a call that needs a grant is not run while the record of agent calls cannot be written", plugin.ToolName(c.ID)).
 					WithHint(plugin.AskOperator("doctor"))
 				refusedBy(rec, verr)
 				return errResult(verr), nil
@@ -535,7 +535,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// same rate as one that waits (pacer).
 			if err := opts.pace.wait(ctx, refusalKey(ctx, opts)); err != nil {
 				verr := view.Errorf("core.mcp.cancelled",
-					"%s was not run: the caller went away while it waited its turn", c.ID)
+					"%s was not run: the caller went away while it waited its turn", plugin.ToolName(c.ID))
 				refusedBy(rec, verr)
 				return errResult(verr), nil
 			}
@@ -613,7 +613,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				// real message from `rta doctor` and from the same call at a
 				// terminal.
 				agentErr := view.Errorf("core.profile.secret.unavailable",
-					"%s could not resolve a credential for profile %q", c.ID, profileName).
+					"%s could not resolve a credential for profile %q", plugin.ToolName(c.ID), profileName).
 					WithHint(plugin.AskOperator("doctor"))
 				// On the record, where only a person reads it: the sentence the
 				// agent heard in the row's own fields, and in Note what it was
@@ -644,7 +644,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				// the cluster one refusal at a time. The operator gets the real
 				// message from the same call at a terminal and from `rta doctor`.
 				agentErr := view.Errorf("core.profile.tunnel.unavailable",
-					"%s could not reach the connection profile %q names", c.ID, profileName).
+					"%s could not reach the connection profile %q names", plugin.ToolName(c.ID), profileName).
 					WithHint(plugin.AskOperator("doctor"))
 				refusedBy(rec, agentErr)
 				rec.Note = cut(textclean.Credentials(verr3.Message), maxReason)
@@ -829,15 +829,20 @@ func fencedRefusal(rec *agentlog.Entry, c plugin.Capability, ref string, conn co
 ) *view.Error {
 	person := profile.FenceRefusal(ref, conn, c, breach, plugin.SurfaceCLI)
 	input := profile.FenceInput(breach.Input, plugin.SurfaceMCP)
+	// The call is named as the tool the agent called, as it is in every
+	// sentence this bridge says to an agent: the dotted ID is what a person
+	// types at a terminal, and no name at all on this side of the wire. A
+	// command in a hint keeps the ID, since that one is the operator's to run.
+	tool := plugin.ToolName(c.ID)
 	hint := "name only what that connection covers, or ask the operator what it covers and for a grant on another one"
-	agent := view.Errorf(person.Code, "%s was not run: %s lies outside what the connection it names reaches", c.ID, input)
+	agent := view.Errorf(person.Code, "%s was not run: %s lies outside what the connection it names reaches", tool, input)
 	switch {
 	case breach.Widened():
 		agent = view.Errorf(person.Code, "%s was not run: %s reads past what the connection it names reaches in %s",
-			c.ID, profile.FenceInput(breach.Switch, plugin.SurfaceMCP), input)
+			tool, profile.FenceInput(breach.Switch, plugin.SurfaceMCP), input)
 	case breach.Blank:
 		agent = view.Errorf(person.Code, "%s was not run: %s is blank, and the connection it names has to be told which one",
-			c.ID, input)
+			tool, input)
 		hint = "name a value for it, or ask the operator which one that connection covers"
 	}
 	agent = agent.WithHint(hint)
@@ -894,12 +899,12 @@ func takeProfile(c plugin.Capability, values map[string]any, opts Options) (stri
 			// operator's to fix, in the words every other unreadable store
 			// uses, and not with the file's own error, which names a path.
 			return "", view.Errorf("core.profile.unreadable",
-				"%s cannot be judged: the connections this server was configured with could not be read", c.ID).
+				"%s cannot be judged: the connections this server was configured with could not be read", plugin.ToolName(c.ID)).
 				WithHint(plugin.AskOperator("doctor"))
 		}
 		if named := cfg.ProfilesFor(plugin.Namespace(c.ID)); len(named) > 0 && plugin.Profilable(c) {
 			return "", view.Errorf("core.profile.required",
-				"%s has configured connections, so a call must name which one", c.ID).
+				"%s has configured connections, so a call must name which one", plugin.ToolName(c.ID)).
 				WithHint("ask the operator which profile to use and for a grant naming it")
 		}
 		return "", nil
@@ -986,7 +991,7 @@ func ungranted(c plugin.Capability, name, agent string) *view.Error {
 		cmd += " --agent " + agent
 	}
 	return view.Errorf("core.grant.required",
-		"agents may not use %s on profile %q without a person's consent", c.ID, name).
+		"agents may not use %s on profile %q without a person's consent", plugin.ToolName(c.ID), name).
 		WithHint(plugin.AskOperator(cmd + " --ttl 15m"))
 }
 

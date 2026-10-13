@@ -60,14 +60,14 @@ func TestAGrantUsedUpIsToldToHaveEnded(t *testing.T) {
 	}
 	text := refusalText(t, callTool(t, s, "demo_item_reveal", map[string]any{"key": "staging"}))
 
-	if !strings.Contains(text, "the grant for demo.item.reveal staging ended (2 of 2 uses)") {
+	if !strings.Contains(text, "the grant for demo_item_reveal staging ended (2 of 2 uses)") {
 		t.Errorf("the agent was not told the grant ran out: %s", text)
 	}
 	if !strings.Contains(text, "core.grant.required") || !strings.Contains(text, "rta grant allow demo.item.reveal staging") {
 		t.Errorf("the refusal lost its code or the command that issues the next grant: %s", text)
 	}
 	if rec := lastRecord(t); rec.Code != "core.grant.required" ||
-		rec.Reason != "the grant for demo.item.reveal staging ended (2 of 2 uses)" {
+		rec.Reason != "the grant for demo_item_reveal staging ended (2 of 2 uses)" {
 		t.Errorf("the record does not say what the agent was told: %+v", rec)
 	}
 }
@@ -90,7 +90,7 @@ func TestAGrantThisServerNeverUsedStaysNoActiveGrant(t *testing.T) {
 	spendElsewhere(t, "staging")
 
 	text := refusalText(t, callTool(t, s, "demo_item_reveal", map[string]any{"key": "staging"}))
-	if !strings.Contains(text, "no active grant for demo.item.reveal staging") || strings.Contains(text, "ended") {
+	if !strings.Contains(text, "no active grant for demo_item_reveal staging") || strings.Contains(text, "ended") {
 		t.Errorf("a grant the agent never used was described to it: %s", text)
 	}
 }
@@ -130,7 +130,7 @@ func TestAnEndedGrantDoesNotExplainAnotherRecord(t *testing.T) {
 	callTool(t, s, "demo_item_reveal", map[string]any{"key": "staging"})
 
 	text := refusalText(t, callTool(t, s, "demo_item_reveal", map[string]any{"key": "prod"}))
-	if strings.Contains(text, "ended") || !strings.Contains(text, "no active grant for demo.item.reveal prod") {
+	if strings.Contains(text, "ended") || !strings.Contains(text, "no active grant for demo_item_reveal prod") {
 		t.Errorf("a grant for another record was offered as the reason: %s", text)
 	}
 }
@@ -178,7 +178,7 @@ func TestTheQuestionSaysTheGrantEnded(t *testing.T) {
 	callTool(t, s, "demo_item_reveal", map[string]any{"key": "staging"})
 	select {
 	case req := <-seen:
-		if req.Why != "the grant for demo.item.reveal staging ended (1 of 1 use)" {
+		if req.Why != "the grant for demo_item_reveal staging ended (1 of 1 use)" {
 			t.Errorf("the question does not say why it is being asked: %q", req.Why)
 		}
 	default:
@@ -195,7 +195,7 @@ func TestAnExpiredGrantIsToldToHaveEnded(t *testing.T) {
 	e.spentOn("a", []grant.Grant{g})
 	c := plugin.Capability{ID: "demo.item.reveal"}
 
-	if got, want := e.ended("a", c, "staging", grant.Caller{}, time.Now()), "the grant for demo.item.reveal staging ended"; got != want {
+	if got, want := e.ended("a", c, "staging", grant.Caller{}, time.Now()), "the grant for demo_item_reveal staging ended"; got != want {
 		t.Errorf("an expired grant: got %q, want %q", got, want)
 	}
 	if got := e.ended("a", c, "staging", grant.Caller{}, g.Expires.Add(-time.Second)); got != "" {
@@ -225,7 +225,7 @@ func TestAGrantRenewedAndTakenBackIsNotSaidToHaveExpired(t *testing.T) {
 	time.Sleep(1300 * time.Millisecond)
 
 	text := refusalText(t, callTool(t, s, "demo_item_reveal", map[string]any{"key": "staging"}))
-	if strings.Contains(text, "expired") || !strings.Contains(text, "the grant for demo.item.reveal staging ended") {
+	if strings.Contains(text, "expired") || !strings.Contains(text, "the grant for demo_item_reveal staging ended") {
 		t.Errorf("a grant taken back was described as one that expired: %s", text)
 	}
 	if rec := lastRecord(t); strings.Contains(rec.Reason, "expired") {

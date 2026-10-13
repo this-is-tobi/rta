@@ -1905,10 +1905,20 @@ func (g Grant) Stale(pin string) bool {
 }
 
 // refuseMissing is the sentence a call gets when nothing authorizes it.
+//
+// **The sentence names the tool and the command names the capability.** The
+// only caller this gate has is the MCP bridge, so the call that was refused is
+// one an agent made, by a tool name (plugin.ToolName), and a sentence that
+// called it by its dotted ID named something nothing on the agent's side of the
+// wire is called. What the operator types is another matter and keeps the ID
+// the terminal knows it by: `rta grant allow kv.get`, in the hint. The ledger
+// row and the consent page carry this sentence as well, beside the capability
+// column that still reads the ID.
 func refuseMissing(c plugin.Capability, missing []string, profile, agent string) *view.Error {
 	if len(missing) == 0 {
 		missing = []string{""}
 	}
+	tool := plugin.ToolName(c.ID)
 	// No command for a record that is only white space, because none would
 	// work: grant allow refuses the record (CheckScope), so the one the hint
 	// used to hand on — `grant allow kv.get ' ' --ttl 15m` — was a second
@@ -1917,7 +1927,7 @@ func refuseMissing(c plugin.Capability, missing []string, profile, agent string)
 	// record, which is a wider decision than the call asks for, and an
 	// answer to the call itself where the server parks calls for a person.
 	if BlankRecord(missing[0]) {
-		return view.Errorf("core.grant.required", "no active grant for %s", describe(c.ID, missing)).
+		return view.Errorf("core.grant.required", "no active grant for %s", describe(tool, missing)).
 			WithHint("a person has to allow this, and no grant can name a record that is only white space — " +
 				"only one on every record of " + c.ID + " covers it, or a person allowing this call itself " +
 				"when it is parked for them")
@@ -1969,7 +1979,7 @@ func refuseMissing(c plugin.Capability, missing []string, profile, agent string)
 	}
 	// The one command line an agent is handed, and in the one form that
 	// hands it on (plugin.AskOperator): only a person issues a grant.
-	return view.Errorf("core.grant.required", "no active grant for %s", describe(c.ID, missing)).WithHint(hint)
+	return view.Errorf("core.grant.required", "no active grant for %s", describe(tool, missing)).WithHint(hint)
 }
 
 // maxHintCommands is how many grant commands a refusal spells out before it
@@ -1988,7 +1998,7 @@ func refuseThrottled(c plugin.Capability, g Grant) *view.Error {
 	_, next, _ := g.rateRoom(time.Now())
 	e := view.Errorf("core.grant.rate",
 		"the grant for %s allows %d %s per %s and that is spent",
-		g.Target, g.RateMax, format.Plural(g.RateMax, "call", "calls"), g.RateWindow)
+		plugin.ToolName(g.Target), g.RateMax, format.Plural(g.RateMax, "call", "calls"), g.RateWindow)
 	if next.IsZero() {
 		// A window that would not parse: the grant cannot say when, and
 		// guessing would be worse than admitting it.
@@ -2001,24 +2011,25 @@ func refuseThrottled(c plugin.Capability, g Grant) *view.Error {
 	return e.WithHint(fmt.Sprintf("try again in %s — this is a pace the operator set, not a missing permission", wait))
 }
 
-// describe names what was refused the way the person issuing the grant will
-// have to type it, each record as the gate compares it: the command to type
-// is the hint's, spelled for a shell, and this is the sentence read beside it.
-func describe(capID string, scopes []string) string {
+// describe names what was refused, the call by name (the tool, as the agent
+// that made it knows it) and each record as the gate compares it: the command
+// to type is the hint's, spelled for a shell, and this is the sentence read
+// beside it.
+func describe(name string, scopes []string) string {
 	if len(scopes) == 1 && scopes[0] == "" {
-		return capID
+		return name
 	}
 	named := make([]string, 0, len(scopes))
 	for _, s := range scopes {
 		if s == "" {
-			named = append(named, capID)
+			named = append(named, name)
 			continue
 		}
 		// As compared, byte for byte (textclean.Record): this sentence is
 		// also why a parked call is being asked, on the page the operator
 		// answers from, and a record with a no-break space after it read
 		// there as the record without.
-		named = append(named, capID+" "+textclean.Record(s))
+		named = append(named, name+" "+textclean.Record(s))
 	}
 	return strings.Join(named, ", ")
 }

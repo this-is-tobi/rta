@@ -104,7 +104,7 @@ rta agent log --refused -o json          # the refusals, as data
 rta agent log -o csv >> ~/audit/$(date +%F).csv
 ```
 
-Every refused or failed row carries the cause twice, deliberately split: a `code` column holding just the dotted, stable code (`core.grant.required`, `agent.surface`), and a `why` column holding the sentence — for a call refused because a grant it ran on is spent or has lapsed, `the grant for <target> ended (1 of 1 use)`, and for any other missing grant `no active grant for <target>`. Match on the code — it is the contract a [SIEM](../95-reference/10-glossary.md#acronyms) or jq rule can rely on across versions; the wording is not.
+Every refused or failed row carries the cause twice, deliberately split: a `code` column holding just the dotted, stable code (`core.grant.required`, `agent.surface`), and a `why` column holding the sentence — for a call refused because a grant it ran on is spent or has lapsed, `the grant for <target> ended (1 of 1 use)`, and for any other missing grant `no active grant for <target>`, where the target is spelled as the tool the agent called (`kv_get db-password`) and not as the capability (`kv.get`) the same row names beside it. Match on the code — it is the contract a [SIEM](../95-reference/10-glossary.md#acronyms) or jq rule can rely on across versions; the wording is not.
 
 Which makes "ship the record somewhere durable" a cron line rather than a feature request.
 

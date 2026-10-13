@@ -58,7 +58,7 @@ func TestAnAgentNamingSeveralNotesNeedsACoverForEachOverMCP(t *testing.T) {
 	session := mcpSession(t)
 
 	text, isErr := callTool(t, session, "note_rm", map[string]any{"id": []string{"1", "2"}})
-	if !isErr || !strings.Contains(text, "core.grant.required") || !strings.Contains(text, "no active grant for note.rm 2") {
+	if !isErr || !strings.Contains(text, "core.grant.required") || !strings.Contains(text, "no active grant for note_rm 2") {
 		t.Errorf("a call naming notes 1 and 2 under a grant for 1: error=%v %s", isErr, text)
 	}
 	if s, _ := load(); len(s.Items) != 3 {
