@@ -277,7 +277,7 @@ func Fenced(name string, conn config.Connection, c plugin.Capability, in plugin.
 	if breach == nil {
 		return nil
 	}
-	return FenceRefusal(name, c, breach, sf)
+	return FenceRefusal(name, conn, c, breach, sf)
 }
 
 // FenceBreached is Fenced's check without its words: how the call goes outside
@@ -307,8 +307,21 @@ func FenceInput(f plugin.Field, sf plugin.Surface) string {
 }
 
 // FenceRefusal words a breach for the person who can act on it. ref is the
-// profile as the call named it, instance included.
-func FenceRefusal(ref string, c plugin.Capability, b *plugin.FenceBreach, sf plugin.Surface) *view.Error {
+// profile as the call named it, instance included, and conn the connection it
+// resolved to.
+//
+// **A blank the connection appears to answer is said as what happened.** An
+// input a call names as its scope is never filled from a profile — the grant is
+// checked against the record the call names, before anything is resolved — so a
+// connection that states `set: namespace: apps` and fences it to `[apps]` still
+// refuses a call that leaves the namespace out, and "is blank, and profile
+// reaches only: apps" read as a contradiction of the line beside it. Saying that
+// the connection states the value, and that a call has to name it all the same,
+// is the whole of the fix; the line is not honoured (noteInertSet says so where
+// it is written).
+func FenceRefusal(ref string, conn config.Connection, c plugin.Capability, b *plugin.FenceBreach,
+	sf plugin.Surface,
+) *view.Error {
 	profileName, instance := config.SplitRef(ref)
 	entry := plugin.Namespace(c.ID)
 	if instance != "" {
@@ -327,6 +340,13 @@ func FenceRefusal(ref string, c plugin.Capability, b *plugin.FenceBreach, sf plu
 			named(b.Switch), named(b.Input), ref, reaches).
 			WithHint("leave " + named(b.Switch) + " out, or " + cross)
 	case b.Blank:
+		if stated, ok := conn.Set[b.Input.Config]; ok && plugin.IsScope(c, b.Input) {
+			return view.Errorf("core.profile.fenced",
+				"%s is not given: profile %q states %s: %s, but a call has to name it",
+				named(b.Input), ref, b.Input.Config, textclean.Terminal(fmt.Sprint(stated))).
+				WithHint(c.ID + " takes it as its scope, which a profile never fills — give it one of " +
+					reaches + ", or " + cross)
+		}
 		return view.Errorf("core.profile.fenced",
 			"%s is blank, and profile %q reaches only: %s", named(b.Input), ref, reaches).
 			WithHint("give it one of those, or " + cross)
