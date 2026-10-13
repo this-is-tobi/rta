@@ -159,7 +159,9 @@ type Dashboard struct {
 	Columns int `yaml:"columns,omitempty" json:"columns,omitempty"`
 	// Views are named arrangements of the same five fields, each a whole
 	// dashboard of its own, and a profile selects one (Profile.Dashboard): the
-	// screen that is drawn while it is switched on. See views.go.
+	// screen that is drawn while it is switched on. A profile can also write
+	// its screen in its own entry, which is a view named after the profile and
+	// is not in this map. See views.go.
 	Views map[string]View `yaml:"views,omitempty" json:"views,omitempty"`
 }
 

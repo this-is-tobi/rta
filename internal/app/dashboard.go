@@ -378,7 +378,7 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		pairsOut = append(pairsOut, view.Pair{Key: "wrote", Value: verb + " " + entry.Key() + " in " + dashboardFile(drawn)})
 	}
 	if drawn != "" {
-		pairsOut = append(pairsOut, view.Pair{Key: "view", Value: drawn + " — drawn while a profile that selects it is switched on (`rta profile set <name> --dashboard " + drawn + "`), or with `--view " + drawn + "`"})
+		pairsOut = append(pairsOut, view.Pair{Key: "view", Value: drawnWhen(cfg, drawn)})
 	}
 	pairsOut = append(pairsOut, view.Pair{Key: "tile", Value: id})
 	if automatic {
@@ -410,6 +410,19 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		view.Pair{Key: "on screen", Value: "bare `rta` opens on it; H on the tile or `rta dashboard rm " +
 			removeLine(entry) + inViewFlag(drawn) + "` takes it down"})
 	return view.KeyValue{Pairs: pairsOut}, nil
+}
+
+// drawnWhen says when a view is on screen, for the receipt of a command that
+// has just put something on it: a profile's own screen is the one drawn while
+// that environment is switched on, and any other view is the one a profile
+// selects, which is a thing `rta profile set` states for it.
+func drawnWhen(cfg config.Config, v string) string {
+	if cfg.InProfile(v) {
+		return v + " — the screen written in profile " + v + "'s own entry, drawn while it is switched on " +
+			"(`rta use " + v + "`), or with `--view " + v + "`"
+	}
+	return v + " — drawn while a profile that selects it is switched on (`rta profile set <name> --dashboard " +
+		v + "`), or with `--view " + v + "`"
 }
 
 // removeLine is the `rta dashboard rm` arguments that name this entry.
@@ -835,10 +848,14 @@ func viewOf(cmd *cobra.Command, cfg config.Config, mayCreate bool) (string, *vie
 		return drawnView(cfg), nil
 	case name == config.DefaultView:
 		return "", nil
+	// Before the grammar of a view's name, which is for making one: a profile
+	// that writes its screen in its entry has that screen under the profile's
+	// name, and a profile may be called what no view could be.
+	case cfg.HasView(name):
+		return name, nil
 	case !config.ValidViewName(name):
 		return "", viewNameRefusal("core.dashboard.view", name)
-	}
-	if _, stated := cfg.Dashboard.Views[name]; !stated && !mayCreate {
+	case !mayCreate:
 		return "", missingViewRefusal(cfg, name)
 	}
 	return name, nil
@@ -877,8 +894,12 @@ func completeViews(*cobra.Command, []string, string) ([]cobra.Completion, cobra.
 	}
 	out := []cobra.Completion{cobra.CompletionWithDesc(config.DefaultView, "the dashboard: block")}
 	for _, name := range cfg.ViewNames() {
-		out = append(out, cobra.CompletionWithDesc(name, format.Count(len(cfg.Dashboard.Views[name].Tiles)+
-			len(cfg.Dashboard.Views[name].Add), "tile", "tiles")))
+		d, _ := cfg.Block(name)
+		desc := format.Count(len(d.Tiles)+len(d.Add), "tile", "tiles")
+		if cfg.InProfile(name) {
+			desc += ", written in profile " + name
+		}
+		out = append(out, cobra.CompletionWithDesc(name, desc))
 	}
 	return out, cobra.ShellCompDirectiveNoFileComp
 }
@@ -890,11 +911,21 @@ func viewsTable(cfg config.Config) view.View {
 		{Name: "View"}, {Name: "Selected by"}, {Name: "Tiles", Kind: view.KindNumber}, {Name: "File"}, {Name: "Drawn now"},
 	}}
 	now := drawnView(cfg)
+	// Who selects a view is who draws it, so this asks the same question the
+	// screen does: a name nothing states, and a block that cannot be had under
+	// its profile's name, select nothing and are not listed against anything.
+	// A profile that writes its screen in its entry selects it by being it.
 	selectors := map[string][]string{}
 	for _, name := range cfg.ProfileNames() {
-		if v := cfg.Profiles[name].Dashboard.Name; v != "" {
-			selectors[v] = append(selectors[v], name)
+		v := cfg.ViewFor(name)
+		if v == "" {
+			continue
 		}
+		who := name
+		if v == name && cfg.InProfile(v) {
+			who += " (its own)"
+		}
+		selectors[v] = append(selectors[v], who)
 	}
 	row := func(name, file string, tiles int, selected []string) {
 		drawn := ""
@@ -909,7 +940,7 @@ func viewsTable(cfg config.Config) view.View {
 	base := cfg.Dashboard
 	row(config.DefaultView, config.Where("dashboard", ""), len(base.Tiles)+len(base.Add), nil)
 	for _, name := range cfg.ViewNames() {
-		v := cfg.Dashboard.Views[name]
+		v, _ := cfg.Block(name)
 		row(name, config.Where("views", name), len(v.Tiles)+len(v.Add), selectors[name])
 	}
 	t.Total = len(t.Rows)

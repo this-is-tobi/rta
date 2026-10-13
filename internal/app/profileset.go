@@ -370,11 +370,12 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 				verr = inlineScreenRefusal(name, p.Dashboard.Inline)
 				return cfg, false
 			}
-			if named != "" && !config.ValidViewName(named) {
+			switch {
+			case named == "" || cfg.HasView(named):
+			case !config.ValidViewName(named):
 				verr = viewNameRefusal("core.profile.dashboard", named)
 				return cfg, false
-			}
-			if _, stated := cfg.Dashboard.Views[named]; named != "" && !stated {
+			default:
 				verr = missingViewRefusal(cfg, named)
 				return cfg, false
 			}
