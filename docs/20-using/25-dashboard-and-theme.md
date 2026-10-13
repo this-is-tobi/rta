@@ -118,6 +118,36 @@ rta profile set prod --dashboard ops                         # the screen prod s
 
 `--view default` names the `dashboard:` block when that is the one you mean. In the TUI the header says `view ops` when it is not the default, `H`, `+` and `[` `]` write to the view that is drawn, and `V` draws the next one — the default, then each view by name — for this session only, which is how you look at the databases screen without switching environment. A switch (`u`) undoes it, since switching is asking for that environment's screen. Each view is a unit of its own when the configuration is [split across files](./22-your-config-file.md#split-it-across-files): a drop-in can hold one view and nothing else.
 
+### A screen written in the profile
+
+When only one environment shows a screen there is nothing to name. Write the arrangement under the profile's `dashboard:` instead of a view's name, with the same keys a view has:
+
+```yaml
+# ~/.config/rta/config.d/20-staging.yaml
+profiles:
+  staging:
+    plugins:
+      pg: {}
+    dashboard:
+      add:
+      - id: kube.metrics.node
+      - id: cnpg.storage
+        profile: staging/orders
+      hidden:
+      - kube.metrics.node@prod/auth
+      order:
+      - note.list
+      - sys.overview
+```
+
+Switching to `staging` draws that screen, and every other environment, and none, draws what it did. The block is a view named after its profile and nothing more, so each thing above works on it as it does on a view under `views:`: `rta dashboard views` lists it as `staging`, selected by `staging (its own)`, in the file that holds the entry; `--view staging` names it; `V` cycles to it; and with `staging` switched on it is the screen a bare `rta dashboard list` shows. Another profile can select it by name (`dashboard: staging`) as it can any view.
+
+A profile is one thing that lives in one file, and so is its screen: it is stated in the file that holds the entry, moves with it, and an entry stated in two files is refused as any profile is. That puts the environment's connections beside its screen in the drop-in, which is what a drop-in per environment looks like anyway.
+
+A name has one statement. When `dashboard: views:` also has a view called `staging`, the name keeps meaning that view, the block in the profile is not drawn and cannot be addressed, and the `dashboard:` block draws while `staging` is switched on, rather than either of the two being chosen for you. `default` names the `dashboard:` block, so a profile called `default` cannot have its own screen addressed either.
+
+A config file rta does not honour — the `./.rta.yaml` it falls back to when there is no config directory — arranges no screen, a profile's own included. Its blocks are read and listed, the automatic dashboard is what draws, and the dashboard commands refuse to write there, as they do for the `dashboard:` block and every view.
+
 ## Colours
 
 `t` opens the theme editor, a form with one box per colour and a preview beside it, and saves what you changed into the config file. The same block can be written by hand, and the CLI draws with it too:

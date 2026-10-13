@@ -95,10 +95,10 @@ func (d Dashboard) View() View {
 // drawing it when the environment is switched on and `V` cycling to it, the
 // writers that add, hide and remove a tile — already works on a name, so the
 // block is given one, the profile's, instead of being taught to each of them
-// as a second kind of screen. Views (the Config methods below) is where the
-// two kinds are read as one; a writer asks where the block lives and the
-// answer is the profile's entry rather than a `views:` entry that would then
-// state the same name twice.
+// as a second kind of screen. The Config methods below are where the two kinds
+// are read as one (stated says how a name is resolved); a writer asks where the
+// block lives and the answer is the profile's entry rather than a `views:`
+// entry that would then state the same name twice.
 //
 // Exactly one of the two is set. The block wins in MarshalYAML if a caller sets
 // both, which the loader cannot produce: a value is a string or a mapping.
@@ -213,27 +213,121 @@ func refuseBadDashboards(path string, profiles map[string]Profile) error {
 	return nil
 }
 
-// ViewNames are the names of the views the configuration states, sorted.
+// viewKind is where a view's arrangement is stated.
+type viewKind int
+
+const (
+	// noView: nothing states it.
+	noView viewKind = iota
+	// namedView: under `dashboard: views:`.
+	namedView
+	// profileView: in the entry of the profile it is named after.
+	profileView
+)
+
+// stated is the arrangement a view name addresses and where it is stated.
+//
+// **One name, one place, and the named view wins the name.** A profile's own
+// screen is addressed by the profile's name, so a `views:` entry of the same
+// name is a second statement of it. The name keeps meaning the view it always
+// meant, and the block in the profile is not addressable (ShadowedScreen says
+// why, and ViewFor draws the `dashboard:` block for that profile rather than
+// guess which of the two a person meant). Letting the block win instead would
+// have a view that exists, is listed and is selected by name stop being the
+// one that is drawn the day somebody writes a profile of that name — the quiet
+// kind of change this package spends its comments avoiding.
+//
+// `default` is the `dashboard:` block's name and so is nobody's screen: a
+// profile called that can state a block, but cannot have it addressed.
+func (c Config) stated(name string) (View, viewKind) {
+	if name == "" || name == DefaultView {
+		return View{}, noView
+	}
+	if v, ok := c.Dashboard.Views[name]; ok {
+		return v, namedView
+	}
+	if block := c.Profiles[name].Dashboard.Inline; block != nil {
+		return *block, profileView
+	}
+	return View{}, noView
+}
+
+// ViewNames are the names of the views the configuration states, sorted: the
+// ones under `dashboard: views:` and the profiles that write their screen in
+// their own entry, which are views named after the profile.
 func (c Config) ViewNames() []string {
 	names := make([]string, 0, len(c.Dashboard.Views))
 	for name := range c.Dashboard.Views {
 		names = append(names, name)
 	}
+	for name := range c.Profiles {
+		if _, kind := c.stated(name); kind == profileView {
+			names = append(names, name)
+		}
+	}
 	sort.Strings(names)
 	return names
+}
+
+// HasView reports whether a name addresses a stated view. Not the question of
+// whether it is a name a view can be given (ValidViewName), which is for
+// creating one: a profile's own screen has the profile's name, whatever that is.
+func (c Config) HasView(name string) bool {
+	_, kind := c.stated(name)
+	return kind != noView
+}
+
+// InProfile reports whether a view is a profile's own screen — written in the
+// profile's entry and not under `dashboard: views:` — which is what decides
+// where a write to it goes and what a message calls it.
+func (c Config) InProfile(view string) bool {
+	_, kind := c.stated(view)
+	return kind == profileView
 }
 
 // ViewFor is the view the profile that is switched on selects, or "" when
 // there is none to draw: nothing is switched on, the profile names no view, or
 // the view it names is not stated (which `rta doctor` says, and which draws the
 // default, since a screen that fails to draw over a missing name is worse than
-// the one every machine has).
+// the one every machine has). For a profile that writes its screen in its entry
+// that is the profile's own name, unless the name cannot be had (stated).
 func (c Config) ViewFor(profile string) string {
-	name := c.Profiles[profile].Dashboard.Name
-	if _, ok := c.Dashboard.Views[name]; ok && name != "" {
-		return name
+	d := c.Profiles[profile].Dashboard
+	if d.Inline != nil {
+		if c.InProfile(profile) {
+			return profile
+		}
+		return ""
+	}
+	if c.HasView(d.Name) {
+		return d.Name
 	}
 	return ""
+}
+
+// ShadowedScreen says why a profile's own screen is not drawn although it is
+// written, in the two parts a problem is told in; both empty when it is drawn
+// or there is none.
+//
+// Told as a problem of the profile and not refused: nothing about the profile's
+// connections is in question, and a screen that fails over a name is a worse
+// outage than the default one, so the `dashboard:` block draws until the two
+// statements are one.
+func (c Config) ShadowedScreen(profile string) (reason, hint string) {
+	if c.Profiles[profile].Dashboard.Inline == nil {
+		return "", ""
+	}
+	switch _, kind := c.stated(profile); {
+	case profile == DefaultView:
+		return "writes its dashboard in its entry, and `default` names the `dashboard:` block rather than a screen, " +
+				"so the block in the entry is not drawn and the `dashboard:` block draws",
+			"rename the profile, or state the screen under `dashboard: views:` and name it here"
+	case kind == namedView:
+		return "writes its dashboard in its entry, and `dashboard: views:` states a view called " + profile +
+				" as well, so neither is drawn and the `dashboard:` block draws",
+			"keep one: take the block out of the profile, or the view out of `dashboard: views:`, or rename the view"
+	}
+	return "", ""
 }
 
 // Block is the arrangement a view states, the `dashboard:` block's own for "" or
@@ -245,17 +339,31 @@ func (c Config) Block(view string) (Dashboard, bool) {
 		d.Views = nil
 		return d, true
 	}
-	v, ok := c.Dashboard.Views[view]
-	return v.Dashboard(), ok
+	v, kind := c.stated(view)
+	return v.Dashboard(), kind != noView
 }
 
 // SetBlock states the arrangement of a view — the `dashboard:` block's own for
 // "" or DefaultView, whose views are kept — creating the view when it is not
-// stated yet.
+// stated yet. A view that is a profile's own screen is stated in that profile's
+// entry, which is where it lives and where the file that holds it is written;
+// putting it under `views:` would state the name twice.
 func (c *Config) SetBlock(view string, d Dashboard) {
 	if view == "" || view == DefaultView {
 		d.Views = c.Dashboard.Views
 		c.Dashboard = d
+		return
+	}
+	if c.InProfile(view) {
+		profiles := make(map[string]Profile, len(c.Profiles))
+		for name, p := range c.Profiles {
+			profiles[name] = p
+		}
+		block := d.View()
+		p := profiles[view]
+		p.Dashboard = ProfileDashboard{Inline: &block}
+		profiles[view] = p
+		c.Profiles = profiles
 		return
 	}
 	views := make(map[string]View, len(c.Dashboard.Views)+1)

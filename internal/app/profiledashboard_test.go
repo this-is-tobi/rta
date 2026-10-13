@@ -87,3 +87,91 @@ func TestProfileSetKeepsTheBlockWhenItIsAboutSomethingElse(t *testing.T) {
 		}
 	}
 }
+
+// The screen of a profile is listed with the views: what selects it, the file
+// it is in — the drop-in that holds the entry — and, once the environment is
+// switched on, that it is the one drawn and why.
+func TestViewsListsAProfilesOwnScreenWithItsFileAndWhyItIsDrawn(t *testing.T) {
+	run := session(t, setRegistry(t))
+	dropIn(t, "20-staging.yaml", stagingEntry)
+	out, errOut, err := run("dashboard", "views", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	for _, want := range []string{`"staging"`, "staging (its own)", filepath.Join("config.d", "20-staging.yaml")} {
+		if !strings.Contains(out, want) {
+			t.Errorf("views does not say %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "is switched on") {
+		t.Errorf("a view is drawn with nothing switched on:\n%s", out)
+	}
+	if _, errOut, err := run("use", "staging"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if out, _, _ = run("dashboard", "views", "-o", "json"); !strings.Contains(out, "yes — staging is switched on") {
+		t.Errorf("the drawn view does not say why:\n%s", out)
+	}
+}
+
+// Switching the environment on is what makes its screen the one every
+// dashboard command acts on and draws, and switching off puts the
+// dashboard: block back.
+func TestTheDashboardCommandsDrawAProfilesOwnScreenWhileItIsOn(t *testing.T) {
+	run := session(t, setRegistry(t))
+	dropIn(t, "20-staging.yaml", stagingEntry)
+	has := func(args ...string) bool {
+		t.Helper()
+		out, errOut, err := run(append(args, "-o", "json")...)
+		if err != nil {
+			t.Fatalf("%v: %v %q", args, err, errOut)
+		}
+		return strings.Contains(out, "orders")
+	}
+	if has("dashboard", "list") {
+		t.Fatal("the dashboard: block draws a tile only staging's screen adds")
+	}
+	if !has("dashboard", "list", "--view", "staging") {
+		t.Error("--view staging does not draw the screen written in the entry")
+	}
+	if _, errOut, err := run("use", "staging"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !has("dashboard", "list") {
+		t.Error("with staging switched on, the screen it states is not the one listed")
+	}
+	if has("dashboard", "list", "--view", "default") {
+		t.Error("--view default does not name the dashboard: block while staging is on")
+	}
+	if _, errOut, err := run("use", "--off"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if has("dashboard", "list") {
+		t.Error("the screen stayed after the environment was switched off")
+	}
+}
+
+// A profile's own screen is drawn while that environment is switched on, and a
+// receipt that told a person to select it with `profile set --dashboard`, which
+// that very profile refuses, would send them to a command that throws it away.
+func TestAddToAProfilesOwnScreenSaysWhenItIsDrawn(t *testing.T) {
+	run := session(t, setRegistry(t))
+	dropIn(t, "20-staging.yaml", stagingEntry)
+	out, errOut, err := run("dashboard", "add", "db.status", "--profile", "staging", "--view", "staging")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "written in profile staging's own entry") || !strings.Contains(out, "`rta use staging`") ||
+		strings.Contains(out, "--dashboard") {
+		t.Errorf("the receipt does not say when the screen is drawn:\n%s", out)
+	}
+}
+
+func TestShellCompletionOffersAProfilesOwnScreenAsAView(t *testing.T) {
+	run := session(t, setRegistry(t))
+	dropIn(t, "20-staging.yaml", stagingEntry)
+	out, _, err := run("__complete", "dashboard", "list", "--view", "")
+	if err != nil || !strings.Contains(out, "staging\t1 tile, written in profile staging") {
+		t.Errorf("--view completes to:\n%s (%v)", out, err)
+	}
+}

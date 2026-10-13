@@ -448,11 +448,33 @@ func Owners() func(kind, name string) string {
 		if err != nil {
 			return Path()
 		}
+		if kind == "views" {
+			if i, ok := s.viewOwner(name); ok {
+				return s.layers[i].path
+			}
+			return Path()
+		}
 		if i, ok := s.owner[unit]; ok {
 			return s.layers[i].path
 		}
 		return Path()
 	}
+}
+
+// viewOwner is the file that states a view: the one with it under `dashboard:
+// views:`, or else the one whose profile of that name writes its screen in its
+// entry, which is a view named after the profile (ProfileDashboard). The same
+// order Config.stated reads them in, so a name answers with the file of the
+// statement that is the view.
+func (s *stack) viewOwner(name string) (int, bool) {
+	if i, ok := s.owner["views/"+name]; ok {
+		return i, true
+	}
+	if i, ok := s.owner["profiles/"+name]; ok && name != DefaultView &&
+		s.layers[i].cfg.Profiles[name].Dashboard.Inline != nil {
+		return i, true
+	}
+	return 0, false
 }
 
 // DropInFile is the path a drop-in of this name has, or an error when name is

@@ -386,7 +386,7 @@ func (m Model) wantView(cfg config.Config) string {
 	case m.viewPick == config.DefaultView:
 		return ""
 	case m.viewPick != "":
-		if _, ok := cfg.Dashboard.Views[m.viewPick]; ok {
+		if cfg.HasView(m.viewPick) {
 			return m.viewPick
 		}
 	}
