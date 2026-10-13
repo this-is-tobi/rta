@@ -34,6 +34,11 @@ func TestMain(m *testing.M) {
 
 func setup(t *testing.T) string {
 	t.Helper()
+	// The store session is process state, which is what it is for, and a test
+	// that unlocked from the TUI's surface left it for the next one: nothing read
+	// it back until a tile began to say whether it was open.
+	forgetSession()
+	t.Cleanup(forgetSession)
 	dir := t.TempDir()
 	t.Setenv("RTA_DATA_DIR", dir)
 	t.Setenv(passphraseEnv, "")

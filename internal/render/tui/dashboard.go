@@ -75,6 +75,9 @@ type tile struct {
 	// the dispatch rather than the answer, so a slow answer does not
 	// stretch the interval it was waiting out.
 	lastFired time.Time
+	// storeOpen is whether the store session was open when this tile was last
+	// dispatched, for a tile that says something about it (watchesStoreSession).
+	storeOpen bool
 }
 
 // tileSource is where a tile came from: picked for its plugin by the
@@ -665,7 +668,7 @@ func (m *Model) rebuildTiles() {
 	fresh := buildTilesWith(m.reg, m.dash, m.instances())
 	for i := range fresh {
 		if prev, ok := old[fresh[i].key()]; ok {
-			fresh[i].view, fresh[i].err, fresh[i].lastFired = prev.view, prev.err, prev.lastFired
+			fresh[i].view, fresh[i].err, fresh[i].lastFired, fresh[i].storeOpen = prev.view, prev.err, prev.lastFired, prev.storeOpen
 		}
 	}
 	m.tiles = fresh
@@ -906,9 +909,16 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 // it, and this one is simply skipped until its own interval has passed —
 // no second timer, nothing to arm or cancel, and a tile that was slow to
 // answer cannot stack copies of itself the way the every-tick path can.
+//
+// A tile that says whether the store is unlocked in this TUI is due as soon as
+// that stops being what it said (watchesStoreSession): it paces what it costs,
+// and what it costs is the decrypt, which a look at the session does not make.
 func (t tile) due(now time.Time) bool {
 	if t.search {
 		return false
+	}
+	if t.watchesStoreSession() && t.storeOpen != storeUnlocked() {
+		return true
 	}
 	if t.cap.Refresh <= 0 || t.lastFired.IsZero() {
 		return true
@@ -975,7 +985,7 @@ func refreshTiles(tiles []tile, gen int, pluginCfg PluginConfig,
 		if tc.pending {
 			continue
 		}
-		tiles[i].lastFired = now
+		tiles[i].lastFired, tiles[i].storeOpen = now, storeUnlocked()
 		cfg := configOf(pluginCfg, t.cap)
 		if tc.err != nil {
 			// Reported the same way a dial failure already is below, in

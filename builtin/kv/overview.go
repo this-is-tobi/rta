@@ -39,17 +39,19 @@ func overviewCapability() plugin.Capability {
 		ID: "kv.overview", Summary: "What the secret store holds, by count and kind, and what can open it",
 		// The words a person says it in rather than the ones it is written in:
 		// "how many secrets are stored" has neither "secrets" nor "stored" in
-		// the summary, whose words are the singular and "holds".
-		Keywords: []string{"secrets", "stored", "inventory", "contents", "counts", "locked"},
+		// the summary, whose words are the singular and "holds". What they keep in
+		// it they call passwords and credentials, and what they ask of the keys
+		// removed from it is whether anything was deleted.
+		Keywords: []string{"secrets", "stored", "inventory", "contents", "counts", "locked", "passwords", "credentials", "deleted"},
 		// HostSpecific as kv.status is, whose lines it carries: where this machine
 		// keeps the store and whether the server's own environment opens it say
 		// something about the server, never about whoever is calling it.
 		Safety: plugin.Read, HostSpecific: true, Idempotent: true, Detailed: true,
 		Refresh: overviewRefresh,
-		Description: "Where the store is, how big, when it last changed, how it is locked and whether this " +
-			"environment can open it; then what is in it: how many keys and folders, how many of each kind, " +
-			"how many bytes of values, how old the newest and the oldest are, and what is kept besides the " +
-			"live keys: earlier values (`kv.history`) and removed keys (`kv.restore`). Names, counts and " +
+		Description: "What is in the store: how many keys and folders, how many of each kind, how many bytes " +
+			"of values, how old the newest and the oldest are, and what is kept besides the live keys: earlier " +
+			"values (`kv.history`) and removed keys (`kv.restore`). Then where the store is, how big, when it " +
+			"last changed, how it is locked and whether this environment can open it. Names, counts and " +
 			"sizes, never a value.\n\n" +
 			"The inventory needs the store open, and this never asks for what opens it: with no key at hand " +
 			"it says so, says what supplies one, and still answers the rest. `kv.status` is the cheaper " +
@@ -76,24 +78,44 @@ func overviewCapability() plugin.Capability {
 // purpose: every use of a session moves its idle deadline out, so a tile
 // refreshing on a timer would keep a store unlocked for as long as the
 // terminal stayed open, which is the one thing the session is built not to do.
-// Opening the tile asks for the unlock like any kv action, and the session
-// answers that.
+// Opening the tile is a use, a person asking to see, and the session answers
+// that. What the tile does is look: a session that is open is said to be, in the
+// words of the header's badge, so that one screen does not say "store unlocked"
+// and "no passphrase available" at once (SessionUntil, which is not a use).
 func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
-	summary, mode, verr := storeFacts(req)
+	facts, verr := readStoreFacts(req)
 	if verr != nil {
 		return nil, verr
 	}
+	// What is in the store leads, then how it is locked, then where the file is:
+	// a tile is cut from the bottom, and what a glance wants first is the count.
+	// On a tile the lock comes straight after the count, since the lines between
+	// them — the kinds, the ages, what is kept — are the ones a box a third of the
+	// screen wide wraps over several lines and cuts, and a tile that never says
+	// how the secret store is locked has not answered the question it is for.
+	var pairs []view.Pair
 	var counted *inventory
-	if mode != "" {
+	var lock []view.Pair
+	if facts.mode != "" {
 		s, lerr := load(unattended(req))
-		if lerr != nil {
-			summary.Pairs = append(summary.Pairs, view.Pair{Key: "inventory", Value: cannotOpen(req, lerr)})
-		} else {
+		switch {
+		case lerr == nil:
 			inv := inventoryOf(s)
 			counted = &inv
-			summary.Pairs = append(summary.Pairs, inv.pairs(req.Surface())...)
+			pairs = append(pairs, inv.pairs(req.Surface(), isTile(req))...)
+		case heldBySession(req, facts.mode, lerr):
+			pairs = append(pairs, view.Pair{Key: "inventory", Value: "unlocked in this session — enter to see"})
+		default:
+			pairs = append(pairs, view.Pair{Key: "inventory", Value: cannotOpen(req, lerr)})
 		}
+		lock = facts.lock(unlocksHere(req, facts.mode, lerr))
 	}
+	at := len(pairs)
+	if isTile(req) {
+		at = min(1, at)
+	}
+	pairs = append(slices.Insert(pairs, at, lock...), facts.where...)
+	summary := view.KeyValue{Pairs: pairs}
 	if !req.Bool("detail") {
 		return summary, nil
 	}
@@ -106,7 +128,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	if counted != nil && counted.folders > 0 {
 		p.PutAs("folders", "top-level folders", counted.foldersTable(req.Surface()))
 	}
-	if mode == modeKeys {
+	if facts.mode == modeKeys {
 		p.AddAs("readers", "readers", runRecipients, plugin.Read, nil)
 	}
 	return p.View(), nil
@@ -125,27 +147,124 @@ func unattended(req plugin.Request) plugin.Request {
 	return req
 }
 
-// keyAbsent are the refusals load gives when nothing that could open the store
-// was at hand, as against a key that was given and did not fit.
-var keyAbsent = []string{"kv.passphrase.missing", "kv.identity.required", "kv.identity.locked"}
+// unlocksHere is the `unlocks here` line of a page that has just tried to open
+// the store, and lerr is why it could not, nil when it did. kv.status answers the
+// cheaper question — is a key at hand — and never finds out whether it fits;
+// this page has found out, and does not say "yes" over the line that says the
+// store would not decrypt, or "you will be asked" under the one that says this
+// page does not ask.
+func unlocksHere(req plugin.Request, mode keyMode, lerr *view.Error) string {
+	switch {
+	case lerr == nil:
+		return unlockAvailability(req, mode)
+	case heldBySession(req, mode, lerr):
+		return "yes — unlocked in this session"
+	case keyRefused(req, lerr):
+		return refusedKey(req, lerr)
+	}
+	return unlockLine(req, mode, req.Surface().CapabilityName("kv.list")+" asks, this page does not")
+}
+
+// isTile reports whether this is the dashboard's run of the overview: the
+// compact answer on the TUI, which refreshes on a timer in a box a third of the
+// screen wide. The page enter opens is the detailed one.
+func isTile(req plugin.Request) bool {
+	return req.Surface() == plugin.SurfaceTUI && !req.Bool("detail")
+}
+
+// heldBySession reports whether a tile's open failed only because the store is
+// unlocked in the TUI's session and the tile, which never uses it, was not given
+// the passphrase. Only a passphrase store has a session.
+func heldBySession(req plugin.Request, mode keyMode, lerr *view.Error) bool {
+	if lerr == nil || lerr.Code != "kv.passphrase.missing" || mode != modePassphrase || !isTile(req) {
+		return false
+	}
+	_, open := SessionUntil()
+	return open
+}
+
+// supplyPassphrase is how the caller is told to give the passphrase of a store
+// this page cannot open without it. On the TUI the box is not on the page, so it
+// says the keys that reach it: `e` from the page, and from a tile `enter` first.
+func supplyPassphrase(req plugin.Request) string {
+	if req.Surface() != plugin.SurfaceTUI {
+		return passphraseHint(req.Surface())
+	}
+	keys := "e"
+	if isTile(req) {
+		keys = "enter, then e"
+	}
+	return "set " + passphraseEnv + ", or type the passphrase: " + keys
+}
+
+// keyRefused reports whether the open failed with a key at hand that was not
+// accepted, as against one that was not there: the passphrase that did not
+// decrypt the store, the identity the store is not locked to, and the
+// passphrase given for a key that is not that key's own.
+func keyRefused(req plugin.Request, verr *view.Error) bool {
+	switch verr.Code {
+	case "kv.wrongpass", "kv.wrongkey":
+		return true
+	case "kv.identity.locked":
+		return lookupPassphrase(req) != ""
+	}
+	return false
+}
+
+// refusedKey is the line for a key that was at hand and was not accepted, which
+// names it by where it came from and not by any part of it.
+func refusedKey(req plugin.Request, verr *view.Error) string {
+	if verr.Code == "kv.wrongkey" {
+		return "no — identity " + identityPath(req) + " was not accepted by the store"
+	}
+	line := "no — the passphrase " + passphraseSource(req) + " was not accepted"
+	if verr.Code == "kv.identity.locked" {
+		line += " by the key"
+	}
+	return line
+}
+
+// keyMissing reports whether the open failed because nothing that could open the
+// store was at hand.
+func keyMissing(req plugin.Request, verr *view.Error) bool {
+	switch verr.Code {
+	case "kv.passphrase.missing", "kv.identity.required":
+		return true
+	case "kv.identity.locked":
+		return lookupPassphrase(req) == ""
+	}
+	return false
+}
 
 // cannotOpen is the line standing where the inventory would be, which says why
 // there is none and what would supply it: the refusal's own message and hint,
-// worded for the surface asking.
+// worded for the surface asking. A passphrase that was not given is not said
+// twice, since the line begins by saying that no key is at hand, and a tile
+// gives the line a quarter of its width.
 //
-// On a terminal it also says that this page is not the one that asks, because
-// `unlocks here` above it reads "you will be asked" and it was not.
+// A locked key is said the same short way: the file is named by the line beside
+// this one (unlocksHere), and that an agent signs and does not decrypt is the
+// answer to a different question, of why `kv.list` will ask a person for a key
+// the ssh-agent has.
 func cannotOpen(req plugin.Request, verr *view.Error) string {
-	lead := "not opened"
-	if slices.Contains(keyAbsent, verr.Code) {
+	lead, why := "not opened", verr.Message
+	missing := keyMissing(req, verr)
+	if missing {
 		lead = "needs a key at hand"
 	}
-	line := lead + " — " + verr.Message
-	if verr.Hint != "" {
-		line += "; " + verr.Hint
+	if verr.Code == "kv.passphrase.missing" {
+		why = ""
 	}
-	if canPrompt(req) {
-		line += " — this page never asks, " + req.Surface().CapabilityName("kv.list") + " does"
+	line := lead
+	switch {
+	case missing && verr.Code == "kv.identity.locked":
+		line += " — the key's own passphrase: " + supplyPassphrase(req)
+	case verr.Code == "kv.passphrase.missing":
+		line += " — " + supplyPassphrase(req)
+	case why != "" && verr.Hint != "":
+		line += " — " + why + "; " + verr.Hint
+	case why != "" || verr.Hint != "":
+		line += " — " + why + verr.Hint
 	}
 	return line
 }
@@ -233,11 +352,16 @@ func kindName(kind string) string {
 	return kind
 }
 
-// pairs are the inventory's lines of the summary, after the facts kv.status
-// states about the file: what is held, what it is, how old, and what is kept
-// beside it. Each line that says nothing about this store is left out, because
-// a zero on a tile reads as a thing somebody is meant to watch.
-func (inv inventory) pairs(sf plugin.Surface) []view.Pair {
+// pairs are the inventory's lines of the summary, which lead it: what is held,
+// what it is, how old, and what is kept beside it. Each line that says nothing
+// about this store is left out, because a zero on a tile reads as a thing
+// somebody is meant to watch.
+//
+// A tile (glance) says what is kept in fewer words, since a third of a screen
+// wraps "1 earlier value · 2 removed keys, restorable" over three lines and a
+// tile cut after the second ends a phrase on a comma. The words are the page's
+// own, shortened, and the page that enter opens has them whole.
+func (inv inventory) pairs(sf plugin.Surface, glance bool) []view.Pair {
 	var pairs []view.Pair
 	if inv.keys == 0 {
 		pairs = append(pairs, view.Pair{Key: "keys", Value: "none — " + sf.CapabilityName("kv.set") + " adds one"})
@@ -263,11 +387,17 @@ func (inv inventory) pairs(sf plugin.Surface) []view.Pair {
 	if inv.earlier > 0 {
 		kept = append(kept, format.CountOf(inv.earlier, "earlier value"))
 	}
-	if inv.removed > 0 {
+	if inv.removed > 0 && glance {
+		kept = append(kept, strconv.Itoa(inv.removed)+" removed")
+	} else if inv.removed > 0 {
 		kept = append(kept, format.CountOf(inv.removed, "removed key")+", restorable")
 	}
 	if len(kept) > 0 {
-		pairs = append(pairs, view.Pair{Key: "history", Value: strings.Join(kept, " · ")})
+		sep := " · "
+		if glance {
+			sep = ", "
+		}
+		pairs = append(pairs, view.Pair{Key: "history", Value: strings.Join(kept, sep)})
 	}
 	return pairs
 }

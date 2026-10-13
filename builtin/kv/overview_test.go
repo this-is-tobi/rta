@@ -111,18 +111,118 @@ func TestTheOverviewCountsWhatTheStoreHolds(t *testing.T) {
 }
 
 // What kv.status says about the file is not spelled a second time: the page
-// begins with exactly the lines kv.status answers with, whatever state the store
-// is in, so the two cannot disagree about where it is or whether it opens.
-func TestTheOverviewBeginsWithWhatStatusSays(t *testing.T) {
+// carries exactly the lines kv.status answers with, whatever state the store is
+// in, so the two cannot disagree about where it is or how it is locked. The one
+// line it words for itself is whether this shell opens it, because the page has
+// tried: kv.status says a key is at hand and the page says whether it fit.
+func TestTheOverviewCarriesWhatStatusSays(t *testing.T) {
 	seeded(t)
-	status, err := runStatus(t.Context(), req(nil, false))
-	if err != nil {
-		t.Fatal(err)
+	for name, tc := range map[string]struct {
+		values map[string]any
+		// unlocks is what the page says of opening the store, when it is not
+		// what kv.status says.
+		unlocks string
+	}{
+		"a store this call opens":  {values: nil},
+		"a store it cannot open":   {values: map[string]any{"passphrase": "not the passphrase"}, unlocks: "no — the passphrase given was not accepted"},
+		"a store with no key held": {values: map[string]any{"passphrase": ""}},
+	} {
+		status, err := runStatus(t.Context(), req(tc.values, false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		page := overviewPairs(t, req(tc.values, false)).Pairs
+		for _, line := range status.(view.KeyValue).Pairs {
+			if line.Key == "unlocks here" && tc.unlocks != "" {
+				line.Value = tc.unlocks
+			}
+			if !slices.Contains(page, line) {
+				t.Errorf("%s: the overview does not say %v:\n page %v", name, line, page)
+			}
+		}
 	}
-	facts := status.(view.KeyValue).Pairs
-	page := overviewPairs(t, req(nil, false)).Pairs
-	if len(page) <= len(facts) || !slices.Equal(page[:len(facts)], facts) {
-		t.Errorf("the overview does not begin with kv.status's lines:\n status %v\n page   %v", facts, page)
+}
+
+// A tile is cut from the bottom, and a glance wants the count before it wants
+// where the file is: the inventory leads, then how the store is locked, then the
+// file. When the inventory cannot be had, the line that says why leads instead.
+func TestTheOverviewLeadsWithTheCountAndEndsWithTheFile(t *testing.T) {
+	seeded(t)
+	keysOf := func(kv view.KeyValue) []string {
+		out := make([]string, len(kv.Pairs))
+		for i, p := range kv.Pairs {
+			out[i] = p.Key
+		}
+		return out
+	}
+	opened := keysOf(overviewPairs(t, req(nil, false)))
+	if want := []string{"keys", "kinds", "last set", "history", "locked with", "unlocks here", "store", "size", "changed"}; !slices.Equal(opened, want) {
+		t.Errorf("an open store reads %v, want %v", opened, want)
+	}
+	locked := keysOf(overviewPairs(t, plugin.NewRequest(nil, false, false)))
+	if want := []string{"inventory", "locked with", "unlocks here", "store", "size", "changed"}; !slices.Equal(locked, want) {
+		t.Errorf("a store nothing opened reads %v, want %v", locked, want)
+	}
+}
+
+// A tile is cut from the bottom and is a third of the screen wide, so what it
+// has room for is the count and how the store is locked: the kinds, the ages and
+// what is kept come after, in that order, and the history is said in few words.
+// The page enter opens, and the answer a terminal or an agent gets, keep the
+// whole sentence and the order of the inventory first.
+func TestTheTileLeadsWithTheCountAndTheLock(t *testing.T) {
+	seeded(t)
+	keysOf := func(kv view.KeyValue) []string {
+		out := make([]string, len(kv.Pairs))
+		for i, p := range kv.Pairs {
+			out[i] = p.Key
+		}
+		return out
+	}
+	opened := plugin.NewRequest(map[string]any{"passphrase": "correct horse battery staple"}, false, false)
+	tile := overviewPairs(t, opened.WithSurface(plugin.SurfaceTUI))
+	if want := []string{"keys", "locked with", "unlocks here", "kinds", "last set", "history", "store", "size", "changed"}; !slices.Equal(keysOf(tile), want) {
+		t.Errorf("a tile reads %v, want %v", keysOf(tile), want)
+	}
+	if got, want := pairValue(tile, "history"), "1 earlier value, 2 removed"; got != want {
+		t.Errorf("the tile's history = %q, want %q", got, want)
+	}
+
+	whole := "1 earlier value · 2 removed keys, restorable"
+	for name, r := range map[string]plugin.Request{
+		"a terminal": opened.WithSurface(plugin.SurfaceCLI),
+		"an agent":   opened.WithSurface(plugin.SurfaceMCP),
+		"a caller":   opened,
+	} {
+		kv := overviewPairs(t, r)
+		if want := []string{"keys", "kinds", "last set", "history", "locked with", "unlocks here", "store", "size", "changed"}; !slices.Equal(keysOf(kv), want) {
+			t.Errorf("%s reads %v, want %v", name, keysOf(kv), want)
+		}
+		if got := pairValue(kv, "history"); got != whole {
+			t.Errorf("%s: history = %q, want %q", name, got, whole)
+		}
+	}
+	// The page the tile opens is not a tile: it has the room, and the wording.
+	page := sectionByID(t, overviewPage(t, opened.WithSurface(plugin.SurfaceTUI)), "summary").(view.KeyValue)
+	if got := pairValue(page, "history"); got != whole {
+		t.Errorf("the opened page's history = %q, want %q", got, whole)
+	}
+	if got := keysOf(page); got[1] != "kinds" {
+		t.Errorf("the opened page reads %v: the inventory leads it", got)
+	}
+}
+
+// A tile that cannot open the store has one line for the count and it is the
+// one that says why; the lock follows it all the same.
+func TestTheTileOfAStoreItCannotOpenKeepsTheLockBeforeTheFile(t *testing.T) {
+	seeded(t)
+	kv := overviewPairs(t, plugin.NewRequest(nil, false, false).WithSurface(plugin.SurfaceTUI))
+	got := make([]string, len(kv.Pairs))
+	for i, p := range kv.Pairs {
+		got[i] = p.Key
+	}
+	if want := []string{"inventory", "locked with", "unlocks here", "store", "size", "changed"}; !slices.Equal(got, want) {
+		t.Errorf("a tile reads %v, want %v", got, want)
 	}
 }
 
@@ -153,7 +253,7 @@ func TestTheOverviewOfAStoreItCannotOpenSaysWhatItNeeds(t *testing.T) {
 
 	for surface, supplied := range map[plugin.Surface]string{
 		plugin.SurfaceCLI: "set RTA_KV_PASSPHRASE or give --passphrase",
-		plugin.SurfaceTUI: "give the passphrase box",
+		plugin.SurfaceTUI: "or type the passphrase: enter, then e",
 		plugin.SurfaceMCP: "ask the operator to set RTA_KV_PASSPHRASE",
 	} {
 		r := plugin.NewRequest(nil, false, false).WithSurface(surface)
@@ -162,6 +262,11 @@ func TestTheOverviewOfAStoreItCannotOpenSaysWhatItNeeds(t *testing.T) {
 		if !strings.HasPrefix(line, "needs a key at hand — ") || !strings.Contains(line, supplied) {
 			t.Errorf("%s: the inventory line = %q, want it to say a key is needed and %q", surface, line, supplied)
 		}
+		// Said once: the line already begins by saying no key is at hand, and a
+		// tile gives it a quarter of its width.
+		if strings.Contains(line, "no passphrase provided") {
+			t.Errorf("%s: the inventory line says twice that nothing was given: %q", surface, line)
+		}
 		for _, counted := range []string{"keys", "kinds", "history"} {
 			if got := pairValue(kv, counted); got != "" {
 				t.Errorf("%s: a store nothing opened still says %s = %q", surface, counted, got)
@@ -169,6 +274,29 @@ func TestTheOverviewOfAStoreItCannotOpenSaysWhatItNeeds(t *testing.T) {
 		}
 		if pairValue(kv, "store") == "" || pairValue(kv, "locked with") != "a passphrase" {
 			t.Errorf("%s: the facts about the file are missing: %v", surface, kv.Pairs)
+		}
+	}
+}
+
+// The TUI's tile shows no passphrase box, so it names the keys that reach one:
+// from the tile `enter` opens the page and `e` there edits its inputs, and on the
+// page itself `e` is the one key. Neither says "box", which is what a form calls
+// it and a page does not have.
+func TestTheOverviewNamesTheKeysThatReachThePassphraseBox(t *testing.T) {
+	seeded(t)
+	tui := plugin.NewRequest(nil, false, false).WithSurface(plugin.SurfaceTUI)
+
+	tile := pairValue(overviewPairs(t, tui), "inventory")
+	if want := "needs a key at hand — set RTA_KV_PASSPHRASE, or type the passphrase: enter, then e"; tile != want {
+		t.Errorf("the tile says %q, want %q", tile, want)
+	}
+	page := pairValue(sectionByID(t, overviewPage(t, tui), "summary").(view.KeyValue), "inventory")
+	if want := "needs a key at hand — set RTA_KV_PASSPHRASE, or type the passphrase: e"; page != want {
+		t.Errorf("the page says %q, want %q", page, want)
+	}
+	for _, line := range []string{tile, page} {
+		if strings.Contains(line, "box") {
+			t.Errorf("%q names a box that is not on the screen", line)
 		}
 	}
 }
@@ -185,25 +313,19 @@ func TestTheOverviewOfAStoreTheKeyDoesNotOpenSaysSo(t *testing.T) {
 
 // A person at a terminal is asked for a passphrase by everything else here,
 // and the overview is not that: it would be the call a tile and a status line
-// are built from. It says so beside the line that otherwise reads "you will be
-// asked", and names the command that does ask.
+// are built from. The line beside the inventory says which command does ask,
+// where it used to say "you will be asked" under a line saying this page never
+// does.
 func TestTheOverviewNeverAsksForAPassphraseAtATerminal(t *testing.T) {
 	seeded(t)
-	origPrompt, origCan := promptPassphrase, canPrompt
-	promptPassphrase = func() (string, error) {
-		t.Error("the overview asked for the store's passphrase")
-		return "correct horse battery staple", nil
-	}
-	canPrompt = func(r plugin.Request) bool { return r.Surface() == plugin.SurfaceCLI }
-	t.Cleanup(func() { promptPassphrase, canPrompt, prompted = origPrompt, origCan, "" })
+	atATerminal(t)
 
 	kv := overviewPairs(t, cliReq(nil))
-	line := pairValue(kv, "inventory")
-	if !strings.HasPrefix(line, "needs a key at hand") || !strings.Contains(line, "this page never asks, `rta kv list` does") {
+	if line := pairValue(kv, "inventory"); !strings.HasPrefix(line, "needs a key at hand") {
 		t.Errorf("inventory = %q", line)
 	}
-	if got := pairValue(kv, "unlocks here"); !strings.HasPrefix(got, "on request") {
-		t.Errorf("unlocks here = %q: the line the overview's own disclaimer sits beside", got)
+	if got := pairValue(kv, "unlocks here"); !strings.HasPrefix(got, "on request — `rta kv list` asks") {
+		t.Errorf("unlocks here = %q: the line that says who asks", got)
 	}
 	if got := pairValue(kv, "keys"); got != "" {
 		t.Errorf("a store nobody opened was counted: keys = %q", got)
@@ -413,7 +535,7 @@ func TestTheSummaryNamesTheTopLevelFoldersOnlyWhenThereAreOthers(t *testing.T) {
 		"2 keys, 3 folders (1 at the top), 2 B of values": inventoryOfNames("a/b/x", "a/c/y"),
 		"2 keys, 1 folder, 2 B of values":                 inventoryOfNames("flat", "a/x"),
 	} {
-		if got := pairValue(view.KeyValue{Pairs: inv.pairs(plugin.SurfaceCLI)}, "keys"); got != want {
+		if got := pairValue(view.KeyValue{Pairs: inv.pairs(plugin.SurfaceCLI, false)}, "keys"); got != want {
 			t.Errorf("keys = %q, want %q", got, want)
 		}
 	}

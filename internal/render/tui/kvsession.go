@@ -116,3 +116,16 @@ func (m Model) storeBadge() string {
 	}
 	return theme.WarnText.Render(" ◐ store unlocked · " + profile.ShortDuration(left))
 }
+
+// storeUnlocked is whether the store session is open, which is a look and not a
+// use: it moves no deadline.
+func storeUnlocked() bool {
+	_, open := kv.SessionUntil()
+	return open
+}
+
+// watchesStoreSession is whether what this tile says depends on the store
+// session: the kv tile says whether the store is unlocked in this TUI, as the
+// header's badge does, and the two must not disagree for as long as the tile's
+// own pace keeps it from being re-run.
+func (t tile) watchesStoreSession() bool { return strings.HasPrefix(t.cap.ID, "kv.") }

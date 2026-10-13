@@ -186,6 +186,34 @@ func lookupPassphrase(req plugin.Request) string {
 	return os.Getenv(passphraseEnv)
 }
 
+// givenPassphrase is the passphrase the caller supplied itself — a flag, a form's
+// box — and "" when there is none or the only one is the environment's. A form's
+// box is filled from RTA_KV_PASSPHRASE when it is set (EnvFallback), so the
+// environment's own arrives in the request looking like a typed one; what is
+// equal to it is taken to be it.
+func givenPassphrase(req plugin.Request) string {
+	if p := req.String("passphrase"); p != os.Getenv(passphraseEnv) {
+		return p
+	}
+	return ""
+}
+
+// passphraseSource says where the passphrase lookupPassphrase found came from.
+func passphraseSource(req plugin.Request) string {
+	if givenPassphrase(req) != "" {
+		return "given"
+	}
+	return "from the environment"
+}
+
+// passphraseHint is how a caller on sf is told to supply the store's passphrase.
+func passphraseHint(sf plugin.Surface) string {
+	if sf == plugin.SurfaceMCP {
+		return "ask the operator to set " + passphraseEnv + " in the environment rta mcp serve runs in"
+	}
+	return fmt.Sprintf("set %s or give %s", passphraseEnv, sf.InputName("passphrase"))
+}
+
 // promptPassphrase is overridable in tests; it reads from the terminal.
 var promptPassphrase = func() (string, error) {
 	secret, err := readSecret("Passphrase: ")
@@ -285,11 +313,7 @@ func resolvePassphrase(req plugin.Request) (string, *view.Error) {
 			return p, nil
 		}
 	}
-	hint := fmt.Sprintf("set %s or give %s", passphraseEnv, req.Surface().InputName("passphrase"))
-	if req.Surface() == plugin.SurfaceMCP {
-		hint = "ask the operator to set " + passphraseEnv + " in the environment rta mcp serve runs in"
-	}
-	return "", view.Errorf("kv.passphrase.missing", "no passphrase provided").WithHint(hint)
+	return "", view.Errorf("kv.passphrase.missing", "no passphrase provided").WithHint(passphraseHint(req.Surface()))
 }
 
 // askPassphrase is the terminal's answer to "what is the passphrase", or "" when
@@ -393,7 +417,7 @@ func load(req plugin.Request) (store, *view.Error) {
 	// an idle deadline that every refresh of a tile reading the store moves out
 	// again, so that it never relocks.
 	if req.Surface() == plugin.SurfaceTUI && identityPath(req) == "" {
-		if p := req.String("passphrase"); p != "" && p != os.Getenv(passphraseEnv) {
+		if p := givenPassphrase(req); p != "" {
 			rememberSession(p)
 		}
 	}
