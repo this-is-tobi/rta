@@ -29,8 +29,9 @@ const instructions = "rta is a security boundary in front of this machine, not a
 	"and the tool's \"limit\" or a narrower call shows the rest. " +
 	"A failure is {\"type\":\"error\",\"code\",\"message\",\"hint\"}: the hint says what to change in the call, " +
 	"or whose the fix is. A command in a hint (`rta ...`) is the operator's to run and you have no terminal, so say what " +
-	"is needed and ask the operator rather than retrying. A tool that needs a grant (any whose Safety is above read, " +
-	"even one that only returns data) is refused until a person issues one for you. A path argument names a file on the machine running rta, under the roots the operator started it with."
+	"is needed and ask the operator rather than retrying. A tool that needs a grant is refused until a person issues one for you: " +
+	"every one whose Safety is above read, and some reads that reach out or reveal; a tool's own text says when it needs one. " +
+	"A path argument names a file on the machine running rta, under the roots the operator started it with."
 
 // profileInstructions is the one sentence about the "profile" argument, said
 // at the handshake when any tool offers it. It sat at the end of the

@@ -24,6 +24,22 @@ func TestTheHandshakeCarriesWhatIsTrueOfEveryTool(t *testing.T) {
 	}
 }
 
+// A read is not always free: one that reaches a destination the caller chooses,
+// or hands over what the operator set up, costs a grant like a write does. The
+// handshake used to give the safety class as the whole rule, and a model that
+// took it at its word spent a call on a read that was going to be refused.
+func TestTheHandshakeDoesNotCallEveryReadFree(t *testing.T) {
+	got := connect(t, Options{}).InitializeResult().Instructions
+	if strings.Contains(got, "even one that only returns data") {
+		t.Errorf("the handshake gives the safety class as the whole grant rule:\n%s", got)
+	}
+	for _, want := range []string{"above read", "some reads", "own text says"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the handshake never says %q about which tools need a grant:\n%s", want, got)
+		}
+	}
+}
+
 func TestADescriptionDoesNotRepeatTheEnvelope(t *testing.T) {
 	c := plugin.Capability{ID: "demo.thing.get", Summary: "get a thing", Safety: plugin.Read}
 	desc := toolDef(c, Options{}).Description
