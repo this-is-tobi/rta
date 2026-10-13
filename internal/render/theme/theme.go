@@ -234,10 +234,10 @@ func (p Problem) String() string {
 }
 
 // Apply sets the palette from overrides, keyed the way Fields lists them,
-// each a "#rrggbb" string. Call once, at startup, before anything renders —
-// and safe to call again: every field resets to its built-in first, so a
-// second call with a different (or empty) map is a fresh decision rather
-// than one layered on the last.
+// each a "#rrggbb" string. Called at startup, before anything renders, and
+// again whenever the environment in force changes: every field resets to its
+// built-in first, so a second call with a different (or empty) map is a fresh
+// decision rather than one layered on the last.
 //
 // An unknown key or a malformed value is reported, not fatal: the field it
 // named keeps its built-in color and every other field is unaffected, the

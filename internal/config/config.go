@@ -198,7 +198,8 @@ type Config struct {
 	// each a "#rrggbb" string.
 	//
 	// Untyped for the same reason Plugins is: what a key means and whether a
-	// value is valid is internal/render/theme.Apply's decision, not this
+	// value is valid is internal/render/theme's decision (Apply for this block,
+	// Resolve for the layers a profile's own block joins), not this
 	// package's, and config stays the leaf package it already was — loaded
 	// before anything has decided whether this run even has a renderer to
 	// color, and read by `rta mcp serve` too, which colors nothing at all.

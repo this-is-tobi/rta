@@ -67,8 +67,9 @@ func Check() ([]Finding, error) {
 //
 // Two blocks are left to the readers that already answer for them: profiles,
 // whose loader names an unknown key and tells a pre-environment shape from a
-// typo (Profile.UnknownKeys), and theme, whose slots theme.Apply reports one by
-// one. Naming them here as well would say each of those twice in `rta doctor`.
+// typo (Profile.UnknownKeys), and theme — the top-level block and each
+// profile's own, whose slots the palette reports one by one. Naming them here as
+// well would say each of those twice in `rta doctor`.
 // What is checked is everything else — the top level, the dashboard, its tiles,
 // each role — and the shape of a plugins: section, whose own keys are what each
 // plugin declares and so are internal/pluginconf's to judge.
