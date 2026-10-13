@@ -3,12 +3,14 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/this-is-tobi/rta/builtin/kv"
 	"github.com/this-is-tobi/rta/internal/config"
@@ -349,6 +351,7 @@ type pinBind struct {
 // switch, and the pins are noted over the tiles that result.
 func (m *Model) syncTiles() tea.Cmd {
 	s := readStamps()
+	m.syncPalette(s)
 	if m.syncDashboard(s) || m.pinsMoved(s) {
 		m.rebuildTiles()
 	}
@@ -359,6 +362,68 @@ func (m *Model) syncTiles() tea.Cmd {
 	}
 	return tea.Batch(cmds...)
 }
+
+// syncPalette paints the screen in the colours of the environment in force, and
+// reports whether that moved anything.
+//
+// **Compared with the palette that is live, not with a note of what was last
+// applied.** The question is whether the screen shows what the file says for
+// this environment, and a stored key answers a different one: it would not
+// notice a palette some other path moved, and it would be one more thing every
+// writer of a profile had to keep in step — the arrangement the profile stamp
+// was made to end. Applying changes nothing when nothing differs, so this runs
+// on every tick for the price of reading a config the tick has read already.
+//
+// Rides on the read syncTiles makes rather than on the stamp syncActive
+// compares: the stamp is what a *binding* depends on, and an environment's
+// colours bind nothing — a recolour that rebound it would unlock the store for
+// a cosmetic edit. So a profile edited in the profile form, `rta profile set
+// --theme` from another terminal and `rta use` in one all reach the screen
+// here, on the next tick at the latest.
+//
+// An unreadable file leaves the palette where it is: the colours of a screen
+// are no reason for it to change in the middle of a typo.
+func (m *Model) syncPalette(s stamps) bool {
+	if s.err != nil {
+		return false
+	}
+	overrides, _ := theme.Resolve(profile.ThemeLayers(s.cfg, m.active)...)
+	if maps.Equal(theme.Effective(overrides), theme.Current()) {
+		return false
+	}
+	theme.Apply(overrides)
+	m.repaint()
+	return true
+}
+
+// paint applies the palette of the environment in force from a configuration in
+// hand — the one a save has just written — and answers what could not be used
+// in it, for a caller that has something to say about it.
+func (m *Model) paint(cfg config.Config) []theme.Problem {
+	problems := theme.ApplyLayers(profile.ThemeLayers(cfg, m.active)...)
+	m.repaint()
+	return problems
+}
+
+// repaint brings what the model itself holds in step with a palette that has
+// just changed.
+//
+// Everything drawn from a style at View time follows by itself, because the
+// styles are rebuilt by the palette (theme.rebuildStyles) and read when they
+// are drawn. What does not follow is what was made from a colour once and kept:
+// the spinner's style, built when the model was, and the text a result pane
+// holds, rendered when the result landed and not since. Those are redone here,
+// which is the whole list — the dashboard's tiles hold views and not strings,
+// and the lists, forms and panes draw each time.
+func (m *Model) repaint() {
+	m.spinner.Style = spinnerStyle()
+	if m.mode == modeResult || m.mode == modeConfirm {
+		m.renderResult()
+	}
+}
+
+// spinnerStyle is the spinner's style: the identity colour, as it is now.
+func spinnerStyle() lipgloss.Style { return lipgloss.NewStyle().Foreground(theme.Primary) }
 
 // syncDashboard adopts a dashboard block written since this session last
 // read one, and reports whether it did. Compared with what was last read

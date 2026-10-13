@@ -173,7 +173,7 @@ hostname   db.internal
 ...
 ```
 
-The badge prints above the result while that environment is on, in the colour you gave it, with the deadline beside it when there is one. The TUI's dashboard header carries the same badge, and the colour is the `primary` of what the CLI draws while the environment is in force — its titles, keys and headings — unless the profile states a `primary` of its own in its [`theme:`](./25-dashboard-and-theme.md#a-palette-per-environment), which can also recolour the rest.
+The badge prints above the result while that environment is on, in the colour you gave it, with the deadline beside it when there is one. The TUI's dashboard header carries the same badge, and the colour is the `primary` of what the CLI and the TUI draw while the environment is in force — titles, keys, headings and the selection — unless the profile states a `primary` of its own in its [`theme:`](./25-dashboard-and-theme.md#a-palette-per-environment), which can also recolour the rest.
 
 Four things about it are deliberate:
 

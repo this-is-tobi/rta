@@ -69,6 +69,8 @@ The selected tile is the one with the coloured border. On a terminal that shows 
 
 What a key did is said in the footer, beside the keys: a green `✓` for something done and a red `✗` for something that did not happen, such as a save the file refused or an approval that was turned down. The mark carries the difference where colour does not show.
 
+**The colours follow the environment that is on.** A profile can have a colour and a `theme:` of its own ([a palette per environment](./25-dashboard-and-theme.md#a-palette-per-environment)), and the TUI draws in them: `u` on the profiles pane repaints everything, a result on screen included, and `rta use` from another terminal, a deadline lapsing and an edit of the profile in force reach it on the next refresh. Switching off puts your own colours back.
+
 The config file the dashboard and the colours are stated in is [Your config file](./22-your-config-file.md), and stating the whole dashboard there, with the colours it draws in, is on [Dashboard and theme](./25-dashboard-and-theme.md).
 
 ## Answering agents
