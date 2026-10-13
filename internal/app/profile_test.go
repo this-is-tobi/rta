@@ -206,7 +206,7 @@ func TestAnEmptyProfileListIsATableToAParser(t *testing.T) {
 	}
 
 	out, _, err = runWith(t, connRegistry(t), empty, "profile", "list", "-o", "csv")
-	if err != nil || strings.TrimSpace(out) != "Profile,Plugins,Status,Screen,Note" {
+	if err != nil || strings.TrimSpace(out) != "Profile,Plugins,Status,Screen,Theme,Note" {
 		t.Errorf("csv = %q, %v; want the header row alone", out, err)
 	}
 }

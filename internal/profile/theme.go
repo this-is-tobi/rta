@@ -120,3 +120,19 @@ func ThemeProblems(cfg config.Config, name string) []theme.Problem {
 	}
 	return own
 }
+
+// ThemeNotes is ThemeProblems as the notes that list them, each entry by its
+// key under the profile (`theme.accent`, `color`) so that a line reads as the
+// file does. `rta config check` names the same entries by the key and the line
+// they are written on and asks for these to leave them out of the notes it
+// prints beside them: one entry said twice is one problem counted as two.
+func ThemeNotes(cfg config.Config, name string) []Problem {
+	problems := ThemeProblems(cfg, name)
+	notes := make([]Problem, 0, len(problems))
+	for _, tp := range problems {
+		notes = append(notes, Problem{Name: name,
+			Reason: strings.TrimPrefix(tp.Key(), "profiles."+name+".") + ": " + tp.Reason,
+			Hint:   tp.Hint})
+	}
+	return notes
+}

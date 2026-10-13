@@ -311,6 +311,9 @@ type profileRow struct {
 	until *time.Time
 	// conns is one entry per plugin this environment configures.
 	conns []connRow
+	// themed is how many colours of its own the environment applies: the entries
+	// of its `theme:` that stand, and not the block as written (profile.ThemeStanding).
+	themed int
 }
 
 func (r profileRow) valid() bool { return r.problem == "" }
@@ -509,7 +512,7 @@ func (m Model) profileRows() []profileRow {
 			}
 		}
 		row := profileRow{name: name, p: p, problem: problem, note: wholeNote[name],
-			active: name == active, conns: conns}
+			active: name == active, conns: conns, themed: len(profile.ThemeStanding(cfg, name))}
 		if row.active {
 			row.until = sel.Until
 		}
@@ -883,6 +886,13 @@ func profileCovers(row profileRow) string {
 	// was the part that fell off, on the environment with the most to say.
 	if screen := profileScreen(row.p.Dashboard); screen != "" {
 		detail = theme.Faded.Render(textclean.Terminal(screen)) + theme.Subtle.Render(" · ") + detail
+	}
+	// That switching to it changes what the screen looks like, said where the
+	// profile is listed. Counted and not spelled: which colours is `show`'s, and
+	// the pane has the one line. What is applied is counted: an entry the palette
+	// leaves out paints nothing, and the note beside this says so.
+	if row.themed > 0 {
+		detail += theme.Subtle.Render(" · ") + theme.Faded.Render(format.CountOf(row.themed, "theme colour"))
 	}
 	// A note takes the place of the operator's own, as it takes the Note
 	// column in `rta profile list`: the credential line under this one is

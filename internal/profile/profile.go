@@ -834,8 +834,16 @@ func Notes(cfg config.Config, inst Installed) []Problem {
 		if p.BadColor() {
 			notes = append(notes, Problem{Name: name,
 				Reason: "has color " + p.Color + ", which is not a colour",
-				Hint:   "the form is `#rrggbb`, e.g. `#FF6B7A` — the badge is unpainted until it is"})
+				Hint: "the form is `#rrggbb`, e.g. `#FF6B7A` — the badge is unpainted, and the screen keeps " +
+					"its own primary colour, until it is"})
 		}
+		// The same reasoning for what a profile states in its theme: an entry
+		// that cannot be used is a line that is not painted, and refusing to
+		// reach an environment over a mistyped hex is rta inventing an outage.
+		// What is said includes the entries the palette leaves out because they
+		// would make one status read as another, which are valid colours and
+		// not usable ones.
+		notes = append(notes, ThemeNotes(cfg, name)...)
 		// A screen written in the entry that cannot be drawn is noted for the
 		// reason a colour is: the connections are fine and the environment runs,
 		// and the `dashboard:` block draws in its place. Refusing to reach an

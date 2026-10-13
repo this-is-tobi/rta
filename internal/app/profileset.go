@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -76,7 +78,11 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 			"a profile carries the reference. `--secret` is that reference — never a value.\n\n" +
 			"`--set` states a default, which a caller can override. `--only` fences an input:\n" +
 			"once per allowed value, it states what the connection reaches, and a call whose\n" +
-			"value falls outside it is refused. `--unfence` takes the fences off.",
+			"value falls outside it is refused. `--unfence` takes the fences off.\n\n" +
+			"`--color` marks the environment and is its primary colour while it is on. `--theme` states\n" +
+			"the rest of its palette, one `slot=#rrggbb` per colour and the whole block as `--set` does,\n" +
+			"and `--untheme` takes the block off. The status colours (good, warn, bad, inverse, ink)\n" +
+			"are not an environment's to state: `rta config set theme.good` sets one in your own config.",
 		// In the order a person would run them, because a test does: a profile that
 		// configures nothing is refused at creation, so the line that states only
 		// a note and a deadline comes after the one that gives it a plugin.
@@ -85,6 +91,7 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 			"      --set host=db.staging.internal --set port=5432 \\\n" +
 			"      --secret password=kv:staging-db-password\n" +
 			"  rta profile set staging --note 'shared staging' --ttl 8h\n" +
+			"  rta profile set staging --color '#dd3333' --theme label='#C792EA' --theme accent='#FFB000'\n" +
 			"  rta profile set staging --plugin pg \\\n" +
 			"      --only database=app --only database=app-jobs\n" +
 			"  rta profile set staging --plugin pg/analytics \\\n" +
@@ -100,7 +107,10 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 	}
 	cmd.Flags().String("note", "", "why this environment exists")
 	cmd.Flags().String("ttl", "", "how long a switch to it lasts (`30m`, `8h`, or `none`)")
-	cmd.Flags().String("color", "", "badge colour every command prints while it is on (`#rrggbb`, or `none`)")
+	cmd.Flags().String("color", "", "badge colour every command prints while it is on, and the screen's primary (`#rrggbb`, or `none`)")
+	cmd.Flags().StringArray("theme", nil,
+		"a `slot=#rrggbb` of the palette while it is on, over yours, never a status colour; repeat for more — the whole theme: block")
+	cmd.Flags().Bool("untheme", false, "remove the profile's theme: block")
 	cmd.Flags().String("dashboard", "", "the dashboard view drawn while it is on — one of `rta dashboard views` (or `none`)")
 	cmd.Flags().String("plugin", "", "which plugin the connection flags below are about — "+
 		"`pg`, or `pg/analytics` to state one of several connections to it")
@@ -127,10 +137,95 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 	completeFlag(cmd, "plugin", completeInstalledPlugins)
 	completeFlag(cmd, "ttl", completeWindow)
 	completeFlag(cmd, "dashboard", completeViews)
+	completeFlag(cmd, "theme", completeThemeSlots)
 	completeFlag(cmd, "set", completeSetKeys)
 	completeFlag(cmd, "only", completeSetKeys)
 	completeFlag(cmd, "secret", completeSecretInputs)
 	return cmd
+}
+
+// completeThemeSlots offers the palette's slots for `--theme`, each with the
+// colour it has when nothing states one — the ones a profile can state, which
+// are not the status colours: offering a slot the next step refuses is a
+// completion that teaches the mistake.
+//
+// Silent past the `=`, as completeSetKeys is: a colour is the operator's to
+// choose, and the one thing rta could offer there, the built-in, is in the
+// description beside the slot.
+func completeThemeSlots(_ *cobra.Command, _ []string, prefix string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	direction := cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
+	if strings.Contains(prefix, "=") {
+		return nil, direction
+	}
+	builtin := theme.Effective(nil)
+	slots := theme.Fields()
+	out := make([]cobra.Completion, 0, len(slots))
+	for _, slot := range slots {
+		if theme.IsStatus(slot) {
+			continue
+		}
+		out = append(out, cobra.CompletionWithDesc(slot+"=", "built-in "+builtin[slot]))
+	}
+	return out, direction
+}
+
+// parseThemeFlags turns `--theme slot=#rrggbb` into a profile's `theme:` block,
+// each slot one the palette has and each colour one it can use.
+//
+// Refused here, where `--set` and `--only` leave a key nothing reads for the
+// check that follows to name, because the palette's slots are a closed list of
+// ten and a typo among them is one the file would carry as a line nothing
+// paints — the case `rta doctor` reports, and the one a command that can refuse
+// should not write. So is a status colour, which a profile cannot state
+// (theme.Resolve): the line would be there and the palette would leave it out. A slot named twice is refused as `--set` refuses a scalar
+// given twice: two answers, and no way to say which a reader of the command
+// would expect.
+func parseThemeFlags(pairs []string) (map[string]string, *view.Error) {
+	slots := theme.Fields()
+	// What a refusal lists is what the flag takes, which is not every slot the
+	// palette has: a hint that offered the status colours would offer the next
+	// refusal.
+	offered := slices.DeleteFunc(slices.Clone(slots), theme.IsStatus)
+	order, raw, verr := collectPairs(pairs, nil, flagWords{
+		flag: "theme", example: "primary=#D97757", shape: "core.profile.theme.shape",
+		empty: func(k string) *view.Error {
+			return view.Errorf("core.profile.theme.empty", "`--theme %s=` states no colour", k).
+				WithHint("`--theme` states the whole block, so leave a slot out to take it from yours — " +
+					"and check the variable this came from expanded")
+		},
+	})
+	if verr != nil {
+		return nil, verr
+	}
+	block := make(map[string]string, len(order))
+	for _, slot := range order {
+		if !slices.Contains(slots, slot) {
+			hint := "one of: " + strings.Join(offered, ", ")
+			if guess := theme.NearestSlot(slot); guess != "" {
+				hint = "did you mean `" + guess + "`? — " + hint
+			}
+			return nil, view.Errorf("core.profile.theme.slot", "%q is not a colour of the palette", slot).WithHint(hint)
+		}
+		if theme.IsStatus(slot) {
+			return nil, view.Errorf("core.profile.theme.status",
+				"%s is a status colour, which only your own config file sets", slot).
+				WithHint("an environment cannot state the colours that mean ok, warn and failed; " +
+					"`rta config set theme." + slot + " '#3ED598'` sets it in your own, for every environment")
+		}
+		values := raw[slot]
+		if len(values) > 1 {
+			return nil, view.Errorf("core.profile.theme.repeated",
+				"`--theme %s` is given more than once, and a slot takes one colour", slot).
+				WithHint("state it once")
+		}
+		colour := strings.TrimSpace(values[0])
+		if !theme.HexColor.MatchString(colour) {
+			return nil, view.Errorf("core.profile.theme.color", "%s is not a colour: %q", slot, colour).
+				WithHint("write it as `#rrggbb`, quoted since # starts a comment in a shell: `--theme " + slot + "='#D97757'`")
+		}
+		block[slot] = colour
+	}
+	return block, nil
 }
 
 // completeSetKeys offers the config keys the plugin already on the command
@@ -324,12 +419,14 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 		// run to report against — the closure below returns false rather
 		// than committing it, so there is nothing on disk to read back.
 		finalProfile config.Profile
-		// views are what the card reads a profile's own screen against: whether
-		// its name is taken is a fact of the configuration and not of the profile.
-		views map[string]config.View
+		// scope is the configuration the profile is read in, for the part of its
+		// card that depends on what is around it: the colours it lies over, and
+		// the views a profile's own screen is read against, since whether its name
+		// is taken is a fact of the configuration and not of the profile.
+		scope config.Config
 	)
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
-		views = cfg.Dashboard.Views
+		scope = cfg
 		if cfg.Profiles == nil {
 			cfg.Profiles = map[string]config.Profile{}
 		}
@@ -397,11 +494,44 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 			}
 			p.Color = color
 		}
+		// The palette states the whole block as `--set` and `--only` do, for the
+		// same reason: a script is the source of truth for what it states, and a
+		// colour left behind by a restatement is one nobody remembers writing.
+		// What is dropped is said, as theirs is. `--untheme` is `--unfence` for
+		// it: the way to take the block off.
+		var themeReceipts []view.Pair
+		switch {
+		case cmd.Flags().Changed("theme") && mustBool(cmd, "untheme"):
+			verr = view.Errorf("core.profile.theme.both",
+				"--untheme removes the block that --theme states").
+				WithHint("state one or the other")
+			return cfg, false
+		case cmd.Flags().Changed("theme"):
+			pairs, _ := cmd.Flags().GetStringArray("theme")
+			block, themeVerr := parseThemeFlags(pairs)
+			if themeVerr != nil {
+				verr = themeVerr
+				return cfg, false
+			}
+			if left := missingSlots(p.Theme, block); len(left) > 0 {
+				themeReceipts = append(themeReceipts, view.Pair{Key: "dropped",
+					Value: strings.Join(left, ", ") + " — the flags state the whole block, and these were not among them"})
+			}
+			p.Theme = block
+		case mustBool(cmd, "untheme"):
+			if left := missingSlots(p.Theme, nil); len(left) > 0 {
+				themeReceipts = append(themeReceipts, view.Pair{Key: "removed",
+					Value: strings.Join(left, ", ") + " — while " + name + " is switched on the screen is drawn in your own colours" +
+						" again, and in its color: as the primary if it has one"})
+			}
+			p.Theme = nil
+		}
 
 		key, receipts, verr = applyConnectionFlags(cmd, name, &p, reg)
 		if verr != nil {
 			return cfg, false
 		}
+		receipts = append(themeReceipts, receipts...)
 		if !existed && len(p.Plugins) == 0 {
 			// A profile that configures nothing is one `rta use` refuses, so
 			// creating one is creating something unusable. Updating an
@@ -455,9 +585,9 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 		if err != nil {
 			return nil, view.AsError(err, "core.profile.config")
 		}
-		written, views = after.Profiles[name], after.Dashboard.Views
+		written, scope = after.Profiles[name], after
 	}
-	card := profileCard(name, written, views, reg)
+	card := profileCard(scope, name, written, reg)
 	verb := "updated"
 	switch {
 	case dryRun && !existed:
@@ -1237,10 +1367,10 @@ func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry, d
 		verr    *view.Error
 		key     string
 		current config.Profile
-		views   map[string]config.View
+		scope   config.Config
 	)
 	if err := config.Mutate(func(cfg config.Config) (config.Config, bool) {
-		views = cfg.Dashboard.Views
+		scope = cfg
 		p, known := cfg.Profiles[name]
 		if !known {
 			verr = unknownProfile(cfg, name)
@@ -1300,9 +1430,9 @@ func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry, d
 			if err != nil {
 				return nil, view.AsError(err, "core.profile.config")
 			}
-			written, views = after.Profiles[name], after.Dashboard.Views
+			written, scope = after.Profiles[name], after
 		}
-		card := profileCard(name, written, views, reg)
+		card := profileCard(scope, name, written, reg)
 		card.Pairs = append([]view.Pair{
 			{Key: removeLabel, Value: key + " from " + name}}, card.Pairs...)
 		return card, nil
@@ -1410,4 +1540,22 @@ func completeInstalledPlugins(*cobra.Command, []string, string) ([]cobra.Complet
 func mustString(cmd *cobra.Command, name string) string {
 	v, _ := cmd.Flags().GetString(name)
 	return v
+}
+
+func mustBool(cmd *cobra.Command, name string) bool {
+	v, _ := cmd.Flags().GetBool(name)
+	return v
+}
+
+// missingSlots names the slots of before that after does not state, as the
+// file spells them (`theme.good`), sorted.
+func missingSlots(before, after map[string]string) []string {
+	var out []string
+	for slot := range before {
+		if _, kept := after[slot]; !kept {
+			out = append(out, "theme."+slot)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
