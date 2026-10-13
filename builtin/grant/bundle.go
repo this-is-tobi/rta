@@ -156,22 +156,30 @@ type environmentBundle struct {
 // The refusals are the ones a grant on the environment would give
 // (configuredEnvironment, the ceiling's own load), and a bare environment name
 // only: `staging/analytics` is one connection, and one connection is a grant
-// on it.
+// on it. A name that is no connection of the environment is not "one
+// connection of" it — the wording belongs to a connection that exists — and is
+// refused as `grant allow` refuses it, naming what the environment holds.
 func expandEnvironment(sf plugin.Surface, catalog func() []plugin.Capability, env string, class plugin.Safety) (environmentBundle, *view.Error) {
 	b := environmentBundle{name: env, class: class, refs: map[string][]string{}, wider: map[plugin.Safety][]string{}}
-	if name, instance := config.SplitRef(env); instance != "" {
-		return b, view.Errorf("grant.issue.instance", "%q is one connection of %s, and a bundle covers every connection in it", env, name).
-			WithHint("name the environment, `" + name + "`; one connection is a grant of its own: `" +
-				sf.Call("grant.allow", plugin.Arg{Name: "target", Value: "<capability>", Positional: true},
-					plugin.Arg{Name: "profile", Value: env}) + "`")
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return b, view.AsError(err, "grant.config")
 	}
-	p, verr := configuredEnvironment(cfg, env, "")
+	name, instance := config.SplitRef(env)
+	p, verr := configuredEnvironment(cfg, name, "")
 	if verr != nil {
 		return b, verr
+	}
+	if instance != "" {
+		held := connectionsIn(p, name)
+		if !slices.Contains(held, env) {
+			return b, view.Errorf("grant.unknowninstance", "profile %q has no connection called %q", name, instance).
+				WithHint("it has: " + strings.Join(held, ", "))
+		}
+		return b, view.Errorf("grant.issue.instance", "%q is one connection of %s, and a bundle covers every connection in it", env, name).
+			WithHint("name the environment, `" + name + "`; one connection is a grant of its own: `" +
+				sf.Call("grant.allow", plugin.Arg{Name: "target", Value: "<capability>", Positional: true},
+					plugin.Arg{Name: "profile", Value: env}) + "`")
 	}
 	ceiling, verr := core.Ceiling()
 	if verr != nil {
@@ -222,6 +230,18 @@ func expandEnvironment(sf plugin.Surface, catalog func() []plugin.Capability, en
 		return b, b.nothingToIssue(sf)
 	}
 	return b, nil
+}
+
+// connectionsIn is every connection an environment holds, across its plugins,
+// spelled as a grant names them: staging, staging/analytics.
+func connectionsIn(p config.Profile, name string) []string {
+	namespaces := p.Namespaces()
+	refs := make([]string, 0, len(namespaces))
+	for _, ns := range namespaces {
+		refs = append(refs, profiles.InstanceRefs(p, name, ns)...)
+	}
+	sort.Strings(refs)
+	return slices.Compact(refs)
 }
 
 // nothingToIssue is the refusal when the expansion is empty, and says why.

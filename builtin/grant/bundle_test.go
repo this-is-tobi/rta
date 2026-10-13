@@ -405,6 +405,26 @@ func TestAnEnvironmentBundleRefusesWhatItCannotRead(t *testing.T) {
 	}
 }
 
+// A connection the environment does not hold is not "one connection of" it:
+// the wording belongs to a real one, and the hint of the wrong name offered a
+// `grant allow` call that failed in turn. It is refused as `grant allow`
+// refuses it, naming what the environment holds, whether the name is a
+// misspelt label, a plugin where the label goes, or an environment that does
+// not exist.
+func TestAnUnknownConnectionOfAnEnvironmentIsRefusedLikeGrantAllowDoes(t *testing.T) {
+	envSetup(t)
+	for _, ref := range []string{"staging/nope", "staging/db", "staging/vault"} {
+		verr := bundleRefusal(t, issueReq(map[string]any{"profile": ref}, false, false))
+		if verr.Code != "grant.unknowninstance" || strings.Contains(verr.Message, "one connection of") ||
+			verr.Hint != "it has: staging, staging/analytics" {
+			t.Errorf("%s = %s / %q / %q, want the connections staging holds", ref, verr.Code, verr.Message, verr.Hint)
+		}
+	}
+	if verr := bundleRefusal(t, issueReq(map[string]any{"profile": "prod/analytics"}, false, false)); verr.Code != "grant.unknownprofile" {
+		t.Errorf("a connection of an environment that does not exist = %s, want grant.unknownprofile", verr.Code)
+	}
+}
+
 // --max-uses and --rate are each row's own: the receipt says so beside the
 // number, and every grant carries it.
 func TestTheBoundsBindEachRowAndTheReceiptSaysSo(t *testing.T) {
