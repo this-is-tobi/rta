@@ -22,6 +22,12 @@ func resetTheme(t *testing.T) {
 	t.Cleanup(func() { theme.Apply(nil) })
 }
 
+// globalTarget is the top-level block holding stored, the one place there was
+// to edit before profiles had palettes.
+func globalTarget(stored map[string]string) themeTarget {
+	return themeTarget{stored: stored, source: "theme"}
+}
+
 // The order this form asks fields in is a separate list from
 // theme.Fields()'s alphabetical one, kept only for presentation — and a
 // separate list is exactly the kind of thing that silently stops matching
@@ -48,8 +54,8 @@ func TestThemeFieldOrderNamesExactlyWhatThemeFieldsDoes(t *testing.T) {
 // from what is actually on disk instead.
 func TestThemeFormStartsEmptyForAFieldWithNoStoredOverride(t *testing.T) {
 	resetTheme(t)
-	theme.Apply(map[string]string{"primary": "#ABCDEF"}) // live, but not on disk
-	tf := newThemeForm(map[string]string{})              // nothing stored
+	theme.Apply(map[string]string{"primary": "#ABCDEF"})  // live, but not on disk
+	tf := newThemeForm(globalTarget(map[string]string{})) // nothing stored
 	if got := *tf.bindings["primary"]; got != "" {
 		t.Errorf("primary binding = %q, want empty — seeded from the live palette instead of disk", got)
 	}
@@ -57,7 +63,7 @@ func TestThemeFormStartsEmptyForAFieldWithNoStoredOverride(t *testing.T) {
 
 func TestThemeFormSeedsWhatIsActuallyStored(t *testing.T) {
 	resetTheme(t)
-	tf := newThemeForm(map[string]string{"primary": "#123456"})
+	tf := newThemeForm(globalTarget(map[string]string{"primary": "#123456"}))
 	if got := *tf.bindings["primary"]; got != "#123456" {
 		t.Errorf("primary binding = %q, want #123456", got)
 	}
@@ -67,7 +73,7 @@ func TestThemeFormSeedsWhatIsActuallyStored(t *testing.T) {
 }
 
 func TestThemeOverridesCollectsOnlyNonEmptyFields(t *testing.T) {
-	tf := newThemeForm(map[string]string{"primary": "#123456"})
+	tf := newThemeForm(globalTarget(map[string]string{"primary": "#123456"}))
 	*tf.bindings["good"] = "  #00FF00  " // whitespace, as a person might leave it
 	got := tf.overrides()
 	want := map[string]string{"primary": "#123456", "good": "#00FF00"}
@@ -102,7 +108,7 @@ func TestSaveThemeWritesToDiskAndAppliesLive(t *testing.T) {
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 
 	m := New(testRegistry(t), config.Dashboard{}, nil)
-	m.themeForm = newThemeForm(map[string]string{})
+	m.themeForm = newThemeForm(globalTarget(map[string]string{}))
 	*m.themeForm.bindings["primary"] = "#654321"
 
 	next, _ := m.saveTheme()
@@ -141,7 +147,7 @@ func TestSaveThemeReportsWhatApplyCouldNotHonour(t *testing.T) {
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 
 	m := New(testRegistry(t), config.Dashboard{}, nil)
-	m.themeForm = newThemeForm(map[string]string{})
+	m.themeForm = newThemeForm(globalTarget(map[string]string{}))
 	*m.themeForm.bindings["primary"] = "definitely-not-hex"
 
 	next, _ := m.saveTheme()
@@ -167,7 +173,7 @@ func TestTheThemeBoxIsVisibleOnAShortTerminal(t *testing.T) {
 	for _, height := range []int{20, 14, 13, 12, 10, 9} {
 		m := New(registry.New(), config.Dashboard{}, nil)
 		m.width, m.height = 60, height
-		m.themeForm, m.mode = newThemeForm(nil), modeTheme
+		m.themeForm, m.mode = newThemeForm(globalTarget(nil)), modeTheme
 		m.themeForm.form.Init()
 		m.fitThemeForm()
 		out := plain(m.themeView())
@@ -188,7 +194,7 @@ func TestThePreviewStripNeverPartsASwatchFromItsName(t *testing.T) {
 	for _, width := range []int{30, 40, 60, 200} {
 		m := New(registry.New(), config.Dashboard{}, nil)
 		m.width, m.height = width, 40
-		m.themeForm, m.mode = newThemeForm(nil), modeTheme
+		m.themeForm, m.mode = newThemeForm(globalTarget(nil)), modeTheme
 		m.fitThemeForm()
 		rows := strings.Split(plain(m.themeView()), "\n")
 		seen := 0

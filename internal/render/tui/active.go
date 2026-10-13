@@ -741,9 +741,10 @@ func (m Model) activeBadge() string {
 //
 // **Green was never wrong and is still the right default.** It says "something
 // is switched on", which is all rta knows about an environment nobody marked.
-// A colour is the operator saying *which* something, and this is the only
-// place in either surface where their colour appears — so it can never be read
-// as a status, which is exactly what a repainted palette would have risked.
+// A colour is the operator saying *which* something, and the badge is where it
+// appears as itself: everywhere else it is the palette's primary, which the
+// palette will not let be a status colour (theme.Resolve), so a mark cannot be
+// misread as ok, warn or failed in either place.
 func (m Model) paintBadge(badge string) string {
 	if m.activeColor == "" {
 		return theme.GoodText.Render(" ● " + badge)

@@ -249,7 +249,7 @@ func TestTabInTheThemeEditorFollowsTheSameRule(t *testing.T) {
 	m := New(registry.New(), config.Dashboard{}, nil)
 	m.width, m.height = 100, 40
 	m.mode = modeTheme
-	m.themeForm = newThemeForm(nil)
+	m.themeForm = newThemeForm(globalTarget(nil))
 	m.themeForm.form = startedHuhForm(m.themeForm.form)
 
 	focused := m.themeForm.form.GetFocusedField()
@@ -273,7 +273,7 @@ func TestTheThemeEditorAcceptsInPlace(t *testing.T) {
 	m := New(registry.New(), config.Dashboard{}, nil)
 	m.width, m.height = 100, 40
 	m.mode = modeTheme
-	m.themeForm = newThemeForm(nil)
+	m.themeForm = newThemeForm(globalTarget(nil))
 	m.themeForm.form = startedHuhForm(m.themeForm.form)
 
 	first := m.themeForm.offers[themeFieldOrder[0]][0]
@@ -420,7 +420,7 @@ func TestArrowsBrowseThePaletteInTheThemeEditor(t *testing.T) {
 	m := New(registry.New(), config.Dashboard{}, nil)
 	m.width, m.height = 100, 40
 	m.mode = modeTheme
-	m.themeForm = newThemeForm(nil)
+	m.themeForm = newThemeForm(globalTarget(nil))
 	m.themeForm.form = startedHuhForm(m.themeForm.form)
 	name, ok := m.themeForm.focusedInput()
 	if !ok {

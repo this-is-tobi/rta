@@ -33,7 +33,8 @@ type tile struct {
 	profile string
 	// color is the pinned profile's own colour, "" when it has none: painted
 	// on its name in the title the way the header badge paints the
-	// switched-on environment's, and on nothing else.
+	// switched-on environment's, and on nothing else — the palette is the
+	// whole screen's, and a tile pinned to another profile does not move it.
 	color string
 	// source says where this tile came from, which is what H has to know:
 	// an automatic tile is hidden by ID, an entry somebody wrote is removed.

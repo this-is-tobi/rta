@@ -26,9 +26,10 @@ type panelHead struct {
 	Title string // the pane's name, in theme.PanelTitle
 	Note  string // muted, beside the title: a summary
 	// NoteColor paints the note in a colour of its own instead of muted:
-	// a pinned tile's profile name in that profile's colour, the one thing
-	// the profile doc lets a colour touch. "" keeps the note muted, and so
-	// does anything that is not a #rrggbb colour.
+	// a pinned tile's profile name in that profile's colour — as itself, which
+	// is what the palette cannot do for a tile, since the palette is the whole
+	// screen's and a tile pinned to another profile does not move it. ""
+	// keeps the note muted, and so does anything that is not a #rrggbb colour.
 	NoteColor string
 	Right     string // muted, right-aligned in the top border: a cost, a count
 	// Attention says the panel is asking for something: its border and its
