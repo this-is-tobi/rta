@@ -117,6 +117,9 @@ func configTable(reg *registry.Registry, file config.Config) view.Table {
 	if n := len(file.Dashboard.Add); n > 0 {
 		add("dashboard.add", format.Count(n, "tile", "tiles")+" — `rta dashboard list`", from("dashboard", ""))
 	}
+	if n := len(file.Dashboard.Sections); n > 0 {
+		add("dashboard.sections", format.Count(n, "section", "sections")+" — `rta dashboard sections`", from("dashboard", ""))
+	}
 	headings := make([]string, 0, len(file.Plugins))
 	for h := range file.Plugins {
 		headings = append(headings, h)

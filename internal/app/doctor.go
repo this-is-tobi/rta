@@ -512,6 +512,9 @@ func doctorDashboardTiles(reg *registry.Registry, add func(check, status, detail
 	for _, p := range danglingViews(cfg, cfg) {
 		add("dashboard", "warn", p.text)
 	}
+	for _, p := range sectionProblems(reg, cfg, cfg) {
+		add("dashboard", "warn", p.key+": "+p.text)
+	}
 }
 
 // screenProblem is one thing wrong with the screen a profile is meant to show:

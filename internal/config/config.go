@@ -446,6 +446,9 @@ func parse(path string, data []byte) (Config, error) {
 				WithHint(parseHint(err))
 		}
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			if refusal := refuseBadSections(path, data); refusal != nil {
+				return cfg, refusal
+			}
 			return cfg, view.Errorf("config.invalid", "parsing %s: %v", path, err).
 				WithHint(parseHint(err))
 		}

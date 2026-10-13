@@ -175,6 +175,9 @@ func configProblems(reg *registry.Registry, path string, data []byte) []configPr
 			Text: "the dashboard: block, its views and the screens in profile entries are read from a working-directory " +
 				"config file, so they are not honoured and the automatic dashboard is drawn (set $RTA_CONFIG to name this file deliberately)"})
 	}
+	for _, p := range sectionProblems(reg, cfg, whole) {
+		out = append(out, configProblem{Key: p.key, Line: lines[p.key], Text: p.text})
+	}
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i].Line, out[j].Line
 		return (a != 0 && b == 0) || (a != 0 && b != 0 && a < b)

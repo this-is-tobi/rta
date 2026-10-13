@@ -268,6 +268,25 @@ func TestAFoldIsNotWrittenAndSurvivesTheTilesBeingBuiltAgain(t *testing.T) {
 	}
 }
 
+// An edit to how a section starts, made in another terminal, reaches the screen on
+// the next tick like any other edit of the dashboard: the stamp that tells the
+// session the file moved covers `sections:`.
+func TestAnEditToHowASectionStartsReachesTheOpenDashboard(t *testing.T) {
+	m := sectioned(t, grouped(), 120, 60)
+	if m.collapsed("databases") {
+		t.Fatal("the fixture starts folded")
+	}
+	edited := grouped()
+	edited.Sections = map[string]config.DashboardSection{"databases": {Collapsed: true}}
+	if err := config.Write(config.Config{Dashboard: edited}); err != nil {
+		t.Fatal(err)
+	}
+	m.syncTiles()
+	if !m.collapsed("databases") || shape(m) != "#databases [3] #edge [4] [5]" {
+		t.Errorf("the edit did not arrive: folded %v, rows %s", m.collapsed("databases"), shape(m))
+	}
+}
+
 // `]` on a header moves the section past the entry beside it, and the order it
 // writes is the one the screen shows.
 func TestMovingASectionByItsHeader(t *testing.T) {

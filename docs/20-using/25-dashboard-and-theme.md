@@ -108,6 +108,8 @@ A section is drawn together, at the place of its first tile: the tiles that name
 
 `columns:` is the grid width of the section's own rows in place of the dashboard's, held to what fits as the dashboard's is, and 0 is the dashboard's. A name is a heading a person reads — up to 64 characters, no control characters — so `databases`, `prod: orders` and `pg · staging` all are. A file can state one that is not, and it is still drawn: quoted, with what it holds written out, on its header and in the notes that name it, so that a line break in it cannot make the header two lines.
 
+What a file states about sections that does nothing is named, and never stops the file being read. `rta config check` and `rta doctor` report three things: a `sections:` entry that no tile of that screen is in, listed with the names there are so that a typo is one line from its fix; a name that cannot be a heading; and a column count below zero, which is read as 0, on a section's `columns:` and the dashboard's own alike. The `pg · staging` a profile gives its panels is a name whenever that profile holds several connections, whichever environment is on, so stating how it starts is never reported as nothing. A section's `columns:` that is not a number, or a `sections:` that is not a mapping of names, does not load: the refusal names the file, the line, the key and what it takes.
+
 From a shell, `--section` writes the entry into a section, and `rta dashboard sections` lists what is drawn and stated:
 
 ```bash
