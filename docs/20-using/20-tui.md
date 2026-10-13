@@ -65,6 +65,8 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 
 Tiles are yours to arrange. `H` hides one you never look at, and `p` opens the inventory where it comes back; one panel of an entry that expanded into several connections is hidden by its own key, which the inventory has no row for, so it comes back with the `rta dashboard unhide <id> --profile <profile/instance>` line its note prints. On a tile you added, `H` removes the entry instead — the footer says `remove` there, and the note prints the `rta dashboard add` line that puts it back; `+` on a catalogue row or a search match adds one the automatic set left out, asking which connection when the capability takes one.
 
+A dashboard that groups its tiles draws each group under a header row, `▾ databases ──── 5 tiles · ok`, and a long one is where that earns its place: the panels of an entry that expanded into several connections are a group of their own, `pg · staging`, and the header says the worst thing its tiles say even when they are folded away. [Sections](./25-dashboard-and-theme.md#sections-group-tiles-and-fold-the-group) say how to state them.
+
 The selected tile is the one with the coloured border. On a terminal that shows no colour (`NO_COLOR`, `TERM=dumb`) its border is drawn in heavy lines instead, so the selection never rests on colour alone. The idle search line has no border to colour: when it is the selection its `⌕` becomes a `❯`.
 
 What a key did is said in the footer, beside the keys: a green `✓` for something done and a red `✗` for something that did not happen, such as a save the file refused or an approval that was turned down. The mark carries the difference where colour does not show.

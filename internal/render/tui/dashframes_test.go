@@ -151,7 +151,7 @@ func assertWholeFrame(t *testing.T, name string, m Model, w, h int) {
 		t.Errorf("%s: %d lines tall, terminal is %d", name, got, h)
 	}
 	lines := strings.Split(plain(content), "\n")
-	rows := m.tileRows()
+	rows := cellRows(m)
 	first, last := m.rowWindow(len(rows))
 	heights := m.drawnHeights(first, last)
 	want := 1 + m.searchHeight() + lipgloss.Height(m.dashFooter())

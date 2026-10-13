@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -63,8 +64,14 @@ type tile struct {
 	// gave a 44-character key the whole 200 cells, which is as wrong in the
 	// other direction as cramming it into 39.
 	span int
-	view view.View
-	err  *view.Error
+	// section is the group this tile is drawn in, under a header that folds: the
+	// name its entry states, or — for the panels one entry expanded into, when it
+	// names none — the plugin and profile they are connections of (expandTiles).
+	// "" for a tile in none, which is every tile of a dashboard that does not use
+	// them.
+	section string
+	view    view.View
+	err     *view.Error
 	// search marks the live search tile: a full-width query bar over the
 	// registry, always first.
 	search bool
@@ -581,7 +588,10 @@ func buildTilesWith(reg *registry.Registry, dash config.Dashboard, instances Ins
 		tiles = autoTiles(reg)
 	}
 	tiles = joinTiles(tiles, statedTiles(reg, dash.Add, tileAdded))
-	tiles = arrange(expandTiles(tiles, instances), dash)
+	// Grouped after the arrangement and not before it: what `order:` and a move
+	// decide is where a tile goes, and a section is drawn where its first tile
+	// ends up, so ordering the first tile of a section orders the section.
+	tiles = groupSections(arrange(expandTiles(tiles, instances), dash))
 	for i := range tiles {
 		tiles[i].actions = capActions(reg, tiles[i].cap.ID)
 	}
@@ -651,6 +661,15 @@ func expandTiles(tiles []tile, instances Instances) []tile {
 			}
 			panel := t
 			panel.profile, panel.color, panel.expanded, panel.entry = ref, colors[name], true, t.key()
+			// An entry that became several panels is a group by being one: the
+			// panels of a profile's five databases are the dashboard growing
+			// by five at a time, and the section is what lets it fold back. One
+			// that stayed one panel is not, which is why this is here and not
+			// where the entry is read, and an entry that names its own section
+			// keeps it.
+			if panel.section == "" {
+				panel.section = config.AutoSectionName(plugin.Namespace(t.cap.ID), name)
+			}
 			out = append(out, panel)
 		}
 	}
@@ -673,7 +692,7 @@ func (m *Model) rebuildTiles() {
 		}
 	}
 	m.tiles = fresh
-	m.selected = min(max(m.selected, 0), len(m.tiles)-1)
+	m.keepSelection()
 	m.clampScroll()
 }
 
@@ -710,7 +729,8 @@ func statedTiles(reg *registry.Registry, entries []config.Tile, source tileSourc
 		if c.Safety != plugin.Read {
 			continue
 		}
-		t := tile{cap: c, values: ct.With, profile: ct.Profile, source: source, span: ct.Span}
+		t := tile{cap: c, values: ct.With, profile: ct.Profile, source: source, span: ct.Span,
+			section: strings.TrimSpace(ct.Section)}
 		if t.profile != "" {
 			t.color = profileColor(config.RefName(t.profile))
 		}
@@ -732,6 +752,9 @@ type Placement struct {
 	Hidden bool
 	// Expanded marks one panel of several one entry became.
 	Expanded bool
+	// Section is the group the tile is drawn in, "" for none: the one its entry
+	// names, or the automatic one an entry that became several panels is given.
+	Section string
 }
 
 // Layout is the arrangement bare `rta` would draw for this config and the
@@ -752,7 +775,7 @@ func Layout(reg *registry.Registry, dash config.Dashboard, instances Instances) 
 	for _, t := range tiles[1:] {
 		out = append(out, Placement{
 			ID: t.cap.ID, Profile: t.profile, Source: t.source.String(),
-			Refresh: t.cap.Refresh, With: t.values, Expanded: t.expanded,
+			Refresh: t.cap.Refresh, With: t.values, Expanded: t.expanded, Section: t.section,
 			Hidden: (t.source == tileAuto && hidden[t.cap.ID]) || (t.expanded && hidden[t.key()]),
 		})
 	}

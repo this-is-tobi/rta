@@ -36,27 +36,17 @@ const minColWidth = 40
 // through is a dashboard you stop opening.
 const maxCols = 4
 
-func (m Model) grid() grid {
-	// The dashboard was two columns at every width, so a 200-cell terminal
-	// drew two 100-cell tiles of a six-line summary — half the screen spent
-	// on whitespace, with the tiles that did not fit pushed below the fold.
-	cols := max(min(m.width/minColWidth, maxCols), 1)
-	if n := m.dash.Columns; n > 0 {
-		cols = max(n, 1)
-	}
-	// A configured column count still has to fit: honouring columns: 4 on a
-	// 60-cell terminal draws four 14-cell tiles, which is not what anybody
-	// meant by it.
-	cols = max(min(cols, m.width/minColWidth), 1)
-	// One gap cell between columns; hit-testing divides by tileW+1.
-	return grid{cols: cols, tileW: (m.width - (cols - 1)) / cols}
-}
+// grid is the dashboard's own grid; gridAt says how it is worked out, and gridFor
+// which one a tile is laid out on, since a section may state a width of its own.
+func (m Model) grid() grid { return m.gridAt(m.dash.Columns) }
 
 // span is how many columns tile i occupies at the current grid width: what
 // the capability declared it needs, what the config overrode it to, clamped
 // to a grid that may be narrower than either.
-func (m Model) span(i int) int {
-	g := m.grid()
+func (m Model) span(i int) int { return m.spanOn(i, m.gridFor(i)) }
+
+// spanOn is span on a grid given.
+func (m Model) spanOn(i int, g grid) int {
 	if i <= 0 || i >= len(m.tiles) {
 		return 1
 	}
@@ -76,36 +66,38 @@ func (m Model) span(i int) int {
 }
 
 // tileRows groups the capability tiles into the rows they are drawn on: a
-// wide tile takes a row to itself, the rest fill the grid.
+// wide tile takes a row to itself, the rest fill the grid. A section is a
+// header row and, unless it is folded, the rows of its tiles on the grid it
+// states; the tiles in no section are laid out on the dashboard's, and a header
+// ends the row before it, so a section never shares a line with a stranger.
 //
 // This is the one place that decides which tile sits on which row. It used
 // to be `i/cols` arithmetic repeated across rendering, hit-testing, scroll
 // paging and selection movement — four copies of one rule, correct only for
 // as long as every row held exactly cols tiles, and all four of which had to
 // be found and changed together the moment one did not.
-func (m Model) tileRows() [][]int {
-	g := m.grid()
-	var rows [][]int
-	var cur []int
-	used := 0
-	flush := func() {
-		if len(cur) > 0 {
-			rows = append(rows, cur)
-			cur, used = nil, 0
+func (m Model) tileRows() []gridRow {
+	runs := m.sectionRuns()
+	var rows []gridRow
+	next := 0
+	for i := 1; i < len(m.tiles); {
+		if next < len(runs) && runs[next].lo == i {
+			run := runs[next]
+			next++
+			rows = append(rows, gridRow{header: run})
+			if !m.collapsed(run.name) {
+				rows = append(rows, m.packRows(run.lo, run.hi, m.gridFor(run.lo))...)
+			}
+			i = run.hi
+			continue
 		}
+		end := len(m.tiles)
+		if next < len(runs) {
+			end = runs[next].lo
+		}
+		rows = append(rows, m.packRows(i, end, m.grid())...)
+		i = end
 	}
-	for i := 1; i < len(m.tiles); i++ {
-		w := m.span(i)
-		if used+w > g.cols {
-			flush()
-		}
-		cur = append(cur, i)
-		used += w
-		if used >= g.cols {
-			flush()
-		}
-	}
-	flush()
 	return rows
 }
 
@@ -127,7 +119,7 @@ func (m Model) rowSpan(cells []int) int {
 // does not fill the grid shares out what is left, so a short row reads as a
 // deliberate arrangement instead of a rendering accident.
 func (m Model) tileWidth(i int) int {
-	g := m.grid()
+	g := m.gridFor(i)
 	cells := m.rowOf(i)
 	if len(cells) == 0 {
 		return g.tileW
@@ -159,18 +151,20 @@ func (m Model) tileWidth(i int) int {
 
 // rowOf returns the row tile i sits on.
 func (m Model) rowOf(i int) []int {
-	for _, cells := range m.tileRows() {
-		if slices.Contains(cells, i) {
-			return cells
+	for _, row := range m.tileRows() {
+		if slices.Contains(row.cells, i) {
+			return row.cells
 		}
 	}
 	return nil
 }
 
-// rowAndCol locates a tile in the row layout.
+// rowAndCol locates a tile in the row layout: the index of its row among all
+// the rows, headers included, and its column in it. -1 for a tile that is not on
+// a row, which is one in a section that is folded.
 func (m Model) rowAndCol(idx int) (int, int) {
 	for r, row := range m.tileRows() {
-		for c, i := range row {
+		for c, i := range row.cells {
 			if i == idx {
 				return r, c
 			}
@@ -183,14 +177,19 @@ func (m Model) rowAndCol(idx int) (int, int) {
 // natural content among that row's tiles, clamped to [tileMinHeight,
 // tileHeight]. Tiles within a row always share the row's height, the same
 // invariant TestTilesOnSameRowAreUniform checks — only the height itself now
-// varies row to row instead of being one constant for the whole grid.
+// varies row to row instead of being one constant for the whole grid. A header
+// is the one row that is one line, whatever is under it.
 func (m Model) rowHeights() []int {
 	rows := m.tileRows()
 	heights := make([]int, 0, len(rows))
 	limit := m.rowLimit()
 	for _, row := range rows {
+		if row.isHeader() {
+			heights = append(heights, sectionHeaderHeight)
+			continue
+		}
 		h := tileMinHeight
-		for _, i := range row {
+		for _, i := range row.cells {
 			h = max(h, tileRowHeight(m.asReturned(i), m.tileWidth(i)))
 		}
 		heights = append(heights, min(h, limit))
@@ -235,7 +234,8 @@ func visibleRowCount(heights []int, from, avail int) int {
 
 // tileAt maps a terminal cell to a tile index, -1 for none. Row 0 is the
 // header, then the full-width search bar, then tile rows — each its own
-// height — offset by the scroll position.
+// height — offset by the scroll position. A section's header is none: it is a
+// row, and headerAt is what finds it.
 func (m Model) tileAt(x, y int) int {
 	if y < 1 {
 		return -1
@@ -243,31 +243,16 @@ func (m Model) tileAt(x, y int) int {
 	if y < 1+m.searchHeight() {
 		return 0
 	}
-	rows := m.tileRows()
-	if len(rows) == 0 {
+	row, ok := m.gridRowAt(y)
+	if !ok || row.isHeader() {
 		return -1
-	}
-	first, last := m.rowWindow(len(rows))
-	heights := m.drawnHeights(first, last)
-	yy := y - 1 - m.searchHeight()
-	row := -1
-	for r, h := range heights {
-		if yy < h {
-			row = first + r
-			break
-		}
-		yy -= h
-	}
-	if row < 0 {
-		return -1 // footer area below the last visible tile row
 	}
 	// Walk the row by drawn width. Dividing x by one column width only ever
 	// worked while every tile was one column wide, and the special case for
 	// a single full-width tile was that assumption's one exception rather
 	// than a rule — a two-column tile beside a one-column one landed every
 	// click in the row on the wrong tile.
-	cells := rows[row]
-	for _, i := range cells {
+	for _, i := range row.cells {
 		w := m.tileWidth(i)
 		if x < w {
 			return i
@@ -278,6 +263,29 @@ func (m Model) tileAt(x, y int) int {
 		}
 	}
 	return -1
+}
+
+// gridRowAt is the row the terminal line y is drawn on, and whether it is on
+// one: the header, the search bar and the footer area below the last row are
+// not. The rows are walked at the heights they were drawn at (drawnHeights), so
+// a click lands where the paint did.
+func (m Model) gridRowAt(y int) (gridRow, bool) {
+	rows := m.tileRows()
+	if len(rows) == 0 {
+		return gridRow{}, false
+	}
+	first, last := m.rowWindow(len(rows))
+	yy := y - 1 - m.searchHeight()
+	if yy < 0 {
+		return gridRow{}, false
+	}
+	for r, h := range m.drawnHeights(first, last) {
+		if yy < h {
+			return rows[first+r], true
+		}
+		yy -= h
+	}
+	return gridRow{}, false
 }
 
 // dashRowsVisible reports how many tile rows fit under header + search bar,
@@ -351,53 +359,128 @@ func (m Model) maxScroll() int {
 
 // clampScroll keeps the selected tile visible and the offset in bounds. The
 // search bar never scrolls; capability tiles window selection-driven.
+//
+// A tile that scrolls into view from above brings its section's header with it
+// when it is the first row under it: a window that opened on the middle of a
+// section says nothing about which section that is.
 func (m *Model) clampScroll() {
 	m.scroll = min(m.scroll, m.maxScroll())
-	visible := m.dashRowsVisible()
 	if m.selected == 0 {
 		return
 	}
-	selRow, _ := m.rowAndCol(m.selected)
+	selRow, _ := m.selectedRow()
 	if selRow < 0 {
 		return
 	}
 	if selRow < m.scroll {
 		m.scroll = selRow
+		if rows := m.tileRows(); selRow > 0 && rows[selRow-1].isHeader() {
+			m.scroll = selRow - 1
+		}
 	}
-	if selRow >= m.scroll+visible {
+	// Asked after the window has moved: how many rows fit depends on which rows
+	// they are, and the header that came along may leave room for one fewer.
+	if visible := m.dashRowsVisible(); selRow >= m.scroll+visible {
 		m.scroll = selRow - visible + 1
 	}
 }
 
-// moveSelection shifts the selected tile by (dx, dy): the search bar sits
-// above the grid, capability tiles move on it.
+// selectedRow is the row the selection is on and the column in it: a tile's, or
+// the header row of the section that holds the selection, whose column is the
+// one the reader last aimed for. -1 when the selection is on none, which is the
+// search bar, or a tile in a section that is folded.
+func (m Model) selectedRow() (row, col int) {
+	if m.selected >= 0 {
+		return m.rowAndCol(m.selected)
+	}
+	for r, gr := range m.tileRows() {
+		if gr.isHeader() && gr.header.name == m.header {
+			return r, m.goalCol
+		}
+	}
+	return -1, -1
+}
+
+// stop is one place the selection rests: a tile, or the header of a section.
+type stop struct {
+	tile   int
+	header string
+	col    int
+}
+
+// stops are the places the selection can rest, in the order they are read: each
+// header and the tiles under it, row by row. The members of a folded section are
+// not there, since they are on no row, so the arrows pass through the header of
+// one and skip what it holds.
+func (m Model) stops() []stop {
+	out := make([]stop, 0, len(m.tiles))
+	for _, row := range m.tileRows() {
+		if row.isHeader() {
+			out = append(out, stop{header: row.header.name})
+			continue
+		}
+		for c, i := range row.cells {
+			out = append(out, stop{tile: i, col: c})
+		}
+	}
+	return out
+}
+
+// currentStop is the stop that holds the selection, whether or not the layout
+// has it on a row.
+func (m Model) currentStop() stop {
+	if m.selected < 0 {
+		return stop{header: m.header}
+	}
+	return stop{tile: m.selected}
+}
+
+// selectStop puts the selection on s. A header is selected as -1 with the section
+// named beside it, so that everything that reads a tile's index off the selection
+// finds none rather than a tile that is not the one in front of the reader.
+func (m *Model) selectStop(s stop) {
+	if s.header == "" {
+		m.selected, m.header = s.tile, ""
+		return
+	}
+	m.selected, m.header = -1, s.header
+}
+
+// moveSelection shifts the selection by (dx, dy): the search bar sits above the
+// grid, tiles and the headers of sections move on it.
 func (m *Model) moveSelection(dx, dy int) {
 	defer m.clampScroll()
 	if m.selected == 0 {
 		if dy > 0 || dx > 0 {
-			m.selected = min(1, len(m.tiles)-1)
+			if stops := m.stops(); len(stops) > 0 {
+				m.selectStop(stops[0])
+			}
 		}
 		m.goalCol = 0
 		return
 	}
-	// Left and right walk the tiles in order, which is what they look like
+	// Left and right walk the stops in order, which is what they look like
 	// they do. Up and down move between rows and keep the column, which is
 	// only the same thing while every row is the same length — and a
 	// full-width tile makes one of them shorter.
 	if dx != 0 {
-		if next := m.selected + dx; next >= 1 && next < len(m.tiles) {
-			m.selected = next
+		stops, here := m.stops(), m.currentStop()
+		at := slices.IndexFunc(stops, func(s stop) bool { return s.tile == here.tile && s.header == here.header })
+		if at < 0 {
+			return
 		}
+		next := stops[min(max(at+dx, 0), len(stops)-1)]
+		m.selectStop(next)
 		// Moving sideways is choosing a column, so it sets the one vertical
 		// movement will aim for.
-		_, m.goalCol = m.rowAndCol(m.selected)
+		m.goalCol = next.col
 		return
 	}
 	if dy == 0 {
 		return
 	}
 	rows := m.tileRows()
-	row, col := m.rowAndCol(m.selected)
+	row, col := m.selectedRow()
 	if row < 0 {
 		return
 	}
@@ -413,14 +496,18 @@ func (m *Model) moveSelection(dx, dy int) {
 	}
 	target := row + dy
 	if target < 0 {
-		m.selected = 0 // up from the top row lands on search
+		m.selected, m.header = 0, "" // up from the top row lands on search
 		return
 	}
 	if target >= len(rows) {
 		return
 	}
 	m.goalCol = col
-	m.selected = rows[target][min(col, len(rows[target])-1)]
+	if rows[target].isHeader() {
+		m.selectStop(stop{header: rows[target].header.name})
+		return
+	}
+	m.selectStop(stop{tile: rows[target].cells[min(col, len(rows[target].cells)-1)]})
 }
 
 // returned is what a tile's capability handed back, before cleaning.
@@ -865,8 +952,12 @@ func (m Model) dashboardView() string {
 	heights := m.drawnHeights(first, last)
 	rendered := make([]string, 0, last-first)
 	for r := first; r < last; r++ {
-		parts := make([]string, 0, 2*len(rows[r]))
-		for _, i := range rows[r] {
+		if rows[r].isHeader() {
+			rendered = append(rendered, m.renderSectionHeader(rows[r].header, m.onHeader(rows[r].header.name)))
+			continue
+		}
+		parts := make([]string, 0, 2*len(rows[r].cells))
+		for _, i := range rows[r].cells {
 			if len(parts) > 0 {
 				// A one-cell gap column between tiles — the same gap tileAt
 				// divides by.
