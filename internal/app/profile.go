@@ -331,6 +331,16 @@ func newUseCommand(opts *globalOpts) *cobra.Command {
 				_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
 				return Rendered(verr)
 			}
+			// The receipt of a switch is drawn in the colours of where it
+			// switched to — or back to the operator's own when it switched
+			// off — and not in those of the environment that was on a moment
+			// ago, which is the one thing on the screen that would say the
+			// switch had not happened.
+			if !opts.dryRun {
+				if cfg, err := config.Load(); err == nil {
+					ApplyTheme(cfg, profile.Active())
+				}
+			}
 			return cli.Render(cmd.OutOrStdout(), v, renderOpts)
 		},
 	}
