@@ -376,6 +376,123 @@ func TestAViewAndABlockOfTheSameNameAreReportedAndNeitherIsDrawn(t *testing.T) {
 	}
 }
 
+// shopEntry is an environment whole against the registry the config tests use,
+// with its screen written in the entry.
+const shopEntry = `profiles:
+  shop:
+    plugins:
+      net:
+        set:
+          timeout: 5
+    dashboard:
+      add:
+      - id: net.ping
+`
+
+// The check holds a screen written in an entry to a view's keys, with the line
+// and the file the typo is in, and a drop-in that is right says so.
+func TestConfigCheckHoldsAProfilesOwnScreenToAViewsKeys(t *testing.T) {
+	_, path := split(t, map[string]string{
+		"config.yaml":           "output: json\n",
+		"config.d/20-shop.yaml": strings.Replace(shopEntry, "      add:", "      tile:\n      - id: net.ping\n      add:", 1),
+	})
+	out, errOut, err := runConfigAt(t, configRegistry(t), path, "config", "check", "-o", "pretty")
+	if err == nil || !strings.Contains(out+errOut, "profiles.shop.dashboard.tile") ||
+		!strings.Contains(out+errOut, "20-shop.yaml") || !strings.Contains(out+errOut, `did you mean "tiles"`) {
+		t.Errorf("the typo in the block was not named: %v\n%s%s", err, out, errOut)
+	}
+	_, path = split(t, map[string]string{"config.yaml": "output: json\n", "config.d/20-shop.yaml": shopEntry})
+	out, errOut, err = runConfigAt(t, configRegistry(t), path, "config", "check", "-o", "pretty")
+	if err != nil || strings.Contains(out+errOut, "shop") {
+		t.Errorf("a right drop-in was not clean: %v\n%s%s", err, out, errOut)
+	}
+}
+
+// A profile in one file naming a view in another is not naming one nothing
+// states, and a view and a block of one name in two files are reported once, in
+// the file that holds the profile, with the line of its `dashboard:` key.
+func TestConfigCheckReadsViewsAcrossFiles(t *testing.T) {
+	_, path := split(t, map[string]string{
+		"config.yaml": "dashboard:\n  views:\n    ops:\n      columns: 3\n    shop:\n      columns: 5\n",
+		"config.d/20-shop.yaml": shopEntry +
+			"  lost:\n    plugins:\n      net: {}\n    dashboard: ghost\n  prod:\n    plugins:\n      net: {}\n    dashboard: ops\n",
+	})
+	out, errOut, err := runConfigAt(t, configRegistry(t), path, "config", "check", "-o", "pretty")
+	text := out + errOut
+	if err == nil {
+		t.Fatalf("a collision was not a problem:\n%s", text)
+	}
+	if got := strings.Count(text, "neither is drawn"); got != 1 {
+		t.Errorf("the collision was said %d times:\n%s", got, text)
+	}
+	if !strings.Contains(text, "profile shop writes its dashboard in its entry") || !strings.Contains(text, "20-shop.yaml") ||
+		!strings.Contains(text, "profiles.shop.dashboard") {
+		t.Errorf("the collision is not told with its profile, file and key:\n%s", text)
+	}
+	if !strings.Contains(text, "selects dashboard view ghost") {
+		t.Errorf("a name nothing states was not reported:\n%s", text)
+	}
+	if strings.Contains(text, "selects dashboard view ops") {
+		t.Errorf("a view in another file was called unstated:\n%s", text)
+	}
+}
+
+// The same collision in one file is one problem too. The check lists the notes
+// every profile has, and the collision is one of them, so without leaving that
+// note out it was said once with the line of its key and once with none, and
+// counted as two problems.
+func TestConfigCheckSaysACollisionInOneFileOnceWithItsLine(t *testing.T) {
+	_, path := split(t, map[string]string{
+		"config.yaml": "dashboard:\n  views:\n    shop:\n      columns: 5\n" + shopEntry,
+	})
+	out, errOut, err := runConfigAt(t, configRegistry(t), path, "config", "check", "-o", "pretty")
+	text := out + errOut
+	if err == nil {
+		t.Fatalf("a collision was not a problem:\n%s", text)
+	}
+	if got := strings.Count(text, "neither is drawn"); got != 1 {
+		t.Errorf("the collision was said %d times:\n%s", got, text)
+	}
+	if !strings.Contains(text, "1 problem in") || !strings.Contains(text, "profiles.shop.dashboard") {
+		t.Errorf("the collision is not one problem with the key of its profile:\n%s", text)
+	}
+}
+
+// Doctor says it once, as a note on the profile where every profile problem is
+// said, and still says the name that nothing states.
+func TestDoctorReportsAScreenInDoubtOnceAndADanglingNameStill(t *testing.T) {
+	_, configDir := isolate(t)
+	files := map[string]string{
+		"config.yaml": "dashboard:\n  views:\n    shop:\n      columns: 5\n",
+		"config.d/20-shop.yaml": shopEntry +
+			"  lost:\n    plugins:\n      net: {}\n    dashboard: ghost\n",
+	}
+	for name, text := range files {
+		path := filepath.Join(configDir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var inDoubt, dangling []string
+	for _, r := range doctorTable(configRegistry(t), false).Rows {
+		switch {
+		case strings.Contains(r[2], "neither is drawn"):
+			inDoubt = append(inDoubt, r[0]+": "+r[2])
+		case strings.Contains(r[2], "selects dashboard view ghost"):
+			dangling = append(dangling, r[0]+": "+r[2])
+		}
+	}
+	if len(inDoubt) != 1 || !strings.HasPrefix(inDoubt[0], "profile: ") || !strings.Contains(inDoubt[0], "keep one") {
+		t.Errorf("a screen in doubt was said %v", inDoubt)
+	}
+	if len(dangling) != 1 || !strings.HasPrefix(dangling[0], "dashboard: ") {
+		t.Errorf("a name nothing states was said %v", dangling)
+	}
+}
+
 // A profile's own screen is drawn while that environment is switched on, and a
 // receipt that told a person to select it with `profile set --dashboard`, which
 // that very profile refuses, would send them to a command that throws it away.

@@ -117,11 +117,21 @@ func configProblems(reg *registry.Registry, path string, data []byte) []configPr
 	// one. A line the file states and rta does not apply is what this command
 	// exists to name, and a check that passed a file while those three said
 	// otherwise would be the page and the run disagreeing about one file.
-	for _, line := range groupedProblems(profile.Notes(cfg, withTrust{reg})) {
+	for _, line := range groupedProblems(withoutShadowedScreens(cfg, profile.Notes(cfg, withTrust{reg}))) {
 		out = append(out, configProblem{Key: "profiles", Text: line})
 	}
-	for _, line := range danglingViews(cfg) {
-		out = append(out, configProblem{Key: "profiles", Text: line})
+	// Read against every file, since a view is as likely to be in another one as
+	// the profile that names it, and the collision of a profile's own screen with
+	// a view of its name is between two files as often as it is within one. It is
+	// said here with the line of the `dashboard:` key, which is why the note of
+	// the same sentence is left out of the loop above.
+	whole, werr := config.Together(path, data)
+	if werr != nil {
+		whole = cfg
+	}
+	for _, p := range append(danglingViews(cfg, whole), shadowedScreens(cfg, whole)...) {
+		key := "profiles." + p.profile + ".dashboard"
+		out = append(out, configProblem{Key: key, Line: lines[key], Text: p.text})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i].Line, out[j].Line
