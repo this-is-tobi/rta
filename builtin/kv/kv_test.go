@@ -113,6 +113,7 @@ func TestSafetyClasses(t *testing.T) {
 		"kv.rm":         plugin.Destructive,
 		"kv.recipients": plugin.Read,
 		"kv.status":     plugin.Read,
+		"kv.overview":   plugin.Read, // names, counts and sizes: the line kv.list draws
 		"kv.show":       plugin.Read,
 		"kv.init":       plugin.Write,
 		"kv.rekey":      plugin.Destructive, // it can take every reader's access away at once
