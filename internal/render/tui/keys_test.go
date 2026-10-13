@@ -24,6 +24,12 @@ func plain(s string) string { return ansiSeq.ReplaceAllString(s, "") }
 
 func realModel(t *testing.T, w, h int) (Model, *registry.Registry) {
 	t.Helper()
+	// The model reads the configuration and the data directory on its own
+	// (the switched-on environment, the profiles pane, the theme), so a test
+	// that did not point them somewhere would pass or fail with what is in the
+	// home directory of whoever runs it.
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	reg, err := all.Registry(nil)
 	if err != nil {
 		t.Fatal(err)
