@@ -159,13 +159,13 @@ func TestAnEnvironmentNameTakesEveryConnectionInIt(t *testing.T) {
 	}
 
 	reissue()
-	run(t, runRevoke, map[string]any{"profile": "staging/main", "agent": "test"})
+	run(t, revokeH, map[string]any{"profile": "staging/main", "agent": "test"})
 	if got := profiles(); !slices.Equal(got, []string{"", "staging-db", "staging/scratch"}) {
 		t.Fatalf("revoking one connection left %q, want only staging/main gone", got)
 	}
 
 	reissue()
-	body := run(t, runRevoke, map[string]any{"profile": "staging", "agent": "test"}).(view.Text).Body
+	body := run(t, revokeH, map[string]any{"profile": "staging", "agent": "test"}).(view.Text).Body
 	if !strings.HasPrefix(body, "revoked 2 grants") {
 		t.Errorf("revoking the environment said %q, want both of its connections", body)
 	}
@@ -174,7 +174,7 @@ func TestAnEnvironmentNameTakesEveryConnectionInIt(t *testing.T) {
 	}
 
 	reissue()
-	run(t, runRevoke, map[string]any{"target": "kv.get", "profile": "staging", "agent": "test", "exact": true})
+	run(t, revokeH, map[string]any{"target": "kv.get", "profile": "staging", "agent": "test", "exact": true})
 	if got := profiles(); len(got) != 4 {
 		t.Fatalf("an exact revoke of the bare environment name took %q, want none: it names no grant", got)
 	}

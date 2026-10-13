@@ -1097,7 +1097,7 @@ func revokeDetailed(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOu
 // either way, for the call a leftover grant is named with, and server the
 // remote server the outcome came from, empty for this machine's own.
 func revokeBody(sf plugin.Surface, spec operatorid.RevokeSpec, server string, out operatorid.RevokeOutcome,
-	gone []core.Grant, dry bool,
+	gone []core.Grant, bundle string, dry bool,
 ) string {
 	target := spec.Target
 	if out.NoneActive {
@@ -1145,7 +1145,11 @@ func revokeBody(sf plugin.Surface, spec operatorid.RevokeSpec, server string, ou
 	if dry {
 		return stillCovered("would revoke " + format.Count(out.Revoked, "grant", "grants") + goneLines(sf, gone, true))
 	}
-	return stillCovered("revoked " + format.Count(out.Revoked, "grant", "grants") + goneLines(sf, gone, false))
+	taken := "revoked " + format.Count(out.Revoked, "grant", "grants") + goneLines(sf, gone, false)
+	if bundle != "" {
+		taken += "\nall of them are what `" + bundle + "` issues: one call puts the set back, for a new window"
+	}
+	return stillCovered(taken)
 }
 
 // goneLines is the grants a revoke took back, or would, each in the sentence
@@ -1202,6 +1206,12 @@ func reissueCall(sf plugin.Surface, g core.Grant, now time.Time) string {
 	}
 	if g.RateMax > 0 && g.RateWindow != "" {
 		args = append(args, plugin.Arg{Name: "rate", Value: fmt.Sprintf("%d/%s", g.RateMax, g.RateWindow)})
+	}
+	// The reason it was issued, which `grant list` shows and the line that
+	// puts it back used to drop: the grant that comes back is the one that
+	// was taken, why included.
+	if g.Note != "" {
+		args = append(args, plugin.Arg{Name: "note", Value: g.Note})
 	}
 	return sf.Call("grant.allow", args...)
 }
