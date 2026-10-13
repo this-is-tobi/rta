@@ -19,7 +19,10 @@ package config
 // know. Those stay open objects with a description saying who does know, and
 // `rta doctor` remains the deep validator.
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // schemaPatterns, named once so a grammar stated here cannot drift from the
 // code that enforces it.
@@ -40,6 +43,24 @@ var (
 // palette lists them. The package that owns them is the render tree's theme,
 // which this leaf does not import, so a test holds the two lists to one answer.
 var themeKeys = []string{"primary", "accent", "muted", "faint", "label", "good", "warn", "bad", "inverse", "ink"}
+
+// statusThemeKeys are the slots only the operator's own named config file can
+// state: the colours that mean ok, warn and failed, and the text of the two
+// badges that say the last two. An environment's palette and a file nobody named
+// are refused them (theme.Resolve), so a profile's theme: is not offered them.
+// Held to the palette's own answer by a test, for the reason themeKeys is.
+var statusThemeKeys = []string{"good", "warn", "bad", "inverse", "ink"}
+
+// profileThemeKeys are the slots a profile's theme: may name.
+func profileThemeKeys() []string {
+	keys := make([]string, 0, len(themeKeys))
+	for _, key := range themeKeys {
+		if !slices.Contains(statusThemeKeys, key) {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
 
 // schemaProfileRef is what a tile's profile: may say — a profile name, or
 // name/instance — built from the loader's own name pattern rather than
@@ -86,14 +107,12 @@ func Schema() map[string]any {
 				"propertyNames":        map[string]any{"pattern": profileName.String()},
 				"additionalProperties": map[string]any{"$ref": "#/$defs/profile"},
 			},
-			"theme": map[string]any{
-				"description": "Overrides the built-in palette: " + strings.Join(themeKeys, ", ") +
-					", each a #rrggbb string. A name or colour rta cannot use is left out and " +
-					"reported by `rta doctor`; the rest apply.",
-				"type":                 "object",
-				"propertyNames":        map[string]any{"enum": themeKeys},
-				"additionalProperties": map[string]any{"type": "string", "pattern": schemaColor},
-			},
+			"theme": themeBlock("Overrides the built-in palette: "+strings.Join(themeKeys, ", ")+
+				", each a #rrggbb string. A name or colour rta cannot use is left out and "+
+				"reported by `rta doctor`; the rest apply. The status colours (good, warn, bad, "+
+				"inverse, ink) count only in your own config file, and a file nobody named, such as a "+
+				"./.rta.yaml in a repository, may state none of them, nor a text colour under 1.5:1 "+
+				"against black or white.", themeKeys),
 			"roles": map[string]any{
 				"description": "Bundles `rta grant issue <role>` issues whole, under one passphrase: " +
 					"grant lines in the grammar `rta grant allow` takes, and how long the grants last.",
@@ -198,12 +217,22 @@ func Schema() map[string]any {
 					},
 					"color": map[string]any{
 						"description": "Marks this environment, so which one is switched on " +
-							"is legible before the command runs. Paints the profile's own " +
-							"name and nothing else — never the palette, which would put " +
-							"this colour beside the ones that mean ok, warn and failed.",
+							"is legible before the command runs: the colour of its badge, and " +
+							"the primary colour (selection, titles, keys) of every screen drawn " +
+							"while it is in force, unless its own theme states a primary. A " +
+							"colour that is exactly one of the status colours, or under 1.5:1 " +
+							"against black or white, is left out of the palette and the badge " +
+							"keeps it, so a mark never reads as ok, warn or failed.",
 						"type":    "string",
 						"pattern": schemaColor,
 					},
+					"theme": themeBlock("Overrides the palette while this environment is in force: the "+
+						"text colours of the top-level theme block, laid over it and over this "+
+						"profile's color. The status colours (good, warn, bad, inverse, ink) are not an "+
+						"environment's to state: they are set in your own config file. A name or "+
+						"colour rta cannot use, a text colour under 1.5:1 against black or white, or "+
+						"a primary that is a status colour, is left out and reported by `rta doctor`; "+
+						"the rest apply.", profileThemeKeys()),
 				},
 			},
 			"connection": map[string]any{
@@ -272,6 +301,19 @@ func Schema() map[string]any {
 				},
 			},
 		},
+	}
+}
+
+// themeBlock is the schema of a block of palette colours, which the top-level
+// `theme:` states and so does each profile: one grammar, described once, so
+// the two cannot disagree about which colours an editor completes. The names are
+// the caller's, since a profile is not offered the status colours.
+func themeBlock(description string, keys []string) map[string]any {
+	return map[string]any{
+		"description":          description,
+		"type":                 "object",
+		"propertyNames":        map[string]any{"enum": keys},
+		"additionalProperties": map[string]any{"type": "string", "pattern": schemaColor},
 	}
 }
 

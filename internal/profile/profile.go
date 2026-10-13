@@ -132,7 +132,7 @@ func Lookup(cfg config.Config, c plugin.Capability, ref string, inst Installed) 
 	if unknown := p.UnknownKeys(); len(unknown) > 0 {
 		return none, migrationOr(name, p, view.Errorf("core.profile.unknownkey",
 			"profile %q has %s, which nothing reads", name, strings.Join(unknown, ", ")).
-			WithHint("a profile takes plugins, note and ttl"))
+			WithHint("a profile takes plugins, note, ttl, color, dashboard and theme"))
 	}
 	// Ahead of resolution, deliberately: two entries for one namespace and
 	// instance — a stale pin left beside its replacement, most realistically
@@ -777,7 +777,7 @@ func Check(cfg config.Config, inst Installed) []Problem {
 		if unknown := p.UnknownKeys(); len(unknown) > 0 {
 			verr := migrationOr(name, p, view.Errorf("x",
 				"has %s, which nothing reads", strings.Join(unknown, ", ")).
-				WithHint("a profile takes plugins, note, ttl and color"))
+				WithHint("a profile takes plugins, note, ttl, color, dashboard and theme"))
 			add(verr.Message, verr.Hint)
 			continue
 		}

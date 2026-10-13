@@ -63,7 +63,7 @@
           "additionalProperties": false,
           "properties": {
             "color": {
-              "description": "Marks this environment, so which one is switched on is legible before the command runs. Paints the profile's own name and nothing else \u2014 never the palette, which would put this colour beside the ones that mean ok, warn and failed.",
+              "description": "Marks this environment, so which one is switched on is legible before the command runs: the colour of its badge, and the primary colour (selection, titles, keys) of every screen drawn while it is in force, unless its own theme states a primary. A colour that is exactly one of the status colours, or under 1.5:1 against black or white, is left out of the palette and the badge keeps it, so a mark never reads as ok, warn or failed.",
               "pattern": "^#[0-9a-fA-F]{6}$",
               "type": "string"
             },
@@ -90,6 +90,23 @@
               "description": "What this environment is: the connections, keyed the way the top-level plugins: section is keyed \u2014 pinned (pg@1a2b3c4d) for anything on $PATH, so a PATH impostor cannot inherit the stated connection \u2014 plus an optional instance label (pg/analytics@1a2b3c4d) when one environment holds several connections to the same plugin. A bare key is the default instance; a call names a labeled one as --profile <name>/<instance>.",
               "propertyNames": {
                 "pattern": "^[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)?(@[0-9a-f]+)?$"
+              },
+              "type": "object"
+            },
+            "theme": {
+              "additionalProperties": {
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "type": "string"
+              },
+              "description": "Overrides the palette while this environment is in force: the text colours of the top-level theme block, laid over it and over this profile's color. The status colours (good, warn, bad, inverse, ink) are not an environment's to state: they are set in your own config file. A name or colour rta cannot use, a text colour under 1.5:1 against black or white, or a primary that is a status colour, is left out and reported by `rta doctor`; the rest apply.",
+              "propertyNames": {
+                "enum": [
+                  "primary",
+                  "accent",
+                  "muted",
+                  "faint",
+                  "label"
+                ]
               },
               "type": "object"
             },
@@ -779,7 +796,7 @@
             "pattern": "^#[0-9a-fA-F]{6}$",
             "type": "string"
           },
-          "description": "Overrides the built-in palette: primary, accent, muted, faint, label, good, warn, bad, inverse, ink, each a #rrggbb string. A name or colour rta cannot use is left out and reported by `rta doctor`; the rest apply.",
+          "description": "Overrides the built-in palette: primary, accent, muted, faint, label, good, warn, bad, inverse, ink, each a #rrggbb string. A name or colour rta cannot use is left out and reported by `rta doctor`; the rest apply. The status colours (good, warn, bad, inverse, ink) count only in your own config file, and a file nobody named, such as a ./.rta.yaml in a repository, may state none of them, nor a text colour under 1.5:1 against black or white.",
           "propertyNames": {
             "enum": [
               "primary",
