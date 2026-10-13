@@ -9,9 +9,12 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // Sections: tiles drawn together under a header that folds.
@@ -113,6 +116,36 @@ func groupSections(tiles []tile) []tile {
 		}
 	}
 	return out
+}
+
+// SectionNames are the sections an arrangement can draw, in any environment: the
+// names its entries state, and the `<plugin> · <profile>` an entry that follows the
+// switch or names a profile is given when that profile holds several connections to
+// the plugin. Exported for `rta config check` and `rta doctor`, which say that a
+// `sections:` entry names no tile, and cannot say it for a group named after an
+// environment that is not the one switched on by looking at what is drawn now:
+// the entry is right the day that environment is, and wrong only when no
+// environment could ever make it a name.
+func SectionNames(reg *registry.Registry, dash config.Dashboard, cfg config.Config) map[string]bool {
+	shown := dash
+	shown.Hidden = nil
+	names := map[string]bool{}
+	for _, t := range buildTilesWith(reg, shown, nil)[1:] {
+		if t.section != "" {
+			names[t.section] = true
+			continue
+		}
+		if config.RefInstance(t.profile) != "" {
+			continue
+		}
+		ns := plugin.Namespace(t.cap.ID)
+		for name, p := range cfg.Profiles {
+			if (t.profile == "" || config.RefName(t.profile) == name) && p.Trusted() && len(p.Instances(ns)) >= 2 {
+				names[config.AutoSectionName(ns, name)] = true
+			}
+		}
+	}
+	return names
 }
 
 // gridRow is one line of the grid: a section's header, or the tiles that share a

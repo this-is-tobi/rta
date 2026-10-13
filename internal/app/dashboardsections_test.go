@@ -296,6 +296,22 @@ func TestSectionNamesWithALineBreakStayOnOneRow(t *testing.T) {
 	}
 }
 
+// `rta config` says there are sections, the file that states them, and the command
+// that lists them, as it does for the tiles.
+func TestConfigListsTheSectionsTheDashboardStates(t *testing.T) {
+	run := session(t, setRegistry(t))
+	dropIn(t, "10-block.yaml", "dashboard:\n  sections:\n    a:\n      collapsed: true\n    b:\n      columns: 2\n")
+	out, errOut, err := run("config", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	for _, want := range []string{`"dashboard.sections"`, "2 sections — `rta dashboard sections`", filepath.Join("config.d", "10-block.yaml")} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the config listing does not say %q:\n%s", want, out)
+		}
+	}
+}
+
 // With nothing grouped there is nothing to list, and the table says how to start.
 func TestDashboardSectionsSaysSoWhenThereAreNone(t *testing.T) {
 	run := session(t, setRegistry(t))

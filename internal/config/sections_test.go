@@ -1,11 +1,14 @@
 package config
 
 import (
+	"errors"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Sections group the tiles of a dashboard under a header that folds. What the
@@ -303,6 +306,92 @@ func TestAProfilesOwnScreenKeepsItsSectionsThroughAWrite(t *testing.T) {
 	}
 	if strings.Contains(read(t, filepath.Join(dir, "config.yaml")), "views") {
 		t.Error("the screen was written under views: as well")
+	}
+}
+
+// A column count that is not a number does not load, with the line it is on, as
+// the dashboard's own does not: what a decoder can refuse is refused
+// where it is read, and the one value it accepts that means nothing — a negative
+// one — is the check's to name.
+func TestASectionsColumnsThatIsNotANumberDoesNotLoad(t *testing.T) {
+	configAt(t)
+	for _, tc := range []struct{ name, text string }{
+		{"a word", "dashboard:\n  sections:\n    a:\n      columns: many\n"},
+		{"a view's", "dashboard:\n  views:\n    v:\n      sections:\n        a:\n          columns: many\n"},
+		{"the dashboard's", "dashboard:\n  columns: many\n"},
+	} {
+		_, err := Parse([]byte(tc.text))
+		if err == nil || !strings.Contains(err.Error(), "config.yaml") {
+			t.Errorf("%s: err = %v, want a refusal naming the file", tc.name, err)
+		}
+	}
+	cfg, err := Parse([]byte("dashboard:\n  sections:\n    a:\n      columns: -2\n"))
+	if err != nil || cfg.Dashboard.SectionOf("a").Columns != -2 {
+		t.Errorf("a negative count: %v, %+v", err, cfg.Dashboard.Sections)
+	}
+}
+
+// A section's keys of the wrong shape are refused in the loader's own words, as a
+// profile's dashboard is: the file, the spot, the key and what it takes, where the
+// decoder's sentence is about Go types and quotes a line of the file. The first one
+// in the file is the one named, wherever the section is stated.
+func TestASectionKeyOfTheWrongShapeIsRefusedNamingTheFileTheSpotAndWhatItTakes(t *testing.T) {
+	for what, tc := range map[string]struct{ text, spot, key, says, takes string }{
+		"a word": {"dashboard:\n  sections:\n    one: {columns: many}\n",
+			"[3:", "dashboard.sections.one.columns", "is text", "takes a whole number from 0"},
+		"a list": {"dashboard:\n  views:\n    v:\n      sections:\n        a:\n          columns: [1]\n",
+			"[6:", "dashboard.views.v.sections.a.columns", "is a list", "takes a whole number from 0"},
+		"a bool in a profile's own screen": {"profiles:\n  staging:\n    dashboard:\n      sections:\n        mine:\n          columns: true\n",
+			"[6:", "profiles.staging.dashboard.sections.mine.columns", "is true or false", "takes a whole number from 0"},
+		"a number too large": {"dashboard:\n  sections:\n    one:\n      columns: 99999999999999999999\n",
+			"[4:", "dashboard.sections.one.columns", "is a number too large to be a count of columns", "takes a whole number from 0"},
+		"sections as a list": {"dashboard:\n  sections: [a, b]\n",
+			"[2:", "dashboard.sections", "is a list", "takes a mapping of section names to how each starts"},
+		"sections as a word in a view": {"dashboard:\n  views:\n    v:\n      sections: abc\n",
+			"[4:", "dashboard.views.v.sections", "is text", "takes a mapping of section names to how each starts"},
+		"sections as a number in a profile's own screen": {"profiles:\n  staging:\n    dashboard:\n      sections: 3\n",
+			"[4:", "profiles.staging.dashboard.sections", "is a number", "takes a mapping of section names to how each starts"},
+		"a name that is not plain": {"dashboard:\n  sections:\n    \"two\\nlines\": {columns: many}\n",
+			"[3:", `dashboard.sections."two\nlines".columns`, "is text", "takes a whole number from 0"},
+	} {
+		t.Run(what, func(t *testing.T) {
+			path := configAt(t)
+			_, err := Parse([]byte(tc.text))
+			if err == nil {
+				t.Fatal("loaded")
+			}
+			msg := err.Error()
+			for _, want := range []string{path, tc.spot, tc.key + " " + tc.says, tc.takes} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("%q lacks %q", msg, want)
+				}
+			}
+			if strings.Contains(msg, "cannot unmarshal") || strings.Contains(msg, "Go struct") || strings.Contains(msg, "was used where") {
+				t.Errorf("the decoder's own sentence came through: %q", msg)
+			}
+			var verr *view.Error
+			if !errors.As(err, &verr) || verr.Hint == "" || verr.Code != "config.invalid" {
+				t.Errorf("err = %#v, want config.invalid with a hint", err)
+			}
+		})
+	}
+}
+
+// What the decoder takes is not refused for it: a count in quotes, a decimal and a
+// column count left empty all load, and a file with another mistake in it is still
+// refused for that one, in the decoder's words.
+func TestTheSectionRefusalOnlyNamesWhatTheDecoderRefused(t *testing.T) {
+	configAt(t)
+	cfg, err := Parse([]byte("dashboard:\n  sections:\n    a: {columns: \"3\"}\n    b: {columns: 2.5}\n    c: {columns: }\n    d:\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := []int{cfg.Dashboard.SectionOf("a").Columns, cfg.Dashboard.SectionOf("b").Columns, cfg.Dashboard.SectionOf("c").Columns}; !slices.Equal(got, []int{3, 2, 0}) {
+		t.Errorf("columns = %v, want 3, 2 and 0", got)
+	}
+	_, err = Parse([]byte("dashboard:\n  sections:\n    a: {columns: 2}\n  columns: many\n"))
+	if err == nil || !strings.Contains(err.Error(), "cannot unmarshal") {
+		t.Errorf("another mistake in the file: %v, want the decoder's refusal of it", err)
 	}
 }
 

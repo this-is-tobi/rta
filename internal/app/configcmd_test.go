@@ -217,6 +217,7 @@ func TestConfigSetPointsAtTheCommandThatWritesTheRestOfTheFile(t *testing.T) {
 		"profiles.prod.note": "rta profile set",
 		"dashboard.add":      "rta dashboard add",
 		"dashboard.tiles":    "rta dashboard add",
+		"dashboard.sections": "rta dashboard sections",
 		"roles.morning":      "rta config edit",
 	} {
 		_, errOut, _, err := configRun(t, reg, "", "config", "set", typed, "x")

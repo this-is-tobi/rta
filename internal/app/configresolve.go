@@ -271,6 +271,10 @@ func unknownConfigKey(reg *registry.Registry, raw string) *view.Error {
 		strings.HasPrefix(rest, "add.")):
 		return view.Errorf("core.config.key.managed", "dashboard tiles are written by `rta dashboard add`, not by key").
 			WithHint("`rta dashboard list` shows them and `rta dashboard rm` takes one down")
+	case head == "dashboard" && (rest == "sections" || strings.HasPrefix(rest, "sections.")):
+		return view.Errorf("core.config.key.managed", "dashboard sections are stated in the file, not by key").
+			WithHint("`rta dashboard sections` lists them, `rta dashboard add --section` puts a tile in one, " +
+				"and `rta config edit` opens the file to say how one starts")
 	case head == "roles":
 		return view.Errorf("core.config.key.managed", "roles are written in the file, not by key").
 			WithHint("`rta config edit` opens it, and `rta grant roles` lists them")
