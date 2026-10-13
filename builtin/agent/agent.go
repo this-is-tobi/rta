@@ -1413,8 +1413,12 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// narrow grant can stand for this call is known before anybody types
 	// anything, and a passphrase spent on a refusal buys nothing.
 	var unissued *view.Error
+	var build string
 	if ttl != "" {
 		unissued = noNarrowGrant(req.Surface(), r, ttl)
+		if unissued == nil {
+			build, unissued = rtagrant.BoundArtifact(req.Surface(), artifact, r.Cap)
+		}
 	}
 	var signer *guard.Signer
 	if ttl != "" && unissued == nil && guard.Enabled() {
@@ -1458,7 +1462,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 			// Measured here rather than inside alsoGrant because the surface
 			// is this request's fact, not the parked call's.
 			from := grant.Origin(req.Surface(), term.IsTerminal(int(stdio.Real().Fd())))
-			note, verr = alsoGrant(r, ttl, from, signer)
+			note, verr = alsoGrant(r, ttl, from, build, signer)
 		}
 		if verr != nil {
 			// The call is already allowed; a bad --ttl must not read as if
@@ -1599,7 +1603,7 @@ func andList(items []string) string {
 // at a time. Should one fail after another stood, the note names those that
 // stand beside the refusal, so the answer never claims a grant it did not
 // issue nor hides one it did.
-func alsoGrant(r consent.Request, ttl, from string, signer *guard.Signer) (string, *view.Error) {
+func alsoGrant(r consent.Request, ttl, from, build string, signer *guard.Signer) (string, *view.Error) {
 	asked, err := time.ParseDuration(ttl)
 	if err != nil {
 		return "", view.Errorf("agent.allow.ttl", "%q is not a duration", ttl).
@@ -1635,6 +1639,12 @@ func alsoGrant(r consent.Request, ttl, from string, signer *guard.Signer) (strin
 			// rather than against a label.
 			Profile:    r.Profile,
 			ProfilePin: r.Pin,
+			// The plugin build it stands on, as `grant allow` binds it (see
+			// grant.Grant.Digest): the gate compares it exactly, so a grant
+			// without it covers a built-in only, and one issued here for a
+			// plugin capability read as live, said the next calls were covered,
+			// and authorized none of them.
+			Digest: build,
 			// And who asked. Without it, answering a named agent's question with
 			// --ttl would issue a grant covering the *unnamed* server — a grant
 			// that reads as consent, lists as live, and never authorizes the

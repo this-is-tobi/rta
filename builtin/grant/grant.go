@@ -1698,10 +1698,12 @@ func artifactWarnings(sf plugin.Surface, grants []core.Grant, states []core.Arti
 	}
 	var replaced, gone []string
 	unknown := 0
+	unbound := false
 	for i, g := range grants {
 		switch states[i] {
 		case core.ArtifactReplaced:
 			replaced = append(replaced, g.Named())
+			unbound = unbound || g.Digest == ""
 		case core.ArtifactGone:
 			gone = append(gone, g.Named())
 		case core.ArtifactUnknown:
@@ -1724,6 +1726,15 @@ func artifactWarnings(sf plugin.Surface, grants []core.Grant, states []core.Arti
 			hint = fmt.Sprintf("a grant is bound to the plugin build it was issued against, and an upgrade or a "+
 				"rebuild is another build — issue %s again there with `%s`", format.Plural(n, "it", "each"),
 				sf.Call("grant.allow", plugin.Arg{Name: "server", Value: server}))
+		}
+		// A grant that records no build and stands on a plugin was never bound
+		// to one, so no upgrade explains it and "after the upgrade" would send
+		// its owner looking for one that did not happen. It reads `built in
+		// (replaced)` on the roster, which is the only clue it leaves.
+		if unbound {
+			hint += "; a grant marked `built in (replaced)` was issued with no plugin build to bind to " +
+				"— by an answer to a parked call on an rta that recorded none, or before the plugin was " +
+				"installed — so no upgrade explains it, and issuing it again is the same fix"
 		}
 		out = append(out, view.Error{
 			Code: "grant.artifact.replaced",

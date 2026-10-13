@@ -149,6 +149,35 @@ func TestAGrantOnAReplacedPluginIsMarkedWithTheFix(t *testing.T) {
 	}
 }
 
+// A grant standing on a plugin with no build recorded was never bound to one:
+// "after the upgrade" would send its owner looking for an upgrade that did not
+// happen, so the warning says what it is, and that issuing it again is the fix.
+// A row with a build recorded keeps the plain wording.
+func TestAGrantWithNoBuildOnAPluginIsExplainedAsUnbound(t *testing.T) {
+	setup(t)
+	now := time.Now()
+	if verr := core.Issue(core.Grant{Target: "hello.wipe", Agent: "test", Issued: now, Expires: now.Add(time.Hour)}, true); verr != nil {
+		t.Fatal(verr)
+	}
+	tbl := listWith(t, answering(helloBuild), false)
+	if got := cell(t, tbl, rowFor(t, tbl, "hello.wipe"), "Artifact"); got != "built in (replaced)" {
+		t.Errorf("hello.wipe's artifact reads %q, want the mark a grant with no build carries", got)
+	}
+	w := warning(t, tbl, "grant.artifact.replaced")
+	for _, want := range []string{"no plugin build to bind to", "no upgrade explains it", "issuing it again is the same fix"} {
+		if !strings.Contains(w.Hint, want) {
+			t.Errorf("the hint reads %q, want it to say %q", w.Hint, want)
+		}
+	}
+
+	setup(t)
+	helloGrants(t)
+	tbl = listWith(t, answering(helloRebuilt), false)
+	if w := warning(t, tbl, "grant.artifact.replaced"); strings.Contains(w.Hint, "no plugin build") {
+		t.Errorf("a grant that records its build is told it has none: %q", w.Hint)
+	}
+}
+
 // A grant on a plugin nothing answers for now is marked apart from one on a
 // replaced build: the fix starts with the plugin loading at all.
 func TestAGrantOnAPluginThatDoesNotLoadIsMarkedSo(t *testing.T) {

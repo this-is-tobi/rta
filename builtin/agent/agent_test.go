@@ -220,6 +220,55 @@ func TestAllowWithATTLAlsoIssuesTheGrantYouWouldHaveTyped(t *testing.T) {
 	}
 }
 
+// The plugin build a parked call was made against, and the grant a --ttl
+// answer leaves behind. The grant has to stand on that build exactly as
+// `grant allow` binds it: with no digest it covers a built-in only, so the
+// answer's "and hello.get for the next 15m" was true of nothing, the next call
+// parked again, and `grant list` marked the new row as issued on a plugin
+// that had been replaced.
+func TestAllowWithATTLOnAPluginCapabilityIssuesAGrantThatCoversTheNextCall(t *testing.T) {
+	isolate(t)
+	const build = "5dae737f8845b3c1d6c0a1b7e2f9d4c3a8b6e1f07c2d9a4b5e3f1a0c7d8e9b2a"
+	hello := plugin.Capability{ID: "hello.get", Summary: "read", Safety: plugin.Write, Scope: "key",
+		Inputs: []plugin.Field{{Name: "key", Type: plugin.String, Positional: true}}}
+	p, err := consent.Ask(consent.Call{
+		Cap: "hello.get", Safety: "write", Scopes: []string{"greeting"}, Agent: "erin",
+		Args: map[string]any{"key": "greeting"}, Why: "no active grant",
+	}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+
+	answering := func(ns string) (string, bool) { return build, ns == "hello" }
+	var allow plugin.Capability
+	for _, c := range Plugin(catalog, answering).Capabilities {
+		if c.ID == "agent.allow" {
+			allow = c
+		}
+	}
+	in := map[string]any{"id": p.Request.ID, "ttl": "15m"}
+	if _, err := allow.Run(context.Background(), plugin.NewRequest(
+		plugin.Resolve(allow, plugin.Inputs{Caller: in}), false, false).WithSurface(plugin.SurfaceCLI)); err != nil {
+		t.Fatal(err)
+	}
+
+	again := map[string]any{"key": "greeting"}
+	by := grant.Caller{Agent: "erin", Digest: build}
+	release, verr := grant.Reserve(hello, again, by)
+	if verr != nil {
+		t.Fatalf("the same call again is refused (%v), though the answer said the next 15m were covered", verr)
+	}
+	release()
+	grants, verr := grant.Load()
+	if verr != nil || len(grants) != 1 {
+		t.Fatalf("grants = %v (%v), want the one the answer issued", grants, verr)
+	}
+	if got := grants[0].ArtifactFrom(answering); got != grant.ArtifactCurrent {
+		t.Errorf("the grant reads %v on a plugin nobody replaced, want it bound to the build that answers", got)
+	}
+}
+
 // alsoGrant issues a standing grant through the same internal/grant.Issue
 // path `rta grant allow` uses, so it has to apply the same ceiling —
 // otherwise a team policy tightening the window did nothing here, while
