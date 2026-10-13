@@ -14,8 +14,8 @@
 // # On safety classes
 //
 // kv.get, kv.copy, kv.edit, kv.env, kv.set, kv.rename and kv.init are Write;
-// kv.list, kv.show, kv.recipients and kv.status are Read; kv.rm and kv.rekey
-// are Destructive.
+// kv.list, kv.show, kv.recipients, kv.status and kv.overview are Read; kv.rm
+// and kv.rekey are Destructive.
 //
 // Classifying kv.get as Write is deliberate and is the one place the safety
 // model is read as "blast radius" rather than "does it mutate". It has no
@@ -103,6 +103,7 @@ func Plugin() plugin.Plugin {
 		Name:    "kv",
 		Summary: "Encrypted local store for secrets, certificates and key files",
 		Capabilities: []plugin.Capability{
+			overviewCapability(),
 			{
 				ID: "kv.list", Summary: "List stored keys (names and metadata only, never values)",
 				Safety: plugin.Read, Idempotent: true,

@@ -1122,6 +1122,21 @@ func boolToInt(b bool) int {
 // construction — so this is the one kv capability that always works, and the
 // one worth putting on a dashboard.
 func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
+	summary, mode, verr := storeFacts(req)
+	if verr != nil {
+		return nil, verr
+	}
+	if mode == "" || !req.Bool("detail") {
+		return summary, nil
+	}
+	return detailedStatus(ctx, req, summary, mode), nil
+}
+
+// storeFacts is everything that can be said of the store without opening it,
+// as kv.status states it, and how the store is locked — "" while there is no
+// store, which the facts say themselves. The one place these lines are spelled,
+// for the capabilities that begin with them.
+func storeFacts(req plugin.Request) (view.KeyValue, keyMode, *view.Error) {
 	path := storePath()
 	pairs := []view.Pair{{Key: "store", Value: path}}
 	info, err := os.Stat(path)
@@ -1130,9 +1145,9 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 		return view.KeyValue{Pairs: append(pairs, view.Pair{
 			Key:   "state",
 			Value: "no store yet — " + NoStoreNext(req.Surface(), "<key>"),
-		})}, nil
+		})}, "", nil
 	case err != nil:
-		return nil, view.Errorf("kv.store.unreadable", "reading %s: %v", path, err)
+		return view.KeyValue{}, "", view.Errorf("kv.store.unreadable", "reading %s: %v", path, err)
 	}
 	pairs = append(pairs,
 		view.Pair{Key: "size", Value: format.Bytes(info.Size())},
@@ -1141,7 +1156,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	mode, specs, verr := currentMode()
 	if verr != nil {
-		return nil, verr
+		return view.KeyValue{}, "", verr
 	}
 	if mode == modeKeys {
 		pairs = append(pairs, view.Pair{Key: "locked to",
@@ -1153,11 +1168,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	// store you cannot unlock right now is the thing you want to find out
 	// before you need the secret, not while you need it.
 	pairs = append(pairs, view.Pair{Key: "unlocks here", Value: unlockAvailability(req, mode)})
-	summary := view.KeyValue{Pairs: pairs}
-	if !req.Bool("detail") {
-		return summary, nil
-	}
-	return detailedStatus(ctx, req, summary, mode), nil
+	return view.KeyValue{Pairs: pairs}, mode, nil
 }
 
 // detailedStatus is the full-page answer to "what is in this store and who
@@ -1360,9 +1371,7 @@ func suggestFolders(ctx context.Context, req plugin.Request) []string {
 	var folders []string
 	for _, entry := range suggestKeys(ctx, req) {
 		key, _, _ := strings.Cut(entry, "\t")
-		parts := strings.Split(key, "/")
-		for i := 1; i < len(parts); i++ {
-			folder := strings.Join(parts[:i], "/") + "/"
+		for _, folder := range foldersOf(key) {
 			if !seen[folder] {
 				seen[folder] = true
 				folders = append(folders, folder)
@@ -1370,6 +1379,18 @@ func suggestFolders(ctx context.Context, req plugin.Request) []string {
 		}
 	}
 	return folders
+}
+
+// foldersOf is the folders a key is in, outermost first: a/b/c is in a/ and
+// a/b/. The convention kv.tree draws and a grant's scope follows — a folder is
+// what names share, and is never an entry itself (checkKeyName).
+func foldersOf(key string) []string {
+	parts := strings.Split(key, "/")
+	out := make([]string, 0, len(parts)-1)
+	for i := 1; i < len(parts); i++ {
+		out = append(out, strings.Join(parts[:i], "/")+"/")
+	}
+	return out
 }
 
 // callList lays calls out one per line, each with what it is for aligned

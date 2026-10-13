@@ -73,10 +73,12 @@ rta kv rm old-token --purge --yes         # the one removal that is final
 
 Every write over an existing key keeps what it replaced — the last five values, inside the same encrypted store — and `kv rm` keeps the whole entry aside rather than destroying it. A paste over the wrong key, a rotation that broke something, a mis-click on the wrong row: each is undone by name. A restore pushes the value it replaces into the history in turn, so a restore is undoable by the same command. `--purge` is the one removal that is final, and it also finishes off a key removed earlier.
 
-## Seeing the store without opening it
+## Seeing what is in the store
 
 ```bash
-rta kv status
+rta kv overview             # what is in it, how it is locked, and whether this shell can open it
+rta kv overview --detail    # and the folders its names share, and who can open it
+rta kv status               # where it is and what can open it, without decrypting it
 rta kv list
 rta kv list db/             # only the keys in one folder
 rta kv show db-password     # everything about it except the value
@@ -85,6 +87,12 @@ rta kv recipients           # which public keys can decrypt this store
 ```
 
 A folder is what keys named with slashes share: `db/password` and `db/user` are in `db/`. It is never a key itself, so `kv get db` is refused as `kv.notfound`, and the hint says `db/` is a folder and names the keys in it.
+
+`kv overview` is the one page about the store: how many keys it holds, in how many folders, how many of each kind, how many bytes of values, when the newest and the oldest were set, and what it keeps beside the live keys — earlier values, and removed keys that `kv restore` brings back — and then whether it is locked with a passphrase or to keys and how many, whether this shell can open it, where the file is, how big, and when it last changed. The count comes first because the dashboard cuts a tile from the bottom, and on the tile how the store is locked comes straight after it, with the kinds, the ages and what is kept after that, and what is kept said in fewer words: `3 earlier values, 2 removed`. Names, counts and sizes, never a value or a piece of one, which is the line `kv list` draws. The folder count counts every folder at every depth, so `prod/db/password` is in `prod/` and in `prod/db/`, and when some are nested the line says how many are at the top. `--detail` adds a table of the eight biggest top-level folders with their key counts and sizes, with the keys that are in no folder as its last row, and a line under it saying how many top-level folders there are and that `kv tree` draws every one; for a store locked to keys it also says which public keys can open it. A folder is named by whoever wrote a key in it, so one whose name holds a newline, an escape sequence, a right-to-left override or any character you could not see is shown in quotes with that character written out, the way `fs tree` shows a file: it cannot add a row of its own or read as another folder, and a name that reads as itself is shown as it is.
+
+The counts need the store open, and `kv overview` never asks for what opens it. With no key at hand it still says where the store is and how it is locked, then says in one line that the inventory needs a key and what supplies one — `RTA_KV_PASSPHRASE` or `--passphrase` for a passphrase store, `--identity` or `RTA_KV_IDENTITY` for a store locked to keys — and ends there; `kv list` is the command that asks. That is what lets an agent, or anything else that runs it where nobody is there to answer, call it safely. The `unlocks here` line tells the same story from the other side: at a terminal it says `on request` and that `kv list` is the one that asks, and when a passphrase was at hand and did not open the store it says that the passphrase was not accepted, where `kv status`, which never opens the store, can only say that one is at hand. Both name where a passphrase came from — `from the environment` is `RTA_KV_PASSPHRASE`, and one given as `--passphrase` or typed in the unlock form is `given`.
+
+It is also the secrets tile on [the dashboard](./20-tui.md), which re-runs it every thirty seconds rather than every few: opening a passphrase store costs a third of a second of key derivation and a quarter of a gigabyte of memory, and a store changes when somebody changes it. The tile counts the store when the environment can open it, from `RTA_KV_PASSPHRASE` or a key found for it. The passphrase of a store you unlocked in the TUI is not used by it, since a tile on a timer that used it would keep that unlock from ever lapsing; the tile looks at the session instead and says `unlocked in this session`, as the header's `store unlocked` badge does, and `enter` on it is the use, which the page that follows answers with the counts. With nothing unlocked the tile says what it needs, and that `enter` opens the page and `e` there the unlock form, because the tile has no passphrase box of its own. `s` lists the secrets from the tile and `a` adds one.
 
 `kv status` answers "where is the store and what can open it" **without unlocking it**, which makes it safe to run anywhere — including in a script that is checking whether a machine is set up.
 
@@ -120,6 +128,8 @@ rta grant allow kv.get db-password --agent claude --ttl 15m --max-uses 1
 ```
 
 Without a grant naming it, an agent's `kv.get` is refused and the refusal is written down.
+
+What needs no grant is the shape of the store. `kv.list`, `kv.tree` and `kv.overview` answer an agent with names, kinds, sizes and counts — never a value or a piece of one — whenever the environment its server was started in can open the store. That is the line `kv.list` has always drawn, and `kv.overview` stays on it: it adds how many keys and folders there are, how old the values are, and how many removed keys and earlier values the store keeps, and no more than the listing already tells.
 
 **Reach for `--max-uses 1` here more than anywhere else.** A secret an agent needs once is the clearest case in the whole model: one key, one read, then the grant is gone whether or not you remember it.
 

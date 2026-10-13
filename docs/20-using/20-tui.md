@@ -20,7 +20,7 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 
 ```
  rta  dashboard  ↓ more
- ❯ 20 plugins · 128 capabilities — type to search
+ ❯ 20 plugins · 129 capabilities — type to search
 ╭─ sys.overview ──────────────────────╮ ╭─ agent.overview ─────────────────────╮
 │ host  laptop.home · darwin 26.5.2   │ │ waiting on you          0            │
 │       (arm64) · up 4d 19h 5m        │ │ connected now                        │
