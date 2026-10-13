@@ -19,6 +19,7 @@ import (
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	profiles "github.com/this-is-tobi/rta/internal/profile"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -892,6 +893,68 @@ func inactiveProfileNote(g core.Grant) string {
 	return ""
 }
 
+// registryView is the registry as profile.Lookup reads it, rebuilt from the
+// two accessors this plugin is handed: the catalogue, and the artifact behind
+// a namespace. Lookup asks a registry two things — what a plugin declares, and
+// whether it is external and which build — and those are exactly the two.
+// Origin.Path is only ever asked whether it is set, which is what a digest
+// stands for here: Registry.Artifact answers a digest for an external plugin
+// and nothing for a built-in, so the two cannot disagree.
+type registryView struct {
+	catalog  func() []plugin.Capability
+	artifact func(string) (string, bool)
+}
+
+func (r registryView) Capabilities() []plugin.Capability { return r.catalog() }
+
+func (r registryView) Origin(namespace string) (registry.Origin, bool) {
+	digest, known := r.artifact(namespace)
+	if !known || digest == "" {
+		return registry.Origin{}, known
+	}
+	return registry.Origin{Path: "external", Digest: digest}, true
+}
+
+// unusableProfileNote warns when a grant names a connection every call through
+// is refused for. The profile exists, so the grant is issued and listed like a
+// working one, and each call the agent then makes is refused under the
+// sentence an ungranted call is told — which tells the operator to issue the
+// grant again. That sentence is the same for every way a profile can be
+// unusable on purpose, so the names of the operator's connections cannot be
+// read off it; the reason is told here instead, to the person who issued the
+// grant, who is the one who can fix it.
+//
+// Asked of the check the MCP gate runs (profile.Lookup), against one
+// capability the grant reaches: what `profile list` calls invalid is what that
+// refuses, and a note that disagreed with the gate would be a second opinion
+// about a call.
+func unusableProfileNote(catalog func() []plugin.Capability, artifact func(string) (string, bool), g core.Grant) string {
+	if g.Profile == "" {
+		return ""
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return ""
+	}
+	ns := core.Namespace(g.Target)
+	for _, c := range catalog() {
+		if core.Namespace(c.ID) != ns || c.HumanOnly || !plugin.Profilable(c) || (g.Target != ns && g.Target != c.ID) {
+			continue
+		}
+		_, verr := profiles.Lookup(cfg, c, g.Profile, registryView{catalog, artifact})
+		if verr == nil {
+			return ""
+		}
+		note := fmt.Sprintf("note: profile %s cannot be used, so every call through this grant is refused until it is fixed — %s",
+			g.Profile, verr.Message)
+		if verr.Hint != "" {
+			note += " (" + verr.Hint + ")"
+		}
+		return note
+	}
+	return ""
+}
+
 // PrepareRemote is the server half of remote issuance, wired into the serve
 // command by the app layer (the kv.Reveal pattern: "this server prepares
 // grants" is a line somebody typed, never a transitive import). label is
@@ -916,6 +979,9 @@ func PrepareRemote(catalog func() []plugin.Capability,
 			p.Notes = append(p.Notes, n)
 		}
 		if n := inactiveProfileNote(g); n != "" {
+			p.Notes = append(p.Notes, n)
+		}
+		if n := unusableProfileNote(catalog, artifact, g); n != "" {
 			p.Notes = append(p.Notes, n)
 		}
 		if n := profilelessNote(catalog, g); n != "" {
