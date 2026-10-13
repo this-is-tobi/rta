@@ -70,11 +70,12 @@ func (m *Model) hideSelected() string {
 		m.dash.Tiles = dropTile(m.dash.Tiles, gone.key())
 		note = fmt.Sprintf("removed %s from the stated dashboard", gone.key())
 	case gone.source == tileAdded:
+		way := addedEntry(m.dash.Add, gone).AddCommand(m.view)
 		m.dash.Add = dropTile(m.dash.Add, gone.key())
 		// Say how it comes back, as the exact command: an undo that is
 		// "find the config file" is one people are right to be nervous
 		// about pressing toward.
-		note = fmt.Sprintf("removed %s — `%s` puts it back", gone.key(), addCommand(gone))
+		note = fmt.Sprintf("removed %s — `%s` puts it back", gone.key(), way)
 		// An entry that stood in the automatic tile's place: with the
 		// entry gone that tile is back on the next build, and H meant off
 		// the screen, so the tile is hidden as well — p shows it the way
@@ -84,7 +85,7 @@ func (m *Model) hideSelected() string {
 				m.dash.Hidden = append(m.dash.Hidden, gone.cap.ID)
 			}
 			note = fmt.Sprintf("removed %s and hid the automatic tile it stood for — `%s` puts it back as it was, p the plain one",
-				gone.key(), addCommand(gone))
+				gone.key(), way)
 		}
 	default:
 		m.dash.Hidden = append(m.dash.Hidden, gone.cap.ID)
@@ -116,11 +117,21 @@ func (t tile) withdraws() bool {
 	return !t.expanded && (t.source == tileStated || t.source == tileAdded)
 }
 
-// addCommand is the `rta dashboard add` line that would write this tile's
-// entry again.
-func addCommand(t tile) string {
-	entry := config.Tile{ID: t.cap.ID, Profile: t.profile, Span: t.span, With: t.values}
-	return "rta dashboard add " + entry.AddArgs()
+// addedEntry is the `add:` entry the added tile t was built from, as the file
+// states it: the last one of its key when several share it, which is the one on
+// screen (joinTiles) and the one `rta dashboard rm` reports. The way back is
+// spelled from that entry and not from the tile, which holds what the layout
+// needs of it — a section, for one, that an expanded panel is given by rule and
+// the entry never stated — so a field the entry has is in the way back without
+// this function knowing it, which is what the CLI's receipt does with the same
+// entry.
+func addedEntry(entries []config.Tile, t tile) config.Tile {
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].Key() == t.key() {
+			return entries[i]
+		}
+	}
+	return config.Tile{ID: t.cap.ID, Profile: t.profile}
 }
 
 // standsForAutomatic reports whether an added tile took an automatic
