@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -146,6 +147,38 @@ func TestAWriteToAProfilesOwnScreenGoesToTheProfileAndNeverToViews(t *testing.T)
 	}
 	if again.Dashboard.Views["staging"].Add != nil || len(again.Dashboard.Views) != 1 {
 		t.Errorf("a view called staging appeared under views: %+v", again.Dashboard.Views)
+	}
+}
+
+// A configuration that is nothing but drop-ins stays that: a write into one of
+// them is not a reason to make the config file beside them, with its header, an
+// empty mapping and the schema file its header names.
+func TestAWriteIntoADropInDoesNotMakeTheConfigFile(t *testing.T) {
+	dir := layout(t, map[string]string{"config.d/20-staging.yaml": stagingDropIn})
+	err := Mutate(func(c Config) (Config, bool) {
+		block, _ := c.Block("staging")
+		block.Columns = 2
+		c.SetBlock("staging", block)
+		return c, true
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"config.yaml", SchemaFile} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			t.Errorf("%s was made by a write into a drop-in", name)
+		}
+	}
+	if got := read(t, filepath.Join(dir, "config.d", "20-staging.yaml")); !strings.Contains(got, "columns: 2") {
+		t.Errorf("the drop-in was not written:\n%s", got)
+	}
+	// A unit nothing states yet still goes to the config file, which this makes.
+	err = Mutate(func(c Config) (Config, bool) { c.Output = "json"; return c, true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, filepath.Join(dir, "config.yaml")); !strings.Contains(got, "output: json") {
+		t.Errorf("the config file after a write that has a unit for it:\n%s", got)
 	}
 }
 

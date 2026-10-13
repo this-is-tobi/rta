@@ -312,6 +312,14 @@ func (s *stack) writeBack(next Config) error {
 	// command reads first is the one that did not change.
 	for i := len(parts) - 1; i >= 0; i-- {
 		l := s.layers[i]
+		// A file that is not there and has nothing to state stays not there.
+		// The config file is the one it happens to: a person whose whole
+		// configuration is drop-ins writes into one of them, and rendering the
+		// empty remainder of the file beside it made it — a header, an empty
+		// mapping and its schema — as the side effect of changing a tile.
+		if !l.exists && len(unitsOf(parts[i])) == 0 {
+			continue
+		}
 		data, err := render(l.text, parts[i])
 		if err != nil {
 			return writeErr(l.path, err)
