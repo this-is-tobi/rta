@@ -81,6 +81,12 @@ rta profile rm  <name> [--plugin <name>]
 dropped  set.database, set.sslmode — the flags state the whole block, and these were not among them
 ```
 
+A fence that a restatement leaves out is not a default that went, and is not reported as one. Restating `--only database=app` over an entry that also fenced `schema` and `port` takes those two fences off, which is said as `--unfence` says it, one row for both:
+
+```
+unfenced  only.port, only.schema — calls through this connection are no longer held to those lists
+```
+
 One plugin per invocation. A profile spanning three plugins is three lines, and each of them is independently re-runnable — including in parallel: every writer of the config file takes a lock across the whole read-modify-write, so concurrent runs cannot lose each other's profiles.
 
 `rta profile rm <name>` removes the environment, switches it off if it was on, and **revokes every grant naming it**. That last part is not tidiness: a grant naming a profile nothing can look up authorizes nothing, so leaving it behind is a row in `rta grant list` that reads like access and is not. `--plugin` removes one entry and keeps the environment.
