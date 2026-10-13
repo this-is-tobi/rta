@@ -76,6 +76,12 @@ var findable = []struct {
 	{"read a secret from the store", []string{"kv_get"}},
 	{"save a password safely", []string{"kv_set"}},
 	{"who can decrypt the secret store", []string{"kv_recipients"}},
+	{"how many secrets are stored", []string{"kv_overview"}},
+	{"how many secrets do i have stored", []string{"kv_overview"}},
+	{"how many stored secrets are there", []string{"kv_overview"}},
+	{"what is in my secret store", []string{"kv_overview"}},
+	{"is the secret store locked", []string{"kv_overview", "kv_status"}},
+	{"which folders hold my secrets", []string{"kv_overview", "kv_tree"}},
 	{"list my ssh keys", []string{"keys_list"}},
 }
 

@@ -37,6 +37,10 @@ const noFolder = "(no folder)"
 func overviewCapability() plugin.Capability {
 	return plugin.Capability{
 		ID: "kv.overview", Summary: "What the secret store holds, by count and kind, and what can open it",
+		// The words a person says it in rather than the ones it is written in:
+		// "how many secrets are stored" has neither "secrets" nor "stored" in
+		// the summary, whose words are the singular and "holds".
+		Keywords: []string{"secrets", "stored", "inventory", "contents", "counts", "locked"},
 		// HostSpecific as kv.status is, whose lines it carries: where this machine
 		// keeps the store and whether the server's own environment opens it say
 		// something about the server, never about whoever is calling it.
