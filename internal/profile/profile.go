@@ -836,6 +836,14 @@ func Notes(cfg config.Config, inst Installed) []Problem {
 				Reason: "has color " + p.Color + ", which is not a colour",
 				Hint:   "the form is `#rrggbb`, e.g. `#FF6B7A` — the badge is unpainted until it is"})
 		}
+		// A screen written in the entry that cannot be drawn is noted for the
+		// reason a colour is: the connections are fine and the environment runs,
+		// and the `dashboard:` block draws in its place. Refusing to reach an
+		// environment over which of two statements of its screen was meant would
+		// be the same invented outage.
+		if reason, hint := cfg.ShadowedScreen(name); reason != "" {
+			notes = append(notes, Problem{Name: name, Reason: reason, Hint: hint})
+		}
 		for _, key := range p.PluginKeys() {
 			notes = append(notes, noteSet(name, key, p.Plugins[key], config.PluginNamespace(key), inst)...)
 			notes = append(notes, noteInertSet(name, key, p.Plugins[key], config.PluginNamespace(key), inst)...)

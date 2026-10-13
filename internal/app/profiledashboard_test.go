@@ -289,6 +289,93 @@ func TestAWorkingDirectoryFilesProfileScreenIsNeitherDrawnNorWritten(t *testing.
 	}
 }
 
+// What an environment shows is on its card and in the list: the name of the
+// view it selects, or `inline: 1 tile` for the screen written in its entry.
+func TestProfileShowAndListSayWhatScreenAProfileShows(t *testing.T) {
+	run := session(t, setRegistry(t))
+	dropIn(t, "20-staging.yaml", stagingEntry)
+	for _, args := range [][]string{
+		{"dashboard", "add", "db.status", "--view", "ops", "--set", "dbname=ops"},
+		{"profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal", "--dashboard", "ops"},
+	} {
+		if _, errOut, err := run(args...); err != nil {
+			t.Fatalf("%v: %v %q", args, err, errOut)
+		}
+	}
+	show, errOut, err := run("profile", "show", "staging")
+	if err != nil || !strings.Contains(show, "inline: 1 tile") || !strings.Contains(show, "rta dashboard list --view staging") {
+		t.Errorf("the card of an environment with its own screen: %v %q\n%s", err, errOut, show)
+	}
+	if show, _, _ = run("profile", "show", "prod"); !strings.Contains(show, "ops — the view drawn while this is switched on") {
+		t.Errorf("the card of an environment that selects a view:\n%s", show)
+	}
+	list, errOut, err := run("profile", "list", "-o", "csv")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	rows := strings.Split(strings.TrimSpace(list), "\n")
+	if rows[0] != "Profile,Plugins,Status,Screen,Note" {
+		t.Errorf("the list's columns = %q", rows[0])
+	}
+	for _, want := range []string{"prod,db,ok,ops,", "staging,db,ok,inline: 1 tile,shared"} {
+		if !slices.Contains(rows, want) {
+			t.Errorf("the list lacks the row %q:\n%s", want, list)
+		}
+	}
+}
+
+// Taking an environment away takes its screen with it, and says so, since the
+// tiles are not kept anywhere else.
+func TestRemovingAProfileSaysItsOwnScreenWentWithIt(t *testing.T) {
+	run := session(t, setRegistry(t))
+	path := dropIn(t, "20-staging.yaml", stagingEntry)
+	out, errOut, err := run("profile", "rm", "staging", "--dry-run")
+	if err != nil || !strings.Contains(out, "its own screen, 1 tile, would go with it") {
+		t.Fatalf("the preview: %v %q\n%s", err, errOut, out)
+	}
+	if got := fileText(t, path); got != stagingEntry {
+		t.Fatalf("a preview wrote:\n%s", got)
+	}
+	out, errOut, err = run("profile", "rm", "staging", "--yes")
+	if err != nil || !strings.Contains(out, "its own screen, 1 tile, went with it") {
+		t.Fatalf("the removal: %v %q\n%s", err, errOut, out)
+	}
+	if _, still := loadedConfig(t).Profiles["staging"]; still {
+		t.Error("the profile is still there")
+	}
+}
+
+// A view of the same name beside the block is reported where every profile
+// problem is — the list, the card — and the environment is still one that can
+// be switched on: it draws the dashboard: block until the two are one.
+func TestAViewAndABlockOfTheSameNameAreReportedAndNeitherIsDrawn(t *testing.T) {
+	run := session(t, setRegistry(t))
+	if err := os.WriteFile(config.Path(), []byte("dashboard:\n  views:\n    staging:\n      columns: 5\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dropIn(t, "20-staging.yaml", stagingEntry)
+	list, errOut, err := run("profile", "list", "-o", "csv")
+	if err != nil || !strings.Contains(list, "staging,db,warn,inline: 1 tile,") ||
+		!strings.Contains(list, "a view called staging") || !strings.Contains(list, "neither is drawn") {
+		t.Errorf("the list: %v %q\n%s", err, errOut, list)
+	}
+	show, _, _ := run("profile", "show", "staging")
+	if !strings.Contains(show, "warning") || !strings.Contains(show, "keep one") {
+		t.Errorf("the card does not say it:\n%s", show)
+	}
+	if _, errOut, err := run("use", "staging"); err != nil {
+		t.Fatalf("a screen in doubt refused the environment: %v %q", err, errOut)
+	}
+	out, _, err := run("dashboard", "list", "-o", "json")
+	if err != nil || strings.Contains(out, "orders") {
+		t.Errorf("one of the two was drawn: %v\n%s", err, out)
+	}
+	views, _, _ := run("dashboard", "views", "-o", "json")
+	if strings.Contains(views, "(its own)") {
+		t.Errorf("the block is listed as a view that is drawn:\n%s", views)
+	}
+}
+
 // A profile's own screen is drawn while that environment is switched on, and a
 // receipt that told a person to select it with `profile set --dashboard`, which
 // that very profile refuses, would send them to a command that throws it away.

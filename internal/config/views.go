@@ -9,6 +9,7 @@ import (
 	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/ast"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -179,6 +180,20 @@ func (d ProfileDashboard) MarshalYAML() (any, error) {
 func (d ProfileDashboard) MarshalJSON() ([]byte, error) {
 	v, _ := d.MarshalYAML()
 	return json.Marshal(v)
+}
+
+// Describe says what the profile shows, in the words a list or a card prints it
+// in: the name of the view, or `inline: 3 tiles` for a screen written in the
+// entry, and nothing when it states neither. The count is the tiles the screen
+// states and adds, the one `rta dashboard views` gives for the same screen.
+func (d ProfileDashboard) Describe() string {
+	switch {
+	case d.Inline != nil:
+		return "inline: " + format.Count(len(d.Inline.Tiles)+len(d.Inline.Add), "tile", "tiles")
+	case d.Name != "":
+		return d.Name
+	}
+	return ""
 }
 
 // IsZero says the profile states no screen, so that `omitempty` leaves the key

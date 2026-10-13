@@ -680,6 +680,7 @@ func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 		{Name: "Profile"},
 		{Name: "Plugins"},
 		{Name: "Status", Kind: view.KindStatus},
+		{Name: "Screen"},
 		{Name: "Note"},
 	}}
 	for _, name := range cfg.ProfileNames() {
@@ -703,7 +704,7 @@ func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 		} else if name == active {
 			status = "on"
 		}
-		t.Rows = append(t.Rows, []string{name, strings.Join(p.Namespaces(), " "), status, note})
+		t.Rows = append(t.Rows, []string{name, strings.Join(p.Namespaces(), " "), status, p.Dashboard.Describe(), note})
 	}
 	t.Total = len(t.Rows)
 	return t
@@ -727,7 +728,7 @@ func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 // this is where they read what it says.
 func showProfile(cfg config.Config, ref string, reg *registry.Registry) (view.View, *view.Error) {
 	if p, ok := cfg.Profiles[ref]; ok {
-		return profileCard(ref, p, reg), nil
+		return profileCard(ref, p, cfg.Dashboard.Views, reg), nil
 	}
 	name, instance := config.RefName(ref), config.RefInstance(ref)
 	if instance == "" {
@@ -757,13 +758,16 @@ func showProfile(cfg config.Config, ref string, reg *registry.Registry) (view.Vi
 		return nil, view.Errorf("core.profile.instance", "profile %q has no instance called %q", name, instance).
 			WithHint(hint)
 	}
-	card := profileCard(name, only, reg)
+	card := profileCard(name, only, cfg.Dashboard.Views, reg)
 	card.Pairs = slices.Insert(card.Pairs, 1, view.Pair{Key: "instance",
 		Value: instance + " — `rta profile show " + name + "` shows every connection in " + name})
 	return card, nil
 }
 
-func profileCard(name string, p config.Profile, reg *registry.Registry) view.KeyValue {
+// profileCard is the page for one environment. views are the ones the
+// configuration states under `dashboard: views:`, which a profile's own screen
+// has to be read against: whether its name is taken is not in the profile.
+func profileCard(name string, p config.Profile, views map[string]config.View, reg *registry.Registry) view.KeyValue {
 	pairs := []view.Pair{{Key: "profile", Value: name}}
 	if p.Note != "" {
 		pairs = append(pairs, view.Pair{Key: "note", Value: p.Note})
@@ -781,7 +785,11 @@ func profileCard(name string, p config.Profile, reg *registry.Registry) view.Key
 	if p.TTL != "" {
 		pairs = append(pairs, view.Pair{Key: "ttl", Value: p.TTL + " per switch"})
 	}
-	if p.Dashboard.Name != "" {
+	switch {
+	case p.Dashboard.Inline != nil:
+		pairs = append(pairs, view.Pair{Key: "dashboard", Value: p.Dashboard.Describe() +
+			" — its own screen, drawn while this is switched on; `rta dashboard list --view " + name + "` lists it"})
+	case p.Dashboard.Name != "":
 		pairs = append(pairs, view.Pair{Key: "dashboard", Value: p.Dashboard.Name +
 			" — the view drawn while this is switched on; `rta dashboard views` lists them"})
 	}
@@ -841,10 +849,9 @@ func profileCard(name string, p config.Profile, reg *registry.Registry) view.Key
 	// does. The two are one command apart and the second is what a rebuild
 	// produces every time; `rta use` was taught the difference and the page
 	// beside it was not, which is this file's recorded failure mode.
-	pairs = append(pairs, saidOnce("problem", profile.Check(
-		config.Config{Profiles: map[string]config.Profile{name: p}}, withTrust{reg}))...)
-	pairs = append(pairs, saidOnce("warning", profile.Notes(
-		config.Config{Profiles: map[string]config.Profile{name: p}}, withTrust{reg}))...)
+	alone := config.Config{Profiles: map[string]config.Profile{name: p}, Dashboard: config.Dashboard{Views: views}}
+	pairs = append(pairs, saidOnce("problem", profile.Check(alone, withTrust{reg}))...)
+	pairs = append(pairs, saidOnce("warning", profile.Notes(alone, withTrust{reg}))...)
 	return view.KeyValue{Pairs: pairs}
 }
 
