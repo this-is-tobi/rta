@@ -71,6 +71,33 @@ func TestAProfileFillsNoInputAGrantIsCheckedAgainst(t *testing.T) {
 	}
 }
 
+// IsScope says why ProfileFillable refuses an input and decides nothing, so the
+// two cannot be allowed to disagree: an input a call names as its scope is never
+// one a profile fills, whatever else is declared on it, and an input that is not
+// a scope is refused by ProfileFillable for some other reason or not at all.
+func TestAScopeIsNeverProfileFillable(t *testing.T) {
+	c := Capability{ID: "x.rename", Summary: "s", Safety: Write, NeedsGrant: true,
+		Scope: "key", ScopeAlso: []string{"to"},
+		Inputs: []Field{
+			{Name: "key", Type: String, Config: "key"},
+			{Name: "to", Type: String, Config: "to"},
+			{Name: "creds", Type: String, Local: true, EnvFallback: true},
+			{Name: "note", Type: String, Config: "note"},
+		}}
+	for _, f := range c.Inputs {
+		want := f.Name == "key" || f.Name == "to"
+		if got := IsScope(c, f); got != want {
+			t.Errorf("IsScope(%q) = %v, want %v", f.Name, got, want)
+		}
+		if IsScope(c, f) && ProfileFillable(c, f) {
+			t.Errorf("%q is a scope and a profile may fill it", f.Name)
+		}
+	}
+	if IsScope(Capability{ID: "x.y", Summary: "s", Safety: Read}, Field{Name: ""}) {
+		t.Error("a capability with no scope declared one for the input with no name")
+	}
+}
+
 // The plugin part of a capability ID, pinned directly: internal/policy used
 // to derive this by hand rather than calling Namespace, and disagreed with
 // it for a leading-dot ID — its own i > 0 check treated index 0, where the

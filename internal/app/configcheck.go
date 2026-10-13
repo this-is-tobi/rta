@@ -110,6 +110,16 @@ func configProblems(reg *registry.Registry, path string, data []byte) []configPr
 	for _, line := range groupedProblems(profile.Check(cfg, withTrust{reg})) {
 		out = append(out, configProblem{Key: "profiles", Text: line})
 	}
+	// And what a profile does not do as written while it still resolves, which
+	// `rta profile list`, `rta profile show` and `rta doctor` already say: a
+	// `set:` line that every read of its key ignores because each takes the key as
+	// its scope, a number outside what its capabilities take, a colour that is not
+	// one. A line the file states and rta does not apply is what this command
+	// exists to name, and a check that passed a file while those three said
+	// otherwise would be the page and the run disagreeing about one file.
+	for _, line := range groupedProblems(profile.Notes(cfg, withTrust{reg})) {
+		out = append(out, configProblem{Key: "profiles", Text: line})
+	}
 	for _, line := range danglingViews(cfg) {
 		out = append(out, configProblem{Key: "profiles", Text: line})
 	}
@@ -156,7 +166,8 @@ func configCheckCommand(reg *registry.Registry, render renderFn) *cobra.Command 
 		Long: "Holds the file, and each file of its config.d beside it, to everything rta reads it for\n" +
 			"and lists what does not apply: a key\n" +
 			"rta has no use for, with the line it is on and the one it was probably meant to be,\n" +
-			"a value no call would take, a colour that is not one, a section that reaches no plugin.\n" +
+			"a value no call would take, a colour that is not one, a section that reaches no plugin,\n" +
+			"a profile line that the calls it is for never read.\n" +
 			"Exits 1 when it finds anything, so it can gate a dotfiles repository or a CI step.\n" +
 			"`rta doctor` says the same of the config among everything else about this machine.",
 		Args:              cobra.NoArgs,

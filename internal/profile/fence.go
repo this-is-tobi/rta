@@ -45,7 +45,7 @@ func checkOnly(name, key string, conn config.Connection, ns string, inst Install
 		return nil
 	}
 	readers := fillableReaders(ns, inst)
-	declared := declaredKeys(ns, inst)
+	reach := reachOfKeys(ns, inst)
 	keys := make([]string, 0, len(conn.Only))
 	for k := range conn.Only {
 		keys = append(keys, k)
@@ -58,7 +58,7 @@ func checkOnly(name, key string, conn config.Connection, ns string, inst Install
 	}
 	for _, k := range keys {
 		if len(readers[k]) == 0 {
-			problems = append(problems, unreadKey(name, key, k, ns, "only", readers, declared))
+			problems = append(problems, unreadKey(name, key, k, ns, "only", readers, reach))
 			continue
 		}
 		f := pluginconf.SharedField(readers[k])
@@ -360,22 +360,4 @@ func fenceList(allowed []any) string {
 		text = "nothing"
 	}
 	return text
-}
-
-// declaredKeys is every config key the namespace declares on any input, a
-// profile may fill it or not: what separates "nothing reads that" from "that is
-// a key, and a profile may not have it".
-func declaredKeys(ns string, inst Installed) map[string]bool {
-	declared := map[string]bool{}
-	for _, c := range capabilitiesOf(inst) {
-		if plugin.Namespace(c.ID) != ns {
-			continue
-		}
-		for _, f := range c.Inputs {
-			if f.Config != "" {
-				declared[f.Config] = true
-			}
-		}
-	}
-	return declared
 }

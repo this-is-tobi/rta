@@ -24,7 +24,7 @@ rta profile set payments-staging --note "payments, staging" \
     --plugin kube --set context=staging --set namespace=payments
 ```
 
-`kube` shells out to `kubectl`, and kubectl needs your kubeconfig — a location rta denies every plugin until you allow it, [a second decision](../40-plugins/10-plugins.md#when-a-plugin-needs-one-of-those-locations) after installing. The profile names the context and the namespace the next steps work in, so none of them repeats `--context` or `--namespace`; `rta profile show payments-staging` says what it covers.
+`kube` shells out to `kubectl`, and kubectl needs your kubeconfig — a location rta denies every plugin until you allow it, [a second decision](../40-plugins/10-plugins.md#when-a-plugin-needs-one-of-those-locations) after installing. The profile names the context, and the namespace the provisioning steps below work in, so none of them repeats `--context` or `--namespace`. A read takes a namespace as its scope, which a call names and a profile never fills, so `rta kube pod list --profile payments-staging` says `--namespace payments`; `rta profile show payments-staging` says what the profile covers, and which capabilities its `namespace` does not reach.
 
 ## 2. Mint the identity
 
@@ -151,7 +151,7 @@ The agent's tool list carries the `kube` reads and no way to mint an identity, a
 The minted token stops working at its expiry, whatever rta does, so the instance loses its reach on schedule rather than keeping it forever. To keep going, mint another — provisioning refuses a name already in use — swap it into the Secret, then revoke the old one:
 
 ```bash
-rta kube serviceaccount list --profile payments-staging
+rta kube serviceaccount list --profile payments-staging --namespace payments
 rta kube serviceaccount provision agent-payments-2 --profile payments-staging \
     --grant kube.pod.list --grant kube.event.list --grant kube.deployment.list \
     --ttl 24h --out ~/minted/agent-payments-2.kubeconfig

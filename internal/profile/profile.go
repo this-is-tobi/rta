@@ -838,6 +838,7 @@ func Notes(cfg config.Config, inst Installed) []Problem {
 		}
 		for _, key := range p.PluginKeys() {
 			notes = append(notes, noteSet(name, key, p.Plugins[key], config.PluginNamespace(key), inst)...)
+			notes = append(notes, noteInertSet(name, key, p.Plugins[key], config.PluginNamespace(key), inst)...)
 		}
 	}
 	return notes
@@ -878,6 +879,137 @@ func noteSet(name, key string, conn config.Connection, ns string, inst Installed
 					Hint: "write a value " + bounds})
 			}
 		}
+	}
+	return notes
+}
+
+// keyReach is where one config key of a namespace lands, by capability: the ones
+// a profile's value for it is filled into, and the ones that take it as their
+// scope, which a call names and no profile fills (plugin.ProfileFillable). Sorted
+// capability IDs.
+type keyReach struct {
+	fills, scoped []string
+}
+
+// reachOfKeys is every config key the namespace declares on any input, a profile
+// may fill it or not, and where each lands. What separates "nothing reads that"
+// from "that is a key, and a profile may not have it" — and, for the second,
+// from "a profile may have it for some of what reads it, and not for the rest".
+//
+// A key declared only by a Path is in the map and in neither list: it is refused
+// for another reason, and unreadKey words it.
+func reachOfKeys(ns string, inst Installed) map[string]keyReach {
+	out := map[string]keyReach{}
+	for _, c := range capabilitiesOf(inst) {
+		if plugin.Namespace(c.ID) != ns {
+			continue
+		}
+		for _, f := range c.Inputs {
+			if f.Config == "" {
+				continue
+			}
+			r := out[f.Config]
+			switch {
+			case plugin.ProfileFillable(c, f):
+				r.fills = append(r.fills, c.ID)
+			case f.Type != plugin.Path && plugin.IsScope(c, f):
+				r.scoped = append(r.scoped, c.ID)
+			}
+			out[f.Config] = r
+		}
+	}
+	for k, r := range out {
+		sort.Strings(r.fills)
+		sort.Strings(r.scoped)
+		out[k] = r
+	}
+	return out
+}
+
+// maxCapabilitiesNamed is how many capabilities a sentence about a config key
+// names before it counts the rest: kube has seven that take a namespace as their
+// scope, and a note naming them all is the part of the line nobody reads.
+const maxCapabilitiesNamed = 3
+
+// capabilityList names ids, the first few and then how many more.
+func capabilityList(ids []string) string {
+	if len(ids) <= maxCapabilitiesNamed {
+		return strings.Join(ids, ", ")
+	}
+	return strings.Join(ids[:maxCapabilitiesNamed], ", ") + fmt.Sprintf(" and %d more", len(ids)-maxCapabilitiesNamed)
+}
+
+// takesAsScope is "kube.pod.list takes it as its scope, which a call names", in
+// the number the subject is. A grant is checked against the record the call
+// names before the call is resolved, so a call is what names one — never a
+// profile (plugin.ProfileFillable).
+func takesAsScope(ids []string) string {
+	return capabilityList(ids) + " " + scopeClause(len(ids), "takes", "take")
+}
+
+// scopeClause is what follows the capabilities named: "takes it as its scope,
+// which a call names" for one, "take it as their scope, ..." for several.
+func scopeClause(n int, one, many string) string {
+	if n == 1 {
+		return one + " it as its scope, which a call names"
+	}
+	return many + " it as their scope, which a call names"
+}
+
+// ScopeNote says which capabilities of ns take key as their scope, and so are
+// never reached by a profile's value for it, as the clause that follows what the
+// value is: "does not reach cluster.event.list, cluster.pod.list: they take it as
+// their scope, which a call names". "" when none does, which is nearly every key.
+//
+// One sentence for the note on a `set:` line (noteInertSet) and the help under
+// the box that states one (the TUI's connection editor), so the two cannot say
+// different things about the same key.
+func ScopeNote(ns string, inst Installed, key string) string {
+	r := reachOfKeys(ns, inst)[key]
+	if len(r.scoped) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("does not reach %s: %s", capabilityList(r.scoped),
+		scopeClause(len(r.scoped), "it takes", "they take"))
+}
+
+// noteInertSet reports a `set:` line that fills some of the capabilities reading
+// its key and is never read by the rest, because they take the key as their
+// scope.
+//
+// **A line that does nothing is a line somebody believes is in effect**, which
+// is the failure checkSet exists for — and this one passed it, because the key is
+// read by something a profile may fill: kube's namespace is what
+// kube.serviceaccount.provision provisions in, and what kube.pod.list, the other
+// reads and the rest take as their scope. `rta profile set` wrote it without a
+// word, `rta profile show` listed it as the namespace the environment works in,
+// and every call for a pod, a deployment or an event read the context's own.
+// Wrong about the wrong place, and an answer that looks fine.
+//
+// A note and not a problem, because the profile is not wrong: the line is
+// honoured wherever a profile may fill the key, a fence beside it is held to
+// whatever a call resolves to, and an operator's existing file, possibly with
+// this line in it, must go on resolving — a profile marked invalid refuses every
+// call. What is wrong is the reading of it, which is what this corrects.
+//
+// Only a key some capability does fill. A key every reader takes as its scope is
+// the refusal unreadKey words, since there is nothing the line could do.
+func noteInertSet(name, key string, conn config.Connection, ns string, inst Installed) []Problem {
+	reach := reachOfKeys(ns, inst)
+	keys := make([]string, 0, len(conn.Set))
+	for k := range conn.Set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var notes []Problem
+	for _, k := range keys {
+		r := reach[k]
+		if len(r.scoped) == 0 || len(r.fills) == 0 {
+			continue
+		}
+		notes = append(notes, Problem{Name: name, Plugin: key,
+			Reason: fmt.Sprintf("`set: %s` %s", k, ScopeNote(ns, inst, k)),
+			Hint:   fmt.Sprintf("name %s on the call; the line fills only %s", k, capabilityList(r.fills))})
 	}
 	return notes
 }
@@ -1078,7 +1210,7 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 	// one capability offers it — made Lookup refuse the whole profile for
 	// every capability, the one offering it included.
 	readers := fillableReaders(ns, inst)
-	declared := map[string]bool{}
+	reach := reachOfKeys(ns, inst)
 	// Whether this namespace has an EndpointTLS input at all — not which
 	// capability declares it, matching fillable/declared's own namespace-wide
 	// grain, and correct at that grain because a plugin's connFields()
@@ -1094,9 +1226,6 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 			if f.Endpoint == plugin.EndpointTLS {
 				hasTLSField = true
 			}
-			if f.Config != "" {
-				declared[f.Config] = true
-			}
 		}
 	}
 	set := make([]string, 0, len(conn.Set))
@@ -1108,7 +1237,7 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 	var problems []Problem
 	for _, k := range set {
 		if len(readers[k]) == 0 {
-			problems = append(problems, unreadKey(name, key, k, ns, "", readers, declared))
+			problems = append(problems, unreadKey(name, key, k, ns, "", readers, reach))
 			continue
 		}
 		f := pluginconf.SharedField(readers[k])
@@ -1176,7 +1305,7 @@ func checkSet(name, key string, conn config.Connection, ns string, inst Installe
 // `only:` cannot come to disagree about what a key that reads nothing means.
 // block names the one that held it — "" for `set:`, whose wording this is, and
 // "only" for the allowlist, whose reader is told which block to look in.
-func unreadKey(name, key, k, ns, block string, readers map[string][]plugin.Field, declared map[string]bool) Problem {
+func unreadKey(name, key, k, ns, block string, readers map[string][]plugin.Field, reach map[string]keyReach) Problem {
 	reason := fmt.Sprintf("nothing in %s reads %q", ns, k)
 	hint := "`rta explain <capability>` lists the config keys it reads"
 	if guess := near.Word(k, readerKeys(readers)); guess != "" {
@@ -1184,13 +1313,19 @@ func unreadKey(name, key, k, ns, block string, readers map[string][]plugin.Field
 	} else if where := near.Qualified(k, readerKeys(readers)); len(where) > 0 {
 		hint = "it is spelled with the capability that reads it: " + strings.Join(where, " or ")
 	}
-	if declared[k] {
+	if declared, isKey := reach[k]; isKey {
 		// Declared but refused: a Path, or the capability's own Scope.
 		// Worth its own sentence — the operator's key is not a typo,
 		// the rule is deliberate, and "nothing reads it" would send
 		// them looking for a spelling mistake that is not there.
 		reason = fmt.Sprintf("%q is a config key in %s, but a profile may not fill it", k, ns)
 		hint = "a profile chooses where a call goes, never what it reads or where it writes"
+		if len(declared.scoped) > 0 {
+			// The other refusal, and not the Path one: this key is what each
+			// capability that reads it works on, so a sentence about where a
+			// call goes or what it reads says the wrong thing about it.
+			hint = takesAsScope(declared.scoped) + " — a profile never supplies one"
+		}
 	}
 	if block != "" {
 		reason += ", named under `" + block + ":`"

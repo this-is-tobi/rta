@@ -138,7 +138,7 @@ rta config check
 ╰──────┴──────────────┴────────────────────────────────────────────────────────────────────────────╯
 ```
 
-A key rta does not read is ignored, which on its own would make a typo look like a setting that does nothing, so every command at a terminal warns about one and `rta doctor` has a `config` row for each with its line. `rta config check` exits `1` when it finds something and says `has nothing rta ignores` when it does not, so it fits a pre-commit hook. A value `output:` cannot take is the one problem that stops commands: every command that renders fails as `core.output.invalid` and names the file, and `rta doctor`, `rta config` and `rta config set output pretty` still run so you can fix it.
+A key rta does not read is ignored, which on its own would make a typo look like a setting that does nothing, so every command at a terminal warns about one and `rta doctor` has a `config` row for each with its line. `rta config check` exits `1` when it finds something and says `has nothing rta ignores` when it does not, so it fits a pre-commit hook. It names what a profile states and its calls never read as well — a `set:` line for a key every read takes as its scope, which a call names ([a call names its scope](./40-profiles.md#defining-one)). A value `output:` cannot take is the one problem that stops commands: every command that renders fails as `core.output.invalid` and names the file, and `rta doctor`, `rta config` and `rta config set output pretty` still run so you can fix it.
 
 ## Split it across files
 
