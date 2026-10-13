@@ -128,6 +128,46 @@ func TestPluginDocCarriesNothingMachineSpecific(t *testing.T) {
 	}
 }
 
+// A key several capabilities read is one row per wording, and each row says
+// which capabilities it is true of. The table described a shared key with the
+// first capability's help, so a key that lists everything when it is left out
+// in one capability and names the thing to act on in another read as the first
+// for both.
+func TestPluginDocDescribesASharedKeyForEachWordingOfIt(t *testing.T) {
+	p := docFixture()
+	p.Capabilities = append(p.Capabilities, plugin.Capability{
+		ID: "shelf.dust", Summary: "Dust a shelf", Safety: plugin.Write,
+		Inputs: []plugin.Field{
+			{Name: "room", Type: plugin.String, Config: "room", Required: true, Help: "the room to dust"},
+		},
+		Run: noopHandler,
+	})
+	cfg := docSection(t, docPage(t, p), "Configuration").(view.Sections)
+	keys := cfg.Items[1].View.(view.Table)
+
+	var rows [][]string
+	for _, row := range keys.Rows {
+		if row[0] == "room" {
+			rows = append(rows, row)
+		}
+	}
+	want := [][]string{
+		{"room", "shelf.burn, shelf.list", "which room's shelf"},
+		{"room", "shelf.dust", "the room to dust"},
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("the room key is %d rows, want one for each wording: %v", len(rows), rows)
+	}
+	for i := range want {
+		if strings.Join(rows[i], "|") != strings.Join(want[i], "|") {
+			t.Errorf("row %d = %v, want %v", i, rows[i], want[i])
+		}
+	}
+	if keys.Total != len(keys.Rows) {
+		t.Errorf("total = %d for %d rows", keys.Total, len(keys.Rows))
+	}
+}
+
 func TestPluginDocOmitsConfigurationWhenNothingIsConfigurable(t *testing.T) {
 	p := docFixture()
 	for i := range p.Capabilities {
