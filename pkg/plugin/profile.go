@@ -52,6 +52,19 @@ func ProfileFillable(c Capability, f Field) bool {
 	return f.Config != "" || (f.Local && f.EnvFallback)
 }
 
+// IsScope reports whether f is the input c declares as its Scope, or one
+// ScopeAlso names: the record a grant is checked against, which a call names and
+// no profile fills (ProfileFillable's second security clause, said on its own).
+//
+// Exported for what has to *say why* a profile's value does not reach an input —
+// a note on a `set:` line every read of a namespace ignores, a refusal that tells
+// a person the connection states a value and the call still has to name it — and
+// not to decide anything: what a profile may fill is ProfileFillable's alone, and
+// TestAScopeIsNeverProfileFillable holds the two together.
+func IsScope(c Capability, f Field) bool {
+	return c.Scope != "" && (f.Name == c.Scope || slices.Contains(c.ScopeAlso, f.Name))
+}
+
 // Tunnellable reports whether any capability among caps declares an input a
 // profile's forward could fill — the condition under which a `kube:` or an
 // `ssh:` coordinate on a connection means anything at all.

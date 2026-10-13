@@ -377,6 +377,14 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 			if tunnelled && (f.Endpoint != plugin.EndpointNone || f.TLSAdjacent) {
 				continue
 			}
+			// Said under the box when a value stated here does not reach every
+			// capability that reads the key: a namespace is what kube's reads
+			// take as their scope, which a call names, so the line is honoured
+			// by the one capability that provisions in it and by none of the
+			// rest — and the box beside it looks like any other.
+			if note := profile.ScopeNote(config.PluginNamespace(chosen), m.installed(), f.Name); note != "" {
+				f.Help = strings.TrimSpace(f.Help + " — a value stated here " + note)
+			}
 			// Prefixed so a plugin's own key can never collide with the
 			// field above: a plugin declaring a config key called "plugin"
 			// would otherwise silently become the entry's key.

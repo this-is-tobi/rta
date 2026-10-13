@@ -72,6 +72,8 @@ profiles:
 | `plugins.<name>.ssh` | Reach it through an SSH jump host |
 | `plugins.<name>.secrets-from` | Which cluster and namespace a `kube:` secret is read from, when the connection opens no forward |
 
+**A call names its scope; a profile does not.** An input a capability declares as the record it works on — `kv.get`'s key, a bucket, a namespace — is the one a grant is checked against, before anything is resolved, so it is named by the call and never filled from a profile. `set:` is a default for every other input and nothing for that one. kube's `namespace` is where this shows: `kube.pod.list`, `kube.deployment.list`, `kube.event.list`, `kube.quota.list`, `kube.pvc.list`, `kube.cert.list`, `kube.metrics.pod` and `kube.serviceaccount.list` take it as their scope, so `--set namespace=payments` is not what they read, and `rta kube pod list --profile payments-staging` reads the context's own namespace unless the call says `--namespace payments`. `kube.serviceaccount.provision` and `kube.serviceaccount.revoke` work in a namespace rather than on a record in it, and those two do read the profile's. The line is not refused, since the two read it; `rta profile set`, `rta profile show`, `rta profile list`, `rta doctor` and `rta config check` each say which capabilities it does not reach, and the connection editor says it under the box.
+
 ## `secrets:` holds a reference, never a value
 
 ```yaml
