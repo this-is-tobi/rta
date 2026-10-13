@@ -507,7 +507,7 @@ func (i issuance) build(sf plugin.Surface, catalog func() []plugin.Capability, a
 		if i.role != nil {
 			g.Role = i.role.Name
 		}
-		for _, s := range []string{cappedNote(n), inactiveProfileNote(g)} {
+		for _, s := range []string{cappedNote(n), inactiveProfileNote(g), unusableProfileNote(catalog, artifact, g)} {
 			if s == "" {
 				continue
 			}

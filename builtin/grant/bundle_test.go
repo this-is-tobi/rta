@@ -457,6 +457,45 @@ func TestAnUnknownConnectionOfAnEnvironmentIsRefusedLikeGrantAllowDoes(t *testin
 	}
 }
 
+// A grant that names a profile `profile list` calls invalid is issued, listed
+// like a working one, and refused on every call — under the sentence an
+// ungranted call is told, which says to issue the grant again. The person who
+// issued it is told why instead, with the fix, whichever way it is issued: a
+// single grant, an environment's bundle, or a draft prepared for an operator.
+// A profile that is usable says nothing.
+func TestAGrantOnAnUnusableProfileSaysWhyEveryCallIsRefused(t *testing.T) {
+	configDir, _ := envSetup(t)
+	writeFile(t, filepath.Join(configDir, "config.yaml"), envConfig+
+		"  stale:\n    plugins:\n      db@000000000000:\n        set: {dsn: main}\n")
+	cannot := "note: profile stale cannot be used, so every call through this grant is refused until it is fixed — " +
+		`"db" is built in and has no artifact to pin (write it as ` + "`db:`)"
+	allow := func(profile string) string {
+		t.Helper()
+		v, err := runAllow(context.Background(), issueReq(map[string]any{
+			"target": "db.query", "profile": profile, "agent": "test", "ttl": "1h"}, false, false), envCatalog, builtIn)
+		if err != nil {
+			t.Fatalf("allow on %s: %v", profile, err)
+		}
+		return v.(view.Text).Body
+	}
+	if body := allow("stale"); !strings.Contains(body, cannot) {
+		t.Errorf("the receipt of a grant on an unusable profile reads %q, want %q", body, cannot)
+	}
+	if body := allow("staging"); strings.Contains(body, "cannot be used") {
+		t.Errorf("a usable profile is warned about: %q", body)
+	}
+
+	prepared, verr := PrepareRemote(envCatalog, builtIn)(operatorid.IssueSpec{
+		Target: "db.query", Profile: "stale", Agent: "test", TTL: "1h"}, "alice")
+	if verr != nil || !slices.Contains(prepared.Notes, cannot) {
+		t.Errorf("the draft for an operator carries %q (%v), want %q", prepared.Notes, verr, cannot)
+	}
+
+	if got := pair(receipt(bundleIssue(t, map[string]any{"profile": "stale", "agent": "test"})), "note"); !strings.Contains(got, cannot) {
+		t.Errorf("the receipt of a bundle on an unusable profile carries %q, want %q", got, cannot)
+	}
+}
+
 // --max-uses and --rate are each row's own: the receipt says so beside the
 // number, and every grant carries it.
 func TestTheBoundsBindEachRowAndTheReceiptSaysSo(t *testing.T) {
