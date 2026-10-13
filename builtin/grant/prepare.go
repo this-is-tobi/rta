@@ -84,9 +84,8 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 		return core.Grant{}, notes, verr
 	}
 	notes = buildNotes{ttl: ttl, asked: asked, byPolicy: byPolicy, capWhere: capWhere}
-	if spec.MaxUses < 0 {
-		return core.Grant{}, notes, view.Errorf("grant.badmaxuses", "%s cannot be negative", sf.InputName("max-uses")).
-			WithHint("0 means unlimited within the TTL, which is also the default")
+	if verr := checkMaxUses(sf, spec.MaxUses); verr != nil {
+		return core.Grant{}, notes, verr
 	}
 	rateMax, rateWindow, verr := parseRate(sf, spec.Rate)
 	if verr != nil {
@@ -154,6 +153,14 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 		RateMax:    rateMax,
 		RateWindow: rateWindow,
 	}, notes, nil
+}
+
+func checkMaxUses(sf plugin.Surface, n int) *view.Error {
+	if n < 0 {
+		return view.Errorf("grant.badmaxuses", "%s cannot be negative", sf.InputName("max-uses")).
+			WithHint("0 means unlimited within the TTL, which is also the default")
+	}
+	return nil
 }
 
 // BoundArtifact is the artifact a grant on target is issued against: the

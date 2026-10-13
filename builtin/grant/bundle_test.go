@@ -405,6 +405,38 @@ func TestAnEnvironmentBundleRefusesWhatItCannotRead(t *testing.T) {
 	}
 }
 
+// What every row is built from — the agent, --max-uses, --rate — is refused
+// as a grant's own are, once, and not against the first row generated: the
+// refusal named `line "kube.cert.list --profile staging"`, which nobody wrote,
+// for a flag the person typed on the command line. A role's agent is the same
+// flag shared by every line.
+func TestARefusedSharedFlagIsNotReportedAgainstARowNobodyWrote(t *testing.T) {
+	configDir, _ := envSetup(t)
+	writeFile(t, filepath.Join(configDir, "config.yaml"), envConfig+"roles:\n  dev:\n    grants: [db.vacuum --profile staging]\n")
+	for name, c := range map[string]struct {
+		values map[string]any
+		code   string
+	}{
+		"a rate with no window":     {map[string]any{"profile": "staging", "agent": "claude", "rate": "5"}, "grant.badrate"},
+		"a negative bound":          {map[string]any{"profile": "staging", "agent": "claude", "max-uses": -1}, "grant.badmaxuses"},
+		"a name that is no name":    {map[string]any{"profile": "staging", "agent": "bad name"}, "grant.agent.charset"},
+		"a role's name that is not": {map[string]any{"role": "dev", "agent": "bad name"}, "grant.agent.charset"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			verr := bundleRefusal(t, issueReq(c.values, false, false))
+			if verr.Code != c.code || strings.Contains(verr.Message, "line \"") || strings.Contains(verr.Message, "environment \"") {
+				t.Errorf("refused as %s: %s, want %s, and no line or environment it was found on", verr.Code, verr.Message, c.code)
+			}
+		})
+	}
+	// A line's own bound is still reported against the line that has it.
+	writeFile(t, filepath.Join(configDir, "config.yaml"), envConfig+"roles:\n  dev:\n    grants: [db.vacuum --profile staging --rate 5]\n")
+	if verr := bundleRefusal(t, issueReq(map[string]any{"role": "dev", "agent": "claude"}, false, false)); verr.Code != "grant.badrate" ||
+		!strings.Contains(verr.Message, `role "dev", line "db.vacuum --profile staging --rate 5"`) {
+		t.Errorf("a role line's own rate = %s: %s, want it reported against the line", verr.Code, verr.Message)
+	}
+}
+
 // A connection the environment does not hold is not "one connection of" it:
 // the wording belongs to a real one, and the hint of the wrong name offered a
 // `grant allow` call that failed in turn. It is refused as `grant allow`

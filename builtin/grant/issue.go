@@ -371,6 +371,9 @@ func planRole(req plugin.Request, named string) (issuance, *view.Error) {
 	if verr != nil {
 		return issuance{}, verr
 	}
+	if verr := core.CheckAgent(agent); verr != nil {
+		return issuance{}, verr
+	}
 	ttl := strings.TrimSpace(req.String("ttl"))
 	if ttl == "" {
 		ttl = strings.TrimSpace(src.Role.TTL)
@@ -429,6 +432,9 @@ func planEnvironment(req plugin.Request, catalog func() []plugin.Capability, env
 			WithHint("4h, 12h — the most a grant can last is 24h")
 	}
 	run := bundleRun{agent: agent, window: window, maxUses: req.Int("max-uses"), rate: strings.TrimSpace(req.String("rate"))}
+	if verr := checkShared(sf, run); verr != nil {
+		return issuance{}, verr
+	}
 	bundle, verr := expandEnvironment(sf, catalog, env, class)
 	if verr != nil {
 		return issuance{}, verr
@@ -437,6 +443,22 @@ func planEnvironment(req plugin.Request, catalog func() []plugin.Capability, env
 		env: &bundle, lines: bundle.lines(req.String("note"), run.rate, run.maxUses),
 		agent: agent, ttl: ttl, window: window, run: run,
 	}, nil
+}
+
+// checkShared holds the inputs every row of a bundle is built from to the
+// rules a grant's own are held to, once, before any row exists. Left to the
+// row, a bad --rate was reported against the first row generated — `line
+// "kube.cert.list --profile staging"`, which nobody wrote — and the person
+// went looking for a line that is not in any role or config.
+func checkShared(sf plugin.Surface, run bundleRun) *view.Error {
+	if verr := core.CheckAgent(run.agent); verr != nil {
+		return verr
+	}
+	if verr := checkMaxUses(sf, run.maxUses); verr != nil {
+		return verr
+	}
+	_, _, verr := parseRate(sf, run.rate)
+	return verr
 }
 
 // where names a line in a refusal: the role and the line, or the environment
