@@ -36,12 +36,21 @@ type fenceFixture struct {
 
 func newFenceFixture(t *testing.T, yaml, dir string) *fenceFixture {
 	t.Helper()
+	return newScopedFenceFixture(t, yaml, dir, "")
+}
+
+// newScopedFenceFixture is the fixture with the capability's Scope set: the
+// input a grant is checked against, which no profile fills. Shaped like kube —
+// a plugin where the namespace is the scope of its reads, and an input a profile
+// may fill for the one capability that provisions in it — because a key that
+// every reader takes as its scope is a profile the loader refuses outright.
+func newScopedFenceFixture(t *testing.T, yaml, dir, scope string) *fenceFixture {
+	t.Helper()
 	var ran int
 	var ns string
 	var all bool
-	reg := registry.New()
-	if err := reg.Register(plugin.Plugin{Name: "app", Summary: "app", Capabilities: []plugin.Capability{{
-		ID: "app.status", Summary: "status", Safety: plugin.Read,
+	caps := []plugin.Capability{{
+		ID: "app.status", Summary: "status", Safety: plugin.Read, Scope: scope,
 		Inputs: []plugin.Field{
 			{Name: "namespace", Type: plugin.String, Config: "namespace"},
 			{Name: "all-namespaces", Type: plugin.Bool, Config: "all-namespaces", Widens: "namespace"},
@@ -51,7 +60,19 @@ func newFenceFixture(t *testing.T, yaml, dir string) *fenceFixture {
 			ns, all = req.String("namespace"), req.Bool("all-namespaces")
 			return view.Text{Body: "ok"}, nil
 		},
-	}}}); err != nil {
+	}}
+	if scope != "" {
+		caps = append(caps, plugin.Capability{
+			ID: "app.provision", Summary: "provision", Safety: plugin.Write, Scope: "name",
+			Inputs: []plugin.Field{
+				{Name: "name", Type: plugin.String, Positional: true, Required: true},
+				{Name: "namespace", Type: plugin.String, Config: "namespace", Local: true},
+			},
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+		})
+	}
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{Name: "app", Summary: "app", Capabilities: caps}); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("RTA_DATA_DIR", dir)
@@ -280,6 +301,48 @@ func TestABlankFencedInputIsToldApartFromOneOutsideTheList(t *testing.T) {
 	}
 	if *f.ran != 0 {
 		t.Fatal("a refused call reached the handler")
+	}
+}
+
+// An input a call names as its scope is never filled from a profile, so a
+// connection that states `set: namespace: staging` and fences it still refuses a
+// call that leaves the namespace out. What the operator is told in the record is
+// what happened — the connection states the value, a call has to name it — and
+// what the agent is told is that the argument is blank, with neither the value
+// the profile states nor the profile's name: the line is the operator's.
+func TestABlankScopeUnderAStatedValueIsExplainedToTheOperatorAndNotToTheAgent(t *testing.T) {
+	f := newScopedFenceFixture(t, fenced, t.TempDir(), "namespace")
+	f.grantFor(t, "staging", 0)
+
+	res := f.call(t, map[string]any{"profile": "staging"})
+	assertCode(t, res, "core.profile.fenced")
+	if *f.ran != 0 {
+		t.Fatal("the call reached the handler with the scope blank")
+	}
+	text := contentText(t, res)
+	if message := messageOf(t, res); !strings.Contains(message, `the "namespace" argument is blank`) {
+		t.Errorf("the agent was not told the argument is blank: %q", message)
+	}
+	for _, leaked := range []string{"staging", "states", "staging-jobs"} {
+		if strings.Contains(text, leaked) {
+			t.Errorf("the refusal tells the agent %q:\n%s", leaked, text)
+		}
+	}
+
+	entries, err := agentlog.Read(1)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("ledger = %v, %v", entries, err)
+	}
+	if note := entries[0].Note; !strings.Contains(note, `profile "staging" states namespace: staging, but a call has to name it`) {
+		t.Errorf("the record does not say what happened: note %q", note)
+	}
+	if strings.Contains(entries[0].Reason, "states namespace") {
+		t.Errorf("the reason column carries what the agent must not see: %q", entries[0].Reason)
+	}
+
+	// Naming one of the values is what the connection asks for.
+	if res := f.call(t, map[string]any{"profile": "staging", "namespace": "staging-jobs"}); res.IsError {
+		t.Errorf("a call that names a value the fence holds was refused: %s", contentText(t, res))
 	}
 }
 

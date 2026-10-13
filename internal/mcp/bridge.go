@@ -594,7 +594,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				Caller: values, Config: opts.pluginConfig(c), ConfigSection: opts.configSection(c),
 			}, os.LookupEnv); breach != nil {
 				release()
-				return errResult(fencedRefusal(rec, c, profileName, breach)), nil
+				return errResult(fencedRefusal(rec, c, profileName, conn, breach)), nil
 			}
 			fence = profile.FenceOf(conn)
 			// After the gate, never before: a secret must not be fetched, and a
@@ -824,8 +824,10 @@ func withheld(e *agentlog.Entry, verr *view.Error) {
 // profile and what it reaches. That is the half of the ledger that lets
 // somebody see an agent probing a boundary — a call that was refused here has
 // spent no grant (the caller released it) and reached nothing.
-func fencedRefusal(rec *agentlog.Entry, c plugin.Capability, ref string, breach *plugin.FenceBreach) *view.Error {
-	person := profile.FenceRefusal(ref, c, breach, plugin.SurfaceCLI)
+func fencedRefusal(rec *agentlog.Entry, c plugin.Capability, ref string, conn config.Connection,
+	breach *plugin.FenceBreach,
+) *view.Error {
+	person := profile.FenceRefusal(ref, conn, c, breach, plugin.SurfaceCLI)
 	input := profile.FenceInput(breach.Input, plugin.SurfaceMCP)
 	hint := "name only what that connection covers, or ask the operator what it covers and for a grant on another one"
 	agent := view.Errorf(person.Code, "%s was not run: %s lies outside what the connection it names reaches", c.ID, input)
