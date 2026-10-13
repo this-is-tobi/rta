@@ -131,8 +131,8 @@ rta config check
 ╭──────┬──────────────┬────────────────────────────────────────────────────────────────────────────╮
 │ LINE │ KEY          │ PROBLEM                                                                    │
 ├──────┼──────────────┼────────────────────────────────────────────────────────────────────────────┤
-│   17 │ theme.primry │ not a color this rta understands (one of: accent, bad, faint, good, ink,   │
-│      │              │ inverse, label, muted, primary, warn)                                      │
+│   17 │ theme.primry │ not a color this rta understands — did you mean `primary`? (one of:        │
+│      │              │ accent, bad, faint, good, ink, inverse, label, muted, primary, warn)       │
 │   18 │ dashbord     │ is not a key rta reads (did you mean "dashboard"?)                         │
 │   20 │ output       │ "jsno" is not an output format (it takes pretty, json, yaml, csv or md)    │
 ╰──────┴──────────────┴────────────────────────────────────────────────────────────────────────────╯

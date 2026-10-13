@@ -2,6 +2,7 @@ package config
 
 import (
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -62,6 +63,17 @@ func TestTheSchemaNamesTheSlotsThePaletteHas(t *testing.T) {
 	}
 	if strings.Contains(description, "rta theme") {
 		t.Errorf("the theme block's description sends the reader to a command that does not exist: %s", description)
+	}
+}
+
+// What a profile's theme block offers is the palette's slots less the status
+// colours, which the palette will not take from an environment: the schema
+// states the five on its own, and this holds them to the palette's answer.
+func TestTheSchemaOffersAProfileExactlyWhatThePaletteTakesFromOne(t *testing.T) {
+	for _, slot := range themeKeys {
+		if got, want := !slices.Contains(statusThemeKeys, slot), !theme.IsStatus(slot); got != want {
+			t.Errorf("%s: the schema offers it to a profile = %v, the palette takes it from one = %v", slot, got, want)
+		}
 	}
 }
 
