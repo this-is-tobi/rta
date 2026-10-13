@@ -107,24 +107,51 @@ func SetOutsideFence(conn config.Connection, ns string, inst Installed) []string
 	readers := fillableReaders(ns, inst)
 	var outside []string
 	for k, stated := range conn.Set {
-		list, fenced := conn.Only[k]
-		if !fenced || len(readers[k]) == 0 {
-			continue
-		}
-		f := pluginconf.SharedField(readers[k])
-		if problem, _ := plugin.FenceProblem(f, list); problem != "" {
-			continue
-		}
-		if problem, _ := plugin.StatedTypeProblem(f, stated); problem != "" {
-			continue
-		}
-		allowed, _ := plugin.FenceList(list)
-		if !plugin.FenceAllows(f, allowed, stated) {
+		if _, out := outsideItsOwnList(conn, readers, k, stated); out {
 			outside = append(outside, k)
 		}
 	}
 	sort.Strings(outside)
 	return outside
+}
+
+// SetFenceReason says why stated is not a value the entry's own `only:` list
+// allows for key, as the clause that follows the key — "must be one of app,
+// app-jobs" — or "" when it is allowed, or is not something this can judge.
+//
+// For the form that edits `set:` and not `only:`, which asks it of a box as the
+// person leaves it, so the refusal lands on the box that holds the value like
+// every other rule a box is held to, and not on the whole form after it has been
+// submitted. The values are the person's own configuration, read by the person
+// who wrote them, and they come first because the footer that carries the
+// sentence is cut at the edge of a terminal: what cannot be cut is the answer.
+// The same judgement SetOutsideFence makes, from the same function.
+func SetFenceReason(conn config.Connection, ns string, inst Installed, key string, stated any) string {
+	allowed, out := outsideItsOwnList(conn, fillableReaders(ns, inst), key, stated)
+	if !out {
+		return ""
+	}
+	return "must be one of " + fenceList(allowed)
+}
+
+// outsideItsOwnList is the one question SetOutsideFence and SetFenceReason ask:
+// whether the entry fences key and states a value for it that the list does not
+// hold, and what the list holds.
+func outsideItsOwnList(conn config.Connection, readers map[string][]plugin.Field, key string, stated any,
+) (allowed []any, outside bool) {
+	list, fenced := conn.Only[key]
+	if !fenced || len(readers[key]) == 0 {
+		return nil, false
+	}
+	f := pluginconf.SharedField(readers[key])
+	if problem, _ := plugin.FenceProblem(f, list); problem != "" {
+		return nil, false
+	}
+	if problem, _ := plugin.StatedTypeProblem(f, stated); problem != "" {
+		return nil, false
+	}
+	allowed, _ = plugin.FenceList(list)
+	return allowed, !plugin.FenceAllows(f, allowed, stated)
 }
 
 // fencedSecretMappings reports a `secrets:` reference aimed at an input the

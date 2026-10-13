@@ -1299,6 +1299,27 @@ func advanceFormBySyntheticEnter(f *huh.Form) *huh.Form {
 	return f
 }
 
+// focusField puts the cursor on the named field of a form that has just been
+// built, by moving it there a field at a time as the person would — each move
+// is the form's own, so what a field does as the cursor leaves it still happens.
+//
+// For a form rebuilt to say a save was refused, which opens on its first field:
+// of a form ninety lines long, the one the refusal is about may be out of sight,
+// and every other refused box already keeps the cursor. Fields are widgets in
+// the order they were given, and a heading a form draws between them skips
+// itself, so the nth field is n moves from the first.
+func (cf *capForm) focusField(name string) {
+	for i, f := range cf.fields {
+		if f.Name != name {
+			continue
+		}
+		for range i {
+			cf.form = settleForm(cf.form, huh.NextField())
+		}
+		return
+	}
+}
+
 // refocusLeftBehindError takes the cursor back to a field that was left with an
 // error, before a fast submit advances from where it stands. Tab moves on
 // whatever the field holds: `Bad Name` in a profile's name box, then the note,

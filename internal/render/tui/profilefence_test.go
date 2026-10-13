@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	huh "charm.land/huh/v2"
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/this-is-tobi/rta/internal/config"
 )
 
@@ -47,8 +50,87 @@ func TestEditingAConnectionKeepsItsFence(t *testing.T) {
 }
 
 // A default the fence refuses on every call is refused where the person is
-// looking at the box, naming the way to change the list — the form has none —
-// and nothing is written.
+// looking at the box: said beside it as the box is left, with the values the
+// list holds first, because the footer that carries it is cut at the edge of a
+// terminal and the list is the answer. The form edits `set:` and not `only:`, so
+// the way to change the list comes after, and nothing is written.
+func TestAValueTypedOutsideTheFenceIsRefusedAtItsBox(t *testing.T) {
+	noHistory(t)
+	m := profileModel(t, fencedStaging())
+	m.profileOpen = "staging"
+	next, _ := m.startConnForm("db")
+	nm := next.(Model)
+	nm.form.form = startedForm(nm.form)
+	nm = focusBox(t, nm, profileSetPrefix+"schema")
+	nm = typeKeys(t, nm, "prod")
+
+	// The save key, which submits what is in the boxes the way enter on each would.
+	next, _ = nm.fastSubmitForm()
+	nm = next.(Model)
+
+	if nm.form == nil || nm.mode != modeForm {
+		t.Fatalf("a value outside the fence closed the form: mode %v", nm.mode)
+	}
+	box := nm.form.form.GetFocusedField()
+	if box != huh.Field(nm.form.inputs[profileSetPrefix+"schema"]) {
+		t.Fatalf("the cursor is not on the box that holds the value outside the fence")
+	}
+	if err := box.Error(); err == nil || err.Error() != "must be one of app, app-jobs" {
+		t.Errorf("the box says %v, want what the list holds", err)
+	}
+	// In the footer, and in the part of it that survives a narrow terminal.
+	nm.width = 60
+	footer := ansi.Strip(nm.footerFor(modeForm))
+	if !strings.Contains(footer, "must be one of app, app-jobs") {
+		t.Errorf("the footer at 60 columns = %q, want the allowed values", footer)
+	}
+	onDisk, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, written := onDisk.Profiles["staging"].Plugins["db"].Set["schema"]; written {
+		t.Error("a refused save wrote the value anyway")
+	}
+}
+
+// A box that only displays a default the file never stated is not a statement:
+// nothing is written for it, so a default the fence would refuse is not refused
+// — the plugin's own `localhost` under a list of the hosts the connection
+// reaches is what every untouched form shows.
+func TestADisplayedDefaultOutsideTheFenceIsNotRefused(t *testing.T) {
+	noHistory(t)
+	m := profileModel(t, config.Config{Profiles: map[string]config.Profile{
+		"staging": {Plugins: map[string]config.Connection{"db": {
+			Only: map[string]any{"host": []any{"staging.internal"}},
+		}}},
+	}})
+	m.profileOpen = "staging"
+	next, _ := m.startConnForm("db")
+	nm := next.(Model)
+	nm.form.form = startedForm(nm.form)
+	if got := *nm.form.bindings[profileSetPrefix+"host"]; got != "localhost" {
+		t.Fatalf("the host box shows %q, want the plugin's own default", got)
+	}
+
+	next, _ = nm.fastSubmitForm()
+	nm = next.(Model)
+	if nm.form != nil {
+		t.Fatalf("an untouched form was refused: %v", nm.form.form.Errors())
+	}
+	onDisk, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set := onDisk.Profiles["staging"].Plugins["db"].Set; len(set) != 0 {
+		t.Errorf("an untouched save wrote %v", set)
+	}
+}
+
+// The save is the last line of defence for the boxes that hold no typed text — a
+// picker and a toggle — and a value that reached it from somewhere else: it
+// refuses the same way, with the values first, and puts the cursor on the box,
+// where the form it rebuilds would otherwise open on the first of ninety lines
+// with the box it is about out of sight.
 func TestTheConnectionFormRefusesADefaultOutsideTheFence(t *testing.T) {
 	noHistory(t)
 	m := profileModel(t, fencedStaging())
@@ -59,12 +141,15 @@ func TestTheConnectionFormRefusesADefaultOutsideTheFence(t *testing.T) {
 	after, _ := nm.saveConnForm()
 	nm = after.(Model)
 
-	if !strings.Contains(nm.flash, "set.schema is outside the `only:` list") ||
+	if !strings.HasPrefix(nm.flash, "set.schema must be one of app, app-jobs") ||
 		!strings.Contains(nm.flash, "rta profile set staging --plugin db --only schema=") {
-		t.Errorf("flash = %q, want the refusal and the command that changes the list", nm.flash)
+		t.Errorf("flash = %q, want the refusal with the values first, and the command that changes the list", nm.flash)
 	}
 	if strings.Contains(nm.flash, "prod") {
 		t.Errorf("the refusal repeats the value: %q", nm.flash)
+	}
+	if nm.form == nil || nm.form.form.GetFocusedField() != huh.Field(nm.form.inputs[profileSetPrefix+"schema"]) {
+		t.Error("the rebuilt form does not put the cursor on the box that was refused")
 	}
 	onDisk, err := config.LoadFile()
 	if err != nil {

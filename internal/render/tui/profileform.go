@@ -454,6 +454,12 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 			}
 		}
 	}
+	// The fence is the entry's own, and an entry re-aimed at another plugin
+	// drops it at save (saveConnForm): a list written for the plugin it left is
+	// not one to hold a box of the new one to.
+	if known && config.PluginNamespace(chosen) == config.PluginNamespace(key) {
+		m.form.holdToFence(fields, conn, config.PluginNamespace(chosen), m.installed())
+	}
 	m.form.profileTarget = key
 	m.form.connEditing = true
 	m.form.builtOn = chosen
@@ -461,6 +467,47 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 	m.fitForm()
 	m.mode = modeForm
 	return m, m.form.form.Init()
+}
+
+// holdToFence holds each `set.` box that takes typed text to the entry's own
+// `only:` list for its key, as the person leaves it.
+//
+// **A value the list refuses is refused at the box, like a port that is not a
+// number.** It was refused by the save, after the whole form was submitted: the
+// form it came back to opened on its first field, ninety lines above the box it
+// was about, with a footer that was cut at the width of the terminal before it
+// reached the values. At the box the cursor stays where the person is, and the
+// footer reads "must be one of app, app-jobs" beside the key just pressed
+// (profile.SetFenceReason, which the save asks as well — one rule).
+//
+// Only boxes that hold typed text. A picker is chosen from and a toggle is
+// flipped, and neither runs a validator here; the save still refuses what they
+// hold, and puts the cursor back on them (saveConnForm).
+//
+// And not a box that only displays a default the file never stated: nothing is
+// written for it (displayed), so there is nothing for the list to refuse, and
+// the plugin's own `localhost` under a list of the hosts a connection reaches is
+// what every untouched form shows.
+func (cf *capForm) holdToFence(fields []plugin.Field, conn config.Connection, ns string, inst profile.Installed) {
+	for _, f := range fields {
+		key, isSet := strings.CutPrefix(f.Name, profileSetPrefix)
+		if _, fenced := conn.Only[key]; !isSet || !fenced || len(f.Options) > 0 || f.Type == plugin.Bool {
+			continue
+		}
+		if cf.checks == nil {
+			cf.checks = map[string]func(string) error{}
+		}
+		cf.checks[f.Name] = func(typed string) error {
+			stated := typedValue(f, typed)
+			if cf.derived[f.Name] && cf.displayed(f, stated) {
+				return nil
+			}
+			if why := profile.SetFenceReason(conn, ns, inst, key, stated); why != "" {
+				return errors.New(why)
+			}
+			return nil
+		}
+	}
 }
 
 // declarationOf is the installed plugin a profile key names, and whether it
@@ -555,8 +602,11 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 	var (
 		gone    bool
 		refusal string
-		freed   []string
-		unread  []string
+		// refusedAt is the form field a refusal is about, when it is about one:
+		// the rebuilt form puts the cursor there.
+		refusedAt string
+		freed     []string
+		unread    []string
 	)
 	// The whole load-mutate-write under one lock, like every other writer of
 	// this file: the gap between reading it and writing it back is where a
@@ -753,12 +803,20 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 		// rather than saved and refused by every run — and said with the way
 		// out, since a form has no box for the list. Only for a plugin it could
 		// read: an unknown one offered no `set.` boxes and wrote nothing new.
+		//
+		// The typed boxes are refused where the person is, before the form is
+		// submitted (holdToFence); this is what a picker and a toggle reach, and
+		// it says the same thing — the values first, since the flash is cut at the
+		// edge of the terminal and what the list holds is the answer — and puts
+		// the cursor back on the box.
 		if known {
-			if outside := profile.SetOutsideFence(conn, config.PluginNamespace(key), m.installed()); len(outside) > 0 {
-				refusal = "set." + outside[0] + " is outside the `only:` list of this entry, which this form " +
-					"does not edit — pick one the list holds, or change the list with " +
-					"`rta profile set " + m.profileOpen + " --plugin " + config.PluginNamespace(key) +
-					" --only " + outside[0] + "=…`"
+			ns := config.PluginNamespace(key)
+			if outside := profile.SetOutsideFence(conn, ns, m.installed()); len(outside) > 0 {
+				why := profile.SetFenceReason(conn, ns, m.installed(), outside[0], conn.Set[outside[0]])
+				refusal = "set." + outside[0] + " " + why + " — this entry's `only:` list, which this form " +
+					"does not edit: `rta profile set " + m.profileOpen + " --plugin " + ns +
+					" --only " + outside[0] + "=…` changes it"
+				refusedAt = profileSetPrefix + outside[0]
 				return cfg, false
 			}
 		}
@@ -786,6 +844,9 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 		rebuilt, cmd := m.connForm(was, key, values)
 		if nm, ok := rebuilt.(Model); ok {
 			nm.refuse(refusal)
+			if refusedAt != "" && nm.form != nil {
+				nm.form.focusField(refusedAt)
+			}
 			return nm, cmd
 		}
 		return rebuilt, cmd
