@@ -242,6 +242,19 @@ func advertisedScreens() map[string]func(*testing.T) (Model, mode) {
 			m, _ := realModel(t, 120, 40)
 			return m, modeDashboard
 		},
+		// A dashboard with sections: the keys that fold are on its bar, and the
+		// selection can be on a tile of one or on a header, which is a different
+		// screen to the keys — enter folds there, and H is not offered.
+		"dashboard with sections": func(t *testing.T) (Model, mode) {
+			m := sectioned(t, grouped(), 120, 40)
+			m.selected = 1
+			return m, modeDashboard
+		},
+		"dashboard on a header": func(t *testing.T) (Model, mode) {
+			m := sectioned(t, grouped(), 120, 40)
+			m.selectStop(stop{header: "databases"})
+			return m, modeDashboard
+		},
 		"plugins": func(t *testing.T) (Model, mode) {
 			m, _ := realModel(t, 120, 40)
 			m.selected = 1
@@ -337,7 +350,14 @@ func TestEveryKeyAScreenAnswersToIsAdvertised(t *testing.T) {
 				fresh, _ := build(t)
 				before := fingerprint(fresh)
 				after, cmd := fresh.Update(keyMsg(key))
-				if fingerprint(after.(Model)) == before && cmd == nil {
+				// A refusal is a key that did nothing and said why — H on a section's
+				// header, where it would take several entries down at once — so it is
+				// not an action that has to be taught in the footer.
+				done := after.(Model)
+				if done.flash != "" && done.flash == done.flashBad {
+					done.flash = ""
+				}
+				if fingerprint(done) == before && cmd == nil {
 					continue
 				}
 				t.Errorf("%s answers to %q but its footer never says so:\n  %s",
@@ -409,10 +429,11 @@ func keyMsg(key string) tea.KeyPressMsg {
 // what each key is allowed to change would be the same drift this test exists
 // to catch, written twice.
 func fingerprint(m Model) string {
-	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d|%q|%v|%v",
+	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d|%q|%v|%v|%q|%v",
 		m.mode, m.selected, m.pluginSel, m.pluginScroll, m.profileSel, m.profileScroll,
 		m.row, m.query, m.searchEditing, m.form != nil, m.themeForm != nil,
-		m.copyPick != nil, len(m.trail), m.flash, m.tickGen, m.armedDelete, m.armed != nil, m.previewing)
+		m.copyPick != nil, len(m.trail), m.flash, m.tickGen, m.armedDelete, m.armed != nil, m.previewing,
+		m.header, m.folds)
 }
 
 // One idea, one word, one notation — everywhere. Three spellings of "the

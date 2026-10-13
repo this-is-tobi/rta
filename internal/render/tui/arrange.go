@@ -43,6 +43,16 @@ func (m Model) visibleEntries() []string {
 // an `add:` entry is the person's own ask, so the honest record of taking
 // it down is the entry being gone.
 func (m *Model) hideSelected() string {
+	// A header is not a tile, and what H would mean on one is not one thing: the
+	// tiles under it came from `tiles:`, from `add:` and from the automatic set,
+	// each taken down in its own way with its own way back, and a section is
+	// five of them at once. One press that wrote all of that to the file would be
+	// the most destructive key on the screen sitting beside the one that folds, so
+	// it says what to press instead.
+	if m.selected < 0 && m.header != "" {
+		m.refuse("a section is folded with z, and H hides one tile at a time — select a tile under " + sectionLabel(m.header))
+		return m.flash
+	}
 	if m.selected < 1 || m.selected >= len(m.tiles) {
 		return ""
 	}
@@ -81,7 +91,9 @@ func (m *Model) hideSelected() string {
 		note = fmt.Sprintf("hid %s — press p to bring it back", gone.cap.ID)
 	}
 	m.tiles = append(m.tiles[:m.selected], m.tiles[m.selected+1:]...)
-	m.selected = min(m.selected, len(m.tiles)-1)
+	// Where the selection goes may be a tile that is folded away, which is not
+	// somewhere it can rest.
+	m.keepSelection()
 	m.clampScroll()
 
 	if err := m.save(); err != nil {
@@ -131,43 +143,75 @@ func (m Model) automaticKey(key string) bool {
 	return false
 }
 
-// moveSelected shifts the selected tile by one position and persists the
-// resulting order. A panel of several that one entry became moves with its
-// siblings, past whatever sits beyond them: the file can place the entry
-// and nothing finer, so a move that split them, or reordered them among
-// themselves, would show an order the next build could not reproduce.
+// moveSelected shifts the selected tile, or the section whose header is
+// selected, by one position and persists the resulting order. A panel of several
+// that one entry became moves with its siblings, past whatever sits beyond them:
+// the file can place the entry and nothing finer, so a move that split them, or
+// reordered them among themselves, would show an order the next build could not
+// reproduce.
+//
+// **A section is one thing to move, and a tile in one moves inside it.** The file
+// places a section where its first tile is, so moving a section is moving
+// entries past it, and a tile that stepped out of its section would be put back
+// by the next build, since the section it names draws all its tiles together. So
+// `[` and `]` on a header move the section past the entry or the section beside
+// it; on a tile of a section that holds other entries they move the tile among
+// them, and at the edge say so instead of doing nothing; and on a tile that is
+// all its section holds, the section is what moves, which is what the same key
+// did for an entry that expanded into several panels before sections were
+// drawn. A tile in no section steps over a whole section as it does over a tile.
+//
+// Putting a tile in another section is not something these keys do: the section
+// is a property of the entry, and an automatic tile has no entry to write it
+// to. `rta dashboard add <capability> --section <name>` states it.
 func (m *Model) moveSelected(delta int) string {
-	if m.selected < 1 || m.selected >= len(m.tiles) {
+	onHeader := m.selected < 0 && m.header != ""
+	sel := m.selected
+	if onHeader {
+		run, ok := m.sectionNamed(m.header)
+		if !ok {
+			return ""
+		}
+		sel = run.lo
+	}
+	if sel < 1 || sel >= len(m.tiles) {
 		return ""
 	}
-	// The two runs to exchange, [a, b) and [b, c): the selected tile's
-	// entry and the entry beside it, each one tile unless it expanded.
-	lo, hi := m.entrySpan(m.selected)
+	// The two runs to exchange, [a, b) and [b, c): the selected thing and the one
+	// beside it, each one tile unless it is an entry that expanded or a section.
+	lo, hi, from, to, inner := m.movingUnit(sel, onHeader)
+	beside := m.unitSpan
+	if inner {
+		beside = m.entrySpan
+	}
 	var a, b, c int
 	if delta < 0 {
-		if lo <= 1 {
-			return ""
+		if lo <= from {
+			return m.atTheEdge(sel, "first", inner)
 		}
-		a, _ = m.entrySpan(lo - 1)
+		a, _ = beside(lo - 1)
 		b, c = lo, hi
 	} else {
-		if hi >= len(m.tiles) {
-			return ""
+		if hi >= to {
+			return m.atTheEdge(sel, "last", inner)
 		}
 		a, b = lo, hi
-		_, c = m.entrySpan(hi)
+		_, c = beside(hi)
 	}
+	next := swapRuns(m.tiles, a, b, c)
 	// A stated list keeps its own order and the added entries follow it
 	// (buildTiles), so a move across that seam would show an order the file
 	// cannot reproduce on the next run. The seam is an end, like the edges.
-	if len(m.dash.Tiles) > 0 && m.tiles[a].source != m.tiles[b].source {
+	if len(m.dash.Tiles) > 0 && !readsBackAsIs(next) {
 		return ""
 	}
-	m.tiles = swapRuns(m.tiles, a, b, c)
-	if delta < 0 {
-		m.selected -= b - a
-	} else {
-		m.selected += c - b
+	m.tiles = next
+	if !onHeader {
+		if delta < 0 {
+			m.selected -= b - a
+		} else {
+			m.selected += c - b
+		}
 	}
 	m.clampScroll()
 
@@ -185,17 +229,87 @@ func (m *Model) moveSelected(delta int) string {
 }
 
 // entrySpan is the run of tiles around i that stand for one entry, as
-// [lo, hi): the tile alone, unless it is one panel of several.
+// [lo, hi): the tile alone, unless it is one panel of several. Two entries
+// that differ only in the section they name are two entries, and so are never
+// one run, although they share a key.
 func (m Model) entrySpan(i int) (lo, hi int) {
-	key := m.tiles[i].entryKey()
+	same := func(j int) bool {
+		return m.tiles[j].entryKey() == m.tiles[i].entryKey() && m.tiles[j].section == m.tiles[i].section
+	}
 	lo, hi = i, i+1
-	for lo > 1 && m.tiles[lo-1].entryKey() == key {
+	for lo > 1 && same(lo-1) {
 		lo--
 	}
-	for hi < len(m.tiles) && m.tiles[hi].entryKey() == key {
+	for hi < len(m.tiles) && same(hi) {
 		hi++
 	}
 	return lo, hi
+}
+
+// unitSpan is what steps as one thing past a tile: the whole of its section, or
+// its entry when it is in none.
+func (m Model) unitSpan(i int) (lo, hi int) {
+	if run, ok := m.sectionNamed(m.tiles[i].section); ok {
+		return run.lo, run.hi
+	}
+	return m.entrySpan(i)
+}
+
+// sectionNamed is the run of the section called name, if it is on the dashboard.
+func (m Model) sectionNamed(name string) (sectionRun, bool) {
+	if name == "" {
+		return sectionRun{}, false
+	}
+	for _, r := range m.sectionRuns() {
+		if r.name == name {
+			return r, true
+		}
+	}
+	return sectionRun{}, false
+}
+
+// movingUnit is the run [lo, hi) that moves when the selection does, and the
+// room [from, to) it moves in. Inside is true when that room is one section and
+// the run is an entry in it: the tile of a section that holds other entries.
+func (m Model) movingUnit(sel int, onHeader bool) (lo, hi, from, to int, inner bool) {
+	run, inSection := m.sectionNamed(m.tiles[sel].section)
+	if !inSection {
+		lo, hi = m.entrySpan(sel)
+		return lo, hi, 1, len(m.tiles), false
+	}
+	lo, hi = m.entrySpan(sel)
+	if onHeader || (lo == run.lo && hi == run.hi) {
+		return run.lo, run.hi, 1, len(m.tiles), false
+	}
+	return lo, hi, run.lo, run.hi, true
+}
+
+// atTheEdge is what a move that has nowhere to go says. Silent at the ends of the
+// dashboard, as it always was; at the end of a section it says why, since the key
+// worked a press ago and what is different is the section.
+func (m *Model) atTheEdge(sel int, end string, inner bool) string {
+	if !inner {
+		return ""
+	}
+	t := m.tiles[sel]
+	m.refuse(fmt.Sprintf("%s is the %s tile of %s — [ ] on its header moves the section", t.key(), end, sectionLabel(t.section)))
+	return m.flash
+}
+
+// readsBackAsIs reports whether a stated dashboard written in this order is built
+// into this order: the stated entries first and the added ones after, and each
+// section together where its first tile is.
+func readsBackAsIs(tiles []tile) bool {
+	var stated, added []tile
+	for _, t := range tiles[1:] {
+		if t.source == tileStated {
+			stated = append(stated, t)
+		} else {
+			added = append(added, t)
+		}
+	}
+	want := groupSections(append(stated, added...))
+	return slices.EqualFunc(want, tiles[1:], func(a, b tile) bool { return a.key() == b.key() && a.section == b.section })
 }
 
 // swapRuns exchanges the runs [a, b) and [b, c) of tiles.

@@ -162,6 +162,87 @@ func (m *Model) setCollapsed(name string, collapsed bool) {
 // onHeader is whether the header row of the section called name holds the selection.
 func (m Model) onHeader(name string) bool { return m.selected < 0 && m.header == name }
 
+// headerAt is the section whose header is drawn on the terminal line y, for the
+// click that folds it.
+func (m Model) headerAt(y int) (string, bool) {
+	if row, ok := m.gridRowAt(y); ok && row.isHeader() {
+		return row.header.name, true
+	}
+	return "", false
+}
+
+// foldVerb is what folding the section would be called now: the word on the key
+// that does it, and in the answer it gives.
+func (m Model) foldVerb(name string) string {
+	if m.collapsed(name) {
+		return "unfold"
+	}
+	return "fold"
+}
+
+// sectionKeys answers the keys that fold: enter and space on a header, which is
+// all a header can be asked to do, and z and Z wherever the dashboard has sections.
+// Not handled — false — it leaves the key to the dashboard's own switch, and when
+// there is no section at all that is every key, so a dashboard without sections
+// has no key it did not have, and a tile's own `z` action is still reachable.
+func (m Model) sectionKeys(key string) (Model, bool) {
+	switch {
+	case m.selected < 0 && m.header != "" && (key == "enter" || key == " " || key == "space"):
+		m.setCollapsed(m.header, !m.collapsed(m.header))
+		m.clampScroll()
+		return m, true
+	case key == "z" && m.hasSections():
+		m.flash = m.foldSelected()
+		return m, true
+	case key == "Z" && m.hasSections():
+		m.flash = m.foldAll()
+		return m, true
+	}
+	return m, false
+}
+
+// foldSelected folds the section of the selected header or tile, or unfolds it,
+// and says what it did when it could not. A tile that is in none is told so: the
+// key is on the bar whenever the dashboard has a section, and an answer is better
+// than a press that goes nowhere.
+func (m *Model) foldSelected() string {
+	name := ""
+	switch {
+	case m.selected < 0:
+		name = m.header
+	case m.selected > 0 && m.selected < len(m.tiles):
+		name = m.tiles[m.selected].section
+	}
+	if name == "" {
+		m.guide("this tile is in no section — Z folds every one")
+		return m.flash
+	}
+	m.setCollapsed(name, !m.collapsed(name))
+	// Folding the section a tile is in leaves the selection on the header it is
+	// now under, which is the nearest thing there is of it.
+	m.keepSelection()
+	m.clampScroll()
+	return ""
+}
+
+// foldAll folds every section, or unfolds them all when none is open: one key
+// that can be pressed again to undo itself, which a fold that always folded
+// could not be.
+func (m *Model) foldAll() string {
+	runs := m.sectionRuns()
+	fold := slices.ContainsFunc(runs, func(r sectionRun) bool { return !m.collapsed(r.name) })
+	for _, r := range runs {
+		m.setCollapsed(r.name, fold)
+	}
+	m.keepSelection()
+	m.clampScroll()
+	verb := "unfolded"
+	if fold {
+		verb = "folded"
+	}
+	return verb + " " + format.Count(len(runs), "section", "sections")
+}
+
 // keepSelection puts the selection back on something that is drawn, for the
 // moments the tiles were built again under it: the selected tile went, or is now
 // in a section that starts folded, or the section whose header held it is gone.
@@ -282,7 +363,7 @@ func (m Model) renderSectionHeader(run sectionRun, selected bool) string {
 		mark, title = "❯ ", theme.Key
 	}
 	lead := mark + glyph + " "
-	name := textclean.Terminal(run.name)
+	name := sectionLabel(run.name)
 	sum := m.sectionSummary(run)
 	// What is left of a line for the name beside this much of the right-hand
 	// side: the gap and the two cells of rule between them are four.
@@ -315,6 +396,16 @@ func (m Model) renderSectionHeader(run sectionRun, selected bool) string {
 	// counts one.
 	return ansi.Truncate(left+" "+theme.Border.Render(strings.Repeat("─", max(fill, 1)))+" "+right, width, "")
 }
+
+// sectionLabel is a section's name as the screen says it, on the header and in a
+// flash: as it is when it reads as itself, and quoted otherwise. A name is a
+// heading a file states, so it can be one that is not — a line break in it made
+// the header two rows where the layout counts one, and a flash that names it a
+// line cut in two — and textclean.Name, which is plugin.ListedName, is how every
+// listing of names a stranger chose shows one, with the escape sequence or the
+// reordering character in it written out where textclean.Terminal dropped it
+// without a word.
+func sectionLabel(name string) string { return textclean.Name(name) }
 
 // minNameCells is the least of its name a header keeps for itself while a shorter
 // form of what it says on the right would leave it more.
