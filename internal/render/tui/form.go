@@ -388,6 +388,18 @@ func (cf *capForm) displayed(f plugin.Field, current any) bool {
 		if !ok {
 			seeded = f.Default
 		}
+		// A toggle holds off when nothing says otherwise, so a Bool with no
+		// seed and no declared default is showing `false`, and nil against
+		// false compared as a change: the editor wrote `no-owner: false` into
+		// a profile whose operator never stated it — where it outranks the
+		// base `plugins:` section, so the off silently overrode an `on` the
+		// operator had written there for this environment. A text box shows
+		// nothing for a missing default and answers nothing, so it never
+		// reaches this comparison; the toggle is the one widget that always
+		// answers.
+		if seeded == nil && f.Type == plugin.Bool {
+			seeded = false
+		}
 		if len(f.Options) > 0 && f.Type.Repeatable() {
 			// A multi-select hands its choices back in the order of its
 			// options, whatever order it was seeded in, so the same set
