@@ -300,7 +300,18 @@ func (m Model) saveTheme() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	problems := theme.Apply(overrides)
+	// The palette of the environment in force, not the block just saved on its
+	// own: the colours a person sees after a save are the ones the file now
+	// says for where they are, and the next tick would otherwise paint them
+	// over a screen that had briefly shown something else.
+	var problems []theme.Problem
+	if cfg, err := config.LoadFile(); err == nil {
+		for _, p := range m.paint(cfg) {
+			if !strings.HasPrefix(p.Source, "profiles.") {
+				problems = append(problems, p)
+			}
+		}
+	}
 	switch {
 	case len(problems) == 1:
 		m.flash = "saved, but " + problems[0].String()

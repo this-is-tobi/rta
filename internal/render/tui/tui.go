@@ -372,7 +372,7 @@ func New(reg *registry.Registry, dash config.Dashboard,
 
 	sp := spinner.New(
 		spinner.WithSpinner(spinner.MiniDot),
-		spinner.WithStyle(lipgloss.NewStyle().Foreground(theme.Primary)),
+		spinner.WithStyle(spinnerStyle()),
 	)
 	m := Model{
 		reg:        reg,
@@ -1033,7 +1033,13 @@ func Run(ctx context.Context, reg *registry.Registry, dash config.Dashboard,
 	// Explicit input: main() has pointed os.Stdin at /dev/null so that no
 	// plugin inherits the user's keyboard, and bubbletea's default is
 	// os.Stdin — without this the TUI would open and answer no key at all.
-	_, err := tea.NewProgram(New(reg, dash, pluginCfg, opts...),
-		tea.WithContext(ctx), tea.WithInput(stdio.Real())).Run()
+	m := New(reg, dash, pluginCfg, opts...)
+	// The colours of the environment this session opens in, before the first
+	// frame. The CLI has painted them already, from the same file and the same
+	// switch, and this is a no-op then; it is here because a session must not
+	// depend on its caller having done so, and so that what the model believes
+	// about the palette is true from its first paint on.
+	m.syncPalette(readStamps())
+	_, err := tea.NewProgram(m, tea.WithContext(ctx), tea.WithInput(stdio.Real())).Run()
 	return err
 }
