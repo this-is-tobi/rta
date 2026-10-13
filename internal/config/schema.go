@@ -187,10 +187,14 @@ func Schema() map[string]any {
 						"pattern": schemaDuration,
 					},
 					"dashboard": map[string]any{
-						"description": "The dashboard view drawn while this profile is switched on: " +
-							"one of `dashboard: views:`. Left out, the `dashboard:` block draws.",
-						"type":    "string",
-						"pattern": viewName.String(),
+						"description": "The screen drawn while this profile is switched on: the name " +
+							"of one of `dashboard: views:`, or the screen itself written here, with " +
+							"the keys a view has (tiles, add, hidden, order, columns) — addressed as " +
+							"a view named after this profile. Left out, the `dashboard:` block draws.",
+						"oneOf": []any{
+							map[string]any{"type": "string", "pattern": viewName.String()},
+							map[string]any{"$ref": "#/$defs/view"},
+						},
 					},
 					"color": map[string]any{
 						"description": "Marks this environment, so which one is switched on " +

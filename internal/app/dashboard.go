@@ -892,7 +892,7 @@ func viewsTable(cfg config.Config) view.View {
 	now := drawnView(cfg)
 	selectors := map[string][]string{}
 	for _, name := range cfg.ProfileNames() {
-		if v := cfg.Profiles[name].Dashboard; v != "" {
+		if v := cfg.Profiles[name].Dashboard.Name; v != "" {
 			selectors[v] = append(selectors[v], name)
 		}
 	}
@@ -921,6 +921,18 @@ func viewNameRefusal(code, name string) *view.Error {
 	return view.Errorf(code, "%q is not a name a view can have", name).
 		WithHint("a view is named in lower case, digits and hyphens, starting with a letter, at most 32 long — " +
 			"and `default` is the dashboard: block, not a view")
+}
+
+// inlineScreenRefusal is the refusal for `rta profile set --dashboard` on a
+// profile whose screen is written in its own entry: the flag names a view, and
+// naming one would discard the block.
+func inlineScreenRefusal(name string, block *config.View) *view.Error {
+	return view.Errorf("core.profile.dashboard.inline",
+		"profile %s writes its own dashboard in its entry (%s), and --dashboard would throw it away",
+		name, format.Count(len(block.Tiles)+len(block.Add), "tile", "tiles")).
+		WithHint("`rta dashboard add <capability> --view " + name + "` changes that screen; to show a named view " +
+			"instead, move the tiles under `dashboard: views:` and replace the block in the entry with the view's " +
+			"name (`rta config edit`)")
 }
 
 // missingViewRefusal is the refusal for a view nothing states, naming the ones

@@ -361,6 +361,15 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 			if named == "none" || named == config.DefaultView {
 				named = ""
 			}
+			// The block is the screen, written out, and this flag names
+			// another one: taking the flag at its word would throw away
+			// tiles somebody arranged, with nothing in the receipt that a
+			// script could undo. `none` is refused the same way, since it
+			// means "back to the dashboard: block" and not "forget my tiles".
+			if p.Dashboard.Inline != nil {
+				verr = inlineScreenRefusal(name, p.Dashboard.Inline)
+				return cfg, false
+			}
 			if named != "" && !config.ValidViewName(named) {
 				verr = viewNameRefusal("core.profile.dashboard", named)
 				return cfg, false
@@ -369,7 +378,7 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 				verr = missingViewRefusal(cfg, named)
 				return cfg, false
 			}
-			p.Dashboard = named
+			p.Dashboard = config.ProfileDashboard{Name: named}
 		}
 		if cmd.Flags().Changed("color") {
 			color := strings.TrimSpace(mustString(cmd, "color"))
