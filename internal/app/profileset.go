@@ -170,6 +170,13 @@ func completeSetKeys(cmd *cobra.Command, _ []string, prefix string) ([]cobra.Com
 			if len(f.Options) > 0 {
 				desc = strings.Join(f.Options, "|")
 			}
+			// The key is offered because something a profile may fill reads it;
+			// what the rest of the namespace does with it is the part a person
+			// choosing a key to state would otherwise find out from a read that
+			// ignores it.
+			if note := profile.ScopeNote(ns, installed, f.Config); note != "" {
+				desc += " — a value stated here " + note
+			}
 			out = append(out, cobra.CompletionWithDesc(f.Config+"=", desc))
 		}
 	}

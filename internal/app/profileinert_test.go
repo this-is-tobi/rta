@@ -90,6 +90,37 @@ func TestASetLineEveryReadIgnoresIsSaidWhereverItIsReadBack(t *testing.T) {
 	}
 }
 
+// The key is offered to `--set` because something a profile may fill reads it,
+// and the description is where a person choosing a key finds out the rest.
+func TestCompletionSaysWhichCapabilitiesAKeyDoesNotReach(t *testing.T) {
+	reg := clusterishRegistry(t)
+	SetInstalled(reg)
+	t.Cleanup(func() { SetInstalled(nil) })
+	cmd, _, err := NewRoot(reg, "test").Find([]string{"profile", "set"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Flags().Set("plugin", "cluster"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := completeSetKeys(cmd, nil, "")
+	var namespace, context string
+	for _, entry := range got {
+		switch {
+		case strings.HasPrefix(entry, "namespace="):
+			namespace = entry
+		case strings.HasPrefix(entry, "context="):
+			context = entry
+		}
+	}
+	if !strings.Contains(namespace, "does not reach cluster.event.list, cluster.pod.list") {
+		t.Errorf("--set namespace= is offered as %q", namespace)
+	}
+	if context == "" || strings.Contains(context, "does not reach") {
+		t.Errorf("--set context= is offered as %q", context)
+	}
+}
+
 // A line every capability takes says nothing, in any of the surfaces.
 func TestASetLineEveryReaderTakesIsSaidNowhere(t *testing.T) {
 	run := session(t, clusterishRegistry(t))
