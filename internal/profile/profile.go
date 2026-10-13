@@ -995,6 +995,9 @@ func ScopeNote(ns string, inst Installed, key string) string {
 // Only a key some capability does fill. A key every reader takes as its scope is
 // the refusal unreadKey words, since there is nothing the line could do.
 func noteInertSet(name, key string, conn config.Connection, ns string, inst Installed) []Problem {
+	if len(conn.Set) == 0 {
+		return nil
+	}
 	reach := reachOfKeys(ns, inst)
 	keys := make([]string, 0, len(conn.Set))
 	for k := range conn.Set {
