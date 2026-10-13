@@ -341,9 +341,7 @@ func planRole(req plugin.Request, named string) (issuance, *view.Error) {
 		{"rate", strings.TrimSpace(req.String("rate")) != ""}, {"note", strings.TrimSpace(req.String("note")) != ""},
 	} {
 		if given.set {
-			return issuance{}, view.Errorf("grant.issue.bundleflag", "%s is for an environment: a role's lines carry their own",
-				sf.InputName(given.name)).
-				WithHint("write it on the role's line, `kv.get db-password --" + given.name + " …`, or give " + sf.InputName("profile") + " instead of the role")
+			return issuance{}, bundleFlagRefusal(sf, src, given.name)
 		}
 	}
 	lines, err := src.Lines()
@@ -386,6 +384,27 @@ func planRole(req plugin.Request, named string) (issuance, *view.Error) {
 			WithHint("4h, 12h — the most a grant can last is 24h")
 	}
 	return issuance{role: &src, lines: lines, agent: agent, ttl: ttl, window: window}, nil
+}
+
+// bundleFlagRefusal answers a flag only an environment's bundle takes, given
+// beside a role. A role's lines name their capabilities, so --safety, which
+// picks which classes of a plugin's capabilities an environment covers, has
+// nowhere to apply and is no line flag either: the way to a class is the
+// environment, and that is the whole hint. The others are a line's own, and
+// the example is a line of this role, not a capability picked for the text.
+func bundleFlagRefusal(sf plugin.Surface, src role.Source, name string) *view.Error {
+	if name == "safety" {
+		return view.Errorf("grant.issue.bundleflag", "%s is for an environment: a role names its capabilities itself, so there is no class for it to pick",
+			sf.InputName(name)).
+			WithHint("`" + sf.Call("grant.issue", plugin.Arg{Name: "profile", Value: "<env>"}, plugin.Arg{Name: "safety", Value: "write"}) +
+				"` issues an environment's capabilities of that class")
+	}
+	stem := "<capability>"
+	if lines, err := src.Lines(); err == nil {
+		stem = strings.TrimSpace(lines[0].Target + " " + lines[0].Scope)
+	}
+	return view.Errorf("grant.issue.bundleflag", "%s is for an environment: a role's lines carry their own", sf.InputName(name)).
+		WithHint("write it on the role's line, `" + stem + " --" + name + " …`, or give " + sf.InputName("profile") + " instead of the role")
 }
 
 func planEnvironment(req plugin.Request, catalog func() []plugin.Capability, env string) (issuance, *view.Error) {
