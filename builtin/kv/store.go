@@ -384,8 +384,16 @@ func load(req plugin.Request) (store, *view.Error) {
 	// passphrase — an identity-mode open is the key file's business — and
 	// only after the decrypt above succeeded, so what is remembered is known
 	// to be the store's.
+	//
+	// Not the environment's own passphrase, which resolves into the same input
+	// (EnvFallback) and so arrives here looking like a typed one. It is the
+	// operator's standing channel, answers every later open by itself
+	// (hostPassphrase), and remembering it would only start a session nobody
+	// asked for: a header saying the store is unlocked from the first frame, and
+	// an idle deadline that every refresh of a tile reading the store moves out
+	// again, so that it never relocks.
 	if req.Surface() == plugin.SurfaceTUI && identityPath(req) == "" {
-		if p := req.String("passphrase"); p != "" {
+		if p := req.String("passphrase"); p != "" && p != os.Getenv(passphraseEnv) {
 			rememberSession(p)
 		}
 	}

@@ -100,6 +100,32 @@ func TestOnlyTheTUIStartsASession(t *testing.T) {
 	}
 }
 
+// A passphrase the environment names reaches a TUI run as an input like a typed
+// one (EnvFallback), and is not a session's to keep: the environment answers
+// every later open by itself. A tile that reads the store on a timer would
+// otherwise start one on its first run and move its deadline out on every one
+// after, so the header would say the store is unlocked from the first frame and
+// it would never relock.
+func TestAPassphraseFromTheEnvironmentDoesNotStartASession(t *testing.T) {
+	setup(t)
+	freezeClock(t)
+	const passphrase = "correct horse battery staple"
+	text(t, runSet, map[string]any{"key": "k", "value": "v", "passphrase": passphrase}, false)
+	t.Setenv(passphraseEnv, passphrase)
+
+	openedFrom(t, plugin.SurfaceTUI, passphrase)
+	if _, ok := SessionPassphrase(); ok {
+		t.Error("the environment's passphrase started a store session")
+	}
+	// What a person types into the form is still remembered when it is not what
+	// the environment holds: the session is for what nothing else answers.
+	t.Setenv(passphraseEnv, "")
+	openedFrom(t, plugin.SurfaceTUI, passphrase)
+	if _, ok := SessionPassphrase(); !ok {
+		t.Error("a passphrase typed into the form no longer starts a session")
+	}
+}
+
 func TestTheSessionExpiresWhenIdle(t *testing.T) {
 	setup(t)
 	at := freezeClock(t)
