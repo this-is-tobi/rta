@@ -492,6 +492,54 @@ func TestExitCodeContract(t *testing.T) {
 	}
 }
 
+// A value a flag cannot take exits 2, whichever check refuses it. `--limit abc`
+// is refused by the flag parser as core.usage and exited 2, while `--limit 0`
+// and `--sort bogus` are refused after it by the host's check of the
+// declaration — in the same sentence, for the same mistake — and exited 1, so a
+// script that branches on the code could not tell "my arguments are wrong,
+// nothing ran" from "the operation failed" for the commonest mistakes there are.
+// A refusal that is not about an input stays a 1.
+func TestAValueAFlagCannotTakeExitsTwoWhichCheckRefusesIt(t *testing.T) {
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{Name: "bound", Summary: "bounded inputs",
+		Capabilities: []plugin.Capability{{
+			ID: "bound.take", Summary: "take bounded values", Safety: plugin.Read,
+			Inputs: []plugin.Field{
+				{Name: "limit", Type: plugin.Int, Min: 1, Max: 10, Default: 5, Help: "how many"},
+				{Name: "sort", Type: plugin.String, Options: []string{"cpu", "mem"}, Help: "by what"},
+				{Name: "label", Type: plugin.String, Required: true, Config: "label", Help: "which"},
+			},
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "taken"}, nil },
+		}}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		args []string
+		code string
+	}{
+		{[]string{"bound", "take", "--label", "x", "--limit", "abc"}, CodeUsage},
+		{[]string{"bound", "take", "--label", "x", "--limit", "0"}, "core.input.range"},
+		{[]string{"bound", "take", "--label", "x", "--limit", "11"}, "core.input.range"},
+		{[]string{"bound", "take", "--label", "x", "--sort", "bogus"}, "core.input.option"},
+		{[]string{"bound", "take", "--label", ""}, "core.input.missing"},
+	} {
+		_, _, err := run(t, reg, c.args...)
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != c.code {
+			t.Errorf("%v: err = %#v, want code %s", c.args, err, c.code)
+			continue
+		}
+		if got := ExitCode(err); got != 2 {
+			t.Errorf("%v: %s exits %d, want 2 — nothing ran, and the arguments are what to fix", c.args, c.code, got)
+		}
+	}
+
+	_, _, err := run(t, testRegistry(t), "demo", "item", "fail")
+	if got := ExitCode(err); got != 1 {
+		t.Errorf("a capability's own failure exits %d, want 1", got)
+	}
+}
+
 // The TUI asked to stop by a signal has stopped, not failed; anything else it
 // ends on is coded. SIGTERM wrote "Program was killed: context canceled." in
 // a box nothing coded, over the terminal the TUI had just handed back.
@@ -1482,6 +1530,9 @@ func TestARefusedConfigValueNamesTheKeyItCameFrom(t *testing.T) {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("refusal does not say %q:\n%s", want, errOut)
 		}
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Errorf("a config value the declaration refuses exits %d, want 2: nothing ran", got)
 	}
 	// And a flag given on the call steps round it, as the hint says.
 	if _, errOut, err := run(t, reg, "gen", "token", "--encoding", "hex"); err != nil {

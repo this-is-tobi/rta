@@ -43,7 +43,7 @@ func TestAnEmptyRequiredInputIsRefusedOnTheCLI(t *testing.T) {
 			t.Errorf("the refusal does not say %q:\n%s", want, errOut)
 		}
 	}
-	if ExitCode(err) != 1 {
-		t.Errorf("exit %d, want 1: the command line was well formed", ExitCode(err))
+	if ExitCode(err) != 2 {
+		t.Errorf("exit %d, want 2: an argument given as nothing is one left out, and nothing ran", ExitCode(err))
 	}
 }

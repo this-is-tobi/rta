@@ -47,22 +47,42 @@ import (
 // confirmation declined. 130 and 143 are a signal's, and never an error's:
 // they are what rta exits with when it stops without the command
 // (WatchSignals), which then has returned nothing to map.
+//
+// A usage error is one nothing ran for and a retry cannot mend, which is what a
+// script branches on: 2 says "fix the arguments", 1 says "the operation was
+// refused or failed". The host's check of a call's inputs is the second kind of
+// usage error. A flag parser refuses `--limit abc` as CodeUsage before the call
+// exists, and the check refuses `--limit 0` or `--sort bogus` as core.input.*
+// once it does — in the same sentence, for the same mistake, since the
+// declaration's bounds and options are only known there. Exiting 1 for those
+// let a script's retry loop treat a limit of 0 as a flaky capability, and made
+// the exit code depend on how a value was wrong instead of on whether anything
+// ran.
 func ExitCode(err error) int {
 	if err == nil {
 		return 0
 	}
 	var ve *view.Error
 	if ok := asViewError(err, &ve); ok {
-		switch ve.Code {
-		case CodeConfirmRequired:
+		switch {
+		case ve.Code == CodeConfirmRequired:
 			return 3
-		case CodeUsage, CodeOutputInvalid:
+		case ve.Code == CodeUsage, ve.Code == CodeOutputInvalid, strings.HasPrefix(ve.Code, codeInputFamily):
 			return 2
 		}
 		return 1
 	}
 	return 2
 }
+
+// codeInputFamily is what the codes of the host's check of a call's inputs
+// begin with: core.input.type, .option, .range and .missing, refused before any
+// handler runs. Every surface refuses with them, so one that arrives from the
+// operator's config or a profile — worded as that layer's, by
+// plugin.CheckInputs — exits 2 as well, as an --output nobody typed does
+// (CodeOutputInvalid): nothing ran, and it is the arguments, or the values
+// that fill them, that are to be fixed.
+const codeInputFamily = "core.input."
 
 // CodeUsage is the refusal of a command line rta could not use: an unknown
 // command or flag, a missing or extra argument, a value the flag cannot take,
