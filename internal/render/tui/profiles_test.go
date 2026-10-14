@@ -427,6 +427,25 @@ func TestTheHeaderBadgeTakesTheEnvironmentsOwnColourWhenItHasOne(t *testing.T) {
 	}
 }
 
+// **Under NO_COLOR the badge is not a bare word.** A marked environment's badge
+// is a filled block, and with the fill stripped "prod" read as the text of the
+// header beside it — less marked than an unmarked environment's bullet. The
+// brackets are what the command line already prints in that case, from the one
+// function (theme.Mark) both draw it with.
+func TestTheHeaderBadgeKeepsItsBracketsWhereTheTerminalHasNoColour(t *testing.T) {
+	m := Model{active: "shop-prod", noColor: true}
+	for _, color := range []string{"#FF6B7A", ""} {
+		m.activeColor = color
+		if got := plain(m.paintBadge("shop-prod")); !strings.Contains(got, "[ shop-prod ]") {
+			t.Errorf("with colour %q and none to draw it in, the badge is %q, want it bracketed", color, got)
+		}
+	}
+	m.activeColor, m.noColor = "#FF6B7A", false
+	if got := plain(m.paintBadge("shop-prod")); strings.Contains(got, "[") {
+		t.Errorf("a terminal with colour got brackets as well as the fill: %q", got)
+	}
+}
+
 // The switched-on environment reaches the tiles, or the dashboard is quietly
 // answering a question about somewhere else.
 func TestTilesRunAgainstTheSwitchedOnEnvironment(t *testing.T) {

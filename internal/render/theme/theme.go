@@ -756,6 +756,29 @@ func Badge(text, hex string) string {
 		Render(text)
 }
 
+// Mark is how the environment in force is named on a screen: the badge in its
+// own colour when it has one, the bullet an environment nobody marked keeps, and
+// where there is no colour to draw either in, the name between brackets.
+//
+// **The brackets are the mark when there is no colour to be one**, for a marked
+// environment and an unmarked one alike: a badge is a filled block, and with the
+// fill taken away it is a bare word, indistinguishable from the text it sits in
+// and less marked than a bullet. Drawn here and not by each surface because
+// there are two — the line before a command and the header of the TUI — and
+// they had decided it twice, differently. ascii is a terminal that cannot show
+// the bullet.
+func Mark(name, hex string, noColor, ascii bool) string {
+	switch {
+	case noColor:
+		return "[ " + name + " ]"
+	case HexColor.MatchString(hex):
+		return Badge(name, hex)
+	case ascii:
+		return GoodText.Render("* " + name)
+	}
+	return GoodText.Render("● " + name)
+}
+
 // relativeLuminance is WCAG 2.x for a #rrggbb string: each channel
 // gamma-expanded, then weighted by how much the eye owes it. Green carries
 // most of the answer, which is why a mid green background needs dark ink and a

@@ -745,11 +745,17 @@ func (m Model) activeBadge() string {
 // appears as itself: everywhere else it is the palette's primary, which the
 // palette will not let be a status colour (theme.Resolve), so a mark cannot be
 // misread as ok, warn or failed in either place.
+//
+// Drawn by the function the command line draws its own line with (theme.Mark),
+// so a terminal with no colour (NO_COLOR, TERM=dumb) gets the name in brackets
+// for either: a marked environment's badge is a filled block, and with the fill
+// stripped it was a bare word, less marked than an unmarked environment's bullet.
 func (m Model) paintBadge(badge string) string {
-	if m.activeColor == "" {
-		return theme.GoodText.Render(" ● " + badge)
+	mark := theme.Mark(badge, m.activeColor, m.noColor, false)
+	if !m.noColor && !theme.HexColor.MatchString(m.activeColor) {
+		return " " + mark
 	}
-	return theme.Badge(badge, m.activeColor)
+	return mark
 }
 
 // profileColor is the active environment's colour, or "" — read here, off the

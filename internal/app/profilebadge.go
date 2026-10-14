@@ -69,7 +69,7 @@ func WarnActiveProfile(w io.Writer, cmd *cobra.Command, cfg config.Config, style
 	// whatever is switched on: the badge says that one, so the line above a
 	// result never names an environment the result did not come from.
 	if words, stated := adHocWords(cmd); stated {
-		fmt.Fprintln(w, badgeLabel(profile.AdHocName+" — "+words, "", false, style))
+		fmt.Fprintln(w, badgeLabel(profile.AdHocName+" — "+words, "", style))
 		return
 	}
 	sel := profile.LoadSelection()
@@ -88,7 +88,7 @@ func WarnActiveProfile(w io.Writer, cmd *cobra.Command, cfg config.Config, style
 	// lie this line exists to prevent. Where the environment says nothing about
 	// the command there is nothing to have left.
 	if leaves(cmd, p) {
-		fmt.Fprintln(w, badgeLabel(profile.AdHocName+" — without "+name, "", false, style))
+		fmt.Fprintln(w, badgeLabel(profile.AdHocName+" — without "+name, "", style))
 		return
 	}
 	// A colour that is not a colour marks nothing, rather than falling back to
@@ -110,7 +110,7 @@ func WarnActiveProfile(w io.Writer, cmd *cobra.Command, cfg config.Config, style
 			shown += ", except " + replaced
 		}
 	}
-	label := badgeLabel(shown, p.Color, marked, style)
+	label := badgeLabel(shown, p.Color, style)
 	// The deadline rides along because it is the other half of the same
 	// question — being on production and being on it for six more minutes are
 	// different situations, and both are decided before the command runs.
@@ -134,19 +134,12 @@ func badgeStream(w io.Writer, environ []string) (out io.Writer, plain bool) {
 	return cw, cw.Profile <= colorprofile.ASCII
 }
 
-func badgeLabel(name, color string, marked bool, style BadgeStyle) string {
-	switch {
-	case style.NoColor:
-		// The brackets are the badge when there is no colour to be a badge
-		// with. Dropping the line entirely would be worse: --no-color is a
-		// statement about ANSI, not about wanting to know less.
-		return "[ " + name + " ]"
-	case marked:
-		return theme.Badge(name, color)
-	case style.ASCII:
-		return theme.GoodText.Render("* " + name)
-	}
-	return theme.GoodText.Render("● " + name)
+// badgeLabel is the line's mark of an environment, drawn by the one function the
+// TUI's header draws it with (theme.Mark). Where there is no colour it keeps its
+// brackets: dropping the line entirely would be worse, since --no-color is a
+// statement about ANSI and not about wanting to know less.
+func badgeLabel(name, color string, style BadgeStyle) string {
+	return theme.Mark(name, color, style.NoColor, style.ASCII)
 }
 
 // badgeValueWidth is how much of a typed value the badge prints.

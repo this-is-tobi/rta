@@ -52,3 +52,34 @@ func TestSomethingThatIsNotAColourIsNotPainted(t *testing.T) {
 		t.Error("a real colour painted nothing")
 	}
 }
+
+// **The mark of the environment in force is the one thing that must survive a
+// terminal with no colour**, since it is the one thing there to say where the
+// next keystroke lands. A badge is a filled block, and with the fill taken away
+// it is a bare word that reads as any other word in the line; the brackets are
+// what is left to tell it from text, for a marked environment and an unmarked
+// one alike. One function so the command line and the TUI cannot disagree.
+func TestAMarkKeepsItsBracketsWhereThereIsNoColourToBeABadgeWith(t *testing.T) {
+	for _, hex := range []string{"#FF6B7A", ""} {
+		if got := Mark("prod", hex, true, false); got != "[ prod ]" {
+			t.Errorf("Mark(prod, %q) with no colour = %q, want the brackets", hex, got)
+		}
+		if got := Mark("prod", hex, true, true); got != "[ prod ]" {
+			t.Errorf("Mark(prod, %q) with no colour, ASCII = %q, want the brackets", hex, got)
+		}
+	}
+}
+
+func TestAMarkWithColourIsTheBadgeOrTheBulletTheEnvironmentHas(t *testing.T) {
+	if got := Mark("prod", "#FF6B7A", false, false); got != Badge("prod", "#FF6B7A") {
+		t.Errorf("a marked environment is %q, want its badge", got)
+	}
+	for hex, bullet := range map[string]string{"": "●", "red": "●", "#FFF": "●"} {
+		if got := Mark("lab", hex, false, false); !strings.Contains(got, bullet+" lab") {
+			t.Errorf("Mark(lab, %q) = %q, want the bullet an unmarked environment keeps", hex, got)
+		}
+	}
+	if got := Mark("lab", "", false, true); !strings.Contains(got, "* lab") || strings.Contains(got, "●") {
+		t.Errorf("an unmarked environment on a terminal that cannot show the bullet is %q", got)
+	}
+}
