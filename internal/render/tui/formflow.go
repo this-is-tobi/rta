@@ -265,6 +265,7 @@ func (m *Model) fitForm() {
 	if m.form == nil {
 		return
 	}
+	m.form.noColor = m.noColor
 	if m.width > 0 {
 		m.form.form = m.form.form.WithWidth(formWidth(m.width))
 	}
