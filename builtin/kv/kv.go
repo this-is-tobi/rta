@@ -332,7 +332,9 @@ func Plugin() plugin.Plugin {
 				Run: runRename,
 			},
 			{
-				ID: "kv.rm", Summary: "Remove a stored key, keeping it restorable until purged", Safety: plugin.Destructive,
+				ID: "kv.rm", Summary: "Remove a stored key, keeping it restorable until purged",
+				// What a person calls removing a secret from the store.
+				Keywords: []string{"delete", "deleted"}, Safety: plugin.Destructive,
 				Flash: true,
 				Scope: "key",
 				Description: "The key leaves the listing and every read of it, but the entry is kept " +

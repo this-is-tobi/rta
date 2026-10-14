@@ -116,7 +116,9 @@ func runHistory(_ context.Context, req plugin.Request) (view.View, error) {
 func restoreCapability() plugin.Capability {
 	return plugin.Capability{
 		ID: "kv.restore", Summary: "Bring back a removed key, or an earlier value of one",
-		Safety: plugin.Write, NeedsGrant: true, Scope: "key",
+		// A removed key is a deleted one to whoever is looking for it.
+		Keywords: []string{"deleted"},
+		Safety:   plugin.Write, NeedsGrant: true, Scope: "key",
 		Description: "With no `revision`, a key `kv.rm` removed comes back exactly as it was, " +
 			"history included. With one, the key's current value is replaced by that earlier " +
 			"one — the number `kv.history` lists, 1 being the most recent — and the value being " +
