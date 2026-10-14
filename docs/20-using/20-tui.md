@@ -188,7 +188,7 @@ Views are actionable rather than static, and what a view offers is the plugin's 
 
 ## Profiles
 
-`f` opens the profiles pane — your configured environments, which one is on, and what each covers. `n` creates one and `c` edits it, which is the shortest way to define a profile: the form is generated from each plugin's declared inputs, and it knows which of them are secrets, so a credential lands in `secrets:` as a reference instead of in `set:` as a value.
+`f` opens the profiles pane — your configured environments, which one is on, and what each covers. `n` creates one and `c` edits it, which is the shortest way to define a profile: the form is generated from each plugin's declared inputs, and it knows which of them are secrets, so a credential lands in `secrets:` as a reference instead of in `set:` as a value. Adding a plugin to an environment refuses a name that is not registered, as `rta profile set` does, and says the command that fixes it — `pg is a first-party plugin — rta plugin install pg installs it` — and the form stays open on what you typed.
 
 | Key | What it does |
 | --- | --- |

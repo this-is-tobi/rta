@@ -287,6 +287,38 @@ func TestSavingRefusesACoordinateThePluginCannotUse(t *testing.T) {
 	}
 }
 
+// Defining an environment's pg before pg is installed is the natural order, and
+// the form said "saved pg in staging" over an entry every run refused. It
+// refuses as `rta profile set` does, in the words of the command line, with the
+// install that fixes it, and writes nothing.
+func TestSavingRefusesAPluginThatIsNotInstalledAndNamesTheInstall(t *testing.T) {
+	noHistory(t)
+	m := twoPluginModel(t)
+	m.pluginSel = pluginIndex(t, m, "db")
+
+	next, _ := m.startConnForm("")
+	nm := next.(Model)
+	nm.form.form = startedForm(nm.form)
+	*nm.form.bindings[profilePluginField] = "pg"
+
+	after, _ := nm.saveConnForm()
+	nm = after.(Model)
+	if !strings.Contains(nm.flash, `profile names "pg", which is not a registered plugin`) ||
+		!strings.Contains(nm.flash, "`rta plugin install pg` installs it") {
+		t.Errorf("the save did not refuse with the command line's words: %q", nm.flash)
+	}
+	if nm.form == nil {
+		t.Error("the refusal closed the form it was about, and what was typed with it")
+	}
+	cfg, err := config.LoadFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, written := cfg.Profiles["staging"].Plugins["pg"]; written {
+		t.Error("an entry for a plugin that is not installed was written anyway")
+	}
+}
+
 // The TLS toggle is offered exactly where the coordinate boxes are — it is a
 // fact about whichever one is filled, so a plugin no forward can reach has
 // nothing for it to describe either.
