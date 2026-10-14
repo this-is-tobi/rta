@@ -979,12 +979,18 @@ const minSqueezed = 12
 // `rta pkg outdated go` drew INSTALLED as "INSTA…" over "v2.18." and "0". So
 // the arrangement is made here and handed over finished.
 //
-// A column no wider than minSqueezed, or than its heading, keeps its natural
-// width. A wider one starts at that floor, and the room left over is shared in
-// equal cells among the columns that still want more, until each has what it
-// asked for or the room is gone. Equal, not proportional: neither the column
-// with a forty-character outlier nor the one with a sentence has a better claim
-// to the last cell.
+// A column no wider than minSqueezed, than its heading or than its widest word
+// (up to maxProtectedToken) keeps its natural width. A wider one starts at
+// that floor, and the room left over is shared in equal cells among the columns
+// that still want more, until each has what it asked for or the room is gone.
+// Equal, not proportional: neither the column with a forty-character outlier
+// nor the one with a sentence has a better claim to the last cell.
+//
+// The widest word is in the floor because a word cut in half is a different
+// one: a position or a WAL file name drawn over two lines reads as two values,
+// and nothing on the screen says where the cut was. When the floors do not fit
+// there is no arrangement, and fitsAsGrid sends the table to records, where a
+// value has the whole line.
 func squeezedWidths(t view.Table, headers []string, st styles) []int {
 	if st.width <= 0 || len(t.Columns) == 0 {
 		return nil
@@ -995,13 +1001,14 @@ func squeezedWidths(t view.Table, headers []string, st styles) []int {
 	if sum(natural) <= budget {
 		return nil
 	}
+	words := unbreakableWidths(t, headers)
 	widths := make([]int, len(natural))
 	for i, n := range natural {
 		heading := 0
 		if i < len(headers) {
 			heading = lipgloss.Width(headers[i])
 		}
-		widths[i] = min(n, max(heading, minSqueezed)+2)
+		widths[i] = min(n, max(heading, minSqueezed, words[i])+2)
 	}
 	left := budget - sum(widths)
 	if left < 0 {
