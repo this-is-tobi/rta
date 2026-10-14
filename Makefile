@@ -285,10 +285,23 @@ fmt-check: ## Fail if anything is unformatted — `make fmt` fixes it
 	@out=$$(gofmt -l $(FMT_PATHS)); \
 	if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out" | sed 's/^/  /'; exit 1; fi
 
-# -coverpkg because most of internal/ is exercised from other packages' tests;
-# without it the shared code reads as untested when it is not.
-coverage: ## Coverage across the whole root module
-	go test -coverpkg=./... -coverprofile=coverage.out ./...
+# The profile is written by the pass CI makes: no cached results, shuffled,
+# under the race detector, in one run, so the verdict and the numbers are one
+# execution (`hard` is the same flags without the profile). -coverpkg because
+# most of internal/ is exercised from other packages' tests; without it the
+# shared code reads as untested when it is not.
+#
+# This was a second, plain `go test` after `hard`: a pass the pipeline never
+# makes, and the one pass that ran without the race build's wider bounds on
+# starting a plugin (internal/pluginhost/slow.go). On a loaded laptop the
+# first run of a freshly built plugin outlasts the five seconds a real start
+# is given, because macOS looks at a new executable the first time it runs,
+# and the tests in internal/plugindist and internal/pluginhost that start one
+# failed there and nowhere else, while the race pass before it, and CI, passed
+# the same tests. The end-to-end binary in cmd/rta is built without -race in
+# either pass, and gets the same bounds from the slowhost tag.
+coverage: ## Coverage across the whole root module, in the one race-detector pass CI makes
+	go test -count=1 -race -shuffle=on -coverpkg=./... -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out | tail -1
 
 coverage-html: coverage ## ... and write coverage.html to open in a browser
@@ -305,7 +318,11 @@ coverage-html: coverage ## ... and write coverage.html to open in a browser
 # fmt-check runs first now rather than last. Learning that a file is
 # unformatted after the whole race suite has run is learning it ten minutes
 # too late.
-ci: fmt-check vet lint hard coverage proto-lint proto-check cross size-check ## Everything CI runs
+#
+# The tests run once, in `coverage`, which carries `hard`'s flags: the
+# pipeline makes one pass, and a second, plain one here was a gate it does not
+# have.
+ci: fmt-check vet lint coverage proto-lint proto-check cross size-check ## Everything CI runs
 	@printf "\nci: green — every gate the pipeline runs.\n\n"
 
 ##@ Protocol
