@@ -140,6 +140,22 @@ func configProblems(reg *registry.Registry, path string, data []byte) []configPr
 		key := "profiles." + p.profile + ".dashboard"
 		out = append(out, configProblem{Key: key, Line: lines[key], Text: p.text})
 	}
+	// A view's name is held to the grammar the writers hold it to, so a name that
+	// reached the file by hand is said here and not only refused by the command
+	// that would have made it. It is still drawn, as the file says, under its name
+	// shown as a name.
+	names := make([]string, 0, len(cfg.Dashboard.Views))
+	for name := range cfg.Dashboard.Views {
+		if !config.ValidViewName(name) {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		key := "dashboard.views." + name
+		out = append(out, configProblem{Key: key, Line: lines[key],
+			Text: fmt.Sprintf("%q is not a name a view can have (lower case, digits and hyphens, starting with a letter, at most 32 long), so --view and `rta dashboard add` refuse it", name)})
+	}
 	// A file found in the working directory arranges no screen: the profiles in
 	// it are named above, and the dashboard it states is named here, once, so a
 	// check does not pass a file whose every screen is ignored.
