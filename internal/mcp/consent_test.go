@@ -898,3 +898,92 @@ func TestConsentDoesNotCrossTheSessionFence(t *testing.T) {
 		t.Fatal("a call into the switched-on environment was refused without asking")
 	}
 }
+
+// The fence is about environments, and a call that names none is in none: a
+// note, a stored secret and a file have no environment to cross. The question
+// was lost for all of them while a switch was on, so the operator who started
+// the server to be asked saw an empty queue all day and took it for the gate,
+// while every ungranted write was refused where nobody could see it.
+func TestConsentIsStillAskedForACallThatNamesNoEnvironmentWhileOneIsSwitchedOn(t *testing.T) {
+	s := connect(t, Options{
+		Consent:     true,
+		ConsentWait: 20 * time.Second,
+		Active:      func() string { return "staging" },
+	})
+	seen := answerWhenAsked(t, true)
+
+	res := callTool(t, s, "demo_item_reveal", map[string]any{"key": "db-password"})
+	if res.IsError {
+		t.Fatalf("an approved call was still refused: %s", res.Content[0].(*sdk.TextContent).Text)
+	}
+	select {
+	case req := <-seen:
+		if req.Cap != "demo.item.reveal" || req.Profile != "" {
+			t.Fatalf("the operator was asked about %+v", req)
+		}
+	default:
+		t.Fatal("a call that names no environment was refused without anybody being asked")
+	}
+}
+
+// instancedProfiles has two environments that each reach two databases, a
+// default and an analytics one: the references a call names are
+// staging, staging/analytics, prod and prod/analytics.
+const instancedProfiles = `
+plugins:
+  pg:
+    host: base.internal
+profiles:
+  staging:
+    plugins:
+      pg:
+        set: {host: staging.internal}
+      pg/analytics:
+        set: {host: staging-analytics.internal}
+  prod:
+    plugins:
+      pg:
+        set: {host: prod.internal}
+      pg/analytics:
+        set: {host: prod-analytics.internal}
+`
+
+// The switch is the whole environment, and an instance is inside it: with
+// staging on, a call naming staging/analytics is put to the operator exactly
+// as one naming staging is, and one naming prod/analytics is not. Comparing
+// the whole reference with the environment's name refused the first unasked,
+// the empty queue and the silent refusal the fence was never meant to cause,
+// for every install that names its databases by instance.
+func TestConsentFollowsTheEnvironmentOfAnInstanceReference(t *testing.T) {
+	f := newProfileFixture(t, instancedProfiles, func(o *Options) {
+		o.Consent = true
+		o.ConsentWait = 20 * time.Second
+		o.Active = func() string { return "staging" }
+	})
+
+	saw, stop := watchPending(t)
+	started := time.Now()
+	res := f.call(t, map[string]any{"profile": "prod/analytics", "sql": "select 1"})
+	elapsed := time.Since(started)
+	stop()
+	if !res.IsError {
+		t.Fatal("a call into an environment that is switched off went through")
+	}
+	if req := saw(); req.ID != "" {
+		t.Fatalf("the operator was asked to approve a call across the fence: %+v", req)
+	}
+	if elapsed > 10*time.Second {
+		t.Fatalf("the call parked for %s, so it was asked about after all", elapsed)
+	}
+
+	seen := answerWhenAsked(t, false)
+	f.call(t, map[string]any{"profile": "staging/analytics", "sql": "select 1"})
+	select {
+	case req := <-seen:
+		if req.Cap != "pg.query" || req.Profile != "staging/analytics" {
+			t.Fatalf("the operator was asked about %+v", req)
+		}
+	default:
+		t.Fatal("an instance of the switched-on environment was refused without anybody being asked")
+	}
+}
