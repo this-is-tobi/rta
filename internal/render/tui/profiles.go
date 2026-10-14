@@ -12,6 +12,7 @@ import (
 
 	"github.com/this-is-tobi/rta/builtin/kv"
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
@@ -528,12 +529,26 @@ func (m Model) profileRows() []profileRow {
 // produces it, since trust is keyed on the digest, and the pane called it
 // "not a registered plugin" where `rta profile list` said to trust it.
 func (m Model) installed() profile.Installed {
-	return withUntrusted{Registry: m.reg, untrusted: m.untrusted}
+	return withUntrusted{Registry: m.reg, untrusted: m.untrusted, failed: m.failed}
 }
 
 type withUntrusted struct {
 	*registry.Registry
 	untrusted []pluginhost.Untrusted
+	failed    []pluginhost.Failed
+}
+
+// MissingHint is what a plugin that is not registered needs, said as the
+// command line says it (plugindist.WordHint): the install for a first-party
+// plugin that is not here, and for one that is here and not running where the
+// reason is. Without it the check's own reason carried only the generic pointer
+// at `rta plugin list`, where `rta profile set` names the command.
+func (w withUntrusted) MissingHint(namespace string) string {
+	hint, _ := plugindist.WordHint(namespace, func(name string) bool {
+		_, ok := w.Origin(name)
+		return ok
+	}, w.untrusted, w.failed)
+	return hint
 }
 
 // Untrusted reports whether discovery found an artifact by this name and did

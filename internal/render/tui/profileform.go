@@ -832,6 +832,25 @@ func (m Model) saveConnForm() (tea.Model, tea.Cmd) {
 				return cfg, false
 			}
 		}
+		// **A plugin that is not registered is refused for a new entry**, as `rta
+		// profile set` refuses it (the same profile.CheckConnection): the form
+		// said "saved pg in dev" over an entry every run then refused, and the
+		// row beside it read "invalid" with the reason and not the command that
+		// fixes it. Said where the name was typed, with that command. An entry
+		// that already stands under the key is edited as before, since this form
+		// keeps the file's own block for a plugin it cannot read (above) and a
+		// person with the artifact missing from this machine can still correct
+		// the coordinate.
+		if !known && was != key {
+			if problems := profile.CheckConnection(m.profileOpen, key, conn, m.installed()); len(problems) > 0 {
+				refusal = problems[0].Reason
+				if problems[0].Hint != "" {
+					refusal += " — " + problems[0].Hint
+				}
+				refusedAt = profilePluginField
+				return cfg, false
+			}
+		}
 		if was != "" && was != key {
 			delete(p.Plugins, was)
 		}
