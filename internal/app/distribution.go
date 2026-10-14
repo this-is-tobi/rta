@@ -140,13 +140,26 @@ func installView(rep plugindist.Report, dryRun bool) view.View {
 		configureNote = "its keys go under `plugins." + pin + ":` in the config, or in a profile — `rta explain " +
 			firstCapability(rep.Declared) + "` lists them"
 	}
+	// Said by the report that makes the decision, in the words of doctor's own
+	// row for it. Installing is the trust decision (the install help says so),
+	// and the report ended without a word about it while `rta plugin --help`
+	// says a plugin runs once its artifact is approved with `rta plugin trust`:
+	// nothing on the page said whether that was still owed, or that a binary had
+	// just been approved to run.
+	trustNote := "approved to run at digest " + shortDigest(rep.Digest) +
+		" — installing is that decision, and `rta plugin untrust " + rep.Name + "` takes it back"
 	if dryRun {
 		installedLabel = "would install to"
-		configureLabel = "once installed"
+		trustNote = "installing would approve it to run at digest " + shortDigest(rep.Digest) +
+			" — `rta plugin untrust " + rep.Name + "` takes it back"
+		// A step to take, not a condition: "once installed" over this sentence
+		// read as the state of a plugin that was not.
+		configureLabel = "to install it"
 		configureNote = "run without --dry-run to fetch it and land it — nothing was written"
 	}
 	pairs = append(pairs, []view.Pair{
 		{Key: installedLabel, Value: rep.Path},
+		{Key: "trust", Value: trustNote},
 		{Key: configureLabel, Value: configureNote},
 	}...)
 	if creds := credentialVars(rep.Declared); len(creds) > 0 {

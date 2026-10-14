@@ -57,7 +57,7 @@ The install report names what it asks for, at the one moment you have the digest
 
 Only then does it land: the managed store, the trust entry, and `rta.lock`, which records what rta *computed* rather than what anybody claimed.
 
-**Installing is the trust decision.** There is no separate `rta plugin trust` afterwards — you approved the artifact by installing it, having seen it verified.
+**Installing is the trust decision.** There is no separate `rta plugin trust` afterwards — you approved the artifact by installing it, having seen it verified. The report ends on a `trust` row that says so, with the digest approved and `rta plugin untrust <name>` to take it back; under `--dry-run` the row says what installing would approve, and the row `to install it` says to run the command again without the flag.
 
 ```bash
 rta plugin outdated
