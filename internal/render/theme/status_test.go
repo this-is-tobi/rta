@@ -58,6 +58,13 @@ func TestEveryStatusWordTheBuiltinsUseIsColoured(t *testing.T) {
 		"invalid":  StatusBad,
 		"disabled": StatusMuted,
 		"none":     StatusMuted,
+		// the lines an overview gives when its backend is not there: docker's
+		// daemon, kube's cluster and its nodes, which are key/value pages
+		"did not answer — Unable to connect to the server: dial tcp 127.0.0.1:1: connect: connection refused": StatusBad,
+		"was never contacted — no kubeconfig":                               StatusBad,
+		"answered, and refused — namespaces is forbidden":                   StatusBad,
+		"answered, and did not accept this credential — Unauthorized":       StatusBad,
+		"could not be read — nodes is forbidden: User cannot list resource": StatusWarn,
 	}
 	for word, want := range cases {
 		if got := ClassifyStatus(word); got != want {
