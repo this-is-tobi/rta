@@ -1,6 +1,10 @@
 package tui
 
-import huh "charm.land/huh/v2"
+import (
+	huh "charm.land/huh/v2"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
+)
 
 // fieldHints is what the box under the cursor can do beyond the keys every
 // form shares — the half of a form's footer that moves with the cursor.
@@ -49,6 +53,52 @@ func fieldHints(f *huh.Form, fields int, completes func(*huh.Input) bool) []hint
 		return []hintItem{action("ctrl+e", "$EDITOR"), action("ctrl+j", "new line")}
 	}
 	return nil
+}
+
+// onLastField is whether enter on the field under the cursor completes the form
+// instead of moving on. It is huh's own knowledge: a field's Submit binding is
+// enabled on the last field and its Next binding on every other
+// (charm.land/huh/v2, WithPosition), and the form keeps that current as groups
+// show and hide, so asking the binding agrees with what the key will do where
+// counting fields would drift from it the moment a conditional box (hideUnless)
+// appears or goes.
+func onLastField(f *huh.Form) bool {
+	if f == nil || f.State != huh.StateNormal {
+		return false
+	}
+	for _, b := range f.GetFocusedField().KeyBinds() {
+		if b.Enabled() && b.Help().Desc == "submit" {
+			return true
+		}
+	}
+	return false
+}
+
+// formEnterWord names enter by what it does where the cursor is: "next" on every
+// field but the last, and on the last the thing that completing the form does,
+// which afterFormUpdate decides and this reads in the same order.
+//
+// The footer said "next" on the last field of every form, with the ways to
+// submit listed beside it as keys that were not enter — and enter ran the call,
+// a write included, or saved a standing grant to an agent. The word has to be
+// the one for what the key is about to do, since pressing enter down a form to
+// look at its fields is what people do.
+func (m Model) formEnterWord() string {
+	cf := m.form
+	if cf == nil || !onLastField(cf.form) {
+		return "next"
+	}
+	switch {
+	case cf.adHocFrom != nil:
+		return "hold"
+	case cf.configTarget != "", cf.allowTarget != "", cf.credentialEditing, cf.connEditing, cf.profileEditing:
+		return "save"
+	case !cf.final:
+		return "next"
+	case m.current.Safety == plugin.Destructive:
+		return "preview"
+	}
+	return "run"
 }
 
 // completes reports whether in is one of this form's boxes with something on

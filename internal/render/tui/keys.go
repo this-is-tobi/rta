@@ -416,7 +416,7 @@ func (m Model) screenItems(screen mode) []hintItem {
 			hints = fieldHints(m.form.form, len(m.form.fields), m.form.completes)
 		}
 		return append(hints,
-			labelled(bindOpen, "next"), item(bindFastSubmit), labelled(bindBack, "cancel"),
+			labelled(bindOpen, m.formEnterWord()), item(bindFastSubmit), labelled(bindBack, "cancel"),
 		)
 	case modeTheme:
 		var hints []hintItem
@@ -430,8 +430,13 @@ func (m Model) screenItems(screen mode) []hintItem {
 			// and the current values — so the predicate is a constant.
 			hints = fieldHints(m.themeForm.form, len(themeFieldOrder), func(*huh.Input) bool { return true })
 		}
+		// The editor ends in a save, which is what enter does on its last box.
+		word := "next"
+		if m.themeForm != nil && onLastField(m.themeForm.form) {
+			word = "save"
+		}
 		return append(hints,
-			labelled(bindOpen, "next/save"), item(bindFastSubmit), labelled(bindBack, "cancel"),
+			labelled(bindOpen, word), item(bindFastSubmit), labelled(bindBack, "cancel"),
 		)
 	case modeCopyPick:
 		var hints []hintItem
