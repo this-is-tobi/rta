@@ -425,6 +425,43 @@ func TestEveryGrantAnExampleIssuesNamesItsAgent(t *testing.T) {
 	}
 }
 
+// Capabilities are renamed here when the name earns it, and a page that still
+// gives the old one to `rta explain`, `rta grant allow` or `rta dashboard add`
+// teaches a command that answers "no such capability" — the one argument those
+// commands take that nothing in the text shows to be wrong, since every ID has the
+// shape of a real one. The IDs a page gives them, and the plugin names a grant also
+// takes, are held to the catalogue the docs are held to everywhere else.
+//
+// The example plugin the plugin pages build is the reader's own, and has none here.
+func TestEveryCapabilityTheDocsGiveACommandIsOneTheCatalogueHas(t *testing.T) {
+	reg := documentedRegistry(t)
+	known := map[string]bool{}
+	for _, c := range reg.Capabilities() {
+		known[c.ID] = true
+		known[plugin.Namespace(c.ID)] = true
+	}
+	given := regexp.MustCompile("rta (?:explain|grant (?:allow|renew|revoke)|dashboard (?:add|rm|hide|unhide)) ([a-z][a-z0-9.-]*[a-z0-9])")
+
+	root := repoRoot(t)
+	checked := 0
+	for _, page := range markdownPages(t, root) {
+		for _, snippet := range commandSnippets(readDoc(t, root, page)) {
+			for _, m := range given.FindAllStringSubmatch(snippet.text, -1) {
+				if plugin.Namespace(m[1]) == "hello" {
+					continue
+				}
+				checked++
+				if !known[m[1]] {
+					t.Errorf("%s:%d: `%s` gives a command %s, which is neither a capability nor a plugin the catalogue has", page, snippet.line, snippet.text, m[1])
+				}
+			}
+		}
+	}
+	if checked < 40 {
+		t.Fatalf("checked %d capability IDs given to a command, want the sixty or so there are; has the wording moved?", checked)
+	}
+}
+
 // A profile is how an agent uses a service without holding its credential: the
 // host reads the entry the profile's `secrets:` names when a call runs, and an
 // agent granted the profile never receives it — `rta doctor` says as much of a
