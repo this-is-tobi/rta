@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -121,6 +122,19 @@ func viewGrade(v view.View) grade {
 	case view.KeyValue:
 		if waitingCalls(v) > 0 {
 			worst = gradeWarn
+		}
+		// A page of facts has no status column, but the line that says its backend
+		// is down is drawn red by the words it begins with, and what is red on a
+		// tile is what its header counts. Only the bad and the partial: "up 3
+		// days" is a good word and a fact, and a header says ok when a tile said
+		// so. A masked value is not read, whatever it says.
+		for _, p := range v.Pairs {
+			if slices.Contains(v.Redacted, p.Key) {
+				continue
+			}
+			if g := gradeOf(theme.ClassifyStatus(p.Value)); g == gradeWarn || g == gradeBad {
+				worst = max(worst, g)
+			}
 		}
 	case view.Sections:
 		for _, s := range v.Items {

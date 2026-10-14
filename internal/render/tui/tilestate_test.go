@@ -33,6 +33,31 @@ func gitRegistry(t *testing.T) *registry.Registry {
 // a repository, and the first thing a newcomer saw was a red ERROR badge on a
 // tile they never asked for. The tile says what is true instead — there is no
 // repository here — in the muted voice an empty notebook has.
+// The docker and kube overviews answer with a key/value page, not an error, when
+// their backend is not there, and a section of them folded to a header that said
+// nothing: the rollup read a key/value page only for the calls the agent tile has
+// waiting. It reads the words a value begins with, the ones a status cell is
+// coloured by, so what is red on the tile is what the header counts. A value that
+// is a good word says nothing: "up 3 days" is a fact, and the header says ok only
+// when a tile said so.
+func TestAKeyValueTileThatSaysItsBackendIsDownGradesBad(t *testing.T) {
+	for name, tc := range map[string]struct {
+		pairs []view.Pair
+		want  grade
+	}{
+		"down":      {[]view.Pair{{Key: "context", Value: "lab"}, {Key: "cluster", Value: "did not answer — connection refused"}}, gradeBad},
+		"refused":   {[]view.Pair{{Key: "cluster", Value: "answered, and refused — namespaces is forbidden"}}, gradeBad},
+		"partial":   {[]view.Pair{{Key: "cluster", Value: "answering"}, {Key: "nodes", Value: "could not be read — forbidden"}}, gradeWarn},
+		"worst":     {[]view.Pair{{Key: "nodes", Value: "could not be read — forbidden"}, {Key: "cluster", Value: "was never contacted — no kubeconfig"}}, gradeBad},
+		"facts":     {[]view.Pair{{Key: "context", Value: "lab"}, {Key: "namespaces", Value: "12"}}, gradeNone},
+		"a fact up": {[]view.Pair{{Key: "uptime", Value: "up 3 days"}, {Key: "mode", Value: "read-only"}}, gradeNone},
+	} {
+		if got := viewGrade(view.KeyValue{Pairs: tc.pairs}); got != tc.want {
+			t.Errorf("%s: graded %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
 func TestTheGitTileOutsideARepositoryIsAQuietSentenceNotAnError(t *testing.T) {
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
 	m := filled(t, New(gitRegistry(t), config.Dashboard{}, nil), 80, 24)
