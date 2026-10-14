@@ -115,7 +115,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 		at = min(1, at)
 	}
 	pairs = append(slices.Insert(pairs, at, lock...), facts.where...)
-	summary := view.KeyValue{Pairs: pairs}
+	summary := view.KeyValue{Pairs: pairs, Numbers: overviewNumbers(facts, counted)}
 	if !req.Bool("detail") {
 		return summary, nil
 	}
@@ -400,6 +400,57 @@ func (inv inventory) pairs(sf plugin.Surface, glance bool) []view.Pair {
 		pairs = append(pairs, view.Pair{Key: "history", Value: strings.Join(kept, sep)})
 	}
 	return pairs
+}
+
+// overviewNumbers are the page's counts and sizes as numbers, for the formats a
+// program reads (view.KeyValue.Numbers): what the sentences of the page were made
+// from, and only what is known. The file's own come without opening the store,
+// the inventory's only when it was opened, and a store that is not there has
+// none. A date is seconds since the epoch, named for it, since a number is what
+// a program asked for and the page has the ages in words.
+func overviewNumbers(facts storeFacts, inv *inventory) map[string]float64 {
+	n := map[string]float64{}
+	if !facts.changed.IsZero() {
+		n["file_bytes"] = float64(facts.size)
+		n["changed_unix"] = float64(facts.changed.Unix())
+	}
+	if facts.readers > 0 {
+		n["readers"] = float64(facts.readers)
+	}
+	if inv != nil {
+		n["keys"] = float64(inv.keys)
+		n["folders"] = float64(inv.folders)
+		n["top_level_folders"] = float64(len(inv.top))
+		n["value_bytes"] = float64(inv.valueBytes)
+		n["earlier_values"] = float64(inv.earlier)
+		n["removed_keys"] = float64(inv.removed)
+		for kind, count := range inv.kinds {
+			n["kind_"+numberName(kind)] = float64(count)
+		}
+		if !inv.newest.IsZero() {
+			n["newest_set_unix"] = float64(inv.newest.Unix())
+			n["oldest_set_unix"] = float64(inv.oldest.Unix())
+		}
+	}
+	if len(n) == 0 {
+		return nil
+	}
+	return n
+}
+
+// numberName is a kind as a name a number can have: lower case, with underscores
+// where the kind has a hyphen or anything else that is not a letter or a digit
+// (private-key is private_key).
+func numberName(kind string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r + ('a' - 'A')
+		}
+		return '_'
+	}, kind)
 }
 
 // kindsLine counts each kind held, the most common first — at most the seven

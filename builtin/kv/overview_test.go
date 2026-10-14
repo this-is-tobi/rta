@@ -111,6 +111,59 @@ func TestTheOverviewCountsWhatTheStoreHolds(t *testing.T) {
 	}
 }
 
+// The sentences are for a person and the numbers are for a program: `-o json`
+// and `-o yaml` carry the counts and sizes they were made from, by name, so that
+// `jq .numbers.keys` is the whole of the work and nobody takes
+// "5 keys, 3 folders (2 at the top), 2.1 KiB of values" apart. The same numbers
+// are the ones in the sentence, which is what keeps them one fact and not two.
+func TestTheOverviewHandsAProgramItsNumbers(t *testing.T) {
+	bytes := seeded(t)
+
+	n := overviewPairs(t, req(nil, false)).Numbers
+	for name, want := range map[string]float64{
+		"keys":              5,
+		"folders":           3,
+		"top_level_folders": 2,
+		"value_bytes":       float64(bytes),
+		"earlier_values":    1,
+		"removed_keys":      2,
+		"kind_string":       4,
+		"kind_certificate":  1,
+	} {
+		if got, ok := n[name]; !ok || got != want {
+			t.Errorf("numbers[%q] = %v (present %v), want %v", name, got, ok, want)
+		}
+	}
+	for _, name := range []string{"file_bytes", "changed_unix", "newest_set_unix", "oldest_set_unix"} {
+		if n[name] <= 0 {
+			t.Errorf("numbers[%q] = %v, want a positive number", name, n[name])
+		}
+	}
+	for name := range n {
+		if name != strings.ToLower(name) || strings.ContainsAny(name, " -/") {
+			t.Errorf("numbers name %q is not lower case with underscores", name)
+		}
+	}
+}
+
+// A store the page cannot open has no inventory to give numbers for, and says
+// only what can be said of the file; a store that is not there says none.
+func TestTheOverviewNumbersAreOnlyWhatIsKnown(t *testing.T) {
+	seeded(t)
+	n := overviewPairs(t, req(map[string]any{"passphrase": ""}, false)).Numbers
+	if _, has := n["keys"]; has {
+		t.Errorf("a store that was not opened has a key count: %v", n)
+	}
+	if n["file_bytes"] <= 0 {
+		t.Errorf("the file's size is known without opening it: %v", n)
+	}
+
+	setup(t)
+	if n := overviewPairs(t, req(nil, false)).Numbers; len(n) != 0 {
+		t.Errorf("a store that is not there has numbers: %v", n)
+	}
+}
+
 // What kv.status says about the file is not spelled a second time: the page
 // carries exactly the lines kv.status answers with, whatever state the store is
 // in, so the two cannot disagree about where it is or how it is locked. The one

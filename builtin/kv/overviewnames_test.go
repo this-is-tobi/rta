@@ -127,6 +127,27 @@ func TestAnAgentIsToldAFolderNameAsItIsNotCleaned(t *testing.T) {
 	}
 }
 
+// An agent asking how many keys there are is told in a number it does not have
+// to take out of a sentence, in the answer it reads as JSON.
+func TestAnAgentIsGivenTheNumbersToo(t *testing.T) {
+	seeded(t)
+	t.Setenv(passphraseEnv, "correct horse battery staple")
+
+	res := callTool(t, mcpSession(t, mcp.Options{}), "kv_overview", map[string]any{})
+	if res.IsError {
+		t.Fatalf("kv_overview was refused: %+v", res.Content)
+	}
+	var answer struct {
+		Numbers map[string]float64 `json:"numbers"`
+	}
+	if err := json.Unmarshal([]byte(res.Content[0].(*sdk.TextContent).Text), &answer); err != nil {
+		t.Fatal(err)
+	}
+	if answer.Numbers["keys"] != 5 || answer.Numbers["folders"] != 3 || answer.Numbers["removed_keys"] != 2 {
+		t.Errorf("the agent's numbers = %v, want 5 keys, 3 folders and 2 removed keys", answer.Numbers)
+	}
+}
+
 // A name that reads as itself is not changed by showing names this way, so a
 // store with ordinary folders sees no difference — and the row for the keys in
 // no folder, which no folder can be called, is not quoted for its space.
