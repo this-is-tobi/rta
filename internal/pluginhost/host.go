@@ -60,7 +60,8 @@ import (
 // never reply, and without this that is an indefinite hang with the process
 // cache locked behind it.
 // Variables rather than constants for one reason, and it is not
-// configuration: a race-instrumented build raises them (see slow_race.go).
+// configuration: a race-instrumented build raises them, and so does one built
+// with the slowhost tag (see slow.go).
 // Nothing else writes to them, and there is no flag or environment variable
 // behind them — the values below are what every real invocation uses.
 var (

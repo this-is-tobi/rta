@@ -4,12 +4,14 @@ package main_test
 
 import (
 	"bufio"
+	"debug/buildinfo"
 	"encoding/json"
 	"errors"
 	"flag"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -51,13 +53,38 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	binary = filepath.Join(dir, "rta")
-	build := exec.Command("go", "build", "-o", binary, ".")
+	// The wide plugin-start bounds a race build gets, without the
+	// instrumentation (internal/pluginhost/slow.go says why). This binary
+	// starts the stand-ins the tests write and the plugins `rta plugin dev`
+	// compiles, each a file the machine has not run before, and the five
+	// seconds a real machine is given are not meant for one busy running a
+	// whole suite.
+	build := exec.Command("go", "build", "-tags", "slowhost", "-o", binary, ".")
 	if out, err := build.CombinedOutput(); err != nil {
 		panic("building rta: " + err.Error() + "\n" + string(out))
 	}
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
+}
+
+// Read from the binary itself, so that dropping the tag from the build above
+// fails here, in a sentence that says why, and not as a timeout in some other
+// test on a day the machine is busy.
+func TestTheBinaryUnderTestIsBuiltWithTheWidePluginBounds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e builds the binary")
+	}
+	info, err := buildinfo.ReadFile(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range info.Settings {
+		if s.Key == "-tags" && slices.Contains(strings.Split(s.Value, ","), "slowhost") {
+			return
+		}
+	}
+	t.Errorf("the binary was not built with -tags slowhost, so a plugin it starts is given the production five seconds: %v", info.Settings)
 }
 
 // lockedBuffer collects a child process's output safely. exec writes it from

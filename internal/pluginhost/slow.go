@@ -1,11 +1,12 @@
-//go:build race
+//go:build race || slowhost
 
 package pluginhost
 
 import "time"
 
-// Under the race detector, a plugin takes longer to start than any real one
-// ever will.
+// Under the race detector, or in a build that asks for the same bounds with
+// the slowhost tag, a plugin takes longer to start than any real one ever
+// will.
 //
 // The bounds in host.go describe a real machine: fork, exec and one write,
 // with headroom for a Gatekeeper scan or a cold network filesystem. A
@@ -29,6 +30,26 @@ import "time"
 // that a spawn bound tight enough to be useful on a real machine has nothing
 // to say about a test host, shared CI runner included, that is busy with
 // something else.
+//
+// **What can be separated now** is what a first run costs on its own, measured
+// on a laptop at a load average of four: a two-line shell script written a
+// moment before, a plugin just built, a copy of a binary that had already run
+// and a copy of that with a new modification time each took 120 to 320 ms the
+// first time and 5 to 10 ms the second, and the call that starts the process
+// returned within a few milliseconds either way, so the wait is spent after
+// the exec, inside the handshake window. That is the operating system looking
+// at a file it has not seen run. Every new file pays it, a copy no less than a
+// build, and it is not instrumentation: it is there in a build with no -race
+// at all. A suite that writes or builds dozens of programs and starts each one
+// pays it dozens of times at once, and it has been seen to pass five seconds.
+//
+// Hence the tag. The end-to-end tests in cmd/rta drive a binary built without
+// -race, because an instrumented one would slow every invocation they make,
+// and that binary kept the production bounds while the test process around it
+// had the wide ones: a stand-in that exits at once, and a plugin that `rta
+// plugin dev` had just compiled, timed out in the race pass of `make ci`.
+// Nothing a test does can warm what `rta plugin dev` builds for itself, so
+// the bound is what gives, and TestMain builds that binary with the tag.
 //
 // The alternatives were both worse for the shipped behaviour. Raising the
 // product timeout slows every genuine failure on every user's machine to fix

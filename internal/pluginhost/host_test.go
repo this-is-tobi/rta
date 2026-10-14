@@ -334,7 +334,7 @@ func TestABinaryThatIsNotAPluginFailsQuickly(t *testing.T) {
 			}
 			// Derived from the handshake bound rather than hardcoded against
 			// it, so the two cannot drift — a race build raises that bound
-			// (slow_race.go) and this has to move with it. Still far under
+			// (slow.go) and this has to move with it. Still far under
 			// the minute go-plugin would otherwise spend, which is the whole
 			// point of the test.
 			slack := startTimeout + 15*time.Second
@@ -353,7 +353,7 @@ func TestABinaryThatIsNotAPluginFailsQuickly(t *testing.T) {
 
 // giveUpSoon shortens how long a plugin that never answers is waited for, for
 // a test whose plugin never will. Under -race the bound is twenty seconds
-// (slow_race.go), because a real plugin built with -race can be that slow to
+// (slow.go), because a real plugin built with -race can be that slow to
 // start on a loaded machine; a script that sleeps is not one, and each such
 // test paid the whole bound, a minute of the suite between three of them.
 // Nothing here is about how long a handshake may take: the tests that are
