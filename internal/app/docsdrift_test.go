@@ -254,6 +254,26 @@ func TestTheInstallationPageQuotesDoctorsCounts(t *testing.T) {
 	}
 }
 
+// firstPartyNames is the first-party plugins by the README's own list of them,
+// the one every other statement of which they are is held to.
+func firstPartyNames(t *testing.T) []string {
+	t.Helper()
+	list := regexp.MustCompile("(?s)first-party plugins live in .*? as proof the contract works — (.*?) — each ")
+	m := list.FindStringSubmatch(readDoc(t, repoRoot(t), "README.md"))
+	if m == nil {
+		t.Fatal("README.md no longer lists the first-party plugins after \"as proof the contract works\"; " +
+			"if the sentence moved, move this test with it")
+	}
+	var names []string
+	for _, quoted := range regexp.MustCompile("`[a-z0-9]+`").FindAllString(m[1], -1) {
+		names = append(names, strings.Trim(quoted, "`"))
+	}
+	if len(names) < 2 {
+		t.Fatalf("read %d first-party plugins out of %q", len(names), m[1])
+	}
+	return names
+}
+
 // The first-party plugins are counted in words, in four places, and the writing
 // chapter's "Ten first-party plugins live in rta-plugins" outlived the twelve
 // the other three pages named: the page a plugin author reads to see what has
@@ -264,16 +284,7 @@ func TestTheInstallationPageQuotesDoctorsCounts(t *testing.T) {
 // the table of them on the plugins page, must agree with how many it names.
 func TestTheDocsCountTheFirstPartyPluginsAlike(t *testing.T) {
 	root := repoRoot(t)
-	list := regexp.MustCompile("(?s)first-party plugins live in .*? as proof the contract works — (.*?) — each ")
-	m := list.FindStringSubmatch(readDoc(t, root, "README.md"))
-	if m == nil {
-		t.Fatal("README.md no longer lists the first-party plugins after \"as proof the contract works\"; " +
-			"if the sentence moved, move this test with it")
-	}
-	want := len(regexp.MustCompile("`[a-z0-9]+`").FindAllString(m[1], -1))
-	if want < 2 {
-		t.Fatalf("read %d first-party plugins out of %q", want, m[1])
-	}
+	want := len(firstPartyNames(t))
 
 	words := map[string]int{
 		"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,

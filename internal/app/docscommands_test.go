@@ -11,6 +11,12 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/profile"
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The quickstart told a new reader to run `rta cert check example.com`, and
@@ -30,7 +36,10 @@ import (
 // sentences ("rta mcp server listening on stdio"), which are not commands
 // and must not be read as one.
 func TestEveryCommandTheDocsSpellExists(t *testing.T) {
-	tree := rtaCommandTree(t)
+	// The first-party plugins' commands are in this tree too (docscatalogue_test.go),
+	// so `rta pg qeury` is a verb nobody can run and not the name of a plugin this
+	// build happens not to carry.
+	tree := commandTree(documentedRegistry(t))
 
 	repo := repoRoot(t)
 	pages, err := filepath.Glob(filepath.Join(repo, "docs", "*", "*.md"))
@@ -63,6 +72,11 @@ func rtaCommandTree(t *testing.T) map[string]*cobra.Command {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return commandTree(reg)
+}
+
+// commandTree is every command NewRoot builds over reg, by its full path.
+func commandTree(reg *registry.Registry) map[string]*cobra.Command {
 	tree := map[string]*cobra.Command{}
 	var walk func(c *cobra.Command, prefix string)
 	walk = func(c *cobra.Command, prefix string) {
@@ -172,13 +186,39 @@ func commandSnippets(body string) []snippet {
 // So every command line in a shell fence is parsed as the command it names —
 // its flags, then its arguments — by the real tree, and refused where the tree
 // would refuse it. Only what can be judged from the text alone: a line with a
-// placeholder, an ellipsis, a substitution or a plugin the default build does
-// not carry is skipped, and so is anything after a pipe or a redirect.
+// placeholder, an ellipsis or a substitution is skipped, and so is anything
+// after a pipe or a redirect.
+//
+// The tree has the first-party plugins' commands in it (docscatalogue_test.go).
+// Without them, a line like `rta pg query --profile staging`, which asks for no
+// SQL, and `rta vault kv tree --path apps`, which gives an argument as a flag,
+// were commands the default build knows nothing about, and the two pages that
+// carried them were the ones a reader copies from to reach a database.
 func TestEveryCommandTheDocsSpellParsesAsWritten(t *testing.T) {
-	reg, err := NewRegistry()
-	if err != nil {
-		t.Fatal(err)
-	}
+	forEachDocumentedCommand(t, documentedRegistry(t), func(where string, text string, words []string, root *cobra.Command) {
+		cmd, args, err := root.Find(words)
+		if err != nil || cmd == root || cmd.HasSubCommands() {
+			return
+		}
+		if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
+			return
+		}
+		if err := cmd.ParseFlags(args); err != nil {
+			// What a person typing it would be told, which says the fix where
+			// pflag's "unknown flag" only says the symptom.
+			t.Errorf("%s: `%s`: %v", where, text, cmd.FlagErrorFunc()(cmd, err))
+			return
+		}
+		if err := cmd.ValidateArgs(cmd.Flags().Args()); err != nil {
+			t.Errorf("%s: `%s`: %v", where, text, err)
+		}
+	})
+}
+
+// forEachDocumentedCommand visits every command line of every page that the text
+// alone settles (plainCommand), with the root the page's lines are found in.
+func forEachDocumentedCommand(t *testing.T, reg *registry.Registry, visit func(where, text string, words []string, root *cobra.Command)) {
+	t.Helper()
 	repo := repoRoot(t)
 	pages, err := filepath.Glob(filepath.Join(repo, "docs", "*", "*.md"))
 	if err != nil {
@@ -194,22 +234,131 @@ func TestEveryCommandTheDocsSpellParsesAsWritten(t *testing.T) {
 			if !ok {
 				continue
 			}
-			cmd, args, err := root.Find(words)
-			if err != nil || cmd == root || cmd.HasSubCommands() {
-				continue
-			}
-			if slices.Contains(args, "--help") || slices.Contains(args, "-h") {
-				continue
-			}
-			if err := cmd.ParseFlags(args); err != nil {
-				t.Errorf("%s:%d: `%s`: %v", rel, line.line, line.text, err)
-				continue
-			}
-			if err := cmd.ValidateArgs(cmd.Flags().Args()); err != nil {
-				t.Errorf("%s:%d: `%s`: %v", rel, line.line, line.text, err)
-			}
+			visit(fmt.Sprintf("%s:%d", rel, line.line), line.text, words, root)
 		}
 	}
+}
+
+// What a command is given with --set is a name the command resolves against a
+// declaration, and nothing about the line shows whether it does: `rta dashboard
+// add cert.expiry --set host=example.com` parses as well as any line, and is
+// refused when run because cert.expiry's input is `targets`, which is the line
+// the dashboard page gave a reader for adding a tile. The same is true of what
+// `rta profile set` is given — `--set` a key the plugin reads, `--secret` an
+// input it takes as a credential, `--only` an input it can fence — and of a
+// value outside the options or bounds the input declares.
+//
+// So the keys a line states are resolved the way the command resolves them, by
+// the functions it calls and not by a second reading of the declaration: a tile's
+// inputs by parseTileInputs and the checks `dashboard add` makes after it, a
+// profile's by parseSetFlags, parseSecretFlags, parseOnlyFlags and
+// profile.CheckConnection, which is also what `rta profile list` and `rta
+// doctor` report with. What stays unjudged is what depends on the reader's
+// state — that a profile named by --profile exists, that a kv entry a --secret
+// names has been stored — which is the one thing the text cannot settle.
+func TestEveryInputTheDocsStateWithSetIsOneItsPluginTakes(t *testing.T) {
+	isolate(t)
+	reg := documentedRegistry(t)
+	checked := 0
+	forEachDocumentedCommand(t, reg, func(where, text string, words []string, _ *cobra.Command) {
+		// A root of its own for each line: a flag set on a command stays set
+		// on it, and `--set` is an array that would carry the last line's keys
+		// into this one.
+		cmd, args, err := NewRoot(reg, "test").Find(words)
+		if err != nil || slices.Contains(args, "--help") {
+			return
+		}
+		if cmd.ParseFlags(args) != nil {
+			return // the parse test reports it
+		}
+		var verr *view.Error
+		switch cmd.CommandPath() {
+		case "rta dashboard add":
+			if len(cmd.Flags().Args()) != 1 {
+				return // the parse test reports it
+			}
+			verr = tileProblem(reg, cmd)
+		case "rta profile set":
+			verr = connectionProblem(reg, cmd)
+		default:
+			return
+		}
+		checked++
+		if verr != nil {
+			t.Errorf("%s: `%s` — %s: %s", where, text, verr.Code, verr.Message)
+		}
+	})
+	if checked < 4 {
+		t.Fatalf("resolved the inputs of %d documented lines, want the handful there are; has the wording moved?", checked)
+	}
+}
+
+// tileProblem is what `rta dashboard add <capability> --set k=v ...` refuses
+// about the capability and its inputs, as far as the line alone shows it. The
+// calls are runDashboardAdd's own, in its order, and the parts of it that read
+// the reader's config (a profile that does not exist, a view nobody wrote) are
+// the ones left out. cmd has the line's flags parsed, and its one argument.
+func tileProblem(reg *registry.Registry, cmd *cobra.Command) *view.Error {
+	id := cmd.Flags().Args()[0]
+	c, ok := reg.Capability(id)
+	if !ok {
+		return view.Errorf("core.dashboard.unknown", "%s is no capability", id)
+	}
+	if c.Safety != plugin.Read {
+		return view.Errorf("core.dashboard.notread", "%s is not a read, and a tile re-runs on a timer", id)
+	}
+	pairs, _ := cmd.Flags().GetStringArray("set")
+	with, verr := parseTileInputs(pairs, c)
+	if verr != nil {
+		return verr
+	}
+	resolved := plugin.Resolve(c, plugin.Inputs{Caller: with})
+	if verr := plugin.CheckInputs(c, plugin.NewRequest(resolved, false, false)); verr != nil {
+		return verr
+	}
+	for k := range with {
+		with[k] = resolved[k]
+	}
+	return tileCanRunUnasked(c, with, cmd.Flags().Changed("profile"))
+}
+
+// connectionProblem is what `rta profile set ... --plugin <name> --set k=v ...`
+// refuses about the connection it states, as far as the line alone shows it:
+// the block it would write is checked by the rules every report on a profile
+// uses, in the namespace the line names. A line that states no plugin states no
+// connection, and a profile that is only recoloured has nothing to resolve. cmd
+// has the line's flags parsed.
+func connectionProblem(reg *registry.Registry, cmd *cobra.Command) *view.Error {
+	key, _ := cmd.Flags().GetString("plugin")
+	if key == "" {
+		return nil
+	}
+	ns, _, _ := config.SplitKey(key)
+	var conn config.Connection
+	var verr *view.Error
+	if pairs, _ := cmd.Flags().GetStringArray("set"); len(pairs) > 0 {
+		if conn.Set, verr = parseSetFlags(pairs, ns, reg); verr != nil {
+			return verr
+		}
+	}
+	if pairs, _ := cmd.Flags().GetStringArray("only"); len(pairs) > 0 {
+		if conn.Only, verr = parseOnlyFlags(pairs, ns, reg); verr != nil {
+			return verr
+		}
+	}
+	if pairs, _ := cmd.Flags().GetStringArray("secret"); len(pairs) > 0 {
+		if conn.Secrets, verr = parseSecretFlags(pairs); verr != nil {
+			return verr
+		}
+	}
+	name := "docs"
+	if given := cmd.Flags().Args(); len(given) > 0 {
+		name = given[0]
+	}
+	if problems := profile.CheckConnection(name, key, conn, reg); len(problems) > 0 {
+		return view.Errorf("core.profile.unusable", "%s", problems[0].Reason).WithHint(problems[0].Hint)
+	}
+	return nil
 }
 
 // The commands that set rta up and run its boundary have no `rta explain`
