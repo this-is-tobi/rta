@@ -217,6 +217,45 @@ func Names() []string {
 	return out
 }
 
+// Lacking is the entries among keys that the store does not hold, opened the
+// way a profile's credential is: from the host's own environment, never
+// prompting, and answering with names the caller already has.
+//
+// For one caller, `rta doctor`, which asks it of the entries the profiles map
+// so that a profile whose first call would fail on an entry nobody made says
+// so before the call does. It is asked only when this environment can open the
+// store (Unlockable), because opening one costs a third of a second of key
+// derivation and a quarter of a gigabyte, and nothing that runs on a timer
+// asks it.
+//
+// The error is the store's own refusal to open, which is not the same news as
+// the entries being absent: a RTA_KV_PASSPHRASE that does not fit the store
+// leaves every entry unread, and "none of them are there" would be a false
+// answer to it.
+//
+// It changes nothing, the TUI's store session included. Doctor runs in the
+// TUI's own process, and a failed open ends the session for every use of the
+// store (wrongKey); this one is a question about the environment, not a use,
+// and what it tried was the environment's passphrase, which a session never
+// stood behind.
+func Lacking(keys []string) ([]string, *view.Error) {
+	req := plugin.NewRequest(map[string]any{
+		"passphrase": hostPassphrase(),
+		"identity":   os.Getenv(identityEnv),
+	}, false, true)
+	s, verr := open(req, false)
+	if verr != nil {
+		return nil, verr
+	}
+	var lacking []string
+	for _, key := range keys {
+		if _, held := s.Entries[key]; !held {
+			lacking = append(lacking, key)
+		}
+	}
+	return lacking, nil
+}
+
 // Store writes a value under a name, unlocking and re-sealing from the host's
 // own environment.
 //

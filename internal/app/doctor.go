@@ -770,7 +770,7 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 			bad[p.Name] = true
 		}
 		fromStore := 0
-		var withoutStore []string
+		var withoutStore, inTheStore []string
 		for _, name := range cfg.ProfileNames() {
 			if bad[name] {
 				continue
@@ -790,6 +790,13 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 			for _, entry := range kv.UnreadableEntries(name, p) {
 				if !slices.Contains(withoutStore, entry) {
 					withoutStore = append(withoutStore, entry)
+				}
+			}
+			if kv.HasStore() {
+				for _, entry := range kv.EntriesRead(name, p) {
+					if !slices.Contains(inTheStore, entry) {
+						inTheStore = append(inTheStore, entry)
+					}
 				}
 			}
 			if len(named) > 0 {
@@ -846,6 +853,7 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 			add("profile", "warn", kv.NoStoreSentence(plugin.SurfaceCLI,
 				format.Count(len(withoutStore), "profile credential comes", "profile credentials come"), withoutStore))
 		}
+		doctorStoreCredentials(add, inTheStore)
 		// The widening, said out loud. A profile that maps a credential out of
 		// the store means an agent holding a grant for that profile can cause
 		// those entries to be read — it never sees them, and it cannot reach an
@@ -882,6 +890,59 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 				break profiled
 			}
 		}
+	}
+}
+
+// doctorStoreCredentials grades the entries profiles map onto a store that
+// exists against what can be known about reading them: whether a server started
+// from this shell could open it at all, and, when this environment can, whether
+// the entries are in it.
+//
+// The row exists because a refusal an agent meets on a profile's credential
+// sends the operator to the record, and an operator who goes to doctor first
+// used to find every profile row ok beside a `kv store` row that said, in its
+// own words, that a server started here could not open the store. Two rows that
+// each told the truth and were never put side by side.
+//
+// A store this shell cannot open is a note, not a warning: the `kv store` row
+// grades the same fact ok, because a store nothing can open unattended is the
+// safer posture, and a server whose own environment carries the passphrase is
+// not subject to it, so a warning would fail `rta doctor --strict` for somebody
+// who has done nothing wrong and has nothing in this shell to clear it with.
+// The note says what the posture costs. An entry the store lacks and a
+// passphrase that does not fit are warnings, since they fail for anything
+// started from here. The entries are looked for only when the environment
+// unlocks the store by itself, so a passphrase is never asked for here and
+// nothing is decrypted that a server started from this shell could not decrypt
+// too.
+func doctorStoreCredentials(add func(check, status, detail string), entries []string) {
+	if len(entries) == 0 {
+		return
+	}
+	if unlockable, _ := kv.Unlockable(); !unlockable {
+		add("profile", "info", storeClosedSentence(
+			format.Count(len(entries), "profile credential comes", "profile credentials come"), entries))
+		return
+	}
+	lacking, verr := kv.Lacking(entries)
+	switch {
+	case verr != nil:
+		// The refusal with its hint, which is where "wrong passphrase" is: the
+		// message alone says the store could not be decrypted and leaves a
+		// reader to work out which of the two inputs it was.
+		//
+		// No count of the entries, which is of entries here and of mappings in
+		// the widening note two rows on, and the same profile credential
+		// mapped twice reads as one and as two.
+		refusal := verr.Message
+		if verr.Hint != "" {
+			refusal += " — " + verr.Hint
+		}
+		add("profile", "warn", fmt.Sprintf("the store does not open from this environment, so %s (%s) cannot be read: %s",
+			format.Plural(len(entries), "the profile credential it holds", "the profile credentials it holds"),
+			strings.Join(entries, ", "), refusal))
+	case len(lacking) > 0:
+		add("profile", "warn", storeLacksSentence(lacking))
 	}
 }
 
