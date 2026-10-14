@@ -200,7 +200,7 @@ func TestAnExactSelectorThatCanNameNoGrantIsRefused(t *testing.T) {
 			t.Errorf("%s: %v, want %s", name, err, c.code)
 		}
 	}
-	if _, verr := RevokeRemote(operatorid.RevokeSpec{Exact: true, Agent: "claude"}, true); verr == nil ||
+	if _, verr := RevokeRemote(catalog)(operatorid.RevokeSpec{Exact: true, Agent: "claude"}, true); verr == nil ||
 		verr.Code != "grant.exact.target" {
 		t.Errorf("the operator channel's exact revoke with no target: %v, want grant.exact.target", verr)
 	}
@@ -234,7 +234,7 @@ func TestAnExactRemoteRevokeIsRefusedByAServerThatIgnoresIt(t *testing.T) {
 		// As an older server answers: the field unread, so no Exact said back.
 		wrote = wrote || write
 		spec.Exact = false
-		out, verr := RevokeRemote(spec, false)
+		out, verr := RevokeRemote(catalog)(spec, false)
 		out.Exact = false
 		return out, verr
 	}})

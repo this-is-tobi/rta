@@ -147,7 +147,7 @@ func TestRemoteAllowThenRevokeEndToEnd(t *testing.T) {
 	srv := httptest.NewUnstartedServer(mcp.NewOperatorHandler(mcp.OperatorConfig{
 		Roster: roster, URL: base,
 		Prepare: PrepareRemote(catalog, builtIn),
-		Revoke:  RevokeRemote,
+		Revoke:  RevokeRemote(catalog),
 	}))
 	srv.Listener.Close()
 	srv.Listener = ln
@@ -264,7 +264,7 @@ func TestAHostilePrepareIsNotASigningOracle(t *testing.T) {
 // it, and points remotes.yaml at it.
 func remoteLab(t *testing.T) {
 	t.Helper()
-	remoteLabAs(t, mcp.OperatorConfig{Revoke: RevokeRemote})
+	remoteLabAs(t, mcp.OperatorConfig{Revoke: RevokeRemote(catalog)})
 }
 
 // remoteLabAs is remoteLab serving cfg, its roster and URL filled in.

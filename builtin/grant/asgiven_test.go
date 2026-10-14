@@ -96,7 +96,7 @@ func TestARecordOfWhiteSpaceAloneIsRefused(t *testing.T) {
 	if got := scopesOn(t, "kv.get"); !slices.Equal(got, []string{"db-password"}) {
 		t.Errorf("the refusals changed the roster to %q", got)
 	}
-	if _, verr := RevokeRemote(operatorid.RevokeSpec{Target: "kv.get", Scope: " "}, true); verr == nil || verr.Code != "grant.scope.blank" {
+	if _, verr := RevokeRemote(catalog)(operatorid.RevokeSpec{Target: "kv.get", Scope: " "}, true); verr == nil || verr.Code != "grant.scope.blank" {
 		t.Errorf("the operator channel's revoke on white space: %v, want grant.scope.blank", verr)
 	}
 	if got := scopesOn(t, "kv.get"); !slices.Equal(got, []string{"db-password"}) {

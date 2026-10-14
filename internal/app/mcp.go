@@ -515,7 +515,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 						// additionally requires the machine's guard in remote
 						// mode, checked per call.
 						Prepare: grantcap.PrepareRemote(reg.Capabilities, reg.Artifact),
-						Revoke:  grantcap.RevokeRemote,
+						Revoke:  grantcap.RevokeRemote(reg.Capabilities),
 						Pending: agentcap.PendingRemote(agentName),
 						Answer:  agentcap.AnswerRemote(agentName),
 						// The build each grant on the roster is bound to is
