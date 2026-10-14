@@ -734,11 +734,14 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// audit.web carry NeedsGrant because the failure *is* the
 			// information ("connection refused" is a port map), and a
 			// runaway loop is by definition one that is failing. What is
-			// refunded is what never reached the handler: a profile that
-			// would not resolve, a forward that would not open, a lock —
-			// those releases sit above. A flaky capability burning a
-			// one-time grant costs the operator a re-issue, which is the
-			// honest outcome.
+			// refunded is what never reached the handler, and each of those
+			// releases sits above: a profile that would not resolve, a call
+			// outside its fence, a credential it could not fill, a forward
+			// that would not open, an input the host refused once the profile
+			// and the config had filled the rest. A lock is not one of them: it
+			// refuses before the use is reserved, so there is nothing to give
+			// back. A flaky capability burning a one-time grant costs the
+			// operator a re-issue, which is the honest outcome.
 			ve := view.AsError(err, c.ID+".failed")
 			// A handler's own policy gate — localOnly, humanOnly, a
 			// credential-minting verb refusing agents — says so on the error

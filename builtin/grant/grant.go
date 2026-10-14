@@ -94,9 +94,11 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"scoped to db-password allows that key and no other. " +
 					"`agent` narrows it to one of your named agents, so consent given while " +
 					"talking to one client does not follow every other client on this machine. " +
-					"`max-uses` expires the grant after that many successful calls, on top of " +
+					"`max-uses` expires the grant after that many calls, on top of " +
 					"`ttl`, whichever comes first — 1 for a value that should be " +
-					"read exactly once. `rate` bounds how fast instead of how much: " +
+					"read exactly once. A call spends its use when it runs, whether or not " +
+					"the capability then succeeds: a mistyped key or a backend that is down " +
+					"spends it too, and only a call refused before it ran gives it back. `rate` bounds how fast instead of how much: " +
 					"10/1h allows ten calls in any hour and tells the agent when to " +
 					"come back, so a session that has gone wrong slows to something you can " +
 					"notice rather than draining at machine speed.",
@@ -114,7 +116,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 							"omit only when this machine knows exactly one"},
 					{Name: "ttl", Type: plugin.String, Default: "15m", Suggest: suggestTTL,
 						Help: "how long it lasts: 30s, 15m, 2h"},
-					{Name: "max-uses", Type: plugin.Int, Help: "expire after this many successful calls (0 = unlimited)"},
+					{Name: "max-uses", Type: plugin.Int, Help: "expire after this many calls that run, failures included (0 = unlimited)"},
 					{Name: "rate", Type: plugin.String, Suggest: suggestRate,
 						Help: "how fast it may be used, as calls/window — e.g. 10/1h"},
 					{Name: "note", Type: plugin.String, Help: "why — shown by grant.list"},
@@ -167,7 +169,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					{Name: "ttl", Type: plugin.String, Suggest: suggestRoleTTL,
 						Help: "how long the grants last: 4h, 12h (the role's ttl, else " + DefaultRoleTTL + ")"},
 					{Name: "max-uses", Type: plugin.Int,
-						Help: "with profile: expire each grant after this many successful calls (0 = unlimited) — each grant, not the bundle"},
+						Help: "with profile: expire each grant after this many calls that run, failures included (0 = unlimited) — each grant, not the bundle"},
 					{Name: "rate", Type: plugin.String, Suggest: suggestRate,
 						Help: "with profile: how fast each grant may be used, as calls/window — each grant, not the bundle"},
 					{Name: "note", Type: plugin.String, Help: "with profile: why — shown by grant.list"},

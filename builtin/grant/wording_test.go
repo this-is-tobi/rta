@@ -92,3 +92,29 @@ func TestTheAgentIsTheSubjectOfTheAllowMessage(t *testing.T) {
 		t.Fatalf("allow said %q", body)
 	}
 }
+
+// A use is spent when the call runs, and a call that fails inside the
+// capability has run: a mistyped key burns a `--max-uses 1` grant. The help
+// and the description said "successful calls", which promised the opposite to
+// the person for whom 1 is the shape of a value read exactly once.
+func TestMaxUsesSaysThatACallThatRunsAndFailsStillCounts(t *testing.T) {
+	seen := 0
+	for _, c := range Plugin(func() []plugin.Capability { return nil }, builtIn).Capabilities {
+		for _, f := range c.Inputs {
+			if f.Name != "max-uses" {
+				continue
+			}
+			seen++
+			if strings.Contains(f.Help, "successful") || !strings.Contains(f.Help, "failures included") {
+				t.Errorf("%s describes max-uses as %q, want it to say a failed call still counts", c.ID, f.Help)
+			}
+		}
+		if c.ID == "grant.allow" && (strings.Contains(c.Description, "successful") ||
+			!strings.Contains(c.Description, "whether or not the capability then succeeds")) {
+			t.Errorf("grant.allow's description does not say a failed call spends its use:\n%s", c.Description)
+		}
+	}
+	if seen < 2 {
+		t.Fatalf("found %d max-uses inputs, want grant.allow's and the bundle's", seen)
+	}
+}
