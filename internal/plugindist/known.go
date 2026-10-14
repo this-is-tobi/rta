@@ -131,8 +131,11 @@ func WordHint(word string, loaded func(namespace string) bool,
 	untrusted []pluginhost.Untrusted, failed []pluginhost.Failed) (hint string, ok bool) {
 	for _, u := range untrusted {
 		if strings.EqualFold(u.Name, word) && !u.Taken {
-			return u.Name + " is installed at " + u.Path + " and has not been approved to run — " +
-				"`rta plugin trust " + u.Name + "` approves that build", true
+			// The command before the path: a line that does not fit (the
+			// dashboard's search is one) loses its end, and a path of forty
+			// characters in front of the command cut it off at 80 columns.
+			return u.Name + " has not been approved to run — `rta plugin trust " + u.Name +
+				"` approves the build installed at " + u.Path, true
 		}
 	}
 	for _, f := range failed {

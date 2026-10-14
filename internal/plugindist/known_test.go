@@ -188,7 +188,7 @@ func TestAnInstalledPluginThatIsNotRunningIsToldWhatIsWrongAndNotToInstall(t *te
 	failed := []pluginhost.Failed{{Name: "redis", Path: "/opt/bin/rta-plugin-redis", Reason: "exited 3"}}
 
 	hint, ok := WordHint("qdrant", nil, untrusted, failed)
-	if !ok || !strings.Contains(hint, "`rta plugin trust qdrant` approves that build") || strings.Contains(hint, "`rta plugin install") {
+	if !ok || !strings.Contains(hint, "`rta plugin trust qdrant` approves the build installed at /opt/bin/rta-plugin-qdrant") || strings.Contains(hint, "`rta plugin install") {
 		t.Errorf("WordHint(qdrant) = %q, %v, want the approval", hint, ok)
 	}
 	hint, ok = WordHint("Redis", nil, untrusted, failed)
