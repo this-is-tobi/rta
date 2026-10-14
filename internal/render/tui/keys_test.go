@@ -588,6 +588,35 @@ func TestQuitWorksFromEveryScreen(t *testing.T) {
 	}
 }
 
+// Tab is advertised as a way to select a tile, and shift+tab did nothing: a
+// hand that reaches for the reverse of a key the footer teaches got silence, and
+// the way back to the search bar from the last tile of a long dashboard was one
+// arrow at a time. It walks the same stops backwards and ends on the bar.
+func TestShiftTabWalksBackWhatTabWalks(t *testing.T) {
+	m, _ := realModel(t, 120, 40)
+	step := func(m Model, k tea.KeyPressMsg) Model {
+		out, _ := m.Update(k)
+		return out.(Model)
+	}
+	tab := tea.KeyPressMsg{Code: tea.KeyTab}
+	back := tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
+
+	one := step(m, tab)
+	two := step(one, tab)
+	if one.currentStop() == m.currentStop() || two.currentStop() == one.currentStop() {
+		t.Fatalf("tab did not move the selection: %v, %v, %v", m.currentStop(), one.currentStop(), two.currentStop())
+	}
+	if got := step(two, back); got.currentStop() != one.currentStop() {
+		t.Errorf("shift+tab from the second stop is on %v, want the first, %v", got.currentStop(), one.currentStop())
+	}
+	if got := step(one, back); got.selected != 0 {
+		t.Errorf("shift+tab from the first stop is on %v, want the search bar", got.currentStop())
+	}
+	if got := step(m, back); got.selected != 0 {
+		t.Errorf("shift+tab on the search bar moved the selection to %v", got.currentStop())
+	}
+}
+
 func press(t *testing.T, m Model, key string) Model {
 	t.Helper()
 	var msg tea.KeyPressMsg

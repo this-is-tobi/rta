@@ -96,6 +96,8 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		m.moveSelection(-1, 0)
 	case "right", "l", "tab":
 		m.moveSelection(1, 0)
+	case "shift+tab":
+		m.moveBack()
 	case "up", "k":
 		m.moveSelection(0, -1)
 	case "down", "j":
