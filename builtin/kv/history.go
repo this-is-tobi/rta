@@ -227,7 +227,7 @@ func removedTable(sf plugin.Surface, s store) view.View {
 		sf.CapabilityName("kv.restore") + " brings it back or " + sf.InputName("purge") + " drops it."}
 	for _, k := range names {
 		r := s.Removed[k]
-		t.Rows = append(t.Rows, []string{k, r.Kind, format.Bytes(len(r.Value)), r.Description,
+		t.Rows = append(t.Rows, []string{plugin.ListedName(k), r.Kind, format.Bytes(len(r.Value)), r.Description,
 			itemstore.Age(r.RemovedAt)})
 	}
 	t.Total = len(t.Rows)

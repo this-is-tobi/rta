@@ -113,7 +113,7 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	t := view.Table{Columns: cols}
 	for _, k := range names {
 		e := s.Entries[k]
-		row := []string{k, e.Kind, format.Bytes(len(e.Value)), e.Description, itemstore.Age(e.Updated)}
+		row := []string{plugin.ListedName(k), e.Kind, format.Bytes(len(e.Value)), e.Description, itemstore.Age(e.Updated)}
 		if withHistory {
 			row = append(row, historyCell(len(e.Previous)))
 		}
