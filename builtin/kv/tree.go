@@ -59,9 +59,9 @@ func runTree(_ context.Context, req plugin.Request) (view.View, error) {
 		parts := strings.Split(k, "/")
 		cur := root
 		for _, p := range parts[:len(parts)-1] {
-			cur = cur.child(p)
+			cur = cur.child(p, true)
 		}
-		leaf := cur.child(parts[len(parts)-1])
+		leaf := cur.child(parts[len(parts)-1], false)
 		leaf.kind = s.Entries[k].Kind
 	}
 	return view.Tree{Roots: root.render()}, nil
@@ -69,19 +69,25 @@ func runTree(_ context.Context, req plugin.Request) (view.View, error) {
 
 // treeNode is a folder or a leaf while the tree is being built; the order
 // of insertion is the sorted order of the keys, which is the order drawn.
+//
+// A folder and a leaf of the same label are two nodes: a key `a` beside `a/top`
+// is an entry and a folder, the store holds both, and `kv.list` and the count
+// say so. One node per label drew the folder alone, and the entry was on every
+// page but the map.
 type treeNode struct {
 	label    string
+	folder   bool
 	kind     string
 	children []*treeNode
 }
 
-func (n *treeNode) child(label string) *treeNode {
+func (n *treeNode) child(label string, folder bool) *treeNode {
 	for _, c := range n.children {
-		if c.label == label {
+		if c.label == label && c.folder == folder {
 			return c
 		}
 	}
-	c := &treeNode{label: label}
+	c := &treeNode{label: label, folder: folder}
 	n.children = append(n.children, c)
 	return c
 }
@@ -90,7 +96,7 @@ func (n *treeNode) render() []view.Node {
 	out := make([]view.Node, 0, len(n.children))
 	for _, c := range n.children {
 		node := view.Node{Label: c.label, Detail: c.kind}
-		if len(c.children) > 0 {
+		if c.folder {
 			node.Label += "/"
 			node.Detail = format.CountOf(c.leaves(), "key")
 			node.Children = c.render()
@@ -101,7 +107,7 @@ func (n *treeNode) render() []view.Node {
 }
 
 func (n *treeNode) leaves() int {
-	if len(n.children) == 0 {
+	if !n.folder {
 		return 1
 	}
 	total := 0
