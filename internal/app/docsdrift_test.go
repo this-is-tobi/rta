@@ -599,6 +599,46 @@ func TestTheDocsShowACountOfOneAsSingular(t *testing.T) {
 	}
 }
 
+// Three sentences on the pages a newcomer is sent to first held the most
+// security guidance in the least readable form: what `audit clients --fix`
+// prints for an agent's own configuration ran to a hundred and ninety words in
+// one sentence, what the server tells every agent at the handshake to a hundred
+// and fifty, and which hosts `audit web` refuses to seventy-odd inside a paragraph
+// of five hundred. Dense is not wrong, and a reader skims it, which is the one
+// thing guidance about how to stop an agent granting itself access cannot afford.
+//
+// Only these three are held, by the sentence and not by the page: a limit on every
+// sentence of the docs would be an allowlist of everything else that is long. A
+// sentence is a line of a list or a run up to the next full stop, and a command in
+// backticks is one word, since it is a name to look up and not a thing to parse.
+func TestTheDensestSecuritySentencesStayInPiecesAReaderCanHold(t *testing.T) {
+	const limit = 60
+	code := regexp.MustCompile("`[^`]*`")
+	stop := regexp.MustCompile(`[.!?]\s+`)
+	root := repoRoot(t)
+	for _, p := range []struct{ rel, from, to string }{
+		{"docs/30-boundary/10-the-boundary.md", "`rta audit clients --fix` prints those edits", "It prints and never writes"},
+		{"docs/30-boundary/20-mcp.md", "What is true of every tool is said once instead", "Once a profile is configured"},
+		{"docs/30-boundary/30-grants.md", "`audit web` refuses", "An internationalised name"},
+	} {
+		_, rest, ok := strings.Cut(readDoc(t, root, p.rel), p.from)
+		if !ok {
+			t.Fatalf("%s no longer holds %q; if the passage moved, move this test with it", p.rel, p.from)
+		}
+		passage, _, ok := strings.Cut(p.from+rest, p.to)
+		if !ok {
+			t.Fatalf("%s no longer has %q after %q; if the passage moved, move this test with it", p.rel, p.to, p.from)
+		}
+		for _, line := range strings.Split(passage, "\n") {
+			for _, sentence := range stop.Split(strings.TrimPrefix(strings.TrimSpace(line), "- "), -1) {
+				if n := len(strings.Fields(code.ReplaceAllString(sentence, "x"))); n > limit {
+					t.Errorf("%s has a sentence of %d words (more than %d) in the passage that begins %q: %.80s…", p.rel, n, limit, p.from, sentence)
+				}
+			}
+		}
+	}
+}
+
 // Start here gives each track a time, and a newcomer budgets a morning from it.
 // Nothing computed the numbers: the six pages of the second track said about 45
 // minutes and take about an hour to read, the eight of the third said about an
