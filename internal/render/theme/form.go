@@ -60,3 +60,22 @@ func Form(isDark bool) *huh.Styles {
 	t.Group.Description = t.Focused.Description
 	return t
 }
+
+// FormMono is Form for a terminal that shows no colour (NO_COLOR, TERM=dumb).
+//
+// A yes/no box tells its answer by the fill of one of two buttons and by
+// nothing else, and with the fill taken away both read `yes     no`: a person
+// pressing enter on a to-do or an allow box did not know which they had
+// chosen. The chosen button is drawn between brackets, the mark the active
+// environment's name takes when there is no colour to be a badge (Mark), and
+// as text rather than as an attribute, so it survives a terminal that draws
+// none and a copy of the screen. Every other part of a form already carries its
+// state in a glyph: the pickers' selector, the check marks of a multiple choice,
+// the focused field's heavy bar.
+func FormMono(isDark bool) *huh.Styles {
+	t := Form(isDark)
+	bracketed := func(s string) string { return "[ " + s + " ]" }
+	t.Focused.FocusedButton = t.Focused.FocusedButton.Transform(bracketed)
+	t.Blurred.FocusedButton = t.Blurred.FocusedButton.Transform(bracketed)
+	return t
+}

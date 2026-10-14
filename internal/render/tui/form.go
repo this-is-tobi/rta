@@ -184,6 +184,10 @@ type capForm struct {
 	// field name: the form of a profile's name, which only the profile editor
 	// knows. See withCheck.
 	checks map[string]func(string) error
+	// noColor is whether the terminal shows no colour, as the model learned it
+	// (fitForm): a yes/no box is drawn with brackets then, since the fill that
+	// said which answer was chosen is not there to say it.
+	noColor bool
 }
 
 // formOption tunes a form beyond the fields it collects.
@@ -696,7 +700,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 	// why. The footer carries the message now (footerFor), where the height
 	// is already budgeted.
 	cf.form = huh.NewForm(cf.groups(fields, names)...).WithKeyMap(formKeyMap()).
-		WithTheme(formTheme()).WithShowHelp(false).WithShowErrors(false)
+		WithTheme(cf.theme()).WithShowHelp(false).WithShowErrors(false)
 	return cf
 }
 
