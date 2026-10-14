@@ -73,6 +73,35 @@ func RevealAs(sf plugin.Surface) func(key string) (string, *view.Error) {
 	return func(key string) (string, *view.Error) { return reveal(sf, key) }
 }
 
+// RevealForServer is Reveal for `rta mcp serve`, whose refusals the operator
+// reads and an agent never does: the bridge answers the agent with a sentence
+// that names neither the entry nor the store, and keeps this one for the
+// record's note (internal/mcp). Reveal's wording hands a command on as "ask the
+// operator to run" because it cannot tell who is asking, and on that row it
+// told the operator to ask themselves.
+//
+// What the operator needs differs from a person at a terminal in one thing: the
+// passphrase or the key has to reach the environment the server was started in,
+// which is not the shell they are typing in, and is the commonest reason the
+// refusal is on the record at all. The commands are spelled as they type them,
+// the CLI's own, and the two refusals that name an environment name that one.
+func RevealForServer(key string) (string, *view.Error) {
+	value, verr := reveal(plugin.SurfaceCLI, key)
+	if verr == nil {
+		return value, nil
+	}
+	const where = " in the environment rta mcp serve runs in"
+	out := *verr
+	switch verr.Code {
+	case "kv.passphrase.missing":
+		out.Hint = "set " + passphraseEnv + where
+	case "kv.identity.required":
+		out.Hint = "set " + identityEnv + " to the private key of one of the store's recipients," + where +
+			" — " + plugin.SurfaceCLI.CapabilityName("kv.recipients") + " lists who can read it"
+	}
+	return "", &out
+}
+
 func reveal(sf plugin.Surface, key string) (string, *view.Error) {
 	if key == "" {
 		return "", view.Errorf("kv.key.empty", "no entry named")
@@ -87,7 +116,7 @@ func reveal(sf plugin.Surface, key string) (string, *view.Error) {
 
 	s, verr := load(req)
 	if verr != nil {
-		return "", verr
+		return "", hostOpenHint(sf, verr)
 	}
 	e, ok := s.Entries[key]
 	if !ok {
@@ -113,6 +142,30 @@ func reveal(sf plugin.Surface, key string) (string, *view.Error) {
 			WithHint(listEntriesHint(sf))
 	}
 	return string(e.Value), nil
+}
+
+// hostOpenHint is the refusal load gave to open the store, with the passphrase
+// hint worded for what this open can actually be given.
+//
+// load words "no passphrase provided" for a call that has a flag — "set
+// RTA_KV_PASSPHRASE or give --passphrase" — and the request the host reads
+// with carries none: it is built from the environment alone (hostPassphrase)
+// and never prompts. A person who ran `rta pg query --profile staging` was told
+// to give a flag that command does not have. What opens the store here is the
+// variable, in the environment of whatever resolves the credential: this
+// process at a terminal, and over MCP the server's own, which is the one an
+// operator is not looking at.
+func hostOpenHint(sf plugin.Surface, verr *view.Error) *view.Error {
+	if verr.Code != "kv.passphrase.missing" {
+		return verr
+	}
+	out := *verr
+	if sf == plugin.SurfaceMCP {
+		out.Hint = passphraseHint(plugin.SurfaceMCP)
+	} else {
+		out.Hint = "set " + passphraseEnv + " — a profile's credential is read without asking for the passphrase"
+	}
+	return &out
 }
 
 // makeStoreHint is the command that makes the store and the entry a profile

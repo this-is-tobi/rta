@@ -318,7 +318,8 @@ profiles:
 `
 	f := newProfileFixture(t, withSecret, func(o *Options) {
 		o.Secrets = func(key string) (string, *view.Error) {
-			return "", view.Errorf("kv.notfound", "no entry %s: there is no store on this machine yet", key)
+			return "", view.Errorf("kv.notfound", "no entry %s: there is no store on this machine yet", key).
+				WithHint("ask the operator to run `rta kv set " + key + "`")
 		}
 	})
 	now := time.Now()
@@ -330,8 +331,15 @@ profiles:
 
 	res := f.call(t, map[string]any{"profile": "staging", "sql": "select 1"})
 	assertCode(t, res, "core.profile.secret.unavailable")
-	if text := contentText(t, res); strings.Contains(text, "staging-db-password") {
+	text := contentText(t, res)
+	if strings.Contains(text, "staging-db-password") {
 		t.Errorf("the agent was told which entry the operator mapped: %s", text)
+	}
+	// Whoever relays the hint sends the operator to the record, where the reason
+	// is. Doctor cannot see the environment this server was started in, and the
+	// hint that named it led to a report with every row green.
+	if !strings.Contains(text, plugin.AskOperator("agent log --detail")) || strings.Contains(text, "rta doctor") {
+		t.Errorf("the hint does not send the operator to the record: %s", text)
 	}
 
 	entries, err := agentlog.Read(1)
@@ -344,6 +352,9 @@ profiles:
 	}
 	if !strings.Contains(e.Note, "staging-db-password") || !strings.Contains(e.Note, "no store") {
 		t.Errorf("the row does not carry the cause for the operator: note %q", e.Note)
+	}
+	if !strings.Contains(e.Note, "rta kv set staging-db-password") {
+		t.Errorf("the row the operator was sent to does not say what to run: note %q", e.Note)
 	}
 }
 

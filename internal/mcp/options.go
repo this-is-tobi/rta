@@ -113,6 +113,11 @@ type Options struct {
 	// Injected rather than imported so this package never depends on the
 	// store, and so a caller has to decide, in one line somebody typed, that
 	// this server may open it.
+	//
+	// A refusal it returns never reaches an agent: the bridge answers one with
+	// a sentence naming neither the entry nor the store, and puts the refusal
+	// itself, hint included, in the record's note, which is the operator's to
+	// read. So the hint is worded for the operator, not for a caller to relay.
 	Secrets profile.Reader
 	// Profiles is the operator's configured connections, as read when the
 	// server was built. The zero value has none, which withholds reach rather

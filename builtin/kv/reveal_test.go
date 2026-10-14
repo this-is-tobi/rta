@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Reveal is the one place that bypasses kv.get's grant gate, on the strength
@@ -112,6 +113,60 @@ func TestRevealAsSaysWhatToRunToThePersonAtTheTerminal(t *testing.T) {
 		if verr != nil && strings.Contains(verr.Hint+verr.Message, "another-entry") {
 			t.Errorf("%s: the refusal names an entry that does exist: %+v", sf, verr)
 		}
+	}
+}
+
+// What `rta mcp serve` is refused on a profile's credential is read by the
+// operator, from the record, and "ask the operator to run" on that row told them
+// to ask themselves. The server's reader words each refusal for them: the
+// command as they type it, and for the two that are about an environment, the
+// one the server was started in, which is not the shell they are typing in and
+// is the commonest reason there is a row at all.
+func TestRevealForServerWordsItsRefusalsForTheOperatorWhoReadsTheRecord(t *testing.T) {
+	setup(t)
+	const entry = "staging-db-password"
+	t.Setenv(passphraseEnv, "correct horse battery staple")
+
+	refusedWith := func(when string) *view.Error {
+		t.Helper()
+		_, verr := RevealForServer(entry)
+		if verr == nil {
+			t.Fatalf("%s: the server read an entry that is not there", when)
+		}
+		if strings.Contains(verr.Hint, "ask the operator") {
+			t.Errorf("%s: the hint tells the operator to ask themselves: %q", when, verr.Hint)
+		}
+		return verr
+	}
+
+	if verr := refusedWith("no store"); verr.Hint !=
+		"`rta kv set staging-db-password` creates the store, locked with a passphrase you choose, and the entry" {
+		t.Errorf("no store: hint = %q", verr.Hint)
+	}
+	text(t, runSet, map[string]any{"key": "another-entry", "value": "x"}, false)
+	if verr := refusedWith("a store without the entry"); verr.Hint != "`rta kv list` lists every key" {
+		t.Errorf("a store without the entry: hint = %q", verr.Hint)
+	}
+
+	t.Setenv(passphraseEnv, "")
+	if verr := refusedWith("no passphrase"); verr.Code != "kv.passphrase.missing" ||
+		verr.Hint != "set RTA_KV_PASSPHRASE in the environment rta mcp serve runs in" {
+		t.Errorf("no passphrase: %+v", verr)
+	}
+	// The default reader, which cannot tell who is asking, still hands the step
+	// on; the wording above is a choice the server's wiring makes.
+	if _, verr := Reveal(entry); verr == nil || !strings.HasPrefix(verr.Hint, "ask the operator to set RTA_KV_PASSPHRASE") {
+		t.Errorf("the default reader stopped handing the step on as the operator's: %+v", verr)
+	}
+
+	private, public := writeSSHKeypair(t, t.TempDir(), "id_ed25519")
+	t.Setenv(passphraseEnv, "correct horse battery staple")
+	text(t, runRekey, map[string]any{"only": true, "recipient": []string{public}, "identity": private}, false)
+	t.Setenv(passphraseEnv, "")
+	verr := refusedWith("a store locked to a key")
+	if verr.Code != "kv.identity.required" || !strings.Contains(verr.Hint, "set RTA_KV_IDENTITY") ||
+		!strings.Contains(verr.Hint, "in the environment rta mcp serve runs in") || strings.Contains(verr.Hint, "--identity") {
+		t.Errorf("a store locked to a key: %+v", verr)
 	}
 }
 
@@ -254,5 +309,34 @@ func TestStoreStampOfAMissingStoreIsEmpty(t *testing.T) {
 	setup(t)
 	if got := StoreStamp(); got != "" {
 		t.Errorf("StoreStamp = %q, want empty for a store that does not exist", got)
+	}
+}
+
+// What a profile's credential is read with is the environment and nothing a
+// flag could add, so the refusal for a store that was never given its
+// passphrase names the variable, on every surface that reads one. load words it
+// for a call that has a flag — "or give --passphrase" — and a person who ran
+// `rta pg query --profile staging` was told to give that flag to a command that
+// does not have it.
+func TestRevealWithoutAPassphraseNamesTheVariableAndNoFlag(t *testing.T) {
+	setup(t)
+	t.Setenv(passphraseEnv, "correct horse battery staple")
+	text(t, runSet, map[string]any{"key": "db-password", "value": "s3cr3t"}, false)
+	t.Setenv(passphraseEnv, "")
+
+	reads := map[string]func(string) (string, *view.Error){
+		"the default reader": Reveal,
+		"the CLI":            RevealAs(plugin.SurfaceCLI),
+		"the TUI":            RevealAs(plugin.SurfaceTUI),
+		"an MCP server":      RevealAs(plugin.SurfaceMCP),
+	}
+	for who, read := range reads {
+		_, verr := read("db-password")
+		if verr == nil || verr.Code != "kv.passphrase.missing" {
+			t.Fatalf("%s: a store with no passphrase given = %v, want kv.passphrase.missing", who, verr)
+		}
+		if strings.Contains(verr.Hint, "--passphrase") || !strings.Contains(verr.Hint, passphraseEnv) {
+			t.Errorf("%s: the hint names a flag nothing here reads, or not the variable: %q", who, verr.Hint)
+		}
 	}
 }
