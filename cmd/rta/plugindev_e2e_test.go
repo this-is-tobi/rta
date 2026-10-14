@@ -139,3 +139,51 @@ func TestPluginDevDrawsTheRefusalOfTheCommandItRunsInThatCommandsFormat(t *testi
 		}
 	}
 }
+
+// The second pass through the loop the docs teach: the plugin is built onto
+// $PATH and trusted, and the next edit-and-run is `rta plugin dev` in the same
+// directory. It was refused as "namespace already registered" with a hint to
+// rename the plugin, which the author's own installed copy had nothing to do
+// with. The directory is what runs, and the run says which installed copy it
+// did not use.
+func TestPluginDevRunsTheDirectoryWhenThePluginIsAlsoInstalled(t *testing.T) {
+	src, env := scaffolded(t)
+	goTool, err := exec.LookPath("go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	installedAt := filepath.Join(bin, "rta-plugin-probe")
+	build := exec.Command(goTool, "build", "-o", installedAt, ".")
+	build.Dir = src
+	build.Env = env
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("building the installed copy: %v\n%s", err, out)
+	}
+	// Nothing but the installed copy and the toolchain on PATH, so a plugin on
+	// the machine running the suite is not discovered beside it.
+	env = append(env, "PATH="+bin+":"+filepath.Dir(goTool)+":/usr/bin:/bin")
+	if r := runIn(t, env, "plugin", "trust", "probe", "--yes"); r.code != 0 {
+		t.Fatalf("trusting the installed copy: exit %d (%s)", r.code, r.stderr)
+	}
+	if r := runIn(t, env, "probe", "greet", "world"); r.code != 0 || !strings.Contains(r.stdout, "Hello, world!") {
+		t.Fatalf("the installed copy does not run: exit %d, %q (%s)", r.code, r.stdout, r.stderr)
+	}
+
+	r := runIn(t, env, "plugin", "dev", src, "--", "probe", "greet", "world")
+	if r.code != 0 || !strings.Contains(r.stdout, "Hello, world!") {
+		t.Fatalf("plugin dev did not run the directory: exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
+	}
+	for _, want := range []string{"probe is also installed", installedAt} {
+		if !strings.Contains(r.stderr, want) {
+			t.Errorf("stderr does not say %q: %q", want, r.stderr)
+		}
+	}
+
+	// And the bare report, which is what `rta plugin dev` shows when nothing
+	// follows it, is the one for the directory's build.
+	r = runIn(t, env, "plugin", "dev", src, "-o", "json")
+	if r.code != 0 || !strings.Contains(r.stdout, "probe.greet") {
+		t.Errorf("the report: exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
+	}
+}

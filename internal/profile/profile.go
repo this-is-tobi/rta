@@ -318,6 +318,18 @@ func repinHint(ns string) string {
 	return "`rta profile repin --all --plugin " + ns + "` points every profile at it"
 }
 
+// repinTail is what a refusal of a pin adds after saying which pin is in force:
+// the command that repoints the profiles at it, or for a build made for one run
+// that no profile should be repointed at, what the refusal means for the
+// entry. The same command typed in that run would write the digest of a build
+// made for that run only into every entry that names the plugin.
+func repinTail(ns string, o registry.Origin) string {
+	if o.Dev {
+		return "; an entry pinned to an installed build is not used in this run"
+	}
+	return "; " + repinHint(ns)
+}
+
 // checkPin confirms a profile's plugin key names the artifact that is actually
 // installed.
 //
@@ -363,9 +375,13 @@ func checkPin(key string, inst Installed) *view.Error {
 				WithHint("write it as `" + ns + ":`")
 		}
 	case !pinned:
+		hint := "write it as `" + ns + "@" + o.Short() + ":`"
+		if o.Dev {
+			hint = o.Which(ns) + "; pin the entry to the build you install"
+		}
 		return view.Errorf("core.profile.unpinned",
 			"%q is an installed plugin, so a profile entry for it must name the artifact", ns).
-			WithHint("write it as `" + ns + "@" + o.Short() + ":`")
+			WithHint(hint)
 	case len(pin) < minPinLen:
 		// Below the floor every other digest-prefix match in the codebase
 		// shares (internal/plugintrust): short enough to be cheap to grind,
@@ -378,12 +394,11 @@ func checkPin(key string, inst Installed) *view.Error {
 		// copy-truncated one.
 		return view.Errorf("core.profile.shortpin",
 			"this profile's pin for %q is too short to trust", ns).
-			WithHint("the installed one is `" + ns + "@" + o.Short() + "` — at least " +
-				strconv.Itoa(minPinLen) + " hex characters; " + repinHint(ns))
+			WithHint(o.Which(ns) + " — at least " + strconv.Itoa(minPinLen) + " hex characters" + repinTail(ns, o))
 	case !strings.HasPrefix(o.Digest, pin):
 		return view.Errorf("core.profile.stalepin",
-			"this profile's pin does not match the installed %q", ns).
-			WithHint("the installed one is `" + ns + "@" + o.Short() + "`; " + repinHint(ns))
+			"this profile's pin does not match %s", o.Called(ns)).
+			WithHint(o.Which(ns) + repinTail(ns, o))
 	}
 	return nil
 }

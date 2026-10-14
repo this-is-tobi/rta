@@ -895,10 +895,8 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 				}
 				client = relaxed
 			}
-			if err := reg.RegisterFrom(client.Declared, client.Origin()); err != nil {
-				return view.Errorf("plugin.dev.register", "%v", err).
-					WithHint("the namespace this plugin declares is already taken by a " +
-						"built-in or another installed plugin; change Plugin().Name")
+			if verr := registerDev(reg, client, cmd.ErrOrStderr()); verr != nil {
+				return verr
 			}
 
 			if len(rest) == 0 {
@@ -934,6 +932,69 @@ func newPluginDevCommand(reg *registry.Registry, version string, opts *globalOpt
 	}
 	cmd.Flags().BoolVar(&keep, "keep", false, "leave the compiled binary in place and print where")
 	return cmd
+}
+
+// registerDev puts the plugin plugin dev built into reg, in place of an
+// installed copy of the same namespace when there is one, and says so on
+// standard error.
+//
+// **The directory wins, for the run, and the run says it did.** A refusal
+// here sent the author to rename a plugin that is theirs: the loop the docs
+// teach ends in a `go build` onto $PATH and `rta plugin trust`, and the next
+// edit-and-run met "namespace already registered" with a hint about a
+// built-in or another plugin. The argument that exempts dev from trust
+// decides this too — the author named a directory in the command they just
+// typed, which is a stronger act than a digest in a file — and so does the
+// first-party case, where the plugin being changed is the one installed. What
+// the run does not do is hand the installed copy's standing to whatever it
+// built: a pin, a grant and a trust approval name bytes, and these are not
+// those, so the registry's origin is the new build's and the operator's
+// section pinned to the installed digest is dropped from what a call reads
+// (pluginconf.Resolver.Without). The installed process is left alone and
+// serves nothing in this run.
+//
+// **Said, because a silent shadow is the failure mode of a shadow.** One line
+// on standard error, whatever follows — with a command after `--` the only
+// output is that command's — naming the copy that was not used.
+//
+// A built-in is refused as it always was, but with its own cause: the
+// namespace is compiled into rta, so the hint that fits is the one about the
+// name. Any other refusal is the declaration, which the plugin's own SDK
+// validated before it served and this rta did not accept — a plugin built
+// against a different rta than the one running it.
+func registerDev(reg *registry.Registry, c *pluginhost.Client, stderr io.Writer) *view.Error {
+	origin := c.Origin()
+	origin.Dev = true
+	displaced, err := reg.RegisterOver(c.Declared, origin)
+	switch {
+	case errors.Is(err, registry.ErrBuiltIn):
+		return view.Errorf("plugin.dev.register", "%v", err).
+			WithHint("a built-in's namespace is never a plugin's, here or installed; " +
+				"change Plugin().Name — `rta plugin list` shows the names in use")
+	case err != nil:
+		return view.Errorf("plugin.dev.register", "%v", err).
+			WithHint("this rta refuses the declaration the plugin served — a plugin built " +
+				"against a different rta than the one running it can be held to rules its " +
+				"own SDK did not know; build it against this one")
+	}
+	if displaced.External() {
+		// The bytes decide, as everywhere a pin is read: a build nobody has
+		// edited since it was installed is the installed artifact, and what
+		// was pinned to it is still its own.
+		notice := fmt.Sprintf("rta: %s is also installed (%s, %s); this run uses the plugin built "+
+			"from the directory instead", c.Declared.Name, displaced.Path, displaced.Short())
+		if displaced.Digest != origin.Digest {
+			SetPluginConfig(pluginConfig.Without(c.Declared.Name), pluginConfigProblem)
+			// What stops applying is said, since nothing else would: the
+			// section is dropped without a word, and a profile entry for the
+			// installed copy is refused as a stale pin in a run that never
+			// asked to change the pin.
+			notice += ", so a `plugins:` section and the profile entries pinned to the installed " +
+				"copy do not apply to it"
+		}
+		fmt.Fprintln(stderr, notice)
+	}
+	return nil
 }
 
 // renderNested draws a refusal the command plugin dev ran did not draw

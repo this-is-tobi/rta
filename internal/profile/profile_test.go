@@ -1275,3 +1275,43 @@ profiles:
 		t.Errorf("a String target was refused: %s", verr.Message)
 	}
 }
+
+// While `rta plugin dev` runs a directory in place of an installed copy, the
+// registry's origin for the namespace is the build the run made. A pin that is
+// refused then is refused against that build, and a hint that called it "the
+// installed one" and offered `profile repin --all` would have written the
+// digest of a build made for that run only into every entry that
+// names the plugin.
+func TestAPinRefusedInADevRunNamesTheBuildTheRunUsesAndOffersNoRepin(t *testing.T) {
+	reg := registry.New()
+	dev := registry.Origin{Path: "/tmp/rta-plugin-dev-1/rta-plugin-dev", Digest: "fedcba9876543210", Dev: true}
+	if err := reg.RegisterFrom(plugin.Plugin{
+		Name: "pg", Summary: "pg", Capabilities: []plugin.Capability{pgCap()},
+	}, dev); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, key := range map[string]string{
+		"stale":     "pg@000000000000",
+		"too short": "pg@fedc",
+		"unpinned":  "pg",
+	} {
+		_, verr := Lookup(load(t, envFor(key)), pgCap(), "staging", reg)
+		if verr == nil {
+			t.Errorf("%s: an entry that names no build of this run was resolved", name)
+			continue
+		}
+		for _, want := range []string{"this run uses `pg@fedcba987654`", "built from a directory", "for this run only"} {
+			if !strings.Contains(verr.Hint, want) {
+				t.Errorf("%s: hint %q does not say %q", name, verr.Hint, want)
+			}
+		}
+		if text := verr.Message + " " + verr.Hint; strings.Contains(text, "installed one") || strings.Contains(text, "repin") {
+			t.Errorf("%s: the refusal names the build of a run as installed, or offers to pin to it: %q", name, text)
+		}
+	}
+	_, verr := Lookup(load(t, envFor("pg@000000000000")), pgCap(), "staging", reg)
+	if want := `this profile's pin does not match the "pg" this run built from a directory`; verr == nil || verr.Message != want {
+		t.Errorf("the stale pin said %v, want %q", verr, want)
+	}
+}

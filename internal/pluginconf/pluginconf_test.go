@@ -356,3 +356,69 @@ func TestRawSectionIsDeterministicAcrossTwoHeadingsForOneNamespace(t *testing.T)
 		}
 	}
 }
+
+// A section is resolved once against the artifact installed under its
+// namespace and read by namespace alone from then on, so a run that puts a
+// different build under the namespace has to take the section out of what a
+// call reads: it names the installed bytes, and these are not those. Every
+// other namespace answers as before, and the resolver it was taken from is
+// not changed.
+func TestWithoutTakesOneNamespacesSectionAndItsHeadingOut(t *testing.T) {
+	cfg := config.Config{Plugins: map[string]map[string]any{
+		"pg@1a2b3c4d5e6f": {"host": "db.internal"},
+		"sys":             {"sort": "mem"},
+	}}
+	r, _ := Resolve(trusted(t, cfg), installed)
+
+	narrowed := r.Without("pg")
+	if got := narrowed.For("pg"); got != nil {
+		t.Errorf("the section pinned to the installed build still reaches pg: %v", got)
+	}
+	if got := narrowed.Section("pg"); got != "" {
+		t.Errorf("the heading of the dropped section was kept: %q", got)
+	}
+	if got := narrowed.For("sys"); got["sort"] != "mem" {
+		t.Errorf("another namespace lost its section: %v", got)
+	}
+	if got := narrowed.Section("sys"); got != "sys" {
+		t.Errorf("another namespace lost its heading: %q", got)
+	}
+	if got := r.For("pg"); got["host"] != "db.internal" {
+		t.Errorf("the resolver it was taken from changed: %v", got)
+	}
+	var none *Resolver
+	if none.Without("pg") != nil {
+		t.Error("a nil resolver became something")
+	}
+}
+
+// A section is judged against the origin the registry holds, and during a
+// `rta plugin dev` run that is the build the run made, which exists for that
+// run only: the problem names it for what it is and not as the installed copy.
+func TestAProblemInADevRunNamesTheBuildTheRunUsesAndNotTheInstalledOne(t *testing.T) {
+	dev := origins(map[string]registry.Origin{
+		"pg": {Path: "/tmp/rta-plugin-dev-1/rta-plugin-dev", Digest: "fedcba9876543210", Dev: true},
+	})
+	for section, reason := range map[string]string{
+		"pg@000000000000": `this run built from a directory`,
+		"pg@fedc":         "too short to trust",
+		"pg":              "must name the artifact",
+	} {
+		_, problems := Resolve(trusted(t, config.Config{Plugins: map[string]map[string]any{section: {"host": "db"}}}), dev)
+		if len(problems) != 1 {
+			t.Fatalf("%s: problems = %v", section, problems)
+		}
+		p := problems[0]
+		if !strings.Contains(p.Reason, reason) {
+			t.Errorf("%s: reason %q does not say %q", section, p.Reason, reason)
+		}
+		for _, want := range []string{"this run uses `pg@fedcba987654`", "for this run only"} {
+			if !strings.Contains(p.Hint, want) {
+				t.Errorf("%s: hint %q does not say %q", section, p.Hint, want)
+			}
+		}
+		if strings.Contains(p.Reason+" "+p.Hint, "the installed") {
+			t.Errorf("%s: the build of a run is called installed: %q / %q", section, p.Reason, p.Hint)
+		}
+	}
+}

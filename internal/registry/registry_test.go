@@ -183,3 +183,137 @@ func TestARegisteredHandlersEmptyFailureIsCodedAndWorded(t *testing.T) {
 		t.Errorf("a cancellation came back as %#v", err)
 	}
 }
+
+// The namespace an installed plugin holds can be taken for a run, and what
+// that plugin was goes with it: its origin and every capability, so what is
+// read off the registry afterwards names the plugin that is running. A
+// capability the new declaration no longer has must not stay behind, callable
+// under a namespace that now means something else.
+func TestRegisterOverReplacesAnInstalledPluginWhole(t *testing.T) {
+	installed := Origin{Path: "/usr/local/bin/rta-plugin-acme", Digest: "aaaaaaaaaaaaaaaa"}
+	built := Origin{Path: "/tmp/rta-plugin-dev", Digest: "bbbbbbbbbbbbbbbb"}
+	old := testPlugin("acme")
+	old.Capabilities = append(old.Capabilities, plugin.Capability{
+		ID: "acme.thing.rm", Summary: "remove a thing", Safety: plugin.Destructive,
+		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "gone"}, nil },
+	})
+	r := New()
+	if err := r.RegisterFrom(old, installed); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Register(testPlugin("other")); err != nil {
+		t.Fatal(err)
+	}
+
+	displaced, err := r.RegisterOver(testPlugin("acme"), built)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if displaced != installed {
+		t.Errorf("displaced %+v, want the installed copy %+v", displaced, installed)
+	}
+	if got, _ := r.Origin("acme"); got != built {
+		t.Errorf("origin of acme = %+v, want the build that replaced it %+v", got, built)
+	}
+	if digest, known := r.Artifact("acme"); !known || digest != built.Digest {
+		t.Errorf("artifact of acme = %q (%v), want %q", digest, known, built.Digest)
+	}
+	if _, ok := r.Capability("acme.thing.rm"); ok {
+		t.Error("a capability only the displaced plugin declared is still registered")
+	}
+	if _, ok := r.Capability("acme.thing.list"); !ok {
+		t.Error("the replacement's capability is not registered")
+	}
+	if n := len(r.Plugins()); n != 2 {
+		t.Errorf("%d plugins registered, want 2 (acme once, and other untouched)", n)
+	}
+	if got, _ := r.Origin("other"); got.External() {
+		t.Errorf("another namespace's origin changed: %+v", got)
+	}
+}
+
+// A free namespace is registered as RegisterFrom registers it, and displaces
+// nothing.
+func TestRegisterOverAFreeNamespaceDisplacesNothing(t *testing.T) {
+	r := New()
+	displaced, err := r.RegisterOver(testPlugin("acme"), Origin{Path: "/tmp/rta-plugin-dev", Digest: "bbbb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if displaced.External() {
+		t.Errorf("displaced %+v from a namespace nobody held", displaced)
+	}
+	if got, _ := r.Origin("acme"); got.Digest != "bbbb" {
+		t.Errorf("origin of acme = %+v", got)
+	}
+}
+
+// A built-in's namespace is compiled into the binary the operator chose to
+// run, and its configuration is unpinned, so a plugin standing in for one
+// would be handed that configuration. It is refused whole, and what was
+// registered is as it was.
+func TestRegisterOverNeverDisplacesABuiltIn(t *testing.T) {
+	r := New()
+	if err := r.Register(testPlugin("sys")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := r.RegisterOver(testPlugin("sys"), Origin{Path: "/tmp/rta-plugin-dev", Digest: "bbbb"})
+	if !errors.Is(err, ErrBuiltIn) {
+		t.Fatalf("err = %v, want ErrBuiltIn", err)
+	}
+	if got, _ := r.Origin("sys"); got.External() {
+		t.Errorf("the built-in's origin became %+v", got)
+	}
+	if _, ok := r.Capability("sys.thing.list"); !ok {
+		t.Error("the built-in lost its capability")
+	}
+}
+
+// A declaration that fails Validate leaves the namespace as it found it: the
+// check is made before anything is dropped, so a plugin that cannot register
+// does not empty the namespace on the way to saying so.
+func TestRegisterOverAnInvalidDeclarationLeavesTheInstalledPluginServing(t *testing.T) {
+	installed := Origin{Path: "/usr/local/bin/rta-plugin-acme", Digest: "aaaa"}
+	r := New()
+	if err := r.RegisterFrom(testPlugin("acme"), installed); err != nil {
+		t.Fatal(err)
+	}
+	bad := testPlugin("acme")
+	bad.Capabilities[0].Safety = "nope"
+	if _, err := r.RegisterOver(bad, Origin{Path: "/tmp/rta-plugin-dev", Digest: "bbbb"}); err == nil {
+		t.Fatal("an invalid declaration was registered over an installed plugin")
+	}
+	if got, _ := r.Origin("acme"); got != installed {
+		t.Errorf("origin of acme = %+v after a refused declaration, want %+v", got, installed)
+	}
+	if _, ok := r.Capability("acme.thing.list"); !ok {
+		t.Error("the installed plugin's capability was dropped by a declaration that was refused")
+	}
+}
+
+// A hint says which artifact a pin is compared with, and for the build `rta
+// plugin dev` made for one run that is not "the installed one": it exists for
+// that run only, so its digest is not one to copy into a file.
+func TestAHintNamesTheInstalledArtifactOrTheBuildARunMadeFromADirectory(t *testing.T) {
+	installed := Origin{Path: "/usr/local/bin/rta-plugin-pg", Digest: "1a2b3c4d5e6f7890"}
+	dev := Origin{Path: "/tmp/rta-plugin-dev-1/rta-plugin-dev", Digest: "fedcba9876543210", Dev: true}
+
+	if got, want := installed.Which("pg"), "the installed one is `pg@1a2b3c4d5e6f`"; got != want {
+		t.Errorf("Which = %q, want %q", got, want)
+	}
+	if got, want := installed.Called("pg"), `the installed "pg"`; got != want {
+		t.Errorf("Called = %q, want %q", got, want)
+	}
+	which := dev.Which("pg")
+	for _, want := range []string{"this run uses `pg@fedcba987654`", "built from a directory", "for this run only"} {
+		if !strings.Contains(which, want) {
+			t.Errorf("Which = %q, want it to say %q", which, want)
+		}
+	}
+	if strings.Contains(which, "installed") {
+		t.Errorf("a build made for one run is called installed: %q", which)
+	}
+	if got, want := dev.Called("pg"), `the "pg" this run built from a directory`; got != want {
+		t.Errorf("Called = %q, want %q", got, want)
+	}
+}

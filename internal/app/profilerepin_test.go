@@ -19,6 +19,12 @@ import (
 // against instead of a caller typing "@digest" by hand.
 func pgRegistryAt(t *testing.T, digest string) *registry.Registry {
 	t.Helper()
+	return pgRegistryFrom(t, registry.Origin{Path: "/usr/local/bin/rta-plugin-pg", Digest: digest})
+}
+
+// pgRegistryFrom is pgRegistryAt for a registry whose pg came from origin.
+func pgRegistryFrom(t *testing.T, origin registry.Origin) *registry.Registry {
+	t.Helper()
 	reg := registry.New()
 	p := plugin.Plugin{
 		Name: "pg", Summary: "pg plugin",
@@ -34,7 +40,7 @@ func pgRegistryAt(t *testing.T, digest string) *registry.Registry {
 			},
 		}},
 	}
-	if err := reg.RegisterFrom(p, registry.Origin{Path: "/usr/local/bin/rta-plugin-pg", Digest: digest}); err != nil {
+	if err := reg.RegisterFrom(p, origin); err != nil {
 		t.Fatal(err)
 	}
 	return reg
@@ -337,5 +343,26 @@ func TestProfileRepinRefusesABuiltinPlugin(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "built in") {
 		t.Errorf("errOut = %q, want the built-in refusal", errOut)
+	}
+}
+
+// The command a stale-pin hint used to recommend would write the digest of a
+// build made for that run only into every profile entry that names
+// the plugin, so it refuses to point anything at one.
+func TestProfileRepinRefusesTheBuildAPluginDevRunMade(t *testing.T) {
+	run := repinSession(t)
+	seedStaleProfile(t, run, pgRegistryAt(t, pgOldDigest), "staging")
+	before := configOf(t)
+
+	dev := pgRegistryFrom(t, registry.Origin{Path: "/tmp/rta-plugin-dev-1/rta-plugin-dev", Digest: pgNewDigest, Dev: true})
+	_, errOut, err := run(dev, "profile", "repin", "--all", "--plugin", "pg")
+	if err == nil || !strings.Contains(errOut, "core.profile.repin.dev") {
+		t.Fatalf("repin to a build made for one run answered %v %q", err, errOut)
+	}
+	if strings.Contains(errOut, "repin --all --plugin pg` points") {
+		t.Errorf("the refusal still recommends the command: %q", errOut)
+	}
+	if after := configOf(t); after != before {
+		t.Errorf("a refused repin changed the file:\n%s\nwas:\n%s", after, before)
 	}
 }
