@@ -26,9 +26,9 @@ func TestCyclingViewsOfAnUnhonouredFileSaysThereAreNone(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := New(registry.New(), config.Dashboard{}, nil)
-	flash, cmd := m.cycleView()
-	if !strings.Contains(flash, "arranges no screen") {
-		t.Errorf("flash = %q, want the statement that this file arranges nothing", flash)
+	cmd := m.cycleView()
+	if !strings.Contains(m.flash, "arranges no screen") {
+		t.Errorf("flash = %q, want the statement that this file arranges nothing", m.flash)
 	}
 	if m.view != "" || cmd != nil {
 		t.Errorf("a view was switched to (%q) from a file that arranges nothing", m.view)

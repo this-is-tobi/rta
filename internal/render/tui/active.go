@@ -785,19 +785,27 @@ func colorOf(cfg config.Config, name string) string {
 // cycleView draws the next view: the dashboard: block, then each view by name,
 // and round again. Which one is drawn is this session's own (viewPick) until a
 // switch, and nothing is written, since a picture is not an edit.
-func (m *Model) cycleView() (string, tea.Cmd) {
+//
+// It says what happened itself, through refuse and guide, because only one of
+// its four answers is a switch and the mark follows the text: "no views yet" is
+// a pointer to the command that makes one, and was drawn with the green check of
+// a view that had just been shown.
+func (m *Model) cycleView() tea.Cmd {
 	cfg, err := config.LoadFile()
 	if err != nil {
-		return "the config cannot be read, so there are no views to show: " + err.Error(), nil
+		m.refuse("the config cannot be read, so there are no views to show: " + err.Error())
+		return nil
 	}
 	// A file found in the working directory arranges no screen, so every view in
 	// it would draw the automatic dashboard under a name that says otherwise.
 	if !config.TrustedPath() {
-		return "this config file arranges no screen, so there are no views to show — set $RTA_CONFIG to the file you mean", nil
+		m.refuse("this config file arranges no screen, so there are no views to show — set $RTA_CONFIG to the file you mean")
+		return nil
 	}
 	names := cfg.ViewNames()
 	if len(names) == 0 {
-		return "no views yet — `rta dashboard add <capability> --view <name>` makes one", nil
+		m.guide("no views yet — `rta dashboard add <capability> --view <name>` makes one")
+		return nil
 	}
 	order := append([]string{config.DefaultView}, names...)
 	current := m.view
@@ -809,5 +817,6 @@ func (m *Model) cycleView() (string, tea.Cmd) {
 	want := m.wantView(cfg)
 	m.dash, m.view, m.dashOnDisk = cfg.TrustedDashboardFor(want), want, dashStamp(want, cfg.TrustedDashboardFor(want))
 	m.rebuildTiles()
-	return "view: " + next, m.syncTiles()
+	m.flash = "view: " + next
+	return m.syncTiles()
 }

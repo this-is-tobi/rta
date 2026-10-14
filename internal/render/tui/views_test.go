@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -76,6 +77,47 @@ func TestVSaysWhatToDoWhenThereAreNoViews(t *testing.T) {
 	next, _ := on.Update(tea.KeyPressMsg{Code: 'V', Text: "V"})
 	if got := next.(Model).flash; !strings.Contains(got, "no views yet") || !strings.Contains(got, "--view") {
 		t.Errorf("flash = %q", got)
+	}
+}
+
+// "no views yet" names the command that makes one and reports nothing done, so
+// it is guidance and carries the arrow; it wore the check mark of the switch the
+// same key makes when there is a view to draw, and a switch still does.
+func TestVWithNoViewsIsDrawnAsGuidanceAndASwitchAsASuccess(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	m := New(multiRegistry(t), config.Dashboard{}, nil)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	on := sized.(Model)
+	on.selected = 1
+	next, _ := on.Update(tea.KeyPressMsg{Code: 'V', Text: "V"})
+	bar := plain(next.(Model).footerFor(modeDashboard))
+	if !strings.Contains(bar, "→ no views yet") || strings.Contains(bar, "✓ no views") || strings.Contains(bar, "✗ no views") {
+		t.Errorf("the footer after V with no views:\n%s\nwant the guidance arrow and neither the check nor the cross", bar)
+	}
+
+	next, _ = viewsModel(t).Update(tea.KeyPressMsg{Code: 'V', Text: "V"})
+	bar = plain(next.(Model).footerFor(modeDashboard))
+	if !strings.Contains(bar, "✓ view: only-alpha") || strings.Contains(bar, "→ view:") {
+		t.Errorf("the footer after V drew a view:\n%s\nwant the check mark", bar)
+	}
+}
+
+// A config file that cannot be read or that arranges no screen is a V that did
+// not show a view, and says so with the cross.
+func TestVThatCannotShowAViewIsDrawnAsARefusal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	t.Setenv("RTA_CONFIG", path)
+	m := New(multiRegistry(t), config.Dashboard{}, nil)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	on := sized.(Model)
+	on.selected = 1
+	if err := os.WriteFile(path, []byte("dashboard: [not, a, block\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	next, _ := on.Update(tea.KeyPressMsg{Code: 'V', Text: "V"})
+	bar := plain(next.(Model).footerFor(modeDashboard))
+	if !strings.Contains(bar, "✗ the config cannot be read") || strings.Contains(bar, "✓ the config") {
+		t.Errorf("the footer after V on an unreadable config:\n%s\nwant the cross", bar)
 	}
 }
 
