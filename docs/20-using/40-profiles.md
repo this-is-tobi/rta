@@ -135,7 +135,7 @@ secrets:
 ```bash
 rta profile list                 # what is configured, and whether each is usable
 rta profile show staging         # what it sets, and where each value comes from
-rta pg query --profile staging   # one command against it
+rta pg query 'select 1' --profile staging   # one command against it
 rta dashboard add pg.overview --profile staging   # a tile about it, whatever is switched on
 ```
 
@@ -146,7 +146,7 @@ rta use staging
 rta use staging --for 2h
 rta use                          # what is on
 rta use --off
-rta pg query --no-profile --host db.other --user me   # this one call, without it
+rta pg query 'select 1' --no-profile --host db.other --user me   # this one call, without it
 ```
 
 While a profile is on, every later command for a plugin it covers runs against it with no `--profile` at all, and says so first: at a terminal each prints `● staging 59m left` on stderr before its result, the bullet the TUI's header draws for it. A pipe, `-o json` and the other machine-readable formats never get the line, and a command that names its own `--profile` has already said which environment it means.

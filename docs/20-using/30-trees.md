@@ -90,7 +90,7 @@ rta s3 object tree --bucket build-artifacts --prefix releases/ --depth 3
 
 ```bash
 rta vault kv tree
-rta vault kv tree --path apps --depth 6
+rta vault kv tree apps --depth 6
 ```
 
 Unlike the S3 case this genuinely costs one `LIST` per folder, because that is the only way Vault will answer. So it is bounded in **both** directions — 500 paths and 200 listings — and the second bound is the one that matters, because every request costs somebody else money and lands in an audit device.
