@@ -1838,6 +1838,54 @@ func RefusedStale(c plugin.Capability, values map[string]any, by Caller) bool {
 	return len(missing) == 0
 }
 
+// RefusedBySwitch reports whether a refusal this call just received was caused
+// by the environment the operator has switched on: the call names another
+// profile, and a grant covers it that would count if nothing were switched on.
+//
+// **The third of three failures that share one sentence**, beside a call nobody
+// granted and a grant issued against a connection that has since moved
+// (RefusedStale). `rta use staging` is the operator working in one place, and
+// every grant naming another environment stays issued, stays on the roster and
+// covers nothing until they switch back; the agent hears an ungranted call's
+// words for all three, for the reason grant.reachable gives, and the operator's
+// own screens did not tell the third apart either — the record said "no grant"
+// beside a roster that held the very grant, and the remedy it pointed at,
+// issuing one, could not help.
+//
+// The same filter the gate applied, minus the switch, so it cannot call a
+// refusal the switch's that the gate made for another reason: a scope, an agent
+// name, a plugin build or a stale pin still count against the grant here. False
+// on anything it cannot establish, including a grant file it fails to read: this
+// decides nothing, it only explains.
+func RefusedBySwitch(c plugin.Capability, values map[string]any, by Caller) bool {
+	if by.Active == "" || by.Profile == "" || config.RefName(by.Profile) == by.Active {
+		return false
+	}
+	grants, verr := Load()
+	if verr != nil {
+		return false
+	}
+	unswitched := by
+	unswitched.Active = ""
+	var counting []Grant
+	for _, g := range grants {
+		if callerReachable(g, unswitched) {
+			counting = append(counting, g)
+		}
+	}
+	_, _, missing, _ := allocate(c, values, counting, unswitched)
+	return len(missing) == 0
+}
+
+// HeldBySwitch reports whether the environment switched on is what keeps g from
+// covering anything: it names a profile that is not that environment, or any
+// profile while the selection cannot be believed (active is the name
+// profile.Fence answers). For the screens that list grants, which show every
+// one that stands and so cannot say which of them work.
+func HeldBySwitch(g Grant, active string) bool {
+	return !insideActive(g, Caller{Active: active})
+}
+
 // reachableNow is reachable(Load(), by) — but computed in one pass over
 // loadAll's complete result, with at indexing straight back into it, rather
 // than by calling reachable on Load's already ceiling-and-active-filtered

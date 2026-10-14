@@ -1410,6 +1410,9 @@ func heldRoster(sf plugin.Surface, opts rosterOpts, artifact func(string) (strin
 	// changed connection is here: the refusal an agent gets says only what
 	// an ungranted call is told.
 	t.Warnings = append(t.Warnings, artifactWarnings(sf, grants, states, "")...)
+	if w := switchWarning(grants, profiles.Fence()); w != nil {
+		t.Warnings = append(t.Warnings, *w)
+	}
 	suppressed := core.Suppressed()
 	if suppressed > 0 {
 		t.Warnings = append(t.Warnings, suppressedWarning(sf, suppressed))
@@ -1677,6 +1680,56 @@ func judged(grants []core.Grant, bound func(core.Grant) core.ArtifactState) []co
 		states[i] = bound(g)
 	}
 	return states
+}
+
+// switchWarning is what the roster says of the grants the environment switched
+// on is holding inert, and it is said beside the rows because nothing on a row
+// can: `rta use staging` makes every grant naming another environment cover no
+// call, and each of them stays issued, stays listed and reads exactly as it did.
+// The roster is the screen somebody opens to learn what an agent may do right
+// now, and it answered with every grant that stands, the dead ones among them.
+//
+// The agent is refused in the words an ungranted call gets, which is the
+// design (core.RefusedBySwitch), so a person who read "no active grant" in the
+// record and found the grant here had nothing that said the two were the same
+// grant and the same switch. Advisory, like the artifact marks: every row is on
+// the roster, and a surface heads it as partial only for what is missing.
+//
+// Nothing for a grant that names no profile, which no environment holds, and
+// nothing while nothing is switched on. While the selection cannot be believed
+// every profiled grant is held (profile.Fence), and the cause is another one.
+func switchWarning(grants []core.Grant, active string) *view.Error {
+	if active == "" {
+		return nil
+	}
+	var held int
+	var names []string
+	for _, g := range grants {
+		if !core.HeldBySwitch(g, active) {
+			continue
+		}
+		held++
+		if ref := config.RefName(g.Profile); !slices.Contains(names, ref) {
+			names = append(names, ref)
+		}
+	}
+	if held == 0 {
+		return nil
+	}
+	if active == profiles.Unverified {
+		return &view.Error{Code: "grant.held", Advisory: true,
+			Message: "the file that says which environment is switched on does not verify, so no grant that names an environment covers a call",
+			Hint:    "`rta doctor` says what is wrong with it, and `rta use` writes it again"}
+	}
+	sort.Strings(names)
+	how := "`rta use <name>` switches to the one a grant names"
+	if len(names) == 1 {
+		how = "`rta use " + names[0] + "` switches to it"
+	}
+	return &view.Error{Code: "grant.held", Advisory: true,
+		Message: fmt.Sprintf("%s nothing while %s is switched on — %s %s, and an agent reaches only the environment that is on",
+			format.Count(held, "grant covers", "grants cover"), active, format.Plural(held, "it names", "they name"), strings.Join(names, ", ")),
+		Hint: how + ", `rta use --off` switches nothing on, and `rta agent log --refused` says when a call met one"}
 }
 
 // artifactWarnings is what the Artifact column's marks mean and what to do
