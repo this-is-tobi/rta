@@ -346,6 +346,34 @@ func checkKeywords(t reporter, p plugin.Plugin, cfg config) {
 	}
 }
 
+// checkReach says when a capability that is offered to agents can never be
+// called by one: it has an input that is Required and Local with no Config key
+// and no EnvFallback, so nothing but a person at a terminal can give it. The
+// host's refusal of such a call is right — "ask the operator to run it from
+// their own terminal" — and is the answer to a call; this is the question
+// before it, whether the capability was meant for agents at all. A tool no
+// agent can use is still listed to every one of them, on every connection.
+//
+// A note and never a failure: the host handles the case on purpose, and a
+// capability the operator is expected to run themselves is legitimate. The
+// way out is HumanOnly, which leaves it out of the tool list, or a Config key
+// or an EnvFallback, which lets the operator set the input ahead of time.
+func checkReach(t reporter, p plugin.Plugin, cfg config) {
+	t.Helper()
+
+	for _, c := range p.Capabilities {
+		if c.HumanOnly || cfg.skipped(RuleDeclaration, c.ID) {
+			continue
+		}
+		if f, stuck := c.OperatorOnlyInput(); stuck {
+			t.Logf("sdktest: %s: %s is offered to agents and none can call it: input %q is Required and Local, "+
+				"and with no Config key and no EnvFallback only a person at a terminal can give it. Declare the "+
+				"capability HumanOnly to keep it out of an agent's tool list, or give the input a Config key or "+
+				"an EnvFallback so the operator can set it ahead of time", RuleDeclaration, c.ID, f.Name)
+		}
+	}
+}
+
 // wordsOf splits text into the lowercase words search matches by.
 func wordsOf(text string) []string {
 	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
@@ -407,7 +435,7 @@ func checkRedaction(t reporter, seen []observed, cfg config) {
 			continue
 		}
 		nameable, pointed := false, false
-		var masked []string
+		var masked, names []string
 		walkViews(o.view, func(v view.View) {
 			switch t2 := v.(type) {
 			case view.KeyValue:
@@ -418,6 +446,7 @@ func checkRedaction(t reporter, seen []observed, cfg config) {
 					keys = append(keys, p.Key)
 					pointed = pointed || p.Key == view.RevealKey
 				}
+				names = append(names, keys...)
 				reportUnmatched(t, o.cap, "key", t2.Redacted, keys)
 			case view.Table:
 				nameable = true
@@ -426,6 +455,7 @@ func checkRedaction(t reporter, seen []observed, cfg config) {
 				for _, c := range t2.Columns {
 					cols = append(cols, c.Name)
 				}
+				names = append(names, cols...)
 				reportUnmatched(t, o.cap, "column", t2.Redacted, cols)
 			}
 		})
@@ -447,8 +477,52 @@ func checkRedaction(t reporter, seen []observed, cfg config) {
 				"itself, because this is the reveal, declare Reveals. If it shows no secret, say so with "+
 				"sdktest.Skip(sdktest.RuleRedaction, %q, \"...\").",
 				RuleRedaction, o.cap.ID, secretReason(o.cap), o.cap.ID)
+		case nameable && len(masked) == 0 && !o.cap.Reveals && o.cap.Safety == plugin.Read && !handlesSecrets(o.cap):
+			if named := credentialNamed(names); len(named) > 0 {
+				t.Logf("sdktest: %s: %s is Read, so an agent calls it with no grant, and its answer has %s "+
+					"with nothing marked Redacted. If it shows a credential, mark it Redacted and point at where "+
+					"it can be read (a pair keyed view.RevealKey); an answer that is the credential itself is not "+
+					"a Read — declare NeedsGrant with a Scope, and Reveals. If what it shows is a name or a date "+
+					"and not the value, say so with sdktest.Skip(sdktest.RuleRedaction, %q, \"...\").",
+					RuleRedaction, o.cap.ID, quotedFields(named), o.cap.ID)
+			}
 		}
 	}
+}
+
+// credentialNouns are the words that end the name of a key or a column whose
+// value is a credential: `token`, `wrapping-token`, `client secret`.
+var credentialNouns = []string{
+	"token", "password", "passwd", "passphrase", "secret", "api-key", "apikey", "private-key",
+	"secret-key", "access-key",
+}
+
+// credentialNamed picks the names that read as a credential: the noun is the
+// whole name or its last word, so `secret rotated`, `actual token expiry` and
+// `credentials` — about a credential, not holding one — are left alone. A name
+// is all there is to go on, so a column that lists the names of Secrets is
+// still picked, which is why this is a note and the way out is one line.
+func credentialNamed(names []string) []string {
+	flatten := strings.NewReplacer(" ", "-", "_", "-", ".", "-")
+	var out []string
+	for _, n := range names {
+		flat := strings.ToLower(flatten.Replace(strings.TrimSpace(n)))
+		for _, noun := range credentialNouns {
+			if flat == noun || strings.HasSuffix(flat, "-"+noun) {
+				out = append(out, n)
+				break
+			}
+		}
+	}
+	return out
+}
+
+func quotedFields(names []string) string {
+	quoted := make([]string, len(names))
+	for i, n := range names {
+		quoted[i] = fmt.Sprintf("%q", n)
+	}
+	return format.CountOf(len(names), "field") + " named " + strings.Join(quoted, ", ")
 }
 
 func reportUnmatched(t reporter, c plugin.Capability, kind string, redacted, present []string) {

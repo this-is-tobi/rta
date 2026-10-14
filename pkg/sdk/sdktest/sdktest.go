@@ -74,7 +74,9 @@ const (
 	// RuleDeclaration: the plugin validates — no duplicate names, no default
 	// the declared type or its options cannot hold. It is the registry's own
 	// check at load time, so a plugin failing it does not load, and no Skip
-	// waives it.
+	// waives it. Its notes, which a Skip does waive, say when a search keyword
+	// adds nothing and when a capability offered to agents has an input only a
+	// person at a terminal can give.
 	RuleDeclaration Rule = "declaration"
 	// RuleViews: every view a capability returns survives the JSON encoding
 	// every non-terminal surface uses.
@@ -89,7 +91,9 @@ const (
 	// exists and says where the value can be read (a pair keyed
 	// view.RevealKey) unless Skip states why the mask is permanent, a
 	// capability that declares Reveals marks nothing Redacted, and a
-	// capability that handles secrets declares one at all.
+	// capability that handles secrets declares one at all. A Read whose answer
+	// has a key or column named like a credential and marks nothing is noted,
+	// by its name alone — see checkRedaction.
 	RuleRedaction Rule = "redaction"
 	// RuleActions: what a capability declares the TUI may do with its result
 	// holds against the result it returns — Copy names a column or key the
@@ -216,6 +220,7 @@ func checkAll(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[st
 	}
 	checkVerbs(t, p, cfg)
 	checkKeywords(t, p, cfg)
+	checkReach(t, p, cfg)
 	checkSpelling(t, p, cfg)
 	checkWording(t, p, cfg)
 	if cfg.source != "" {

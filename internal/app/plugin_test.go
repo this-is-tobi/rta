@@ -1546,3 +1546,23 @@ func TestTheScaffoldREADMETellsAnAuthorHowToDeclareACredential(t *testing.T) {
 		t.Errorf("the README does not say how a credential is declared:\n%s", readme)
 	}
 }
+
+// The Agents column of the dev report is where an author learns what an agent
+// can do with a capability, and "yes, by default" for one whose required input
+// only a person at a terminal can give reads as a tool an agent can use.
+func TestTheDevReportSaysWhenNoAgentCanCallACapability(t *testing.T) {
+	needsName := plugin.Capability{ID: "acme.station.show", Summary: "show a station", Safety: plugin.Read,
+		Inputs: []plugin.Field{{Name: "name", Type: plugin.String, Required: true, Local: true}}}
+	if got := agentReach(nil, needsName); !strings.HasPrefix(got, "no — needs name") {
+		t.Errorf("a capability no agent can call reads %q", got)
+	}
+	needsName.HumanOnly = true
+	if got := agentReach(nil, needsName); !strings.Contains(got, "never an agent") {
+		t.Errorf("a HumanOnly capability reads %q", got)
+	}
+	setByConfig := plugin.Capability{ID: "acme.station.show", Summary: "show a station", Safety: plugin.Read,
+		Inputs: []plugin.Field{{Name: "name", Type: plugin.String, Required: true, Local: true, Config: "name"}}}
+	if got := agentReach(nil, setByConfig); got != "yes, by default" {
+		t.Errorf("a capability an operator can configure reads %q", got)
+	}
+}
