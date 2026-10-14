@@ -106,6 +106,29 @@ rta kv rekey --only --recipient age1me...            # drop every other reader
 
 `rekey` always refuses to lock you out. That is not a courtesy — it is the difference between a key-rotation command you can use and one you use once.
 
+## Backing up, and restoring
+
+The store is a few files, and which of them matter depends on how it is locked. `rta kv status` prints where the store file is and what can open it, without opening it.
+
+| Locked with | The files | A copy of them needs |
+| --- | --- | --- |
+| A passphrase, the default | `kv.age`, in the data directory | The passphrase and nothing else: it opens the file on any machine |
+| `kv init --generate` | `kv.age` and `kv.recipients` in the data directory, and the key `kv.identity` in the config directory, beside `config.yaml` | All three: the first two are ciphertext and public keys, and the key is what opens them |
+| `--identity` or `--recipient` | `kv.age` and `kv.recipients` in the data directory | The private key of one of the recipients, which for an SSH key is the file you already have |
+
+The key is kept out of the data directory on purpose, so that a copy of the data directory — a backup, a synced folder, a container volume — holds ciphertext and nothing that opens it. It also makes those two files not enough to restore from: on a machine given only them, `rta kv status` says `unlocks here  no identity given (--identity, or set RTA_KV_IDENTITY)` and `rta kv list` is refused as `kv.identity.required`. A store made with `--generate` finds its key as `kv.identity` beside the config file, so that is the file a restore is missing. Back the key up separately, to somewhere that is not beside the store: losing it loses every secret in the store, and nobody can help you. rta makes it owner-only (`0600`), and a copy of it should be too.
+
+Everything the store holds is in `kv.age`: the live keys, the last five earlier values of each, and the keys removed and not yet purged. A restored copy has them all, and `kv restore` brings back an earlier value or a removed key from it as it did before. Copy `kv.age` and `kv.recipients` together, from the same moment: an older `kv.age` beside a newer `kv.recipients` (a `kv rekey` in between) still reads, and its next write is refused as `kv.recipients.mismatch`.
+
+To restore, put `kv.age` and `kv.recipients` in the directory of the store file `rta kv status` prints, and the key in the directory of the config file `rta config path` prints, or keep the key anywhere and name it with `--identity` or `RTA_KV_IDENTITY`. Then check, first without unlocking anything and then with the key or the passphrase:
+
+```bash
+rta kv status    # where it is, how it is locked, and whether this machine can open it
+rta kv list      # opens it, and lists the keys
+```
+
+There is no verb that exports or imports a store whole, and `rta kv restore` is not one: it brings back a removed key, or an earlier value of one, in a store that is there ([Undoing a mistake](#undoing-a-mistake)). The files are the backup. A second reader is the other safeguard for a dedicated key: `rta kv rekey --recipient <a public key you keep elsewhere> --yes` adds one, and either key then opens the store ([Changing the lock afterwards](#changing-the-lock-afterwards)).
+
 ## What this means for agents
 
 This is the part to read before connecting an [MCP](../95-reference/10-glossary.md#acronyms) client.
