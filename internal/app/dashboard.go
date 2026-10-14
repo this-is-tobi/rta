@@ -954,6 +954,16 @@ func viewsTable(cfg config.Config) view.View {
 		row(name, config.Where("views", name), len(v.Tiles)+len(v.Add), selectors[name])
 	}
 	t.Total = len(t.Rows)
+	// A file found in the working directory arranges no screen (a cloned
+	// repository must not), so its views are listed as what the file says and
+	// not as screens to choose from: the table would otherwise read as a menu
+	// of which every entry draws the automatic dashboard.
+	if !config.TrustedPath() {
+		t.Warnings = append(t.Warnings, *view.Errorf("core.dashboard.untrusted",
+			"%s is not a config file rta was told to use, so it arranges no screen and none of them is drawn", config.Path()).
+			WithHint("set $RTA_CONFIG to the file you mean — a config file found in the working " +
+				"directory arranges nothing, because a cloned repository must not"))
+	}
 	return t
 }
 

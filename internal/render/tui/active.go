@@ -718,6 +718,11 @@ func (m *Model) cycleView() (string, tea.Cmd) {
 	if err != nil {
 		return "the config cannot be read, so there are no views to show: " + err.Error(), nil
 	}
+	// A file found in the working directory arranges no screen, so every view in
+	// it would draw the automatic dashboard under a name that says otherwise.
+	if !config.TrustedPath() {
+		return "this config file arranges no screen, so there are no views to show — set $RTA_CONFIG to the file you mean", nil
+	}
 	names := cfg.ViewNames()
 	if len(names) == 0 {
 		return "no views yet — `rta dashboard add <capability> --view <name>` makes one", nil
