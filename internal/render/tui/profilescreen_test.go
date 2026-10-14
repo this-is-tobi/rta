@@ -45,6 +45,24 @@ func TestTheProfilesPaneSaysWhatScreenAnEnvironmentShows(t *testing.T) {
 	}
 }
 
+// The line is cut at the edge of the pane, and what an environment's connections
+// are called, with their pins, is as long as the environment has connections: the
+// screen came after them and was the part that fell off, on the environment that
+// needed it said most. It comes first, so it is there whatever the width.
+func TestTheScreenIsOnTheLineBeforeTheConnectionsThatMayCutItOff(t *testing.T) {
+	m := profileModel(t, ownScreenConfig())
+	var staging profileRow
+	for _, row := range m.profiles {
+		if row.name == "staging" {
+			staging = row
+		}
+	}
+	line := plain(profileCovers(staging))
+	if screen, conn := strings.Index(line, "own screen"), strings.Index(line, "db"); screen < 0 || conn < 0 || screen > conn {
+		t.Errorf("the screen is not ahead of the connections: %q", line)
+	}
+}
+
 // Editing the environment must not drop the screen it carries: it is written one
 // level down from where the form's fields are, and a form that rebuilt the entry
 // from them would empty it in a keystroke.

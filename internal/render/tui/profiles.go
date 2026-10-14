@@ -877,8 +877,12 @@ func profileCovers(row profileRow) string {
 	// that lists what an environment is would otherwise be silent about the one
 	// thing in it that is not a connection — and a block written in the entry
 	// is then a part of the entry nobody can see from here.
+	//
+	// First, because the line is cut at the edge of the pane and the connections
+	// are as long as the environment has them, pins included: after them the screen
+	// was the part that fell off, on the environment with the most to say.
 	if screen := profileScreen(row.p.Dashboard); screen != "" {
-		detail += theme.Subtle.Render(" · ") + theme.Faded.Render(textclean.Terminal(screen))
+		detail = theme.Faded.Render(textclean.Terminal(screen)) + theme.Subtle.Render(" · ") + detail
 	}
 	// A note takes the place of the operator's own, as it takes the Note
 	// column in `rta profile list`: the credential line under this one is
