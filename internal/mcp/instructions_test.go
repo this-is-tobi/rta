@@ -24,6 +24,19 @@ func TestTheHandshakeCarriesWhatIsTrueOfEveryTool(t *testing.T) {
 	}
 }
 
+// A list that is cut and cannot say how long the whole is leaves its total out
+// (git_log), and the rule above it defines only a total: with no sentence for
+// the absent one, an agent read a log of exactly its limit as a repository of
+// that many commits, which is the reading the missing total was meant to stop.
+func TestTheHandshakeSaysWhatATableWithNoTotalMeans(t *testing.T) {
+	got := connect(t, Options{}).InitializeResult().Instructions
+	for _, want := range []string{"more than the rows sent", "has none", "a warning", "continues"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the handshake never says %q about a table with no total:\n%s", want, got)
+		}
+	}
+}
+
 // A read is not always free: one that reaches a destination the caller chooses,
 // or hands over what the operator set up, costs a grant like a write does. The
 // handshake used to give the safety class as the whole rule, and a model that

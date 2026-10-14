@@ -45,6 +45,73 @@ func TestLogRespectsLimit(t *testing.T) {
 	}
 }
 
+// A total equal to the rows sent says the history is whole, and the handshake
+// tells every agent exactly that: "when it is more than the rows sent, the list
+// is cut". A log cut at its limit answered `total: 5` with five rows, so an agent
+// asked how much history there is concluded the repository had five commits.
+// The total is exact when the walk ran out of commits and absent when it was
+// stopped, with the cut said in a warning rather than counted: counting would
+// walk a whole history to answer a limit of twenty.
+func TestALogCutAtItsLimitSaysSoAndClaimsNoTotal(t *testing.T) {
+	dir, repo := testRepo(t)
+	for i := 0; i < 5; i++ {
+		commitFile(t, repo, dir, "a.txt", fmt.Sprintf("content %d\n", i), fmt.Sprintf("commit %d", i))
+	}
+
+	cut := table(t, runLog, req(t, dir, map[string]any{"limit": 2}))
+	if len(cut.Rows) != 2 || cut.Total != 0 {
+		t.Errorf("a log cut at 2 of 5 commits = %d rows, total %d; want 2 rows and no total", len(cut.Rows), cut.Total)
+	}
+	if len(cut.Warnings) != 1 || cut.Warnings[0].Code != "git.log.older" || !cut.Warnings[0].Advisory ||
+		!strings.Contains(cut.Warnings[0].Message, "newest 2 commits") ||
+		!strings.Contains(cut.Warnings[0].Hint, "limit shows more, up to 500") {
+		t.Errorf("a cut log does not say the history continues, and how to see more: %+v", cut.Warnings)
+	}
+
+	whole := table(t, runLog, req(t, dir, map[string]any{"limit": 5}))
+	if len(whole.Rows) != 5 || whole.Total != 5 || len(whole.Warnings) != 0 {
+		t.Errorf("a log that reached the first commit = %d rows, total %d, warnings %v; want 5 of 5 and nothing to say",
+			len(whole.Rows), whole.Total, whole.Warnings)
+	}
+
+	t.Chdir(dir)
+	at := table(t, runLog, req(t, dir, map[string]any{"limit": 1, "file": "a.txt"}))
+	if at.Total != 0 || len(at.Warnings) != 1 {
+		t.Errorf("a path-filtered log is cut the same way: total %d, warnings %v", at.Total, at.Warnings)
+	}
+}
+
+// The way on a cut log names is what the call has not used. One already given
+// `file` was told that `file` narrows it, and at the five hundred `limit`
+// reaches that was the only advice it had.
+func TestACutLogAlreadyNarrowedToAPathIsNotToldToNarrowItAgain(t *testing.T) {
+	dir, repo := testRepo(t)
+	for i := 0; i < 3; i++ {
+		commitFile(t, repo, dir, "deploy/a.txt", fmt.Sprintf("content %d\n", i), fmt.Sprintf("commit %d", i))
+	}
+	t.Chdir(dir)
+
+	hint := func(values map[string]any) string {
+		t.Helper()
+		cut := table(t, runLog, req(t, dir, values))
+		if len(cut.Warnings) != 1 {
+			t.Fatalf("%v: a log cut at its limit carries %v, want the one warning", values, cut.Warnings)
+		}
+		return cut.Warnings[0].Hint
+	}
+	if got := hint(map[string]any{"limit": 1}); !strings.Contains(got, "narrows it to the commits that touched one path") {
+		t.Errorf("a log with no path was not told a path narrows it: %q", got)
+	}
+	if got := hint(map[string]any{"limit": 1, "file": "."}); !strings.Contains(got, "narrows it to the commits that touched one path") {
+		t.Errorf("the whole tree is no path to have narrowed to: %q", got)
+	}
+	got := hint(map[string]any{"limit": 1, "file": "deploy"})
+	if !strings.Contains(got, "a narrower path in") || strings.Contains(got, "touched one path") ||
+		!strings.Contains(got, "limit shows more") {
+		t.Errorf("a log already narrowed to deploy: hint = %q, want more limit and a narrower path", got)
+	}
+}
+
 func TestLogFileNarrowsToCommitsThatTouchedIt(t *testing.T) {
 	dir, repo := testRepo(t)
 	commitFile(t, repo, dir, "a.txt", "a\n", "touches a")
