@@ -1,14 +1,17 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/builtin/kv"
 	"github.com/this-is-tobi/rta/internal/mcp"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -612,6 +615,75 @@ func TestADigestTheDocsQuoteIsSpelledAtTheLengthRtaPrintsIt(t *testing.T) {
 	}
 	if quoted < 5 {
 		t.Fatalf("found %d quoted plugin digests, want the half dozen the docs hold; has the spelling moved?", quoted)
+	}
+}
+
+// A backup of the secret store was a thing the docs could not be followed to:
+// the reference table that names the store listed `kv.age` and `kv.recipients`,
+// and the key a `--generate` store opens with, `kv.identity`, sat in the config
+// directory and in the note of another row. Copying what the table named gave
+// a store nothing could open, and the first anyone knew was the restore. The
+// files a store keeps depend on how it is locked, so the Secrets page says which
+// each lock keeps — and this makes a real store of each kind and holds those
+// rows to the files it wrote, in both directions: a file the store keeps that a
+// row does not name, and a file a row names that the store never makes.
+func TestTheSecretsPageNamesExactlyTheFilesEachKindOfStoreKeeps(t *testing.T) {
+	const rel = "docs/20-using/50-secrets.md"
+	page := readDoc(t, repoRoot(t), rel)
+	_, section, ok := strings.Cut(page, "## Backing up, and restoring")
+	if !ok {
+		t.Fatalf("%s no longer has a `Backing up, and restoring` section; if it moved, move this test with it", rel)
+	}
+	section, _, _ = strings.Cut(section, "\n## ")
+	named := regexp.MustCompile("`(kv\\.[a-z]+)`")
+	rowOf := func(opening string) []string {
+		for _, line := range strings.Split(section, "\n") {
+			if strings.HasPrefix(line, opening) {
+				var out []string
+				for _, m := range named.FindAllStringSubmatch(line, -1) {
+					out = append(out, m[1])
+				}
+				slices.Sort(out)
+				return slices.Compact(out)
+			}
+		}
+		t.Fatalf("%s has no table row opening %q; if the table moved, move this test with it", rel, opening)
+		return nil
+	}
+	kept := func(dataDir, configDir string) []string {
+		var out []string
+		for _, dir := range []string{dataDir, configDir} {
+			files, err := filepath.Glob(filepath.Join(dir, "kv.*"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, f := range files {
+				out = append(out, filepath.Base(f))
+			}
+		}
+		slices.Sort(out)
+		return out
+	}
+
+	dataDir, configDir := isolate(t)
+	t.Setenv("RTA_KV_PASSPHRASE", "correct horse")
+	writeStore(t)
+	if got, want := rowOf("| A passphrase"), kept(dataDir, configDir); !slices.Equal(got, want) {
+		t.Errorf("%s says a passphrase store keeps %v, and one writes %v", rel, got, want)
+	}
+
+	dataDir, configDir = isolate(t)
+	for _, c := range kv.Plugin().Capabilities {
+		if c.ID != "kv.init" {
+			continue
+		}
+		if _, err := c.Run(context.Background(), plugin.NewRequest(map[string]any{"generate": true}, false, true)); err != nil {
+			t.Fatalf("making a store locked to a generated key: %v", err)
+		}
+	}
+	writeStore(t)
+	if got, want := rowOf("| `kv init --generate`"), kept(dataDir, configDir); !slices.Equal(got, want) || len(want) != 3 {
+		t.Errorf("%s says a store locked to a generated key keeps %v, and one writes %v", rel, got, want)
 	}
 }
 
