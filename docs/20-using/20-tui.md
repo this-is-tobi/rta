@@ -48,6 +48,7 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 | Key | What it does |
 | --- | --- |
 | `/` | Search |
+| `tab` `shift+tab` | Select the next tile, or the one before it, which from the first tile is the search bar |
 | `enter` | Open — or fold and unfold a [section](./25-dashboard-and-theme.md#sections-group-tiles-and-fold-the-group), on its header (`space` does the same there) |
 | `esc` | Back |
 | `q` or `ctrl+c` | Quit |

@@ -512,6 +512,24 @@ func (m *Model) moveSelection(dx, dy int) {
 	m.selectStop(stop{tile: rows[target].cells[min(col, len(rows[target].cells)-1)]})
 }
 
+// moveBack is shift+tab, the way back along what tab walks: one stop earlier, and
+// from the first of them the search bar, which is where tab left from. Tab was
+// advertised as a way to select and had no return, so the only way back to the
+// bar from the last tile of a long dashboard was one arrow at a time.
+func (m *Model) moveBack() {
+	defer m.clampScroll()
+	if m.selected == 0 {
+		return
+	}
+	stops, here := m.stops(), m.currentStop()
+	at := slices.IndexFunc(stops, func(s stop) bool { return s.tile == here.tile && s.header == here.header })
+	if at > 0 {
+		m.moveSelection(-1, 0)
+		return
+	}
+	m.selected, m.header, m.goalCol = 0, "", 0
+}
+
 // returned is what a tile's capability handed back, before cleaning.
 type returned struct {
 	view view.View
