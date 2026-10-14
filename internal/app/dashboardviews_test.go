@@ -130,6 +130,25 @@ func TestViewsListsEveryViewWhoSelectsItAndTheOneDrawn(t *testing.T) {
 	}
 }
 
+// `dashboard views` counts the entries a view states (a tile it pins and a tile
+// it adds), which is not the number of tiles it draws: the automatic ones come
+// with the view that states none, and one entry can draw several panels. The
+// column said "tiles" beside `dashboard sections` and `dashboard list`, which
+// count what is drawn, so one word named three numbers.
+func TestViewsCountsTheEntriesAViewStatesAndSaysSo(t *testing.T) {
+	run := session(t, setRegistry(t))
+	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "dbs", "--set", "dbname=shop"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	out, errOut, err := run("dashboard", "views", "-o", "json")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, `"Entries"`) || strings.Contains(out, `"Tiles"`) {
+		t.Errorf("the count is not named for what it counts:\n%s", out)
+	}
+}
+
 func TestProfileSetDashboardTakesAViewThatExistsOrNone(t *testing.T) {
 	run := session(t, setRegistry(t))
 	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal", "--dashboard", "ghost"); err == nil || !strings.Contains(errOut, "core.dashboard.noview") {
