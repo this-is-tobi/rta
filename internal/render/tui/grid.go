@@ -820,8 +820,16 @@ func (m Model) dashboardView() string {
 	}
 	// And which screen of the dashboard this is, when it is not the one every
 	// machine has: tiles below are the view's, and H, + and [ ] write to it.
+	//
+	// The name is a key in a config file, which a drop-in or a repository can
+	// bring, and so it is shown as every listed name is (plugin.ListedName):
+	// as it is when it reads as itself, quoted with each character a person
+	// would not see written out when it does not. Drawn raw, a name carried an
+	// escape that coloured the rest of the line, an OSC 8 that made the word
+	// beside it a link, a one-byte CSI the terminal acts on, and a newline that
+	// started a second header line.
 	if m.view != "" {
-		header += theme.Subtle.Render("  view " + m.view)
+		header += theme.Subtle.Render("  view " + plugin.ListedName(m.view))
 	}
 	// And whether the secret store is open in this process — the other fact
 	// about "where am I" that changes what the next keystroke can reach.
