@@ -23,7 +23,7 @@ That reads as: allow the agent `claude` to call `kv.get`, but only on the key `d
 | `--rate` | Bound how *fast*, as calls/window — `10/1h` |
 | `--note` | Why, shown by `grant list` |
 
-Leaving the scope out of a grant on a capability that reveals a stored value, such as `kv.get`, covers every record it reaches, so the receipt says so while the clock is running: `note: kv.get reveals the stored value itself, and with no record named it does so for every record it reaches — name one to allow only that record`. A plugin name counts the capabilities of that kind it carries.
+Leaving the scope out of a grant on a capability that reveals a stored value, such as `kv.get`, covers every record it reaches, so the receipt says so while the clock is running: `note: kv.get reveals the stored value itself, and with no record named it does so for every record it reaches — name one to allow only that record`. A plugin name counts the capabilities of that kind it carries. The [roster](../95-reference/10-glossary.md#terms) says it again for as long as the grant stands: `rta grant list` carries an advisory for every grant that names a whole plugin, counting what it covers, the destructive capabilities among them and the ones that reveal a stored value, so a row that reads `kv` beside one that reads `kv.get deploy-key` is not mistaken for its sibling.
 
 A whole environment at once is `rta grant issue --profile staging --agent claude`: one grant per capability per connection, reads unless you say more, under one passphrase. [Roles](./35-roles-consent-and-the-guard.md#everything-an-environment-covers-without-writing-the-role) says what it covers and what it leaves out.
 

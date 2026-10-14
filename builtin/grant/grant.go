@@ -1216,6 +1216,7 @@ func runList(ctx context.Context, req plugin.Request, catalog func() []plugin.Ca
 	if verr != nil {
 		return nil, verr
 	}
+	r.table.Warnings = append(r.table.Warnings, wideWarnings(req.Surface(), catalog, r.grants)...)
 	if !opts.detail {
 		return r.table, nil
 	}
@@ -1328,6 +1329,9 @@ type roster struct {
 	table      view.Table
 	roles      string
 	suppressed int
+	// grants are the rows the table shows, for what is said about them beside it
+	// and not in a cell (wideWarnings).
+	grants []core.Grant
 }
 
 // heldTable is the roster as a view: always the one table, however many roles
@@ -1424,7 +1428,7 @@ func heldRoster(sf plugin.Surface, opts rosterOpts, artifact func(string) (strin
 	if len(grants) == 0 {
 		t.Empty = emptyRoster(sf, !opts.detail, opts, standing)
 	}
-	return roster{table: t, roles: rolesInForce(grants), suppressed: suppressed}, nil
+	return roster{table: t, roles: rolesInForce(grants), suppressed: suppressed, grants: grants}, nil
 }
 
 // emptyRoster is what a person is told in place of a roster with no grant in
@@ -1680,6 +1684,46 @@ func judged(grants []core.Grant, bound func(core.Grant) core.ArtifactState) []co
 		states[i] = bound(g)
 	}
 	return states
+}
+
+// wideWarnings say, beside the roster, what a grant that names a whole plugin
+// reaches. `grant allow kv` reads like the smallest row on the list and is the
+// widest one: every capability in kv that needs a grant, destructive ones and the
+// readers of stored values included, each for every record. The receipt says so
+// when it is issued (breadthNote, revealNote), and that was the only time: a
+// roster is read at three in the morning for what is dangerous, and a row
+// reading `kv` beside one reading `kv.get deploy-key` looks like a sibling of it.
+//
+// Beside the rows and not in a cell, because the Capability cell is what a row
+// action reads back to revoke by (RecordOfRoster), and one advisory a grant: the
+// rows are all there, and a surface heads the roster as partial only for what
+// is missing. Counted as the grant covers (reachOf), so a plugin with nothing
+// that needs a grant says nothing.
+func wideWarnings(sf plugin.Surface, catalog func() []plugin.Capability, grants []core.Grant) []view.Error {
+	var out []view.Error
+	for _, g := range grants {
+		if strings.Contains(g.Target, ".") {
+			continue
+		}
+		gated, destructive, reveals := reachOf(catalog, g)
+		if len(gated) == 0 {
+			continue
+		}
+		whose := ""
+		if g.Agent != "" {
+			whose = " for " + g.Agent
+		}
+		msg := fmt.Sprintf("%s is a whole-plugin grant%s: it covers %s an agent needs a grant for, %s",
+			g.Target, whose, format.Count(len(gated), "capability", "capabilities"), destructiveSummary(destructive))
+		if len(reveals) > 0 {
+			msg += fmt.Sprintf(", and %s that reveal%s stored values (%s), each for every record it reaches",
+				strconv.Itoa(len(reveals)), format.Plural(len(reveals), "s", ""), strings.Join(reveals, ", "))
+		}
+		out = append(out, view.Error{Code: "grant.wide", Advisory: true, Message: msg,
+			Hint: "`" + sf.Call("grant.revoke", plugin.Arg{Name: "target", Value: g.Target, Positional: true}) +
+				"` takes it back, and a grant on one capability, named for one record, allows only that"})
+	}
+	return out
 }
 
 // switchWarning is what the roster says of the grants the environment switched
