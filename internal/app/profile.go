@@ -685,6 +685,23 @@ func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 			notes[p.Name] = p.Reason
 		}
 	}
+	// A profile that resolves and cannot be used: listed ok, it was the page that
+	// contradicted `rta doctor` about the same profile in the same second, and the
+	// first thing a person who copied the docs' example read before a first call
+	// failed on a credential. Said beside whatever else is noted, since both are
+	// true of it.
+	for _, name := range cfg.ProfileNames() {
+		if _, invalid := problems[name]; invalid {
+			continue
+		}
+		if entries := kv.UnreadableEntries(name, cfg.Profiles[name]); len(entries) > 0 {
+			reason := kv.NoStoreReason(plugin.SurfaceCLI, entries)
+			if already, noted := notes[name]; noted {
+				reason = already + "; " + reason
+			}
+			notes[name] = reason
+		}
+	}
 	active := profile.Active()
 	t := view.Table{Columns: []view.Column{
 		{Name: "Profile"},
@@ -895,8 +912,16 @@ func profileCard(scope config.Config, name string, p config.Profile, reg *regist
 	// does. The two are one command apart and the second is what a rebuild
 	// produces every time; `rta use` was taught the difference and the page
 	// beside it was not, which is this file's recorded failure mode.
-	pairs = append(pairs, saidOnce("problem", profile.Check(alone, withTrust{reg}))...)
+	problems := profile.Check(alone, withTrust{reg})
+	pairs = append(pairs, saidOnce("problem", problems)...)
 	pairs = append(pairs, saidOnce("warning", profile.Notes(alone, withTrust{reg}))...)
+	// After the rows above, so it is the last thing `rta profile set` prints about
+	// what it just wrote — this page is that command's receipt — and the one line
+	// that says what to run next. An invalid profile is not told: its problem
+	// rows are the thing to fix first, and doctor skips it the same way.
+	if entries := kv.UnreadableEntries(name, p); len(problems) == 0 && len(entries) > 0 {
+		pairs = append(pairs, view.Pair{Key: "warning", Value: kv.NoStoreReason(plugin.SurfaceCLI, entries)})
+	}
 	return view.KeyValue{Pairs: pairs}
 }
 

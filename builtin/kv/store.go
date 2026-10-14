@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/filelock"
 	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/paths"
@@ -628,6 +630,67 @@ func keyArg(key string) plugin.Arg { return plugin.Arg{Name: "key", Value: key, 
 // fact about it that needs no passphrase, and the one that tells "that entry
 // is not in it" from "there is nothing for it to be in".
 func HasStore() bool { return fileExists(storePath()) }
+
+// RefUnreadable reports whether a `secrets:` reference can only fail: it names
+// the store, this machine has none, and nothing the environment gives takes its
+// place. exported is whether the RTA_PROFILE_<NAME>_<INPUT> variable of the
+// credential it fills is set, which beats the reference (profile.Fill) and
+// leaves the store unread for it.
+//
+// Said of the store's absence and no further, because that is the one thing
+// about a reference that is knowable without a passphrase. Whether an entry is
+// in a store that exists only its owner's passphrase answers, and a listing is
+// no place to ask for it.
+//
+// **One question for every page that grades a profile.** `rta profile list`
+// called such a profile ok and `rta use` switched it on while `rta doctor` had
+// warned about it the whole time, and the TUI's profile pane graded it from a
+// copy of this test of its own that nothing held to the others.
+func RefUnreadable(r config.SecretRef, exported bool) bool {
+	return r.Scheme == "kv" && !exported && !HasStore()
+}
+
+// UnreadableEntries is the store entries that profile name maps a credential
+// onto and that no call through it can read, as RefUnreadable asks: in the order
+// the profile states them, each once, nil when there is a store or nothing
+// reads it.
+//
+// A credential an exported variable supplies is not counted, and the variable
+// exists for the default instance only — a labeled instance reads none at all
+// (profile.Bind), so its reference is read whatever is exported.
+func UnreadableEntries(name string, p config.Profile) []string {
+	if HasStore() {
+		return nil
+	}
+	var entries []string
+	for _, key := range p.PluginKeys() {
+		_, instance, _ := config.SplitKey(key)
+		for _, r := range p.Plugins[key].SecretRefs() {
+			_, exported := os.LookupEnv(plugin.ProfileEnvVar(name, r.Input))
+			if RefUnreadable(r, exported && instance == "") && !slices.Contains(entries, r.Ref) {
+				entries = append(entries, r.Ref)
+			}
+		}
+	}
+	return entries
+}
+
+// NoStoreSentence says that credentials come from a store this machine has not
+// made, and what makes it: one kv.set, which creates the store and the entry
+// together, spelled as the surface asking runs it. subject is what comes from
+// it, counted by the caller — "1 profile credential comes", "2 credentials
+// come" — and the sentence is the same for doctor, the profile list, the
+// profile card and the TUI's pane, so none of them sends a person a different
+// way.
+func NoStoreSentence(sf plugin.Surface, subject string, entries []string) string {
+	return fmt.Sprintf("%s from the store (%s), and there is no store on this machine yet — `%s` creates it",
+		subject, strings.Join(entries, ", "), sf.Call("kv.set", keyArg(entries[0])))
+}
+
+// NoStoreReason is NoStoreSentence for one profile's own page or row.
+func NoStoreReason(sf plugin.Surface, entries []string) string {
+	return NoStoreSentence(sf, format.Count(len(entries), "credential comes", "credentials come"), entries)
+}
 
 // Unlockable reports whether this environment alone can open the store: no
 // flags, no prompt, nothing typed.

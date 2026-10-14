@@ -2,9 +2,13 @@ package kv
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -110,5 +114,55 @@ func TestNoStoreNextToAnAgentNamesOnlyItsTool(t *testing.T) {
 	}
 	if tui := NoStoreNext(plugin.SurfaceTUI, "db"); strings.Contains(tui, "rta ") || !strings.Contains(tui, "kv.set key=db") {
 		t.Errorf("NoStoreNext in the TUI = %q, want its own names", tui)
+	}
+}
+
+// Every page that says whether a profile can be used asks this one question of
+// the references it maps, so the list, the card, doctor and the TUI's pane
+// cannot grade one profile four ways. A reference into the store is unreadable
+// where there is no store and nothing exported answers for it — and the
+// variable is the default instance's alone: a labeled instance reads none, so
+// its reference is read whatever is exported (profile.Bind).
+func TestAReferenceIsUnreadableOnlyWhereNoStoreAndNoVariableCanAnswer(t *testing.T) {
+	dir := setup(t)
+	profile := config.Profile{Plugins: map[string]config.Connection{
+		"db": {Secrets: map[string]string{"password": "kv:db-password", "user": "kv:db-user"}},
+		"db/analytics": {Secrets: map[string]string{
+			"password": "kv:analytics-password", "token": "kube:apps/db/token"}},
+	}}
+	sorted := func(entries []string) []string { slices.Sort(entries); return entries }
+
+	if got, want := sorted(UnreadableEntries("staging", profile)),
+		[]string{"analytics-password", "db-password", "db-user"}; !slices.Equal(got, want) {
+		t.Errorf("with no store, the unreadable entries are %v, want %v", got, want)
+	}
+
+	t.Setenv("RTA_PROFILE_STAGING_PASSWORD", "from-the-environment")
+	if got, want := sorted(UnreadableEntries("staging", profile)),
+		[]string{"analytics-password", "db-user"}; !slices.Equal(got, want) {
+		t.Errorf("an exported password answers for the default instance's only: %v, want %v", got, want)
+	}
+	if RefUnreadable(config.SecretRef{Scheme: "kv", Ref: "x"}, true) || RefUnreadable(config.SecretRef{Scheme: "kube", Ref: "x"}, false) {
+		t.Error("a reference the environment answers for, or one that is not the store's, was called unreadable")
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "kv.age"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := UnreadableEntries("staging", profile); got != nil {
+		t.Errorf("with a store the answer is not this question's to give, and it says %v", got)
+	}
+}
+
+// One sentence for every page, in the words of the surface that says it.
+func TestTheNoStoreSentenceIsSpelledForTheSurfaceThatSaysIt(t *testing.T) {
+	entries := []string{"db-password", "db-user"}
+	for sf, want := range map[plugin.Surface]string{
+		plugin.SurfaceCLI: "2 credentials come from the store (db-password, db-user), and there is no store on this machine yet — `rta kv set db-password` creates it",
+		plugin.SurfaceTUI: "2 credentials come from the store (db-password, db-user), and there is no store on this machine yet — `kv.set key=db-password` creates it",
+	} {
+		if got := NoStoreReason(sf, entries); got != want {
+			t.Errorf("%v: %q, want %q", sf, got, want)
+		}
 	}
 }
