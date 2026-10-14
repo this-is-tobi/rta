@@ -68,7 +68,7 @@ return view.Table{
 }, nil
 ```
 
-Cells are strings and a column's `Kind` (`view.KindStatus`, `view.KindDuration`, …) is a hint the renderers style by, never styling itself. `Total` is how many rows the answer holds when the page shows fewer.
+Cells are strings and a column's `Kind` (`view.KindStatus`, `view.KindDuration`, …) is a hint the renderers style by, never styling itself. `Total` is how many rows the answer holds when the page shows fewer. A cell is one line: a name a stranger chose — an object key, a file, a store entry — goes in through `plugin.ListedName` ([conventions](./24-testing-and-publishing.md#conventions-worth-following)), because a newline inside a cell is drawn as a line of its own and reads as another row.
 
 A table that stops short hands back where it left off: `Page: &view.Cursor{Next: next, Input: "after"}`. `Next` is the value, and `Input` names the input of the same capability that takes it, so whoever reads the table is told what to pass instead of left to guess. It has to be one an agent can give: a declared `String` that is not `Local`, which `sdktest` checks; a cursor that names no input still works for whoever knows the plugin, and `sdktest` notes it.
 
@@ -97,7 +97,7 @@ return nil, view.Errorf("weather.nosuchcity", "no station for %q", city).
 	WithHint(req.Surface().CapabilityName("weather.stations") + " lists the ones that exist")
 ```
 
-The code is stable enough for a script to branch on, and the hint is what the person does next. Both are lost by `fmt.Errorf`.
+The code is stable enough for a script to branch on, and the hint is what the person does next. Both are lost by `fmt.Errorf`. An error with a hint and no code — `view.Errorf("", …)`, or a `view.Error` literal with only a message and a hint — keeps its hint and is answered as `weather.station.show.failed`, the one code every uncoded error of that capability shares, so a script cannot tell your cases apart: give each its own.
 
 This is the shape of every answer a plugin gives. [Declaring inputs](./21-declaring-inputs.md) is what it takes, [Answers, errors and hints](./22-answers-errors-and-hints.md) is everything else an answer can carry, and [Safety, credentials and what rta does to your process](./23-safety-and-credentials.md) is the part that decides what an agent may do with it.
 
