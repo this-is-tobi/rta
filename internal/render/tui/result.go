@@ -142,13 +142,12 @@ func (m Model) resultMeta() string {
 	switch v := m.result.view.(type) {
 	case view.Table:
 		n := len(v.Rows)
-		total := max(v.Total, n)
 		// Not over an empty listing's sentence, which the pane draws in
 		// place of the grid: "0 of 0 rows" above "nothing is locked" says
 		// the same thing twice, the second time as a figure. The count stays
 		// over an empty grid, where it is what says nothing came back.
 		if n > 0 || v.Empty == "" {
-			parts = append(parts, theme.Subtle.Render(fmt.Sprintf("%d of %s", n, format.CountOf(total, "row"))))
+			parts = append(parts, theme.Subtle.Render(rowCount(v)))
 		}
 		if m.interactive() && n > 0 {
 			parts = append(parts, theme.Subtle.Render(fmt.Sprintf("row %d/%d", m.row+1, n)))
@@ -198,6 +197,23 @@ func (m Model) resultMeta() string {
 		}
 	}
 	return " " + fitMeta(parts, warn, m.viewport.Width())
+}
+
+// rowCount is the figure for what a table came back with: "N of M rows", M
+// being what its producer counted.
+//
+// A table with rows, no total and a warning is one that could not count what it
+// left out, which is how a git log stopped at its limit says the history goes
+// on. "20 of 20 rows" beside that warning claims the whole of what the warning
+// says is not there, so the figure is "20 rows" and the warning, which the line
+// keeps whatever the width, carries the rest. A table with no total and no
+// warning is the many that did not count and are whole, and keeps "N of N".
+func rowCount(t view.Table) string {
+	n := len(t.Rows)
+	if t.Total == 0 && n > 0 && len(t.Warnings) > 0 {
+		return format.CountOf(n, "row")
+	}
+	return fmt.Sprintf("%d of %s", n, format.CountOf(max(t.Total, n), "row"))
 }
 
 // fitMeta joins the context line's parts, and when they are wider than the

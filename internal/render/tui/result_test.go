@@ -29,6 +29,40 @@ func TestTheResultLineCountsInTheRightNumber(t *testing.T) {
 	}
 }
 
+// A table that could not count what it left out has no total and says so in a
+// warning (a git log stopped at its limit), and "2 of 2 rows" beside "the history
+// continues" read as the whole of the thing the warning says is not whole. A table
+// that never counted and has nothing to warn of is whole, and keeps its "N of N".
+func TestATableThatCouldNotCountDoesNotClaimItsRowsAreAll(t *testing.T) {
+	c := plugin.Capability{ID: "git.log", Safety: plugin.Read}
+	older := view.Error{Code: "git.log.older", Message: "the history continues past the newest 2 commits", Advisory: true}
+	denied := view.Error{Code: "fs.unreadable", Message: "a directory could not be read"}
+	table := func(total int, warnings ...view.Error) view.Table {
+		return view.Table{Columns: []view.Column{{Name: "Hash"}}, Rows: [][]string{{"a1"}, {"b2"}},
+			Total: total, Warnings: warnings}
+	}
+	for _, tc := range []struct {
+		name string
+		v    view.Table
+		want string
+		not  string
+	}{
+		{"a cut log", table(0, older), "2 rows · ⚠ 1 warning", "of"},
+		{"a listing with a missing part and no count", table(0, denied), "2 rows · ⚠ partial (1 warning)", "of"},
+		{"a listing that counted", table(463, denied), "2 of 463 rows", ""},
+		{"a whole one that never counted", table(0), "2 of 2 rows", ""},
+	} {
+		m := Model{current: c, result: resultMsg{cap: c, view: tc.v}}
+		got := plain(m.resultMeta())
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("%s: meta = %q, want %q", tc.name, got, tc.want)
+		}
+		if tc.not != "" && strings.Contains(got, " "+tc.not+" ") {
+			t.Errorf("%s: meta = %q, claims a total nobody counted", tc.name, got)
+		}
+	}
+}
+
 // The line above the fold heads an answer partial only for a warning that
 // says something is missing from it. The roster's advisories — a grant bound
 // to a replaced plugin build, a server on another build of rta — sit beside

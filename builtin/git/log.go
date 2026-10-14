@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -11,11 +12,15 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-const defaultLogLimit = 20
+const (
+	defaultLogLimit = 20
+	maxLogLimit     = 500
+)
 
 func logCapability() plugin.Capability {
 	return plugin.Capability{
@@ -30,7 +35,7 @@ func logCapability() plugin.Capability {
 			"directory — the structured equivalent of `git log -- <path>`.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
-			{Name: "limit", Type: plugin.Int, Config: "log.limit", Default: defaultLogLimit, Min: 1, Max: 500,
+			{Name: "limit", Type: plugin.Int, Config: "log.limit", Default: defaultLogLimit, Min: 1, Max: maxLogLimit,
 				Help: "how many of the most recent commits to show"},
 			{Name: "file", Type: plugin.Path, Help: fileHelp("commits touching this file or directory")},
 		},
@@ -52,6 +57,7 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Name: "Message"},
 	}, Empty: "no commits yet"}
 	opts := &git.LogOptions{Order: git.LogOrderCommitterTime}
+	narrowed := false
 	if file := req.String("file"); file != "" {
 		rel, verr := repoFile(repo, file, req.Surface(), req.Surface().InputName("file"))
 		if verr != nil {
@@ -60,6 +66,7 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 		opts.PathFilter = within(rel)
 		if rel != "." {
 			t.Empty = "no commit reaching HEAD touched " + rel
+			narrowed = true
 		}
 	}
 	// A repository with no commits yet has an empty history, as git.branches
@@ -75,8 +82,10 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 	defer iter.Close()
 
 	limit := req.Int("limit")
+	older := false
 	err = iter.ForEach(func(c *object.Commit) error {
 		if len(t.Rows) >= limit {
+			older = true
 			return storer.ErrStop
 		}
 		t.Rows = append(t.Rows, []string{
@@ -90,8 +99,51 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("git.log.failed", "walking log: %v", err)
 	}
+	if older {
+		t.Warnings = append(t.Warnings, olderCommits(req.Surface(), len(t.Rows), limit, narrowed))
+		return t, nil
+	}
 	t.Total = len(t.Rows)
 	return t, nil
+}
+
+// olderCommits says that the history goes on past the commits shown, in place
+// of the total a cut list has no cheap way to give.
+//
+// **A total equal to the rows sent says the history is whole.** The handshake
+// tells every agent that a table's total counts every row there is and that
+// more than the rows sent means the list is cut, so a log answering `total: 5`
+// with five rows read as a repository of exactly five commits, in a free read,
+// at every limit. The walk already holds the answer to the question that
+// matters: the callback is handed the commit after the last one shown, or it is
+// not, and one commit past the limit is all the cut costs to see. Counting the
+// whole history to put a number beside twenty rows would walk every commit a
+// large repository has, and with `file` every tree a commit touched, so there
+// is no number: the total is absent when the list was cut and exact when the
+// walk ran out of commits first.
+//
+// An advisory warning and no cursor: the commits shown are all there, and a
+// cursor would need an input that starts the walk somewhere else, a feature
+// this list has not been asked for. `limit` reaches five hundred back and
+// `file` follows one path as far as it goes.
+//
+// The way on is what the call has not already used. A log already narrowed to
+// one path, at the most `limit` allows, was told to narrow it by the one input
+// it had spent, which is no advice at all: what is left to it is a deeper path.
+func olderCommits(sf plugin.Surface, shown, limit int, narrowed bool) view.Error {
+	hint := sf.InputName("file") + " narrows it to the commits that touched one path"
+	if narrowed {
+		hint = "a narrower path in " + sf.InputName("file") + " narrows it further"
+	}
+	if limit < maxLogLimit {
+		hint = sf.InputName("limit") + " shows more, up to " + strconv.Itoa(maxLogLimit) + "; " + hint
+	}
+	return view.Error{
+		Code:     "git.log.older",
+		Advisory: true,
+		Message:  "the history continues past the newest " + format.CountOf(shown, "commit"),
+		Hint:     hint,
+	}
 }
 
 // within is the filter `git log -- <path>` applies to the paths a commit
