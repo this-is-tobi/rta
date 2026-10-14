@@ -2,12 +2,35 @@ package clipboard
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+// warmEnv makes a stand-in that writes its input exit at once instead.
+const warmEnv = "RTA_FAKE_WARM"
+
+// warm runs a stand-in once before the call that has a deadline on it.
+//
+// **The first run of an executable written a moment ago is slow on a Mac**:
+// the system scans a new file before it lets it start, which took about a
+// second on an idle machine (the second run of the same file took five
+// milliseconds) and several under the load of a full test run, where Copy's own
+// five-second deadline per program then reported a stand-in that does nothing
+// slow as "pbcopy (timed out)" and failed a test of the value that was put on
+// the clipboard. The deadline is the code under test and is left as it is; the
+// cost of a file's first run is paid here, where nothing is timing it.
+func warm(t *testing.T, path string) {
+	t.Helper()
+	cmd := exec.Command(path)
+	cmd.Env = append(os.Environ(), warmEnv+"=1")
+	// A stand-in that fails on purpose (exit 3) fails here as well, and that is
+	// not what this is for.
+	_ = cmd.Run()
+}
 
 // fakeClipboard puts a stand-in for every clipboard program this package
 // knows about on PATH, and nothing else.
@@ -21,11 +44,14 @@ func fakeClipboard(t *testing.T) (stdin, argv string) {
 	dir := t.TempDir()
 	stdin = filepath.Join(dir, "stdin")
 	argv = filepath.Join(dir, "argv")
-	script := "#!/bin/sh\ncat > " + stdin + "\nprintf '%s\\n' \"$@\" > " + argv + "\n"
+	script := "#!/bin/sh\n[ -z \"$" + warmEnv + "\" ] || exit 0\ncat > " + stdin + "\nprintf '%s\\n' \"$@\" > " + argv + "\n"
 	for _, name := range []string{"pbcopy", "xclip", "xsel", "wl-copy", "clip.exe", "termux-clipboard-set"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil {
 			t.Fatal(err)
 		}
+	}
+	for _, c := range Commands() {
+		warm(t, filepath.Join(dir, c.Name))
 	}
 	// Prepended, not substituted: the stand-in is a shell script, and a PATH
 	// holding nothing but the stand-ins leaves it unable to find `cat` — at
@@ -94,9 +120,11 @@ func TestCopyTriesTheNextProgramWhenTheFirstInstalledOneFails(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, first), []byte("#!/bin/sh\nexit 1\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, second), []byte("#!/bin/sh\ncat > "+stdin+"\n"), 0o700); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, second), []byte("#!/bin/sh\n[ -z \"$"+warmEnv+"\" ] || exit 0\ncat > "+stdin+"\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	warm(t, filepath.Join(dir, first))
+	warm(t, filepath.Join(dir, second))
 	// Prepended, not substituted — see fakeClipboard's own comment on this:
 	// a PATH holding nothing but the stand-ins cannot find `sh` or `cat`
 	// either, and the resulting exit status 127 looks like the code under
@@ -130,6 +158,7 @@ func everyProgramFails(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, c.Name), []byte("#!/bin/sh\nexit 3\n"), 0o700); err != nil {
 			t.Fatal(err)
 		}
+		warm(t, filepath.Join(dir, c.Name))
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }

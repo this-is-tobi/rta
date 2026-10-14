@@ -3,12 +3,14 @@ package tui
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/this-is-tobi/rta/internal/clipboard"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -24,11 +26,20 @@ func fakeClipboard(t *testing.T) (stdin string) {
 	t.Helper()
 	dir := t.TempDir()
 	stdin = filepath.Join(dir, "stdin")
-	script := "#!/bin/sh\ncat > " + stdin + "\n"
+	script := "#!/bin/sh\n[ -z \"$RTA_FAKE_WARM\" ] || exit 0\ncat > " + stdin + "\n"
 	for _, name := range []string{"pbcopy", "xclip", "xsel", "wl-copy", "clip.exe", "termux-clipboard-set"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// The first run of an executable written a moment ago is slow on a Mac, where
+	// the system scans a new file before it starts it, and the copy that follows
+	// has a deadline per program (internal/clipboard): run each once here, with
+	// the stand-in told to exit at once, so the first run is not under it.
+	for _, c := range clipboard.Commands() {
+		cmd := exec.Command(filepath.Join(dir, c.Name))
+		cmd.Env = append(os.Environ(), "RTA_FAKE_WARM=1")
+		_ = cmd.Run()
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return stdin
