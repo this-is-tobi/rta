@@ -92,6 +92,12 @@ func fitsAsGrid(t view.Table, headers []string, st styles) bool {
 	if budget <= 0 {
 		return false
 	}
+	// Floors that do not fit are a table lipgloss would shrink by its own rule,
+	// which is the one squeezedWidths exists to avoid: a word of one column cut
+	// in half so that the prose beside it could keep its length.
+	if sum(natural) > st.width-(len(natural)+1) && squeezedWidths(t, headers, st) == nil {
+		return false
+	}
 	return narrowestSqueezed(natural, text, budget) >= minGridColumn
 }
 
@@ -154,6 +160,42 @@ func naturalWidths(t view.Table, headers []string) []int {
 			}
 		}
 		out[i] = w + 2
+	}
+	return out
+}
+
+// maxProtectedToken is the widest single token a squeeze makes room for. A
+// log position, a WAL segment file name, a short hash, a timestamp is one token
+// that means nothing once it is cut, and 24 cells holds each of them. A longer
+// one is a path, a URL, a digest or a pseudo-version: every renderer cuts
+// those, and a column that kept room for its one long outlier would starve its
+// neighbours (`rta pkg outdated go` drew its pseudo-version over two lines so
+// that the other five columns could keep their headings). Such a token is not
+// ignored by the grid, it is simply the one thing allowed to wrap.
+const maxProtectedToken = 24
+
+// unbreakableWidths is, per column, the widest run of characters with no space
+// in it that is no wider than maxProtectedToken (a heading counts), without
+// the padding naturalWidths adds. A cell wraps at spaces, so that run is the
+// narrowest the column can be drawn without splitting a word in half.
+func unbreakableWidths(t view.Table, headers []string) []int {
+	out := make([]int, len(t.Columns))
+	widest := func(i int, cell string) {
+		for _, word := range strings.Fields(cell) {
+			if w := lipgloss.Width(word); w <= maxProtectedToken {
+				out[i] = max(out[i], w)
+			}
+		}
+	}
+	for i := range t.Columns {
+		if i < len(headers) {
+			widest(i, headers[i])
+		}
+		for _, row := range t.Rows {
+			if i < len(row) {
+				widest(i, row[i])
+			}
+		}
 	}
 	return out
 }
