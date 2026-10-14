@@ -50,7 +50,7 @@ reopen  rm  search  set  show  status  tags  toggle
 
 `sdktest.Vocabulary()` returns the same list at runtime, so you never have to trust this page over the tool. The point is that learning one plugin teaches you all of them.
 
-One of those words carries extra weight. **`<your-plugin>.overview` becomes your dashboard tile** — the panel the TUI draws for your plugin on its landing screen. Without one, the tile is whichever of your capabilities happens to come first and can run unattended, which means your declaration order picks it by accident. Declaring an overview is how you pick it on purpose.
+One of those words carries extra weight. **`<your-plugin>.overview` becomes your dashboard tile** — the panel the TUI draws for your plugin on its landing screen. Without one, the tile is whichever of your capabilities happens to come first and can run unattended, which means your declaration order picks it by accident. Declaring an overview is how you pick it on purpose, and the `dashboard tile` line of `rta plugin dev` says which one the dashboard took and whether it was your choice.
 
 A tile runs on load and then every few seconds with nobody watching, so it has to be `Read`, answerable from its defaults alone, and cheap enough to repeat. If your overview is none of those, set `NoPreview: true` on it — rta will tile something else rather than put it on a timer, and `overview` still means to a reader what it means everywhere else.
 
