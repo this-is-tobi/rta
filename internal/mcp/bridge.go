@@ -709,20 +709,24 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				// the operator mapped ("reading prod-db-password for password"),
 				// and builtin/kv.Reveal already refuses to list entry names to
 				// anything that might be an agent. Handing one over in a failure
-				// would undo that from the other side. The operator gets the
-				// real message from `rta doctor` and from the same call at a
-				// terminal.
+				// would undo that from the other side.
+				//
+				// The operator is sent to the record, where the real message is,
+				// and not to `rta doctor`: doctor reads the profile file and, when
+				// its own shell can open the store, the entries in it, but it
+				// cannot see the environment this server was started in, and the
+				// commonest cause is exactly that — a passphrase store whose
+				// passphrase the server was never given. An operator who followed
+				// the old hint found every row green and a refusal that would not
+				// go away.
 				agentErr := view.Errorf("core.profile.secret.unavailable",
 					"%s could not resolve a credential for profile %q", plugin.ToolName(c.ID), profileName).
-					WithHint(plugin.AskOperator("doctor"))
+					WithHint(readTheRecord())
 				// On the record, where only a person reads it: the sentence the
 				// agent heard in the row's own fields, and in Note what it was
-				// not told. A row with neither said a grant was spent on a call
-				// that failed and nothing about why, and the doctor the agent's
-				// hint points at checks the file's structure, not whether an
-				// entry is there.
+				// not told, with what to do about it when the refusal says.
 				refusedBy(rec, agentErr)
-				rec.Note = cut(textclean.Credentials(verr2.Message), maxReason)
+				rec.Note = cut(textclean.Credentials(withRemedy(verr2)), maxReason)
 				return errResult(agentErr), nil
 			}
 			// The forward, if this connection names a cluster. Last, because it
@@ -742,12 +746,14 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				// operator's cluster, namespace and service, and an agent that can
 				// read "service postgres not found in namespace databases" can map
 				// the cluster one refusal at a time. The operator gets the real
-				// message from the same call at a terminal and from `rta doctor`.
+				// message from the record, which is where the hint sends them:
+				// doctor never dials a cluster, so it has nothing to say about a
+				// forward that would not open.
 				agentErr := view.Errorf("core.profile.tunnel.unavailable",
 					"%s could not reach the connection profile %q names", plugin.ToolName(c.ID), profileName).
-					WithHint(plugin.AskOperator("doctor"))
+					WithHint(readTheRecord())
 				refusedBy(rec, agentErr)
-				rec.Note = cut(textclean.Credentials(verr3.Message), maxReason)
+				rec.Note = cut(textclean.Credentials(withRemedy(verr3)), maxReason)
 				return errResult(agentErr), nil
 			}
 			for input, v := range dialled {
@@ -1060,6 +1066,37 @@ func storeRefusal(verr *view.Error) *view.Error {
 	out.Hint = "this is about the grants rta keeps rather than this call, and only the operator " +
 		"can fix it — " + plugin.AskOperator("doctor")
 	return &out
+}
+
+// readTheRecord is the hint of a refusal whose reason the agent is not told: the
+// credential a connection reads and the cluster it dials are the operator's to
+// know, and an agent that read "no entry staging-db-password" or "service
+// postgres not found in namespace databases" could map them one refusal at a
+// time. The reason is on the record, which only the operator reads, and the
+// sentence says the row is there so that whoever relays it knows what to look
+// for in a log that holds every call.
+//
+// The record and not `rta doctor`, which this used to name: doctor answers for
+// the profile file and for this shell, and a server's refusal comes from the
+// environment the server was started in, which it cannot see. `--detail`
+// because the compact log keeps a refusal to a few words ("connection
+// unusable") and leaves the sentence for it.
+func readTheRecord() string {
+	return plugin.AskOperator("agent log --detail") + " — the row for this call says why"
+}
+
+// withRemedy is a refusal's message for the record's Note, with its hint after
+// it when it has one: what went wrong, and the operator's next step, in the
+// one row they were sent to read. The hint is the refusal's own, so it is only
+// ever as specific as the code that wrote it, and it is worded for the reader
+// of this row only because the reader the server was given (Options.Secrets)
+// words it so: a hint written for an agent says "ask the operator to run", and
+// the operator is the one who is reading.
+func withRemedy(verr *view.Error) string {
+	if verr.Hint == "" {
+		return verr.Message
+	}
+	return verr.Message + " — " + verr.Hint
 }
 
 // withoutCredentialedCommand is a refusal for a call that needs a grant, with

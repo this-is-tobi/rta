@@ -589,7 +589,11 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				// never by prompting. Wired here and not inside internal/mcp so
 				// that "this server may read the operator's store" is a line
 				// somebody typed rather than a transitive import.
-				Secrets:   kv.Reveal,
+				//
+				// The reader that words a refusal for the operator: the bridge
+				// never hands it to an agent, and the record's note is where the
+				// operator reads it (kv.RevealForServer).
+				Secrets:   kv.RevealForServer,
 				Untrusted: untrustedNames(),
 				Paths:     guard,
 				Remote:    httpAddr != "",
