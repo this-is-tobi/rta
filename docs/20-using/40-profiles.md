@@ -184,7 +184,7 @@ Four things about it are deliberate:
 
 An environment can go further than one colour: `rta profile set shop-prod --theme label='#C792EA'` gives it a palette, and [a palette per environment](./25-dashboard-and-theme.md#a-palette-per-environment) says how it lies over yours and what it may not do. `rta profile show` prints it, `rta profile list` counts it, and the TUI's `t` edits it.
 
-`--no-color` keeps the badge and drops the paint: `[ shop-prod ]`, which is also what a session under `NO_COLOR` or `TERM=dumb` gets. A colour rta cannot read marks nothing, so the environment announces itself as an unmarked one does, rather than in one you did not choose; it is reported by `rta profile list`, `rta profile show` and `rta doctor`, and never stops the environment from being switched to or used. Under a locale that does not name `UTF-8` the bullet is an asterisk, as everything rta draws is plain ASCII there (see [the CLI](./10-cli.md)).
+`--no-color` keeps the badge and drops the paint: `[ shop-prod ]`, which is also what a session under `NO_COLOR` or `TERM=dumb` gets, in the TUI's header as on the command line, for an environment with a colour and one without. A colour rta cannot read marks nothing, so the environment announces itself as an unmarked one does, rather than in one you did not choose; it is reported by `rta profile list`, `rta profile show` and `rta doctor`, and never stops the environment from being switched to or used. Under a locale that does not name `UTF-8` the bullet is an asterisk, as everything rta draws is plain ASCII there (see [the CLI](./10-cli.md)).
 
 ## `only:` fences an input to the values a connection reaches
 
