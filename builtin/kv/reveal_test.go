@@ -42,7 +42,8 @@ func TestRevealDoesNotEnumerateOnNotFound(t *testing.T) {
 	if strings.Contains(verr.Message, "a-real-entry") || strings.Contains(verr.Hint, "a-real-entry") {
 		t.Fatalf("the not-found error names an entry that does exist: %+v", verr)
 	}
-	// Read by an agent as often as by a person: the command is the operator's.
+	// Reveal cannot tell who reads what it refuses with, so the command is
+	// handed on as the operator's, which is safe to read from either side.
 	if !strings.HasPrefix(verr.Hint, plugin.AskOperator("kv list")) {
 		t.Errorf("the hint hands on a command without saying whose it is: %q", verr.Hint)
 	}
@@ -70,6 +71,47 @@ func TestRevealWithNoStoreSaysThereIsNoneAndHowOneIsMade(t *testing.T) {
 	}
 	if !strings.HasPrefix(verr.Hint, plugin.AskOperator("kv set staging-db-password")) {
 		t.Errorf("the hint does not hand on the command that makes the store, as the operator's: %q", verr.Hint)
+	}
+}
+
+// A person at a terminal is the operator and has nobody to ask, so what their
+// own profile refuses with is the command to run, spelled for where they are —
+// "ask the operator to run" read as an instruction for somebody else. The
+// default stays the wording safe to read from either side, so a caller that
+// does not say who it is keeps handing the command on.
+func TestRevealAsSaysWhatToRunToThePersonAtTheTerminal(t *testing.T) {
+	setup(t)
+	t.Setenv(passphraseEnv, "correct horse battery staple")
+	const missing = "staging-db-password"
+
+	for _, c := range []struct {
+		sf   plugin.Surface
+		want string
+	}{
+		{plugin.SurfaceCLI, "`rta kv set staging-db-password` creates the store, locked with a passphrase you choose, and the entry"},
+		{plugin.SurfaceTUI, "`kv.set key=staging-db-password` creates the store, locked with a passphrase you choose, and the entry"},
+	} {
+		_, verr := RevealAs(c.sf)(missing)
+		if verr == nil || verr.Hint != c.want {
+			t.Errorf("%s, no store: hint = %+v, want %q", c.sf, verr, c.want)
+		}
+	}
+	if _, verr := Reveal(missing); verr == nil || !strings.HasPrefix(verr.Hint, plugin.AskOperator("kv set "+missing)) {
+		t.Errorf("the default no longer hands the command on as the operator's: %+v", verr)
+	}
+
+	text(t, runSet, map[string]any{"key": "another-entry", "value": "x"}, false)
+	for sf, want := range map[plugin.Surface]string{
+		plugin.SurfaceCLI: "`rta kv list` lists every key",
+		plugin.SurfaceTUI: "`kv.list` lists every key",
+	} {
+		_, verr := RevealAs(sf)(missing)
+		if verr == nil || verr.Hint != want {
+			t.Errorf("%s, a store without the entry: hint = %+v, want %q", sf, verr, want)
+		}
+		if verr != nil && strings.Contains(verr.Hint+verr.Message, "another-entry") {
+			t.Errorf("%s: the refusal names an entry that does exist: %+v", sf, verr)
+		}
 	}
 }
 

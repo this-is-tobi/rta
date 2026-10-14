@@ -241,7 +241,7 @@ func bindCmd(reg *registry.Registry, name, stamp string) tea.Cmd {
 		if !ok {
 			return boundMsg{name: name, stamp: stamp}
 		}
-		read := memoRead(kv.Reveal)
+		read := memoRead(kv.RevealAs(plugin.SurfaceTUI))
 		out := map[string]envBind{}
 		for _, c := range reg.Capabilities() {
 			if !plugin.Profilable(c) || !p.Covers(plugin.Namespace(c.ID)) {

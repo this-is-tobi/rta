@@ -621,5 +621,5 @@ func (m Model) fillConn(name string, conn config.Connection, c plugin.Capability
 	values map[string]any) (map[string]any, *view.Error) {
 	ctx, cancel := context.WithTimeout(context.Background(), bindTimeout)
 	defer cancel()
-	return profile.Fill(ctx, name, conn, c, values, os.LookupEnv, kv.Reveal)
+	return profile.Fill(ctx, name, conn, c, values, os.LookupEnv, kv.RevealAs(plugin.SurfaceTUI))
 }

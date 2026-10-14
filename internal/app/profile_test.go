@@ -340,6 +340,36 @@ const credentialInstancesConfig = `profiles:
           password: kv:staging-mapped-password
 `
 
+// The first refusal a person gets from their own profile is theirs to act on.
+// "ask the operator to run `rta kv set staging-db-password`" was worded for a
+// reader with no terminal, and the person at one is the operator: it read as an
+// instruction for somebody else, in a word `rta operator` also uses. An agent's
+// call never carries this text (the bridge answers it generically), so what a
+// terminal prints is the command itself.
+func TestTheRefusalOfAProfilesOwnCredentialSaysWhatToRunNotWhomToAsk(t *testing.T) {
+	_, errOut, err := runWith(t, connRegistry(t), `
+profiles:
+  staging:
+    plugins:
+      db:
+        set: {host: db.internal}
+        secrets:
+          password: kv:staging-db-password
+`, "db", "status", "--profile", "staging")
+	if err == nil {
+		t.Fatal("a profile naming an entry of a store nobody made succeeded")
+	}
+	for _, want := range []string{"core.profile.secret.failed", "no store on this machine yet",
+		"`rta kv set staging-db-password` creates the store, locked with a passphrase you choose, and the entry"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("the refusal does not say %q:\n%s", want, errOut)
+		}
+	}
+	if strings.Contains(errOut, "ask the operator") {
+		t.Errorf("a person at a terminal is told to ask somebody else:\n%s", errOut)
+	}
+}
+
 // A profile that maps a credential onto the store, on a machine with none, is
 // one no call through it can use, and every page that says whether a profile is
 // usable says so in the same words. `rta profile list` called it ok and `rta
