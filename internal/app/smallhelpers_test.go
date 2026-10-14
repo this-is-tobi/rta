@@ -80,7 +80,7 @@ func TestAnInstallReportDescribesWhatAPluginDeclares(t *testing.T) {
 		{ID: "dir.group.list", Safety: plugin.Read},
 		{ID: "dir.dump", Safety: plugin.Write, HumanOnly: true, Inputs: conn},
 	}}
-	if got, want := declaresLine(connected), "dir.dump, dir.group.list, dir.user.list — 2 read · 1 write · none needs a grant until a profile names one"; got != want {
+	if got, want := declaresLine(connected), "dir.dump, dir.group.list, dir.user.list — 2 read · 1 write · none needs a grant until a profile names one · 1 is for a person at a terminal"; got != want {
 		t.Errorf("declaresLine(reads that take a profile) = %q, want %q", got, want)
 	}
 	humanOnly := plugin.Plugin{Name: "dir", Capabilities: []plugin.Capability{
@@ -106,8 +106,22 @@ func TestAnInstallReportDescribesWhatAPluginDeclares(t *testing.T) {
 		{ID: "db.insert", Safety: plugin.Write},
 		{ID: "db.edit", Safety: plugin.Write, HumanOnly: true},
 	}}
-	if got := declaresLine(gated); !strings.HasSuffix(got, "1 needs a grant") {
-		t.Errorf("declaresLine(gated) = %q, want one capability that needs a grant", got)
+	if got := declaresLine(gated); !strings.HasSuffix(got, "1 needs a grant · 1 is for a person at a terminal") {
+		t.Errorf("declaresLine(gated) = %q, want one capability that needs a grant and one only a person runs", got)
+	}
+	// The search row counts every capability that is not a read, so what an
+	// agent can be granted and what only a person runs add up to that number:
+	// five there, three and two here, and not bytes that differ from the claim.
+	pg := plugin.Plugin{Name: "pg", Capabilities: []plugin.Capability{
+		{ID: "pg.query", Safety: plugin.Write}, {ID: "pg.exec", Safety: plugin.Write}, {ID: "pg.drop", Safety: plugin.Destructive},
+		{ID: "pg.dump", Safety: plugin.Write, HumanOnly: true}, {ID: "pg.restore", Safety: plugin.Destructive, HumanOnly: true},
+	}}
+	if got := declaresLine(pg); !strings.HasSuffix(got, "3 need a grant · 2 are for a person at a terminal") {
+		t.Errorf("declaresLine(pg) = %q", got)
+	}
+	// A read only a person can run is in no row's count of what needs a grant.
+	if got := declaresLine(humanOnly); strings.Contains(got, "for a person") {
+		t.Errorf("declaresLine(humanOnly) = %q: a read needed no grant, so there is nothing to reconcile", got)
 	}
 	if firstCapability(mixed) != "db.drop" || firstCapability(plugin.Plugin{Name: "empty"}) != "empty" {
 		t.Error("firstCapability")
