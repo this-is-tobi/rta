@@ -537,6 +537,93 @@ func stillCovering(live []core.Grant, spec operatorid.RevokeSpec) *core.Grant {
 	return nil
 }
 
+// unknownRevokeTarget is the refusal for a revoke that took nothing back
+// because the name it was given is not one anything answers to.
+//
+// "No active grant for kv.gett." is true, and reads as all clear: a transposed
+// letter left a destructive grant standing while the operator, and any script
+// (the exit was 0), took it for gone. `grant allow` refuses the same name for
+// the same reason (a typo is a grant that authorizes nothing, shown as one
+// that does), and revoke, which is what is reached for in a hurry, is the
+// command that least can afford to say less.
+//
+// Only a name that also matched no grant is refused. A grant for a capability
+// that has since left the catalogue — a plugin that was removed — is still the
+// operator's to take back, and a real name with no grant is a plain "no grant",
+// said as before; so is any name when nothing at all is allowed, since the
+// belief the operator holds then is true.
+//
+// **Held is asked of the name alone, past the other selectors.** A revoke that
+// took nothing because `--agent codex` missed a grant of claude's has not
+// found a name nobody holds: the grant is standing, the selector is what
+// missed, and "no grant is held under it" would be false about the very row
+// the operator is trying to take back. That case is the plain "no active
+// grant for X, for agent codex", which says what the revoke was narrowed to.
+//
+// server is "" for this machine's own store and a placeholder for the one the
+// operator channel reaches: the revoke that would take the nearest grant back
+// is then said with the `--server` it needs, since the sentence is read where
+// the command is typed and the server that answers is not this machine.
+func unknownRevokeTarget(sf plugin.Surface, server string, catalog func() []plugin.Capability,
+	spec operatorid.RevokeSpec, out operatorid.RevokeOutcome) *view.Error {
+	if spec.Target == "" || out.NoneActive || out.Revoked > 0 || out.Still != nil ||
+		targetExists(catalog, spec.Target) || holdsUnder(spec.Target) {
+		return nil
+	}
+	hint := sf.CapabilityName("grant.list") + " shows what is currently allowed"
+	if server != "" {
+		hint = "`" + sf.Call("grant.list", plugin.Arg{Name: "server", Value: server}) +
+			"` shows what is currently allowed there"
+	}
+	if nearest := nearestStandingTarget(spec.Target); nearest != "" {
+		args := []plugin.Arg{{Name: "target", Value: nearest, Positional: true}}
+		if server != "" {
+			args = append(args, plugin.Arg{Name: "server", Value: server})
+		}
+		hint = "did you mean " + nearest + "? `" + sf.Call("grant.revoke", args...) + "` takes it back; " + hint
+	}
+	return view.Errorf("grant.unknowntarget", "%q does not name a registered capability or plugin, and no grant is held under it", spec.Target).
+		WithHint(hint)
+}
+
+// holdsUnder reports whether an active grant names target, or lies inside it
+// when it names a plugin, whatever else a revoke narrowed itself by.
+func holdsUnder(target string) bool {
+	stored, verr := core.Load()
+	if verr != nil {
+		return false
+	}
+	named := selector{target: target}
+	now := time.Now()
+	for _, g := range stored {
+		if g.Active(now) && named.matches(g) {
+			return true
+		}
+	}
+	return false
+}
+
+// nearestStandingTarget is the target of an active grant that a mistyped name
+// was most likely meant for, or "" when none is close enough to be worth
+// saying. Never the name that was typed: a hint that offers back what the
+// operator just wrote reads as advice and is the one sentence that cannot help.
+func nearestStandingTarget(typed string) string {
+	stored, verr := core.Load()
+	if verr != nil {
+		return ""
+	}
+	now := time.Now()
+	var targets []string
+	seen := map[string]bool{typed: true}
+	for _, g := range stored {
+		if g.Active(now) && !seen[g.Target] {
+			seen[g.Target] = true
+			targets = append(targets, g.Target)
+		}
+	}
+	return near.Word(typed, targets)
+}
+
 // resolveAgent decides who a grant is for when the operator did not say.
 //
 // Every server is named (`rta mcp serve --as`), and Grant.Agent matches
@@ -995,32 +1082,49 @@ func PrepareRemote(catalog func() []plugin.Capability,
 }
 
 // RevokeRemote is the server half of remote revocation, wired like
-// PrepareRemote. Revocation asks for no guard signature in either mode —
-// taking authority away is the fail-safe direction, the same reasoning that
-// lets `grant revoke` run without the passphrase locally.
-func RevokeRemote(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
-	spec.Target = core.Normalize(spec.Target)
-	if verr := revokeSelector(spec).check(plugin.SurfaceUnknown); verr != nil {
-		return operatorid.RevokeOutcome{}, verr
+// PrepareRemote, with the catalogue it too reads. Revocation asks for no guard
+// signature in either mode — taking authority away is the fail-safe direction,
+// the same reasoning that lets `grant revoke` run without the passphrase
+// locally.
+//
+// **The catalogue is the server's, and that is why the check on a name nothing
+// answers to is made here and not by the machine that typed it.** A mistyped
+// capability is an all-clear the same way over the operator channel — exit 0,
+// the grant still standing — and on a shared server, which is the revoke made
+// in a hurry with other people's agents on it, the hurry is greater. Only this
+// side can say whether the name is one of its plugins.
+func RevokeRemote(catalog func() []plugin.Capability) func(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
+	return func(spec operatorid.RevokeSpec, write bool) (operatorid.RevokeOutcome, *view.Error) {
+		spec.Target = core.Normalize(spec.Target)
+		if verr := revokeSelector(spec).check(plugin.SurfaceUnknown); verr != nil {
+			return operatorid.RevokeOutcome{}, verr
+		}
+		// Role counts as a selector here as it does locally: `revoke --role dev`
+		// takes one role back from every agent, and refusing it for naming
+		// nothing sent an operator to --all, the widest revoke there is. Worded
+		// for the command line, as PrepareRemote's refusals are.
+		if !spec.All && spec.Target == "" && strings.TrimSpace(spec.Profile) == "" &&
+			strings.TrimSpace(spec.Agent) == "" && strings.TrimSpace(spec.Role) == "" {
+			sf := plugin.SurfaceUnknown
+			return operatorid.RevokeOutcome{}, view.Errorf("grant.notarget", "name a capability, or give %s", sf.InputName("all")).
+				WithHint("`" + sf.Call("grant.list", plugin.Arg{Name: "server", Value: "<name>"}) +
+					"` shows what is currently allowed there")
+		}
+		// The record as sent, as `grant revoke` takes it here, and white space
+		// alone refused for givenRecord's reason: this client refuses it before
+		// sending, and one that did not must not be read as every record.
+		if verr := givenRecord(plugin.SurfaceUnknown, spec.Scope); verr != nil {
+			return operatorid.RevokeOutcome{}, verr
+		}
+		out, verr := revokeOutcome(spec, write)
+		if verr != nil {
+			return operatorid.RevokeOutcome{}, verr
+		}
+		if verr := unknownRevokeTarget(plugin.SurfaceUnknown, "<name>", catalog, spec, out); verr != nil {
+			return operatorid.RevokeOutcome{}, verr
+		}
+		return out, nil
 	}
-	// Role counts as a selector here as it does locally: `revoke --role dev`
-	// takes one role back from every agent, and refusing it for naming
-	// nothing sent an operator to --all, the widest revoke there is. Worded
-	// for the command line, as PrepareRemote's refusals are.
-	if !spec.All && spec.Target == "" && strings.TrimSpace(spec.Profile) == "" &&
-		strings.TrimSpace(spec.Agent) == "" && strings.TrimSpace(spec.Role) == "" {
-		sf := plugin.SurfaceUnknown
-		return operatorid.RevokeOutcome{}, view.Errorf("grant.notarget", "name a capability, or give %s", sf.InputName("all")).
-			WithHint("`" + sf.Call("grant.list", plugin.Arg{Name: "server", Value: "<name>"}) +
-				"` shows what is currently allowed there")
-	}
-	// The record as sent, as `grant revoke` takes it here, and white space
-	// alone refused for givenRecord's reason: this client refuses it before
-	// sending, and one that did not must not be read as every record.
-	if verr := givenRecord(plugin.SurfaceUnknown, spec.Scope); verr != nil {
-		return operatorid.RevokeOutcome{}, verr
-	}
-	return revokeOutcome(spec, write)
 }
 
 // revokeOutcome runs one revocation under the store's lock. The count, the

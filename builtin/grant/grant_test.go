@@ -594,8 +594,8 @@ func TestARevokeOfATargetNarrowedToSomethingThatMatchesNothingSaysWhatItWasNarro
 	}{
 		{map[string]any{"target": "kv.get", "agent": "nobody"}, "No active grant for kv.get, for agent nobody."},
 		{map[string]any{"target": "kv.get", "agent": "nobody", "profile": "prod"}, "No active grant for kv.get, for agent nobody via profile prod."},
-		{map[string]any{"target": "kv.set", "agent": "claude"}, "No active grant for kv.set, for agent claude."},
-		{map[string]any{"target": "kv.set"}, "No active grant for kv.set."},
+		{map[string]any{"target": "kv.env", "agent": "claude"}, "No active grant for kv.env, for agent claude."},
+		{map[string]any{"target": "kv.env"}, "No active grant for kv.env."},
 	} {
 		body := run(t, revokeH, c.values).(view.Text).Body
 		if first, _, _ := strings.Cut(body, "\n"); first != c.want {

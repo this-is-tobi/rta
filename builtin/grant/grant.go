@@ -1908,6 +1908,9 @@ func runRevoke(ctx context.Context, req plugin.Request, catalog func() []plugin.
 	if verr != nil {
 		return nil, verr
 	}
+	if verr := unknownRevokeTarget(req.Surface(), "", catalog, spec, out); verr != nil {
+		return nil, verr
+	}
 	bundle := ""
 	if !req.DryRun {
 		bundle = issuedAsABundle(req.Surface(), catalog, gone)
