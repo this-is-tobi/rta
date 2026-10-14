@@ -7,43 +7,24 @@ import (
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
-// pluginWordHint answers a word typed where a plugin's name goes — a command,
-// a capability's namespace, a profile's plugin key — that is the name of a
-// plugin: one rta knows to be first-party and finds nowhere on this machine,
-// or one that is installed and did not start.
+// pluginWordHint is plugindist.WordHint over what discovery found this run: a
+// word that is the name of a plugin which is not running, said the one way
+// every surface says it.
 //
 // For the root command's unknown-word path, which has to do two things with
 // it: take the neighbours back — `rta pg` was told it meant "pkg", `rta docker`
 // "doctor" and `rta qdrant` "grant", names that share nothing with the word but
 // its length — and say what the word is instead. ok is false for every other
-// word, and the path keeps whatever it said before.
+// word, and the path keeps whatever it said before. `rta k8s` with kube
+// installed is a typo for `rta kube`, and being told to install it is the one
+// answer that is wrong, which is what loaded is for.
 //
-// loaded is how the caller knows a plugin is already running, and a word
-// whose plugin is gives no answer: `rta k8s` with kube installed is a typo for
-// `rta kube`, and being told to install it is the one answer that is wrong.
-//
-// A plugin that is on $PATH and waiting for approval is answered first, here
-// and not by each caller: a first-party name that is installed and untrusted is
-// not a plugin to install, and the one-line answer for it is `rta plugin
-// trust`. The root's unknown-word path said so and `rta explain pg.status`, a
-// grant target and a profile's plugin key, which come through here, sent the
-// person to an install that answers "already installed".
+// The untrusted and failed answers come before the first-party one in
+// WordHint, here and not in each caller: `rta explain pg.status`, a grant
+// target and a profile's plugin key all come through this, and so does the
+// dashboard's search, which kept a copy of the first-party half.
 func pluginWordHint(loaded func(namespace string) bool, word string) (hint string, ok bool) {
-	for _, u := range untrustedPluginsFound {
-		if u.Name == word && !u.Taken {
-			return word + " is installed at " + u.Path + " and has not been approved to run — " +
-				"`rta plugin trust " + word + "` approves that build", true
-		}
-	}
-	for _, f := range failedPluginsFound {
-		if f.Name == word {
-			return word + " is installed and failed to start — `rta plugin list` says why", true
-		}
-	}
-	if hint := plugindist.FirstPartyHint(word, loaded); hint != "" {
-		return hint, true
-	}
-	return "", false
+	return plugindist.WordHint(word, loaded, untrustedPluginsFound, failedPluginsFound)
 }
 
 // missingPluginHint is pluginWordHint for a capability ID, a grant target or

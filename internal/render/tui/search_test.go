@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -133,7 +134,7 @@ func TestTheSearchNamesTheInstallForAFirstPartyPluginThatIsNotHere(t *testing.T)
 	// person reaching for a capability types it whole.
 	for _, query := range []string{"pg.query", "pg status", "postgres query"} {
 		m.query = query
-		if m.searchPluginHint() == "" {
+		if m.searchHint() == "" {
 			t.Errorf("%q: the query is a capability of a plugin that is not here, and says nothing about installing it", query)
 		}
 	}
@@ -144,5 +145,84 @@ func TestTheSearchNamesTheInstallForAFirstPartyPluginThatIsNotHere(t *testing.T)
 	m.query = "ports"
 	if box := ansi.Strip(m.renderSearchTile(100, false)); strings.Contains(box, "install") {
 		t.Errorf("a query for something that is here is told to install:\n%s", box)
+	}
+}
+
+// A first-party plugin that is on this machine and was not started is not one
+// to install: the command line says to approve it or where the reason it failed
+// is, and the search told the same person to fetch what they already have.
+func TestTheSearchSaysWhatTheCommandLineSaysForAnInstalledPluginThatIsNotRunning(t *testing.T) {
+	m, _ := realModel(t, 130, 40)
+	m.query = "qdrant"
+
+	m.untrusted = []pluginhost.Untrusted{{Name: "qdrant", Path: "/opt/bin/rta-plugin-qdrant"}}
+	box := ansi.Strip(m.renderSearchTile(130, false))
+	if !strings.Contains(box, "has not been approved to run") || !strings.Contains(box, "`rta plugin trust qdrant`") ||
+		strings.Contains(box, "installs it") {
+		t.Errorf("a plugin waiting for approval:\n%s\nwant the approval and not an install", box)
+	}
+
+	m.untrusted = nil
+	m.failed = []pluginhost.Failed{{Name: "qdrant", Path: "/opt/bin/rta-plugin-qdrant", Reason: "exited 3: boom"}}
+	box = ansi.Strip(m.renderSearchTile(130, false))
+	if !strings.Contains(box, "installed and failed to start") || !strings.Contains(box, "`rta plugin list` says why") ||
+		strings.Contains(box, "installs it") {
+		t.Errorf("a plugin that failed to start:\n%s\nwant where the reason is and not an install", box)
+	}
+}
+
+// A capability ID typed whole is scored against the words after the plugin's
+// name, and the other plugins' capabilities that share them filled the window:
+// `qdrant.collection.list` showed redis.client.list and left out the only line
+// that said why qdrant was not there. The hint keeps a line of its own.
+func TestTheSearchKeepsItsHintWhenOtherCapabilitiesFillTheWindow(t *testing.T) {
+	m, _ := realModel(t, 130, 40)
+	m.untrusted = []pluginhost.Untrusted{{Name: "qdrant", Path: "/opt/bin/rta-plugin-qdrant"}}
+	m.query = "qdrant.collection.list"
+	if n := len(m.searchResults()); n <= searchMatches {
+		t.Fatalf("the query finds %d capabilities; want more than the %d that fit, or this proves nothing", n, searchMatches)
+	}
+	box := ansi.Strip(m.renderSearchTile(130, false))
+	if !strings.Contains(box, "`rta plugin trust qdrant`") {
+		t.Errorf("the box drops the hint when results fill it:\n%s", box)
+	}
+	if lines := strings.Count(box, "\n") + 1; lines != searchTileHeight {
+		t.Errorf("the box is %d lines tall with a hint and a full list, want the %d it is always drawn at", lines, searchTileHeight)
+	}
+	if !strings.Contains(box, "1/") {
+		t.Errorf("the count of what is not shown is gone:\n%s", box)
+	}
+}
+
+// Plugins and profiles are panes, not capabilities, so the words a first-run
+// person types for them found nothing — or, for "install plugin", a package
+// manager's capability that reads as the install feature. The box says where
+// they are.
+func TestTheSearchSaysWhereThePluginAndProfilePanesAre(t *testing.T) {
+	m, _ := realModel(t, 130, 40)
+	for query, want := range map[string]string{
+		"plugin":         "press p",
+		"plugins":        "press p",
+		"installs":       "press p",
+		"install plugin": "press p",
+		"profile":        "press f",
+		"profiles":       "press f",
+		"environment":    "press f",
+		"environments":   "press f",
+	} {
+		m.query = query
+		box := ansi.Strip(m.renderSearchTile(130, false))
+		if !strings.Contains(box, want) || strings.Contains(box, "no matches") {
+			t.Errorf("%q:\n%s\nwant where the pane is (%s) and not \"no matches\"", query, box, want)
+		}
+	}
+	// `index` is the first word of a search about a database's indexes, and the
+	// plugin pane is not what it asks for: it would have answered with a line
+	// about plugins and taken one of the few result rows from the matches.
+	for _, query := range []string{"zzzq", "index", "index bloat"} {
+		m.query = query
+		if box := ansi.Strip(m.renderSearchTile(130, false)); strings.Contains(box, "press p") || strings.Contains(box, "press f") {
+			t.Errorf("%q: a word that is neither pane named one:\n%s", query, box)
+		}
 	}
 }

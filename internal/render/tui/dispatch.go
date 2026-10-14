@@ -796,11 +796,11 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "pgup":
-		m.searchSel = max(m.searchSel-searchMatches, 0)
+		m.searchSel = max(m.searchSel-m.searchRows(), 0)
 		return m, nil
 	case "pgdown":
 		if n := len(m.searchResults()); n > 0 {
-			m.searchSel = min(m.searchSel+searchMatches, n-1)
+			m.searchSel = min(m.searchSel+m.searchRows(), n-1)
 		}
 		return m, nil
 	case "backspace":

@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -107,6 +108,42 @@ func FirstPartyHint(word string, loaded func(namespace string) bool) string {
 		return word + " is the first-party plugin " + name + " — " + install
 	}
 	return name + " is a first-party plugin — " + install
+}
+
+// WordHint answers a word typed where a plugin's name goes — a command, a
+// capability's namespace, a profile's plugin key, the dashboard's search box —
+// that is the name of a plugin: one that is on this machine and was not
+// started, or one rta knows to be first-party and finds nowhere. ok is false
+// for every other word.
+//
+// untrusted and failed are what discovery found and did not run, which the
+// caller holds because they are this run's and not a thing to look up again. An
+// installed plugin that is waiting for approval is answered first, and then one
+// that failed to start, before the first-party answer is asked: a first-party
+// name that is installed is not a plugin to install, and the one-line answer for
+// it is `rta plugin trust`. Callers that went straight to FirstPartyHint sent
+// the person to an install that answers "already installed", the command line
+// and the dashboard's search among them.
+//
+// loaded is how the caller knows a plugin is already running, and a word whose
+// plugin is gives no answer from FirstPartyHint (see there).
+func WordHint(word string, loaded func(namespace string) bool,
+	untrusted []pluginhost.Untrusted, failed []pluginhost.Failed) (hint string, ok bool) {
+	for _, u := range untrusted {
+		if strings.EqualFold(u.Name, word) && !u.Taken {
+			return u.Name + " is installed at " + u.Path + " and has not been approved to run — " +
+				"`rta plugin trust " + u.Name + "` approves that build", true
+		}
+	}
+	for _, f := range failed {
+		if strings.EqualFold(f.Name, word) {
+			return f.Name + " is installed and failed to start — `rta plugin list` says why", true
+		}
+	}
+	if hint := FirstPartyHint(word, loaded); hint != "" {
+		return hint, true
+	}
+	return "", false
 }
 
 // FirstPartyHintFor is FirstPartyHint for a capability ID or a target that may

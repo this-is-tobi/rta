@@ -642,20 +642,24 @@ func (m Model) searchResults() []plugin.Capability {
 	return out
 }
 
-// searchPluginHint answers a query that is the name of a first-party plugin
-// that is not installed: a first-run person typing pg or postgres into a
-// dashboard that has neither is told what to run, not shown "no matches" or,
-// worse, only the one unrelated capability whose name contains those letters.
-// It is the sentence the command line gives for the same word (the shared
-// plugindist.FirstPartyHint), so the two surfaces cannot disagree, and it
-// reads the registry for what is running, so an installed plugin never gets
-// told to install itself.
+// searchHint answers a query that names something that is not on the
+// dashboard's search because it is not a capability, or is one that is not
+// running: a first-run person typing pg or postgres into a dashboard that has
+// neither is told what to run, not shown "no matches" or, worse, only the one
+// unrelated capability whose name contains those letters.
+//
+// For a plugin it is the sentence the command line gives for the same word
+// (plugindist.WordHint), so the two surfaces cannot disagree: an installed
+// plugin that is waiting for approval is told to be approved and one that failed
+// to start is told where the reason is, and neither is sent to an install that
+// answers "already installed". It reads the registry for what is running, so a
+// plugin that is never gets told to install itself.
 //
 // The plugin is the first word of the query, or the part before its first dot:
 // a person reaching for a capability types `redis.key.list` or `mysql query`,
 // and only the bare name was recognised, so those were answered with fuzzy
 // matches for unrelated capabilities and, for `mysql query`, "no matches".
-func (m Model) searchPluginHint() string {
+func (m Model) searchHint() string {
 	word := strings.TrimSpace(m.query)
 	if i := strings.IndexAny(word, " ."); i > 0 {
 		word = word[:i]
@@ -663,26 +667,67 @@ func (m Model) searchPluginHint() string {
 	if word == "" {
 		return ""
 	}
+	if hint := panesHint(word); hint != "" {
+		return hint
+	}
 	caps := m.reg.Capabilities()
-	return plugindist.FirstPartyHint(word, func(namespace string) bool {
+	hint, _ := plugindist.WordHint(word, func(namespace string) bool {
 		return slices.ContainsFunc(caps, func(c plugin.Capability) bool {
 			return plugin.Namespace(c.ID) == namespace
 		})
-	})
+	}, m.untrusted, m.failed)
+	return hint
+}
+
+// panesHint says where the two things a first-run person has to set up live,
+// for the words they type for them. Plugins and profiles are panes and not
+// capabilities, so the search found nothing for "plugin" or "profile" and, for
+// "install plugin", the one capability whose summary says both, which reads as
+// the install feature and is a package manager. The panes open on a tile
+// (typing.go: on the search bar a letter is the query), which is the part
+// nobody can guess from the bar that says "type to search".
+//
+// The four words are the ones a first-run person reaches for, singular or
+// plural. `index` is not one of them: it names a plugin index, which is a
+// command and not a pane, and it is the first word of a search that is about
+// something else entirely — `index bloat` on a database — where the line would
+// answer a question nobody asked and take one of the few result rows.
+func panesHint(word string) string {
+	switch strings.TrimSuffix(strings.ToLower(word), "s") {
+	case "plugin", "install":
+		return "plugins: esc, select a tile, press p · or `rta plugin install <name>`"
+	case "profile", "environment":
+		return "profiles: esc, select a tile, press f · or `rta profile set <name>`"
+	}
+	return ""
+}
+
+// searchRows is how many matches the box shows right now: searchMatches, and
+// one fewer while a hint keeps a line of its own. A query that names a plugin
+// that is not running scores the capabilities of every other plugin on the
+// words that are left (`qdrant.collection.list` found 56), and with the hint
+// drawn only in a window with room, those unrelated rows pushed out the one
+// line that said why qdrant was not among them.
+func (m Model) searchRows() int {
+	if m.searchHint() != "" {
+		return searchMatches - 1
+	}
+	return searchMatches
 }
 
 // searchWindow returns the visible slice of matches and where it starts,
 // keeping the selection inside it. The offset is derived rather than stored,
 // so it cannot drift out of step with a selection the keys just moved.
 func (m Model) searchWindow(results []plugin.Capability) ([]plugin.Capability, int) {
-	if len(results) <= searchMatches {
+	rows := m.searchRows()
+	if len(results) <= rows {
 		return results, 0
 	}
 	sel := min(m.searchSel, len(results)-1)
 	// The window follows the selection by the shortest move that keeps it
-	// visible, which is one line per keypress once you are past the third.
-	first := max(0, sel-searchMatches+1)
-	return results[first : first+searchMatches], first
+	// visible, which is one line per keypress once you are past the last row.
+	first := max(0, sel-rows+1)
+	return results[first : first+rows], first
 }
 
 // searchOpen reports whether the search has the keyboard or a query to show,
@@ -763,8 +808,8 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 		}
 		lines = append(lines, line)
 	}
-	switch hint := m.searchPluginHint(); {
-	case hint != "" && len(window) < searchMatches:
+	switch hint := m.searchHint(); {
+	case hint != "":
 		lines = append(lines, theme.Subtle.Render(ansi.Truncate("  "+hint, max(inner, 1), "…")))
 	case m.query != "" && len(results) == 0:
 		lines = append(lines, theme.Subtle.Render("  no matches"))
@@ -782,7 +827,7 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 	}
 	// The count is the honest part: it says three of eleven, so a match that
 	// is not on screen is a known thing rather than a missing one.
-	if n := len(results); n > searchMatches {
+	if n := len(results); n > m.searchRows() {
 		right = fmt.Sprintf("%d/%d · ", min(m.searchSel, n-1)+1, n) + right
 	}
 	return panel(panelHead{Title: "⌕ search", Right: right, Heavy: m.noColor},
