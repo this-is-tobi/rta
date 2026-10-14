@@ -87,7 +87,7 @@ secrets:
   token: kube:postgres-creds/password
 ```
 
-A config file is plaintext, read on every invocation, with nobody watching. So this block holds a **name**, and the value is fetched at resolution time — reaching neither this file, nor an environment variable, nor an argv.
+A config file is plaintext, read on every invocation, with nobody watching. So this block holds a **name**, and the value is fetched at resolution time — reaching neither this file, nor an environment variable, nor an argv. It does not reach an agent either: one granted the profile has the credential read on this machine for each call and never receives it, which is why a `kv.get` grant on the entry is never part of using the connection, and would be the one thing that hands it over.
 
 A `kube:` reference needs to know *which* cluster and namespace to read from. A `kube:` coordinate answers that as a side effect of naming a forward — but a connection that reaches its service directly has no forward to name, and stating one purely to locate a Secret would drag the call through a port-forward it never needed and quietly override `set: host`. `secrets-from:` is that answer on its own:
 

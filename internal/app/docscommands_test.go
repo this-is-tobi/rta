@@ -425,6 +425,54 @@ func TestEveryGrantAnExampleIssuesNamesItsAgent(t *testing.T) {
 	}
 }
 
+// A profile is how an agent uses a service without holding its credential: the
+// host reads the entry the profile's `secrets:` names when a call runs, and an
+// agent granted the profile never receives it — `rta doctor` says as much of a
+// store that unlocks where the server starts. A `kv.get` grant on that same entry
+// is the one thing that does hand it over, so the developer recipe that issued
+// both in one block — the staging database, then `kv.get` on `staging-db-password`
+// for five minutes, once — taught the reverse of what the product is for, and a
+// reader copied it as the ordinary day's setup. The bound on it (five minutes, one
+// use) is what kept it from being worse, and is not what made it right.
+//
+// A grant a page issues on `kv.get` may name a secret an agent has to hold itself,
+// a deploy token, and no entry that a page maps to a credential.
+func TestNoGrantTheDocsIssueHandsAnAgentACredentialAProfileMaps(t *testing.T) {
+	root := repoRoot(t)
+	mapped := regexp.MustCompile(`kv:([A-Za-z0-9](?:[A-Za-z0-9/_.-]*[A-Za-z0-9])?)`)
+	issue := regexp.MustCompile(`rta grant allow kv\.get ([A-Za-z0-9](?:[A-Za-z0-9/_.-]*[A-Za-z0-9])?)`)
+
+	entries := map[string]string{}
+	for _, page := range markdownPages(t, root) {
+		for _, m := range mapped.FindAllStringSubmatch(readDoc(t, root, page), -1) {
+			if _, seen := entries[m[1]]; !seen {
+				entries[m[1]] = page
+			}
+		}
+	}
+	if len(entries) < 4 {
+		t.Fatalf("found %d entries a profile maps to a credential, want the handful the docs hold; has the reference moved?", len(entries))
+	}
+
+	issued := 0
+	for _, page := range markdownPages(t, root) {
+		for _, line := range shellLines(readDoc(t, root, page)) {
+			m := issue.FindStringSubmatch(line.text)
+			if m == nil {
+				continue
+			}
+			issued++
+			if mappedIn, ok := entries[m[1]]; ok {
+				t.Errorf("%s:%d: `%s` hands an agent %s, which %s maps to a credential: a profile grant already lets the agent use it without holding it",
+					page, line.line, line.text, m[1], mappedIn)
+			}
+		}
+	}
+	if issued < 3 {
+		t.Fatalf("found %d kv.get grants in the docs, want the handful there are; has the wording moved?", issued)
+	}
+}
+
 // shellLines is every logical line of every shell fence, a backslash
 // continuation joined onto the line it continues, and the inline code spans
 // outside a fence that run rta in its image, with the line it began on. Not

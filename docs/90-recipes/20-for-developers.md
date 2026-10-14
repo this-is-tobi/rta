@@ -38,11 +38,10 @@ While a profile is on, `rta mcp serve` refuses every other one, whatever grants 
 
 ```bash
 rta grant allow pg.query --profile staging --agent claude --ttl 1h --rate 30/1h
-rta grant allow kv.get staging-db-password --agent claude --ttl 5m --max-uses 1
 rta grant list
 ```
 
-A read costs nothing until it names a profile. Anything that changes something, or returns what somebody stored, costs a grant: one capability, optionally one record, gone on its own. `--rate` is the bound people skip and the one that makes a runaway visible while it is happening. When your team keeps roles, `rta grant roles` lists them and `rta grant issue dev --agent claude` issues a day's worth at once. [Grants](../30-boundary/30-grants.md) · [Pair with an agent on a staging database](./01-readme.md#pair-with-an-agent-on-a-staging-database-for-an-hour).
+A read costs nothing until it names a profile. Anything that changes something, or returns what somebody stored, costs a grant: one capability, optionally one record, gone on its own. That one grant is all the database needs: the profile maps `password` to `kv:staging-db-password`, rta reads the entry on this machine when the agent's `pg.query` runs, and the agent never receives it. There is no `kv.get` line beside it on purpose, since a grant on that entry would hand the agent the password the profile keeps from it; grant `kv.get` for a secret the agent has to hold itself, such as a deploy token, and then for [one read](./01-readme.md#hand-over-one-secret-once). `--rate` is the bound people skip and the one that makes a runaway visible while it is happening. When your team keeps roles, `rta grant roles` lists them and `rta grant issue dev --agent claude` issues a day's worth at once. [Grants](../30-boundary/30-grants.md) · [Pair with an agent on a staging database](./01-readme.md#pair-with-an-agent-on-a-staging-database-for-an-hour).
 
 ## Answer it while you work
 

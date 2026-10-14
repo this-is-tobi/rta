@@ -124,10 +124,12 @@ kv store   info   unlocks from this environment — an MCP server started here
 A server inherits the environment it was started from. If you locked the store with `--generate` or an identity that is available in your shell, then a server started from that shell **can** open it. That line is the whole warning: it is not a misconfiguration and not a bug, it is what "no passphrase to type" means, and it is worth knowing before you connect a client. What bounds it is grants:
 
 ```bash
-rta grant allow kv.get db-password --agent claude --ttl 15m --max-uses 1
+rta grant allow kv.get deploy-token --agent claude --ttl 15m --max-uses 1
 ```
 
 Without a grant naming it, an agent's `kv.get` is refused and the refusal is written down.
+
+**An agent that only has to use a service needs no `kv.get` at all.** A [profile](./40-profiles.md#secrets-holds-a-reference-never-a-value) maps a credential to a stored entry (`--secret password=kv:staging-db-password`), rta reads it on this machine when the call runs, and an agent granted `pg.query --profile staging` queries the database and never receives the password. A `kv.get` grant on that entry would hand it exactly what the profile keeps from it, so grant `kv.get` for a secret the agent has to hold itself, such as a deploy token it passes to another tool.
 
 What needs no grant is the shape of the store. `kv.list`, `kv.tree` and `kv.overview` answer an agent with names, kinds, sizes and counts — never a value or a piece of one — whenever the environment its server was started in can open the store. That is the line `kv.list` has always drawn, and `kv.overview` stays on it: it adds how many keys and folders there are, how old the values are, and how many removed keys and earlier values the store keeps, and no more than the listing already tells.
 
