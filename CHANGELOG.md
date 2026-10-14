@@ -1,5 +1,93 @@
 # Changelog
 
+## [0.40.0](https://github.com/this-is-tobi/rta/compare/v0.39.0...v0.40.0) (2026-10-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **kv:** kv status has no --detail, and kv_status no longer takes a detail argument; kv overview --detail is the page, with the folders and the readers.
+
+### Features
+
+* **cli:** draw in the colours of the environment a call is about ([16ff689](https://github.com/this-is-tobi/rta/commit/16ff689cb6ad12513ef008f75e4b8dc80d9a5bb0))
+* **config:** a profile takes a theme block ([fa1674f](https://github.com/this-is-tobi/rta/commit/fa1674fcf76cbb8e90b400af061ece785126df5a))
+* **config:** a profile's dashboard is the name of a view or a block of its own ([9d2459c](https://github.com/this-is-tobi/rta/commit/9d2459c618bd779e0b1a08e4eb17daf78e11ee36))
+* **config:** check and doctor name a section that states nothing and a column count below zero ([777a651](https://github.com/this-is-tobi/rta/commit/777a651a22ac52f80bec79245c2b74798233135a))
+* **config:** doctor and check say a screen that cannot be drawn, across files ([93577f5](https://github.com/this-is-tobi/rta/commit/93577f593b3361b216aeccd4d274c225cd9e2785))
+* **config:** tiles name a section and a dashboard states how its sections start ([51a7642](https://github.com/this-is-tobi/rta/commit/51a76427293a13d6671848149acae6a396a03f7a))
+* **dashboard:** a profile's own screen is the view named after the profile ([336c853](https://github.com/this-is-tobi/rta/commit/336c853b8704b4f4d283b0a413e88317f5259085))
+* **dashboard:** add takes --section, list shows it, and sections lists every section ([bcee814](https://github.com/this-is-tobi/rta/commit/bcee81447f6475930c954fabac4a822949446f19))
+* **dashboard:** add, hide and rm write a profile's own screen into its entry ([817f02d](https://github.com/this-is-tobi/rta/commit/817f02d46bf933e08b4291e33241b10fb7e97c37))
+* **kv:** kv.overview hands a program its numbers ([baf3c0b](https://github.com/this-is-tobi/rta/commit/baf3c0be34c68d437b710df88214209826ba638b))
+* **kv:** kv.overview leads with the count, then the lock, then the file ([31dd17b](https://github.com/this-is-tobi/rta/commit/31dd17b8f7ddd6cb960db5426ca5ad7f6699de34))
+* **kv:** kv.overview shows what the store holds and how it is locked ([dbfbd8c](https://github.com/this-is-tobi/rta/commit/dbfbd8c89f17c3a5a07be4977ead8b7b53632ab2))
+* **kv:** search words for kv.overview, and its gate held to kv.list's ([14a5a04](https://github.com/this-is-tobi/rta/commit/14a5a04c0c59a1335b0e7b42d20196a64dd495c6))
+* **kv:** the dashboard's kv tile is kv.overview, and kv.status loses --detail ([e013fd7](https://github.com/this-is-tobi/rta/commit/e013fd78f9c16d0b2287dee4e4b1a231b18808b9))
+* **profile:** list, show and rm say what screen an environment shows ([d8ccfd2](https://github.com/this-is-tobi/rta/commit/d8ccfd23b7b0fb9cbcfbb156318cd68174476136))
+* **profile:** state, show and check a profile's theme from the command line ([f34bcea](https://github.com/this-is-tobi/rta/commit/f34bceaba4e386e7c909c51c6706a03872d33072))
+* **theme:** fold an environment's colours over the operator's palette ([46f9d1c](https://github.com/this-is-tobi/rta/commit/46f9d1cee52c5619fa606a9983a61e60475a9787))
+* **tui:** a form is drawn in the palette that is in force ([1c7a399](https://github.com/this-is-tobi/rta/commit/1c7a39901dd410042bf0979f646bdd99e7cd68ac))
+* **tui:** a section's header counts a key/value page that says its backend is down ([9e80a0a](https://github.com/this-is-tobi/rta/commit/9e80a0a9d4cb708647e5ffc23e431b1844db2568))
+* **tui:** draw tiles in sections under a header row that says what a fold hides ([6b8195d](https://github.com/this-is-tobi/rta/commit/6b8195dc3a8f00d63f0786e458726c8861cf8b7e))
+* **tui:** edit a profile's palette from the theme editor ([021d9dd](https://github.com/this-is-tobi/rta/commit/021d9ddb974738a580100e86949b5c349f54870e))
+* **tui:** fold a section with enter, space, z or a click, Z for all, and move it by its header ([0b75a9c](https://github.com/this-is-tobi/rta/commit/0b75a9cb6f5a44f8d15d4a1137078dfee1e2a131))
+* **tui:** repaint the screen when the environment in force changes ([8c748ff](https://github.com/this-is-tobi/rta/commit/8c748ff08895a717965f52ee2d76caf0a0466879))
+* **view:** a key/value page can hand a program its numbers ([011e6c8](https://github.com/this-is-tobi/rta/commit/011e6c86170355d45a2feccb2616adede22e41b8))
+
+
+### Bug Fixes
+
+* **agent:** a call that names no record is no longer shown as an empty one ([a46a50c](https://github.com/this-is-tobi/rta/commit/a46a50c9b5cec5cc29e48467180115e16fc7cfeb))
+* **agent:** a ttl answer binds its grant to the plugin build like grant allow does ([a61428b](https://github.com/this-is-tobi/rta/commit/a61428bff52dbf02a25dca833070c63403263edf))
+* **app:** a profile or view name that is not plain is listed as a name, so it stays one line ([f4e152d](https://github.com/this-is-tobi/rta/commit/f4e152dc34ce2a96a1a0325e4353d8c77f0a99c8))
+* **cli:** --set completion says which capabilities a key does not reach ([50eaa0a](https://github.com/this-is-tobi/rta/commit/50eaa0a8566d7613c71cbb7e68dea6ef47a179ff))
+* **cli:** a fence refusal names --no-profile as the way across for one call ([7001606](https://github.com/this-is-tobi/rta/commit/7001606f69032fce725a936d083c17d1e8267e35))
+* **cli:** a passphrase the command line refuses is no longer offered there ([f911cd0](https://github.com/this-is-tobi/rta/commit/f911cd06cdd6b12cde38e9e76945b0390f47557e))
+* **cli:** a restated fence says a fence came off, not that a default was dropped ([cdcec42](https://github.com/this-is-tobi/rta/commit/cdcec425aa6522d2fcf3b49e50d6a6e6362336d4))
+* **cli:** explain says a scope input is named by the call and never by a profile ([5347400](https://github.com/this-is-tobi/rta/commit/53474009e59aee50141696bef9f44c4015e33571))
+* **cli:** the profile set example runs as written, and a test holds it to that ([309962c](https://github.com/this-is-tobi/rta/commit/309962ceb1d30c2fa5d9d171f6eee36fc26a6c7e))
+* **config:** config check names a view whose name no writer would make ([9653674](https://github.com/this-is-tobi/rta/commit/9653674fb1d7f68f9e767e4635f24198fc1b6361))
+* **dashboard:** a file that arranges no screen is not offered as a menu of screens ([fb3429a](https://github.com/this-is-tobi/rta/commit/fb3429aaaa0fc9ef6fca225377e81aaa425b4f8e))
+* **dashboard:** views counts the entries a view states, and says entries ([4392ab6](https://github.com/this-is-tobi/rta/commit/4392ab6a221daa163860862882c177f206c83a38))
+* **grant:** a flag given beside a role is hinted at a way that exists ([846911c](https://github.com/this-is-tobi/rta/commit/846911c558023c8645a0cfb003337ede8641be4d))
+* **grant:** a refused shared flag is no longer reported against a row nobody wrote ([929bdab](https://github.com/this-is-tobi/rta/commit/929bdabc97a95f0a28d3b6e76f951bf1632827f8))
+* **grant:** a revoked bundle names the call that issued it and keeps the note ([188e7ba](https://github.com/this-is-tobi/rta/commit/188e7ba8885e4d0a2bc626f1c2097a1be20b07e3))
+* **grant:** an unknown connection of an environment is refused like grant allow refuses it ([458f220](https://github.com/this-is-tobi/rta/commit/458f220d1ce7fb2ab3d5cf4dfea745ad32418b7d))
+* **grant:** say why a grant on an unusable profile will be refused ([84490b1](https://github.com/this-is-tobi/rta/commit/84490b1547c5b9bee8e89eb41b4f46a483f3716e))
+* **kv:** a flag or an argument that moved says where it went ([bdfcaa6](https://github.com/this-is-tobi/rta/commit/bdfcaa67d77e7cae16da761e574e266473a54aca))
+* **kv:** a listing shows every key's name as it is, so no two differing names read alike ([77e44b7](https://github.com/this-is-tobi/rta/commit/77e44b75eb654ff1d295536fb3d750541ce4cb9b))
+* **kv:** a passphrase from the environment does not start a store session ([75aa419](https://github.com/this-is-tobi/rta/commit/75aa419a3b2d9c9bdf97cd5084af73609dc84ced))
+* **kv:** a search for delete or deleted finds kv.rm and kv.restore ([b3447de](https://github.com/this-is-tobi/rta/commit/b3447de43f326bbd7f5325dabb06de26629eff10))
+* **kv:** the tree draws a key that is also a folder ([704f4ff](https://github.com/this-is-tobi/rta/commit/704f4ff5a3ef611d19592fd2ada3c854527be545))
+* **mcp:** a blank fenced argument is told apart from one outside the list ([4941d68](https://github.com/this-is-tobi/rta/commit/4941d687fac5df783443e4e690c4431c2aa449b4))
+* **mcp:** host refusals name the tool the agent called, not the capability ID ([5b42354](https://github.com/this-is-tobi/rta/commit/5b423544e1106313cd5f02d6b724a2ec24938aed))
+* **mcp:** the handshake says some reads need a grant ([3fc45a0](https://github.com/this-is-tobi/rta/commit/3fc45a0eb8cfd09781df1a5295168727bd269dab))
+* **plugin-doc:** a config key shared by several capabilities is described for each ([f99dffc](https://github.com/this-is-tobi/rta/commit/f99dffc19bbf3ea1910fee3942915e6cab15944d))
+* **profile:** a fence refusal says the connection states what a call has to name ([9d72565](https://github.com/this-is-tobi/rta/commit/9d725654bfaa85f29ef5567656fa1d32f47d97ae))
+* **profile:** say when a set line is one that every read of its key ignores ([a0d9173](https://github.com/this-is-tobi/rta/commit/a0d917383266d61c52356db230dec7ca1440e5f8))
+* **render:** a table keeps a position or a file name whole, or is drawn as records ([03bbda4](https://github.com/this-is-tobi/rta/commit/03bbda4d5e004d7a5078abd287f8557ccbe2abec))
+* **theme:** an overview that says its backend is down is drawn as a failure ([d2d668c](https://github.com/this-is-tobi/rta/commit/d2d668c1504366fa830cc51b0f75aa33c5838dde))
+* **tui:** a capability's own profile box is not the environment picker ([e88c431](https://github.com/this-is-tobi/rta/commit/e88c431371950b41f3392fe1f0e8dd90509e6303))
+* **tui:** a copy does not hold the screen while the clipboard program runs ([db038af](https://github.com/this-is-tobi/rta/commit/db038afe85c8433eb6ef81c55bd7f47cd7a1dcba))
+* **tui:** a log position in a tile is not cut in its middle like a path ([70fa3ca](https://github.com/this-is-tobi/rta/commit/70fa3cae6795ebc606a1cfe58dcbb53709e30a96))
+* **tui:** a value outside the fence is refused at its box, with the values first ([3f3d6f6](https://github.com/this-is-tobi/rta/commit/3f3d6f601d8cd08ec5135fdd004f1f60e01397a1))
+* **tui:** an untouched editor save no longer writes a toggle that was never set ([e20d373](https://github.com/this-is-tobi/rta/commit/e20d3735c3ad1ff318724a3fdfd5ba70a0898caa))
+* **tui:** an untouched toggle is not an answer the picker keeps ([f8e0946](https://github.com/this-is-tobi/rta/commit/f8e0946430981885f70594a8c238cef68c14cde2))
+* **tui:** keep the environment badge in brackets where the terminal has no colour ([7c437eb](https://github.com/this-is-tobi/rta/commit/7c437eb0131891aa2a8411f49c213d72342c21f8))
+* **tui:** the dashboard header shows a view's name as a name, never as terminal input ([1dfeb2c](https://github.com/this-is-tobi/rta/commit/1dfeb2c6bd3a6f1561c91c0a4d7336f12609aec1))
+* **tui:** the profiles pane puts an environment's screen ahead of the connections that cut it off ([1636159](https://github.com/this-is-tobi/rta/commit/1636159d1724aeafc48a20fe849e7454d7fb9ae3))
+* **tui:** the profiles pane says a credential is mapped, not resolved ([bcda7ec](https://github.com/this-is-tobi/rta/commit/bcda7ec229a43a0919f994b857dc27f8baf86901))
+
+
+### Performance Improvements
+
+* **profile:** a connection that states no set line is not scanned for scopes ([13b5b03](https://github.com/this-is-tobi/rta/commit/13b5b034597ba0d49df5c6d0806d8109b6324bba))
+
+
+### Dependencies
+
+* **make:** ci runs the one race-mode test pass the pipeline makes ([565c582](https://github.com/this-is-tobi/rta/commit/565c582928699cd2fef62791bb2a0fa6fbe950c4))
+
 ## [0.39.0](https://github.com/this-is-tobi/rta/compare/v0.38.1...v0.39.0) (2026-10-13)
 
 
