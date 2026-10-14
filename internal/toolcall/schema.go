@@ -155,12 +155,26 @@ func InputSchema(c plugin.Capability, profiles []string, config map[string]any) 
 	// does not exist here: only a person can issue a grant, so every wrong
 	// guess terminates at that person anyway, and the refusal names the exact
 	// command including the string the agent supplied.
-	if len(profiles) > 0 && plugin.Profilable(c) {
+	//
+	// **Required wherever it is published**, because the host refuses a call
+	// that leaves it out (core.profile.required: the base connection is not
+	// reachable once a namespace has profiles, so an unprofiled call cannot be
+	// the one the operator's grant covered). A list that left it off told a
+	// client validating against the schema that the first call on every
+	// connection-backed tool, the one with no argument to send, was one the tool
+	// answers, and it was refused on all of them. The property is published
+	// under the condition the refusal holds under, because both ask
+	// TakesProfile; the one difference is a profile written after the server
+	// started, which the refusal sees at once and the schema, sent once, does
+	// not.
+	if TakesProfile(c, profiles) {
 		props["profile"] = map[string]any{
 			"type": "string",
-			"description": "name one of the connections the operator configured. " +
+			"description": "name one of the connections the operator configured — required: this area has " +
+				"connections, so a call that names none is refused. " +
 				"Refused unless a person has issued a grant naming this exact profile.",
 		}
+		required = append(required, "profile")
 	}
 	schema := map[string]any{
 		"type":       "object",
@@ -177,6 +191,26 @@ func InputSchema(c plugin.Capability, profiles []string, config map[string]any) 
 		schema["required"] = required
 	}
 	return schema
+}
+
+// TakesProfile reports whether a call to c names a connection, and has to:
+// the capability can run against one (plugin.Profilable) and the operator has
+// configured at least one for its namespace, profiles being the names written
+// for it.
+//
+// **One answer, asked by everything that depends on it.** Whether the schema
+// publishes `profile`, whether it lists it as required, whether the tool's
+// text and the handshake say a grant names a connection, and whether a call
+// that names none is refused (core.profile.required) are one fact about a tool
+// and an install, and each of them used to be a copy of this condition written
+// where it was needed. Copies agree until the day somebody edits one, and then
+// a client validating against the schema sends a call the host refuses, or
+// the host accepts an argument the schema never offered. What differs between
+// the askers is only which names they hold: the schema and the tool's text
+// are written once, from what the operator had configured when the server
+// started, and a call is judged against the file as it is now.
+func TakesProfile(c plugin.Capability, profiles []string) bool {
+	return plugin.Profilable(c) && len(profiles) > 0
 }
 
 // emptyDefault reports whether a declared default gives a call nothing: empty

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1047,5 +1048,41 @@ func TestTheProfileSentenceIsSaidOnceAtTheHandshake(t *testing.T) {
 	without := newProfileFixture(t, "plugins:\n  pg:\n    host: base.internal\n")
 	if got := without.session.InitializeResult().Instructions; strings.Contains(got, "profile") {
 		t.Errorf("an install with no profile is told about them:\n%s", got)
+	}
+}
+
+// The schema's required list is the list a call is held to, and a call that
+// names no profile on a namespace that has some is refused (R5). The property
+// is published under exactly that condition, so it is required there: it was
+// left off, and a client validating against the schema sent the first call of
+// every connection-backed tool without the one argument it cannot do without,
+// which the tool then refused.
+func TestTheProfileArgumentIsRequiredWhereAnUnprofiledCallIsRefused(t *testing.T) {
+	published := func(f *profileFixture) (required []string, description string) {
+		var schema struct {
+			Properties map[string]struct {
+				Description string `json:"description"`
+			} `json:"properties"`
+			Required []string `json:"required"`
+		}
+		if err := json.Unmarshal([]byte(f.schema(t)), &schema); err != nil {
+			t.Fatal(err)
+		}
+		return schema.Required, schema.Properties["profile"].Description
+	}
+
+	f := newProfileFixture(t, twoProfiles)
+	required, description := published(f)
+	if !slices.Contains(required, "profile") {
+		t.Errorf("profile is published and not required: required = %v", required)
+	}
+	if !strings.Contains(description, "required") {
+		t.Errorf("the property does not say it is required: %q", description)
+	}
+	assertCode(t, f.call(t, map[string]any{"sql": "select 1"}), "core.profile.required")
+
+	bare := newProfileFixture(t, "plugins:\n  pg:\n    host: base.internal\n")
+	if required, description := published(bare); slices.Contains(required, "profile") || description != "" {
+		t.Errorf("an install with no profile requires one: required = %v, property %q", required, description)
 	}
 }

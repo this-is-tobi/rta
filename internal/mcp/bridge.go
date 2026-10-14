@@ -905,7 +905,7 @@ func takeProfile(c plugin.Capability, values map[string]any, opts Options) (stri
 				"%s cannot be judged: the connections this server was configured with could not be read", plugin.ToolName(c.ID)).
 				WithHint(plugin.AskOperator("doctor"))
 		}
-		if named := cfg.ProfilesFor(plugin.Namespace(c.ID)); len(named) > 0 && plugin.Profilable(c) {
+		if toolcall.TakesProfile(c, cfg.ProfilesFor(plugin.Namespace(c.ID))) {
 			return "", view.Errorf("core.profile.required",
 				"%s has configured connections, so a call must name which one", plugin.ToolName(c.ID)).
 				WithHint("ask the operator which profile to use and for a grant naming it")

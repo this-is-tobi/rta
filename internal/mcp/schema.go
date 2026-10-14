@@ -41,7 +41,7 @@ const instructions = "rta is a security boundary in front of this machine, not a
 // the safety class, so it is said rather than left for a model to discover by
 // being refused; the names are not listed — see InputSchema on why an
 // inventory is not something an ungranted caller gets — but the fact that
-// "profile" is optional and gated is what stops a model ignoring it or
+// "profile" is required and gated is what stops a model ignoring it or
 // guessing at it. The argument's own description in each schema says the
 // same of that tool in one line.
 const profileInstructions = "A tool with a \"profile\" argument reaches connections the operator configured: " +
@@ -91,7 +91,7 @@ func handshakeInstructions(offered []plugin.Capability, opts Options) string {
 		text += " " + areasInstructions + strings.Join(areas, ", ") + "."
 	}
 	for _, c := range offered {
-		if plugin.Profilable(c) && len(opts.Profiles.ProfilesFor(plugin.Namespace(c.ID))) > 0 {
+		if toolcall.TakesProfile(c, opts.Profiles.ProfilesFor(plugin.Namespace(c.ID))) {
 			text += " " + profileInstructions
 			break
 		}
@@ -213,7 +213,7 @@ func toolDef(c plugin.Capability, opts Options) *sdk.Tool {
 	profiles := opts.Profiles.ProfilesFor(plugin.Namespace(c.ID))
 	return &sdk.Tool{
 		Name:        plugin.ToolName(c.ID),
-		Description: agentText(c, opts.tools, plugin.Profilable(c) && len(profiles) > 0),
+		Description: agentText(c, opts.tools, toolcall.TakesProfile(c, profiles)),
 		Annotations: ann,
 		InputSchema: nameInSchema(toolcall.InputSchema(c, profiles, opts.pluginConfig(c)), opts.tools),
 	}
