@@ -32,12 +32,15 @@ func resultOnScreen(t *testing.T) Model {
 func TestCopyingAViewAsJSONReachesTheSystemClipboard(t *testing.T) {
 	stdin := fakeClipboard(t)
 	next, cmd := resultOnScreen(t).Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
-	got := next.(Model)
+	if cmd == nil {
+		t.Fatal("nothing was left to copy or to send to the terminal")
+	}
+	if batch, ok := cmd().(tea.BatchMsg); !ok || len(batch) != 2 {
+		t.Error("the copy and the terminal write are not both sent: over ssh only OSC 52 reaches the local clipboard")
+	}
+	got := settleCopy(t, next.(Model), cmd)
 	if got.flash != "copied as JSON" {
 		t.Errorf("flash = %q, want the copy confirmed", got.flash)
-	}
-	if cmd == nil {
-		t.Error("the terminal was sent nothing: over ssh only OSC 52 reaches the local clipboard")
 	}
 	raw, err := os.ReadFile(stdin)
 	if err != nil {
@@ -53,10 +56,10 @@ func TestCopyingAViewAsJSONReachesTheSystemClipboard(t *testing.T) {
 func TestCopyingAViewAsJSONAdmitsWhenOnlyTheTerminalWasTold(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	next, cmd := resultOnScreen(t).Update(tea.KeyPressMsg{Code: 'y', Text: "y"})
-	if got := next.(Model).flash; !strings.HasPrefix(got, "sent to the terminal") {
-		t.Errorf("flash = %q, want the admission that only the terminal was told", got)
-	}
 	if cmd == nil {
-		t.Error("nothing was sent to the terminal either")
+		t.Fatal("nothing was sent to the terminal either")
+	}
+	if got := settleCopy(t, next.(Model), cmd).flash; !strings.HasPrefix(got, "sent to the terminal") {
+		t.Errorf("flash = %q, want the admission that only the terminal was told", got)
 	}
 }

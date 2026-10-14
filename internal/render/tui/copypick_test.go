@@ -112,7 +112,7 @@ func TestConfirmingThePickerCopiesTheChosenRawValue(t *testing.T) {
 	om := openPickerOnThreePasswords(t)
 	om.copyPick.value = "second-pw" // as if the operator had moved the highlight here
 
-	confirmed, _ := om.confirmCopyPick()
+	confirmed, cmd := om.confirmCopyPick()
 	cm, ok := confirmed.(Model)
 	if !ok {
 		t.Fatal("confirmCopyPick did not return a Model")
@@ -124,6 +124,7 @@ func TestConfirmingThePickerCopiesTheChosenRawValue(t *testing.T) {
 	if cm.copyPick != nil {
 		t.Error("the picker form is still attached after confirming")
 	}
+	cm = settleCopy(t, cm, cmd)
 	got, err := os.ReadFile(stdin)
 	if err != nil {
 		t.Fatalf("nothing reached the clipboard: %v", err)
@@ -143,11 +144,12 @@ func TestConfirmingThePickerWithNoClipboardProgramFlashesTheFailure(t *testing.T
 	om := openPickerOnThreePasswords(t)
 	t.Setenv("PATH", t.TempDir())
 
-	confirmed, _ := om.confirmCopyPick()
+	confirmed, cmd := om.confirmCopyPick()
 	cm, ok := confirmed.(Model)
 	if !ok {
 		t.Fatal("confirmCopyPick did not return a Model")
 	}
+	cm = settleCopy(t, cm, cmd)
 	if cm.flash == "" || cm.mode != modeResult {
 		t.Errorf("flash = %q, mode = %v, want a failure notice and no crash", cm.flash, cm.mode)
 	}
@@ -316,7 +318,7 @@ func TestConfirmingATilePickerReturnsToTheDashboardAndRestartsRefresh(t *testing
 	if pick.mode != modeCopyPick {
 		t.Fatalf("did not open the picker: mode = %v", pick.mode)
 	}
-	confirmed, _ := pick.confirmCopyPick()
+	confirmed, cmd := pick.confirmCopyPick()
 	cm, ok := confirmed.(Model)
 	if !ok {
 		t.Fatal("confirmCopyPick did not return a Model")
@@ -328,6 +330,7 @@ func TestConfirmingATilePickerReturnsToTheDashboardAndRestartsRefresh(t *testing
 	if cm.tickGen == beforeGen {
 		t.Error("tile refresh was not restarted on return to the dashboard")
 	}
+	settleCopy(t, cm, cmd)
 	got, err := os.ReadFile(stdin)
 	if err != nil {
 		t.Fatalf("nothing reached the clipboard: %v", err)

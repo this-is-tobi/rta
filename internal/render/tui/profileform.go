@@ -13,13 +13,13 @@ import (
 	huh "charm.land/huh/v2"
 
 	"github.com/this-is-tobi/rta/builtin/kv"
-	"github.com/this-is-tobi/rta/internal/clipboard"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/tunnel"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Creating and editing environments, the plugins inside them, where each
@@ -1061,13 +1061,17 @@ func (m *Model) deleteSelectedConn() string {
 // an identifier whatever it was given, and this refuses on top of it: two
 // independent reasons the paste is safe, because the one that was relied on
 // lived in another package.
-func (m *Model) copyExportLine() string {
+//
+// What is said at once is the string, and a copy that has to be made comes
+// back as a command that reports through copiedMsg when the clipboard program
+// has answered (see copiedMsg).
+func (m *Model) copyExportLine() (string, tea.Cmd) {
 	if m.profileSel >= len(m.profiles) {
-		return ""
+		return "", nil
 	}
 	row := m.profiles[m.profileSel]
 	if !row.valid() {
-		return row.name + " is not usable — " + row.problem
+		return row.name + " is not usable — " + row.problem, nil
 	}
 	var missing []string
 	for _, c := range row.conns {
@@ -1083,15 +1087,17 @@ func (m *Model) copyExportLine() string {
 	}
 	if len(missing) == 0 {
 		if needed, _ := row.missing(); needed == 0 {
-			return row.name + " needs no credential"
+			return row.name + " needs no credential", nil
 		}
-		return row.name + "'s credentials are already resolved — nothing to export"
+		return row.name + "'s credentials are already resolved — nothing to export", nil
 	}
 	sort.Strings(missing)
-	if ok, _, _ := clipboard.Copy([]byte(strings.Join(missing, "\n") + "\n")); !ok {
-		return "no clipboard here — " + strings.Join(missing, "; ")
-	}
-	return "copied " + format.CountOf(len(missing), "export line") + " — fill in the value and run it"
+	return "", copyInBackground(strings.Join(missing, "\n")+"\n", func(err *view.Error) copiedMsg {
+		if err != nil {
+			return copiedMsg{flash: "no clipboard here — " + strings.Join(missing, "; ")}
+		}
+		return copiedMsg{flash: "copied " + format.CountOf(len(missing), "export line") + " — fill in the value and run it"}
+	})
 }
 
 // firstSetField names the first config box, which is where the second heading
