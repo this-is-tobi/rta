@@ -340,8 +340,10 @@ var version = "dev"
 // and JSON. Nothing below mentions which one is asking.
 func Plugin() plugin.Plugin {
 	return plugin.Plugin{
-		Name:    "{{.Name}}",
-		Summary: "TODO: one line on what this plugin is for",
+		Name: "{{.Name}}",
+		// What the plugin list shows for it, and what an agent is told it is
+		// for. This one describes the greeting below: change it with it.
+		Summary: "Greets people by name",
 		Version: version,
 		Capabilities: []plugin.Capability{
 			{
@@ -353,9 +355,11 @@ func Plugin() plugin.Plugin {
 				// Write and Destructive are the others.
 				Safety:     plugin.Read,
 				Idempotent: true,
-				Description: "Replace this with what the capability actually does. This text is " +
-					"published to AI agents as the tool description, so write it for somebody " +
-					"deciding whether to call it.",
+				// What the capability does, for somebody deciding whether to
+				// call it. It is published to AI agents word for word as the
+				// tool description.
+				Description: "Returns a greeting for the name it is given, in capitals when " +
+					"shout is set. It reads nothing and changes nothing.",
 				Inputs: []plugin.Field{
 					{
 						Name: "name", Type: plugin.String, Positional: true, Required: true,
@@ -468,7 +472,10 @@ func TestPlugin(t *testing.T) {
 }
 
 // conformanceInputs supplies values for capabilities the suite cannot drive
-// from their declared defaults, keyed by capability id.
+// from their declared defaults, keyed by capability id: the greeting's one
+// required input is here, so the suite runs it and holds what it returns to
+// every renderer. Add an entry for each capability you declare that has a
+// required input — without one the suite cannot run it.
 //
 // Two rules make the difference between a real check and a green nothing:
 // point anything that connects at somewhere nothing is listening
@@ -483,7 +490,9 @@ func TestPlugin(t *testing.T) {
 //		"{{.Name}}.thing.get": {"endpoint": "127.0.0.1:1", "out": filepath.Join(dir, "got")},
 //	}
 func conformanceInputs(dir string) map[string]map[string]any {
-	return map[string]map[string]any{}
+	return map[string]map[string]any{
+		"{{.Name}}.greet": {"name": "world"},
+	}
 }
 `
 

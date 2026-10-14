@@ -72,9 +72,18 @@ func TestTheScaffoldBuildsAndLoads(t *testing.T) {
 
 	// The scaffold ships a conformance test, so it had better pass. An author
 	// whose first `go test` fails on generated code learns to ignore it.
-	suite := goFromCache(dir, "test", "./...")
-	if out, err := suite.CombinedOutput(); err != nil {
+	//
+	// And it runs the one capability the scaffold has. The suite cannot invent
+	// a required input, so a scaffold that left conformanceInputs empty passed
+	// with the greeting "not run": green, and checking nothing, which is the
+	// outcome the test's own comment warns an author against.
+	suite := goFromCache(dir, "test", "-v", "./...")
+	out, err := suite.CombinedOutput()
+	if err != nil {
 		t.Fatalf("the scaffold fails its own conformance suite:\n%s", out)
+	}
+	if strings.Contains(string(out), "not run") {
+		t.Errorf("the scaffold's own capability is not driven by its conformance suite:\n%s", out)
 	}
 
 	// And it is a plugin rta accepts, not merely a program that builds.
