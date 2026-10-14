@@ -1566,3 +1566,46 @@ func TestTheDevReportSaysWhenNoAgentCanCallACapability(t *testing.T) {
 		t.Errorf("a capability an operator can configure reads %q", got)
 	}
 }
+
+// The tile line is read by the author of the plugin, who needs to know both
+// which capability the dashboard took and whether they chose it: a tile picked
+// by declaration order looked like the result of their declaration.
+func TestTheDevReportSaysHowTheDashboardTileWasChosen(t *testing.T) {
+	read := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	line := func(p plugin.Plugin) string {
+		reg := registry.New()
+		if err := reg.RegisterFrom(p, registry.Origin{Path: "/tmp/rta-plugin-" + p.Name, Digest: "sha256:" + p.Name}); err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		if err := cli.Render(&buf, devReport(reg, &pluginhost.Client{Declared: p}),
+			cli.Options{Format: cli.Pretty, NoColor: true, Width: 200}); err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range strings.Split(buf.String(), "\n") {
+			if strings.Contains(l, "dashboard tile") {
+				return l
+			}
+		}
+		t.Fatalf("no tile line in:\n%s", buf.String())
+		return ""
+	}
+	byOrder := line(plugin.Plugin{Name: "acme", Summary: "a plugin", Capabilities: []plugin.Capability{
+		{ID: "acme.debug-dump", Summary: "dump", Safety: plugin.Read, Run: read}}})
+	if !strings.Contains(byOrder, "acme.debug-dump") || !strings.Contains(byOrder, "picked automatically") ||
+		!strings.Contains(byOrder, "declare acme.overview") {
+		t.Errorf("a tile picked by order does not say so: %q", byOrder)
+	}
+	chosen := line(plugin.Plugin{Name: "acme", Summary: "a plugin", Capabilities: []plugin.Capability{
+		{ID: "acme.debug-dump", Summary: "dump", Safety: plugin.Read, Run: read},
+		{ID: "acme.overview", Summary: "overview", Safety: plugin.Read, Run: read}}})
+	if !strings.Contains(chosen, "acme.overview") || strings.Contains(chosen, "picked automatically") {
+		t.Errorf("a tile the author chose reads %q", chosen)
+	}
+	none := line(plugin.Plugin{Name: "acme", Summary: "a plugin", Capabilities: []plugin.Capability{
+		{ID: "acme.station.show", Summary: "show", Safety: plugin.Read, Run: read,
+			Inputs: []plugin.Field{{Name: "name", Type: plugin.String, Required: true}}}}})
+	if !strings.Contains(none, "none") || !strings.Contains(none, "declare acme.overview") {
+		t.Errorf("a plugin with no tile is not told what to do: %q", none)
+	}
+}

@@ -1127,10 +1127,23 @@ func devReport(reg *registry.Registry, c *pluginhost.Client) view.View {
 	// is invisible in the source and worth stating outright — an author who
 	// wanted a different one learns here that `<plugin>.overview` is how to
 	// say so.
+	//
+	// Said to the author and not to the operator the reasons were written for:
+	// what the line leaves them able to do is the point of it. A tile picked by
+	// declaration order is a result nobody asked for, and the line read as one
+	// they had.
+	overview := p.Name + ".overview"
 	if id, ok := tui.TileFor(reg, p); ok {
-		pairs = append(pairs, view.Pair{Key: "dashboard tile", Value: id})
+		tile := id + " — yours, by its name"
+		if id != overview {
+			tile = id + " — picked automatically, the first that runs unattended; declare " +
+				overview + " to choose"
+		}
+		pairs = append(pairs, view.Pair{Key: "dashboard tile", Value: tile})
 	} else {
-		pairs = append(pairs, view.Pair{Key: "dashboard tile", Value: "none — " + tui.NoTileReason(p)})
+		pairs = append(pairs, view.Pair{Key: "dashboard tile",
+			Value: "none — " + tui.NoTileReason(p) + "; declare " + overview + ", answerable from " +
+				"its defaults, to give the dashboard one"})
 	}
 
 	caps := view.Table{Columns: []view.Column{
