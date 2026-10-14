@@ -652,8 +652,24 @@ func discovered(name string) (pluginhost.Untrusted, *view.Error) {
 	}
 	return pluginhost.Untrusted{}, view.Errorf("plugin.trust.notfound",
 		"no plugin called %q is installed", name).
-		WithHint("rta finds a plugin as `" + pluginhost.Prefix + name + "` on your $PATH; " +
-			"`rta plugin trust` with no argument lists what it found")
+		WithHint(notFoundHint(name))
+}
+
+// notFoundHint says why a plugin that was just built is not found. The place
+// the docs and `plugin new` send an author to build it, ~/.local/bin, is on
+// no $PATH until somebody put it there, and the failure that followed — two
+// errors and an empty list — never said the directory was the problem.
+func notFoundHint(name string) string {
+	binary := pluginhost.BinaryName(name)
+	if home, err := os.UserHomeDir(); err == nil {
+		dir := filepath.Join(home, ".local", "bin")
+		if info, err := os.Stat(filepath.Join(dir, binary)); err == nil && !info.IsDir() {
+			return binary + " is in " + dir + ", and that directory is not on your $PATH — add it, " +
+				"or build the plugin into one that is"
+		}
+	}
+	return "rta finds a plugin as `" + binary + "` on your $PATH; " +
+		"`rta plugin trust` with no argument lists what it found"
 }
 
 // untrustedPlugins is what discovery would refuse right now.

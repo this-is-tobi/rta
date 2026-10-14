@@ -247,9 +247,10 @@ func scaffoldAnswer(s scaffold, dir string, files []string, dryRun bool) view.Ke
 	if !dryRun {
 		install := filepath.Join(os.Getenv("HOME"), ".local", "bin", s.Binary)
 		pairs = append(pairs, view.Pair{Key: "to install it",
-			Value: "`go build -o " + install + " .` in it — anything named " + pluginhost.Prefix +
-				"* on $PATH is a plugin every rta finds; the part after the prefix is only a " +
-				"filename, and the namespace comes from what the plugin declares"})
+			Value: "`go build -o " + install + " .` in it, then `rta plugin trust " + s.Name +
+				"` — anything named " + pluginhost.Prefix + "* in a directory on $PATH is a plugin every " +
+				"rta finds once you approve it (" + filepath.Dir(install) + " has to be one); the part " +
+				"after the prefix is only a filename, and the namespace comes from what the plugin declares"})
 	}
 	return view.KeyValue{Pairs: pairs}
 }
@@ -410,10 +411,13 @@ An [rta](https://github.com/this-is-tobi/rta) plugin.
 ## Install
 
     go build -o ~/.local/bin/{{.Binary}} .
+    rta plugin trust {{.Name}}
 
-Anything named ` + "`" + `rta-plugin-*` + "`" + ` on your $PATH is a plugin. The name after the
-prefix is only a filename; the namespace comes from what the plugin declares,
-so rta validates it and refuses a collision with an existing one.
+Anything named ` + "`" + `rta-plugin-*` + "`" + ` on your $PATH is a plugin once you have approved that
+exact build with ` + "`" + `rta plugin trust` + "`" + ` (a rebuild needs approving again), and
+~/.local/bin has to be on your $PATH for rta to find it there. The name after
+the prefix is only a filename; the namespace comes from what the plugin
+declares, so rta validates it and refuses a collision with an existing one.
 
 ## What you get for free
 

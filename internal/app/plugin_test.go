@@ -1609,3 +1609,70 @@ func TestTheDevReportSaysHowTheDashboardTileWasChosen(t *testing.T) {
 		t.Errorf("a plugin with no tile is not told what to do: %q", none)
 	}
 }
+
+// The first install step in the docs builds into ~/.local/bin, which is on no
+// $PATH until somebody put it there, and the failure that followed was two
+// errors that never named the directory. When the file is there, the refusal
+// says so.
+func TestPluginTrustSaysWhenTheBinaryIsInLocalBinOffThePath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", t.TempDir())
+	run := session(t, registry.New())
+
+	_, _, err := run("plugin", "trust", "weather")
+	var verr *view.Error
+	if !errors.As(err, &verr) || verr.Code != "plugin.trust.notfound" {
+		t.Fatalf("err = %v, want plugin.trust.notfound", err)
+	}
+	if strings.Contains(verr.Hint, ".local/bin") {
+		t.Errorf("the hint names a directory nothing is in: %q", verr.Hint)
+	}
+
+	bin := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "rta-plugin-weather"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = run("plugin", "trust", "weather")
+	if !errors.As(err, &verr) {
+		t.Fatalf("err = %v", err)
+	}
+	for _, want := range []string{"rta-plugin-weather is in", bin, "not on your $PATH"} {
+		if !strings.Contains(verr.Hint, want) {
+			t.Errorf("the hint does not say %q: %q", want, verr.Hint)
+		}
+	}
+}
+
+// The install step the scaffold and `plugin new` give ends in a file that is
+// found only if its directory is on $PATH and only run once it is trusted,
+// and neither condition was said: the README stopped at go build, and the
+// answer never mentioned the approval.
+func TestTheScaffoldSaysToTrustWhatItBuildsAndWhereItHasToBe(t *testing.T) {
+	dir := t.TempDir()
+	s := scaffold{Name: "weather", Binary: "rta-plugin-weather", Module: "rta-plugin-weather", RtaMod: rtaModule}
+	if _, err := s.write(dir, false); err != nil {
+		t.Fatal(err)
+	}
+	readme, err := os.ReadFile(filepath.Join(dir, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readme), "rta plugin trust weather") || !strings.Contains(string(readme), "has to be on your $PATH") {
+		t.Errorf("the README's install step does not say to trust the build, or where it has to be:\n%s", readme)
+	}
+	var install string
+	for _, pair := range scaffoldAnswer(s, dir, nil, false).Pairs {
+		if pair.Key == "to install it" {
+			install = pair.Value
+		}
+	}
+	for _, want := range []string{"rta plugin trust weather", "has to be one"} {
+		if !strings.Contains(install, want) {
+			t.Errorf("the install line does not say %q: %q", want, install)
+		}
+	}
+}
