@@ -1,6 +1,8 @@
 package wire
 
 import (
+	"math"
+
 	"github.com/this-is-tobi/rta/pkg/view"
 	rtav1 "github.com/this-is-tobi/rta/proto/rta/v1"
 )
@@ -22,6 +24,24 @@ var columnKinds = []struct {
 	{view.KindTimestamp, rtav1.ColumnKind_COLUMN_KIND_TIMESTAMP},
 	{view.KindStatus, rtav1.ColumnKind_COLUMN_KIND_STATUS},
 	{view.KindUsage, rtav1.ColumnKind_COLUMN_KIND_USAGE},
+}
+
+// finiteNumbers is a page's numbers without the ones JSON cannot write: a NaN or
+// an infinity in one plugin's page would otherwise fail the page, whole, for every
+// caller that asks for it as JSON, and the host reads this from outside its own
+// code. Nil when none is left, so that an empty map and an absent one read alike.
+func finiteNumbers(in map[string]float64) map[string]float64 {
+	var out map[string]float64
+	for name, n := range in {
+		if math.IsNaN(n) || math.IsInf(n, 0) {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]float64, len(in))
+		}
+		out[name] = n
+	}
+	return out
 }
 
 func columnKindToProto(k view.ColumnKind) rtav1.ColumnKind {
@@ -121,6 +141,7 @@ func ViewToProto(v view.View) *rtav1.View {
 				return &rtav1.Pair{Key: p.Key, Value: p.Value}
 			}),
 			Redacted: t.Redacted,
+			Numbers:  t.Numbers,
 		}}}
 	case view.Table:
 		tbl := &rtav1.Table{
@@ -195,6 +216,7 @@ func ViewFromProto(v *rtav1.View) view.View {
 				return view.Pair{Key: p.GetKey(), Value: p.GetValue()}
 			}),
 			Redacted: k.KeyValue.GetRedacted(),
+			Numbers:  finiteNumbers(k.KeyValue.GetNumbers()),
 		}
 	case *rtav1.View_Table:
 		t := view.Table{
