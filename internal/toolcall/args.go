@@ -202,6 +202,9 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 		if kebab := strings.ReplaceAll(name, "_", "-"); kebab != name && declared[kebab] {
 			respelled = append(respelled, fmt.Sprintf("%q is spelled %q", name, kebab))
 		}
+		if to, ok := MovedTo(c.ID, name); ok {
+			respelled = append(respelled, fmt.Sprintf("%q moved to %s", name, plugin.SurfaceMCP.CapabilityName(to)))
+		}
 	}
 	plural := ""
 	if len(unknown) > 1 {
