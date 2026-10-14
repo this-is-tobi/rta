@@ -216,16 +216,7 @@ func breadthNote(catalog func() []plugin.Capability, g core.Grant) string {
 	if strings.Contains(g.Target, ".") {
 		return ""
 	}
-	var gated, destructive []string
-	for _, c := range catalog() {
-		if !reachedBy(g, c) {
-			continue
-		}
-		gated = append(gated, c.ID)
-		if c.Safety == plugin.Destructive {
-			destructive = append(destructive, c.ID)
-		}
-	}
+	gated, destructive, _ := reachOf(catalog, g)
 	if len(gated) == 0 {
 		if g.Profile != "" && targetExists(catalog, g.Target) {
 			return fmt.Sprintf("note: no capability of %s takes a profile, so a grant naming %s covers no call — "+
@@ -233,7 +224,6 @@ func breadthNote(catalog func() []plugin.Capability, g core.Grant) string {
 		}
 		return ""
 	}
-	sort.Strings(destructive)
 	which := destructiveSummary(destructive)
 	return fmt.Sprintf("note: %s covers %s an agent needs a grant for, %s — name one to allow only it",
 		g.Target, format.Count(len(gated), "capability", "capabilities"), which)
@@ -253,13 +243,7 @@ func revealNote(catalog func() []plugin.Capability, g core.Grant) string {
 	if g.Scope != "" {
 		return ""
 	}
-	var ids []string
-	for _, c := range catalog() {
-		if c.Reveals && reachedBy(g, c) {
-			ids = append(ids, c.ID)
-		}
-	}
-	sort.Strings(ids)
+	_, _, ids := reachOf(catalog, g)
 	switch len(ids) {
 	case 0:
 		return ""
@@ -269,6 +253,29 @@ func revealNote(catalog func() []plugin.Capability, g core.Grant) string {
 	}
 	return "note: " + g.Target + " covers " + format.Count(len(ids), "capability", "capabilities") +
 		" that reveal stored values (" + strings.Join(ids, ", ") + "), each for every record it reaches — name one to allow only it"
+}
+
+// reachOf is what a grant covers in the catalogue, by the three counts the
+// receipt gives of a plugin-wide one and the roster repeats: every capability it
+// reaches, the destructive among them, and the ones that reveal a stored value.
+// Each is sorted, so a sentence built from them reads the same every time.
+func reachOf(catalog func() []plugin.Capability, g core.Grant) (gated, destructive, reveals []string) {
+	for _, c := range catalog() {
+		if !reachedBy(g, c) {
+			continue
+		}
+		gated = append(gated, c.ID)
+		if c.Safety == plugin.Destructive {
+			destructive = append(destructive, c.ID)
+		}
+		if c.Reveals {
+			reveals = append(reveals, c.ID)
+		}
+	}
+	sort.Strings(gated)
+	sort.Strings(destructive)
+	sort.Strings(reveals)
+	return gated, destructive, reveals
 }
 
 // reachedBy reports whether a grant covers calls of c: c is the capability it
