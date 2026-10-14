@@ -1143,6 +1143,12 @@ type storeFacts struct {
 	// mode is how the store is locked, "" while there is no store, which where
 	// says itself.
 	mode keyMode
+	// size and changed are the file's, zero while there is none, and readers is
+	// how many keys a store locked to keys is locked to: the numbers behind
+	// lines where and locked say as words.
+	size    int64
+	changed time.Time
+	readers int
 }
 
 // lock is the lines about the lock — how it is, and what is said of opening it —
@@ -1182,7 +1188,11 @@ func readStoreFacts(req plugin.Request) (storeFacts, *view.Error) {
 		locked = view.Pair{Key: "locked to",
 			Value: format.CountOf(len(specs), "key") + " — see " + req.Surface().CapabilityName("kv.recipients")}
 	}
-	return storeFacts{where: where, locked: locked, mode: mode}, nil
+	facts := storeFacts{where: where, locked: locked, mode: mode, size: info.Size(), changed: info.ModTime()}
+	if mode == modeKeys {
+		facts.readers = len(specs)
+	}
+	return facts, nil
 }
 
 // unlockAvailability says whether a key is at hand, naming only where it came
