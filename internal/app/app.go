@@ -36,6 +36,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/render/tui"
 	agentsession "github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/internal/toolcall"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -1368,6 +1369,14 @@ func flagValueError(cmd *cobra.Command, err error, c *plugin.Capability) error {
 	if typed, unknown := unknownFlagName(err); unknown {
 		if refused := unknownBeforeFlag(cmd); refused != nil {
 			return refused
+		}
+		// A flag another command has taken over (toolcall.MovedTo), which is the
+		// answer to "unknown flag" for whoever still types it.
+		if c != nil {
+			if to, moved := toolcall.MovedTo(c.ID, typed); moved {
+				return &view.Error{Code: CodeUsage, Message: err.Error(),
+					Hint: "--" + typed + " moved to " + plugin.SurfaceCLI.CapabilityName(to)}
+			}
 		}
 		if near := nearestFlags(cmd, typed); len(near) > 0 {
 			return &view.Error{Code: CodeUsage, Message: err.Error(),
