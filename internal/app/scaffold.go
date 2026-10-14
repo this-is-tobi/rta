@@ -498,6 +498,18 @@ func conformanceInputs(dir string) map[string]map[string]any {
 // scaffold rather than by inspecting the template: plugins/pg had carried
 // its own build artifact as a tracked file since it was written, silently,
 // for exactly this reason.
-const binaryIgnoreTemplate = `{{.Binary}}
-{{.Name}}
+//
+// **Anchored, and the directory of that name given back.** A bare name
+// matches at every depth and a file or a directory alike, so `weather` also
+// hid internal/weather/ and a package directory weather/ — the layout a
+// plugin named for its domain most naturally has — from `git add`, without a
+// word: the author found out when CI or a clone failed to build. Both names
+// are now the root's alone, and the last line re-includes a directory called
+// {{.Name}} there, which a later pattern can do because it is the directory
+// itself that is named and not something inside an excluded one. The file
+// that is the binary stays ignored: a pattern with a trailing slash matches
+// only a directory.
+const binaryIgnoreTemplate = `/{{.Binary}}
+/{{.Name}}
+!/{{.Name}}/
 `

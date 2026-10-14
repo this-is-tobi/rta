@@ -141,21 +141,91 @@ func TestScaffoldingRefusesRatherThanOverwrites(t *testing.T) {
 // {{.Binary}}. plugins/pg had been carrying that artifact as a tracked file
 // since it was written, for exactly this reason.
 func TestScaffoldedGitignoreCoversBothBuildArtifactNames(t *testing.T) {
+	dir := scaffoldedRepo(t, "eol")
+	ignored := gitIgnored(t, dir, "rta-plugin-eol", "eol")
+	for _, name := range []string{"rta-plugin-eol", "eol"} {
+		if !ignored[name] {
+			t.Errorf("a built binary called %s is not ignored", name)
+		}
+	}
+}
+
+// A plugin named for its domain is the ordinary case, and a package of the
+// same name beside main.go is the ordinary layout. The unanchored .gitignore
+// the scaffold wrote hid that package — and internal/<name>/ — from `git add`
+// without a word, and the loss surfaced as a build that failed in CI or in
+// somebody's clone.
+func TestScaffoldedGitignoreDoesNotHideAPackageNamedLikeThePlugin(t *testing.T) {
+	dir := scaffoldedRepo(t, "weather")
+	for _, path := range []string{"weather/client.go", "internal/weather/api.go", "pkg/weather/api.go", "main.go"} {
+		if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, path), []byte("package weather\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ignored := gitIgnored(t, dir, "weather/client.go", "internal/weather/api.go", "pkg/weather/api.go", "main.go")
+	for path, hidden := range ignored {
+		if hidden {
+			t.Errorf("%s is ignored: a source file never reaches a commit", path)
+		}
+	}
+}
+
+// scaffoldedRepo is a scaffold for a plugin called name, written into a fresh
+// git repository.
+func scaffoldedRepo(t *testing.T, name string) string {
+	t.Helper()
 	dir := t.TempDir()
-	s := scaffold{Name: "eol", Binary: "rta-plugin-eol", Module: "rta-plugin-eol", RtaMod: rtaModule}
+	s := scaffold{Name: name, Binary: "rta-plugin-" + name, Module: "rta-plugin-" + name, RtaMod: rtaModule}
 	if _, err := s.write(dir, false); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
-	if err != nil {
-		t.Fatal(err)
+	if out, err := gitIn(dir, "init", "-q", ".").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
 	}
-	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	for _, want := range []string{s.Binary, s.Name} {
-		if !slices.Contains(lines, want) {
-			t.Errorf(".gitignore = %q, missing a line for %q", data, want)
+	return dir
+}
+
+// gitIgnored says, for each path, whether git would ignore it in dir. Paths
+// that do not exist yet are created as empty files: the question is about the
+// patterns, and git answers it by name.
+func gitIgnored(t *testing.T, dir string, paths ...string) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	for _, path := range paths {
+		full := filepath.Join(dir, path)
+		if _, err := os.Stat(full); err != nil {
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(full, nil, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		err := gitIn(dir, "check-ignore", "-q", path).Run()
+		var exit *exec.ExitError
+		switch {
+		case err == nil:
+			out[path] = true
+		case errors.As(err, &exit) && exit.ExitCode() == 1:
+			out[path] = false
+		default:
+			t.Fatalf("git check-ignore %s: %v", path, err)
 		}
 	}
+	return out
+}
+
+// gitIn is a git(1) run in dir that reads no configuration but the
+// repository's own: a global excludes file on the machine running the suite
+// would otherwise answer for the scaffold's.
+func gitIn(dir string, args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+	return cmd
 }
 
 // The name becomes a cobra command, the prefix of every capability ID and
