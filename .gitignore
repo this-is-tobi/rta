@@ -21,3 +21,10 @@ coverage.html
 # A person's own mise overrides, never the repository's (mise.toml is)
 mise.local.toml
 .mise.local.toml
+
+# And the lockfile mise writes beside them when a person's own settings ask
+# for one. Nothing here installs through mise (CI reads go.mod), so a
+# committed lock would pin a toolchain nothing checks and go stale with every
+# Go bump.
+mise*.lock
+.mise*.lock
