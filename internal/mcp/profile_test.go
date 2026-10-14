@@ -1086,3 +1086,52 @@ func TestTheProfileArgumentIsRequiredWhereAnUnprofiledCallIsRefused(t *testing.T
 		t.Errorf("an install with no profile requires one: required = %v, property %q", required, description)
 	}
 }
+
+// `rta use staging` is the operator working in one place, and the grant they
+// issued for prod yesterday stays issued and covers nothing. The agent is told
+// what an ungranted call is told, on purpose, and the record said the same: "no
+// grant", beside a roster that held the very grant, with nothing to say the
+// remedy it pointed at — issuing one — could not help.
+func TestTheRecordSaysWhenARefusalWasTheEnvironmentSwitchedOn(t *testing.T) {
+	f := newProfileFixture(t, twoProfiles)
+	now := time.Now()
+	if verr := grant.Save([]grant.Grant{{
+		Target: "pg", Profile: "prod", ProfilePin: f.pin("prod", "pg"), Issued: now, Expires: now.Add(time.Hour),
+	}}); verr != nil {
+		t.Fatal(verr)
+	}
+	if verr := profile.SaveSelection(profile.Selection{Active: "staging"}); verr != nil {
+		t.Fatal(verr)
+	}
+
+	res := f.call(t, map[string]any{"profile": "prod", "sql": "select 1"})
+	assertCode(t, res, "core.grant.required")
+	saidToTheAgent := contentText(t, res)
+	if strings.Contains(saidToTheAgent, "switched on") || strings.Contains(saidToTheAgent, "staging") {
+		t.Errorf("the agent was told the operator is working elsewhere: %s", saidToTheAgent)
+	}
+	entries, err := agentlog.Read(1)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("Read = %v, %v", entries, err)
+	}
+	if note := entries[0].Note; !strings.Contains(note, "a grant covers this call") ||
+		!strings.Contains(note, "staging is switched on") || !strings.Contains(note, "rta use prod") {
+		t.Errorf("the record's note = %q, want the grant that covers the call and the switch that holds it", note)
+	}
+
+	// With nothing granted the agent hears the same words, and the record has
+	// nothing to add: it must not blame a switch for a call nobody allowed.
+	if verr := grant.Save(nil); verr != nil {
+		t.Fatal(verr)
+	}
+	if got := contentText(t, f.call(t, map[string]any{"profile": "prod", "sql": "select 1"})); got != saidToTheAgent {
+		t.Errorf("the two refusals read differently to an agent:\n held: %s\n none: %s", saidToTheAgent, got)
+	}
+	entries, err = agentlog.Read(1)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("Read = %v, %v", entries, err)
+	}
+	if entries[0].Note != "" {
+		t.Errorf("a call nothing granted was blamed on the switch: %q", entries[0].Note)
+	}
+}

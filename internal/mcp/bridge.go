@@ -584,6 +584,17 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 						rec.Note = "the file that says which environment is on does not verify, " +
 							"so no profile is usable — `rta doctor`, then `rta use`"
 					}
+					// Or the operator is working in another environment: a grant
+					// covers this call and counts for nothing while that one is
+					// switched on. The agent hears an ungranted call's words, and
+					// issuing the grant again, which is what those words suggest,
+					// cannot help; what does is `rta use` for this profile.
+					if verr.Code == "core.grant.required" && by.Active != profile.Unverified &&
+						grant.RefusedBySwitch(c, gated, by) {
+						rec.Note = "a grant covers this call, but " + by.Active + " is switched on, and " +
+							"while it is no agent can reach another environment — `rta use " +
+							config.RefName(profileName) + "` switches, `rta use --off` switches nothing on"
+					}
 					return errResult(storeRefusal(verr)), nil
 				}
 				return errResult(decided), nil
