@@ -287,6 +287,34 @@ func TestAPathInAGlancedCellIsCutInTheMiddle(t *testing.T) {
 	}
 }
 
+// A slash between two numbers is a log position, not a directory, and cutting
+// its middle names a position that never was: `16/B374D848` as `16/…D848` is
+// read as an LSN. It is left whole for the box to wrap, where every digit is
+// still on the screen.
+func TestALogPositionIsNotCutLikeAPath(t *testing.T) {
+	kv := view.KeyValue{Pairs: []view.Pair{
+		{Key: "replay position", Value: "FFFFFFFF/FFFFFFFF"},
+		{Key: "file", Value: "/var/lib/postgresql/17/main/pg_wal/000000010000001600000002D"},
+	}}
+	got := glanceKeyValue(kv, 30).(view.KeyValue)
+	if got.Pairs[0].Value != "FFFFFFFF/FFFFFFFF" {
+		t.Errorf("a position was cut: %q", got.Pairs[0].Value)
+	}
+	if !strings.Contains(got.Pairs[1].Value, "…") {
+		t.Errorf("a path beside it is no longer cut: %q", got.Pairs[1].Value)
+	}
+	for _, s := range []string{"0/3000148", "16/B374D848", "FFFFFFFF/FFFFFFFF"} {
+		if pathLike(s) {
+			t.Errorf("%q is a position, not a path", s)
+		}
+	}
+	for _, s := range []string{"/tmp/kv.age", "~/x", "a/b", "https://example.com/x", "10/20/30", "ns/pod-0"} {
+		if !pathLike(s) {
+			t.Errorf("%q is a path or a name with a slash and is cut in the middle", s)
+		}
+	}
+}
+
 // A value that fits, or that is words and not a path, is left exactly as it is.
 func TestAValueThatFitsOrIsProseIsNotCut(t *testing.T) {
 	kv := view.KeyValue{Pairs: []view.Pair{
