@@ -10,8 +10,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rta/builtin/kv"
+	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/mcp"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -230,6 +232,66 @@ func TestTheHostingChapterSendsATeamToItsAnswerInTheFirstParagraph(t *testing.T)
 	} {
 		if !strings.Contains(first, want) {
 			t.Errorf("%s's first paragraph does not link %s; a team that came to host a server has to be sent to what it should do instead before it configures tokens", rel, want)
+		}
+	}
+}
+
+// The record page told a reader that `agent overview` keeps two kinds of
+// refusal apart because only one is yours to answer, and the command prints a
+// third row for everything else — a lock, a path outside the roots, a
+// connection that cannot be used — which is where the refusals an operator
+// can fix land. A reader who met `refused otherwise` on the screen had nothing
+// on the page to look it up in. The rows are read from what the command prints
+// over a record holding one refusal of each kind, so a row added to it has to be
+// named where the page says what the rows are.
+func TestTheRecordPageNamesEveryRefusalRowAgentOverviewPrints(t *testing.T) {
+	isolate(t)
+	for _, code := range []string{"core.grant.required", "core.mcp.badargs", "core.mcp.path.outside"} {
+		if err := agentlog.Append(agentlog.Entry{
+			At: time.Now(), Cap: "pg.query", Outcome: agentlog.Refused, Auth: agentlog.Blocked, Code: code,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatalf("building the built-in registry: %v", err)
+	}
+	c, ok := reg.Capability("agent.overview")
+	if !ok {
+		t.Fatal("agent.overview is not registered")
+	}
+	answer, err := c.Run(context.Background(), plugin.NewRequest(map[string]any{}, false, false))
+	if err != nil {
+		t.Fatalf("agent overview: %v", err)
+	}
+	pairs, ok := answer.(view.KeyValue)
+	if !ok {
+		t.Fatalf("agent overview answers %T, want a key/value page", answer)
+	}
+
+	const rel = "docs/30-boundary/40-audit-trail.md"
+	page := readDoc(t, repoRoot(t), rel)
+	var refusals []string
+	between := false
+	for _, p := range pairs.Pairs {
+		switch p.Key {
+		case "calls in the last hour":
+			between = true
+		case "you approved live":
+			between = false
+		default:
+			if between {
+				refusals = append(refusals, p.Key)
+			}
+		}
+	}
+	if len(refusals) != 3 {
+		t.Fatalf("agent overview printed %d rows between the hour's count and the approvals, want the three kinds of refusal: %v", len(refusals), refusals)
+	}
+	for _, key := range refusals {
+		if !strings.Contains(page, "`"+key+"`") {
+			t.Errorf("%s never names the `%s` row of agent overview", rel, key)
 		}
 	}
 }
