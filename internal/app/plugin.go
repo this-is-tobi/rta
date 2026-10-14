@@ -49,7 +49,9 @@ func newPluginCommand(reg *registry.Registry, version string, opts *globalOpts) 
 			"gRPC; rta launches it and renders what it declares on every surface.\n" +
 			"rta finds anything named " + pluginhost.Prefix + "* on your $PATH and runs it once\n" +
 			"you have approved that artifact — `rta plugin trust`.\n\n" +
-			"`rta plugin list` is the inventory; `new` and `dev` are for writing one.",
+			"`rta plugin list` is the inventory, built-in plugins and installed ones alike, and\n" +
+			"says where each came from once any is not built in; `new` and `dev` are for\n" +
+			"writing one.",
 		RunE: groupRunE,
 	}
 	root.AddCommand(newPluginListCommand(reg, opts))

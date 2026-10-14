@@ -23,11 +23,12 @@ The pane bands its rows by provenance, because that is the fact that changes how
 | --- | --- |
 | **built in** | Compiled into the rta binary you are running, which is why these need no digest |
 | **installed by rta** | rta placed these bytes from an index you attached; the row carries the version, the index and what the signature check found |
+| **in the system root** | What an image or a package put in the read-only system root, which rta reads and never writes: not yours to remove or upgrade, and the root's own `rta.lock` says where each came from, which the row carries as an installed one does |
 | **found on $PATH** | Binaries rta did not place and holds no record of |
 | **failed to start** | Approved and launched, and did not come up: the row carries how it ended and the command that takes it out of the way, and no key acts on it, because nothing of it is registered |
 | **not run** | Discovered and never launched, because nothing has approved them yet |
 
-A stock install is entirely built in, so no bands are drawn at all — one band separates nothing.
+A stock install is entirely built in, so no bands are drawn at all — one band separates nothing. `rta plugin list` says the same thing in a `Source` column, with these names for where the bytes came from, since a table has no bands to draw: a plugin that is not running is there too, under the same words for where its artifact is. A list that is built in all the way down leaves the column out for the same reason, and when it is there it is the last column, so what a script reads by position stays where it was.
 
 **There is no "official" band, and that is a fact about rta rather than an omission.** The bands say how the bytes arrived, and the first-party index is only one place they can arrive from: a plugin installed from it is *installed by rta* like any other, with the index named on its row. rta attaches no index until you ask — `rta plugin index add official` attaches the first-party one, the only name it reserves — and a band named for an index would put rta's voice behind a source instead of behind the bytes. What rta genuinely knows is whether it placed the bytes itself, and that is what the bands say. Trust here binds to a digest, never to a name — which is also why an `rta.lock` record is matched to a row by digest: an entry naming this plugin and describing different bytes belongs to a half-finished upgrade, not to what you are running.
 

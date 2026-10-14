@@ -29,7 +29,7 @@ Every one of them draws the same line in the same place: the read tier describes
 
 A capability ships built into `rta` when it needs no credential and no configuration, brings nothing outside the standard library, and reaches either nothing or one fixed public host that no input can redirect — `eol.check` asks endoflife.date, the `audit` plugin asks [OSV](../95-reference/10-glossary.md#acronyms) and endoflife.date, and neither can be pointed anywhere else. It is a plugin the moment any of that stops being true: a client library the people who never use it should not carry, a credential location it has to declare, or a destination the caller chooses, which is the line `http.get` sits behind a grant for. Every plugin in rta-plugins fails at least one of those tests, and that is what put it there; `eol` passed all of them, and that is what brought it here.
 
-What is built in, with a first command for each. `rta plugin list` is the same inventory with a count of capabilities and the highest [safety class](../95-reference/10-glossary.md#terms) each carries, and `rta explain <plugin>` lists what is under one.
+What is built in, with a first command for each. `rta plugin list` is the same inventory with a count of capabilities and the highest [safety class](../95-reference/10-glossary.md#terms) each carries, and — once any plugin is not built in — a `Source` column that says whether each one is `built in`, `installed by rta`, `in the system root` or `found on $PATH` (a stock install is built in all the way down, and the column says nothing there, so it is left out), and `rta explain <plugin>` lists what is under one.
 
 | Plugin | What it is for | A first command |
 | --- | --- | --- |

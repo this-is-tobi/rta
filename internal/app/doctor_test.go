@@ -12,6 +12,7 @@ import (
 	"github.com/this-is-tobi/rta/builtin/kv"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
 	"github.com/this-is-tobi/rta/internal/profile"
@@ -458,5 +459,105 @@ func TestDoctorNamesADashboardTileWhoseCapabilityIsGone(t *testing.T) {
 	}
 	if !strings.Contains(warns[1], "net.info") {
 		t.Errorf("second warning = %q, want net.info", warns[1])
+	}
+}
+
+// A managed plugin runs from the real path of its store, and a data directory
+// that is reached through a link — /tmp or /var on a Mac, a ~/.local a dotfiles
+// manager keeps elsewhere — never matched it as written. The doctor then warned
+// that the managed copy was shadowed, naming the managed copy itself as what ran
+// instead, on the first command a person runs after an install.
+func TestTheDoctorDoesNotCallAManagedCopyShadowedForTheSpellingOfItsDirectory(t *testing.T) {
+	real, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "elsewhere")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_DATA_DIR", filepath.Join(link, "data"))
+	t.Setenv("RTA_SYSTEM_DIR", "")
+	digest := strings.Repeat("c", 64)
+	binary := filepath.Join(real, "data", "plugins", "store", "pg", digest, "rta-plugin-pg")
+
+	if err := os.MkdirAll(filepath.Dir(plugindist.LockPath()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock := `{"plugins":[{"name":"pg","digest":"` + digest + `","version":"v1","index":"local","signature":"none stated"}]}`
+	if err := os.WriteFile(plugindist.LockPath(), []byte(lock), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(plugindist.BinDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", "store", "pg", digest, "rta-plugin-pg"),
+		filepath.Join(plugindist.BinDir(), "rta-plugin-pg")); err != nil {
+		t.Fatal(err)
+	}
+	prev := loadedPlugins
+	t.Cleanup(func() { SetLoadedPlugins(prev) })
+	SetLoadedPlugins([]*pluginhost.Client{{
+		Identity: pluginhost.Identity{Path: binary, Digest: digest},
+		Declared: plugin.Plugin{Name: "pg"},
+	}})
+
+	rows := 0
+	doctorManagedPlugins(func(check, status, detail string) {
+		rows++
+		if check != "managed pg" || status == "warn" || strings.Contains(detail, "shadowed") {
+			t.Errorf("%s is %s: %s", check, status, detail)
+		}
+	})
+	if rows != 1 {
+		t.Errorf("doctor made %d managed rows, want the one", rows)
+	}
+}
+
+// A copy in the system root that is the one running shadows the managed copy
+// like any other, and is not a stray to go and remove: discovery ranks the root
+// above the operator's store by design, which `rta plugin remove` cannot undo.
+// The row says which it is, and says nothing of the root for a copy that sits
+// anywhere else.
+func TestTheDoctorSaysWhenTheCopyShadowingAManagedPluginIsTheSystemRoots(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	t.Setenv("RTA_SYSTEM_DIR", t.TempDir())
+	digest := strings.Repeat("d", 64)
+	if err := os.MkdirAll(filepath.Dir(plugindist.LockPath()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock := `{"plugins":[{"name":"pg","digest":"` + digest + `","version":"v1","index":"local","signature":"none stated"}]}`
+	if err := os.WriteFile(plugindist.LockPath(), []byte(lock), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(plugindist.BinDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", "store", "pg", digest, "rta-plugin-pg"),
+		filepath.Join(plugindist.BinDir(), "rta-plugin-pg")); err != nil {
+		t.Fatal(err)
+	}
+	prev := loadedPlugins
+	t.Cleanup(func() { SetLoadedPlugins(prev) })
+
+	for name, c := range map[string]struct {
+		path       string
+		wantInRoot bool
+	}{
+		"the system root's": {filepath.Join(pluginhost.SystemBin(), "rta-plugin-pg"), true},
+		"one on $PATH":      {filepath.Join(t.TempDir(), "rta-plugin-pg"), false},
+	} {
+		SetLoadedPlugins([]*pluginhost.Client{{
+			Identity: pluginhost.Identity{Path: c.path, Digest: strings.Repeat("e", 64)},
+			Declared: plugin.Plugin{Name: "pg"},
+		}})
+		var status, detail string
+		doctorManagedPlugins(func(_, s, d string) { status, detail = s, d })
+		if status != "warn" || !strings.Contains(detail, "shadowed: calls run "+c.path) {
+			t.Errorf("%s: %s: %s", name, status, detail)
+		}
+		if got := strings.Contains(detail, "system root"); got != c.wantInRoot {
+			t.Errorf("%s: the row names the system root = %v, want %v: %s", name, got, c.wantInRoot, detail)
+		}
 	}
 }

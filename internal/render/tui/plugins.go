@@ -5,7 +5,6 @@ import (
 	"slices"
 
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -52,7 +51,9 @@ type pluginRow struct {
 	// compiled into the rta binary the user already chose to run, which is
 	// why it needs no path and no digest.
 	origin registry.Origin
-	// lock is what rta.lock records about this artifact, or nil.
+	// lock is what rta.lock records about this artifact, or nil — the record
+	// beside the place its bytes are in: the operator's, or the system root's
+	// own for a plugin an image or a package put there.
 	//
 	// **Matched by digest and never by name**, which is the same rule every
 	// authorisation in rta follows. A row named `pg` and a lock entry named
@@ -156,6 +157,7 @@ type pluginGroup int
 const (
 	groupBuiltin pluginGroup = iota
 	groupManaged
+	groupSystem
 	groupPath
 	groupFailed
 	groupWaiting
@@ -167,15 +169,17 @@ const (
 func (g pluginGroup) title() string {
 	switch g {
 	case groupBuiltin:
-		return "built in"
+		return plugindist.SourceBuiltIn
 	case groupManaged:
-		return "installed by rta"
+		return plugindist.SourceInstalled
+	case groupSystem:
+		return plugindist.SourceSystem
 	case groupFailed:
 		return "failed to start"
 	case groupWaiting:
 		return "not run"
 	}
-	return "found on $PATH"
+	return plugindist.SourcePath
 }
 
 func (g pluginGroup) caption() string {
@@ -184,6 +188,8 @@ func (g pluginGroup) caption() string {
 		return "compiled into the rta binary you chose to run, which is why they need no digest"
 	case groupManaged:
 		return "rta placed these bytes and recorded where from — the version is the index's claim, not a guarantee"
+	case groupSystem:
+		return "put in a read-only root by an image or a package — its own rta.lock says where each came from"
 	case groupFailed:
 		return "approved and launched, and did not come up — the reason is on each row, and the way out beside it"
 	case groupWaiting:
@@ -205,23 +211,12 @@ func (r pluginRow) group() pluginGroup {
 		return groupFailed
 	case !r.external():
 		return groupBuiltin
-	case underStore(r.origin.Path):
+	case plugindist.InStore(r.origin.Path):
 		return groupManaged
+	case plugindist.InSystemRoot(r.origin.Path):
+		return groupSystem
 	}
 	return groupPath
-}
-
-// underStore reports whether an artifact sits inside the directory rta
-// installs into.
-//
-// The path, and not a name in rta.lock, because pluginhost.Identify resolves
-// symlinks before hashing — the store serves through a bin/ directory of
-// links, so a managed plugin's origin is already its real path under the
-// store. It is also the question `rta doctor` asks to spot a $PATH copy
-// shadowing a managed one, asked the same way here so the two screens cannot
-// disagree about which artifact is which.
-func underStore(path string) bool {
-	return path != "" && strings.HasPrefix(path, plugindist.StoreDir()+string(filepath.Separator))
 }
 
 // needList names the locations a row is short of, in the plugin's own words.
@@ -299,11 +294,23 @@ func pluginRows(reg *registry.Registry, dash config.Dashboard, untrusted []plugi
 	for _, e := range plugindist.ReadLock() {
 		locked[e.Digest] = e
 	}
+	// The system root keeps a record of its own, beside the plugins it holds and
+	// written when they were installed. A row is matched against the record of
+	// the place its bytes are in, so a digest both records hold is described by
+	// the one that placed it.
+	rooted := map[string]plugindist.LockEntry{}
+	for _, e := range plugindist.ReadSystemLock() {
+		rooted[e.Digest] = e
+	}
 	rows := make([]pluginRow, 0, len(reg.Plugins())+len(untrusted))
 	for _, p := range reg.Plugins() {
 		origin, _ := reg.Origin(p.Name)
 		row := pluginRow{plugin: p, origin: origin}
-		if e, ok := locked[origin.Digest]; ok {
+		records := locked
+		if row.group() == groupSystem {
+			records = rooted
+		}
+		if e, ok := records[origin.Digest]; ok {
 			row.lock = &e
 		}
 		for _, n := range p.Needs {
@@ -678,7 +685,8 @@ func (m Model) pluginsView() string {
 // bound to, so it is worth being able to see it here and compare it against
 // what a grant was issued against, without running doctor.
 // pluginOrigin is the provenance half of the detail line: the artifact, and —
-// for one rta placed itself — what it recorded about placing it.
+// for one rta placed itself, or one that an image or a package placed in the
+// system root — what was recorded about placing it.
 //
 // The lock's three facts are here rather than only in `rta doctor` because
 // this is the pane somebody opens to ask what a plugin *is*, and until now the
@@ -696,7 +704,8 @@ func pluginOrigin(row pluginRow) string {
 	if !row.external() {
 		return "built in"
 	}
-	if row.group() == groupManaged {
+	switch row.group() {
+	case groupManaged:
 		if row.lock == nil {
 			return "in rta's store · " + row.origin.Short() +
 				" — rta.lock has no record of these bytes; `" + plugin.SurfaceTUI.Call("audit.doctor") +
@@ -705,7 +714,18 @@ func pluginOrigin(row pluginRow) string {
 		// The same three facts `rta doctor` prints for a managed plugin, in
 		// the same words. Two screens describing one artifact differently is
 		// how an operator ends up unsure which of them to believe.
-		return fmt.Sprintf("installed by rta · %s from index %q · signature: %s · %s",
+		return fmt.Sprintf("%s · %s from index %q · signature: %s · %s", plugindist.SourceInstalled,
+			row.lock.Version, row.lock.Index, row.lock.Signature, row.origin.Short())
+	case groupSystem:
+		// The root's own record, read the same way: by digest, and never by
+		// the name an entry shares with a row. Nothing is said to be drifting,
+		// since the root is the image's or the package's to keep and no
+		// command of rta's repairs it.
+		if row.lock == nil {
+			return plugindist.SourceSystem + " · " + row.origin.Short() +
+				" — the root's rta.lock has no record of these bytes"
+		}
+		return fmt.Sprintf("%s · %s from index %q · signature: %s · %s", plugindist.SourceSystem,
 			row.lock.Version, row.lock.Index, row.lock.Signature, row.origin.Short())
 	}
 	return "$PATH: " + row.origin.Path + " · " + row.origin.Short()

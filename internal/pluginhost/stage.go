@@ -26,13 +26,37 @@ const staleRun = 24 * time.Hour
 // managed store, the system root's, or the copies staged below.
 func inStore(exe string) bool {
 	for _, store := range []string{ManagedStore(), SystemStore(), ManagedRun()} {
-		if store == "" {
-			continue
+		if Beneath(exe, store) {
+			return true
 		}
-		for _, form := range withTarget(store) {
-			if inside(exe, form) {
-				return true
-			}
+	}
+	return false
+}
+
+// Beneath reports whether path lies below dir — below, so dir itself is not —
+// in either spelling dir has: as it was named, and with every symlink in it
+// resolved. An empty path or directory names nothing.
+//
+// **Both spellings, because the two sides of the question are not written by
+// the same hand.** An artifact's path comes out of Identify with its symlinks
+// resolved, since the sandbox needs the file itself, while a directory is
+// whatever RTA_DATA_DIR, XDG_DATA_HOME or the home directory said, and on the
+// machines people use /tmp and /var are links, as is the ~/.local a dotfiles
+// manager keeps elsewhere. A prefix test on the spelling that was typed alone
+// read a store reached through one as somewhere else: every plugin rta had
+// installed was reported as found on $PATH, and `rta doctor` warned that the
+// managed copy was shadowed, naming that very copy as the one that ran.
+//
+// Asked of the store, the system root's and the staged copies by the launch,
+// and of the first two by every screen that says where a plugin came from, so
+// they cannot disagree about which artifact is which.
+func Beneath(path, dir string) bool {
+	if path == "" || dir == "" {
+		return false
+	}
+	for _, form := range withTarget(dir) {
+		if path != form && inside(path, form) {
+			return true
 		}
 	}
 	return false
