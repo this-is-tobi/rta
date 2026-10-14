@@ -1,14 +1,12 @@
 # Hosting a server
 
-Over stdio, `rta mcp serve` is a child process of one client on your own machine: no daemon, no port, nothing to start. `--http` is the other transport, for running rta somewhere that is not your own machine — a dev platform, a Codespace, a per-user pod. This page is that transport: how a caller proves who it is, how an orchestrator probes it, what it leaves out, and what stops being true. Why that instance should be **one per person** and not one for everyone is [Why not one server for everyone](./67-containers-and-images.md#why-not-one-server-for-everyone); the deployment is [Kubernetes](./80-kubernetes.md).
+Over stdio, `rta mcp serve` is a child process of one client on your own machine: no daemon, no port, nothing to start. `--http` is the other transport, for running rta somewhere that is not your own machine — a dev platform, a Codespace, a per-user pod. This page is that transport: how a caller proves who it is, how an orchestrator probes it, what it leaves out, and what stops being true. **The instance is one person's, not a server a team shares.** A shared one is a single process holding the union of every member's credentials and authenticating to your clusters and databases as itself, so their own per-person access control sees one service account and one compromised agent reaches everything the process was configured with. A team shares the image and the configuration and runs one instance each: [A team: share the configuration, not the process](./67-containers-and-images.md#a-team-share-the-configuration-not-the-process) is how, and [Why not one server for everyone](./67-containers-and-images.md#why-not-one-server-for-everyone) is what a shared one costs. The deployment is [Kubernetes](./80-kubernetes.md), a chart whose unit is the instance rather than the release.
 
 ```bash
 rta mcp serve --http 127.0.0.1:8443 --token-file tokens.txt --as work
 ```
 
-A second transport, opt-in: the server listens on TCP instead of speaking stdio to a parent process, which is what running it somewhere other than your own machine actually needs.
-
-Putting that somewhere is its own subject: [Kubernetes](./80-kubernetes.md) is the deployment, with a chart whose unit is the instance rather than the release.
+It is opt-in: the server listens on TCP instead of speaking stdio to a parent process.
 
 A caller now has to prove who it is over the wire, since there is no parent process left to trust instead. Two mechanisms, usable together:
 

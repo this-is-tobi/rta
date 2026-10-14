@@ -212,6 +212,28 @@ func TestTheHostingChapterNamesWhatARemoteServerHides(t *testing.T) {
 	}
 }
 
+// A person who sets out to run rta for a team is led through the hosting page,
+// the operator page and the containers page, and is told on the third that one
+// shared server is the thing not to build: the reason was a link at the foot of
+// the hosting page's first paragraph, and the answer to "for a team" — share the
+// image and the configuration, run one instance each — was a section nobody
+// had been sent to. The page that is read first for a hosted server says in its
+// first paragraph that the instance is one person's, and links both the section
+// that answers a team and the table of what a shared one costs.
+func TestTheHostingChapterSendsATeamToItsAnswerInTheFirstParagraph(t *testing.T) {
+	const rel = "docs/30-boundary/65-hosting-a-server.md"
+	_, afterTitle, _ := strings.Cut(readDoc(t, repoRoot(t), rel), "\n\n")
+	first, _, _ := strings.Cut(afterTitle, "\n\n")
+	for _, want := range []string{
+		"(./67-containers-and-images.md#a-team-share-the-configuration-not-the-process)",
+		"(./67-containers-and-images.md#why-not-one-server-for-everyone)",
+	} {
+		if !strings.Contains(first, want) {
+			t.Errorf("%s's first paragraph does not link %s; a team that came to host a server has to be sent to what it should do instead before it configures tokens", rel, want)
+		}
+	}
+}
+
 // namesCapability reports whether prose names id in backticks: the ID itself,
 // a `prefix.*` covering it, or — when wholeNamespace says the gate takes all
 // of it — the bare plugin name.
