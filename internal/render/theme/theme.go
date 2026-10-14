@@ -304,7 +304,11 @@ func ClassifyStatus(s string) StatusKind {
 		// is wrong, a decision is outstanding — and rather than neutral,
 		// because "installed and doing nothing" is the state a trust gate has
 		// to make impossible to miss.
-		strings.HasPrefix(v, "untrusted"):
+		strings.HasPrefix(v, "untrusted") ||
+		// A part of an overview its credential cannot read (the nodes of a
+		// namespaced token), said beside the parts it could: the answer is
+		// partial and the page still worth reading, so amber and not red.
+		strings.HasPrefix(v, "could not be read"):
 		return StatusWarn
 	case strings.HasPrefix(v, "error") || strings.HasPrefix(v, "expired") ||
 		strings.HasPrefix(v, "invalid") || strings.HasPrefix(v, "fail") ||
@@ -314,7 +318,14 @@ func ClassifyStatus(s string) StatusKind {
 		strings.HasPrefix(v, "critical") ||
 		// A note past its due date, the one grade the note list gives that a
 		// person is meant to act on today, and it was the one drawn plainest.
-		strings.HasPrefix(v, "overdue"):
+		strings.HasPrefix(v, "overdue") ||
+		// How an overview says its backend is not there, in the one line that is
+		// its headline: the docker daemon and the kube cluster answer with a
+		// key/value page rather than an error, so that the page can still say
+		// what the configuration knows. They were drawn plainest, on a dashboard
+		// of green ones.
+		strings.HasPrefix(v, "did not answer") || strings.HasPrefix(v, "was never contacted") ||
+		strings.HasPrefix(v, "answered, and refused") || strings.HasPrefix(v, "answered, and did not accept"):
 		return StatusBad
 	case strings.HasPrefix(v, "closed") || strings.HasPrefix(v, "info") ||
 		strings.HasPrefix(v, "none") || strings.HasPrefix(v, "disabled") ||
