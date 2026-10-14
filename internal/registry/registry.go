@@ -5,6 +5,7 @@ package registry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -31,11 +32,42 @@ import (
 type Origin struct {
 	Path   string
 	Digest string
+	// Dev marks the build `rta plugin dev` made from a directory for one run.
+	// It is registered for that run only, and its binary is deleted when the
+	// run ends unless --keep says otherwise, so nothing an operator writes down
+	// about it names something installed — a pin names a build that only a run
+	// of the same directory will have again — and a hint that calls it "the
+	// installed one" says what is not true of it. Like the rest of an Origin it
+	// is the loader's to say and not the plugin's, and only registerDev sets it.
+	Dev bool
 }
 
 // External reports whether this came from a binary on $PATH rather than from
 // the rta binary the operator already chose to run.
 func (o Origin) External() bool { return o.Path != "" }
+
+// Called is the artifact as a message names the one a pin is compared with:
+// the installed plugin, or for a build made for one run, the plugin that run
+// built from a directory. A message that spoke of "the installed" plugin
+// while a different build answered to the namespace pointed the operator at
+// bytes that were not running.
+func (o Origin) Called(namespace string) string {
+	if o.Dev {
+		return fmt.Sprintf("the %q this run built from a directory", namespace)
+	}
+	return fmt.Sprintf("the installed %q", namespace)
+}
+
+// Which is the pin a hint tells an operator to compare theirs with, and for a
+// build made for one run, what that pin is worth: it names a build that exists
+// for this run only, so it is not one to copy into a file.
+func (o Origin) Which(namespace string) string {
+	pin := "`" + namespace + "@" + o.Short() + "`"
+	if o.Dev {
+		return "this run uses " + pin + ", built from a directory for this run only"
+	}
+	return "the installed one is " + pin
+}
 
 // Short is the digest abbreviated for display, and for the prefix match an
 // operator's `plugins.<ns>@<digest>` pin is compared against.
@@ -114,6 +146,62 @@ func (r *Registry) RegisterFrom(p plugin.Plugin, origin Origin) error {
 	r.plugins[p.Name] = p
 	r.origins[p.Name] = origin
 	return nil
+}
+
+// ErrBuiltIn is what RegisterOver answers for a namespace compiled into rta:
+// nothing an operator installs or builds takes that one over, for a run or
+// otherwise.
+var ErrBuiltIn = errors.New("is built into rta")
+
+// RegisterOver is RegisterFrom for a plugin that may take the namespace an
+// installed one holds. It drops that plugin — its capabilities with it — and
+// registers p in its place, and says whose origin it displaced: the zero
+// Origin when the namespace was free, the installed copy's when it was not.
+//
+// It exists for `rta plugin dev`, which runs a directory the author named in
+// the command they just typed. A refusal there read "namespace already
+// registered", and an installed copy of the very plugin being written is the
+// usual way to meet it: the loop the docs teach ends in `go build` onto $PATH
+// and `rta plugin trust`, and the next edit-and-run was refused, with a hint
+// that sent the author off to rename a plugin that is theirs.
+//
+// **Everything about the displaced plugin goes, and nothing of it is
+// inherited.** The origin is replaced with the capabilities, in one step, so
+// what is read off the registry afterwards — a profile's pin, a grant's
+// digest, the MCP gate's artifact check — compares against the bytes that are
+// running and not against the ones that were installed. A pin names a build,
+// so a connection stated for the installed copy meets a stale pin when a
+// different build answers to its namespace, which is the refusal a pin is
+// for. What a registry cannot do is reach what was already resolved by
+// namespace alone before this ran, and the caller owns that: the operator's
+// pinned configuration is internal/pluginconf's Resolver.Without.
+//
+// **A built-in is never displaced.** Its namespace is compiled into the
+// binary the operator chose to run, its configuration is unpinned because it
+// has no separate artifact, and a plugin standing in for one would be handed
+// that configuration. The answer is ErrBuiltIn, as `plugin new` refuses the
+// same name.
+//
+// A declaration that fails Validate displaces nothing: it is checked before
+// the namespace is touched, so a plugin that cannot be registered does not
+// leave its namespace empty on the way to saying so.
+func (r *Registry) RegisterOver(p plugin.Plugin, origin Origin) (Origin, error) {
+	if err := p.Validate(); err != nil {
+		return Origin{}, fmt.Errorf("registering plugin: %w", err)
+	}
+	held, taken := r.origins[p.Name]
+	if !taken {
+		return Origin{}, r.RegisterFrom(p, origin)
+	}
+	if !held.External() {
+		return Origin{}, fmt.Errorf("namespace %q %w", p.Name, ErrBuiltIn)
+	}
+	for _, c := range r.plugins[p.Name].Capabilities {
+		delete(r.caps, c.ID)
+	}
+	delete(r.plugins, p.Name)
+	delete(r.origins, p.Name)
+	return held, r.RegisterFrom(p, origin)
 }
 
 // settled is run, capability id's handler, with its error read through

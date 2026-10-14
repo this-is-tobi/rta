@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,8 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/builtin/all"
+	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
@@ -1251,5 +1254,173 @@ func TestTheDevReportCountsWhatItsSandboxDenies(t *testing.T) {
 		if got := sandboxedLine(deny); !strings.HasPrefix(got, want) {
 			t.Errorf("got %q, want it to start %q", got, want)
 		}
+	}
+}
+
+// devClientFor is the plugin a directory built, as plugin dev holds it once the
+// host has opened it: the declaration p, from a temporary binary with its own
+// digest.
+func devClientFor(p plugin.Plugin, digest string) *pluginhost.Client {
+	return &pluginhost.Client{
+		Identity: pluginhost.Identity{Path: "/tmp/rta-plugin-dev-1/rta-plugin-dev", Digest: digest},
+		Declared: p,
+	}
+}
+
+// `rta plugin dev` runs the directory it was given even when the plugin is
+// installed. The loop the docs teach ends in a `go build` onto $PATH and `rta
+// plugin trust`, and the next edit-and-run was refused as "namespace already
+// registered", with a hint to rename a plugin that is the author's own. The
+// registry now names the build that is running, and the run says which
+// installed copy it did not use.
+func TestPluginDevRunsTheDirectoryInPlaceOfTheInstalledCopyAndSaysSo(t *testing.T) {
+	reg, installedOrigin := configCapability(t)
+	devDigest := "fedcba9876543210fedcba"
+	dev := plugin.Plugin{Name: "pg", Summary: "postgres, edited", Capabilities: []plugin.Capability{{
+		ID: "pg.query", Summary: "run a query", Safety: plugin.Read,
+		Run: func(context.Context, plugin.Request) (view.View, error) {
+			return view.Text{Body: "from the directory"}, nil
+		},
+	}}}
+
+	var stderr bytes.Buffer
+	if verr := registerDev(reg, devClientFor(dev, devDigest), &stderr); verr != nil {
+		t.Fatalf("plugin dev refused a plugin that is also installed: %v (hint: %s)", verr, verr.Hint)
+	}
+	got, _ := reg.Origin("pg")
+	if got.Digest != devDigest {
+		t.Errorf("pg is registered from %+v, want the build from the directory (%s)", got, devDigest)
+	}
+	c, _ := reg.Capability("pg.query")
+	v, err := c.Run(context.Background(), plugin.NewRequest(nil, false, false))
+	if err != nil || v.(view.Text).Body != "from the directory" {
+		t.Errorf("pg.query answered %v, %v; the installed copy is still the one that runs", v, err)
+	}
+	for _, want := range []string{"pg is also installed", installedOrigin.Path, installedOrigin.Short(), "the directory instead"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("the notice does not say %q: %q", want, stderr.String())
+		}
+	}
+}
+
+// What an operator pinned to the installed bytes does not reach a different
+// build that answers to the same namespace: the section is resolved once, by
+// namespace, against the installed artifact, and a directory run in its place
+// would otherwise be handed it on every call.
+func TestPluginDevDoesNotHandTheInstalledCopysPinnedConfigToTheBuild(t *testing.T) {
+	reg, installedOrigin := configCapability(t)
+	t.Cleanup(func() { SetPluginConfig(nil, nil) })
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
+		"pg@" + installedOrigin.Short(): {"host": "db.internal"},
+	}}), reg.Origin))
+	queryCap, _ := reg.Capability("pg.query")
+	if PluginConfig(queryCap)["host"] != "db.internal" {
+		t.Fatalf("the installed copy does not read its own section: %v", PluginConfig(queryCap))
+	}
+
+	dev := plugin.Plugin{Name: "pg", Summary: "postgres, edited", Capabilities: []plugin.Capability{{
+		ID: "pg.query", Summary: "run a query", Safety: plugin.Read,
+		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+	}}}
+	if verr := registerDev(reg, devClientFor(dev, "fedcba9876543210fedcba"), io.Discard); verr != nil {
+		t.Fatal(verr)
+	}
+	if got := PluginConfig(queryCap); got != nil {
+		t.Errorf("the build from the directory is handed the section pinned to the installed digest: %v", got)
+	}
+}
+
+// A directory whose build is the installed artifact, byte for byte, is that
+// artifact: what is pinned to those bytes is still theirs, and the run says
+// which copy it replaced all the same.
+func TestPluginDevKeepsPinnedConfigForABuildThatIsTheInstalledArtifact(t *testing.T) {
+	reg, installedOrigin := configCapability(t)
+	t.Cleanup(func() { SetPluginConfig(nil, nil) })
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
+		"pg@" + installedOrigin.Short(): {"host": "db.internal"},
+	}}), reg.Origin))
+	queryCap, _ := reg.Capability("pg.query")
+
+	dev := plugin.Plugin{Name: "pg", Summary: "postgres", Capabilities: []plugin.Capability{{
+		ID: "pg.query", Summary: "run a query", Safety: plugin.Read,
+		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+	}}}
+	if verr := registerDev(reg, devClientFor(dev, installedOrigin.Digest), io.Discard); verr != nil {
+		t.Fatal(verr)
+	}
+	if got := PluginConfig(queryCap); got["host"] != "db.internal" {
+		t.Errorf("a build identical to the installed artifact lost the section pinned to it: %v", got)
+	}
+}
+
+// The notice says what stops applying, since nothing else would: the section
+// pinned to the installed digest is dropped without a word, and a profile
+// entry for the installed copy is then refused as a stale pin in a run that
+// never asked to change the pin.
+func TestPluginDevSaysThatTheInstalledCopysPinsDoNotApplyToTheBuild(t *testing.T) {
+	reg, installedOrigin := configCapability(t)
+	t.Cleanup(func() { SetPluginConfig(nil, nil) })
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
+		"pg@" + installedOrigin.Short(): {"host": "db.internal"},
+	}}), reg.Origin))
+	dev := plugin.Plugin{Name: "pg", Summary: "postgres, edited", Capabilities: []plugin.Capability{{
+		ID: "pg.query", Summary: "run a query", Safety: plugin.Read,
+		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+	}}}
+
+	var stderr bytes.Buffer
+	if verr := registerDev(reg, devClientFor(dev, "fedcba9876543210fedcba"), &stderr); verr != nil {
+		t.Fatal(verr)
+	}
+	for _, want := range []string{"the directory instead", "a `plugins:` section", "profile entries pinned to the installed copy", "do not apply"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("the notice does not say %q: %q", want, stderr.String())
+		}
+	}
+	if got, _ := reg.Origin("pg"); !got.Dev {
+		t.Errorf("the registry does not mark %+v as made for this run", got)
+	}
+
+	// A build that is the installed artifact keeps what was pinned to it, and
+	// the notice does not claim otherwise.
+	reg2, installed2 := configCapability(t)
+	stderr.Reset()
+	if verr := registerDev(reg2, devClientFor(dev, installed2.Digest), &stderr); verr != nil {
+		t.Fatal(verr)
+	}
+	if strings.Contains(stderr.String(), "do not apply") {
+		t.Errorf("a build identical to the installed artifact was said to lose its pins: %q", stderr.String())
+	}
+}
+
+// A namespace compiled into rta is refused, and the hint is the one that fits
+// it: the old hint spoke of another installed plugin, which is not what is in
+// the way of `rta plugin dev` in a plugin named sys. The run changes nothing
+// the built-in owns.
+func TestPluginDevRefusesABuiltInNamespaceAndSaysWhoseItIs(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := plugin.Plugin{Name: "sys", Summary: "mine", Capabilities: []plugin.Capability{{
+		ID: "sys.mine", Summary: "mine", Safety: plugin.Read,
+		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+	}}}
+	var stderr bytes.Buffer
+	verr := registerDev(reg, devClientFor(dev, "fedcba9876543210fedcba"), &stderr)
+	if verr == nil {
+		t.Fatal("a plugin named after a built-in was registered over it")
+	}
+	if verr.Code != "plugin.dev.register" || !strings.Contains(verr.Message, "built into rta") {
+		t.Errorf("refused as %s %q, want a message saying the namespace is built in", verr.Code, verr.Message)
+	}
+	if strings.Contains(verr.Hint, "another installed plugin") || !strings.Contains(verr.Hint, "Plugin().Name") {
+		t.Errorf("the hint does not fit a built-in: %q", verr.Hint)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("a refused registration said %q", stderr.String())
+	}
+	if got, _ := reg.Origin("sys"); got.External() {
+		t.Errorf("sys is registered from %+v after the refusal", got)
 	}
 }

@@ -79,9 +79,13 @@ func resolvePluginKey(reg *registry.Registry, rest string) (configKey, *view.Err
 	case origin.External():
 		heading = ns + "@" + origin.Short()
 		if pinned && (len(pin) < 8 || !strings.HasPrefix(origin.Digest, pin)) {
+			hint := origin.Which(ns) + " — or leave the pin off, and rta writes it"
+			if origin.Dev {
+				hint = origin.Which(ns) + "; a pin is for a build that stays installed"
+			}
 			return configKey{}, view.Errorf("core.config.key.pin",
-				"this pin does not match the installed %q", ns).
-				WithHint("the installed one is `" + heading + "` — or leave the pin off, and rta writes it")
+				"this pin does not match %s", origin.Called(ns)).
+				WithHint(hint)
 		}
 	case pinned:
 		return configKey{}, view.Errorf("core.config.key.pin", "%q is built in and has no artifact to pin", ns).

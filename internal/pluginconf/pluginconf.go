@@ -143,9 +143,13 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 			}
 			r.sections[ns], r.headings[ns] = cfg.Plugins[section], section
 		case !pinned:
+			hint := "write it as `" + ns + "@" + o.Short() + ":`"
+			if o.Dev {
+				hint = o.Which(ns) + "; pin the section to the build you install"
+			}
 			problems = append(problems, Problem{Section: section,
 				Reason: fmt.Sprintf("%q is an installed plugin, so its config must name the artifact it is for", ns),
-				Hint:   "write it as `" + ns + "@" + o.Short() + ":`"})
+				Hint:   hint})
 		case len(pin) < minPinLen:
 			// Below the floor internal/profile, internal/plugintrust and
 			// internal/mcp's own digest-prefix matches all share: short
@@ -156,14 +160,13 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 			// separate one.
 			problems = append(problems, Problem{Section: section,
 				Reason: fmt.Sprintf("this pin for %q is too short to trust", ns),
-				Hint: "the installed one is `" + ns + "@" + o.Short() + "` — at least " +
-					strconv.Itoa(minPinLen) + " hex characters"})
+				Hint:   o.Which(ns) + " — at least " + strconv.Itoa(minPinLen) + " hex characters"})
 		case !strings.HasPrefix(o.Digest, pin):
 			// A stale pin is the ordinary case after an upgrade, and saying
 			// which digest is installed is the whole point.
 			problems = append(problems, Problem{Section: section,
-				Reason: fmt.Sprintf("this pin does not match the installed %q", ns),
-				Hint:   "the installed one is `" + ns + "@" + o.Short() + "`"})
+				Reason: "this pin does not match " + o.Called(ns),
+				Hint:   o.Which(ns)})
 		default:
 			r.sections[ns], r.headings[ns] = cfg.Plugins[section], section
 		}
@@ -182,6 +185,34 @@ func (r *Resolver) For(namespace string) map[string]any {
 		return nil
 	}
 	return r.sections[namespace]
+}
+
+// Without is r for a run in which namespace names another artifact than the
+// one its section was matched to: the section, and the heading it was read
+// under, are left out, and every other namespace answers as it did.
+//
+// A section is resolved once, at startup, against the artifact installed under
+// its namespace, and For answers by namespace alone from then on — the pin was
+// checked before and is not looked at again. That holds for as long as the
+// namespace keeps naming that artifact. `rta plugin dev` is the one command
+// that changes it mid-process, by running a directory in place of an installed
+// copy, and the values an operator pinned to the installed bytes are exactly
+// what the package exists not to hand to whatever else answers to the name.
+// Nil stays nil, and r itself is not changed.
+func (r *Resolver) Without(namespace string) *Resolver {
+	if r == nil {
+		return nil
+	}
+	out := &Resolver{
+		sections: make(map[string]map[string]any, len(r.sections)),
+		headings: make(map[string]string, len(r.headings)),
+	}
+	for ns, section := range r.sections {
+		if ns != namespace {
+			out.sections[ns], out.headings[ns] = section, r.headings[ns]
+		}
+	}
+	return out
 }
 
 // Section returns the heading For's values were written under — `pg@1a2b3c4d`

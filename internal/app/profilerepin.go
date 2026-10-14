@@ -123,6 +123,14 @@ func runProfileRepin(cmd *cobra.Command, only string, all bool, reg *registry.Re
 			"%q is built in and has no artifact to pin", ns).
 			WithHint("nothing to repin — a built-in namespace is never pinned")
 	}
+	// A build that plugin dev made for this run is not installed either, and
+	// is the one a hint might have named: every entry written to it would be
+	// pinned to the digest of a build made for that run only.
+	if o.Dev {
+		return nil, view.Errorf("core.profile.repin.dev",
+			"%q is the build this run made from a directory, for this run only", ns).
+			WithHint("install the build, then run `rta profile repin --all --plugin " + ns + "` outside plugin dev")
+	}
 	newPin := o.Short()
 
 	// The one place a key is measured against what was asked for, so the
