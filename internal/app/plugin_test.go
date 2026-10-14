@@ -1676,3 +1676,22 @@ func TestTheScaffoldSaysToTrustWhatItBuildsAndWhereItHasToBe(t *testing.T) {
 		}
 	}
 }
+
+// Trust never runs the artifact, so it cannot know what it declares, and what
+// it said — "it loads on your next command" — was a promise a file that
+// declares another namespace breaks. The sentence carries the condition.
+func TestPluginTrustSaysItLoadsOnlyIfTheNamespaceIsTheFilesName(t *testing.T) {
+	run := session(t, registry.New())
+	binDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(binDir, pluginhost.Prefix+"forecast"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+	out, errOut, err := run("plugin", "trust", "forecast")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "if it declares the namespace `forecast`") {
+		t.Errorf("trust promises the load without the condition: %q", out)
+	}
+}
