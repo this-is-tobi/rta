@@ -152,6 +152,12 @@ func TestResultPhrasesAreReadFromTheCodesTheRecordAlreadyCarries(t *testing.T) {
 		{agentlog.Entry{Outcome: agentlog.Refused, Code: "core.lock.frozen"}, "refused · locked"},
 		{agentlog.Entry{Outcome: agentlog.Refused, Code: "core.consent.declined"}, "refused · you declined"},
 		{agentlog.Entry{Outcome: agentlog.Refused, Code: "core.mcp.path.outside"}, "refused · path outside the roots"},
+		// A grant that names a connection the call then could not use: which half
+		// failed is what the row can say, and the operator reading it is the one
+		// who has to fix it.
+		{agentlog.Entry{Outcome: agentlog.Refused, Code: "core.profile.secret.unavailable"}, "refused · credential unreadable"},
+		{agentlog.Entry{Outcome: agentlog.Refused, Code: "core.profile.tunnel.unavailable"}, "refused · forward did not open"},
+		{agentlog.Entry{Outcome: agentlog.Refused, Code: "core.profile.unusable"}, "refused · connection unusable"},
 		{agentlog.Entry{Outcome: agentlog.Refused, Code: "kv.passphrase.missing"}, "refused · kv.passphrase.missing"},
 		// A row from before the code and the reason were stored apart.
 		{agentlog.Entry{Outcome: agentlog.Refused, Reason: "core.grant.required: no active grant for kv.get"}, "refused · no grant"},
@@ -293,7 +299,7 @@ func TestTheOverviewTellsWhatNeedsYourGrantFromWhatWasMalformed(t *testing.T) {
 	if got, want := overviewPair(t, v, "malformed or unknown calls"), "3 — note.add, net.dns, no_such_tool"; got != want {
 		t.Errorf("malformed or unknown calls = %q, want %q", got, want)
 	}
-	if got, want := overviewPair(t, v, "refused otherwise"), "1 — sys.cpu"; got != want {
+	if got, want := overviewPair(t, v, "refused otherwise"), "1 — sys.cpu; `rta agent log --refused --detail` says why"; got != want {
 		t.Errorf("refused otherwise = %q, want %q", got, want)
 	}
 	for _, p := range v.(view.KeyValue).Pairs {

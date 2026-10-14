@@ -8,7 +8,7 @@ rta agent log         # one line per call, oldest first — the latest is at the
 rta agent pending     # anything parked, waiting on you — see Grants for live consent
 ```
 
-`agent overview` keeps two kinds of refusal apart, because only one is yours to answer: `needs your grant` names the capabilities an agent asked for that only a grant would let through, and `malformed or unknown calls` names the ones that asked for an argument or a tool that does not exist, which the agent has to fix and no grant would change.
+`agent overview` keeps two kinds of refusal apart, because only one is yours to answer: `needs your grant` names the capabilities an agent asked for that only a grant would let through, and `malformed or unknown calls` names the ones that asked for an argument or a tool that does not exist, which the agent has to fix and no grant would change. `refused otherwise` counts the rest — a lock, a path outside the roots, a pace limit, a connection or credential a grant names that the server could not use — and says where the reason is: `rta agent log --refused --detail`, because the compact line keeps each to a few words (`refused · credential unreadable`, `refused · forward did not open`) and the sentence is only in the detail.
 
 ## What a line carries
 

@@ -105,6 +105,15 @@ func refusalWords(code string) string {
 	case "core.record.unwritable":
 		return "record unwritable"
 	}
+	switch code {
+	case "core.profile.secret.unavailable":
+		// The two the operator is sent to this log for: a connection a grant
+		// names that a call could not use, and which half of it failed is the
+		// first thing the row can say. The sentence is under --detail.
+		return "credential unreadable"
+	case "core.profile.tunnel.unavailable":
+		return "forward did not open"
+	}
 	switch {
 	case strings.HasPrefix(code, "core.lock."):
 		return "locked"

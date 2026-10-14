@@ -546,6 +546,7 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	sf := req.Surface()
 	listed := sf.CapabilityWith("agent.log", "refused") + " lists them"
+	why := sf.CapabilityWith("agent.log", "refused", "detail") + " says why"
 	pairs := []view.Pair{
 		{Key: "waiting on you", Value: nowWaiting},
 		{Key: "connected now", Value: connected},
@@ -560,7 +561,12 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 		pairs = append(pairs, view.Pair{Key: "malformed or unknown calls", Value: refusalCount(malformed, "")})
 	}
 	if len(other) > 0 {
-		pairs = append(pairs, view.Pair{Key: "refused otherwise", Value: refusalCount(other, "")})
+		// With where the reason is: this bucket is every refusal that is neither a
+		// grant nor a malformed call — a lock, a path outside the roots, a pace, a
+		// connection or credential the server could not use — and the compact log
+		// keeps each to a few words. The last of those is the operator's to fix and
+		// the sentence that says what is only under --detail.
+		pairs = append(pairs, view.Pair{Key: "refused otherwise", Value: refusalCount(other, why)})
 	}
 	pairs = append(pairs, view.Pair{Key: "you approved live", Value: fmt.Sprintf("%d", approved)})
 	if agentlog.Started() {
