@@ -696,7 +696,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 	// why. The footer carries the message now (footerFor), where the height
 	// is already budgeted.
 	cf.form = huh.NewForm(cf.groups(fields, names)...).WithKeyMap(formKeyMap()).
-		WithShowHelp(false).WithShowErrors(false)
+		WithTheme(formTheme()).WithShowHelp(false).WithShowErrors(false)
 	return cf
 }
 

@@ -232,7 +232,7 @@ func newThemeForm(target themeTarget) *themeForm {
 	// huh's help line is off here as on every form: the footer speaks for
 	// the focused field (fieldHints), in the app's one vocabulary.
 	tf.form = huh.NewForm(huh.NewGroup(fields...)).WithKeyMap(formKeyMap()).
-		WithShowHelp(false).WithShowErrors(false)
+		WithTheme(formTheme()).WithShowHelp(false).WithShowErrors(false)
 	return tf
 }
 
@@ -452,7 +452,7 @@ func newThemePicker(targets []themeTarget, active string) *themePicker {
 			Title("whose palette is this?").
 			Options(opts...).
 			Value(&tp.value),
-	)).WithShowHelp(false).WithShowErrors(false)
+	)).WithTheme(formTheme()).WithShowHelp(false).WithShowErrors(false)
 	return tp
 }
 

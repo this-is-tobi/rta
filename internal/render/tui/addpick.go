@@ -63,7 +63,7 @@ func newAddPickForm(c plugin.Capability, active string, choices []pinChoice, ret
 			Title("which connection is the " + c.ID + " tile about?").
 			Options(opts...).
 			Value(&ap.value),
-	)).WithShowHelp(false).WithShowErrors(false)
+	)).WithTheme(formTheme()).WithShowHelp(false).WithShowErrors(false)
 	return ap
 }
 
