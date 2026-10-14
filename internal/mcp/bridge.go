@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/this-is-tobi/rta/internal/agentlog"
@@ -24,6 +25,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/internal/lockdown"
+	"github.com/this-is-tobi/rta/internal/near"
 	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
@@ -113,7 +115,24 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 // and those are exactly the calls an operator grepping outcome=refused is
 // looking for. The name is bounded and cleaned like a client's own name,
 // because it is the caller's to choose.
+//
+// The answer names the nearest tool this server offers, when one is close
+// enough to be a slip of the keyboard (`kv_gett`, `pg_schema` for
+// `pg_schema_dump`, `kv.get` for `kv_get`): the names are area_thing_action and
+// easy to near-miss, and the other two surfaces already answer a misspelt
+// command with its nearest, so an agent that mistyped one of two hundred names
+// corrects itself instead of fetching the whole tool list again or guessing at
+// a different tool. The candidates are the offered names and nothing else, and
+// the answer is a function of those and the word typed, so a capability that is
+// never a tool (`grant_allow`) is answered exactly as a name that does not
+// exist at all is — the uniformity the docs promise for it — and no suggestion
+// can lead an agent to a name that is withheld from it.
 func recordUnknownTools(known map[string]bool, opts Options) sdk.Middleware {
+	offered := make([]string, 0, len(known))
+	for name := range known {
+		offered = append(offered, name)
+	}
+	slices.Sort(offered)
 	return func(next sdk.MethodHandler) sdk.MethodHandler {
 		return func(ctx context.Context, method string, req sdk.Request) (sdk.Result, error) {
 			if method == "tools/call" {
@@ -133,11 +152,70 @@ func recordUnknownTools(known map[string]bool, opts Options) sdk.Middleware {
 					}
 					record(rec)
 					opts.refusals.hold(ctx, refusalKey(ctx, opts))
+					// The bounded name, not the raw one: the work of finding the
+					// nearest is the product of two lengths, and the caller
+					// chooses this one.
+					if nearest := nearestTool(name, offered); nearest != "" {
+						return nil, &jsonrpc.Error{
+							Code:    jsonrpc.CodeInvalidParams,
+							Message: fmt.Sprintf("unknown tool %q — did you mean %s?", name, nearest),
+						}
+					}
 				}
 			}
 			return next(ctx, method, req)
 		}
 	}
+}
+
+// nearestTool is the tool among offered that a name nobody offers was most
+// likely meant to be, or "" when none is close enough to say so with the
+// confidence a correction carries. offered is sorted, so a tie is the same
+// answer every time.
+//
+// **The same area, and one slip away.** near.Word, which answers a misspelt
+// command and a misspelt config key, allows a third of the word's length, and
+// that is tuned for the one word of a command. A tool name is three words, and
+// two names two edits apart are usually two tools: over the capabilities that
+// are never tools it called `kv_edit` `kv_init` (which writes), `agent_log`
+// `git_log`, `lock_list` `note_list` and `keys_restore` `kv_restore`, a person's
+// verb turned into a stranger's tool with the confidence of a spelling fix.
+// So a suggestion has to be in the area the word names — the word before the
+// first underscore; most of what is only a person's has an area no tool has,
+// and where one is shared (`kv_edit` beside `kv_init`) the two words differ by
+// more than a slip — and be one letter added, dropped, changed or swapped, or
+// the start of the one tool it could be the start of (`pg_schema` for
+// `pg_schema_dump`; `kv_re` is the start of four, and names none). The
+// spellings an agent writes out of habit from a capability's ID or a flag,
+// `kv.get` and `kv-get`, read as the underscore they stand for.
+//
+// Case-insensitive, as near.Word is. An area with a typo in it is not
+// answered: a name that matches no area gives nothing to be near.
+func nearestTool(typed string, offered []string) string {
+	name := strings.ToLower(strings.NewReplacer(".", "_", "-", "_").Replace(typed))
+	area, _, _ := strings.Cut(name, "_")
+	best, bestDistance := "", 2
+	unfinished, starts := "", 0
+	for _, tool := range offered {
+		if toolArea, _, _ := strings.Cut(tool, "_"); toolArea != area {
+			continue
+		}
+		if len(name) >= 3 && strings.HasPrefix(tool, name) {
+			unfinished, starts = tool, starts+1
+		}
+		// Two names whose lengths differ by more than one are not one edit
+		// apart, and the distance is the product of the two lengths.
+		if len(tool)-len(name) > 1 || len(name)-len(tool) > 1 {
+			continue
+		}
+		if d := near.Distance(name, tool); d < bestDistance {
+			best, bestDistance = tool, d
+		}
+	}
+	if best == "" && starts == 1 {
+		return unfinished
+	}
+	return best
 }
 
 // reg is passed rather than read off Options because it is what the gate needs
