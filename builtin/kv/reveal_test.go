@@ -116,6 +116,35 @@ func TestRevealAsSaysWhatToRunToThePersonAtTheTerminal(t *testing.T) {
 	}
 }
 
+// Doctor asks the store whether the entries profiles map are in it, and in the
+// TUI it asks from the process that holds the person's unlock. An exported
+// passphrase that does not fit is an answer to the question, and ended the
+// session they had typed a minute before, which is not what was asked about.
+// The same wrong passphrase in a use of the store still ends it.
+func TestLackingLeavesTheStoreSessionAloneWhenTheEnvironmentDoesNotFit(t *testing.T) {
+	setup(t)
+	const right = "correct horse battery staple"
+	t.Setenv(passphraseEnv, right)
+	text(t, runSet, map[string]any{"key": "db-password", "value": "s3cr3t"}, false)
+
+	rememberSession(right)
+	t.Setenv(passphraseEnv, "an export that went stale")
+	lacking, verr := Lacking([]string{"db-password"})
+	if verr == nil || verr.Code != "kv.wrongpass" || lacking != nil {
+		t.Fatalf("a passphrase that does not fit = %v, %+v; want the store's own refusal", lacking, verr)
+	}
+	if _, open := SessionUntil(); !open {
+		t.Error("asking whether the store opens from the environment ended the session the person typed")
+	}
+
+	if _, verr := Reveal("db-password"); verr == nil {
+		t.Fatal("a stale export opened the store")
+	}
+	if _, open := SessionUntil(); open {
+		t.Error("a use of the store with a passphrase that does not fit left the session standing")
+	}
+}
+
 // What `rta mcp serve` is refused on a profile's credential is read by the
 // operator, from the record, and "ask the operator to run" on that row told them
 // to ask themselves. The server's reader words each refusal for them: the

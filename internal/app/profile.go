@@ -674,6 +674,35 @@ func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 	return cmd
 }
 
+// storeClosedSentence says that credentials come from a store that exists and
+// that a server started from this shell could not open, and what lets one.
+//
+// Said by doctor alone: a listing has no business opening a store to find out,
+// and whether this environment can is the one thing knowable without. It is
+// judged from the shell doctor runs in because that is all doctor can see — the
+// same proxy `profile` rows use for an unexported RTA_PROFILE_* variable — so
+// it says "from this shell", and an operator who gives the server its
+// passphrase in its own environment reads it as the reminder it is. Over MCP a
+// refused credential is never read to the agent, so this is the row the
+// operator finds, and the way out is named in it: the passphrase for a server
+// to open this store, or a key it opens without one.
+func storeClosedSentence(subject string, entries []string) string {
+	return fmt.Sprintf("%s from the store (%s), which a server started from this shell could not open: "+
+		"a call an agent makes through such a profile is refused unless the server's own environment sets "+
+		"RTA_KV_PASSPHRASE, or the store has a key it opens unattended (`rta kv rekey --generate`)",
+		subject, strings.Join(entries, ", "))
+}
+
+// storeLacksSentence says that credentials come from entries a store that opens
+// from this environment does not hold, and what makes the first. The store is
+// there and so is the profile: what a call fails on is an entry nobody made.
+func storeLacksSentence(entries []string) string {
+	return fmt.Sprintf("%s from the store (%s), and the store holds no %s — `rta kv set %s` makes %s",
+		format.Count(len(entries), "profile credential comes", "profile credentials come"),
+		strings.Join(entries, ", "), format.Plural(len(entries), "such entry", "such entries"),
+		entries[0], format.Plural(len(entries), "it", "the first"))
+}
+
 func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 	problems := map[string]string{}
 	for _, p := range profile.Check(cfg, withTrust{reg}) {

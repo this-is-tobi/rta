@@ -561,3 +561,90 @@ func TestTheDoctorSaysWhenTheCopyShadowingAManagedPluginIsTheSystemRoots(t *test
 		}
 	}
 }
+
+// A profile that maps a credential onto the store is graded against the store
+// that exists, because the refusal an agent meets on it is the operator's to
+// find and the commonest cause lies in what a server started from this shell
+// can open. Doctor used to say ok for the profile and, two rows away, that a
+// server started here could not open the store: both true, never put together.
+//
+// Only an environment that opens the store by itself is asked for the entries —
+// no passphrase is ever prompted for here — and a credential an exported
+// variable supplies is never looked for in it at all.
+func TestAProfileThatReadsAStoreIsGradedAgainstWhatThisShellCanOpen(t *testing.T) {
+	const passphrase = "correct horse battery staple"
+	run := session(t, setRegistry(t))
+	if _, errOut, err := run("profile", "set", "staging", "--plugin", "db", "--set", "host=db.internal",
+		"--secret", "password=kv:staging-db-password"); err != nil {
+		t.Fatalf("profile set: %v\n%s", err, errOut)
+	}
+	t.Setenv("RTA_KV_PASSPHRASE", passphrase)
+	writeStore(t)
+
+	rows := func(status string) []string {
+		t.Helper()
+		var out []string
+		for _, row := range doctorReport(setRegistry(t)).(view.Table).Rows {
+			if row[0] == "profile" && row[1] == status {
+				out = append(out, row[2])
+			}
+		}
+		return out
+	}
+	warns := func() []string { return rows("warn") }
+	saying := func(status string, want ...string) bool {
+		for _, w := range rows(status) {
+			ok := true
+			for _, part := range want {
+				ok = ok && strings.Contains(w, part)
+			}
+			if ok {
+				return true
+			}
+		}
+		return false
+	}
+
+	t.Run("a store this shell cannot open", func(t *testing.T) {
+		t.Setenv("RTA_KV_PASSPHRASE", "")
+		if !saying("info", "staging-db-password", "could not open", "RTA_KV_PASSPHRASE") || saying("warn", "staging-db-password") {
+			t.Errorf("a store this shell cannot open is not said, as a note, to be unreadable to a server:\n%v\n%v",
+				rows("info"), warns())
+		}
+	})
+	t.Run("an entry nobody made", func(t *testing.T) {
+		if !saying("warn", "staging-db-password", "holds no such entry", "`rta kv set staging-db-password`") {
+			t.Errorf("a store that opens and lacks the entry is not said to:\n%v", warns())
+		}
+	})
+	t.Run("a passphrase that does not fit", func(t *testing.T) {
+		t.Setenv("RTA_KV_PASSPHRASE", "not the one")
+		if !saying("warn", "staging-db-password", "does not open from this environment") || saying("warn", "holds no such entry") {
+			t.Errorf("a wrong passphrase must not read as an entry that is not there:\n%v", warns())
+		}
+		// The store's own words for it: a row that says only that the store
+		// could not be decrypted leaves a reader to find which input was wrong.
+		if !saying("warn", "staging-db-password", "wrong passphrase, or the store file is corrupt") {
+			t.Errorf("the row does not say it is the passphrase that does not fit:\n%v", warns())
+		}
+	})
+	t.Run("an entry that is there", func(t *testing.T) {
+		if verr := kv.Store("staging-db-password", "hunter2", "", ""); verr != nil {
+			t.Fatal(verr)
+		}
+		for _, w := range warns() {
+			if strings.Contains(w, "staging-db-password") {
+				t.Errorf("a credential that can be read is warned about: %s", w)
+			}
+		}
+	})
+	t.Run("a variable supplies the credential", func(t *testing.T) {
+		t.Setenv("RTA_KV_PASSPHRASE", "")
+		t.Setenv("RTA_PROFILE_STAGING_PASSWORD", "from-the-environment")
+		for _, w := range append(warns(), rows("info")...) {
+			if strings.Contains(w, "staging-db-password") {
+				t.Errorf("an entry the call never reads is mentioned: %s", w)
+			}
+		}
+	})
+}

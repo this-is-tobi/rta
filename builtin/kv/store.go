@@ -378,7 +378,18 @@ func lockBeforeValue(req plugin.Request) *view.Error {
 // load decrypts the store. A missing file is an empty store — first use
 // needs no setup step. A decrypt failure (wrong key or a corrupted file —
 // age cannot tell them apart, and neither can we) is one coded error.
-func load(req plugin.Request) (store, *view.Error) {
+func load(req plugin.Request) (store, *view.Error) { return open(req, true) }
+
+// open is load, with whether a key that does not fit ends the store session
+// (wrongKey) left to the caller.
+//
+// Every use of the store ends it, because what was tried was what the session
+// holds or might as well have. A question that only asks whether the store can
+// be opened from the environment (Lacking, for `rta doctor`) is not a use: the
+// passphrase it tried is the environment's, which wins over a session and says
+// nothing about it, so a stale export would end an unlock the person typed into
+// the TUI a minute ago for having been asked a question about the export.
+func open(req plugin.Request, endSessionOnWrongKey bool) (store, *view.Error) {
 	data, err := atomicfile.ReadFile(storePath())
 	if os.IsNotExist(err) {
 		return store{Entries: map[string]entry{}}, nil
@@ -392,11 +403,11 @@ func load(req plugin.Request) (store, *view.Error) {
 	}
 	r, err := age.Decrypt(bytes.NewReader(data), identities...)
 	if err != nil {
-		return store{}, wrongKey(req)
+		return store{}, wrongKey(req, endSessionOnWrongKey)
 	}
 	plaintext, err := io.ReadAll(r)
 	if err != nil {
-		return store{}, wrongKey(req)
+		return store{}, wrongKey(req, endSessionOnWrongKey)
 	}
 	s, verr := decodeStore(plaintext)
 	if verr != nil {
@@ -427,12 +438,14 @@ func load(req plugin.Request) (store, *view.Error) {
 }
 
 // wrongKey names the failure in terms of whatever the caller actually tried.
-func wrongKey(req plugin.Request) *view.Error {
+func wrongKey(req plugin.Request, endSession bool) *view.Error {
 	// Whichever request carried the wrong secret, what the session holds is
 	// not the store's passphrase any more — or never was. Ending it here,
 	// at the one place "this did not open the store" is named, means a
 	// stale session is re-asked rather than retried until its deadline.
-	forgetSession()
+	if endSession {
+		forgetSession()
+	}
 	if identityPath(req) != "" {
 		return view.Errorf("kv.wrongkey", "that key cannot decrypt the store").
 			WithHint(req.Surface().CapabilityName("kv.recipients") + " lists the public keys it was encrypted to")
@@ -647,32 +660,46 @@ func HasStore() bool { return fileExists(storePath()) }
 // warned about it the whole time, and the TUI's profile pane graded it from a
 // copy of this test of its own that nothing held to the others.
 func RefUnreadable(r config.SecretRef, exported bool) bool {
-	return r.Scheme == "kv" && !exported && !HasStore()
+	return readsStore(r, exported) && !HasStore()
 }
 
-// UnreadableEntries is the store entries that profile name maps a credential
-// onto and that no call through it can read, as RefUnreadable asks: in the order
-// the profile states them, each once, nil when there is a store or nothing
-// reads it.
+// readsStore is whether a call reads this reference from the store: it names
+// the store, and no exported variable takes its place.
+func readsStore(r config.SecretRef, exported bool) bool {
+	return r.Scheme == "kv" && !exported
+}
+
+// EntriesRead is the store entries that profile name maps a credential onto and
+// that a call through it reads, whether or not a store exists: in the order the
+// profile states them, each once. What `rta doctor` grades against a store that
+// does, and what UnreadableEntries is the missing-store half of.
 //
 // A credential an exported variable supplies is not counted, and the variable
 // exists for the default instance only — a labeled instance reads none at all
 // (profile.Bind), so its reference is read whatever is exported.
-func UnreadableEntries(name string, p config.Profile) []string {
-	if HasStore() {
-		return nil
-	}
+func EntriesRead(name string, p config.Profile) []string {
 	var entries []string
 	for _, key := range p.PluginKeys() {
 		_, instance, _ := config.SplitKey(key)
 		for _, r := range p.Plugins[key].SecretRefs() {
 			_, exported := os.LookupEnv(plugin.ProfileEnvVar(name, r.Input))
-			if RefUnreadable(r, exported && instance == "") && !slices.Contains(entries, r.Ref) {
+			if readsStore(r, exported && instance == "") && !slices.Contains(entries, r.Ref) {
 				entries = append(entries, r.Ref)
 			}
 		}
 	}
 	return entries
+}
+
+// UnreadableEntries is the store entries that profile name maps a credential
+// onto and that no call through it can read, as RefUnreadable asks: the entries
+// it reads (EntriesRead) when there is no store, nil when there is one or
+// nothing reads it.
+func UnreadableEntries(name string, p config.Profile) []string {
+	if HasStore() {
+		return nil
+	}
+	return EntriesRead(name, p)
 }
 
 // NoStoreSentence says that credentials come from a store this machine has not
