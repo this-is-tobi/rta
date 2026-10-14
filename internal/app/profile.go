@@ -704,7 +704,7 @@ func profileTable(cfg config.Config, reg *registry.Registry) view.Table {
 		} else if name == active {
 			status = "on"
 		}
-		t.Rows = append(t.Rows, []string{name, strings.Join(p.Namespaces(), " "), status, p.Dashboard.Describe(), note})
+		t.Rows = append(t.Rows, []string{plugin.ListedName(name), strings.Join(p.Namespaces(), " "), status, p.Dashboard.Describe(), note})
 	}
 	t.Total = len(t.Rows)
 	return t
@@ -1169,7 +1169,11 @@ func unknownProfile(cfg config.Config, name string) *view.Error {
 	}
 	hint := "no profiles are configured — `rta profile set " + create + " --plugin <plugin> --set <key>=<value>` creates one"
 	if all := cfg.ProfileNames(); len(all) > 0 {
-		hint = "configured: " + strings.Join(all, ", ")
+		listed := make([]string, len(all))
+		for i, n := range all {
+			listed[i] = plugin.ListedName(n)
+		}
+		hint = "configured: " + strings.Join(listed, ", ")
 	}
 	return view.Errorf("core.profile.unknown", "no profile named %q", name).WithHint(hint)
 }

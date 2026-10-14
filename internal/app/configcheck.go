@@ -19,8 +19,15 @@ import (
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/format"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
+
+// oneLine is a sentence with its line breaks written out, for a cell that must
+// stay one line whatever names the sentence quotes.
+func oneLine(s string) string {
+	return strings.NewReplacer("\r", `\r`, "\n", `\n`).Replace(s)
+}
 
 // configProblem is one thing in the config file that does not do what it
 // says: a key rta ignores, a value no call would accept, a section that
@@ -157,7 +164,9 @@ func problemsTable(problems []configProblem, empty string) view.Table {
 		if p.Line > 0 {
 			line = strconv.Itoa(p.Line)
 		}
-		row := []string{line, p.Key, p.Text}
+		// A problem is one line: its key and the names inside its sentence come
+		// from the file, and a newline in one is a second row of this table.
+		row := []string{line, plugin.ListedName(p.Key), oneLine(p.Text)}
 		if named {
 			row = append([]string{configFileName(p.File)}, row...)
 		}
