@@ -92,10 +92,14 @@ func (n *treeNode) child(label string, folder bool) *treeNode {
 	return c
 }
 
+// render draws each label as a listed name (plugin.ListedName): a key's name is
+// whatever its writer typed, and cleaned of its control characters two names
+// that differ drew alike, while a newline in one started a line of the map a
+// reader took for another entry.
 func (n *treeNode) render() []view.Node {
 	out := make([]view.Node, 0, len(n.children))
 	for _, c := range n.children {
-		node := view.Node{Label: c.label, Detail: c.kind}
+		node := view.Node{Label: plugin.ListedName(c.label), Detail: c.kind}
 		if c.folder {
 			node.Label += "/"
 			node.Detail = format.CountOf(c.leaves(), "key")
