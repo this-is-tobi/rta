@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -566,7 +568,13 @@ func (m Model) tileReturned(i int) view.View {
 // tileContentLines renders one tile's body at width, full length — the
 // natural content driving both how tall its row needs to be (tileRowHeight)
 // and what renderTile then clamps to whatever height that row settled on.
-func tileContentLines(t tile, width int) []string {
+func tileContentLines(t tile, width int) []string { return tileLines(t, width, false) }
+
+// tileLines is tileContentLines for a tile that may be the selection, which
+// matters to one sentence (keyPromised). The row's height is sized from the
+// tile unselected, which is the longer of the two, so selecting a tile never
+// asks its row for room it was not given.
+func tileLines(t tile, width int, selected bool) []string {
 	inner := width - 4
 	body := ""
 	switch {
@@ -579,12 +587,113 @@ func tileContentLines(t tile, width int) []string {
 		_ = cli.RenderError(&buf, t.err, cli.Options{Format: cli.Pretty, Width: inner})
 		body = buf.String()
 	case t.view != nil:
-		body = tileBody(t.view, inner)
+		body = tileBody(keyPromised(t, selected), inner)
 	default:
 		body = theme.Subtle.Render("loading…")
 	}
 	return strings.Split(strings.TrimRight(body, "\n"), "\n")
 }
+
+// keyPromised is the tile's view with one sentence made true while the tile is
+// not the selection: an empty list that says "press a to add one", where `a` is
+// one of the keys the capability declares for its own tile.
+//
+// Those keys answer on the selected tile (dispatch.go, selectedAction) and
+// nowhere else, and until a tile is selected the search bar holds every letter.
+// The sentence is read first on the first screen of a fresh install, where
+// nothing is selected, and "press a" there started a search for the letter a.
+// The plugin cannot say it right for both places: the same sentence is the whole
+// of the opened list, where the key answers at once, so the tile qualifies it
+// when it is drawn.
+//
+// Keyed on the keys the capability declares and not on the shape of a sentence,
+// so a sentence naming a key nothing answers is left as its plugin wrote it. A
+// sentence that already says to select is left as it is as well: a plugin that
+// words it for the tile has nothing to be told twice, and "select a tile, then
+// select this tile, then press a" is no instruction.
+//
+// The sentence is read, and not parsed: a capability whose declared key is `a`
+// and whose empty list says "press a name to narrow" is read as naming the key,
+// and the Action doc says the wording is the plugin's to keep clear of that.
+func keyPromised(t tile, selected bool) view.View {
+	tbl, ok := t.view.(view.Table)
+	if selected || !ok || len(tbl.Rows) > 0 || saysToSelect(tbl.Empty) {
+		return t.view
+	}
+	for _, a := range t.cap.Actions {
+		at, named := pressIndex(tbl.Empty, a.Key)
+		if !named {
+			continue
+		}
+		lead := "select this tile, then "
+		if tbl.Empty[at] == 'P' {
+			lead = "Select this tile, then "
+		}
+		tbl.Empty = tbl.Empty[:at] + lead + "press " + tbl.Empty[at+len(pressVerb):]
+		return tbl
+	}
+	return t.view
+}
+
+// pressVerb is how an empty list's sentence tells the reader to press a key.
+const pressVerb = "press "
+
+// pressIndex is where text tells the reader to press key: the verb in either
+// case, on a word boundary, then the key, which does not run into the word that
+// follows it when it ends in a letter. A key that is a symbol, `+`, has no word
+// to run into and is named wherever it stands, which is what a `\b` after it
+// could not say: no boundary lies between a symbol and the space beside it.
+//
+// Scanned by hand, because the rewrite runs for every empty tile on every frame
+// and a pattern compiled from each declared key each time was the most
+// expensive thing a frame did for a tile with nothing in it. The characters on
+// either side are read as characters: a dash or an ellipsis before the verb is
+// punctuation, and a letter of another script after the key is a word.
+func pressIndex(text, key string) (int, bool) {
+	if key == "" {
+		return 0, false
+	}
+	lastOfKey, _ := utf8.DecodeLastRuneInString(key)
+	for i := 0; i+len(pressVerb)+len(key) <= len(text); i++ {
+		if !strings.EqualFold(text[i:i+len(pressVerb)], pressVerb) || !strings.HasPrefix(text[i+len(pressVerb):], key) {
+			continue
+		}
+		if before, _ := utf8.DecodeLastRuneInString(text[:i]); i > 0 && isWordRune(before) {
+			continue
+		}
+		after := i + len(pressVerb) + len(key)
+		if next, _ := utf8.DecodeRuneInString(text[after:]); after < len(text) && isWordRune(lastOfKey) && isWordRune(next) {
+			continue
+		}
+		return i, true
+	}
+	return 0, false
+}
+
+// saysToSelect is whether text already tells the reader to select something: the
+// word, and not "selected" or "selection", which a sentence about an empty list
+// has its own reasons to use.
+func saysToSelect(text string) bool {
+	const verb = "select"
+	lower := strings.ToLower(text)
+	for from := 0; ; {
+		i := strings.Index(lower[from:], verb)
+		if i < 0 {
+			return false
+		}
+		start, end := from+i, from+i+len(verb)
+		before, _ := utf8.DecodeLastRuneInString(lower[:start])
+		after, _ := utf8.DecodeRuneInString(lower[end:])
+		if (start == 0 || !isWordRune(before)) && (end == len(lower) || !isWordRune(after)) {
+			return true
+		}
+		from = end
+	}
+}
+
+// isWordRune is a character that is part of a word: a letter or a digit of any
+// script, or an underscore.
+func isWordRune(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) }
 
 // tileRowHeight is how tall a row needs to be to show t in full, clamped to
 // [tileMinHeight, tileHeight] — the two ends of the range that already
@@ -601,7 +710,7 @@ func tileRowHeight(t tile, width int) int {
 // exact width × height cells, so overflowing content can never make one tile
 // taller than its row.
 func renderTile(t tile, width, height int, selected, heavy bool) string {
-	lines := tileContentLines(t, width)
+	lines := tileLines(t, width, selected)
 	preview := height - 2
 	if len(lines) > preview {
 		lines = lines[:max(preview-1, 0)]

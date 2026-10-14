@@ -48,6 +48,15 @@ const (
 // Action is one key a result offers: press it and the target opens, seeded
 // from what was on screen. A list's row actions, the actions on a record's
 // own page, and the buttons on a dashboard tile are all this.
+//
+// A capability's empty list may name its own key — `press a to add one` — and
+// the dashboard's tile draws that sentence as `select this tile, then press a
+// to add one` until the tile is the selection, because a tile's keys answer on
+// the selection and the search bar holds every letter before that; the opened
+// list, where the key answers at once, keeps the sentence as written. The tile
+// finds the key by reading `press <key>` in either case, with the key not run
+// into a word after it, so a sentence that says `press a name` for a key `a`
+// is read as naming it, and one that already says to select is left alone.
 type Action struct {
 	// Key is what the person presses: one printable character, or "enter"
 	// for a row's own detail page. Validate refuses the keys every screen
