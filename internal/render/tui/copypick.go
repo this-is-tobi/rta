@@ -59,7 +59,7 @@ func newCopyPickForm(values []string, cap plugin.Capability, returnTo mode) *cop
 			Title("copy which value?").
 			Options(opts...).
 			Value(&cp.value),
-	)).WithShowHelp(false).WithShowErrors(false)
+	)).WithTheme(formTheme()).WithShowHelp(false).WithShowErrors(false)
 	return cp
 }
 
