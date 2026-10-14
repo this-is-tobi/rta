@@ -364,9 +364,24 @@ func shorten(s string, n int) string {
 }
 
 // pathLike is a value with a slash in it and no whitespace: a path or a URL,
-// which wraps at no place a reader would choose.
+// which wraps at no place a reader would choose. A log position is not one,
+// though it has the same look: the slash joins two numbers, and the middle of a
+// position cut out reads as a position that never was.
 func pathLike(s string) bool {
-	return strings.Contains(s, "/") && !strings.ContainsAny(s, " \t\n")
+	return strings.Contains(s, "/") && !strings.ContainsAny(s, " \t\n") && !logPosition(s)
+}
+
+// logPosition is a PostgreSQL write-ahead-log position as it prints, up to
+// eight uppercase hex digits, a slash and up to eight more: 0/3000148,
+// 16/B374D848.
+func logPosition(s string) bool {
+	high, low, ok := strings.Cut(s, "/")
+	hex := func(part string) bool {
+		return part != "" && len(part) <= 8 && !strings.ContainsFunc(part, func(r rune) bool {
+			return (r < '0' || r > '9') && (r < 'A' || r > 'F')
+		})
+	}
+	return ok && hex(high) && hex(low)
 }
 
 // middleEllipsis cuts s to n cells keeping its start and, more of, its end:
