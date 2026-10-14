@@ -599,6 +599,74 @@ func TestTheDocsShowACountOfOneAsSingular(t *testing.T) {
 	}
 }
 
+// Start here gives each track a time, and a newcomer budgets a morning from it.
+// Nothing computed the numbers: the six pages of the second track said about 45
+// minutes and take about an hour to read, the eight of the third said about an
+// hour and take an hour and a half, and every page that grew since made them
+// less true. The claim is held to the words of the pages the track lists, read at
+// two hundred a minute, which is a slow pace on purpose: these are pages with
+// commands to read and a table to decode on most lines.
+//
+// A fifth either way is allowed, since a claim is "about" something and the pages
+// are edited every week; past that the test names the number to write.
+func TestTheTracksOnStartHereClaimTheTimeTheirPagesTakeToRead(t *testing.T) {
+	const rel = "docs/01-readme.md"
+	root := repoRoot(t)
+	page := readDoc(t, root, rel)
+
+	claim := regexp.MustCompile(`about (?:(\d+) minutes|an hour and a half|an hour)`)
+	link := regexp.MustCompile(`(?m)^\d+\. \[[^\]]+\]\(\./([^)#]+\.md)`)
+	checked := 0
+	for _, track := range []struct{ name, row, heading string }{
+		{"A", "| **A. Try it**", "### A. Try it"},
+		{"B", "| **B. Give an agent access safely**", "### B. Give an agent access safely"},
+		{"C", "| **C. Run it for a team**", "### C. Run it for a team"},
+	} {
+		var row string
+		for _, line := range strings.Split(page, "\n") {
+			if strings.HasPrefix(line, track.row) {
+				row = line
+			}
+		}
+		if row == "" {
+			t.Fatalf("%s has no row for track %s; if the table moved, move this test with it", rel, track.name)
+		}
+		var minutes float64
+		switch m := claim.FindStringSubmatch(row); {
+		case m == nil:
+			t.Errorf("%s: track %s says no time of the form \"about 15 minutes\" or \"about an hour\": %s", rel, track.name, row)
+			continue
+		case m[1] != "":
+			n, _ := strconv.Atoi(m[1])
+			minutes = float64(n)
+		case strings.Contains(m[0], "and a half"):
+			minutes = 90
+		default:
+			minutes = 60
+		}
+
+		_, section, _ := strings.Cut(page, track.heading)
+		section, _, _ = strings.Cut(section, "\n### ")
+		words := 0
+		pages := link.FindAllStringSubmatch(section, -1)
+		for _, m := range pages {
+			words += len(strings.Fields(readDoc(t, root, filepath.Join("docs", m[1]))))
+		}
+		if len(pages) == 0 {
+			t.Fatalf("%s lists no pages under %q; has the list moved?", rel, track.heading)
+		}
+		reading := float64(words) / 200
+		if minutes < reading*0.8 || minutes > reading*1.2 {
+			t.Errorf("%s says track %s takes about %.0f minutes, and its %d pages are %d words, which is %.0f minutes of reading at two hundred a minute",
+				rel, track.name, minutes, len(pages), words, reading)
+		}
+		checked++
+	}
+	if checked != 3 {
+		t.Fatalf("checked %d tracks, want 3", checked)
+	}
+}
+
 // The README's table of contents is the one list of the docs a reader on
 // GitHub sees, and the site builds its own sidebar from the tree: a page added
 // to the tree and not to the list is on the site and invisible from the
