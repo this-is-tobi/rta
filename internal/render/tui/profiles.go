@@ -350,19 +350,18 @@ type credentialRow struct {
 	exported bool
 	// ref is the `secrets:` mapping, empty when there is none.
 	ref config.SecretRef
-	// noStore is true when ref names the store and this machine has none yet —
-	// the one thing about a mapping the pane can know without a passphrase
-	// (kv.HasStore), and the doctor row's own question. Whether an entry is in a
-	// store that exists is not, which is why the pane says a credential is
-	// mapped and never that it is resolved: only Fill resolves a reference.
-	noStore bool
 }
 
 // unreadable reports whether the reference this environment would read the
 // credential from points at a store that does not exist, with nothing exported
 // to read it from instead.
+//
+// The one thing about a mapping the pane can know without a passphrase, asked
+// as every other page asks it (kv.RefUnreadable). Whether an entry is in a
+// store that exists is not known, which is why the pane says a credential is
+// mapped and never that it is resolved: only Fill resolves a reference.
 func (c credentialRow) unreadable() bool {
-	return c.noStore && !c.exported && c.ref.Scheme == "kv"
+	return kv.RefUnreadable(c.ref, c.exported)
 }
 
 // winner names the channel this environment actually reads the credential
@@ -513,6 +512,19 @@ func (m Model) profileRows() []profileRow {
 		}
 		row := profileRow{name: name, p: p, problem: problem, note: wholeNote[name],
 			active: name == active, conns: conns, themed: len(profile.ThemeStanding(cfg, name))}
+		// An environment that resolves and cannot be used is graded as `rta
+		// profile list` grades it, from the same question and in its sentence: a
+		// credential mapped onto a store this machine has not made fails the
+		// first call through it, and this pane called it ok beside a third line
+		// that said so. Said beside whatever else is noted, since both are true
+		// of it, and not for an invalid one, whose problem is the thing to fix.
+		if entries := kv.UnreadableEntries(name, p); row.valid() && len(entries) > 0 {
+			reason := kv.NoStoreReason(plugin.SurfaceTUI, entries)
+			if row.note != "" {
+				reason = row.note + "; " + reason
+			}
+			row.note = reason
+		}
 		if row.active {
 			row.until = sel.Until
 		}
@@ -560,12 +572,6 @@ func (m Model) credentialRows(name, key string, conn config.Connection) []creden
 	}
 	inputs := m.credentialInputs(config.PluginNamespace(key))
 	out := make([]credentialRow, 0, len(inputs))
-	// Asked once, and only when a reference names the store: a stat of one file,
-	// the only thing the store will say with no passphrase.
-	storeless := false
-	for _, r := range refs {
-		storeless = storeless || (r.Scheme == "kv" && !kv.HasStore())
-	}
 	for _, input := range inputs {
 		// A labeled instance has no environment channel — see Bind: a
 		// variable for `staging/analytics` would be forgeable by naming
@@ -579,7 +585,7 @@ func (m Model) credentialRows(name, key string, conn config.Connection) []creden
 			_, exported = os.LookupEnv(env)
 		}
 		out = append(out, credentialRow{
-			input: input, env: env, exported: exported, ref: refs[input], noStore: storeless,
+			input: input, env: env, exported: exported, ref: refs[input],
 		})
 	}
 	return out
@@ -842,7 +848,8 @@ func profileState(row profileRow) string {
 }
 
 // profileStatus is the word `rta profile list` gives the same environment:
-// invalid, warn for one that runs otherwise than written, ok.
+// invalid, warn for one that runs otherwise than written or reads a store this
+// machine has not made, ok.
 func profileStatus(row profileRow) string {
 	if !row.valid() {
 		return theme.BadText.Render("invalid")

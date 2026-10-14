@@ -84,3 +84,49 @@ func TestThePaneSaysACredentialIsMappedAndNeverThatItIsResolved(t *testing.T) {
 		t.Errorf("with a store, profileDetail = %q, want \"1 credential mapped\"", got)
 	}
 }
+
+// The pane grades an environment as `rta profile list` does, from the same
+// question: a credential mapped onto a store this machine has not made fails
+// the first call through it, and the pane called it ok beside a third line that
+// said so. The word is the first thing a person scanning the pane reads.
+func TestTheProfilePaneGradesAMissingStoreAsTheListDoes(t *testing.T) {
+	status := func(m Model) string { return ansi.Strip(profileStatus(m.profiles[0])) }
+
+	t.Run("there is no store", func(t *testing.T) {
+		m := vaultishModel(t)
+		if got := status(m); got != "warn" {
+			t.Errorf("the pane grades an environment reading a store nobody made %q, want warn", got)
+		}
+		// In the pane's own spelling of the command: a capability named by its
+		// id, which its form fills in, and not a line to type in a shell.
+		for _, want := range []string{"1 credential comes from the store (staging-db-password)",
+			"no store on this machine yet", "`kv.set key=staging-db-password` creates it"} {
+			if !strings.Contains(m.profiles[0].note, want) {
+				t.Errorf("the note = %q, want it to say %q", m.profiles[0].note, want)
+			}
+		}
+		if second := ansi.Strip(profileCovers(m.profiles[0])); !strings.Contains(second, "no store on this machine yet") {
+			t.Errorf("the second line = %q, want the reason beside the word", second)
+		}
+	})
+
+	t.Run("there is a store", func(t *testing.T) {
+		m := vaultishModel(t)
+		if err := os.WriteFile(filepath.Join(os.Getenv("RTA_DATA_DIR"), "kv.age"), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		m.profiles = m.profileRows()
+		if got := status(m); got != "ok" {
+			t.Errorf("with a store the pane grades it %q, want ok", got)
+		}
+	})
+
+	t.Run("the environment supplies the credential", func(t *testing.T) {
+		m := vaultishModel(t)
+		t.Setenv("RTA_PROFILE_STAGING_PASSWORD", "from-the-environment")
+		m.profiles = m.profileRows()
+		if got := status(m); got != "ok" {
+			t.Errorf("a call never reads the store for a credential the environment gives, and the pane grades it %q", got)
+		}
+	})
+}

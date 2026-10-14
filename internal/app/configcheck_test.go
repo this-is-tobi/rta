@@ -91,6 +91,25 @@ func TestConfigCheckOnAFileThatIsRightSaysSoAndExitsZero(t *testing.T) {
 	}
 }
 
+// `rta config check` answers about the file, and the file is the same on a
+// machine that has a store and on one that has not made it yet. A profile that
+// maps a credential onto the store is right in the file either way; saying it
+// here would fail a pre-commit hook on any machine without a store, and a CI
+// runner never has one. `rta profile list`, the TUI and `rta doctor` are the
+// pages that speak for the machine.
+func TestConfigCheckHoldsTheFileAndNotTheMachineToTheStoreAProfileNames(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	out, errOut, _, err := configRun(t, configRegistry(t),
+		"profiles:\n  staging:\n    plugins:\n      net:\n        secrets:\n          token: kv:staging-token\n",
+		"config", "check", "-o", "json")
+	if err != nil {
+		t.Fatalf("a profile reading a store this machine lacks failed the check: %v\n%s", err, errOut)
+	}
+	if strings.Contains(out, "store") {
+		t.Errorf("config check speaks for the machine's store:\n%s", out)
+	}
+}
+
 func TestConfigCheckWithNoFileHasNothingToCheck(t *testing.T) {
 	_, errOut, _, err := configRun(t, configRegistry(t), "", "config", "check")
 	if err != nil {

@@ -340,6 +340,76 @@ const credentialInstancesConfig = `profiles:
           password: kv:staging-mapped-password
 `
 
+// A profile that maps a credential onto the store, on a machine with none, is
+// one no call through it can use, and every page that says whether a profile is
+// usable says so in the same words. `rta profile list` called it ok and `rta
+// use` switched it on while `rta doctor` had warned about the same profile the
+// whole time, so a person who copied the docs' example first heard of it from a
+// call that failed on the credential.
+//
+// Only the store's absence is said: whether an entry is in one that exists is a
+// question for its owner's passphrase, and a credential an exported variable
+// supplies is never read from the store at all.
+func TestAProfileThatReadsAStoreThisMachineLacksIsNotListedOk(t *testing.T) {
+	const sentence = "there is no store on this machine yet — `rta kv set staging-db-password` creates it"
+	setArgs := []string{"profile", "set", "staging", "--plugin", "db", "--set", "host=db.internal",
+		"--secret", "password=kv:staging-db-password"}
+	listed := func(run func(args ...string) (string, string, error)) (status, note string) {
+		t.Helper()
+		out, errOut, err := run("profile", "list", "-o", "json")
+		if err != nil {
+			t.Fatalf("profile list: %v\n%s", err, errOut)
+		}
+		var table struct {
+			Rows [][]string `json:"rows"`
+		}
+		if err := json.Unmarshal([]byte(out), &table); err != nil || len(table.Rows) != 1 {
+			t.Fatalf("profile list = %v, rows %d:\n%s", err, len(table.Rows), out)
+		}
+		return table.Rows[0][2], table.Rows[0][5]
+	}
+
+	run := session(t, setRegistry(t))
+	receipt, errOut, err := run(setArgs...)
+	if err != nil {
+		t.Fatalf("profile set: %v\n%s", err, errOut)
+	}
+	if !strings.Contains(receipt, "warning") || !strings.Contains(receipt, sentence) {
+		t.Errorf("the receipt of `profile set` does not say the credential cannot be read yet:\n%s", receipt)
+	}
+	if status, note := listed(run); status != "warn" || !strings.Contains(note, sentence) {
+		t.Errorf("profile list = %q, %q; want warn, and the sentence doctor says", status, note)
+	}
+	page, _, err := run("profile", "show", "staging")
+	if err != nil || !strings.Contains(page, sentence) {
+		t.Errorf("profile show does not say it (%v):\n%s", err, page)
+	}
+	doctorSays := false
+	for _, row := range doctorReport(setRegistry(t)).(view.Table).Rows {
+		doctorSays = doctorSays || (row[0] == "profile" && row[1] == "warn" && strings.Contains(row[2], sentence))
+	}
+	if !doctorSays {
+		t.Error("doctor does not say it in the words the list does")
+	}
+
+	t.Setenv("RTA_KV_PASSPHRASE", "correct horse battery staple")
+	writeStore(t)
+	if status, note := listed(run); status != "ok" || strings.Contains(note, "store") {
+		t.Errorf("a store exists and profile list still says %q, %q", status, note)
+	}
+
+	t.Run("an exported variable supplies the credential", func(t *testing.T) {
+		run := session(t, setRegistry(t))
+		if _, errOut, err := run(setArgs...); err != nil {
+			t.Fatalf("profile set: %v\n%s", err, errOut)
+		}
+		t.Setenv("RTA_PROFILE_STAGING_PASSWORD", "from-the-environment")
+		if status, note := listed(run); status != "ok" {
+			t.Errorf("profile list = %q, %q; the call never reads the store for a credential the environment gives", status, note)
+		}
+	})
+}
+
 // A labeled instance reads no RTA_PROFILE_* variable — a name for
 // `staging/analytics` would be forgeable by naming a profile carefully, so
 // profile.Bind leaves the channel to the default instance — and the page that

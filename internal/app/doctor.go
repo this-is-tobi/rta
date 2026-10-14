@@ -770,7 +770,7 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 			bad[p.Name] = true
 		}
 		fromStore := 0
-		var storeEntries []string
+		var withoutStore []string
 		for _, name := range cfg.ProfileNames() {
 			if bad[name] {
 				continue
@@ -784,10 +784,12 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 						" from "+r.Scheme+":"+r.Ref)
 					if r.Scheme == "kv" {
 						fromStore++
-						if !slices.Contains(storeEntries, r.Ref) {
-							storeEntries = append(storeEntries, r.Ref)
-						}
 					}
+				}
+			}
+			for _, entry := range kv.UnreadableEntries(name, p) {
+				if !slices.Contains(withoutStore, entry) {
+					withoutStore = append(withoutStore, entry)
 				}
 			}
 			if len(named) > 0 {
@@ -836,10 +838,13 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 		// above reads ok, and the first the person hears of it is a call that
 		// fails on the credential. Only the store's absence is known without
 		// a passphrase; whether an entry is in one that exists is not.
-		if len(storeEntries) > 0 && !kv.HasStore() {
-			add("profile", "warn", fmt.Sprintf("%s from the store (%s), and there is no store on this machine yet — `rta kv set %s` creates it",
-				format.Count(len(storeEntries), "profile credential comes", "profile credentials come"),
-				strings.Join(storeEntries, ", "), storeEntries[0]))
+		//
+		// `rta profile list` and `show` say it too, in the same sentence, from the
+		// same question (kv.UnreadableEntries): the listing that called such a
+		// profile ok was the page a person reads first.
+		if len(withoutStore) > 0 {
+			add("profile", "warn", kv.NoStoreSentence(plugin.SurfaceCLI,
+				format.Count(len(withoutStore), "profile credential comes", "profile credentials come"), withoutStore))
 		}
 		// The widening, said out loud. A profile that maps a credential out of
 		// the store means an agent holding a grant for that profile can cause

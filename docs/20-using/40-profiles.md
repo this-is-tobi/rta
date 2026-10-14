@@ -17,6 +17,8 @@ rta profile set staging --note "the shared staging stack" --ttl 8h \
 
 It is idempotent — running it twice is running it once — so it belongs in a provisioning script, a Dockerfile, or a dotfiles repository as easily as in a terminal. `rta profile rm` is the other half.
 
+`kv:staging-db-password` names an entry in [the store](./50-secrets.md), and the profile does not make it: `rta kv set staging-db-password` does, and makes the store with it on a machine that has none. Until there is a store, `profile set` ends with a `warning` row saying so, `profile list` puts the same sentence in its `Note` column and marks the profile `warn` (`on` while it is switched on), `profile show` repeats it, the TUI's profiles pane grades the profile `warn` with it, and `rta doctor` says it in the same words. Whether an entry is in a store that exists is something only its passphrase can say, so a call that reads a missing one fails at the call, and says which entry. `rta config check` does not say it: it holds the file, which reads the same on a machine that has a store and on one that has not made it yet, and a check that failed the file on one and passed it on the other would not fit a pre-commit hook.
+
 **Or from the form, which is the shortest path at a keyboard.** Open the TUI, press an arrow to select a tile, press `f` for profiles, then `n`:
 
 ```bash
