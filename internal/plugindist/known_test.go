@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -171,6 +172,38 @@ func TestAPluginThatIsRunningIsNotTold(t *testing.T) {
 	}
 	if hint := FirstPartyHint("k8s", func(name string) bool { return name == "kube" }); hint != "" {
 		t.Errorf("FirstPartyHint(k8s) with kube running = %q, want none", hint)
+	}
+}
+
+// A plugin that is installed is not one to install, whatever its name: one that
+// is waiting for approval is told to be approved and one that failed to start is
+// told where the reason is, both before the first-party answer, and an artifact
+// whose name something else already holds is told neither, since approving it
+// would only earn a collision.
+func TestAnInstalledPluginThatIsNotRunningIsToldWhatIsWrongAndNotToInstall(t *testing.T) {
+	untrusted := []pluginhost.Untrusted{
+		{Name: "qdrant", Path: "/opt/bin/rta-plugin-qdrant"},
+		{Name: "pg", Path: "/opt/bin/rta-plugin-pg", Taken: true},
+	}
+	failed := []pluginhost.Failed{{Name: "redis", Path: "/opt/bin/rta-plugin-redis", Reason: "exited 3"}}
+
+	hint, ok := WordHint("qdrant", nil, untrusted, failed)
+	if !ok || !strings.Contains(hint, "`rta plugin trust qdrant` approves that build") || strings.Contains(hint, "`rta plugin install") {
+		t.Errorf("WordHint(qdrant) = %q, %v, want the approval", hint, ok)
+	}
+	hint, ok = WordHint("Redis", nil, untrusted, failed)
+	if !ok || !strings.Contains(hint, "redis is installed and failed to start — `rta plugin list` says why") {
+		t.Errorf("WordHint(Redis) = %q, %v, want the failure, in the plugin's own spelling", hint, ok)
+	}
+	hint, ok = WordHint("pg", nil, untrusted, failed)
+	if !ok || !strings.Contains(hint, "`rta plugin install pg` installs it") || strings.Contains(hint, "trust") {
+		t.Errorf("WordHint(pg) with a taken artifact = %q, %v, want the first-party answer and no approval", hint, ok)
+	}
+	if hint, ok := WordHint("mongo", nil, untrusted, failed); ok {
+		t.Errorf("WordHint(mongo) = %q, want no answer for a word that is no plugin", hint)
+	}
+	if hint, ok := WordHint("etcd", func(string) bool { return true }, untrusted, failed); ok {
+		t.Errorf("WordHint(etcd) with etcd running = %q, want none", hint)
 	}
 }
 
