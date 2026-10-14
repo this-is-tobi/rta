@@ -46,7 +46,7 @@ rta dashboard add kube.overview --profile prod
 rta dashboard add kube.overview --profile staging
 rta dashboard add pg.overview --profile staging                # one panel per pg connection staging holds
 rta dashboard add pg.overview --profile staging/analytics --span 2
-rta dashboard add cert.expiry --set host=example.com
+rta dashboard add cert.expiry --set targets=example.com
 rta dashboard list                                             # every panel bare rta would draw, where each came from, and what is hidden
 rta dashboard hide pg.overview --profile staging/orders        # that one panel; its siblings stay
 rta dashboard unhide pg.overview --profile staging/orders
@@ -232,8 +232,8 @@ While `shop-prod` is in force what is drawn comes from these, each over the one 
 From a script, or without opening the file:
 
 ```bash
-rta profile set shop-prod --color '#FF6B7A' --theme label='#C792EA'   # the whole theme: block of the profile
-rta profile set shop-prod --untheme                                   # take it off
+rta profile set shop-prod --plugin pg --set host=db.internal --color '#FF6B7A' --theme label='#C792EA'   # the entry above, written from flags
+rta profile set shop-prod --untheme                                                                      # take its theme: block off
 ```
 
 `--theme` states the block whole, as `--set` does, so a slot you leave out is removed and the receipt says which. A slot the palette does not have, a colour that is not `#rrggbb` and a status colour (below) are refused before anything is written, and the flag completes the five slots a profile can state. `rta profile show` prints the palette that stands beside the profile's colour and `rta profile list` counts it in a `Theme` column, as the profiles pane in the TUI does: what is counted and named is what is applied, so an entry the palette leaves out is not in either. It is a warning on the profile, which is still listed as usable and still switched to, in `rta profile list`, `show` and `rta doctor`, and `rta config check` names its line (`profiles.shop-prod.theme.label`). It costs only itself: the rest of the block applies, and the colour beneath it, yours and not the built-in, stands in its place.
