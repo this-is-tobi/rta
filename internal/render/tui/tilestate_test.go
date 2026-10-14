@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -123,6 +125,89 @@ func TestATileWithParkedCallsSaysSoInItsBorder(t *testing.T) {
 	}
 	if got := plain(renderTile(waiting, 44, 8, true, true)); !strings.Contains(strings.SplitN(got, "\n", 2)[0], "● 2 waiting") {
 		t.Errorf("selecting the tile hid the badge:\n%s", got)
+	}
+}
+
+// "press a to add one" is the first instruction on a fresh install's dashboard,
+// and nothing is selected there: the search bar holds every letter, so the key
+// the tile named started a search for it. An empty tile that names one of its
+// own keys says to select it first until it is selected, and the opened list,
+// where the key answers at once, keeps the plugin's sentence as written.
+func TestAnEmptyTileThatNamesItsOwnKeySaysToSelectItFirst(t *testing.T) {
+	notes := tile{
+		cap: plugin.Capability{ID: "note.list", Actions: []plugin.Action{{Key: "a", Label: "add", Target: "note.add"}}},
+		view: view.Table{
+			Columns: []view.Column{{Name: "ID"}},
+			Empty:   "Nothing here yet — press a to add one",
+		},
+	}
+	unselected := ansi.Strip(renderTile(notes, 90, 6, false, false))
+	if !strings.Contains(unselected, "select this tile, then press a to add one") {
+		t.Errorf("an unselected tile promises a key that is a letter of the search:\n%s", unselected)
+	}
+	selected := ansi.Strip(renderTile(notes, 90, 6, true, false))
+	if !strings.Contains(selected, "press a to add one") || strings.Contains(selected, "select this tile") {
+		t.Errorf("the selected tile, where the key answers:\n%s", selected)
+	}
+
+	// Only a key the capability declares for its tile, and only an empty list.
+	notes.cap.Actions = nil
+	if got := ansi.Strip(renderTile(notes, 90, 6, false, false)); strings.Contains(got, "select this tile") {
+		t.Errorf("a key the tile does not declare was qualified:\n%s", got)
+	}
+	notes.cap.Actions = []plugin.Action{{Key: "a", Label: "add", Target: "note.add"}}
+	notes.view = view.Table{
+		Columns: []view.Column{{Name: "ID"}},
+		Rows:    [][]string{{"1"}},
+		Empty:   "Nothing here yet — press a to add one",
+	}
+	if got := ansi.Strip(renderTile(notes, 90, 6, false, false)); strings.Contains(got, "select this tile") {
+		t.Errorf("a tile with rows was qualified:\n%s", got)
+	}
+}
+
+// The sentence is a plugin's own words, so it is read the way a person reads
+// it: a capital at the start of a sentence, a key that is a symbol, and a
+// sentence that already says to select a tile are all ordinary, and each left
+// the promise standing, or said twice, when the match was a `\b` pattern for a
+// word character.
+func TestTheKeyAnEmptyTilePromisesIsFoundTheWayAPersonReadsIt(t *testing.T) {
+	for _, tc := range []struct{ key, empty, want string }{
+		{"a", "Press a to add one.", "Select this tile, then press a to add one."},
+		{"+", "Nothing here — press + to add one", "Nothing here — select this tile, then press + to add one"},
+		{"a", "Select a tile, then press a to add one", "Select a tile, then press a to add one"},
+		{"a", "Nothing here — press ab to add one", "Nothing here — press ab to add one"},
+		{"a", "Nothing here — depress a lever", "Nothing here — depress a lever"},
+		{"a", "Nothing here yet — press a to add one", "Nothing here yet — select this tile, then press a to add one"},
+		{"A", "Nothing here yet — press a to add one", "Nothing here yet — press a to add one"},
+		{"a", "Nothing here yet…press a to add one", "Nothing here yet…select this tile, then press a to add one"},
+		{"a", "No note selected — press a to add one", "No note selected — select this tile, then press a to add one"},
+		{"a", "Nothing here — press aé to add one", "Nothing here — press aé to add one"},
+	} {
+		tl := tile{
+			cap:  plugin.Capability{ID: "x.list", Actions: []plugin.Action{{Key: tc.key, Label: "add", Target: "x.add"}}},
+			view: view.Table{Columns: []view.Column{{Name: "ID"}}, Empty: tc.empty},
+		}
+		got := keyPromised(tl, false).(view.Table).Empty
+		if got != tc.want {
+			t.Errorf("key %q, %q is drawn as %q, want %q", tc.key, tc.empty, got, tc.want)
+		}
+	}
+}
+
+// The rewrite runs for every empty tile on every frame, and compiling a pattern
+// from each declared key each time was the dearest thing a frame did for a tile
+// with nothing in it.
+func TestTheEmptyTileRewriteAllocatesLittleOnEveryFrame(t *testing.T) {
+	tl := tile{
+		cap: plugin.Capability{ID: "x.list", Actions: []plugin.Action{
+			{Key: "u", Label: "update", Target: "x.edit"}, {Key: "t", Label: "toggle", Target: "x.toggle"},
+			{Key: "d", Label: "done", Target: "x.done"}, {Key: "a", Label: "add", Target: "x.add"},
+		}},
+		view: view.Table{Columns: []view.Column{{Name: "ID"}}, Empty: "Nothing here yet — press a to add one"},
+	}
+	if allocs := testing.AllocsPerRun(50, func() { _ = keyPromised(tl, false) }); allocs > 8 {
+		t.Errorf("keyPromised allocated %.0f times for one empty tile, want a handful", allocs)
 	}
 }
 
