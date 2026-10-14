@@ -941,7 +941,11 @@ func viewsTable(cfg config.Config) view.View {
 				drawn = "yes — " + active + " is switched on"
 			}
 		}
-		t.Rows = append(t.Rows, []string{name, strings.Join(selected, ", "), strconv.Itoa(tiles), configFileName(file), drawn})
+		listed := make([]string, len(selected))
+		for i, who := range selected {
+			listed[i] = plugin.ListedName(who)
+		}
+		t.Rows = append(t.Rows, []string{plugin.ListedName(name), strings.Join(listed, ", "), strconv.Itoa(tiles), configFileName(file), drawn})
 	}
 	base := cfg.Dashboard
 	row(config.DefaultView, config.Where("dashboard", ""), len(base.Tiles)+len(base.Add), nil)
