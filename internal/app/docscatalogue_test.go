@@ -170,7 +170,8 @@ func documentedRegistry(t *testing.T) *registry.Registry {
 	}
 	for _, p := range firstPartyPlugins(t) {
 		if err := reg.RegisterFrom(p, registry.Origin{}); err != nil {
-			t.Fatalf("registering the recorded %s plugin: %v", p.Name, err)
+			t.Fatalf("registering the recorded %s plugin: %v — if the rules a declaration is held to have changed, "+
+				"the record is rewritten from built plugins, as the comment on firstPartyCatalogue says", p.Name, err)
 		}
 	}
 	return reg
