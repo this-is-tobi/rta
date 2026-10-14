@@ -895,7 +895,7 @@ func completeViews(*cobra.Command, []string, string) ([]cobra.Completion, cobra.
 	out := []cobra.Completion{cobra.CompletionWithDesc(config.DefaultView, "the dashboard: block")}
 	for _, name := range cfg.ViewNames() {
 		d, _ := cfg.Block(name)
-		desc := format.Count(len(d.Tiles)+len(d.Add), "tile", "tiles")
+		desc := format.Count(len(d.Tiles)+len(d.Add), "entry", "entries")
 		if cfg.InProfile(name) {
 			desc += ", written in profile " + name
 		}
@@ -906,9 +906,15 @@ func completeViews(*cobra.Command, []string, string) ([]cobra.Completion, cobra.
 
 // viewsTable is every view the configuration states: which profiles select it,
 // what it holds, which file states it, and the one that is drawn now.
+//
+// What it holds is a count of entries, the tiles a view pins and the ones it
+// adds, and it is called that: the number of tiles a view draws is not here (the
+// automatic ones come with a view that states none, and one entry can draw
+// several panels), and `dashboard list` and `dashboard sections` count what is
+// drawn.
 func viewsTable(cfg config.Config) view.View {
 	t := view.Table{Columns: []view.Column{
-		{Name: "View"}, {Name: "Selected by"}, {Name: "Tiles", Kind: view.KindNumber}, {Name: "File"}, {Name: "Drawn now"},
+		{Name: "View"}, {Name: "Selected by"}, {Name: "Entries", Kind: view.KindNumber}, {Name: "File"}, {Name: "Drawn now"},
 	}}
 	now := drawnView(cfg)
 	// Who selects a view is who draws it, so this asks the same question the

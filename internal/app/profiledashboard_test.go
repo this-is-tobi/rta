@@ -513,7 +513,7 @@ func TestShellCompletionOffersAProfilesOwnScreenAsAView(t *testing.T) {
 	run := session(t, setRegistry(t))
 	dropIn(t, "20-staging.yaml", stagingEntry)
 	out, _, err := run("__complete", "dashboard", "list", "--view", "")
-	if err != nil || !strings.Contains(out, "staging\t1 tile, written in profile staging") {
+	if err != nil || !strings.Contains(out, "staging\t1 entry, written in profile staging") {
 		t.Errorf("--view completes to:\n%s (%v)", out, err)
 	}
 }
