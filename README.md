@@ -99,8 +99,8 @@ Ask Claude Code to add a note and the refusal carries the exact line that would 
 
 ## What is in it
 
-**20 built-in plugins, 129 capabilities** in the default build, and `rta plugin list` is the inventory:
+**21 built-in plugins, 131 capabilities** in the default build, and `rta plugin list` is the inventory:
 
-`sys` · `net` · `http` · `cert` · `fs` · `kv` · `note` · `gen` · `codec` · `time` · `audit` · `grant` · `agent` · `operator` · `lock` · `pkg` · `debug` · `keys` · `git` · `eol`
+`sys` · `net` · `http` · `cert` · `fs` · `kv` · `note` · `gen` · `codec` · `time` · `audit` · `grant` · `agent` · `operator` · `lock` · `pkg` · `debug` · `keys` · `git` · `eol` · `gitignore`
 
 Plus anything you install. Twelve first-party plugins live in [rta-plugins](https://github.com/this-is-tobi/rta-plugins) as proof the contract works — `pg`, `mysql`, `mariadb`, `etcd`, `qdrant`, `redis`, `s3`, `vault`, `kube`, `cnpg`, `docker` and `keycloak` — each a separate binary from a separate module, so the ones you skip cost you nothing, and `rta plugin index add official` is how they arrive.

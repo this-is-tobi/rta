@@ -1035,6 +1035,60 @@
     }
   },
   {
+    "name": "gitignore_list",
+    "description": "List the templates github/gitignore offers\n\nLists the templates in the github/gitignore repository, with the name gitignore_show takes for each: the main ones for languages, frameworks and tools, the global ones for operating systems and editors, and the community ones. A term narrows the list to the templates whose name contains it, or to one kind when the term is main, global or community. Without one the first templates are listed and the total says how many there are; `limit` shows more.\n\nAlso called: ignore, template, generate.\n\nSafety: read.",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "only this kind: main (languages and tools), global (systems and editors), community",
+          "enum": [
+            "main",
+            "global",
+            "community"
+          ],
+          "type": "string"
+        },
+        "limit": {
+          "default": 50,
+          "description": "how many templates to list",
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "term": {
+          "description": "part of a template's name, or a kind (main, global, community) to list that kind: go, node, mac, global",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "name": "gitignore_show",
+    "description": "Print github/gitignore templates as one .gitignore file\n\nPrints the named github/gitignore templates as one .gitignore file, each file's text under its own ### name ### line. `templates` takes names as gitignore_list shows them, in any case, or a qualified name such as Global/macOS when a bare name could mean two.\n\nAlso called: ignore, template, generate.\n\nSafety: read.",
+    "read_only_hint": true,
+    "idempotent_hint": true,
+    "input_schema": {
+      "additionalProperties": false,
+      "properties": {
+        "templates": {
+          "description": "template names as gitignore_list shows them: Go, Node, macOS; or a qualified name, Global/macOS, when a name could mean two",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "templates"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "name": "http_delete",
     "description": "DELETE a URL\n\nAlso called: api, endpoint, request.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.delete`.",
     "destructive_hint": false,

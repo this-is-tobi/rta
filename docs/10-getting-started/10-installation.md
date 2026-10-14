@@ -45,7 +45,7 @@ rta doctor
 ```
 CHECK            STATUS  DETAIL
 grant guard      info    off — anything that can run commands as you can issue a grant; `rta grant guard on` puts a passphrase in front of that
-capabilities     ok      20 plugins, 129 capabilities
+capabilities     ok      21 plugins, 131 capabilities
 agent grants     ok      none active — agents cannot write or destroy anything
 locks            ok      none — nothing is frozen
 kv store         ok      none yet — `rta kv set <key>` creates one, locked with a passphrase you choose
