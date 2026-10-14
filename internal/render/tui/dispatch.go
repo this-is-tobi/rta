@@ -112,8 +112,7 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// Another screen of the dashboard: the default, then each view in
 		// turn. Session-only, so looking at the databases' screen does not
 		// switch environment, and a switch (u) undoes it.
-		flash, cmd := m.cycleView()
-		m.flash = flash
+		cmd := m.cycleView()
 		return m, cmd, true
 	case "+":
 		// The other half of H, from the screen it is about: what to add
