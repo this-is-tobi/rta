@@ -51,7 +51,29 @@ import (
 // certificates and keystores; a credential filling a declared input is text by
 // the time a handler reads it, so the conversion happens here rather than
 // leaving every caller to guess.
-func Reveal(key string) (string, *view.Error) {
+//
+// What it refuses with is worded for a reader who has no terminal — the
+// command is handed on as the operator's to run — because this entry point
+// cannot tell who is asking. The caller that can, a person at a terminal or in
+// the TUI, says so with RevealAs.
+func Reveal(key string) (string, *view.Error) { return reveal(plugin.SurfaceMCP, key) }
+
+// RevealAs is Reveal for a caller that knows who reads its refusal: the CLI
+// and the TUI, where it is the person at the terminal, who is the operator and
+// has nobody to ask. "Ask the operator to run `rta kv set staging-db-password`"
+// read to them as an instruction for somebody else, in a word `rta operator`
+// also uses, for whoever manages a remote server.
+//
+// Nothing else differs, and an agent's call never reaches it: the MCP bridge
+// answers a refused credential with a refusal that names neither the entry nor
+// the store, and keeps the real one on the record for the person. The default
+// Reveal is the more cautious wording all the same, so a caller that forgets
+// to say who it is gets the one safe to read from either side.
+func RevealAs(sf plugin.Surface) func(key string) (string, *view.Error) {
+	return func(key string) (string, *view.Error) { return reveal(sf, key) }
+}
+
+func reveal(sf plugin.Surface, key string) (string, *view.Error) {
 	if key == "" {
 		return "", view.Errorf("kv.key.empty", "no entry named")
 	}
@@ -85,12 +107,32 @@ func Reveal(key string) (string, *view.Error) {
 			// refused on: whether a store exists is not what the comment above
 			// keeps from it, which is what the entries in it are called.
 			return "", view.Errorf("kv.notfound", "no entry %s: there is no store on this machine yet", textclean.Record(key)).
-				WithHint(plugin.AskOperator("kv set "+textclean.Record(key)) + " — it creates the store, locked with a passphrase you choose, and the entry")
+				WithHint(makeStoreHint(sf, key))
 		}
 		return "", view.Errorf("kv.notfound", "no entry %s in the store", textclean.Record(key)).
-			WithHint(plugin.AskOperator("kv list") + " to see what is there")
+			WithHint(listEntriesHint(sf))
 	}
 	return string(e.Value), nil
+}
+
+// makeStoreHint is the command that makes the store and the entry a profile
+// maps a credential onto, as the reader on sf runs it: handed on as the
+// operator's over MCP, and the reader's own anywhere else.
+func makeStoreHint(sf plugin.Surface, key string) string {
+	const result = "creates the store, locked with a passphrase you choose, and the entry"
+	if sf == plugin.SurfaceMCP {
+		return plugin.AskOperator("kv set "+textclean.Record(key)) + " — it " + result
+	}
+	return "`" + sf.Call("kv.set", keyArg(textclean.Record(key))) + "` " + result
+}
+
+// listEntriesHint is where to see what the store holds, as the reader on sf
+// reaches it.
+func listEntriesHint(sf plugin.Surface) string {
+	if sf == plugin.SurfaceMCP {
+		return plugin.AskOperator("kv list") + " to see what is there"
+	}
+	return sf.CapabilityName("kv.list") + " lists every key"
 }
 
 // Names lists the entries in the store, sorted, unlocking from the host's own

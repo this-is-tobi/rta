@@ -157,10 +157,12 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 		return boundProfile{}, noop, verr
 	}
 	// Fill, not Bind: this is a real run with a person waiting, so a `secrets:`
-	// reference is fetched here. kv.Reveal is injected rather than imported by
+	// reference is fetched here. kv.RevealAs is injected rather than imported by
 	// internal/profile, which is reached from the completion path on every
-	// keystroke and has no business knowing an encrypted store exists.
-	filled, verr := profile.Fill(ctx, name, conn, c, caller, os.LookupEnv, kv.Reveal)
+	// keystroke and has no business knowing an encrypted store exists. It is
+	// told the caller is the CLI, so what it refuses with is the person's own
+	// command to run and not a request to ask somebody else.
+	filled, verr := profile.Fill(ctx, name, conn, c, caller, os.LookupEnv, kv.RevealAs(plugin.SurfaceCLI))
 	if verr != nil {
 		// noop, never nil: the caller defers this before checking the error,
 		// so a nil here is a segfault on the *failure* path — which is the
