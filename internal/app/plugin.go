@@ -1167,6 +1167,12 @@ func devReport(reg *registry.Registry, c *pluginhost.Client) view.View {
 // blast radius and it is easy to write Read for something that reveals a
 // secret.
 func agentReach(_ *registry.Registry, c plugin.Capability) string {
+	// The second kind of "no" is the author's to notice and nobody else's: the
+	// tool is listed to every agent and every call is refused, so "yes, by
+	// default" read as a capability an agent can use.
+	if f, stuck := c.OperatorOnlyInput(); stuck && !c.HumanOnly {
+		return "no — needs " + f.Name + ", which only the person at the terminal can give"
+	}
 	switch {
 	case c.HumanOnly:
 		return "no — for the person at the terminal, never an agent"

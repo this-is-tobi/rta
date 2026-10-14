@@ -830,3 +830,92 @@ func TestAPrimaryValueTheViewDoesNotHaveOrMasksIsRejected(t *testing.T) {
 		t.Errorf("a Primary on a text view was accepted: %q", rec.errText())
 	}
 }
+
+// A Read capability is the free tier, so one that returns a token unmarked is
+// a grant-free read of a secret, and nothing in the suite looked: the warning
+// half of the redaction rule is asked only of a capability that takes a Secret
+// or needs a grant. The name is all there is to go on, so it is a note, with
+// the same way out the other note offers — never a failure, which would make
+// the cheapest way to go green a redaction entry that protects nothing.
+func TestAReadThatReturnsAFieldNamedLikeACredentialIsNotedAndNeverFailed(t *testing.T) {
+	c := ok()
+	c.ID = "demo.config.show"
+	c.Run = func(context.Context, plugin.Request) (view.View, error) {
+		return view.KeyValue{Pairs: []view.Pair{{Key: "endpoint", Value: "https://x.example"}, {Key: "token", Value: "tok_live_9f8e7d"}}}, nil
+	}
+	rec := redactionOf(t, noConfig(), c)
+	if len(rec.errs) > 0 {
+		t.Errorf("a note was made an error: %s", rec.errText())
+	}
+	for _, want := range []string{`"token"`, "Read", "mark it Redacted", "sdktest.Skip(sdktest.RuleRedaction"} {
+		if !strings.Contains(rec.logText(), want) {
+			t.Errorf("the note does not say %q: %q", want, rec.logText())
+		}
+	}
+
+	// A column counts as a key does, and the way out silences it.
+	c.Run = func(context.Context, plugin.Request) (view.View, error) {
+		return view.Table{Columns: []view.Column{{Name: "name"}, {Name: "API key"}}, Rows: [][]string{{"a", "k"}}}, nil
+	}
+	if rec := redactionOf(t, noConfig(), c); !strings.Contains(rec.logText(), `"API key"`) {
+		t.Errorf("a column named like a credential was not noted: %q", rec.logText())
+	}
+	skipped := noConfig()
+	skipped.skips[RuleRedaction] = map[string]string{c.ID: "names the key, never its value"}
+	if rec := redactionOf(t, skipped, c); rec.logText() != "" {
+		t.Errorf("a Skip did not silence the note: %q", rec.logText())
+	}
+}
+
+// What is about a credential and not one — when a secret was rotated, how long
+// a token has left, a heading — is left alone, or the note would be said so
+// often it stopped being read. The name has to end in the noun.
+func TestAFieldThatOnlyMentionsACredentialIsLeftAlone(t *testing.T) {
+	c := ok()
+	c.Run = func(context.Context, plugin.Request) (view.View, error) {
+		return view.KeyValue{Pairs: []view.Pair{
+			{Key: "secret rotated", Value: "3 days ago"}, {Key: "actual token expiry", Value: "1h"},
+			{Key: "Credentials", Value: "from a secret"}, {Key: "keyring", Value: "ok"},
+		}}, nil
+	}
+	if rec := redactionOf(t, noConfig(), c); rec.logText() != "" || len(rec.errs) > 0 {
+		t.Errorf("a field that only mentions a credential was noted: %q %q", rec.logText(), rec.errText())
+	}
+}
+
+// A capability offered to agents with an input only a person at a terminal can
+// give is listed to every one of them and refused on every call. The host's
+// refusal is deliberate; the note is for the author, who meant either a
+// capability for the terminal (HumanOnly) or an input an operator can set.
+func TestACapabilityNoAgentCanCallIsNotedForItsAuthor(t *testing.T) {
+	c := ok()
+	c.Inputs = append(c.Inputs, plugin.Field{Name: "name", Type: plugin.String, Required: true, Local: true})
+	p := plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}
+	rec := &recorder{}
+	checkReach(rec, p, noConfig())
+	for _, want := range []string{"demo.item.list", `"name"`, "HumanOnly", "Config key", "EnvFallback"} {
+		if !strings.Contains(rec.logText(), want) {
+			t.Errorf("the note does not say %q: %q", want, rec.logText())
+		}
+	}
+	if len(rec.errs) > 0 {
+		t.Errorf("the note was made an error: %s", rec.errText())
+	}
+
+	// None of the four ways a call can be reached is noted.
+	for name, change := range map[string]func(*plugin.Capability){
+		"HumanOnly":    func(c *plugin.Capability) { c.HumanOnly = true },
+		"a Config key": func(c *plugin.Capability) { c.Inputs[len(c.Inputs)-1].Config = "name" },
+		"EnvFallback":  func(c *plugin.Capability) { c.Inputs[len(c.Inputs)-1].EnvFallback = true },
+		"not Local":    func(c *plugin.Capability) { c.Inputs[len(c.Inputs)-1].Local = false },
+	} {
+		c := ok()
+		c.Inputs = append(c.Inputs, plugin.Field{Name: "name", Type: plugin.String, Required: true, Local: true})
+		change(&c)
+		rec := &recorder{}
+		checkReach(rec, plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}, noConfig())
+		if rec.logText() != "" {
+			t.Errorf("%s: a capability an agent can reach was noted: %q", name, rec.logText())
+		}
+	}
+}

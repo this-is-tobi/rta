@@ -548,6 +548,27 @@ func empty(v any) bool {
 	return false
 }
 
+// OperatorOnlyInput is the first input of c that nothing but a person at a
+// terminal can give: Required, Local — so an agent's schema does not have it
+// and the bridge drops it unread — and with neither a Config key nor an
+// EnvFallback, so no operator can set it ahead of time either. It is the third
+// answer MissingInput gives for a Local input an MCP call lacks ("ask the
+// operator to run it from their own terminal"), asked of the declaration
+// instead of of a call.
+//
+// A capability that has one is listed to every agent and refused on every
+// call. The host's refusal is the right answer to a call, and the question an
+// author has is earlier: whether that is what they meant, or whether the
+// capability is for the person at the terminal and is HumanOnly.
+func (c Capability) OperatorOnlyInput() (Field, bool) {
+	for _, f := range c.Inputs {
+		if f.Required && f.Local && f.Config == "" && !f.EnvFallback {
+			return f, true
+		}
+	}
+	return Field{}, false
+}
+
 // CheckRequired reports the first input a request must carry and does not —
 // see Missing — or nil, named the way the request's surface names it.
 func CheckRequired(c Capability, req Request) *view.Error {
