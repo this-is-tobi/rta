@@ -422,7 +422,7 @@ func lockTable(sf plugin.Surface, locks []lockdown.Lock) view.View {
 		// row action can lift the lock under the cursor without a form: the
 		// row carries both halves of the principal, and the surface matches
 		// columns to inputs by name.
-		Columns: []view.Column{{Name: "kind"}, {Name: "name"}, {Name: "note"}, {Name: "by"}, {Name: "stands"}},
+		Columns: []view.Column{{Name: "Kind"}, {Name: "Name"}, {Name: "Note"}, {Name: "By"}, {Name: "Stands"}},
 		Rows:    rows,
 		// Advisory, for the reason a grant on a replaced plugin is: the rows are
 		// all here, and one of them means more than its cells say.

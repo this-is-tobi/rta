@@ -1056,7 +1056,7 @@ func completeViews(*cobra.Command, []string, string) ([]cobra.Completion, cobra.
 // drawn.
 func viewsTable(cfg config.Config) view.View {
 	t := view.Table{Columns: []view.Column{
-		{Name: "View"}, {Name: "Selected by"}, {Name: "Entries", Kind: view.KindNumber}, {Name: "File"}, {Name: "Drawn now"},
+		{Name: "View"}, {Name: "Selected By"}, {Name: "Entries", Kind: view.KindNumber}, {Name: "File"}, {Name: "Drawn Now"},
 	}}
 	now := drawnView(cfg)
 	// Who selects a view is who draws it, so this asks the same question the

@@ -35,7 +35,7 @@ func TestAnEmptyQueueIsASentence(t *testing.T) {
 	}
 	out.Reset()
 	if err := cli.Render(&out, v, cli.Options{Format: cli.CSV}); err != nil ||
-		strings.TrimSpace(out.String()) != "id,capability,record,safety,profile,would do,expires in" {
+		strings.TrimSpace(out.String()) != "ID,Capability,Record,Safety,Profile,Would Do,Expires In" {
 		t.Errorf("csv = %q (%v), want the header row alone", out.String(), err)
 	}
 }

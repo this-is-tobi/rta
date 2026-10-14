@@ -1291,7 +1291,7 @@ func TestTheFirstColumnIsTheIdAnAnswerIsAimedBy(t *testing.T) {
 		t.Fatal(err)
 	}
 	table := v.(view.Table)
-	if len(table.Columns) == 0 || table.Columns[0].Name != "id" {
+	if len(table.Columns) == 0 || table.Columns[0].Name != "ID" {
 		t.Fatalf("the first column is %+v, want the request id", table.Columns)
 	}
 	if len(table.Rows) != 1 || table.Rows[0][0] != r.ID {
@@ -1413,7 +1413,7 @@ func TestTheOverviewNamesWhoIsConnectedNow(t *testing.T) {
 		}
 		found = true
 		table := s.View.(view.Table)
-		if len(table.Rows) != 1 || cell(t, table, 0, "client") != "Claude Code 2.1" || cell(t, table, 0, "session") != id || cell(t, table, 0, "calls") != "2" {
+		if len(table.Rows) != 1 || cell(t, table, 0, "Client") != "Claude Code 2.1" || cell(t, table, 0, "Session") != id || cell(t, table, 0, "Calls") != "2" {
 			t.Errorf("connected table = %v", table.Rows)
 		}
 	}

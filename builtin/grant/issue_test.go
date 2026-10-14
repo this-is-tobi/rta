@@ -320,7 +320,7 @@ func TestNoRoleDefinedIsATableToAParser(t *testing.T) {
 	}
 	var out bytes.Buffer
 	if err := cli.Render(&out, v, cli.Options{Format: cli.CSV}); err != nil ||
-		strings.TrimSpace(out.String()) != "role,from,agent,ttl,grants" {
+		strings.TrimSpace(out.String()) != "Role,From,Agent,TTL,Grants" {
 		t.Errorf("csv = %q (%v), want the header row alone", out.String(), err)
 	}
 }

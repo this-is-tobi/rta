@@ -146,8 +146,8 @@ func allManagerNames() []string {
 // upgrade of that one package under that one manager with nothing to type.
 func outdatedTable(l listing) view.Table {
 	t := view.Table{Columns: []view.Column{
-		{Name: "target"},
-		{Name: "package"},
+		{Name: "Target"},
+		{Name: "Package"},
 		{Name: "Installed"},
 		{Name: "Latest"},
 		{Name: "Status", Kind: view.KindStatus},

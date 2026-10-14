@@ -34,7 +34,7 @@ func managersCapability() plugin.Capability {
 // packages with nothing to type.
 func managersTable(ctx context.Context) view.Table {
 	t := view.Table{Columns: []view.Column{
-		{Name: "manager"},
+		{Name: "Manager"},
 		{Name: "Binary"},
 		{Name: "Path"},
 		{Name: "Version"},

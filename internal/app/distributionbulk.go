@@ -266,7 +266,7 @@ func runPluginRemoveAll(cmd *cobra.Command, opts *globalOpts) error {
 	}
 
 	t := view.Table{Columns: []view.Column{{Name: "Plugin"}, {Name: "Artifacts"},
-		{Name: "Still stated by"}}}
+		{Name: "Still Stated By"}}}
 	orphaned := false
 	still := 0
 	for _, e := range locked {

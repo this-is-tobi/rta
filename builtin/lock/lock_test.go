@@ -77,7 +77,7 @@ func TestNothingLockedIsATableToAParser(t *testing.T) {
 	}
 	var out bytes.Buffer
 	if err := cli.Render(&out, v, cli.Options{Format: cli.CSV}); err != nil ||
-		strings.TrimSpace(out.String()) != "kind,name,note,by,stands" {
+		strings.TrimSpace(out.String()) != "Kind,Name,Note,By,Stands" {
 		t.Errorf("csv = %q (%v), want the header row alone", out.String(), err)
 	}
 }

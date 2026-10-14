@@ -430,9 +430,9 @@ func connectedTable(agent string) (view.Table, error) {
 		open = slices.DeleteFunc(open, func(s session.Record) bool { return s.Agent != agent })
 	}
 	t := view.Table{Columns: []view.Column{
-		{Name: "agent"}, {Name: "client"}, {Name: "since", Kind: view.KindTimestamp},
-		{Name: "calls"}, {Name: "no grant"}, {Name: "roots"}, {Name: "session"},
-		{Name: "directory"}, {Name: "record"},
+		{Name: "Agent"}, {Name: "Client"}, {Name: "Since", Kind: view.KindTimestamp},
+		{Name: "Calls"}, {Name: "No Grant"}, {Name: "Roots"}, {Name: "Session"},
+		{Name: "Directory"}, {Name: "Record"},
 	}}
 	for _, s := range open {
 		// "asks" or "refuses" is the whole answer to "why did that call not
@@ -974,6 +974,14 @@ type logColumn struct {
 // serve over HTTP at all, is never: a column of em dashes on the screen an
 // operator opens in a hurry is a column they learn to skip.
 //
+// **Lower case, unlike every other table.** The column names here are the
+// record's own fields, and `--after` exists so that a shipper can read them
+// from a cursor: renaming one to match the Title Case the rest of the catalogue
+// uses would break whatever reads the log by name, for the sake of a header the
+// pretty renderer upper-cases for a person anyway. The tables beside it in this
+// package — who is connected, what is waiting — carry no such contract and are
+// in Title Case with the rest.
+//
 // **Two shapes.** The whole table, every field of the entry, is what a script
 // and `--detail` read, and its columns are the record's own. The compact one
 // is what a person scans on a terminal: when, what, the record it named and
@@ -1137,11 +1145,11 @@ func pendingTable(sf plugin.Surface, reqs []consent.Request) view.Table {
 		rows = append(rows, row)
 	}
 	cols := []view.Column{
-		{Name: "id"}, {Name: "capability"}, {Name: "record"}, {Name: "safety", Kind: view.KindStatus},
-		{Name: "profile"}, {Name: "would do"}, {Name: "expires in", Kind: view.KindDuration},
+		{Name: "ID"}, {Name: "Capability"}, {Name: "Record"}, {Name: "Safety", Kind: view.KindStatus},
+		{Name: "Profile"}, {Name: "Would Do"}, {Name: "Expires In", Kind: view.KindDuration},
 	}
 	if asking {
-		cols = slices.Insert(cols, 1, view.Column{Name: "agent"})
+		cols = slices.Insert(cols, 1, view.Column{Name: "Agent"})
 	}
 	t := view.Table{Columns: cols, Rows: rows, Total: len(rows)}
 	// A sentence on a screen, not an empty bordered table: the queue is the
