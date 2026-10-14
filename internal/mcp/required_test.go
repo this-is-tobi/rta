@@ -95,20 +95,25 @@ func TestAnInputTheConfigFillsIsNotRequiredOfAnAgent(t *testing.T) {
 		t.Fatalf("a call leaving out the database the config gives: %s", body)
 	}
 
-	for name, tc := range map[string]struct{ yaml, refusal string }{
-		"not in the config": {"plugins:\n  db:\n    host: db.internal\n", "core.input.missing"},
+	for name, tc := range map[string]struct {
+		yaml, refusal string
+		required      []string
+	}{
+		"not in the config": {"plugins:\n  db:\n    host: db.internal\n", "core.input.missing", []string{"database"}},
 		// Empty is nothing given, to the call as to the list.
-		"empty in the config": {"plugins:\n  db:\n    host: db.internal\n    database: \"\"\n", "core.input.missing"},
+		"empty in the config": {"plugins:\n  db:\n    host: db.internal\n    database: \"\"\n",
+			"core.input.missing", []string{"database"}},
 		// A call naming no profile is refused sooner here, since the
 		// namespace has one; what stays required is required of a call
-		// naming stg as much as of one naming a profile setting nothing.
+		// naming stg as much as of one naming a profile setting nothing. The
+		// profile itself is on the list, being what that refusal asks for.
 		"only a profile's": {"plugins:\n  db:\n    host: db.internal\n" +
 			"profiles:\n  stg:\n    plugins:\n      db:\n        set:\n          database: app\n",
-			"core.profile.required"},
+			"core.profile.required", []string{"database", "profile"}},
 	} {
 		call, ran, _, s := requiredServer(t, tc.yaml)
-		if got := requiredOf(t, s); !slices.Equal(got, []string{"database"}) {
-			t.Errorf("%s: required = %v, want [database]", name, got)
+		if got := requiredOf(t, s); !slices.Equal(got, tc.required) {
+			t.Errorf("%s: required = %v, want %v", name, got, tc.required)
 		}
 		if body, isErr := call(map[string]any{}); !isErr || *ran || !strings.Contains(body, tc.refusal) {
 			t.Errorf("%s: a call leaving out the database was not refused as %s: %s", name, tc.refusal, body)
