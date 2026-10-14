@@ -64,6 +64,59 @@ func TestTheInstallReportDoesNotSendAPluginWithNoKeysToTheConfig(t *testing.T) {
 	}
 }
 
+// Installing is the trust decision, and the report that makes it says so: it
+// ended with where the plugin landed and how to configure it, and nothing about
+// the artifact having been approved to run, while `rta plugin --help` says a
+// plugin runs once approved. A dry run says what installing would do, and its
+// `to install it` row is a step to take rather than a condition — for a plugin
+// that reads a credential too, whose report goes on to name the variable after
+// it, so the row is the step and not the end of the page.
+func TestTheInstallReportSaysTheArtifactIsApprovedToRun(t *testing.T) {
+	plain := plugin.Plugin{Name: "hello", Capabilities: []plugin.Capability{{ID: "hello.greet", Safety: plugin.Read}}}
+	credentialed := plugin.Plugin{Name: "hello", Capabilities: []plugin.Capability{{
+		ID: "hello.greet", Safety: plugin.Read,
+		Inputs: []plugin.Field{{Name: "password", Type: plugin.Secret, Local: true, EnvFallback: true}},
+	}}}
+	for name, declared := range map[string]plugin.Plugin{"reads no credential": plain, "reads a credential": credentialed} {
+		t.Run(name, func(t *testing.T) {
+			rep := plugindist.Report{
+				Name: "hello", Version: "v0.1.0", Index: "local", URL: "file:///x",
+				Digest: "6db7eaeebf84" + strings.Repeat("0", 52), Signature: "none stated", Path: "/store/hello",
+				Declared: declared,
+			}
+			rows := func(dryRun bool) map[string]string {
+				kv, ok := installView(rep, dryRun).(view.KeyValue)
+				if !ok {
+					t.Fatal("the install report is not a key/value page")
+				}
+				got := map[string]string{}
+				for _, p := range kv.Pairs {
+					got[p.Key] = p.Value
+				}
+				return got
+			}
+
+			done := rows(false)["trust"]
+			for _, want := range []string{"approved to run at digest 6db7eaeebf84", "installing is that decision", "`rta plugin untrust hello` takes it back"} {
+				if !strings.Contains(done, want) {
+					t.Errorf("trust row = %q, want it to say %q", done, want)
+				}
+			}
+
+			preview := rows(true)
+			if want := "installing would approve it to run at digest 6db7eaeebf84"; !strings.Contains(preview["trust"], want) {
+				t.Errorf("dry run trust row = %q, want it to say %q", preview["trust"], want)
+			}
+			if strings.Contains(preview["trust"], "approved to run at") {
+				t.Errorf("a dry run says the artifact was approved: %q", preview["trust"])
+			}
+			if _, stale := preview["once installed"]; stale || !strings.Contains(preview["to install it"], "run without --dry-run") {
+				t.Errorf("the dry run has no step to take: %v", preview)
+			}
+		})
+	}
+}
+
 // "Up to date" is a verdict on the index as it was last updated, and an upgrade
 // never fetches the index: it said so with no mention of the one command that
 // would change the answer.
