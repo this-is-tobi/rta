@@ -291,7 +291,18 @@ func askConsent(ctx context.Context, c plugin.Capability, opts Options, values m
 	// nowhere else — the fence exists so this decision is NOT re-opened
 	// call by call, while distracted, which is the one posture in which
 	// people say yes to things.
-	if active := opts.active(); active != "" && profileName != active {
+	//
+	// **The fence is across environments, so it needs a call that names one,
+	// and compares by environment, not by spelling.** A call that names none —
+	// a note, a stored secret, a file — is in no environment and has none to
+	// cross, and comparing its empty name with the switched-on one refused it
+	// unasked: for as long as a switch was on, which the all-day profiles make
+	// a whole day, the queue stayed empty for every ungranted write of that
+	// kind while the operator who started the server to be asked took it for
+	// the gate. A call naming `staging/analytics` is inside an active `staging`
+	// as much as one naming `staging` is, which is how the grants are matched;
+	// the one predicate is internal/grant's, so the two cannot drift again.
+	if !grant.InsideActive(profileName, opts.active()) {
 		return false, nil
 	}
 	parked, err := consent.Ask(consent.Call{

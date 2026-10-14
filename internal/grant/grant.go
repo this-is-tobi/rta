@@ -1767,14 +1767,26 @@ func callerReachable(g Grant, by Caller) bool {
 
 // insideActive is callerReachable's fence half, split out so RefusedStale
 // can apply everything the gate applies except the pin.
+func insideActive(g Grant, by Caller) bool {
+	return InsideActive(g.Profile, by.Active)
+}
+
+// InsideActive is the one answer to "is this profile reference inside the
+// environment the operator switched on", for everything that has to agree on
+// it: which grants a call can use, whether a refusal is the switch's doing,
+// and whether a refused call may be put to the operator as a question.
 //
 // By the name half: the switch is the whole environment, so an active
-// `staging` keeps a grant naming `staging/analytics` reachable — the
-// instance is inside the place the operator switched on, and dropping it
-// would make activating an environment revoke consent for its own
-// databases.
-func insideActive(g Grant, by Caller) bool {
-	return by.Active == "" || g.Profile == "" || config.RefName(g.Profile) == by.Active
+// `staging` keeps `staging/analytics` inside — the instance is in the place
+// the operator switched on, and dropping it would make activating an
+// environment revoke consent for its own databases, and refuse unasked a call
+// the operator would be asked about were it spelled `staging`.
+//
+// A reference that names no environment — a note, a stored secret, a file —
+// is in none and has none to cross, so it is inside whatever is switched on.
+// Nothing switched on fences nothing.
+func InsideActive(ref, active string) bool {
+	return active == "" || ref == "" || config.RefName(ref) == active
 }
 
 // RefusedStale reports whether a refusal this call just received was caused
