@@ -112,8 +112,8 @@ func TestNothingToListIsATableToAParser(t *testing.T) {
 		say    string
 		header string
 	}{
-		"tools":    {tools, "No tools listed", "target,Source,Installed,Latest,Status,Where"},
-		"outdated": {outdated, "No package manager found", "target,package,Installed,Latest,Status,Upgrade"},
+		"tools":    {tools, "No tools listed", "Target,Source,Installed,Latest,Status,Where"},
+		"outdated": {outdated, "No package manager found", "Target,Package,Installed,Latest,Status,Upgrade"},
 	} {
 		tbl, ok := c.v.(view.Table)
 		if !ok || len(tbl.Rows) != 0 || !strings.Contains(tbl.Empty, c.say) {
@@ -637,7 +637,7 @@ func TestToolsGrammarAndListing(t *testing.T) {
 		t.Errorf("ghost = %+v", states[1])
 	}
 	tbl := toolsTable(states)
-	if tbl.Rows[0][4] != "outdated" || tbl.Columns[0].Name != "target" {
+	if tbl.Rows[0][4] != "outdated" || tbl.Columns[0].Name != "Target" {
 		t.Errorf("table = %v", tbl)
 	}
 }

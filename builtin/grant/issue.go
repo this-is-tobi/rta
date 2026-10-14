@@ -633,8 +633,8 @@ func issueLine(g core.Grant) string {
 
 func planTable(prepared []core.Grant, replaces []string) view.Table {
 	t := view.Table{Columns: []view.Column{
-		{Name: "capability"}, {Name: "record"}, {Name: "profile"},
-		{Name: "expires in", Kind: view.KindDuration}, {Name: "budget"}, {Name: "replaces"},
+		{Name: "Capability"}, {Name: "Record"}, {Name: "Profile"},
+		{Name: "Expires In", Kind: view.KindDuration}, {Name: "Budget"}, {Name: "Replaces"},
 	}}
 	for i, g := range prepared {
 		t.Rows = append(t.Rows, []string{
@@ -671,7 +671,7 @@ func runRoles(_ context.Context, req plugin.Request) (view.View, error) {
 		all = hits
 	}
 	t := view.Table{Columns: []view.Column{
-		{Name: "role"}, {Name: "from"}, {Name: "agent"}, {Name: "ttl"}, {Name: "grants"},
+		{Name: "Role"}, {Name: "From"}, {Name: "Agent"}, {Name: "TTL"}, {Name: "Grants"},
 	}}
 	for _, s := range all {
 		t.Rows = append(t.Rows, []string{s.Name, sourceWord(s), dash(s.Role.Agent), windowWords(s), strings.Join(s.Role.Grants, "\n")})

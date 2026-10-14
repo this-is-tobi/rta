@@ -66,6 +66,8 @@ An empty listing is still its table — the columns, and `rows` an empty array �
 
 `-o csv` writes a table as its rows and any other result as rows of its own: key/value pairs under `key,value`, text as one cell under `text`, and a tree, a chart or a page of sections as every value it holds under `path,value`, the path being where `-o json` puts it. A result that is not a table is never a reason for csv to fail — a write has already happened by the time its result is written.
 
+A column's name is Title Case on every built-in table (`Expires In`, `Would Do`), the same word for the same field wherever it appears, so a script that reads a `-o csv` header or `columns[].name` meets one spelling. `rta agent log` is the one exception: its columns are the record's own fields (`seq`, `outcome`, `authorized`), which a log shipper reads by name and a rename would break.
+
 A column may carry a `kind` — a semantic hint the renderers style by, never styling itself. Two of them are graded rather than merely aligned: a `status` column colours its own vocabulary (`ok`, `warn`, `expired`, `denied`…), and a `usage` column is a percentage of something with a ceiling, drawn green below 80%, amber from 80 and red from 90. That is what makes a full volume in `rta kube pvc usage`, a throttled container in `kube metrics pod` and a namespace out of quota findable by glance rather than by reading every row.
 
 Not every percentage is one. `fs usage`'s Share is a directory's proportion of a tree and 95% is the answer you ran it for; `sys ps`'s CPU% passes 100 on a second core; `kube metrics pressure` reports stall time, where a node is already in trouble far below 80. Those stay `percent` — ungraded, and deliberately so.

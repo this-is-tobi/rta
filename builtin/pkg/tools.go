@@ -214,7 +214,7 @@ func runTools(ctx context.Context, req plugin.Request) (view.View, error) {
 
 func toolsTable(states []toolState) view.Table {
 	t := view.Table{Columns: []view.Column{
-		{Name: "target"}, {Name: "Source"}, {Name: "Installed"}, {Name: "Latest"},
+		{Name: "Target"}, {Name: "Source"}, {Name: "Installed"}, {Name: "Latest"},
 		{Name: "Status", Kind: view.KindStatus}, {Name: "Where"},
 	}}
 	for _, s := range states {

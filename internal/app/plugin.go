@@ -254,8 +254,8 @@ func newPluginDisallowCommand(opts *globalOpts) *cobra.Command {
 func needsInventory() view.View {
 	set := plugintrust.Load()
 	t := view.Table{Columns: []view.Column{
-		{Name: "Plugin"}, {Name: "Asks for"}, {Name: "Status", Kind: view.KindStatus},
-		{Name: "To allow"},
+		{Name: "Plugin"}, {Name: "Asks For"}, {Name: "Status", Kind: view.KindStatus},
+		{Name: "To Allow"},
 	}}
 	for _, c := range loadedPlugins {
 		if len(c.Declared.Needs) == 0 {
@@ -682,7 +682,7 @@ func trustInventory() view.View {
 		{Name: "Plugin"},
 		{Name: "Digest"},
 		{Name: "Artifact"},
-		{Name: "To load it"},
+		{Name: "To Load It"},
 	}}
 	for _, u := range untrustedPlugins() {
 		t.Rows = append(t.Rows, []string{u.Name, u.Short(), u.Path, "rta plugin trust " + u.Name})

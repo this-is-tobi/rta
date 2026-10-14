@@ -101,7 +101,7 @@ func pluginDocView(p plugin.Plugin) (view.View, *view.Error) {
 // the key read as the first's for all of them, and a sentence nobody wrote
 // about the others was put in their mouths. Grouped by help, so a key whose
 // capabilities agree is still one row, as it always was, and one they differ
-// on says to which each wording applies — the "Read by" column is what makes a
+// on says to which each wording applies — the "Read By" column is what makes a
 // repeated key legible. A neutral sentence for the key as a whole was the
 // other way, and it is one the plugin would have to write and no declaration
 // holds.
@@ -140,7 +140,7 @@ func configKeysView(reg *registry.Registry, p plugin.Plugin) view.View {
 	sort.Strings(keys)
 	t := view.Table{Columns: []view.Column{
 		{Name: "Key"},
-		{Name: "Read by"},
+		{Name: "Read By"},
 		{Name: "Help"},
 	}}
 	for _, k := range keys {
