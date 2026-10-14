@@ -54,3 +54,16 @@ func TestANameWithANewlineIsOneLineInEveryListing(t *testing.T) {
 		t.Errorf("the hint listing the configured profiles was cut at a name's newline:\n%s", errOut)
 	}
 }
+
+// The writers refuse a view name that is not lower case, digits and hyphens,
+// and the reader took any. A view the writers could not have made is named by
+// the check, with what a view may be called, so a name that reached the file by
+// hand is not the only place the rule is unsaid.
+func TestConfigCheckNamesAViewWhoseNameNoWriterWouldMake(t *testing.T) {
+	run := session(t, setRegistry(t))
+	dropIn(t, "30-bigops.yaml", "dashboard:\n  views:\n    Big Ops:\n      add:\n      - id: db.status\n")
+	out, _, _ := run("config", "check", "-o", "json")
+	if !strings.Contains(out, "dashboard.views.Big Ops") || !strings.Contains(out, "not a name a view can have") {
+		t.Errorf("config check does not name the view:\n%s", out)
+	}
+}
