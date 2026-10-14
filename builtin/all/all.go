@@ -18,6 +18,7 @@ import (
 	rtafs "github.com/this-is-tobi/rta/builtin/fs"
 	"github.com/this-is-tobi/rta/builtin/gen"
 	rtagit "github.com/this-is-tobi/rta/builtin/git"
+	"github.com/this-is-tobi/rta/builtin/gitignore"
 	"github.com/this-is-tobi/rta/builtin/grant"
 	rtahttp "github.com/this-is-tobi/rta/builtin/http"
 	"github.com/this-is-tobi/rta/builtin/keys"
@@ -69,6 +70,7 @@ func RegistryWith(conf func(plugin.Capability) map[string]any,
 		eol.Plugin(),
 		rtafs.Plugin(),
 		rtagit.Plugin(),
+		gitignore.Plugin(),
 		note.Plugin(),
 		kv.Plugin(),
 		gen.Plugin(),

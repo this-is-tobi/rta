@@ -27,7 +27,7 @@ Every one of them draws the same line in the same place: the read tier describes
 
 ## Built in, or a plugin
 
-A capability ships built into `rta` when it needs no credential and no configuration, brings nothing outside the standard library, and reaches either nothing or one fixed public host that no input can redirect — `eol.check` asks endoflife.date, the `audit` plugin asks [OSV](../95-reference/10-glossary.md#acronyms) and endoflife.date, and neither can be pointed anywhere else. It is a plugin the moment any of that stops being true: a client library the people who never use it should not carry, a credential location it has to declare, or a destination the caller chooses, which is the line `http.get` sits behind a grant for. Every plugin in rta-plugins fails at least one of those tests, and that is what put it there; `eol` passed all of them, and that is what brought it here.
+A capability ships built into `rta` when it needs no credential and no configuration, brings nothing outside the standard library, and reaches either nothing or the fixed public hosts of one provider, none of which an input can redirect — `eol.check` asks endoflife.date, `gitignore.show` asks GitHub's API for the listing of the repository and its raw host for the files, a capability of the `audit` plugin asks [OSV](../95-reference/10-glossary.md#acronyms) or endoflife.date, and none of them can be pointed anywhere else. It is a plugin the moment any of that stops being true: a client library the people who never use it should not carry, a credential location it has to declare, or a destination the caller chooses, which is the line `http.get` sits behind a grant for. Every plugin in rta-plugins fails at least one of those tests, and that is what put it there; `eol` and `gitignore` passed all of them, and that is what brought them here.
 
 What is built in, with a first command for each. `rta plugin list` is the same inventory with a count of capabilities and the highest [safety class](../95-reference/10-glossary.md#terms) each carries, and — once any plugin is not built in — a `Source` column that says whether each one is `built in`, `installed by rta`, `in the system root` or `found on $PATH` (a stock install is built in all the way down, and the column says nothing there, so it is left out), and `rta explain <plugin>` lists what is under one.
 
@@ -39,6 +39,7 @@ What is built in, with a first command for each. `rta plugin list` is the same i
 | `cert` | X.509 and TLS inspection: certificates, chains, expiry | `rta cert expiry example.com` |
 | `fs` | Filesystem answers: what is using space, what is here, what is this file | `rta fs usage ~/Downloads` |
 | `git` | Structured views of a git repository — status, log, diff, branches, blame, config, hooks | `rta git status` |
+| `gitignore` | Starter .gitignore files from github/gitignore: find templates, print them as one file | `rta gitignore show Go macOS` |
 | `audit` | Security hardening checks, each graded against a named OWASP/CWE control | `rta audit web example.com` |
 | `kv` | Encrypted local store for secrets, certificates and key files | `rta kv init --generate` |
 | `note` | Local notebook: capture, tag, cross-link, schedule, break down, check off | `rta note add "renew the certificate"` |

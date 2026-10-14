@@ -571,6 +571,26 @@
               },
               "type": "object"
             },
+            "^gitignore(@[0-9a-f]+)?$": {
+              "additionalProperties": false,
+              "description": "Starter .gitignore files from github/gitignore: find templates, print them as one file",
+              "properties": {
+                "list": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "limit": {
+                      "default": 50,
+                      "description": "how many templates to list (read by gitignore.list)",
+                      "maximum": 1000,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
             "^http(@[0-9a-f]+)?$": {
               "additionalProperties": false,
               "description": "Request any endpoint and inspect the response \u2014 a REST client",
