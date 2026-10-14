@@ -1503,3 +1503,46 @@ func TestPluginDevRefusesABuiltInNamespaceAndSaysWhoseItIs(t *testing.T) {
 		t.Errorf("sys is registered from %+v after the refusal", got)
 	}
 }
+
+// The first thing a newcomer copies off the inputs page is its example, and an
+// example that declares a Secret without Local is an input an agent is asked
+// to fill: an API key typed into a tool call, against the same page's rule
+// that a credential is `Local: true, EnvFallback: true`. Nothing else flags
+// it — the suite, plugin dev and explain all stay quiet about a Secret an
+// agent may give, because a value to store is a legitimate one — so the page
+// is the only guidance there is.
+func TestTheDocsDeclareACredentialInputLocal(t *testing.T) {
+	root := repoRoot(t)
+	page := readDoc(t, root, "docs/40-plugins/21-declaring-inputs.md")
+	found := 0
+	for _, line := range strings.Split(page, "\n") {
+		if !strings.Contains(line, "Type: plugin.Secret") {
+			continue
+		}
+		found++
+		if !strings.Contains(line, "Local: true") {
+			t.Errorf("a Secret input in the docs is one an agent is asked to fill:\n%s", strings.TrimSpace(line))
+		}
+	}
+	if found == 0 {
+		t.Error("the page no longer declares a Secret input; if the example moved, move this test with it")
+	}
+}
+
+// The scaffold's README is what an author reads beside the code they just
+// generated, and its one line about secrets used to say only to ask for one
+// with a plugin.Secret input.
+func TestTheScaffoldREADMETellsAnAuthorHowToDeclareACredential(t *testing.T) {
+	dir := t.TempDir()
+	s := scaffold{Name: "weather", Binary: "rta-plugin-weather", Module: "rta-plugin-weather", RtaMod: rtaModule}
+	if _, err := s.write(dir, false); err != nil {
+		t.Fatal(err)
+	}
+	readme, err := os.ReadFile(filepath.Join(dir, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readme), "Local: true, EnvFallback: true") {
+		t.Errorf("the README does not say how a credential is declared:\n%s", readme)
+	}
+}

@@ -435,7 +435,8 @@ One declaration in ` + "`" + `main.go` + "`" + ` becomes:
   directory, and cannot read the usual credential locations. ` + "`" + `rta doctor` + "`" + ` prints
   the exact set.
 - **Your stdin is /dev/null.** The protocol owns the real one. Ask for a secret
-  with a ` + "`" + `plugin.Secret` + "`" + ` input instead of prompting.
+  with a ` + "`" + `plugin.Secret` + "`" + ` input instead of prompting, and declare a credential
+  ` + "`" + `Local: true, EnvFallback: true` + "`" + ` so that no agent is ever asked to type it.
 `
 
 const testTemplate = `package main

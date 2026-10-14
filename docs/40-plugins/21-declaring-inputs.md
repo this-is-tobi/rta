@@ -8,12 +8,14 @@
 Inputs: []plugin.Field{
 	{Name: "city", Type: plugin.String, Positional: true, Required: true, Help: "which city"},
 	{Name: "units", Type: plugin.String, Default: "c", Options: []string{"c", "f"}},
-	{Name: "key", Type: plugin.Secret, Help: "API key"},
+	{Name: "key", Type: plugin.Secret, Local: true, EnvFallback: true, Help: "API key"},
 	{Name: "out", Type: plugin.Path, Local: true, Help: "write the report here"},
 }
 ```
 
 `Type` is mandatory and closed — there is no inference from the name, because `Secret` is what makes a value masked and `Path` is what makes it completable, and neither is guessable. The host holds every value to it before your handler runs: one your accessor could not read — text where a `Bool` is declared, a boolean where a `String` is, a block where a list is — is refused on every surface, a value from the operator's config or a profile included, and never handed to you as the zero. Nothing is coerced: `"true"` is not read as true, because the next question is `yes`, and the one after that decides whether a connection is encrypted.
+
+A credential is declared `Local: true, EnvFallback: true` as well as `Secret`, as `key` is above. `Secret` masks the value on every surface, and `Local` keeps the input out of an agent's schema, so no tool call is ever asked to carry an API key: the operator's own environment (`EnvFallback`) or a [profile](#a-connection-a-profile-can-fill) supplies it, and the capability is still one an agent can call. A `Secret` that is not `Local` is for a value an agent legitimately hands you to store — a password field on a record, a value to write — and it reaches an agent as an ordinary string argument, masked wherever it is shown afterwards.
 
 Your handler reads each input by name, as the type it declared: `req.String("city")`, `req.Int("limit")`, `req.Float("ratio")`, `req.Bool("shout")`, `req.StringSlice("tag")`, `req.Duration("timeout")`. An input nobody gave and nothing filled reads as the zero of its type, which is why `Required` and `Default` are declarations and not something to check for in the handler.
 
