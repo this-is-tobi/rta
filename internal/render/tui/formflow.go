@@ -390,10 +390,24 @@ func (m Model) formView() string {
 	// nothing can render past the last row whatever the field mix turns out
 	// to cost.
 	head := capHead(m.current)
-	if m.form.about != "" {
-		head.Note = m.form.about
+	if about := m.formAbout(); about != "" {
+		head.Note = about
 	}
 	return panel(head, "\n"+m.form.form.View(), m.width, m.height-lipgloss.Height(footer), true) + "\n" + footer
+}
+
+// formAbout is what the panel's title says in place of the capability's
+// summary: the parked call an allow form answers (set when it opened, since the
+// call does not change under it), or whom a lock form is about, which follows
+// the boxes (aboutLock).
+func (m Model) formAbout() string {
+	if m.form.about != "" {
+		return m.form.about
+	}
+	if m.current.ID == lockCapability {
+		return aboutLock(m.form)
+	}
+	return ""
 }
 
 // closeForm dismisses the current form: back to the actionable view it was

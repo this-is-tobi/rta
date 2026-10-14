@@ -280,8 +280,32 @@ func flashText(msg resultMsg) string {
 		if t, ok := msg.view.(view.Text); ok && !strings.Contains(t.Body, "\n") && len(t.Body) <= maxFlashLen {
 			return t.Body
 		}
+		if line, ok := lockReceipt(msg); ok {
+			return line
+		}
 	}
 	return msg.cap.ID + " done"
+}
+
+// lockReceipt is the line a placed lock leaves in the footer: the capability's
+// own receipt, "locked agent claude", where "lock.add done" left a person who
+// had pressed the key on a row to find out from `rta lock list` whom it was.
+// Taken from what the capability answered and not from what the form meant to
+// ask, so a lock on every agent, or one placed on a server, says that.
+func lockReceipt(msg resultMsg) (string, bool) {
+	if msg.cap.ID != lockCapability {
+		return "", false
+	}
+	kv, ok := msg.view.(view.KeyValue)
+	if !ok {
+		return "", false
+	}
+	for _, p := range kv.Pairs {
+		if line := "locked " + p.Value; p.Key == "locked" && !strings.Contains(line, "\n") && len(line) <= maxFlashLen {
+			return line, true
+		}
+	}
+	return "", false
 }
 
 // maxFlashLen bounds a flashed one-liner. Generous for an ordinary

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -211,6 +212,32 @@ func aboutCall(c plugin.Capability, base map[string]any) string {
 		return call.describe()
 	}
 	return ""
+}
+
+// aboutLock is whom the lock form is about, for the form opened on a row that
+// already named the principal: `L` on a queue row or an agent's page seeds the
+// name, and a form does not ask for what it was given, so nothing on the screen
+// said who was about to be locked — the one question a person reaching for the
+// instant stop in a hurry can still check before they submit, and the one place
+// the `A` form beside it does say (aboutCall).
+//
+// Read from the form as it stands and not fixed when it opened: the kind is one
+// of the boxes, and a title that went on saying "agent" over a credential would
+// be a line that lies on the screen it was added to make trustworthy. Empty
+// when the name is a box of the form's own, which is on screen already.
+func aboutLock(f *capForm) string {
+	name, _ := f.base["name"].(string)
+	if strings.TrimSpace(name) == "" {
+		return ""
+	}
+	kind, _ := f.base["kind"].(string)
+	if bound, ok := f.bindings["kind"]; ok {
+		kind = *bound
+	}
+	if kind = strings.TrimSpace(kind); kind == "" {
+		return "lock " + plugin.ListedName(name)
+	}
+	return "lock " + kind + " " + plugin.ListedName(name)
 }
 
 // guardIdle is the inputs of c a form should ask: the same, less the guard's

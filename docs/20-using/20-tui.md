@@ -93,7 +93,7 @@ The agent tile says the same, and opens the queue and the record. From it, and f
 | `a` | Allow it once — the footer names the call and what it would do, and `enter` allows exactly that call |
 | `A` | Allow it for a while, or as a role — the `ttl` and `role` form, for the same call |
 | `d` | Deny it — one key, no form |
-| `L` | Lock the agent that asked, its name already filled in from the row; from the agent tile, the agent that is connected when there is only one |
+| `L` | Lock the agent that asked, its name already filled in from the row and named in the form's title (`lock agent claude`), and in the footer once it is done (`locked agent claude`); from the agent tile, the agent that is connected when there is only one |
 
 `a` stops for a confirmation because granting access is the direction that cannot be taken back once a secret has been read, and what it stops on is the call itself, in one line, rather than a form that never said which call it was about. Any key but `enter` and `A` cancels it and says the call is still waiting. The line holds the call that was named when `a` was pressed, so the queue refreshing under the cursor cannot change which one `enter` allows. The form asks for the guard's passphrase only when the grant guard is on.
 
