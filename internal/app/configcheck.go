@@ -140,11 +140,34 @@ func configProblems(reg *registry.Registry, path string, data []byte) []configPr
 		key := "profiles." + p.profile + ".dashboard"
 		out = append(out, configProblem{Key: key, Line: lines[key], Text: p.text})
 	}
+	// A file found in the working directory arranges no screen: the profiles in
+	// it are named above, and the dashboard it states is named here, once, so a
+	// check does not pass a file whose every screen is ignored.
+	if !config.TrustedPath() && statesAScreen(cfg) {
+		out = append(out, configProblem{Key: "dashboard", Line: lines["dashboard"],
+			Text: "the dashboard: block, its views and the screens in profile entries are read from a working-directory " +
+				"config file, so they are not honoured and the automatic dashboard is drawn (set $RTA_CONFIG to name this file deliberately)"})
+	}
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i].Line, out[j].Line
 		return (a != 0 && b == 0) || (a != 0 && b != 0 && a < b)
 	})
 	return out
+}
+
+// statesAScreen is whether a configuration arranges any dashboard: the block's
+// own fields, a view, or a profile that selects or writes one.
+func statesAScreen(cfg config.Config) bool {
+	d := cfg.Dashboard
+	if len(d.Tiles)+len(d.Add)+len(d.Hidden)+len(d.Order)+len(d.Views) > 0 || d.Columns != 0 {
+		return true
+	}
+	for _, p := range cfg.Profiles {
+		if p.Dashboard.Name != "" || p.Dashboard.Inline != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func problemsTable(problems []configProblem, empty string) view.Table {
