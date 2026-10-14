@@ -75,6 +75,8 @@ var findable = []struct {
 	{"find my todo about the migration", []string{"note_search"}},
 	{"read a secret from the store", []string{"kv_get"}},
 	{"save a password safely", []string{"kv_set"}},
+	{"delete a stored secret", []string{"kv_rm"}},
+	{"bring back a deleted secret", []string{"kv_restore"}},
 	{"who can decrypt the secret store", []string{"kv_recipients"}},
 	{"how many secrets are stored", []string{"kv_overview"}},
 	{"how many secrets do i have stored", []string{"kv_overview"}},
