@@ -202,6 +202,7 @@ func everyViewType() map[string]view.View {
 		"keyvalue": view.KeyValue{
 			Pairs:    []view.Pair{{Key: "k", Value: "v"}, {Key: "secret", Value: "s"}},
 			Redacted: []string{"secret"},
+			Numbers:  map[string]float64{"keys": 16, "value_bytes": 2891},
 		},
 		"table": view.Table{
 			Columns:  []view.Column{{Name: "A", Kind: view.KindBytes}, {Name: "B", Kind: view.KindStatus}},
@@ -290,6 +291,22 @@ func TestEveryViewFieldIsCarried(t *testing.T) {
 					name, f.Name)
 			}
 		}
+	}
+}
+
+// A number that is not finite cannot be written in JSON, and one such number
+// in a plugin's page would fail the whole page for every caller that asks for
+// it. The host drops it on the way in and keeps the rest.
+func TestANumberThatIsNotFiniteIsDroppedOnTheWayIn(t *testing.T) {
+	wire := &rtav1.View{Kind: &rtav1.View_KeyValue{KeyValue: &rtav1.KeyValue{
+		Numbers: map[string]float64{"keys": 16, "nan": math.NaN(), "inf": math.Inf(1), "neg": math.Inf(-1)},
+	}}}
+	kv, ok := ViewFromProto(wire).(view.KeyValue)
+	if !ok {
+		t.Fatalf("a key/value page came back as %T", ViewFromProto(wire))
+	}
+	if len(kv.Numbers) != 1 || kv.Numbers["keys"] != 16 {
+		t.Errorf("numbers = %v, want only keys", kv.Numbers)
 	}
 }
 

@@ -43,6 +43,22 @@ type KeyValue struct {
 	Pairs []Pair `json:"pairs"`
 	// Redacted lists keys whose values must be masked by every renderer.
 	Redacted []string `json:"redacted,omitempty"`
+	// Numbers are the page's counts and sizes as numbers, by name, for the two
+	// formats a program reads (`-o json`, `-o yaml`) and for an agent over MCP.
+	//
+	// A pair's value is a sentence written for a person ("16 keys, 11 folders,
+	// 2.8 KiB of values") and a script reading it has to take it apart; the
+	// numbers are what the sentence was made from, `{"keys": 16, "folders": 11,
+	// "value_bytes": 2891}`, so `jq .numbers.keys` is the whole of the work. Every
+	// other renderer ignores them: they are a second way to read the page and
+	// never a second page, so a name here is a fact the pairs already say.
+	//
+	// A name is lower case with underscores and says its unit when it has one
+	// (`value_bytes`, `file_bytes`). Never a number that is masked: a name in
+	// Redacted drops its number (Redact), but a number for a value the page does
+	// not show at all is the producer's to leave out. A non-finite number cannot
+	// be written in JSON and is dropped on the way in from a plugin.
+	Numbers map[string]float64 `json:"numbers,omitempty"`
 }
 
 // ColumnKind is a semantic hint about what a column holds. It selects
@@ -377,6 +393,16 @@ func Redact(v View) View {
 			}
 		}
 		t.Pairs = pairs
+		// A number named for a masked key is the value in another form.
+		if len(t.Numbers) > 0 {
+			numbers := make(map[string]float64, len(t.Numbers))
+			for name, n := range t.Numbers {
+				if !t.IsRedacted(name) {
+					numbers[name] = n
+				}
+			}
+			t.Numbers = numbers
+		}
 		return t
 	case Table:
 		mask := make([]bool, len(t.Columns))
