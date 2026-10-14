@@ -339,8 +339,9 @@ func (m Model) profilesKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		if !m.selectedProfileHasUnsetCredential() {
 			return m, nil, true
 		}
-		m.flash = m.copyExportLine()
-		return m, nil, true
+		flash, cmd := m.copyExportLine()
+		m.flash = flash
+		return m, cmd, true
 	}
 	return m, nil, true
 }
@@ -592,12 +593,7 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 				// is the only one that reaches the local machine over ssh, so
 				// the value goes to both and the flash says which is certain.
 				text := string(raw)
-				if copyValueToClipboard(text) == nil {
-					m.flash = "copied as JSON"
-				} else {
-					m.flash = "sent to the terminal as JSON — it pastes only where the terminal accepts that"
-				}
-				return m, tea.SetClipboard(text), true
+				return m, tea.Batch(copyInBackground(text, copiedJSON), tea.SetClipboard(text)), true
 			}
 		}
 	case "c":

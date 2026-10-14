@@ -104,7 +104,7 @@ func TestCopyTakesTheValueAndThePickerDrawsItCleaned(t *testing.T) {
 		Columns: []view.Column{{Name: "Password"}},
 		Rows:    [][]string{{secret}},
 	}})
-	press(t, one.(Model), "c")
+	pressAndCopy(t, one.(Model), "c")
 	if copied, err := os.ReadFile(stdin); err != nil || string(copied) != secret {
 		t.Fatalf("clipboard got %q (%v), want the value itself", copied, err)
 	}
@@ -198,7 +198,7 @@ func TestATileIsDrawnCleanedAndCopiesItsValue(t *testing.T) {
 	if strings.ContainsRune(m.dashboardView(), 0x202e) {
 		t.Fatal("the dashboard draws the override itself")
 	}
-	press(t, m, "c")
+	pressAndCopy(t, m, "c")
 	if copied, err := os.ReadFile(stdin); err != nil || string(copied) != secret {
 		t.Fatalf("clipboard got %q (%v), want the value itself", copied, err)
 	}

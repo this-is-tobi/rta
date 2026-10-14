@@ -139,13 +139,7 @@ func (m Model) fastSubmitCopyPick() (tea.Model, tea.Cmd) {
 func (m Model) confirmCopyPick() (tea.Model, tea.Cmd) {
 	value := m.copyPick.value
 	next, cmd := m.closeCopyPick()
-	nm := next.(Model)
-	if verr := copyValueToClipboard(value); verr != nil {
-		nm.refuse("not copied: " + verr.Error())
-	} else {
-		nm.flash = "copied value"
-	}
-	return nm, cmd
+	return next, tea.Batch(cmd, copyInBackground(value, copiedValue))
 }
 
 // closeCopyPick dismisses the picker without copying anything, back to

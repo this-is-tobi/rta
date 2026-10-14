@@ -600,6 +600,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case completeMsg:
 		return m.applyCompletion(msg)
 
+	case copiedMsg:
+		if msg.refusal != "" {
+			m.refuse(msg.refusal)
+		} else {
+			m.flash = msg.flash
+		}
+		return m, nil
+
 	case tileMsg:
 		if idx := m.tileIndexFor(msg); idx >= 0 {
 			// Cleaned on arrival, for the same reason resultMsg is: what the

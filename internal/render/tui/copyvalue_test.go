@@ -195,8 +195,8 @@ func TestPressingCCopiesTheGeneratedValue(t *testing.T) {
 		},
 	})
 
-	after, _ := withResult.(Model).Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
-	nm := after.(Model)
+	after, cmd := withResult.(Model).Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+	nm := settleCopy(t, after.(Model), cmd)
 
 	got, err := os.ReadFile(stdin)
 	if err != nil {
@@ -221,7 +221,8 @@ func TestPressingCCopiesTheNamedPairFromAKeyValueResult(t *testing.T) {
 		}},
 	})
 
-	after, _ := withResult.(Model).Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+	after, cmd := withResult.(Model).Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+	done := settleCopy(t, after.(Model), cmd)
 
 	got, err := os.ReadFile(stdin)
 	if err != nil {
@@ -230,7 +231,7 @@ func TestPressingCCopiesTheNamedPairFromAKeyValueResult(t *testing.T) {
 	if string(got) != "9f86d081884c7d659a2feaa0c55ad015" {
 		t.Errorf("clipboard got %q, want the token alone, not \"bytes\" too", got)
 	}
-	if after.(Model).flash == "" {
+	if done.flash == "" {
 		t.Error("no flash confirming the copy")
 	}
 }
@@ -298,8 +299,8 @@ func TestPressingCWithNoClipboardProgramFlashesTheFailure(t *testing.T) {
 		},
 	})
 
-	after, _ := withResult.(Model).Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
-	nm := after.(Model)
+	after, cmd := withResult.(Model).Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+	nm := settleCopy(t, after.(Model), cmd)
 
 	if nm.flash == "" || nm.mode != modeResult {
 		t.Errorf("flash = %q, mode = %v, want a failure notice and no crash", nm.flash, nm.mode)

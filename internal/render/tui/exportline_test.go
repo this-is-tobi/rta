@@ -64,9 +64,12 @@ func TestAnInvalidProfileNeverWritesAnExportLine(t *testing.T) {
 		t.Fatal("the loader accepted the name — this test is about the one it rejects")
 	}
 
-	got := m.copyExportLine()
+	got, cmd := m.copyExportLine()
 	if strings.Contains(got, "export ") {
 		t.Errorf("the copy produced %q — a line built out of a name rta had already refused", got)
+	}
+	if cmd != nil {
+		t.Error("a copy was set going for a name rta had already refused")
 	}
 	// The refusal does name the profile, which the band beside it already
 	// does: the operator has to know which of their environments this is
@@ -116,7 +119,8 @@ func TestTheExportLineIsAShellCommandWithNoValueInIt(t *testing.T) {
 	m := profileNeedingACredential(t, "staging")
 	env := plugin.ProfileEnvVar("staging", "token")
 
-	got := m.copyExportLine()
+	_, cmd := m.copyExportLine()
+	got := settleCopy(t, m, cmd).flash
 	if !strings.Contains(got, "1 export line") {
 		t.Fatalf("copy said %q", got)
 	}

@@ -146,12 +146,7 @@ func copyHint(c plugin.Capability, v view.View) (hintItem, bool) {
 // copyValue resolves directly, since no mode change happens in that case.
 func (m Model) copyOrPick(spec copySpec, cap plugin.Capability, v view.View, returnTo mode) (tea.Model, tea.Cmd) {
 	if val, ok := copyValue(spec, v); ok {
-		if verr := copyValueToClipboard(val); verr != nil {
-			m.refuse("not copied: " + verr.Error())
-		} else {
-			m.flash = "copied value"
-		}
-		return m, nil
+		return m, copyInBackground(val, copiedValue)
 	}
 	if _, found := copyChoices(spec, v); found {
 		return m.startCopyPick(spec, cap, v, returnTo)
@@ -187,4 +182,48 @@ func copyValueToClipboard(value string) *view.Error {
 	}
 	return view.Errorf("tui.clipboard.missing",
 		"no clipboard program on this machine — install one of: %s", strings.Join(tried, ", "))
+}
+
+// copiedMsg is what a copy says when it is done: a flash for the footer, or a
+// refusal when the copy failed and nothing was put anywhere.
+//
+// The copy waits on a program outside this one (internal/clipboard bounds each
+// at five seconds), and the program's loop is what draws the screen and reads
+// the keys. Run inside the key's own handler, a slow compositor or a wrapper
+// waiting on a lock stopped everything — the spinner, every tile's refresh,
+// the next key — until it answered, and the footer said nothing while it did.
+// The key now returns at once and the copy reports back through here.
+type copiedMsg struct {
+	flash   string
+	refusal string
+}
+
+// copyInBackground copies value on a command of its own and reports the
+// outcome through outcome, which turns the result into what the screen says.
+// The value is handed over by value: nothing of the model is read off the
+// loop.
+func copyInBackground(value string, outcome func(*view.Error) copiedMsg) tea.Cmd {
+	return func() tea.Msg { return outcome(copyValueToClipboard(value)) }
+}
+
+// copiedValue is the outcome of copying one generated or chosen value: said as
+// a refusal when it failed, since nothing was copied and the value is still
+// only on the screen.
+func copiedValue(err *view.Error) copiedMsg {
+	if err != nil {
+		return copiedMsg{refusal: "not copied: " + err.Error()}
+	}
+	return copiedMsg{flash: "copied value"}
+}
+
+// copiedJSON is the outcome of `y`, which sends the view to the system
+// clipboard and to the terminal at once. OSC 52 alone is silent when the
+// terminal does not take it, so the flash says which of the two is certain:
+// a failed system copy is a flash and not a refusal, because the terminal was
+// still sent the value and may have kept it.
+func copiedJSON(err *view.Error) copiedMsg {
+	if err != nil {
+		return copiedMsg{flash: "sent to the terminal as JSON — it pastes only where the terminal accepts that"}
+	}
+	return copiedMsg{flash: "copied as JSON"}
 }
