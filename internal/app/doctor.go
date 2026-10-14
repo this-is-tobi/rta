@@ -1495,9 +1495,15 @@ func doctorManagedPlugins(add func(check, status, detail string)) {
 		// answering.
 		for _, p := range loadedPlugins {
 			if p.Declared.Name == e.Name &&
-				!strings.HasPrefix(p.Identity.Path, plugindist.StoreDir()+string(filepath.Separator)) {
+				!plugindist.InStore(p.Identity.Path) {
 				status = "warn"
 				detail += " — shadowed: calls run " + p.Identity.Path + ", not the managed copy"
+				// A copy in the system root is no stray: discovery ranks it above the
+				// operator's store by design, and `rta plugin remove` cannot undo that.
+				// Said, since "shadowed" reads as a $PATH mistake to go and fix.
+				if plugindist.InSystemRoot(p.Identity.Path) {
+					detail += " (it is in the system root, which outranks the operator's store)"
+				}
 			}
 		}
 		add(name, status, detail)

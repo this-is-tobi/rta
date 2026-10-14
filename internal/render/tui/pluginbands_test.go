@@ -43,7 +43,13 @@ const (
 // writeLock puts entries in rta.lock, the file plugindist.ReadLock reads.
 func writeLock(t *testing.T, entries ...plugindist.LockEntry) {
 	t.Helper()
-	path := plugindist.LockPath()
+	writeLockAt(t, plugindist.LockPath(), entries...)
+}
+
+// writeLockAt puts entries in the record at path: the operator's, or the system
+// root's own.
+func writeLockAt(t *testing.T, path string, entries ...plugindist.LockEntry) {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -115,6 +121,72 @@ func TestEveryProvenanceRtaCanKnowGetsItsOwnBand(t *testing.T) {
 		if got := groupOf(t, m, name); got != want {
 			t.Errorf("%s is in band %q, want %q", name, got.title(), want.title())
 		}
+	}
+}
+
+// The full image keeps its plugins in a read-only root, and the inventory put
+// every one of them under "found on $PATH" — a band whose caption says rta holds
+// no record of its bytes, over plugins whose root keeps one. They get a band of
+// their own, described from that record by digest like the operator's own are
+// from theirs, so a digest both records hold is told by the one that placed it.
+func TestAnImagesPluginsGetABandAndTheirRootsRecord(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("RTA_CONFIG", filepath.Join(dir, "config.yaml"))
+	t.Setenv("RTA_DATA_DIR", filepath.Join(dir, "data"))
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RTA_SYSTEM_DIR", root)
+	const recorded, unrecorded = storeDigest, pathDigest
+	writeLockAt(t, plugindist.SystemLockPath(), plugindist.LockEntry{
+		Name: "imaged", Digest: recorded, Version: "0.3.0", Index: "official", Signature: "verified"})
+	writeLock(t, plugindist.LockEntry{
+		Name: "imaged", Digest: recorded, Version: "9.9.9", Index: "mine", Signature: "none stated"})
+
+	reg := registry.New()
+	// Beside a built-in: one band is not a grouping, and draws no rule.
+	if err := reg.Register(bandPlugin("inside")); err != nil {
+		t.Fatal(err)
+	}
+	for name, digest := range map[string]string{"imaged": recorded, "unlisted": unrecorded} {
+		path := filepath.Join(root, "plugins", "store", name, digest, "rta-plugin-"+name)
+		if err := reg.RegisterFrom(bandPlugin(name), registry.Origin{Path: path, Digest: digest}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := New(reg, config.Dashboard{}, nil)
+	m.width, m.height = 110, 44
+	m.plugins = pluginRows(reg, config.Dashboard{}, nil)
+	m.mode = modePlugins
+
+	for _, row := range m.plugins {
+		if row.plugin.Name == "inside" {
+			continue
+		}
+		if got := row.group(); got != groupSystem {
+			t.Errorf("%s is in band %q, want %q", row.plugin.Name, got.title(), groupSystem.title())
+		}
+		got := pluginOrigin(row)
+		switch row.plugin.Name {
+		case "imaged":
+			for _, want := range []string{"in the system root", "0.3.0", "official", "verified"} {
+				if !strings.Contains(got, want) {
+					t.Errorf("the image's row says %q, missing %q", got, want)
+				}
+			}
+			if strings.Contains(got, "9.9.9") || strings.Contains(got, "mine") {
+				t.Errorf("the row took the operator's record of the same digest: %q", got)
+			}
+		case "unlisted":
+			if !strings.Contains(got, "no record of these bytes") || strings.Contains(got, "$PATH") {
+				t.Errorf("a plugin its root does not record says %q", got)
+			}
+		}
+	}
+	out := plain(m.pluginsView())
+	if title := strings.ToUpper(groupSystem.title()); strings.Count(out, title) != 1 || !strings.Contains(out, groupSystem.caption()) {
+		t.Errorf("the pane draws no rule for the system root:\n%s", out)
 	}
 }
 

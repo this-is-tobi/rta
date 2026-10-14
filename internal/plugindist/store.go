@@ -28,6 +28,78 @@ import (
 // StoreDir is where installed artifacts live, by name then digest.
 func StoreDir() string { return pluginhost.ManagedStore() }
 
+// InStore reports whether an artifact sits inside the directory rta installs
+// into for this operator.
+//
+// The path, and not a name in rta.lock, because pluginhost.Identify resolves
+// symlinks before hashing — the store serves through a bin/ directory of
+// links, so a managed plugin's origin is already its real path under the
+// store. It is also the question `rta doctor` asks to spot a $PATH copy
+// shadowing a managed one, asked the same way by every screen that says where
+// a plugin came from, so they cannot disagree about which artifact is which.
+//
+// Only the operator's own store, and never the system root's: the doctor's
+// shadow check is a question about the copy `rta plugin install` placed, and a
+// system-root copy outranks it in discovery, so it is a shadow like any other.
+// InSystemRoot is that other question.
+func InStore(path string) bool { return pluginhost.Beneath(path, StoreDir()) }
+
+// InSystemRoot reports whether an artifact sits inside the system root's
+// plugins: its store, where an image or a package that ran `rta plugin install`
+// at build time put it, or the bin/ directory discovery reads beside it.
+//
+// The root is the whole of what the question is about, and not its store alone:
+// a package that dropped a binary straight into bin/ filled the root as much
+// as one that laid out a store, and neither is on a $PATH. False when there is
+// no system root.
+func InSystemRoot(path string) bool {
+	return pluginhost.Beneath(path, pluginhost.SystemStore()) ||
+		pluginhost.Beneath(path, pluginhost.SystemBin())
+}
+
+// The four places a plugin's bytes can have come from, in the words every
+// surface says them in: the TUI's inventory bands and `rta plugin list`'s
+// Source column. They say how the bytes arrived, and not who vouches for
+// them — the first-party index is only one place an installed plugin can come
+// from, so nothing is named for it.
+//
+// **The system root is a word of its own, and "installed by rta" would not be
+// true of it.** A full image's plugins were put there by `rta plugin install`
+// at build time, but they are not the reader's installs: `rta plugin remove`
+// and `upgrade` answer that such a plugin "is not managed by rta", `untrust`
+// refuses to withdraw what the root trusts, and where the operator's own store
+// holds a copy of the same plugin it is the root's that runs. It is not "found
+// on $PATH" either — nothing in an image is on a $PATH, and the root keeps its
+// own rta.lock saying where each plugin came from (ReadSystemLock), which is
+// the opposite of "holds no record of".
+const (
+	SourceBuiltIn   = "built in"
+	SourceInstalled = "installed by rta"
+	SourceSystem    = "in the system root"
+	SourcePath      = "found on $PATH"
+)
+
+// SourceOf says which of them the plugin served from path came from: the empty
+// path of one compiled into the rta binary is built in, an artifact rta placed
+// from an index into the operator's own store is installed, one in the system
+// root an image or a package filled is the root's, and the rest — whatever is
+// on $PATH — is bytes rta did not place and holds no record of.
+//
+// In that order, because the two can be one directory: an image build runs
+// `rta plugin install` with the root as its data directory, and what it has just
+// installed there is, for that run, the operator's own.
+func SourceOf(path string) string {
+	switch {
+	case path == "":
+		return SourceBuiltIn
+	case InStore(path):
+		return SourceInstalled
+	case InSystemRoot(path):
+		return SourceSystem
+	}
+	return SourcePath
+}
+
 // BinDir is the directory of current-version symlinks. It is what discovery
 // scans (appended after $PATH) and what an operator adds to their own $PATH
 // if they want managed plugins visible to other tools. The path itself is
