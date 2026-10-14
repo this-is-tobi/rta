@@ -3,6 +3,7 @@ package kv
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -223,6 +224,46 @@ func TestTheTileOfAStoreItCannotOpenKeepsTheLockBeforeTheFile(t *testing.T) {
 	}
 	if want := []string{"inventory", "locked with", "unlocks here", "store", "size", "changed"}; !slices.Equal(got, want) {
 		t.Errorf("a tile reads %v, want %v", got, want)
+	}
+}
+
+// The overview and the listing are two views of one store, so what the overview
+// counts is what the listing shows, whatever the names: a key that is also the
+// start of a folder, one with a leading slash and one with two in a row. Every
+// key is in exactly one row of the folders table, and a key that is in no
+// folder is the one row, not a folder.
+func TestTheOverviewCountsExactlyTheKeysTheListingShows(t *testing.T) {
+	setup(t)
+	keys := []string{"a", "a/top", "a/b/c/deep", "/leading", "x//y", "flat"}
+	for _, key := range keys {
+		text(t, runSet, map[string]any{"key": key, "value": "v"}, false)
+	}
+	listed := table(t, runList, nil)
+	if len(listed.Rows) != len(keys) {
+		t.Fatalf("the listing shows %d keys, want %d", len(listed.Rows), len(keys))
+	}
+
+	summary := pairValue(overviewPairs(t, req(nil, false)), "keys")
+	if want := fmt.Sprintf("%d keys, ", len(listed.Rows)); !strings.HasPrefix(summary, want) {
+		t.Errorf("keys = %q, want it to start %q", summary, want)
+	}
+	folders := sectionByID(t, overviewPage(t, req(nil, false)), "folders").(view.Table)
+	counted, byFolder := 0, map[string]string{}
+	for _, row := range folders.Rows {
+		n, err := strconv.Atoi(row[1])
+		if err != nil {
+			t.Fatalf("a folder row counts %q keys", row[1])
+		}
+		counted += n
+		byFolder[row[0]] = row[1]
+	}
+	if counted != len(listed.Rows) {
+		t.Errorf("the folders table holds %d keys, the listing shows %d: %v", counted, len(listed.Rows), byFolder)
+	}
+	for folder, want := range map[string]string{"a/": "2", "/": "1", "x/": "1", noFolder: "2"} {
+		if byFolder[folder] != want {
+			t.Errorf("%s holds %q keys, want %s: %v", folder, byFolder[folder], want, byFolder)
+		}
 	}
 }
 
