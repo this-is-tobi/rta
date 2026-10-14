@@ -445,7 +445,12 @@ func newPluginTrustCommand(opts *globalOpts) *cobra.Command {
 					view.Pair{Key: "size", Value: humanBytes(info.Size())},
 					view.Pair{Key: "modified", Value: info.ModTime().Format(time.RFC3339)})
 			}
-			next := "it loads on your next `rta` command — `rta plugin list` shows what it declares"
+			// Conditional, because trust never runs the artifact and so cannot
+			// know what it declares: the namespace has to be the one its file
+			// is named for, and a file that declares another is refused at
+			// load with a notice that says so, on every command.
+			next := "it loads on your next `rta` command if it declares the namespace `" + found.Name +
+				"`, the one its file name gives — `rta plugin list` shows what it declares"
 			if opts.dryRun {
 				next = "run without --dry-run to actually trust it"
 			}
