@@ -15,6 +15,7 @@ import (
 	"github.com/this-is-tobi/rta/builtin/kv"
 	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/mcp"
+	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -232,6 +233,49 @@ func TestTheHostingChapterSendsATeamToItsAnswerInTheFirstParagraph(t *testing.T)
 	} {
 		if !strings.Contains(first, want) {
 			t.Errorf("%s's first paragraph does not link %s; a team that came to host a server has to be sent to what it should do instead before it configures tokens", rel, want)
+		}
+	}
+}
+
+// The indexes page says what install does with the plugin it fetches, and the
+// sentence that was meant to say what the report shows had lost its verb: a
+// paragraph about registries ended on "Capability by capability, safety class
+// and grant flag, and every credential location the plugin asks for", the
+// remainder of a sentence from the paragraph above it, while the report itself is
+// one row of what the plugin declares and one row for each place it asks to
+// read. A reader deciding whether to trust an artifact is told what to look for
+// on the screen that decides it: the rows that carry what the plugin declares and
+// what it asks for are named where install is described.
+func TestTheIndexesPageNamesTheRowsOfTheInstallReportThatSayWhatAPluginDeclaresAndAsks(t *testing.T) {
+	const rel = "docs/40-plugins/12-indexes-and-upgrades.md"
+	report := installView(plugindist.Report{
+		Name: "kube", Index: "ix", URL: "https://example.test/rta-plugin-kube", Version: "1.0.0",
+		Digest: strings.Repeat("ab", 32), Signature: "none stated", Path: "/store/kube/rta-plugin-kube",
+		Declared: plugin.Plugin{
+			Name: "kube", Needs: []plugin.Need{plugin.NeedKubeconfig},
+			Capabilities: []plugin.Capability{{ID: "kube.pod.list", Safety: plugin.Read}},
+		},
+	}, false)
+	rows, ok := report.(view.KeyValue)
+	if !ok {
+		t.Fatalf("the install report is %T, want a key/value page", report)
+	}
+	shown := map[string]bool{}
+	for _, p := range rows.Pairs {
+		shown[p.Key] = true
+	}
+
+	_, section, found := strings.Cut(readDoc(t, repoRoot(t), rel), "\n## Installing\n")
+	if !found {
+		t.Fatalf("%s no longer has an Installing section; if it moved, move this test with it", rel)
+	}
+	section, _, _ = strings.Cut(section, "\n## ")
+	for _, row := range []string{"declares", "asks to read"} {
+		if !shown[row] {
+			t.Fatalf("the install report no longer has a %q row; if it was renamed, move this test and the page with it", row)
+		}
+		if !strings.Contains(section, "`"+row+"`") {
+			t.Errorf("%s's Installing section never names the `%s` row of the install report", rel, row)
 		}
 	}
 }

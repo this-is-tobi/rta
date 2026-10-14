@@ -49,11 +49,11 @@ rta plugin upgrade pg
 rta plugin remove pg
 ```
 
-Install is where claims meet evidence. rta fetches the artifact — over `https`, from an [OCI](../95-reference/10-glossary.md#acronyms) registry, or from a file on this machine — hashes it, launches it in the same sandbox any load uses, and **refuses if what it declares is not what the index said** — naming the index that made the claim.
+Install is where claims meet evidence. rta fetches the artifact — over `https`, from an [OCI](../95-reference/10-glossary.md#acronyms) registry, or from a file on this machine — hashes it, launches it in the same sandbox any load uses, and **refuses if what it declares is not what the index said** — naming the index that made the claim. What is compared is every capability the binary declares against every one the index lists, in both directions, with each one's [safety class](../95-reference/10-glossary.md#terms) and whether it needs a grant, and every credential location the plugin asks to read: an index cannot quietly leave out that a plugin wants your kubeconfig.
 
-A registry artifact is pulled **anonymously**: rta sends no credential to any registry, ever. That is not a missing feature to fill in casually — an index is somebody else's repository, so authenticating to whatever host a manifest names would turn a search result into a way to spend your credentials. A private artifact is refused by name instead. Capability by capability, [safety class](../95-reference/10-glossary.md#terms) and grant flag, and every credential location the plugin asks for: an index cannot quietly leave out that a plugin wants your kubeconfig.
+A registry artifact is pulled **anonymously**: rta sends no credential to any registry, ever. That is not a missing feature to fill in casually — an index is somebody else's repository, so authenticating to whatever host a manifest names would turn a search result into a way to spend your credentials. A private artifact is refused by name instead.
 
-The install report names what it asks for, at the one moment you have the digest in front of you. Installing does not grant it — `rta plugin allow` is still a separate decision, and this is what makes it an informed one.
+The install report shows what the plugin declares — a `declares` row listing its capabilities, with how many are reads, writes and destructive and how many need a grant — and, for a plugin that wants one, an `asks to read` row naming each credential location. You see both at the one moment you have the digest in front of you. Installing does not grant what it asks to read — `rta plugin allow` is still a separate decision, and this is what makes it an informed one.
 
 Only then does it land: the managed store, the trust entry, and `rta.lock`, which records what rta *computed* rather than what anybody claimed.
 
