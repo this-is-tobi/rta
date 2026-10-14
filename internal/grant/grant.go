@@ -248,19 +248,27 @@ type Grant struct {
 	// to Expires.Sub(Issued), which for a grant that has never been renewed is
 	// exactly the window it was issued with.
 	TTL string `json:"ttl,omitempty"`
-	// MaxUses caps how many successful calls this grant authorizes before it
-	// is spent, on top of Expires. Zero means unlimited within the TTL — the
-	// behavior of every grant issued before this field existed, and the
-	// common case today: "for the next 15 minutes" needs no counting.
+	// MaxUses caps how many calls this grant authorizes before it is spent,
+	// on top of Expires: every call that reaches the capability's handler,
+	// whether or not the handler then succeeds. Zero means unlimited within
+	// the TTL — the behavior of every grant issued before this field existed,
+	// and the common case today: "for the next 15 minutes" needs no counting.
 	MaxUses int `json:"maxUses,omitempty"`
 	// Uses counts what has been spent so far. Reserve increments it *before*
 	// the call runs, under the lock that authorized it, and hands back a
-	// release() that gives the use back if the call then fails — a call
-	// refused for an unrelated reason (the capability itself failed, the
-	// process was killed mid-run) must not spend a one-time grant that
-	// revealed nothing. Incrementing afterwards was the obvious ordering and
-	// the wrong one: it left the decision and the spend in different critical
-	// sections, so two concurrent calls both read Uses=0 and both ran.
+	// release() that gives the use back only for a call that was refused
+	// after the gate and before the handler — a profile that would not
+	// resolve or fenced the call out, a credential it could not fill, a
+	// forward that would not open, an input the host refused once the profile
+	// and the config had filled the rest. A lock gives nothing back because it
+	// refuses before the use is reserved, and so does consent, which spends no
+	// use. Once the handler has run the use stays spent, an error included: a
+	// use used to come back on any failure, which made a use limit mean
+	// nothing for the capabilities whose failure is the information
+	// (internal/mcp, where the call is made). Incrementing afterwards was the
+	// obvious ordering and the wrong one: it left the decision and the spend
+	// in different critical sections, so two concurrent calls both read
+	// Uses=0 and both ran.
 	Uses int `json:"uses,omitempty"`
 	// RateMax and RateWindow bound how *often* this grant may be spent:
 	// "10 calls an hour" rather than "10 calls ever". Zero and empty mean no
@@ -1333,8 +1341,9 @@ func IssueReplacing(g Grant, write bool) (*Grant, *view.Error) {
 // f sees loadAll's answer, not Load's. A grant spent to its last use is no
 // longer Active, so Load hides it — and a writer that round-trips through Load
 // deletes every row it was not shown, merely by saving. That row is exactly the
-// one refund reaches for when the guarded call fails, so the use would never
-// come back and a one-time grant that revealed nothing would stay spent.
+// one refund reaches for when a call is refused after the gate, so the use would
+// never come back and a one-time grant that never reached the capability would
+// stay spent.
 // Deciding over the whole file also means f drops a dead row because it meant
 // to, not because of what it happened to be handed.
 //
@@ -2035,7 +2044,7 @@ func describe(name string, scopes []string) string {
 }
 
 // Reserve authorizes a call and spends its use in one atomic step, returning
-// a release to call if the call then fails.
+// a release to call if the call is then refused before the capability runs.
 //
 // **This is the gate.** Not one of two — the only exported way to ask whether
 // a call is authorized, and the only thing that spends a use. It has to be one
@@ -2048,10 +2057,12 @@ func describe(name string, scopes []string) string {
 // then recorded a single use, leaving no trace in `grant list` that it had
 // happened.
 //
-// Spending before the call and refunding on failure keeps the property the
-// old ordering was protecting — a transient failure must not burn a one-time
-// grant that delivered nothing — while closing the window, because the
-// decision and the spend now happen under the same lock.
+// Spending before the call and refunding a call that was refused before the
+// capability ran keeps the property the old ordering was protecting — a
+// one-time grant must not be burnt by a call that never reached the
+// capability — while closing the window, because the decision and the spend
+// now happen under the same lock. A call the capability itself fails keeps its
+// use spent.
 //
 // Grants with no use limit (MaxUses == 0, everything issued before the field
 // existed, and the overwhelming common case) never take the lock: there is
