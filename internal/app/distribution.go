@@ -186,7 +186,7 @@ func shortDigest(d string) string {
 func declaresLine(p plugin.Plugin) string {
 	ids := make([]string, 0, len(p.Capabilities))
 	counts := map[plugin.Safety]int{}
-	grants := 0
+	grants, personOnly := 0, 0
 	takesProfile := false
 	for _, c := range p.Capabilities {
 		ids = append(ids, c.ID)
@@ -196,6 +196,15 @@ func declaresLine(p plugin.Plugin) string {
 		// reaches needs none.
 		if grant.Required(c, "") && !c.HumanOnly {
 			grants++
+		}
+		// Counted apart rather than dropped. The search row that brought the
+		// person here counts every capability that is not a read, because a
+		// manifest cannot say which ones refuse an agent outright, and a line
+		// that then read three where the row had read five looked like bytes
+		// that differed from the claim this install checks. The two numbers
+		// differ by exactly these.
+		if grant.Required(c, "") && c.HumanOnly {
+			personOnly++
 		}
 		takesProfile = takesProfile || (!c.HumanOnly && plugin.Profilable(c))
 	}
@@ -211,6 +220,9 @@ func declaresLine(p plugin.Plugin) string {
 		}
 	}
 	classes = append(classes, plugin.GrantNeedLine(grants, takesProfile))
+	if personOnly > 0 {
+		classes = append(classes, format.Count(personOnly, "is", "are")+" for a person at a terminal")
+	}
 	return strings.Join(ids, ", ") + " — " + strings.Join(classes, " · ")
 }
 
