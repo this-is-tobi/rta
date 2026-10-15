@@ -1065,6 +1065,119 @@ func TestTheProfilePanesSayWhatRunsOtherwiseThanWritten(t *testing.T) {
 	}
 }
 
+// paneText is a pane read as the sentence it holds: the border and the
+// indentation dropped and every line joined to the next, so a note that wraps is
+// found as it was written.
+func paneText(pane string) string {
+	var words []string
+	for _, line := range strings.Split(pane, "\n") {
+		words = append(words, strings.Fields(strings.Trim(line, "│"))...)
+	}
+	return strings.Join(words, " ")
+}
+
+// The reason for `warn` is the one thing that says why, and both panes cut it at
+// their edge — at 120 columns and at 220 — where the clause that says what to
+// write instead was. A row with a note takes the lines the note needs, under what
+// it qualifies, and a row with none is as tall as it ever was.
+func TestAWarnRowsReasonIsReadWholeOnBothProfilePanes(t *testing.T) {
+	m := profileModel(t, config.Config{Profiles: map[string]config.Profile{
+		"cache-prod": {Note: "the shared cache",
+			Plugins: map[string]config.Connection{"cache": conn(map[string]any{"db": 20})}},
+		"plain": {Note: "the quiet one",
+			Plugins: map[string]config.Connection{"db": conn(map[string]any{"host": "x"})}},
+	}})
+	if err := m.reg.Register(cachePlugin()); err != nil {
+		t.Fatal(err)
+	}
+	m.profiles = m.profileRows()
+	var warn profileRow
+	for _, row := range m.profiles {
+		if row.name == "cache-prod" {
+			warn = row
+		}
+	}
+	if len(warn.note) < 100 || len(warn.conns) != 1 || len(warn.conns[0].note) < 100 {
+		t.Fatalf("the test needs a note longer than a pane is wide: %q and %+v", warn.note, warn.conns)
+	}
+
+	for _, width := range []int{120, 80, 60, 40} {
+		m.width, m.height = width, 40
+		m.mode = modeProfiles
+		if out := paneText(plain(m.profilesView())); !strings.Contains(out, warn.note) {
+			t.Errorf("width %d: the environments pane cuts the reason:\n%s\nwant %q whole", width, plain(m.profilesView()), warn.note)
+		}
+		if out := plain(m.profilesView()); !strings.Contains(out, "the quiet one") {
+			t.Errorf("width %d: an environment with no warning lost the operator's own note:\n%s", width, out)
+		}
+
+		m.profileOpen, m.mode = "cache-prod", modeProfilePlugins
+		out := paneText(plain(m.connsView()))
+		if !strings.Contains(out, warn.conns[0].note) {
+			t.Errorf("width %d: the plugins pane cuts the reason:\n%s\nwant %q whole", width, plain(m.connsView()), warn.conns[0].note)
+		}
+		if !strings.Contains(out, "no credential needed") {
+			t.Errorf("width %d: the note took the line that says where the credentials come from:\n%s", width, plain(m.connsView()))
+		}
+		m.profileOpen = ""
+	}
+
+	inner := 80 - 4
+	for _, row := range m.profiles {
+		got := profileBands([]profileRow{row})[0].height(inner)
+		if want := bandHeight; row.note == "" && got != want {
+			t.Errorf("%s has no note and is %d lines tall, want the %d every band had", row.name, got, want)
+		}
+		if row.note != "" && got <= bandHeight {
+			t.Errorf("%s has a note and is %d lines tall, want more than %d", row.name, got, bandHeight)
+		}
+	}
+}
+
+// A band is no longer a fixed three lines, so the window is a walk over what the
+// bands draw: the one selected is on screen with the whole of its note, from the
+// first to the last, and the count in the border says which of them are.
+func TestTheProfilesPaneScrollsByTheLinesItDrawsWhenABandIsTaller(t *testing.T) {
+	m := profileModel(t, config.Config{})
+	note := func(name string) string {
+		return "the reason for " + name + " is a sentence long enough to take several lines of a narrow pane"
+	}
+	for _, name := range []string{"env-a", "env-b", "env-c", "env-d", "env-e", "env-f"} {
+		row := profileRow{name: name}
+		if name == "env-b" || name == "env-d" || name == "env-f" {
+			row.note = note(name)
+		}
+		m.profiles = append(m.profiles, row)
+	}
+	m.width, m.height, m.mode = 60, 16, modeProfiles
+	if got, want := m.profileBodyHeight(), 11; got != want {
+		t.Fatalf("the body is %d lines, want %d, which holds three plain bands and not six", got, want)
+	}
+
+	for sel, row := range m.profiles {
+		m.profileSel = sel
+		m.clampProfileScroll(m.profileBodyHeight())
+		out := plain(m.profilesView())
+		if !strings.Contains(out, strings.ToUpper(row.name)) {
+			t.Errorf("env %d selected and its band is not on screen (scroll %d):\n%s", sel, m.profileScroll, out)
+		}
+		if row.note != "" && !strings.Contains(paneText(out), row.note) {
+			t.Errorf("env %d selected and its note is not whole on screen (scroll %d):\n%s", sel, m.profileScroll, out)
+		}
+		if lines := strings.Count(out, "\n") + 1; lines > m.height {
+			t.Errorf("env %d selected and the pane is %d lines on a %d-line terminal", sel, lines, m.height)
+		}
+	}
+	// The end of the list is reached with the window full, not with the last
+	// band alone above dead space.
+	m.profileSel = len(m.profiles) - 1
+	m.clampProfileScroll(m.profileBodyHeight())
+	out := plain(m.profilesView())
+	if !strings.Contains(out, "ENV-F") || !strings.Contains(out, "ENV-E") || !strings.Contains(out, "of 6") {
+		t.Errorf("the last band is alone, or the border does not count the list:\n%s", out)
+	}
+}
+
 // The renderer cleans a band's name and nothing under it, because the detail
 // lines arrive styled. What those lines quote from the config file has to be
 // cleaned before it is styled: a ttl, an entry's key or a `secrets:`

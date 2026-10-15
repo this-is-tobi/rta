@@ -774,12 +774,22 @@ func (m Model) profileBodyHeight() int {
 }
 
 func (m *Model) clampProfileScroll(bodyHeight int) {
-	clampBand(m.profileSel, &m.profileScroll, len(m.profiles), visibleBands(bodyHeight))
+	clampBand(m.profileSel, &m.profileScroll, profileBands(m.profiles), bodyHeight, m.paneInner())
 }
 
 func (m *Model) clampConnScroll(bodyHeight int) {
 	row, _ := m.openProfile()
-	clampBand(m.connSel, &m.connScroll, len(row.conns), visibleBands(bodyHeight))
+	clampBand(m.connSel, &m.connScroll, connBands(row), bodyHeight, m.paneInner())
+}
+
+// paneInner is the width a band list is drawn at: the pane's, less the border
+// its panel keeps. The width is 80 until the terminal says otherwise, as the
+// views draw it.
+func (m Model) paneInner() int {
+	if m.width <= 0 {
+		return 80 - 4
+	}
+	return m.width - 4
 }
 
 // profilesView is the outer pane: one band per environment.
@@ -816,27 +826,46 @@ func (m Model) profilesView() string {
 		return header + "\n" + body + "\n" + footer
 	}
 
-	visible := visibleBands(m.profileBodyHeight())
-	scroll := min(max(m.profileScroll, 0), max(0, len(m.profiles)-visible))
-
-	bands := make([]band, 0, len(m.profiles))
-	for _, row := range m.profiles {
-		bands = append(bands, band{
-			name:   row.name,
-			right:  []string{profileState(row), profileStatus(row)},
-			detail: []string{profileCovers(row), profileDetail(row)},
-		})
-	}
+	bands := profileBands(m.profiles)
+	inner := width - 4
+	scroll := min(max(m.profileScroll, 0), maxBandScroll(bands, m.profileBodyHeight(), inner))
+	visible := bandsFit(bands, scroll, m.profileBodyHeight(), inner)
 
 	right := fmt.Sprintf("%d configured", len(m.profiles))
-	if len(m.profiles) > visible {
+	if scroll > 0 || scroll+visible < len(m.profiles) {
 		right = fmt.Sprintf("%d-%d of %d", scroll+1,
 			min(scroll+visible, len(m.profiles)), len(m.profiles))
 	}
 	body := panel(panelHead{Title: "profiles", Right: right},
-		renderBands(bands, m.profileSel, scroll, visible, width-4),
+		renderBands(bands, m.profileSel, scroll, visible, inner),
 		width, m.height-1-lipgloss.Height(footer), true)
 	return header + "\n" + body + "\n" + footer
+}
+
+// profileBands is the outer pane's list: one band per environment, and under the
+// band of one that runs otherwise than it was written the whole of why.
+func profileBands(rows []profileRow) []band {
+	bands := make([]band, 0, len(rows))
+	for _, row := range rows {
+		bands = append(bands, band{
+			name:   row.name,
+			right:  []string{profileState(row), profileStatus(row)},
+			detail: []string{profileCovers(row), profileDetail(row)},
+			note:   warnNote(row),
+		})
+	}
+	return bands
+}
+
+// warnNote is the reason an environment is `warn`, which is the one thing the
+// word does not say: the entry that does not do what its file states, and how.
+// An environment that cannot be used says its problem on the line a note would
+// take, and has no note of its own.
+func warnNote(row profileRow) string {
+	if row.valid() {
+		return row.note
+	}
+	return ""
 }
 
 // profileState is the "am I in production" fact, and the one somebody scans
@@ -913,10 +942,11 @@ func profileCovers(row profileRow) string {
 	// column in `rta profile list`: the credential line under this one is
 	// still true of an environment that works, where a problem replaces it,
 	// and "the shared cache" says less than the database it is not reading.
-	switch {
-	case row.valid() && row.note != "":
-		detail += theme.Subtle.Render(" · ") + theme.WarnText.Render(textclean.Terminal(row.note))
-	case row.p.Note != "":
+	//
+	// The note is not on this line. It ran to a hundred columns and was cut at
+	// the edge of the pane, where the clause that says what to do was; the band
+	// draws it under its lines, wrapped (band.note).
+	if row.p.Note != "" && warnNote(row) == "" {
 		detail += theme.Subtle.Render(" · " + textclean.Terminal(row.p.Note))
 	}
 	return detail
@@ -995,34 +1025,43 @@ func (m Model) connsView() string {
 		return header + "\n" + body + "\n" + footer
 	}
 
-	visible := visibleBands(m.profileBodyHeight())
-	scroll := min(max(m.connScroll, 0), max(0, len(row.conns)-visible))
+	bands := connBands(row)
+	inner := width - 4
+	scroll := min(max(m.connScroll, 0), maxBandScroll(bands, m.profileBodyHeight(), inner))
+	visible := bandsFit(bands, scroll, m.profileBodyHeight(), inner)
 
+	right := fmt.Sprintf("%d configured", len(row.conns))
+	if scroll > 0 || scroll+visible < len(row.conns) {
+		right = fmt.Sprintf("%d-%d of %d", scroll+1,
+			min(scroll+visible, len(row.conns)), len(row.conns))
+	}
+	body := panel(panelHead{Title: row.name, Right: right},
+		renderBands(bands, m.connSel, scroll, visible, inner),
+		width, m.height-1-lipgloss.Height(footer), true)
+	return header + "\n" + body + "\n" + footer
+}
+
+// connBands is the inner pane's list: one band per plugin the environment
+// configures, with the whole of the note under the one that has it.
+func connBands(row profileRow) []band {
 	bands := make([]band, 0, len(row.conns))
 	for _, c := range row.conns {
 		status := theme.GoodText.Render("ok")
+		note := ""
 		switch {
 		case !c.valid():
 			status = theme.BadText.Render("invalid")
 		case c.note != "":
-			status = theme.WarnText.Render("warn")
+			status, note = theme.WarnText.Render("warn"), c.note
 		}
 		bands = append(bands, band{
 			name:   c.key,
 			right:  []string{status},
 			detail: []string{connSummary(c), connDetail(c)},
+			note:   note,
 		})
 	}
-
-	right := fmt.Sprintf("%d configured", len(row.conns))
-	if len(row.conns) > visible {
-		right = fmt.Sprintf("%d-%d of %d", scroll+1,
-			min(scroll+visible, len(row.conns)), len(row.conns))
-	}
-	body := panel(panelHead{Title: row.name, Right: right},
-		renderBands(bands, m.connSel, scroll, visible, width-4),
-		width, m.height-1-lipgloss.Height(footer), true)
-	return header + "\n" + body + "\n" + footer
+	return bands
 }
 
 // connSummary renders the overlay compactly: the values, not the key names,
@@ -1073,15 +1112,14 @@ func fenceText(list any) string {
 // not work. Cleaned before it is styled, for profileDetail's reason; a
 // credential's source is a `secrets:` reference exactly as the file has it.
 //
-// A note takes the line as a problem does. This pane is where the entry is
-// edited, so the note comes with the value to write instead, and the
-// credentials it covers are still counted one pane out.
+// A note is not here: it used to take this line as a problem does, so that the
+// value to write instead was what the pane showed, and the credentials it covered
+// were counted one pane out. It has lines of its own under the band now, wrapped,
+// and the line says where each credential comes from for an entry that works
+// otherwise than written as for any other.
 func connDetail(c connRow) string {
 	if !c.valid() {
 		return theme.BadText.Render(textclean.Terminal(c.problem))
-	}
-	if c.note != "" {
-		return theme.WarnText.Render(textclean.Terminal(c.note))
 	}
 	if len(c.credentials) == 0 {
 		return theme.Faded.Render("no credential needed")
