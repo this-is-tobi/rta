@@ -38,5 +38,5 @@ Breaking changes are welcome when they buy security, performance, binary size or
 
 ## Verifying changes
 
-- `make ci` runs the gates CI runs (lint, race-mode tests, build, cross-compile). Capture its exit code directly — `make ci > log 2>&1; echo $?` — never infer success from a pipe or a partial log tail.
+- `make ci` runs the gates CI runs (lint, race-mode tests with the profile, build, cross-compile), except the plain test passes CI also makes on macOS and arm64 Linux (`make test-plain`). Capture its exit code directly — `make ci > log 2>&1; echo $?` — never infer success from a pipe or a partial log tail.
 - No heredocs (`cat <<EOF`) for generating file content — one mangled a Go test file once. Use a file-writing tool or a small script instead.
