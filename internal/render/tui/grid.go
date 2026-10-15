@@ -273,7 +273,7 @@ func (m Model) tileAt(x, y int) int {
 // a click lands where the paint did.
 func (m Model) gridRowAt(y int) (gridRow, bool) {
 	rows := m.tileRows()
-	if len(rows) == 0 {
+	if len(rows) == 0 || !m.tilesFit() {
 		return gridRow{}, false
 	}
 	first, last := m.rowWindow(len(rows))
@@ -308,6 +308,16 @@ func (m Model) dashRowsVisible() int {
 // the search bar under it and the footer.
 func (m Model) dashRowBudget() int {
 	return m.height - 1 - lipgloss.Height(m.dashFooter()) - m.searchHeight()
+}
+
+// tilesFit is whether the room under the search holds the least a tile row is
+// drawn at (tileClipHeight). When it does not, no row is drawn: the one row
+// visibleRowCount admits without the room for it was cut by the screen's own
+// edge, which left a box with its top border and the line that says there is
+// more, and nothing a person could read — and a click on it opened a tile that
+// was not there. An unknown size fits everything, as dashRowsVisible says.
+func (m Model) tilesFit() bool {
+	return m.height <= 0 || m.dashRowBudget() >= tileClipHeight
 }
 
 // rowWindow is the half-open range of tile rows on screen: from the scroll
@@ -1181,6 +1191,10 @@ func (m Model) dashboardView() string {
 		return frame
 	}
 
+	if !m.tilesFit() {
+		return m.tooSmallFrame(header, search, footer)
+	}
+
 	// Window the rows to the screen; the selection-driven scroll offset is
 	// maintained by clampScroll. Markers show there is more above/below.
 	first, last := m.rowWindow(len(rows))
@@ -1204,13 +1218,60 @@ func (m Model) dashboardView() string {
 	}
 	switch {
 	case first > 0 && last < len(rows):
-		header += theme.Subtle.Render("  ↕ more")
+		header += m.moreHint(header, "↕")
 	case first > 0:
-		header += theme.Subtle.Render("  ↑ more")
+		header += m.moreHint(header, "↑")
 	case last < len(rows):
-		header += theme.Subtle.Render("  ↓ more")
+		header += m.moreHint(header, "↓")
 	}
 	return aboveFooter(header+"\n"+search+"\n"+strings.Join(rendered, "\n"), footer, m.height)
+}
+
+// tooSmallNote is what the tile area says when no row of tiles fits in it.
+const tooSmallNote = "terminal too small, enlarge it to see tiles"
+
+// tooSmallNotes are what it says when the terminal is too narrow for that, whole
+// words at a time: the sentence, the part of it that says what is the matter, and
+// the least that does. A sentence cut where the edge falls is "terminal too smal…"
+// on the terminals that most need it.
+var tooSmallNotes = []string{tooSmallNote, "terminal too small", "too small"}
+
+// tooSmallLine is the longest of tooSmallNotes that fits, drawn muted and
+// indented as the other notes under the search are.
+func (m Model) tooSmallLine() string {
+	for _, note := range tooSmallNotes {
+		if line := "  " + note; m.width <= 0 || lipgloss.Width(line) <= m.width {
+			return theme.Subtle.Render(line)
+		}
+	}
+	return theme.Subtle.Render(ansi.Truncate("  "+tooSmallNotes[len(tooSmallNotes)-1], max(m.width, 1), "…"))
+}
+
+// tooSmallFrame is the dashboard on a terminal with no room for a row of tiles:
+// the header, the search and the footer, and one muted line where the tiles
+// would be, when the terminal has a line to spare, that says why they are not
+// there. A dashboard that draws nothing under its search looks like one that
+// failed to load, which is what the note for a dashboard with no tiles is for.
+func (m Model) tooSmallFrame(header, search, footer string) string {
+	top := header + "\n" + search
+	if m.height-lipgloss.Height(top+"\n"+footer) >= 1 {
+		top += "\n" + m.tooSmallLine()
+	}
+	return aboveFooter(top, footer, m.height)
+}
+
+// moreHint is the header's pointer to the rows off the screen, in the direction
+// of arrow: the arrow and the word, or the arrow alone when the word does not
+// fit after what the header already says, or nothing when not even that does.
+// The terminal cuts a line at its edge wherever the edge falls, and "↓ mo" says
+// less than the arrow did.
+func (m Model) moreHint(header, arrow string) string {
+	for _, hint := range []string{"  " + arrow + " more", "  " + arrow} {
+		if m.width <= 0 || lipgloss.Width(header)+lipgloss.Width(hint) <= m.width {
+			return theme.Subtle.Render(hint)
+		}
+	}
+	return ""
 }
 
 // aboveFooter puts footer under top, and cuts top from its bottom when the two
