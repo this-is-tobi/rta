@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/goccy/go-yaml"
 
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -299,6 +300,40 @@ func TestPrettyTable(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("pretty table missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// A cell with a line break in it is one cell. The grid draws nothing between
+// rows, so "thing" under a blank key read as a row of its own: a rule between the
+// rows puts the second line in the row it belongs to. A table with no line break
+// in any cell keeps the compact grid, which is every listing there is.
+func TestAMultiLineCellIsBoundedByRowRules(t *testing.T) {
+	cells := view.Table{
+		Columns: []view.Column{{Name: "Key"}, {Name: "Description"}},
+		Rows:    [][]string{{"k1", "does a\nthing"}, {"k2", "plain"}},
+	}
+	rule := func(out string) int {
+		n := 0
+		for _, line := range strings.Split(strings.TrimRight(ansi.Strip(out), "\n"), "\n") {
+			if strings.HasPrefix(line, "├") {
+				n++
+			}
+		}
+		return n
+	}
+	out := render(t, cells, Pretty)
+	if got := rule(out); got != 2 {
+		t.Errorf("a table with a multi-line cell has %d inner rules, want one under the header and one between its rows:\n%s", got, out)
+	}
+	lines := strings.Split(strings.TrimRight(ansi.Strip(out), "\n"), "\n")
+	if i := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "thing") }); i < 0 ||
+		!strings.HasPrefix(lines[i+1], "├") {
+		t.Errorf("the second line of the cell is not closed by the rule under its row:\n%s", out)
+	}
+
+	cells.Rows[0][1] = "does a thing"
+	if out := render(t, cells, Pretty); rule(out) != 1 {
+		t.Errorf("a table with no line break in a cell gained rules between its rows:\n%s", out)
 	}
 }
 
