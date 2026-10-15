@@ -46,10 +46,10 @@ func TestAnIdleSearchIsOneLineAndOpensToTheBox(t *testing.T) {
 	if !strings.Contains(open[1], "⌕ search") {
 		t.Errorf("the box did not open when the search took the keyboard: %q", open[1])
 	}
-	if !strings.HasPrefix(open[1+searchTileHeight], "╭") {
-		t.Errorf("the first tile is not under the open box (%d lines): %q", searchTileHeight, open[1+searchTileHeight])
+	if !strings.HasPrefix(open[1+m.searchTileHeight()], "╭") {
+		t.Errorf("the first tile is not under the open box (%d lines): %q", m.searchTileHeight(), open[1+m.searchTileHeight()])
 	}
-	if got := m.tileAt(5, 1+searchTileHeight); got != 1 {
+	if got := m.tileAt(5, 1+m.searchTileHeight()); got != 1 {
 		t.Errorf("a click under the open box lands on tile %d, want 1", got)
 	}
 

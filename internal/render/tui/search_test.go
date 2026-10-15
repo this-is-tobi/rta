@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/this-is-tobi/rta/internal/pluginhost"
@@ -186,8 +188,8 @@ func TestTheSearchKeepsItsHintWhenOtherCapabilitiesFillTheWindow(t *testing.T) {
 	if !strings.Contains(box, "`rta plugin trust qdrant`") {
 		t.Errorf("the box drops the hint when results fill it:\n%s", box)
 	}
-	if lines := strings.Count(box, "\n") + 1; lines != searchTileHeight {
-		t.Errorf("the box is %d lines tall with a hint and a full list, want the %d it is always drawn at", lines, searchTileHeight)
+	if lines := strings.Count(box, "\n") + 1; lines != m.searchTileHeight() {
+		t.Errorf("the box is %d lines tall with a hint and a full list, want the %d it is always drawn at", lines, m.searchTileHeight())
 	}
 	if !strings.Contains(box, "1/") {
 		t.Errorf("the count of what is not shown is gone:\n%s", box)
@@ -223,6 +225,59 @@ func TestTheSearchSaysWhereThePluginAndProfilePanesAre(t *testing.T) {
 		m.query = query
 		if box := ansi.Strip(m.renderSearchTile(130, false)); strings.Contains(box, "press p") || strings.Contains(box, "press f") {
 			t.Errorf("%q: a word that is neither pane named one:\n%s", query, box)
+		}
+	}
+}
+
+// The window was three lines at every size, so a terminal sixty lines high
+// showed three matches over forty lines of tiles nobody was looking at. It is a
+// fifth of the height, at least three and at most ten, and everything that
+// measures the dashboard under it — the box as drawn, the hit test, the room the
+// tiles have, the count in the border, the page a key moves by — follows.
+func TestTheSearchBoxHoldsAsManyMatchesAsTheTerminalCanSpare(t *testing.T) {
+	for _, tc := range []struct{ w, h, slots int }{
+		{80, 14, 3}, {80, 24, 4}, {100, 30, 6}, {132, 45, 9}, {200, 60, 10}, {200, 100, 10},
+	} {
+		m, _ := realModel(t, tc.w, tc.h)
+		m.query, m.searchEditing = "list", true
+		results := m.searchResults()
+		if len(results) <= tc.slots {
+			t.Fatalf("%dx%d: the query finds %d capabilities; want more than the %d that fit, or this proves nothing", tc.w, tc.h, len(results), tc.slots)
+		}
+		if got := m.searchRows(); got != tc.slots {
+			t.Errorf("%dx%d: the box shows %d matches, want %d", tc.w, tc.h, got, tc.slots)
+		}
+		box := ansi.Strip(m.renderSearchTile(tc.w, true))
+		if lines := strings.Count(box, "\n") + 1; lines != searchChrome+tc.slots || lines != m.searchHeight() {
+			t.Errorf("%dx%d: the box is %d lines, want %d, which is what the layout under it is measured from (%d)", tc.w, tc.h, lines, searchChrome+tc.slots, m.searchHeight())
+		}
+		for i, c := range results {
+			if shown := strings.Contains(box, c.ID+" "); shown != (i < tc.slots) {
+				t.Errorf("%dx%d: match %d (%s) is shown: %v, want %v", tc.w, tc.h, i+1, c.ID, shown, i < tc.slots)
+			}
+		}
+		if want := fmt.Sprintf("1/%d", len(results)); !strings.Contains(box, want) {
+			t.Errorf("%dx%d: the border does not count the matches it does not show (%s):\n%s", tc.w, tc.h, want, box)
+		}
+
+		frame := frameLines(m)
+		if len(frame) > tc.h || !strings.HasPrefix(frame[1+m.searchHeight()], "╭") {
+			t.Errorf("%dx%d: the first tile is not drawn right under the box (%d lines, frame %d):\n%s", tc.w, tc.h, m.searchHeight(), len(frame), strings.Join(frame, "\n"))
+		}
+		if got := m.tileAt(5, m.searchHeight()); got != 0 {
+			t.Errorf("%dx%d: a click on the box's last line lands on tile %d, want the search", tc.w, tc.h, got)
+		}
+		if got := m.tileAt(5, 1+m.searchHeight()); got != 1 {
+			t.Errorf("%dx%d: a click on the first tile's border lands on tile %d, want 1", tc.w, tc.h, got)
+		}
+
+		paged, _ := m.updateSearch(tea.KeyPressMsg{Code: tea.KeyPgDown})
+		if got := paged.(Model).searchSel; got != tc.slots {
+			t.Errorf("%dx%d: page down moved the selection to %d, want a window's worth, %d", tc.w, tc.h, got, tc.slots)
+		}
+		m.searchSel = tc.slots
+		if window, first := m.searchWindow(results); len(window) != tc.slots || first != 1 {
+			t.Errorf("%dx%d: with the match after the window selected it shows %d from %d, want %d from 1", tc.w, tc.h, len(window), first, tc.slots)
 		}
 	}
 }
