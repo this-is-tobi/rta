@@ -30,9 +30,10 @@ import (
 // Defaults match what internal/grant used before this package existed.
 //
 // Variables rather than constants for one reason, and it is not
-// configuration: a race-instrumented build raises the two durations that
-// bound waiting (see slow_race.go). Nothing else writes to them, and the
-// values below are what every real invocation uses.
+// configuration: a race-instrumented build, or one built with the slowhost
+// tag, raises the two durations that bound waiting (see slow.go). Nothing
+// else writes to them, and the values below are what every real invocation
+// uses.
 var (
 	DefaultStale   = 5 * time.Second
 	DefaultRetry   = 10 * time.Millisecond

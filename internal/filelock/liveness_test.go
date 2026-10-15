@@ -24,7 +24,7 @@ import (
 //
 // It is not a hypothetical delay. The store lock is held across an age decrypt,
 // an edit and an encrypt; `rta kv` can prompt for a passphrase inside it; a
-// machine under real load stretches all of it. slow_race.go already reasons
+// machine under real load stretches all of it. slow.go already reasons
 // about exactly this shape — it raises DefaultStale alongside DefaultTimeout
 // precisely so that instrumented holders are not judged dead — which is the
 // same argument applied to a build tag rather than to production.

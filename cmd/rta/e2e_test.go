@@ -58,7 +58,9 @@ func TestMain(m *testing.M) {
 	// starts the stand-ins the tests write and the plugins `rta plugin dev`
 	// compiles, each a file the machine has not run before, and the five
 	// seconds a real machine is given are not meant for one busy running a
-	// whole suite.
+	// whole suite. The same tag gives it the wide lock bounds
+	// (internal/filelock/slow.go), so it waits for a lock as long as the test
+	// process around it does.
 	build := exec.Command("go", "build", "-tags", "slowhost", "-o", binary, ".")
 	if out, err := build.CombinedOutput(); err != nil {
 		panic("building rta: " + err.Error() + "\n" + string(out))

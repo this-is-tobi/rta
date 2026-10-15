@@ -1,11 +1,13 @@
-//go:build race
+//go:build race || slowhost
 
 package filelock
 
 import "time"
 
-// Under the race detector, holding this lock takes longer than it ever will
-// in production, so waiting for it has to allow longer too.
+// Under the race detector, or in a build that asks for the same bounds with
+// the slowhost tag (internal/pluginhost/slow.go says why that tag exists),
+// holding this lock takes longer than it ever will in production, so waiting
+// for it has to allow longer too.
 //
 // The defaults bound a real machine doing a real load-modify-save: for
 // builtin/kv that is an age decrypt, an edit and an encrypt, which is fast
@@ -30,7 +32,16 @@ import "time"
 // and because a wait that outlives the lease is a shape worth keeping out of
 // the suite entirely.
 //
-// Nothing rta ships is built with -race, so none of this reaches a user.
+// The tag is for the plain passes CI makes on the machines that do not run the
+// detector. A loaded runner stretches an uninstrumented holder as it stretches
+// an instrumented one, and eight writers queued behind each other wait for
+// eight of them; the two-second bound that is right for a real machine can be
+// a lock timeout there, which reads as a deadlock. The end-to-end binary in
+// cmd/rta is built with the tag too, so it waits for a lock as long as the
+// test process around it does.
+//
+// Nothing rta ships is built with -race or the tag, so none of this reaches a
+// user.
 // TestAcquireReclaimsAStaleLock plants its lock at a multiple of
 // DefaultStale rather than at a literal age, so it moves with this.
 func init() {
