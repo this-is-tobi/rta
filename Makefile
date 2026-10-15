@@ -489,15 +489,51 @@ else:
 endef
 export CHART_SCHEMA_PY
 
-chart-schema: ## Embed `rta config schema` into the chart's values schema
-	@mkdir -p $(BUILDDIR)
-	@go run ./cmd/rta config schema > $(BUILDDIR)/config.schema.json
-	@python3 -c "$$CHART_SCHEMA_PY" $(CHART_DIR)/values.schema.json $(BUILDDIR)/config.schema.json
+# `rta config schema` describes the machine it runs on as much as the checkout
+# it was built from. Every plugin it finds — on $PATH, in the system root, in
+# the data directory's store — and has been told to trust is launched and
+# described, and its keys join the schema under `plugins:`. CI's runner has
+# none, so the schema it compares with is the built-in catalogue alone, and a
+# laptop with the first-party plugins installed generated several hundred
+# lines more: `make chart-schema` wrote a file the pipeline then refused, and
+# `make chart-schema-check` failed, blaming the checkout, on exactly the
+# machines that had something installed and on no others.
+#
+# So the command runs on a machine of its own making: a data directory, a
+# system root and a config file made empty for the run and removed after it.
+# Nothing is trusted there, so nothing is launched, and what comes out is the
+# same on every machine and the same as CI's. A plugin on $PATH is found and
+# left alone for the same reason: trust is what launches it, and trust is
+# recorded in the data directory and the system root, both of them empty here.
+#
+# The three variables are set on that one command and not exported. Exported,
+# they would reach every other target a `make ci` runs, and the test suites that
+# read them would run on an empty machine too.
+#
+# The directory goes when the shell exits, and a signal is turned into an exit
+# first: dash, which is the sh Linux gives make, ends on SIGINT, SIGTERM or
+# SIGHUP without running an EXIT trap, so a cancelled `make` left the directory
+# behind there. SIGKILL cannot be caught, and `make clean` removes what that
+# leaves.
+#
+# Regenerated on every run, which is why the name is among the phony targets at
+# the end of this file: nothing about the file the last run left says the next
+# one would be the same. The directory is made fresh and unique, under
+# BUILDDIR, so two runs at once do not share it.
+CONFIG_SCHEMA := $(BUILDDIR)/config.schema.json
 
-chart-schema-check: ## Fail if the chart's embedded config schema has drifted
+$(CONFIG_SCHEMA):
 	@mkdir -p $(BUILDDIR)
-	@go run ./cmd/rta config schema > $(BUILDDIR)/config.schema.json
-	@python3 -c "$$CHART_SCHEMA_PY" $(CHART_DIR)/values.schema.json $(BUILDDIR)/config.schema.json --check
+	@sealed=$$(mktemp -d "$(abspath $(BUILDDIR))/config-schema.XXXXXX") && trap 'rm -rf "$$sealed"' EXIT && trap 'exit 1' INT TERM HUP && \
+	  mkdir "$$sealed/data" "$$sealed/system" && : > "$$sealed/config.yaml" && \
+	  RTA_DATA_DIR="$$sealed/data" RTA_SYSTEM_DIR="$$sealed/system" RTA_CONFIG="$$sealed/config.yaml" \
+	  go run ./cmd/rta config schema > $@
+
+chart-schema: $(CONFIG_SCHEMA) ## Embed `rta config schema` into the chart's values schema
+	@python3 -c "$$CHART_SCHEMA_PY" $(CHART_DIR)/values.schema.json $(CONFIG_SCHEMA)
+
+chart-schema-check: $(CONFIG_SCHEMA) ## Fail if the chart's embedded config schema has drifted
+	@python3 -c "$$CHART_SCHEMA_PY" $(CHART_DIR)/values.schema.json $(CONFIG_SCHEMA) --check
 
 chart-lint: chart-schema-check ## Lint the chart and validate values.yaml against its schema
 	helm lint $(CHART_DIR) --values $(CHART_DIR)/ci/test-values.yaml
@@ -514,10 +550,13 @@ clean: ## Remove build output and coverage artifacts
 
 # `proto` has to be here: a directory of that name exists, so without this
 # make would find it up to date and report success for a target that ran
-# nothing.
+# nothing. `$(CONFIG_SCHEMA)` is here for the same reason: it names a file, the
+# last run left one behind, and without this make would find it up to date and
+# answer with the last run's schema.
 .PHONY: help setup download tidy fmt build install \
 	cross snapshot size size-check bump-index test hard hard-tui hard-app hard-rest \
 	test-plain plain-tui plain-app plain-rest vet lint check \
 	fmt-check coverage coverage-html ci proto proto-lint proto-check \
 	chart-schema chart-schema-check chart-lint chart-docs \
+	$(CONFIG_SCHEMA) \
 	clean
