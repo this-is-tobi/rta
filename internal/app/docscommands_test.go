@@ -648,17 +648,7 @@ func TestEveryCommandAGoStringTellsAPersonToRunExists(t *testing.T) {
 	span := regexp.MustCompile("`rta((?: [a-z][a-z0-9-]*){1,3})")
 
 	checked := 0
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "node_modules", "testdata", ".local", "docs", "proto":
-				return filepath.SkipDir
-			}
-			return nil
-		}
+	err := walkCheckout(root, []string{".git", "node_modules", "testdata", ".local", "docs", "proto"}, func(path string, d os.DirEntry) error {
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
@@ -732,17 +722,7 @@ func TestEveryFlagAGoStringTellsAPersonToTypeExists(t *testing.T) {
 	span := regexp.MustCompile("`(rta [^`]*|--[a-z][a-z0-9-]*[^`]*)`")
 	flag := regexp.MustCompile(`(?:^|[\s=(])--([a-z][a-z0-9-]*)`)
 	checked := 0
-	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "node_modules", "testdata", ".local", "docs", "proto":
-				return filepath.SkipDir
-			}
-			return nil
-		}
+	err = walkCheckout(root, []string{".git", "node_modules", "testdata", ".local", "docs", "proto"}, func(path string, d os.DirEntry) error {
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}

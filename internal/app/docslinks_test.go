@@ -1,9 +1,11 @@
 package app
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"unicode"
@@ -67,17 +69,7 @@ func TestEveryDocsPathCitedFromCodeExists(t *testing.T) {
 	cite := regexp.MustCompile(`\bdocs/(?:[a-z0-9-]+/)*[0-9]{2}-[a-z-]+\.md\b`)
 
 	var checked int
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "node_modules", "testdata", ".local", "docs":
-				return filepath.SkipDir
-			}
-			return nil
-		}
+	err := walkCheckout(root, []string{".git", "node_modules", "testdata", ".local", "docs"}, func(path string, d os.DirEntry) error {
 		switch {
 		case strings.HasSuffix(path, ".go"),
 			strings.HasSuffix(path, ".yml"),
@@ -136,17 +128,8 @@ func TestEveryDocsPageNamedInGoSourceStillExists(t *testing.T) {
 	}
 
 	name := regexp.MustCompile(`"([0-9]{2}-[a-z-]+\.md)"`)
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "node_modules", "testdata", ".local", "docs":
-				return filepath.SkipDir
-			}
-			return nil
-		}
+	var checked int
+	err := walkCheckout(root, []string{".git", "node_modules", "testdata", ".local", "docs"}, func(path string, _ os.DirEntry) error {
 		if !strings.HasSuffix(path, ".go") {
 			return nil
 		}
@@ -156,6 +139,7 @@ func TestEveryDocsPageNamedInGoSourceStillExists(t *testing.T) {
 		}
 		rel, _ := filepath.Rel(root, path)
 		for _, m := range name.FindAllStringSubmatch(string(body), -1) {
+			checked++
 			if !pages[m[1]] {
 				t.Errorf("%s names the docs page %q, and no page by that name exists any more — "+
 					"a path assembled from segments does not show up in a search for the whole one",
@@ -166,6 +150,69 @@ func TestEveryDocsPageNamedInGoSourceStillExists(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("walking the checkout: %v", err)
+	}
+	// A walk that read no source passed this test whatever the pages were
+	// called: a checkout in a directory named docs was skipped whole.
+	if checked == 0 {
+		t.Fatal("found no docs page named in Go source, which cannot be right — the walk " +
+			"read nothing, or the pages are no longer named by their file names")
+	}
+}
+
+// walkCheckout calls visit for every file under root, leaving out the
+// directories named in skip wherever they are below it.
+//
+// The root is not one of them, whatever it is called. The tests that read the
+// checkout's source skip its docs directory by name, and a name matches
+// whatever sits at the end of the path: a checkout cloned into a directory
+// called docs was skipped whole by four of the five walkers that had the
+// check written out, which then found nothing to read and failed, and by the
+// fifth, which found nothing to read and passed. One walker keeps the
+// exemption in one place, so a sixth cannot leave it out.
+func walkCheckout(root string, skip []string, visit func(path string, d fs.DirEntry) error) error {
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path != root && slices.Contains(skip, d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		return visit(path, d)
+	})
+}
+
+func TestAWalkOfTheCheckoutLeavesOutTheNamedDirectoriesBelowTheRootAndNeverTheRoot(t *testing.T) {
+	for _, rootName := range []string{"rta", "docs", "node_modules"} {
+		root := filepath.Join(t.TempDir(), rootName)
+		for _, f := range []string{
+			"main.go", "builtin/kv/kv.go", "docs/notes.txt", "internal/docs/page.go",
+			"node_modules/dep/index.go", ".git/config", "testdata/golden.go",
+		} {
+			path := filepath.Join(root, filepath.FromSlash(f))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		var seen []string
+		err := walkCheckout(root, []string{".git", "node_modules", "testdata", "docs"}, func(path string, _ fs.DirEntry) error {
+			rel, _ := filepath.Rel(root, path)
+			seen = append(seen, filepath.ToSlash(rel))
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		slices.Sort(seen)
+		if got, want := strings.Join(seen, " "), "builtin/kv/kv.go main.go"; got != want {
+			t.Errorf("a checkout called %s: walked %q, want %q", rootName, got, want)
+		}
 	}
 }
 

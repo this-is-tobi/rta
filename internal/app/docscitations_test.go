@@ -82,16 +82,7 @@ func TestThePolicyDocumentsPointAtEveryPageOfTheMCPReasoning(t *testing.T) {
 func TestEveryCoreCodeTheDocsNameIsOneRtaRaises(t *testing.T) {
 	root := repoRoot(t)
 	var source strings.Builder
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if name := d.Name(); name == ".git" || name == "node_modules" || name == "docs" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
+	err := walkCheckout(root, []string{".git", "node_modules", "docs"}, func(path string, _ fs.DirEntry) error {
 		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
 			body, err := os.ReadFile(path)
 			if err != nil {
