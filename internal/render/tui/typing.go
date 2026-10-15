@@ -47,7 +47,7 @@ func searchIdleItems() []hintItem {
 		{display: "type", label: "to search", rank: rankPrimary, typed: true},
 		{
 			display: bindSelect.display, label: "select", rank: rankPrimary,
-			keys: []string{"up", "down", "left", "right", "tab"},
+			keys: []string{"up", "down", "left", "right", "tab", "home", "end"},
 		},
 		alias(labelled(bindOpen, "search"), "/"),
 		{display: ":", label: "browse", rank: rankExtra, keys: []string{":"}},

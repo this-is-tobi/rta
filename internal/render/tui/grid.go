@@ -530,6 +530,32 @@ func (m *Model) moveBack() {
 	m.selected, m.header, m.goalCol = 0, "", 0
 }
 
+// selectEdge is home and end: the selection goes to the first place it rests, or
+// the last, from the search bar as from anywhere on the grid. They are the places
+// tab walks between, so the first is where tab goes from the bar and the last is
+// where tab stops; on a dashboard that groups its tiles one of them can be the
+// header of a section, and a folded section at the end is where the selection
+// has to rest since the tiles it holds are on no row.
+//
+// Not g and G, which a person coming from a pager would try: a letter answers as
+// a command only once a tile holds the selection, and on the search bar it is
+// the first letter of a query, so those two would have worked on some screens of
+// the dashboard and typed on the others. Home and end are no letters of any
+// query, and answer wherever the dashboard answers keys at all.
+func (m *Model) selectEdge(last bool) {
+	defer m.clampScroll()
+	stops := m.stops()
+	if len(stops) == 0 {
+		return
+	}
+	edge := stops[0]
+	if last {
+		edge = stops[len(stops)-1]
+	}
+	m.selectStop(edge)
+	m.goalCol = edge.col
+}
+
 // returned is what a tile's capability handed back, before cleaning.
 type returned struct {
 	view view.View

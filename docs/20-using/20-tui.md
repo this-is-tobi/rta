@@ -49,6 +49,7 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 | --- | --- |
 | `/` | Search |
 | `tab` `shift+tab` | Select the next tile, or the one before it, which from the first tile is the search bar |
+| `home` `end` | Select the first tile or the last, from the search bar or from any tile — the header of a section where one opens or closes the dashboard, since a folded section holds no tile to rest on |
 | `enter` | Open — or fold and unfold a [section](./25-dashboard-and-theme.md#sections-group-tiles-and-fold-the-group), on its header (`space` does the same there) |
 | `esc` | Back |
 | `q` or `ctrl+c` | Quit |
