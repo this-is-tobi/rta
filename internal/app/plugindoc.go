@@ -165,7 +165,7 @@ func configKeysView(reg *registry.Registry, p plugin.Plugin) view.View {
 // without the one line that belongs to a machine rather than to the plugin:
 // the path of the reader's config file.
 func docCard(reg *registry.Registry, c plugin.Capability) view.View {
-	card := cardView(reg, c).(view.KeyValue)
+	card := cardOf(reg, c)
 	kept := card.Pairs[:0]
 	for _, pair := range card.Pairs {
 		if pair.Key != "config file" && pair.Key != "description" {

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -79,6 +80,99 @@ func TestExplainCard(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("card missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// What an input is, as data. The card writes it in a sentence — "int, default
+// 20, a value from 1 to 500" — and `-o json` carried it only inside that string,
+// so a script had to take the sentence apart to learn a type, a default or a
+// range. The page is the card and, under it, a table with a cell for each.
+func TestExplainAnswersWithTheCardAndItsInputsAsATable(t *testing.T) {
+	reg, _ := NewRegistry()
+	out, _, err := run(t, reg, "explain", "git.log", "-o", "json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var page struct {
+		Type  string `json:"type"`
+		Items []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+			View  struct {
+				Type    string `json:"type"`
+				Columns []struct {
+					Name string `json:"name"`
+				} `json:"columns"`
+				Rows [][]string `json:"rows"`
+			} `json:"view"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(out), &page); err != nil {
+		t.Fatalf("explain -o json is not JSON: %v\n%s", err, out)
+	}
+	if page.Type != "sections" || len(page.Items) != 2 || page.Items[0].ID != "card" || page.Items[1].ID != "inputs" ||
+		page.Items[1].View.Type != "table" {
+		t.Fatalf("the page is %q with %d items, want the card and an inputs table:\n%s", page.Type, len(page.Items), out)
+	}
+	var names []string
+	for _, c := range page.Items[1].View.Columns {
+		names = append(names, c.Name)
+	}
+	want := "Name Type Required Default Min Max Options Config Positional Local Secret Help"
+	if strings.Join(names, " ") != want {
+		t.Errorf("columns = %q, want %q", strings.Join(names, " "), want)
+	}
+	limit := map[string]string{}
+	for _, row := range page.Items[1].View.Rows {
+		if row[0] == "limit" {
+			for i, name := range names {
+				limit[name] = row[i]
+			}
+		}
+	}
+	for column, wanted := range map[string]string{
+		"Type": "int", "Default": "20", "Min": "1", "Max": "500", "Config": "log.limit", "Required": "", "Secret": "",
+	} {
+		if limit[column] != wanted {
+			t.Errorf("git.log's limit %s = %q, want %q (row %v)", column, limit[column], wanted, limit)
+		}
+	}
+}
+
+// The table is the card's inputs and nothing the card leaves out: the options of
+// a choice, the bounds of a duration as it was written, a secret that is never
+// offered to an agent, and the --detail switch the host adds to a capability that
+// has a detailed view.
+func TestTheInputsTableCarriesWhatTheCardSays(t *testing.T) {
+	c := plugin.Capability{
+		ID: "demo.thing.get", Safety: plugin.Read, Detailed: true,
+		Inputs: []plugin.Field{
+			{Name: "name", Type: plugin.String, Positional: true, Required: true, Help: "which one"},
+			{Name: "mode", Type: plugin.String, Options: []string{"fast", "slow"}, Default: "fast"},
+			{Name: "wait", Type: plugin.Duration, Min: "1s", Max: "5m", Default: "10s"},
+			{Name: "token", Type: plugin.Secret, Local: true},
+			{Name: "empty", Type: plugin.String, Default: ""},
+		},
+	}
+	byName := map[string][]string{}
+	for _, row := range inputsTable(c).Rows {
+		byName[row[0]] = row
+	}
+	// Name Type Required Default Min Max Options Config Positional Local Secret Help
+	for name, want := range map[string][]string{
+		"name":   {"name", "string", "true", "", "", "", "", "", "true", "", "", "which one"},
+		"mode":   {"mode", "string", "", "fast", "", "", "fast|slow", "", "", "", "", ""},
+		"wait":   {"wait", "duration", "", "10s", "1s", "5m", "", "", "", "", "", ""},
+		"token":  {"token", "secret", "", "", "", "", "", "", "", "true", "true", ""},
+		"empty":  {"empty", "string", "", "", "", "", "", "", "", "", "", ""},
+		"detail": {"detail", "bool", "", "false", "", "", "", "", "", "", "", "return the full detailed view instead of the compact summary"},
+	} {
+		if got := byName[name]; strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+			t.Errorf("input %s = %q, want %q", name, got, want)
+		}
+	}
+	if none := inputsTable(plugin.Capability{ID: "demo.none"}); len(none.Rows) != 0 || none.Empty == "" {
+		t.Errorf("a capability with no inputs has rows %v and no sentence for a person: %q", none.Rows, none.Empty)
 	}
 }
 
