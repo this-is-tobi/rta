@@ -100,7 +100,12 @@ func exact(n json.Number) any {
 // A Local field is not a name this tool has, to a caller: it is not in the
 // schema, so one sent anyway is refused as any other name the tool does not
 // have is, in the same words and with the same list of what it does take.
-func Validate(c plugin.Capability, values map[string]any) *view.Error {
+//
+// takesProfile is TakesProfile's answer for this call, asked by the caller that
+// knows which connections the operator has configured: where it is false the
+// tool has no `profile` argument, and one sent is refused like any other name
+// it has not got.
+func Validate(c plugin.Capability, takesProfile bool, values map[string]any) *view.Error {
 	declared := make(map[string]bool, len(c.Inputs)+1)
 	check := func(f plugin.Field) *view.Error {
 		v, given := values[f.Name]
@@ -152,11 +157,28 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 	// the name, no Field declares it, and InputSchema publishes it wherever an
 	// operator has a connection configured. Type-checked as a string here so
 	// {"profile": 3} is an error rather than a value takeProfile has to decide
-	// about, and accepted whether or not the schema advertised it — a caller
-	// naming a profile on an install that has none is answered by the gate
-	// (which refuses it for want of a grant), not by a message about the
-	// argument, so that the operator's inventory stays out of the reply.
-	if plugin.Profilable(c) {
+	// about.
+	//
+	// **Taken only where the area has a connection.** A name sent for a tool
+	// whose area has none was let through to the grant gate, which refused it
+	// for want of a grant and named the command that issues one — a command the
+	// operator's own CLI rejects, since no profile says anything about that area
+	// — so an agent was sent to a person for something nobody could do, and the
+	// person to a command that cannot work. It is an argument the tool does not
+	// have, and is refused as every other one is, in the words and with the list
+	// of what the tool does take.
+	//
+	// That answer tells an agent nothing it was not told. The schema carries
+	// `profile` exactly where connections exist (takesProfile is the condition
+	// it is published under, asked of the file as it is now rather than as it
+	// was when the server started), so whether this area has any is in
+	// tools/list, and a call that names none already hears it from the host
+	// (core.profile.required) without holding a grant. What stays out of every
+	// reply is the other half, which names are configured: where the area has
+	// connections the argument is taken and the gate answers an unknown name as
+	// it answers an ungranted one (grant.refuseMissing keeps the two identical
+	// for exactly this), and none of that changes here.
+	if takesProfile {
 		declared["profile"] = true
 		if verr := check(plugin.Field{Name: "profile", Type: plugin.String}); verr != nil {
 			return verr
@@ -210,7 +232,7 @@ func Validate(c plugin.Capability, values map[string]any) *view.Error {
 	if len(unknown) > 1 {
 		plural = "s"
 	}
-	hint := acceptedHint(c)
+	hint := acceptedHint(c, takesProfile)
 	if len(respelled) > 0 {
 		hint = strings.Join(respelled, ", ") + "; " + hint
 	}
@@ -243,10 +265,13 @@ func held(c plugin.Capability, f plugin.Field, v any) *view.Error {
 
 // acceptedHint names what this tool does take, because "unknown argument" on
 // its own costs the round trip the schema was published to save.
-func acceptedHint(c plugin.Capability) string {
+func acceptedHint(c plugin.Capability, takesProfile bool) string {
 	// Exactly what InputSchema puts in "properties", in the same order: a
 	// hint that named an argument the schema does not offer, or omitted one
-	// it does, would send a model round again for a different reason.
+	// it does, would send a model round again for a different reason. The
+	// profile is the one name that depends on the install, and it is
+	// Validate's own answer that decides it, so a call is never told it may
+	// send what the same call has just been refused for sending.
 	names := make([]string, 0, len(c.Inputs)+1)
 	for _, f := range c.Inputs {
 		if !f.Local {
@@ -256,11 +281,7 @@ func acceptedHint(c plugin.Capability) string {
 	if c.Detailed {
 		names = append(names, "detail")
 	}
-	// Accepted whether or not the schema published it (Validate takes it for
-	// any capability that can run against a connection), and the one name an
-	// agent that has just been told "unknown argument" most needs to know is
-	// not what is wrong.
-	if plugin.Profilable(c) {
+	if takesProfile {
 		names = append(names, "profile")
 	}
 	if len(names) == 0 {
