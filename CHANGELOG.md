@@ -1,5 +1,72 @@
 # Changelog
 
+## [0.41.0](https://github.com/this-is-tobi/rta/compare/v0.40.0...v0.41.0) (2026-10-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* **explain:** a capability's inputs are a table beside its card
+
+### Features
+
+* **explain:** a capability's inputs are a table beside its card ([23baf2e](https://github.com/this-is-tobi/rta/commit/23baf2e42e1a7c9db60f7c602eb42ab1d2fafaa4))
+* **gitignore:** list github/gitignore's templates and print several as one file ([0e1f184](https://github.com/this-is-tobi/rta/commit/0e1f18463972ade6a3e91029ce6f1a3e932c1a35))
+* **grant:** warn when a grant hands an agent a credential a profile keeps ([15298c9](https://github.com/this-is-tobi/rta/commit/15298c9d1dba5d088fcc0323f9252fe65d0396cb))
+* **mcp:** answer a misspelt tool name with the nearest one on offer ([41718ef](https://github.com/this-is-tobi/rta/commit/41718eff7eb82cf4979ea6247fab4a0c5a2e1a34))
+* **sdktest:** note a Read that returns a credential and a tool no agent can call ([80cb293](https://github.com/this-is-tobi/rta/commit/80cb293213ec7259c26063b727c1a749ec024352))
+* **sdktest:** note an Idempotent claim on an act that does more each time ([01874a9](https://github.com/this-is-tobi/rta/commit/01874a9a17289b6886049f194b88a31cad2ac96d))
+* **tui:** home and end select the first and the last tile ([522e6b6](https://github.com/this-is-tobi/rta/commit/522e6b6fb169810ae9c0e950cf8af96bf5a58870))
+* **tui:** shift+tab selects the tile before, as tab selects the next ([7ecdc22](https://github.com/this-is-tobi/rta/commit/7ecdc22bce34daa71926aafb6f3e5c601103b674))
+* **tui:** the search box shows as many matches as the terminal has room for ([2866c2a](https://github.com/this-is-tobi/rta/commit/2866c2ab073e8fa654ca8c286c7812e577f5ec9f))
+
+
+### Bug Fixes
+
+* **agent:** the log and overview say where a refused connection's reason is ([7dcb6e6](https://github.com/this-is-tobi/rta/commit/7dcb6e624916dd5299fd3b546a263575c062304a))
+* **app:** a value the declaration refuses exits 2 like one the parser refuses ([733aa3b](https://github.com/this-is-tobi/rta/commit/733aa3bfe1ea6735ac0c320ee9e2dcac6a3fac0e))
+* **app:** the three ways a command line gets TLS wrong are answered about TLS ([506f6a5](https://github.com/this-is-tobi/rta/commit/506f6a5d46821ca3ba4d0acccad64834b47e6200))
+* **doctor:** a profile's store credential is graded against the store ([0b66d36](https://github.com/this-is-tobi/rta/commit/0b66d36f2c542209220aacb9451e2fe9fd310a95))
+* **git:** a log cut at its limit says the history continues ([5d1c3ea](https://github.com/this-is-tobi/rta/commit/5d1c3eaccb963f5eef91f33c31ba824c3d2f537f))
+* **grant:** a revoke naming nothing that exists is refused, not reported as no grant ([b36b6a2](https://github.com/this-is-tobi/rta/commit/b36b6a27ce7db1060b6daa259d0b475eb1fbfebd))
+* **grant:** say on the roster what a whole-plugin grant reaches ([639b2f5](https://github.com/this-is-tobi/rta/commit/639b2f5ed972edcc287671c17db7bc00e8389785))
+* **grant:** say that a call failing inside the capability still spends its use ([2cf50b3](https://github.com/this-is-tobi/rta/commit/2cf50b39254dc006d330cad4f807da89769cd7fc))
+* **grant:** say when the switched-on environment is why a covered call is refused ([668228d](https://github.com/this-is-tobi/rta/commit/668228d4d4b192ddc2ed4d075bc33055b3b35130))
+* **kv:** a profile's own credential refusal says what to run, not whom to ask ([a9789d7](https://github.com/this-is-tobi/rta/commit/a9789d7ef59d481d5db748fb36b9121cf9f9f6de))
+* **kv:** a store made with a generated key says where its key is looked for ([ecc8382](https://github.com/this-is-tobi/rta/commit/ecc83826558bbc7ad7b91bd4a10d621dc83925bc))
+* **mcp:** a call that names no environment is still asked about while one is on ([0c5bc77](https://github.com/this-is-tobi/rta/commit/0c5bc770e9ca6ceb6adf46ba3e9994afdc690980))
+* **mcp:** a refused credential or tunnel sends the operator to the record ([1a0fd64](https://github.com/this-is-tobi/rta/commit/1a0fd64ee4b589f3f29c6052ca811133d5c74d26))
+* **mcp:** frame only the descriptions a plugin wrote ([14886d9](https://github.com/this-is-tobi/rta/commit/14886d9a18498b80aeb5124153b1c3ff2bf184b7))
+* **mcp:** list profile as required wherever the schema publishes it ([434c194](https://github.com/this-is-tobi/rta/commit/434c1941010db8c4ffb04106d0b9036ada77071c))
+* **mcp:** refuse a profile argument where the tool has no connection ([4e791eb](https://github.com/this-is-tobi/rta/commit/4e791eb070b6cccd03810edd9f4b093f92dbc565))
+* **plugin:** dev runs its directory in place of an installed copy ([cdb1b75](https://github.com/this-is-tobi/rta/commit/cdb1b753cef00283298e915d4917396a6e083a7b))
+* **plugindist:** the approval sentence leads with the command ([72428cd](https://github.com/this-is-tobi/rta/commit/72428cd32e9e6e11413e8ce6fd59d8d181983de6))
+* **plugin:** install says the artifact is approved to run, and a dry run what it would ([5973612](https://github.com/this-is-tobi/rta/commit/597361218eab6c598159ca92b5da8b820ffe8750))
+* **plugin:** list says where each plugin came from, once any is not built in ([acc8c32](https://github.com/this-is-tobi/rta/commit/acc8c32962c923a0ac9e22c0016ca572827c0357))
+* **plugin:** the dev report says how the dashboard tile was chosen ([4ed0338](https://github.com/this-is-tobi/rta/commit/4ed03383fb20bcef57120a378894c9eab8af6b28))
+* **plugin:** the install line says which of the claimed grants are for a person ([ba23a69](https://github.com/this-is-tobi/rta/commit/ba23a690318bc2820102b2f3b6f2949a3bf317fb))
+* **plugin:** the scaffold's gitignore no longer hides a package of its name ([0e3fff3](https://github.com/this-is-tobi/rta/commit/0e3fff336428b6dec1c7fe2693a55698a1ac8654))
+* **plugin:** the scaffold's suite drives its capability and ships no TODO text ([f25cfa6](https://github.com/this-is-tobi/rta/commit/f25cfa6391c80f7cbad3df0fb53361fe4cfb9d81))
+* **plugin:** trust names the directory a built plugin sits in when it is off PATH ([4c4f063](https://github.com/this-is-tobi/rta/commit/4c4f06305a9dffccdfabb3f0f05314c0a0c6f0d1))
+* **plugin:** trust no longer promises a load it cannot check ([900f3f9](https://github.com/this-is-tobi/rta/commit/900f3f9476a7c097e379edf41279761296b721da))
+* **profile:** list, show and the TUI pane say when a credential reads a store nobody made ([fd0d215](https://github.com/this-is-tobi/rta/commit/fd0d2157567409e9ea2dde8b877ca5d92279584d))
+* **render:** a table with a multi-line cell draws a rule between its rows ([18e560e](https://github.com/this-is-tobi/rta/commit/18e560e4131232c413347226f26de330a9d890cd))
+* **tables:** the operator's tables name their columns in Title Case ([c2aa040](https://github.com/this-is-tobi/rta/commit/c2aa0405c06ed7b424297a83ce234e40cc691484))
+* **tui:** a terminal too small for any tile says so and keeps the hint whole ([51094dc](https://github.com/this-is-tobi/rta/commit/51094dc671df9fecd2bc895d5db4dda05efd464c))
+* **tui:** an empty tile that names its own key says to select it first ([51b16ec](https://github.com/this-is-tobi/rta/commit/51b16ec84a9f8450804d8983612d74476f666dcd))
+* **tui:** name whom the lock form locks, and who was locked when it is done ([5e1eb9a](https://github.com/this-is-tobi/rta/commit/5e1eb9a5d2fcf4103916d2a234c6368926b91eb3))
+* **tui:** search answers installed-but-stopped plugins and the plugin and profile panes ([c830331](https://github.com/this-is-tobi/rta/commit/c83033165accf3a5e63586c7bed4cac1db4a7a42))
+* **tui:** the chosen answer of a yes/no box is bracketed without colour ([37bc99d](https://github.com/this-is-tobi/rta/commit/37bc99db8f57ad1f2f8d894e0e797ab4f97ee963))
+* **tui:** the connection editor refuses a plugin that is not registered ([641aef2](https://github.com/this-is-tobi/rta/commit/641aef2547db430f6f387cb7881d20c589722731))
+* **tui:** the form's footer names enter for what it does on the last field ([7d8e15e](https://github.com/this-is-tobi/rta/commit/7d8e15e2b260c478c2ea751a6cc0ff173f2830df))
+* **tui:** the profile pane test reads the reason where the pane draws it ([c1571c1](https://github.com/this-is-tobi/rta/commit/c1571c114a74a4a0a224aaffc18e96be94f7a243))
+* **tui:** the profiles panes show the reason for warn whole ([c2d5279](https://github.com/this-is-tobi/rta/commit/c2d527982614bf2526a1159b397e8c7c456df5f3))
+* **tui:** the view key with nothing to show is drawn as guidance or a refusal ([8a15d06](https://github.com/this-is-tobi/rta/commit/8a15d06b77725fc75094830c5a3fa246e567501c))
+
+
+### Dependencies
+
+* **make:** hard has two halves a pipeline can run on two machines ([9cc3714](https://github.com/this-is-tobi/rta/commit/9cc371416e962991e54db5cdcd83cd229b535610))
+
 ## [0.40.0](https://github.com/this-is-tobi/rta/compare/v0.39.0...v0.40.0) (2026-10-14)
 
 
