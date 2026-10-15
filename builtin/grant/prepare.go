@@ -255,6 +255,89 @@ func revealNote(catalog func() []plugin.Capability, g core.Grant) string {
 		" that reveal stored values (" + strings.Join(ids, ", ") + "), each for every record it reaches — name one to allow only it"
 }
 
+// kvNamespace is the plugin whose entries a profile's `kv:` reference names,
+// and so the one whose capabilities can read a credential a profile keeps.
+const kvNamespace = "kv"
+
+// credentialNote warns when a grant lets an agent read a store entry that a
+// profile maps to one of its credentials. A profile exists to let an agent use
+// a connection without ever holding what opens it, and `grant allow kv.get
+// staging-db-password` beside a grant on the profile hands the agent the very
+// password the profile keeps from it: the developer recipe once issued exactly
+// that pair. Neither grant is wrong on its own, so nothing refuses; the
+// operator who typed the second is the one to be told what it undoes.
+//
+// Asked of the references a profile reads (config.KVReaders, which owns their
+// grammar) against what the grant covers (core.ScopeCovers, the rule the gate
+// reads a record by), so a folder and a plugin-wide grant are counted by the
+// same reading as the call they would let through. Only a capability that
+// reveals a value and belongs to the plugin the `kv:` scheme names counts: a
+// grant on another plugin's reveal reads another store, whatever its scope
+// would cover here.
+func credentialNote(catalog func() []plugin.Capability, g core.Grant) string {
+	readsStore := false
+	for _, c := range catalog() {
+		if core.Namespace(c.ID) == kvNamespace && c.Reveals && reachedBy(g, c) {
+			readsStore = true
+			break
+		}
+	}
+	if !readsStore {
+		return ""
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return ""
+	}
+	readers := cfg.KVReaders()
+	var entries []string
+	for entry := range readers {
+		if core.ScopeCovers(g.Scope, entry) {
+			entries = append(entries, entry)
+		}
+	}
+	sort.Strings(entries)
+	if len(entries) == 1 {
+		return fmt.Sprintf("note: kv entry %s is kept from the agent by %s, and this grant lets it read it — "+
+			"a grant on the profile lets it use the connection without reading the credential",
+			plugin.ListedName(entries[0]), profileNames(readers[entries[0]]))
+	}
+	if len(entries) == 0 {
+		return ""
+	}
+	shown := entries[:min(3, len(entries))]
+	named := make([]string, len(shown))
+	for i, entry := range shown {
+		named[i] = plugin.ListedName(entry) + " for " + strings.Join(shownNames(readers[entry]), ", ")
+	}
+	which := strings.Join(named, "; ")
+	if rest := len(entries) - len(shown); rest > 0 {
+		which += " and " + format.Count(rest, "other", "others")
+	}
+	return fmt.Sprintf("note: this grant lets the agent read %s that profiles keep from it (%s) — name the entries it "+
+		"needs, or grant the profile and leave the credentials unread",
+		format.Count(len(entries), "kv entry", "kv entries"), which)
+}
+
+// profileNames is the connections that read an entry, as a phrase: "profile
+// staging", "profiles prod and staging".
+func profileNames(refs []string) string {
+	names := shownNames(refs)
+	if len(names) == 1 {
+		return "profile " + names[0]
+	}
+	return "profiles " + strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
+// shownNames is names as a person reads them in a list of names (plugin.ListedName).
+func shownNames(names []string) []string {
+	out := make([]string, len(names))
+	for i, name := range names {
+		out[i] = plugin.ListedName(name)
+	}
+	return out
+}
+
 // reachOf is what a grant covers in the catalogue, by the three counts the
 // receipt gives of a plugin-wide one and the roster repeats: every capability it
 // reaches, the destructive among them, and the ones that reveal a stored value.
@@ -1082,6 +1165,9 @@ func PrepareRemote(catalog func() []plugin.Capability,
 			p.Notes = append(p.Notes, n)
 		}
 		if n := revealNote(catalog, g); n != "" {
+			p.Notes = append(p.Notes, n)
+		}
+		if n := credentialNote(catalog, g); n != "" {
 			p.Notes = append(p.Notes, n)
 		}
 		return p, nil

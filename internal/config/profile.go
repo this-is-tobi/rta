@@ -732,21 +732,53 @@ func (c Config) ProfileNames() []string {
 // package is how the `kube:` scheme would get silently miscounted the day the
 // grammar grows.
 func (c Config) KVUsers() map[string][]string {
+	// One mention per profile, however many of its plugins share the entry —
+	// the question is "who depends on this", not "how often".
+	return c.kvReaders(func(profile, _ string) string { return profile })
+}
+
+// KVReaders is KVUsers by connection rather than by profile: each kv store
+// entry onto the references whose connections read a credential from it,
+// `staging` for a profile's plugin and `staging/analytics` for one of several
+// instances of the same plugin in it — the spelling a grant or `--profile`
+// takes to name that connection. For what has to say which connection keeps a
+// credential, where "the profile" would leave the operator looking through
+// every instance in it.
+func (c Config) KVReaders() map[string][]string {
+	return c.kvReaders(func(profile, instance string) string {
+		if instance == "" {
+			return profile
+		}
+		return profile + "/" + instance
+	})
+}
+
+// kvReaders is the one walk over the `kv:` references of every profile, named
+// by whichever reference name the caller wants and mentioned once per name,
+// however many of its plugins share the entry. SecretRefs owns the grammar and
+// this owns the walk, so a reading of the references cannot count one the other
+// misses.
+func (c Config) kvReaders(name func(profile, instance string) string) map[string][]string {
 	out := map[string][]string{}
-	for _, name := range c.ProfileNames() {
-		p := c.Profiles[name]
-		// One mention per profile, however many of its plugins share the
-		// entry — the question is "who depends on this", not "how often".
-		seen := map[string]bool{}
+	for _, profile := range c.ProfileNames() {
+		p := c.Profiles[profile]
+		seen := map[[2]string]bool{}
 		for _, key := range p.PluginKeys() {
+			_, instance, _ := SplitKey(key)
+			reader := name(profile, instance)
 			for _, ref := range p.Plugins[key].SecretRefs() {
-				if ref.Scheme != "kv" || seen[ref.Ref] {
+				if ref.Scheme != "kv" || seen[[2]string{reader, ref.Ref}] {
 					continue
 				}
-				seen[ref.Ref] = true
-				out[ref.Ref] = append(out[ref.Ref], name)
+				seen[[2]string{reader, ref.Ref}] = true
+				out[ref.Ref] = append(out[ref.Ref], reader)
 			}
 		}
+	}
+	// By the name asked for, not by the key it was read under: `pg/a-b` sorts
+	// before `pg/a@1f` as a key and after `pg/a` as a reference.
+	for entry := range out {
+		sort.Strings(out[entry])
 	}
 	return out
 }
