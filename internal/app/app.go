@@ -116,6 +116,8 @@ func usageError(cmd *cobra.Command, err error) error {
 	case strings.HasPrefix(err.Error(), "unexpected argument"):
 		if word := flagWordHint(cmd); word != "" {
 			hint = word
+		} else if value := switchValueHint(cmd); value != "" {
+			hint = value
 		} else if flags := valueFlagsHint(cmd); flags != "" {
 			hint = flags
 		}
@@ -1238,6 +1240,7 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 		use += " " + argumentSlot(f)
 	}
 
+	validateArgs := positionalArgsValidator(positionals)
 	cmd := &cobra.Command{
 		Use:   use,
 		Short: c.Summary,
@@ -1245,8 +1248,16 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 			strings.TrimSpace(c.Summary+"\n\n"+c.Description),
 			capabilityArgs(c, positionals),
 		),
-		Example:     capabilityExamples(c),
-		Args:        positionalArgsValidator(positionals),
+		Example: capabilityExamples(c),
+		// The swallowed flag first: it is what makes the word after it
+		// unexpected, and with nothing after it there is no other check to
+		// say it (refuseSwallowedFlag).
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := refuseSwallowedFlag(cmd, c); err != nil {
+				return err
+			}
+			return validateArgs(cmd, args)
+		},
 		Annotations: capabilityAnnotations(c),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCapability(cmd.Context(), cmd, c, args, opts)
@@ -1402,6 +1413,14 @@ func flagValueError(cmd *cobra.Command, err error, c *plugin.Capability) error {
 			if to, moved := toolcall.MovedTo(c.ID, typed); moved {
 				return &view.Error{Code: CodeUsage, Message: err.Error(),
 					Hint: "--" + typed + " moved to " + plugin.SurfaceCLI.CapabilityName(to)}
+			}
+		}
+		// Before the nearest spelling, which for a flag that says TLS is the
+		// name of one that does nothing without it (tlsFlagHint).
+		if c != nil {
+			if hint := tlsFlagHint(*c, typed); hint != "" {
+				return &view.Error{Code: CodeUsage, Message: err.Error(),
+					Hint: hint + " — `" + cmd.CommandPath() + " --help` lists what it takes"}
 			}
 		}
 		if near := nearestFlags(cmd, typed); len(near) > 0 {
