@@ -18,7 +18,7 @@ A passphrase store needs no setup — that is what you get by default, and the f
 rta kv init --generate
 ```
 
-`--generate` makes a **dedicated age key for this store** and locks it to that. After it, nothing needs a flag and nothing needs typing: no passphrase, no `--identity`. And unlike your SSH login key, losing it costs you this store and nothing else.
+`--generate` makes a **dedicated age key for this store** and locks it to that. After it, nothing needs a flag and nothing needs typing: no passphrase, no `--identity`. And unlike your SSH login key, losing it costs you this store and nothing else. It is kept beside the config rather than beside the store so that a copy of the data directory is ciphertext and nothing else, which makes it the other half of a backup: on a machine that has the store and not the key, `kv list` answers `kv.identity.required`, and the hint names the file it looks for.
 
 ```bash
 rta kv init --identity ~/.ssh/id_ed25519     # a key you already have

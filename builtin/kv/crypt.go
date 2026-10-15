@@ -581,7 +581,7 @@ func currentMode() (keyMode, []string, *view.Error) {
 // ciphertext is the store's own bytes, needed for the one case below where
 // what to trust cannot be decided from currentMode's say-so alone.
 func readKeys(req plugin.Request, ciphertext []byte) ([]age.Identity, *view.Error) {
-	mode, _, verr := currentMode()
+	mode, specs, verr := currentMode()
 	if verr != nil {
 		return nil, verr
 	}
@@ -618,9 +618,7 @@ func readKeys(req plugin.Request, ciphertext []byte) ([]age.Identity, *view.Erro
 					}
 				}
 			}
-			return nil, view.Errorf("kv.identity.required", "this store is encrypted to keys, not a passphrase").
-				WithHint(giveIdentity(req.Surface()) + " — " + req.Surface().CapabilityName("kv.recipients") +
-					" lists who can read it")
+			return nil, identityRequired(req.Surface(), specs)
 		}
 		// The passphrase is optional here: it only matters if the key file
 		// itself is locked, so a missing one is not an error yet.
@@ -805,14 +803,67 @@ func refuseSilentIdentity(req plugin.Request) *view.Error {
 			"that key, " + rekeyOnly(sf, "that key"))
 }
 
+// identityRequired is the refusal of a store locked to keys that was given no
+// key to open it with. specs are the recipients it is locked to.
+func identityRequired(sf plugin.Surface, specs []string) *view.Error {
+	return view.Errorf("kv.identity.required", "this store is encrypted to keys, not a passphrase").
+		WithHint(giveIdentity(sf, specs) + " — " + sf.CapabilityName("kv.recipients") + " lists who can read it")
+}
+
 // giveIdentity says how the caller on sf names the private key that opens a
 // store locked to keys: the input, and over MCP the operator's variable, the
 // one way an agent's call is ever given a key.
-func giveIdentity(sf plugin.Surface) string {
+//
+// **A store made with `kv init --generate` is locked to an age key, and its
+// private half is somewhere other than the one place the hint used to send a
+// reader.** `~/.ssh/id_ed25519` is right for a store locked to SSH keys and a
+// dead end for this one: the key is the file `kv init --generate` wrote beside
+// the config (defaultIdentity), looked for there without being told, and kept
+// away from the store on purpose, so that a copy of the data directory is
+// ciphertext and nothing else. The person who finds that out from this refusal
+// is the one who restored a backup of the data directory onto another machine,
+// and the sentence has to say that the key is the other half of the backup.
+//
+// Said to a person, who has the path in their own config directory, and never
+// over MCP: what an agent is told is the operator's variable, and a filesystem
+// path in a refusal an agent reads is a path the agent did not have.
+func giveIdentity(sf plugin.Surface, specs []string) string {
+	return nameIdentity(sf, specs, "give "+sf.InputName("identity"))
+}
+
+// hostIdentity is giveIdentity for a read that has no input to give: a profile's
+// credential is opened from the environment and the default key file alone.
+func hostIdentity(sf plugin.Surface, specs []string) string {
+	return nameIdentity(sf, specs, "set "+identityEnv+" to")
+}
+
+// nameIdentity is the sentence both are, with how a person hands over the key.
+func nameIdentity(sf plugin.Surface, specs []string, how string) string {
 	if sf == plugin.SurfaceMCP {
 		return "ask the operator to set " + identityEnv + " in the environment rta mcp serve runs in"
 	}
-	return "give " + sf.InputName("identity") + " your private key, e.g. ~/.ssh/id_ed25519"
+	if !lockedToAgeKey(specs) {
+		return how + " your private key, e.g. ~/.ssh/id_ed25519"
+	}
+	return how + " the private key of one of its recipients — " + generatedKeyNote()
+}
+
+// generatedKeyNote is where the key `kv init --generate` makes is looked for,
+// and what that means for a copy of the store.
+func generatedKeyNote() string {
+	return "`kv init --generate` keeps its key at " + defaultIdentity() +
+		", where it is looked for without being told, so a backup of the store needs that file too"
+}
+
+// lockedToAgeKey reports whether any recipient the store is locked to is an
+// age key, which is what a generated key is and an SSH key is not.
+func lockedToAgeKey(specs []string) bool {
+	for _, spec := range specs {
+		if strings.HasPrefix(strings.TrimSpace(spec), "age1") {
+			return true
+		}
+	}
+	return false
 }
 
 // privateKeyFile reports whether a spec is a path to a private key on this

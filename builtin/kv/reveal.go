@@ -155,15 +155,25 @@ func reveal(sf plugin.Surface, key string) (string, *view.Error) {
 // variable, in the environment of whatever resolves the credential: this
 // process at a terminal, and over MCP the server's own, which is the one an
 // operator is not looking at.
+//
+// The same goes for a store locked to keys: load's hint says to give a flag, and
+// the host's read has none. It is rebuilt here for the reader on sf, which also
+// keeps the path of a generated key out of the default reader's refusal, the one
+// an agent could be handed.
 func hostOpenHint(sf plugin.Surface, verr *view.Error) *view.Error {
-	if verr.Code != "kv.passphrase.missing" {
-		return verr
-	}
 	out := *verr
-	if sf == plugin.SurfaceMCP {
-		out.Hint = passphraseHint(plugin.SurfaceMCP)
-	} else {
-		out.Hint = "set " + passphraseEnv + " — a profile's credential is read without asking for the passphrase"
+	switch verr.Code {
+	case "kv.passphrase.missing":
+		if sf == plugin.SurfaceMCP {
+			out.Hint = passphraseHint(plugin.SurfaceMCP)
+		} else {
+			out.Hint = "set " + passphraseEnv + " — a profile's credential is read without asking for the passphrase"
+		}
+	case "kv.identity.required":
+		specs, _ := loadRecipients()
+		out.Hint = hostIdentity(sf, specs) + " — " + sf.CapabilityName("kv.recipients") + " lists who can read it"
+	default:
+		return verr
 	}
 	return &out
 }

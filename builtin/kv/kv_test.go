@@ -1019,6 +1019,78 @@ func writeSSHKeypair(t *testing.T, dir, name string) (private, public string) {
 	return private, public
 }
 
+// A store made with `kv init --generate` is locked to an age key whose private
+// half is the file beside the config, not the SSH key the refusal used to send a
+// reader to. The person who meets it restored a backup of the data directory on
+// another machine, and the hint says where the key is looked for and that the
+// backup needs it too: to a person, as a path they can open; to an agent, never.
+func TestAGeneratedStoreWithoutItsKeyNamesWhereTheKeyIsLookedFor(t *testing.T) {
+	setup(t)
+	text(t, runInit, map[string]any{"generate": true}, false)
+	text(t, runSet, map[string]any{"key": "token", "value": "s3cr3t"}, false)
+	keyPath := defaultIdentity()
+	if err := os.Remove(keyPath); err != nil {
+		t.Fatal(err)
+	}
+
+	refusal := func(sf plugin.Surface) *view.Error {
+		t.Helper()
+		_, err := runGet(context.Background(), req(map[string]any{"key": "token"}, false).WithSurface(sf))
+		verr := view.AsError(err, "z")
+		if verr.Code != "kv.identity.required" {
+			t.Fatalf("%s: a generated store opened without its key, or refused as %+v", sf, verr)
+		}
+		return verr
+	}
+	for _, sf := range []plugin.Surface{plugin.SurfaceCLI, plugin.SurfaceTUI} {
+		hint := refusal(sf).Hint
+		for _, want := range []string{keyPath, "backup", "private key of one of its recipients", "lists who can read it"} {
+			if !strings.Contains(hint, want) {
+				t.Errorf("%s: the hint does not say %q: %s", sf, want, hint)
+			}
+		}
+		if strings.Contains(hint, "id_ed25519") {
+			t.Errorf("%s: a store locked to an age key is sent to an SSH key: %s", sf, hint)
+		}
+	}
+	// An agent is told the operator's variable and no path: the one place a
+	// filesystem path in a refusal would be a path the agent did not have.
+	agent := refusal(plugin.SurfaceMCP).Hint
+	if strings.Contains(agent, filepath.Dir(keyPath)) || strings.Contains(agent, "id_ed25519") ||
+		!strings.Contains(agent, "ask the operator to set "+identityEnv) {
+		t.Errorf("the refusal over MCP names a path, or not the variable: %s", agent)
+	}
+
+	// A profile's credential is read from the environment and the key file, with
+	// no flag to give, so the host's reader names the variable and the same path.
+	_, verr := RevealAs(plugin.SurfaceCLI)("token")
+	if verr == nil || verr.Code != "kv.identity.required" || strings.Contains(verr.Hint, "--identity") ||
+		!strings.Contains(verr.Hint, "set "+identityEnv+" to the private key") || !strings.Contains(verr.Hint, keyPath) {
+		t.Errorf("a person's profile read of a generated store: %+v", verr)
+	}
+	// The default reader is the one safe to hand to either side: no path.
+	if _, verr := Reveal("token"); verr == nil || strings.Contains(verr.Hint, filepath.Dir(keyPath)) ||
+		!strings.Contains(verr.Hint, "ask the operator to set "+identityEnv) {
+		t.Errorf("the default reader of a generated store: %+v", verr)
+	}
+}
+
+// A store locked to an SSH key is still sent to the SSH key, which is the one
+// the person already owns and backs up with the rest of ~/.ssh.
+func TestAnSSHStoreWithoutItsKeyIsStillSentToTheSSHKey(t *testing.T) {
+	setup(t)
+	private, public := writeSSHKeypair(t, t.TempDir(), "id_ed25519")
+	text(t, runSet, map[string]any{"key": "first", "value": "x"}, false)
+	text(t, runRekey, map[string]any{"only": true, "recipient": []string{public}, "identity": private}, false)
+
+	_, err := runGet(context.Background(), req(map[string]any{"key": "first"}, false).WithSurface(plugin.SurfaceCLI))
+	verr := view.AsError(err, "z")
+	if verr.Code != "kv.identity.required" || !strings.Contains(verr.Hint, "e.g. ~/.ssh/id_ed25519") ||
+		strings.Contains(verr.Hint, "kv init --generate") {
+		t.Errorf("a store locked to an SSH key: %+v", verr)
+	}
+}
+
 // The whole point of key mode: a store you unlock with the SSH key you
 // already own and already back up, instead of one more passphrase.
 func TestSSHKeyEncryptionRoundTrip(t *testing.T) {
