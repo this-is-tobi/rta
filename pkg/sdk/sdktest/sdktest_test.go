@@ -779,6 +779,78 @@ func TestAKeywordTheCapabilityAlreadyContainsIsNoted(t *testing.T) {
 	}
 }
 
+// Idempotent tells an MCP client that a retry changes nothing more, and a
+// restart is the act that does more each time: the first plugin to declare one
+// that way is the case this exists for. A note, since a reload that is a no-op
+// when nothing changed is idempotent in a way a restart is not, and the author
+// is the one who knows.
+func TestAnIdempotentClaimOnAnActDoneAgainEachTimeIsNotedAndNeverFailed(t *testing.T) {
+	repeat := func(verb string) plugin.Plugin {
+		c := ok()
+		c.ID = "demo.service." + verb
+		c.Safety, c.Idempotent = plugin.Write, true
+		return plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}
+	}
+
+	for _, verb := range repeatVerbs {
+		rec := &recorder{}
+		checkRepeats(rec, repeat(verb), noConfig())
+		if len(rec.errs) > 0 {
+			t.Errorf("%s: a note was made an error: %s", verb, rec.errText())
+		}
+		for _, want := range []string{"demo.service." + verb + " is declared Idempotent", `"` + verb + `"`, "sdktest.Skip(sdktest.RuleDeclaration"} {
+			if !strings.Contains(rec.logText(), want) {
+				t.Errorf("%s: the note does not say %q: %q", verb, want, rec.logText())
+			}
+		}
+	}
+
+	// The way out is the same one the other notes offer, and silences it.
+	cfg := noConfig()
+	cfg.skips[RuleDeclaration] = map[string]string{"demo.service.restart": "a restart of a stopped service starts it once"}
+	rec := &recorder{}
+	checkRepeats(rec, repeat("restart"), cfg)
+	if rec.logText() != "" {
+		t.Errorf("a waived note was said: %q", rec.logText())
+	}
+}
+
+// What first-party plugins and rta's own capabilities declare Idempotent above
+// Read ends in these words, and none of them is an act that does more when it
+// is repeated: stopping a stopped container, setting a value to itself,
+// renewing a grant to a fixed deadline and restoring a key that is not
+// overwritten change nothing the second time. The note holds nothing against
+// them, nor against a claim that is not made or a capability that changes
+// nothing to begin with.
+func TestTheNoteOnRepeatedActsLeavesWhatTheCatalogueClaimsAlone(t *testing.T) {
+	check := func(verb string, safety plugin.Safety, idempotent bool) string {
+		c := ok()
+		c.ID = "demo.service." + verb
+		c.Safety, c.Idempotent = safety, idempotent
+		rec := &recorder{}
+		checkRepeats(rec, plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}, noConfig())
+		return rec.logText()
+	}
+
+	for _, verb := range []string{
+		"activity", "decrypt", "delete", "destroy", "done", "dump", "edit", "env", "get", "init", "inspect",
+		"put", "query", "renew", "reopen", "restore", "revoke", "scroll", "set", "slowlog", "stop", "undelete",
+	} {
+		if got := check(verb, plugin.Write, true); got != "" {
+			t.Errorf("%s: an idempotent claim was noted: %q", verb, got)
+		}
+	}
+	if got := check("restart", plugin.Write, false); got != "" {
+		t.Errorf("a capability that does not claim it was noted: %q", got)
+	}
+	if got := check("restart", plugin.Read, true); got != "" {
+		t.Errorf("a Read, which changes nothing to repeat, was noted: %q", got)
+	}
+	if got := check("restart", plugin.Destructive, true); got == "" {
+		t.Error("a Destructive restart that claims it was not noted")
+	}
+}
+
 // Primary is what a pipe is handed in place of the table around it, so a name
 // the view lacks hands it nothing, and a name the view masks hands it the
 // mask. Both are findings only a run can make.
