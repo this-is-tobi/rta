@@ -7,9 +7,10 @@
 # red on the day that key existed. CI is the second machine.
 #
 # Everything below is a call into the shared workflow catalogue rather than a
-# script kept here. The gates are the same ones `make ci` runs, expressed as
-# that catalogue's inputs: -count=1, -race and -shuffle=on are `make hard`.
-# One thing stays local: the cross build, which nothing general covers.
+# script kept here. The gates are the ones `make ci` runs, expressed as that
+# catalogue's inputs or, for the race pass, as the make targets it is made of,
+# and the test jobs say what they add to it. One thing stays local: the cross
+# build, which nothing general covers.
 name: CI
 
 on:
@@ -88,7 +89,7 @@ jobs:
   # template among its stated reasons, and TestEveryDocsPathCitedFromCodeExists
   # opens every docs page a YAML file cites, the chart's values and templates
   # included. Both are tests that read prose, which test-prose runs for every
-  # pull request `test` skips, so a change only under charts/ runs the chart's
+  # pull request the tests skip, so a change only under charts/ runs the chart's
   # own gates and those two packages, and nothing else.
   changes:
     name: Detect changed paths
@@ -150,8 +151,44 @@ jobs:
       # than the stricter FILE — see that file for why, and for what to do on
       # the day a wire break is the right call.
 
-  test:
-    name: Test
+  # The suite, asked as three questions that are answered at once.
+  #
+  # It was one question asked three times: the same `go test`, with the race
+  # detector and an atomic coverage profile, on ubuntu, on macOS and on arm64
+  # Linux, and the slowest of the three decided how long every pull request
+  # waited. On one laptop the detector roughly doubles the suite's wall clock
+  # and triples its longest package, and the profile it requires adds another
+  # third on top; the same profile without the detector costs a few percent. So
+  # what the three copies cost was the detector and the combination, and what
+  # the other two machines are for is the host they read.
+  #
+  # Each question goes where it is best asked, and the pipeline takes as long
+  # as the longest of them:
+  #
+  #   test-race-*    the race detector, on one runner, in two halves that are
+  #                  a partition of the module (`make hard`; the Makefile says
+  #                  which halves and why)
+  #   test-coverage  the profile, from one plain run over the whole module
+  #   test-hosts     the suite, plain, on macOS and on arm64 Linux
+  #
+  # **What the other two machines no longer print is their coverage total.** The
+  # operating system moves about half a percent of the statements covered
+  # (platform files, host reads), so the profile stays on the machine it always
+  # came from, and the other two still run the suite.
+  #
+  # **The plain passes are built with -tags slowhost.** The wider bounds on
+  # starting a plugin and on waiting for a lock (internal/pluginhost/slow.go,
+  # internal/filelock/slow.go) are not about the detector: they are about a
+  # machine that looks at an executable the first time it runs and stretches
+  # whatever holds a lock, which a busy macOS runner does with no
+  # instrumentation at all. A plain pass without the tag is the one that failed
+  # on a loaded laptop and nowhere else (see `coverage` in the Makefile).
+  # `make test-plain` is these passes on a laptop.
+  #
+  # The detector runs here on one machine. race.yml asks the other two every
+  # night.
+  test-race-tui:
+    name: Test (race detector, the TUI)
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
     uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
@@ -160,9 +197,59 @@ jobs:
     with:
       # `make hard` in the catalogue's own words: no cached results, no
       # ordering luck, no data races. All three have caught something real.
-      RACE: true
+      # The terminal screens' tests are the longest package, so they have a
+      # runner to themselves.
+      TEST_COMMAND: make hard-tui
+      RUNNERS: '[["ubuntu-latest"]]'
+
+  test-race-rest:
+    name: Test (race detector, the rest)
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
+    permissions:
+      contents: read
+    with:
+      TEST_COMMAND: make hard-rest
+      RUNNERS: '[["ubuntu-latest"]]'
+
+  # The profile, from one run over the whole module. It is one measurement and
+  # not the sum of several: the artifact keeps the name and the machine it had,
+  # and the total is the line the job prints, as before. Statements covered do
+  # not depend on the detector, and the same tree gave 88.87% with it and
+  # 88.88% without. The mode is `set` where the race pass wrote `atomic`, so
+  # the hit counts are gone; nothing in the repository reads them.
+  test-coverage:
+    name: Test (coverage)
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
+    permissions:
+      contents: read
+    with:
+      RACE: false
       SHUFFLE: true
       COUNT: "1"
+      BUILD_TAGS: '["slowhost"]'
+      RUNNERS: '[["ubuntu-latest"]]'
+      COVERAGE: true
+      # Most of this module is exercised from other packages' tests, which
+      # reads as untested without this.
+      COVERAGE_PACKAGES: ./...
+
+  # The suite as it is on the other two machines.
+  test-hosts:
+    name: Test (other hosts)
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
+    permissions:
+      contents: read
+    with:
+      RACE: false
+      SHUFFLE: true
+      COUNT: "1"
+      BUILD_TAGS: '["slowhost"]'
       # The second machine — and the third. A suite that reads the host it
       # runs on passes on the host it was written on, and the first two
       # runners share a blind spot: ubuntu is amd64 and macOS reads sysctl
@@ -171,25 +258,21 @@ jobs:
       # gap hid a real bug (sys.cpu rendered a blank model on every Pi and
       # Graviton) until the suite was run in an arm64 container by hand; the
       # arm runner makes that reading automatic.
-      RUNNERS: '[["ubuntu-latest"], ["macos-latest"], ["ubuntu-24.04-arm"]]'
-      COVERAGE: true
-      # Most of this module is exercised from other packages' tests, which
-      # reads as untested without this.
-      COVERAGE_PACKAGES: ./...
+      RUNNERS: '[["macos-latest"], ["ubuntu-24.04-arm"]]'
 
-  # The suite's tests that read prose, for every pull request `test` skips.
+  # The tests that read prose, for every pull request the test jobs skip.
   #
   # Several tests hold the docs to the code rather than the code to itself:
   # every command a page spells, every link between pages, every docs path a
   # Go comment, the Dockerfile or a workflow cites, the counts README.md and
   # docs/ state about the catalogue, and a hidden character in any file git
   # tracks. They exist so that a page cannot say what the code does not, and
-  # a pull request changing only pages skipped `test` with the rest of the
+  # a pull request changing only pages skipped the tests with the rest of the
   # suite, so the one change they were written to check was the one that
   # never ran them: a dead link or a wrong count merged green, and the next
   # code change went red on a page it never touched.
   #
-  # So they run here whenever `test` does not: the two packages that hold
+  # So they run here whenever the tests do not: the two packages that hold
   # them, on one runner, and without the race detector, which has nothing to
   # find in a test reading files. A change only under charts/ reaches two of
   # them (the `changes` job says which), and this is all it needs from the Go
@@ -271,9 +354,9 @@ jobs:
 
   # The arm64 image, actually executed — on the arm runner, so this runs the
   # real binary rather than an emulation of it. This is the only place the
-  # suite runs anything on arm64 Linux at all: the test matrix is
-  # ubuntu-amd64 + macos-arm64, a gap that has already hidden one real bug
-  # (sys.cpu's blank model, invisible to both runners).
+  # built image runs on arm64 Linux; the suite itself runs there in test-hosts.
+  # The gap that once hid a real bug (sys.cpu's blank model, invisible to both
+  # runners the suite had then) is why neither is left out.
   test-docker-arm64:
     name: Test Docker image (arm64)
     needs: [build-docker]
@@ -505,7 +588,10 @@ jobs:
     - changes
     - lint
     - lint-proto
-    - test
+    - test-race-tui
+    - test-race-rest
+    - test-coverage
+    - test-hosts
     - test-prose
     - build
     - build-docker
