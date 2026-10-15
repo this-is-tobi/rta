@@ -105,8 +105,11 @@ func TestTheProfilePaneGradesAMissingStoreAsTheListDoes(t *testing.T) {
 				t.Errorf("the note = %q, want it to say %q", m.profiles[0].note, want)
 			}
 		}
-		if second := ansi.Strip(profileCovers(m.profiles[0])); !strings.Contains(second, "no store on this machine yet") {
-			t.Errorf("the second line = %q, want the reason beside the word", second)
+		// The reason is the band's note, drawn whole under its lines and wrapped to
+		// the pane (band.note): the second line says which plugins the environment
+		// covers, and the reason no longer shares it, where it was cut at the edge.
+		if note := profileBands(m.profiles)[0].note; !strings.Contains(note, "no store on this machine yet") {
+			t.Errorf("the band's note = %q, want the reason beside the word", note)
 		}
 	})
 
