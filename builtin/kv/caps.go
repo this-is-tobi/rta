@@ -96,7 +96,7 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	// How many earlier values each entry still keeps — the column that tells
 	// a rotated key from one only ever set, without `kv show` on each. On the
-	// same rule as Used by: only once some listed entry keeps one, because a
+	// same rule as Used By: only once some listed entry keeps one, because a
 	// column of blanks names a concept the listing has no use for yet.
 	if withHistory {
 		cols = append(cols, view.Column{Name: "History"})
@@ -105,7 +105,7 @@ func runList(_ context.Context, req plugin.Request) (view.View, error) {
 	// a concept this store does not otherwise have, on every listing, for
 	// operators who never wrote a profile.
 	if withUsers {
-		cols = append(cols, view.Column{Name: "Used by"})
+		cols = append(cols, view.Column{Name: "Used By"})
 	}
 	if detail {
 		cols = append(cols, view.Column{Name: "Source"}, view.Column{Name: "Created", Kind: view.KindDuration})

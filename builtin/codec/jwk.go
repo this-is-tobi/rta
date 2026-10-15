@@ -475,7 +475,7 @@ func keySetView(doc object, list []any) view.View {
 	p.ambiguous(doc, "key set", "RFC 7517 §5")
 	t := view.Table{Columns: []view.Column{
 		{Name: "Kid"}, {Name: "Type"}, {Name: "Alg"}, {Name: "Use"}, {Name: "Thumbprint"},
-		{Name: "Private"}, {Name: "Certificate expires"},
+		{Name: "Private"}, {Name: "Certificate Expires"},
 	}}
 	// A kid shared by two keys of the same type is ambiguous to a verifier;
 	// RFC 7517 §4.5 names one of different types — an RSA and an EC key

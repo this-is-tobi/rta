@@ -56,12 +56,12 @@ func TestListNamesTheProfilesUsingAnEntry(t *testing.T) {
 	tbl := listTable(t, req(nil, false))
 	col := -1
 	for i, c := range tbl.Columns {
-		if c.Name == "Used by" {
+		if c.Name == "Used By" {
 			col = i
 		}
 	}
 	if col < 0 {
-		t.Fatalf("no Used by column in %v", tbl.Columns)
+		t.Fatalf("no Used By column in %v", tbl.Columns)
 	}
 	rows := map[string]string{}
 	for _, r := range tbl.Rows {
@@ -87,8 +87,8 @@ func TestListWithholdsProfileUsersOverMCP(t *testing.T) {
 
 	tbl := listTable(t, req(nil, false).WithSurface(plugin.SurfaceMCP))
 	for _, c := range tbl.Columns {
-		if c.Name == "Used by" {
-			t.Fatalf("the MCP listing carries the Used by column: %v", tbl.Columns)
+		if c.Name == "Used By" {
+			t.Fatalf("the MCP listing carries the Used By column: %v", tbl.Columns)
 		}
 	}
 	for _, r := range tbl.Rows {
@@ -108,8 +108,8 @@ func TestListOmitsTheColumnWhenNothingIsReferenced(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, c := range listTable(t, req(nil, false)).Columns {
-		if c.Name == "Used by" {
-			t.Fatalf("Used by column present with no profile referencing anything")
+		if c.Name == "Used By" {
+			t.Fatalf("Used By column present with no profile referencing anything")
 		}
 	}
 }
