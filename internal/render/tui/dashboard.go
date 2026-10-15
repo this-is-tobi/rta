@@ -159,13 +159,22 @@ const (
 	// line that says there is more. Anything shorter is a box with nothing
 	// in it, on a terminal too short for its own footer.
 	tileClipHeight = 3
-	// searchMatches is how many live results the search bar shows at once.
-	// The list itself is not cut to this: it scrolls, because a query that
-	// matches eleven capabilities should not silently become three.
+	// searchMatches is the fewest live results the search box shows at once, and
+	// what it shows on a terminal with no room to give it more. The list itself
+	// is not cut to this: it scrolls, because a query that matches eleven
+	// capabilities should not silently become three. searchSlots says how many
+	// it shows on a taller one.
 	searchMatches = 3
-	// searchTileHeight: borders + query line + searchMatches result lines.
-	// Only while somebody is searching; see searchBarHeight.
-	searchTileHeight = searchMatches + 3
+	// searchMatchesMax is the most the box grows to. Past ten lines it is a page
+	// of its own and no longer a window over the dashboard, which is what the
+	// tiles under it are there to be seen beside.
+	searchMatchesMax = 10
+	// searchHeightShare is the part of the terminal's height the box's result
+	// lines may be: one in five.
+	searchHeightShare = 5
+	// searchChrome is what the open box costs beyond its result lines: the two
+	// borders and the line the query is typed on.
+	searchChrome = 3
 	// searchBarHeight is what the search costs the layout while nobody is using
 	// it: one line saying it is there. The box with room for results used to be
 	// drawn at all times, and on an 80x24 terminal its four empty lines were

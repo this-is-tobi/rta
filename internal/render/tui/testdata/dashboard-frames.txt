@@ -55,16 +55,11 @@
 │ ❯ a▌                                                     │
 │ ❯ alpha.overview  what alpha sees                 read   │
 │   beta.overview  what beta sees                   read   │
-│   delta.overview  what delta sees                 read ↓ │
+│   delta.overview  what delta sees                 read   │
+│   gamma.overview  what gamma sees                 read ↓ │
 ╰──────────────────────────────────────────────────────────╯
 ╭─ alpha.overview ─────────────────────────────────────────╮
 │ who   ANSWER-alpha                                       │
-│ blob  ZZ0123456789abcdefghij0123456789abcdefghij01234567 │
-│       89abcdefghij                                       │
-│                                                          │
-╰──────────────────────────────────────────────────────────╯
-╭─ beta.overview ──────────────────────────────────────────╮
-│ who   ANSWER-beta                                        │
 │ blob  ZZ0123456789abcdefghij0123456789abcdefghij01234567 │
 │       89abcdefghij                                       │
 │                                                          │
@@ -134,18 +129,13 @@
 │ ❯ tall.info  tall                                 read   │
 │                                                          │
 │                                                          │
+│                                                          │
 ╰──────────────────────────────────────────────────────────╯
 ╭─ short.info ─────────────────────────────────────────────╮
 │ one line                                                 │
 │                                                          │
 │                                                          │
 │                                                          │
-╰──────────────────────────────────────────────────────────╯
-╭─ mid.info ───────────────────────────────────────────────╮
-│ line                                                     │
-│ line                                                     │
-│ line                                                     │
-│ … enter for details                                      │
 ╰──────────────────────────────────────────────────────────╯
  ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
 === spanned 60x20 initial ===
@@ -212,18 +202,13 @@
 │ ❯ tall.info  tall                                 read   │
 │                                                          │
 │                                                          │
+│                                                          │
 ╰──────────────────────────────────────────────────────────╯
 ╭─ short.info ─────────────────────────────────────────────╮
 │ one line                                                 │
 │                                                          │
 │                                                          │
 │                                                          │
-╰──────────────────────────────────────────────────────────╯
-╭─ mid.info ───────────────────────────────────────────────╮
-│ line                                                     │
-│ line                                                     │
-│ line                                                     │
-│ … enter for details                                      │
 ╰──────────────────────────────────────────────────────────╯
  ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
 === hidden-ordered-added 60x20 initial ===
@@ -292,18 +277,13 @@
 │ ❯ tall.info  tall                                 read   │
 │                                                          │
 │                                                          │
+│                                                          │
 ╰──────────────────────────────────────────────────────────╯
 ╭─ tall.info ──────────────────────────────────────────────╮
 │ line                                                     │
 │ line                                                     │
 │ line                                                     │
 │ … enter for details                                      │
-╰──────────────────────────────────────────────────────────╯
-╭─ short.info ─────────────────────────────────────────────╮
-│ one line                                                 │
-│                                                          │
-│                                                          │
-│                                                          │
 ╰──────────────────────────────────────────────────────────╯
  ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
 === automatic 80x24 initial ===
@@ -381,7 +361,8 @@
 │ ❯ a▌                                                                         │
 │ ❯ alpha.overview  what alpha sees                                     read   │
 │   beta.overview  what beta sees                                       read   │
-│   delta.overview  what delta sees                                     read ↓ │
+│   delta.overview  what delta sees                                     read   │
+│   gamma.overview  what gamma sees                                     read ↓ │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ alpha.overview ────────────────────╮ ╭─ beta.overview ──────────────────────╮
 │ who   ANSWER-alpha                  │ │ who   ANSWER-beta                    │
@@ -470,18 +451,17 @@
 │ ❯ tall.info  tall                                                     read   │
 │                                                                              │
 │                                                                              │
+│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ short.info ────────────────────────╮ ╭─ mid.info ───────────────────────────╮
 │ one line                            │ │ line                                 │
 │                                     │ │ line                                 │
 │                                     │ │ line                                 │
 │                                     │ │ line                                 │
-│                                     │ │ line                                 │
-│                                     │ │ line                                 │
+│                                     │ │ … enter for details                  │
 ╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
 ╭─ short.info ────────────────────────╮ ╭─ tall.info ──────────────────────────╮
 │ one line                            │ │ line                                 │
-│                                     │ │ line                                 │
 │                                     │ │ line                                 │
 │                                     │ │ line                                 │
 │                                     │ │ line                                 │
@@ -554,6 +534,7 @@
 │ ❯ tall.info  tall                                                     read   │
 │                                                                              │
 │                                                                              │
+│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ short.info ─────────────────────────────────────────────────────────────────╮
 │ one line                                                                     │
@@ -566,8 +547,7 @@
 │ line                                │ │                                      │
 │ line                                │ │                                      │
 │ line                                │ │                                      │
-│ line                                │ │                                      │
-│ line                                │ │                                      │
+│ … enter for details                 │ │                                      │
 ╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
  ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
 === hidden-ordered-added 80x24 initial ===
@@ -646,10 +626,10 @@
 │ ❯ tall.info  tall                                                     read   │
 │                                                                              │
 │                                                                              │
+│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ tall.info ─────────────────────────╮ ╭─ short.info ─────────────────────────╮
 │ line                                │ │ one line                             │
-│ line                                │ │                                      │
 │ line                                │ │                                      │
 │ line                                │ │                                      │
 │ line                                │ │                                      │
@@ -660,8 +640,7 @@
 │ line                                                                         │
 │ line                                                                         │
 │ line                                                                         │
-│ line                                                                         │
-│ line                                                                         │
+│ … enter for details                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑↓ pick · enter run · + add tile · esc clear · ctrl+c quit
 === automatic 100x30 initial ===
@@ -735,11 +714,14 @@
  + add tile · b browse · / search · q quit · ? help
 === automatic 100x30 search-open ===
  rta  dashboard
-╭─ ⌕ search ────────────────────────────────── 1/5 · ↑↓ pick · enter run · + add tile · esc clear ─╮
+╭─ ⌕ search ──────────────────────────────────────── ↑↓ pick · enter run · + add tile · esc clear ─╮
 │ ❯ a▌                                                                                             │
 │ ❯ alpha.overview  what alpha sees                                                         read   │
 │   beta.overview  what beta sees                                                           read   │
-│   delta.overview  what delta sees                                                         read ↓ │
+│   delta.overview  what delta sees                                                         read   │
+│   gamma.overview  what gamma sees                                                         read   │
+│   epsilon.overview  what epsilon sees                                                     read   │
+│                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ alpha.overview ──────────────────────────────╮ ╭─ beta.overview ────────────────────────────────╮
 │ who   ANSWER-alpha                            │ │ who   ANSWER-beta                              │
@@ -857,6 +839,9 @@
 │ ❯ tall.info  tall                                                                         read   │
 │                                                                                                  │
 │                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ short.info ──────────────────────────────────╮ ╭─ mid.info ─────────────────────────────────────╮
 │ one line                                      │ │ line                                           │
@@ -868,8 +853,6 @@
 ╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
 ╭─ short.info ──────────────────────────────────╮ ╭─ tall.info ────────────────────────────────────╮
 │ one line                                      │ │ line                                           │
-│                                               │ │ line                                           │
-│                                               │ │ line                                           │
 │                                               │ │ line                                           │
 │                                               │ │ line                                           │
 │                                               │ │ line                                           │
@@ -967,6 +950,9 @@
 │ ❯ tall.info  tall                                                                         read   │
 │                                                                                                  │
 │                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────╮
 │ one line                                                                                         │
@@ -1062,11 +1048,12 @@
 │ ❯ tall.info  tall                                                                         read   │
 │                                                                                                  │
 │                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ tall.info ───────────────────────────────────╮ ╭─ short.info ───────────────────────────────────╮
 │ line                                          │ │ one line                                       │
-│ line                                          │ │                                                │
-│ line                                          │ │                                                │
 │ line                                          │ │                                                │
 │ line                                          │ │                                                │
 │ line                                          │ │                                                │
@@ -1136,11 +1123,17 @@
  q quit · ? help
 === automatic 132x45 search-open ===
  rta  dashboard
-╭─ ⌕ search ────────────────────────────────────────────────────────────────── 1/5 · ↑↓ pick · enter run · + add tile · esc clear ─╮
+╭─ ⌕ search ──────────────────────────────────────────────────────────────────────── ↑↓ pick · enter run · + add tile · esc clear ─╮
 │ ❯ a▌                                                                                                                             │
 │ ❯ alpha.overview  what alpha sees                                                                                         read   │
 │   beta.overview  what beta sees                                                                                           read   │
-│   delta.overview  what delta sees                                                                                         read ↓ │
+│   delta.overview  what delta sees                                                                                         read   │
+│   gamma.overview  what gamma sees                                                                                         read   │
+│   epsilon.overview  what epsilon sees                                                                                     read   │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ alpha.overview ────────────────────────╮ ╭─ beta.overview ─────────────────────────╮ ╭─ delta.overview ─────────────────────────╮
 │ who   ANSWER-alpha                      │ │ who   ANSWER-beta                       │ │ who   ANSWER-delta                       │
@@ -1232,6 +1225,12 @@
 ╭─ ⌕ search ──────────────────────────────────────────────────────────────────────── ↑↓ pick · enter run · + add tile · esc clear ─╮
 │ ❯ a▌                                                                                                                             │
 │ ❯ tall.info  tall                                                                                                         read   │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
 │                                                                                                                                  │
 │                                                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -1375,6 +1374,12 @@
 │ ❯ tall.info  tall                                                                                                         read   │
 │                                                                                                                                  │
 │                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ one line                                                                                                                         │
@@ -1494,6 +1499,12 @@
 ╭─ ⌕ search ──────────────────────────────────────────────────────────────────────── ↑↓ pick · enter run · + add tile · esc clear ─╮
 │ ❯ a▌                                                                                                                             │
 │ ❯ tall.info  tall                                                                                                         read   │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
+│                                                                                                                                  │
 │                                                                                                                                  │
 │                                                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

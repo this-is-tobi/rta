@@ -855,17 +855,35 @@ func panesHint(word string) string {
 	return ""
 }
 
-// searchRows is how many matches the box shows right now: searchMatches, and
-// one fewer while a hint keeps a line of its own. A query that names a plugin
-// that is not running scores the capabilities of every other plugin on the
-// words that are left (`qdrant.collection.list` found 56), and with the hint
-// drawn only in a window with room, those unrelated rows pushed out the one
-// line that said why qdrant was not among them.
+// searchSlots is how many lines the open box has for what it answers: a fifth of
+// the terminal's height, at least searchMatches and at most searchMatchesMax. It
+// was three at every size, so a terminal sixty lines high showed three results
+// and a hint over forty lines of tiles the person had stopped looking at: while
+// the box is open the search is what they are doing, and the count in its
+// border, which says how many more there are, is the part that stays honest at
+// any size.
+//
+// It is read off the height the model draws in, and everything that measures
+// the dashboard under the box reads the same number — the row budget, the hit
+// test, the scroll window — through searchHeight.
+func (m Model) searchSlots() int {
+	return min(max(m.height/searchHeightShare, searchMatches), searchMatchesMax)
+}
+
+// searchTileHeight is the open box: its result lines and what surrounds them.
+func (m Model) searchTileHeight() int { return searchChrome + m.searchSlots() }
+
+// searchRows is how many matches the box shows right now: searchSlots, and one
+// fewer while a hint keeps a line of its own. A query that names a plugin that is
+// not running scores the capabilities of every other plugin on the words that are
+// left (`qdrant.collection.list` found 56), and with the hint drawn only in a
+// window with room, those unrelated rows pushed out the one line that said why
+// qdrant was not among them.
 func (m Model) searchRows() int {
 	if m.searchHint() != "" {
-		return searchMatches - 1
+		return m.searchSlots() - 1
 	}
-	return searchMatches
+	return m.searchSlots()
 }
 
 // searchWindow returns the visible slice of matches and where it starts,
@@ -892,7 +910,7 @@ func (m Model) searchOpen() bool { return m.searchEditing || m.query != "" }
 // window — has to agree on.
 func (m Model) searchHeight() int {
 	if m.searchOpen() {
-		return searchTileHeight
+		return m.searchTileHeight()
 	}
 	return searchBarHeight
 }
@@ -984,7 +1002,7 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 		right = fmt.Sprintf("%d/%d · ", min(m.searchSel, n-1)+1, n) + right
 	}
 	return panel(panelHead{Title: "⌕ search", Right: right, Heavy: m.noColor},
-		strings.Join(lines, "\n"), width, searchTileHeight, selected)
+		strings.Join(lines, "\n"), width, m.searchTileHeight(), selected)
 }
 
 // dashFooterItems is the dashboard's hint bar: the selected tile's own actions
