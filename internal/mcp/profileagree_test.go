@@ -121,5 +121,41 @@ func TestEveryAnswerAboutAToolsProfileAgrees(t *testing.T) {
 		if refused != want {
 			t.Errorf("%s: a call naming no profile is refused for it = %v, want %v: %s", name, refused, want, contentText(t, res))
 		}
+
+		// The argument is taken exactly where it is published, and the list of
+		// what a refused call may send is the schema's own: a call that names a
+		// profile where the schema has none is an argument the tool does not
+		// have, and is never told it was.
+		named := contentText(t, callTool(t, s, name, map[string]any{"profile": "staging"}))
+		if unknown := strings.Contains(named, `unknown argument: \"profile\"`); unknown == want {
+			t.Errorf("%s: a call naming a profile is refused as an unknown argument = %v, want %v: %s", name, unknown, !want, named)
+		}
+		if !want && strings.Contains(named, "grant allow") {
+			t.Errorf("%s: a call naming a profile where there is none is sent to a command that cannot work: %s", name, named)
+		}
+		var accepted []string
+		for property := range schema.Properties {
+			accepted = append(accepted, property)
+		}
+		slices.Sort(accepted)
+		hinted := []string{}
+		var refusal struct {
+			Hint string `json:"hint"`
+		}
+		if err := json.Unmarshal([]byte(contentText(t, callTool(t, s, name, map[string]any{"bogus": 1}))), &refusal); err != nil {
+			t.Fatal(err)
+		}
+		if list, ok := strings.CutPrefix(refusal.Hint, "accepted arguments: "); ok {
+			hinted = strings.Split(list, ", ")
+			slices.Sort(hinted)
+		} else if refusal.Hint != "this tool takes no arguments" {
+			t.Errorf("%s: the refusal's hint is %q", name, refusal.Hint)
+		}
+		if len(accepted) == 0 {
+			accepted = []string{}
+		}
+		if !slices.Equal(hinted, accepted) {
+			t.Errorf("%s: the refusal lists %v, the schema publishes %v", name, hinted, accepted)
+		}
 	}
 }

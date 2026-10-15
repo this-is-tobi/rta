@@ -334,7 +334,18 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// the one use a --max-uses 1 grant had, and was then refused by the
 		// guard in front of the handler — so the corrected retry was refused
 		// for want of a grant.
-		if verr := toolcall.Validate(c, values); verr != nil {
+		//
+		// Whether the call may name a connection at all is asked here too, of
+		// the file as it is now: the same read takeProfile holds an unprofiled
+		// call to, so what is refused as an argument the tool does not have and
+		// what is refused for naming none cannot disagree about the same area. A
+		// file that cannot be read says nothing of whether the area has
+		// connections, so no name is refused as unknown on its strength; it goes
+		// on to the gate, which refuses what nobody granted.
+		connections, connectionsKnown := opts.profileSet()
+		takesProfile := toolcall.TakesProfile(c, connections.ProfilesFor(plugin.Namespace(c.ID))) ||
+			!connectionsKnown && plugin.Profilable(c)
+		if verr := toolcall.Validate(c, takesProfile, values); verr != nil {
 			refusedBy(rec, verr)
 			return errResult(verr), nil
 		}
@@ -350,7 +361,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// construction, or a person's consent and the connection that was
 		// actually touched can disagree. `rta use` deliberately does not reach
 		// this surface for exactly that reason.
-		profileName, verr := takeProfile(c, values, opts)
+		profileName, verr := takeProfile(c, values, connections, connectionsKnown)
 		if verr != nil {
 			refusedBy(rec, verr)
 			return errResult(verr), nil
@@ -949,7 +960,12 @@ func fencedRefusal(rec *agentlog.Entry, c plugin.Capability, ref string, conn co
 // Refused rather than ignored: a caller that named a profile meant to reach
 // somewhere other than the default, and silently running against the default
 // instead is the one outcome nobody asked for.
-func takeProfile(c plugin.Capability, values map[string]any, opts Options) (string, *view.Error) {
+//
+// cfg is the operator's connections as the file has them now, and known says
+// whether they could be read at all (Options.profileSet); the caller reads
+// them once, so that what Validate let through as an argument and what is held
+// against a call that names none are decided from one reading.
+func takeProfile(c plugin.Capability, values map[string]any, cfg config.Config, known bool) (string, *view.Error) {
 	// Only where the host owns the name. A capability with nothing a profile
 	// could fill may legitimately declare its own input called "profile" —
 	// builtin/grant does, because a profile name is the data it operates on —
@@ -983,7 +999,6 @@ func takeProfile(c plugin.Capability, values map[string]any, opts Options) (stri
 		// rule switched on at the next restart, with nothing anywhere saying
 		// so — the same defect as the connection stamp above, one field along.
 		// Every other input to this decision is already read per call.
-		cfg, known := opts.profileSet()
 		if !known {
 			// Not "no profiles": the file that says which plugins have
 			// them has not read since before this server started, so a call

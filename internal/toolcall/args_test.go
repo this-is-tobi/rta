@@ -24,31 +24,44 @@ func TestValidateAcceptsDeclaredFieldsAndRejectsUnknownOnes(t *testing.T) {
 		{Name: "host", Type: plugin.String},
 		{Name: "count", Type: plugin.Int},
 	}}
-	if verr := Validate(c, map[string]any{"host": "h", "count": float64(3)}); verr != nil {
+	if verr := Validate(c, false, map[string]any{"host": "h", "count": float64(3)}); verr != nil {
 		t.Fatalf("a well-formed call was refused: %v", verr)
 	}
-	verr := Validate(c, map[string]any{"host": "h", "extra": "surprise"})
+	verr := Validate(c, false, map[string]any{"host": "h", "extra": "surprise"})
 	if verr == nil || !strings.Contains(verr.Message, "extra") {
 		t.Fatalf("an unknown argument was not refused by name: %v", verr)
 	}
 }
 
-// The list of what a tool takes is the answer to "unknown argument", and a tool
-// that can run against a connection takes `profile` whether or not this server
-// published it: left out, the one argument an agent most often needs was the
-// one the refusal did not mention.
-func TestTheAcceptedArgumentsNameProfileForAToolThatTakesOne(t *testing.T) {
+// The list of what a tool takes is the answer to "unknown argument", and it is
+// the list the schema publishes: `profile` is in it where the operator has a
+// connection for the tool's area, and nowhere else. A tool that can run
+// against a connection but has none configured has no such argument, and a
+// call that names one is refused like any other name the tool has not got —
+// it was let through to the grant gate, which named a command the operator's
+// CLI rejects.
+func TestTheAcceptedArgumentsNameProfileOnlyWhereTheToolTakesOne(t *testing.T) {
 	c := plugin.Capability{ID: "db.status", Inputs: []plugin.Field{
 		{Name: "schema", Type: plugin.String},
 		{Name: "host", Type: plugin.String, Default: "localhost", Config: "host", Local: true},
 	}}
-	verr := Validate(c, map[string]any{"bogus": 1})
+	verr := Validate(c, TakesProfile(c, []string{"staging"}), map[string]any{"bogus": 1})
 	if verr == nil || !strings.Contains(verr.Hint, "accepted arguments: schema, profile") {
 		t.Errorf("hint = %v, want schema and profile named", verr)
 	}
+	if verr := Validate(c, TakesProfile(c, nil), map[string]any{"bogus": 1}); verr == nil ||
+		verr.Hint != "accepted arguments: schema" {
+		t.Errorf("a tool with no connection configured was told it takes a profile: %v", verr)
+	}
+	verr = Validate(c, TakesProfile(c, nil), map[string]any{"profile": "staging"})
+	if verr == nil || verr.Code != "core.mcp.badargs" || verr.Message != `unknown argument: "profile"` ||
+		verr.Hint != "accepted arguments: schema" {
+		t.Errorf("a profile named where none is configured: %v, want an unknown argument", verr)
+	}
 	plain := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{{Name: "host", Type: plugin.String}}}
-	if verr := Validate(plain, map[string]any{"bogus": 1}); verr == nil || strings.Contains(verr.Hint, "profile") {
-		t.Errorf("a tool that takes no profile was told it does: %v", verr)
+	if verr := Validate(plain, TakesProfile(plain, []string{"staging"}), map[string]any{"bogus": 1}); verr == nil ||
+		strings.Contains(verr.Hint, "profile") {
+		t.Errorf("a tool nothing can connect was told it takes a profile: %v", verr)
 	}
 }
 
@@ -63,12 +76,12 @@ func TestAnArgumentInTheOtherSpellingIsToldItsName(t *testing.T) {
 		{Name: "new-name", Type: plugin.String},
 		{Name: "secret-file", Type: plugin.Path, Local: true},
 	}}
-	verr := Validate(c, map[string]any{"key": "a", "new_name": "b"})
+	verr := Validate(c, false, map[string]any{"key": "a", "new_name": "b"})
 	want := `"new_name" is spelled "new-name"; accepted arguments: key, new-name`
 	if verr == nil || verr.Code != "core.mcp.badargs" || verr.Hint != want {
 		t.Errorf("new_name: %v, want the hint %q", verr, want)
 	}
-	verr = Validate(c, map[string]any{"key": "a", "secret_file": "x"})
+	verr = Validate(c, false, map[string]any{"key": "a", "secret_file": "x"})
 	if verr == nil || strings.Contains(verr.Hint, "secret-file") {
 		t.Errorf("secret_file: %v, want no hint naming the Local input", verr)
 	}
@@ -76,7 +89,7 @@ func TestAnArgumentInTheOtherSpellingIsToldItsName(t *testing.T) {
 
 func TestValidateRejectsAWrongTypeByName(t *testing.T) {
 	c := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{{Name: "count", Type: plugin.Int}}}
-	verr := Validate(c, map[string]any{"count": "not a number"})
+	verr := Validate(c, false, map[string]any{"count": "not a number"})
 	if verr == nil || !strings.Contains(verr.Message, "count") {
 		t.Fatalf("a wrong-typed argument was not refused by name: %v", verr)
 	}
@@ -91,10 +104,10 @@ func TestValidateAcceptsTheHostInjectedDetailAndProfileFields(t *testing.T) {
 			{Name: "key", Type: plugin.String},
 			{Name: "endpoint", Type: plugin.String, Config: "endpoint"},
 		}}
-	if verr := Validate(c, map[string]any{"detail": true, "profile": "staging"}); verr != nil {
+	if verr := Validate(c, true, map[string]any{"detail": true, "profile": "staging"}); verr != nil {
 		t.Fatalf("the host's own injected fields were refused: %v", verr)
 	}
-	if verr := Validate(c, map[string]any{"detail": "not a bool"}); verr == nil {
+	if verr := Validate(c, false, map[string]any{"detail": "not a bool"}); verr == nil {
 		t.Fatal("a wrong-typed detail flag was accepted")
 	}
 }
@@ -109,8 +122,8 @@ func TestValidateRefusesALocalFieldAsAnyNameTheToolDoesNotHave(t *testing.T) {
 		{Name: "identity", Type: plugin.Path, Local: true},
 		{Name: "limit", Type: plugin.Int},
 	}}
-	local := Validate(c, map[string]any{"identity": 12345})
-	typo := Validate(c, map[string]any{"idenity": 12345})
+	local := Validate(c, false, map[string]any{"identity": 12345})
+	typo := Validate(c, false, map[string]any{"idenity": 12345})
 	if local == nil || typo == nil {
 		t.Fatalf("a name the tool does not take was accepted: local=%v typo=%v", local, typo)
 	}
@@ -294,12 +307,12 @@ func TestTheSchemaRequiresWhatACallIsRefusedFor(t *testing.T) {
 func TestValidateRefusesAnIntegerPastWhatInt64Holds(t *testing.T) {
 	c := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{{Name: "timeout", Type: plugin.Int}}}
 	for _, n := range []float64{1 << 63, -(1 << 64), 1e300, math.Inf(1), math.NaN(), 1.5} {
-		if verr := Validate(c, map[string]any{"timeout": n}); verr == nil {
+		if verr := Validate(c, false, map[string]any{"timeout": n}); verr == nil {
 			t.Errorf("%v was accepted as an integer", n)
 		}
 	}
 	for _, n := range []float64{-(1 << 63), 1<<63 - 1024, 0} {
-		if verr := Validate(c, map[string]any{"timeout": n}); verr != nil {
+		if verr := Validate(c, false, map[string]any{"timeout": n}); verr != nil {
 			t.Errorf("%v was refused: %v", n, verr)
 		}
 	}
@@ -314,17 +327,17 @@ func TestAnEnumMissIsHintedWithTheEnum(t *testing.T) {
 		field("tags", plugin.StringSlice, "red", "blue"),
 	}}
 	for _, args := range []map[string]any{{"encoding": "HEX"}, {"tags": []any{"red", "Blue"}}} {
-		verr := Validate(c, args)
+		verr := Validate(c, false, args)
 		if verr == nil || !strings.Contains(verr.Hint, "one of") || strings.Contains(verr.Hint, "expects") {
 			t.Errorf("%v: %v", args, verr)
 		}
 	}
 	// Named as the refusal above it names the input, an argument.
-	verr := Validate(c, map[string]any{"encoding": "HEX"})
+	verr := Validate(c, false, map[string]any{"encoding": "HEX"})
 	if want := `the "encoding" argument takes one of hex, base64, spelled exactly as listed`; verr == nil || verr.Hint != want {
 		t.Errorf("an option miss is hinted %v, want %q", verr, want)
 	}
-	verr = Validate(c, map[string]any{"encoding": 3.0})
+	verr = Validate(c, false, map[string]any{"encoding": 3.0})
 	if verr == nil || verr.Hint != `the "encoding" argument expects a string` {
 		t.Errorf("a wrong type: %v", verr)
 	}
@@ -337,7 +350,7 @@ func TestAShapeRefusalHandsOnTheInputsOwnHelp(t *testing.T) {
 	c := plugin.Capability{ID: "net.port", Inputs: []plugin.Field{
 		{Name: "ports", Type: plugin.String, Help: "ports and ranges, comma-separated: 22,80,8000-8010"},
 	}}
-	verr := Validate(c, map[string]any{"ports": []any{"22", "80"}})
+	verr := Validate(c, false, map[string]any{"ports": []any{"22", "80"}})
 	want := `the "ports" argument expects a string: ports and ranges, comma-separated: 22,80,8000-8010`
 	if verr == nil || verr.Hint != want {
 		t.Errorf("a list for a string: %v, want the hint %q", verr, want)
@@ -350,7 +363,7 @@ func TestAShapeRefusalHandsOnTheInputsOwnHelp(t *testing.T) {
 // refusals as the one input spelled another way.
 func TestAShapeRefusalNamesTheArgument(t *testing.T) {
 	c := plugin.Capability{ID: "gen.token", Inputs: []plugin.Field{{Name: "encoding", Type: plugin.String}}}
-	verr := Validate(c, map[string]any{"encoding": 3.0})
+	verr := Validate(c, false, map[string]any{"encoding": 3.0})
 	if verr == nil || verr.Code != "core.mcp.badargs" {
 		t.Fatalf("a number for a string: %v", verr)
 	}
@@ -396,7 +409,7 @@ func TestAnOptionOrRangeMissIsTheHostsRefusal(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tc.raw, err)
 		}
-		verr := Validate(c, values)
+		verr := Validate(c, false, values)
 		if verr == nil || verr.Code != tc.code || !strings.Contains(verr.Message, tc.says) {
 			t.Errorf("%s: %v, want %s saying %q", tc.raw, verr, tc.code, tc.says)
 		}
@@ -414,7 +427,7 @@ func TestAWholeNumberIsAnIntegerHoweverItIsWritten(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", raw, err)
 		}
-		if verr := Validate(c, values); verr != nil {
+		if verr := Validate(c, false, values); verr != nil {
 			t.Errorf("%s was refused: %v", raw, verr)
 			continue
 		}
@@ -424,7 +437,7 @@ func TestAWholeNumberIsAnIntegerHoweverItIsWritten(t *testing.T) {
 		}
 	}
 	values, _ := Decode([]byte(`{"limit": 2.5}`))
-	if verr := Validate(c, values); verr == nil || verr.Code != "core.mcp.badargs" {
+	if verr := Validate(c, false, values); verr == nil || verr.Code != "core.mcp.badargs" {
 		t.Errorf("a fraction for an integer: %v", verr)
 	}
 }
@@ -508,14 +521,14 @@ func TestANumberForADurationIsToldItNeedsAUnit(t *testing.T) {
 	c := plugin.Capability{ID: "x.y", Inputs: []plugin.Field{
 		{Name: "wait", Type: plugin.Duration, Help: "how long to wait"},
 	}}
-	verr := Validate(c, map[string]any{"wait": int64(30)})
+	verr := Validate(c, false, map[string]any{"wait": int64(30)})
 	if verr == nil || verr.Code != "core.mcp.badargs" {
 		t.Fatalf("a number for a duration: %v", verr)
 	}
 	if !strings.Contains(verr.Message, "with its unit") || !strings.Contains(verr.Hint, "30s") {
 		t.Errorf("message %q, hint %q: neither says a unit is missing", verr.Message, verr.Hint)
 	}
-	if verr := Validate(c, map[string]any{"wait": "30s"}); verr != nil {
+	if verr := Validate(c, false, map[string]any{"wait": "30s"}); verr != nil {
 		t.Errorf("a duration with its unit was refused: %v", verr)
 	}
 }
