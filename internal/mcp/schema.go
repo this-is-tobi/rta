@@ -128,10 +128,30 @@ func handshakeInstructions(offered []plugin.Capability, opts Options) string {
 // The frame is only worth anything because Validate refuses both literals in
 // declared text (pkg/plugin/text.go). A plugin that could write the closing
 // line would close the untrusted block early and continue as rta.
-func agentText(c plugin.Capability, tools map[string]bool, profiled bool) string {
+//
+// **Only text a plugin wrote is framed** (authored). A built-in's summary is
+// rta's own words, so the marker said of every built-in tool that something
+// other than rta had written it, which is false, cost about a hundred bytes a
+// tool, and made the first line of every description the same — the line a
+// client that shows only the start of a description, or a search index, reads.
+// A frame that is on everything marks nothing: it is worth reading because it
+// is where a third party's words begin.
+//
+// Whether a capability is a plugin's is not read from anything that capability
+// says. A name is whatever its declaration claims, and the words of a summary
+// or a keyword are the thing the frame exists to hold back, so a plugin that
+// called itself `kv` or wrote "rta's own" would have taken the marker off its
+// own text by saying so. It is read from the registry, which records where
+// each namespace was loaded from and which a plugin cannot declare
+// (registry.Origin): a namespace a built-in holds is refused to every plugin,
+// and a capability whose origin is unknown is framed, the side that costs a
+// marker rather than a model's trust.
+func agentText(c plugin.Capability, tools map[string]bool, profiled, authored bool) string {
 	var b strings.Builder
-	b.WriteString(plugin.AuthoredOpen)
-	b.WriteString("\n" + nameTools(c.Summary, tools))
+	if authored {
+		b.WriteString(plugin.AuthoredOpen + "\n")
+	}
+	b.WriteString(nameTools(c.Summary, tools))
 	if text := c.AgentText(); text != "" {
 		b.WriteString("\n\n" + nameTools(text, tools))
 	}
@@ -146,7 +166,9 @@ func agentText(c plugin.Capability, tools map[string]bool, profiled bool) string
 		// sys.ps).
 		b.WriteString("\n\nAlso called: " + strings.Join(c.Keywords, ", ") + ".")
 	}
-	b.WriteString("\n" + plugin.AuthoredClose)
+	if authored {
+		b.WriteString("\n" + plugin.AuthoredClose)
+	}
 
 	fmt.Fprintf(&b, "\n\nSafety: %s.", c.Safety)
 	if c.Reveals {
@@ -213,7 +235,7 @@ func toolDef(c plugin.Capability, opts Options) *sdk.Tool {
 	profiles := opts.Profiles.ProfilesFor(plugin.Namespace(c.ID))
 	return &sdk.Tool{
 		Name:        plugin.ToolName(c.ID),
-		Description: agentText(c, opts.tools, toolcall.TakesProfile(c, profiles)),
+		Description: agentText(c, opts.tools, toolcall.TakesProfile(c, profiles), opts.pluginAuthored(c)),
 		Annotations: ann,
 		InputSchema: nameInSchema(toolcall.InputSchema(c, profiles, opts.pluginConfig(c)), opts.tools),
 	}

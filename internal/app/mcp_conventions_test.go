@@ -14,20 +14,24 @@ import (
 // changed; these say what may never be true of any tool, so a new capability
 // is refused by the test rather than found by a model.
 
-// authored is the part of a published description a plugin wrote: between the
-// frame markers, and so without rta's own lines after it, which are the one
-// place a dotted ID or an `rta ...` command belongs, since whose command it
-// is is said right there.
+// authored is the part of a published description a capability's author wrote:
+// between the frame markers where there is a frame, and so without rta's own
+// lines after it, which are the one place a dotted ID or an `rta ...` command
+// belongs, since whose command it is is said right there. A built-in's text is
+// not framed, being rta's own, and rta's lines begin at the safety class.
 func authored(t *testing.T, description string) string {
 	t.Helper()
 	open, closing := plugin.AuthoredOpen+"\n", "\n"+plugin.AuthoredClose
-	rest, ok := strings.CutPrefix(description, open)
-	if !ok {
-		t.Fatalf("the description does not open on the frame:\n%s", description)
+	if rest, framed := strings.CutPrefix(description, open); framed {
+		text, _, ok := strings.Cut(rest, closing)
+		if !ok {
+			t.Fatalf("the description does not close its frame:\n%s", description)
+		}
+		return text
 	}
-	text, _, ok := strings.Cut(rest, closing)
+	text, _, ok := strings.Cut(description, "\n\nSafety: ")
 	if !ok {
-		t.Fatalf("the description does not close its frame:\n%s", description)
+		t.Fatalf("the description has neither a frame nor a safety line:\n%s", description)
 	}
 	return text
 }
