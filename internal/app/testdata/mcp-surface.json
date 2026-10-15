@@ -1,7 +1,7 @@
 [
   {
     "name": "audit_deps",
-    "description": "── the text below is written by the plugin, not by rta ──\nCheck declared dependencies against the OSV vulnerability database\n\nReads what a project already declares (go.mod, the JavaScript, Python, Rust, PHP and Ruby lockfiles, or a CycloneDX/SPDX SBOM beside them) and asks osv.dev once about every pinned dependency, reporting which are named in an advisory with its severity and the versions that fix it, the records for one vulnerability collapsed onto it. Nothing is resolved, built or crawled: reading a lockfile is not scanning, so whether your code reaches the vulnerable function is for osv-scanner, trivy or grype. Components whose ecosystem OSV does not recognise are counted and named rather than dropped. `offline` inventories without asking anything; `recursive` walks a monorepo, skipping node_modules, vendor and build output.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Check declared dependencies against the OSV vulnerability database\n\nReads what a project already declares (go.mod, the JavaScript, Python, Rust, PHP and Ruby lockfiles, or a CycloneDX/SPDX SBOM beside them) and asks osv.dev once about every pinned dependency, reporting which are named in an advisory with its severity and the versions that fix it, the records for one vulnerability collapsed onto it. Nothing is resolved, built or crawled: reading a lockfile is not scanning, so whether your code reaches the vulnerable function is for osv-scanner, trivy or grype. Components whose ecosystem OSV does not recognise are counted and named rather than dropped. `offline` inventories without asking anything; `recursive` walks a monorepo, skipping node_modules, vendor and build output.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -38,7 +38,7 @@
   },
   {
     "name": "audit_kube_eol",
-    "description": "── the text below is written by the plugin, not by rta ──\nSoftware past or near its end of life: the control plane, the kubelets, and every image's release\n\nThe control plane's version, every node's kubelet and the release each running image's tag names, graded against endoflife.date as `eol_check` grades one product: past its end of life fails, within warn-days of it warns, supported passes with the date. An image is recognised by its name through the catalogue's aliases and its tag read as a release (15.4 is postgresql 15, bookworm is debian 12). Images endoflife.date does not track, tags that name no release and digests with no tag are each reported once rather than guessed at. Narrowed to a namespace it grades that namespace's images and the control plane; nodes belong to no namespace and are not examined, which the result says.\n\nAlso called: kubernetes, outdated, unsupported, upgrade, stale, components.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Software past or near its end of life: the control plane, the kubelets, and every image's release\n\nThe control plane's version, every node's kubelet and the release each running image's tag names, graded against endoflife.date as `eol_check` grades one product: past its end of life fails, within warn-days of it warns, supported passes with the date. An image is recognised by its name through the catalogue's aliases and its tag read as a release (15.4 is postgresql 15, bookworm is debian 12). Images endoflife.date does not track, tags that name no release and digests with no tag are each reported once rather than guessed at. Narrowed to a namespace it grades that namespace's images and the control plane; nodes belong to no namespace and are not examined, which the result says.\n\nAlso called: kubernetes, outdated, unsupported, upgrade, stale, components.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -64,7 +64,7 @@
   },
   {
     "name": "audit_kube_netpol",
-    "description": "── the text below is written by the plugin, not by rta ──\nNamespaces with no NetworkPolicy — unrestricted pod-to-pod traffic\n\nEvery non-system namespace checked for at least one NetworkPolicy. With none, the cluster's default applies: every pod in the namespace can reach every other pod, in either direction. Cites CIS Kubernetes Benchmark 2.0.1 5.3.2.\n\nNarrowed to a namespace it checks that one, including a system namespace if you name it explicitly.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Namespaces with no NetworkPolicy — unrestricted pod-to-pod traffic\n\nEvery non-system namespace checked for at least one NetworkPolicy. With none, the cluster's default applies: every pod in the namespace can reach every other pod, in either direction. Cites CIS Kubernetes Benchmark 2.0.1 5.3.2.\n\nNarrowed to a namespace it checks that one, including a system namespace if you name it explicitly.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -85,7 +85,7 @@
   },
   {
     "name": "audit_kube_podsecurity",
-    "description": "── the text below is written by the plugin, not by rta ──\nPods running privileged, in a host namespace, or with root not excluded\n\nEvery pod cluster-wide, checked against three Pod Security Standards controls: a privileged container (fail), hostNetwork/hostPID/hostIPC (fail), and whether anything in the pod asserts non-root (warn), meaning that neither the pod nor any container sets runAsNonRoot or a non-zero runAsUser. Init and ephemeral containers count as main ones. The non-root check approximates Kubernetes' securityContext merge rather than simulating it: a pod that asserts non-root at the pod level and never overrides it per container is not flagged, while one relying only on an image's own non-root USER is. A namespace narrows which pods are read, and a clean result says so, never that no pod in the cluster is affected.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Pods running privileged, in a host namespace, or with root not excluded\n\nEvery pod cluster-wide, checked against three Pod Security Standards controls: a privileged container (fail), hostNetwork/hostPID/hostIPC (fail), and whether anything in the pod asserts non-root (warn), meaning that neither the pod nor any container sets runAsNonRoot or a non-zero runAsUser. Init and ephemeral containers count as main ones. The non-root check approximates Kubernetes' securityContext merge rather than simulating it: a pod that asserts non-root at the pod level and never overrides it per container is not flagged, while one relying only on an image's own non-root USER is. A namespace narrows which pods are read, and a clean result says so, never that no pod in the cluster is affected.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -106,7 +106,7 @@
   },
   {
     "name": "audit_kube_quotas",
-    "description": "── the text below is written by the plugin, not by rta ──\nNamespaces with no ResourceQuota — unbounded resource consumption\n\nEvery non-system namespace checked for at least one ResourceQuota. CIS Kubernetes Benchmark has no numbered control for this — confirmed absent rather than assumed — so this cites NSA/CISA Kubernetes Hardening Guidance's \"Resource policies\" section instead.\n\nNarrowed to a namespace it checks that one, including a system namespace if you name it explicitly — the system-namespace filter exists so a cluster-wide sweep stays quiet, not to refuse a direct question.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Namespaces with no ResourceQuota — unbounded resource consumption\n\nEvery non-system namespace checked for at least one ResourceQuota. CIS Kubernetes Benchmark has no numbered control for this — confirmed absent rather than assumed — so this cites NSA/CISA Kubernetes Hardening Guidance's \"Resource policies\" section instead.\n\nNarrowed to a namespace it checks that one, including a system namespace if you name it explicitly — the system-namespace filter exists so a cluster-wide sweep stays quiet, not to refuse a direct question.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -127,7 +127,7 @@
   },
   {
     "name": "audit_kube_rbac",
-    "description": "── the text below is written by the plugin, not by rta ──\nBroad RBAC: cluster-admin bindings and wildcard rules\n\nEvery ClusterRoleBinding to cluster-admin, and every Role/ClusterRole rule using a wildcard verb, resource or apiGroup. cluster-admin bound to a broad group (system:authenticated, system:unauthenticated, system:masters) grades fail; bound to anything else grades warn — sometimes a real operator's binding, always worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3.\n\nNarrowed to a namespace it checks that namespace's Roles only. ClusterRoleBindings and ClusterRoles belong to no namespace, so they are not examined at all — reported in the result rather than left implied, since a scoped run that silently skipped the cluster-admin check would read as a clean RBAC posture.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Broad RBAC: cluster-admin bindings and wildcard rules\n\nEvery ClusterRoleBinding to cluster-admin, and every Role/ClusterRole rule using a wildcard verb, resource or apiGroup. cluster-admin bound to a broad group (system:authenticated, system:unauthenticated, system:masters) grades fail; bound to anything else grades warn — sometimes a real operator's binding, always worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3.\n\nNarrowed to a namespace it checks that namespace's Roles only. ClusterRoleBindings and ClusterRoles belong to no namespace, so they are not examined at all — reported in the result rather than left implied, since a scoped run that silently skipped the cluster-admin check would read as a clean RBAC posture.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -148,7 +148,7 @@
   },
   {
     "name": "audit_mail",
-    "description": "── the text below is written by the plugin, not by rta ──\nAudit a domain's email authentication: SPF, DKIM, DMARC, MTA-STS\n\nAnswers \"can somebody send mail as this domain\" from the records the domain publishes: SPF (present, singular, how it ends, how close to RFC 7208's ten-lookup limit), DMARC (policy, rollout percentage, whether anything reports back), DKIM for a given selector, MTA-STS and TLS-RPT (only the TXT record that advertises the policy is read, not the policy file), and MX, including RFC 7505's null MX, a hardening measure rather than an omission. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. With `detail`: one section per area plus the cited references with lookup URLs. A handful of lookups of names derived from the domain by rule, and nothing is enumerated, which is why DKIM needs its selector.\n── end of plugin-written text ──\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"domain\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.mail`.",
+    "description": "Audit a domain's email authentication: SPF, DKIM, DMARC, MTA-STS\n\nAnswers \"can somebody send mail as this domain\" from the records the domain publishes: SPF (present, singular, how it ends, how close to RFC 7208's ten-lookup limit), DMARC (policy, rollout percentage, whether anything reports back), DKIM for a given selector, MTA-STS and TLS-RPT (only the TXT record that advertises the policy is read, not the policy file), and MX, including RFC 7505's null MX, a hardening measure rather than an omission. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. With `detail`: one section per area plus the cited references with lookup URLs. A handful of lookups of names derived from the domain by rule, and nothing is enumerated, which is why DKIM needs its selector.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"domain\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.mail`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -183,7 +183,7 @@
   },
   {
     "name": "audit_web",
-    "description": "── the text below is written by the plugin, not by rta ──\nAudit a web host: TLS, certificate, headers, cookies, exposure\n\nOne HTTPS request, graded: TLS version and cipher, certificate validity, expiry and signature algorithm, the security headers a host should send (HSTS, CSP checked for weak directives like unsafe-inline, X-Frame-Options/frame-ancestors, cross-origin isolation), CORS behavior (probed with an Origin no real browser would send, to catch blind reflection), cookie flags, and the version/stack details a host should not leak. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. With `detail`: one section per area plus the cited references with lookup URLs. It only inspects the response the host volunteers, plus the one Origin header the CORS probe adds.\n── end of plugin-written text ──\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.web`.",
+    "description": "Audit a web host: TLS, certificate, headers, cookies, exposure\n\nOne HTTPS request, graded: TLS version and cipher, certificate validity, expiry and signature algorithm, the security headers a host should send (HSTS, CSP checked for weak directives like unsafe-inline, X-Frame-Options/frame-ancestors, cross-origin isolation), CORS behavior (probed with an Origin no real browser would send, to catch blind reflection), cookie flags, and the version/stack details a host should not leak. Every finding cites an OWASP Top 10:2025 category and a MITRE CWE. With `detail`: one section per area plus the cited references with lookup URLs. It only inspects the response the host volunteers, plus the one Origin header the CORS probe adds.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.web`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -214,7 +214,7 @@
   },
   {
     "name": "audit_why",
-    "description": "── the text below is written by the plugin, not by rta ──\nTrace one dependency back to what pulled it in\n\nAnswers the question an advisory raises second: did we ask for this, or did something else pull it in, and if so what. Reads the same manifests as audit_deps and draws the package at the root with everything that requires it beneath, up to the dependencies the project asks for by name. Nothing is resolved, installed or fetched. go.mod marks a require direct or indirect and stores no edges; the JavaScript lockfiles, Cargo, uv, Poetry, composer, Gemfile.lock, pip-compile's `# via` annotations and a CycloneDX SBOM carry the graph. Where the file does not say, this says so and hands over the package manager's own command (`go mod why`, `pnpm why`, `cargo tree --invert`) with the package already in it.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Trace one dependency back to what pulled it in\n\nAnswers the question an advisory raises second: did we ask for this, or did something else pull it in, and if so what. Reads the same manifests as audit_deps and draws the package at the root with everything that requires it beneath, up to the dependencies the project asks for by name. Nothing is resolved, installed or fetched. go.mod marks a require direct or indirect and stores no edges; the JavaScript lockfiles, Cargo, uv, Poetry, composer, Gemfile.lock, pip-compile's `# via` annotations and a CycloneDX SBOM carry the graph. Where the file does not say, this says so and hands over the package manager's own command (`go mod why`, `pnpm why`, `cargo tree --invert`) with the package already in it.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -242,7 +242,7 @@
   },
   {
     "name": "cert_chain",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow the certificate chain presented by a host\n\nOver MCP it reads a PEM or DER file under the server's roots and dials no host; `cert_expiry` checks a live host, with a grant.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Show the certificate chain presented by a host\n\nOver MCP it reads a PEM or DER file under the server's roots and dials no host; `cert_expiry` checks a live host, with a grant.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -268,7 +268,7 @@
   },
   {
     "name": "cert_expiry",
-    "description": "── the text below is written by the plugin, not by rta ──\nCheck certificate expiry for one or more hosts\n\nConnects to each host over TLS and reports when its certificate ends: the date, the time left, and a status: ok, WARN once it ends within `warn-days`, EXPIRED once it has, INVALID before it begins; a host still negotiating TLS 1.0 or 1.1 is flagged beside the date. One row per host, and one that cannot be reached is its row's error and does not stop the rest. The chain the host sends is graded: the certificate that ends first sets the date and status and is named when it is not the leaf; a root sent along is the client's store to judge. It trusts nothing: `cert_inspect` judges a chain. Over MCP a target is never a file, and each host listed needs a grant, since a certificate's own words are tool output, as a banner is.\n── end of plugin-written text ──\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"targets\"). You cannot issue one yourself — ask the operator to run `rta grant allow cert.expiry`.",
+    "description": "Check certificate expiry for one or more hosts\n\nConnects to each host over TLS and reports when its certificate ends: the date, the time left, and a status: ok, WARN once it ends within `warn-days`, EXPIRED once it has, INVALID before it begins; a host still negotiating TLS 1.0 or 1.1 is flagged beside the date. One row per host, and one that cannot be reached is its row's error and does not stop the rest. The chain the host sends is graded: the certificate that ends first sets the date and status and is named when it is not the leaf; a root sent along is the client's store to judge. It trusts nothing: `cert_inspect` judges a chain. Over MCP a target is never a file, and each host listed needs a grant, since a certificate's own words are tool output, as a banner is.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"targets\"). You cannot issue one yourself — ask the operator to run `rta grant allow cert.expiry`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -302,7 +302,7 @@
   },
   {
     "name": "cert_inspect",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow certificate details for a host or PEM file\n\nOver MCP it reads a PEM or DER file under the server's roots and dials no host; `cert_expiry` checks a live host, with a grant.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Show certificate details for a host or PEM file\n\nOver MCP it reads a PEM or DER file under the server's roots and dials no host; `cert_expiry` checks a live host, with a grant.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -328,7 +328,7 @@
   },
   {
     "name": "cert_pem",
-    "description": "── the text below is written by the plugin, not by rta ──\nPrint the certificate chain as PEM\n\nThe certificates as PEM, for a ConfigMap, a Dockerfile COPY or `update-ca-certificates`; `cert_chain` draws them to be read. `include` chooses which: chain (the default) is everything the host presented, leaf the end-entity certificate alone, and issuers the chain without the leaf, which is what a ca-bundle behind a private CA has to hold. A presented chain is what the host chose to send and may be incomplete: this reports what arrived rather than filling the gap from a trust store, so a bundle never silently differs from what the server serves. The PEM comes back in the response. Over MCP it reads a PEM or DER file under the server's roots and dials no host; `cert_expiry` checks a live host, with a grant.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Print the certificate chain as PEM\n\nThe certificates as PEM, for a ConfigMap, a Dockerfile COPY or `update-ca-certificates`; `cert_chain` draws them to be read. `include` chooses which: chain (the default) is everything the host presented, leaf the end-entity certificate alone, and issuers the chain without the leaf, which is what a ca-bundle behind a private CA has to hold. A presented chain is what the host chose to send and may be incomplete: this reports what arrived rather than filling the gap from a trust store, so a bundle never silently differs from what the server serves. The PEM comes back in the response. Over MCP it reads a PEM or DER file under the server's roots and dials no host; `cert_expiry` checks a live host, with a grant.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -364,7 +364,7 @@
   },
   {
     "name": "cert_tls",
-    "description": "── the text below is written by the plugin, not by rta ──\nReport the negotiated TLS version and cipher for a host\n\nOver MCP this always refuses: a file has no handshake to report, and a host is not dialled by this tool. net_probe with `tls` reports a host's TLS version and cipher, with a grant.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Report the negotiated TLS version and cipher for a host\n\nOver MCP this always refuses: a file has no handshake to report, and a host is not dialled by this tool. net_probe with `tls` reports a host's TLS version and cipher, with a grant.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -390,7 +390,7 @@
   },
   {
     "name": "codec_b64",
-    "description": "── the text below is written by the plugin, not by rta ──\nBase64 encode or decode a value\n\nDecoding accepts standard, URL-safe and unpadded variants, and the line breaks and spaces wrapped base64 arrives with, without being told which dialect: the caller already has the encoded value, so being forgiving about which produced it costs nothing. Bytes that are not plain text come back as a hex dump, and text holding a control or invisible character comes back as its exact value beside the dump.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Base64 encode or decode a value\n\nDecoding accepts standard, URL-safe and unpadded variants, and the line breaks and spaces wrapped base64 arrives with, without being told which dialect: the caller already has the encoded value, so being forgiving about which produced it costs nothing. Bytes that are not plain text come back as a hex dump, and text holding a control or invisible character comes back as its exact value beside the dump.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -417,7 +417,7 @@
   },
   {
     "name": "codec_hex",
-    "description": "── the text below is written by the plugin, not by rta ──\nHex encode or decode a value\n\nDecoding accepts the spellings hex is copied in: a 0x prefix, and bytes separated by colons, spaces or dashes, the way openssl prints a fingerprint. Bytes that are not plain text are shown as a hex dump, beside the exact value when they are text holding a control or invisible character.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Hex encode or decode a value\n\nDecoding accepts the spellings hex is copied in: a 0x prefix, and bytes separated by colons, spaces or dashes, the way openssl prints a fingerprint. Bytes that are not plain text are shown as a hex dump, beside the exact value when they are text holding a control or invisible character.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -440,7 +440,7 @@
   },
   {
     "name": "codec_jwk",
-    "description": "── the text below is written by the plugin, not by rta ──\nRead a JSON Web Key or key set: type, size, thumbprint, and whether it is private\n\nTakes one JWK or a whole key set, an issuer's jwks_uri answer, and says what each key is: its type and size, whether its point is on its curve, its kid, use and alg, and the RFC 7638 thumbprint a DPoP cnf.jkt or a pinned key is compared against. Names a key holding private material, which a published set never should, and two keys sharing a kid. A certificate chain in x5c is read and checked against the key beside it. Private members are never printed.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Read a JSON Web Key or key set: type, size, thumbprint, and whether it is private\n\nTakes one JWK or a whole key set, an issuer's jwks_uri answer, and says what each key is: its type and size, whether its point is on its curve, its kid, use and alg, and the RFC 7638 thumbprint a DPoP cnf.jkt or a pinned key is compared against. Names a key holding private material, which a published set never should, and two keys sharing a kid. A certificate chain in x5c is read and checked against the key beside it. Private members are never printed.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -459,7 +459,7 @@
   },
   {
     "name": "codec_jwt",
-    "description": "── the text below is written by the plugin, not by rta ──\nDecode a JWT, JWS or JWE for inspection: headers, claims, dates\n\nDecodes a signed token (JWS), an encrypted one (JWE) or the JSON form of either, and names what a strict parser would refuse: a padded segment, a repeated member, an empty signature. A JWE's content is not read, because decrypting takes the recipient's key: a private key, a shared key or a password, depending on its alg. Unverified, and labeled so, unless `key` is given: a public key, certificate or issuer's key set, which you fetch, since this never fetches a URL. Then the signature is checked, the algorithm is decided by the key and never by the token, and a mismatch is an error naming why. An HMAC signature is checked only against a shared secret the operator keeps in a file, never one an agent passes.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Decode a JWT, JWS or JWE for inspection: headers, claims, dates\n\nDecodes a signed token (JWS), an encrypted one (JWE) or the JSON form of either, and names what a strict parser would refuse: a padded segment, a repeated member, an empty signature. A JWE's content is not read, because decrypting takes the recipient's key: a private key, a shared key or a password, depending on its alg. Unverified, and labeled so, unless `key` is given: a public key, certificate or issuer's key set, which you fetch, since this never fetches a URL. Then the signature is checked, the algorithm is decided by the key and never by the token, and a mismatch is an error naming why. An HMAC signature is checked only against a shared secret the operator keeps in a file, never one an agent passes.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -482,7 +482,7 @@
   },
   {
     "name": "codec_url",
-    "description": "── the text below is written by the plugin, not by rta ──\nEscape a value for a URL, or unescape one\n\nQuery-component escaping by default (spaces become +), the form almost everyone means by \"URL encode this\" — the value for a query string or form body. `path` escapes a path segment instead, where a space is %20 and + is a literal plus: decoding a path as a query turns c++.txt into \"c  .txt\".\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Escape a value for a URL, or unescape one\n\nQuery-component escaping by default (spaces become +), the form almost everyone means by \"URL encode this\" — the value for a query string or form body. `path` escapes a path segment instead, where a space is %20 and + is a literal plus: decoding a path as a query turns c++.txt into \"c  .txt\".\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -509,7 +509,7 @@
   },
   {
     "name": "debug_ansi",
-    "description": "── the text below is written by the plugin, not by rta ──\nBreak down the escape sequences and hidden characters in a string\n\nWalks the input as a terminal would and names what each printable run or escape sequence does: the modes a program leaves set when it garbles a terminal (hidden cursor, alternate screen, mouse reporting, bracketed paste), the requests a terminal answers into the input, and the OSC sequences worth knowing on sight (title, hyperlink, a clipboard write, decoded). Also names the characters that hide themselves, bidi overrides, zero-width characters, C1 controls, tag characters and variation-selector runs, decoded to what they invisibly carry, as a prompt injection hides in a sentence. An escape written out as a log shows it — \\033, \\x1b, \\e, \\u001b or ^[ ahead of [ or ] — is read as the character, and said to be.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Break down the escape sequences and hidden characters in a string\n\nWalks the input as a terminal would and names what each printable run or escape sequence does: the modes a program leaves set when it garbles a terminal (hidden cursor, alternate screen, mouse reporting, bracketed paste), the requests a terminal answers into the input, and the OSC sequences worth knowing on sight (title, hyperlink, a clipboard write, decoded). Also names the characters that hide themselves, bidi overrides, zero-width characters, C1 controls, tag characters and variation-selector runs, decoded to what they invisibly carry, as a prompt injection hides in a sentence. An escape written out as a log shows it — \\033, \\x1b, \\e, \\u001b or ^[ ahead of [ or ] — is read as the character, and said to be.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -528,7 +528,7 @@
   },
   {
     "name": "eol_check",
-    "description": "── the text below is written by the plugin, not by rta ──\nWhether a product, or one of its release cycles, is still supported\n\nLooks up a product on endoflife.date and grades every release cycle by how close it is to its own end-of-life date. Name one cycle to see just that row — or the version running, 16.2, for the cycle it belongs to, 16 — or a range of them — 13..16, 15.., ..16 — to see every numbered cycle inside it; leave it out to see every cycle still supported and the latest one that has ended, or pass `all` for every one. Aliases work — \"postgres\" and \"postgresql\" name the same product.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Whether a product, or one of its release cycles, is still supported\n\nLooks up a product on endoflife.date and grades every release cycle by how close it is to its own end-of-life date. Name one cycle to see just that row — or the version running, 16.2, for the cycle it belongs to, 16 — or a range of them — 13..16, 15.., ..16 — to see every numbered cycle inside it; leave it out to see every cycle still supported and the latest one that has ended, or pass `all` for every one. Aliases work — \"postgres\" and \"postgresql\" name the same product.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -560,7 +560,7 @@
   },
   {
     "name": "eol_products",
-    "description": "── the text below is written by the plugin, not by rta ──\nSearch the endoflife.date catalogue: names, aliases and categories\n\nLists the products endoflife.date tracks, with the aliases eol_check and eol_watch accept for each. A term narrows the list to products whose name, label or alias contains it. Without one the first products are listed and the total says how many there are; `limit` shows more.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Search the endoflife.date catalogue: names, aliases and categories\n\nLists the products endoflife.date tracks, with the aliases eol_check and eol_watch accept for each. A term narrows the list to products whose name, label or alias contains it. Without one the first products are listed and the total says how many there are; `limit` shows more.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -587,7 +587,7 @@
   },
   {
     "name": "eol_watch",
-    "description": "── the text below is written by the plugin, not by rta ──\nGrade every product and cycle on a configured watchlist at once\n\nRuns eol_check over a list of products, each optionally pinned to one release cycle or a range of them as product@cycle — postgresql@15, postgresql@13..16, nodejs, debian@bookworm. Write the list once as `plugins: eol: products:` in your config or a profile and it is what this grades from then on. A product the API does not know, or a cycle the product does not have, is one row saying so; the rest of the list is still graded.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Grade every product and cycle on a configured watchlist at once\n\nRuns eol_check over a list of products, each optionally pinned to one release cycle or a range of them as product@cycle — postgresql@15, postgresql@13..16, nodejs, debian@bookworm. Write the list once as `plugins: eol: products:` in your config or a profile and it is what this grades from then on. A product the API does not know, or a cycle the product does not have, is one row saying so; the rest of the list is still graded.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -611,7 +611,7 @@
   },
   {
     "name": "fs_hash",
-    "description": "── the text below is written by the plugin, not by rta ──\nChecksum a file, and compare it against an expected value\n\nHashes a file and, given `expect`, says plainly whether it matches — which is the actual task, and the one comparing two hex strings by eye is bad at. A file that is not the one described is an error, so a script's \u0026\u0026 stops there, and a checksum that cannot be this algorithm's, by its length, is refused and not reported as a mismatch. The comparison is case-insensitive and tolerates the \"sha256:\" prefix and the surrounding whitespace that come with a pasted checksum. It is not a signature check: it says a file is the one somebody described, not that the description came from anybody in particular.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Checksum a file, and compare it against an expected value\n\nHashes a file and, given `expect`, says plainly whether it matches — which is the actual task, and the one comparing two hex strings by eye is bad at. A file that is not the one described is an error, so a script's \u0026\u0026 stops there, and a checksum that cannot be this algorithm's, by its length, is refused and not reported as a mismatch. The comparison is case-insensitive and tolerates the \"sha256:\" prefix and the surrounding whitespace that come with a pasted checksum. It is not a signature check: it says a file is the one somebody described, not that the description came from anybody in particular.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -645,7 +645,7 @@
   },
   {
     "name": "fs_tree",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow a directory as a tree, with sizes\n\nThe shape of a directory, a few levels at a time, with each entry's size beside it. Entries are ordered directories first and then by name. Truncated branches say how many entries they are hiding rather than trailing off, so the tree never claims a directory is smaller than it is. With `detail`: what the walk covered, the tree, and everything it left out — depth, per-directory limit, hidden entries, mount points and unreadable directories gathered in one place instead of scattered through the branches they happened in. A name that holds an escape, a newline or another character that does not draw as itself is shown quoted with it written out, never cleaned into another name.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Show a directory as a tree, with sizes\n\nThe shape of a directory, a few levels at a time, with each entry's size beside it. Entries are ordered directories first and then by name. Truncated branches say how many entries they are hiding rather than trailing off, so the tree never claims a directory is smaller than it is. With `detail`: what the walk covered, the tree, and everything it left out — depth, per-directory limit, hidden entries, mount points and unreadable directories gathered in one place instead of scattered through the branches they happened in. A name that holds an escape, a newline or another character that does not draw as itself is shown quoted with it written out, never cleaned into another name.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -685,7 +685,7 @@
   },
   {
     "name": "fs_usage",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow what is using space under a path, biggest first\n\nTotals every entry under a path and ranks them. Directories are summed recursively; the share column is of the scanned total, not of the disk. A size is the disk a file takes, as du counts it: a sparse file by what is written, a file with several hard links once; `apparent` counts lengths instead. Hidden entries are included, they are usually the answer. With `detail`: the ranking, the largest individual files found anywhere beneath, and what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop or wander onto a network mount. A name holding an escape, a newline or another character that does not draw as itself is shown quoted with it written out, never cleaned into another name.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Show what is using space under a path, biggest first\n\nTotals every entry under a path and ranks them. Directories are summed recursively; the share column is of the scanned total, not of the disk. A size is the disk a file takes, as du counts it: a sparse file by what is written, a file with several hard links once; `apparent` counts lengths instead. Hidden entries are included, they are usually the answer. With `detail`: the ranking, the largest individual files found anywhere beneath, and what was skipped. Follows no symlinks and crosses no filesystem boundary, so a scan cannot loop or wander onto a network mount. A name holding an escape, a newline or another character that does not draw as itself is shown quoted with it written out, never cleaned into another name.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -724,7 +724,7 @@
   },
   {
     "name": "gen_overview",
-    "description": "── the text below is written by the plugin, not by rta ──\nA sampler of the shapes worth generating, ready to use\n\nGenerates one of each common shape side by side — passwords, encryption key material, URL-safe and TOTP tokens, UUIDs — labelled with what it is for, the entropy it actually carries and the call that reproduces it, so picking the right shape does not require remembering the inputs first. With `detail`: every preset, plus why a \"32-character key\" is not a 32-byte one. Every value is real and freshly generated; nothing is an example.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "A sampler of the shapes worth generating, ready to use\n\nGenerates one of each common shape side by side — passwords, encryption key material, URL-safe and TOTP tokens, UUIDs — labelled with what it is for, the entropy it actually carries and the call that reproduces it, so picking the right shape does not require remembering the inputs first. With `detail`: every preset, plus why a \"32-character key\" is not a 32-byte one. Every value is real and freshly generated; nothing is an example.\n\nSafety: read.",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -740,7 +740,7 @@
   },
   {
     "name": "gen_password",
-    "description": "── the text below is written by the plugin, not by rta ──\nGenerate a cryptographically random password\n\nCharacters are drawn uniformly, with no modulo bias. Reports entropy in bits: length x log2(alphabet size).\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Generate a cryptographically random password\n\nCharacters are drawn uniformly, with no modulo bias. Reports entropy in bits: length x log2(alphabet size).\n\nSafety: read.",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -785,7 +785,7 @@
   },
   {
     "name": "gen_token",
-    "description": "── the text below is written by the plugin, not by rta ──\nGenerate random bytes, formatted as hex/base64/base32\n\ncrypto/rand bytes, formatted by `encoding`. base32 at the right length is already a TOTP secret (RFC 4648/6238) — there is no separate gen.totp.\n\nAlso called: api, secret, bearer, key, create.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Generate random bytes, formatted as hex/base64/base32\n\ncrypto/rand bytes, formatted by `encoding`. base32 at the right length is already a TOTP secret (RFC 4648/6238) — there is no separate gen.totp.\n\nAlso called: api, secret, bearer, key, create.\n\nSafety: read.",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -814,7 +814,7 @@
   },
   {
     "name": "gen_uuid",
-    "description": "── the text below is written by the plugin, not by rta ──\nGenerate a UUID: v4 random (default) or v7 time-ordered\n\nv1/v3/v5/v6 are deliberately not offered: v1 leaks the generating machine's MAC address and a timestamp, v3/v5 hash a namespace+name instead of generating anything (a different operation), and v6 is superseded by v7 for the same time-ordering goal, per RFC 9562's own recommendation.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Generate a UUID: v4 random (default) or v7 time-ordered\n\nv1/v3/v5/v6 are deliberately not offered: v1 leaks the generating machine's MAC address and a timestamp, v3/v5 hash a namespace+name instead of generating anything (a different operation), and v6 is superseded by v7 for the same time-ordering goal, per RFC 9562's own recommendation.\n\nSafety: read.",
     "read_only_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -841,7 +841,7 @@
   },
   {
     "name": "git_blame",
-    "description": "── the text below is written by the plugin, not by rta ──\nWho last touched each line of a file, and when\n\nOne row per line: who last changed it, when, and the commit that did — the structured equivalent of `git blame`. `from` and `limit` show a window of the lines, and the total is the file's length. Reads the file's history to answer, and refuses a version of it over 16 MiB, or a history of more than 64 MiB in all, rather than read it. It spends at most two seconds on that history: a line it has not traced by then carries the commit it had reached, marked ^ as git marks a boundary, meaning the line is at least that old.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Who last touched each line of a file, and when\n\nOne row per line: who last changed it, when, and the commit that did — the structured equivalent of `git blame`. `from` and `limit` show a window of the lines, and the total is the file's length. Reads the file's history to answer, and refuses a version of it over 16 MiB, or a history of more than 64 MiB in all, rather than read it. It spends at most two seconds on that history: a line it has not traced by then carries the commit it had reached, marked ^ as git marks a boundary, meaning the line is at least that old.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -876,7 +876,7 @@
   },
   {
     "name": "git_branches",
-    "description": "── the text below is written by the plugin, not by rta ──\nLocal branches, what each tracks, and which one is checked out\n\nEvery local branch, alphabetically, with the checked-out one marked, the remote branch it tracks, and how far the two have drifted as of the last fetch; nothing here touches the network. `gone` in Status means the tracked remote branch no longer exists, what `git fetch --prune` leaves behind and the usual sign a merged branch can go. With `all`, remote-tracking branches follow as `remotes/\u003cremote\u003e/\u003cname\u003e`. A detached HEAD is its own row, and a branch checked out in another worktree is marked `worktree`: git refuses to check it out here. What a branch tracks is read from every file of config git reads, over MCP from the repository's own, as git_remotes reads a remote.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Local branches, what each tracks, and which one is checked out\n\nEvery local branch, alphabetically, with the checked-out one marked, the remote branch it tracks, and how far the two have drifted as of the last fetch; nothing here touches the network. `gone` in Status means the tracked remote branch no longer exists, what `git fetch --prune` leaves behind and the usual sign a merged branch can go. With `all`, remote-tracking branches follow as `remotes/\u003cremote\u003e/\u003cname\u003e`. A detached HEAD is its own row, and a branch checked out in another worktree is marked `worktree`: git refuses to check it out here. What a branch tracks is read from every file of config git reads, over MCP from the repository's own, as git_remotes reads a remote.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -897,7 +897,7 @@
   },
   {
     "name": "git_config",
-    "description": "── the text below is written by the plugin, not by rta ──\nEffective config across system, global and local scope\n\nEvery key set in system, global, local or worktree config, one row per file it is set in with its scope, before any of them override another: worktree wins over local, local over global, global over system, and the command scope (GIT_CONFIG_COUNT, GIT_CONFIG_PARAMETERS) over all. Includes are followed as git follows them (include.path, and includeIf on gitdir:, gitdir/i:, onbranch: or hasconfig:remote.*.url:); one this cannot decide is not read, and a warning says so. Over MCP only the repository's own config, local and worktree, is returned, and an include of a file outside the server's roots is not followed: a warning names it and the file is never opened. Values that carry a credential are masked.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Effective config across system, global and local scope\n\nEvery key set in system, global, local or worktree config, one row per file it is set in with its scope, before any of them override another: worktree wins over local, local over global, global over system, and the command scope (GIT_CONFIG_COUNT, GIT_CONFIG_PARAMETERS) over all. Includes are followed as git follows them (include.path, and includeIf on gitdir:, gitdir/i:, onbranch: or hasconfig:remote.*.url:); one this cannot decide is not read, and a warning says so. Over MCP only the repository's own config, local and worktree, is returned, and an include of a file outside the server's roots is not followed: a warning names it and the file is never opened. Values that carry a credential are masked.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -914,7 +914,7 @@
   },
   {
     "name": "git_diff",
-    "description": "── the text below is written by the plugin, not by rta ──\nLine-level changes — uncommitted, or one commit against its parent\n\nUnified diff text. With no `commit`, every uncommitted change, staged and unstaged, against HEAD, refused as git.status.timeout past two seconds. `commit` diffs that commit against its parent, the root commit against the empty tree, a merge against its first parent; two arbitrary commits are not compared. One diff reads at most 16 MiB of a file and 64 MiB in all, looks at no more than 10000 files and spends two seconds matching lines; the lines after the patch name each file left out or diffed coarsely. An untracked file under an ignore file git_status did not apply is named, never shown. Over MCP a link in the working tree is diffed only where it names a place under the roots.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Line-level changes — uncommitted, or one commit against its parent\n\nUnified diff text. With no `commit`, every uncommitted change, staged and unstaged, against HEAD, refused as git.status.timeout past two seconds. `commit` diffs that commit against its parent, the root commit against the empty tree, a merge against its first parent; two arbitrary commits are not compared. One diff reads at most 16 MiB of a file and 64 MiB in all, looks at no more than 10000 files and spends two seconds matching lines; the lines after the patch name each file left out or diffed coarsely. An untracked file under an ignore file git_status did not apply is named, never shown. Over MCP a link in the working tree is diffed only where it names a place under the roots.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -935,7 +935,7 @@
   },
   {
     "name": "git_hooks",
-    "description": "── the text below is written by the plugin, not by rta ──\nWhat's in the hooks directory, and which of it git would actually run\n\nThe hooks directory (core.hooksPath where any config git reads sets it, the repository's own otherwise) and which entries git would actually run, judged as git judges them: named exactly (a `.sample` suffix never runs) and executable, a symbolic link by what it leads to. Anything else with a hook's name, such as a directory or a named pipe, is one git tries to run and cannot, failing the command it guards, and is listed as fails. The config is read as git_config reads it; an include this cannot decide is not followed, and a warning says how many. Over MCP a link leading out of the roots is not followed and is listed active, as git may run what it leads to.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "What's in the hooks directory, and which of it git would actually run\n\nThe hooks directory (core.hooksPath where any config git reads sets it, the repository's own otherwise) and which entries git would actually run, judged as git judges them: named exactly (a `.sample` suffix never runs) and executable, a symbolic link by what it leads to. Anything else with a hook's name, such as a directory or a named pipe, is one git tries to run and cannot, failing the command it guards, and is listed as fails. The config is read as git_config reads it; an include this cannot decide is not followed, and a warning says how many. Over MCP a link leading out of the roots is not followed and is listed active, as git may run what it leads to.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -952,7 +952,7 @@
   },
   {
     "name": "git_log",
-    "description": "── the text below is written by the plugin, not by rta ──\nRecent commit history\n\nThe most recent commits reaching HEAD, newest first — hash, author, date and the message's own first line, each a table row rather than text to parse. `file` narrows it to commits that touched one path — a file, or anything beneath a directory — the structured equivalent of `git log -- \u003cpath\u003e`.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Recent commit history\n\nThe most recent commits reaching HEAD, newest first — hash, author, date and the message's own first line, each a table row rather than text to parse. `file` narrows it to commits that touched one path — a file, or anything beneath a directory — the structured equivalent of `git log -- \u003cpath\u003e`.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -980,7 +980,7 @@
   },
   {
     "name": "git_overview",
-    "description": "── the text below is written by the plugin, not by rta ──\nBranch, working-tree state and the latest commit, at a glance\n\nA one-line answer to \"what state is this repository in\": which branch is checked out (or that HEAD is detached), whether the working tree is clean, and the latest commit. With `detail` it expands into the same status, log and branches views their own capabilities return — one shape, not a second implementation of each. The working tree is read as git_status reads it, and past its two seconds the overview is refused as git.status.timeout.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Branch, working-tree state and the latest commit, at a glance\n\nA one-line answer to \"what state is this repository in\": which branch is checked out (or that HEAD is detached), whether the working tree is clean, and the latest commit. With `detail` it expands into the same status, log and branches views their own capabilities return — one shape, not a second implementation of each. The working tree is read as git_status reads it, and past its two seconds the overview is refused as git.status.timeout.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1002,7 +1002,7 @@
   },
   {
     "name": "git_remotes",
-    "description": "── the text below is written by the plugin, not by rta ──\nWhere this repository fetches from and pushes to\n\nEach remote with its URL, the file of config that sets it, and how many of its branches this repository knows from the last fetch (0 for a remote never fetched, not missing). A remote with a pushurl is two rows, and Use says which does what: git fetches from the first url and pushes to every pushurl where one is set, and to every url where none is. Read from every file of config git reads, as git reads it, including a url.\u003cbase\u003e.insteadOf rewrite; over MCP only the repository's own config is read, as git_config shows it there. A credential embedded in a URL is masked.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Where this repository fetches from and pushes to\n\nEach remote with its URL, the file of config that sets it, and how many of its branches this repository knows from the last fetch (0 for a remote never fetched, not missing). A remote with a pushurl is two rows, and Use says which does what: git fetches from the first url and pushes to every pushurl where one is set, and to every url where none is. Read from every file of config git reads, as git reads it, including a url.\u003cbase\u003e.insteadOf rewrite; over MCP only the repository's own config is read, as git_config shows it there. A credential embedded in a URL is masked.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1019,7 +1019,7 @@
   },
   {
     "name": "git_status",
-    "description": "── the text below is written by the plugin, not by rta ──\nWhat has changed in the working tree, staged and unstaged\n\nThe structured equivalent of `git status --porcelain`: one row per path with a staged change, an unstaged change, or neither yet. A path a merge stopped on is listed as git lists it (UU, AA, UD, DU). A staged move with the content unchanged is one row, `R` with `old -\u003e new` in Path; with an edit it stays a `D` and an `A`. A submodule moved to another commit, or with a change inside it, is listed as modified, honouring its ignore setting. It ignores what git ignores (.gitignore, info/exclude, core.excludesFile) up to 1 MiB and 10000 patterns; a pattern file past that, or a .gitignore that is a symbolic link, is skipped with a warning. Past two seconds it is refused as git.status.timeout, never answered with a cleaner tree.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "What has changed in the working tree, staged and unstaged\n\nThe structured equivalent of `git status --porcelain`: one row per path with a staged change, an unstaged change, or neither yet. A path a merge stopped on is listed as git lists it (UU, AA, UD, DU). A staged move with the content unchanged is one row, `R` with `old -\u003e new` in Path; with an edit it stays a `D` and an `A`. A submodule moved to another commit, or with a change inside it, is listed as modified, honouring its ignore setting. It ignores what git ignores (.gitignore, info/exclude, core.excludesFile) up to 1 MiB and 10000 patterns; a pattern file past that, or a .gitignore that is a symbolic link, is skipped with a warning. Past two seconds it is refused as git.status.timeout, never answered with a cleaner tree.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1036,7 +1036,7 @@
   },
   {
     "name": "http_delete",
-    "description": "── the text below is written by the plugin, not by rta ──\nDELETE a URL\n\nAlso called: api, endpoint, request.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.delete`.",
+    "description": "DELETE a URL\n\nAlso called: api, endpoint, request.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.delete`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1077,7 +1077,7 @@
   },
   {
     "name": "http_get",
-    "description": "── the text below is written by the plugin, not by rta ──\nGET a URL and show status, timing and body\n\nAlso called: api, endpoint, request, fetch, curl, download.\n── end of plugin-written text ──\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.get`.",
+    "description": "GET a URL and show status, timing and body\n\nAlso called: api, endpoint, request, fetch, curl, download.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.get`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1118,7 +1118,7 @@
   },
   {
     "name": "http_head",
-    "description": "── the text below is written by the plugin, not by rta ──\nHEAD a URL and show status, timing, type and declared size\n\nAlso called: api, endpoint, request.\n── end of plugin-written text ──\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.head`.",
+    "description": "HEAD a URL and show status, timing, type and declared size\n\nAlso called: api, endpoint, request.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.head`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1159,7 +1159,7 @@
   },
   {
     "name": "http_post",
-    "description": "── the text below is written by the plugin, not by rta ──\nPOST to a URL with an optional body\n\nAlso called: api, endpoint, request, submit.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.post`.",
+    "description": "POST to a URL with an optional body\n\nAlso called: api, endpoint, request, submit.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.post`.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -1203,7 +1203,7 @@
   },
   {
     "name": "http_put",
-    "description": "── the text below is written by the plugin, not by rta ──\nPUT to a URL with an optional body\n\nAlso called: api, endpoint, request.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.put`.",
+    "description": "PUT to a URL with an optional body\n\nAlso called: api, endpoint, request.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.put`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1248,7 +1248,7 @@
   },
   {
     "name": "http_status",
-    "description": "── the text below is written by the plugin, not by rta ──\nWhat an HTTP status code means, and where it is defined\n\nA code prints its card; a class (`4xx`, `500-599`) or nothing prints the table. Offline: the text is the standard's, and every code net/http knows is here. It looks at no URL: `http_head` reports the status a live one returns.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "What an HTTP status code means, and where it is defined\n\nA code prints its card; a class (`4xx`, `500-599`) or nothing prints the table. Offline: the text is the standard's, and every code net/http knows is here. It looks at no URL: `http_head` reports the status a live one returns.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1264,7 +1264,7 @@
   },
   {
     "name": "keys_list",
-    "description": "── the text below is written by the plugin, not by rta ──\nList the SSH private keys in ~/.ssh, how protected each is, and whether it can be backed up\n\nKeys are found by their PEM preamble rather than an id_* name, so a key called work_ed25519 or symlinked in under any name is listed, and a stray file that was never a key is not. Only public data is read: a key's .pub sibling for its type, fingerprint and comment, and whether the private key is passphrase-protected, checked without supplying a passphrase. Nothing is decrypted. Backup-eligible means ed25519, the one type with a single seed to encode as words. An Exposed column appears only when some key's permissions let another account on this machine read it, which is a credential exposure and the reason ssh stops accepting that key.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "List the SSH private keys in ~/.ssh, how protected each is, and whether it can be backed up\n\nKeys are found by their PEM preamble rather than an id_* name, so a key called work_ed25519 or symlinked in under any name is listed, and a stray file that was never a key is not. Only public data is read: a key's .pub sibling for its type, fingerprint and comment, and whether the private key is passphrase-protected, checked without supplying a passphrase. Nothing is decrypted. Backup-eligible means ed25519, the one type with a single seed to encode as words. An Exposed column appears only when some key's permissions let another account on this machine read it, which is a credential exposure and the reason ssh stops accepting that key.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1275,7 +1275,7 @@
   },
   {
     "name": "kv_env",
-    "description": "── the text below is written by the plugin, not by rta ──\nPrint stored values as shell exports\n\nOutput for a shell to evaluate, which loads secrets into its session without ever writing them to a file. Key names become environment names (db-password → DB_PASSWORD). A `format` of dotenv writes .env syntax instead. Same grant requirement as kv_get: this reveals values. Naming no key means every key, which is a wider ask and needs a grant for kv_env itself rather than one per key.\n── end of plugin-written text ──\n\nSafety: write.\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.env`.",
+    "description": "Print stored values as shell exports\n\nOutput for a shell to evaluate, which loads secrets into its session without ever writing them to a file. Key names become environment names (db-password → DB_PASSWORD). A `format` of dotenv writes .env syntax instead. Same grant requirement as kv_get: this reveals values. Naming no key means every key, which is a wider ask and needs a grant for kv_env itself rather than one per key.\n\nSafety: write.\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.env`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1307,7 +1307,7 @@
   },
   {
     "name": "kv_get",
-    "description": "── the text below is written by the plugin, not by rta ──\nReveal a stored value\n\nClassified as a write, because revealing a secret is the sensitive act: an agent needs a grant naming the key it may read, issued by a person. A grant authorizes revealing a value, not choosing where on this machine it gets written, so the value comes back in the response.\n\nAlso called: secret, password, read, retrieve, credential, decrypt.\n── end of plugin-written text ──\n\nSafety: write.\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.get`.",
+    "description": "Reveal a stored value\n\nClassified as a write, because revealing a secret is the sensitive act: an agent needs a grant naming the key it may read, issued by a person. A grant authorizes revealing a value, not choosing where on this machine it gets written, so the value comes back in the response.\n\nAlso called: secret, password, read, retrieve, credential, decrypt.\n\nSafety: write.\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.get`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1326,7 +1326,7 @@
   },
   {
     "name": "kv_history",
-    "description": "── the text below is written by the plugin, not by rta ──\nWhat a key held before, and when each value was replaced\n\nEvery write over an existing key keeps what it replaced — the last 5 values, inside the same encrypted store — and `kv_rm` keeps the whole entry aside rather than destroying it. This lists that past: kind, size, description, when each value was set and when it was replaced. Never the values themselves, which is what keeps it a Read; `kv_restore` brings one back.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "What a key held before, and when each value was replaced\n\nEvery write over an existing key keeps what it replaced — the last 5 values, inside the same encrypted store — and `kv_rm` keeps the whole entry aside rather than destroying it. This lists that past: kind, size, description, when each value was set and when it was replaced. Never the values themselves, which is what keeps it a Read; `kv_restore` brings one back.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1345,7 +1345,7 @@
   },
   {
     "name": "kv_init",
-    "description": "── the text below is written by the plugin, not by rta ──\nSet up how the store is encrypted\n\nDone once. `generate` makes a dedicated age key for this store and uses it: no passphrase to type, and unlike an SSH login key, one whose loss costs this store and nothing else. A passphrase store needs no init, which is what the store is by default. Locking it to a key that already exists, or adding readers, is the operator's to do.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow kv.init`.",
+    "description": "Set up how the store is encrypted\n\nDone once. `generate` makes a dedicated age key for this store and uses it: no passphrase to type, and unlike an SSH login key, one whose loss costs this store and nothing else. A passphrase store needs no init, which is what the store is by default. Locking it to a key that already exists, or adding readers, is the operator's to do.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow kv.init`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1361,7 +1361,7 @@
   },
   {
     "name": "kv_list",
-    "description": "── the text below is written by the plugin, not by rta ──\nList stored keys (names and metadata only, never values)\n\nNever returns a value or a preview of one — only key names, what kind of thing each is, its size, its description, when it changed and — once any value has been replaced — how many earlier values `kv_history` still keeps for each. With `detail`: the source filename of anything stored from disk.\n\n`folder` is one folder of the tree `kv_tree` draws, `db/` for `db/password` and `db/user`: only the keys under it.\n\n`match` is the \"which one was it called?\" filter: a substring of the name or the description, case-insensitive, so a `match` of aws finds `prod-deploy-key` when the description is the only place the word AWS appears.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "List stored keys (names and metadata only, never values)\n\nNever returns a value or a preview of one — only key names, what kind of thing each is, its size, its description, when it changed and — once any value has been replaced — how many earlier values `kv_history` still keeps for each. With `detail`: the source filename of anything stored from disk.\n\n`folder` is one folder of the tree `kv_tree` draws, `db/` for `db/password` and `db/user`: only the keys under it.\n\n`match` is the \"which one was it called?\" filter: a substring of the name or the description, case-insensitive, so a `match` of aws finds `prod-deploy-key` when the description is the only place the word AWS appears.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1403,7 +1403,7 @@
   },
   {
     "name": "kv_overview",
-    "description": "── the text below is written by the plugin, not by rta ──\nWhat the secret store holds, by count and kind, and what can open it\n\nWhat is in the store: how many keys and folders, how many of each kind, how many bytes of values, how old the newest and the oldest are, and what is kept besides the live keys: earlier values (`kv_history`) and removed keys (`kv_restore`). Then where the store is, how big, when it last changed, how it is locked and whether this environment can open it. Names, counts and sizes, never a value.\n\nThe inventory needs the store open, and this never asks for what opens it: with no key at hand it says so, says what supplies one, and still answers the rest. `kv_status` is the cheaper question and never decrypts. With `detail`: the biggest top-level folders, and who can open a store locked to keys.\n\nAlso called: secrets, stored, inventory, contents, counts, locked, passwords, credentials, deleted.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "What the secret store holds, by count and kind, and what can open it\n\nWhat is in the store: how many keys and folders, how many of each kind, how many bytes of values, how old the newest and the oldest are, and what is kept besides the live keys: earlier values (`kv_history`) and removed keys (`kv_restore`). Then where the store is, how big, when it last changed, how it is locked and whether this environment can open it. Names, counts and sizes, never a value.\n\nThe inventory needs the store open, and this never asks for what opens it: with no key at hand it says so, says what supplies one, and still answers the rest. `kv_status` is the cheaper question and never decrypts. With `detail`: the biggest top-level folders, and who can open a store locked to keys.\n\nAlso called: secrets, stored, inventory, contents, counts, locked, passwords, credentials, deleted.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1420,7 +1420,7 @@
   },
   {
     "name": "kv_recipients",
-    "description": "── the text below is written by the plugin, not by rta ──\nList the public keys that can decrypt the store\n\nAnswers \"who can read this?\" without unlocking anything — recipients are public keys, so the list is plaintext by design. An empty list means the store is passphrase-encrypted.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "List the public keys that can decrypt the store\n\nAnswers \"who can read this?\" without unlocking anything — recipients are public keys, so the list is plaintext by design. An empty list means the store is passphrase-encrypted.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1431,7 +1431,7 @@
   },
   {
     "name": "kv_rekey",
-    "description": "── the text below is written by the plugin, not by rta ──\nChange which keys can open the store\n\nThe store is decrypted and written back under a new set of keys, the one operation that changes who can read what is already stored. Adding is the default: `generate` makes a dedicated age key and leaves the existing readers alone, so a store locked to an SSH key gains one that needs no passphrase. `only` makes the set exclusive instead, and with `generate` switches the lock from one key to the other. Two things are refused rather than confirmed: a store that cannot be opened, and a change that locks out every key the operator holds. Old copies of the file stay readable by the old keys; re-keying does not reach into backups.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow kv.rekey`.",
+    "description": "Change which keys can open the store\n\nThe store is decrypted and written back under a new set of keys, the one operation that changes who can read what is already stored. Adding is the default: `generate` makes a dedicated age key and leaves the existing readers alone, so a store locked to an SSH key gains one that needs no passphrase. `only` makes the set exclusive instead, and with `generate` switches the lock from one key to the other. Two things are refused rather than confirmed: a store that cannot be opened, and a change that locks out every key the operator holds. Old copies of the file stay readable by the old keys; re-keying does not reach into backups.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow kv.rekey`.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1450,7 +1450,7 @@
   },
   {
     "name": "kv_rename",
-    "description": "── the text below is written by the plugin, not by rta ──\nRename a key, keeping its value and its history\n\nThe entry moves inside the store, the value is never decrypted into anything but memory, and its description, kind, source and timestamps travel with it: the one way to rename that reveals nothing, where kv_get, kv_set and kv_rm took two grants and put the secret in the open. A name already taken is refused rather than overwritten, since that would destroy the secret in it, which is `kv_rm`'s question. A grant has to cover both names, `key` and `new-name`, because a key's name decides which grants can read it; a folder grant covers a move inside the folder.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\" and one \"new-name\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.rename`.",
+    "description": "Rename a key, keeping its value and its history\n\nThe entry moves inside the store, the value is never decrypted into anything but memory, and its description, kind, source and timestamps travel with it: the one way to rename that reveals nothing, where kv_get, kv_set and kv_rm took two grants and put the secret in the open. A name already taken is refused rather than overwritten, since that would destroy the secret in it, which is `kv_rm`'s question. A grant has to cover both names, `key` and `new-name`, because a key's name decides which grants can read it; a folder grant covers a move inside the folder.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\" and one \"new-name\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.rename`.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -1473,7 +1473,7 @@
   },
   {
     "name": "kv_restore",
-    "description": "── the text below is written by the plugin, not by rta ──\nBring back a removed key, or an earlier value of one\n\nWith no `revision`, a key `kv_rm` removed comes back exactly as it was, history included. With one, the key's current value is replaced by that earlier one — the number `kv_history` lists, 1 being the most recent — and the value being replaced joins the history in turn, so a restore is itself undoable.\n\nA removed key whose name has since been reused is refused rather than merged: rename the live one first, or purge the removed one.\n\nAlso called: deleted.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.restore`.",
+    "description": "Bring back a removed key, or an earlier value of one\n\nWith no `revision`, a key `kv_rm` removed comes back exactly as it was, history included. With one, the key's current value is replaced by that earlier one — the number `kv_history` lists, 1 being the most recent — and the value being replaced joins the history in turn, so a restore is itself undoable.\n\nA removed key whose name has since been reused is refused rather than merged: rename the live one first, or purge the removed one.\n\nAlso called: deleted.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.restore`.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -1495,7 +1495,7 @@
   },
   {
     "name": "kv_rm",
-    "description": "── the text below is written by the plugin, not by rta ──\nRemove a stored key, keeping it restorable until purged\n\nThe key leaves the listing and every read of it, but the entry is kept aside whole — value, history and all — inside the same encrypted store, where `kv_list` shows it with `removed` and `kv_restore` brings it back. That is the undo a mis-click needs. `purge` is the removal that has none: the entry and everything it ever held are gone when it returns, and it also finishes off a key removed earlier.\n\nDestructive either way, because a removed key is still a key nothing can read until somebody notices. Who can open the store does not change: removing the last entry leaves an empty store locked to the same keys, not an unlocked one. To rename rather than replace, `kv_rename` moves an entry without its value ever leaving memory.\n\nAlso called: delete, deleted.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.rm`.",
+    "description": "Remove a stored key, keeping it restorable until purged\n\nThe key leaves the listing and every read of it, but the entry is kept aside whole — value, history and all — inside the same encrypted store, where `kv_list` shows it with `removed` and `kv_restore` brings it back. That is the undo a mis-click needs. `purge` is the removal that has none: the entry and everything it ever held are gone when it returns, and it also finishes off a key removed earlier.\n\nDestructive either way, because a removed key is still a key nothing can read until somebody notices. Who can open the store does not change: removing the last entry leaves an empty store locked to the same keys, not an unlocked one. To rename rather than replace, `kv_rename` moves an entry without its value ever leaving memory.\n\nAlso called: delete, deleted.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.rm`.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1517,7 +1517,7 @@
   },
   {
     "name": "kv_set",
-    "description": "── the text below is written by the plugin, not by rta ──\nSet (or overwrite) a stored value\n\nThe value is given as `value`; a call with none is refused unless its `description` or `kind` relabel an entry that already exists, which leaves the secret and both timestamps untouched, so correcting what something is for does not reset the age kv_list reports. The kind (certificate, private key, json, file, string) is detected from the content unless `kind` says otherwise. Writing never changes who can read the store: that is `kv_rekey`. Setting a key that already exists replaces the secret and keeps the old one, the last 5 values listed by `kv_history` and brought back by `kv_restore` with a `revision`. It still needs a per-key grant: an agent that can overwrite a secret can break what reads it, undo or not.\n\nAlso called: secret, password, save, write, credential, encrypt.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.set`.",
+    "description": "Set (or overwrite) a stored value\n\nThe value is given as `value`; a call with none is refused unless its `description` or `kind` relabel an entry that already exists, which leaves the secret and both timestamps untouched, so correcting what something is for does not reset the age kv_list reports. The kind (certificate, private key, json, file, string) is detected from the content unless `kind` says otherwise. Writing never changes who can read the store: that is `kv_rekey`. Setting a key that already exists replaces the secret and keeps the old one, the last 5 values listed by `kv_history` and brought back by `kv_restore` with a `revision`. It still needs a per-key grant: an agent that can overwrite a secret can break what reads it, undo or not.\n\nAlso called: secret, password, save, write, credential, encrypt.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.set`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1557,7 +1557,7 @@
   },
   {
     "name": "kv_show",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow everything about one entry except its value\n\nThe detail page for a stored key: what kind of thing it is, what it is for, how big it is, where it came from and when it changed. Deliberately not the value — that is `kv_get`, a write for exactly that reason. This stays Read because everything on it is metadata.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Show everything about one entry except its value\n\nThe detail page for a stored key: what kind of thing it is, what it is for, how big it is, where it came from and when it changed. Deliberately not the value — that is `kv_get`, a write for exactly that reason. This stays Read because everything on it is metadata.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1576,7 +1576,7 @@
   },
   {
     "name": "kv_status",
-    "description": "── the text below is written by the plugin, not by rta ──\nWhere the store is and what can open it\n\nEverything about the store that can be known without unlocking it: whether it exists, how big it is, when it last changed, whether it is locked with a passphrase or to keys, and whether a key is available in this environment. It reads the file and never decrypts it, so it answers whatever state the store is in; `kv_overview` is the page that also counts what is inside, and carries these lines.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Where the store is and what can open it\n\nEverything about the store that can be known without unlocking it: whether it exists, how big it is, when it last changed, whether it is locked with a passphrase or to keys, and whether a key is available in this environment. It reads the file and never decrypts it, so it answers whatever state the store is in; `kv_overview` is the page that also counts what is inside, and carries these lines.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1587,7 +1587,7 @@
   },
   {
     "name": "kv_tree",
-    "description": "── the text below is written by the plugin, not by rta ──\nThe store as a tree of the folders its keys share\n\nKeys named with slashes — `staging/db/password`, `prod/deploy-key` — are drawn as the folders they share, each leaf labelled with its kind. Names only, never values, the same line `kv_list` draws. A grant for `kv_get` scoped to staging/ is how one of those folders becomes a grant's scope, so this is also the map of what such a grant covers.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "The store as a tree of the folders its keys share\n\nKeys named with slashes — `staging/db/password`, `prod/deploy-key` — are drawn as the folders they share, each leaf labelled with its kind. Names only, never values, the same line `kv_list` draws. A grant for `kv_get` scoped to staging/ is how one of those folders becomes a grant's scope, so this is also the map of what such a grant covers.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1598,7 +1598,7 @@
   },
   {
     "name": "net_dns",
-    "description": "── the text below is written by the plugin, not by rta ──\nResolve DNS records for a name, or a name for an address\n\nA `type` of auto (the default) asks the question you usually mean: A, AAAA and CNAME for a name, PTR for an address. The system resolver answers unless the operator has set another. With `detail`: the query, the resolver that answered, and how long it took.\n── end of plugin-written text ──\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"name\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.dns`.",
+    "description": "Resolve DNS records for a name, or a name for an address\n\nA `type` of auto (the default) asks the question you usually mean: A, AAAA and CNAME for a name, PTR for an address. The system resolver answers unless the operator has set another. With `detail`: the query, the resolver that answered, and how long it took.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"name\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.dns`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1645,7 +1645,7 @@
   },
   {
     "name": "net_hosts_add",
-    "description": "── the text below is written by the plugin, not by rta ──\nPoint a hostname at an address in the hosts file\n\nA name resolves to one address, so this takes the name away from any other active entry rather than leaving two that race. Everything else in the file — comments, ordering, spacing — survives untouched, and the previous version is saved before the write.\n\nClassified destructive rather than write: this rewrites a root-owned file that governs name resolution for every process on the machine, and a wrong entry silently reroutes traffic instead of failing. Over MCP that means a per-capability grant naming this capability, or the net plugin, with a deadline on it.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"hostname\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.hosts.add`.",
+    "description": "Point a hostname at an address in the hosts file\n\nA name resolves to one address, so this takes the name away from any other active entry rather than leaving two that race. Everything else in the file — comments, ordering, spacing — survives untouched, and the previous version is saved before the write.\n\nClassified destructive rather than write: this rewrites a root-owned file that governs name resolution for every process on the machine, and a wrong entry silently reroutes traffic instead of failing. Over MCP that means a per-capability grant naming this capability, or the net plugin, with a deadline on it.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"hostname\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.hosts.add`.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1671,7 +1671,7 @@
   },
   {
     "name": "net_hosts_list",
-    "description": "── the text below is written by the plugin, not by rta ──\nList hosts-file entries, including disabled ones\n\nOne row per hostname, since a hostname is what you look up, disable and remove. Entries commented out by `net_hosts_toggle` are shown as disabled rather than hidden as comments.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "List hosts-file entries, including disabled ones\n\nOne row per hostname, since a hostname is what you look up, disable and remove. Entries commented out by `net_hosts_toggle` are shown as disabled rather than hidden as comments.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1687,7 +1687,7 @@
   },
   {
     "name": "net_hosts_rm",
-    "description": "── the text below is written by the plugin, not by rta ──\nRemove hostnames from the hosts file\n\nRemoves the names, and the line only if nothing is left on it. `net_hosts_toggle` parks an entry instead, which is usually what you want.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"hostname\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.hosts.rm`.",
+    "description": "Remove hostnames from the hosts file\n\nRemoves the names, and the line only if nothing is left on it. `net_hosts_toggle` parks an entry instead, which is usually what you want.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"hostname\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.hosts.rm`.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1708,7 +1708,7 @@
   },
   {
     "name": "net_hosts_toggle",
-    "description": "── the text below is written by the plugin, not by rta ──\nEnable or disable a hosts-file entry without deleting it\n\nA disabled entry stays in the file, commented, and comes back with the same command. Same blast radius as add, same classification.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"hostname\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.hosts.toggle`.",
+    "description": "Enable or disable a hosts-file entry without deleting it\n\nA disabled entry stays in the file, commented, and comes back with the same command. Same blast radius as add, same classification.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"hostname\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.hosts.toggle`.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1726,7 +1726,7 @@
   },
   {
     "name": "net_listen",
-    "description": "── the text below is written by the plugin, not by rta ──\nWhat this machine is listening on, and which process owns it\n\nEvery TCP and UDP socket this machine has open for business, with the address it is bound to, how far that reaches (loopback, one address, or all interfaces) and the process behind it. Two limits. UDP has no listening state, so a socket with a port and no peer is shown whether it is a server waiting or a resolver with a query in flight; the kernel does not tell them apart. And the answer is only as complete as the caller's privileges: Linux reads the whole socket table but can only name the process behind sockets it may look into, so the Process column empties; macOS reads through lsof, which shows only what the caller may see, so the row is absent entirely.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "What this machine is listening on, and which process owns it\n\nEvery TCP and UDP socket this machine has open for business, with the address it is bound to, how far that reaches (loopback, one address, or all interfaces) and the process behind it. Two limits. UDP has no listening state, so a socket with a port and no peer is shown whether it is a server waiting or a resolver with a query in flight; the kernel does not tell them apart. And the answer is only as complete as the caller's privileges: Linux reads the whole socket table but can only name the process behind sockets it may look into, so the Process column empties; macOS reads through lsof, which shows only what the caller may see, so the row is absent entirely.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1752,7 +1752,7 @@
   },
   {
     "name": "net_overview",
-    "description": "── the text below is written by the plugin, not by rta ──\nLocal network overview: interfaces, DNS, proxy, throughput\n\nReports local facts only — it never calls external services, so no public-IP lookup. Proxy credentials are masked. Throughput is sampled over 500ms. With `detail`: every interface with MAC, MTU, flags and addresses, per-interface traffic counters, the full resolver list and proxy environment.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Local network overview: interfaces, DNS, proxy, throughput\n\nReports local facts only — it never calls external services, so no public-IP lookup. Proxy credentials are masked. Throughput is sampled over 500ms. With `detail`: every interface with MAC, MTU, flags and addresses, per-interface traffic counters, the full resolver list and proxy environment.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1769,7 +1769,7 @@
   },
   {
     "name": "net_ping",
-    "description": "── the text below is written by the plugin, not by rta ──\nPing a host and report latency statistics\n── end of plugin-written text ──\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.ping`.",
+    "description": "Ping a host and report latency statistics\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.ping`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1806,7 +1806,7 @@
   },
   {
     "name": "net_port",
-    "description": "── the text below is written by the plugin, not by rta ──\nTCP connect-scan ports on a host\n\nWhich ports answer, not what they say — `net_probe` shows the banner for one; this maps many at once. Needs a grant for the same reason: the host is the caller's choice.\n── end of plugin-written text ──\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.port`.",
+    "description": "TCP connect-scan ports on a host\n\nWhich ports answer, not what they say — `net_probe` shows the banner for one; this maps many at once. Needs a grant for the same reason: the host is the caller's choice.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.port`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1837,7 +1837,7 @@
   },
   {
     "name": "net_probe",
-    "description": "── the text below is written by the plugin, not by rta ──\nOpen a TCP connection and report what answers\n\nProves the port accepts a connection, times the handshake, and shows the banner the service volunteers. `tls` completes a TLS handshake first and reports the negotiated version and cipher. It sends nothing and only waits for the banner; to speak first — the protocols that expect the client to open — use `net_send`, which is a write. Both need a grant: the destination is the caller's choice either way, and whatever it says back is read as tool output.\n── end of plugin-written text ──\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.probe`.",
+    "description": "Open a TCP connection and report what answers\n\nProves the port accepts a connection, times the handshake, and shows the banner the service volunteers. `tls` completes a TLS handshake first and reports the negotiated version and cipher. It sends nothing and only waits for the banner; to speak first — the protocols that expect the client to open — use `net_send`, which is a write. Both need a grant: the destination is the caller's choice either way, and whatever it says back is read as tool output.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.probe`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1881,7 +1881,7 @@
   },
   {
     "name": "net_resolver_list",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow the system resolver, and who controls it\n\nresolv.conf is the file people most often edit to no effect: on most modern systems it is generated and replaced. This leads with who owns it, because that decides whether anything else in it is worth changing.\n\nAlso called: dns, nameserver, nameservers, servers, resolv.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Show the system resolver, and who controls it\n\nresolv.conf is the file people most often edit to no effect: on most modern systems it is generated and replaced. This leads with who owns it, because that decides whether anything else in it is worth changing.\n\nAlso called: dns, nameserver, nameservers, servers, resolv.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -1897,7 +1897,7 @@
   },
   {
     "name": "net_resolver_set",
-    "description": "── the text below is written by the plugin, not by rta ──\nSet the system nameservers\n\nReplaces the nameserver lines, leaving search domains, options and comments where they are, after saving the previous version. Refuses when the file is generated by something else — silently editing a generated file is worse than refusing, since the change works and then vanishes with nothing to point at. `force` overrides that, with the warning repeated in the result.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"server\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.resolver.set`.",
+    "description": "Set the system nameservers\n\nReplaces the nameserver lines, leaving search domains, options and comments where they are, after saving the previous version. Refuses when the file is generated by something else — silently editing a generated file is worse than refusing, since the change works and then vanishes with nothing to point at. `force` overrides that, with the warning repeated in the result.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"server\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.resolver.set`.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -1922,7 +1922,7 @@
   },
   {
     "name": "net_send",
-    "description": "── the text below is written by the plugin, not by rta ──\nSend bytes to a TCP port and report what comes back\n\nOpens a TCP connection, writes what you give it, and shows the reply — how you poke a protocol that expects the client to speak first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in `data` are interpreted. `tls` speaks it over TLS. This is a write: what arrives is executed by whatever is listening, so it needs an explicit grant before an AI agent can use it. `net_probe` is the read-only half — connect, handshake, listen — and carries the same grant, since the destination is still the caller's to choose either way.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.send`.",
+    "description": "Send bytes to a TCP port and report what comes back\n\nOpens a TCP connection, writes what you give it, and shows the reply — how you poke a protocol that expects the client to speak first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in `data` are interpreted. `tls` speaks it over TLS. This is a write: what arrives is executed by whatever is listening, so it needs an explicit grant before an AI agent can use it. `net_probe` is the read-only half — connect, handshake, listen — and carries the same grant, since the destination is still the caller's to choose either way.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.send`.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -1970,7 +1970,7 @@
   },
   {
     "name": "net_trace",
-    "description": "── the text below is written by the plugin, not by rta ──\nTrace the route to a host, hop by hop\n\nICMP echo probes with a rising TTL: each hop that expires one reports itself. Answers the question ping cannot — not just \"is it reachable\" but \"where does it stop\". Silent hops show as *; that is a router declining to reply, not necessarily a fault.\n── end of plugin-written text ──\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.trace`.",
+    "description": "Trace the route to a host, hop by hop\n\nICMP echo probes with a rising TTL: each hop that expires one reports itself. Answers the question ping cannot — not just \"is it reachable\" but \"where does it stop\". Silent hops show as *; that is a router declining to reply, not necessarily a fault.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.trace`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2015,7 +2015,7 @@
   },
   {
     "name": "note_add",
-    "description": "── the text below is written by the plugin, not by rta ──\nAdd a note\n\nA title is enough. `todo` (or a due date, which implies it) makes it something to do; a parent makes it part of something bigger; markdown in the body is rendered on human surfaces.\n\nAlso called: remember, reminder, todo, task, jot, later.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.add`.",
+    "description": "Add a note\n\nA title is enough. `todo` (or a due date, which implies it) makes it something to do; a parent makes it part of something bigger; markdown in the body is rendered on human surfaces.\n\nAlso called: remember, reminder, todo, task, jot, later.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.add`.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -2056,7 +2056,7 @@
   },
   {
     "name": "note_done",
-    "description": "── the text below is written by the plugin, not by rta ──\nCheck notes off\n\nDone for a task, filed for a note: either way it leaves the default list and stays findable through note_list's `all`, and in note_search. Several ids check off several notes in one call, all or none: an id that is not a note refuses the call before anything changes. A plain note is made a to-do and checked off in the same call, since asking to be done with it says what it is.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.done`.",
+    "description": "Check notes off\n\nDone for a task, filed for a note: either way it leaves the default list and stays findable through note_list's `all`, and in note_search. Several ids check off several notes in one call, all or none: an id that is not a note refuses the call before anything changes. A plain note is made a to-do and checked off in the same call, since asking to be done with it says what it is.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.done`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -2078,7 +2078,7 @@
   },
   {
     "name": "note_edit",
-    "description": "── the text below is written by the plugin, not by rta ──\nEdit a note's title, body, tags, due date or parent\n\nEmpty fields keep their current value. A `tag` of - clears all tags; a `due` of none clears the due date.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.edit`.",
+    "description": "Edit a note's title, body, tags, due date or parent\n\nEmpty fields keep their current value. A `tag` of - clears all tags; a `due` of none clears the due date.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.edit`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -2121,7 +2121,7 @@
   },
   {
     "name": "note_list",
-    "description": "── the text below is written by the plugin, not by rta ──\nList notes\n\nOpen notes, the ones with a due date first — soonest on top — then the rest in the order they were written. Checked-off notes are hidden unless `all`. Shows top-level notes by default; `parent` lists one note's sub-notes. With `detail`: adds creation date and a body preview.\n\nAlso called: todo, tasks.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "List notes\n\nOpen notes, the ones with a due date first — soonest on top — then the rest in the order they were written. Checked-off notes are hidden unless `all`. Shows top-level notes by default; `parent` lists one note's sub-notes. With `detail`: adds creation date and a body preview.\n\nAlso called: todo, tasks.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2154,7 +2154,7 @@
   },
   {
     "name": "note_reopen",
-    "description": "── the text below is written by the plugin, not by rta ──\nReopen checked notes\n\nThe undo for `note_done`, for one id or several. Re-opening an already-open note is a no-op, not an error.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.reopen`.",
+    "description": "Reopen checked notes\n\nThe undo for `note_done`, for one id or several. Re-opening an already-open note is a no-op, not an error.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.reopen`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -2176,7 +2176,7 @@
   },
   {
     "name": "note_rm",
-    "description": "── the text below is written by the plugin, not by rta ──\nRemove notes permanently\n\nSub-notes are re-parented to the removed note's parent, never deleted silently. Several ids remove several notes in one call, all or none, each one a record a grant or a consent has to cover.\n── end of plugin-written text ──\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"id\"). You cannot issue one yourself — ask the operator to run `rta grant allow note.rm`.",
+    "description": "Remove notes permanently\n\nSub-notes are re-parented to the removed note's parent, never deleted silently. Several ids remove several notes in one call, all or none, each one a record a grant or a consent has to cover.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"id\"). You cannot issue one yourself — ask the operator to run `rta grant allow note.rm`.",
     "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
@@ -2197,7 +2197,7 @@
   },
   {
     "name": "note_search",
-    "description": "── the text below is written by the plugin, not by rta ──\nSearch notes by title, body or tag\n\nSearches every note regardless of parent/child, done or open.\n\nAlso called: find, todo, lookup.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Search notes by title, body or tag\n\nSearches every note regardless of parent/child, done or open.\n\nAlso called: find, todo, lookup.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2216,7 +2216,7 @@
   },
   {
     "name": "note_show",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow one note: metadata, content, sub-notes, references\n\nA composed page rather than one blob: structured metadata (status, due, tags, parent, progress) stays separate from the markdown content, so both stay readable and machine callers can read a due date without parsing prose. Sub-notes and cross-references (\"#12\" in a body, resolved both ways) follow.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Show one note: metadata, content, sub-notes, references\n\nA composed page rather than one blob: structured metadata (status, due, tags, parent, progress) stays separate from the markdown content, so both stay readable and machine callers can read a due date without parsing prose. Sub-notes and cross-references (\"#12\" in a body, resolved both ways) follow.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2235,7 +2235,7 @@
   },
   {
     "name": "note_tags",
-    "description": "── the text below is written by the plugin, not by rta ──\nList tags in use and how many notes carry each\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "List tags in use and how many notes carry each\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2246,7 +2246,7 @@
   },
   {
     "name": "note_toggle",
-    "description": "── the text below is written by the plugin, not by rta ──\nTurn a note into a to-do, or a to-do back into a note\n\nThe switch between the two kinds of thing in the notebook. A note becomes an open to-do; a to-do becomes a note and forgets whether it was done, which is the point — a note has nothing to be done about.\n\nAlso called: todo.\n── end of plugin-written text ──\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.toggle`.",
+    "description": "Turn a note into a to-do, or a to-do back into a note\n\nThe switch between the two kinds of thing in the notebook. A note becomes an open to-do; a to-do becomes a note and forgets whether it was done, which is the point — a note has nothing to be done about.\n\nAlso called: todo.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.toggle`.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -2264,7 +2264,7 @@
   },
   {
     "name": "sys_cpu",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow CPU model, core count and current usage\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Show CPU model, core count and current usage\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2280,7 +2280,7 @@
   },
   {
     "name": "sys_disk",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow disk usage per mounted filesystem\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Show disk usage per mounted filesystem\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2296,7 +2296,7 @@
   },
   {
     "name": "sys_host",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow host info: OS, kernel, uptime, addresses\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Show host info: OS, kernel, uptime, addresses\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2307,7 +2307,7 @@
   },
   {
     "name": "sys_load",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow load averages, normalized per core\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Show load averages, normalized per core\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2318,7 +2318,7 @@
   },
   {
     "name": "sys_mem",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow memory and swap usage\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Show memory and swap usage\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2329,7 +2329,7 @@
   },
   {
     "name": "sys_overview",
-    "description": "── the text below is written by the plugin, not by rta ──\nOne-screen host health: cpu, memory, load, disk, uptime\n\nA dense one-line-per-subsystem summary. With `detail` it expands into a full report: identity, per-core usage, memory and swap breakdown, every filesystem, sensors and top processes. Lines a platform cannot provide are omitted rather than failing the view.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "One-screen host health: cpu, memory, load, disk, uptime\n\nA dense one-line-per-subsystem summary. With `detail` it expands into a full report: identity, per-core usage, memory and swap breakdown, every filesystem, sensors and top processes. Lines a platform cannot provide are omitted rather than failing the view.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2346,7 +2346,7 @@
   },
   {
     "name": "sys_ps",
-    "description": "── the text below is written by the plugin, not by rta ──\nList top processes by CPU or memory\n\nRanks the processes this account can read, by CPU over a 200ms window or by memory. Another user's processes cannot be read without privileges, and one that ends during the scan is gone before it is, so both are left out and counted in a note under the table.\n\nAlso called: process, pid, hog, task, running.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "List top processes by CPU or memory\n\nRanks the processes this account can read, by CPU over a 200ms window or by memory. Another user's processes cannot be read without privileges, and one that ends during the scan is gone before it is, so both are left out and counted in a note under the table.\n\nAlso called: process, pid, hog, task, running.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2374,7 +2374,7 @@
   },
   {
     "name": "sys_temp",
-    "description": "── the text below is written by the plugin, not by rta ──\nShow sensor temperatures\n\nAlso called: temperature, thermal, hot, heat, celsius, overheating, fan.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Show sensor temperatures\n\nAlso called: temperature, thermal, hot, heat, celsius, overheating, fan.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -2385,7 +2385,7 @@
   },
   {
     "name": "time_at",
-    "description": "── the text below is written by the plugin, not by rta ──\nConvert an instant between epoch, UTC, local time and a named zone\n\nTakes an instant in whatever form you have it — an epoch number at any precision, an RFC3339 stamp, a plain date, or a duration either side of now (`90m ago`, `in 2h`, `+90m`) — and shows it as UTC, as local time, as epoch seconds and milliseconds, and as how long ago or away it is. With `zone`, in a third timezone too.\n\nA bare number carries no unit, so the unit is chosen by magnitude and then stated back to you in the `read-as` row: between 1970 and 1973 the ranges overlap and no rule can resolve it. A time of day the local clock showed twice, the night it went back, is answered as one of the two with the other named in an `ambiguous` row; one it never showed is refused.\n── end of plugin-written text ──\n\nSafety: read.",
+    "description": "Convert an instant between epoch, UTC, local time and a named zone\n\nTakes an instant in whatever form you have it — an epoch number at any precision, an RFC3339 stamp, a plain date, or a duration either side of now (`90m ago`, `in 2h`, `+90m`) — and shows it as UTC, as local time, as epoch seconds and milliseconds, and as how long ago or away it is. With `zone`, in a third timezone too.\n\nA bare number carries no unit, so the unit is chosen by magnitude and then stated back to you in the `read-as` row: between 1970 and 1973 the ranges overlap and no rule can resolve it. A time of day the local clock showed twice, the night it went back, is answered as one of the two with the other named in an `ambiguous` row; one it never showed is refused.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {

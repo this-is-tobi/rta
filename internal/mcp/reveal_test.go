@@ -178,7 +178,7 @@ func TestTheDescriptionOfARevealSaysWhatItReturnsInTheHostsVoice(t *testing.T) {
 	reg := revealRegistry(t)
 	get, _ := reg.Capability("vault.item.get")
 	show, _ := reg.Capability("vault.item.show")
-	text := agentText(get, nil, false)
+	text := agentText(get, nil, false, true)
 	const said = "Returns the stored value itself, not a masked copy, and it becomes part of your context."
 	i := strings.Index(text, said)
 	if i < 0 {
@@ -187,8 +187,8 @@ func TestTheDescriptionOfARevealSaysWhatItReturnsInTheHostsVoice(t *testing.T) {
 	if !strings.Contains(text[:i], plugin.AuthoredClose) {
 		t.Errorf("the sentence stands inside the plugin's block, where the plugin could write it:\n%s", text)
 	}
-	if strings.Contains(agentText(show, nil, false), "stored value itself") {
-		t.Errorf("a masked read says it returns the value itself:\n%s", agentText(show, nil, false))
+	if strings.Contains(agentText(show, nil, false, true), "stored value itself") {
+		t.Errorf("a masked read says it returns the value itself:\n%s", agentText(show, nil, false, true))
 	}
 }
 

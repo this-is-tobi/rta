@@ -69,7 +69,7 @@ Worth knowing before you debug something surprising:
 
 ## Declared text is checked
 
-Your `Summary`, `Description`, `Help` and `Options` are published verbatim to AI agents as tool descriptions. rta refuses control characters, bidirectional overrides, invisible characters and its own framing markers at registration, and caps the lengths. If `rta plugin dev` refuses your plugin over a summary, that is why.
+Your `Summary`, `Description`, `Help` and `Options` are published verbatim to AI agents as tool descriptions. rta refuses control characters, bidirectional overrides, invisible characters and its own framing markers at registration, and caps the lengths. If `rta plugin dev` refuses your plugin over a summary, that is why. What an agent reads of your capability is your summary, your text and your keywords between two lines that say a plugin wrote them, and rta's own lines, the safety class and the grant it needs, after the second; the built-in tools carry no such frame, since nobody else wrote their words, and a plugin cannot take it off its own by calling itself one.
 
 Write the `Description` for somebody deciding whether to call it. It is the text a model reads before choosing.
 

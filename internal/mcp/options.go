@@ -300,6 +300,19 @@ func (o Options) profileSet() (config.Config, bool) {
 	return o.Profiles, o.ProfilesErr == nil
 }
 
+// pluginAuthored reports whether the words a capability declares were written
+// by a plugin rather than by rta, which is what puts them inside the frame
+// agentText draws around a plugin's text.
+//
+// Answered by the registry's record of where the namespace was loaded from and
+// nothing the capability declares: only a namespace known to be compiled into
+// this binary is rta's own, and one that is unknown, as when no lookup was
+// wired, is framed.
+func (o Options) pluginAuthored(c plugin.Capability) bool {
+	origin, known := o.origin(plugin.Namespace(c.ID))
+	return !known || origin.External()
+}
+
 // origin resolves a namespace, treating an unwired lookup as "nothing is
 // known", which is the fail-closed direction.
 func (o Options) origin(ns string) (registry.Origin, bool) {
