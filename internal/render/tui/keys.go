@@ -166,7 +166,7 @@ var (
 	// looking at" is one idea and reads worse as three.
 	bindSelect = binding{
 		display: "↑↓←→",
-		keys:    []string{"up", "down", "left", "right", "k", "j", "h", "l", "tab", "shift+tab"},
+		keys:    []string{"up", "down", "left", "right", "k", "j", "h", "l", "tab", "shift+tab", "home", "end"},
 		label:   "select", rank: rankPrimary,
 	}
 	bindScroll = binding{

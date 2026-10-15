@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -107,6 +108,15 @@ func TestTheDocsTableOfTheDashboardsKeysHasEveryKeyTheFooterOffers(t *testing.T)
 			}
 			t.Errorf("the dashboard offers %q (%s) and the docs' table of its keys does not list it", key, it.label)
 		}
+	}
+	// The arrows stand for a dozen keys in the footer and the table never lists
+	// them, but the named keys among them — tab, shift+tab, home, end — are keys a
+	// hand has to be told about, and the footer's glyph does not.
+	for _, key := range bindSelect.keys {
+		if len([]rune(key)) == 1 || slices.Contains([]string{"up", "down", "left", "right"}, key) || documented[key] {
+			continue
+		}
+		t.Errorf("the dashboard selects with %q and the docs' table of its keys does not list it", key)
 	}
 }
 
@@ -408,7 +418,7 @@ func everyKey() []string {
 	}
 	out = append(out,
 		"[", "]", "<", ">", "/", ":", ".", ",", "-", "=", "?", "!", "@", "#", "$", "%",
-		"up", "down", "left", "right", "enter", "esc", "tab", " ", "ctrl+c",
+		"up", "down", "left", "right", "enter", "esc", "tab", "home", "end", " ", "ctrl+c",
 	)
 	return out
 }
@@ -617,6 +627,76 @@ func TestShiftTabWalksBackWhatTabWalks(t *testing.T) {
 	}
 }
 
+// Home and end are the first and the last place the selection rests: what a hand
+// reaches for on a dashboard longer than the screen, where the last tile was one
+// arrow per row away. They answer from the search bar as tab does, scroll the
+// window to the tile they select, and are no letters of a query, so the box that
+// holds the keyboard leaves them alone.
+func TestHomeAndEndSelectTheFirstAndTheLastTile(t *testing.T) {
+	m, _ := realModel(t, 60, 24)
+	step := func(m Model, code rune) Model {
+		out, _ := m.Update(tea.KeyPressMsg{Code: code})
+		return out.(Model)
+	}
+	if m.selected != 0 || len(m.tiles) < 5 {
+		t.Fatalf("the test needs the cold start over several tiles: selected %d of %d", m.selected, len(m.tiles))
+	}
+	if rows, fit := m.dashRows(), m.dashRowsVisible(); rows <= fit {
+		t.Fatalf("all %d rows are on screen, so nothing here scrolls", rows)
+	}
+
+	last := step(m, tea.KeyEnd)
+	if want := len(m.tiles) - 1; last.selected != want {
+		t.Fatalf("end from the search bar selected %d, want the last tile, %d", last.selected, want)
+	}
+	if row, _ := last.selectedRow(); row < last.scroll || row >= last.scroll+last.dashRowsVisible() {
+		t.Errorf("the last tile is on row %d and the window shows the %d from row %d", row, last.dashRowsVisible(), last.scroll)
+	}
+	if again := step(last, tea.KeyEnd); again.selected != last.selected || again.scroll != last.scroll {
+		t.Errorf("end on the last tile moved the selection to %d, scroll %d", again.selected, again.scroll)
+	}
+
+	first := step(last, tea.KeyHome)
+	if first.selected != 1 || first.scroll != 0 {
+		t.Errorf("home from the last tile selected %d with scroll %d, want the first tile with the window at the top", first.selected, first.scroll)
+	}
+	middle := step(step(m, tea.KeyDown), tea.KeyDown)
+	if got := step(middle, tea.KeyEnd); got.selected != len(m.tiles)-1 {
+		t.Errorf("end from tile %d selected %d, want the last", middle.selected, got.selected)
+	}
+
+	typing := m
+	typing.searchEditing, typing.query = true, "ab"
+	for _, code := range []rune{tea.KeyHome, tea.KeyEnd} {
+		if got := step(typing, code); got.selected != 0 || got.query != "ab" || !got.searchEditing {
+			t.Errorf("a key that is no letter changed the search being typed: selected %d, query %q, editing %v", got.selected, got.query, got.searchEditing)
+		}
+	}
+}
+
+// On a dashboard that groups its tiles the places the selection rests include
+// the headers, and a folded section at the end holds no tile to rest on.
+func TestHomeAndEndRestOnTheHeadersOfSectionsAtTheEdges(t *testing.T) {
+	dash := config.Dashboard{Tiles: []config.Tile{
+		{ID: "alpha.status", Section: "databases"}, {ID: "beta.status", Section: "databases"}, {ID: "gamma.status", Section: "edge"},
+	}}
+	m := sectioned(t, dash, 120, 40)
+	step := func(m Model, code rune) Model {
+		out, _ := m.Update(tea.KeyPressMsg{Code: code})
+		return out.(Model)
+	}
+	if got := step(m, tea.KeyEnd); got.selected != len(m.tiles)-1 {
+		t.Errorf("end selected %d with every section open, want the last tile, %d", got.selected, len(m.tiles)-1)
+	}
+	folded := press(t, step(m, tea.KeyEnd), "Z")
+	if end := step(folded, tea.KeyEnd); end.selected != -1 || end.header != "edge" {
+		t.Errorf("end with every section folded rests on tile %d, header %q, want the header of the last section", end.selected, end.header)
+	}
+	if home := step(folded, tea.KeyHome); home.selected != -1 || home.header != "databases" {
+		t.Errorf("home rests on tile %d, header %q, want the header of the first section", home.selected, home.header)
+	}
+}
+
 func press(t *testing.T, m Model, key string) Model {
 	t.Helper()
 	var msg tea.KeyPressMsg
@@ -646,6 +726,10 @@ func keyCodeFor(name string) rune {
 		return tea.KeyEscape
 	case "tab":
 		return tea.KeyTab
+	case "home":
+		return tea.KeyHome
+	case "end":
+		return tea.KeyEnd
 	}
 	return 0
 }
