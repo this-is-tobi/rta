@@ -732,12 +732,28 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 		shieldedHeaders[i] = shield(h)
 	}
 
+	// A rule between the rows when any cell has more than one line.
+	//
+	// A grid draws no line between rows, so the second line of a cell is the
+	// first line of nothing else only by the blank cells beside it, and in a
+	// listing of descriptions or notes a person reads "thing" under a row's
+	// blank key as a row of its own. Rules put the lines inside the row they
+	// belong to. The alternative, a mark in place of the break, would turn
+	// `rta grant roles`, which lists one grant per line of a role's cell on
+	// purpose ("every line of each"), into a run of text wrapped inside it.
+	// Left off for a table with none, which keeps the compact grid every
+	// listing has.
+	multiline := slices.ContainsFunc(rows, func(row []string) bool {
+		return slices.ContainsFunc(row, func(cell string) bool { return strings.Contains(cell, "\n") })
+	})
+
 	// Tables are rebuilt per attempt: lipgloss tables memoize layout, so a
 	// width change on a rendered instance is unreliable.
 	build := func(width int) string {
 		tbl := table.New().
 			Border(st.glyphs.border).
 			BorderStyle(st.border).
+			BorderRow(multiline).
 			Headers(shieldedHeaders...).
 			Rows(display...).
 			StyleFunc(func(row, col int) lipgloss.Style {
