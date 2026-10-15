@@ -75,8 +75,9 @@ const (
 	// the declared type or its options cannot hold. It is the registry's own
 	// check at load time, so a plugin failing it does not load, and no Skip
 	// waives it. Its notes, which a Skip does waive, say when a search keyword
-	// adds nothing and when a capability offered to agents has an input only a
-	// person at a terminal can give.
+	// adds nothing, when a capability offered to agents has an input only a
+	// person at a terminal can give, and when a capability that is done again
+	// each time it is called declares that running it again changes nothing.
 	RuleDeclaration Rule = "declaration"
 	// RuleViews: every view a capability returns survives the JSON encoding
 	// every non-terminal surface uses.
@@ -221,6 +222,7 @@ func checkAll(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[st
 	checkVerbs(t, p, cfg)
 	checkKeywords(t, p, cfg)
 	checkReach(t, p, cfg)
+	checkRepeats(t, p, cfg)
 	checkSpelling(t, p, cfg)
 	checkWording(t, p, cfg)
 	if cfg.source != "" {

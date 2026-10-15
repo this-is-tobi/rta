@@ -374,6 +374,45 @@ func checkReach(t reporter, p plugin.Plugin, cfg config) {
 	}
 }
 
+// repeatVerbs are last ID segments for an act that is done again each time it
+// is called: restarting a service restarts it again, a request is a new one,
+// and rotating a credential issues another. A capability that ends in one and
+// declares Idempotent has told an MCP client that a retry is free, and the
+// first time the retry is a second restart it was wrong.
+//
+// Drawn from what the catalogue uses, and then cut by it. `renew` and
+// `restore` read as the same kind of verb and are not in the list: rta's own
+// grant.renew extends a grant to a fixed deadline and keys.restore refuses to
+// write over a key it already wrote, so each is idempotent as declared and a
+// note on either would have been wrong about rta.
+var repeatVerbs = []string{"reload", "request", "restart", "retry", "rotate"}
+
+// checkRepeats says when a capability that does something again each time it
+// is called claims that running it again changes nothing more.
+//
+// Idempotent is the claim the verb contradicts, and only an author can say
+// whether this once it holds: a reload that is a no-op when nothing changed is
+// idempotent in a way a restart is not. So a note and never a failure, which
+// the author waives for that capability with Skip and a reason that stays on
+// the record. A Read is left alone, since it changes nothing to repeat.
+func checkRepeats(t reporter, p plugin.Plugin, cfg config) {
+	t.Helper()
+
+	for _, c := range p.Capabilities {
+		if !c.Idempotent || c.Safety == plugin.Read || cfg.skipped(RuleDeclaration, c.ID) {
+			continue
+		}
+		words := c.Words()
+		if verb := words[len(words)-1]; slices.Contains(repeatVerbs, verb) {
+			t.Logf("sdktest: %s: %s is declared Idempotent, and %q is an act that is done again each time it "+
+				"is called. Idempotent tells an MCP client that a retry changes nothing more, so drop it unless "+
+				"running this twice really is the same as once; then waive this note with "+
+				"sdktest.Skip(sdktest.RuleDeclaration, %q, why), and say why a repeat is a no-op",
+				RuleDeclaration, c.ID, verb, c.ID)
+		}
+	}
+}
+
 // wordsOf splits text into the lowercase words search matches by.
 func wordsOf(text string) []string {
 	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
