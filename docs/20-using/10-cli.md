@@ -181,6 +181,7 @@ rta explain sys.cpu      # one, in full
 ```
 
 ```
+CARD ──────────────────────────────────────────────────────────────────────
 id           sys.cpu
 summary      Show CPU model, core count and current usage
 safety       read
@@ -192,7 +193,16 @@ input:cores  bool, from config plugins.sys.cpu.cores — per-core usage as a bar
 config file  ~/.config/rta/config.yaml
 set a key    rta config set plugins.sys.cpu.cores true
 dashboard    a tile when added (`rta dashboard add sys.cpu`, or + on it in the TUI), re-run every few seconds; the automatic dashboard shows sys.overview for this plugin
+
+INPUTS ────────────────────────────────────────────────────────────────────
+╭───────┬──────┬──────────┬─────────┬─────┬─────┬─────────┬───────────┬────────────┬───────┬────────┬───────────────────────────────╮
+│ NAME  │ TYPE │ REQUIRED │ DEFAULT │ MIN │ MAX │ OPTIONS │ CONFIG    │ POSITIONAL │ LOCAL │ SECRET │ HELP                          │
+├───────┼──────┼──────────┼─────────┼─────┼─────┼─────────┼───────────┼────────────┼───────┼────────┼───────────────────────────────┤
+│ cores │ bool │          │         │     │     │         │ cpu.cores │            │       │        │ per-core usage as a bar chart │
+╰───────┴──────┴──────────┴─────────┴─────┴─────┴─────────┴───────────┴────────────┴───────┴────────┴───────────────────────────────╯
 ```
+
+The page is the card and, under it, its inputs as a table, so the type, default, range, options and config key of each are cells and not a sentence to take apart: `rta explain git.log -o json | jq '.items[1].view.rows[]'` has a row per input, with `Required`, `Positional`, `Local` and `Secret` as `true` or blank. On a terminal too narrow for twelve columns the table is drawn as one record per input, with the blank cells left out. The card keeps the sentence as well, since it also says what no column holds: that an input is read from a pipe, which variable it comes from, and what a profile's tunnel fills.
 
 A capability that needs a grant over MCP says so on its card, with the command that issues it — `rta explain kv.get` has a `grant required (mcp)` row — and an input an agent may not give is marked `local (never offered to MCP callers)`.
 

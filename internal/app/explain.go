@@ -98,7 +98,82 @@ func catalogView(capabilities []plugin.Capability) view.View {
 	return t
 }
 
+// cardView is the page `rta explain <capability>` answers with: the card, and
+// under it the same inputs as data.
+//
+// The card says what an input is in a sentence — "int, default 20, a value from
+// 1 to 500 — how many to show" — which is what a person reads and what a
+// script has to take apart: the type, the default, the range and the options
+// were reachable from `-o json` only inside that string. The table carries
+// them as cells, a shape every format already writes, so `jq` reads
+// `.items[1].view.rows` and an agent reads the same rows over the wire. The
+// sentence stays: it also says what no column holds (piped, widens, which
+// variable, which tunnel field) and is the shorter read for a person.
 func cardView(reg *registry.Registry, c plugin.Capability) view.View {
+	return view.Sections{Items: []view.Section{
+		{ID: "card", Title: "Card", View: cardOf(reg, c)},
+		{ID: "inputs", Title: "Inputs", View: inputsTable(c)},
+	}}
+}
+
+// inputsTable is a capability's inputs as one row each, in the order it
+// declares them, and the `--detail` switch the host adds to a capability that
+// has a detailed view.
+//
+// The booleans are "true" or blank, so that a person reading the rows as
+// records — which is what a narrow terminal gets — meets the facts that are
+// there and not a column of "false"; a program reads blank as false. A bound is
+// the declared number, or the duration as the plugin spelled it, never the
+// sentence "from 1 to 500" the card writes. The config column is the key and,
+// as on the card, never the value: what an operator has configured is theirs.
+func inputsTable(c plugin.Capability) view.Table {
+	t := view.Table{
+		Columns: []view.Column{
+			{Name: "Name"}, {Name: "Type"}, {Name: "Required"}, {Name: "Default"}, {Name: "Min"}, {Name: "Max"},
+			{Name: "Options"}, {Name: "Config"}, {Name: "Positional"}, {Name: "Local"}, {Name: "Secret"}, {Name: "Help"},
+		},
+		Empty: "takes no inputs",
+	}
+	flag := func(on bool) string {
+		if on {
+			return "true"
+		}
+		return ""
+	}
+	for _, f := range c.Inputs {
+		def := ""
+		if f.Default != nil && fmt.Sprint(f.Default) != "" {
+			def = fmt.Sprint(f.Default)
+		}
+		t.Rows = append(t.Rows, []string{
+			f.Name, string(f.Type), flag(f.Required), def, boundText(f.Min), boundText(f.Max),
+			strings.Join(f.Options, "|"), f.Config, flag(f.Positional), flag(f.Local),
+			flag(f.Type == plugin.Secret || f.Type == plugin.SecretSlice), f.Help,
+		})
+	}
+	if c.Detailed {
+		t.Rows = append(t.Rows, []string{"detail", string(plugin.Bool), "", "false", "", "", "", "", "", "", "",
+			"return the full detailed view instead of the compact summary"})
+	}
+	t.Total = len(t.Rows)
+	return t
+}
+
+// boundText is a declared bound as a cell: a number as a person types it, a
+// duration as it was written, and nothing for a bound that is not declared.
+func boundText(bound any) string {
+	switch b := bound.(type) {
+	case nil:
+		return ""
+	case string:
+		return b
+	}
+	return plugin.NumberText(bound)
+}
+
+// cardOf is the capability's card as pairs, which is also what the plugin
+// documentation reads (docCard) without the table beside it.
+func cardOf(reg *registry.Registry, c plugin.Capability) view.KeyValue {
 	pairs := []view.Pair{
 		{Key: "id", Value: c.ID},
 		{Key: "summary", Value: c.Summary},

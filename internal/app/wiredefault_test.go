@@ -54,10 +54,7 @@ func TestTheCardSaysNoDefaultForAnEmptyOne(t *testing.T) {
 	if err := reg.Register(plugin.Plugin{Name: "wire", Summary: "wire", Capabilities: []plugin.Capability{c}}); err != nil {
 		t.Fatal(err)
 	}
-	card, ok := cardView(reg, c).(view.KeyValue)
-	if !ok {
-		t.Fatal("the card is not key-value pairs")
-	}
+	card := cardOf(reg, c)
 	if got := pairValue(card, "input:cert"); strings.Contains(got, "default") {
 		t.Errorf("an empty default is shown: %q", got)
 	}

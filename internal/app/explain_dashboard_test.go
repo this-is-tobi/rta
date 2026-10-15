@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/internal/render/tui"
-	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The card says what the landing screen does with a capability: whether it
@@ -20,10 +19,7 @@ func TestExplainCardSaysWhatTheDashboardDoesWithIt(t *testing.T) {
 		if !ok {
 			t.Fatalf("no capability %s", id)
 		}
-		kv, ok := cardView(reg, c).(view.KeyValue)
-		if !ok {
-			t.Fatalf("%s: card is not key-value pairs", id)
-		}
+		kv := cardOf(reg, c)
 		return pairValue(kv, "dashboard")
 	}
 
@@ -89,10 +85,7 @@ func TestATileIsToldToStateAPipedInput(t *testing.T) {
 	if !ok {
 		t.Fatal("no debug.ansi")
 	}
-	kv, ok := cardView(reg, c).(view.KeyValue)
-	if !ok {
-		t.Fatal("the card is not key-value pairs")
-	}
+	kv := cardOf(reg, c)
 	if got := pairValue(kv, "dashboard"); !strings.Contains(got, "`rta dashboard add debug.ansi --set input=…`") {
 		t.Errorf("dashboard row = %q, want the add it takes", got)
 	}

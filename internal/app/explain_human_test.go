@@ -3,8 +3,6 @@ package app
 import (
 	"strings"
 	"testing"
-
-	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // A capability for the person at the terminal is never a tool, and its
@@ -20,10 +18,7 @@ func TestAHumanOnlyCardNamesNoGrant(t *testing.T) {
 			continue
 		}
 		humanOnly++
-		card, ok := cardView(reg, c).(view.KeyValue)
-		if !ok {
-			t.Fatalf("%s: card is %s, want key-value pairs", c.ID, view.TypeOf(cardView(reg, c)))
-		}
+		card := cardOf(reg, c)
 		if got := pairValue(card, "grant required (mcp)"); got != "" {
 			t.Errorf("%s: grant required = %q on a capability that is never a tool", c.ID, got)
 		}
