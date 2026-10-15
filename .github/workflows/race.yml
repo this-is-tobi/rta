@@ -1,0 +1,56 @@
+# The race detector on every machine, every night.
+#
+# A pull request runs it on one runner (ci.yml: test-race-tui and
+# test-race-rest) and the plain suite on the other two. A data race is the same
+# race on every kernel, and three copies of the detector were what the pipeline
+# waited for, but the scheduler of macOS or of arm64 Linux can still walk into
+# one the first machine never does, and a runner image that moves under the
+# suite changes nothing in the tree and can still break it. This asks both
+# questions, with the detector, on all three machines, off the path anybody
+# waits on.
+#
+# It is a signal and not a gate: nothing waits for it, so a release can be cut
+# while it is red. A red run is read before a release pull request is merged
+# (`gh run list --workflow race.yml --limit 1`).
+#
+# It also runs for a pull request that edits this file and for nobody else,
+# because a workflow that starts only on a schedule cannot be tried before it is
+# merged, and one that fails to start leaves no job and no log to read (the
+# comment on scan.yml's permissions says how that looks). A scheduled run only
+# ever starts from the default branch.
+#
+# Caching is off: a job that runs the suite on main must not leave a cache for
+# the release job, which holds the credentials a test run does not, to restore.
+name: Race
+
+on:
+  pull_request:
+    paths:
+    - .github/workflows/race.yml
+  schedule:
+  - cron: "41 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: race-${{ github.ref }}
+  cancel-in-progress: true
+
+# Every job below narrows this further; nothing here writes.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Race detector
+    uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
+    permissions:
+      contents: read
+    with:
+      # `make hard`, as the pipeline ran it before it was split: no cached
+      # results, no ordering luck, no data races, on each of the three machines
+      # the suite reads.
+      RACE: true
+      SHUFFLE: true
+      COUNT: "1"
+      CACHE: false
+      RUNNERS: '[["ubuntu-latest"], ["macos-latest"], ["ubuntu-24.04-arm"]]'
