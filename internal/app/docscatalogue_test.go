@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -261,5 +262,49 @@ func TestTheFirstPartyCatalogueHoldsEveryPluginTheReadmeNames(t *testing.T) {
 	}
 	if len(have) != len(want) {
 		t.Errorf("%s holds %d plugins, the README names %d", firstPartyCatalogue, len(have), len(want))
+	}
+}
+
+// The inputs page lists the short letters the first-party plugins declare, and
+// what each stands for in which plugin. The table is made from the catalogue,
+// so a letter a plugin adds, moves or drops fails here when the catalogue is
+// regenerated, and a table edited by hand fails the same way. It holds the page
+// to the plugins and nothing else: that one letter means two inputs in two
+// plugins is a fact the page states and not a fault, since each plugin follows
+// the tool its users already type.
+func TestTheShortLettersTheInputsPageListsAreTheOnesThePluginsDeclare(t *testing.T) {
+	want := map[string]bool{}
+	for _, p := range firstPartyPlugins(t) {
+		for _, c := range p.Capabilities {
+			for _, f := range c.Inputs {
+				if f.Short != "" {
+					want["-"+f.Short+" "+f.Name+" "+p.Name] = true
+				}
+			}
+		}
+	}
+	if len(want) == 0 {
+		t.Fatalf("%s declares no short letter, which cannot be right — the check reads nothing", firstPartyCatalogue)
+	}
+
+	row := regexp.MustCompile("^\\| `(-[A-Za-z])` \\| `([a-z0-9-]+)` \\| (.+) \\|$")
+	name := regexp.MustCompile("`([a-z0-9-]+)`")
+	got := map[string]bool{}
+	for _, line := range strings.Split(readDoc(t, repoRoot(t), "docs/40-plugins/21-declaring-inputs.md"), "\n") {
+		if m := row.FindStringSubmatch(line); m != nil {
+			for _, plugin := range name.FindAllStringSubmatch(m[3], -1) {
+				got[m[1]+" "+m[2]+" "+plugin[1]] = true
+			}
+		}
+	}
+	for k := range want {
+		if !got[k] {
+			t.Errorf("the plugins declare %q and the table of short letters does not list it; the table is made from %s", k, firstPartyCatalogue)
+		}
+	}
+	for k := range got {
+		if !want[k] {
+			t.Errorf("the table of short letters lists %q and no plugin declares it", k)
+		}
 	}
 }

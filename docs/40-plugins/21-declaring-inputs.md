@@ -59,6 +59,40 @@ plugins:
 
 **The scope is a flag, the record is the argument.** A config-backed input cannot be positional — arguments bind left to right, so a config-filled first argument would change what a typed one means — which is why `--cluster`, `--namespace` and `--bucket` are flags with keys while the pod, the object and the backup stay positional. kubectl draws the same line with `-n`.
 
+**The letters follow each product's own tool.** The first-party plugins give an input a short letter where the tool a person already types has one: kubectl's `-n` for a namespace, psql's `-U`, `-p` and `-d`, mysql's `-u`, `-P` and `-D`. So a letter does not mean one thing across plugins — `-n` is `limit` in most of them and `namespace` in `kube` and `cnpg`, and `-d` is a database in `pg` and a depth in four others — and nothing holds one plugin's letters to another's: `rta <plugin> <capability> --help` says what a letter is for the one in front of you. Every letter the first-party plugins declare, and the input it stands for there:
+
+| Letter | Input | Plugins |
+| --- | --- | --- |
+| `-A` | `all-namespaces` | `cnpg`, `kube` |
+| `-a` | `all` | `docker` |
+| `-b` | `bucket` | `s3` |
+| `-c` | `clean` | `pg` |
+| `-c` | `client` | `keycloak` |
+| `-c` | `cluster` | `cnpg` |
+| `-c` | `collection` | `qdrant` |
+| `-c` | `columns` | `pg` |
+| `-D` | `database` | `mariadb`, `mysql` |
+| `-d` | `database` | `pg` |
+| `-d` | `depth` | `etcd`, `redis`, `s3`, `vault` |
+| `-e` | `exact` | `qdrant` |
+| `-F` | `format` | `pg` |
+| `-f` | `out` | `pg` |
+| `-j` | `jobs` | `pg` |
+| `-n` | `limit` | `etcd`, `keycloak`, `mariadb`, `mysql`, `pg`, `qdrant`, `redis`, `s3` |
+| `-n` | `namespace` | `cnpg`, `kube` |
+| `-O` | `no-owner` | `pg` |
+| `-P` | `port` | `mariadb`, `mysql` |
+| `-p` | `port` | `pg` |
+| `-p` | `prefix` | `s3` |
+| `-r` | `realm` | `keycloak` |
+| `-r` | `recursive` | `s3` |
+| `-s` | `schema` | `pg` |
+| `-t` | `table` | `mariadb`, `mysql` |
+| `-t` | `ttl` | `s3` |
+| `-t` | `type` | `keycloak` |
+| `-U` | `user` | `pg` |
+| `-u` | `user` | `keycloak`, `mariadb`, `mysql` |
+
 ## A connection a profile can fill
 
 A plugin that talks to a service has a connection — where it is, and what authenticates to it — and an operator states one once, in a [profile](../20-using/40-profiles.md), instead of retyping it on every call. There is nothing profile-specific for you to write: a profile fills inputs you already declared, by rules rta applies to the declaration, and `rta explain <capability>` shows the config key each fillable input answers to.
