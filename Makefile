@@ -231,11 +231,40 @@ bump-index: ## Pin Dockerfile.full's official index at REF (a commit of rta-plug
 test: ## Run the root module's tests
 	go test ./...
 
-# What CI runs, and what a change to shared state should be checked against:
-# no cached results, no ordering luck, no data races. All three have caught
-# something real.
+# What a change to shared state should be checked against: no cached results,
+# no ordering luck, no data races. All three have caught something real. CI
+# runs this pass as the two halves below.
+HARD_FLAGS := -count=1 -race -shuffle=on
+
 hard: ## Run them with no cache, shuffled, under the race detector
-	go test -count=1 -race -shuffle=on ./...
+	go test $(HARD_FLAGS) ./...
+
+# `hard`, in the two pieces CI runs on two machines at once. One package, the
+# terminal screens' (internal/render/tui), is the longest by a wide margin:
+# hundreds of in-process terminal programs, one after the other, and raced it is
+# expected to take about as long as the rest of the module does on a runner of
+# its own. `hard-rest` takes the others by what is left, so the two are a
+# partition of the module whatever is added to it and nothing can fall between
+# them. If the package named here is renamed, `hard-tui` fails and `hard-rest`
+# runs everything, which is slower and still complete.
+HARD_TUI := ./internal/render/tui
+
+hard-tui: ## `hard` over the one package that takes longest
+	go test $(HARD_FLAGS) $(HARD_TUI)
+
+# -e keeps a package that does not load in the list, so that `go test` fails on
+# it by name instead of the list quietly leaving it out; an empty list is an
+# error and not a pass.
+hard-rest: ## `hard` over every other package
+	pkgs=$$(go list -e ./... | grep -v -x -F "$$(go list -e $(HARD_TUI))"); \
+	test -n "$$pkgs" && go test $(HARD_FLAGS) $$pkgs
+
+# The passes CI makes beside the race pass, on the machines that read the host
+# and for the coverage profile: no race detector, and the slowhost tag for the
+# wider bounds a busy machine needs on starting a plugin and on waiting for a
+# lock (internal/pluginhost/slow.go and internal/filelock/slow.go say why).
+test-plain: ## The suite as CI runs it on macOS and arm64 Linux, with no race detector
+	go test -count=1 -shuffle=on -tags slowhost ./...
 
 vet: ## go vet the root module
 	go vet ./...
@@ -301,7 +330,7 @@ fmt-check: ## Fail if anything is unformatted — `make fmt` fixes it
 # the same tests. The end-to-end binary in cmd/rta is built without -race in
 # either pass, and gets the same bounds from the slowhost tag.
 coverage: ## Coverage across the whole root module, in the one race-detector pass CI makes
-	go test -count=1 -race -shuffle=on -coverpkg=./... -coverprofile=coverage.out ./...
+	go test $(HARD_FLAGS) -coverpkg=./... -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out | tail -1
 
 coverage-html: coverage ## ... and write coverage.html to open in a browser
@@ -430,7 +459,7 @@ clean: ## Remove build output and coverage artifacts
 # make would find it up to date and report success for a target that ran
 # nothing.
 .PHONY: help setup download tidy fmt build install \
-	cross snapshot size size-check bump-index test hard vet lint check \
+	cross snapshot size size-check bump-index test hard hard-tui hard-rest test-plain vet lint check \
 	fmt-check coverage coverage-html ci proto proto-lint proto-check \
 	chart-schema chart-schema-check chart-lint chart-docs \
 	clean
