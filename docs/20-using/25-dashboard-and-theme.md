@@ -257,4 +257,4 @@ The colours that are text — `primary`, `accent`, `muted`, `faint` and `label` 
 
 ## Next
 
-[Seeing the shape of things](./30-trees.md) — mapping a directory, a bucket, a Vault mount or an etcd keyspace in one call.
+[Config examples](./26-config-examples.md) — a cluster and its databases, the services reached over the network, roles and a dashboard, one need at a time.

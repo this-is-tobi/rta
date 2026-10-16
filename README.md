@@ -52,6 +52,7 @@ Ask Claude Code to add a note and the refusal carries the exact line that would 
 - [The TUI](./docs/20-using/20-tui.md) *- The dashboard, answering agents, the catalogue, forms and confirmations*
 - [Your config file](./docs/20-using/22-your-config-file.md) *- Where it lives, `rta config set`, `edit` and `check`, and a first file worth having*
 - [Dashboard and theme](./docs/20-using/25-dashboard-and-theme.md) *- Stating the dashboard in the config file, and the colours*
+- [Config examples](./docs/20-using/26-config-examples.md) *- A cluster and its databases, remote services, roles and a dashboard, to copy and change*
 - [Seeing the shape of things](./docs/20-using/30-trees.md) *- Mapping a directory, a bucket, a Vault mount or an etcd keyspace in one call*
 - [Profiles](./docs/20-using/40-profiles.md) *- Naming an environment once and pointing every plugin at it*
 - [Profiles in depth](./docs/20-using/41-profiles-in-depth.md) *- Several connections to one plugin, a profile from a script, types, and editor completion*
