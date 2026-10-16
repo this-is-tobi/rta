@@ -60,7 +60,7 @@ const starterExamples = `#
 # output: json                  # the default --output: pretty, json, yaml, csv or md
 #
 # dashboard:
-#   columns: 2                  # the grid's width; left out, it follows the terminal
+#   width: 6                    # how wide a tile is, in twelfths of the screen: 6 is half; left out, it follows the terminal
 #   hidden: [gen.overview]      # tiles to leave off the screen
 #
 # theme:

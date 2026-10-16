@@ -201,6 +201,11 @@ func unknownKey(pair *ast.MappingValueNode, s *shape, path, full string) Finding
 		f.Hint = nestedForm(pair, path)
 		return f
 	}
+	if hint, retired := retiredKey(key, path); retired {
+		f.Reason = "is no longer a key"
+		f.Hint = hint
+		return f
+	}
 	if guess := near.Word(key, s.names); guess != "" {
 		f.Hint = fmt.Sprintf("did you mean %q?", guess)
 		return f
@@ -239,7 +244,7 @@ func nestedForm(pair *ast.MappingValueNode, path string) string {
 }
 
 // keyHomes maps a key to the one block that has it, for a key written in the
-// wrong one: `columns:` at the top of the file belongs under `dashboard:`.
+// wrong one: `columns:` at the top of the file once belonged under `dashboard:`.
 // Only the blocks that are mappings of fixed keys count; the name a key has in
 // two of them is no answer.
 var keyHomes = sync.OnceValue(func() map[string]string {
@@ -267,7 +272,7 @@ var keyHomes = sync.OnceValue(func() map[string]string {
 })
 
 // KeyLines is the line each key of the text is written on, by its dotted path:
-// output, dashboard.columns, plugins.http.timeout, and dashboard.add[1].id for
+// output, dashboard.width, plugins.http.timeout, and dashboard.add[1].id for
 // a key inside a list. A key written flat, with a dot in its name, has the
 // path it spells. What a reader that keeps no position of its own — the
 // palette, a plugin's declaration — names a problem by, to be given a line.
@@ -301,4 +306,25 @@ func KeyLines(data []byte) map[string]int {
 	}
 	walk(file.Docs[0].Body, "")
 	return lines
+}
+
+// retiredKey is the answer for a dashboard key the grid replaced. `columns:` and
+// `span:` counted columns of a grid whose width came from the terminal, so the
+// same number meant two tiles to a row on a laptop and four on a monitor; the
+// grid is twelve tracks wide and `width:` is a fraction of the screen. The words
+// are not renamed in place because the old number would then have been read, with
+// no error, as something else: `span: 2` was two of four columns and is two
+// twelfths. Refusing the old key says so instead, with the number to write.
+func retiredKey(key, path string) (string, bool) {
+	if path != "" && !strings.Contains(path, "dashboard") {
+		return "", false
+	}
+	switch key {
+	case "columns":
+		return "`width:` replaces it, in twelfths of the screen: `columns: 2` is `width: 6`, `columns: 3` is `width: 4`", true
+	case "span":
+		return "`width:` replaces it, in twelfths of the screen and not in columns the terminal sized: " +
+			"half is `width: 6`, a third `width: 4`, the whole row `width: 12`", true
+	}
+	return "", false
 }

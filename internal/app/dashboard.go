@@ -180,7 +180,8 @@ func dashboardTable(reg *registry.Registry, cfg config.Config, v string) view.Vi
 func sectionsTable(reg *registry.Registry, cfg config.Config) view.View {
 	t := view.Table{Columns: []view.Column{
 		{Name: "View"}, {Name: "Section"}, {Name: "Tiles", Kind: view.KindNumber},
-		{Name: "Starts"}, {Name: "Columns", Kind: view.KindNumber}, {Name: "Refresh"}, {Name: "File"},
+		{Name: "Starts"}, {Name: "Width", Kind: view.KindNumber}, {Name: "Height", Kind: view.KindNumber},
+		{Name: "Refresh"}, {Name: "File"},
 	}}
 	t.Empty = "No section is stated or drawn — `rta dashboard add <capability> --section <name>` puts a tile in one."
 	for _, name := range append([]string{config.DefaultView}, cfg.ViewNames()...) {
@@ -206,14 +207,17 @@ func sectionsTable(reg *registry.Registry, cfg config.Config) view.View {
 			}
 		}
 		for _, section := range drawn {
-			starts, columns := "open", ""
+			starts, width, height := "open", "", ""
 			if stated[section].Collapsed {
 				starts = "folded"
 			}
-			if n := stated[section].Columns; n > 0 {
-				columns = strconv.Itoa(n)
+			if n := stated[section].Width; n > 0 {
+				width = strconv.Itoa(n)
 			}
-			t.Rows = append(t.Rows, []string{nameCell(name), nameCell(section), strconv.Itoa(counts[section]), starts, columns,
+			if n := stated[section].Height; n > 0 {
+				height = strconv.Itoa(n)
+			}
+			t.Rows = append(t.Rows, []string{nameCell(name), nameCell(section), strconv.Itoa(counts[section]), starts, width, height,
 				stated[section].Refresh, configFileName(file)})
 		}
 	}
@@ -278,7 +282,8 @@ func dashboardAddCommand(reg *registry.Registry, render renderFn, opts *globalOp
 	// stray "80", refused as not a key=value pair, and no value with a comma
 	// could be stated at all. A list-shaped input is one --set per element.
 	cmd.Flags().StringArray("set", nil, "an input for the run, `key=value`; repeat for several")
-	cmd.Flags().Int("span", 0, "grid columns the tile occupies; 0 leaves it to the capability")
+	cmd.Flags().Int("width", 0, "how wide the tile is, in twelfths of the screen: 6 is half, 4 a third; 0 leaves it to its section, the screen and the terminal")
+	cmd.Flags().Int("height", 0, "how tall the tile's box is, in lines; 0 leaves it to what the tile has to say")
 	cmd.Flags().String("section", "", "draw the tile in this section, under a header that folds; left out, in none")
 	cmd.Flags().String("refresh", "", "how often the tile is re-run, such as 30s or 5m; left out, its section's, then the screen's, then the capability's")
 	addViewFlag(cmd, "put the tile on this view, creating it when it is new")
@@ -438,10 +443,16 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 	if verr := tileCanRunUnasked(c, with, ref != ""); verr != nil {
 		return nil, verr
 	}
-	span, _ := cmd.Flags().GetInt("span")
-	if span < 0 {
-		return nil, view.Errorf("core.dashboard.span", "--span %d is not a number of columns", span).
-			WithHint("0 leaves the width to the capability")
+	width, _ := cmd.Flags().GetInt("width")
+	if width != 0 && (width < 1 || width > config.GridTracks) {
+		return nil, view.Errorf("core.dashboard.width", "--width %d is not a width: the screen is %d wide", width, config.GridTracks).
+			WithHint("a whole number of twelfths — 6 is half the screen, 4 a third, 12 the whole row; 0 leaves it to the terminal")
+	}
+	height, _ := cmd.Flags().GetInt("height")
+	if height != 0 && (height < config.MinHeight || height > config.MaxHeight) {
+		return nil, view.Errorf("core.dashboard.height", "--height %d is not a height: a tile is %d to %d lines tall",
+			height, config.MinHeight, config.MaxHeight).
+			WithHint("the lines of the tile's box, borders included; 0 leaves it to what the tile has to say")
 	}
 	section := strings.TrimSpace(mustString(cmd, "section"))
 	if section != "" && !config.ValidSectionName(section) {
@@ -453,7 +464,7 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 	if verr != nil {
 		return nil, verr
 	}
-	entry := config.Tile{ID: id, With: with, Profile: ref, Span: span, Section: section, Refresh: refresh}
+	entry := config.Tile{ID: id, With: with, Profile: ref, Width: width, Height: height, Section: section, Refresh: refresh}
 	// An entry with the key of an automatic tile is that tile (tui.joinTiles):
 	// the one way to give the automatic sys tile a width, an input or a section.
 	// One that says nothing the automatic tile does not already is refused
@@ -465,8 +476,8 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 			automatic = automatic || (p.ID == id && p.Source == "automatic")
 		}
 	}
-	if automatic && len(with) == 0 && span == 0 && section == "" && refresh == "" {
-		hint := "`--profile <name>` pins a second one to a connection; `--set`, `--span`, `--section` and `--refresh` say how this one runs"
+	if automatic && len(with) == 0 && width == 0 && height == 0 && section == "" && refresh == "" {
+		hint := "`--profile <name>` pins a second one to a connection; `--set`, `--width`, `--height`, `--section` and `--refresh` say how this one runs"
 		if slices.Contains(blockOf(cfg, drawn).Hidden, id) {
 			hint = "it is hidden — `rta dashboard unhide " + id + inViewFlag(drawn) + "` brings it back"
 		}

@@ -17,7 +17,7 @@ func TestAddArgsSpellsTheWholeEntry(t *testing.T) {
 	}{
 		{Tile{ID: "sys.overview"}, "sys.overview"},
 		{Tile{ID: "kube.overview", Profile: "prod/edge"}, "kube.overview --profile prod/edge"},
-		{Tile{ID: "sys.overview", Span: 2, With: map[string]any{"cores": true}}, "sys.overview --span 2 --set cores=true"},
+		{Tile{ID: "sys.overview", Width: 6, With: map[string]any{"cores": true}}, "sys.overview --width 6 --set cores=true"},
 		{Tile{ID: "cert.expiry", With: map[string]any{"port": 8443, "host": "a.example"}},
 			"cert.expiry --set host=a.example --set port=8443"},
 		{Tile{ID: "eol.check", With: map[string]any{"product": []any{"nodejs", "go"}}},

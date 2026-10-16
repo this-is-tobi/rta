@@ -406,9 +406,8 @@ func TestTilesSharingARowMatchTheTallestOne(t *testing.T) {
 	if len(heights) != 1 || heights[0] != tileHeight {
 		t.Fatalf("heights = %v, want one row at the max %d, set by the tall tile", heights, tileHeight)
 	}
-	g := sm.grid()
-	shortPanel := renderTile(sm.tiles[1], g.tileW, heights[0], false, false)
-	tallPanel := renderTile(sm.tiles[2], g.tileW, heights[0], false, false)
+	shortPanel := renderTile(sm.tiles[1], sm.tileWidth(1), heights[0], false, false)
+	tallPanel := renderTile(sm.tiles[2], sm.tileWidth(2), heights[0], false, false)
 	shortLines, tallLines := strings.Count(shortPanel, "\n"), strings.Count(tallPanel, "\n")
 	if shortLines != tallLines {
 		t.Fatalf("row neighbors have different heights: short=%d tall=%d lines", shortLines, tallLines)
@@ -1044,7 +1043,7 @@ func TestClickingAnywhereOnAWideRowHitsThatTile(t *testing.T) {
 	heights := m.rowHeights()
 	wideRow, wideIdx := -1, -1
 	for r, row := range rows {
-		if len(row) == 1 && m.span(row[0]) == m.grid().cols {
+		if len(row) == 1 && m.span(row[0]) == config.GridTracks {
 			wideRow, wideIdx = r, row[0]
 		}
 	}

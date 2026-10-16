@@ -104,7 +104,7 @@ func TestConfigSetWritesAKeyHeldToWhatItTakes(t *testing.T) {
 		{"an output format", []string{"output", "json"}, "output: json"},
 		{"the long name of a format", []string{"output", "markdown"}, "output: md"},
 		{"a colour", []string{"theme.primary", "#7aa2f7"}, "primary: \"#7aa2f7\""},
-		{"a grid width", []string{"dashboard.columns", "3"}, "columns: 3"},
+		{"a grid width", []string{"dashboard.width", "3"}, "width: 3"},
 		{"a number a plugin declares", []string{"plugins.net.timeout", "20"}, "timeout: 20"},
 		{"a nested key", []string{"plugins.net.ping.count", "7"}, "ping:\n      count: 7"},
 		{"the capability spelling of a key", []string{"plugins.net.port.timeout", "5"}, "timeout: 5"},
@@ -158,8 +158,8 @@ func TestConfigSetRefusesWhatTheKeyDoesNotTake(t *testing.T) {
 		{"an output nothing renders", "core.config.set.option", []string{"output", "jsno"}, "rta config set output json"},
 		{"two values for one key", "core.config.set.arity", []string{"output", "json", "yaml"}, ""},
 		{"a colour that is not one", "core.config.set.color", []string{"theme.primary", "red"}, "'#D97757'"},
-		{"a width that is not a number", "core.config.set.type", []string{"dashboard.columns", "wide"}, ""},
-		{"a negative width", "core.config.set.type", []string{"dashboard.columns", "--", "-1"}, ""},
+		{"a width that is not a number", "core.config.set.type", []string{"dashboard.width", "wide"}, ""},
+		{"a negative width", "core.config.set.type", []string{"dashboard.width", "--", "-1"}, ""},
 		{"a word for an int", "core.config.set.type", []string{"plugins.net.timeout", "soon"}, "rta config set plugins.net.timeout"},
 		{"yes for a bool", "core.config.set.type", []string{"plugins.gen.password.symbols", "yes"}, "rta config set plugins.gen.password.symbols true"},
 		{"a value outside a closed set", "core.config.set.option", []string{"plugins.net.encoding", "rot13"}, ""},
@@ -197,9 +197,9 @@ func TestConfigSetNamesTheKeyItWasNearlyGivenWhenItIsNone(t *testing.T) {
 	reg := configRegistry(t)
 	for _, c := range []struct{ typed, want string }{
 		{"oputput", "`output`"},
-		{"columns", "`dashboard.columns`"},
+		{"width", "`dashboard.width`"},
 		{"primary", "`theme.primary`"},
-		{"dashboard.colums", "`dashboard.columns`"},
+		{"dashboard.widht", "`dashboard.width`"},
 		{"plugins.net.timout", "`plugins.net.timeout`"},
 		{"plugin.net.timeout", "`plugins.net.timeout`"},
 		{"plugins.nt.timeout", "`net`"},
@@ -294,8 +294,8 @@ func TestConfigSetOfTheDefaultLeavesTheKeyOut(t *testing.T) {
 	if strings.Contains(file, "output:") {
 		t.Errorf("the default was pinned as a key:\n%s", file)
 	}
-	_, _, file, _ = configRun(t, configRegistry(t), "", "config", "set", "dashboard.columns", "0")
-	if strings.Contains(file, "columns") {
+	_, _, file, _ = configRun(t, configRegistry(t), "", "config", "set", "dashboard.width", "0")
+	if strings.Contains(file, "width") {
 		t.Errorf("an automatic width was pinned:\n%s", file)
 	}
 }
@@ -362,11 +362,11 @@ func TestConfigUnsetOfAKeyThatIsNotThereIsNotAnError(t *testing.T) {
 
 func TestConfigGetPrintsTheBareValueForAScript(t *testing.T) {
 	reg := configRegistry(t)
-	text := "output: yaml\ndashboard:\n  hidden: [gen.overview, net.ping]\n  columns: 3\ntheme:\n  good: \"#00ff00\"\n" +
+	text := "output: yaml\ndashboard:\n  hidden: [gen.overview, net.ping]\n  width: 3\ntheme:\n  good: \"#00ff00\"\n" +
 		"plugins:\n  net:\n    timeout: 20\n    ping:\n      count: 7\nprofiles:\n  prod:\n    note: the real one\n"
 	for key, want := range map[string]string{
 		"output":                 "yaml\n",
-		"dashboard.columns":      "3\n",
+		"dashboard.width":        "3\n",
 		"dashboard.hidden":       "gen.overview\nnet.ping\n",
 		"theme.good":             "#00ff00\n",
 		"plugins.net.timeout":    "20\n",

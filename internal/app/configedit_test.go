@@ -98,7 +98,7 @@ func TestConfigEditReopensOnAFileThatDoesNotParseAndSavesTheFix(t *testing.T) {
 	opened := editing(t,
 		func(shown string) string { return shown + "dashboard: [unclosed\n" },
 		func(shown string) string {
-			return strings.Replace(shown, "dashboard: [unclosed", "dashboard:\n  columns: 2", 1)
+			return strings.Replace(shown, "dashboard: [unclosed", "dashboard:\n  width: 2", 1)
 		},
 	)
 	_, errOut, file, err := configRun(t, configRegistry(t), "output: json\n", "config", "edit", "-o", "pretty")
@@ -118,7 +118,7 @@ func TestConfigEditReopensOnAFileThatDoesNotParseAndSavesTheFix(t *testing.T) {
 	if strings.Contains(file, noteMark) {
 		t.Errorf("the note was saved:\n%s", file)
 	}
-	if !strings.Contains(file, "columns: 2") || !strings.Contains(file, "output: json") {
+	if !strings.Contains(file, "width: 2") || !strings.Contains(file, "output: json") {
 		t.Errorf("the fix was not saved:\n%s", file)
 	}
 }
@@ -162,15 +162,15 @@ func TestConfigEditCancelsWhenTheReopenedFileIsLeftAlone(t *testing.T) {
 // A key rta ignores does not stop a save: the file is valid, and it may be a
 // key from a newer rta. It is saved and named, with its line.
 func TestConfigEditSavesAKeyRtaIgnoresAndNamesIt(t *testing.T) {
-	editing(t, func(shown string) string { return shown + "dashboard:\n  colums: 3\n" })
+	editing(t, func(shown string) string { return shown + "dashboard:\n  widht: 3\n" })
 	out, errOut, file, err := configRun(t, configRegistry(t), "output: json\n", "config", "edit", "-o", "pretty")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, errOut)
 	}
-	if !strings.Contains(file, "colums: 3") {
+	if !strings.Contains(file, "widht: 3") {
 		t.Errorf("the file was not saved:\n%s", file)
 	}
-	for _, want := range []string{"dashboard.colums", `did you mean "columns"?`, "1 problem"} {
+	for _, want := range []string{"dashboard.widht", `did you mean "width"?`, "1 problem"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the receipt lacks %q:\n%s", want, out)
 		}
@@ -198,7 +198,7 @@ func TestConfigEditDoesNotSaveAnOutputNothingRenders(t *testing.T) {
 func TestConfigEditDoesNotOverwriteAWriteThatLandedWhileTheEditorWasOpen(t *testing.T) {
 	editing(t, func(shown string) string {
 		if err := config.Mutate(func(c config.Config) (config.Config, bool) {
-			c.Dashboard.Columns = 4
+			c.Dashboard.Width = 4
 			return c, true
 		}); err != nil {
 			t.Error(err)
@@ -209,7 +209,7 @@ func TestConfigEditDoesNotOverwriteAWriteThatLandedWhileTheEditorWasOpen(t *test
 	if err == nil || codeOf(t, errOut) != "config.conflict" || !strings.Contains(errOut, "changed while the editor was open") {
 		t.Fatalf("the edit was accepted over a concurrent write: %v\n%s", err, errOut)
 	}
-	if !strings.Contains(file, "columns: 4") || strings.Contains(file, "output: yaml") {
+	if !strings.Contains(file, "width: 4") || strings.Contains(file, "output: yaml") {
 		t.Errorf("the other writer's file was overwritten:\n%s", file)
 	}
 }

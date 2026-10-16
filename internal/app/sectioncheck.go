@@ -57,9 +57,7 @@ func sectionProblems(reg *registry.Registry, own, whole config.Config) []section
 
 func blockSectionProblems(reg *registry.Registry, prefix string, d config.Dashboard, whole config.Config) []sectionProblem {
 	var out []sectionProblem
-	if d.Columns < 0 {
-		out = append(out, sectionProblem{prefix + ".columns", notColumns(d.Columns)})
-	}
+	out = append(out, gridProblems(prefix, d)...)
 	out = append(out, refreshProblems(reg, prefix, d)...)
 	for _, list := range []struct {
 		key   string
@@ -80,9 +78,6 @@ func blockSectionProblems(reg *registry.Registry, prefix string, d config.Dashbo
 		case !names[name]:
 			out = append(out, sectionProblem{key, namesNoTile(name, names)})
 		}
-		if n := d.Sections[name].Columns; n < 0 {
-			out = append(out, sectionProblem{key + ".columns", notColumns(n)})
-		}
 	}
 	return out
 }
@@ -92,9 +87,45 @@ func notAName(name string) string {
 		"no space at either end", name, config.MaxSectionName)
 }
 
-func notColumns(n int) string {
-	return fmt.Sprintf("columns %d is not a number of columns, and is read as 0: it takes a whole number from 0, "+
-		"and 0 is the grid the rest of the screen is on", n)
+func notWidth(n int) string {
+	return fmt.Sprintf("width %d is not a width, and is read as 0: it takes a whole number of twelfths of the screen "+
+		"from 1 to %d — 6 is half, 4 a third, 12 the whole row — and 0 is each tile's own", n, config.GridTracks)
+}
+
+func notHeight(n int) string {
+	return fmt.Sprintf("height %d is not a height, and is read as 0: it takes the lines of a tile's box, from %d to %d, "+
+		"and 0 is what the tile has to say", n, config.MinHeight, config.MaxHeight)
+}
+
+// gridProblems is every `width:` and `height:` of one screen that is outside what
+// they take, at all three levels they are written at: the screen, a section, a
+// tile. The same two questions each time, since the keys are meant to read the same
+// wherever they stand. A value that is too wide for a narrow terminal is not one:
+// it is drawn as wide as the terminal allows, which is the terminal's to decide.
+func gridProblems(prefix string, d config.Dashboard) []sectionProblem {
+	var out []sectionProblem
+	check := func(key string, width, height int) {
+		if width != 0 && (width < 1 || width > config.GridTracks) {
+			out = append(out, sectionProblem{key + ".width", notWidth(width)})
+		}
+		if height != 0 && (height < config.MinHeight || height > config.MaxHeight) {
+			out = append(out, sectionProblem{key + ".height", notHeight(height)})
+		}
+	}
+	check(prefix, d.Width, d.Height)
+	for _, name := range slices.Sorted(maps.Keys(d.Sections)) {
+		s := d.Sections[name]
+		check(prefix+".sections."+name, s.Width, s.Height)
+	}
+	for _, list := range []struct {
+		key   string
+		tiles []config.Tile
+	}{{"tiles", d.Tiles}, {"add", d.Add}} {
+		for i, t := range list.tiles {
+			check(fmt.Sprintf("%s.%s[%d]", prefix, list.key, i), t.Width, t.Height)
+		}
+	}
+	return out
 }
 
 // namesNoTile says that a `sections:` entry has nothing to state, and what the

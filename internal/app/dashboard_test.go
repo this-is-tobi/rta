@@ -297,7 +297,7 @@ func TestDashboardAddOfAnAutomaticTileIsRefusedOrTakesItsPlace(t *testing.T) {
 	if _, errOut, _ := run("dashboard", "add", "db.status"); !strings.Contains(errOut, "rta dashboard unhide db.status") {
 		t.Errorf("refusal = %q, want the way back for a hidden tile", errOut)
 	}
-	out, errOut, err := run("dashboard", "add", "db.status", "--span", "2")
+	out, errOut, err := run("dashboard", "add", "db.status", "--width", "6")
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
@@ -315,7 +315,7 @@ func TestDashboardAddOfAnAutomaticTileIsRefusedOrTakesItsPlace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	if !strings.Contains(out, "rta dashboard add db.status --span 2`") {
+	if !strings.Contains(out, "rta dashboard add db.status --width 6`") {
 		t.Errorf("receipt = %q, want the whole entry as the way back, since the bare add is refused", out)
 	}
 }

@@ -422,7 +422,7 @@ func TestDoctorSaysNothingAboutThemeWhenNothingWasOverridden(t *testing.T) {
 // config row beside it said ok.
 func TestDoctorNamesEachKeyTheConfigHasThatRtaDoesNotRead(t *testing.T) {
 	_, configDir := isolate(t)
-	cfg := "output: json\ndashbord:\n  columns: 2\n"
+	cfg := "output: json\ndashbord:\n  width: 2\n"
 	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}

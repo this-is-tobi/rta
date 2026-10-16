@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/theme"
@@ -22,49 +23,93 @@ import (
 // columns at a width, which rows fit, and what one tile renders as —
 // including tile zero, the search bar.
 
-// grid describes the capability-tile geometry below the full-width search
-// bar — one source of truth for painting and mouse hit-testing.
-type grid struct {
-	cols, tileW int
-}
+// The dashboard's grid is config.GridTracks wide and a tile is some number of
+// tracks: its width, in twelfths of the screen. Everything below that decides a
+// tile's place is arithmetic on the terminal's width and those numbers, in one
+// spot, so that painting, hit-testing, scrolling and moving the selection read the
+// same layout.
 
-// minColWidth is the narrowest a tile column gets before its summaries stop
-// being readable. It is derived from where the dashboard already stood: two
-// columns from 80 cells up, which is 39 cells and a gap.
+// minColWidth is the narrowest a tile gets before its summaries stop being
+// readable. It is derived from where the dashboard already stood: two columns from
+// 80 cells up, which is 39 cells and a gap.
 const minColWidth = 40
+
+// minTileCells is the least a tile is drawn at, in cells: a width that would give
+// less is read as the least that gives this, which is how one file holds on a
+// terminal of any size. At 80 cells that is half the screen, at 120 a third.
+const minTileCells = minColWidth - 1
 
 // maxCols caps the automatic grid. Past four the tiles are narrow enough that
 // the eye stops scanning columns and starts hunting, and a dashboard you hunt
 // through is a dashboard you stop opening.
 const maxCols = 4
 
-// grid is the dashboard's own grid; gridAt says how it is worked out, and gridFor
-// which one a tile is laid out on, since a section may state a width of its own.
-func (m Model) grid() grid { return m.gridAt(m.dash.Columns) }
+// edge is the cell track j starts at: the screen's width and the gap cell after
+// each tile shared out over the tracks, so that a tile's width is the distance
+// between its two edges less its gap, tiles of equal width differ by at most a
+// cell, and the last one ends exactly at the right edge. Rounded down, so the
+// remainder falls on the right of the row and not in the middle of it.
+func (m Model) edge(track int) int {
+	return track * (m.width + 1) / config.GridTracks
+}
 
-// span is how many columns tile i occupies at the current grid width: what
-// the capability declared it needs, what the config overrode it to, clamped
-// to a grid that may be narrower than either.
-func (m Model) span(i int) int { return m.spanOn(i, m.gridFor(i)) }
+// cellsOf is how wide, in cells, the narrowest tile of span tracks is drawn.
+func (m Model) cellsOf(span int) int { return m.edge(span) - 1 }
 
-// spanOn is span on a grid given.
-func (m Model) spanOn(i int, g grid) int {
+// tracksFor is the least number of tracks that draws a tile at least cells wide:
+// a capability's MinWidth, or the floor below which nothing is readable.
+func (m Model) tracksFor(cells int) int {
+	for span := 1; span < config.GridTracks; span++ {
+		if m.cellsOf(span) >= cells {
+			return span
+		}
+	}
+	return config.GridTracks
+}
+
+// minTracks is the least width any tile has: the terminal's own floor, one whole
+// row when the terminal is narrower than a tile can be.
+func (m Model) minTracks() int {
+	if m.width < minColWidth {
+		return config.GridTracks
+	}
+	return m.tracksFor(minTileCells)
+}
+
+// autoSpan is the width a tile gets when nothing states one: as many columns as
+// the terminal has room for, to a most of four, each a whole number of tracks
+// (twelve divides by 1, 2, 3 and 4), so the dashboard of a screen that states no
+// width is the dashboard it always was.
+//
+// The dashboard was two columns at every width, so a 200-cell terminal drew two
+// 100-cell tiles of a six-line summary — half the screen spent on whitespace,
+// with the tiles that did not fit pushed below the fold.
+func (m Model) autoSpan() int {
+	return config.GridTracks / max(min(m.width/minColWidth, maxCols), 1)
+}
+
+// span is how many tracks tile i is wide at the current width of the terminal.
+//
+// A width the tile's own entry states is a demand and is kept, but for the floor
+// every tile has. One a section or the screen states is a default, and it yields
+// to the capability's own minimum (MinWidth) exactly as a pace yields to a
+// declared one: the default was never about the tile that needs more room. With
+// none stated the tile has the width the terminal makes of it.
+func (m Model) span(i int) int {
 	if i <= 0 || i >= len(m.tiles) {
 		return 1
 	}
 	t := m.tiles[i]
-	if t.span > 0 {
-		return max(min(t.span, g.cols), 1)
+	floor := m.minTracks()
+	if t.width > 0 && t.widthDemand {
+		return min(max(t.width, floor), config.GridTracks)
 	}
-	if t.cap.MinWidth <= 0 {
-		return 1
+	s := m.autoSpan()
+	if t.width > 0 {
+		s = t.width
 	}
-	// Each extra column brings its own width plus the gap cell before it.
-	n := 1
-	for n < g.cols && n*g.tileW+(n-1) < t.cap.MinWidth {
-		n++
-	}
-	return n
+	s = max(s, m.tracksFor(t.cap.MinWidth), floor)
+	return min(s, config.GridTracks)
 }
 
 // tileRows groups the capability tiles into the rows they are drawn on: a
@@ -88,7 +133,7 @@ func (m Model) tileRows() []gridRow {
 			next++
 			rows = append(rows, gridRow{header: run})
 			if !m.collapsed(run.name) {
-				rows = append(rows, m.packRows(run.lo, run.hi, m.gridFor(run.lo))...)
+				rows = append(rows, m.packRows(run.lo, run.hi)...)
 			}
 			i = run.hi
 			continue
@@ -97,58 +142,47 @@ func (m Model) tileRows() []gridRow {
 		if next < len(runs) {
 			end = runs[next].lo
 		}
-		rows = append(rows, m.packRows(i, end, m.grid())...)
+		rows = append(rows, m.packRows(i, end)...)
 		i = end
 	}
 	return rows
 }
 
-// rowSpan is how many columns a row's tiles claim between them.
-func (m Model) rowSpan(cells []int) int {
-	n := 0
-	for _, i := range cells {
-		n += m.span(i)
-	}
-	return n
-}
-
-// tileWidth is how wide one tile is drawn: its span in grid columns, plus
+// tileWidth is how wide one tile is drawn, in cells: its span in tracks, plus
 // whatever a short row has left over.
 //
 // The leftover matters. A wide tile forces the row before it to close early,
 // so with nine tiles in two columns the eighth used to be drawn at half
 // width with dead space beside it and nothing to explain the hole. A row that
 // does not fill the grid shares out what is left, so a short row reads as a
-// deliberate arrangement instead of a rendering accident.
+// deliberate arrangement instead of a rendering accident; what does not divide
+// goes to the last tile, so a row is always exactly the screen wide and its right
+// edge lines up with every other row's.
 func (m Model) tileWidth(i int) int {
-	g := m.gridFor(i)
 	cells := m.rowOf(i)
 	if len(cells) == 0 {
-		return g.tileW
+		return max(m.cellsOf(m.autoSpan()), 1)
 	}
-	spare := 0
-	if left := g.cols - m.rowSpan(cells); left > 0 {
-		spare = left / len(cells)
-	}
-	widths := make([]int, len(cells))
-	used := len(cells) - 1 // the gap cell between tiles
+	spans := make([]int, len(cells))
+	taken := 0
 	for k, idx := range cells {
-		sp := m.span(idx) + spare
-		widths[k] = sp*g.tileW + (sp - 1)
-		used += widths[k]
+		spans[k] = m.span(idx)
+		taken += spans[k]
 	}
-	// The last tile absorbs whatever integer division left behind, so a row
-	// is exactly the screen wide and its right edge lines up with every
-	// other row's. Computing each width independently left a cell or two
-	// unaccounted for at some terminal sizes, which reads as a wobble down
-	// the right-hand side that nothing on screen explains.
-	widths[len(cells)-1] += m.width - used
+	if left := config.GridTracks - taken; left > 0 {
+		for k := range spans {
+			spans[k] += left / len(cells)
+		}
+		spans[len(spans)-1] += left % len(cells)
+	}
+	start := 0
 	for k, idx := range cells {
 		if idx == i {
-			return max(widths[k], 1)
+			return max(m.edge(start+spans[k])-m.edge(start)-1, 1)
 		}
+		start += spans[k]
 	}
-	return g.tileW
+	return max(m.cellsOf(m.autoSpan()), 1)
 }
 
 // rowOf returns the row tile i sits on.
@@ -190,13 +224,37 @@ func (m Model) rowHeights() []int {
 			heights = append(heights, sectionHeaderHeight)
 			continue
 		}
-		h := tileMinHeight
-		for _, i := range row.cells {
-			h = max(h, tileRowHeight(m.asReturned(i), m.tileWidth(i)))
-		}
-		heights = append(heights, min(h, limit))
+		heights = append(heights, m.rowHeight(row, limit))
 	}
 	return heights
+}
+
+// rowHeight is how tall one row of tiles is drawn: the tallest of what its tiles
+// need, where a tile that states a height needs exactly that and one that does
+// not needs what it has to say (tileRowHeight), held between the least a panel
+// reads as one and limit.
+//
+// A stated height is not held to limit, since the limit is the cap on guessing
+// and a person who wrote `height: 20` has said how much room the tile gets; it is
+// held to the room there is on the screen, so a row never outgrows it. Tiles on a
+// row always share its height, so an explicit one sets the row for the tiles
+// beside it.
+func (m Model) rowHeight(row gridRow, limit int) int {
+	stated, natural := 0, 0
+	for _, i := range row.cells {
+		if h := m.tiles[i].height; h > 0 {
+			stated = max(stated, h)
+			continue
+		}
+		natural = max(natural, tileRowHeight(m.asReturned(i), m.tileWidth(i)))
+	}
+	if stated > 0 && m.height > 0 {
+		stated = min(stated, max(m.dashRowBudget(), tileClipHeight))
+	}
+	if natural == 0 {
+		return stated
+	}
+	return max(stated, min(max(natural, tileMinHeight), limit))
 }
 
 // rowLimit is the tallest a row is drawn: tileHeight, unless the room under

@@ -23,7 +23,7 @@ dashboard:
     - id: sys.mem   # memory
     # the cpu one
     - id: sys.disk
-  columns: 3
+  width: 3
 
 plugins:
   # http knobs
@@ -84,7 +84,7 @@ func mustContain(t *testing.T, got string, wants ...string) {
 // style and all.
 func TestAnUnrelatedWriteLeavesTheRestOfTheFileByteForByte(t *testing.T) {
 	seed(t, handWritten)
-	got := mutate(t, func(c *Config) { c.Dashboard.Columns = 4 })
+	got := mutate(t, func(c *Config) { c.Dashboard.Width = 4 })
 
 	for _, block := range []string{
 		"# my own header\n\n# Default output\noutput: json   # line comment on output\noputput: nope\n",
@@ -98,7 +98,7 @@ func TestAnUnrelatedWriteLeavesTheRestOfTheFileByteForByte(t *testing.T) {
 			t.Errorf("a block nothing touched was changed; lost:\n%s\nin:\n%s", block, got)
 		}
 	}
-	mustContain(t, got, "columns: 4")
+	mustContain(t, got, "width: 4")
 }
 
 // A command that writes what is already there writes nothing, so opening the
@@ -121,7 +121,7 @@ func TestWritingWhatIsAlreadyThereChangesNothing(t *testing.T) {
 func TestTheBlockThatChangedKeepsItsComments(t *testing.T) {
 	seed(t, handWritten)
 	got := mutate(t, func(c *Config) { c.Dashboard.Add = append(c.Dashboard.Add, Tile{ID: "sys.cpu"}) })
-	mustContain(t, got, "# tiles I added", "- id: sys.mem # memory", "# the cpu one", "- id: sys.cpu", "columns: 3")
+	mustContain(t, got, "# tiles I added", "- id: sys.mem # memory", "# the cpu one", "- id: sys.cpu", "width: 3")
 	// And the rest of the file is still the same bytes it was.
 	mustContain(t, got, "  dev: { grants: [note, sys] }   # flow style", "# trailing comment at the end")
 }
@@ -154,8 +154,8 @@ func TestACommentOnAListEntryFollowsItsEntry(t *testing.T) {
 // a span — is the same tile, and keeps what was said about it.
 func TestACommentOnATileSurvivesItBeingEditedInPlace(t *testing.T) {
 	seed(t, handWritten)
-	got := mutate(t, func(c *Config) { c.Dashboard.Add[0].Span = 2 })
-	mustContain(t, got, "# memory", "span: 2")
+	got := mutate(t, func(c *Config) { c.Dashboard.Add[0].Width = 6 })
+	mustContain(t, got, "# memory", "width: 6")
 	if strings.Index(got, "# memory") > strings.Index(got, "sys.disk") {
 		t.Errorf("the note moved off its tile:\n%s", got)
 	}
@@ -333,7 +333,7 @@ func TestWhatIsWrittenAlwaysLoadsBackAsWhatWasAskedFor(t *testing.T) {
 		do   func(*Config)
 	}{
 		{"change the output", func(c *Config) { c.Output = "yaml" }},
-		{"add a tile", func(c *Config) { c.Dashboard.Add = append(c.Dashboard.Add, Tile{ID: "sys.cpu", Span: 2}) }},
+		{"add a tile", func(c *Config) { c.Dashboard.Add = append(c.Dashboard.Add, Tile{ID: "sys.cpu", Width: 6}) }},
 		{"hide a tile", func(c *Config) { c.Dashboard.Hidden = []string{"git.overview"} }},
 		{"order tiles", func(c *Config) { c.Dashboard.Order = []string{"sys.overview", "note.list"} }},
 		{"add a plugin value", func(c *Config) { c.Plugins["http"]["limit"] = 7 }},
@@ -351,7 +351,7 @@ func TestWhatIsWrittenAlwaysLoadsBackAsWhatWasAskedFor(t *testing.T) {
 		{"remove the output", func(c *Config) { c.Output = "" }},
 		{"add everything back", func(c *Config) {
 			c.Output = "json"
-			c.Dashboard.Columns = 2
+			c.Dashboard.Width = 2
 			c.Plugins = map[string]map[string]any{"http": {"timeout": 9}}
 			c.Theme = map[string]string{"accent": "#abcdef"}
 			c.Roles = map[string]Role{"dev": {Grants: []string{"sys"}}}
@@ -403,7 +403,7 @@ func TestANewBlockIsSetApartFromTheNoteOfTheBlockItGoesAheadOf(t *testing.T) {
 //
 // Fails without trimBOM: the file is written with `output` twice.
 func TestAFileThatStartsWithAByteOrderMarkIsReadAndWrittenAsWithout(t *testing.T) {
-	p := seed(t, "\ufeffoutput: pretty   # kept\ndashboard:\n  columns: 2\n")
+	p := seed(t, "\ufeffoutput: pretty   # kept\ndashboard:\n  width: 2\n")
 	cfg, err := LoadFile()
 	if err != nil || cfg.Output != "pretty" {
 		t.Fatalf("the first key behind the mark was not read: %q, %v", cfg.Output, err)
@@ -419,7 +419,7 @@ func TestAFileThatStartsWithAByteOrderMarkIsReadAndWrittenAsWithout(t *testing.T
 	if _, err := os.ReadFile(p); err != nil {
 		t.Fatal(err)
 	}
-	if again, err := LoadFile(); err != nil || again.Output != "json" || again.Dashboard.Columns != 2 {
+	if again, err := LoadFile(); err != nil || again.Output != "json" || again.Dashboard.Width != 2 {
 		t.Errorf("what was written does not read back: %+v, %v", again, err)
 	}
 }
@@ -430,8 +430,8 @@ func TestAFileThatStartsWithAByteOrderMarkIsReadAndWrittenAsWithout(t *testing.T
 // Fails without the conversion in render: the block written again ends its
 // lines with a bare LF among CRLF ones.
 func TestAFileWithCRLFLineEndingsKeepsThemWhenABlockIsWritten(t *testing.T) {
-	p := seed(t, "output: pretty\r\n# about the dashboard\r\ndashboard:\r\n  columns: 2\r\n")
-	mutate(t, func(c *Config) { c.Dashboard.Columns = 4 })
+	p := seed(t, "output: pretty\r\n# about the dashboard\r\ndashboard:\r\n  width: 2\r\n")
+	mutate(t, func(c *Config) { c.Dashboard.Width = 4 })
 	raw, err := os.ReadFile(p)
 	if err != nil {
 		t.Fatal(err)
@@ -440,15 +440,15 @@ func TestAFileWithCRLFLineEndingsKeepsThemWhenABlockIsWritten(t *testing.T) {
 	if strings.Count(text, "\n") != strings.Count(text, "\r\n") {
 		t.Errorf("a line ends without the carriage return the others have:\n%q", text)
 	}
-	if !strings.Contains(text, "columns: 4") || !strings.Contains(text, "# about the dashboard") {
+	if !strings.Contains(text, "width: 4") || !strings.Contains(text, "# about the dashboard") {
 		t.Errorf("the write was not made, or lost the note:\n%q", text)
 	}
-	if again, err := LoadFile(); err != nil || again.Dashboard.Columns != 4 {
+	if again, err := LoadFile(); err != nil || again.Dashboard.Width != 4 {
 		t.Errorf("what was written does not read back: %+v, %v", again, err)
 	}
 
-	lf := seed(t, "output: pretty\ndashboard:\n  columns: 2\n")
-	mutate(t, func(c *Config) { c.Dashboard.Columns = 4 })
+	lf := seed(t, "output: pretty\ndashboard:\n  width: 2\n")
+	mutate(t, func(c *Config) { c.Dashboard.Width = 4 })
 	if raw, _ := os.ReadFile(lf); strings.Contains(string(raw), "\r") {
 		t.Errorf("a file with LF endings gained carriage returns: %q", raw)
 	}

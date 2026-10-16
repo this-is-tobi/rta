@@ -17,7 +17,7 @@ const typoFile = `# my machine
 output: json   # json for the scripts
 
 dashboard:
-  colums: 3
+  widht: 3
   hidden: [gen.overview]
 
 plugins:
@@ -40,7 +40,7 @@ func TestConfigCheckNamesWhatDoesNotApplyAndExitsNonZero(t *testing.T) {
 		t.Fatalf("exit %d, %v", ExitCode(err), err)
 	}
 	for _, want := range []string{
-		"dashboard.colums", `did you mean "columns"?`,
+		"dashboard.widht", `did you mean "width"?`,
 		"plugins.net.timout", `did you mean "timeout"?`,
 		"plugins.gen.password.symbols", "written as one key", "password: {symbols: <value>}",
 		"theme.good", "is not a color",
@@ -68,7 +68,7 @@ func TestConfigCheckGivesEachKeyItsLine(t *testing.T) {
 		line[r[1]] = r[0]
 	}
 	for key, want := range map[string]string{
-		"dashboard.colums": "5", "plugins.net.timout": "10", "plugins.gen.password.symbols": "12",
+		"dashboard.widht": "5", "plugins.net.timout": "10", "plugins.gen.password.symbols": "12",
 		"theme.good": "14", "roles.morning.grnts": "17",
 	} {
 		if line[key] != want {
@@ -79,7 +79,7 @@ func TestConfigCheckGivesEachKeyItsLine(t *testing.T) {
 
 func TestConfigCheckOnAFileThatIsRightSaysSoAndExitsZero(t *testing.T) {
 	out, errOut, _, err := configRun(t, configRegistry(t),
-		"output: json\ndashboard:\n  columns: 2\nplugins:\n  net:\n    timeout: 20\n", "config", "check", "-o", "json")
+		"output: json\ndashboard:\n  width: 2\nplugins:\n  net:\n    timeout: 20\n", "config", "check", "-o", "json")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, errOut)
 	}
@@ -155,7 +155,7 @@ func TestStartupNoticeNamesTheKeysRtaIgnores(t *testing.T) {
 	if buf.Len() != 0 {
 		t.Errorf("a machine with no file was told something: %q", buf.String())
 	}
-	if err := os.WriteFile(path, []byte("oputput: json\ncolumns: 3\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("oputput: json\nwidth: 3\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	WarnConfigProblems(&buf, sys, false)
