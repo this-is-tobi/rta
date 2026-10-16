@@ -164,11 +164,20 @@ func hostOpenHint(sf plugin.Surface, verr *view.Error) *view.Error {
 	out := *verr
 	switch verr.Code {
 	case "kv.passphrase.missing":
-		if sf == plugin.SurfaceMCP {
+		switch sf {
+		case plugin.SurfaceMCP:
 			out.Hint = passphraseHint(plugin.SurfaceMCP)
-		} else {
+		case plugin.SurfaceTUI:
+			out.Hint = "press U to unlock the store for this session — or set " + passphraseEnv + " before starting rta"
+		default:
 			out.Hint = "set " + passphraseEnv + " — a profile's credential is read without asking for the passphrase"
 		}
+	case "kv.identity.locked":
+		if sf != plugin.SurfaceTUI {
+			return verr
+		}
+		out.Hint = "press U to unlock the key for this session — or set " + passphraseEnv +
+			" to its passphrase before starting rta, or add a key that needs none: " + sf.CapabilityWith("kv.rekey", "generate")
 	case "kv.identity.required":
 		specs, _ := loadRecipients()
 		out.Hint = hostIdentity(sf, specs) + " — " + sf.CapabilityName("kv.recipients") + " lists who can read it"
@@ -343,5 +352,15 @@ func StoreStamp() string {
 	if err != nil {
 		return ""
 	}
-	return strconv.FormatInt(info.ModTime().UnixNano(), 10) + ":" + strconv.FormatInt(info.Size(), 10)
+	stamp := strconv.FormatInt(info.ModTime().UnixNano(), 10) + ":" + strconv.FormatInt(info.Size(), 10)
+	// Whether a session holds the store open is part of what a resolution
+	// depends on: a bind made while it was shut cached the refusal, and the
+	// store file did not change when the person unlocked it, so without this the
+	// tiles kept their error until something else moved. Looking does not
+	// extend the session, and its lapse changes the stamp too, so the tiles
+	// relock on the tick after it ends.
+	if _, open := peekSession(); open {
+		stamp += ":unlocked"
+	}
+	return stamp
 }

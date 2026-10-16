@@ -140,16 +140,18 @@ func TestTheSessionExpiresWhenIdle(t *testing.T) {
 	}
 }
 
-// Idle, not absolute: every use pushes the deadline out, so a TUI in steady
-// use never asks again, and one left open on a desk does.
+// Idle, not absolute: every use by the person pushes the deadline out, so a TUI
+// in steady use never asks again, and one left open on a desk does. A tile's
+// read of a profile's credential is not a use by the person (see
+// TestATileReadingTheStoreDoesNotKeepTheUnlockAlive).
 func TestUsingTheSessionKeepsItAlive(t *testing.T) {
 	setup(t)
 	at := freezeClock(t)
 	unlockedFromTheTUI(t, "correct horse battery staple")
 
 	*at = at.Add(10 * time.Minute)
-	if _, verr := Reveal("k"); verr != nil {
-		t.Fatalf("Reveal at +10m: %+v", verr)
+	if _, ok := SessionPassphrase(); !ok {
+		t.Fatal("the session was gone at +10m")
 	}
 	*at = at.Add(10 * time.Minute) // +20m: past the original deadline, inside the slid one
 	if _, ok := SessionPassphrase(); !ok {
