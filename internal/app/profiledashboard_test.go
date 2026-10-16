@@ -350,7 +350,7 @@ func TestRemovingAProfileSaysItsOwnScreenWentWithIt(t *testing.T) {
 // be switched on: it draws the dashboard: block until the two are one.
 func TestAViewAndABlockOfTheSameNameAreReportedAndNeitherIsDrawn(t *testing.T) {
 	run := session(t, setRegistry(t))
-	if err := os.WriteFile(config.Path(), []byte("dashboard:\n  views:\n    staging:\n      columns: 5\n"), 0o600); err != nil {
+	if err := os.WriteFile(config.Path(), []byte("dashboard:\n  views:\n    staging:\n      width: 5\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	dropIn(t, "20-staging.yaml", stagingEntry)
@@ -413,7 +413,7 @@ func TestConfigCheckHoldsAProfilesOwnScreenToAViewsKeys(t *testing.T) {
 // the file that holds the profile, with the line of its `dashboard:` key.
 func TestConfigCheckReadsViewsAcrossFiles(t *testing.T) {
 	_, path := split(t, map[string]string{
-		"config.yaml": "dashboard:\n  views:\n    ops:\n      columns: 3\n    shop:\n      columns: 5\n",
+		"config.yaml": "dashboard:\n  views:\n    ops:\n      width: 3\n    shop:\n      width: 5\n",
 		"config.d/20-shop.yaml": shopEntry +
 			"  lost:\n    plugins:\n      net: {}\n    dashboard: ghost\n  prod:\n    plugins:\n      net: {}\n    dashboard: ops\n",
 	})
@@ -443,7 +443,7 @@ func TestConfigCheckReadsViewsAcrossFiles(t *testing.T) {
 // counted as two problems.
 func TestConfigCheckSaysACollisionInOneFileOnceWithItsLine(t *testing.T) {
 	_, path := split(t, map[string]string{
-		"config.yaml": "dashboard:\n  views:\n    shop:\n      columns: 5\n" + shopEntry,
+		"config.yaml": "dashboard:\n  views:\n    shop:\n      width: 5\n" + shopEntry,
 	})
 	out, errOut, err := runConfigAt(t, configRegistry(t), path, "config", "check", "-o", "pretty")
 	text := out + errOut
@@ -463,7 +463,7 @@ func TestConfigCheckSaysACollisionInOneFileOnceWithItsLine(t *testing.T) {
 func TestDoctorReportsAScreenInDoubtOnceAndADanglingNameStill(t *testing.T) {
 	_, configDir := isolate(t)
 	files := map[string]string{
-		"config.yaml": "dashboard:\n  views:\n    shop:\n      columns: 5\n",
+		"config.yaml": "dashboard:\n  views:\n    shop:\n      width: 5\n",
 		"config.d/20-shop.yaml": shopEntry +
 			"  lost:\n    plugins:\n      net: {}\n    dashboard: ghost\n",
 	}

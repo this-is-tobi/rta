@@ -17,7 +17,7 @@ dashboard:
   order:
   - sys.overview
   - note.list
-  columns: 3
+  width: 4
 ```
 
 **Add to it.** `add:` joins tiles to the automatic set, and it is the only way to get a capability the automatic dashboard leaves out. Anything that reaches off the box — every `kube`, `pg`, `s3` and `vault` capability — is kept off it deliberately, however cheap it looks: a dashboard runs its tiles on load and again on a timer, and nobody expects opening a TUI to spend an API quota or disclose anything to a third party. An entry here is you asking for it, which is a decision the automatic path can't make for you. Three surfaces write the same entry: this block, `rta dashboard add` from a shell, and `+` in the TUI on a catalogue row (`b`) or a search match (`/`), which asks which connection the tile is about when the capability takes one — a profile, one of its labelled instances, or the switch — and lands on the dashboard with the new tile selected. `+` refuses what `add` refuses, in the same words, and on an automatic tile `H` took off it shows the tile again rather than writing a twin. A tile added from another terminal reaches an open dashboard on its next refresh.
@@ -32,10 +32,10 @@ dashboard:
     profile: staging
   - id: pg.overview
     profile: staging/analytics
-    span: 2
+    width: 6
 ```
 
-`profile:` pins a tile to one connection — a profile, or `name/instance` for one of several connections to the same plugin — and the tile is about that connection whatever `rta use` switched on, with the name on its panel. That is what lets one capability sit on the dashboard twice, once per cluster. Without it a tile follows the switched-on environment: switch to staging and the pg tile is about staging. `with:` fills the capability's inputs. `span:` widens a tile past what its own declared width works out to — for the one you actually read.
+`profile:` pins a tile to one connection — a profile, or `name/instance` for one of several connections to the same plugin — and the tile is about that connection whatever `rta use` switched on, with the name on its panel. That is what lets one capability sit on the dashboard twice, once per cluster. Without it a tile follows the switched-on environment: switch to staging and the pg tile is about staging. `with:` fills the capability's inputs. `width:` states how wide it is, in twelfths of the screen — `6` is half, for the one you actually read.
 
 **One entry, one panel per connection.** A profile can hold several connections to the same plugin — `pg/orders`, `pg/analytics`, three more — and a tile whose profile names no instance becomes one panel per connection that profile holds for its plugin, each named on its panel. `{id: pg.overview, profile: staging}` is every Postgres database staging knows, and one added to the profile next month gets its panel on its own, the same rule the automatic set follows for a plugin installed next month. A tile that follows the switch expands the same way, into whatever environment is on: under staging it is staging's databases, under prod that environment's own. Name the instance, `profile: staging/analytics`, for one panel. This is the one place a bare profile over several connections is not refused with "your call", as `--profile staging` is on a single command: a dashboard is not a choice, showing every one is the glance, and no wrong pick is possible.
 
@@ -45,7 +45,7 @@ The same from a script, or without opening the file:
 rta dashboard add kube.overview --profile prod
 rta dashboard add kube.overview --profile staging
 rta dashboard add pg.overview --profile staging                # one panel per pg connection staging holds
-rta dashboard add pg.overview --profile staging/analytics --span 2
+rta dashboard add pg.overview --profile staging/analytics --width 6
 rta dashboard add cert.expiry --set targets=example.com
 rta dashboard list                                             # every panel bare rta would draw, where each came from, and what is hidden
 rta dashboard hide pg.overview --profile staging/orders        # that one panel; its siblings stay
@@ -53,9 +53,9 @@ rta dashboard unhide pg.overview --profile staging/orders
 rta dashboard rm kube.overview --profile staging
 ```
 
-`add` refuses what the file would have quietly got wrong: a capability that is not a read, an input it does not declare, a credential under `--set`, a `--set` value of a type the input cannot hold (`core.dashboard.set.type`) or outside its options or range (`core.input.option`, `core.input.range` — the codes a run would refuse it with, on every refresh), a required input nothing fills, a profile that does not cover the plugin. Adding the same tile again replaces it, so the command is safe in a script that runs on every boot. In the TUI, `H` on an added tile withdraws its entry rather than hiding the capability — hiding by name would take both kube tiles down — and the footer says the command that puts it back, the same line `rm` prints: the whole entry, its section and the view it was on included; `H` on one panel of an entry that expanded hides that connection's panel by its key and leaves the rest, and `unhide` is the way back. `hide` and `unhide` are what `H` and the inventory pane do, from a script. Adding a capability the automatic dashboard already shows makes the entry that tile: `rta dashboard add sys.overview --span 2` widens it rather than doubling it, and the bare form is refused, with the way back when the tile is hidden. `[` and `]` move an entry that expanded as one, its panels together, because the file can place the entry and nothing finer.
+`add` refuses what the file would have quietly got wrong: a capability that is not a read, an input it does not declare, a credential under `--set`, a `--set` value of a type the input cannot hold (`core.dashboard.set.type`) or outside its options or range (`core.input.option`, `core.input.range` — the codes a run would refuse it with, on every refresh), a required input nothing fills, a profile that does not cover the plugin. Adding the same tile again replaces it, so the command is safe in a script that runs on every boot. In the TUI, `H` on an added tile withdraws its entry rather than hiding the capability — hiding by name would take both kube tiles down — and the footer says the command that puts it back, the same line `rm` prints: the whole entry, its section and the view it was on included; `H` on one panel of an entry that expanded hides that connection's panel by its key and leaves the rest, and `unhide` is the way back. `hide` and `unhide` are what `H` and the inventory pane do, from a script. Adding a capability the automatic dashboard already shows makes the entry that tile: `rta dashboard add sys.overview --width 6` widens it rather than doubling it, and the bare form is refused, with the way back when the tile is hidden. `[` and `]` move an entry that expanded as one, its panels together, because the file can place the entry and nothing finer.
 
-**Or state it exactly.** `tiles:` replaces the automatic set outright — `hidden:` and `order:` are not consulted, because the list is already both, except for a `hidden:` key naming one panel of an entry that expanded, which is a panel and not an entry the list could drop. Its entries take the same `profile:`, `with:` and `span:`, and `add:` entries follow the list:
+**Or state it exactly.** `tiles:` replaces the automatic set outright — `hidden:` and `order:` are not consulted, because the list is already both, except for a `hidden:` key naming one panel of an entry that expanded, which is a panel and not an entry the list could drop. Its entries take the same `profile:`, `with:`, `width:`, `height:` and `refresh:`, and `add:` entries follow the list:
 
 ```yaml
 dashboard:
@@ -63,12 +63,40 @@ dashboard:
   - id: kube.overview
     profile: prod
   - id: note.list
-    span: 2
+    width: 6
 ```
 
 Worth knowing what a tile costs before you add one: it refreshes on a timer for as long as the TUI is open, so a cluster-wide `kube.overview` tile is a round of `kubectl` calls at every refresh, for every hour the terminal stays open. `rta explain kube.overview` prints what a capability actually reads, which is not always only what its name suggests, and its `dashboard` row says how often a tile of it re-runs.
 
-## How often a tile runs
+## Width, height and pace: one rule at three levels
+
+A tile is sized and paced by three keys, `width:`, `height:` and `refresh:`, and each means the same thing wherever it is written: on a tile, on a section under `sections:`, and on the screen, which is the `dashboard:` block or a view. The nearest one wins, tile then section then screen then what the tile gets by itself. The one on a section or the screen is a default for the tiles under it, and it yields to a tile that needs more room or runs at a slower pace than it asks for; the one on a tile is a demand. So `width: 6` on a section is half the screen for every tile in it, and one line replaces a `width:` on each of them.
+
+### How wide and how tall
+
+The grid is twelve tracks wide, as the web's is, and `width:` is a number of them: `12` is the whole row, `6` half, `4` a third, `3` a quarter. Twelve because it divides: every layout of a row is widths that add to twelve, and the terminal's own width never changes what was meant, only how many cells that is. A tile is never drawn narrower than it can be read, so a width that does not fit a narrow terminal is read as the least that does (half the screen at 80 cells, a third from 120), and the same file draws taller on a small terminal instead of cramped. With no width stated a tile has the width the terminal makes of it — two to a row from 80 cells, three from 120, four from 160 — and a capability that needs more room (`MinWidth`) takes it.
+
+`height:` is how tall a tile's box is, in lines, borders included. Left out, it is what the tile has to say, from six lines to eleven, and a number lifts that cap for the tile with more to show: `height: 14` on a `cnpg.status` tile shows the rows that otherwise end at "… enter for details". A row is as tall as the tallest of its tiles, and a stated height is held to the room the screen has. It takes `4` to `60`.
+
+```yaml
+dashboard:
+  width: 6                # two to a row, unless a section or a tile says otherwise
+  sections:
+    databases:
+      width: 4            # three to a row
+      height: 14
+  add:
+  - id: cnpg.status
+    profile: prod
+    section: databases
+  - id: kube.overview
+    profile: prod
+    width: 12             # a whole row
+```
+
+`rta dashboard add cnpg.status --profile prod --width 4 --height 14` writes the same entry, `rta config set dashboard.width 6` the screen's, and `rta dashboard sections` prints what each section states. `columns:` and `span:`, which counted columns of a grid the terminal sized, are gone: `rta config check` names them and says what to write, since the same number would otherwise have meant something else (`span: 2` was two of four columns and is two twelfths).
+
+### How often a tile runs
 
 A tile runs when its screen opens and again at its pace, and where nothing says otherwise the pace follows what a run costs. One that reads this machine runs every five seconds, the dashboard's own tick and the fastest any tile goes. One that reaches a configured connection — a cluster, a database, a bucket, a vault — runs every thirty seconds, because each run is a round trip to a service somebody else logs: a `pg` tile is two `kubectl` calls and a login, and behind a bastion that audits every Kubernetes request each one is audit events for as long as the screen is drawn. A run that has not answered is never started again on top of itself, so a slow service is asked once, not once per tick.
 
@@ -113,7 +141,7 @@ dashboard:
     databases:
       collapsed: true   # starts folded to its header row
     edge:
-      columns: 3        # its own grid width
+      width: 4          # its tiles are a third of the screen wide
   add:
   - id: pg.overview
     profile: staging/orders
@@ -132,9 +160,9 @@ A section is drawn together, at the place of its first tile: the tiles that name
 
 **The header says what a fold hides.** `▾` is an open section and `▸` a folded one, followed by its name, how many tiles it holds and the worst of what they say: `● 1 bad` for a tile that is an error or has a status or usage cell in the red, `● 2 warn` for the amber ones — a partial answer, a call waiting for you — `ok` when the tiles that grade themselves are fine, and `N loading` while some have not answered yet. Folding hides the panels and never a problem, at any width: a header that is short of room gives up the count first and then the end of its name, cut with an ellipsis, and keeps what the tiles say. `ok` is said only when a tile said so, since tiles that grade nothing say nothing. A page of key/value pairs has no status column and is read by the words its values begin with, the ones a status cell is coloured by: a docker daemon or a cluster that `did not answer`, `was never contacted` or `answered, and refused` is a bad tile, and a part it `could not be read` is a warning; a value that is a fact, even a good word like `up 3 days`, says nothing.
 
-`columns:` is the grid width of the section's own rows in place of the dashboard's, held to what fits as the dashboard's is, and 0 is the dashboard's. A name is a heading a person reads — up to 64 characters, no control characters — so `databases`, `prod: orders` and `pg · staging` all are. A file can state one that is not, and it is still drawn: quoted, with what it holds written out, on its header and in the notes that name it, so that a line break in it cannot make the header two lines.
+`width:`, `height:` and `refresh:` are how wide, how tall and how often the tiles of the section are, in place of the screen's ([below](#width-height-and-pace-one-rule-at-three-levels)). A name is a heading a person reads — up to 64 characters, no control characters — so `databases`, `prod: orders` and `pg · staging` all are. A file can state one that is not, and it is still drawn: quoted, with what it holds written out, on its header and in the notes that name it, so that a line break in it cannot make the header two lines.
 
-What a file states about sections that does nothing is named, and never stops the file being read. `rta config check` and `rta doctor` report three things: a `sections:` entry that no tile of that screen is in, listed with the names there are so that a typo is one line from its fix; a name that cannot be a heading; and a column count below zero, which is read as 0, on a section's `columns:` and the dashboard's own alike. The `pg · staging` a profile gives its panels is a name whenever that profile holds several connections, whichever environment is on, so stating how it starts is never reported as nothing. A section's `columns:` that is not a number, or a `sections:` that is not a mapping of names, does not load: the refusal names the file, the line, the key and what it takes.
+What a file states about sections that does nothing is named, and never stops the file being read. `rta config check` and `rta doctor` report three things: a `sections:` entry that no tile of that screen is in, listed with the names there are so that a typo is one line from its fix; a name that cannot be a heading; and a `width:`, `height:` or `refresh:` outside what it takes, read as left out, on a section, a tile and the screen alike. The `pg · staging` a profile gives its panels is a name whenever that profile holds several connections, whichever environment is on, so stating how it starts is never reported as nothing. A section's `width:` or `height:` that is not a number, or a `sections:` that is not a mapping of names, does not load: the refusal names the file, the line, the key and what it takes.
 
 From a shell, `--section` writes the entry into a section, and `rta dashboard sections` lists what is drawn and stated:
 
@@ -142,10 +170,10 @@ From a shell, `--section` writes the entry into a section, and `rta dashboard se
 rta dashboard add pg.overview --profile staging/orders --section databases
 rta dashboard add sys.overview --section host      # the automatic sys tile, now in a section: the entry takes its place
 rta dashboard list                                 # a Section column says which section each tile is in
-rta dashboard sections                             # every section of every view: tiles, how it starts, columns, the file
+rta dashboard sections                             # every section of every view: tiles, how it starts, width, height, refresh, the file
 ```
 
-A section is a fact about the entry, so `--section` is how a tile changes section: adding the same tile again replaces the entry, and without `--section` it is in none, as it is without its `--span`. Moving a tile with `[` `]` does not change its section, and at the edge of its section says so. `rta dashboard sections` counts what bare `rta` would draw now, so a group named after the environment, `pg · staging`, is counted while staging is switched on, and a section a view states that no tile is in is listed with none. A name that is not plain, in either table, is quoted the way it is on the header, so that it is one cell and never a row of its own in `csv`. In the TUI the header takes the arrows, `enter`, `space`, `z` and a click to fold it, `Z` folds every section, and `[` `]` on it move the section ([the TUI](./20-tui.md) has them all); a fold is for the session and is never written, so `collapsed:` is how a section starts and the only way to say it.
+A section is a fact about the entry, so `--section` is how a tile changes section: adding the same tile again replaces the entry, and without `--section` it is in none, as it is without its `--width`. Moving a tile with `[` `]` does not change its section, and at the edge of its section says so. `rta dashboard sections` counts what bare `rta` would draw now, so a group named after the environment, `pg · staging`, is counted while staging is switched on, and a section a view states that no tile is in is listed with none. A name that is not plain, in either table, is quoted the way it is on the header, so that it is one cell and never a row of its own in `csv`. In the TUI the header takes the arrows, `enter`, `space`, `z` and a click to fold it, `Z` folds every section, and `[` `]` on it move the section ([the TUI](./20-tui.md) has them all); a fold is for the session and is never written, so `collapsed:` is how a section starts and the only way to say it.
 
 ## Views: a screen per environment
 
@@ -153,10 +181,10 @@ A person who works against three environments wants three screens: staging's clu
 
 ```yaml
 dashboard:
-  columns: 2
+  width: 6
   views:
     ops:
-      columns: 3
+      width: 4
       tiles:
       - id: kube.overview
         profile: prod

@@ -32,7 +32,7 @@ func TestEveryExampleInTheStarterIsAFileRtaReads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the uncommented starter does not parse: %v\n%s", err, text)
 	}
-	if cfg.Output == "" || cfg.Dashboard.Columns == 0 || len(cfg.Dashboard.Hidden) == 0 ||
+	if cfg.Output == "" || cfg.Dashboard.Width == 0 || len(cfg.Dashboard.Hidden) == 0 ||
 		len(cfg.Theme) == 0 || len(cfg.Plugins["http"]) == 0 {
 		t.Errorf("an example sets nothing: %+v", cfg)
 	}
@@ -49,7 +49,7 @@ func TestTheStarterAsItStandsStatesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Output != "" || cfg.Dashboard.Columns != 0 || len(cfg.Plugins) != 0 || len(cfg.Theme) != 0 {
+	if cfg.Output != "" || cfg.Dashboard.Width != 0 || len(cfg.Plugins) != 0 || len(cfg.Theme) != 0 {
 		t.Errorf("the starter states %+v", cfg)
 	}
 }

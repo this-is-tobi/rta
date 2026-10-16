@@ -8,11 +8,11 @@ import (
 )
 
 const viewsYAML = `dashboard:
-  columns: 2
+  width: 2
   hidden: [gen.overview]
   views:
     ops:
-      columns: 3
+      width: 3
       tiles:
       - id: kube.overview
         profile: prod
@@ -60,7 +60,7 @@ func TestAProfileSelectsTheViewItNames(t *testing.T) {
 }
 
 // A view is a whole arrangement and replaces the block while it is drawn: it
-// takes nothing from the block, not even its columns.
+// takes nothing from the block, not even its width.
 func TestAViewReplacesTheBlockAndDoesNotOverlayIt(t *testing.T) {
 	configAt(t)
 	cfg, err := Parse([]byte(viewsYAML))
@@ -68,27 +68,27 @@ func TestAViewReplacesTheBlockAndDoesNotOverlayIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	base, ok := cfg.Block("")
-	if !ok || base.Columns != 2 || len(base.Hidden) != 1 || base.Views != nil {
+	if !ok || base.Width != 2 || len(base.Hidden) != 1 || base.Views != nil {
 		t.Errorf("the default block = %+v", base)
 	}
-	if again, _ := cfg.Block(DefaultView); again.Columns != 2 {
+	if again, _ := cfg.Block(DefaultView); again.Width != 2 {
 		t.Errorf("the default addressed by name = %+v", again)
 	}
 	ops, ok := cfg.Block("ops")
-	if !ok || ops.Columns != 3 || len(ops.Tiles) != 1 || len(ops.Hidden) != 0 {
+	if !ok || ops.Width != 3 || len(ops.Tiles) != 1 || len(ops.Hidden) != 0 {
 		t.Errorf("ops = %+v: it took something from the block", ops)
 	}
 	if _, ok := cfg.Block("nowhere"); ok {
 		t.Error("a view nothing states was found")
 	}
-	if got := cfg.TrustedDashboardFor("ops"); got.Columns != 3 || got.Views != nil {
+	if got := cfg.TrustedDashboardFor("ops"); got.Width != 3 || got.Views != nil {
 		t.Errorf("the trusted view = %+v", got)
 	}
 }
 
 func TestAViewNotTrustedDrawsTheAutomaticDashboard(t *testing.T) {
-	cfg := Config{Dashboard: Dashboard{Views: map[string]View{"ops": {Columns: 3}}}}
-	if got := cfg.TrustedDashboardFor("ops"); got.Columns != 0 || got.Views != nil {
+	cfg := Config{Dashboard: Dashboard{Views: map[string]View{"ops": {Width: 3}}}}
+	if got := cfg.TrustedDashboardFor("ops"); got.Width != 0 || got.Views != nil {
 		t.Errorf("an untrusted config drew %+v", got)
 	}
 }
@@ -97,15 +97,15 @@ func TestSetBlockStatesAViewAndKeepsTheOthers(t *testing.T) {
 	configAt(t)
 	cfg, _ := Parse([]byte(viewsYAML))
 	cfg.SetBlock("fresh", Dashboard{Hidden: []string{"sys.overview"}})
-	cfg.SetBlock("ops", Dashboard{Columns: 4})
-	cfg.SetBlock("", Dashboard{Columns: 5})
+	cfg.SetBlock("ops", Dashboard{Width: 4})
+	cfg.SetBlock("", Dashboard{Width: 5})
 	if got := strings.Join(cfg.ViewNames(), ","); got != "dbs,fresh,ops" {
 		t.Errorf("views = %s", got)
 	}
-	if cfg.Dashboard.Columns != 5 || len(cfg.Dashboard.Views) != 3 {
+	if cfg.Dashboard.Width != 5 || len(cfg.Dashboard.Views) != 3 {
 		t.Errorf("setting the default lost the views: %+v", cfg.Dashboard)
 	}
-	if ops, _ := cfg.Block("ops"); ops.Columns != 4 || len(ops.Tiles) != 0 {
+	if ops, _ := cfg.Block("ops"); ops.Width != 4 || len(ops.Tiles) != 0 {
 		t.Errorf("ops = %+v", ops)
 	}
 }
@@ -126,16 +126,16 @@ func TestViewNamesAreWordsAndNotTheDefault(t *testing.T) {
 // states it.
 func TestViewsAreUnitsOfTheirOwnInTheFilesThatStateThem(t *testing.T) {
 	dir := layout(t, map[string]string{
-		"config.yaml":          "dashboard:\n  columns: 2\n",
-		"config.d/10-ops.yaml": "dashboard:\n  views:\n    ops:\n      columns: 3\n",
-		"config.d/20-dbs.yaml": "dashboard:\n  views:\n    dbs:\n      columns: 4\n",
+		"config.yaml":          "dashboard:\n  width: 2\n",
+		"config.d/10-ops.yaml": "dashboard:\n  views:\n    ops:\n      width: 3\n",
+		"config.d/20-dbs.yaml": "dashboard:\n  views:\n    dbs:\n      width: 4\n",
 	})
 	cfg, err := LoadFile()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(cfg.ViewNames(), ","); got != "dbs,ops" || cfg.Dashboard.Columns != 2 {
-		t.Fatalf("views = %s, columns = %d", got, cfg.Dashboard.Columns)
+	if got := strings.Join(cfg.ViewNames(), ","); got != "dbs,ops" || cfg.Dashboard.Width != 2 {
+		t.Fatalf("views = %s, columns = %d", got, cfg.Dashboard.Width)
 	}
 	for _, tc := range []struct{ kind, name, file string }{
 		{"views", "ops", "config.d/10-ops.yaml"},
@@ -149,17 +149,17 @@ func TestViewsAreUnitsOfTheirOwnInTheFilesThatStateThem(t *testing.T) {
 	}
 	mainBefore := read(t, filepath.Join(dir, "config.yaml"))
 	err = Mutate(func(c Config) (Config, bool) {
-		c.SetBlock("ops", Dashboard{Columns: 6})
-		c.SetBlock("fresh", Dashboard{Columns: 1})
+		c.SetBlock("ops", Dashboard{Width: 6})
+		c.SetBlock("fresh", Dashboard{Width: 1})
 		return c, true
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := read(t, filepath.Join(dir, "config.d", "10-ops.yaml")); !strings.Contains(got, "columns: 6") {
+	if got := read(t, filepath.Join(dir, "config.d", "10-ops.yaml")); !strings.Contains(got, "width: 6") {
 		t.Errorf("the view's own file after the write:\n%s", got)
 	}
-	if got := read(t, filepath.Join(dir, "config.d", "20-dbs.yaml")); !strings.Contains(got, "columns: 4") || strings.Contains(got, "fresh") {
+	if got := read(t, filepath.Join(dir, "config.d", "20-dbs.yaml")); !strings.Contains(got, "width: 4") || strings.Contains(got, "fresh") {
 		t.Errorf("another view's file after the write:\n%s", got)
 	}
 	got := read(t, filepath.Join(dir, "config.yaml"))
@@ -170,15 +170,15 @@ func TestViewsAreUnitsOfTheirOwnInTheFilesThatStateThem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if names := strings.Join(again.ViewNames(), ","); names != "dbs,fresh,ops" || again.Dashboard.Columns != 2 {
-		t.Errorf("after the write: views = %s, columns = %d", names, again.Dashboard.Columns)
+	if names := strings.Join(again.ViewNames(), ","); names != "dbs,fresh,ops" || again.Dashboard.Width != 2 {
+		t.Errorf("after the write: views = %s, columns = %d", names, again.Dashboard.Width)
 	}
 }
 
 func TestAViewStatedTwiceIsRefusedNamingBothFiles(t *testing.T) {
 	layout(t, map[string]string{
-		"config.yaml":          "dashboard:\n  views:\n    ops:\n      columns: 3\n",
-		"config.d/10-ops.yaml": "dashboard:\n  views:\n    ops:\n      columns: 4\n",
+		"config.yaml":          "dashboard:\n  views:\n    ops:\n      width: 3\n",
+		"config.d/10-ops.yaml": "dashboard:\n  views:\n    ops:\n      width: 4\n",
 	})
 	_, err := LoadFile()
 	if err == nil || !strings.Contains(err.Error(), "dashboard view ops") {

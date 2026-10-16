@@ -13,7 +13,7 @@ import (
 
 func TestAProfilesOwnScreenIsTheViewNamedAfterIt(t *testing.T) {
 	dir := layout(t, map[string]string{
-		"config.yaml": "dashboard:\n  columns: 2\n  views:\n    ops:\n      columns: 3\n" +
+		"config.yaml": "dashboard:\n  width: 2\n  views:\n    ops:\n      width: 3\n" +
 			"profiles:\n  prod:\n    dashboard: ops\n    plugins:\n      db: {}\n",
 		"config.d/20-staging.yaml": stagingDropIn,
 	})
@@ -34,7 +34,7 @@ func TestAProfilesOwnScreenIsTheViewNamedAfterIt(t *testing.T) {
 			cfg.HasView("staging"), cfg.InProfile("staging"), cfg.InProfile("ops"), cfg.HasView("ghost"))
 	}
 	block, ok := cfg.Block("staging")
-	if !ok || len(block.Add) != 2 || block.Columns != 0 || block.Views != nil {
+	if !ok || len(block.Add) != 2 || block.Width != 0 || block.Views != nil {
 		t.Errorf("staging = %+v, %v: it took something from the block", block, ok)
 	}
 	if got := cfg.TrustedDashboardFor("staging"); len(got.Add) != 2 || !slices.Equal(got.Order, []string{"note.list", "sys.overview"}) {
@@ -53,7 +53,7 @@ func TestAProfilesOwnScreenIsTheViewNamedAfterIt(t *testing.T) {
 // is the view's, wherever it is written.
 func TestAProfileCanSelectAnotherProfilesOwnScreenByName(t *testing.T) {
 	configAt(t)
-	cfg, err := Parse([]byte("profiles:\n  staging:\n    dashboard:\n      columns: 3\n" +
+	cfg, err := Parse([]byte("profiles:\n  staging:\n    dashboard:\n      width: 3\n" +
 		"  qa:\n    dashboard: staging\n  lost:\n    dashboard: ghost\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -72,15 +72,15 @@ func TestAProfileCanSelectAnotherProfilesOwnScreenByName(t *testing.T) {
 // of the two by an order nobody wrote down.
 func TestAViewAndABlockOfTheSameNameAreNeitherDrawn(t *testing.T) {
 	configAt(t)
-	cfg, err := Parse([]byte("dashboard:\n  columns: 2\n  views:\n    staging:\n      columns: 5\n" +
-		"profiles:\n  staging:\n    dashboard:\n      columns: 3\n"))
+	cfg, err := Parse([]byte("dashboard:\n  width: 2\n  views:\n    staging:\n      width: 5\n" +
+		"profiles:\n  staging:\n    dashboard:\n      width: 3\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := cfg.ViewFor("staging"); got != "" {
 		t.Errorf("staging draws %q: one of the two was chosen", got)
 	}
-	if block, _ := cfg.Block("staging"); block.Columns != 5 {
+	if block, _ := cfg.Block("staging"); block.Width != 5 {
 		t.Errorf("the name addresses %+v, want the view under views:", block)
 	}
 	if cfg.InProfile("staging") || strings.Join(cfg.ViewNames(), ",") != "staging" {
@@ -103,7 +103,7 @@ func TestAViewAndABlockOfTheSameNameAreNeitherDrawn(t *testing.T) {
 // `default` addresses the dashboard: block, so it is nobody's screen.
 func TestAProfileCalledDefaultCannotHaveItsScreenAddressed(t *testing.T) {
 	configAt(t)
-	cfg, err := Parse([]byte("profiles:\n  default:\n    dashboard:\n      columns: 3\n"))
+	cfg, err := Parse([]byte("profiles:\n  default:\n    dashboard:\n      width: 3\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestAWriteToAProfilesOwnScreenGoesToTheProfileAndNeverToViews(t *testing.T)
 		block, _ := c.Block("staging")
 		block.Hidden = append(slices.Clone(block.Hidden), "git.overview")
 		c.SetBlock("staging", block)
-		c.SetBlock("fresh", Dashboard{Columns: 1})
+		c.SetBlock("fresh", Dashboard{Width: 1})
 		return c, true
 	})
 	if err != nil {
@@ -157,7 +157,7 @@ func TestAWriteIntoADropInDoesNotMakeTheConfigFile(t *testing.T) {
 	dir := layout(t, map[string]string{"config.d/20-staging.yaml": stagingDropIn})
 	err := Mutate(func(c Config) (Config, bool) {
 		block, _ := c.Block("staging")
-		block.Columns = 2
+		block.Width = 2
 		c.SetBlock("staging", block)
 		return c, true
 	})
@@ -169,7 +169,7 @@ func TestAWriteIntoADropInDoesNotMakeTheConfigFile(t *testing.T) {
 			t.Errorf("%s was made by a write into a drop-in", name)
 		}
 	}
-	if got := read(t, filepath.Join(dir, "config.d", "20-staging.yaml")); !strings.Contains(got, "columns: 2") {
+	if got := read(t, filepath.Join(dir, "config.d", "20-staging.yaml")); !strings.Contains(got, "width: 2") {
 		t.Errorf("the drop-in was not written:\n%s", got)
 	}
 	// A unit nothing states yet still goes to the config file, which this makes.

@@ -94,13 +94,13 @@ func goldenShapes(t *testing.T) []goldenShape {
 	return []goldenShape{
 		{"automatic", answeringRegistry(t, "alpha", "beta", "gamma", "delta", "epsilon"), config.Dashboard{}},
 		{"stated", heightRegistry(t), dashFixture()},
-		{"spanned", heightRegistry(t), config.Dashboard{Columns: 2, Tiles: []config.Tile{
-			{ID: "short.info", Span: 2}, {ID: "mid.info"}, {ID: "short.info", Profile: "prod"},
-			{ID: "tall.info"}, {ID: "mid.info", Profile: "staging"}, {ID: "short.info"}, {ID: "tall.info", Span: 2},
+		{"spanned", heightRegistry(t), config.Dashboard{Width: 6, Tiles: []config.Tile{
+			{ID: "short.info", Width: 12}, {ID: "mid.info"}, {ID: "short.info", Profile: "prod"},
+			{ID: "tall.info"}, {ID: "mid.info", Profile: "staging"}, {ID: "short.info"}, {ID: "tall.info", Width: 12},
 		}}},
 		{"hidden-ordered-added", heightRegistry(t), config.Dashboard{
 			Hidden: []string{"mid.info"}, Order: []string{"tall.info", "short.info"},
-			Add: []config.Tile{{ID: "mid.info", Profile: "prod"}, {ID: "tall.info", Profile: "staging", Span: 2}},
+			Add: []config.Tile{{ID: "mid.info", Profile: "prod"}, {ID: "tall.info", Profile: "staging", Width: 12}},
 		}},
 	}
 }

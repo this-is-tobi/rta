@@ -129,7 +129,7 @@ func TestInvalidYAMLIsCodedWithHint(t *testing.T) {
 // silently decoded, the same way an unrelated syntax error already is.
 func TestConfigRefusesYAMLAnchorsAndAliases(t *testing.T) {
 	p := setPath(t)
-	if err := os.WriteFile(p, []byte("output: &o json\ndashboard:\n  columns: 2\n"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte("output: &o json\ndashboard:\n  width: 2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, err := Load()

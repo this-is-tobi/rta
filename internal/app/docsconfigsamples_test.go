@@ -74,7 +74,7 @@ func TestTheConfigPageQuotesWhatTheConfigCommandsPrint(t *testing.T) {
 		}
 	}
 
-	typos := "dashbord:\n  columns: 2\noutput: jsno\ntheme:\n  primry: \"#ffffff\"\n"
+	typos := "dashbord:\n  width: 2\noutput: jsno\ntheme:\n  primry: \"#ffffff\"\n"
 	if err := os.WriteFile(path, []byte(typos), 0o600); err != nil {
 		t.Fatal(err)
 	}

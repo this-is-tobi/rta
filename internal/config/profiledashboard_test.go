@@ -117,7 +117,7 @@ func TestADashboardThatIsNeitherANameNorABlockIsRefusedNamingProfileAndFile(t *t
 // of it is — never merged with it, and never decided by the order of the files.
 func TestTheBlockMergesAndIsRefusedWithTheEntryItIsIn(t *testing.T) {
 	layout(t, map[string]string{
-		"config.yaml": "profiles:\n  prod:\n    plugins:\n      db: {}\n    dashboard:\n      columns: 3\n",
+		"config.yaml": "profiles:\n  prod:\n    plugins:\n      db: {}\n    dashboard:\n      width: 3\n",
 		"config.d/20-staging.yaml": "profiles:\n  staging:\n    plugins:\n      db: {}\n    dashboard:\n" +
 			"      hidden: [sys.overview]\n",
 	})
@@ -125,7 +125,7 @@ func TestTheBlockMergesAndIsRefusedWithTheEntryItIsIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg.Profiles["prod"].Dashboard.Inline; got == nil || got.Columns != 3 {
+	if got := cfg.Profiles["prod"].Dashboard.Inline; got == nil || got.Width != 3 {
 		t.Errorf("prod's block = %+v", got)
 	}
 	if got := cfg.Profiles["staging"].Dashboard.Inline; got == nil || !slices.Equal(got.Hidden, []string{"sys.overview"}) {
@@ -137,7 +137,7 @@ func TestTheBlockMergesAndIsRefusedWithTheEntryItIsIn(t *testing.T) {
 
 	layout(t, map[string]string{
 		"config.yaml":              "profiles:\n  staging:\n    plugins:\n      db: {}\n",
-		"config.d/20-staging.yaml": "profiles:\n  staging:\n    dashboard:\n      columns: 3\n",
+		"config.d/20-staging.yaml": "profiles:\n  staging:\n    dashboard:\n      width: 3\n",
 	})
 	if _, err := LoadFile(); err == nil || !strings.Contains(err.Error(), "profile staging is stated in both") {
 		t.Errorf("a screen split from its entry: %v", err)
@@ -192,7 +192,7 @@ func TestADashboardIsWrittenAsTheNameOrTheBlockItIs(t *testing.T) {
 	err := Mutate(func(c Config) (Config, bool) {
 		c.Profiles = map[string]Profile{
 			"named":  {Dashboard: ProfileDashboard{Name: "ops"}, Plugins: map[string]Connection{"db": {}}},
-			"inline": {Dashboard: ProfileDashboard{Inline: &View{Columns: 2}}, Plugins: map[string]Connection{"db": {}}},
+			"inline": {Dashboard: ProfileDashboard{Inline: &View{Width: 2}}, Plugins: map[string]Connection{"db": {}}},
 			"empty":  {Dashboard: ProfileDashboard{Inline: &View{}}, Plugins: map[string]Connection{"db": {}}},
 			"none":   {Plugins: map[string]Connection{"db": {}}},
 		}
@@ -202,7 +202,7 @@ func TestADashboardIsWrittenAsTheNameOrTheBlockItIs(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := read(t, path)
-	for _, want := range []string{"dashboard: ops\n", "dashboard:\n      columns: 2\n", "dashboard: {}\n"} {
+	for _, want := range []string{"dashboard: ops\n", "dashboard:\n      width: 2\n", "dashboard: {}\n"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the file lacks %q:\n%s", want, text)
 		}
@@ -214,7 +214,7 @@ func TestADashboardIsWrittenAsTheNameOrTheBlockItIs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Profiles["named"].Dashboard.Name != "ops" || cfg.Profiles["inline"].Dashboard.Inline.Columns != 2 ||
+	if cfg.Profiles["named"].Dashboard.Name != "ops" || cfg.Profiles["inline"].Dashboard.Inline.Width != 2 ||
 		cfg.Profiles["empty"].Dashboard.Inline == nil || !cfg.Profiles["none"].Dashboard.IsZero() {
 		t.Errorf("read back: %+v", cfg.Profiles)
 	}
@@ -225,7 +225,7 @@ func TestADashboardIsDescribedByItsNameOrItsTileCount(t *testing.T) {
 		"ops":             {Name: "ops"},
 		"inline: 1 tile":  {Inline: &View{Add: []Tile{{ID: "sys.overview"}}}},
 		"inline: 3 tiles": {Inline: &View{Tiles: []Tile{{ID: "a"}, {ID: "b"}}, Add: []Tile{{ID: "c"}}}},
-		"inline: 0 tiles": {Inline: &View{Columns: 2}},
+		"inline: 0 tiles": {Inline: &View{Width: 2}},
 		"":                {},
 	} {
 		if got := d.Describe(); got != want {
@@ -236,9 +236,9 @@ func TestADashboardIsDescribedByItsNameOrItsTileCount(t *testing.T) {
 
 func TestADashboardPrintsAsJSONTheWayItIsWritten(t *testing.T) {
 	for dashboard, want := range map[ProfileDashboard]string{
-		{Name: "ops"}:               `{"dashboard":"ops"}`,
-		{Inline: &View{Columns: 2}}: `{"dashboard":{"columns":2}}`,
-		{}:                          `{}`,
+		{Name: "ops"}:             `{"dashboard":"ops"}`,
+		{Inline: &View{Width: 2}}: `{"dashboard":{"width":2}}`,
+		{}:                        `{}`,
 	} {
 		raw, err := json.Marshal(Profile{Dashboard: dashboard})
 		if err != nil {

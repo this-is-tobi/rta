@@ -51,7 +51,7 @@ func TestAFileWithNoRtaHeaderGetsNoSchemaBesideIt(t *testing.T) {
 	if err := os.WriteFile(path, []byte("output: json\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := Mutate(func(c Config) (Config, bool) { c.Dashboard.Columns = 2; return c, true }); err != nil {
+	if err := Mutate(func(c Config) (Config, bool) { c.Dashboard.Width = 2; return c, true }); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(path), SchemaFile)); !os.IsNotExist(err) {

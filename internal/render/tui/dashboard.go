@@ -58,12 +58,18 @@ type tile struct {
 	// moment they switched, and its two panels could be split by moving
 	// one past a stranger.
 	entry string
-	// span is how many grid columns this tile occupies, 0 meaning "work it
-	// out from the capability's MinWidth". It replaces a bool that could
-	// only say "one column or all of them": on a four-column screen that
-	// gave a 44-character key the whole 200 cells, which is as wrong in the
-	// other direction as cramming it into 39.
-	span int
+	// width is the width, in twelfths of the screen, that the tile's entry, its
+	// section or the screen states, nearest first (resolveGrid); 0 when none does,
+	// and the tile has what the terminal makes of it (Model.span).
+	//
+	// widthDemand says which: true when it is the tile's own entry that states it,
+	// a demand that beats the capability's MinWidth, and false when it is a
+	// default from the section or the screen, which yields to it.
+	width       int
+	widthDemand bool
+	// height is the height of the tile's box in lines, resolved the same way; 0
+	// leaves it to what the tile has to say.
+	height int
 	// refresh is the pace the tile's own entry states, 0 when it states none.
 	refresh time.Duration
 	// every is the pace the tile runs at once everything that can state one has:
@@ -620,6 +626,7 @@ func buildTilesWith(reg *registry.Registry, dash config.Dashboard, instances Ins
 	for i := range tiles {
 		tiles[i].actions = capActions(reg, tiles[i].cap.ID)
 		tiles[i].every, tiles[i].paceFrom = resolvePace(tiles[i], dash)
+		resolveGrid(&tiles[i], dash)
 	}
 	search := tile{cap: plugin.Capability{ID: "search", Summary: "find a capability"}, search: true}
 	return append([]tile{search}, tiles...)
@@ -661,6 +668,26 @@ func PaceOf(c plugin.Capability, entry config.Tile, dash config.Dashboard) (time
 	t := tile{cap: c, section: strings.TrimSpace(entry.Section)}
 	t.refresh, _ = config.ParseRefresh(entry.Refresh)
 	return resolvePace(t, dash)
+}
+
+// resolveGrid gives a tile the width and the height its section or the screen
+// states when its own entry states none: the same cascade as a pace, the nearest
+// statement wins, and it is told apart from a demand by widthDemand. A tile's own
+// width is kept as it is, and a default width is only ever a default.
+func resolveGrid(t *tile, dash config.Dashboard) {
+	sec := dash.SectionOf(t.section)
+	if t.width == 0 {
+		t.width = sec.Width
+		if t.width == 0 {
+			t.width = dash.Width
+		}
+	}
+	if t.height == 0 {
+		t.height = sec.Height
+		if t.height == 0 {
+			t.height = dash.Height
+		}
+	}
 }
 
 // pace is how often this tile is re-run.
@@ -802,7 +829,8 @@ func statedTiles(reg *registry.Registry, entries []config.Tile, source tileSourc
 		if c.Safety != plugin.Read {
 			continue
 		}
-		t := tile{cap: c, values: ct.With, profile: ct.Profile, source: source, span: ct.Span,
+		t := tile{cap: c, values: ct.With, profile: ct.Profile, source: source,
+			width: ct.Width, widthDemand: ct.Width > 0, height: ct.Height,
 			section: strings.TrimSpace(ct.Section)}
 		// A value that cannot be read is the config check's to name; the tile runs
 		// at the pace it would have had without the line.

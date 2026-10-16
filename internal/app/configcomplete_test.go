@@ -30,7 +30,7 @@ func completionsFor(t *testing.T, args ...string) []string {
 // a person never has to know the spelling before they type it.
 func TestConfigSetCompletesEveryKeyItTakes(t *testing.T) {
 	got := completionsFor(t, "config", "set")
-	for _, want := range []string{"output", "dashboard.columns", "dashboard.hidden", "dashboard.order",
+	for _, want := range []string{"output", "dashboard.width", "dashboard.hidden", "dashboard.order",
 		"theme.primary", "plugins.net.timeout", "plugins.net.ping.count", "plugins.gen.password.symbols"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("%s is not offered: %v", want, got)

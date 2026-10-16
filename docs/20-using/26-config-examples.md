@@ -180,6 +180,7 @@ dashboard:
     shop:
       sections:
         this machine: {collapsed: true}
+        databases: {width: 6, height: 12}   # two to a row, tall enough for a cluster's whole status
       tiles:
         - {id: kube.overview, profile: shop, section: kubernetes}
         - {id: kube.metrics.node, profile: shop, section: kubernetes}
@@ -193,6 +194,7 @@ dashboard:
 
     # By application: each one's pods and its database side by side.
     shop-apps:
+      width: 6                # every tile is half the screen: an application's pods beside its database
       tiles:
         - {id: kube.pod.list, profile: shop, with: {namespace: shop-web}, section: web}
         - {id: cnpg.status, profile: shop/web, section: web}

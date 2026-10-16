@@ -20,7 +20,7 @@ func sectionsDropIn() string {
     ops:
       sections:
         databases:
-          columns: 3
+          width: 3
         ghost:
           collapsed: true
         db · prod:
@@ -28,7 +28,7 @@ func sectionsDropIn() string {
         db · staging:
           collapsed: true
         negative:
-          columns: -2
+          width: -2
       add:
       - id: db.status
         profile: prod
@@ -66,8 +66,8 @@ func TestConfigCheckSaysWhatASectionStatesThatDoesNothing(t *testing.T) {
 		"dashboard.views.ops.sections.ghost",
 		`no tile of this screen is in a section called \"ghost\"`,
 		"dashboard.views.ops.sections.db · staging",
-		"dashboard.views.ops.sections.negative.columns",
-		"columns -2 is not a number of columns",
+		"dashboard.views.ops.sections.negative.width",
+		"width -2 is not a width",
 		"dashboard.views.ops.add[1].section",
 		"is not a name a section can have",
 		filepath.Join("config.d", "10-ops.yaml"),
@@ -107,7 +107,7 @@ func TestDoctorSaysWhatASectionStatesThatDoesNothing(t *testing.T) {
 	for _, want := range []string{
 		"dashboard.views.ops.sections.ghost: no tile of this screen",
 		"dashboard.views.ops.sections.db · staging: no tile of this screen",
-		"dashboard.views.ops.sections.negative.columns: columns -2",
+		"dashboard.views.ops.sections.negative.width: width -2",
 		"dashboard.views.ops.add[1].section",
 	} {
 		if strings.Count(joined, want) != 1 {
@@ -126,7 +126,7 @@ func TestDoctorSaysWhatASectionStatesThatDoesNothing(t *testing.T) {
 // to the same rules, in the file that states it.
 func TestConfigCheckReadsSectionsInTheBlockAndInAProfilesOwnScreen(t *testing.T) {
 	run := session(t, setRegistry(t))
-	dropIn(t, "10-block.yaml", "dashboard:\n  columns: -1\n  sections:\n    nothing:\n      collapsed: true\n")
+	dropIn(t, "10-block.yaml", "dashboard:\n  width: -1\n  sections:\n    nothing:\n      collapsed: true\n")
 	dropIn(t, "20-shop.yaml", `profiles:
   shop:
     plugins:
@@ -144,7 +144,7 @@ func TestConfigCheckReadsSectionsInTheBlockAndInAProfilesOwnScreen(t *testing.T)
 		t.Fatalf("the check passed:\n%s", text)
 	}
 	for _, want := range []string{
-		"dashboard.columns", "dashboard.sections.nothing",
+		"dashboard.width", "dashboard.sections.nothing",
 		"profiles.shop.dashboard.sections.lost", "10-block.yaml", "20-shop.yaml",
 	} {
 		if !strings.Contains(text, want) {
@@ -162,7 +162,7 @@ func TestConfigCheckPassesSectionsThatHaveTiles(t *testing.T) {
   sections:
     databases:
       collapsed: true
-      columns: 2
+      width: 2
     db · prod:
       collapsed: true
   add:

@@ -31,7 +31,7 @@ func TestAWriteFollowsAConfigThatIsASymlinkAndKeepsTheLink(t *testing.T) {
 	t.Setenv("RTA_CONFIG", link)
 
 	if err := Mutate(func(c Config) (Config, bool) {
-		c.Dashboard.Columns = 3
+		c.Dashboard.Width = 3
 		return c, true
 	}); err != nil {
 		t.Fatal(err)
@@ -48,7 +48,7 @@ func TestAWriteFollowsAConfigThatIsASymlinkAndKeepsTheLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(got), "columns: 3") || !strings.Contains(string(got), "# kept in the repository") {
+	if !strings.Contains(string(got), "width: 3") || !strings.Contains(string(got), "# kept in the repository") {
 		t.Errorf("the linked file was not the one written:\n%s", got)
 	}
 	if info, err := os.Stat(repo); err != nil || info.Mode().Perm() != 0o600 {

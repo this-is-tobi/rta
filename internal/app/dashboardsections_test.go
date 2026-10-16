@@ -80,7 +80,7 @@ func TestDashboardRmNamesTheWholeEntryAsTheWayBack(t *testing.T) {
 	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	const line = "rta dashboard add db.status --profile prod --span 2 --section host --set dbname=shop --view ops"
+	const line = "rta dashboard add db.status --profile prod --width 6 --section host --set dbname=shop --view ops"
 	args := strings.Fields(strings.TrimPrefix(line, "rta "))
 	if out, errOut, err := run(args...); err != nil {
 		t.Fatalf("%v %q\n%s", err, errOut, out)
@@ -147,7 +147,7 @@ func TestAddingToAViewOrAProfilesOwnScreenKeepsItsSections(t *testing.T) {
       sections:
         databases:
           collapsed: true  # folded until I need them
-          columns: 3
+          width: 3
 `)
 	staging := dropIn(t, "20-staging.yaml", `profiles:
   staging:
@@ -170,7 +170,7 @@ func TestAddingToAViewOrAProfilesOwnScreenKeepsItsSections(t *testing.T) {
 	}
 	cfg := loadedConfig(t)
 	ops, _ := cfg.Block("ops")
-	if got := ops.SectionOf("databases"); !got.Collapsed || got.Columns != 3 || len(ops.Add) != 1 || ops.Add[0].Section != "databases" {
+	if got := ops.SectionOf("databases"); !got.Collapsed || got.Width != 3 || len(ops.Add) != 1 || ops.Add[0].Section != "databases" {
 		t.Errorf("ops = %+v", ops)
 	}
 	own, _ := cfg.Block("staging")
@@ -208,7 +208,7 @@ func TestDashboardSectionsListsEverySectionWithHowItStarts(t *testing.T) {
       sections:
         databases:
           collapsed: true
-          columns: 3
+          width: 3
         ghost:
           collapsed: true
       add:
@@ -227,7 +227,7 @@ func TestDashboardSectionsListsEverySectionWithHowItStarts(t *testing.T) {
 	}
 	rows := map[string]string{}
 	lines := strings.Split(strings.TrimSpace(csv), "\n")
-	if lines[0] != "View,Section,Tiles,Starts,Columns,Refresh,File" {
+	if lines[0] != "View,Section,Tiles,Starts,Width,Height,Refresh,File" {
 		t.Errorf("the columns are %q", lines[0])
 	}
 	for _, line := range lines[1:] {
@@ -300,7 +300,7 @@ func TestSectionNamesWithALineBreakStayOnOneRow(t *testing.T) {
 // that lists them, as it does for the tiles.
 func TestConfigListsTheSectionsTheDashboardStates(t *testing.T) {
 	run := session(t, setRegistry(t))
-	dropIn(t, "10-block.yaml", "dashboard:\n  sections:\n    a:\n      collapsed: true\n    b:\n      columns: 2\n")
+	dropIn(t, "10-block.yaml", "dashboard:\n  sections:\n    a:\n      collapsed: true\n    b:\n      width: 2\n")
 	out, errOut, err := run("config", "-o", "json")
 	if err != nil {
 		t.Fatalf("%v %q", err, errOut)

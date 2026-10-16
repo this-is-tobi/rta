@@ -71,13 +71,13 @@ func TestAnAddedTileMustStillBeARead(t *testing.T) {
 // place — how the automatic sys tile gets a width — rather than a twin
 // beside it refreshing the same answer twice.
 func TestAnAddedEntryTakesTheAutomaticTilesPlace(t *testing.T) {
-	tiles := buildTiles(multiRegistry(t), config.Dashboard{Add: []config.Tile{{ID: "alpha.info", Span: 2}}})
+	tiles := buildTiles(multiRegistry(t), config.Dashboard{Add: []config.Tile{{ID: "alpha.info", Width: 6}}})
 	if got := strings.Join(tileKeys(tiles), " "); got != "alpha.info beta.info" {
 		t.Fatalf("tiles = %q, want no twin", got)
 	}
-	if tiles[1].source != tileAdded || tiles[1].span != 2 {
-		t.Errorf("alpha.info = source %v span %d, want the added entry in the automatic tile's place",
-			tiles[1].source, tiles[1].span)
+	if tiles[1].source != tileAdded || tiles[1].width != 6 {
+		t.Errorf("alpha.info = source %v width %d, want the added entry in the automatic tile's place",
+			tiles[1].source, tiles[1].width)
 	}
 }
 
@@ -86,12 +86,12 @@ func TestAnAddedEntryTakesTheAutomaticTilesPlace(t *testing.T) {
 // tile would otherwise be back on the next build. The note spells the
 // whole entry, since the bare add is refused for an automatic tile.
 func TestHOnAnEntryInPlaceOfTheAutomaticTileHidesItToo(t *testing.T) {
-	m := pinnedModel(t, twoProfileConfig(), config.Dashboard{Add: []config.Tile{{ID: "db.status", Span: 2}}})
+	m := pinnedModel(t, twoProfileConfig(), config.Dashboard{Add: []config.Tile{{ID: "db.status", Width: 6}}})
 	if got := strings.Join(tileKeys(m.tiles), " "); got != "db.status" || m.tiles[1].source != tileAdded {
 		t.Fatalf("tiles = %q (source %v), want the entry in the automatic tile's place", got, m.tiles[1].source)
 	}
 	m.selected = 1
-	if note := m.hideSelected(); !strings.Contains(note, "`rta dashboard add db.status --span 2`") {
+	if note := m.hideSelected(); !strings.Contains(note, "`rta dashboard add db.status --width 6`") {
 		t.Errorf("note = %q, want the whole entry as the way back", note)
 	}
 	cfg := savedConfig(t)
@@ -212,8 +212,8 @@ func TestRemovingAnAddedTileWithdrawsItsEntry(t *testing.T) {
 // it was under held one tile fewer than before. The same entry and the same line
 // are in TestDashboardRmNamesTheWholeEntryAsTheWayBack on the other surface.
 func TestHSpellsTheWayBackOfAnEntryWhole(t *testing.T) {
-	entry := config.Tile{ID: "db.status", Profile: "prod", Span: 2, Section: "host", With: map[string]any{"dbname": "shop"}}
-	const line = "rta dashboard add db.status --profile prod --span 2 --section host --set dbname=shop"
+	entry := config.Tile{ID: "db.status", Profile: "prod", Width: 6, Section: "host", With: map[string]any{"dbname": "shop"}}
+	const line = "rta dashboard add db.status --profile prod --width 6 --section host --set dbname=shop"
 	pressH := func(t *testing.T, m Model) string {
 		t.Helper()
 		m.selected = -1
@@ -267,7 +267,7 @@ func TestTheFooterNamesWhatHDoesToTheSelectedTile(t *testing.T) {
 		{"added", twoProfileConfig(), config.Dashboard{Add: []config.Tile{{ID: "db.status", Profile: "prod"}}},
 			"db.status@prod", "remove"},
 		{"added in place of the automatic tile", twoProfileConfig(),
-			config.Dashboard{Add: []config.Tile{{ID: "db.status", Span: 2}}}, "db.status", "remove"},
+			config.Dashboard{Add: []config.Tile{{ID: "db.status", Width: 6}}}, "db.status", "remove"},
 		{"stated", twoProfileConfig(), config.Dashboard{Tiles: []config.Tile{{ID: "db.status"}}}, "db.status", "remove"},
 		{"one panel of an expanded entry", twoInstanceConfig(),
 			config.Dashboard{Add: []config.Tile{{ID: "db.status", Profile: "prod"}}}, "db.status@prod/analytics", "hide"},

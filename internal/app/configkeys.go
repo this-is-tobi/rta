@@ -46,7 +46,7 @@ type configKey struct {
 func settingKeys(reg *registry.Registry) []configKey {
 	slots := theme.Fields()
 	keys := make([]configKey, 0, 4+len(slots))
-	keys = append(keys, outputKey(), columnsKey(), refreshKey(),
+	keys = append(keys, outputKey(), widthKey(), heightKey(), refreshKey(),
 		capabilityListKey(reg, "dashboard.hidden", "tiles to leave off the screen",
 			"nothing is hidden",
 			func(c *config.Config) *[]string { return &c.Dashboard.Hidden }),
@@ -105,30 +105,44 @@ func outputKey() configKey {
 	}
 }
 
-func columnsKey() configKey {
+// gridKey is dashboard.width and dashboard.height: one declaration of a whole
+// number in a range, since the two are the same kind of key and read the same.
+func gridKey(name, help, example, def string, lo, hi int, field func(*config.Config) *int) configKey {
 	return configKey{
-		Name: "dashboard.columns", Help: "the dashboard's grid width", Example: "3",
-		Default: "automatic, from the terminal's width",
+		Name: name, Help: help, Example: example, Default: def,
 		parse: func(values []string) (any, *view.Error) {
-			if verr := oneValue("dashboard.columns", "3", values); verr != nil {
+			if verr := oneValue(name, example, values); verr != nil {
 				return nil, verr
 			}
 			n, err := strconv.Atoi(values[0])
-			if err != nil || n < 0 {
+			if err != nil || (n != 0 && (n < lo || n > hi)) {
 				return nil, view.Errorf("core.config.set.type",
-					"dashboard.columns is declared int, and takes a whole number from 0").
-					WithHint("0 is automatic: write it as `rta config set dashboard.columns 3`")
+					"%s takes a whole number from %d to %d, or 0", name, lo, hi).
+					WithHint("0 leaves it to each tile: write it as `rta config set " + name + " " + example + "`")
 			}
 			return n, nil
 		},
-		read:  func(c config.Config) (any, bool) { return c.Dashboard.Columns, c.Dashboard.Columns > 0 },
-		write: func(c *config.Config, v any) { c.Dashboard.Columns = v.(int) },
+		read:  func(c config.Config) (any, bool) { n := *field(&c); return n, n > 0 },
+		write: func(c *config.Config, v any) { *field(c) = v.(int) },
 		drop: func(c *config.Config) bool {
-			had := c.Dashboard.Columns != 0
-			c.Dashboard.Columns = 0
+			p := field(c)
+			had := *p != 0
+			*p = 0
 			return had
 		},
 	}
+}
+
+func widthKey() configKey {
+	return gridKey("dashboard.width", "how wide a tile is, in twelfths of the screen (6 is half, 4 a third)", "4",
+		"each tile's own, from the terminal's width", 1, config.GridTracks,
+		func(c *config.Config) *int { return &c.Dashboard.Width })
+}
+
+func heightKey() configKey {
+	return gridKey("dashboard.height", "how tall a tile is, in lines of its box", "14",
+		"what each tile has to say, up to eleven lines", config.MinHeight, config.MaxHeight,
+		func(c *config.Config) *int { return &c.Dashboard.Height })
 }
 
 func refreshKey() configKey {

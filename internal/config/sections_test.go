@@ -15,11 +15,11 @@ import (
 // file can say about them, where, and what a write does to it.
 
 const sectionsYAML = `dashboard:
-  columns: 2
+  width: 2
   sections:
     databases:
       collapsed: true
-      columns: 3
+      width: 3
     pg · staging:
       collapsed: true
   add:
@@ -43,13 +43,13 @@ func TestATileNamesItsSectionAndTheBlockStatesHowItStarts(t *testing.T) {
 		t.Errorf("the entries = %+v: a tile that names no section is in none, one that names it is in it", add)
 	}
 	want := map[string]DashboardSection{
-		"databases":    {Collapsed: true, Columns: 3},
+		"databases":    {Collapsed: true, Width: 3},
 		"pg · staging": {Collapsed: true},
 	}
 	if !reflect.DeepEqual(cfg.Dashboard.Sections, want) {
 		t.Errorf("sections = %+v, want %+v", cfg.Dashboard.Sections, want)
 	}
-	if got := cfg.Dashboard.SectionOf("databases"); got.Columns != 3 || !got.Collapsed {
+	if got := cfg.Dashboard.SectionOf("databases"); got.Width != 3 || !got.Collapsed {
 		t.Errorf("SectionOf(databases) = %+v", got)
 	}
 	if got := cfg.Dashboard.SectionOf("nowhere"); got != (DashboardSection{}) {
@@ -73,7 +73,7 @@ func TestViewsAndAProfilesOwnScreenTakeSectionsBecauseTheyAreTheSameType(t *test
     ops:
       sections:
         ops-group:
-          columns: 2
+          width: 2
       add:
       - id: kube.overview
         profile: prod
@@ -96,7 +96,7 @@ profiles:
 		t.Fatal("a view and a profile's own screen are not one type, so one of them can lack a key the other has")
 	}
 	ops, _ := cfg.Block("ops")
-	if got := ops.SectionOf("ops-group"); got.Columns != 2 || ops.Add[0].Section != "ops-group" {
+	if got := ops.SectionOf("ops-group"); got.Width != 2 || ops.Add[0].Section != "ops-group" {
 		t.Errorf("ops = %+v", ops)
 	}
 	if got := ops.SectionOf("block-only"); got != (DashboardSection{}) {
@@ -107,7 +107,7 @@ profiles:
 		t.Errorf("staging's own screen = %+v, %v", staging, ok)
 	}
 	base, _ := cfg.Block("")
-	if !base.SectionOf("block-only").Collapsed || base.SectionOf("ops-group").Columns != 0 {
+	if !base.SectionOf("block-only").Collapsed || base.SectionOf("ops-group").Width != 0 {
 		t.Errorf("the block = %+v", base)
 	}
 	// And what a writer reads out and puts back keeps them: a write that went
@@ -115,7 +115,7 @@ profiles:
 	// wrote the moment a tile was added.
 	cfg.SetBlock("ops", ops)
 	cfg.SetBlock("staging", staging)
-	if got, _ := cfg.Block("ops"); got.SectionOf("ops-group").Columns != 2 {
+	if got, _ := cfg.Block("ops"); got.SectionOf("ops-group").Width != 2 {
 		t.Errorf("a view's sections did not survive Block and SetBlock: %+v", got)
 	}
 	if got, _ := cfg.Block("staging"); !got.SectionOf("own-group").Collapsed {
@@ -186,7 +186,7 @@ func TestASectionIsNotPartOfTheKeyAndIsInTheCommandThatWritesTheEntryAgain(t *te
 		want string
 	}{
 		{a, "pg.overview --profile staging --section databases"},
-		{Tile{ID: "pg.overview", Section: "pg · staging", Span: 2}, "pg.overview --span 2 --section 'pg · staging'"},
+		{Tile{ID: "pg.overview", Section: "pg · staging", Width: 6}, "pg.overview --width 6 --section 'pg · staging'"},
 		{Tile{ID: "note.list"}, "note.list"},
 	} {
 		if got := tc.tile.AddArgs(); got != tc.want {
@@ -213,7 +213,7 @@ dashboard:
         profile: staging/orders
         section: databases
 `,
-		"config.d/20-block.yaml": "dashboard:\n  sections:\n    group:\n      columns: 2\n",
+		"config.d/20-block.yaml": "dashboard:\n  sections:\n    group:\n      width: 2\n",
 	})
 	cfg, err := LoadFile()
 	if err != nil {
@@ -222,7 +222,7 @@ dashboard:
 	if got, _ := cfg.Block("ops"); !got.SectionOf("databases").Collapsed || got.Add[0].Section != "databases" {
 		t.Errorf("the drop-in's view = %+v", got)
 	}
-	if got := cfg.Dashboard.SectionOf("group"); got.Columns != 2 {
+	if got := cfg.Dashboard.SectionOf("group"); got.Width != 2 {
 		t.Errorf("a block that states only sections is not read: %+v", cfg.Dashboard)
 	}
 	if got := Where("dashboard", ""); got != filepath.Join(dir, "config.d", "20-block.yaml") {
@@ -252,7 +252,7 @@ dashboard:
 	if strings.Count(drop, "section: databases") != 2 {
 		t.Errorf("the new entry did not carry its section:\n%s", drop)
 	}
-	if block := read(t, filepath.Join(dir, "config.d", "20-block.yaml")); !strings.Contains(block, "columns: 2") {
+	if block := read(t, filepath.Join(dir, "config.d", "20-block.yaml")); !strings.Contains(block, "width: 2") {
 		t.Errorf("a write to the view disturbed the block's file:\n%s", block)
 	}
 	if main := read(t, filepath.Join(dir, "config.yaml")); strings.Contains(main, "sections") {
@@ -265,7 +265,7 @@ dashboard:
 func TestABlockOfOnlySectionsIsAUnitStatedOnce(t *testing.T) {
 	layout(t, map[string]string{
 		"config.yaml":        "dashboard:\n  sections:\n    a:\n      collapsed: true\n",
-		"config.d/10-x.yaml": "dashboard:\n  columns: 3\n",
+		"config.d/10-x.yaml": "dashboard:\n  width: 3\n",
 	})
 	if _, err := LoadFile(); err == nil || !strings.Contains(err.Error(), "stated in both") {
 		t.Errorf("error = %v, want the dashboard block refused when two files state it", err)
@@ -309,24 +309,24 @@ func TestAProfilesOwnScreenKeepsItsSectionsThroughAWrite(t *testing.T) {
 	}
 }
 
-// A column count that is not a number does not load, with the line it is on, as
+// A width that is not a number does not load, with the line it is on, as
 // the dashboard's own does not: what a decoder can refuse is refused
 // where it is read, and the one value it accepts that means nothing — a negative
 // one — is the check's to name.
-func TestASectionsColumnsThatIsNotANumberDoesNotLoad(t *testing.T) {
+func TestASectionsWidthThatIsNotANumberDoesNotLoad(t *testing.T) {
 	configAt(t)
 	for _, tc := range []struct{ name, text string }{
-		{"a word", "dashboard:\n  sections:\n    a:\n      columns: many\n"},
-		{"a view's", "dashboard:\n  views:\n    v:\n      sections:\n        a:\n          columns: many\n"},
-		{"the dashboard's", "dashboard:\n  columns: many\n"},
+		{"a word", "dashboard:\n  sections:\n    a:\n      width: many\n"},
+		{"a view's", "dashboard:\n  views:\n    v:\n      sections:\n        a:\n          width: many\n"},
+		{"the dashboard's", "dashboard:\n  width: many\n"},
 	} {
 		_, err := Parse([]byte(tc.text))
 		if err == nil || !strings.Contains(err.Error(), "config.yaml") {
 			t.Errorf("%s: err = %v, want a refusal naming the file", tc.name, err)
 		}
 	}
-	cfg, err := Parse([]byte("dashboard:\n  sections:\n    a:\n      columns: -2\n"))
-	if err != nil || cfg.Dashboard.SectionOf("a").Columns != -2 {
+	cfg, err := Parse([]byte("dashboard:\n  sections:\n    a:\n      width: -2\n"))
+	if err != nil || cfg.Dashboard.SectionOf("a").Width != -2 {
 		t.Errorf("a negative count: %v, %+v", err, cfg.Dashboard.Sections)
 	}
 }
@@ -337,22 +337,22 @@ func TestASectionsColumnsThatIsNotANumberDoesNotLoad(t *testing.T) {
 // in the file is the one named, wherever the section is stated.
 func TestASectionKeyOfTheWrongShapeIsRefusedNamingTheFileTheSpotAndWhatItTakes(t *testing.T) {
 	for what, tc := range map[string]struct{ text, spot, key, says, takes string }{
-		"a word": {"dashboard:\n  sections:\n    one: {columns: many}\n",
-			"[3:", "dashboard.sections.one.columns", "is text", "takes a whole number from 0"},
-		"a list": {"dashboard:\n  views:\n    v:\n      sections:\n        a:\n          columns: [1]\n",
-			"[6:", "dashboard.views.v.sections.a.columns", "is a list", "takes a whole number from 0"},
-		"a bool in a profile's own screen": {"profiles:\n  staging:\n    dashboard:\n      sections:\n        mine:\n          columns: true\n",
-			"[6:", "profiles.staging.dashboard.sections.mine.columns", "is true or false", "takes a whole number from 0"},
-		"a number too large": {"dashboard:\n  sections:\n    one:\n      columns: 99999999999999999999\n",
-			"[4:", "dashboard.sections.one.columns", "is a number too large to be a count of columns", "takes a whole number from 0"},
+		"a word": {"dashboard:\n  sections:\n    one: {width: many}\n",
+			"[3:", "dashboard.sections.one.width", "is text", "takes a whole number"},
+		"a list": {"dashboard:\n  views:\n    v:\n      sections:\n        a:\n          width: [1]\n",
+			"[6:", "dashboard.views.v.sections.a.width", "is a list", "takes a whole number"},
+		"a bool in a profile's own screen": {"profiles:\n  staging:\n    dashboard:\n      sections:\n        mine:\n          width: true\n",
+			"[6:", "profiles.staging.dashboard.sections.mine.width", "is true or false", "takes a whole number"},
+		"a number too large": {"dashboard:\n  sections:\n    one:\n      width: 99999999999999999999\n",
+			"[4:", "dashboard.sections.one.width", "is a number too large to be a width", "takes a whole number"},
 		"sections as a list": {"dashboard:\n  sections: [a, b]\n",
 			"[2:", "dashboard.sections", "is a list", "takes a mapping of section names to how each starts"},
 		"sections as a word in a view": {"dashboard:\n  views:\n    v:\n      sections: abc\n",
 			"[4:", "dashboard.views.v.sections", "is text", "takes a mapping of section names to how each starts"},
 		"sections as a number in a profile's own screen": {"profiles:\n  staging:\n    dashboard:\n      sections: 3\n",
 			"[4:", "profiles.staging.dashboard.sections", "is a number", "takes a mapping of section names to how each starts"},
-		"a name that is not plain": {"dashboard:\n  sections:\n    \"two\\nlines\": {columns: many}\n",
-			"[3:", `dashboard.sections."two\nlines".columns`, "is text", "takes a whole number from 0"},
+		"a name that is not plain": {"dashboard:\n  sections:\n    \"two\\nlines\": {width: many}\n",
+			"[3:", `dashboard.sections."two\nlines".width`, "is text", "takes a whole number"},
 	} {
 		t.Run(what, func(t *testing.T) {
 			path := configAt(t)
@@ -378,18 +378,18 @@ func TestASectionKeyOfTheWrongShapeIsRefusedNamingTheFileTheSpotAndWhatItTakes(t
 }
 
 // What the decoder takes is not refused for it: a count in quotes, a decimal and a
-// column count left empty all load, and a file with another mistake in it is still
+// width left empty all load, and a file with another mistake in it is still
 // refused for that one, in the decoder's words.
 func TestTheSectionRefusalOnlyNamesWhatTheDecoderRefused(t *testing.T) {
 	configAt(t)
-	cfg, err := Parse([]byte("dashboard:\n  sections:\n    a: {columns: \"3\"}\n    b: {columns: 2.5}\n    c: {columns: }\n    d:\n"))
+	cfg, err := Parse([]byte("dashboard:\n  sections:\n    a: {width: \"3\"}\n    b: {width: 2.5}\n    c: {width: }\n    d:\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := []int{cfg.Dashboard.SectionOf("a").Columns, cfg.Dashboard.SectionOf("b").Columns, cfg.Dashboard.SectionOf("c").Columns}; !slices.Equal(got, []int{3, 2, 0}) {
-		t.Errorf("columns = %v, want 3, 2 and 0", got)
+	if got := []int{cfg.Dashboard.SectionOf("a").Width, cfg.Dashboard.SectionOf("b").Width, cfg.Dashboard.SectionOf("c").Width}; !slices.Equal(got, []int{3, 2, 0}) {
+		t.Errorf("widths = %v, want 3, 2 and 0", got)
 	}
-	_, err = Parse([]byte("dashboard:\n  sections:\n    a: {columns: 2}\n  columns: many\n"))
+	_, err = Parse([]byte("dashboard:\n  sections:\n    a: {width: 2}\n  width: many\n"))
 	if err == nil || !strings.Contains(err.Error(), "cannot unmarshal") {
 		t.Errorf("another mistake in the file: %v, want the decoder's refusal of it", err)
 	}
@@ -406,7 +406,7 @@ func TestAMisspeltSectionKeyIsReportedWhereverTheSectionIsStated(t *testing.T) {
     ops:
       sections:
         databases:
-          colums: 2
+          widht: 2
 profiles:
   staging:
     dashboard:
@@ -420,7 +420,7 @@ profiles:
 	}
 	for _, key := range []string{
 		"dashboard.sections.databases.collapse",
-		"dashboard.views.ops.sections.databases.colums",
+		"dashboard.views.ops.sections.databases.widht",
 		"profiles.staging.dashboard.sections.mine.collapsd",
 	} {
 		if !got[key] {

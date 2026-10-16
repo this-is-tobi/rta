@@ -24,26 +24,26 @@ func TestCheckNamesTheKeysOfTheFileRtaIgnores(t *testing.T) {
 	}{
 		{"a typo at the top", "oputput: json\n",
 			[]string{`oputput (line 1): is not a key rta reads (did you mean "output"?)`}},
-		{"a typo inside the dashboard", "dashboard:\n  colums: 3\n  hiden: [note.list]\n",
+		{"a typo inside the dashboard", "dashboard:\n  widht: 3\n  hiden: [note.list]\n",
 			[]string{
-				`dashboard.colums (line 2): is not a key rta reads (did you mean "columns"?)`,
+				`dashboard.widht (line 2): is not a key rta reads (did you mean "width"?)`,
 				`dashboard.hiden (line 3): is not a key rta reads (did you mean "hidden"?)`,
 			}},
-		{"a typo in a flow mapping", "dashboard: {colums: 3}\n",
-			[]string{`dashboard.colums (line 1): is not a key rta reads (did you mean "columns"?)`}},
-		{"a typo in a tile, counted from the tile's index", "dashboard:\n  add:\n    - id: note.list\n    - id: sys.cpu\n      spna: 2\n",
-			[]string{`dashboard.add[1].spna (line 5): is not a key rta reads (did you mean "span"?)`}},
+		{"a typo in a flow mapping", "dashboard: {widht: 3}\n",
+			[]string{`dashboard.widht (line 1): is not a key rta reads (did you mean "width"?)`}},
+		{"a typo in a tile, counted from the tile's index", "dashboard:\n  add:\n    - id: note.list\n    - id: sys.cpu\n      widht: 2\n",
+			[]string{`dashboard.add[1].widht (line 5): is not a key rta reads (did you mean "width"?)`}},
 		{"a typo in a role", "roles:\n  morning:\n    grnts: [a]\n    ttl: 8h\n",
 			[]string{`roles.morning.grnts (line 3): is not a key rta reads (did you mean "grants"?)`}},
-		{"a key that lives in another block", "columns: 3\n",
-			[]string{"columns (line 1): is not a key rta reads (columns belongs under `dashboard:`)"}},
+		{"a key that lives in another block", "width: 3\n",
+			[]string{"width (line 1): is not a key rta reads (width belongs under `dashboard:`)"}},
 		{"a top-level key written inside the dashboard", "dashboard:\n  output: json\n",
 			[]string{"dashboard.output (line 2): is not a key rta reads (output belongs at the top level of the file)"}},
 		{"a key that resembles nothing", "zzzzzz: 1\n",
 			[]string{"zzzzzz (line 1): is not a key rta reads (keys here: output, dashboard, plugins, profiles, theme, roles)"}},
-		{"a dotted path written as one key", "dashboard.columns: 3\n",
-			[]string{"dashboard.columns (line 1): is a dotted path written as one key, and the file nests it " +
-				"(write it nested, `dashboard: {columns: <value>}`, or let `rta config set dashboard.columns <value>` do it)"}},
+		{"a dotted path written as one key", "dashboard.width: 3\n",
+			[]string{"dashboard.width (line 1): is a dotted path written as one key, and the file nests it " +
+				"(write it nested, `dashboard: {width: <value>}`, or let `rta config set dashboard.width <value>` do it)"}},
 		{"a long dotted path", "plugins.gen.password.symbols: true\n",
 			[]string{"plugins.gen.password.symbols (line 1): is a dotted path written as one key, and the file nests it " +
 				"(write it nested, `plugins: {gen: {password: {symbols: <value>}}}`, " +
@@ -64,7 +64,7 @@ func TestCheckNamesTheKeysOfTheFileRtaIgnores(t *testing.T) {
 
 func TestCheckLeavesAFileThatIsRightAlone(t *testing.T) {
 	file := "output: json\n" +
-		"dashboard:\n  columns: 2\n  hidden: [gen.overview]\n  add:\n    - id: note.list\n      span: 2\n" +
+		"dashboard:\n  width: 2\n  hidden: [gen.overview]\n  add:\n    - id: note.list\n      width: 6\n" +
 		"plugins:\n  http:\n    timeout: 10\n" +
 		"roles:\n  morning:\n    grants: [fs.tree]\n    ttl: 8h\n    agent: claude\n"
 	if got := findings(t, file); len(got) != 0 {

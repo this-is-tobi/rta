@@ -52,12 +52,22 @@ type Tile struct {
 	// picker, ran against the named one. The screen and the page disagreed
 	// about where the numbers came from, in the direction that hides it.
 	Profile string `yaml:"profile,omitempty" json:"profile,omitempty"`
-	// Span is how many grid columns this tile occupies, overriding what the
-	// capability's declared MinWidth works out to. 0 leaves that decision to
-	// the capability, which is right almost always — this is for the person
-	// who wants their task list twice as wide as everything else because
-	// that is the one they read.
-	Span int `yaml:"span,omitempty" json:"span,omitempty"`
+	// Width is how many twelfths of the screen this tile is wide: 12 is the
+	// whole row, 6 half of it, 4 a third, 3 a quarter. A demand, which beats
+	// what the capability's own MinWidth works out to; the same key on a
+	// section and on the screen states the width of the tiles under it, as a
+	// default that yields to a capability's minimum. 0 leaves it to them, and to
+	// the terminal's width, which is right almost always — this is for the
+	// person who wants their task list twice as wide as everything else because
+	// that is the one they read. Held to what a tile can be drawn in at the width
+	// of the terminal (see GridTracks).
+	Width int `yaml:"width,omitempty" json:"width,omitempty"`
+	// Height is how many lines tall the tile's box is, borders included. 0 leaves
+	// it to what the tile has to say, between the least a panel reads as one and
+	// eleven lines; a number lifts that cap for the tile that has more to show,
+	// and the row it is on takes the tallest of its tiles. The same key, the same
+	// reading, on a section and on the screen (see MinHeight, MaxHeight).
+	Height int `yaml:"height,omitempty" json:"height,omitempty"`
 	// Section is the group this tile is drawn in, under a header that folds:
 	// `databases`, `staging`. Empty, the tile is in none, which is what every
 	// tile was before this field existed and still draws exactly as it did. An
@@ -108,8 +118,11 @@ func (t Tile) AddArgs() string {
 	if t.Profile != "" {
 		args = append(args, "--profile", t.Profile)
 	}
-	if t.Span > 0 {
-		args = append(args, "--span", strconv.Itoa(t.Span))
+	if t.Width > 0 {
+		args = append(args, "--width", strconv.Itoa(t.Width))
+	}
+	if t.Height > 0 {
+		args = append(args, "--height", strconv.Itoa(t.Height))
 	}
 	if t.Section != "" {
 		args = append(args, "--section", t.Section)
@@ -187,11 +200,16 @@ type Dashboard struct {
 	// Order lists tile keys (Tile.Key) to place first, in this order.
 	// Anything not named keeps its natural position after them.
 	Order []string `yaml:"order,omitempty" json:"order,omitempty"`
-	// Columns fixes the grid width instead of deriving it from the terminal.
-	// 0 means automatic, which is what almost everybody wants: the dashboard
-	// was two columns at every size, so a 200-cell terminal drew two
-	// 100-cell tiles of a six-line summary and called it a screen.
-	Columns int `yaml:"columns,omitempty" json:"columns,omitempty"`
+	// Width is the width, in twelfths of the screen, of every tile that states
+	// none and whose section states none: 6 draws two to a row, 4 three, 3 four.
+	// 0 leaves each tile to its capability and to the terminal, which is what
+	// almost everybody wants: the dashboard was two columns at every size, so a
+	// 200-cell terminal drew two 100-cell tiles of a six-line summary and called
+	// it a screen. The same key, in the same words, on a section and on a tile.
+	Width int `yaml:"width,omitempty" json:"width,omitempty"`
+	// Height is the height of every tile that states none and whose section
+	// states none, in lines; 0 is each tile's own. The same key as on a tile.
+	Height int `yaml:"height,omitempty" json:"height,omitempty"`
 	// Refresh is the pace of every tile that states none and whose section
 	// states none: `30s`, `5m`. Empty leaves each tile at its capability's own
 	// (plugin.Capability.Pace). The same key, in the same words, on a section
