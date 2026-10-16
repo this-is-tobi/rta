@@ -62,7 +62,7 @@ profiles:
         secrets: {password: "kube:billing-pg-cluster-app/password"}
 ```
 
-With five instances and no bare one, `--profile shop` on a database call is refused with the list rather than guessed. The Secret is CloudNativePG's own `<cluster>-app`, and its owner and database are the application's name unless the cluster says otherwise.
+With five instances and no bare one, `--profile shop` on a database read runs on all five, one section each, and on a write is refused with the list rather than guessed. The Secret is CloudNativePG's own `<cluster>-app`, and its owner and database are the application's name unless the cluster says otherwise.
 
 ## Services reached over the network
 

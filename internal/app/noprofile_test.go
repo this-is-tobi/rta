@@ -116,8 +116,9 @@ func TestNoProfileStatesAConnectionWhereTheEnvironmentHoldsSeveralInstances(t *t
 // one. A call that named the environment itself, by a bare name that is
 // ambiguous, asked for it, and is told which instance to add instead.
 func TestTheRefusalOffersNoProfileOnlyToACallThatNamedNoEnvironment(t *testing.T) {
-	reg := connRegistry(t)
-	_, errOut, err := runWith(t, reg, noProfileConfig, "db", "status", "--profile", "shards")
+	// A write: a read runs on every target of the environment (fanout.go).
+	reg := fanOutRegistry(t)
+	_, errOut, err := runWith(t, reg, noProfileConfig, "db", "reset", "--profile", "shards", "--yes")
 	if err == nil || !strings.Contains(errOut, "core.profile.instance.required") {
 		t.Fatalf("a bare name over two instances was not refused: %v\n%s", err, errOut)
 	}
