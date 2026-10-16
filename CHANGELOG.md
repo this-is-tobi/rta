@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.42.0](https://github.com/this-is-tobi/rta/compare/v0.41.0...v0.42.0) (2026-10-16)
+
+
+### Features
+
+* **cli:** --profile completion follows the environment that is on ([fa1cad6](https://github.com/this-is-tobi/rta/commit/fa1cad67a0c742cf4fb3480783e04899002d5a35))
+* **cli:** a read that names an environment and no target runs on every target it holds ([6de3307](https://github.com/this-is-tobi/rta/commit/6de33070175266d802c8321c30ecbb17ba1c52ea))
+* **kv:** an unlock the person asks for, held in memory for the length they choose ([c37e404](https://github.com/this-is-tobi/rta/commit/c37e4049f93b2b05fa87d231c95fb9a1411e1e2e))
+* **tui:** the U key unlocks the store for the session, and locks it again ([c613487](https://github.com/this-is-tobi/rta/commit/c613487d5de3abf7c5ebf801502e397eab665a50))
+
+
+### Bug Fixes
+
+* **kv:** the overview tells the TUI's reader to press U to unlock the store ([12639a6](https://github.com/this-is-tobi/rta/commit/12639a63d140767bc12160df0d15fe053f54da03))
+
 ## [0.41.0](https://github.com/this-is-tobi/rta/compare/v0.40.0...v0.41.0) (2026-10-15)
 
 
