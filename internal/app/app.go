@@ -1296,32 +1296,12 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 			}
 		}
 		completeFlag(cmd, "profile",
-			func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+			func(_ *cobra.Command, _ []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
 				cfg, err := config.Load()
 				if err != nil {
 					return nil, cobra.ShellCompDirectiveNoFileComp
 				}
-				// The refs a call would accept, not just the names: an
-				// environment holding several connections to this plugin
-				// completes as staging/analytics beside staging, because a
-				// bare name over several labeled entries is exactly what
-				// Lookup refuses. The description carries the connection's
-				// own address where the note would repeat per instance.
-				ns := plugin.Namespace(c.ID)
-				var out []cobra.Completion
-				for _, name := range cfg.ProfilesFor(ns) {
-					p := cfg.Profiles[name]
-					for _, ref := range profile.InstanceRefs(p, name, ns) {
-						desc := p.Note
-						if instance := config.RefInstance(ref); instance != "" {
-							if _, conn, ok := p.ForInstance(ns, instance); ok {
-								desc = connAddress(conn, p.Note)
-							}
-						}
-						out = append(out, cobra.CompletionWithDesc(ref, desc))
-					}
-				}
-				return out, cobra.ShellCompDirectiveNoFileComp
+				return profileFlagCompletions(cfg, c, profile.Active(), toComplete)
 			})
 	}
 	cmd.SetFlagErrorFunc(positionalFlagError(c, positionals))
@@ -2065,6 +2045,11 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	values, err := collectValues(cmd, c, args)
 	if err != nil {
 		return usageError(cmd, err)
+	}
+	// A read that names an environment and none of its targets runs on each
+	// (fanout.go); everything else resolves exactly one.
+	if targets := fanOutTargets(cmd, c, values); len(targets) > 0 {
+		return runFanOut(ctx, cmd, c, values, opts, renderOpts, targets)
 	}
 	// The profile, and the values it contributes. A person at a terminal
 	// needs no grant for any of this: the gate is on the MCP surface, because

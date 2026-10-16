@@ -35,7 +35,7 @@ The resolution rules are small and fail closed:
 
 - A bare `--profile staging` runs the **default** instance — the unlabeled entry, which is written as one.
 - With no unlabeled entry and exactly one labeled, that one is unambiguous and wins.
-- With several labeled entries and no default — the `s3` above — a bare name is **refused with the list**, never resolved by sort order: `staging/assets` or `staging/logs`, your call. Completion offers the refs directly, described by each instance's address.
+- With several labeled entries and no default — the `s3` above — a bare name is never resolved by sort order. A **read** from a terminal with the bare name (`rta s3 bucket list --profile staging`, or no `--profile` at all while `staging` is on) runs on every instance, one titled section each, so `staging/assets` and `staging/logs` both answer; a failure on one is on the page and in a non-zero exit, and a value you type that the instances state themselves (`--endpoint`) still has to name its instance. A **write or destructive call is refused with the list**: `staging/assets` or `staging/logs`, your call. An agent never fans out, since a grant names exactly one. Completion offers the targets of the environment that is on, and the other environments as `name/`, described by each instance's address.
 
 Two things follow from an instance being *one connection*:
 
