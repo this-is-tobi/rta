@@ -1368,3 +1368,50 @@ func registeredNamespace(ns string, reg *registry.Registry) bool {
 func fenceable(c plugin.Capability, f plugin.Field) bool {
 	return f.Config != "" && !f.Type.Sensitive() && plugin.ProfileFillable(c, f)
 }
+
+// profileFlagCompletions is what `--profile <TAB>` offers a capability: the
+// targets of the environment that is switched on, and the other environments
+// only as `name/`, which a person who means one types into and tabs again.
+//
+// The refs a call would accept, not just the names: an environment holding
+// several connections to this plugin completes as staging/analytics, and as
+// bare staging too for a read, which runs on all of them (fanout.go). The
+// description carries the connection's own address where the note would repeat
+// per instance.
+//
+// Not every environment's every target. With homelab on, a list that opens with
+// a production target is one keystroke from a call against it, and the person
+// who switched an environment on has already said where they are working. With
+// nothing on, or once a name and a slash are typed, everything is offered.
+func profileFlagCompletions(cfg config.Config, c plugin.Capability, active, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	ns := plugin.Namespace(c.ID)
+	directive := cobra.ShellCompDirectiveNoFileComp
+	var out []cobra.Completion
+	for _, name := range cfg.ProfilesFor(ns) {
+		p := cfg.Profiles[name]
+		refs := profile.InstanceRefs(p, name, ns)
+		if c.Safety == plugin.Read && p.Ambiguous(ns) {
+			refs = append([]string{name}, refs...)
+		}
+		inScope := active == "" || name == active || strings.HasPrefix(toComplete, name+"/")
+		if !inScope {
+			if len(refs) == 1 && refs[0] == name {
+				out = append(out, cobra.CompletionWithDesc(name, p.Note))
+			} else {
+				out = append(out, cobra.CompletionWithDesc(name+"/", p.Note))
+				directive |= cobra.ShellCompDirectiveNoSpace
+			}
+			continue
+		}
+		for _, ref := range refs {
+			desc := p.Note
+			if instance := config.RefInstance(ref); instance != "" {
+				if _, conn, ok := p.ForInstance(ns, instance); ok {
+					desc = connAddress(conn, p.Note)
+				}
+			}
+			out = append(out, cobra.CompletionWithDesc(ref, desc))
+		}
+	}
+	return out, directive
+}
