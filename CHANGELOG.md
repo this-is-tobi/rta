@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.43.0](https://github.com/this-is-tobi/rta/compare/v0.42.0...v0.43.0) (2026-10-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashboard:** the grid is twelve tracks wide, and a tile has a width and a height
+
+### Features
+
+* **config:** a length of time is written one way, days included, everywhere ([303895a](https://github.com/this-is-tobi/rta/commit/303895a11334f5d4b357583863d36a21c098bbe9))
+* **dashboard:** a tile that reaches a connection runs every 30 seconds, and never twice at once ([4b4011b](https://github.com/this-is-tobi/rta/commit/4b4011bd56b08ab0e3068b06be7285016079dbbc))
+* **dashboard:** refresh states a tile's pace the same way on a tile, a section and the screen ([df9a96a](https://github.com/this-is-tobi/rta/commit/df9a96a9415ee9f7046024e6aa0e2877db78d44b))
+* **dashboard:** the grid is twelve tracks wide, and a tile has a width and a height ([4db44a6](https://github.com/this-is-tobi/rta/commit/4db44a6502729660cbe9084cd1ac03776a50b1d1))
+
+
+### Bug Fixes
+
+* **theme:** a name that begins like a status word is not drawn as one ([5217138](https://github.com/this-is-tobi/rta/commit/5217138bbbe409a6e10ec5f8b500583bd01ec2fd))
+
 ## [0.42.0](https://github.com/this-is-tobi/rta/compare/v0.41.0...v0.42.0) (2026-10-16)
 
 
