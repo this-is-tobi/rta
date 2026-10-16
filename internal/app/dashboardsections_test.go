@@ -227,7 +227,7 @@ func TestDashboardSectionsListsEverySectionWithHowItStarts(t *testing.T) {
 	}
 	rows := map[string]string{}
 	lines := strings.Split(strings.TrimSpace(csv), "\n")
-	if lines[0] != "View,Section,Tiles,Starts,Columns,File" {
+	if lines[0] != "View,Section,Tiles,Starts,Columns,Refresh,File" {
 		t.Errorf("the columns are %q", lines[0])
 	}
 	for _, line := range lines[1:] {

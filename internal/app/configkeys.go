@@ -46,7 +46,7 @@ type configKey struct {
 func settingKeys(reg *registry.Registry) []configKey {
 	slots := theme.Fields()
 	keys := make([]configKey, 0, 4+len(slots))
-	keys = append(keys, outputKey(), columnsKey(),
+	keys = append(keys, outputKey(), columnsKey(), refreshKey(),
 		capabilityListKey(reg, "dashboard.hidden", "tiles to leave off the screen",
 			"nothing is hidden",
 			func(c *config.Config) *[]string { return &c.Dashboard.Hidden }),
@@ -126,6 +126,31 @@ func columnsKey() configKey {
 		drop: func(c *config.Config) bool {
 			had := c.Dashboard.Columns != 0
 			c.Dashboard.Columns = 0
+			return had
+		},
+	}
+}
+
+func refreshKey() configKey {
+	return configKey{
+		Name: "dashboard.refresh", Help: "how often a tile is re-run, unless its section or it says otherwise", Example: "30s",
+		Default: "each capability's own: 30s for one that reaches a connection, 5s for the rest",
+		parse: func(values []string) (any, *view.Error) {
+			if verr := oneValue("dashboard.refresh", "30s", values); verr != nil {
+				return nil, verr
+			}
+			d, err := config.ParseRefresh(values[0])
+			if err != nil {
+				return nil, view.Errorf("core.config.set.type", "dashboard.refresh %s", err.Error()).
+					WithHint("write it as `rta config set dashboard.refresh 30s`")
+			}
+			return config.FormatRefresh(d), nil
+		},
+		read:  func(c config.Config) (any, bool) { return c.Dashboard.Refresh, c.Dashboard.Refresh != "" },
+		write: func(c *config.Config, v any) { c.Dashboard.Refresh = v.(string) },
+		drop: func(c *config.Config) bool {
+			had := c.Dashboard.Refresh != ""
+			c.Dashboard.Refresh = ""
 			return had
 		},
 	}

@@ -52,6 +52,11 @@ type DashboardSection struct {
 	// that wants three narrow tiles in a row beside a dashboard of two wide ones
 	// says so here, and the rest is not touched.
 	Columns int `yaml:"columns,omitempty" json:"columns,omitempty"`
+	// Refresh is the pace of this section's tiles that state none of their own:
+	// `30s`, `5m`. Empty inherits the screen's, which is every section's
+	// default. A default and not a demand: a tile whose capability declared a
+	// slower pace keeps it, and is not complained of.
+	Refresh string `yaml:"refresh,omitempty" json:"refresh,omitempty"`
 }
 
 // MaxSectionName bounds a section's name, in characters: it is a header the

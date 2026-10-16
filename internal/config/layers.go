@@ -353,7 +353,7 @@ func writeErr(path string, err error) error {
 // still the block, and left out here a file holding only `dashboard: sections:`
 // was no unit at all: it was merged into nothing, and a write rendered it away.
 func dashboardSet(d Dashboard) bool {
-	return len(d.Tiles)+len(d.Add)+len(d.Hidden)+len(d.Order)+len(d.Sections) > 0 || d.Columns != 0
+	return len(d.Tiles)+len(d.Add)+len(d.Hidden)+len(d.Order)+len(d.Sections) > 0 || d.Columns != 0 || d.Refresh != ""
 }
 
 // unitsOf is what a configuration states, one name per unit: `output`,

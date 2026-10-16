@@ -192,7 +192,7 @@ profiles     --profile <name> runs this against a configured connection; over MC
 input:cores  bool, from config plugins.sys.cpu.cores — per-core usage as a bar chart
 config file  ~/.config/rta/config.yaml
 set a key    rta config set plugins.sys.cpu.cores true
-dashboard    a tile when added (`rta dashboard add sys.cpu`, or + on it in the TUI), re-run every few seconds; the automatic dashboard shows sys.overview for this plugin
+dashboard    a tile when added (`rta dashboard add sys.cpu`, or + on it in the TUI), re-run every 5s; the automatic dashboard shows sys.overview for this plugin
 
 INPUTS ────────────────────────────────────────────────────────────────────
 ╭───────┬──────┬──────────┬─────────┬─────┬─────┬─────────┬───────────┬────────────┬───────┬────────┬───────────────────────────────╮

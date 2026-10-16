@@ -153,6 +153,11 @@
               "description": "The grid width of this section's tile rows, instead of the dashboard's; 0 inherits it.",
               "minimum": 0,
               "type": "integer"
+            },
+            "refresh": {
+              "description": "How often this section's tiles are re-run (30s, 5m, 1h; at most 24h). Left out, it is the screen's \u2014 the nearest one wins. Never faster than the dashboard's own 5s tick, nor than a pace the capability declared (eol.watch runs every 2h); a capability that reaches a configured connection runs every 30s unless told.",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))+$",
+              "type": "string"
             }
           },
           "type": "object"
@@ -169,8 +174,13 @@
               "pattern": "^[a-z0-9][a-z0-9-]{0,62}(/[a-z][a-z0-9-]*)?$",
               "type": "string"
             },
+            "refresh": {
+              "description": "How often this tile is re-run (30s, 5m, 1h; at most 24h). Left out, it is its section's, then the screen's, then its capability's \u2014 the nearest one wins. Never faster than the dashboard's own 5s tick, nor than a pace the capability declared (eol.watch runs every 2h); a capability that reaches a configured connection runs every 30s unless told.",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))+$",
+              "type": "string"
+            },
             "section": {
-              "description": "The group this tile is drawn in, under a header that folds. Tiles that name the same section are drawn together, at the place of the first of them. Left out, the tile is in none — unless it expanded into several panels, which are then in a section of their own named `<plugin> · <profile>`.",
+              "description": "The group this tile is drawn in, under a header that folds. Tiles that name the same section are drawn together, at the place of the first of them. Left out, the tile is in none \u2014 unless it expanded into several panels, which are then in a section of their own named `<plugin> \u00b7 <profile>`.",
               "maxLength": 64,
               "minLength": 1,
               "type": "string"
@@ -219,11 +229,16 @@
               },
               "type": "array"
             },
+            "refresh": {
+              "description": "How often every tile of this screen is re-run, unless its section or it says otherwise (30s, 5m, 1h; at most 24h). Left out, it is each capability's own \u2014 the nearest one wins. Never faster than the dashboard's own 5s tick, nor than a pace the capability declared (eol.watch runs every 2h); a capability that reaches a configured connection runs every 30s unless told.",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))+$",
+              "type": "string"
+            },
             "sections": {
               "additionalProperties": {
                 "$ref": "#/$defs/rtaConfig/$defs/section"
               },
-              "description": "How each section the tiles name starts out and how wide it draws, by section name: `collapsed: true` opens it folded to its header row, `columns` is its own grid width. An automatic group — the panels one entry expanded into — is named `<plugin> · <profile>`. A name no tile is in is reported by `rta config check`.",
+              "description": "How each section the tiles name starts out and how wide it draws, by section name: `collapsed: true` opens it folded to its header row, `columns` is its own grid width. An automatic group \u2014 the panels one entry expanded into \u2014 is named `<plugin> \u00b7 <profile>`. A name no tile is in is reported by `rta config check`.",
               "propertyNames": {
                 "maxLength": 64,
                 "minLength": 1
@@ -274,11 +289,16 @@
               },
               "type": "array"
             },
+            "refresh": {
+              "description": "How often every tile of this screen is re-run, unless its section or it says otherwise (30s, 5m, 1h; at most 24h). Left out, it is each capability's own \u2014 the nearest one wins. Never faster than the dashboard's own 5s tick, nor than a pace the capability declared (eol.watch runs every 2h); a capability that reaches a configured connection runs every 30s unless told.",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))+$",
+              "type": "string"
+            },
             "sections": {
               "additionalProperties": {
                 "$ref": "#/$defs/rtaConfig/$defs/section"
               },
-              "description": "How each section the tiles name starts out and how wide it draws, by section name: `collapsed: true` opens it folded to its header row, `columns` is its own grid width. An automatic group — the panels one entry expanded into — is named `<plugin> · <profile>`. A name no tile is in is reported by `rta config check`.",
+              "description": "How each section the tiles name starts out and how wide it draws, by section name: `collapsed: true` opens it folded to its header row, `columns` is its own grid width. An automatic group \u2014 the panels one entry expanded into \u2014 is named `<plugin> \u00b7 <profile>`. A name no tile is in is reported by `rta config check`.",
               "propertyNames": {
                 "maxLength": 64,
                 "minLength": 1

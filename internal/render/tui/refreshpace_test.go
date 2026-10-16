@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -125,5 +126,43 @@ func TestATileThatReachesAConnectionRunsAtTheRemotePaceUnlessItDeclaredOne(t *te
 	declared.Refresh = time.Minute
 	if got := declared.Pace(); got != time.Minute {
 		t.Errorf("a declared pace was overridden: %v", got)
+	}
+}
+
+// The nearest `refresh:` wins — the tile's, the section's, the screen's, then the
+// capability's — and a default is told from a demand by what becomes of it under a
+// capability's declared pace.
+func TestResolvePaceTakesTheNearestStatementAndSaysWhereItWas(t *testing.T) {
+	host := plugin.Field{Name: "host", Type: plugin.String, Config: "host"}
+	remote := plugin.Capability{ID: "pg.status", Safety: plugin.Read, Inputs: []plugin.Field{host}}
+	slow := plugin.Capability{ID: "eol.watch", Safety: plugin.Read, Refresh: 2 * time.Hour}
+	dash := config.Dashboard{
+		Refresh:  "1m",
+		Sections: map[string]config.DashboardSection{"databases": {Refresh: "45s"}},
+	}
+	for _, tc := range []struct {
+		name     string
+		t        tile
+		want     time.Duration
+		wantFrom string
+	}{
+		{"the tile's own", tile{cap: remote, section: "databases", refresh: 10 * time.Second}, 10 * time.Second, "tile"},
+		{"the section's", tile{cap: remote, section: "databases"}, 45 * time.Second, "section"},
+		{"the screen's", tile{cap: remote}, time.Minute, "screen"},
+		{"a section the screen does not state", tile{cap: remote, section: "other"}, time.Minute, "screen"},
+		{"a default under a declared pace yields", tile{cap: slow, section: "databases"}, 2 * time.Hour, ""},
+		{"a demand under a declared pace is cut", tile{cap: slow, refresh: time.Minute}, 2 * time.Hour, ""},
+		{"slower than a declared pace is allowed", tile{cap: slow, refresh: 6 * time.Hour}, 6 * time.Hour, "tile"},
+		{"under the tick", tile{cap: remote, refresh: time.Second}, plugin.PaceLocal, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, from := resolvePace(tc.t, dash)
+			if got != tc.want || from != tc.wantFrom {
+				t.Errorf("resolvePace = %v from %q, want %v from %q", got, from, tc.want, tc.wantFrom)
+			}
+		})
+	}
+	if got, from := resolvePace(tile{cap: remote}, config.Dashboard{}); got != plugin.PaceRemote || from != "" {
+		t.Errorf("with nothing stated a connection runs at %v from %q", got, from)
 	}
 }

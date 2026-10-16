@@ -64,20 +64,23 @@ type View struct {
 	Hidden   []string                    `yaml:"hidden,omitempty" json:"hidden,omitempty"`
 	Order    []string                    `yaml:"order,omitempty" json:"order,omitempty"`
 	Columns  int                         `yaml:"columns,omitempty" json:"columns,omitempty"`
+	Refresh  string                      `yaml:"refresh,omitempty" json:"refresh,omitempty"`
 	Sections map[string]DashboardSection `yaml:"sections,omitempty" json:"sections,omitempty"`
 }
 
 // Dashboard is v as the arrangement every reader of one takes.
 func (v View) Dashboard() Dashboard {
 	return Dashboard{
-		Tiles: v.Tiles, Add: v.Add, Hidden: v.Hidden, Order: v.Order, Columns: v.Columns, Sections: v.Sections,
+		Tiles: v.Tiles, Add: v.Add, Hidden: v.Hidden, Order: v.Order, Columns: v.Columns, Refresh: v.Refresh,
+		Sections: v.Sections,
 	}
 }
 
 // View is d as a view, without the views it names.
 func (d Dashboard) View() View {
 	return View{
-		Tiles: d.Tiles, Add: d.Add, Hidden: d.Hidden, Order: d.Order, Columns: d.Columns, Sections: d.Sections,
+		Tiles: d.Tiles, Add: d.Add, Hidden: d.Hidden, Order: d.Order, Columns: d.Columns, Refresh: d.Refresh,
+		Sections: d.Sections,
 	}
 }
 

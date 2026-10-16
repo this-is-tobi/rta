@@ -952,7 +952,8 @@ type Capability struct {
 	// page of its own.
 	Flash bool `protobuf:"varint,19,opt,name=flash,proto3" json:"flash,omitempty"`
 	// How often a dashboard tile of this capability is re-run, in seconds.
-	// 0 is the host's own pace (every few seconds). A capability whose answer
+	// 0 is the host's own pace for its kind of work (every 5 seconds, or every 30 for a
+	// capability that reaches a configured connection). A capability whose answer
 	// moves by the day and costs a network round trip, or a dozen
 	// subprocesses, says so here rather than being re-run every five seconds
 	// by a host that cannot know either.

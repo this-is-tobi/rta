@@ -64,6 +64,16 @@ type tile struct {
 	// gave a 44-character key the whole 200 cells, which is as wrong in the
 	// other direction as cramming it into 39.
 	span int
+	// refresh is the pace the tile's own entry states, 0 when it states none.
+	refresh time.Duration
+	// every is the pace the tile runs at once everything that can state one has:
+	// its entry, its section, the screen, the capability (resolvePace). 0 on a
+	// tile nobody resolved, which runs at its capability's.
+	every time.Duration
+	// paceFrom says which of the three the pace came from — "tile", "section" or
+	// "screen" — and is "" when it is the capability's own, for the list that says
+	// where a pace is stated.
+	paceFrom string
 	// section is the group this tile is drawn in, under a header that folds: the
 	// name its entry states, or — for the panels one entry expanded into, when it
 	// names none — the plugin and profile they are connections of (expandTiles).
@@ -609,9 +619,56 @@ func buildTilesWith(reg *registry.Registry, dash config.Dashboard, instances Ins
 	tiles = groupSections(arrange(expandTiles(tiles, instances), dash))
 	for i := range tiles {
 		tiles[i].actions = capActions(reg, tiles[i].cap.ID)
+		tiles[i].every, tiles[i].paceFrom = resolvePace(tiles[i], dash)
 	}
 	search := tile{cap: plugin.Capability{ID: "search", Summary: "find a capability"}, search: true}
 	return append([]tile{search}, tiles...)
+}
+
+// resolvePace is the pace a tile runs at, and where it was stated: the tile's own
+// `refresh:`, else its section's, else the screen's, else what its capability
+// gets (plugin.Capability.Pace). The nearest one wins, which is the one rule
+// `refresh:` has at every level it can be written.
+//
+// What a capability declared is a floor under all three (plugin.ClampPace), and
+// a value that was cut by it is not reported as having come from the file: the
+// tile runs at the capability's pace, and that is the answer to "why does this
+// tile not run every ten seconds". A default stated on a section or the screen
+// yields to a slower capability without a word, since it was never about that
+// tile; a demand on the tile itself that cannot be met is `rta config check`'s
+// to say.
+func resolvePace(t tile, dash config.Dashboard) (time.Duration, string) {
+	want, from := t.refresh, "tile"
+	if want == 0 && t.section != "" {
+		want, _ = config.ParseRefresh(dash.SectionOf(t.section).Refresh)
+		from = "section"
+	}
+	if want == 0 {
+		want, _ = config.ParseRefresh(dash.Refresh)
+		from = "screen"
+	}
+	every, cut := plugin.ClampPace(t.cap, want)
+	if want == 0 || cut {
+		from = ""
+	}
+	return every, from
+}
+
+// PaceOf is the pace an entry of dash runs at, and where it was stated ("tile",
+// "section", "screen", or "" for the capability's own): resolvePace for a caller
+// that has the entry and not a built tile, such as the receipt of `dashboard add`.
+func PaceOf(c plugin.Capability, entry config.Tile, dash config.Dashboard) (time.Duration, string) {
+	t := tile{cap: c, section: strings.TrimSpace(entry.Section)}
+	t.refresh, _ = config.ParseRefresh(entry.Refresh)
+	return resolvePace(t, dash)
+}
+
+// pace is how often this tile is re-run.
+func (t tile) pace() time.Duration {
+	if t.every > 0 {
+		return t.every
+	}
+	return t.cap.Pace()
 }
 
 // joinTiles puts the added entries on the dashboard: after the tiles
@@ -747,6 +804,9 @@ func statedTiles(reg *registry.Registry, entries []config.Tile, source tileSourc
 		}
 		t := tile{cap: c, values: ct.With, profile: ct.Profile, source: source, span: ct.Span,
 			section: strings.TrimSpace(ct.Section)}
+		// A value that cannot be read is the config check's to name; the tile runs
+		// at the pace it would have had without the line.
+		t.refresh, _ = config.ParseRefresh(ct.Refresh)
 		if t.profile != "" {
 			t.color = profileColor(config.RefName(t.profile))
 		}
@@ -762,7 +822,10 @@ type Placement struct {
 	Profile string
 	Source  string
 	Refresh time.Duration
-	With    map[string]any
+	// PaceFrom is where the pace was stated — "tile", "section" or "screen" — and
+	// "" when it is the capability's own.
+	PaceFrom string
+	With     map[string]any
 	// Hidden marks a panel `hidden:` keeps off the screen, listed anyway:
 	// a person asking why a tile is missing is asking this list.
 	Hidden bool
@@ -791,7 +854,7 @@ func Layout(reg *registry.Registry, dash config.Dashboard, instances Instances) 
 	for _, t := range tiles[1:] {
 		out = append(out, Placement{
 			ID: t.cap.ID, Profile: t.profile, Source: t.source.String(),
-			Refresh: t.cap.Pace(), With: t.values, Expanded: t.expanded, Section: t.section,
+			Refresh: t.pace(), PaceFrom: t.paceFrom, With: t.values, Expanded: t.expanded, Section: t.section,
 			Hidden: (t.source == tileAuto && hidden[t.cap.ID]) || (t.expanded && hidden[t.key()]),
 		})
 	}
@@ -972,7 +1035,7 @@ func (t tile) due(now time.Time) bool {
 	}
 	// The timer is the tick: a pace no longer than it is every tick, whatever
 	// the few microseconds between a dispatch and the tick scheduled after it.
-	pace := t.cap.Pace()
+	pace := t.pace()
 	return pace <= tileRefreshInterval || now.Sub(t.lastFired) >= pace
 }
 
