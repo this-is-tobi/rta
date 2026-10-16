@@ -144,7 +144,7 @@ A key rta does not read is ignored, which on its own would make a typo look like
 
 ## Split it across files
 
-When one file grows long — a profile per environment, a team's roles, the colours — put some of it in `config.d`, the directory beside the file: `~/.config/rta/config.d/` next to `config.yaml`, or `rta.d` next to the file `RTA_CONFIG` names. Every `.yaml` or `.yml` file in it is read after the file, in the order of its name, and says the same keys the file does:
+When one file grows long — a profile per environment, a team's roles, the colours — put some of it in `config.d`, the directory beside the file: `~/.config/rta/config.d/` next to `config.yaml`, or `<name>.d` next to the file `RTA_CONFIG` names (`mine.d` beside `mine.yaml`). Every `.yaml` or `.yml` file in it is read after the file, in the order of its name, and says the same keys the file does:
 
 ```yaml
 # ~/.config/rta/config.d/20-dashboard.yaml
