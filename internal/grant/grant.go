@@ -335,7 +335,7 @@ func (g Grant) rateRoom(now time.Time) (room int, next time.Time, limited bool) 
 	if g.RateMax == 0 && g.RateWindow == "" {
 		return 0, time.Time{}, false
 	}
-	d, err := time.ParseDuration(g.RateWindow)
+	d, err := format.ParseDuration(g.RateWindow)
 	if err != nil || d <= 0 || g.RateMax <= 0 || g.RateMax > MaxRate {
 		return 0, time.Time{}, true
 	}
@@ -393,7 +393,7 @@ func (g *Grant) mark(now time.Time, n int) {
 	for i := 0; i < n; i++ {
 		g.Recent = append(g.Recent, now.UTC().Truncate(time.Second))
 	}
-	d, err := time.ParseDuration(g.RateWindow)
+	d, err := format.ParseDuration(g.RateWindow)
 	if err != nil || d <= 0 {
 		return
 	}
@@ -447,7 +447,7 @@ func (g Grant) Active(now time.Time) bool {
 // person could have asked for.
 func (g Grant) Window() time.Duration {
 	if g.TTL != "" {
-		if d, err := time.ParseDuration(g.TTL); err == nil && d > 0 {
+		if d, err := format.ParseDuration(g.TTL); err == nil && d > 0 {
 			return min(d, MaxTTL)
 		}
 	}

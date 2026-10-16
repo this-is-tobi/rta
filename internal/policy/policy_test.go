@@ -277,3 +277,18 @@ func TestAnExplicitPathThatIsMissingIsRefused(t *testing.T) {
 		t.Fatal("RTA_POLICY naming a file that does not exist ran with no ceiling")
 	}
 }
+
+// The ceiling is written with the same units as everywhere else, a day included.
+func TestMaxTTLTakesADay(t *testing.T) {
+	isolate(t)
+	root := t.TempDir()
+	write(t, root, "maxTTL: 1d\n")
+	chdir(t, root)
+	c, verr := Load()
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if c.MaxTTL != 24*time.Hour {
+		t.Errorf("MaxTTL = %v, want 24h", c.MaxTTL)
+	}
+}

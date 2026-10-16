@@ -161,6 +161,10 @@ dashboard:
 
 **Only a file somebody named has a directory.** The `./.rta.yaml` rta falls back to when there is no config directory has none, for the reason it has no profiles and no dashboard: a cloned repository does not get to arrange what rta connects to. Only regular files are read, or a link to one, which is what a dotfiles manager makes of this directory; a name that starts with a dot, ends in `~` or is not `.yaml` or `.yml` is left alone, and at most 64 are read. Nothing in a drop-in grants anything, any more than a line of the file does, and the plugins' own sandbox keeps the directory from them as it keeps the file.
 
+## Lengths of time
+
+A length of time is written one way wherever it is written: a number and a unit, `30s`, `5m`, `2h`, `1d`, `1w`, or several together, `1h30m` and `1d12h`. The same words work in a profile's `ttl:`, a role's `ttl:` and a policy's `maxTTL:`, in a tile's, a section's or the screen's `refresh:`, in `--ttl` of a grant or a lock, in `--for` of `rta use`, in `--since` of a log, in `rta time at` (`in 2d`), and in a plugin's duration inputs. A day is twenty-four hours and a week seven, not calendar units. A bare number is refused everywhere, since `30` is the one spelling every reader has a different default for. What a place then allows is its own bound and is said in its own words: a grant lasts a day at most, so `3d` is held to `1d`, and a tile waits a day at most.
+
 ## A first config that is good
 
 Small, and stating only what you chose. The defaults are chosen to be the right ones (the automatic dashboard, the built-in colours, an agent that reaches only what needs no grant), and a key you state is a decision you made and a default that can no longer improve under you. A first file worth having is a few lines:

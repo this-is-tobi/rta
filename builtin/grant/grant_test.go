@@ -1031,25 +1031,37 @@ func TestAllowIsQuietWhenTheOpenServerIsThisBuild(t *testing.T) {
 	}
 }
 
-// A ttl that is no duration is refused in the tool's own words. `--ttl 1d` was
-// `"1d" is not a duration: time: unknown unit "d" in duration "1d"`, Go's own
-// sentence, for the spelling people reach for first, and a day is what a grant
-// lasts at most.
+// A ttl that is no duration is refused in the tool's own words, not Go's.
 func TestABadTTLIsRefusedWithoutGoSentenceAndSaysWhatToWrite(t *testing.T) {
 	for _, c := range []struct{ raw, hint string }{
-		{"1d", "write 24h"},
-		{"3d", "write 24h"},
-		{"0.5d", "write 24h"},
 		{"abc", "write it with a unit"},
 		{"90", "write it with a unit"},
 		{"2 hours", "write it with a unit"},
 		{"dd", "write it with a unit"},
+		{"1x", "30s, 15m, 2h, 1d"},
 	} {
 		_, _, _, _, verr := parseTTL(plugin.SurfaceCLI, c.raw, "cert.expiry")
 		if verr == nil || verr.Code != "grant.badttl" || strings.Contains(verr.Message, "time:") ||
 			!strings.Contains(verr.Hint, c.hint) {
 			t.Errorf("%q: %+v, want grant.badttl with no Go sentence and a hint saying %q", c.raw, verr, c.hint)
 		}
+	}
+}
+
+// A day is written the way it is everywhere else: a lock takes `1d`, a profile's
+// deadline takes it, and a grant does too. What a grant may last is its own bound,
+// a day, and a longer ask is held to it with the ask kept for the receipt — the
+// parser never said "there is no day unit" for the spelling people reach for first.
+func TestADayIsAValidTTLAndTheCeilingStillHolds(t *testing.T) {
+	for raw, want := range map[string]time.Duration{"1d": 24 * time.Hour, "0.5d": 12 * time.Hour} {
+		ttl, asked, _, _, verr := parseTTL(plugin.SurfaceCLI, raw, "cert.expiry")
+		if verr != nil || ttl != want || asked != want {
+			t.Errorf("%q: ttl %v asked %v err %+v, want %v", raw, ttl, asked, verr, want)
+		}
+	}
+	ttl, asked, _, _, verr := parseTTL(plugin.SurfaceCLI, "3d", "cert.expiry")
+	if verr != nil || ttl != core.MaxTTL || asked != 72*time.Hour {
+		t.Errorf("3d: ttl %v asked %v err %+v, want it held to %v with the ask kept", ttl, asked, verr, core.MaxTTL)
 	}
 }
 
