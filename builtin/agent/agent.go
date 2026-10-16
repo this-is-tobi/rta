@@ -1621,7 +1621,7 @@ func andList(items []string) string {
 // stand beside the refusal, so the answer never claims a grant it did not
 // issue nor hides one it did.
 func alsoGrant(r consent.Request, ttl, from, build string, signer *guard.Signer) (string, *view.Error) {
-	asked, err := time.ParseDuration(ttl)
+	asked, err := format.ParseDuration(ttl)
 	if err != nil {
 		return "", view.Errorf("agent.allow.ttl", "%q is not a duration", ttl).
 			WithHint("try 15m, 1h — the maximum is 24h")

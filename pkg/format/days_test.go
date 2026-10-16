@@ -17,6 +17,8 @@ func TestParseWindowReadsDaysAndEverythingGoReads(t *testing.T) {
 		"1h30m":   90 * time.Minute,
 		"30s":     30 * time.Second,
 		"-2h":     -2 * time.Hour,
+		"+2h":     2 * time.Hour,
+		"1w":      7 * 24 * time.Hour,
 		"0":       0,
 		"1h0m30s": time.Hour + 30*time.Second,
 	} {
@@ -28,7 +30,7 @@ func TestParseWindowReadsDaysAndEverythingGoReads(t *testing.T) {
 }
 
 func TestParseWindowRefusesWhatIsNoWindow(t *testing.T) {
-	for _, raw := range []string{"", "d", "1dd", "1d-2h", "12h1d", "1.2.3d", "d1", "tomorrow", "1x", "99999999999d", "106751d25h"} {
+	for _, raw := range []string{"", "d", "1dd", "1d-2h", "--2h", "1.2.3d", "d1", "tomorrow", "1x", "99999999999d", "106751d25h"} {
 		if got, err := ParseWindow(raw); err == nil {
 			t.Errorf("ParseWindow(%q) = %v, want an error", raw, got)
 		}

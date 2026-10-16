@@ -112,7 +112,7 @@
             },
             "ttl": {
               "description": "How long an activation lasts by default (2h, 30m); empty means no deadline. `rta use --for` overrides it.",
-              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))+$",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+$",
               "type": "string"
             }
           },
@@ -133,7 +133,8 @@
               "type": "array"
             },
             "ttl": {
-              "description": "How long the role's grants last unless --ttl says: 8h, 12h (the default).",
+              "description": "How long the role's grants last unless --ttl says: 8h, 12h (the default), at most 1d.",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+$",
               "type": "string"
             }
           },
@@ -157,7 +158,7 @@
             },
             "refresh": {
               "description": "How often this section's tiles are re-run (30s, 5m, 1h; at most 24h). Left out, it is the screen's \u2014 the nearest one wins. Never faster than the dashboard's own 5s tick, nor than a pace the capability declared (eol.watch runs every 2h); a capability that reaches a configured connection runs every 30s unless told.",
-              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))+$",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+$",
               "type": "string"
             },
             "width": {
@@ -189,7 +190,7 @@
             },
             "refresh": {
               "description": "How often this tile is re-run (30s, 5m, 1h; at most 24h). Left out, it is its section's, then the screen's, then its capability's \u2014 the nearest one wins. Never faster than the dashboard's own 5s tick, nor than a pace the capability declared (eol.watch runs every 2h); a capability that reaches a configured connection runs every 30s unless told.",
-              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))+$",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+$",
               "type": "string"
             },
             "section": {
@@ -246,7 +247,7 @@
             },
             "refresh": {
               "description": "How often every tile of this screen is re-run, unless its section or it says otherwise (30s, 5m, 1h; at most 24h). Left out, it is each capability's own \u2014 the nearest one wins. Never faster than the dashboard's own 5s tick, nor than a pace the capability declared (eol.watch runs every 2h); a capability that reaches a configured connection runs every 30s unless told.",
-              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))+$",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+$",
               "type": "string"
             },
             "sections": {
@@ -313,7 +314,7 @@
             },
             "refresh": {
               "description": "How often every tile of this screen is re-run, unless its section or it says otherwise (30s, 5m, 1h; at most 24h). Left out, it is each capability's own \u2014 the nearest one wins. Never faster than the dashboard's own 5s tick, nor than a pace the capability declared (eol.watch runs every 2h); a capability that reaches a configured connection runs every 30s unless told.",
-              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))+$",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+$",
               "type": "string"
             },
             "sections": {

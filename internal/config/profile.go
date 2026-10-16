@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/this-is-tobi/rta/pkg/format"
 	"os"
 	"regexp"
 	"sort"
@@ -599,7 +600,7 @@ func (p Profile) Window() (time.Duration, bool) {
 	if p.TTL == "" {
 		return 0, false
 	}
-	d, err := time.ParseDuration(p.TTL)
+	d, err := format.ParseDuration(p.TTL)
 	if err != nil || d <= 0 {
 		return 0, false
 	}

@@ -2,52 +2,36 @@ package format
 
 import (
 	"errors"
-	"strconv"
 	"strings"
 	"time"
 )
 
-// ParseWindow reads a window the way a person types one: Go's own spellings
-// ("90m", "1h30m") and, in front of them, days — "1d", "2d", "1d12h" — which
-// time.ParseDuration has no unit for and which is the first thing anybody
-// asking "since yesterday" or "lock it for the weekend" reaches for.
+// ParseWindow reads a window the way a person types one: ParseDuration's grammar
+// — "90m", "1h30m", "2d", "1w" — with the optional sign a "since" carries
+// ("-2h" is two hours back) and the spaces a flag value may have around it.
 //
-// A day is twenty-four hours. A calendar day is not always, and a window a
-// person means as "a day back" is read as the length of one rather than as a
-// date: the two disagree twice a year, for an hour, and a duration that
-// quietly depended on the clock changing would be a worse surprise than the
-// hour.
+// It was once its own parser, with days in front of Go's grammar, which is how
+// a lock took `1d` while a profile's deadline did not. It is ParseDuration now,
+// so there is one answer to what a length of time looks like; the only thing it
+// adds is the sign, because a window back from now is the one place a negative
+// length is meant.
 //
-// Only the leading unit is a day, so "12h1d" is refused rather than read both
-// ways. A day count is held to what a Duration can carry, since a window that
-// wrapped negative would be a lock that lifted itself before it was placed.
+// A day is twenty-four hours. A calendar day is not always, and a window a person
+// means as "a day back" is read as the length of one rather than as a date: the
+// two disagree twice a year, for an hour, and a duration that quietly depended on
+// the clock changing would be a worse surprise than the hour.
 func ParseWindow(raw string) (time.Duration, error) {
 	raw = strings.TrimSpace(raw)
-	digits := 0
-	for digits < len(raw) && (raw[digits] >= '0' && raw[digits] <= '9' || raw[digits] == '.') {
-		digits++
+	negative := strings.HasPrefix(raw, "-")
+	if negative || strings.HasPrefix(raw, "+") {
+		raw = raw[1:]
 	}
-	if digits == 0 || digits >= len(raw) || raw[digits] != 'd' {
-		return time.ParseDuration(raw)
-	}
-	days, err := strconv.ParseFloat(raw[:digits], 64)
+	d, err := ParseDuration(raw)
 	if err != nil {
 		return 0, errors.New("not a window: " + raw)
 	}
-	const day = 24 * time.Hour
-	if days > float64(time.Duration(1<<63-1)/day) {
-		return 0, errors.New("a window that long does not fit: " + raw)
+	if negative {
+		return -d, nil
 	}
-	window := time.Duration(days * float64(day))
-	if rest := raw[digits+1:]; rest != "" {
-		more, err := time.ParseDuration(rest)
-		if err != nil || more < 0 {
-			return 0, errors.New("not a window: " + raw)
-		}
-		if window > time.Duration(1<<63-1)-more {
-			return 0, errors.New("a window that long does not fit: " + raw)
-		}
-		window += more
-	}
-	return window, nil
+	return d, nil
 }
