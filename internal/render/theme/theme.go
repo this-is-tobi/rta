@@ -621,11 +621,11 @@ const (
 func ClassifyStatus(s string) StatusKind {
 	v := strings.ToLower(strings.TrimSpace(s))
 	switch {
-	case v == "":
+	case v == "" || isName(v):
 		return StatusNeutral
-	case strings.HasPrefix(v, "ok") || strings.HasPrefix(v, "valid") ||
-		strings.HasPrefix(v, "open") || strings.HasPrefix(v, "up") ||
-		strings.HasPrefix(v, "active") || strings.HasPrefix(v, "read"):
+	case isWord(v, "ok") || strings.HasPrefix(v, "valid") ||
+		isWord(v, "open") || isWord(v, "up") ||
+		strings.HasPrefix(v, "active") || isWord(v, "read") || isWord(v, "ready"):
 		return StatusGood
 	case strings.HasPrefix(v, "warn") || strings.HasPrefix(v, "write") ||
 		strings.HasPrefix(v, "pending") || strings.HasPrefix(v, "busy") ||
@@ -646,7 +646,7 @@ func ClassifyStatus(s string) StatusKind {
 	case strings.HasPrefix(v, "error") || strings.HasPrefix(v, "expired") ||
 		strings.HasPrefix(v, "invalid") || strings.HasPrefix(v, "fail") ||
 		strings.HasPrefix(v, "denied") || strings.HasPrefix(v, "unreachable") ||
-		strings.HasPrefix(v, "destructive") || strings.HasPrefix(v, "down") ||
+		strings.HasPrefix(v, "destructive") || isWord(v, "down") ||
 		strings.HasPrefix(v, "overloaded") || strings.HasPrefix(v, "eol") ||
 		strings.HasPrefix(v, "critical") ||
 		// A note past its due date, the one grade the note list gives that a
@@ -660,13 +660,45 @@ func ClassifyStatus(s string) StatusKind {
 		strings.HasPrefix(v, "did not answer") || strings.HasPrefix(v, "was never contacted") ||
 		strings.HasPrefix(v, "answered, and refused") || strings.HasPrefix(v, "answered, and did not accept"):
 		return StatusBad
-	case strings.HasPrefix(v, "closed") || strings.HasPrefix(v, "info") ||
-		strings.HasPrefix(v, "none") || strings.HasPrefix(v, "disabled") ||
-		strings.HasPrefix(v, "done"):
+	case strings.HasPrefix(v, "closed") || isWord(v, "info") ||
+		isWord(v, "none") || strings.HasPrefix(v, "disabled") ||
+		isWord(v, "done"):
 		return StatusMuted
 	default:
 		return StatusNeutral
 	}
+}
+
+// isName is whether the text leads with a name rather than a word of the
+// vocabulary: a first token with a hyphen, underscore, dot or slash in it is an
+// identifier — `open-webui-pg-cluster-2`, `upstream.example.com`, `down/a` — and
+// the words above are stems, so reading it by its first letters graded a
+// cluster called open-webui green on the page that names it. The token ends at
+// a space or at the punctuation a status line puts after its word, so
+// "ERROR: connection refused" and "ok — 3 pods" still lead with their word.
+func isName(v string) bool {
+	end := strings.IndexAny(v, " \t,;:()—·")
+	if end < 0 {
+		end = len(v)
+	}
+	return strings.ContainsAny(v[:end], "-_./")
+}
+
+// isWord is whether v leads with word as a whole word, for the short stems that
+// are also the first letters of names and of ordinary words: "up" is a state and
+// "upstream" is not, "ok" is one and "okta" is not, "down" and "downloads".
+// The longer stems (warn, fail, error, expire…) stay prefixes, because their
+// inflections — warning, failed, errors — are the words the plugins emit.
+func isWord(v, word string) bool {
+	rest, ok := strings.CutPrefix(v, word)
+	if !ok {
+		return false
+	}
+	if rest == "" {
+		return true
+	}
+	c := rest[0]
+	return (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_'
 }
 
 // ClassifyUsage grades one view.KindUsage cell — how full something is, from

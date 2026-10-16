@@ -84,3 +84,50 @@ func TestNothingIsNotAState(t *testing.T) {
 		}
 	}
 }
+
+// A name is not a state. The vocabulary matches by the first letters of a value,
+// and a value that names something — a cluster, a host, a bucket — began with
+// them often enough that `open-webui-pg-cluster-2 — primary for 15d` was drawn
+// green beside the other primaries, and a tile of `down-service` would have been
+// counted a failure. A hyphenated, dotted or slashed first token is an
+// identifier, and the short stems match whole words only.
+func TestANameThatBeginsLikeAStatusWordIsNotOne(t *testing.T) {
+	for _, name := range []string{
+		"open-webui-pg-cluster-2 — primary for 15d",
+		"down-service",
+		"up-to-date-app",
+		"upstream.example.com",
+		"okta",
+		"upstream",
+		"downloads",
+		"readme",
+		"info-page",
+		"done_deal",
+		"none/of/it",
+		"ok2",
+	} {
+		if got := ClassifyStatus(name); got != StatusNeutral {
+			t.Errorf("ClassifyStatus(%q) = %v, want neutral", name, got)
+		}
+	}
+}
+
+// The words themselves, however a plugin continues the line after them.
+func TestAStatusWordFollowedByItsDetailIsStillAStatus(t *testing.T) {
+	for in, want := range map[string]StatusKind{
+		"up 3 days":                 StatusGood,
+		"ok — 3 pods":               StatusGood,
+		"ok (12 ms)":                StatusGood,
+		"open: port 443":            StatusGood,
+		"ready":                     StatusGood,
+		"down — connection refused": StatusBad,
+		"none — the cluster has no primary right now": StatusMuted,
+		"done · Oct 2":         StatusMuted,
+		"warning: 3 days left": StatusWarn,
+		"failed: exit 1":       StatusBad,
+	} {
+		if got := ClassifyStatus(in); got != want {
+			t.Errorf("ClassifyStatus(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
