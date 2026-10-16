@@ -31,7 +31,8 @@ profiles:
           namespace: [shop-web, shop-billing]
 
       # `only: cluster:` names the cluster each instance reads and is what a call gets when it names
-      # none. Unlike `set: cluster`, it leaves `cnpg backup request` to name its cluster on the call.
+      # none, `cnpg list` included: a connection lists its own cluster and not the namespace's.
+      # Unlike `set: cluster`, it leaves `cnpg backup request` to name its cluster on the call.
       cnpg/web:
         set: {context: my-cluster, namespace: shop-web}
         only: {cluster: [web-pg-cluster], namespace: [shop-web]}
@@ -90,7 +91,9 @@ profiles:
           region: fr-par
           tls: true
           access-key: SCWXXXXXXXXXXXXXXXXX   # an identifier, not a secret
-        # Fence the buckets this connection may reach; with one listed, a call that names none gets it.
+        # Fence the buckets this connection may reach; with one listed, a call that names none gets it,
+        # and `s3 overview` is about that bucket: its creation date, versioning and (with --detail)
+        # what it holds, not the account's list of buckets.
         only: {bucket: [shop-backups]}
         secrets: {secret-key: "kv:shop-s3-secret-key"}
 ```
