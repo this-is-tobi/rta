@@ -27,9 +27,13 @@ func TestExplainCardSaysWhatTheDashboardDoesWithIt(t *testing.T) {
 	if got := card("eol.watch"); !strings.Contains(got, "declines to run unasked") || !strings.Contains(got, "every 2h") {
 		t.Errorf("eol.watch: %q, want the refusal and the two-hour pace", got)
 	}
-	// Declined, at the host's own pace.
-	if got := card("audit.kube.eol"); !strings.Contains(got, "declines to run unasked") || !strings.Contains(got, "every few seconds") {
+	// Declined, and at the pace of a capability that reaches a cluster.
+	if got := card("audit.kube.eol"); !strings.Contains(got, "declines to run unasked") || !strings.Contains(got, "every 30s") {
 		t.Errorf("audit.kube.eol: %q", got)
+	}
+	// Declined, at the host's own pace: it reads this machine.
+	if got := card("sys.load"); !strings.Contains(got, "every 5s") {
+		t.Errorf("sys.load: %q", got)
 	}
 	// Needs an input nothing defaults.
 	if got := card("cert.expiry"); !strings.Contains(got, "needs to be told what to look at") {
