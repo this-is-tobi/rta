@@ -195,7 +195,7 @@ Then put one modeline at the top of that file:
 
 VS Code's YAML extension (`redhat.vscode-yaml`) and every other editor speaking yaml-language-server now complete each key, flag unknown ones, and show the explanation on hover — `tunnelTLS` tells you it is about the destination and not the hop without leaving the file.
 
-The schema states the envelope, deliberately. What a `plugins:` section or a `set:` overlay may hold *inside* is each plugin's own declaration, which the schema cannot know without knowing every plugin — `rta explain <ns>` lists those keys, and `rta doctor` stays the deep validator for everything the envelope cannot see.
+The schema states the envelope, deliberately. What a `plugins:` section or a `set:` overlay may hold *inside* is each plugin's own declaration, which the schema cannot know without knowing every plugin — `rta explain` on one of its capabilities lists those keys (`rta explain pg.status`; `rta explain pg` lists the capabilities), and `rta doctor` stays the deep validator for everything the envelope cannot see.
 
 ## Related
 
