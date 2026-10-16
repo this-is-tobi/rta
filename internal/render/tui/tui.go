@@ -781,6 +781,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// see resultMsg.cleaned. The error is not cleaned here: the one
 		// thing that draws it is cli.RenderError, which cleans its own copy.
 		msg = msg.cleaned()
+		// The unlock form answered: back to the dashboard it was opened from,
+		// with the tiles that were failing run again at once, and the answer as
+		// a footer line. The result page that every other Read gets would hold
+		// the tiles still until it was closed.
+		if msg.cap.ID == unlockID && msg.err == nil {
+			if t, ok := msg.view.(view.Text); ok {
+				m.flash = t.Body
+			}
+			m.origin = modeDashboard
+			return m.closeToOrigin()
+		}
 		// A mutating action finished cleanly: flash its outcome and return
 		// to the view it was launched from, reloaded. If it destroyed that
 		// view's subject (removing the very task whose page we were on),

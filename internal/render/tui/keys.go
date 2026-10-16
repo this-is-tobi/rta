@@ -66,15 +66,17 @@ var (
 	bindQuit = binding{display: "q", keys: []string{"q", "ctrl+c"}, label: "quit", rank: rankLeave}
 	// Last on the bar, so of the hints that share its rank it is the first
 	// to go when even those do not fit.
-	bindHelp   = binding{display: "?", keys: []string{"?"}, label: "help", rank: rankLeave}
-	bindBack   = binding{display: "esc", keys: []string{"esc"}, label: "back", rank: rankLeave}
-	bindOpen   = binding{display: "enter", keys: []string{"enter"}, label: "open", rank: rankPrimary}
-	bindRerun  = binding{display: "r", keys: []string{"r"}, label: "re-run", rank: rankPrimary}
-	bindEdit   = binding{display: "e", keys: []string{"e"}, label: "edit inputs", rank: rankExtra}
-	bindCopy   = binding{display: "y", keys: []string{"y"}, label: "copy json", rank: rankExtra}
-	bindMove   = binding{display: "[ ]", keys: []string{"[", "]", "<", ">"}, label: "move", rank: rankExtra}
-	bindHide   = binding{display: "H", keys: []string{"H"}, label: "hide", rank: rankExtra}
-	bindView   = binding{display: "V", keys: []string{"V"}, label: "view", rank: rankExtra}
+	bindHelp  = binding{display: "?", keys: []string{"?"}, label: "help", rank: rankLeave}
+	bindBack  = binding{display: "esc", keys: []string{"esc"}, label: "back", rank: rankLeave}
+	bindOpen  = binding{display: "enter", keys: []string{"enter"}, label: "open", rank: rankPrimary}
+	bindRerun = binding{display: "r", keys: []string{"r"}, label: "re-run", rank: rankPrimary}
+	bindEdit  = binding{display: "e", keys: []string{"e"}, label: "edit inputs", rank: rankExtra}
+	bindCopy  = binding{display: "y", keys: []string{"y"}, label: "copy json", rank: rankExtra}
+	bindMove  = binding{display: "[ ]", keys: []string{"[", "]", "<", ">"}, label: "move", rank: rankExtra}
+	bindHide  = binding{display: "H", keys: []string{"H"}, label: "hide", rank: rankExtra}
+	bindView  = binding{display: "V", keys: []string{"V"}, label: "view", rank: rankExtra}
+	// Unlocks the encrypted store for this session, and locks it again.
+	bindUnlock = binding{display: "U", keys: []string{"U"}, label: "unlock", rank: rankExtra}
 	bindPlugin = binding{display: "p", keys: []string{"p"}, label: "plugins", rank: rankExtra}
 	bindTheme  = binding{display: "t", keys: []string{"t"}, label: "theme", rank: rankExtra}
 	bindConfig = binding{display: "c", keys: []string{"c"}, label: "configure", rank: rankAction}

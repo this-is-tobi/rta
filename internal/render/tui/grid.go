@@ -1087,6 +1087,7 @@ func (m Model) dashOwnItems() []hintItem {
 		items = append(items, item(bindHide))
 	}
 	items = append(items, item(bindView), item(bindAdd))
+	items = append(items, m.unlockItem())
 	if m.hasSections() {
 		items = append(items, item(bindFold), item(bindFoldAll))
 	}
