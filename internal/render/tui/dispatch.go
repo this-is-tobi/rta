@@ -120,6 +120,12 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// switch environment, and a switch (u) undoes it.
 		cmd := m.cycleView()
 		return m, cmd, true
+	case "U":
+		// The encrypted store, for this session: tiles that read a profile's
+		// credential from it fail every tick until somebody opens it, and this
+		// is where a person does (kvunlock.go).
+		nm, cmd := m.unlockStore()
+		return nm, cmd, true
 	case "+":
 		// The other half of H, from the screen it is about: what to add
 		// is chosen in the catalogue, where + on a row is the add itself.

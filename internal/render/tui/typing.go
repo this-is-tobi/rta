@@ -72,7 +72,10 @@ func (m Model) typedIntoSearch(msg tea.KeyPressMsg) (string, bool) {
 		return "", false
 	}
 	switch msg.Text {
-	case "/", "+", ":", "?":
+	// U is the unlock key, and the screen it is wanted on is the one that opens
+	// with the search bar selected and every tile failing for want of it: a query
+	// has not started with a capital U, since the search ignores case.
+	case "/", "+", ":", "?", "U":
 		return "", false
 	}
 	for _, r := range msg.Text {
