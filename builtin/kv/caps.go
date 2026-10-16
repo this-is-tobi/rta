@@ -1232,7 +1232,7 @@ func unlockLine(req plugin.Request, mode keyMode, asks string) string {
 			// case where nothing here can open the store at all.
 			return "on request — identity " + p + " is passphrase-protected, " + asks
 		}
-		return "no — identity " + p + " is passphrase-protected (set " + passphraseEnv + ")"
+		return "no — identity " + p + " is passphrase-protected (" + unlockWays(req) + ")"
 	}
 	if lookupPassphrase(req) != "" {
 		return "yes — passphrase " + passphraseSource(req)
@@ -1240,7 +1240,17 @@ func unlockLine(req plugin.Request, mode keyMode, asks string) string {
 	if canPrompt(req) {
 		return "on request — " + asks
 	}
-	return "no passphrase available (set " + passphraseEnv + ")"
+	return "no passphrase available (" + unlockWays(req) + ")"
+}
+
+// unlockWays is how the store is opened from where the reader stands: in the TUI
+// the person is at the keyboard and U asks for the passphrase; anywhere else it
+// is the environment's to set.
+func unlockWays(req plugin.Request) string {
+	if req.Surface() == plugin.SurfaceTUI {
+		return "press U to unlock it for this session, or set " + passphraseEnv + " before starting rta"
+	}
+	return "set " + passphraseEnv
 }
 
 func runRecipients(_ context.Context, req plugin.Request) (view.View, error) {
