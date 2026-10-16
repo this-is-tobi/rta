@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/config"
 	core "github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/internal/role"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -346,5 +348,22 @@ func TestRenewMovesAWholeRole(t *testing.T) {
 		case g.Role == "" && left > time.Hour+time.Minute:
 			t.Fatalf("the hand grant was renewed along with the role: %s left", left)
 		}
+	}
+}
+
+// A role's `ttl:` is written with the units everything else takes, a day included,
+// and a window longer than a grant can live is held to the day with the ask kept.
+func TestARolesTTLTakesADay(t *testing.T) {
+	asked, effective, _, err := effectiveWindow(role.Source{
+		Name: "morning", From: "config.yaml", Role: config.Role{TTL: "1d"},
+	})
+	if err != nil || asked != 24*time.Hour || effective != 24*time.Hour {
+		t.Errorf("ttl 1d: asked %v effective %v err %v, want a day", asked, effective, err)
+	}
+	asked, effective, _, err = effectiveWindow(role.Source{
+		Name: "morning", From: "config.yaml", Role: config.Role{TTL: "3d"},
+	})
+	if err != nil || asked != 72*time.Hour || effective != core.MaxTTL {
+		t.Errorf("ttl 3d: asked %v effective %v err %v, want the ask kept and the day applied", asked, effective, err)
 	}
 }

@@ -143,7 +143,7 @@ func resolve(raw string, now stdtime.Time) (stdtime.Time, timefmt.Unit, *view.Er
 	// hangs off would be wrong half the time. This is separate from the
 	// message below because "I do not understand that" is unhelpful when the
 	// value is understood perfectly and only the direction is missing.
-	if _, parseErr := stdtime.ParseDuration(raw); parseErr == nil {
+	if _, parseErr := format.ParseDuration(raw); parseErr == nil {
 		return stdtime.Time{}, "", view.Errorf("time.at.unsigned",
 			"%q is a length of time, not an instant — in which direction?", raw).
 			WithHint("say which: `" + raw + " ago`, or `in " + raw + "`")
@@ -203,13 +203,13 @@ func relativeDuration(raw string) (stdtime.Duration, bool) {
 	lower := strings.ToLower(raw)
 	switch {
 	case strings.HasPrefix(raw, "+"), strings.HasPrefix(raw, "-"):
-		d, err := stdtime.ParseDuration(raw)
+		d, err := format.ParseWindow(raw)
 		return d, err == nil
 	case strings.HasSuffix(lower, " ago"):
-		d, err := stdtime.ParseDuration(strings.TrimSpace(lower[:len(lower)-len(" ago")]))
+		d, err := format.ParseDuration(strings.TrimSpace(lower[:len(lower)-len(" ago")]))
 		return -d, err == nil
 	case strings.HasPrefix(lower, "in "):
-		d, err := stdtime.ParseDuration(strings.TrimSpace(lower[len("in "):]))
+		d, err := format.ParseDuration(strings.TrimSpace(lower[len("in "):]))
 		return d, err == nil
 	}
 	return 0, false

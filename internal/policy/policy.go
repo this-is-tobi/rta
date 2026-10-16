@@ -33,6 +33,7 @@ package policy
 
 import (
 	"fmt"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"os"
 	"path/filepath"
 	"strings"
@@ -408,7 +409,7 @@ func read(path string, mustExist bool) (Ceiling, *view.Error) {
 		}
 	}
 	if c.RawTTL != "" {
-		d, err := time.ParseDuration(c.RawTTL)
+		d, err := format.ParseDuration(c.RawTTL)
 		if err != nil || d <= 0 {
 			return Ceiling{}, view.Errorf("policy.badttl",
 				"%s: maxTTL %q is not a duration", path, c.RawTTL).

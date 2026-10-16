@@ -819,7 +819,7 @@ func parseRate(sf plugin.Surface, raw string) (int, string, *view.Error) {
 			"past that it is not slowing anything down", core.MaxRate))
 	}
 	window = strings.TrimSpace(window)
-	d, err := time.ParseDuration(window)
+	d, err := format.ParseDuration(window)
 	if err != nil || d <= 0 {
 		return 0, "", bad("the window has to be a duration: 30s, 1h, 24h")
 	}
@@ -893,18 +893,12 @@ func parseTTL(sf plugin.Surface, raw, target string) (ttl, asked time.Duration, 
 	if raw == "" {
 		return core.DefaultTTL, core.DefaultTTL, false, "", nil
 	}
-	parsed, err := time.ParseDuration(raw)
+	parsed, err := format.ParseDuration(raw)
 	if err != nil {
-		// Not Go's own sentence, "time: unknown unit "d" in duration "1d"", and
-		// a hint for the one spelling people reach for first: a day is what a
-		// grant lasts at most, and has no unit of its own here.
-		hint := "write it with a unit: 30s, 15m, 2h"
-		if n, isDays := strings.CutSuffix(raw, "d"); isDays {
-			if _, numErr := strconv.ParseFloat(n, 64); numErr == nil {
-				longest := format.Duration(core.MaxTTL)
-				hint = "there is no day unit, and a grant lasts " + longest + " at most, which is a day: write " + longest
-			}
-		}
+		// Not Go's own sentence, and the one spelling for it everywhere: a day is
+		// "1d" here as it is in a lock and a profile's deadline. A grant lasts a day
+		// at most, which is what the clamp below says when more is asked.
+		hint := "write it with a unit: 30s, 15m, 2h, 1d"
 		return 0, 0, false, "", view.Errorf("grant.badttl", "%q is not a duration", raw).WithHint(hint)
 	}
 	if parsed <= 0 {

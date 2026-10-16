@@ -114,7 +114,7 @@ func effectiveWindow(r role.Source) (asked, effective time.Duration, cappedBy st
 	if raw == "" {
 		raw = DefaultRoleTTL
 	}
-	asked, err = time.ParseDuration(raw)
+	asked, err = format.ParseDuration(raw)
 	if err != nil || asked <= 0 {
 		return 0, 0, "", fmt.Errorf("role %q in %s: ttl %q is not a duration", r.Name, r.From, raw)
 	}
@@ -381,7 +381,7 @@ func planRole(req plugin.Request, named string) (issuance, *view.Error) {
 	if ttl == "" {
 		ttl = DefaultRoleTTL
 	}
-	window, err := time.ParseDuration(ttl)
+	window, err := format.ParseDuration(ttl)
 	if err != nil || window <= 0 {
 		return issuance{}, view.Errorf("grant.role.ttl", "%q is not a duration a role can stand for", ttl).
 			WithHint("4h, 12h — the most a grant can last is 24h")
@@ -426,7 +426,7 @@ func planEnvironment(req plugin.Request, catalog func() []plugin.Capability, env
 	if ttl == "" {
 		ttl = DefaultRoleTTL
 	}
-	window, err := time.ParseDuration(ttl)
+	window, err := format.ParseDuration(ttl)
 	if err != nil || window <= 0 {
 		return issuance{}, view.Errorf("grant.issue.ttl", "%q is not a duration the grants can stand for", ttl).
 			WithHint("4h, 12h — the most a grant can last is 24h")
@@ -481,7 +481,7 @@ func (i issuance) build(sf plugin.Surface, catalog func() []plugin.Capability, a
 		if l.TTL != "" {
 			// The role author's bound on one line and the operator's on all
 			// of them: the shorter stands, and a line never widens.
-			d, err := time.ParseDuration(l.TTL)
+			d, err := format.ParseDuration(l.TTL)
 			if err != nil || d <= 0 {
 				return nil, nil, view.Errorf("grant.role", "%s: --ttl %q is not a duration", i.where(l), l.TTL)
 			}

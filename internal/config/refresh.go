@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/this-is-tobi/rta/pkg/format"
 )
 
 // MaxRefresh is the longest a tile can be asked to wait between runs. A tile
@@ -28,7 +30,7 @@ func ParseRefresh(text string) (time.Duration, error) {
 	if text == "" {
 		return 0, nil
 	}
-	d, err := time.ParseDuration(text)
+	d, err := format.ParseDuration(text)
 	switch {
 	case err != nil:
 		return 0, fmt.Errorf("%q is not a length of time — write it with a unit: 30s, 5m, 1h", text)
@@ -41,14 +43,5 @@ func ParseRefresh(text string) (time.Duration, error) {
 }
 
 // FormatRefresh is a pace as it is written back to a file and read on a list:
-// `30s`, `5m`, `1h30m`, without the zero units a duration prints with.
-func FormatRefresh(d time.Duration) string {
-	s := d.String()
-	if strings.HasSuffix(s, "m0s") {
-		s = s[:len(s)-2]
-	}
-	if strings.HasSuffix(s, "h0m") {
-		s = s[:len(s)-2]
-	}
-	return s
-}
+// `30s`, `5m`, `1h30m`, `1d`, without the zero units a duration prints with.
+func FormatRefresh(d time.Duration) string { return format.FormatDuration(d) }

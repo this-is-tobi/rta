@@ -244,7 +244,7 @@ func checkPrepared(sf plugin.Surface, spec operatorid.IssueSpec, server string, 
 	}
 	asked := core.DefaultTTL
 	if raw := strings.TrimSpace(spec.TTL); raw != "" {
-		parsed, err := time.ParseDuration(raw)
+		parsed, err := format.ParseDuration(raw)
 		if err != nil || parsed <= 0 {
 			return view.Errorf("grant.badttl", "%q is not a duration", raw)
 		}

@@ -366,7 +366,7 @@ func completeWindow(_ *cobra.Command, args []string, _ string) ([]cobra.Completi
 	out := make([]cobra.Completion, 0, 5)
 	seen := map[string]bool{}
 	add := func(value, desc string) {
-		d, err := time.ParseDuration(value)
+		d, err := format.ParseDuration(value)
 		if err != nil || seen[profile.ShortDuration(d)] {
 			return
 		}

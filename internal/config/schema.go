@@ -35,7 +35,7 @@ var (
 	// config is about the artifact, instances are about places, and places
 	// live in profiles.
 	schemaProfileKey = `^[a-z][a-z0-9-]*(/[a-z][a-z0-9-]*)?(@[0-9a-f]+)?$`
-	schemaDuration   = `^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$`
+	schemaDuration   = `^([0-9]+(\.[0-9]+)?(ns|us|µs|μs|ms|s|m|h|d|w))+$`
 	schemaColor      = `^#[0-9a-fA-F]{6}$`
 )
 
@@ -133,8 +133,9 @@ func Schema() map[string]any {
 						"items": map[string]any{"type": "string"},
 					},
 					"ttl": map[string]any{
-						"description": "How long the role's grants last unless --ttl says: 8h, 12h (the default).",
+						"description": "How long the role's grants last unless --ttl says: 8h, 12h (the default), at most 1d.",
 						"type":        "string",
+						"pattern":     schemaDuration,
 					},
 					"agent": map[string]any{
 						"description": "Which agent `rta grant issue` issues this role to when --agent is not given. " +
