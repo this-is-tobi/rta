@@ -229,3 +229,16 @@ func TestTheStoreStampMovesWhenTheSessionOpensAndWhenItLapses(t *testing.T) {
 		t.Errorf("stamp after the lapse = %q, want the shut one %q", lapsed, shut)
 	}
 }
+
+func TestTheOverviewNamesTheUnlockKeyOnlyWhereAPersonCanPressIt(t *testing.T) {
+	tui := plugin.NewRequest(nil, false, false).WithSurface(plugin.SurfaceTUI)
+	if got := unlockWays(tui); !strings.Contains(got, "press U") {
+		t.Errorf("TUI: %q", got)
+	}
+	for _, sf := range []plugin.Surface{plugin.SurfaceCLI, plugin.SurfaceMCP} {
+		got := unlockWays(plugin.NewRequest(nil, false, false).WithSurface(sf))
+		if strings.Contains(got, "press U") || !strings.Contains(got, passphraseEnv) {
+			t.Errorf("%s: %q", sf, got)
+		}
+	}
+}
