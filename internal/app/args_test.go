@@ -248,8 +248,8 @@ func TestAFlagValueTheParserRefusesIsRefusedInTheWordsOfAnInputCheck(t *testing.
 			"takes a number for --ratio, not \"x\"", "", "strconv"},
 		{[]string{"knob", "turn", "--loud=yes"},
 			"takes true or false for --loud, not \"yes\"", "`--loud` alone turns it on", "strconv"},
-		{[]string{"dashboard", "add", "sys.cpu", "--span", "abc"},
-			"`rta dashboard add` takes a whole number for --span, not \"abc\"", "", "strconv"},
+		{[]string{"dashboard", "add", "sys.cpu", "--width", "abc"},
+			"`rta dashboard add` takes a whole number for --width, not \"abc\"", "", "strconv"},
 	} {
 		_, _, err := run(t, reg, c.args...)
 		if err == nil || !strings.Contains(err.Error(), c.want) || strings.Contains(err.Error(), c.notContains) {

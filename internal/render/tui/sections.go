@@ -309,39 +309,9 @@ func (m *Model) keepSelection() {
 	}
 }
 
-// gridAt is the geometry of a grid wanting cols columns, 0 meaning as many as fit.
-func (m Model) gridAt(want int) grid {
-	// The dashboard was two columns at every width, so a 200-cell terminal
-	// drew two 100-cell tiles of a six-line summary — half the screen spent
-	// on whitespace, with the tiles that did not fit pushed below the fold.
-	cols := max(min(m.width/minColWidth, maxCols), 1)
-	if want > 0 {
-		cols = max(want, 1)
-	}
-	// A configured column count still has to fit: honouring columns: 4 on a
-	// 60-cell terminal draws four 14-cell tiles, which is not what anybody
-	// meant by it.
-	cols = max(min(cols, m.width/minColWidth), 1)
-	// One gap cell between columns; hit-testing divides by tileW+1.
-	return grid{cols: cols, tileW: (m.width - (cols - 1)) / cols}
-}
-
-// gridFor is the grid tile i is laid out on: its section's own column count when
-// the section states one, the dashboard's otherwise.
-func (m Model) gridFor(i int) grid {
-	if i > 0 && i < len(m.tiles) {
-		if name := m.tiles[i].section; name != "" {
-			if n := m.dash.SectionOf(name).Columns; n > 0 {
-				return m.gridAt(n)
-			}
-		}
-	}
-	return m.grid()
-}
-
-// packRows lays the tiles [lo, hi) out on rows of grid g: a wide tile takes a row
-// to itself, the rest fill it.
-func (m Model) packRows(lo, hi int, g grid) []gridRow {
+// packRows lays the tiles [lo, hi) out on rows of config.GridTracks: a tile goes
+// on the row it fits, and a row is closed when the next one would not.
+func (m Model) packRows(lo, hi int) []gridRow {
 	var rows []gridRow
 	var cur []int
 	used := 0
@@ -352,13 +322,13 @@ func (m Model) packRows(lo, hi int, g grid) []gridRow {
 		}
 	}
 	for i := lo; i < hi; i++ {
-		w := m.spanOn(i, g)
-		if used+w > g.cols {
+		w := m.span(i)
+		if used+w > config.GridTracks {
 			flush()
 		}
 		cur = append(cur, i)
 		used += w
-		if used >= g.cols {
+		if used >= config.GridTracks {
 			flush()
 		}
 	}

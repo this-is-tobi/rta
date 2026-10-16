@@ -103,7 +103,7 @@ func TestAUnitStatedInTwoFilesIsRefusedNamingBoth(t *testing.T) {
 func TestEachKindOfUnitIsRefusedTwice(t *testing.T) {
 	for name, text := range map[string]string{
 		"output":    "output: json\n",
-		"dashboard": "dashboard:\n  columns: 3\n",
+		"dashboard": "dashboard:\n  width: 3\n",
 		"theme":     "theme:\n  primary: \"#112233\"\n",
 		"role":      "roles:\n  day:\n    grants: [\"kv.get\"]\n",
 		"plugin":    "plugins:\n  pg:\n    limit: 5\n",
@@ -303,7 +303,7 @@ func TestAUnitRemovedIsRemovedFromTheFileThatStatedIt(t *testing.T) {
 func TestWhereNamesTheFileThatStatesAUnit(t *testing.T) {
 	dir := layout(t, map[string]string{
 		"config.yaml":           profile("base", "b.example"),
-		"config.d/10-prod.yaml": profile("prod", "p.example") + "dashboard:\n  columns: 2\n",
+		"config.d/10-prod.yaml": profile("prod", "p.example") + "dashboard:\n  width: 2\n",
 	})
 	for _, tc := range []struct{ kind, name, file string }{
 		{"profiles", "base", "config.yaml"},

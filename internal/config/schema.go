@@ -169,12 +169,8 @@ func Schema() map[string]any {
 						"type":    "string",
 						"pattern": schemaProfileRef,
 					},
-					"span": map[string]any{
-						"description": "How many grid columns this tile occupies; 0 leaves the " +
-							"decision to the capability.",
-						"type":    "integer",
-						"minimum": 0,
-					},
+					"width":   widthSchema("this tile is", "its section's, then the screen's, then the terminal's"),
+					"height":  heightSchema("this tile's box is", "its section's, then the screen's, then what it has to say"),
 					"refresh": refreshSchema("this tile is re-run", "its section's, then the screen's, then its capability's"),
 					"section": map[string]any{
 						"description": "The group this tile is drawn in, under a header that folds. " +
@@ -197,12 +193,8 @@ func Schema() map[string]any {
 							"z and Z in the TUI fold and unfold for the session and write nothing.",
 						"type": "boolean",
 					},
-					"columns": map[string]any{
-						"description": "The grid width of this section's tile rows, instead of the " +
-							"dashboard's; 0 inherits it.",
-						"type":    "integer",
-						"minimum": 0,
-					},
+					"width":   widthSchema("this section's tiles are", "the screen's"),
+					"height":  heightSchema("this section's tiles' boxes are", "the screen's"),
 					"refresh": refreshSchema("this section's tiles are re-run", "the screen's"),
 				},
 			},
@@ -237,7 +229,7 @@ func Schema() map[string]any {
 					"dashboard": map[string]any{
 						"description": "The screen drawn while this profile is switched on: the name " +
 							"of one of `dashboard: views:`, or the screen itself written here, with " +
-							"the keys a view has (tiles, add, hidden, order, columns, sections) — addressed as " +
+							"the keys a view has (tiles, add, hidden, order, width, height, refresh, sections) — addressed as " +
 							"a view named after this profile. Left out, the `dashboard:` block draws.",
 						"oneOf": []any{
 							map[string]any{"type": "string", "pattern": viewName.String()},
@@ -380,17 +372,13 @@ func dashboardFields() map[string]any {
 			"type":  "array",
 			"items": map[string]any{"type": "string"},
 		},
-		"columns": map[string]any{
-			"description": "Fixes the grid width instead of deriving it from the " +
-				"terminal; 0 means automatic.",
-			"type":    "integer",
-			"minimum": 0,
-		},
+		"width":   widthSchema("every tile of this screen is", "each tile's own, from the terminal's width"),
+		"height":  heightSchema("every tile's box on this screen is", "what each tile has to say"),
 		"refresh": refreshSchema("every tile of this screen is re-run, unless its section or it says otherwise", "each capability's own"),
 		"sections": map[string]any{
 			"description": "How each section the tiles name starts out and how wide it draws, by " +
-				"section name: `collapsed: true` opens it folded to its header row, `columns` is " +
-				"its own grid width. An automatic group — the panels one entry expanded into — is " +
+				"section name: `collapsed: true` opens it folded to its header row, `width`, `height` and `refresh` " +
+				"are its tiles' own. An automatic group — the panels one entry expanded into — is " +
 				"named `<plugin> · <profile>`. A name no tile is in is reported by `rta config check`.",
 			"type":                 "object",
 			"propertyNames":        map[string]any{"minLength": 1, "maxLength": MaxSectionName},
@@ -426,5 +414,32 @@ func refreshSchema(what, inherits string) map[string]any {
 			"configured connection runs every 30s unless told.",
 		"type":    "string",
 		"pattern": schemaDuration,
+	}
+}
+
+// widthSchema and heightSchema are the one declaration of `width:` and `height:`,
+// for a tile, a section and a screen alike, as refreshSchema is of a pace: the same
+// range and the same sentence about what a value is, since the keys are meant to
+// work the same wherever they are written.
+func widthSchema(what, inherits string) map[string]any {
+	return map[string]any{
+		"description": "How wide " + what + ", in twelfths of the screen: 12 is the whole row, 6 half, 4 a " +
+			"third, 3 a quarter. Left out, it is " + inherits + " — the nearest one wins. A tile is never " +
+			"drawn narrower than it can be read, so a width that does not fit a narrow terminal is read as the " +
+			"least that does; one a section or the screen states yields to a tile that needs more room.",
+		"type":    "integer",
+		"minimum": 0,
+		"maximum": GridTracks,
+	}
+}
+
+func heightSchema(what, inherits string) map[string]any {
+	return map[string]any{
+		"description": "How tall " + what + ", in lines, borders included. Left out, it is " + inherits +
+			" — the nearest one wins. A tile with more to show than eleven lines is lifted past that cap by " +
+			"saying so; a row is as tall as the tallest of its tiles.",
+		"type":    "integer",
+		"minimum": 0,
+		"maximum": MaxHeight,
 	}
 }

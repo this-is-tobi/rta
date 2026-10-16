@@ -26,7 +26,7 @@ import (
 // and moved every existing entry in every existing file. A `section:` on the
 // entry is one more field that is absent from every config there is today, which
 // is also what keeps a dashboard that states no section drawn exactly as it was.
-// What a section *is* — whether it starts folded, how many columns its tiles
+// What a section *is* — whether it starts folded, how wide its tiles
 // share — is not a property of any one tile, so it is stated once, by name, in
 // `sections:`; naming a section there that no tile is in is a dangling name that
 // `rta config check` reports rather than a refusal, as a view a profile names
@@ -47,11 +47,16 @@ type DashboardSection struct {
 	// follow them into the next terminal — see tui.Model.folds for why that is
 	// not persisted, and what persisting it would take.
 	Collapsed bool `yaml:"collapsed,omitempty" json:"collapsed,omitempty"`
-	// Columns is the grid width of this section's tile rows, in place of the
-	// dashboard's. 0 inherits it, which is every section's default: a section
-	// that wants three narrow tiles in a row beside a dashboard of two wide ones
-	// says so here, and the rest is not touched.
-	Columns int `yaml:"columns,omitempty" json:"columns,omitempty"`
+	// Width is the width, in twelfths of the screen, of this section's tiles that
+	// state none, in place of the dashboard's. 0 inherits it, which is every
+	// section's default: a section that wants three narrow tiles in a row beside
+	// a dashboard of two wide ones says `width: 4` here, and the rest is not
+	// touched. A default and not a demand: a tile whose capability needs more
+	// room is drawn in it.
+	Width int `yaml:"width,omitempty" json:"width,omitempty"`
+	// Height is the height, in lines, of this section's tiles that state none; 0
+	// inherits the screen's. The same key as on a tile.
+	Height int `yaml:"height,omitempty" json:"height,omitempty"`
 	// Refresh is the pace of this section's tiles that state none of their own:
 	// `30s`, `5m`. Empty inherits the screen's, which is every section's
 	// default. A default and not a demand: a tile whose capability declared a
@@ -101,7 +106,7 @@ type sectionFault struct {
 }
 
 // refuseBadSections is what the loader says of a file the decoder refused when
-// the reason is a section's key of the wrong shape: a `columns:` that is not a
+// the reason is a section's key of the wrong shape: a `width:` or `height:` that is not a
 // whole number, or a `sections:` that is not a mapping of names. It names the file,
 // the spot, the key and what the key takes, as a profile's `dashboard:` is
 // refused (refuseBadDashboards), where the decoder's sentence is about Go types,
@@ -194,14 +199,15 @@ func sectionsFault(key string, node ast.Node) *sectionFault {
 		return &sectionFault{
 			key: key, says: "is " + describeValue(node),
 			takes: "takes a mapping of section names to how each starts",
-			hint: "state each section under its name — `sections: {databases: {collapsed: true, columns: 2}}` — " +
+			hint: "state each section under its name — `sections: {databases: {collapsed: true, width: 6}}` — " +
 				"or take the key out; `rta config schema` lists everything a section takes",
 			line: node.GetToken().Position.Line, col: node.GetToken().Position.Column,
 		}
 	}
 	for _, section := range mappingPairs(node) {
 		for _, field := range mappingPairs(section.Value) {
-			if keyText(field) != "columns" {
+			name := keyText(field)
+			if name != "width" && name != "height" {
 				continue
 			}
 			var n int
@@ -212,13 +218,13 @@ func sectionsFault(key string, node ast.Node) *sectionFault {
 			// so it is told from a word by what it spells.
 			says := describeValue(field.Value)
 			if _, err := strconv.Atoi(field.Value.GetToken().Value); errors.Is(err, strconv.ErrRange) {
-				says = "a number too large to be a count of columns"
+				says = "a number too large to be a " + name
 			}
 			return &sectionFault{
-				key: key + "." + pathPart(keyText(section)) + ".columns", says: "is " + says,
-				takes: "takes a whole number from 0",
-				hint: "`columns: 3` draws three tiles to a row of the section, and 0 or leaving it out is the " +
-					"dashboard's own grid — `rta config schema` lists everything a section takes",
+				key: key + "." + pathPart(keyText(section)) + "." + name, says: "is " + says,
+				takes: "takes a whole number",
+				hint: "`width: 4` draws three tiles to a row of the section, `height: 14` makes its tiles fourteen lines tall, " +
+					"and 0 or leaving either out is the screen's own — `rta config schema` lists everything a section takes",
 				line: field.Value.GetToken().Position.Line, col: field.Value.GetToken().Position.Column,
 			}
 		}

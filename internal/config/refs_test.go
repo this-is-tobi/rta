@@ -117,11 +117,11 @@ func TestProfilesForNamesTheProfilesCoveringANamespaceSorted(t *testing.T) {
 // its block says: a cloned repository's ./.rta.yaml must not arrange a
 // screen, and `hidden:` there could take the agent tile off it.
 func TestAnUnnamedConfigsDashboardBlockIsNotDrawn(t *testing.T) {
-	cfg := Config{Dashboard: Dashboard{Hidden: []string{"agent.overview"}, Columns: 1}}
+	cfg := Config{Dashboard: Dashboard{Hidden: []string{"agent.overview"}, Width: 1}}
 	if cfg.Trusted() {
 		t.Fatal("a zero Config reads as trusted")
 	}
-	if got := cfg.TrustedDashboard(); len(got.Hidden) != 0 || got.Columns != 0 {
+	if got := cfg.TrustedDashboard(); len(got.Hidden) != 0 || got.Width != 0 {
 		t.Errorf("TrustedDashboard() = %+v, want the empty block", got)
 	}
 }

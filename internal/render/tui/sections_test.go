@@ -405,9 +405,9 @@ func TestWhatGradesATile(t *testing.T) {
 	}
 }
 
-// A section may state the width of its own tile rows, and the dashboard's width
-// is the rest's.
-func TestASectionCanStateItsOwnColumns(t *testing.T) {
+// A section may state the width of its own tiles, and the dashboard's width is
+// the rest's.
+func TestASectionCanStateItsOwnWidth(t *testing.T) {
 	var tiles []config.Tile
 	for _, id := range []string{"alpha", "beta", "gamma", "delta", "epsilon", "zeta"} {
 		section := ""
@@ -417,9 +417,9 @@ func TestASectionCanStateItsOwnColumns(t *testing.T) {
 		tiles = append(tiles, config.Tile{ID: id + ".status", Section: section})
 	}
 	m := sectioned(t, config.Dashboard{
-		Columns:  1,
+		Width:    config.GridTracks,
 		Tiles:    tiles,
-		Sections: map[string]config.DashboardSection{"wide": {Columns: 4}},
+		Sections: map[string]config.DashboardSection{"wide": {Width: 3}},
 	}, 160, 60)
 	if got := shape(m); got != "[1] #wide [2 3 4 5] [6]" {
 		t.Fatalf("rows = %s, want four tiles across inside the section and one outside it", got)
@@ -428,16 +428,17 @@ func TestASectionCanStateItsOwnColumns(t *testing.T) {
 	if a, b := m.tileWidth(2), m.tileWidth(1); a >= b || b != 160 {
 		t.Errorf("widths: inside the section %d, outside %d", a, b)
 	}
-	// And a section that asks for more than the terminal holds is held to it.
+	// And a section that asks for more than the terminal holds is held to it: a
+	// quarter of 80 cells is twenty, which no tile is drawn at.
 	narrow := sectioned(t, config.Dashboard{
 		Tiles:    tiles,
-		Sections: map[string]config.DashboardSection{"wide": {Columns: 9}},
+		Sections: map[string]config.DashboardSection{"wide": {Width: 3}},
 	}, 80, 60)
-	if g := narrow.gridFor(2); g.cols != 2 {
-		t.Errorf("columns: 9 on 80 cells is %d columns, want the 2 that fit", g.cols)
+	if got := narrow.span(2); got != 6 {
+		t.Errorf("width: 3 on 80 cells is %d twelfths, want the 6 that fit", got)
 	}
-	if g := narrow.gridFor(1); g.cols != 2 {
-		t.Errorf("the dashboard's grid is %d columns", g.cols)
+	if got := narrow.span(1); got != 6 {
+		t.Errorf("a tile with nothing stated is %d twelfths on 80 cells, want 6", got)
 	}
 }
 
@@ -447,7 +448,7 @@ func TestASectionedFrameIsWholeAtEverySize(t *testing.T) {
 	for _, size := range layoutSizes {
 		for _, collapsed := range []bool{false, true} {
 			dash := grouped()
-			dash.Sections = map[string]config.DashboardSection{"databases": {Collapsed: collapsed}, "edge": {Columns: 2}}
+			dash.Sections = map[string]config.DashboardSection{"databases": {Collapsed: collapsed}, "edge": {Width: 6}}
 			m := sectioned(t, dash, size.w, size.h)
 			name := fmt.Sprintf("%dx%d collapsed=%v", size.w, size.h, collapsed)
 			content := m.View().Content

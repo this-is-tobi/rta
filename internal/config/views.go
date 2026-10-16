@@ -63,7 +63,8 @@ type View struct {
 	Add      []Tile                      `yaml:"add,omitempty" json:"add,omitempty"`
 	Hidden   []string                    `yaml:"hidden,omitempty" json:"hidden,omitempty"`
 	Order    []string                    `yaml:"order,omitempty" json:"order,omitempty"`
-	Columns  int                         `yaml:"columns,omitempty" json:"columns,omitempty"`
+	Width    int                         `yaml:"width,omitempty" json:"width,omitempty"`
+	Height   int                         `yaml:"height,omitempty" json:"height,omitempty"`
 	Refresh  string                      `yaml:"refresh,omitempty" json:"refresh,omitempty"`
 	Sections map[string]DashboardSection `yaml:"sections,omitempty" json:"sections,omitempty"`
 }
@@ -71,7 +72,7 @@ type View struct {
 // Dashboard is v as the arrangement every reader of one takes.
 func (v View) Dashboard() Dashboard {
 	return Dashboard{
-		Tiles: v.Tiles, Add: v.Add, Hidden: v.Hidden, Order: v.Order, Columns: v.Columns, Refresh: v.Refresh,
+		Tiles: v.Tiles, Add: v.Add, Hidden: v.Hidden, Order: v.Order, Width: v.Width, Height: v.Height, Refresh: v.Refresh,
 		Sections: v.Sections,
 	}
 }
@@ -79,7 +80,7 @@ func (v View) Dashboard() Dashboard {
 // View is d as a view, without the views it names.
 func (d Dashboard) View() View {
 	return View{
-		Tiles: d.Tiles, Add: d.Add, Hidden: d.Hidden, Order: d.Order, Columns: d.Columns, Refresh: d.Refresh,
+		Tiles: d.Tiles, Add: d.Add, Hidden: d.Hidden, Order: d.Order, Width: d.Width, Height: d.Height, Refresh: d.Refresh,
 		Sections: d.Sections,
 	}
 }
@@ -238,7 +239,7 @@ func refuseBadDashboards(path string, profiles map[string]Profile) error {
 			"parsing %s: %sprofile %s: dashboard is %s, and takes the name of a view or a block that states the screen",
 			path, spot, name, bad.what).
 			WithHint("write `dashboard: <view>` to show one of `dashboard: views:`, or the screen itself under it, " +
-				"with the keys a view has: tiles, add, hidden, order, columns and sections")
+				"with the keys a view has: tiles, add, hidden, order, width, height, refresh and sections")
 	}
 	return nil
 }
