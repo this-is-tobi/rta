@@ -188,3 +188,20 @@ func TestLabeledInstanceCredentialsHaveNoEnvChannel(t *testing.T) {
 		t.Error("the pane offers export lines it cannot write")
 	}
 }
+
+// With an environment on, the picker opens on its targets and lists the others
+// after them: a form for a call in the homelab does not lead with production.
+func TestThePickerListsTheEnvironmentThatIsOnBeforeTheOthers(t *testing.T) {
+	m := profileModel(t, config.Config{Profiles: map[string]config.Profile{
+		"alpha": {Plugins: map[string]config.Connection{"db": {Set: map[string]any{"host": "alpha.internal"}}}},
+		"zulu":  {Plugins: map[string]config.Connection{"db": {Set: map[string]any{"host": "zulu.internal"}}}},
+	}})
+	switchOn(t, &m, "zulu")
+	f := m.profilePicker(dbPlugin().Capabilities[0], "")
+	if f == nil {
+		t.Fatal("no picker")
+	}
+	if len(f.Options) < 3 || f.Options[1] != "zulu" || f.Options[2] != "alpha" {
+		t.Errorf("options = %v, want the environment that is on first", f.Options)
+	}
+}

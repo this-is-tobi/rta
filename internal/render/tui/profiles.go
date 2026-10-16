@@ -73,7 +73,24 @@ func (m Model) profilePicker(c plugin.Capability, on string) *plugin.Field {
 		bad[p.Name] = true
 	}
 	options := []string{profileNoneLabel}
-	for _, name := range cfg.ProfilesFor(ns) {
+	// The environment that is on first, then the rest in their own order: a
+	// list that opens with another environment's production targets, while the
+	// person is working in their homelab, is a picker one keystroke from the
+	// wrong answer. Only ordered, not narrowed, because a picker has no way to
+	// ask for "the others" the way a shell's name/ does.
+	names := cfg.ProfilesFor(ns)
+	if active := profile.Active(); active != "" {
+		slices.SortStableFunc(names, func(a, b string) int {
+			switch {
+			case a == active && b != active:
+				return -1
+			case b == active && a != active:
+				return 1
+			}
+			return 0
+		})
+	}
+	for _, name := range names {
 		if bad[name] {
 			continue
 		}
