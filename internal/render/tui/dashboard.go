@@ -78,11 +78,17 @@ type tile struct {
 	// actions are one-key shortcuts offered while this tile is selected —
 	// the dashboard's buttons (add/edit/done on the note tile).
 	actions []capAction
-	// lastFired is when this tile was last dispatched, for a capability
-	// that declared its own Refresh pace; zero until the first run. From
-	// the dispatch rather than the answer, so a slow answer does not
+	// lastFired is when this tile was last dispatched; zero until the first
+	// run. From the dispatch rather than the answer, so a slow answer does not
 	// stretch the interval it was waiting out.
 	lastFired time.Time
+	// inFlight is whether the run dispatched at lastFired has not answered yet.
+	// A tile is not run again while it has not: a run slower than its pace (a
+	// bastion that takes ten seconds to open a forward, a database that does not
+	// answer until its own timeout) used to be started again at every tick, one
+	// more process and one more login on a service that was already slow, and
+	// the answers arrived in whatever order they finished.
+	inFlight bool
 	// storeOpen is whether the store session was open when this tile was last
 	// dispatched, for a tile that says something about it (watchesStoreSession).
 	storeOpen bool
@@ -698,6 +704,7 @@ func (m *Model) rebuildTiles() {
 	for i := range fresh {
 		if prev, ok := old[fresh[i].key()]; ok {
 			fresh[i].view, fresh[i].err, fresh[i].lastFired, fresh[i].storeOpen = prev.view, prev.err, prev.lastFired, prev.storeOpen
+			fresh[i].inFlight = prev.inFlight
 		}
 	}
 	m.tiles = fresh
@@ -784,7 +791,7 @@ func Layout(reg *registry.Registry, dash config.Dashboard, instances Instances) 
 	for _, t := range tiles[1:] {
 		out = append(out, Placement{
 			ID: t.cap.ID, Profile: t.profile, Source: t.source.String(),
-			Refresh: t.cap.Refresh, With: t.values, Expanded: t.expanded, Section: t.section,
+			Refresh: t.cap.Pace(), With: t.values, Expanded: t.expanded, Section: t.section,
 			Hidden: (t.source == tileAuto && hidden[t.cap.ID]) || (t.expanded && hidden[t.key()]),
 		})
 	}
@@ -950,13 +957,23 @@ func (t tile) due(now time.Time) bool {
 	if t.search {
 		return false
 	}
+	// Before the store-session rule below, which must not start a second run on
+	// top of one that has not answered. A run that never answers (its answer
+	// dropped with the tile that asked for it) is let go once its own timeout
+	// and a tick have passed, so a tile cannot be stuck waiting for nothing.
+	if t.inFlight && now.Sub(t.lastFired) < refreshTimeout+tileRefreshInterval {
+		return false
+	}
 	if t.watchesStoreSession() && t.storeOpen != storeUnlocked() {
 		return true
 	}
-	if t.cap.Refresh <= 0 || t.lastFired.IsZero() {
+	if t.lastFired.IsZero() {
 		return true
 	}
-	return now.Sub(t.lastFired) >= t.cap.Refresh
+	// The timer is the tick: a pace no longer than it is every tick, whatever
+	// the few microseconds between a dispatch and the tick scheduled after it.
+	pace := t.cap.Pace()
+	return pace <= tileRefreshInterval || now.Sub(t.lastFired) >= pace
 }
 
 // resetDue forgets the last run of every tile about the named connection —
@@ -970,7 +987,7 @@ func (t tile) due(now time.Time) bool {
 func resetDue(tiles []tile, profile string) {
 	for i := range tiles {
 		if tiles[i].profile == profile {
-			tiles[i].lastFired = time.Time{}
+			tiles[i].lastFired, tiles[i].inFlight = time.Time{}, false
 		}
 	}
 }
@@ -1018,7 +1035,7 @@ func refreshTiles(tiles []tile, gen int, pluginCfg PluginConfig,
 		if tc.pending {
 			continue
 		}
-		tiles[i].lastFired, tiles[i].storeOpen = now, storeUnlocked()
+		tiles[i].lastFired, tiles[i].storeOpen, tiles[i].inFlight = now, storeUnlocked(), true
 		cfg := configOf(pluginCfg, t.cap)
 		if tc.err != nil {
 			// Reported the same way a dial failure already is below, in

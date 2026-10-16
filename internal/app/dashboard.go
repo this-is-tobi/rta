@@ -149,10 +149,7 @@ func dashboardTable(reg *registry.Registry, cfg config.Config, v string) view.Vi
 		{Name: "With"},
 	}}
 	for _, p := range layoutNow(reg, cfg, v) {
-		every := "every few seconds"
-		if p.Refresh > 0 {
-			every = "every " + pace(p.Refresh)
-		}
+		every := "every " + pace(p.Refresh)
 		source := p.Source
 		if p.Expanded {
 			source += ", one of several"
@@ -543,10 +540,7 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		pairsOut = append(pairsOut, view.Pair{Key: "section",
 			Value: section + " — drawn with the other tiles that name it, under a header that folds (z in the TUI)"})
 	}
-	every := "every few seconds"
-	if c.Refresh > 0 {
-		every = "every " + pace(c.Refresh)
-	}
+	every := "every " + pace(c.Pace())
 	pairsOut = append(pairsOut,
 		view.Pair{Key: "re-runs", Value: every + ", for as long as the TUI is open"},
 		view.Pair{Key: "on screen", Value: "bare `rta` opens on it; H on the tile or `rta dashboard rm " +

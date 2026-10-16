@@ -416,10 +416,7 @@ func dashboardRow(reg *registry.Registry, c plugin.Capability) view.Pair {
 			Value: "never a tile — it reads " + strings.Join(credential, ", ") +
 				", a credential only the caller gives, and a tile has no one to ask"}
 	}
-	every := "every few seconds"
-	if c.Refresh > 0 {
-		every = "every " + pace(c.Refresh)
-	}
+	every := "every " + pace(c.Pace())
 	add := "`rta dashboard add " + c.ID + "`, or + on it in the TUI,"
 	// And the add it takes, when a bare one is refused (tileCanRunUnasked):
 	// debug.ansi's card offered `rta dashboard add debug.ansi`, which wrote a

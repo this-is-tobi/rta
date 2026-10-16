@@ -53,6 +53,7 @@ func TestRefreshTilesSkipsATileInsideItsPaceAndStampsTheOnesItFires(t *testing.T
 
 	unpaced := tiles[1].lastFired
 	time.Sleep(time.Millisecond)
+	tiles[1].inFlight = false // its answer arrived
 	_ = refreshTiles(tiles, 2, nil, nil)
 	if !tiles[2].lastFired.Equal(first) {
 		t.Error("the paced tile was fired again on the very next tick")
@@ -65,5 +66,64 @@ func TestRefreshTilesSkipsATileInsideItsPaceAndStampsTheOnesItFires(t *testing.T
 	_ = refreshTiles(tiles, 3, nil, nil)
 	if tiles[2].lastFired.Equal(first) {
 		t.Error("after resetDue the paced tile should fire regardless of its pace")
+	}
+}
+
+// A tile whose run has not answered is not run again, however long its pace says
+// it has waited: a slow service was being asked once more at every tick.
+func TestATileThatHasNotAnsweredIsNotRunAgain(t *testing.T) {
+	now := time.Now()
+	tl := tile{cap: plugin.Capability{ID: "sys.load", Safety: plugin.Read}, lastFired: now, inFlight: true}
+	if tl.due(now.Add(tileRefreshInterval)) {
+		t.Error("a tile still waiting for its answer was run again")
+	}
+	if !tl.due(now.Add(refreshTimeout + 2*tileRefreshInterval)) {
+		t.Error("a run that never answered kept its tile from running for ever")
+	}
+	tl.inFlight = false
+	if !tl.due(now.Add(tileRefreshInterval)) {
+		t.Error("once it answered the tile was not due at the next tick")
+	}
+}
+
+func TestRefreshTilesMarksTheTilesItFiresAsWaitingForAnAnswer(t *testing.T) {
+	tiles := []tile{{search: true}, {cap: plugin.Capability{ID: "sys.load", Safety: plugin.Read}}}
+	_ = refreshTiles(tiles, 1, nil, nil)
+	if !tiles[1].inFlight {
+		t.Error("a dispatched tile is not marked as waiting")
+	}
+	first := tiles[1].lastFired
+	time.Sleep(time.Millisecond)
+	_ = refreshTiles(tiles, 2, nil, nil)
+	if !tiles[1].lastFired.Equal(first) {
+		t.Error("a tile with a run outstanding was dispatched again")
+	}
+	resetDue(tiles, "")
+	if tiles[1].inFlight {
+		t.Error("resetDue keeps a tile from firing at once, which is what it is for")
+	}
+}
+
+// What a run costs follows where it goes: a capability that reaches a
+// configured connection is a round trip to a service somebody else logs, and
+// polling it at a clock's pace was the dashboard's worst habit.
+func TestATileThatReachesAConnectionRunsAtTheRemotePaceUnlessItDeclaredOne(t *testing.T) {
+	host := plugin.Field{Name: "host", Type: plugin.String, Config: "host"}
+	remote := plugin.Capability{ID: "pg.status", Safety: plugin.Read, Inputs: []plugin.Field{host}}
+	if got := remote.Pace(); got != plugin.PaceRemote {
+		t.Fatalf("a capability that reaches a connection runs every %v, want %v", got, plugin.PaceRemote)
+	}
+	now := time.Now()
+	tl := tile{cap: remote, lastFired: now}
+	if tl.due(now.Add(10 * time.Second)) {
+		t.Error("a remote tile ran ten seconds after its last run")
+	}
+	if !tl.due(now.Add(plugin.PaceRemote)) {
+		t.Error("a remote tile was not due at its pace")
+	}
+	declared := remote
+	declared.Refresh = time.Minute
+	if got := declared.Pace(); got != time.Minute {
+		t.Errorf("a declared pace was overridden: %v", got)
 	}
 }

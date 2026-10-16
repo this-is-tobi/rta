@@ -642,6 +642,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// taken before this answer does not see it — the rest of Model
 			// is a value too — and so a tile that has left the dashboard
 			// does not keep its last answer in memory for the session.
+			m.tiles[idx].inFlight = false
 			m.tiles[idx].view = view.MapStrings(msg.v, textclean.Terminal)
 			m.tiles[idx].err = view.MapErrorStrings(msg.err, textclean.Terminal)
 			raw := make(map[string]returned, len(m.tiles))
