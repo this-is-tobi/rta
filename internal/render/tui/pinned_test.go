@@ -391,7 +391,7 @@ func TestABindLandingForAPinResetsOnlyItsTiles(t *testing.T) {
 	m := pinnedModel(t, twoProfileConfig(), config.Dashboard{Add: []config.Tile{{ID: "db.status", Profile: "prod"}}})
 	fired := time.Now().Add(-time.Minute)
 	for i := range m.tiles {
-		m.tiles[i].cap.Refresh = time.Hour
+		m.tiles[i].every = time.Hour
 		m.tiles[i].lastFired = fired
 	}
 	pin := m.pins["prod"]

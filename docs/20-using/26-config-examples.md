@@ -211,9 +211,9 @@ dashboard:
 
 What a tile costs decides how many to draw:
 
-- A drawn tile runs when its screen opens and again every few seconds, unless its capability set a slower pace (`kube.overview` a minute, `eol.watch` two hours, `pkg.tools` an hour). `rta dashboard list --view shop` prints each tile's pace.
+- A drawn tile runs when its screen opens and again at its pace: every five seconds for a read of this machine, every thirty for one that reaches a connection, and slower where its capability says so (`kube.overview` a minute, `eol.watch` two hours, `pkg.tools` an hour). `refresh:` on a tile, a section or the screen states another, never under what a capability declared. `rta dashboard list --view shop` prints each tile's pace.
 - A folded section still runs. Folding hides the panels and the header keeps saying the worst of them. What does not run is every tile of a screen that is not drawn, and every screen while a result page is open.
-- A `pg` tile is two kubectl calls and a database login, a second or two, every few seconds, in Postgres's logs too. Behind a bastion that audits every Kubernetes request, each tile is audit events for as long as the screen is drawn. That is why the databases' tiles sit on the application screen and not on the first one.
+- A `pg` tile is two kubectl calls and a database login, a second or two, every thirty seconds, in Postgres's logs too. Behind a bastion that audits every Kubernetes request, each tile is audit events for as long as the screen is drawn. That is why the databases' tiles sit on the application screen and not on the first one.
 - The vault, keycloak and s3 tiles need the store open: until you press `U` they say so.
 
 ## Next

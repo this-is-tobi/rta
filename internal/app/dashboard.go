@@ -150,6 +150,9 @@ func dashboardTable(reg *registry.Registry, cfg config.Config, v string) view.Vi
 	}}
 	for _, p := range layoutNow(reg, cfg, v) {
 		every := "every " + pace(p.Refresh)
+		if p.PaceFrom != "" {
+			every += " (" + p.PaceFrom + ")"
+		}
 		source := p.Source
 		if p.Expanded {
 			source += ", one of several"
@@ -177,7 +180,7 @@ func dashboardTable(reg *registry.Registry, cfg config.Config, v string) view.Vi
 func sectionsTable(reg *registry.Registry, cfg config.Config) view.View {
 	t := view.Table{Columns: []view.Column{
 		{Name: "View"}, {Name: "Section"}, {Name: "Tiles", Kind: view.KindNumber},
-		{Name: "Starts"}, {Name: "Columns", Kind: view.KindNumber}, {Name: "File"},
+		{Name: "Starts"}, {Name: "Columns", Kind: view.KindNumber}, {Name: "Refresh"}, {Name: "File"},
 	}}
 	t.Empty = "No section is stated or drawn — `rta dashboard add <capability> --section <name>` puts a tile in one."
 	for _, name := range append([]string{config.DefaultView}, cfg.ViewNames()...) {
@@ -210,7 +213,8 @@ func sectionsTable(reg *registry.Registry, cfg config.Config) view.View {
 			if n := stated[section].Columns; n > 0 {
 				columns = strconv.Itoa(n)
 			}
-			t.Rows = append(t.Rows, []string{nameCell(name), nameCell(section), strconv.Itoa(counts[section]), starts, columns, configFileName(file)})
+			t.Rows = append(t.Rows, []string{nameCell(name), nameCell(section), strconv.Itoa(counts[section]), starts, columns,
+				stated[section].Refresh, configFileName(file)})
 		}
 	}
 	t.Total = len(t.Rows)
@@ -257,7 +261,8 @@ func dashboardAddCommand(reg *registry.Registry, render renderFn, opts *globalOp
 			" each named on its own panel. Without it the tile follows whatever `rta use` switched on." +
 			" `--set` fills the capability's inputs, `key=value`, typed the way it declares them." +
 			" `--section` draws the tile in a named group under a header that folds, with the other tiles that" +
-			" name it." +
+			" name it. `--refresh` sets how often it is re-run, such as 30s: a section and the screen can state the" +
+			" same key as a default, and the nearest one wins." +
 			" Adding the same tile again replaces it, so the command is safe to script." +
 			" In the TUI, + on a catalogue row or a search match writes the same entry.",
 		Args:              cobra.ExactArgs(1),
@@ -275,6 +280,7 @@ func dashboardAddCommand(reg *registry.Registry, render renderFn, opts *globalOp
 	cmd.Flags().StringArray("set", nil, "an input for the run, `key=value`; repeat for several")
 	cmd.Flags().Int("span", 0, "grid columns the tile occupies; 0 leaves it to the capability")
 	cmd.Flags().String("section", "", "draw the tile in this section, under a header that folds; left out, in none")
+	cmd.Flags().String("refresh", "", "how often the tile is re-run, such as 30s or 5m; left out, its section's, then the screen's, then the capability's")
 	addViewFlag(cmd, "put the tile on this view, creating it when it is new")
 	completeFlag(cmd, "profile", completeProfiles)
 	completeFlag(cmd, "set", completeTileInputs(reg))
@@ -443,7 +449,11 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 			WithHint(fmt.Sprintf("a section is a heading: up to %d characters, no control characters, no space at either end"+
 				" — `databases` and `pg · staging` both are", config.MaxSectionName))
 	}
-	entry := config.Tile{ID: id, With: with, Profile: ref, Span: span, Section: section}
+	refresh, verr := refreshFlag(cmd, c)
+	if verr != nil {
+		return nil, verr
+	}
+	entry := config.Tile{ID: id, With: with, Profile: ref, Span: span, Section: section, Refresh: refresh}
 	// An entry with the key of an automatic tile is that tile (tui.joinTiles):
 	// the one way to give the automatic sys tile a width, an input or a section.
 	// One that says nothing the automatic tile does not already is refused
@@ -455,8 +465,8 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 			automatic = automatic || (p.ID == id && p.Source == "automatic")
 		}
 	}
-	if automatic && len(with) == 0 && span == 0 && section == "" {
-		hint := "`--profile <name>` pins a second one to a connection; `--set`, `--span` and `--section` say how this one runs"
+	if automatic && len(with) == 0 && span == 0 && section == "" && refresh == "" {
+		hint := "`--profile <name>` pins a second one to a connection; `--set`, `--span`, `--section` and `--refresh` say how this one runs"
 		if slices.Contains(blockOf(cfg, drawn).Hidden, id) {
 			hint = "it is hidden — `rta dashboard unhide " + id + inViewFlag(drawn) + "` brings it back"
 		}
@@ -540,9 +550,13 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		pairsOut = append(pairsOut, view.Pair{Key: "section",
 			Value: section + " — drawn with the other tiles that name it, under a header that folds (z in the TUI)"})
 	}
-	every := "every " + pace(c.Pace())
+	every, from := tui.PaceOf(c, entry, blockOf(cfg, drawn))
+	paceText := "every " + pace(every)
+	if from != "" {
+		paceText += " (the " + from + "'s)"
+	}
 	pairsOut = append(pairsOut,
-		view.Pair{Key: "re-runs", Value: every + ", for as long as the TUI is open"},
+		view.Pair{Key: "re-runs", Value: paceText + ", for as long as the TUI is open"},
 		view.Pair{Key: "on screen", Value: "bare `rta` opens on it; H on the tile or `rta dashboard rm " +
 			removeLine(entry) + inViewFlag(drawn) + "` takes it down"})
 	return view.KeyValue{Pairs: pairsOut}, nil
@@ -1130,4 +1144,28 @@ func missingViewRefusal(cfg config.Config, name string) *view.Error {
 		hint = "views: " + strings.Join(names, ", ") + " — `rta dashboard add <capability> --view " + name + "` creates a new one"
 	}
 	return view.Errorf("core.dashboard.noview", "there is no view named %q", name).WithHint(hint)
+}
+
+// refreshFlag is --refresh as the entry writes it: refused when it cannot be
+// read, or asks for a pace the capability's own declaration forbids, while the
+// person who typed it is looking — the same answer `rta config check` gives the
+// same line in a file, and the one a tile would otherwise give by quietly running
+// at the floor. Written in the form a duration prints in, so `90s` and `1m30s`
+// are one entry.
+func refreshFlag(cmd *cobra.Command, c plugin.Capability) (string, *view.Error) {
+	text := strings.TrimSpace(mustString(cmd, "refresh"))
+	if text == "" {
+		return "", nil
+	}
+	want, err := config.ParseRefresh(text)
+	if err != nil {
+		return "", view.Errorf("core.dashboard.refresh", "--refresh %s", err.Error()).
+			WithHint("`--refresh 30s` re-runs the tile every thirty seconds; left out, it takes its section's, then the screen's, then the capability's")
+	}
+	if floor, cut := plugin.ClampPace(c, want); cut {
+		return "", view.Errorf("core.dashboard.refresh.floor", "%s re-runs no more often than every %s, and --refresh %s asks for more",
+			c.ID, pace(floor), text).
+			WithHint("a pace a capability declared is what a run costs it, and a configuration can only make it slower")
+	}
+	return config.FormatRefresh(want), nil
 }

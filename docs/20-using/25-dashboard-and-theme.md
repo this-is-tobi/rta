@@ -68,7 +68,33 @@ dashboard:
 
 Worth knowing what a tile costs before you add one: it refreshes on a timer for as long as the TUI is open, so a cluster-wide `kube.overview` tile is a round of `kubectl` calls at every refresh, for every hour the terminal stays open. `rta explain kube.overview` prints what a capability actually reads, which is not always only what its name suggests, and its `dashboard` row says how often a tile of it re-runs.
 
-A capability can set its own pace. The dashboard's timer runs every few seconds, and that is what a tile gets unless its capability declared a longer interval — `eol.watch`, `eol.check` and `eol.products` re-run every two hours, `pkg.overview`, `pkg.outdated` and `pkg.os` every hour, `kv.overview` every thirty seconds — because their answers move by the day and a run costs a request per product or a dozen subprocesses, or, for the store, a decrypt. A plugin's capability declares one the same way: `kube.overview` re-runs every minute, since a run is five cluster-wide lists at once and nothing it reports moves faster than the cluster's own controllers decide it. So `rta dashboard add eol.watch` is the version watchlist on your landing screen at a pace endoflife.date would not notice. Switching environments re-runs every tile that follows the switch, since its inputs just changed, and leaves a pinned tile inside its pace, since its did not.
+## How often a tile runs
+
+A tile runs when its screen opens and again at its pace, and where nothing says otherwise the pace follows what a run costs. One that reads this machine runs every five seconds, the dashboard's own tick and the fastest any tile goes. One that reaches a configured connection — a cluster, a database, a bucket, a vault — runs every thirty seconds, because each run is a round trip to a service somebody else logs: a `pg` tile is two `kubectl` calls and a login, and behind a bastion that audits every Kubernetes request each one is audit events for as long as the screen is drawn. A run that has not answered is never started again on top of itself, so a slow service is asked once, not once per tick.
+
+A capability can declare a pace of its own, and that one is a floor. `eol.watch`, `eol.check` and `eol.products` re-run every two hours, `pkg.overview`, `pkg.outdated` and `pkg.os` every hour, `kube.overview` every minute and `kv.overview` every thirty seconds, because a run costs a request per product, a dozen subprocesses, five cluster-wide lists or a decrypt and nothing they report moves faster. The capability knows what its run costs and rta does not, so a configuration can make a declared pace slower and never faster: `rta dashboard add eol.watch` is the version watchlist on your landing screen at a pace endoflife.date would not notice, and it stays that way.
+
+`refresh:` states a pace yourself, and the same key means the same thing in three places: on a tile, on a section under `sections:`, and on the screen, which is the `dashboard:` block or a view. The nearest one wins, tile then section then screen then the capability's own. A section's or a screen's value is a default for the tiles under it and yields to a slower pace a capability declared without a word, since it was never about that tile; a tile's own is a demand, and `rta config check` says when it cannot be met and what the tile will do instead.
+
+```yaml
+dashboard:
+  refresh: 1m
+  sections:
+    databases:
+      refresh: 30s
+  tiles:
+  - id: cnpg.status
+    profile: prod
+    section: databases
+  - id: pg.status
+    profile: prod/orders
+    section: databases
+    refresh: 10s
+  - id: eol.watch
+    refresh: 6h
+```
+
+A value takes a unit, `30s`, `5m`, `1h30m`, and at most `24h`; nothing below the five-second tick is possible and nothing below a declared pace is accepted. `rta dashboard add pg.status --profile prod/orders --refresh 10s` writes the same entry and refuses a pace the capability cannot run at, `rta config set dashboard.refresh 1m` sets the screen's, and `rta dashboard list` prints each tile's pace with where it was stated, `every 10s (tile)`, and `rta dashboard sections` each section's. Switching environments re-runs every tile that follows the switch, since its inputs just changed, and leaves a pinned tile inside its pace, since its did not.
 
 Two things the block will not do, whatever you write in it:
 

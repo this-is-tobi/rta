@@ -189,7 +189,7 @@ func configProblems(reg *registry.Registry, path string, data []byte) []configPr
 // own fields, a view, or a profile that selects or writes one.
 func statesAScreen(cfg config.Config) bool {
 	d := cfg.Dashboard
-	if len(d.Tiles)+len(d.Add)+len(d.Hidden)+len(d.Order)+len(d.Views)+len(d.Sections) > 0 || d.Columns != 0 {
+	if len(d.Tiles)+len(d.Add)+len(d.Hidden)+len(d.Order)+len(d.Views)+len(d.Sections) > 0 || d.Columns != 0 || d.Refresh != "" {
 		return true
 	}
 	for _, p := range cfg.Profiles {

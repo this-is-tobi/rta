@@ -175,6 +175,7 @@ func Schema() map[string]any {
 						"type":    "integer",
 						"minimum": 0,
 					},
+					"refresh": refreshSchema("this tile is re-run", "its section's, then the screen's, then its capability's"),
 					"section": map[string]any{
 						"description": "The group this tile is drawn in, under a header that folds. " +
 							"Tiles that name the same section are drawn together, at the place of the " +
@@ -202,6 +203,7 @@ func Schema() map[string]any {
 						"type":    "integer",
 						"minimum": 0,
 					},
+					"refresh": refreshSchema("this section's tiles are re-run", "the screen's"),
 				},
 			},
 			"profile": map[string]any{
@@ -384,6 +386,7 @@ func dashboardFields() map[string]any {
 			"type":    "integer",
 			"minimum": 0,
 		},
+		"refresh": refreshSchema("every tile of this screen is re-run, unless its section or it says otherwise", "each capability's own"),
 		"sections": map[string]any{
 			"description": "How each section the tiles name starts out and how wide it draws, by " +
 				"section name: `collapsed: true` opens it folded to its header row, `columns` is " +
@@ -409,4 +412,19 @@ func withViews(fields map[string]any) map[string]any {
 		"additionalProperties": map[string]any{"$ref": "#/$defs/view"},
 	}
 	return fields
+}
+
+// refreshSchema is the one declaration of a `refresh:`, for a tile, a section and
+// a screen alike: the same pattern, the same bound and the same sentence about
+// what a value cannot do, since the key is meant to work the same wherever it is
+// written.
+func refreshSchema(what, inherits string) map[string]any {
+	return map[string]any{
+		"description": "How often " + what + " (30s, 5m, 1h; at most 24h). Left out, it is " + inherits +
+			" — the nearest one wins. Never faster than the dashboard's own 5s tick, nor than a " +
+			"pace the capability declared (eol.watch runs every 2h); a capability that reaches a " +
+			"configured connection runs every 30s unless told.",
+		"type":    "string",
+		"pattern": schemaDuration,
+	}
 }

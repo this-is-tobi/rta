@@ -9,6 +9,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/tui"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // What a configuration says about sections that does nothing, or that cannot be
@@ -59,6 +60,7 @@ func blockSectionProblems(reg *registry.Registry, prefix string, d config.Dashbo
 	if d.Columns < 0 {
 		out = append(out, sectionProblem{prefix + ".columns", notColumns(d.Columns)})
 	}
+	out = append(out, refreshProblems(reg, prefix, d)...)
 	for _, list := range []struct {
 		key   string
 		tiles []config.Tile
@@ -103,4 +105,48 @@ func namesNoTile(name string, names map[string]bool) string {
 		return text + " — `section:` on a tile entry, or `rta dashboard add --section`, puts one in it"
 	}
 	return text + " (the sections here are " + strings.Join(slices.Sorted(maps.Keys(names)), ", ") + ")"
+}
+
+// refreshProblems is every `refresh:` of one screen that cannot be what it says.
+//
+// The same three questions at every level, since the key is meant to work the
+// same wherever it is written: can it be read, and, on a tile, can the capability
+// run that often. A section's or the screen's value is a default for the tiles
+// under it and is never reported for being faster than one capability's declared
+// pace — that tile keeps its own, which is what a default is — while a tile's own
+// is a demand, and a demand that cannot be met is said, with the pace it will get.
+func refreshProblems(reg *registry.Registry, prefix string, d config.Dashboard) []sectionProblem {
+	var out []sectionProblem
+	readable := func(key, text string) {
+		if _, err := config.ParseRefresh(text); err != nil {
+			out = append(out, sectionProblem{key, "refresh " + err.Error()})
+		}
+	}
+	readable(prefix+".refresh", d.Refresh)
+	for _, name := range slices.Sorted(maps.Keys(d.Sections)) {
+		readable(prefix+".sections."+name+".refresh", d.Sections[name].Refresh)
+	}
+	for _, list := range []struct {
+		key   string
+		tiles []config.Tile
+	}{{"tiles", d.Tiles}, {"add", d.Add}} {
+		for i, t := range list.tiles {
+			key := fmt.Sprintf("%s.%s[%d].refresh", prefix, list.key, i)
+			want, err := config.ParseRefresh(t.Refresh)
+			if err != nil {
+				out = append(out, sectionProblem{key, "refresh " + err.Error()})
+				continue
+			}
+			c, ok := reg.Capability(t.ID)
+			if !ok || want == 0 {
+				continue
+			}
+			if floor, cut := plugin.ClampPace(c, want); cut {
+				out = append(out, sectionProblem{key, fmt.Sprintf(
+					"refresh %s is faster than %s runs: it re-runs no more often than every %s, which is what the tile does — "+
+						"a configuration can make a pace slower than a capability's and never faster", t.Refresh, t.ID, config.FormatRefresh(floor))})
+			}
+		}
+	}
+	return out
 }

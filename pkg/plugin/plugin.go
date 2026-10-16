@@ -873,9 +873,10 @@ type Capability struct {
 	// Flash is refused on one.
 	Flash bool
 	// Refresh is how often a dashboard tile of this capability is re-run.
-	// Zero is the host's own pace — every few seconds, which is right for
-	// reading /proc and was, until this field existed, the only pace there
-	// was.
+	// Zero is the host's own pace for the kind of work it does (Pace): every
+	// five seconds for a read of this machine, which is right for /proc, and
+	// every thirty for one that reaches a configured connection. A declared
+	// value is a floor: a configuration can make it slower and never faster.
 	//
 	// NoPreview keeps a capability off the automatic dashboard; this is for
 	// the one a person then names in their config anyway, because they want

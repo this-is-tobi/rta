@@ -69,6 +69,11 @@ type Tile struct {
 	// to a second `add`, which replaces the entry — and so moves it to the section
 	// it now names, or out of every section when it names none.
 	Section string `yaml:"section,omitempty" json:"section,omitempty"`
+	// Refresh is how often this tile is re-run: `30s`, `5m`, `1h`. The same key
+	// on a section and on the dashboard states the default for the tiles under
+	// it, and the nearest one wins (ParseRefresh, plugin.ClampPace). Empty
+	// leaves it to the section, then the screen, then the capability.
+	Refresh string `yaml:"refresh,omitempty" json:"refresh,omitempty"`
 }
 
 // Key is how Order refers to a tile and how `rta dashboard rm` addresses
@@ -108,6 +113,9 @@ func (t Tile) AddArgs() string {
 	}
 	if t.Section != "" {
 		args = append(args, "--section", t.Section)
+	}
+	if t.Refresh != "" {
+		args = append(args, "--refresh", t.Refresh)
 	}
 	keys := make([]string, 0, len(t.With))
 	for k := range t.With {
@@ -184,6 +192,11 @@ type Dashboard struct {
 	// was two columns at every size, so a 200-cell terminal drew two
 	// 100-cell tiles of a six-line summary and called it a screen.
 	Columns int `yaml:"columns,omitempty" json:"columns,omitempty"`
+	// Refresh is the pace of every tile that states none and whose section
+	// states none: `30s`, `5m`. Empty leaves each tile at its capability's own
+	// (plugin.Capability.Pace). The same key, in the same words, on a section
+	// and on a tile.
+	Refresh string `yaml:"refresh,omitempty" json:"refresh,omitempty"`
 	// Sections states, by name, how each section the tiles name starts out and
 	// how wide it draws (DashboardSection). A tile is in a section by saying so
 	// (Tile.Section), or by being one of the panels an entry expanded into; this
