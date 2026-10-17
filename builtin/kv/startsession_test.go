@@ -2,6 +2,7 @@ package kv
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -227,6 +228,129 @@ func TestTheStoreStampMovesWhenTheSessionOpensAndWhenItLapses(t *testing.T) {
 	*at = at.Add(6 * time.Minute)
 	if lapsed := StoreStamp(); lapsed != shut {
 		t.Errorf("stamp after the lapse = %q, want the shut one %q", lapsed, shut)
+	}
+}
+
+// completeKeys is the key suggestion asked as both human surfaces ask it: a
+// request with the completion surface, which carries no credential at all.
+func completeKeys(surface plugin.Surface) []string {
+	return suggestKeys(context.Background(), plugin.NewRequest(nil, false, false).WithSurface(surface))
+}
+
+func keyNames(entries []string) []string {
+	names := make([]string, len(entries))
+	for i, entry := range entries {
+		names[i] = plugin.CandidateValue(entry)
+	}
+	return names
+}
+
+// A key box completes once the person has pressed U. The unlock is the TUI's
+// own, held in this process, and the form that asks for a key is the form
+// whose header says so — but the completion request is stripped of every
+// secret input, so a store with no passphrase in the environment offered
+// nothing right after the person had unlocked it.
+//
+// Completion looks at the session and does not use it: the deadline stays
+// where the person put it, so a box that is being tabbed through cannot keep a
+// store open.
+func TestKeysCompleteWhileTheUnlockIsHeldAndTheDeadlineDoesNotMove(t *testing.T) {
+	setup(t)
+	at := freezeClock(t)
+	aStoreLockedWith(t, aPassphrase)
+	text(t, runSet, map[string]any{"key": "web/one", "value": "v"}, false)
+
+	if got := completeKeys(plugin.SurfaceCompletion); got != nil {
+		t.Fatalf("a locked store offered %q", got)
+	}
+	if err := StartSession(aPassphrase, 30*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	deadline, _ := SessionUntil()
+
+	*at = at.Add(10 * time.Minute)
+	if got, want := keyNames(completeKeys(plugin.SurfaceCompletion)), []string{"k", "web/one"}; !slices.Equal(got, want) {
+		t.Errorf("keys after the unlock = %q, want %q", got, want)
+	}
+	folders := suggestFolders(context.Background(), plugin.NewRequest(nil, false, false).WithSurface(plugin.SurfaceCompletion))
+	if !slices.Equal(folders, []string{"web/"}) {
+		t.Errorf("folders after the unlock = %q, want web/", folders)
+	}
+	if after, _ := SessionUntil(); !after.Equal(deadline) {
+		t.Errorf("completion moved the deadline from %v to %v", deadline, after)
+	}
+}
+
+// Only a completion looks at the session. A request on any other surface is a
+// run or a read, which names the passphrase itself or is refused; the one an
+// agent makes in particular must never be answered from what a person typed
+// into the TUI.
+func TestOnlyACompletionLooksAtTheSession(t *testing.T) {
+	setup(t)
+	freezeClock(t)
+	aStoreLockedWith(t, aPassphrase)
+	if err := StartSession(aPassphrase, 30*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	deadline, _ := SessionUntil()
+	for _, surface := range []plugin.Surface{plugin.SurfaceMCP, plugin.SurfaceCLI, plugin.SurfaceTUI, plugin.SurfaceUnknown} {
+		if got := completeKeys(surface); got != nil {
+			t.Errorf("%s: a request that is not a completion was answered from the session: %q", surface, got)
+		}
+	}
+	if after, _ := SessionUntil(); !after.Equal(deadline) {
+		t.Errorf("the deadline moved from %v to %v", deadline, after)
+	}
+}
+
+// A lapsed or ended session offers nothing, and the environment still answers
+// by itself where it is set.
+func TestKeysCompleteFromNothingOnceTheUnlockIsGone(t *testing.T) {
+	setup(t)
+	at := freezeClock(t)
+	aStoreLockedWith(t, aPassphrase)
+	if err := StartSession(aPassphrase, 10*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	*at = at.Add(11 * time.Minute)
+	if got := completeKeys(plugin.SurfaceCompletion); got != nil {
+		t.Errorf("a lapsed session offered %q", got)
+	}
+
+	if err := StartSession(aPassphrase, 10*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	ForgetSession()
+	if got := completeKeys(plugin.SurfaceCompletion); got != nil {
+		t.Errorf("an ended session offered %q", got)
+	}
+
+	t.Setenv(passphraseEnv, aPassphrase)
+	if got := keyNames(completeKeys(plugin.SurfaceCompletion)); !slices.Equal(got, []string{"k"}) {
+		t.Errorf("keys from the environment = %q, want k", got)
+	}
+}
+
+// A store locked to a key with a passphrase of its own is unlocked with that
+// passphrase, and key boxes complete after it as they do for a passphrase store.
+func TestKeysCompleteAfterTheUnlockOfAPassphraseProtectedKey(t *testing.T) {
+	_, configDir := setupWithConfig(t)
+	freezeClock(t)
+	writeLockedSSHKey(t, configDir, "kv.identity", "the key one")
+	stubKeyPrompt(t, "the key one")
+	if _, err := runSet(context.Background(), cliReq(map[string]any{"key": "k", "value": "v"})); err != nil {
+		t.Fatalf("set with the default identity: %v", err)
+	}
+	keyPassphrases = map[string]string{}
+
+	if got := completeKeys(plugin.SurfaceCompletion); got != nil {
+		t.Fatalf("a locked key offered %q", got)
+	}
+	if verr := StartSession("the key one", time.Hour); verr != nil {
+		t.Fatalf("StartSession: %+v", verr)
+	}
+	if got := keyNames(completeKeys(plugin.SurfaceCompletion)); !slices.Equal(got, []string{"k"}) {
+		t.Errorf("keys after the unlock = %q, want k", got)
 	}
 }
 

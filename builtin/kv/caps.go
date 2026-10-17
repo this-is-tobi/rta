@@ -1333,11 +1333,22 @@ func runRecipients(_ context.Context, req plugin.Request) (view.View, error) {
 // The surface is the backstop underneath that check: a completion request
 // cannot prompt whatever it calls (plugin.SurfaceCompletion), so the worst a
 // mistake here can cost is a missing suggestion.
+//
+// "Without asking anybody" includes a person who already answered. A
+// completion request is stripped of every secret input, so the passphrase the
+// TUI's form typed into the unlock (session.go) never reaches it, and after
+// pressing U the key boxes offered nothing until the person set the variable
+// the unlock exists to avoid. The session is looked at, not used (peekSession):
+// the deadline is the person's, and a box being tabbed through must not be
+// what keeps a store open. Only a completion looks — a request on any other
+// surface names its passphrase itself or is refused, and an agent's must
+// never be answered from what a person typed into the TUI.
 func suggestKeys(_ context.Context, req plugin.Request) []string {
 	mode, _, verr := currentMode()
 	if verr != nil {
 		return nil
 	}
+	req = withHeldPassphrase(req)
 	switch mode {
 	case modeKeys:
 		if identityPath(req) == "" {
@@ -1363,6 +1374,20 @@ func suggestKeys(_ context.Context, req plugin.Request) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// withHeldPassphrase is a completion request carrying the passphrase the person
+// unlocked the store with, when it has none of its own and one is held. For a
+// store locked to a passphrase-protected key the held one is the key's, which
+// is what the key's unlock reads from the same input.
+func withHeldPassphrase(req plugin.Request) plugin.Request {
+	if req.Surface() != plugin.SurfaceCompletion || lookupPassphrase(req) != "" {
+		return req
+	}
+	if held, ok := peekSession(); ok {
+		return req.With(map[string]any{"passphrase": held})
+	}
+	return req
 }
 
 // setCall is the call that makes the first store a passphrase one. A person at a
