@@ -521,8 +521,7 @@ func TestDeclaredAliasesActuallyDoTheSameThing(t *testing.T) {
 	}
 	for _, tc := range cases {
 		base, _ := realModel(t, 120, 40)
-		// On a tile, where the letters are commands: the search bar holds the
-		// selection at a cold start and takes them as a query (typing.go).
+		// On a tile, where every one of these keys has something to act on.
 		base.selected = 1
 		want := tc.observe(press(t, base, tc.primary))
 		for _, alias := range tc.aliases {

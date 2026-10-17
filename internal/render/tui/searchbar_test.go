@@ -35,7 +35,7 @@ func TestTheSearchBoxFooterOffersOnlyWhatTheBoxAnswers(t *testing.T) {
 			t.Errorf("the footer still offers %q while the box takes the keyboard: %s", gone, bar)
 		}
 	}
-	for _, want := range []string{"pick", "run", "add tile", "clear", "ctrl+c quit"} {
+	for _, want := range []string{"pick", "run", "add as tile", "clear", "ctrl+c quit"} {
 		if !strings.Contains(bar, want) {
 			t.Errorf("the footer does not offer %q while the box takes the keyboard: %s", want, bar)
 		}
