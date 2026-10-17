@@ -120,7 +120,7 @@ func TestAClusterSuppliedNameIsListedNotPutRawInARow(t *testing.T) {
 			"kubelets at " + plugin.ListedName("v1.30.2"+hostileName),
 			plugin.ListedName(hostileName),
 			plugin.ListedName("nginx:1.28" + hostileImage),
-			plugin.ListedName("untracked" + hostileImage + ":1"),
+			plugin.ListedName("registry/untracked" + hostileImage + ":1"),
 		}},
 	}
 	for _, c := range cases {

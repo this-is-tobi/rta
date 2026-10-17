@@ -50,10 +50,15 @@ var (
 	reasonUnanswered = ungradedReason{"unanswered", "unanswered by endoflife.date"}
 	// reasonNotLookedUp is an image whose product was past maxEOLProducts.
 	reasonNotLookedUp = ungradedReason{"not-looked-up", "past the lookup limit"}
+	// reasonExcluded is an image the operator said is theirs and not to be
+	// graded. It is not a check that could not run: it is counted apart, in a
+	// row of its own that is not a mark against the report, and listed all the
+	// same, so a mapping cannot make an image vanish.
+	reasonExcluded = ungradedReason{"excluded", "excluded by the images setting"}
 
 	// ungradedOrder is the order the table lists them in and the tally says them.
 	ungradedOrder = []ungradedReason{reasonNoProduct, reasonSuggested, reasonFloating, reasonDigestOnly,
-		reasonNoCycle, reasonNoData, reasonUnanswered, reasonNotLookedUp}
+		reasonNoCycle, reasonNoData, reasonUnanswered, reasonNotLookedUp, reasonExcluded}
 )
 
 // notGraded is one distinct image reference that has no verdict.
@@ -70,15 +75,29 @@ type notGraded struct {
 // total is every distinct image reference that runs, so the row reads "57 of 71"
 // and the numbers reconcile with the graded rows above it. The row is a check
 // that could not run, counted n times: the overall line says "57 checks could
-// not run" and not "1".
+// not run" and not "1". An image the operator excluded is in neither number: it
+// is counted apart, in a row that grades nothing, and listed with the rest.
 func reportNotGraded(r *findings.Report, ungraded []notGraded, total int, clusterWide bool) []view.Section {
 	if len(ungraded) == 0 {
 		return nil
 	}
 	sort.SliceStable(ungraded, func(i, j int) bool { return reasonRank(ungraded[i].reason) < reasonRank(ungraded[j].reason) })
-	r.AddUncheckedN(grpKubeEOLImages,
-		fmt.Sprintf("images not graded (%d of %d)", len(ungraded), total),
-		tallyUngraded(ungraded)+" — the detail page lists each", refUnmaintained, len(ungraded))
+	var could []notGraded
+	for _, n := range ungraded {
+		if n.reason != reasonExcluded {
+			could = append(could, n)
+		}
+	}
+	excluded := len(ungraded) - len(could)
+	if len(could) > 0 {
+		r.AddUncheckedN(grpKubeEOLImages,
+			fmt.Sprintf("images not graded (%d of %d)", len(could), total-excluded),
+			tallyUngraded(could)+" — the detail page lists each", refUnmaintained, len(could))
+	}
+	if excluded > 0 {
+		r.Add(grpKubeEOLImages, fmt.Sprintf("images excluded (%d)", excluded), findings.Info,
+			"left out by the images setting — the detail page lists each", refUnmaintained)
+	}
 
 	t := view.Table{Columns: []view.Column{
 		{Name: "Image"}, {Name: "Where"}, {Name: "Reason"}, {Name: "Next Step"},
@@ -121,10 +140,11 @@ func tallyUngraded(ungraded []notGraded) string {
 	return strings.Join(parts, ", ")
 }
 
-// shown is the reference as the table's Image column spells it: the name, the
-// tag if it has one, and a marker where the bytes are pinned by digest.
+// shown is the reference as the table's Image column spells it: the repository
+// without its registry, the tag if it has one, and a marker where the bytes are
+// pinned by digest.
 func (u *imageUse) shown() string {
-	s := u.name
+	s := u.repo
 	if u.tag != "" {
 		s += ":" + u.tag
 	}

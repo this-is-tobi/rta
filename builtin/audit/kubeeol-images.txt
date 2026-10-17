@@ -1,0 +1,63 @@
+# Images that are a piece of a product, and whose tag IS that product's release.
+#
+# audit.kube.eol grades an image by looking its name up in endoflife.date's
+# catalogue, which cannot know that cert-manager-controller is cert-manager.
+# Each line below says so: <repository suffix>=<product>, matched on whole path
+# segments of the repository whatever registry or mirror is in front of it, the
+# longest suffix winning. The operator's `images` setting is read first and can
+# override or exclude any of these.
+#
+# THE REVIEW RULE. An entry belongs here only if the project cuts the image from
+# the same tag as the product, so that v1.19.1 on the image is cert-manager
+# 1.19.1 and grading it against cert-manager's cycles is true. "Is part of the
+# product" and "is built by the same project" are not the rule: the image gets a
+# verdict, and a verdict under another project's version number is confident
+# and wrong. prometheus-config-reloader, hubble-ui, certgen and
+# csi-node-driver-registrar are the examples that were left out, each
+# versioned on its own.
+#
+#   - A name another project could plausibly ship (background-controller) is
+#     qualified with its organisation, kyverno/background-controller.
+#   - The product is a name in endoflife.date's catalogue. An entry whose
+#     product the site does not list is ignored when the audit runs, so an
+#     upstream rename costs a row not graded and never a wrong verdict.
+#   - Check a new entry against the project's own release notes, and the
+#     product against `rta eol products`, before adding it. Keep the table
+#     short: the operator's own setting is the place for the rest.
+#   - Lowercase, one entry per suffix, and no `-` product: the table grades.
+
+cert-manager-controller=cert-manager
+cert-manager-cainjector=cert-manager
+cert-manager-webhook=cert-manager
+cert-manager-acmesolver=cert-manager
+cert-manager-startupapicheck=cert-manager
+cert-manager-ctl=cert-manager
+
+longhorn-manager=longhorn
+longhorn-engine=longhorn
+longhorn-instance-manager=longhorn
+longhorn-share-manager=longhorn
+longhorn-ui=longhorn
+
+teleport-distroless=teleport
+teleport-ent-distroless=teleport
+teleport-operator=teleport
+
+kyvernopre=kyverno
+kyverno-cli=kyverno
+kyverno/background-controller=kyverno
+kyverno/cleanup-controller=kyverno
+kyverno/reports-controller=kyverno
+
+cilium/operator-generic=cilium
+cilium/operator-aws=cilium
+cilium/operator-azure=cilium
+cilium/hubble-relay=cilium
+
+mattermost-team-edition=mattermost
+mattermost-enterprise-edition=mattermost
+
+kube-apiserver=kubernetes
+kube-controller-manager=kubernetes
+kube-scheduler=kubernetes
+kube-proxy=kubernetes

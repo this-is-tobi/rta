@@ -102,7 +102,7 @@ Keycloak signs in as the service account of a confidential client, `rta` unless 
 
 ## Versions to watch and tools to keep current
 
-`eol` is not a connection: the versions you run or plan to run, graded against endoflife.date. `pkg` is the tools list this environment cares about, which replaces the machine's list while it is on.
+`eol` is not a connection: the versions you run or plan to run, graded against endoflife.date. `pkg` is the tools list this environment cares about, which replaces the machine's list while it is on. `audit` carries the one setting of its own that is no connection either: which product an image is, for `rta audit kube eol`, where its name does not say.
 
 ```yaml
 profiles:
@@ -124,6 +124,16 @@ profiles:
           tools:
             - kubectl-cnpg=github:cloudnative-pg/cloudnative-pg
             - kubectl-stern=github:stern/stern
+      audit:
+        set:
+          # <repository suffix>=<product>: an image whose repository ends in the suffix, on whole path
+          # segments and whatever registry is in front, is graded as that product. The longest suffix
+          # wins, and a table built in already knows cert-manager, longhorn, teleport, kyverno, cilium,
+          # mattermost and the kube-* images, whose tags are their product's releases. `=-` says an image is
+          # yours and not to be graded: it is listed as excluded, and not counted as a check that could not run.
+          images:
+            - platform/cache-engine=redis
+            - ghcr.io/shop/storefront=-
 ```
 
 ## Roles for an agent

@@ -95,7 +95,7 @@ func TestKubeEOLListsEveryUngradedImageWithItsReasonUnclipped(t *testing.T) {
 		t.Fatalf("%d images in the not-graded section, want 60", len(rows))
 	}
 	for i := range images {
-		image := fmt.Sprintf("service-number-%02d:1.%d.0", i, i)
+		image := fmt.Sprintf("team/service-number-%02d:1.%d.0", i, i)
 		row, ok := rows[image]
 		if !ok {
 			t.Errorf("%s is missing from the not-graded section", image)

@@ -363,7 +363,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"nodes were not examined.",
 				Scope:   "namespace",
 				Refresh: eolapi.TileRefresh,
-				Inputs:  []plugin.Field{namespaceField(), contextField(), warnDaysField()},
+				Inputs:  []plugin.Field{namespaceField(), contextField(), warnDaysField(), imagesField()},
 				Run:     runKubeEOL,
 			},
 		},

@@ -395,6 +395,13 @@
                   },
                   "type": "object"
                 },
+                "images": {
+                  "description": "<repository suffix>=<product>, or =- to leave an image out, repeatable \u2014 usually from `plugins: audit: images:` (read by audit.kube.eol)",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
                 "mail": {
                   "additionalProperties": false,
                   "properties": {
