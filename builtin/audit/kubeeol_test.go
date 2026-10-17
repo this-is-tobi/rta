@@ -29,7 +29,8 @@ func newEOLServer(t *testing.T, omit ...string) (*httptest.Server, *int) {
 			{"name":"redis","label":"Redis","category":"database","aliases":[]},
 			{"name":"nginx","label":"nginx","category":"server-app","aliases":[]},
 			{"name":"debian","label":"Debian","category":"os","aliases":[]},
-			{"name":"ghost","label":"Ghost","category":"app","aliases":[]}]}`,
+			{"name":"ghost","label":"Ghost","category":"app","aliases":[]},
+			{"name":"mysql","label":"MySQL","category":"database","aliases":[]}]}`,
 		"/products/kubernetes": `{"result":{"name":"kubernetes","releases":[
 			{"name":"1.30","releaseDate":"2024-04-17","isEol":false,"eolFrom":"2099-06-28","latest":{"name":"1.30.2"}},
 			{"name":"1.28","releaseDate":"2023-08-15","isEol":true,"eolFrom":"2024-10-28","latest":{"name":"1.28.15"}}]}}`,
@@ -44,6 +45,9 @@ func newEOLServer(t *testing.T, omit ...string) (*httptest.Server, *int) {
 			{"name":"12","codename":"Bookworm","releaseDate":"2023-06-10","isEol":false,"eolFrom":"2099-06-30","latest":{"name":"12.13"}}]}}`,
 		"/products/ghost": `{"result":{"name":"ghost","releases":[
 			{"name":"6","releaseDate":"2025-09-01","isEol":false,"eolFrom":null,"latest":{"name":"6.2.0"}}]}}`,
+		"/products/mysql": `{"result":{"name":"mysql","releases":[
+			{"name":"8.4","releaseDate":"2024-04-30","isEol":false,"eolFrom":"2099-04-30","latest":{"name":"8.4.5"}},
+			{"name":"8.0","releaseDate":"2018-04-19","isEol":false,"eolFrom":"2099-04-30","latest":{"name":"8.0.42"}}]}}`,
 	}
 	for _, path := range omit {
 		delete(pages, path)
@@ -112,18 +116,26 @@ func TestKubeEOLGradesTheControlPlaneTheKubeletsAndEveryDistinctImage(t *testing
 		// variant suffix is not part of the release.
 		"image redis:6.2.1-alpine (1 pod in 1 namespace) | " + findings.Fail + " | redis 6.2 reached end of life on 2025-01-01",
 		"image redis:7.2.4 (1 pod in 1 namespace) | " + findings.Warn + " | redis 7.2 reaches end of life on",
-		"image nginx (1 pod in 1 namespace) | " + findings.Info + " | a floating tag names no release",
-		// A variant suffix on a floating tag is still a floating tag.
-		"image nginx:latest-alpine (1 pod in 1 namespace) | " + findings.Info + " | a floating tag names no release",
-		"image redis (1 pod in 1 namespace) | " + findings.Info + " | pinned by digest with no tag",
 		"image debian:bookworm-slim (1 pod in 1 namespace) | " + findings.OK + " | debian 12 is supported until 2099-06-30",
-		// A product the catalogue lists with no cycle the tag matches.
-		"image ghost:5.9 (1 pod in 1 namespace) | " + findings.Info + " | 5.9 names no release cycle of ghost",
-		"images endoflife.date does not track (1) | " + findings.Info + " | internal-app",
+		// What was not graded is one row that counts them, by distinct image:
+		// nine run here and four are graded. A floating tag, a bare digest, a
+		// tag that names no cycle of a product the catalogue lists, and an
+		// image the catalogue does not list at all.
+		"images not graded (5 of 9) | " + findings.Info + " | 1 not on endoflife.date, 3 floating or digest-only, 1 naming no release cycle",
+		// And the overall line counts them: it read "no issues in what was
+		// checked" over an audit that graded four images in nine.
+		"2 failing, 1 warning, 5 checks could not run",
 		"https://endoflife.date/postgresql",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("missing %q in:\n%s", want, rendered)
+		}
+	}
+	// The ones that were not graded are on the detail page with a reason, and
+	// are not rows of their own in the compact table.
+	for _, notWant := range []string{"image nginx", "image redis (", "image ghost", "internal-app"} {
+		if strings.Contains(rendered, notWant) {
+			t.Errorf("an image that was not graded has its own row (%q):\n%s", notWant, rendered)
 		}
 	}
 	// The catalogue, then one page per distinct product — never per pod or

@@ -301,7 +301,8 @@ func scopeLabel(ns string) string {
 // section. findings.Report.Page takes a view.KeyValue now and cannot be handed
 // that table, but what the summary should say about a cluster is still one
 // decision, made here.
-func finishKube(ctx context.Context, req plugin.Request, r *findings.Report, order []findings.Group, sc scope) view.View {
+func finishKube(ctx context.Context, req plugin.Request, r *findings.Report, order []findings.Group, sc scope,
+	extra ...view.Section) view.View {
 	if !req.Bool("detail") {
 		return r.TableFor(req.Surface(), true)
 	}
@@ -313,7 +314,7 @@ func finishKube(ctx context.Context, req plugin.Request, r *findings.Report, ord
 		{Key: "context", Value: kubeContext},
 		{Key: "scope", Value: scopeLabel(sc.ns)},
 	}, r.Grade()...)
-	return r.Page(ctx, req, order, view.KeyValue{Pairs: pairs})
+	return r.Page(ctx, req, order, view.KeyValue{Pairs: pairs}, extra...)
 }
 
 // coverageClean is within's counterpart for the two coverage audits, whose
