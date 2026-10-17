@@ -68,11 +68,27 @@
               "type": "string"
             },
             "dashboard": {
-              "description": "The screen drawn while this profile is switched on: the name of one of `dashboard: views:`, or the screen itself written here, with the keys a view has (tiles, add, hidden, order, width, height, refresh, sections) \u2014 addressed as a view named after this profile. Left out, the `dashboard:` block draws.",
+              "description": "The screens that belong to this environment: the name of one of `dashboard: views:`, or a list of names \u2014 the first is drawn while this profile is switched on and V walks all of them, and only them, while it is \u2014 or the screen itself written here, with the keys a view has (tiles, add, hidden, order, width, height, refresh, sections), addressed as a view named after this profile. `default` is the `dashboard:` block, as a list entry. Left out, the `dashboard:` block draws, and V walks every screen there is.",
               "oneOf": [
                 {
                   "pattern": "^[a-z][a-z0-9-]{0,31}$",
                   "type": "string"
+                },
+                {
+                  "items": {
+                    "anyOf": [
+                      {
+                        "pattern": "^[a-z][a-z0-9-]{0,31}$",
+                        "type": "string"
+                      },
+                      {
+                        "const": "default"
+                      }
+                    ]
+                  },
+                  "minItems": 1,
+                  "type": "array",
+                  "uniqueItems": true
                 },
                 {
                   "$ref": "#/$defs/rtaConfig/$defs/view"
@@ -339,7 +355,7 @@
               "additionalProperties": {
                 "$ref": "#/$defs/rtaConfig/$defs/view"
               },
-              "description": "Named dashboards, each a whole arrangement of its own with the same keys, and a profile selects one with `dashboard:` \u2014 drawn while that profile is switched on, in place of this block. A view's tiles pin themselves to whichever profiles they name, so one view can show every database of every environment.",
+              "description": "Named dashboards, each a whole arrangement of its own with the same keys, and a profile links them with `dashboard:` \u2014 the first drawn while that profile is switched on, in place of this block, and V walking the rest. A view's tiles pin themselves to whichever profiles they name, so one view can show every database of every environment.",
               "propertyNames": {
                 "not": {
                   "const": "default"

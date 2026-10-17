@@ -228,12 +228,26 @@ func Schema() map[string]any {
 						"pattern": schemaDuration,
 					},
 					"dashboard": map[string]any{
-						"description": "The screen drawn while this profile is switched on: the name " +
-							"of one of `dashboard: views:`, or the screen itself written here, with " +
-							"the keys a view has (tiles, add, hidden, order, width, height, refresh, sections) — addressed as " +
-							"a view named after this profile. Left out, the `dashboard:` block draws.",
+						"description": "The screens that belong to this environment: the name of one " +
+							"of `dashboard: views:`, or a list of names — the first is drawn while this " +
+							"profile is switched on and V walks all of them, and only them, while it is — " +
+							"or the screen itself written here, with the keys a view has (tiles, add, hidden, " +
+							"order, width, height, refresh, sections), addressed as a view named after this " +
+							"profile. `default` is the `dashboard:` block, as a list entry. Left out, the " +
+							"`dashboard:` block draws, and V walks every screen there is.",
 						"oneOf": []any{
 							map[string]any{"type": "string", "pattern": viewName.String()},
+							map[string]any{
+								"type":        "array",
+								"minItems":    1,
+								"uniqueItems": true,
+								"items": map[string]any{
+									"anyOf": []any{
+										map[string]any{"type": "string", "pattern": viewName.String()},
+										map[string]any{"const": DefaultView},
+									},
+								},
+							},
 							map[string]any{"$ref": "#/$defs/view"},
 						},
 					},
@@ -393,8 +407,8 @@ func dashboardFields() map[string]any {
 func withViews(fields map[string]any) map[string]any {
 	fields["views"] = map[string]any{
 		"description": "Named dashboards, each a whole arrangement of its own with the same " +
-			"keys, and a profile selects one with `dashboard:` — drawn while that profile is " +
-			"switched on, in place of this block. A view's tiles pin themselves to whichever " +
+			"keys, and a profile links them with `dashboard:` — the first drawn while that profile is " +
+			"switched on, in place of this block, and V walking the rest. A view's tiles pin themselves to whichever " +
 			"profiles they name, so one view can show every database of every environment.",
 		"type":                 "object",
 		"propertyNames":        map[string]any{"pattern": viewName.String(), "not": map[string]any{"const": DefaultView}},

@@ -222,7 +222,7 @@ type Dashboard struct {
 	// and an entry that names none is the one `rta config check` reports.
 	Sections map[string]DashboardSection `yaml:"sections,omitempty" json:"sections,omitempty"`
 	// Views are named arrangements of the same fields, each a whole
-	// dashboard of its own, and a profile selects one (Profile.Dashboard): the
+	// dashboard of its own, and a profile links some (Profile.Dashboard): the
 	// screen that is drawn while it is switched on. A profile can also write
 	// its screen in its own entry, which is a view named after the profile and
 	// is not in this map. See views.go.

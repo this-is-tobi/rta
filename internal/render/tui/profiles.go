@@ -983,8 +983,10 @@ func profileScreen(d config.ProfileDashboard) string {
 	switch {
 	case d.Inline != nil:
 		return "own screen, " + format.Count(len(d.Inline.Tiles)+len(d.Inline.Add), "tile", "tiles")
-	case d.Name != "":
-		return "screen " + d.Name
+	case len(d.Names) > 1:
+		return format.Count(len(d.Names), "screen", "screens") + ", first " + d.Names[0]
+	case len(d.Names) == 1:
+		return "screen " + d.Names[0]
 	}
 	return ""
 }

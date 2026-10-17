@@ -177,7 +177,7 @@ A section is a fact about the entry, so `--section` is how a tile changes sectio
 
 ## Views: a screen per environment
 
-A person who works against three environments wants three screens: staging's cluster and database, production's tiles and nothing else, and one that is about every database there is. A profile is a set of connections and not an arrangement, so the arrangement is named on its own, as a **view**, and a profile says which one it shows:
+A person who works against three environments wants three screens: staging's cluster and database, production's tiles and nothing else, and one that is about every database there is. A profile is a set of connections and not an arrangement, so the arrangement is named on its own, as a **view**, and a profile says which ones belong to it:
 
 ```yaml
 dashboard:
@@ -200,23 +200,23 @@ dashboard:
         profile: analytics
 profiles:
   prod:
-    dashboard: ops
+    dashboard: [ops, databases]   # a name, or a list of names; the first is drawn on arrival
     plugins:
       pg: {}
 ```
 
-Switching to `prod` draws `ops`; any other environment, and no environment, draws the `dashboard:` block as it always has. A view is a whole arrangement of the same six keys the block has — `tiles`, `add`, `hidden`, `order`, `columns`, `sections` — and it **replaces** the block while it is drawn rather than laying over it, so what a screen shows is the fields of one place and not an answer to which of two lists wins. Its tiles pin themselves to whichever profiles they name, which is what makes the `databases` view possible: it belongs to no environment, shows every database of every one, and any profile can select it. A profile that names a view nothing states draws the default and `rta doctor` says so, since a screen that fails to draw over a name is a worse outage than the usual one.
+Switching to `prod` draws `ops`, the first it lists, and `V` walks `ops` and `databases` and no others while `prod` is switched on. A profile that lists nothing, and no environment at all, draws the `dashboard:` block as it always has, and `V` walks every screen there is, so one environment's screens are never paged through on the way to another's. `default` is a legal entry in the list and is the `dashboard:` block. A view is a whole arrangement of the same six keys the block has — `tiles`, `add`, `hidden`, `order`, `columns`, `sections` — and it **replaces** the block while it is drawn rather than laying over it, so what a screen shows is the fields of one place and not an answer to which of two lists wins. Its tiles pin themselves to whichever profiles they name, which is what makes the `databases` view possible: it belongs to no environment, shows every database of every one, and any profile can list it. A profile that names a view nothing states draws the default and `rta doctor` says so, since a screen that fails to draw over a name is a worse outage than the usual one.
 
 From a shell, `--view` names the view on every `rta dashboard` command, and without it a command acts on the view that is drawn now, so what you add, hide or list is what you are looking at:
 
 ```bash
 rta dashboard add kube.overview --profile prod --view ops    # creates the view when it is new
-rta dashboard views                                          # every view, who selects it, and the one drawn now
+rta dashboard views                                          # every view, which profiles link it, and the one drawn now
 rta dashboard list --view databases
-rta profile set prod --dashboard ops                         # the screen prod shows; `--dashboard none` goes back
+rta profile set prod --dashboard ops --dashboard databases   # the screens prod links, the first drawn on arrival; `--dashboard none` goes back
 ```
 
-`--view default` names the `dashboard:` block when that is the one you mean. In the TUI the header says `view ops` when it is not the default, `H`, `+` and `[` `]` write to the view that is drawn, and `V` draws the next one — the default, then each view by name — for this session only, which is how you look at the databases screen without switching environment. A selection on a section's header stays on it when the next screen has that section and goes to the screen's first header or tile when it does not, never to the search line, so `V` pressed again draws the one after. A switch (`u`) undoes it, since switching is asking for that environment's screen. Each view is a unit of its own when the configuration is [split across files](./22-your-config-file.md#split-it-across-files): a drop-in can hold one view and nothing else.
+`--view default` names the `dashboard:` block when that is the one you mean. In the TUI the header says `view ops` when it is not the default, `H`, `+` and `[` `]` write to the view that is drawn, `V` draws the next screen the switched-on environment links — the default, then each view by name, when it links none — and `v` goes back to the screen before, and again to return, for this session only and nothing written. Without `--view`, a command acts on the screen the environment draws first, since the command line cannot see which one a TUI session is on; the receipt says so when the environment links several. A view another environment links is still one you can name with `--view` and edit, and still one `rta profile set --dashboard` can link. A selection on a section's header stays on it when the next screen has that section and goes to the screen's first header or tile when it does not, never to the search line, so `V` pressed again draws the one after. A switch (`u`) undoes it, since switching is asking for that environment's screen. Each view is a unit of its own when the configuration is [split across files](./22-your-config-file.md#split-it-across-files): a drop-in can hold one view and nothing else.
 
 ### A screen written in the profile
 
@@ -248,7 +248,7 @@ A profile is one thing that lives in one file, and so is its screen: it is state
 
 A name has one statement. When `dashboard: views:` also has a view called `staging`, the name keeps meaning that view, the block in the profile is not drawn and cannot be addressed, and the `dashboard:` block draws while `staging` is switched on, rather than either of the two being chosen for you. `default` names the `dashboard:` block, so a profile called `default` cannot have its own screen addressed either. Both are reported where every profile problem is: `rta profile list` shows the profile as `warn` with the reason, `rta profile show` and `rta doctor` say it, and `rta config check` names the file and the line of the `dashboard:` key, which it reads across every file because the view and the profile are as likely to be in two. The profile is still one you can switch on, since nothing about its connections is in question, and it draws the `dashboard:` block until you keep one of the two.
 
-`rta config check` holds the block to the keys a view has, so a `tile:` for `tiles:` inside a profile's entry is named with the line it is on, as it is under `views:`. A `dashboard:` that is neither a name nor a block — a list, a number — is refused when the file is read, naming the file, the profile and the line, and what it takes.
+`rta config check` holds the block to the keys a view has, so a `tile:` for `tiles:` inside a profile's entry is named with the line it is on, as it is under `views:`. A `dashboard:` that is none of a name, a list of names and a block — a number, a list of something else — is refused when the file is read, naming the file, the profile and the line, and what it takes.
 
 A config file rta does not honour — the `./.rta.yaml` it falls back to when there is no config directory — arranges no screen, a profile's own included. Its blocks are read and listed, the automatic dashboard is what draws, and the dashboard commands refuse to write there, as they do for the `dashboard:` block and every view.
 
