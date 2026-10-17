@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
 	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -164,6 +165,30 @@ func TestPrivilegedInitAndEphemeralContainersAreGraded(t *testing.T) {
 	}
 	if strings.Contains(rendered, "no pod") {
 		t.Errorf("a pod running privileged graded clean:\n%s", rendered)
+	}
+}
+
+// A tile re-runs a capability on a timer, and the pace a capability that
+// reaches a configured connection gets when it says nothing is thirty seconds
+// (plugin.PaceRemote): three or four whole-cluster lists, every half minute,
+// for as long as a terminal is open. These are read by the day, and the person
+// who just fixed a binding presses `r`.
+func TestKubeAuditsDeclareARefresh(t *testing.T) {
+	var seen int
+	for _, c := range Plugin(nil, nil).Capabilities {
+		if !strings.HasPrefix(c.ID, "audit.kube.") {
+			continue
+		}
+		seen++
+		if c.Refresh < kubeAuditRefresh {
+			t.Errorf("%s declares a refresh of %s, want at least %s", c.ID, c.Refresh, kubeAuditRefresh)
+		}
+		if c.ID == "audit.kube.eol" && c.Refresh != eolapi.TileRefresh {
+			t.Errorf("audit.kube.eol refreshes every %s, want the pace of the API it asks (%s)", c.Refresh, eolapi.TileRefresh)
+		}
+	}
+	if seen != 5 {
+		t.Errorf("found %d audit.kube.* capabilities, want 5", seen)
 	}
 }
 

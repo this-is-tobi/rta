@@ -22,7 +22,7 @@ func productsCapability() plugin.Capability {
 			"name, label or alias contains it. Without one the first products are listed and the " +
 			"total says how many there are; `limit` shows more.",
 		NoPreview: true,
-		Refresh:   tileRefresh,
+		Refresh:   eolapi.TileRefresh,
 		Inputs: []plugin.Field{
 			{Name: "term", Type: plugin.String, Positional: true,
 				Help: "part of a name, label or alias — postgres, kube, ubuntu"},

@@ -35,6 +35,15 @@ var kubectlBin = "kubectl"
 
 const kubectlTimeout = 20 * time.Second
 
+// kubeAuditRefresh is how often a dashboard tile of a kube.* audit is re-run:
+// a floor an operator's file can lengthen and never shorten. These audits list
+// whole resource kinds — every ClusterRole, every pod — and the answer moves
+// by the day. Left to the pace a capability that reaches a cluster gets by
+// default, thirty seconds, a tile re-listed the cluster, and a bastion that
+// audits every Kubernetes request logged it, for as long as a terminal was
+// open. Somebody who just fixed a binding presses `r`.
+const kubeAuditRefresh = 10 * time.Minute
+
 // kubectlWaitDelay bounds how long a finished-or-killed kubectl may hold its
 // pipes; see kubectlJSON. It only starts counting once the process has
 // exited or the context has killed it, so a healthy listing is never cut

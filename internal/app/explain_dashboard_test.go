@@ -27,9 +27,16 @@ func TestExplainCardSaysWhatTheDashboardDoesWithIt(t *testing.T) {
 	if got := card("eol.watch"); !strings.Contains(got, "declines to run unasked") || !strings.Contains(got, "every 2h") {
 		t.Errorf("eol.watch: %q, want the refusal and the two-hour pace", got)
 	}
-	// Declined, and at the pace of a capability that reaches a cluster.
-	if got := card("audit.kube.eol"); !strings.Contains(got, "declines to run unasked") || !strings.Contains(got, "every 30s") {
-		t.Errorf("audit.kube.eol: %q", got)
+	// Declined, and at the pace of the API it asks: it lists a cluster and then
+	// asks endoflife.date once per product, so a thirty-second tile was a
+	// beacon on a public host.
+	if got := card("audit.kube.eol"); !strings.Contains(got, "declines to run unasked") || !strings.Contains(got, "every 2h") {
+		t.Errorf("audit.kube.eol: %q, want the refusal and the two-hour pace", got)
+	}
+	// The other four only list the operator's own cluster, at a pace that
+	// keeps a tile from re-listing it every half minute.
+	if got := card("audit.kube.rbac"); !strings.Contains(got, "every 10m") {
+		t.Errorf("audit.kube.rbac: %q, want the ten-minute pace", got)
 	}
 	// Declined, at the host's own pace: it reads this machine.
 	if got := card("sys.load"); !strings.Contains(got, "every 5s") {

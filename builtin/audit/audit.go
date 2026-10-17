@@ -23,6 +23,8 @@ package audit
 
 import (
 	"context"
+
+	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -282,9 +284,10 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"belong to no namespace, so they are not examined at all — reported in the result " +
 					"rather than left implied, since a scoped run that silently skipped the cluster-admin " +
 					"check would read as a clean RBAC posture.",
-				Scope:  "namespace",
-				Inputs: []plugin.Field{namespaceField(), contextField()},
-				Run:    runKubeRBAC,
+				Scope:   "namespace",
+				Refresh: kubeAuditRefresh,
+				Inputs:  []plugin.Field{namespaceField(), contextField()},
+				Run:     runKubeRBAC,
 			},
 			{
 				ID:         "audit.kube.podsecurity",
@@ -302,9 +305,10 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"not flagged, while one relying only on an image's own non-root USER is. A namespace " +
 					"narrows which pods are read, and a clean result says so, never that no pod in the " +
 					"cluster is affected.",
-				Scope:  "namespace",
-				Inputs: []plugin.Field{namespaceField(), contextField()},
-				Run:    runKubePodSecurity,
+				Scope:   "namespace",
+				Refresh: kubeAuditRefresh,
+				Inputs:  []plugin.Field{namespaceField(), contextField()},
+				Run:     runKubePodSecurity,
 			},
 			{
 				ID:         "audit.kube.quotas",
@@ -319,9 +323,10 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"\"Resource policies\" section instead.\n\nNarrowed to a namespace it checks that one, " +
 					"including a system namespace if you name it explicitly — the system-namespace filter " +
 					"exists so a cluster-wide sweep stays quiet, not to refuse a direct question.",
-				Scope:  "namespace",
-				Inputs: []plugin.Field{namespaceField(), contextField()},
-				Run:    runKubeQuotas,
+				Scope:   "namespace",
+				Refresh: kubeAuditRefresh,
+				Inputs:  []plugin.Field{namespaceField(), contextField()},
+				Run:     runKubeQuotas,
 			},
 			{
 				ID:         "audit.kube.netpol",
@@ -335,9 +340,10 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"other pod, in either direction. Cites CIS Kubernetes Benchmark 2.0.1 5.3.2.\n\nNarrowed " +
 					"to a namespace it checks that one, including a system namespace if you name it " +
 					"explicitly.",
-				Scope:  "namespace",
-				Inputs: []plugin.Field{namespaceField(), contextField()},
-				Run:    runKubeNetworkPolicy,
+				Scope:   "namespace",
+				Refresh: kubeAuditRefresh,
+				Inputs:  []plugin.Field{namespaceField(), contextField()},
+				Run:     runKubeNetworkPolicy,
 			},
 			{
 				ID:      "audit.kube.eol",
@@ -354,9 +360,10 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"tags that name no release and digests with no tag are each reported once rather than " +
 					"guessed at. Narrowed to a namespace it grades that namespace's images and the control " +
 					"plane; nodes belong to no namespace and are not examined, which the result says.",
-				Scope:  "namespace",
-				Inputs: []plugin.Field{namespaceField(), contextField(), warnDaysField()},
-				Run:    runKubeEOL,
+				Scope:   "namespace",
+				Refresh: eolapi.TileRefresh,
+				Inputs:  []plugin.Field{namespaceField(), contextField(), warnDaysField()},
+				Run:     runKubeEOL,
 			},
 		},
 	}
