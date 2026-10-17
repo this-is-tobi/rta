@@ -641,7 +641,11 @@ func ClassifyStatus(s string) StatusKind {
 		// A part of an overview its credential cannot read (the nodes of a
 		// namespaced token), said beside the parts it could: the answer is
 		// partial and the page still worth reading, so amber and not red.
-		strings.HasPrefix(v, "could not be read"):
+		strings.HasPrefix(v, "could not be read") ||
+		// An overview with no reading of its backend, or of a backend that is up
+		// and has not been set up: docker and qdrant already lead with the first,
+		// and a Vault that was never initialised is the second.
+		strings.HasPrefix(v, "unreadable") || strings.HasPrefix(v, "not initialized"):
 		return StatusWarn
 	case strings.HasPrefix(v, "error") || strings.HasPrefix(v, "expired") ||
 		strings.HasPrefix(v, "invalid") || strings.HasPrefix(v, "fail") ||
@@ -658,7 +662,10 @@ func ClassifyStatus(s string) StatusKind {
 		// what the configuration knows. They were drawn plainest, on a dashboard
 		// of green ones.
 		strings.HasPrefix(v, "did not answer") || strings.HasPrefix(v, "was never contacted") ||
-		strings.HasPrefix(v, "answered, and refused") || strings.HasPrefix(v, "answered, and did not accept"):
+		strings.HasPrefix(v, "answered, and refused") || strings.HasPrefix(v, "answered, and did not accept") ||
+		// A store that is up and answers nothing until somebody opens it: Vault's
+		// seal state, the one thing its overview exists to report.
+		strings.HasPrefix(v, "sealed"):
 		return StatusBad
 	case strings.HasPrefix(v, "closed") || isWord(v, "info") ||
 		isWord(v, "none") || strings.HasPrefix(v, "disabled") ||

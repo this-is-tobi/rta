@@ -65,6 +65,12 @@ func TestEveryStatusWordTheBuiltinsUseIsColoured(t *testing.T) {
 		"answered, and refused — namespaces is forbidden":                   StatusBad,
 		"answered, and did not accept this credential — Unauthorized":       StatusBad,
 		"could not be read — nodes is forbidden: User cannot list resource": StatusWarn,
+		// a store that is up and answers nothing until it is opened, and an
+		// overview that has no reading of its backend: vault's seal state, and
+		// the words docker and qdrant already say
+		"sealed — 0 of 1 unseal key shares given": StatusBad,
+		"unreadable — profile prod refused":       StatusWarn,
+		"not initialized":                         StatusWarn,
 	}
 	for word, want := range cases {
 		if got := ClassifyStatus(word); got != want {
@@ -97,6 +103,7 @@ func TestANameThatBeginsLikeAStatusWordIsNotOne(t *testing.T) {
 		"down-service",
 		"up-to-date-app",
 		"upstream.example.com",
+		"sealed-secrets — controller",
 		"okta",
 		"upstream",
 		"downloads",

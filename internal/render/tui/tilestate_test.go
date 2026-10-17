@@ -53,6 +53,10 @@ func TestAKeyValueTileThatSaysItsBackendIsDownGradesBad(t *testing.T) {
 		"worst":     {[]view.Pair{{Key: "nodes", Value: "could not be read — forbidden"}, {Key: "cluster", Value: "was never contacted — no kubeconfig"}}, gradeBad},
 		"facts":     {[]view.Pair{{Key: "context", Value: "lab"}, {Key: "namespaces", Value: "12"}}, gradeNone},
 		"a fact up": {[]view.Pair{{Key: "uptime", Value: "up 3 days"}, {Key: "mode", Value: "read-only"}}, gradeNone},
+		// Vault's overview leads with its seal state, the one thing it is for.
+		"sealed":        {[]view.Pair{{Key: "state", Value: "sealed — 0 of 1 unseal key shares given — 1.14.4"}}, gradeBad},
+		"unreadable":    {[]view.Pair{{Key: "state", Value: "unreadable — profile prod refused"}}, gradeWarn},
+		"a sealed name": {[]view.Pair{{Key: "engine", Value: "sealed-secrets — controller"}}, gradeNone},
 	} {
 		if got := viewGrade(view.KeyValue{Pairs: tc.pairs}); got != tc.want {
 			t.Errorf("%s: graded %v, want %v", name, got, tc.want)
