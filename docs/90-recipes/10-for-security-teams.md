@@ -98,7 +98,7 @@ Revoking takes grants back and leaves the ungated reads open; a lock refuses eve
 
 ```bash
 rta audit deps                 # a checkout's declared dependencies against OSV
-rta audit kube rbac            # cluster-admin bindings and wildcard rules
+rta audit kube rbac            # ClusterRoleBindings to cluster-admin and wildcard rules; RoleBindings are not read
 rta audit kube podsecurity     # pods privileged, in a host namespace, or free to run as root
 rta audit web example.com      # TLS, headers, cookies, exposure
 ```

@@ -108,6 +108,14 @@ func runKubeRBAC(ctx context.Context, req plugin.Request) (view.View, error) {
 				"ClusterRoles were not checked — they belong to no namespace. Run without a "+
 				"namespace to include them.", refRBACClusterAdmin)
 	}
+	// RoleBindings are never read, narrowed or not, and they are the grants a
+	// namespace's owner cares about most: a RoleBinding of a group to
+	// cluster-admin, or of every unauthenticated request to read secrets, sits
+	// in one namespace and appears nowhere else. A clean result that does not
+	// say so is a clean bill for an object kind nobody looked at.
+	r.AddUnchecked(grpKubeRBAC, "RoleBindings not examined",
+		"this audit reads Roles, ClusterRoles and ClusterRoleBindings and never a RoleBinding, so a "+
+			"RoleBinding that gives cluster-admin, or any role, to anyone is not reported here.", refRBACClusterAdmin)
 	// Everything added from here on is a real finding about what was examined.
 	examined := len(r.Findings)
 

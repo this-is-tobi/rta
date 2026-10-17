@@ -283,7 +283,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 					"namespace it checks that namespace's Roles only. ClusterRoleBindings and ClusterRoles " +
 					"belong to no namespace, so they are not examined at all — reported in the result " +
 					"rather than left implied, since a scoped run that silently skipped the cluster-admin " +
-					"check would read as a clean RBAC posture.",
+					"check would read as a clean RBAC posture. RoleBindings are never read; the result says so.",
 				Scope:   "namespace",
 				Refresh: kubeAuditRefresh,
 				Inputs:  []plugin.Field{namespaceField(), contextField()},

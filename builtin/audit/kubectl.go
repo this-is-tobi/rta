@@ -62,12 +62,22 @@ func kubeGetJSON(ctx context.Context, kubeContext, namespace, kind string, out a
 	if kubeContext != "" {
 		args = append(args, "--context="+kubeContext)
 	}
-	if namespace != "" {
+	switch {
+	case clusterScoped[kind]:
+	case namespace != "":
 		args = append(args, "--namespace="+namespace)
-	} else {
+	default:
 		args = append(args, "--all-namespaces")
 	}
 	return kubectlJSON(ctx, args, kind, out)
+}
+
+// clusterScoped are the kinds that belong to no namespace. kubectl takes
+// --all-namespaces for them and ignores it, and a log of its calls then read as
+// though ClusterRoles were swept namespace by namespace, which hid what each
+// read was for.
+var clusterScoped = map[string]bool{
+	"nodes": true, "namespaces": true, "clusterroles": true, "clusterrolebindings": true,
 }
 
 // kubeVersionJSON runs `kubectl version -o json [--context]` and decodes
@@ -106,7 +116,7 @@ func kubectlJSON(ctx context.Context, args []string, what string, out any) *view
 	// the pipes; the bytes may be the whole answer. JSON is self-delimiting,
 	// so the decode below judges that rather than a blanket refusal.
 	if err != nil && !errors.Is(err, exec.ErrWaitDelay) {
-		return classifyKubectl(ctx, err, errBuf.String())
+		return classifyKubectl(ctx, err, errBuf.String(), what)
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
 		return view.Errorf("audit.kube.unreadable", "kubectl's answer for %s could not be read: %v", what, err)
@@ -114,10 +124,16 @@ func kubectlJSON(ctx context.Context, args []string, what string, out any) *view
 	return nil
 }
 
-func classifyKubectl(ctx context.Context, err error, stderr string) *view.Error {
+func classifyKubectl(ctx context.Context, err error, stderr, what string) *view.Error {
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return view.Errorf("audit.kube.unreachable", "kubectl did not answer within %s", kubectlTimeout).
-			WithHint("the cluster may be unreachable, or its endpoint may be behind a VPN that is not up")
+		// A deadline is two things that look alike: a cluster that cannot be
+		// reached, and a list too large to finish in time. The message claims
+		// only what is known — that kubectl did not finish — and the hint offers
+		// both, the way out of the second first since it is the one a person
+		// can act on from here.
+		return view.Errorf("audit.kube.timeout", "kubectl did not finish reading %s within %s", what, kubectlTimeout).
+			WithHint("a very large list can take longer than that — narrow the audit to a namespace if it takes " +
+				"one; otherwise the cluster may be unreachable, or its endpoint behind a VPN that is not up")
 	}
 	var notFound *exec.Error
 	if errors.As(err, &notFound) {
@@ -326,12 +342,13 @@ func coverageClean(ns, kind string) string {
 	return "namespace " + ns + " has at least one " + kind
 }
 
-// rbacClean states only what a narrowed RBAC audit actually looked at. The
-// cluster-wide sentence names cluster-admin; the narrowed one must not, having
-// not examined a single ClusterRoleBinding.
+// rbacClean states only what an RBAC audit actually looked at. The cluster-wide
+// sentence names cluster-admin and ClusterRoleBindings; the narrowed one must
+// not, having not examined a single ClusterRoleBinding. Neither says "binding"
+// alone: a RoleBinding is a binding, and neither run reads one.
 func rbacClean(ns string) string {
 	if ns == "" {
-		return "no cluster-admin binding and no wildcard verb/resource/apiGroup found"
+		return "no ClusterRoleBinding to cluster-admin, and no wildcard verb, resource or apiGroup in a Role or ClusterRole"
 	}
 	return "no Role in namespace " + ns + " uses a wildcard verb, resource or apiGroup"
 }

@@ -90,7 +90,7 @@
   },
   {
     "name": "audit_kube_rbac",
-    "description": "Broad RBAC: cluster-admin bindings and wildcard rules\n\nEvery ClusterRoleBinding to cluster-admin, and every Role/ClusterRole rule using a wildcard verb, resource or apiGroup. cluster-admin bound to a broad group (system:authenticated, system:unauthenticated, system:masters) grades fail; bound to anything else grades warn — sometimes a real operator's binding, always worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3.\n\nNarrowed to a namespace it checks that namespace's Roles only. ClusterRoleBindings and ClusterRoles belong to no namespace, so they are not examined at all — reported in the result rather than left implied, since a scoped run that silently skipped the cluster-admin check would read as a clean RBAC posture.\n\nSafety: read.",
+    "description": "Broad RBAC: cluster-admin bindings and wildcard rules\n\nEvery ClusterRoleBinding to cluster-admin, and every Role/ClusterRole rule using a wildcard verb, resource or apiGroup. cluster-admin bound to a broad group (system:authenticated, system:unauthenticated, system:masters) grades fail; bound to anything else grades warn — sometimes a real operator's binding, always worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3.\n\nNarrowed to a namespace it checks that namespace's Roles only. ClusterRoleBindings and ClusterRoles belong to no namespace, so they are not examined at all — reported in the result rather than left implied, since a scoped run that silently skipped the cluster-admin check would read as a clean RBAC posture. RoleBindings are never read; the result says so.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
