@@ -154,7 +154,8 @@ func mapColumns(in []Column, f func(string) string) ([]Column, bool) {
 	changed := false
 	out := make([]Column, len(in))
 	for i, c := range in {
-		out[i] = Column{Name: f(c.Name), Kind: c.Kind}
+		out[i] = c
+		out[i].Name = f(c.Name)
 		if out[i] != c {
 			changed = true
 		}

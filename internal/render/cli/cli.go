@@ -636,6 +636,97 @@ func hangsUnderKey(val string, keyCol, width int) bool {
 }
 
 func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
+	t, hidden := fitColumns(t, st)
+	return drawTable(w, t, st, highlight, hidden)
+}
+
+// fitColumns gives up optional columns, as many as it takes for the grid to fit
+// the width at its natural size, and names the ones that held something.
+//
+// The order is view.Table.DropOrder's, after the optional columns that say
+// nothing in any row, which go first and are not named since nothing was lost.
+// A column once given up does not come back for a narrower table's sake or a
+// wider one's: the columns shown are always the front of the same ranking, so
+// widening the terminal only ever shows more. Width 0, which is a pipe, and every
+// machine format never reach this, and carry every column.
+func fitColumns(t view.Table, st styles) (view.Table, []string) {
+	if st.width <= 0 || len(t.Columns) < 2 {
+		return t, nil
+	}
+	order := t.DropOrder()
+	if len(order) == 0 {
+		return t, nil
+	}
+	headers := make([]string, len(t.Columns))
+	for i, c := range t.Columns {
+		headers[i] = strings.ToUpper(c.Name)
+	}
+	natural := naturalWidths(t, headers)
+	total := sum(natural)
+	kept := len(t.Columns)
+	dropped := map[int]bool{}
+	// An optional column with nothing in any row says nothing, and goes first.
+	empty := func(i int) bool {
+		for _, row := range t.Rows {
+			if i < len(row) && row[i] != "" {
+				return false
+			}
+		}
+		return true
+	}
+	var ranked []int
+	for _, i := range order {
+		if empty(i) {
+			ranked = append(ranked, i)
+		}
+	}
+	for _, i := range order {
+		if !empty(i) {
+			ranked = append(ranked, i)
+		}
+	}
+	for _, i := range ranked {
+		if total <= st.width-(kept+1) {
+			break
+		}
+		dropped[i] = true
+		total -= natural[i]
+		kept--
+	}
+	if len(dropped) == 0 {
+		return t, nil
+	}
+	var hidden []string
+	cols := make([]view.Column, 0, kept)
+	for i, c := range t.Columns {
+		if dropped[i] {
+			if !empty(i) {
+				hidden = append(hidden, c.Name)
+			}
+			continue
+		}
+		cols = append(cols, c)
+	}
+	rows := make([][]string, len(t.Rows))
+	for r, row := range t.Rows {
+		cells := make([]string, 0, kept)
+		for i := range t.Columns {
+			if dropped[i] {
+				continue
+			}
+			if i < len(row) {
+				cells = append(cells, row[i])
+			} else {
+				cells = append(cells, "")
+			}
+		}
+		rows[r] = cells
+	}
+	t.Columns, t.Rows = cols, rows
+	return t, hidden
+}
+
+func drawTable(w io.Writer, t view.Table, st styles, highlight int, hidden []string) error {
 	// The sentence an empty table carries is drawn in its place on a screen:
 	// headings over nothing read as a listing that failed. See
 	// view.Table.Empty. The footer still follows, since an empty listing can
@@ -644,7 +735,7 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 		if err := drawEmpty(w, t.Empty, st); err != nil {
 			return err
 		}
-		return tableFooter(w, t, st)
+		return tableFooter(w, t, st, hidden)
 	}
 	headers := make([]string, len(t.Columns))
 	rightAlign := map[int]bool{}
@@ -693,7 +784,7 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 		}); err != nil {
 			return err
 		}
-		return tableFooter(w, t, st)
+		return tableFooter(w, t, st, hidden)
 	}
 	if !fitsAsGrid(t, headers, st) {
 		return asRecords()
@@ -811,7 +902,7 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 		if _, err := fmt.Fprintln(w, restore(rendered)); err != nil {
 			return err
 		}
-		return tableFooter(w, t, st)
+		return tableFooter(w, t, st, hidden)
 	}
 	// Constrain only when the natural width overflows: narrow tables keep
 	// their tight fit, wide ones shrink columns instead of wrapping raggedly.
@@ -836,7 +927,7 @@ func prettyTable(w io.Writer, t view.Table, st styles, highlight int) error {
 	if _, err := fmt.Fprintln(w, restore(rendered)); err != nil {
 		return err
 	}
-	return tableFooter(w, t, st)
+	return tableFooter(w, t, st, hidden)
 }
 
 // drawEmpty writes an empty result's sentence, on a screen and nowhere else:
@@ -877,7 +968,12 @@ func drawnWhole(rendered string, width int, b lipgloss.Border) bool {
 // returned before any of it and printed only the count. A partial listing
 // read as partial on a wide terminal and as complete on a narrow one — a
 // split pane, a phone over ssh — which is where it is hardest to notice.
-func tableFooter(w io.Writer, t view.Table, st styles) error {
+func tableFooter(w io.Writer, t view.Table, st styles, hidden []string) error {
+	if len(hidden) > 0 {
+		if _, err := fmt.Fprintln(w, st.muted.Render(format.CountOf(len(hidden), "column")+" hidden to fit: "+strings.Join(hidden, ", "))); err != nil {
+			return err
+		}
+	}
 	var footer []string
 	if t.Total > len(t.Rows) {
 		footer = append(footer, fmt.Sprintf("%d of %s", len(t.Rows), format.CountOf(t.Total, "row")))

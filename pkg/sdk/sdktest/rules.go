@@ -132,6 +132,19 @@ func checkOneView(t reporter, c plugin.Capability, v view.View) {
 			}
 		}
 		checkCursor(t, c, t2)
+		for i, col := range t2.Columns {
+			// Zero is never given up and a higher number goes sooner, so a negative
+			// one means nothing, and the wire sends it as zero: a plugin that wrote
+			// one meant the opposite of what the host will do.
+			if col.Priority < 0 {
+				t.Errorf("sdktest: %s: %s column %q has priority %d; zero is never given up and a higher number is given up sooner",
+					RuleViews, c.ID, col.Name, col.Priority)
+			}
+			if i == 0 && col.Priority > 0 {
+				t.Logf("sdktest: %s: %s gives its first column %q a priority, which is not honoured: the first column names the row",
+					RuleViews, c.ID, col.Name)
+			}
+		}
 		for i, row := range t2.Rows {
 			if len(row) > len(t2.Columns) {
 				// A cell past the last column has no column name, and a cell

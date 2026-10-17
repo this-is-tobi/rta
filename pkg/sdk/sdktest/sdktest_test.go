@@ -991,3 +991,18 @@ func TestACapabilityNoAgentCanCallIsNotedForItsAuthor(t *testing.T) {
 		}
 	}
 }
+
+// A priority is a hint for fitting a width, and a negative one has no meaning
+// to a host that sends it as zero: the plugin meant something else.
+func TestANegativeColumnPriorityIsAConformanceFailure(t *testing.T) {
+	c := ok()
+	c.Run = func(context.Context, plugin.Request) (view.View, error) {
+		return view.Table{Columns: []view.Column{{Name: "a"}, {Name: "b", Priority: -1}}, Total: 1, Rows: [][]string{{"x", "y"}}}, nil
+	}
+	rec := &recorder{}
+	p := plugin.Plugin{Name: "demo", Capabilities: []plugin.Capability{c}}
+	checkViews(rec, drive(rec, p, noConfig(), t.TempDir(), nil), noConfig())
+	if !strings.Contains(rec.errText(), "has priority -1") {
+		t.Errorf("a negative priority passed: %q", rec.errText())
+	}
+}

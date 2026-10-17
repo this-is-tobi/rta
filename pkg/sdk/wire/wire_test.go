@@ -205,7 +205,7 @@ func everyViewType() map[string]view.View {
 			Numbers:  map[string]float64{"keys": 16, "value_bytes": 2891},
 		},
 		"table": view.Table{
-			Columns:  []view.Column{{Name: "A", Kind: view.KindBytes}, {Name: "B", Kind: view.KindStatus}},
+			Columns:  []view.Column{{Name: "A", Kind: view.KindBytes}, {Name: "B", Kind: view.KindStatus, Priority: 2}},
 			Rows:     [][]string{{"1", "ok"}, {"2", "bad"}},
 			Total:    99,
 			Page:     &view.Cursor{Next: "cursor-token", Input: "after"},
