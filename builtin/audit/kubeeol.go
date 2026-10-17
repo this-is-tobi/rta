@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -31,7 +32,9 @@ import (
 // per distinct product found — never per pod: a hundred postgres pods at
 // one tag are one lookup and one row. Recognising an image is deliberately
 // no cleverer than the catalogue: the image's name (postgres, redis, nginx)
-// is looked up among the products' own names and aliases, and an image
+// is looked up among the products' own names and aliases — after the
+// operator's `images` setting and a short built-in table have said which
+// pieces of a product are that product (kubeeolimages.go) — and an image
 // that is not there is not graded rather than guessed at. The
 // tag is read as a release the way a person reads it — 15.4 is cycle 15,
 // 1.35.3 is cycle 1.35, bookworm is the cycle codenamed Bookworm — and a
@@ -63,6 +66,14 @@ const defaultEOLWarnDays = 90
 func warnDaysField() plugin.Field {
 	return plugin.Field{Name: "warn-days", Type: plugin.Int, Config: "warn-days", Default: defaultEOLWarnDays,
 		Help: "warn about a release within this many days of its end-of-life date"}
+}
+
+// imagesField is the operator's mapping of images to products, Local so no
+// caller supplies one: it picks which page of a fixed host is asked about, and
+// that choice is policy. See kubeeolimages.go for the grammar.
+func imagesField() plugin.Field {
+	return plugin.Field{Name: "images", Type: plugin.StringSlice, Config: "images", Local: true,
+		Help: "<repository suffix>=<product>, or =- to leave an image out, repeatable — usually from `plugins: audit: images:`"}
 }
 
 type serverVersion struct {
@@ -99,6 +110,12 @@ func runKubeEOL(ctx context.Context, req plugin.Request) (view.View, error) {
 
 func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.View, error) {
 	kubeContext := req.String("context")
+	// The operator's setting is read before anything else is: a line that is
+	// not one is theirs to fix, and needs neither a cluster nor the network.
+	rules, verr := parseImageRules(req.StringSlice("images"))
+	if verr != nil {
+		return nil, verr
+	}
 	sc, verr := scopeOf(ctx, req)
 	if verr != nil {
 		return nil, verr
@@ -136,8 +153,15 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 	if verr != nil {
 		return nil, verr
 	}
+	index := productIndex(catalogue)
+	// Checked against the catalogue before a single page is asked for, so a
+	// product named wrongly costs one request and not thirty.
+	images, verr := newImageMap(rules, index)
+	if verr != nil {
+		return nil, verr
+	}
 	g := &grader{ctx: ctx, base: base, warnDays: req.Int("warn-days"), now: time.Now(),
-		index: productIndex(catalogue), fetched: map[string]*eolapi.Product{}, skipped: map[string]bool{},
+		index: index, images: images, fetched: map[string]*eolapi.Product{}, skipped: map[string]bool{},
 		unanswered: map[string]*view.Error{}}
 
 	if verr := g.gradeControlPlane(r, sv.ServerVersion.GitVersion); verr != nil {
@@ -148,12 +172,12 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 			return nil, verr
 		}
 	}
-	images := collectImages(pods.Items)
-	ungraded, verr := g.gradeImages(r, images, ns == "")
+	running := collectImages(pods.Items)
+	ungraded, verr := g.gradeImages(r, running, ns == "")
 	if verr != nil {
 		return nil, verr
 	}
-	extra := reportNotGraded(r, ungraded, len(images), ns == "")
+	extra := reportNotGraded(r, ungraded, len(running), ns == "")
 
 	return finishKube(ctx, req, r, kubeGroupOrder5, sc, extra...), nil
 }
@@ -167,6 +191,8 @@ type grader struct {
 	// index is every catalogue name and alias, lowercased, to the product
 	// it names — what turns an image called postgres into postgresql.
 	index map[string]string
+	// images is which image is which product, where its name alone does not say.
+	images imageMap
 	// fetched caches one lookup per product; nil for a product the
 	// catalogue lists but the API has no page for.
 	fetched map[string]*eolapi.Product
@@ -331,7 +357,13 @@ func (g *grader) gradeKubelets(r *findings.Report, nodes []nodeVersionItem) *vie
 
 // imageUse is one distinct image reference and where it runs.
 type imageUse struct {
-	name, tag  string
+	// repo is the image's identity, its repository without the registry
+	// (splitImage); name is the last segment of it, the part a catalogue
+	// recognises; fulls are the spellings of the repository as pods wrote them,
+	// registry and mirror included, which an operator's entry may name.
+	repo, name string
+	fulls      []string
+	tag        string
 	digest     bool
 	pods       int
 	namespaces map[string]bool
@@ -339,26 +371,34 @@ type imageUse struct {
 
 // collectImages folds every container of every pod — init and ephemeral
 // included, since an init container's image is as much a release somebody
-// runs as a main one's — into one entry per distinct name and tag, so a
+// runs as a main one's — into one entry per distinct repository and tag, so a
 // hundred replicas of one image are one row with a count.
+//
+// Per repository and not per last path segment: bitnami/redis and the official
+// redis are two projects with a name in common, and one row for both graded a
+// fork as the product it was forked from.
 func collectImages(pods []podImageItem) []*imageUse {
 	byRef := map[string]*imageUse{}
 	for _, p := range pods {
 		seenInPod := map[string]bool{}
 		all := append(append(append([]imageCtn{}, p.Spec.Containers...), p.Spec.InitContainers...), p.Spec.EphemeralContainers...)
 		for _, c := range all {
-			name, tag, digest := imageRef(c.Image)
-			if name == "" {
+			full, repo, tag, digest := splitImage(c.Image)
+			if repo == "" {
 				continue
 			}
-			key := name + ":" + tag
+			key := repo + ":" + tag
 			if digest {
 				key += "@"
 			}
 			u, ok := byRef[key]
 			if !ok {
-				u = &imageUse{name: name, tag: tag, digest: digest, namespaces: map[string]bool{}}
+				u = &imageUse{repo: repo, name: repo[strings.LastIndex(repo, "/")+1:], tag: tag, digest: digest,
+					namespaces: map[string]bool{}}
 				byRef[key] = u
+			}
+			if !slices.Contains(u.fulls, full) {
+				u.fulls = append(u.fulls, full)
 			}
 			if !seenInPod[key] {
 				seenInPod[key] = true
@@ -369,11 +409,12 @@ func collectImages(pods []podImageItem) []*imageUse {
 	}
 	out := make([]*imageUse, 0, len(byRef))
 	for _, u := range byRef {
+		sort.Strings(u.fulls)
 		out = append(out, u)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].name != out[j].name {
-			return out[i].name < out[j].name
+		if out[i].repo != out[j].repo {
+			return out[i].repo < out[j].repo
 		}
 		return out[i].tag < out[j].tag
 	})
@@ -389,8 +430,16 @@ func (g *grader) gradeImages(r *findings.Report, images []*imageUse, clusterWide
 		ungraded = append(ungraded, notGraded{use: u, reason: reason, next: next})
 	}
 	for _, u := range images {
-		product, tracked := g.index[u.name]
-		if !tracked {
+		var product string
+		if rule, mapped := g.images.resolve(u); mapped {
+			if rule.exclude {
+				skip(u, reasonExcluded, "left out by the images setting ("+rule.text+")")
+				continue
+			}
+			product = rule.product
+		} else if name, tracked := g.index[u.name]; tracked {
+			product = name
+		} else {
 			reason, next := g.untracked(u)
 			skip(u, reason, next)
 			continue
@@ -429,7 +478,7 @@ func (g *grader) gradeImages(r *findings.Report, images []*imageUse, clusterWide
 				skip(u, reasonNoCycle, noCycle(p, version))
 				continue
 			}
-			ref := u.name
+			ref := u.repo
 			if u.tag != "" {
 				ref += ":" + u.tag
 			}
@@ -452,17 +501,8 @@ func (g *grader) gradeImages(r *findings.Report, images []*imageUse, clusterWide
 // pins bytes, and the bytes' release is nobody's to read off the reference —
 // so it is reported as such rather than mistaken for a tag.
 func imageRef(ref string) (name, tag string, digest bool) {
-	ref = strings.TrimSpace(ref)
-	if at := strings.Index(ref, "@"); at >= 0 {
-		digest = true
-		ref = ref[:at]
-	}
-	last := ref
-	if i := strings.LastIndex(ref, "/"); i >= 0 {
-		last = ref[i+1:]
-	}
-	name, tag, _ = strings.Cut(last, ":")
-	return strings.ToLower(name), tag, digest
+	full, _, tag, digest := splitImage(ref)
+	return full[strings.LastIndex(full, "/")+1:], tag, digest
 }
 
 // releaseOf reads the release out of a tag or a build version the way a

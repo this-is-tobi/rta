@@ -40,7 +40,8 @@ func newFaultyEOLServer(t *testing.T, faults map[string]eolFault, omit ...string
 			{"name":"nginx","label":"nginx","category":"server-app","aliases":[]},
 			{"name":"debian","label":"Debian","category":"os","aliases":[]},
 			{"name":"ghost","label":"Ghost","category":"app","aliases":[]},
-			{"name":"mysql","label":"MySQL","category":"database","aliases":[]}]}`,
+			{"name":"mysql","label":"MySQL","category":"database","aliases":[]},
+			{"name":"cert-manager","label":"cert-manager","category":"app","aliases":[]}]}`,
 		"/products/kubernetes": `{"result":{"name":"kubernetes","releases":[
 			{"name":"1.30","releaseDate":"2024-04-17","isEol":false,"eolFrom":"2099-06-28","latest":{"name":"1.30.2"}},
 			{"name":"1.28","releaseDate":"2023-08-15","isEol":true,"eolFrom":"2024-10-28","latest":{"name":"1.28.15"}}]}}`,
@@ -55,6 +56,9 @@ func newFaultyEOLServer(t *testing.T, faults map[string]eolFault, omit ...string
 			{"name":"12","codename":"Bookworm","releaseDate":"2023-06-10","isEol":false,"eolFrom":"2099-06-30","latest":{"name":"12.13"}}]}}`,
 		"/products/ghost": `{"result":{"name":"ghost","releases":[
 			{"name":"6","releaseDate":"2025-09-01","isEol":false,"eolFrom":null,"latest":{"name":"6.2.0"}}]}}`,
+		"/products/cert-manager": `{"result":{"name":"cert-manager","releases":[
+			{"name":"1.19","releaseDate":"2025-10-07","isEol":false,"eolFrom":"2099-06-10","latest":{"name":"1.19.1"}},
+			{"name":"1.18","releaseDate":"2025-06-10","isEol":false,"eolFrom":"2099-02-10","latest":{"name":"1.18.2"}}]}}`,
 		"/products/mysql": `{"result":{"name":"mysql","releases":[
 			{"name":"8.4","releaseDate":"2024-04-30","isEol":false,"eolFrom":"2099-04-30","latest":{"name":"8.4.5"}},
 			{"name":"8.0","releaseDate":"2018-04-19","isEol":false,"eolFrom":"2099-04-30","latest":{"name":"8.0.42"}}]}}`,
@@ -130,11 +134,12 @@ func TestKubeEOLGradesTheControlPlaneTheKubeletsAndEveryDistinctImage(t *testing
 		"nodes: old-1, old-2",
 		"kubelets at v1.30.2+k3s1 (1 node) | " + findings.OK,
 		// Three pods across two namespaces pull the same image under two
-		// spellings of its name: one row, counted once per pod.
+		// spellings of its registry: one row, counted once per pod.
 		"image postgres:15.4 (3 pods in 2 namespaces) | " + findings.OK + " | postgresql 15 is supported until 2099-11-11",
 		// An init container's image is graded like a main one's, and the
-		// variant suffix is not part of the release.
-		"image redis:6.2.1-alpine (1 pod in 1 namespace) | " + findings.Fail + " | redis 6.2 reached end of life on 2025-01-01",
+		// variant suffix is not part of the release. It is x/redis, not redis:
+		// the organisation says it is not the official image.
+		"image x/redis:6.2.1-alpine (1 pod in 1 namespace) | " + findings.Fail + " | redis 6.2 reached end of life on 2025-01-01",
 		"image redis:7.2.4 (1 pod in 1 namespace) | " + findings.Warn + " | redis 7.2 reaches end of life on",
 		"image debian:bookworm-slim (1 pod in 1 namespace) | " + findings.OK + " | debian 12 is supported until 2099-06-30",
 		// What was not graded is one row that counts them, by distinct image:
