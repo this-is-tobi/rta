@@ -58,8 +58,7 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 | `H` | Hide a tile — or remove it, when it is one you added |
 | `z` | Fold or unfold the section of the selected tile or header. For this session only — nothing is written |
 | `Z` | Fold every section, or unfold them all when none is open |
-| `V` | Draw the next screen of the dashboard: the ones the environment that is on [links](./25-dashboard-and-theme.md#views-a-screen-per-environment) and no others, or the default and then each view in turn when it links none or none is on. For this session only — nothing is written — and switching environment undoes it |
-| `v` | Back to the screen before this one, and again to return: the dashboard's `cd -`. Offered once a screen has been left |
+| `V/v` | Draw the next screen of the dashboard with `V` and the one before with `v`: the screens the environment that is on [links](./25-dashboard-and-theme.md#views-a-screen-per-environment), in the order it lists them, and no others — or the default and then each view by name when it links none or none is on. Both go round at the ends, so `v` from the first screen draws the last, and either undoes the other. For this session only — nothing is written — and switching environment undoes it |
 | `U` | Unlock the encrypted store for this sitting, and lock it again after asking: a masked box for the passphrase (the key's own, for a store locked to a passphrase-protected key) and one for how long to keep it open, from a minute to twelve hours — the store asks once per sitting, below |
 | `+` | Add a tile — on the dashboard it opens the catalogue; on a catalogue row or a search match it adds that one |
 | `p` | Plugin inventory — where a hidden automatic tile comes back |

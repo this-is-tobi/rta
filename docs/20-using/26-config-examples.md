@@ -17,7 +17,7 @@ Kubernetes, CloudNativePG clusters and the Postgres databases in them, for an en
 profiles:
   shop:
     note: shop, production
-    dashboard: [shop, shop-apps, shop-remote]   # the screens of this environment: shop first, and V walks these three (see the last section)
+    dashboard: [shop, shop-apps, shop-remote]   # the screens of this environment: shop first, V walks these three and v walks them back (see the last section)
     # ttl: 8h         # `rta use shop` would lapse on its own after eight hours
     plugins:
       kube:
@@ -184,7 +184,7 @@ roles:
 
 ## A dashboard by service type and by application
 
-A screen is a whole arrangement of tiles, and while it is drawn it replaces your base `dashboard:` block, so whatever you still want from the base is restated. The profile lists the three screens below, so `V` in the TUI walks those three and no others while it is on, and `v` goes back to the one before. [Dashboard and theme](./25-dashboard-and-theme.md#views-a-screen-per-environment) has the keys of a tile.
+A screen is a whole arrangement of tiles, and while it is drawn it replaces your base `dashboard:` block, so whatever you still want from the base is restated. The profile lists the three screens below, so `V` in the TUI walks those three and no others while it is on, and `v` walks them the other way round. [Dashboard and theme](./25-dashboard-and-theme.md#views-a-screen-per-environment) has the keys of a tile.
 
 ```yaml
 dashboard:
