@@ -120,6 +120,11 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// switch environment, and a switch (u) undoes it.
 		cmd := m.cycleView()
 		return m, cmd, true
+	case "v":
+		// The screen before this one, and back again on the next press: the
+		// `cd -` of the dashboard's screens.
+		cmd := m.backView()
+		return m, cmd, true
 	case "U":
 		// The encrypted store, for this session: tiles that read a profile's
 		// credential from it fail every tick until somebody opens it, and this
