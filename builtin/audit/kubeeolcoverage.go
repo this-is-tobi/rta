@@ -44,12 +44,16 @@ var (
 	reasonDigestOnly = ungradedReason{"digest-only", "floating or digest-only"}
 	reasonNoCycle    = ungradedReason{"no-cycle", "naming no release cycle"}
 	reasonNoData     = ungradedReason{"no-data", "with no release data"}
+	// reasonUnanswered is a product whose page endoflife.date did not serve: a
+	// 503 from its host, a rate limit that outlasted the retry, a connection
+	// that dropped. Said apart from no-data, which is the site's answer.
+	reasonUnanswered = ungradedReason{"unanswered", "unanswered by endoflife.date"}
 	// reasonNotLookedUp is an image whose product was past maxEOLProducts.
 	reasonNotLookedUp = ungradedReason{"not-looked-up", "past the lookup limit"}
 
 	// ungradedOrder is the order the table lists them in and the tally says them.
 	ungradedOrder = []ungradedReason{reasonNoProduct, reasonSuggested, reasonFloating, reasonDigestOnly,
-		reasonNoCycle, reasonNoData, reasonNotLookedUp}
+		reasonNoCycle, reasonNoData, reasonUnanswered, reasonNotLookedUp}
 )
 
 // notGraded is one distinct image reference that has no verdict.

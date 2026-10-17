@@ -37,6 +37,25 @@ const APIBase = "https://endoflife.date/api/v1"
 // nothing here needs an operator to widen it.
 const requestTimeout = 10 * time.Second
 
+// defaultRetryDelay is the wait before the one retry of a 429 that names none,
+// or names one this cannot read.
+const defaultRetryDelay = time.Second
+
+// retryDelay is how long a 429's Retry-After asks the client to wait: whole
+// seconds, or the date the HTTP spec also allows. A header that is missing,
+// negative or neither is the default rather than no wait, because a server that
+// refused a request is not asking to be asked again at once.
+func retryDelay(header string, now time.Time) time.Duration {
+	header = strings.TrimSpace(header)
+	if secs, err := strconv.Atoi(header); err == nil && secs >= 0 {
+		return time.Duration(secs) * time.Second
+	}
+	if at, err := http.ParseTime(header); err == nil {
+		return max(0, at.Sub(now))
+	}
+	return defaultRetryDelay
+}
+
 // maxBody bounds the read the way builtin/http does. Generous rather than
 // tight: a handful of products carry a long release history, and the point
 // is refusing a runaway response, not rationing a normal one.
@@ -160,40 +179,65 @@ func FetchCatalogue(ctx context.Context, client *http.Client, base string) ([]Ca
 	return env.Result, nil
 }
 
-// getJSON performs one GET against the API and decodes a 200 into out. It
+// getJSON performs a GET against the API and decodes a 200 into out. It
 // returns the status rather than judging it, because a 404 means "no such
 // product" on one path and "the API moved" on another, and only the caller
 // knows which. what names the thing being asked about in every error, so
 // "asking endoflife.date about \"postgresql\"" and "… about the catalogue"
 // read the same way.
+//
+// A 429 is asked again once, after the wait its Retry-After names, and only if
+// that wait fits in what is left of the request's own budget: the site rate
+// limits a client that asks for many products in a row, which is what a cluster
+// audit does, and says how long to wait. A second refusal, or a wait that would
+// outlast the budget, is the answer, as any other status is.
 func getJSON(ctx context.Context, client *http.Client, reqURL, what string, out any) (int, *view.Error) {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
+	status, retryAfter, verr := getOnce(ctx, client, reqURL, what, out)
+	if verr != nil || status != http.StatusTooManyRequests {
+		return status, verr
+	}
+	wait := retryDelay(retryAfter, time.Now())
+	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) <= wait {
+		return status, nil
+	}
+	select {
+	case <-time.After(wait):
+	case <-ctx.Done():
+		return status, nil
+	}
+	status, _, verr = getOnce(ctx, client, reqURL, what, out)
+	return status, verr
+}
+
+// getOnce is one request, and the Retry-After of its answer.
+func getOnce(ctx context.Context, client *http.Client, reqURL, what string, out any) (int, string, *view.Error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return 0, view.Errorf("eol.request.invalid", "building request for %s: %v", what, err)
+		return 0, "", view.Errorf("eol.request.invalid", "building request for %s: %v", what, err)
 	}
 	httpReq.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return 0, view.Errorf("eol.request.failed", "asking endoflife.date about %s: %v", what, err).
+		return 0, "", view.Errorf("eol.request.failed", "asking endoflife.date about %s: %v", what, err).
 			WithHint("check network access — endoflife.date must be reachable")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return resp.StatusCode, nil
+		return resp.StatusCode, resp.Header.Get("Retry-After"), nil
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
-		return resp.StatusCode, view.Errorf("eol.response.read", "reading the response for %s: %v", what, err)
+		return resp.StatusCode, "", view.Errorf("eol.response.read", "reading the response for %s: %v", what, err)
 	}
 	if err := json.Unmarshal(body, out); err != nil {
-		return resp.StatusCode, view.Errorf("eol.response.invalid", "decoding the response for %s: %v", what, err)
+		return resp.StatusCode, "", view.Errorf("eol.response.invalid", "decoding the response for %s: %v", what, err)
 	}
-	return resp.StatusCode, nil
+	return resp.StatusCode, "", nil
 }
 
 // Verdict is where a release cycle stands today.

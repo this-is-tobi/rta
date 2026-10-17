@@ -137,7 +137,8 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 		return nil, verr
 	}
 	g := &grader{ctx: ctx, base: base, warnDays: req.Int("warn-days"), now: time.Now(),
-		index: productIndex(catalogue), fetched: map[string]*eolapi.Product{}, skipped: map[string]bool{}}
+		index: productIndex(catalogue), fetched: map[string]*eolapi.Product{}, skipped: map[string]bool{},
+		unanswered: map[string]*view.Error{}}
 
 	if verr := g.gradeControlPlane(r, sv.ServerVersion.GitVersion); verr != nil {
 		return nil, verr
@@ -169,13 +170,23 @@ type grader struct {
 	// fetched caches one lookup per product; nil for a product the
 	// catalogue lists but the API has no page for.
 	fetched map[string]*eolapi.Product
-	// skipped names the products past maxEOLProducts, reported once.
+	// skipped names the products past maxEOLProducts.
 	skipped map[string]bool
+	// unanswered is a product whose page could not be fetched, kept so the
+	// second image of it is not another request to a host that just refused.
+	unanswered map[string]*view.Error
 }
 
+// product is the page for one product. A nil page with no error is a product
+// the catalogue lists and the API has no page for, or one past the cap
+// (skipped says which). An error is that this one request failed — the caller
+// decides what a failed product costs; it is not a reason to stop.
 func (g *grader) product(name string) (*eolapi.Product, *view.Error) {
 	if p, ok := g.fetched[name]; ok {
 		return p, nil
+	}
+	if verr, ok := g.unanswered[name]; ok {
+		return nil, verr
 	}
 	if len(g.fetched) >= maxEOLProducts {
 		g.skipped[name] = true
@@ -187,6 +198,7 @@ func (g *grader) product(name string) (*eolapi.Product, *view.Error) {
 			g.fetched[name] = nil
 			return nil, nil
 		}
+		g.unanswered[name] = verr
 		return nil, verr
 	}
 	g.fetched[name] = p
@@ -385,7 +397,13 @@ func (g *grader) gradeImages(r *findings.Report, images []*imageUse, clusterWide
 		}
 		p, verr := g.product(product)
 		if verr != nil {
-			return nil, verr
+			// One product's page failing costs the images of that product and
+			// not the report; a run that was cancelled is not a page that failed.
+			if g.ctx.Err() != nil {
+				return nil, verr
+			}
+			skip(u, reasonUnanswered, verr.Message+"; run the audit again to grade it")
+			continue
 		}
 		if p == nil {
 			if g.skipped[product] {
