@@ -242,6 +242,71 @@ func TestPageIsTheFindingsGroupedInOrder(t *testing.T) {
 	}
 }
 
+// A finding can stand for several checks that could not run. The eol audit
+// could not grade fifty-seven images and said so in one row; the overall line
+// counted that row as one check, so a cluster where four images in five were
+// never graded read "1 check could not run".
+func TestWorstSumsCountedUncheckedFindings(t *testing.T) {
+	r := &Report{}
+	r.Add(grpInventory, "graded", OK, "d", refVulnerableDep)
+	r.AddUncheckedN(grpInventory, "images not graded", "57 of 71", refVulnerableDep, 57)
+	r.AddUnchecked(grpInventory, "kubelets", "not read", refVulnerableDep)
+
+	status, tally := r.Worst()
+	if status != OK || tally != "no issues in what was checked, but 58 checks could not run" {
+		t.Errorf("Worst() = %q, %q", status, tally)
+	}
+	var checks string
+	for _, p := range r.Grade() {
+		if p.Key == "checks" {
+			checks = p.Value
+		}
+	}
+	if checks != "59" {
+		t.Errorf("checks = %q, want 59: the graded one and the 58 that could not run", checks)
+	}
+	// A count below one is one check, not none: a row that exists stands for
+	// something.
+	z := &Report{}
+	z.AddUncheckedN(grpInventory, "x", "d", refVulnerableDep, 0)
+	if _, tally := z.Worst(); tally != "no issues in what was checked, but 1 check could not run" {
+		t.Errorf("tally for a count of 0 = %q", tally)
+	}
+}
+
+// A page can carry a table that is not a group of findings: what could not be
+// graded and why is a table of its own, one row per thing, and a joined cell
+// in a finding is how it came to be clipped past reading. The extra sections
+// sit after the groups and before the references.
+func TestPageAppendsExtraSections(t *testing.T) {
+	r := &Report{}
+	r.Add(grpInventory, "dependencies", Info, "5 declared", refVulnerableDep)
+	extra := view.Section{ID: "not-graded", Title: "not graded", View: view.Table{
+		Columns: []view.Column{{Name: "Image"}}, Rows: [][]string{{"redis:7"}}, Total: 1}}
+
+	page, ok := r.Page(context.Background(), plugin.Request{}, []Group{grpInventory},
+		view.KeyValue{Pairs: r.Grade()}, extra).(view.Sections)
+	if !ok {
+		t.Fatal("Page did not return sections")
+	}
+	var ids []string
+	for _, s := range page.Items {
+		ids = append(ids, s.ID)
+	}
+	if got, want := strings.Join(ids, ","), "summary,inventory,not-graded,references"; got != want {
+		t.Errorf("sections = %s, want %s", got, want)
+	}
+	if page.Items[2].Title != "not graded" {
+		t.Errorf("extra title = %q", page.Items[2].Title)
+	}
+	// Source compatible: a call with none is the page it always was.
+	plain := r.Page(context.Background(), plugin.Request{}, []Group{grpInventory},
+		view.KeyValue{Pairs: r.Grade()}).(view.Sections)
+	if len(plain.Items) != 3 {
+		t.Errorf("a page without extras has %d sections, want 3", len(plain.Items))
+	}
+}
+
 func TestPlural(t *testing.T) {
 	for _, tc := range []struct {
 		n    int
