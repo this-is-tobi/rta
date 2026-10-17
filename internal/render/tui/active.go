@@ -109,7 +109,7 @@ func (m *Model) syncActive() tea.Cmd {
 	m.activeColor = profileColor(name)
 	// The screen follows the switch too: the environment's own view, unless
 	// this session picked one, which a switch undoes.
-	m.viewPick = ""
+	m.viewPick, m.lastView, m.hasLast = "", "", false
 	if cfg, err := config.LoadFile(); err == nil {
 		want := m.wantView(cfg)
 		m.dash, m.view, m.dashOnDisk = cfg.TrustedDashboardFor(want), want, dashStamp(want, cfg.TrustedDashboardFor(want))
@@ -447,11 +447,11 @@ func (m *Model) syncDashboard(s stamps) bool {
 // wantView is the view this session should be drawing: the one it picked with
 // V, if the file still states it, else the one the switched-on profile selects.
 func (m Model) wantView(cfg config.Config) string {
-	switch {
-	case m.viewPick == config.DefaultView:
-		return ""
-	case m.viewPick != "":
-		if cfg.HasView(m.viewPick) {
+	if m.viewPick != "" {
+		if offered, _ := cfg.ScreensFor(m.active); slices.Contains(offered, m.viewPick) {
+			if m.viewPick == config.DefaultView {
+				return ""
+			}
 			return m.viewPick
 		}
 	}
@@ -802,17 +802,66 @@ func (m *Model) cycleView() tea.Cmd {
 		m.refuse("this config file arranges no screen, so there are no views to show — set $RTA_CONFIG to the file you mean")
 		return nil
 	}
-	names := cfg.ViewNames()
-	if len(names) == 0 {
+	if len(cfg.ViewNames()) == 0 {
 		m.guide("no views yet — `rta dashboard add <capability> --view <name>` makes one")
 		return nil
 	}
-	order := append([]string{config.DefaultView}, names...)
+	order, linked := cfg.ScreensFor(m.active)
+	if len(order) == 0 {
+		m.refuse(m.active + " links views that nothing states — `rta doctor` names them")
+		return nil
+	}
 	current := m.view
 	if current == "" {
 		current = config.DefaultView
 	}
+	if linked && len(order) == 1 && order[0] == current {
+		if cfg.Profiles[m.active].Dashboard.Inline != nil {
+			m.guide(m.active + " writes its own screen, so V has nowhere else to go — move it under `dashboard: views:` and list views in the entry (`rta profile set " + m.active + " --dashboard <view> --dashboard <view>`)")
+			return nil
+		}
+		m.guide(m.active + " links one screen, " + current + " — `rta profile set " + m.active + " --dashboard " + current + " --dashboard <view>` links another")
+		return nil
+	}
 	next := order[(slices.Index(order, current)+1)%len(order)]
+	return m.drawView(cfg, next)
+}
+
+// backView draws the screen that was on before this one, and the one it left
+// becomes the "last" in turn, so v goes back and forth between two the way
+// `cd -` does. The memory is this session's; it is only the screens V and v
+// drew, and a switch of environment forgets it.
+func (m *Model) backView() tea.Cmd {
+	cfg, err := config.LoadFile()
+	if err != nil {
+		m.refuse("the config cannot be read, so there are no views to show: " + err.Error())
+		return nil
+	}
+	if !config.TrustedPath() {
+		m.refuse("this config file arranges no screen, so there are no views to show — set $RTA_CONFIG to the file you mean")
+		return nil
+	}
+	if !m.hasLast {
+		m.refuse("no earlier screen — V draws the next one")
+		return nil
+	}
+	order, _ := cfg.ScreensFor(m.active)
+	back := m.lastView
+	if back == "" {
+		back = config.DefaultView
+	}
+	if !slices.Contains(order, back) {
+		m.hasLast = false
+		m.refuse("the screen you came from is gone — V draws the next one")
+		return nil
+	}
+	return m.drawView(cfg, back)
+}
+
+// drawView puts a screen on and remembers the one it replaced, which is what v
+// goes back to.
+func (m *Model) drawView(cfg config.Config, next string) tea.Cmd {
+	m.lastView, m.hasLast = m.view, true
 	m.viewPick = next
 	want := m.wantView(cfg)
 	m.dash, m.view, m.dashOnDisk = cfg.TrustedDashboardFor(want), want, dashStamp(want, cfg.TrustedDashboardFor(want))
