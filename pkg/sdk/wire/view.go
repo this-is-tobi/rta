@@ -146,7 +146,7 @@ func ViewToProto(v view.View) *rtav1.View {
 	case view.Table:
 		tbl := &rtav1.Table{
 			Columns: mapSlice(t.Columns, func(c view.Column) *rtav1.Column {
-				return &rtav1.Column{Name: c.Name, Kind: columnKindToProto(c.Kind)}
+				return &rtav1.Column{Name: c.Name, Kind: columnKindToProto(c.Kind), Priority: uint32Of(c.Priority)}
 			}),
 			Rows: mapSlice(t.Rows, func(r []string) *rtav1.Row {
 				return &rtav1.Row{Cells: r}
@@ -221,7 +221,7 @@ func ViewFromProto(v *rtav1.View) view.View {
 	case *rtav1.View_Table:
 		t := view.Table{
 			Columns: mapSlice(k.Table.GetColumns(), func(c *rtav1.Column) view.Column {
-				return view.Column{Name: c.GetName(), Kind: columnKindFromProto(c.GetKind())}
+				return view.Column{Name: c.GetName(), Kind: columnKindFromProto(c.GetKind()), Priority: int(c.GetPriority())}
 			}),
 			Rows: mapSlice(k.Table.GetRows(), func(r *rtav1.Row) []string {
 				return r.GetCells()

@@ -90,6 +90,19 @@ func ValueToProto(v any) *rtav1.Value {
 	return nil
 }
 
+// uint32Of narrows a column's priority to the proto's uint32. Zero is the value
+// that is never given up, so a negative one, which has no meaning, goes there
+// and not to a huge number that would be given up first.
+func uint32Of(n int) uint32 {
+	if n <= 0 {
+		return 0
+	}
+	if n > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(n)
+}
+
 // int32Of narrows a count or a width to the proto's int32, saturating rather
 // than wrapping: a table with more rows than int32 holds, or a declared
 // width past it, has no terminal to be true on, and 2^31-1 reads as "more

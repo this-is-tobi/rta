@@ -9,7 +9,10 @@
 //   - Secrets are marked Redacted by the producer and masked by the host.
 package view
 
-import "slices"
+import (
+	"slices"
+	"sort"
+)
 
 // View is the closed union of result types a capability can return.
 //
@@ -119,6 +122,26 @@ const (
 type Column struct {
 	Name string     `json:"name"`
 	Kind ColumnKind `json:"kind,omitempty"`
+	// Priority is how willingly a renderer gives this column up when the table
+	// does not fit the width it has. Zero, which is every table written before
+	// the field existed, is never given up; a higher number goes sooner.
+	Priority int `json:"priority,omitempty"`
+}
+
+// DropOrder is the columns a renderer may give up for width, in the order it
+// gives them up: the highest Priority first, and among equals the rightmost.
+// The first column is never in it, since it is the row's name.
+func (t Table) DropOrder() []int {
+	var order []int
+	for i := len(t.Columns) - 1; i > 0; i-- {
+		if t.Columns[i].Priority > 0 {
+			order = append(order, i)
+		}
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		return t.Columns[order[a]].Priority > t.Columns[order[b]].Priority
+	})
+	return order
 }
 
 // Cursor carries contract-level pagination state.
