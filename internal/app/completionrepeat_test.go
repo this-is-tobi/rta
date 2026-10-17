@@ -5,8 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/builtin/all"
 	"github.com/this-is-tobi/rta/internal/recent"
@@ -73,6 +76,100 @@ func TestAListOfWhatExistsIsNotPaddedWithWhatWasUsedBefore(t *testing.T) {
 	got := values(complete(t, tidyRegistry(t), "tidy", "done", ""))
 	if !slices.Equal(got, []string{"1", "2", "3"}) {
 		t.Errorf("the offer is %v, want only 1, 2 and 3", got)
+	}
+}
+
+// tagRegistry has one capability with a list flag, the shape of `note add
+// --tag`: a comma list whose elements are suggested from what exists.
+func tagRegistry(t *testing.T) *registry.Registry {
+	t.Helper()
+	reg := registry.New()
+	err := reg.Register(plugin.Plugin{
+		Name: "tidy", Summary: "tidy plugin",
+		Capabilities: []plugin.Capability{{
+			ID: "tidy.tag", Summary: "tag something", Safety: plugin.Write,
+			Inputs: []plugin.Field{{
+				Name: "tag", Type: plugin.StringSlice, Help: "tags, comma-separated",
+				Suggest: func(context.Context, plugin.Request) []string {
+					return []string{"recipe\tfood", "ideas", "italian\tcooking"}
+				},
+			}},
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "tagged"}, nil },
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reg
+}
+
+// completeDirective is complete with the directive cobra prints last: the bit
+// that tells the shell whether to put a space after the word.
+func completeDirective(t *testing.T, reg *registry.Registry, args ...string) ([]string, cobra.ShellCompDirective) {
+	t.Helper()
+	out, _, err := run(t, reg, append([]string{"__complete"}, args...)...)
+	if err != nil {
+		t.Fatalf("__complete: %v", err)
+	}
+	var lines []string
+	var directive int
+	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+		switch {
+		case l == "":
+		case strings.HasPrefix(l, ":"):
+			directive, _ = strconv.Atoi(l[1:])
+		default:
+			lines = append(lines, l)
+		}
+	}
+	return lines, cobra.ShellCompDirective(directive)
+}
+
+// A list flag completes the element being typed, as the TUI's box does. The
+// shell hands the word as it stands, `recipe,it`, and filters what it is given
+// by that prefix, so the second element was never offered: every candidate came
+// back bare and none of them began with the word. Each comes back as the whole
+// word it would make, and the shell is told not to add a space, since a comma
+// may follow.
+func TestAListFlagCompletesTheElementAfterTheComma(t *testing.T) {
+	withHistory(t, nil)
+	reg := tagRegistry(t)
+
+	got, directive := completeDirective(t, reg, "tidy", "tag", "--tag", "recipe,it")
+	if want := []string{"recipe,italian\tcooking"}; !slices.Equal(got, want) {
+		t.Errorf("after recipe,it the offer is %q, want %q", got, want)
+	}
+	if directive&cobra.ShellCompDirectiveNoSpace == 0 {
+		t.Errorf("directive = %d, want a list flag to keep the cursor against the word", directive)
+	}
+
+	got, _ = completeDirective(t, reg, "tidy", "tag", "--tag=recipe,it")
+	if want := []string{"recipe,italian\tcooking"}; !slices.Equal(got, want) {
+		t.Errorf("--tag=recipe,it offers %q, want %q", got, want)
+	}
+
+	got, _ = completeDirective(t, reg, "tidy", "tag", "--tag", "")
+	if want := []string{"recipe\tfood", "ideas", "italian\tcooking"}; !slices.Equal(got, want) {
+		t.Errorf("on an empty word the offer is %q, want all three with their descriptions", got)
+	}
+
+	got, _ = completeDirective(t, reg, "tidy", "tag", "--tag", "recipe,")
+	if want := []string{"recipe,ideas", "recipe,italian\tcooking"}; !slices.Equal(got, want) {
+		t.Errorf("after recipe, the offer is %q, want the two it does not list", got)
+	}
+}
+
+// A flag that takes one value keeps its space, and an argument that takes
+// several is one value per word: only a list inside one word runs on.
+func TestOnlyAListFlagRunsOnAfterACompletion(t *testing.T) {
+	withHistory(t, nil)
+	_, directive := completeDirective(t, tidyRegistry(t), "tidy", "done", "2", "")
+	if directive&cobra.ShellCompDirectiveNoSpace != 0 {
+		t.Errorf("directive = %d for a positional, want a space after each word", directive)
+	}
+	got, _ := completeDirective(t, tagRegistry(t), "tidy", "tag", "--tag", "zzz")
+	if len(got) != 0 {
+		t.Errorf("a word nothing continues is offered %q", got)
 	}
 }
 
