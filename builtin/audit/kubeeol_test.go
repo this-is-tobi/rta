@@ -20,7 +20,17 @@ import (
 // not move with the calendar; the one that must be near is computed.
 func newEOLServer(t *testing.T, omit ...string) (*httptest.Server, *int) {
 	t.Helper()
+	return newFaultyEOLServer(t, nil, omit...)
+}
+
+// eolFault answers the nth request for one path with a status other than the
+// page, and a Retry-After; a status of 0 serves the page as usual.
+type eolFault func(n int) (status int, retryAfter string)
+
+func newFaultyEOLServer(t *testing.T, faults map[string]eolFault, omit ...string) (*httptest.Server, *int) {
+	t.Helper()
 	requests := 0
+	seen := map[string]int{}
 	soon := time.Now().AddDate(0, 0, 40).Format("2006-01-02")
 	pages := map[string]string{
 		"/products": `{"result":[
@@ -54,6 +64,16 @@ func newEOLServer(t *testing.T, omit ...string) (*httptest.Server, *int) {
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
+		seen[r.URL.Path]++
+		if fault := faults[r.URL.Path]; fault != nil {
+			if status, retryAfter := fault(seen[r.URL.Path]); status != 0 {
+				if retryAfter != "" {
+					w.Header().Set("Retry-After", retryAfter)
+				}
+				w.WriteHeader(status)
+				return
+			}
+		}
 		body, ok := pages[r.URL.Path]
 		if !ok {
 			w.Header().Set("Content-Type", "text/html")
