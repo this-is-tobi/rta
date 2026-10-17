@@ -269,7 +269,42 @@ func within(ns string) string {
 	if ns == "" {
 		return "cluster-wide"
 	}
-	return "in namespace " + ns
+	return "in " + scopeLabel(ns)
+}
+
+// scopeLabel is what a detail page's summary calls the part of the cluster an
+// audit looked at.
+func scopeLabel(ns string) string {
+	if ns == "" {
+		return "cluster-wide"
+	}
+	return "namespace " + ns
+}
+
+// finishKube is the tail every kube.* audit shares: the compact table when the
+// caller wants a line per finding, and otherwise the detail page — opened by
+// the cluster, the scope and the grade, with the findings once, in their
+// group's section.
+//
+// One place rather than five because the tail used to be written five times and
+// all five wrote it wrong the same way: the compact table as the page's
+// summary, so a detail page listed each finding in its summary and again in its
+// section. findings.Report.Page takes a view.KeyValue now and cannot be handed
+// that table, but what the summary should say about a cluster is still one
+// decision, made here.
+func finishKube(ctx context.Context, req plugin.Request, r *findings.Report, order []findings.Group, sc scope) view.View {
+	if !req.Bool("detail") {
+		return r.TableFor(req.Surface(), true)
+	}
+	kubeContext := "the current kubeconfig context"
+	if c := req.String("context"); c != "" {
+		kubeContext = plugin.ListedName(c)
+	}
+	pairs := append([]view.Pair{
+		{Key: "context", Value: kubeContext},
+		{Key: "scope", Value: scopeLabel(sc.ns)},
+	}, r.Grade()...)
+	return r.Page(ctx, req, order, view.KeyValue{Pairs: pairs})
 }
 
 // coverageClean is within's counterpart for the two coverage audits, whose

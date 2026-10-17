@@ -174,10 +174,7 @@ func runKubeRBAC(ctx context.Context, req plugin.Request) (view.View, error) {
 			rbacClean(ns), refRBACClusterAdmin)
 	}
 
-	if !req.Bool("detail") {
-		return r.TableFor(req.Surface(), true), nil
-	}
-	return r.Page(ctx, req, kubeGroupOrder1, r.TableFor(req.Surface(), true)), nil
+	return finishKube(ctx, req, r, kubeGroupOrder1, sc), nil
 }
 
 // isDefaultClusterAdminBinding matches the exact shape every distribution's
@@ -347,10 +344,7 @@ func runKubePodSecurity(ctx context.Context, req plugin.Request) (view.View, err
 			refPodSecurityHostNS)
 	}
 
-	if !req.Bool("detail") {
-		return r.TableFor(req.Surface(), true), nil
-	}
-	return r.Page(ctx, req, []findings.Group{grpKubePod}, r.TableFor(req.Surface(), true)), nil
+	return finishKube(ctx, req, r, []findings.Group{grpKubePod}, sc), nil
 }
 
 func hostNamespaceDetail(p podSecurityItem) string {
@@ -494,10 +488,7 @@ func runKubeQuotas(ctx context.Context, req plugin.Request) (view.View, error) {
 			coverageClean(ns, "ResourceQuota"), refResourcePolicies)
 	}
 
-	if !req.Bool("detail") {
-		return r.TableFor(req.Surface(), true), nil
-	}
-	return r.Page(ctx, req, kubeGroupOrder2, r.TableFor(req.Surface(), true)), nil
+	return finishKube(ctx, req, r, kubeGroupOrder2, sc), nil
 }
 
 // ---- audit.kube.netpol ----
@@ -525,8 +516,5 @@ func runKubeNetworkPolicy(ctx context.Context, req plugin.Request) (view.View, e
 			coverageClean(ns, "NetworkPolicy"), refNetworkPolicy)
 	}
 
-	if !req.Bool("detail") {
-		return r.TableFor(req.Surface(), true), nil
-	}
-	return r.Page(ctx, req, kubeGroupOrder3, r.TableFor(req.Surface(), true)), nil
+	return finishKube(ctx, req, r, kubeGroupOrder3, sc), nil
 }

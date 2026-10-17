@@ -245,8 +245,17 @@ func (r *Report) Grade() []view.Pair {
 //
 // order names the groups and fixes their sequence. It is per-audit because
 // the areas differ, but the assembly does not. summary is the page's opening
-// section, usually a view.KeyValue built around Grade.
-func (r *Report) Page(ctx context.Context, req plugin.Request, order []Group, summary view.View) view.View {
+// section: a view.KeyValue built around Grade, with whatever the page is about
+// ahead of it (the domain, the cluster, the realm).
+//
+// **It is a KeyValue and not a view.View on purpose.** The findings are the
+// group sections below it; the compact table a tile draws holds the same
+// findings, so handing it over as the summary put every finding on the page
+// twice, and five audits did exactly that — each reported as "it runs the check
+// twice" when the check ran once and the page said everything twice. A type
+// that cannot hold a table makes that mistake a compile error instead of
+// something a reader notices on a screen.
+func (r *Report) Page(ctx context.Context, req plugin.Request, order []Group, summary view.KeyValue) view.View {
 	p := plugin.NewPage(ctx, req)
 	p.PutAs("summary", "summary", summary)
 	for _, g := range order {
