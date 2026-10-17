@@ -146,7 +146,7 @@ func runKubeRBAC(ctx context.Context, req plugin.Request) (view.View, error) {
 				}
 			}
 		}
-		r.Add(grpKubeRBAC, "cluster-admin binding: "+b.Metadata.Name, status,
+		r.Add(grpKubeRBAC, "cluster-admin binding: "+plugin.ListedName(b.Metadata.Name), status,
 			"bound to "+names, refRBACClusterAdmin)
 	}
 
@@ -156,9 +156,9 @@ func runKubeRBAC(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	for _, ro := range roles {
 		if wild := wildcardRule(ro.Rules); wild != "" {
-			label := ro.Metadata.Name
+			label := plugin.ListedName(ro.Metadata.Name)
 			if ro.Metadata.Namespace != "" {
-				label = ro.Metadata.Namespace + "/" + ro.Metadata.Name
+				label = plugin.ListedName(ro.Metadata.Namespace) + "/" + label
 			}
 			r.Add(grpKubeRBAC, "wildcard rule: "+label, findings.Warn, wild, refRBACWildcard)
 		}
@@ -187,14 +187,20 @@ func isDefaultClusterAdminBinding(b bindingItem) bool {
 		b.Subjects[0].Name == "system:masters"
 }
 
+// subjectNames lists who a binding is for. A User or Group name is free text
+// the API server only requires to be present, and a binding is made by exactly
+// the principal this audit is looking at, so each part is shown as a listed
+// name (plugin.ListedName) rather than put raw into a row. The kind is a
+// closed set the API validates, but costs nothing to list and keeps this
+// function from having a rule about which parts to trust.
 func subjectNames(subs []subject) string {
 	names := make([]string, 0, len(subs))
 	for _, s := range subs {
+		name := plugin.ListedName(s.Name)
 		if s.Namespace != "" {
-			names = append(names, s.Kind+" "+s.Namespace+"/"+s.Name)
-		} else {
-			names = append(names, s.Kind+" "+s.Name)
+			name = plugin.ListedName(s.Namespace) + "/" + name
 		}
+		names = append(names, plugin.ListedName(s.Kind)+" "+name)
 	}
 	sort.Strings(names)
 	return strings.Join(names, ", ")
@@ -321,14 +327,14 @@ func runKubePodSecurity(ctx context.Context, req plugin.Request) (view.View, err
 	r := &findings.Report{}
 	sc.note(r, grpKubePod)
 	for _, p := range pods.Items {
-		label := p.Metadata.Namespace + "/" + p.Metadata.Name
+		label := plugin.ListedName(p.Metadata.Namespace) + "/" + plugin.ListedName(p.Metadata.Name)
 		if p.Spec.HostNetwork || p.Spec.HostPID || p.Spec.HostIPC {
 			r.Add(grpKubePod, "host namespace: "+label, findings.Fail,
 				hostNamespaceDetail(p), refPodSecurityHostNS)
 		}
 		for _, c := range p.Spec.everyContainer() {
 			if c.SecurityContext.Privileged != nil && *c.SecurityContext.Privileged {
-				r.Add(grpKubePod, "privileged container: "+label+"/"+c.Name+c.suffix, findings.Fail,
+				r.Add(grpKubePod, "privileged container: "+label+"/"+plugin.ListedName(c.Name)+c.suffix, findings.Fail,
 					"securityContext.privileged is true", refExcessivePriv)
 			}
 		}
@@ -480,7 +486,7 @@ func runKubeQuotas(ctx context.Context, req plugin.Request) (view.View, error) {
 	r := &findings.Report{}
 	sc.note(r, grpKubeQuota)
 	for _, ns := range missing {
-		r.Add(grpKubeQuota, "no ResourceQuota: "+ns, findings.Warn,
+		r.Add(grpKubeQuota, "no ResourceQuota: "+plugin.ListedName(ns), findings.Warn,
 			"namespace has no ResourceQuota, so it can consume unbounded cluster resources", refResourcePolicies)
 	}
 	if len(missing) == 0 {
@@ -508,7 +514,7 @@ func runKubeNetworkPolicy(ctx context.Context, req plugin.Request) (view.View, e
 	r := &findings.Report{}
 	sc.note(r, grpKubeNetwork)
 	for _, ns := range missing {
-		r.Add(grpKubeNetwork, "no NetworkPolicy: "+ns, findings.Warn,
+		r.Add(grpKubeNetwork, "no NetworkPolicy: "+plugin.ListedName(ns), findings.Warn,
 			"namespace has no NetworkPolicy, so pod-to-pod traffic is unrestricted by default", refNetworkPolicy)
 	}
 	if len(missing) == 0 {
