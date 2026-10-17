@@ -198,7 +198,7 @@ func (g *grader) grade(p *eolapi.Product, version string) (status, detail string
 	rel, ok := cycleFor(p.Releases, version)
 	if !ok {
 		return findings.Info, fmt.Sprintf("%s names no release cycle of %s that endoflife.date knows (%s)",
-			version, p.Name, cycleNames(p.Releases))
+			plugin.ListedName(version), p.Name, cycleNames(p.Releases))
 	}
 	label := p.Name + " " + rel.Name
 	switch eolapi.Grade(rel, g.warnDays, g.now) {
@@ -240,12 +240,15 @@ func (g *grader) gradeControlPlane(r *findings.Report, gitVersion string) *view.
 	if verr != nil {
 		return verr
 	}
+	// The API server and every kubelet report their own version string, so a
+	// compromised one chooses what this row says: it is listed, not trusted.
+	shown := plugin.ListedName(gitVersion)
 	if p == nil {
-		r.AddUnchecked(grpKubeEOL, "control plane: "+gitVersion, noKubernetesPage, refUnmaintained)
+		r.AddUnchecked(grpKubeEOL, "control plane: "+shown, noKubernetesPage, refUnmaintained)
 		return nil
 	}
 	status, detail := g.grade(p, version)
-	r.AddLinked(grpKubeEOL, "control plane: "+gitVersion, status, detail, refUnmaintained, productPage(p))
+	r.AddLinked(grpKubeEOL, "control plane: "+shown, status, detail, refUnmaintained, productPage(p))
 	return nil
 }
 
@@ -293,7 +296,10 @@ func (g *grader) gradeKubelets(r *findings.Report, nodes []nodeVersionItem) *vie
 	for _, v := range sortedKeys(byVersion) {
 		names := byVersion[v]
 		sort.Strings(names)
-		check := fmt.Sprintf("kubelets at %s (%s)", v, findings.Plural(len(names), "node"))
+		for i, n := range names {
+			names[i] = plugin.ListedName(n)
+		}
+		check := fmt.Sprintf("kubelets at %s (%s)", plugin.ListedName(v), findings.Plural(len(names), "node"))
 		if v == "" {
 			check = fmt.Sprintf("kubelets reporting no version (%s)", findings.Plural(len(names), "node"))
 			r.AddUnchecked(grpKubeEOL, check, "nodes: "+strings.Join(names, ", "), refUnmaintained)
@@ -369,10 +375,11 @@ func (g *grader) gradeImages(r *findings.Report, images []*imageUse, clusterWide
 			untracked[u.name] = true
 			continue
 		}
-		check := "image " + u.name
+		ref := u.name
 		if u.tag != "" {
-			check += ":" + u.tag
+			ref += ":" + u.tag
 		}
+		check := "image " + plugin.ListedName(ref)
 		where := findings.Plural(u.pods, "pod")
 		if clusterWide {
 			where += " in " + findings.Plural(len(u.namespaces), "namespace")
@@ -409,8 +416,12 @@ func (g *grader) gradeImages(r *findings.Report, images []*imageUse, clusterWide
 	}
 	if len(untracked) > 0 {
 		names := sortedKeys(untracked)
+		listed := make([]string, len(names))
+		for i, n := range names {
+			listed[i] = plugin.ListedName(n)
+		}
 		r.Add(grpKubeEOL, fmt.Sprintf("images endoflife.date does not track (%d)", len(names)), findings.Info,
-			strings.Join(names, ", "), refUnmaintained)
+			strings.Join(listed, ", "), refUnmaintained)
 	}
 	return nil
 }
