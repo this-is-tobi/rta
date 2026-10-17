@@ -125,18 +125,25 @@ func TestUWhileUnlockedLocksTheStoreAgain(t *testing.T) {
 	if verr := kv.StartSession(unlockPassphrase, time.Hour); verr != nil {
 		t.Fatal(verr)
 	}
-	if item := m.unlockItem(); item.label != "lock" {
+	if item := m.unlockItem(); item.label != "lock store" {
 		t.Errorf("the footer says %q while the store is open", item.label)
 	}
 	next, _, _ := m.dashboardKeys(keyMsg("U"))
-	got := next.(Model)
+	asked := next.(Model)
+	if asked.dialog == nil {
+		t.Fatal("U locked the store without asking")
+	}
+	if _, ok := kv.SessionUntil(); !ok {
+		t.Fatal("U shut the store before the question was answered")
+	}
+	got := press(t, asked, "enter")
 	if _, ok := kv.SessionUntil(); ok {
-		t.Error("U left the store unlocked")
+		t.Error("confirming left the store unlocked")
 	}
-	if !strings.Contains(got.flash, "locked") {
-		t.Errorf("flash = %q", got.flash)
+	if !strings.Contains(got.flash, "locked") || got.dialog != nil {
+		t.Errorf("flash = %q, dialog open = %v", got.flash, got.dialog != nil)
 	}
-	if item := got.unlockItem(); item.label != "unlock" {
+	if item := got.unlockItem(); item.label != "unlock store" {
 		t.Errorf("the footer says %q once it is shut", item.label)
 	}
 }

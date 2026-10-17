@@ -190,6 +190,9 @@ type Model struct {
 	// armed is a one-key answer that has said what it would do and waits for
 	// the key that confirms it (answers.go); nil when nothing waits.
 	armed *armedAnswer
+	// dialog is a question over the screen, modal while it is up (dialog.go); nil
+	// when none is asked.
+	dialog *dialog
 	// said is what the footer says when the answer that was just given
 	// finishes, in place of the capability's own "done" (answers.go).
 	said string
@@ -664,6 +667,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseClickMsg:
+		if m.dialog != nil {
+			return m.dialogClick(msg)
+		}
 		if m.mode == modeDashboard && msg.Button == tea.MouseLeft {
 			// A click on a header folds the section, anywhere along its line, and
 			// leaves the selection there: the header is what was pressed.
@@ -845,6 +851,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.PasteMsg:
+		if m.dialog != nil {
+			return m, nil
+		}
 		if nm, ok := m.pasteIntoSearch(msg); ok {
 			return nm, nil
 		}
@@ -1063,6 +1072,10 @@ func (m Model) screen() tea.View {
 	default:
 		v = tea.NewView(m.list.View())
 		v.MouseMode = tea.MouseModeCellMotion
+	}
+	if m.dialog != nil {
+		v.SetContent(m.overlayDialog(v.Content))
+		v.MouseMode = tea.MouseModeCellMotion // a button can be clicked
 	}
 	v.AltScreen = true
 	return v

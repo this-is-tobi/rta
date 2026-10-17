@@ -21,6 +21,11 @@ import (
 
 // keyPress routes one key press to the open pane's handler.
 func (m Model) keyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
+	// A question over the screen takes every key before anything else does,
+	// the help overlay and the armed answers included: it is modal.
+	if m.dialog != nil {
+		return m.dialogKeys(msg)
+	}
 	if m.help {
 		return m.helpKeys(msg)
 	}
@@ -686,6 +691,9 @@ func (m Model) runningKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 // MouseMode in View needs a case here, or it has claimed the events
 // precisely so it can throw them away.
 func (m Model) wheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
+	if m.dialog != nil {
+		return m, nil
+	}
 	switch m.mode {
 	case modeDashboard:
 		switch msg.Button {
