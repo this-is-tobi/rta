@@ -271,6 +271,10 @@ func credentialModel(t *testing.T, inputs ...string) Model {
 	dir := t.TempDir()
 	t.Setenv("RTA_CONFIG", filepath.Join(dir, "config.yaml"))
 	t.Setenv("RTA_DATA_DIR", dir)
+	// The store these forms read is the one in dir, opened with a passphrase; a
+	// key exported in the shell running the tests would be tried against it
+	// instead, and the test would fail on whether its author keeps one.
+	t.Setenv("RTA_KV_IDENTITY", "")
 	if err := config.Write(config.Config{Profiles: map[string]config.Profile{
 		"staging": {Plugins: map[string]config.Connection{"vlt": conn(map[string]any{"host": "h"})}},
 	}}); err != nil {
