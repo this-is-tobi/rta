@@ -1768,21 +1768,10 @@ func completeThroughOneRule(cmd *cobra.Command) {
 var remembered = sync.OnceValue(recent.Load)
 
 // offering puts what the operator has actually used behind whatever the field
-// declared for itself.
-//
-// Behind, not in front: a declared list is authoritative — those are the tags
-// that exist — while a shortlist is a convenience, and burying the real answer
-// under a habit would be the wrong way round. For the inputs this matters most
-// for (a bucket, a database, a vault path) there is no declared list at all
-// and the shortlist is the whole of it.
-//
-// Not behind a field that lists what exists right now (Suggest, not Live): that
-// list is the whole answer, and what was used before is by definition not in it
-// any more or already is. A note id checked off last week came back as a
-// candidate to check off again.
+// declared for itself, when recent.Behind says it belongs there.
 func offering(f plugin.Field, c plugin.Capability, profile string, fence plugin.Fence, declared []cobra.Completion) []cobra.Completion {
 	used := fence.Filter(f, remembered().For(profile, c.ID, f.Name))
-	if len(used) == 0 || (f.Suggest != nil && !f.Live) {
+	if len(used) == 0 || !recent.Behind(f) {
 		return declared
 	}
 	seen := make(map[string]bool, len(declared))

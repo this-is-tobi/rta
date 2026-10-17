@@ -1,6 +1,7 @@
 package recent
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -355,5 +356,27 @@ func TestAHeaderWithCommasInItsValueIsRememberedWhole(t *testing.T) {
 	want := []string{"Accept: text/html, application/json"}
 	if !slices.Equal(got, want) {
 		t.Errorf("shortlist = %q, want %q", got, want)
+	}
+}
+
+// What was used goes behind a field's own list only when that list is not a
+// statement of what exists. A Suggest that reads the current notes or hosts
+// is the whole answer, and a value used last week is by definition not in it
+// any more or already is; a live listing is a list of one connection's
+// contents that shell completion never fetches, and a field with no list at
+// all has nothing but what was used.
+func TestHistoryGoesBehindOnlyAFieldThatDoesNotListWhatExists(t *testing.T) {
+	list := func(context.Context, plugin.Request) []string { return []string{"a"} }
+	for name, tc := range map[string]struct {
+		field plugin.Field
+		want  bool
+	}{
+		"nothing declared":      {plugin.Field{Name: "bucket", Type: plugin.String}, true},
+		"a list of what exists": {plugin.Field{Name: "id", Type: plugin.String, Suggest: list}, false},
+		"a live listing":        {plugin.Field{Name: "key", Type: plugin.String, Suggest: list, Live: true}, true},
+	} {
+		if got := Behind(tc.field); got != tc.want {
+			t.Errorf("%s: Behind = %v, want %v", name, got, tc.want)
+		}
 	}
 }

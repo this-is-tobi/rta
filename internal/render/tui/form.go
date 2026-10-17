@@ -903,12 +903,9 @@ func (cf *capForm) watched() []*string {
 
 // candidates asks a field what it can be completed to, given what the rest of
 // the form currently holds, with what this operator has actually used behind
-// whatever the field declared for itself.
-//
-// Behind, not in front: a declared list is authoritative — those are the tags
-// that exist — while a shortlist is a convenience. For the inputs it matters
-// most for (a bucket, a database, a vault path) there is no declared list at
-// all and the shortlist is the whole of it.
+// whatever the field declared for itself — when recent.Behind says it belongs
+// there, the rule the command line asks as well, so a list of what exists is
+// not padded with a hostname or a note id that was removed last week.
 func (cf *capForm) candidates(f plugin.Field) []string {
 	ctx, cancel := context.WithTimeout(context.Background(), suggestTimeout)
 	defer cancel()
@@ -937,6 +934,9 @@ func (cf *capForm) candidates(f plugin.Field) []string {
 			out = append(out, v)
 			seen[v] = true
 		}
+	}
+	if !recent.Behind(f) {
+		return out
 	}
 	for _, v := range cf.fence.Filter(f, cf.used.For(cf.profile, cf.cap.ID, f.Name)) {
 		if !seen[v] {

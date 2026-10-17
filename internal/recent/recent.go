@@ -120,6 +120,24 @@ func Load() Values {
 	return f.Inputs
 }
 
+// Behind reports whether what was used belongs behind the list a field
+// declares for itself, which is the one rule both completion surfaces ask.
+//
+// Behind, not in front: a declared list is authoritative — those are the tags
+// that exist — while a shortlist is a convenience, and burying the real answer
+// under a habit would be the wrong way round. For the inputs this matters most
+// for (a bucket, a database, a vault path) there is no declared list at all
+// and the shortlist is the whole of it.
+//
+// Not behind a field that lists what exists right now (Suggest, not Live): that
+// list is the whole answer, and what was used before is by definition not in it
+// any more or already is. A note id checked off last week came back as a
+// candidate to check off again, and a hostname just removed as one to remove.
+// A Live listing is the other way round: it is a connection's contents, which
+// the keystroke channels never fetch, so history is what a shell and a box have
+// to offer until the deliberate press brings the listing.
+func Behind(f plugin.Field) bool { return f.Suggest == nil || f.Live }
+
 // For is what has been used for one input of one capability under one profile,
 // "" for none.
 func (v Values) For(profile, capID, input string) []string {

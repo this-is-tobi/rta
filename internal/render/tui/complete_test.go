@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -266,27 +267,56 @@ func TestAFormOffersWhatWasUsedBefore(t *testing.T) {
 	}
 }
 
-// A declared list comes first and is not duplicated by the shortlist.
+// A field's own list comes first, and what was used goes behind it only where
+// that list is not a statement of what exists — the rule the command line asks
+// too (recent.Behind). A list of what exists right now is the whole answer: a
+// hostname or a note id that was removed last week came back behind it as one
+// to remove again. A live listing is a connection's contents, which the
+// keystroke never fetches, so what was used is what there is until the
+// deliberate press lands it; and a field with nothing declared has nothing else.
 func TestWhatTheFieldDeclaresComesFirst(t *testing.T) {
-	noHistory(t)
-	c := plugin.Capability{
-		ID: "demo.run", Summary: "run", Safety: plugin.Read,
-		Inputs: []plugin.Field{{Name: "name", Type: plugin.String,
-			Suggest: func(context.Context, plugin.Request) []string { return []string{"declared", "shared"} }}},
-		Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
-	}
-	recent.Record(plugin.SurfaceCLI, c, "", map[string]any{"name": "shared"})
-	recent.Record(plugin.SurfaceCLI, c, "", map[string]any{"name": "remembered"})
+	suggest := func(context.Context, plugin.Request) []string { return []string{"declared", "shared"} }
+	for name, tc := range map[string]struct {
+		field   plugin.Field
+		fetched []string
+		want    []string
+	}{
+		"a list of what exists": {
+			field: plugin.Field{Name: "name", Type: plugin.String, Suggest: suggest},
+			want:  []string{"declared", "shared"},
+		},
+		"a live listing": {
+			field:   plugin.Field{Name: "name", Type: plugin.String, Suggest: suggest, Live: true},
+			fetched: []string{"fetched", "shared"},
+			want:    []string{"fetched", "shared", "remembered"},
+		},
+		"a live listing not fetched yet": {
+			field: plugin.Field{Name: "name", Type: plugin.String, Suggest: suggest, Live: true},
+			want:  []string{"remembered", "shared"},
+		},
+		"nothing declared": {
+			field: plugin.Field{Name: "name", Type: plugin.String},
+			want:  []string{"remembered", "shared"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			noHistory(t)
+			c := plugin.Capability{
+				ID: "demo.run", Summary: "run", Safety: plugin.Read,
+				Inputs: []plugin.Field{tc.field},
+				Run:    func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
+			}
+			recent.Record(plugin.SurfaceCLI, c, "", map[string]any{"name": "shared"})
+			recent.Record(plugin.SurfaceCLI, c, "", map[string]any{"name": "remembered"})
 
-	got := newCapForm(c, c.Inputs, nil, true, nil).candidates(c.Inputs[0])
-	if len(got) != 3 {
-		t.Fatalf("candidates = %v, want the two declared plus the one remembered", got)
-	}
-	if got[0] != "declared" || got[1] != "shared" {
-		t.Errorf("candidates = %v, want the declared list first", got)
-	}
-	if got[2] != "remembered" {
-		t.Errorf("candidates = %v, want the remembered value last", got)
+			cf := newCapForm(c, c.Inputs, nil, true, nil)
+			if tc.fetched != nil {
+				cf.setFetched("name", tc.fetched)
+			}
+			if got := cf.candidates(c.Inputs[0]); !slices.Equal(got, tc.want) {
+				t.Errorf("candidates = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
