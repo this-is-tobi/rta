@@ -23,6 +23,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/this-is-tobi/rta/builtin/all"
+	"github.com/this-is-tobi/rta/internal/boxlist"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/internal/match"
@@ -1586,7 +1587,19 @@ func declareCompletion(cmd *cobra.Command, c plugin.Capability, positionals []pl
 		f := f
 		completeFlag(cmd, f.Name,
 			func(cmd *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
-				return candidates(cmd, c, f, args)
+				out, directive := candidates(cmd, c, f, args)
+				if !f.Type.Repeatable() {
+					return out, directive
+				}
+				// A list flag is one word to the shell, `recipe,it`, which it
+				// matches candidates against whole: bare candidates completed
+				// the first element and then nothing, where the TUI's box
+				// completes every one. Each comes back as the word it would
+				// make (boxlist.Extend, the box's own rule) and the shell keeps
+				// its cursor against it, since a comma may follow. A
+				// positional is not this: it takes one value per word, and
+				// withoutTyped drops the ones already given.
+				return boxlist.Extend(toComplete, out), directive | cobra.ShellCompDirectiveNoSpace
 			})
 	}
 }
