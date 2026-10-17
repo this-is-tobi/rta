@@ -29,10 +29,10 @@ func TestWOpensTheQueueFromTheLandingScreenWhileACallWaits(t *testing.T) {
 	}
 }
 
-func TestWIsALetterWhenNothingWaitsAndWhenTheBarIsBeingTypedInto(t *testing.T) {
+func TestWDoesNothingWhenNothingWaitsAndIsALetterWhenTheBoxIsOpen(t *testing.T) {
 	quiet, _ := realModel(t, 100, 30)
-	if got := press(t, quiet, "w"); got.query != "w" || got.current.ID == queueCapability {
-		t.Errorf("w with nothing parked left query %q on %q, want the first letter of a search", got.query, got.current.ID)
+	if got := press(t, quiet, "w"); got.query != "" || got.searchEditing || got.current.ID == queueCapability {
+		t.Errorf("w with nothing parked left query %q (editing %v) on %q, want nothing to happen", got.query, got.searchEditing, got.current.ID)
 	}
 	busy := learn(t, quiet, oneCall())
 	typing := press(t, busy, "/")

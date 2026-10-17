@@ -25,7 +25,7 @@ func TestAnIdleSearchIsOneLineAndOpensToTheBox(t *testing.T) {
 	m = filled(t, m, 80, 30)
 
 	idle := frameLines(m)
-	if !strings.Contains(idle[1], "type to search") {
+	if !strings.Contains(idle[1], "press / or enter to search") {
 		t.Errorf("the line under the header does not say how to search: %q", idle[1])
 	}
 	if !strings.HasPrefix(idle[2], "╭") {
@@ -55,7 +55,7 @@ func TestAnIdleSearchIsOneLineAndOpensToTheBox(t *testing.T) {
 
 	m = press(t, m, "esc")
 	closed := frameLines(m)
-	if !strings.Contains(closed[1], "type to search") || !strings.HasPrefix(closed[2], "╭") {
+	if !strings.Contains(closed[1], "press / or enter to search") || !strings.HasPrefix(closed[2], "╭") {
 		t.Errorf("leaving the search did not give its lines back:\n%s", strings.Join(closed, "\n"))
 	}
 

@@ -142,8 +142,11 @@ var (
 	// opens the catalogue to pick from. `+` rather than `a`, which the
 	// plugin pane already spends on allow. rankExtra like H and [ ]: the
 	// arrangement keys give way to running things when the bar is short.
-	bindAdd    = binding{display: "+", keys: []string{"+"}, label: "add tile", rank: rankExtra}
-	bindSearch = binding{display: "/", keys: []string{"/"}, label: "search", rank: rankExtra}
+	bindAdd = binding{display: "+", keys: []string{"+"}, label: "add tile", rank: rankExtra}
+	// The same key inside the open search box, where it adds the highlighted
+	// match and does not open the catalogue: two actions, so two words.
+	bindAddResult = binding{display: "+", keys: []string{"+"}, label: "add as tile", rank: rankExtra}
+	bindSearch    = binding{display: "/", keys: []string{"/"}, label: "search", rank: rankExtra}
 	bindToggle = binding{display: "space", keys: []string{" ", "space", "x"}, label: "show/hide", rank: rankPrimary}
 	// "approve" rather than "trust", because the footer has to say what the
 	// key does and not what the subsystem is called: somebody looking at a

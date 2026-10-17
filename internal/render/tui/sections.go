@@ -283,13 +283,10 @@ func (m *Model) foldAll() string {
 // place that is left of it.
 //
 // **A header that is gone leaves the selection on the first stop of what is
-// drawn, not on the search bar.** The search bar takes every letter typed as a
-// query, and the keys that bring about this very case — V to the next screen, the
-// switch to another environment's — are letters: from the search bar the second V
-// was typed into the query, and the screen that was meant to cycle stayed where
-// it was. The first stop is a header or a tile, where a letter is a command, and
-// it is where the selection starts on a screen that has just been drawn; the
-// search bar is only left for a screen with nothing on it.
+// drawn, not on the search bar.** The keys that bring about this very case — V
+// to the next screen, the switch to another environment's — are pressed by
+// somebody working in the grid, and the first stop is the nearest thing in it to
+// where they were; the search bar is only left for a screen with nothing on it.
 func (m *Model) keepSelection() {
 	if m.selected < 0 {
 		if !slices.ContainsFunc(m.sectionRuns(), func(r sectionRun) bool { return r.name == m.header }) {

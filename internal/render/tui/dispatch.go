@@ -71,11 +71,6 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		nm, cmd := m.updateSearch(msg)
 		return nm, cmd, true
 	}
-	if text, ok := m.typedIntoSearch(msg); ok {
-		m.searchEditing, m.searchSel = true, 0
-		m.query += text
-		return m, nil, true
-	}
 	// Before the switch: enter on a header folds it and does not open a tile.
 	if next, handled := m.sectionKeys(msg.String()); handled {
 		return next, nil, true
