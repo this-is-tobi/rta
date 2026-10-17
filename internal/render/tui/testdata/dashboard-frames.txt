@@ -14,7 +14,7 @@
 │                                                          │
 ╰──────────────────────────────────────────────────────────╯
  ↑↓←→ select · enter search · f profiles · p plugins
- t theme · V view · + add tile · q quit · ? help · …
+ t theme · V/v view · + add tile · q quit · ? help · …
 === automatic 60x20 third-tile-and-a-flash ===
  rta  dashboard  ↕ more
  ⌕ 5 plugins · 5 capabilities — press / to search
@@ -48,7 +48,7 @@
 │                                                          │
 ╰──────────────────────────────────────────────────────────╯
  ↑↓←→ select · enter details · f profiles · p plugins
- t theme · [ ] move · H hide · V view · q quit · ? help · …
+ t theme · [ ] move · H hide · q quit · ? help · …
 === automatic 60x20 search-open ===
  rta  dashboard  ↓ more
 ╭─ ⌕ search ─────── 1/5 · ↑↓ pick · enter run · esc clear ─╮
@@ -84,7 +84,7 @@
 │ line                                                     │
 ╰──────────────────────────────────────────────────────────╯
  ↑↓←→ select · enter search · f profiles · p plugins
- t theme · V view · + add tile · q quit · ? help · …
+ t theme · V/v view · + add tile · q quit · ? help · …
 === stated 60x20 third-tile-and-a-flash ===
  rta  dashboard  ↕ more
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -158,7 +158,7 @@
 │ line                                                     │
 ╰──────────────────────────────────────────────────────────╯
  ↑↓←→ select · enter search · f profiles · p plugins
- t theme · V view · + add tile · q quit · ? help · …
+ t theme · V/v view · + add tile · q quit · ? help · …
 === spanned 60x20 third-tile-and-a-flash ===
  rta  dashboard  ↕ more
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -232,7 +232,7 @@
 │                                                          │
 ╰──────────────────────────────────────────────────────────╯
  ↑↓←→ select · enter search · f profiles · p plugins
- t theme · V view · + add tile · q quit · ? help · …
+ t theme · V/v view · + add tile · q quit · ? help · …
 === hidden-ordered-added 60x20 third-tile-and-a-flash ===
  rta  dashboard  ↕ more
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -311,7 +311,7 @@
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter search · f profiles · p plugins · t theme · V view
+ ↑↓←→ select · enter search · f profiles · p plugins · t theme · V/v view
  + add tile · U unlock store · b browse · q quit · ? help
 === automatic 80x24 third-tile-and-a-flash ===
  rta  dashboard
@@ -335,7 +335,7 @@
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins
- t theme · [ ] move · H hide · V view · + add tile · q quit · ? help · …
+ t theme · [ ] move · H hide · V/v view · + add tile · q quit · ? help · …
 === automatic 80x24 last-tile ===
  rta  dashboard
  ⌕ 5 plugins · 5 capabilities — press / to search
@@ -358,7 +358,7 @@
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
- H hide · V view · + add tile · U unlock store · b browse · q quit · ? help · …
+ H hide · V/v view · + add tile · U unlock store · q quit · ? help · …
 === automatic 80x24 search-open ===
  rta  dashboard  ↓ more
 ╭─ ⌕ search ─────────────────────────── 1/5 · ↑↓ pick · enter run · esc clear ─╮
@@ -402,7 +402,7 @@
 │                                     │ │ line                                 │
 │                                     │ │ … enter for details                  │
 ╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
- ↑↓←→ select · enter search · f profiles · p plugins · t theme · V view
+ ↑↓←→ select · enter search · f profiles · p plugins · t theme · V/v view
  + add tile · U unlock store · b browse · q quit · ? help
 === stated 80x24 third-tile-and-a-flash ===
  rta  dashboard  ↓ more
@@ -426,7 +426,7 @@
 │                                     │ │ … enter for details                  │
 ╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
  ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins
- t theme · [ ] move · H remove · V view · + add tile · q quit · ? help · …
+ t theme · [ ] move · H remove · V/v view · + add tile · q quit · ? help · …
 === stated 80x24 last-tile ===
  rta  dashboard  ↑ more
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -447,7 +447,7 @@
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
- H remove · V view · + add tile · U unlock store · q quit · ? help · …
+ H remove · V/v view · + add tile · U unlock store · q quit · ? help · …
 === stated 80x24 search-open ===
  rta  dashboard  ↓ more
 ╭─ ⌕ search ───────────────────────────────── ↑↓ pick · enter run · esc clear ─╮
@@ -489,7 +489,7 @@
 │ line                                │ │                                      │
 │ line                                │ │                                      │
 ╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
- ↑↓←→ select · enter search · f profiles · p plugins · t theme · V view
+ ↑↓←→ select · enter search · f profiles · p plugins · t theme · V/v view
  + add tile · U unlock store · b browse · q quit · ? help
 === spanned 80x24 third-tile-and-a-flash ===
  rta  dashboard  ↓ more
@@ -509,7 +509,7 @@
 │ line                                │ │                                      │
 ╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
  ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins
- t theme · [ ] move · H remove · V view · + add tile · q quit · ? help · …
+ t theme · [ ] move · H remove · V/v view · + add tile · q quit · ? help · …
 === spanned 80x24 last-tile ===
  rta  dashboard  ↑ more
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -530,7 +530,7 @@
 │ … enter for details                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
- H remove · V view · + add tile · U unlock store · q quit · ? help · …
+ H remove · V/v view · + add tile · U unlock store · q quit · ? help · …
 === spanned 80x24 search-open ===
  rta  dashboard  ↓ more
 ╭─ ⌕ search ───────────────────────────────── ↑↓ pick · enter run · esc clear ─╮
@@ -575,7 +575,7 @@
 │ line                                                                         │
 │ line                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter search · f profiles · p plugins · t theme · V view
+ ↑↓←→ select · enter search · f profiles · p plugins · t theme · V/v view
  + add tile · U unlock store · b browse · q quit · ? help
 === hidden-ordered-added 80x24 third-tile-and-a-flash ===
  rta  dashboard  ↓ more
@@ -599,7 +599,7 @@
 │ line                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins
- t theme · [ ] move · H remove · V view · + add tile · q quit · ? help · …
+ t theme · [ ] move · H remove · V/v view · + add tile · q quit · ? help · …
 === hidden-ordered-added 80x24 last-tile ===
  rta  dashboard  ↑ more
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -622,7 +622,7 @@
 │ … enter for details                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
- H remove · V view · + add tile · U unlock store · q quit · ? help · …
+ H remove · V/v view · + add tile · U unlock store · q quit · ? help · …
 === hidden-ordered-added 80x24 search-open ===
  rta  dashboard  ↓ more
 ╭─ ⌕ search ───────────────────────────────── ↑↓ pick · enter run · esc clear ─╮
@@ -668,7 +668,7 @@
 │                                                                                                  │
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter search · f profiles · p plugins · t theme · V view · + add tile
+ ↑↓←→ select · enter search · f profiles · p plugins · t theme · V/v view · + add tile
  U unlock store · b browse · q quit · ? help
 === automatic 100x30 third-tile-and-a-flash ===
  rta  dashboard
@@ -692,7 +692,7 @@
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
  ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
- H hide · V view · + add tile · U unlock store · b browse · / search · q quit · ? help
+ H hide · V/v view · + add tile · U unlock store · b browse · / search · q quit · ? help
 === automatic 100x30 last-tile ===
  rta  dashboard
  ⌕ 5 plugins · 5 capabilities — press / to search
@@ -714,7 +714,7 @@
 │                                                                                                  │
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H hide · V view
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H hide · V/v view
  + add tile · U unlock store · b browse · / search · q quit · ? help
 === automatic 100x30 search-open ===
  rta  dashboard
@@ -774,7 +774,7 @@
 │                                                                                                  │
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter search · f profiles · p plugins · t theme · V view · + add tile
+ ↑↓←→ select · enter search · f profiles · p plugins · t theme · V/v view · + add tile
  U unlock store · b browse · q quit · ? help
 === stated 100x30 third-tile-and-a-flash ===
  rta  dashboard
@@ -805,7 +805,7 @@
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
  ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
- H remove · V view · + add tile · U unlock store · b browse · / search · q quit · ? help
+ H remove · V/v view · + add tile · U unlock store · b browse · / search · q quit · ? help
 === stated 100x30 last-tile ===
  rta  dashboard
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -834,7 +834,7 @@
 │                                                                                                  │
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V/v view
  + add tile · U unlock store · b browse · / search · q quit · ? help
 === stated 100x30 search-open ===
  rta  dashboard  ↓ more
@@ -893,7 +893,7 @@
 │ line                                          │ │                                                │
 │ … enter for details                           │ │                                                │
 ╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
- ↑↓←→ select · enter search · f profiles · p plugins · t theme · V view · + add tile
+ ↑↓←→ select · enter search · f profiles · p plugins · t theme · V/v view · + add tile
  U unlock store · b browse · q quit · ? help
 === spanned 100x30 third-tile-and-a-flash ===
  rta  dashboard  ↓ more
@@ -924,7 +924,7 @@
 │ … enter for details                           │ │                                                │
 ╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
  ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
- H remove · V view · + add tile · U unlock store · b browse · / search · q quit · ? help
+ H remove · V/v view · + add tile · U unlock store · b browse · / search · q quit · ? help
 === spanned 100x30 last-tile ===
  rta  dashboard  ↕ more
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -945,7 +945,7 @@
 │                                                                                                  │
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V/v view
  + add tile · U unlock store · b browse · / search · q quit · ? help
 === spanned 100x30 search-open ===
  rta  dashboard  ↓ more
@@ -995,7 +995,7 @@
 │ line                                                                                             │
 │ line                                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter search · f profiles · p plugins · t theme · V view · + add tile
+ ↑↓←→ select · enter search · f profiles · p plugins · t theme · V/v view · + add tile
  U unlock store · b browse · q quit · ? help
 === hidden-ordered-added 100x30 third-tile-and-a-flash ===
  rta  dashboard  ↓ more
@@ -1020,7 +1020,7 @@
 │ line                                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
  ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
- H remove · V view · + add tile · U unlock store · b browse · / search · q quit · ? help
+ H remove · V/v view · + add tile · U unlock store · b browse · / search · q quit · ? help
 === hidden-ordered-added 100x30 last-tile ===
  rta  dashboard  ↑ more
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -1043,7 +1043,7 @@
 │ line                                                                                             │
 │ … enter for details                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V/v view
  + add tile · U unlock store · b browse · / search · q quit · ? help
 === hidden-ordered-added 100x30 search-open ===
  rta  dashboard  ↓ more
@@ -1089,7 +1089,7 @@
 │       defghij                                                 │ │       efghij                                                   │
 │                                                               │ │                                                                │
 ╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter search · f profiles · p plugins · t theme · V view · + add tile · U unlock store · b browse · q quit · ? help
+ ↑↓←→ select · enter search · f profiles · p plugins · t theme · V/v view · + add tile · U unlock store · b browse · q quit · ? help
 === automatic 132x45 third-tile-and-a-flash ===
  rta  dashboard
  ⌕ 5 plugins · 5 capabilities — press / to search
@@ -1105,7 +1105,7 @@
 │       defghij                                                 │ │       efghij                                                   │
 │                                                               │ │                                                                │
 ╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
- ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H hide · V view · + add tile
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H hide · V/v view · + add tile
  U unlock store · b browse · / search · q quit · ? help
 === automatic 132x45 last-tile ===
  rta  dashboard
@@ -1122,7 +1122,7 @@
 │       defghij                                                 │ │       efghij                                                   │
 │                                                               │ │                                                                │
 ╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H hide · V view · + add tile · U unlock store
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H hide · V/v view · + add tile · U unlock store
  b browse · / search · q quit · ? help
 === automatic 132x45 search-open ===
  rta  dashboard
@@ -1173,7 +1173,7 @@
 │ line                                                          │ │                                                                │
 │ … enter for details                                           │ │                                                                │
 ╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter search · f profiles · p plugins · t theme · V view · + add tile · U unlock store · b browse · q quit · ? help
+ ↑↓←→ select · enter search · f profiles · p plugins · t theme · V/v view · + add tile · U unlock store · b browse · q quit · ? help
 === stated 132x45 third-tile-and-a-flash ===
  rta  dashboard
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -1196,8 +1196,8 @@
 │ line                                                          │ │                                                                │
 │ … enter for details                                           │ │                                                                │
 ╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
- ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view · + add tile
- U unlock store · b browse · / search · q quit · ? help
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V/v view
+ + add tile · U unlock store · b browse · / search · q quit · ? help
 === stated 132x45 last-tile ===
  rta  dashboard
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -1220,7 +1220,7 @@
 │ line                                                          │ │                                                                │
 │ … enter for details                                           │ │                                                                │
 ╰───────────────────────────────────────────────────────────────╯ ╰────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view · + add tile · U unlock store
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V/v view · + add tile · U unlock store
  b browse · / search · q quit · ? help
 === stated 132x45 search-open ===
  rta  dashboard
@@ -1301,7 +1301,7 @@
 │ line                                                                                                                             │
 │ … enter for details                                                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter search · f profiles · p plugins · t theme · V view · + add tile · U unlock store · b browse · q quit · ? help
+ ↑↓←→ select · enter search · f profiles · p plugins · t theme · V/v view · + add tile · U unlock store · b browse · q quit · ? help
 === spanned 132x45 third-tile-and-a-flash ===
  rta  dashboard  ↓ more
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -1336,8 +1336,8 @@
 │                                                                                                                                  │
 │                                                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view · + add tile
- U unlock store · b browse · / search · q quit · ? help
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V/v view
+ + add tile · U unlock store · b browse · / search · q quit · ? help
 === spanned 132x45 last-tile ===
  rta  dashboard  ↑ more
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -1377,7 +1377,7 @@
 │ line                                                                                                                             │
 │ … enter for details                                                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view · + add tile · U unlock store
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V/v view · + add tile · U unlock store
  b browse · / search · q quit · ? help
 === spanned 132x45 search-open ===
  rta  dashboard  ↓ more
@@ -1450,7 +1450,7 @@
 │ line                                                                                                                             │
 │ … enter for details                                                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter search · f profiles · p plugins · t theme · V view · + add tile · U unlock store · b browse · q quit · ? help
+ ↑↓←→ select · enter search · f profiles · p plugins · t theme · V/v view · + add tile · U unlock store · b browse · q quit · ? help
 === hidden-ordered-added 132x45 third-tile-and-a-flash ===
  rta  dashboard
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -1476,8 +1476,8 @@
 │ line                                                                                                                             │
 │ … enter for details                                                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view · + add tile
- U unlock store · b browse · / search · q quit · ? help
+ ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V/v view
+ + add tile · U unlock store · b browse · / search · q quit · ? help
 === hidden-ordered-added 132x45 last-tile ===
  rta  dashboard
  ⌕ 3 plugins · 3 capabilities — press / to search
@@ -1503,7 +1503,7 @@
 │ line                                                                                                                             │
 │ … enter for details                                                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V view · + add tile · U unlock store
+ ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V/v view · + add tile · U unlock store
  b browse · / search · q quit · ? help
 === hidden-ordered-added 132x45 search-open ===
  rta  dashboard

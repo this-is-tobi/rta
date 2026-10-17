@@ -118,12 +118,12 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// Another screen of the dashboard: the default, then each view in
 		// turn. Session-only, so looking at the databases' screen does not
 		// switch environment, and a switch (u) undoes it.
-		cmd := m.cycleView()
+		cmd := m.cycleView(1)
 		return m, cmd, true
 	case "v":
-		// The screen before this one, and back again on the next press: the
-		// `cd -` of the dashboard's screens.
-		cmd := m.backView()
+		// The same walk the other way round, as shift+tab is tab's: a person
+		// who went one screen too far is one key from where they were.
+		cmd := m.cycleView(-1)
 		return m, cmd, true
 	case "U":
 		// The encrypted store, for this session: tiles that read a profile's

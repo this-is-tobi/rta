@@ -25,12 +25,14 @@ func TestCyclingViewsOfAnUnhonouredFileSaysThereAreNone(t *testing.T) {
 	if err := os.WriteFile(".rta.yaml", []byte(file), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	m := New(registry.New(), config.Dashboard{}, nil)
-	cmd := m.cycleView()
-	if !strings.Contains(m.flash, "arranges no screen") {
-		t.Errorf("flash = %q, want the statement that this file arranges nothing", m.flash)
-	}
-	if m.view != "" || cmd != nil {
-		t.Errorf("a view was switched to (%q) from a file that arranges nothing", m.view)
+	for _, step := range []int{1, -1} {
+		m := New(registry.New(), config.Dashboard{}, nil)
+		cmd := m.cycleView(step)
+		if !strings.Contains(m.flash, "arranges no screen") {
+			t.Errorf("step %d: flash = %q, want the statement that this file arranges nothing", step, m.flash)
+		}
+		if m.view != "" || cmd != nil {
+			t.Errorf("step %d: a view was switched to (%q) from a file that arranges nothing", step, m.view)
+		}
 	}
 }

@@ -74,9 +74,11 @@ var (
 	bindCopy  = binding{display: "y", keys: []string{"y"}, label: "copy json", rank: rankExtra}
 	bindMove  = binding{display: "[ ]", keys: []string{"[", "]", "<", ">"}, label: "move", rank: rankExtra}
 	bindHide  = binding{display: "H", keys: []string{"H"}, label: "hide", rank: rankExtra}
-	bindView  = binding{display: "V", keys: []string{"V"}, label: "view", rank: rankExtra}
-	// Back to the screen V or v drew before this one: on the bar once there is one.
-	bindBackView = binding{display: "v", keys: []string{"v"}, label: "last view", rank: rankExtra}
+	// The dashboard's screens: V walks them forward and v the other way round.
+	// One hint for the pair, as [ ] is for moving a tile either way, since the
+	// two answer in exactly the same situations and a bar that spent two
+	// entries on them would lose both sooner on a narrow terminal.
+	bindView = binding{display: "V/v", keys: []string{"V", "v"}, label: "view", rank: rankExtra}
 	// Unlocks the encrypted store for this session, and locks it again.
 	bindUnlock = binding{display: "U", keys: []string{"U"}, label: "unlock store", rank: rankExtra}
 	bindPlugin = binding{display: "p", keys: []string{"p"}, label: "plugins", rank: rankExtra}
