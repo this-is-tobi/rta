@@ -605,11 +605,9 @@ func (m *Model) moveBack() {
 // header of a section, and a folded section at the end is where the selection
 // has to rest since the tiles it holds are on no row.
 //
-// Not g and G, which a person coming from a pager would try: a letter answers as
-// a command only once a tile holds the selection, and on the search bar it is
-// the first letter of a query, so those two would have worked on some screens of
-// the dashboard and typed on the others. Home and end are no letters of any
-// query, and answer wherever the dashboard answers keys at all.
+// Not g and G, which a person coming from a pager would try: a letter is what a
+// tile declares for its own actions, and a capability can still ask for those
+// two. Home and end are no letter of anything, so they cannot collide with one.
 func (m *Model) selectEdge(last bool) {
 	defer m.clampScroll()
 	stops := m.stops()
@@ -711,12 +709,11 @@ func tileLines(t tile, width int, selected bool) []string {
 // one of the keys the capability declares for its own tile.
 //
 // Those keys answer on the selected tile (dispatch.go, selectedAction) and
-// nowhere else, and until a tile is selected the search bar holds every letter.
-// The sentence is read first on the first screen of a fresh install, where
-// nothing is selected, and "press a" there started a search for the letter a.
-// The plugin cannot say it right for both places: the same sentence is the whole
-// of the opened list, where the key answers at once, so the tile qualifies it
-// when it is drawn.
+// nowhere else. The sentence is read first on the first screen of a fresh
+// install, where only the search line is selected, and "press a" there pressed a
+// key that does nothing. The plugin cannot say it right for both places: the
+// same sentence is the whole of the opened list, where the key answers at once,
+// so the tile qualifies it when it is drawn.
 //
 // Keyed on the keys the capability declares and not on the shape of a sentence,
 // so a sentence naming a key nothing answers is left as its plugin wrote it. A
@@ -904,9 +901,9 @@ func (m Model) searchHint() string {
 // for the words they type for them. Plugins and profiles are panes and not
 // capabilities, so the search found nothing for "plugin" or "profile" and, for
 // "install plugin", the one capability whose summary says both, which reads as
-// the install feature and is a package manager. The panes open on a tile
-// (typing.go: on the search bar a letter is the query), which is the part
-// nobody can guess from the bar that says "type to search".
+// the install feature and is a package manager. The panes open on a key that is
+// a letter of the query while the box is open (typing.go), so the way to them
+// starts with leaving the box, which is the part nobody can guess from the box.
 //
 // The four words are the ones a first-run person reaches for, singular or
 // plural. `index` is not one of them: it names a plugin index, which is a
@@ -916,9 +913,9 @@ func (m Model) searchHint() string {
 func panesHint(word string) string {
 	switch strings.TrimSuffix(strings.ToLower(word), "s") {
 	case "plugin", "install":
-		return "plugins: esc, select a tile, press p · or `rta plugin install <name>`"
+		return "plugins: esc, then press p · or `rta plugin install <name>`"
 	case "profile", "environment":
-		return "profiles: esc, select a tile, press f · or `rta profile set <name>`"
+		return "profiles: esc, then press f · or `rta profile set <name>`"
 	}
 	return ""
 }
@@ -996,12 +993,11 @@ func (m Model) renderSearchBar(width int, selected bool) string {
 	return ansi.Truncate(glyph+text, max(width, 1), "…")
 }
 
-// searchStartHint says what starts a search from where the selection is: a
-// letter when the bar holds it (typing.go hands letters to the bar only then),
-// the slash otherwise, because on a tile a letter is that tile's command.
+// searchStartHint says what starts a search from where the selection is: the
+// slash from anywhere, and enter as well when the line itself is selected.
 func (m Model) searchStartHint() string {
-	if m.lettersAreQuery() {
-		return "type to search"
+	if m.selected == 0 {
+		return "press / or enter to search"
 	}
 	return "press / to search"
 }
@@ -1054,15 +1050,11 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 		lines = append(lines, theme.Subtle.Render("  no matches"))
 	}
 
-	// What starts a search depends on whether the bar holds the selection:
-	// typed letters are the query only then (typing.go), and on a tile they are
-	// that tile's commands, so the hint says the key that works from there.
+	// The border keeps to the box's own business; what `+` and the rest do while
+	// it is open is the footer's to say (searchEditingItems), once.
 	right := "press /"
-	if m.lettersAreQuery() {
-		right = "type to search"
-	}
 	if m.searchEditing {
-		right = "↑↓ pick · enter run · + add tile · esc clear"
+		right = "↑↓ pick · enter run · esc clear"
 	}
 	// The count is the honest part: it says three of eleven, so a match that
 	// is not on screen is a known thing rather than a missing one.
@@ -1078,9 +1070,6 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 func (m Model) dashFooterItems() []hintItem {
 	if m.searchEditing {
 		return searchEditingItems()
-	}
-	if m.lettersAreQuery() {
-		return searchIdleItems()
 	}
 	items := []hintItem{}
 	own := m.dashOwnItems()
@@ -1114,7 +1103,7 @@ func searchEditingItems() []hintItem {
 			display: "↑↓", label: "pick", rank: rankPrimary,
 			keys: []string{"up", "down", "ctrl+p", "ctrl+n", "tab", "pgup", "pgdown"},
 		},
-		labelled(bindOpen, "run"), item(bindAdd), labelled(bindBack, "clear"),
+		labelled(bindOpen, "run"), item(bindAddResult), labelled(bindBack, "clear"),
 		{display: "ctrl+c", label: "quit", rank: rankLeave, keys: []string{"ctrl+c"}},
 	}
 }
@@ -1130,18 +1119,25 @@ func searchEditingItems() []hintItem {
 // tile and a header is not one.
 func (m Model) dashOwnItems() []hintItem {
 	open := labelled(bindOpen, "details")
-	if m.selected < 0 {
+	switch {
+	case m.selected < 0:
 		open = hintItem{
 			display: bindOpen.display, label: m.foldVerb(m.header), rank: bindOpen.rank,
 			keys: []string{"enter", " ", "space"},
 		}
+	case m.selected == 0:
+		open = alias(labelled(bindOpen, "search"), bindSearch.keys...)
 	}
 	items := []hintItem{
 		item(bindSelect), open,
 		item(bindProfile), item(bindPlugin), item(bindTheme),
-		item(bindMove),
 	}
-	if m.selected >= 0 {
+	// The search line is neither moved nor hidden: both keys do nothing on it,
+	// and a bar that offered them taught two keys that were not answered.
+	if m.selected != 0 {
+		items = append(items, item(bindMove))
+	}
+	if m.selected > 0 {
 		items = append(items, item(bindHide))
 	}
 	items = append(items, item(bindView), item(bindAdd))
@@ -1149,7 +1145,11 @@ func (m Model) dashOwnItems() []hintItem {
 	if m.hasSections() {
 		items = append(items, item(bindFold), item(bindFoldAll))
 	}
-	return append(items, item(bindBrowse), item(bindSearch), item(bindQuit))
+	items = append(items, item(bindBrowse))
+	if m.selected != 0 {
+		items = append(items, item(bindSearch))
+	}
+	return append(items, item(bindQuit))
 }
 
 // offeredTileActions are the selected tile's actions the dashboard can

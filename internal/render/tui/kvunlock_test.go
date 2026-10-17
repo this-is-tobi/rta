@@ -185,14 +185,20 @@ func TestAKeyBoxBrowsesTheStoreOnceItIsUnlockedWithU(t *testing.T) {
 }
 
 // The screen that opens with every tile failing for want of the store has the
-// search bar selected, and U has to reach the unlock rather than start a query.
-func TestUReachesTheUnlockWhileTheSearchBarHoldsTheSelection(t *testing.T) {
+// search line selected, and U has to reach the unlock from there like every
+// other letter does.
+func TestUReachesTheUnlockWhileTheSearchLineHoldsTheSelection(t *testing.T) {
 	m, _ := kvModel(t)
 	lockedStore(t, m)
 	m = filled(t, New(m.reg, m.dash, nil), 100, 30)
 	m.selected = 0
-	if _, typed := m.typedIntoSearch(keyMsg("U")); typed {
-		t.Error("U was taken as the first letter of a query")
+	next, _, _ := m.dashboardKeys(keyMsg("U"))
+	got := next.(Model)
+	if got.searchEditing || got.query != "" {
+		t.Errorf("U started a search: editing=%v query %q", got.searchEditing, got.query)
+	}
+	if got.mode != modeForm || got.current.ID != unlockID {
+		t.Errorf("U opened mode %v for %q, want the unlock form", got.mode, got.current.ID)
 	}
 }
 

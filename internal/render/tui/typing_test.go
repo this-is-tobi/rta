@@ -7,21 +7,69 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-func typeWord(t *testing.T, m Model, word string) Model {
-	t.Helper()
-	for _, r := range word {
-		m = press(t, m, string(r))
+// The landing screen opens with the search line selected, and a letter pressed
+// there is a command exactly as it is on every tile: the search takes the
+// keyboard on `/` or `enter` and not on the first letter of whatever was meant
+// to be a shortcut. A cold start that swallowed `p`, `t` and `q` as the start of
+// a query made the keys of the dashboard depend on where the selection happened
+// to rest, and `q` quit from every tile but this one.
+func TestALetterOnTheSearchLineIsACommandAndNotAQuery(t *testing.T) {
+	cases := []struct {
+		key  string
+		want func(Model) bool
+		what string
+	}{
+		{"p", func(m Model) bool { return m.mode == modePlugins }, "the plugin inventory"},
+		{"f", func(m Model) bool { return m.mode == modeProfiles }, "the profiles pane"},
+		{"b", func(m Model) bool { return m.mode == modeBrowse }, "the catalogue"},
+		{"t", func(m Model) bool { return m.themeForm != nil }, "the theme form"},
 	}
-	return m
+	for _, tc := range cases {
+		base, _ := realModel(t, 120, 40)
+		if base.selected != 0 {
+			t.Fatalf("a cold start selects %d, want the search line", base.selected)
+		}
+		got := press(t, base, tc.key)
+		if got.searchEditing || got.query != "" {
+			t.Errorf("%s on the search line started a search: editing=%v query=%q", tc.key, got.searchEditing, got.query)
+		}
+		if !tc.want(got) {
+			t.Errorf("%s on the search line did not open %s (mode %v)", tc.key, tc.what, got.mode)
+		}
+	}
+	base, _ := realModel(t, 120, 40)
+	if _, cmd := base.Update(keyMsg("q")); cmd == nil {
+		t.Error("q on the search line did not quit, as it does on every tile")
+	}
 }
 
-// The landing screen looks like a box and used to answer like a keyboard: a
-// word typed into it opened the plugin inventory on its `p`, the theme editor
-// on its `t`, and ate the rest as commands there.
-func TestAWordTypedOnTheLandingScreenIsSearchedForNotRunAsKeys(t *testing.T) {
+// What opens the search from each place the selection can be.
+func TestTheSearchOpensOnSlashAnywhereAndOnEnterOnTheLine(t *testing.T) {
+	base, _ := realModel(t, 120, 40)
+	if m := press(t, base, "enter"); !m.searchEditing || m.query != "" {
+		t.Errorf("enter on the line left editing=%v query %q, want the box open and empty", m.searchEditing, m.query)
+	}
+	if m := press(t, base, "/"); !m.searchEditing || m.selected != 0 || m.query != "" {
+		t.Errorf("/ on the line left editing=%v selected=%d query %q", m.searchEditing, m.selected, m.query)
+	}
+	onATile := press(t, base, "down")
+	if onATile.selected != 1 {
+		t.Fatalf("down selected %d, want the first tile", onATile.selected)
+	}
+	if m := press(t, onATile, "/"); !m.searchEditing || m.selected != 0 || m.query != "" {
+		t.Errorf("/ on a tile left editing=%v selected=%d query %q, want the line selected and open", m.searchEditing, m.selected, m.query)
+	}
+	if m := press(t, base, " "); m.searchEditing || m.query != "" {
+		t.Errorf("space opened the search (editing=%v query %q); only / and enter do", m.searchEditing, m.query)
+	}
+}
+
+// Once the box is open the letters are the query, so a word typed after `/` is a
+// search over the catalogue and not a run of one-letter commands.
+func TestAWordTypedAfterTheSlashIsSearchedForNotRunAsKeys(t *testing.T) {
 	for _, word := range []string{"password", "trust", "dns", "hosts list", "who uses port"} {
 		base, _ := realModel(t, 120, 40)
-		m := typeWord(t, base, word)
+		m := typeWord(t, press(t, base, "/"), word)
 		if m.mode != modeDashboard {
 			t.Errorf("typing %q left the dashboard for %v", word, m.mode)
 		}
@@ -33,7 +81,7 @@ func TestAWordTypedOnTheLandingScreenIsSearchedForNotRunAsKeys(t *testing.T) {
 		}
 	}
 	base, _ := realModel(t, 120, 40)
-	m := typeWord(t, base, "password")
+	m := typeWord(t, press(t, base, "/"), "password")
 	found := false
 	for _, c := range m.searchResults() {
 		found = found || c.ID == "gen.password"
@@ -43,73 +91,68 @@ func TestAWordTypedOnTheLandingScreenIsSearchedForNotRunAsKeys(t *testing.T) {
 	}
 }
 
-// The letters go back to the commands the moment there is a tile to give them
-// to, and the footer says so in the same keystroke.
-func TestAnArrowHandsTheLettersBackToTheTilesAndTheFooterFollows(t *testing.T) {
-	m, _ := realModel(t, 120, 40)
-	if bar := footerOf(m.dashboardView(), footerMaxLines); !strings.Contains(bar, "type to search") {
-		t.Errorf("the bar holding the selection does not say that typing searches:\n%s", bar)
+func typeWord(t *testing.T, m Model, word string) Model {
+	t.Helper()
+	for _, r := range word {
+		m = press(t, m, string(r))
 	}
-	m = press(t, m, "down")
-	if m.selected != 1 {
-		t.Fatalf("down selected %d, want the first tile", m.selected)
+	return m
+}
+
+// The bar says what the keys do from where the selection is. On the search line
+// that is: enter or / searches, the letters are the panes, and nothing is
+// advertised that the line cannot do.
+func TestTheFooterOnTheSearchLineTeachesTheKeysItAnswers(t *testing.T) {
+	m, _ := realModel(t, 160, 40)
+	bar := footerOf(m.dashboardView(), footerMaxLines)
+	for _, want := range []string{"enter search", "p plugins", "f profiles", "t theme", "U unlock", "q quit"} {
+		if !strings.Contains(bar, want) {
+			t.Errorf("the footer on the search line lacks %q:\n%s", want, bar)
+		}
+	}
+	for _, not := range []string{"type to search", "p f t", "move", "hide"} {
+		if strings.Contains(bar, not) {
+			t.Errorf("the footer on the search line still says %q, which it does not do:\n%s", not, bar)
+		}
+	}
+	line := m.renderSearchBar(120, true)
+	if !strings.Contains(line, "press / or enter to search") {
+		t.Errorf("the idle line does not say how to search:\n%s", line)
+	}
+	if tile := press(t, m, "down"); !strings.Contains(tile.renderSearchBar(120, false), "press / to search") {
+		t.Errorf("the idle line with a tile selected must say the key that works from there:\n%s", tile.renderSearchBar(120, false))
+	}
+}
+
+// Moving a tile or hiding one does nothing to the search line, so the bar that
+// offered both there promised two keys that were not answered.
+func TestTheSearchLineAnswersNeitherMoveNorHide(t *testing.T) {
+	m, _ := realModel(t, 160, 40)
+	for _, key := range []string{"[", "]", "H"} {
+		got := press(t, m, key)
+		if got.flash != "" && got.flash != m.flash {
+			t.Errorf("%s on the search line flashed %q", key, got.flash)
+		}
 	}
 	bar := footerOf(m.dashboardView(), footerMaxLines)
-	if strings.Contains(bar, "type to search") || !strings.Contains(bar, "p plugins") {
-		t.Errorf("a tile is selected and the footer still teaches the bar's keys:\n%s", bar)
-	}
-	if opened := press(t, m, "p"); opened.mode != modePlugins {
-		t.Errorf("p on a tile opened %v, want the plugin inventory", opened.mode)
-	}
-	if back := press(t, m, "q"); back.mode != modeDashboard || back.query != "" {
-		t.Errorf("q on a tile typed into the bar: mode %v query %q", back.mode, back.query)
+	if strings.Contains(bar, "[ ]") || strings.Contains(bar, "H ") {
+		t.Errorf("the footer on the search line advertises keys it does not answer:\n%s", bar)
 	}
 }
 
-// Whatever cannot be a letter of a capability search stays a command, and
-// ctrl+c quits from anywhere.
-func TestTheBarKeepsTheFewKeysThatCannotBeLettersOfAQuery(t *testing.T) {
-	base, _ := realModel(t, 120, 40)
-	if m := press(t, base, "/"); !m.searchEditing || m.query != "" {
-		t.Errorf("/ left editing=%v query %q, want the bar open and empty", m.searchEditing, m.query)
+// With the box open the footer says what the keys do in it, and `+` adds the
+// highlighted result as a tile: it says so in those words, and the border does
+// not repeat the footer.
+func TestTheOpenSearchBoxNamesWhatPlusDoes(t *testing.T) {
+	base, _ := realModel(t, 160, 40)
+	m := typeWord(t, press(t, base, "/"), "gen.password")
+	bar := footerOf(m.dashboardView(), footerMaxLines)
+	if !strings.Contains(bar, "add as tile") || strings.Contains(bar, "add tile") {
+		t.Errorf("the footer while searching must name what + does:\n%s", bar)
 	}
-	if m := press(t, base, ":"); m.mode != modeBrowse {
-		t.Errorf(": opened %v, want the catalogue", m.mode)
-	}
-	if m := press(t, base, "+"); m.mode != modeBrowse {
-		t.Errorf("+ opened %v, want the catalogue to add from", m.mode)
-	}
-	if m := press(t, base, "?"); !m.help {
-		t.Error("? did not open the key list")
-	}
-	if m := press(t, base, "enter"); !m.searchEditing {
-		t.Error("enter did not give the bar the keyboard")
-	}
-	if _, cmd := base.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd == nil {
-		t.Error("ctrl+c did not quit from the landing screen")
-	}
-}
-
-// A leading space is how somebody opens a box, and a query that begins with
-// one only has to be trimmed again.
-func TestASpaceOpensTheBarWithoutBeingTyped(t *testing.T) {
-	base, _ := realModel(t, 120, 40)
-	m := press(t, base, " ")
-	if !m.searchEditing || m.query != "" {
-		t.Errorf("space left editing=%v query %q, want the bar open and empty", m.searchEditing, m.query)
-	}
-}
-
-// With nothing under the bar there is nothing to hand the letters to, and
-// `p` is the key the dashboard's own note says brings the hidden tiles back.
-func TestADashboardWithNoTileKeepsItsLettersAsCommands(t *testing.T) {
-	m, _ := realModel(t, 120, 40)
-	m.tiles = m.tiles[:1]
-	if opened := press(t, m, "p"); opened.mode != modePlugins {
-		t.Errorf("p on a dashboard with no tile opened %v, want the plugin inventory", opened.mode)
-	}
-	if bar := footerOf(m.dashboardView(), footerMaxLines); strings.Contains(bar, "type to search") {
-		t.Errorf("the footer teaches typing where typing opens panes:\n%s", bar)
+	box := m.renderSearchTile(120, true)
+	if strings.Contains(box, "add tile") || strings.Contains(box, "add as tile") {
+		t.Errorf("the box border repeats the footer's hint:\n%s", box)
 	}
 }
 

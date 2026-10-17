@@ -13,7 +13,7 @@ func TestANarrowFooterAlwaysSaysHowToLeave(t *testing.T) {
 	for _, width := range []int{60, 50, 40, 30} {
 		m, _ := realModel(t, width, 30)
 		cold := footerOf(m.dashboardView(), footerMaxLines)
-		if !strings.Contains(cold, "ctrl+c quit") {
+		if !strings.Contains(cold, "q quit") {
 			t.Errorf("the search bar at %d columns does not say how to quit:\n%s", width, cold)
 		}
 		m.selected = 1
