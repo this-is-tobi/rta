@@ -197,6 +197,97 @@ func TestCleanResultsClaimOnlyWhatWasExamined(t *testing.T) {
 	if strings.Contains(rbacClean("gitea"), "cluster-admin") {
 		t.Errorf("scoped rbac sentence = %q, want no claim about cluster-admin", rbacClean("gitea"))
 	}
+	// And neither claims RoleBindings, which this audit has never read: "no
+	// cluster-admin binding" is a claim about every binding there is.
+	for _, ns := range []string{"", "gitea"} {
+		sentence := strings.ReplaceAll(rbacClean(ns), "ClusterRoleBinding", "")
+		if strings.Contains(sentence, "RoleBinding") || strings.Contains(sentence, " binding") {
+			t.Errorf("rbac sentence for %q = %q, claims bindings it did not read", ns, rbacClean(ns))
+		}
+	}
+}
+
+// RoleBindings are the grants that matter most to a namespace's owner — a
+// RoleBinding of Group devs to cluster-admin in prod, or of every
+// unauthenticated request to read secrets — and the audit never reads them.
+// Both runs said "no issues in what was checked" about RBAC, which the
+// cluster-wide one wrote as "no cluster-admin binding found": a clean bill for
+// a kind of object nobody looked at. The row that says so is a check that
+// could not run, counted in the overall like the others.
+func TestAnRBACAuditSaysItDidNotReadRoleBindings(t *testing.T) {
+	for _, ns := range []string{"", "prod"} {
+		t.Run("namespace="+ns, func(t *testing.T) {
+			logPath := fakeKubectl(t, map[string]string{
+				"clusterrolebindings": `{"items":[]}`,
+				"roles":               `{"items":[]}`,
+				"clusterroles":        `{"items":[]}`,
+				// What a read of them would find, and must not be claimed absent.
+				"rolebindings": `{"items":[{"metadata":{"namespace":"prod","name":"devs-admin"},
+					"roleRef":{"name":"cluster-admin"},"subjects":[{"kind":"Group","name":"system:unauthenticated"}]}]}`,
+			})
+			out, err := runKubeRBAC(t.Context(), newScopedRequest(ns))
+			if err != nil {
+				t.Fatal(err)
+			}
+			rendered := renderText(t, out)
+			for _, want := range []string{
+				"RoleBindings not examined | info |",
+				"1 check could not run",
+			} {
+				if ns == "" && !strings.Contains(rendered, want) {
+					t.Errorf("cluster-wide: missing %q in:\n%s", want, rendered)
+				}
+				if ns != "" && !strings.Contains(rendered, strings.Replace(want, "1 check", "2 checks", 1)) {
+					t.Errorf("namespace %s: missing %q in:\n%s", ns, want, rendered)
+				}
+			}
+			if strings.Contains(rendered, "overall | ok | no issues found") {
+				t.Errorf("a clean bill for RBAC with RoleBindings unread:\n%s", rendered)
+			}
+			if got := calls(t, logPath); strings.Contains(got, " rolebindings ") {
+				t.Errorf("the narrow fix reads RoleBindings after all:\n%s", got)
+			}
+		})
+	}
+}
+
+// kubectl takes --all-namespaces for a cluster-scoped kind and ignores it. The
+// flag in the log read as though ClusterRoles were swept per namespace, which
+// is not a thing, and hid what each read was for.
+func TestClusterScopedKindsAreNotReadWithAllNamespaces(t *testing.T) {
+	logPath := fakeKubectl(t, map[string]string{
+		"clusterrolebindings": `{"items":[]}`, "clusterroles": `{"items":[]}`, "roles": `{"items":[]}`,
+		"namespaces": `{"items":[{"metadata":{"name":"a"}}]}`, "resourcequotas": `{"items":[]}`,
+		"nodes": `{"items":[]}`,
+	})
+	if _, err := runKubeRBAC(t.Context(), newScopedRequest("")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runKubeQuotas(t.Context(), newScopedRequest("")); err != nil {
+		t.Fatal(err)
+	}
+	var nodes list[limitedNamespace]
+	if verr := kubeGetJSON(t.Context(), "", "", "nodes", &nodes); verr != nil {
+		t.Fatal(verr)
+	}
+	namespaced := map[string]bool{"roles": true, "resourcequotas": true}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(calls(t, logPath)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] != "get" {
+			continue
+		}
+		kind := fields[1]
+		seen[kind] = true
+		if has := strings.Contains(line, "--all-namespaces"); has != namespaced[kind] {
+			t.Errorf("get %s: --all-namespaces = %v, want %v:\n%s", kind, has, namespaced[kind], line)
+		}
+	}
+	for _, kind := range []string{"clusterrolebindings", "clusterroles", "roles", "namespaces", "resourcequotas", "nodes"} {
+		if !seen[kind] {
+			t.Errorf("%s was never read", kind)
+		}
+	}
 }
 
 // Narrowing the RBAC audit drops two thirds of its subject: ClusterRoleBindings
