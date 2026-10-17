@@ -189,7 +189,7 @@ func glanceKept(t view.Table, rows [][]string, widths []int, inner int) (kept []
 	}
 	flex = 0
 	for _, i := range kept[1:] {
-		if t.Columns[i].Kind == view.KindText && !sparse(t, rows, i) && widths[i] >= glanceProse {
+		if t.Columns[i].Priority == 0 && t.Columns[i].Kind == view.KindText && !sparse(t, rows, i) && widths[i] >= glanceProse {
 			flex = i
 		}
 	}
@@ -206,6 +206,7 @@ func glanceKept(t view.Table, rows [][]string, widths []int, inner int) (kept []
 		}
 		droppable = append(droppable, of...)
 	}
+	slices.SortStableFunc(droppable, func(a, b int) int { return t.Columns[b].Priority - t.Columns[a].Priority })
 	for glanceSpan(kept, widths, flex) > inner && len(droppable) > 0 {
 		kept = slices.DeleteFunc(kept, func(i int) bool { return i == droppable[0] })
 		droppable = droppable[1:]
