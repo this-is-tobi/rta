@@ -32,14 +32,18 @@ import (
 // one tag are one lookup and one row. Recognising an image is deliberately
 // no cleverer than the catalogue: the image's name (postgres, redis, nginx)
 // is looked up among the products' own names and aliases, and an image
-// that is not there is reported as not tracked rather than guessed at. The
+// that is not there is not graded rather than guessed at. The
 // tag is read as a release the way a person reads it — 15.4 is cycle 15,
 // 1.35.3 is cycle 1.35, bookworm is the cycle codenamed Bookworm — and a
-// tag that names no cycle, or no tag at all, says so in its own row.
+// tag that names no cycle, or no tag at all, is not graded either.
+//
+// An image that is not graded is not silent: it is counted in the overall line
+// and listed with a reason on the detail page (kubeeolcoverage.go).
 
 var (
-	grpKubeEOL      = findings.Group{ID: "end-of-life", Title: "end of life"}
-	kubeGroupOrder5 = []findings.Group{grpKubeEOL}
+	grpKubeEOLCluster = findings.Group{ID: "cluster", Title: "cluster"}
+	grpKubeEOLImages  = findings.Group{ID: "images", Title: "images"}
+	kubeGroupOrder5   = []findings.Group{grpKubeEOLCluster, grpKubeEOLImages}
 )
 
 // maxEOLProducts bounds the lookups one call makes. endoflife.date has no
@@ -47,8 +51,8 @@ var (
 // the eol built-in's watchlist stops at twenty for the same reason. A
 // cluster runs a handful of distinct tracked products in practice, so
 // thirty is room rather than a limit anybody meets — and one that does is
-// graded on the first thirty with a finding naming the rest, instead of a
-// call that runs for a minute.
+// graded on the first thirty, the images of the rest listed as not graded,
+// instead of a call that runs for a minute.
 const maxEOLProducts = 30
 
 // defaultEOLWarnDays is the eol built-in's own window, for the same reason
@@ -101,7 +105,7 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 	}
 	ns := sc.ns
 	r := &findings.Report{}
-	sc.note(r, grpKubeEOL)
+	sc.note(r, grpKubeEOLCluster)
 
 	// The cluster first, the API second: kubectl failing is about this
 	// machine's access and the likelier of the two, and nothing is asked of
@@ -119,7 +123,7 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 		// The same shape as runKubeRBAC's note, for the same reason: a
 		// narrowed run that silently skipped the kubelets would read as a
 		// cluster whose nodes are all in support.
-		r.AddUnchecked(grpKubeEOL, "kubelets not examined",
+		r.AddUnchecked(grpKubeEOLCluster, "kubelets not examined",
 			"narrowed to namespace "+ns+", so the nodes' kubelet versions were not checked — "+
 				"they belong to no namespace. Run without a namespace to include them.", refUnmaintained)
 	}
@@ -143,17 +147,14 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 			return nil, verr
 		}
 	}
-	if verr := g.gradeImages(r, collectImages(pods.Items), ns == ""); verr != nil {
+	images := collectImages(pods.Items)
+	ungraded, verr := g.gradeImages(r, images, ns == "")
+	if verr != nil {
 		return nil, verr
 	}
-	if len(g.skipped) > 0 {
-		names := sortedKeys(g.skipped)
-		r.AddUnchecked(grpKubeEOL, fmt.Sprintf("products not looked up (%d)", len(names)),
-			fmt.Sprintf("more than %d distinct products run here, and one call looks up that many: %s",
-				maxEOLProducts, strings.Join(names, ", ")), refUnmaintained)
-	}
+	extra := reportNotGraded(r, ungraded, len(images), ns == "")
 
-	return finishKube(ctx, req, r, kubeGroupOrder5, sc), nil
+	return finishKube(ctx, req, r, kubeGroupOrder5, sc, extra...), nil
 }
 
 // grader looks each product up once and grades versions against it.
@@ -233,7 +234,7 @@ func (g *grader) gradeControlPlane(r *findings.Report, gitVersion string) *view.
 	// audit, and an Info row left the overall reading "no issues found" about
 	// a support window nobody read.
 	if version == "" {
-		r.AddUnchecked(grpKubeEOL, "control plane", "the API server reported no version to grade", refUnmaintained)
+		r.AddUnchecked(grpKubeEOLCluster, "control plane", "the API server reported no version to grade", refUnmaintained)
 		return nil
 	}
 	p, verr := g.kubernetes()
@@ -244,11 +245,11 @@ func (g *grader) gradeControlPlane(r *findings.Report, gitVersion string) *view.
 	// compromised one chooses what this row says: it is listed, not trusted.
 	shown := plugin.ListedName(gitVersion)
 	if p == nil {
-		r.AddUnchecked(grpKubeEOL, "control plane: "+shown, noKubernetesPage, refUnmaintained)
+		r.AddUnchecked(grpKubeEOLCluster, "control plane: "+shown, noKubernetesPage, refUnmaintained)
 		return nil
 	}
 	status, detail := g.grade(p, version)
-	r.AddLinked(grpKubeEOL, "control plane: "+shown, status, detail, refUnmaintained, productPage(p))
+	r.AddLinked(grpKubeEOLCluster, "control plane: "+shown, status, detail, refUnmaintained, productPage(p))
 	return nil
 }
 
@@ -302,15 +303,15 @@ func (g *grader) gradeKubelets(r *findings.Report, nodes []nodeVersionItem) *vie
 		check := fmt.Sprintf("kubelets at %s (%s)", plugin.ListedName(v), findings.Plural(len(names), "node"))
 		if v == "" {
 			check = fmt.Sprintf("kubelets reporting no version (%s)", findings.Plural(len(names), "node"))
-			r.AddUnchecked(grpKubeEOL, check, "nodes: "+strings.Join(names, ", "), refUnmaintained)
+			r.AddUnchecked(grpKubeEOLCluster, check, "nodes: "+strings.Join(names, ", "), refUnmaintained)
 			continue
 		}
 		if p == nil {
-			r.AddUnchecked(grpKubeEOL, check, noKubernetesPage+" — nodes: "+strings.Join(names, ", "), refUnmaintained)
+			r.AddUnchecked(grpKubeEOLCluster, check, noKubernetesPage+" — nodes: "+strings.Join(names, ", "), refUnmaintained)
 			continue
 		}
 		status, detail := g.grade(p, releaseOf(v))
-		r.AddLinked(grpKubeEOL, check, status, detail+" — nodes: "+strings.Join(names, ", "),
+		r.AddLinked(grpKubeEOLCluster, check, status, detail+" — nodes: "+strings.Join(names, ", "),
 			refUnmaintained, productPage(p))
 	}
 	return nil
@@ -367,63 +368,63 @@ func collectImages(pods []podImageItem) []*imageUse {
 	return out
 }
 
-func (g *grader) gradeImages(r *findings.Report, images []*imageUse, clusterWide bool) *view.Error {
-	untracked := map[string]bool{}
+// gradeImages adds a row for each image it can give a verdict on and returns
+// the ones it cannot, each with the reason: the caller counts them in one row
+// and lists them on the detail page (reportNotGraded).
+func (g *grader) gradeImages(r *findings.Report, images []*imageUse, clusterWide bool) ([]notGraded, *view.Error) {
+	var ungraded []notGraded
+	skip := func(u *imageUse, reason ungradedReason, next string) {
+		ungraded = append(ungraded, notGraded{use: u, reason: reason, next: next})
+	}
 	for _, u := range images {
 		product, tracked := g.index[u.name]
 		if !tracked {
-			untracked[u.name] = true
+			reason, next := g.untracked(u)
+			skip(u, reason, next)
 			continue
 		}
-		ref := u.name
-		if u.tag != "" {
-			ref += ":" + u.tag
-		}
-		check := "image " + plugin.ListedName(ref)
-		where := findings.Plural(u.pods, "pod")
-		if clusterWide {
-			where += " in " + findings.Plural(len(u.namespaces), "namespace")
-		}
-		check += " (" + where + ")"
-
 		p, verr := g.product(product)
 		if verr != nil {
-			return verr
+			return nil, verr
 		}
 		if p == nil {
-			// Skipped past the cap, reported once at the end; or listed in
-			// the catalogue with no page behind it, which is the API's own
-			// inconsistency and worth one row rather than a failed call.
-			if !g.skipped[product] {
-				r.AddUnchecked(grpKubeEOL, check,
-					"endoflife.date lists "+product+" in its catalogue but has no release data for it", refUnmaintained)
+			if g.skipped[product] {
+				skip(u, reasonNotLookedUp, fmt.Sprintf("%s is past the %d products one call looks up; "+
+					"narrow the audit to a namespace to reach it", product, maxEOLProducts))
+			} else {
+				// Listed in the catalogue with no page behind it, which is
+				// the API's own inconsistency.
+				skip(u, reasonNoData, "endoflife.date lists "+product+" in its catalogue but has no release data for it")
 			}
 			continue
 		}
 		switch {
 		case u.digest && u.tag == "":
-			r.AddLinked(grpKubeEOL, check, findings.Info,
-				"pinned by digest with no tag: a digest names bytes, not a release, so "+p.Name+
-					"'s support window cannot be read from it", refUnmaintained, productPage(p))
+			skip(u, reasonDigestOnly, "a digest names bytes, not a release, so "+p.Name+
+				"'s support window cannot be read from it; deploy by tag to grade it")
 		case u.tag == "" || strings.EqualFold(releaseOf(u.tag), "latest"):
-			r.AddLinked(grpKubeEOL, check, findings.Info,
-				"a floating tag names no release, so nothing can be said about "+p.Name+
-					"'s support window — pin a version to grade it", refUnmaintained, productPage(p))
+			skip(u, reasonFloating, "a floating tag names no release, so nothing can be said about "+p.Name+
+				"'s support window; pin a version to grade it")
 		default:
-			status, detail := g.grade(p, releaseOf(u.tag))
-			r.AddLinked(grpKubeEOL, check, status, detail, refUnmaintained, productPage(p))
+			version := releaseOf(u.tag)
+			if _, ok := cycleFor(p.Releases, version); !ok {
+				skip(u, reasonNoCycle, noCycle(p, version))
+				continue
+			}
+			ref := u.name
+			if u.tag != "" {
+				ref += ":" + u.tag
+			}
+			check := "image " + plugin.ListedName(ref)
+			where := findings.Plural(u.pods, "pod")
+			if clusterWide {
+				where += " in " + findings.Plural(len(u.namespaces), "namespace")
+			}
+			status, detail := g.grade(p, version)
+			r.AddLinked(grpKubeEOLImages, check+" ("+where+")", status, detail, refUnmaintained, productPage(p))
 		}
 	}
-	if len(untracked) > 0 {
-		names := sortedKeys(untracked)
-		listed := make([]string, len(names))
-		for i, n := range names {
-			listed[i] = plugin.ListedName(n)
-		}
-		r.Add(grpKubeEOL, fmt.Sprintf("images endoflife.date does not track (%d)", len(names)), findings.Info,
-			strings.Join(listed, ", "), refUnmaintained)
-	}
-	return nil
+	return ungraded, nil
 }
 
 // imageRef splits a container image reference into the name people know it

@@ -119,16 +119,19 @@ func TestAClusterSuppliedNameIsListedNotPutRawInARow(t *testing.T) {
 			"control plane: " + plugin.ListedName("v1.30.2"+hostileName),
 			"kubelets at " + plugin.ListedName("v1.30.2"+hostileName),
 			plugin.ListedName(hostileName),
-			"image " + plugin.ListedName("nginx:1.28"+hostileImage),
-			plugin.ListedName("untracked" + hostileImage),
+			plugin.ListedName("nginx:1.28" + hostileImage),
+			plugin.ListedName("untracked" + hostileImage + ":1"),
 		}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			fakeKubectl(t, c.bodies)
-			req := eolRequest(nil)
+			// The detail page: it holds the compact table's rows in its
+			// sections, and the one table the eol audit lists what it could not
+			// grade in.
+			req := eolRequest(map[string]any{"detail": true}).With(map[string]any{"detail": true})
 			if c.name != "eol" {
-				req = plugin.NewRequest(nil, false, false)
+				req = plugin.NewRequest(map[string]any{"detail": true}, false, false)
 			}
 			// Over MCP, which is also where a name forged into a row reaches a
 			// model, and where no detail is clipped: the clip would cut a long
