@@ -111,7 +111,7 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 	cmd.Flags().StringArray("theme", nil,
 		"a `slot=#rrggbb` of the palette while it is on, over yours, never a status colour; repeat for more — the whole theme: block")
 	cmd.Flags().Bool("untheme", false, "remove the profile's theme: block")
-	cmd.Flags().String("dashboard", "", "the dashboard view drawn while it is on — one of `rta dashboard views` (or `none`)")
+	cmd.Flags().StringArray("dashboard", nil, "a dashboard view linked to it, repeated for several — the first is drawn while it is on, V walks the rest; one of `rta dashboard views` (or `none`)")
 	cmd.Flags().String("plugin", "", "which plugin the connection flags below are about — "+
 		"`pg`, or `pg/analytics` to state one of several connections to it")
 	// StringArray, never StringSlice: StringSlice splits its argument on
@@ -458,9 +458,20 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 			p.TTL = ttl
 		}
 		if cmd.Flags().Changed("dashboard") {
-			named := strings.TrimSpace(mustString(cmd, "dashboard"))
-			if named == "none" || named == config.DefaultView {
-				named = ""
+			asked, _ := cmd.Flags().GetStringArray("dashboard")
+			var names []string
+			for _, n := range asked {
+				if n = strings.TrimSpace(n); n != "" && !slices.Contains(names, n) {
+					names = append(names, n)
+				}
+			}
+			if slices.Contains(names, "none") {
+				if len(names) > 1 {
+					verr = view.Errorf("core.profile.dashboard.none", "`none` takes every screen off the profile, and other names put them on").
+						WithHint("state `--dashboard none` alone, or the views without it")
+					return cfg, false
+				}
+				names = nil
 			}
 			// The block is the screen, written out, and this flag names
 			// another one: taking the flag at its word would throw away
@@ -471,16 +482,18 @@ func runProfileSet(cmd *cobra.Command, name string, reg *registry.Registry, dryR
 				verr = inlineScreenRefusal(name, p.Dashboard.Inline)
 				return cfg, false
 			}
-			switch {
-			case named == "" || cfg.HasView(named):
-			case !config.ValidViewName(named):
-				verr = viewNameRefusal("core.profile.dashboard", named)
-				return cfg, false
-			default:
-				verr = missingViewRefusal(cfg, named)
-				return cfg, false
+			for _, named := range names {
+				switch {
+				case named == config.DefaultView || cfg.HasView(named):
+				case !config.ValidViewName(named):
+					verr = viewNameRefusal("core.profile.dashboard", named)
+					return cfg, false
+				default:
+					verr = missingViewRefusal(cfg, named)
+					return cfg, false
+				}
 			}
-			p.Dashboard = config.ProfileDashboard{Name: named}
+			p.Dashboard = config.ProfileDashboard{Names: names}
 		}
 		if cmd.Flags().Changed("color") {
 			color := strings.TrimSpace(mustString(cmd, "color"))

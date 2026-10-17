@@ -145,7 +145,7 @@ func TestWhatTheDashboardWritesGoesToTheViewItDraws(t *testing.T) {
 func TestAProfilesViewIsDrawnWhileItIsOnAndAPickIsUndoneBySwitching(t *testing.T) {
 	m := viewsModel(t)
 	cfg := savedConfig(t)
-	cfg.Profiles = map[string]config.Profile{"prod": {Dashboard: config.ProfileDashboard{Name: "only-alpha"}}}
+	cfg.Profiles = map[string]config.Profile{"prod": {Dashboard: config.ProfileDashboard{Names: []string{"only-alpha"}}}}
 	m.viewPick = config.DefaultView
 	if got := m.wantView(cfg); got != "" {
 		t.Errorf("a pick of the default was overridden: %q", got)

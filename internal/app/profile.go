@@ -883,9 +883,9 @@ func profileCard(scope config.Config, name string, p config.Profile, reg *regist
 	case p.Dashboard.Inline != nil:
 		pairs = append(pairs, view.Pair{Key: "dashboard", Value: p.Dashboard.Describe() +
 			" — its own screen, drawn while this is switched on; `rta dashboard list --view " + name + "` lists it"})
-	case p.Dashboard.Name != "":
-		pairs = append(pairs, view.Pair{Key: "dashboard", Value: p.Dashboard.Name +
-			" — the view drawn while this is switched on; `rta dashboard views` lists them"})
+	case len(p.Dashboard.Names) > 0:
+		pairs = append(pairs, view.Pair{Key: "dashboard", Value: p.Dashboard.Describe() +
+			" — the screens linked to this environment: the first is drawn while it is switched on, V walks the others; `rta dashboard views` lists them"})
 	}
 	for _, key := range p.PluginKeys() {
 		conn := p.Plugins[key]

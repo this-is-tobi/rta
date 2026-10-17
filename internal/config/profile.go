@@ -128,13 +128,15 @@ type Profile struct {
 	// environment's screen any more than it gets to point one.
 	Theme map[string]string `yaml:"theme,omitempty" json:"theme,omitempty"`
 
-	// Dashboard is the screen drawn while this profile is switched on: the
-	// name of one of `dashboard: views:`, a whole arrangement of its own, or
-	// that arrangement written here, in place (ProfileDashboard says why both).
-	// Empty, the dashboard: block draws, as it always has. A named view is the
-	// profile's screen and not its connection — the tiles in it pin themselves
-	// to whichever profiles they name, so a profile can show the screen that
-	// is about every database, and several can show the same one.
+	// Dashboard is the screens that belong to this profile: the name of one of
+	// `dashboard: views:`, each a whole arrangement of its own, a list of such
+	// names — the first is drawn while the profile is switched on and V walks
+	// all of them and no others — or one arrangement written here, in place
+	// (ProfileDashboard says why both). Empty, the dashboard: block draws, as it
+	// always has, and V walks every screen. A named view is the profile's screen
+	// and not its connection — the tiles in it pin themselves to whichever
+	// profiles they name, so a profile can show the screen that is about every
+	// database, and several can show the same one.
 	//
 	// A name that is not a view is `rta doctor`'s to say, never a reason to
 	// refuse the profile: a screen that fails over a name is a worse outage

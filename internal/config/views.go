@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/ast"
@@ -21,12 +23,14 @@ import (
 // one with staging's cluster and database, the production one with the
 // production tiles and nothing else — while a profile is, by rule, a set of
 // connections and not an arrangement. So the arrangement is named on its own
-// (`dashboard: views: <name>:`), and a profile points at one
-// (`profiles.<name>.dashboard: <view>`); switching to the profile draws it.
-// A view is not tied to the profile that selects it: its tiles pin themselves
+// (`dashboard: views: <name>:`), and a profile links the ones that belong to its
+// environment (`profiles.<name>.dashboard: <view>`, or a list of them);
+// switching to the profile draws the first, and V walks only the ones it links.
+// A profile that links none is offered every screen there is.
+// A view is not tied to the profile that links it: its tiles pin themselves
 // to whichever profiles they name (Tile.Profile), so a view for the databases
 // can show every database of every environment, and several profiles can
-// select it.
+// link it.
 //
 // **A view replaces the dashboard: block while it is drawn; it does not
 // overlay it.** An overlay would need a rule for every field — does a view's
@@ -86,11 +90,13 @@ func (d Dashboard) View() View {
 }
 
 // ProfileDashboard is what a profile's `dashboard:` says: the name of a view
-// that lives under `dashboard: views:`, or the screen itself, written in the
-// profile.
+// that lives under `dashboard: views:`, a list of such names, or the screen
+// itself, written in the profile.
 //
 //	profiles:
 //	  prod:
+//	    dashboard: [ops, ops-apps]  # the views of this environment: the first is drawn, V walks both
+//	  qa:
 //	    dashboard: ops              # the view called ops, shared by whoever names it
 //	  staging:
 //	    dashboard:                  # staging's own screen, with the keys a view has
@@ -117,11 +123,21 @@ func (d Dashboard) View() View {
 // block lives and the answer is the profile's entry rather than a `views:`
 // entry that would then state the same name twice.
 //
-// Exactly one of the two is set. The block wins in MarshalYAML if a caller sets
-// both, which the loader cannot produce: a value is a string or a mapping.
+// **A list is how an environment has more than one screen.** The names are the
+// screens that belong to it, in the order they are written: the first is drawn
+// when the profile is switched on, and V walks those and no others while it is.
+// Without a list V would page through every environment's screens, which on a
+// config with three screens for each of three environments is nine, and a
+// shorter walk is the point of linking a view to a profile at all. `default` is
+// a legal entry and is the dashboard: block.
+//
+// Names or the block, never both. The block wins in MarshalYAML if a caller sets
+// both, which the loader cannot produce: a value is a string, a list or a mapping.
 type ProfileDashboard struct {
-	// Name is the view this profile selects, "" when it names none.
-	Name string
+	// Names are the views this profile links, in the order it states them: the
+	// first is drawn when the profile is switched on and all of them are what V
+	// walks while it is. Empty when it links none.
+	Names []string
 	// Inline is the profile's own screen, nil when it states none. An empty one
 	// is a screen with nothing arranged, which draws the automatic dashboard:
 	// the way to say that this environment does not show the `dashboard:` block.
@@ -148,7 +164,22 @@ func (d *ProfileDashboard) UnmarshalYAML(node ast.Node) error {
 	switch n := node.(type) {
 	case *ast.NullNode:
 	case *ast.StringNode:
-		d.Name = n.Value
+		d.Names = []string{n.Value}
+	case *ast.SequenceNode:
+		var names []string
+		for _, item := range n.Values {
+			s, ok := item.(*ast.StringNode)
+			if !ok {
+				bad := &badDashboard{what: "a list of something other than names"}
+				if tok := node.GetToken(); tok != nil {
+					bad.line, bad.col = tok.Position.Line, tok.Position.Column
+				}
+				d.bad = bad
+				return nil
+			}
+			names = append(names, s.Value)
+		}
+		d.Names = names
 	case *ast.MappingNode, *ast.MappingValueNode:
 		var v View
 		if err := yaml.NodeToValue(node, &v); err != nil {
@@ -169,8 +200,6 @@ func (d *ProfileDashboard) UnmarshalYAML(node ast.Node) error {
 // would use.
 func describeNode(node ast.Node) string {
 	switch node.(type) {
-	case *ast.SequenceNode:
-		return "a list"
 	case *ast.IntegerNode, *ast.FloatNode, *ast.InfinityNode, *ast.NanNode:
 		return "a number"
 	case *ast.BoolNode:
@@ -188,7 +217,13 @@ func (d ProfileDashboard) MarshalYAML() (any, error) {
 	if d.Inline != nil {
 		return *d.Inline, nil
 	}
-	return d.Name, nil
+	if len(d.Names) > 1 {
+		return d.Names, nil
+	}
+	if len(d.Names) == 1 {
+		return d.Names[0], nil
+	}
+	return "", nil
 }
 
 // MarshalJSON is MarshalYAML's twin, for the callers that print a profile as
@@ -206,8 +241,8 @@ func (d ProfileDashboard) Describe() string {
 	switch {
 	case d.Inline != nil:
 		return "inline: " + format.Count(len(d.Inline.Tiles)+len(d.Inline.Add), "tile", "tiles")
-	case d.Name != "":
-		return d.Name
+	case len(d.Names) > 0:
+		return strings.Join(d.Names, ", ")
 	}
 	return ""
 }
@@ -215,7 +250,7 @@ func (d ProfileDashboard) Describe() string {
 // IsZero says the profile states no screen, so that `omitempty` leaves the key
 // out of what a write produces — an empty name and a nil block are the same
 // absence, and an empty block is not.
-func (d ProfileDashboard) IsZero() bool { return d.Name == "" && d.Inline == nil }
+func (d ProfileDashboard) IsZero() bool { return len(d.Names) == 0 && d.Inline == nil }
 
 // refuseBadDashboards is the loader's refusal of a profile whose `dashboard:`
 // is neither a name nor a block, naming the file, the profile and the spot, the
@@ -316,7 +351,7 @@ func (c Config) InProfile(view string) bool {
 	return kind == profileView
 }
 
-// ViewFor is the view the profile that is switched on selects, or "" when
+// ViewFor is the view the profile that is switched on draws first, or "" when
 // there is none to draw: nothing is switched on, the profile names no view, or
 // the view it names is not stated (which `rta doctor` says, and which draws the
 // default, since a screen that fails to draw over a missing name is worse than
@@ -330,10 +365,38 @@ func (c Config) ViewFor(profile string) string {
 		}
 		return ""
 	}
-	if c.HasView(d.Name) {
-		return d.Name
+	for _, name := range d.Names {
+		if name == DefaultView {
+			return ""
+		}
+		if c.HasView(name) {
+			return name
+		}
 	}
 	return ""
+}
+
+// ScreensFor is what V walks while profile is switched on: the views that
+// profile links, in the order it states them, and linked says whether it links
+// any. A profile that links none, and none switched on, are offered the
+// dashboard: block and then every view there is.
+func (c Config) ScreensFor(profile string) (names []string, linked bool) {
+	d := c.Profiles[profile].Dashboard
+	switch {
+	case d.Inline != nil:
+		if c.InProfile(profile) {
+			return []string{profile}, true
+		}
+		return nil, true
+	case len(d.Names) > 0:
+		for _, name := range d.Names {
+			if (name == DefaultView || c.HasView(name)) && !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+		return names, true
+	}
+	return append([]string{DefaultView}, c.ViewNames()...), false
 }
 
 // ShadowedScreen says why a profile's own screen is not drawn although it is

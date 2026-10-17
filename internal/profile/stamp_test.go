@@ -371,3 +371,21 @@ func TestARecolourMovesTheBadgeStampAndNotTheGrantStamp(t *testing.T) {
 			"operator changing a colour would silently invalidate consent")
 	}
 }
+
+// A grant binds to the stamp, so arranging a screen must not revoke or rebind
+// anything: the dashboard a profile links is a picture and not a connection.
+func TestLinkingScreensDoesNotMoveTheStampsAGrantBindsTo(t *testing.T) {
+	base := config.Profile{Plugins: map[string]config.Connection{"db": {Set: map[string]any{"host": "a"}}}}
+	linked := base
+	linked.Dashboard = config.ProfileDashboard{Names: []string{"ops", "ops-apps"}}
+	inline := base
+	inline.Dashboard = config.ProfileDashboard{Inline: &config.View{Add: []config.Tile{{ID: "sys.overview"}}}}
+	for name, p := range map[string]config.Profile{"a list of views": linked, "its own screen": inline} {
+		if Stamp(p) != Stamp(base) {
+			t.Errorf("%s moved the profile stamp, which would rebind what the badge and the tiles are bound to", name)
+		}
+		if ConnStamp("db", p.Plugins["db"]) != ConnStamp("db", base.Plugins["db"]) {
+			t.Errorf("%s moved the connection stamp, which every grant on it binds to", name)
+		}
+	}
+}

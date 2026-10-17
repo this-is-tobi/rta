@@ -22,7 +22,7 @@ func ownScreenConfig() config.Config {
 		},
 		"prod": {
 			Plugins:   map[string]config.Connection{"db": conn(map[string]any{"host": "prod.internal"})},
-			Dashboard: config.ProfileDashboard{Name: "ops"},
+			Dashboard: config.ProfileDashboard{Names: []string{"ops"}},
 		},
 	}}
 }
@@ -84,7 +84,7 @@ func TestEditingAProfileKeepsItsOwnScreen(t *testing.T) {
 	if p.Dashboard.Inline == nil || len(p.Dashboard.Inline.Add) != 2 || len(p.Dashboard.Inline.Hidden) != 1 {
 		t.Errorf("the form dropped the screen: %+v", p.Dashboard)
 	}
-	if onDisk.Profiles["prod"].Dashboard.Name != "ops" {
+	if onDisk.Profiles["prod"].Dashboard.Describe() != "ops" {
 		t.Errorf("another environment's view was lost: %+v", onDisk.Profiles["prod"].Dashboard)
 	}
 }

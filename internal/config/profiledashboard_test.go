@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -43,7 +44,7 @@ func TestAProfileStatesItsDashboardInItsOwnEntry(t *testing.T) {
 		t.Fatalf("the drop-in was refused: %v", err)
 	}
 	p := cfg.Profiles["staging"]
-	if p.Dashboard.Name != "" || p.Dashboard.Inline == nil {
+	if len(p.Dashboard.Names) != 0 || p.Dashboard.Inline == nil {
 		t.Fatalf("dashboard = %+v, want a block and no name", p.Dashboard)
 	}
 	block := p.Dashboard.Inline
@@ -70,10 +71,10 @@ func TestADashboardThatIsANameOrAnEmptyBlockIsKept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg.Profiles["a"].Dashboard; got.Name != "ops" || got.Inline != nil {
+	if got := cfg.Profiles["a"].Dashboard; got.Describe() != "ops" || got.Inline != nil {
 		t.Errorf("a name = %+v", got)
 	}
-	if got := cfg.Profiles["b"].Dashboard; got.Name != "" || got.Inline == nil {
+	if got := cfg.Profiles["b"].Dashboard; len(got.Names) != 0 || got.Inline == nil {
 		t.Errorf("an empty block = %+v, want a block", got)
 	}
 	for _, name := range []string{"c", "d"} {
@@ -85,9 +86,9 @@ func TestADashboardThatIsANameOrAnEmptyBlockIsKept(t *testing.T) {
 
 func TestADashboardThatIsNeitherANameNorABlockIsRefusedNamingProfileAndFile(t *testing.T) {
 	for what, tc := range map[string]struct{ value, says string }{
-		"a list":   {"[ops, dbs]", "a list"},
-		"a number": {"3", "a number"},
-		"a bool":   {"true", "true or false"},
+		"a list of numbers": {"[1, 2]", "a list of something other"},
+		"a number":          {"3", "a number"},
+		"a bool":            {"true", "true or false"},
 	} {
 		dir := layout(t, map[string]string{
 			"config.yaml": "output: json\n",
@@ -191,7 +192,7 @@ func TestADashboardIsWrittenAsTheNameOrTheBlockItIs(t *testing.T) {
 	path := configAt(t)
 	err := Mutate(func(c Config) (Config, bool) {
 		c.Profiles = map[string]Profile{
-			"named":  {Dashboard: ProfileDashboard{Name: "ops"}, Plugins: map[string]Connection{"db": {}}},
+			"named":  {Dashboard: ProfileDashboard{Names: []string{"ops"}}, Plugins: map[string]Connection{"db": {}}},
 			"inline": {Dashboard: ProfileDashboard{Inline: &View{Width: 2}}, Plugins: map[string]Connection{"db": {}}},
 			"empty":  {Dashboard: ProfileDashboard{Inline: &View{}}, Plugins: map[string]Connection{"db": {}}},
 			"none":   {Plugins: map[string]Connection{"db": {}}},
@@ -214,7 +215,7 @@ func TestADashboardIsWrittenAsTheNameOrTheBlockItIs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Profiles["named"].Dashboard.Name != "ops" || cfg.Profiles["inline"].Dashboard.Inline.Width != 2 ||
+	if cfg.Profiles["named"].Dashboard.Describe() != "ops" || cfg.Profiles["inline"].Dashboard.Inline.Width != 2 ||
 		cfg.Profiles["empty"].Dashboard.Inline == nil || !cfg.Profiles["none"].Dashboard.IsZero() {
 		t.Errorf("read back: %+v", cfg.Profiles)
 	}
@@ -222,7 +223,8 @@ func TestADashboardIsWrittenAsTheNameOrTheBlockItIs(t *testing.T) {
 
 func TestADashboardIsDescribedByItsNameOrItsTileCount(t *testing.T) {
 	for want, d := range map[string]ProfileDashboard{
-		"ops":             {Name: "ops"},
+		"ops":             {Names: []string{"ops"}},
+		"ops, dbs":        {Names: []string{"ops", "dbs"}},
 		"inline: 1 tile":  {Inline: &View{Add: []Tile{{ID: "sys.overview"}}}},
 		"inline: 3 tiles": {Inline: &View{Tiles: []Tile{{ID: "a"}, {ID: "b"}}, Add: []Tile{{ID: "c"}}}},
 		"inline: 0 tiles": {Inline: &View{Width: 2}},
@@ -235,11 +237,16 @@ func TestADashboardIsDescribedByItsNameOrItsTileCount(t *testing.T) {
 }
 
 func TestADashboardPrintsAsJSONTheWayItIsWritten(t *testing.T) {
-	for dashboard, want := range map[ProfileDashboard]string{
-		{Name: "ops"}:             `{"dashboard":"ops"}`,
-		{Inline: &View{Width: 2}}: `{"dashboard":{"width":2}}`,
-		{}:                        `{}`,
+	for _, tc := range []struct {
+		dashboard ProfileDashboard
+		want      string
+	}{
+		{ProfileDashboard{Names: []string{"ops"}}, `{"dashboard":"ops"}`},
+		{ProfileDashboard{Names: []string{"ops", "dbs"}}, `{"dashboard":["ops","dbs"]}`},
+		{ProfileDashboard{Inline: &View{Width: 2}}, `{"dashboard":{"width":2}}`},
+		{ProfileDashboard{}, `{}`},
 	} {
+		dashboard, want := tc.dashboard, tc.want
 		raw, err := json.Marshal(Profile{Dashboard: dashboard})
 		if err != nil {
 			t.Fatal(err)
@@ -250,17 +257,20 @@ func TestADashboardPrintsAsJSONTheWayItIsWritten(t *testing.T) {
 	}
 }
 
-func TestTheSchemaOffersAProfileEitherFormOfDashboard(t *testing.T) {
+func TestTheSchemaOffersAProfileAnyFormOfDashboard(t *testing.T) {
 	profile := Schema()["$defs"].(map[string]any)["profile"].(map[string]any)
 	dashboard := profile["properties"].(map[string]any)["dashboard"].(map[string]any)
 	forms, ok := dashboard["oneOf"].([]any)
-	if !ok || len(forms) != 2 {
+	if !ok || len(forms) != 3 {
 		t.Fatalf("dashboard = %v", dashboard)
 	}
 	if name := forms[0].(map[string]any); name["type"] != "string" || name["pattern"] != viewName.String() {
 		t.Errorf("the name form = %v", name)
 	}
-	if block := forms[1].(map[string]any); block["$ref"] != "#/$defs/view" {
+	if list := forms[1].(map[string]any); list["type"] != "array" || list["uniqueItems"] != true || list["minItems"] != 1 {
+		t.Errorf("the list form = %v: it must be non-empty names with no repeat", list)
+	}
+	if block := forms[2].(map[string]any); block["$ref"] != "#/$defs/view" {
 		t.Errorf("the block form = %v: it is not held to the keys a view has", block)
 	}
 }
@@ -284,5 +294,118 @@ func TestAKeyAViewDoesNotHaveIsNamedInsideTheBlock(t *testing.T) {
 	}
 	if got := CheckText([]byte("profiles:\n  staging:\n    dashboard: ops\n")); len(got) != 0 {
 		t.Errorf("a name was reported: %v", got)
+	}
+}
+
+// A profile links the views of its environment as a name, a list of names or a
+// block, and the first of a list is the one drawn when it is switched on.
+func TestADashboardThatIsAListOfNamesIsKeptInTheOrderItIsWritten(t *testing.T) {
+	configAt(t)
+	cfg, err := Parse([]byte("profiles:\n  a:\n    dashboard: [ops, ops-apps, databases]\n  b:\n    dashboard:\n    - only\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Profiles["a"].Dashboard.Names; !slices.Equal(got, []string{"ops", "ops-apps", "databases"}) {
+		t.Errorf("a = %v", got)
+	}
+	if got := cfg.Profiles["b"].Dashboard.Names; !slices.Equal(got, []string{"only"}) {
+		t.Errorf("a one-name block list = %v", got)
+	}
+}
+
+func TestAListOfSomethingOtherThanNamesIsRefusedAtTheListNamingTheProfile(t *testing.T) {
+	for what, list := range map[string]string{
+		"numbers":  "[1, 2]",
+		"a mix":    "[ops, {b: c}]",
+		"a nested": "[[ops]]",
+	} {
+		dir := layout(t, map[string]string{
+			"config.yaml":           "output: json\n",
+			"config.d/10-prod.yaml": "profiles:\n  prod:\n    dashboard: " + list + "\n",
+		})
+		_, err := LoadFile()
+		if err == nil {
+			t.Errorf("%s: a list of something other than names was accepted", what)
+			continue
+		}
+		for _, want := range []string{"prod", "a list of something other than names", filepath.Join(dir, "config.d", "10-prod.yaml")} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: the refusal %q lacks %q", what, err, want)
+			}
+		}
+	}
+}
+
+func TestAListOfNamesIsWrittenBackAsAListAndOneNameAsAString(t *testing.T) {
+	path := configAt(t)
+	err := Mutate(func(c Config) (Config, bool) {
+		c.Profiles = map[string]Profile{
+			"many": {Dashboard: ProfileDashboard{Names: []string{"ops", "dbs"}}, Plugins: map[string]Connection{"db": {}}},
+			"one":  {Dashboard: ProfileDashboard{Names: []string{"ops"}}, Plugins: map[string]Connection{"db": {}}},
+		}
+		return c, true
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawBytes, rerr := os.ReadFile(path)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	raw := string(rawBytes)
+	if !strings.Contains(raw, "- ops\n            - dbs") && !strings.Contains(raw, "- ops\n    - dbs") && !strings.Contains(raw, "dashboard: [ops, dbs]") {
+		t.Errorf("the list was not written as a list:\n%s", raw)
+	}
+	if !strings.Contains(raw, "dashboard: ops\n") {
+		t.Errorf("one name was not written as a plain string:\n%s", raw)
+	}
+}
+
+// What V walks. The first linked view is the one drawn on arrival; a profile
+// that links nothing, and no profile at all, are offered every screen there is.
+func TestWhichScreensAProfileOffersAndWhetherItLinksAny(t *testing.T) {
+	cfg := Config{Profiles: map[string]Profile{
+		"none":    {},
+		"one":     {Dashboard: ProfileDashboard{Names: []string{"ops"}}},
+		"many":    {Dashboard: ProfileDashboard{Names: []string{"ops", "dbs", "ops"}}},
+		"dangle":  {Dashboard: ProfileDashboard{Names: []string{"ghost", "dbs"}}},
+		"allgone": {Dashboard: ProfileDashboard{Names: []string{"ghost"}}},
+		"withdef": {Dashboard: ProfileDashboard{Names: []string{DefaultView, "dbs"}}},
+		"inline":  {Dashboard: ProfileDashboard{Inline: &View{Add: []Tile{{ID: "sys.overview"}}}}},
+	}}
+	cfg.SetBlock("ops", Dashboard{})
+	cfg.SetBlock("dbs", Dashboard{})
+	cfg.SetBlock("stage", Dashboard{})
+	// A profile that writes its screen in its entry has a screen of its own, which is one the
+	// profiles that link nothing are offered too.
+	every := []string{DefaultView, "dbs", "inline", "ops", "stage"}
+	for name, tc := range map[string]struct {
+		profile string
+		names   []string
+		linked  bool
+	}{
+		"no profile on":               {"", every, false},
+		"a profile in no config":      {"nobody", every, false},
+		"a profile linking nothing":   {"none", every, false},
+		"one name":                    {"one", []string{"ops"}, true},
+		"a list is kept in order":     {"many", []string{"ops", "dbs"}, true},
+		"a dangling name is dropped":  {"dangle", []string{"dbs"}, true},
+		"every name dangling":         {"allgone", nil, true},
+		"default is a legal entry":    {"withdef", []string{DefaultView, "dbs"}, true},
+		"an inline screen links only": {"inline", []string{"inline"}, true},
+	} {
+		names, linked := cfg.ScreensFor(tc.profile)
+		if !slices.Equal(names, tc.names) || linked != tc.linked {
+			t.Errorf("%s: ScreensFor(%q) = %v, %v; want %v, %v", name, tc.profile, names, linked, tc.names, tc.linked)
+		}
+	}
+	if got := cfg.ViewFor("many"); got != "ops" {
+		t.Errorf("the first linked view is not the one drawn: %q", got)
+	}
+	if got := cfg.ViewFor("dangle"); got != "dbs" {
+		t.Errorf("a dangling first name was not skipped: %q", got)
+	}
+	if got := cfg.ViewFor("withdef"); got != "" {
+		t.Errorf("default as the first entry draws %q, want the dashboard: block", got)
 	}
 }
