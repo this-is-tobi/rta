@@ -521,10 +521,11 @@ func doctorDashboardTiles(reg *registry.Registry, add func(check, status, detail
 // the profile it is about and the sentence that says it.
 type screenProblem struct{ profile, text string }
 
-// danglingViews names each of own's profiles that selects a dashboard view
-// nothing states. Not a reason to refuse the profile — the dashboard: block
-// draws instead, which is the screen every machine has — but a name somebody
-// typed and believes is in effect, which is what the rest of this file reports.
+// danglingViews names each view that one of own's profiles links and nothing
+// states, one problem per name. Not a reason to refuse the profile — the name
+// is skipped, and the dashboard: block draws if none of its names remains,
+// which is the screen every machine has — but a name somebody typed and
+// believes is in effect, which is what the rest of this file reports.
 //
 // Two configurations, because the profile and the view it names need not be in
 // the same file: own is the file being asked about and whole is everything the
@@ -534,14 +535,16 @@ type screenProblem struct{ profile, text string }
 func danglingViews(own, whole config.Config) []screenProblem {
 	var out []screenProblem
 	for _, name := range own.ProfileNames() {
-		v := own.Profiles[name].Dashboard.Name
-		if v != "" && !whole.HasView(v) {
+		for _, v := range own.Profiles[name].Dashboard.Names {
+			if v == config.DefaultView || whole.HasView(v) {
+				continue
+			}
 			hint := "`rta dashboard add <capability> --view " + v + "` states it"
 			if names := whole.ViewNames(); len(names) > 0 {
 				hint = "the views are " + strings.Join(names, ", ")
 			}
-			out = append(out, screenProblem{name, "profile " + name + " selects dashboard view " + v +
-				", which is not stated, so the dashboard: block draws (" + hint + ")"})
+			out = append(out, screenProblem{name, "profile " + name + " links dashboard view " + v +
+				", which is not stated, so it is skipped (" + hint + ")"})
 		}
 	}
 	return out

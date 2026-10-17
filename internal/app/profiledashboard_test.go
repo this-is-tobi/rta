@@ -306,8 +306,8 @@ func TestProfileShowAndListSayWhatScreenAProfileShows(t *testing.T) {
 	if err != nil || !strings.Contains(show, "inline: 1 tile") || !strings.Contains(show, "rta dashboard list --view staging") {
 		t.Errorf("the card of an environment with its own screen: %v %q\n%s", err, errOut, show)
 	}
-	if show, _, _ = run("profile", "show", "prod"); !strings.Contains(show, "ops — the view drawn while this is switched on") {
-		t.Errorf("the card of an environment that selects a view:\n%s", show)
+	if show, _, _ = run("profile", "show", "prod"); !strings.Contains(show, "ops — the screens linked to this environment") {
+		t.Errorf("the card of an environment that links a view:\n%s", show)
 	}
 	list, errOut, err := run("profile", "list", "-o", "csv")
 	if err != nil {
@@ -429,10 +429,10 @@ func TestConfigCheckReadsViewsAcrossFiles(t *testing.T) {
 		!strings.Contains(text, "profiles.shop.dashboard") {
 		t.Errorf("the collision is not told with its profile, file and key:\n%s", text)
 	}
-	if !strings.Contains(text, "selects dashboard view ghost") {
+	if !strings.Contains(text, "links dashboard view ghost") {
 		t.Errorf("a name nothing states was not reported:\n%s", text)
 	}
-	if strings.Contains(text, "selects dashboard view ops") {
+	if strings.Contains(text, "links dashboard view ops") {
 		t.Errorf("a view in another file was called unstated:\n%s", text)
 	}
 }
@@ -481,7 +481,7 @@ func TestDoctorReportsAScreenInDoubtOnceAndADanglingNameStill(t *testing.T) {
 		switch {
 		case strings.Contains(r[2], "neither is drawn"):
 			inDoubt = append(inDoubt, r[0]+": "+r[2])
-		case strings.Contains(r[2], "selects dashboard view ghost"):
+		case strings.Contains(r[2], "links dashboard view ghost"):
 			dangling = append(dangling, r[0]+": "+r[2])
 		}
 	}

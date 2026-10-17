@@ -193,7 +193,7 @@ func statesAScreen(cfg config.Config) bool {
 		return true
 	}
 	for _, p := range cfg.Profiles {
-		if p.Dashboard.Name != "" || p.Dashboard.Inline != nil {
+		if len(p.Dashboard.Names) > 0 || p.Dashboard.Inline != nil {
 			return true
 		}
 	}

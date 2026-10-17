@@ -21,10 +21,10 @@ func TestAddWithAViewCreatesItAndLeavesTheBlockAlone(t *testing.T) {
 	if !strings.Contains(out, "dbs") || !strings.Contains(out, "--view dbs") {
 		t.Errorf("the receipt does not name the view or the way back:\n%s", out)
 	}
-	// The flag that makes a profile select it is not the one that created it:
+	// The flag that makes a profile link it is not the one that created it:
 	// `profile set` says --dashboard where every dashboard command says --view.
 	if !strings.Contains(out, "rta profile set <name> --dashboard dbs") {
-		t.Errorf("the receipt does not say how a profile selects the view:\n%s", out)
+		t.Errorf("the receipt does not say how a profile links the view:\n%s", out)
 	}
 	cfg := loadedConfig(t)
 	if len(cfg.Dashboard.Add) != 1 || cfg.Dashboard.Add[0].With["dbname"] != "main" {
@@ -160,7 +160,7 @@ func TestProfileSetDashboardTakesAViewThatExistsOrNone(t *testing.T) {
 	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal", "--dashboard", "dbs"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	if got := loadedConfig(t).Profiles["prod"].Dashboard.Name; got != "dbs" {
+	if got := loadedConfig(t).Profiles["prod"].Dashboard.Describe(); got != "dbs" {
 		t.Errorf("the profile selects %q", got)
 	}
 	show, _, _ := run("profile", "show", "prod")
@@ -170,7 +170,7 @@ func TestProfileSetDashboardTakesAViewThatExistsOrNone(t *testing.T) {
 	if _, errOut, err := run("profile", "set", "prod", "--dashboard", "none"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
-	if got := loadedConfig(t).Profiles["prod"].Dashboard.Name; got != "" {
+	if got := loadedConfig(t).Profiles["prod"].Dashboard.Describe(); got != "" {
 		t.Errorf("none left the profile selecting %q", got)
 	}
 }
@@ -179,7 +179,144 @@ func TestADanglingViewIsReportedByCheckAndNeverRefusesTheProfile(t *testing.T) {
 	out, errOut, _, err := configRun(t, configRegistry(t),
 		"profiles:\n  prod:\n    dashboard: ghost\n    plugins:\n      net:\n        set:\n          timeout: 5\n",
 		"config", "check", "-o", "pretty")
-	if err == nil || !strings.Contains(out+errOut, "selects dashboard view ghost") {
+	if err == nil || !strings.Contains(out+errOut, "links dashboard view ghost") {
 		t.Errorf("the dangling name is not reported: %v\n%s\n%s", err, out, errOut)
+	}
+}
+
+// A profile links the views of its environment with --dashboard, repeated: the
+// first is drawn when it is switched on and V walks all of them.
+func TestProfileSetDashboardIsRepeatedToLinkSeveralViewsInOrder(t *testing.T) {
+	run := session(t, setRegistry(t))
+	for _, view := range []string{"ops", "ops-apps", "databases"} {
+		if _, errOut, err := run("dashboard", "add", "db.status", "--view", view, "--set", "dbname="+view); err != nil {
+			t.Fatalf("%s: %v %q", view, err, errOut)
+		}
+	}
+	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal",
+		"--dashboard", "ops", "--dashboard", "ops-apps", "--dashboard", "ops"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if got := loadedConfig(t).Profiles["prod"].Dashboard.Names; strings.Join(got, ",") != "ops,ops-apps" {
+		t.Errorf("the profile links %v, want ops and ops-apps in the order given, a repeat dropped", got)
+	}
+	show, _, _ := run("profile", "show", "prod")
+	if !strings.Contains(show, "ops, ops-apps") || !strings.Contains(show, "the first is drawn") {
+		t.Errorf("the card does not say the profile links two screens and which is drawn:\n%s", show)
+	}
+	if _, errOut, err := run("profile", "set", "prod", "--dashboard", "default", "--dashboard", "databases"); err != nil {
+		t.Fatalf("default is a legal entry: %v %q", err, errOut)
+	}
+	if got := loadedConfig(t).Profiles["prod"].Dashboard.Names; strings.Join(got, ",") != "default,databases" {
+		t.Errorf("the profile links %v", got)
+	}
+	if _, errOut, err := run("profile", "set", "prod", "--dashboard", "none"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if got := loadedConfig(t).Profiles["prod"].Dashboard.Names; len(got) != 0 {
+		t.Errorf("none alone left the profile linking %v", got)
+	}
+}
+
+func TestNoneBesideANameIsRefusedAndALinkToAMissingViewNamesTheOnesThatExist(t *testing.T) {
+	run := session(t, setRegistry(t))
+	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "ops", "--set", "dbname=ops"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal",
+		"--dashboard", "ops", "--dashboard", "none"); err == nil || !strings.Contains(errOut, "core.profile.dashboard.none") {
+		t.Errorf("none beside a name was accepted: %v\n%s", err, errOut)
+	}
+	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal",
+		"--dashboard", "ops", "--dashboard", "ghost"); err == nil || !strings.Contains(errOut, "core.dashboard.noview") {
+		t.Errorf("a second name nothing states was accepted: %v\n%s", err, errOut)
+	}
+	if _, ok := loadedConfig(t).Profiles["prod"]; ok {
+		t.Error("a refused command still wrote the profile")
+	}
+}
+
+// The listing is an inventory, so it shows every view and who links it, and a
+// view linked to several profiles is listed against each.
+func TestViewsSaysWhoLinksEachViewIncludingTheDashboardBlock(t *testing.T) {
+	run := session(t, setRegistry(t))
+	for _, view := range []string{"ops", "databases"} {
+		if _, errOut, err := run("dashboard", "add", "db.status", "--view", view, "--set", "dbname="+view); err != nil {
+			t.Fatalf("%s: %v %q", view, err, errOut)
+		}
+	}
+	for _, args := range [][]string{
+		{"profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal", "--dashboard", "ops", "--dashboard", "databases"},
+		{"profile", "set", "stage", "--plugin", "db", "--set", "host=stage.internal", "--dashboard", "default", "--dashboard", "databases"},
+	} {
+		if _, errOut, err := run(args...); err != nil {
+			t.Fatalf("%v: %v %q", args, err, errOut)
+		}
+	}
+	out, errOut, err := run("dashboard", "views", "-o", "csv")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	rows := strings.Split(strings.TrimSpace(out), "\n")
+	if !strings.HasPrefix(rows[0], "View,Linked To,") {
+		t.Fatalf("the columns = %q", rows[0])
+	}
+	for _, want := range []string{"databases,\"prod, stage\"", "ops,prod,", "default,stage,"} {
+		found := false
+		for _, row := range rows[1:] {
+			found = found || strings.HasPrefix(row, want)
+		}
+		if !found {
+			t.Errorf("no row starts with %q:\n%s", want, out)
+		}
+	}
+}
+
+// Naming a view addresses it: the filter is for what V walks, never for what a
+// command may act on, so an SRE can edit staging's screen while prod is on.
+func TestACommandCanStillAddressAViewAnotherProfileLinks(t *testing.T) {
+	run := session(t, setRegistry(t))
+	if _, errOut, err := run("dashboard", "add", "db.status", "--view", "stage-only", "--set", "dbname=a"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	for _, args := range [][]string{
+		{"profile", "set", "stage", "--plugin", "db", "--set", "host=stage.internal", "--dashboard", "stage-only"},
+		{"profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal"},
+		{"use", "prod"},
+		{"dashboard", "add", "db.status", "--view", "stage-only", "--set", "dbname=b"},
+		{"profile", "set", "prod", "--dashboard", "stage-only"},
+	} {
+		if _, errOut, err := run(args...); err != nil {
+			t.Fatalf("%v: %v %q", args, err, errOut)
+		}
+	}
+	if got := loadedConfig(t).Profiles["prod"].Dashboard.Names; strings.Join(got, ",") != "stage-only" {
+		t.Errorf("linking a view another profile links was refused or lost: %v", got)
+	}
+}
+
+// Without --view a command acts on the first screen the profile links, which is
+// the one drawn on arrival; the receipt says so when there are others.
+func TestACommandWithoutAViewSaysWhichOfSeveralLinkedScreensItActedOn(t *testing.T) {
+	run := session(t, setRegistry(t))
+	for _, view := range []string{"ops", "ops-apps"} {
+		if _, errOut, err := run("dashboard", "add", "db.status", "--view", view, "--set", "dbname="+view); err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+	}
+	for _, args := range [][]string{
+		{"profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal", "--dashboard", "ops", "--dashboard", "ops-apps"},
+		{"use", "prod"},
+	} {
+		if _, errOut, err := run(args...); err != nil {
+			t.Fatalf("%v: %v %q", args, err, errOut)
+		}
+	}
+	out, errOut, err := run("dashboard", "add", "db.status", "--set", "dbname=extra")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if !strings.Contains(out, "the first of 2 screens prod links") || !strings.Contains(out, "--view ops-apps") {
+		t.Errorf("the receipt does not say which linked screen it wrote to or how to name another:\n%s", out)
 	}
 }

@@ -116,7 +116,7 @@ func newDashboardCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comman
 	}
 	views := &cobra.Command{
 		Use:               "views",
-		Short:             "The dashboard's views, which profiles select them, and the one drawn now",
+		Short:             "The dashboard's views, which profiles link them, and the one drawn now",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -536,6 +536,7 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 	if drawn != "" {
 		pairsOut = append(pairsOut, view.Pair{Key: "view", Value: drawnWhen(cfg, drawn)})
 	}
+	pairsOut = append(pairsOut, whichOfSeveral(cmd, cfg, drawn)...)
 	pairsOut = append(pairsOut, view.Pair{Key: "tile", Value: id})
 	if automatic {
 		pairsOut = append(pairsOut, view.Pair{Key: "in place of",
@@ -576,14 +577,42 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 // drawnWhen says when a view is on screen, for the receipt of a command that
 // has just put something on it: a profile's own screen is the one drawn while
 // that environment is switched on, and any other view is the one a profile
-// selects, which is a thing `rta profile set` states for it.
+// links, which is a thing `rta profile set` states for it.
 func drawnWhen(cfg config.Config, v string) string {
 	if cfg.InProfile(v) {
 		return v + " — the screen written in profile " + v + "'s own entry, drawn while it is switched on " +
 			"(`rta use " + v + "`), or with `--view " + v + "`"
 	}
-	return v + " — drawn while a profile that selects it is switched on (`rta profile set <name> --dashboard " +
-		v + "`), or with `--view " + v + "`"
+	return v + " — linked to a profile with `rta profile set <name> --dashboard " + v +
+		"`: drawn first while that profile is switched on if it is the first, reached with V otherwise; `--view " + v + "` names it here"
+}
+
+// whichOfSeveral says, in the receipt of a command that was not told a view,
+// which of several linked screens it acted on. The command line cannot see the
+// screen a TUI session is showing, so it acts on the one the switched-on profile
+// draws first, and a person who linked three and pressed V in the TUI would
+// otherwise find the tile on a screen they were not looking at.
+func whichOfSeveral(cmd *cobra.Command, cfg config.Config, acted string) []view.Pair {
+	if strings.TrimSpace(mustString(cmd, "view")) != "" {
+		return nil
+	}
+	active := profile.Active()
+	names, linked := cfg.ScreensFor(active)
+	if !linked || len(names) < 2 {
+		return nil
+	}
+	label, other := acted, ""
+	if label == "" {
+		label = config.DefaultView
+	}
+	for _, n := range names {
+		if n != label {
+			other = n
+			break
+		}
+	}
+	return []view.Pair{{Key: "screens", Value: fmt.Sprintf("this went to %s, the first of %d screens %s links — `--view %s` names another",
+		label, len(names), plugin.ListedName(active), other)}}
 }
 
 // removeLine is the `rta dashboard rm` arguments that name this entry.
@@ -747,10 +776,10 @@ func runDashboardRemove(cmd *cobra.Command, id string, dryRun bool) (view.View, 
 	if dryRun {
 		label, verb = "would write", "would have removed"
 	}
-	return view.KeyValue{Pairs: []view.Pair{
+	return view.KeyValue{Pairs: append([]view.Pair{
 		{Key: label, Value: verb + " " + key + " from the dashboard" + inView(drawn) + " in " + dashboardFile(drawn)},
 		{Key: "back", Value: "`" + removed.AddCommand(drawn) + "`"},
-	}}, nil
+	}, whichOfSeveral(cmd, now, drawn)...)}, nil
 }
 
 // dashboardHideCommand builds `hide` and `unhide`: what H does to an
@@ -882,10 +911,10 @@ func runDashboardHide(cmd *cobra.Command, id string, reg *registry.Registry, hid
 	if dryRun {
 		label, verb = "would write", "would have "+verb
 	}
-	return view.KeyValue{Pairs: []view.Pair{
+	return view.KeyValue{Pairs: append([]view.Pair{
 		{Key: label, Value: verb + " " + key + inView(drawn) + " in " + dashboardFile(drawn)},
 		{Key: "back", Value: back},
-	}}, nil
+	}, whichOfSeveral(cmd, cfg, drawn)...)}, nil
 }
 
 // completeHideable offers what hide can take down — automatic tiles and
@@ -980,7 +1009,7 @@ func completeTileInputs(reg *registry.Registry) func(*cobra.Command, []string, s
 // The views a dashboard command acts on.
 //
 // Without --view a command acts on the view that is drawn: the one the
-// switched-on profile selects, or the dashboard: block itself. Whatever a
+// switched-on profile draws first, or the dashboard: block itself. Whatever a
 // person adds, hides or lists is then what they are looking at in the TUI,
 // and `--view default` names the block when that is not.
 
@@ -1048,24 +1077,48 @@ func dashboardFile(v string) string {
 	return config.Where("views", v)
 }
 
-func completeViews(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+// completeViews offers the views there are, each with what it holds and who
+// links it, so a long list of names is a list of things a person can choose
+// between. A flag that is repeated is not offered what it was already given.
+func completeViews(cmd *cobra.Command, _ []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
 	cfg, err := config.LoadFile()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	out := []cobra.Completion{cobra.CompletionWithDesc(config.DefaultView, "the dashboard: block")}
+	given, _ := cmd.Flags().GetStringArray("dashboard")
+	linkedBy := map[string][]string{}
+	for _, profileName := range cfg.ProfileNames() {
+		if names, linked := cfg.ScreensFor(profileName); linked {
+			for _, v := range names {
+				linkedBy[v] = append(linkedBy[v], profileName)
+			}
+		}
+	}
+	describe := func(desc, name string) string {
+		if who := linkedBy[name]; len(who) > 0 {
+			desc += ", linked to " + strings.Join(who, ", ")
+		}
+		return desc
+	}
+	var out []cobra.Completion
+	if !slices.Contains(given, config.DefaultView) {
+		out = append(out, cobra.CompletionWithDesc(config.DefaultView, describe("the dashboard: block", config.DefaultView)))
+	}
 	for _, name := range cfg.ViewNames() {
-		d, _ := cfg.Block(name)
-		desc := format.Count(len(d.Tiles)+len(d.Add), "entry", "entries")
+		if slices.Contains(given, name) {
+			continue
+		}
+		block, _ := cfg.Block(name)
+		desc := format.Count(len(block.Tiles)+len(block.Add), "entry", "entries")
 		if cfg.InProfile(name) {
 			desc += ", written in profile " + name
 		}
-		out = append(out, cobra.CompletionWithDesc(name, desc))
+		out = append(out, cobra.CompletionWithDesc(name, describe(desc, name)))
 	}
 	return out, cobra.ShellCompDirectiveNoFileComp
 }
 
-// viewsTable is every view the configuration states: which profiles select it,
+// viewsTable is every view the configuration states: which profiles link it,
 // what it holds, which file states it, and the one that is drawn now.
 //
 // What it holds is a count of entries, the tiles a view pins and the ones it
@@ -1075,24 +1128,27 @@ func completeViews(*cobra.Command, []string, string) ([]cobra.Completion, cobra.
 // drawn.
 func viewsTable(cfg config.Config) view.View {
 	t := view.Table{Columns: []view.Column{
-		{Name: "View"}, {Name: "Selected By"}, {Name: "Entries", Kind: view.KindNumber}, {Name: "File"}, {Name: "Drawn Now"},
+		{Name: "View"}, {Name: "Linked To"}, {Name: "Entries", Kind: view.KindNumber}, {Name: "File"}, {Name: "Drawn Now"},
 	}}
 	now := drawnView(cfg)
-	// Who selects a view is who draws it, so this asks the same question the
-	// screen does: a name nothing states, and a block that cannot be had under
-	// its profile's name, select nothing and are not listed against anything.
-	// A profile that writes its screen in its entry selects it by being it.
+	// Who links a view is who walks it with V, so this asks the same question
+	// the screen does: a name nothing states, and a block that cannot be had
+	// under its profile's name, link nothing and are not listed against
+	// anything. A profile that writes its screen in its entry links it by being
+	// it, and `default` in a profile's list is the dashboard: block.
 	selectors := map[string][]string{}
 	for _, name := range cfg.ProfileNames() {
-		v := cfg.ViewFor(name)
-		if v == "" {
+		linked, any := cfg.ScreensFor(name)
+		if !any {
 			continue
 		}
-		who := name
-		if v == name && cfg.InProfile(v) {
-			who += " (its own)"
+		for _, v := range linked {
+			who := name
+			if v == name && cfg.InProfile(v) {
+				who += " (its own)"
+			}
+			selectors[v] = append(selectors[v], who)
 		}
-		selectors[v] = append(selectors[v], who)
 	}
 	row := func(name, file string, tiles int, selected []string) {
 		drawn := ""
@@ -1109,7 +1165,7 @@ func viewsTable(cfg config.Config) view.View {
 		t.Rows = append(t.Rows, []string{plugin.ListedName(name), strings.Join(listed, ", "), strconv.Itoa(tiles), configFileName(file), drawn})
 	}
 	base := cfg.Dashboard
-	row(config.DefaultView, config.Where("dashboard", ""), len(base.Tiles)+len(base.Add), nil)
+	row(config.DefaultView, config.Where("dashboard", ""), len(base.Tiles)+len(base.Add), selectors[config.DefaultView])
 	for _, name := range cfg.ViewNames() {
 		v, _ := cfg.Block(name)
 		row(name, config.Where("views", name), len(v.Tiles)+len(v.Add), selectors[name])
@@ -1142,9 +1198,9 @@ func inlineScreenRefusal(name string, block *config.View) *view.Error {
 	return view.Errorf("core.profile.dashboard.inline",
 		"profile %s writes its own dashboard in its entry (%s), and --dashboard would throw it away",
 		name, format.Count(len(block.Tiles)+len(block.Add), "tile", "tiles")).
-		WithHint("`rta dashboard add <capability> --view " + name + "` changes that screen; to show a named view " +
+		WithHint("`rta dashboard add <capability> --view " + name + "` changes that screen; to show named views " +
 			"instead, move the tiles under `dashboard: views:` and replace the block in the entry with the view's " +
-			"name (`rta config edit`)")
+			"name, or a list of them (`rta config edit`)")
 }
 
 // missingViewRefusal is the refusal for a view nothing states, naming the ones
