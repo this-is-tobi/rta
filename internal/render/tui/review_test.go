@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/boxlist"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/recent"
 	"github.com/this-is-tobi/rta/internal/registry"
@@ -228,9 +229,9 @@ func TestACommaListCompletesWithoutASpace(t *testing.T) {
 		{"recipe,ita", "recipe,italian"},
 		{"recipe,   ita", "recipe,   italian"},
 	} {
-		got := extending(tc.typed, declared)
+		got := boxlist.Extend(tc.typed, declared)
 		if len(got) != 1 || got[0] != tc.want {
-			t.Errorf("extending(%q) = %v, want [%q]", tc.typed, got, tc.want)
+			t.Errorf("Extend(%q) = %v, want [%q]", tc.typed, got, tc.want)
 		}
 		if !strings.HasPrefix(got[0], tc.typed) {
 			t.Errorf("%q does not extend %q, so bubbles will not match it", got[0], tc.typed)

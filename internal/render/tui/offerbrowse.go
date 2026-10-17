@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/this-is-tobi/rta/internal/boxlist"
 )
 
 // Up and down browse what a box could be completed to, starting from an
@@ -26,15 +28,25 @@ import (
 // and the arrows go back to the widget, which cycles the matches of what
 // they typed. A Path box browses the directory listing the same way.
 //
+// A list box is browsed one item at a time. The item walked is the last one,
+// and everything ahead of it is the head the walk began from: "a, " offers the
+// rest of the candidates after it, and the walk replaces the item after the
+// head, never the head. The offer is therefore asked for the head (offersAt)
+// and not for the box, which once a candidate is placed reads as a box whose
+// last item is that candidate and offers only what begins with it.
+//
 // Two forms answer the arrows — the capability form and the theme editor —
 // and, as with tab (tabOn), the rule is one free function and the placing is
 // one helper, so the two cannot drift.
 
 // browsed is the candidate rta last placed in a box and its index in the
-// offer list — what tells "still browsing" from "typed over".
+// offer list — what tells "still browsing" from "typed over". For a list box
+// base is the head the candidate was written after, which the walk keeps
+// asking the offer about until the box is typed in.
 type browsed struct {
 	value string
 	at    int
+	base  string
 }
 
 // browseOn is the rule on the state of one box: what it holds, what rta last
@@ -92,20 +104,58 @@ func (m Model) browseOffers(msg tea.KeyPressMsg, down bool) (tea.Model, tea.Cmd)
 		return m.updateForm(msg)
 	}
 	typed := *cf.bindings[name]
-	var offered []string
-	if offer := cf.offers[name]; offer != nil {
-		offered = offer()
-	}
-	at, ok := browseOn(typed, cf.browsed[name], offered, down)
+	base, ok := cf.browseBase(name, typed)
 	if !ok {
 		return m.updateForm(msg)
 	}
-	nm, cmd := placeCandidate(m, Model.updateForm, typed, offered[at])
+	var offered []string
+	if offerAt := cf.offersAt[name]; offerAt != nil {
+		offered = itemsAfter(base, offerAt(base))
+	} else if offer := cf.offers[name]; offer != nil {
+		offered = offer()
+	}
+	at, ok := browseOn(strings.TrimPrefix(typed, base), cf.browsed[name], offered, down)
+	if !ok {
+		return m.updateForm(msg)
+	}
+	nm, cmd := placeCandidate(m, Model.updateForm, typed, base+offered[at])
 	if nm.form != nil {
-		nm.form.browsed[name] = browsed{value: offered[at], at: at}
+		nm.form.browsed[name] = browsed{value: offered[at], at: at, base: base}
 	}
 	nm.flash = browseFlash(at, len(offered))
 	return nm, cmd
+}
+
+// browseBase is the head a walk of this box is over, or false when the box is
+// the widget's to handle. A box that is not a list is walked whole, so its head
+// is empty. A list box is mid-walk while it still holds what was placed, and
+// the walk keeps its head; otherwise a walk starts only where an item does — an
+// empty box, or one that ends at a comma and the space typed after it — since
+// text in the middle of an item is somebody narrowing it, and the widget cycles
+// what matches that.
+func (cf *capForm) browseBase(name, typed string) (string, bool) {
+	if cf.offersAt[name] == nil {
+		return "", true
+	}
+	if last := cf.browsed[name]; last.value != "" && typed == last.base+last.value {
+		return last.base, true
+	}
+	if head, _, _ := boxlist.Last(typed); head == typed {
+		return typed, true
+	}
+	return "", false
+}
+
+// itemsAfter is what each text adds to head, for the texts that begin with it:
+// the items a walk over a list box steps through.
+func itemsAfter(head string, texts []string) []string {
+	items := make([]string, 0, len(texts))
+	for _, text := range texts {
+		if item, ok := strings.CutPrefix(text, head); ok {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 // browseInTheme is the same key in the theme editor, over its palette.

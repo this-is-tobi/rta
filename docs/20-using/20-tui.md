@@ -167,7 +167,7 @@ The run form then comes back on the connection, named `ad hoc · through staging
 
 `shift+tab` is the previous field and `enter` is the next one, whatever the box holds. A field that completes says so under itself, because the footer speaks for the screen rather than for the box under the cursor.
 
-`↓` and `↑` browse the offer from an empty box: down puts the first candidate in the box, the next down its neighbour, up walks the other way, and both wrap. Type over what was placed and the box is yours again — the arrows then cycle the matches of what you typed, which is what they always did once a letter was in.
+`↓` and `↑` browse the offer from an empty box: down puts the first candidate in the box, the next down its neighbour, up walks the other way, and both wrap. Type over what was placed and the box is yours again — the arrows then cycle the matches of what you typed, which is what they always did once a letter was in. A comma list is browsed one item at a time, from where an item begins: after `recipe, ` the arrows walk the candidates for the next item, leaving out the ones the box already lists.
 
 **A list box reads what the list flag reads.** Its elements are separated by commas, and the space around each is dropped, so `recipe, italian` is two tags. An element holding a comma, a double quote or space at an end goes in double quotes, a quote inside it written twice — `"a,b", " padded", "say ""hi"""` — and a box that opens holding a list, a note's tags or a declared default, writes it the same way, so leaving it untouched gives back the list it showed. A quote left open is refused in the footer as you type.
 

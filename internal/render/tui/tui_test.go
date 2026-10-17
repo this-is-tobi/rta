@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	teatest "github.com/charmbracelet/x/exp/teatest/v2"
 
+	"github.com/this-is-tobi/rta/internal/boxlist"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -1485,15 +1486,15 @@ func TestFormSuggestionsSeeASiblingBeingTyped(t *testing.T) {
 // typing "recipe, ita" offered nothing.
 func TestAListCompletesTheItemBeingTyped(t *testing.T) {
 	declared := []string{"italian", "recipe", "urgent"}
-	if got := extending("rec", declared); len(got) != 1 || got[0] != "recipe" {
-		t.Errorf("extending(%q) = %v, want recipe", "rec", got)
+	if got := boxlist.Extend("rec", declared); len(got) != 1 || got[0] != "recipe" {
+		t.Errorf("Extend(%q) = %v, want recipe", "rec", got)
 	}
-	got := extending("recipe, ita", declared)
+	got := boxlist.Extend("recipe, ita", declared)
 	if len(got) != 1 || got[0] != "recipe, italian" {
 		t.Errorf("extending = %v, want the whole box with the item completed", got)
 	}
-	if len(extending("recipe, ", declared)) != 3 {
-		t.Error("an empty trailing item does not offer everything")
+	if got := boxlist.Extend("recipe, ", declared); len(got) != 2 {
+		t.Errorf("an empty trailing item offers %v, want everything the box does not list yet", got)
 	}
 }
 
