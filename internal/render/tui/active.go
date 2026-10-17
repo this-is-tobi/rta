@@ -109,7 +109,7 @@ func (m *Model) syncActive() tea.Cmd {
 	m.activeColor = profileColor(name)
 	// The screen follows the switch too: the environment's own view, unless
 	// this session picked one, which a switch undoes.
-	m.viewPick, m.lastView, m.hasLast = "", "", false
+	m.viewPick = ""
 	if cfg, err := config.LoadFile(); err == nil {
 		want := m.wantView(cfg)
 		m.dash, m.view, m.dashOnDisk = cfg.TrustedDashboardFor(want), want, dashStamp(want, cfg.TrustedDashboardFor(want))
@@ -782,15 +782,22 @@ func colorOf(cfg config.Config, name string) string {
 	return p.Color
 }
 
-// cycleView draws the next view: the dashboard: block, then each view by name,
-// and round again. Which one is drawn is this session's own (viewPick) until a
-// switch, and nothing is written, since a picture is not an edit.
+// cycleView draws the next screen when step is 1 and the one before when it is
+// -1, and round again at either end: V and v are one walk in its two directions,
+// the way tab and shift+tab are, so a person who went one screen too far comes
+// back with one key and not with a trip round the whole list. The walk is the
+// screens the switched-on environment links, in the order it lists them, or the
+// dashboard: block and then each view by name when it links none
+// (Config.ScreensFor), and v takes exactly that order reversed.
+//
+// Which one is drawn is this session's own (viewPick) until a switch, and
+// nothing is written, since a picture is not an edit.
 //
 // It says what happened itself, through refuse and guide, because only one of
 // its four answers is a switch and the mark follows the text: "no views yet" is
 // a pointer to the command that makes one, and was drawn with the green check of
 // a view that had just been shown.
-func (m *Model) cycleView() tea.Cmd {
+func (m *Model) cycleView(step int) tea.Cmd {
 	cfg, err := config.LoadFile()
 	if err != nil {
 		m.refuse("the config cannot be read, so there are no views to show: " + err.Error())
@@ -817,51 +824,34 @@ func (m *Model) cycleView() tea.Cmd {
 	}
 	if linked && len(order) == 1 && order[0] == current {
 		if cfg.Profiles[m.active].Dashboard.Inline != nil {
-			m.guide(m.active + " writes its own screen, so V has nowhere else to go — move it under `dashboard: views:` and list views in the entry (`rta profile set " + m.active + " --dashboard <view> --dashboard <view>`)")
+			m.guide(m.active + " writes its own screen, so V and v have nowhere else to go — move it under `dashboard: views:` and list views in the entry (`rta profile set " + m.active + " --dashboard <view> --dashboard <view>`)")
 			return nil
 		}
 		m.guide(m.active + " links one screen, " + current + " — `rta profile set " + m.active + " --dashboard " + current + " --dashboard <view>` links another")
 		return nil
 	}
-	next := order[(slices.Index(order, current)+1)%len(order)]
-	return m.drawView(cfg, next)
+	return m.drawView(cfg, walkFrom(order, current, step))
 }
 
-// backView draws the screen that was on before this one, and the one it left
-// becomes the "last" in turn, so v goes back and forth between two the way
-// `cd -` does. The memory is this session's; it is only the screens V and v
-// drew, and a switch of environment forgets it.
-func (m *Model) backView() tea.Cmd {
-	cfg, err := config.LoadFile()
-	if err != nil {
-		m.refuse("the config cannot be read, so there are no views to show: " + err.Error())
-		return nil
+// walkFrom is the screen a step of 1 or -1 lands on from current, round the ends
+// of order. A screen the walk does not list is not a place to count from — the
+// links were edited under a running session, say — so there V goes to the first
+// and v to the last, each entering the list from its own end rather than from
+// the position -1 would make up.
+func walkFrom(order []string, current string, step int) string {
+	at := slices.Index(order, current)
+	switch {
+	case at >= 0:
+		return order[(at+step+len(order))%len(order)]
+	case step < 0:
+		return order[len(order)-1]
+	default:
+		return order[0]
 	}
-	if !config.TrustedPath() {
-		m.refuse("this config file arranges no screen, so there are no views to show — set $RTA_CONFIG to the file you mean")
-		return nil
-	}
-	if !m.hasLast {
-		m.refuse("no earlier screen — V draws the next one")
-		return nil
-	}
-	order, _ := cfg.ScreensFor(m.active)
-	back := m.lastView
-	if back == "" {
-		back = config.DefaultView
-	}
-	if !slices.Contains(order, back) {
-		m.hasLast = false
-		m.refuse("the screen you came from is gone — V draws the next one")
-		return nil
-	}
-	return m.drawView(cfg, back)
 }
 
-// drawView puts a screen on and remembers the one it replaced, which is what v
-// goes back to.
+// drawView puts a screen on.
 func (m *Model) drawView(cfg config.Config, next string) tea.Cmd {
-	m.lastView, m.hasLast = m.view, true
 	m.viewPick = next
 	want := m.wantView(cfg)
 	m.dash, m.view, m.dashOnDisk = cfg.TrustedDashboardFor(want), want, dashStamp(want, cfg.TrustedDashboardFor(want))

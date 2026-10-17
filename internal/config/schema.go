@@ -230,11 +230,12 @@ func Schema() map[string]any {
 					"dashboard": map[string]any{
 						"description": "The screens that belong to this environment: the name of one " +
 							"of `dashboard: views:`, or a list of names — the first is drawn while this " +
-							"profile is switched on and V walks all of them, and only them, while it is — " +
+							"profile is switched on, and V walks all of them (v walks them back), and only " +
+							"them, while it is — " +
 							"or the screen itself written here, with the keys a view has (tiles, add, hidden, " +
 							"order, width, height, refresh, sections), addressed as a view named after this " +
 							"profile. `default` is the `dashboard:` block, as a list entry. Left out, the " +
-							"`dashboard:` block draws, and V walks every screen there is.",
+							"`dashboard:` block draws, and V and v walk every screen there is.",
 						"oneOf": []any{
 							map[string]any{"type": "string", "pattern": viewName.String()},
 							map[string]any{

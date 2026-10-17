@@ -111,7 +111,7 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 	cmd.Flags().StringArray("theme", nil,
 		"a `slot=#rrggbb` of the palette while it is on, over yours, never a status colour; repeat for more — the whole theme: block")
 	cmd.Flags().Bool("untheme", false, "remove the profile's theme: block")
-	cmd.Flags().StringArray("dashboard", nil, "a dashboard view linked to it, repeated for several — the first is drawn while it is on, V walks the rest; one of `rta dashboard views` (or `none`)")
+	cmd.Flags().StringArray("dashboard", nil, "a dashboard view linked to it, repeated for several — the first is drawn while it is on, V walks the rest and v walks back; one of `rta dashboard views` (or `none`)")
 	cmd.Flags().String("plugin", "", "which plugin the connection flags below are about — "+
 		"`pg`, or `pg/analytics` to state one of several connections to it")
 	// StringArray, never StringSlice: StringSlice splits its argument on

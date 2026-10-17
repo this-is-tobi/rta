@@ -153,15 +153,10 @@ type Model struct {
 	// one of its views. Every write of the arrangement goes to it, so what a
 	// person hides, moves or adds is what they are looking at.
 	view string
-	// viewPick is the view this session chose with V, or "" to follow the
+	// viewPick is the view this session chose with V or v, or "" to follow the
 	// switched-on profile's. A switch clears it: switching is asking for that
 	// environment's screen.
 	viewPick string
-	// lastView is the screen V or v drew this session before the one on screen,
-	// "" being the dashboard: block, and hasLast whether there is one. Memory of
-	// this process only: a switch clears it, and nothing is written.
-	lastView string
-	hasLast  bool
 	// selected is the dashboard tile that holds the selection: 0 for the search
 	// bar and -1 while the header of a section does, which header names. A header
 	// is not a tile, so everything that reads a tile off the selection finds none

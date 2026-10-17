@@ -67,7 +67,7 @@ profiles:
 | --- | --- |
 | `note` | What this environment is, shown by `profile list` |
 | `ttl` | A deadline the profile brings with it when switched on |
-| `dashboard` | The screens of this environment: the name of a [view](./25-dashboard-and-theme.md#views-a-screen-per-environment), or a list of names — the first is drawn while it is switched on and `V` walks all of them and no others — or [the screen itself](./25-dashboard-and-theme.md#a-screen-written-in-the-profile), written in the entry with the keys a view has, [sections](./25-dashboard-and-theme.md#sections-group-tiles-and-fold-the-group) included |
+| `dashboard` | The screens of this environment: the name of a [view](./25-dashboard-and-theme.md#views-a-screen-per-environment), or a list of names — the first is drawn while it is switched on, `V` walks all of them in the order listed and `v` the other way round, and no others — or [the screen itself](./25-dashboard-and-theme.md#a-screen-written-in-the-profile), written in the entry with the keys a view has, [sections](./25-dashboard-and-theme.md#sections-group-tiles-and-fold-the-group) included |
 | `plugins.<name>.set` | Overlays that plugin's own configuration — a default, which a caller can override |
 | `plugins.<name>.only` | Fences an input to the values this connection reaches, per config key — a list a call cannot go outside |
 | `plugins.<name>.secrets` | Maps a declared input onto **where its value comes from** |
