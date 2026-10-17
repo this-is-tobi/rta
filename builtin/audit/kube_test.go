@@ -48,6 +48,47 @@ func TestIsDefaultClusterAdminBinding(t *testing.T) {
 	}
 }
 
+// What the audit grades a cluster-admin binding, and what its description says
+// it does. The description named system:masters among the groups that grade
+// fail; the code grades the default binding info (every installer creates it)
+// and any other binding naming it, like any other subject, warn.
+func TestAClusterAdminBindingIsGradedAsTheDescriptionSays(t *testing.T) {
+	fakeKubectl(t, map[string]string{
+		"clusterrolebindings": `{"items":[
+			{"metadata":{"name":"cluster-admin"},"roleRef":{"name":"cluster-admin"},
+			 "subjects":[{"kind":"Group","name":"system:masters"}]},
+			{"metadata":{"name":"more-masters"},"roleRef":{"name":"cluster-admin"},
+			 "subjects":[{"kind":"Group","name":"system:masters"},{"kind":"User","name":"bob"}]},
+			{"metadata":{"name":"everyone"},"roleRef":{"name":"cluster-admin"},
+			 "subjects":[{"kind":"Group","name":"system:authenticated"}]}]}`,
+		"roles": `{"items":[]}`, "clusterroles": `{"items":[]}`,
+	})
+	out, err := runKubeRBAC(t.Context(), newScopedRequest(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := renderText(t, out)
+	for _, want := range []string{
+		"cluster-admin binding: cluster-admin | " + findings.Info,
+		"cluster-admin binding: more-masters | " + findings.Warn,
+		"cluster-admin binding: everyone | " + findings.Fail,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("missing %q in:\n%s", want, rendered)
+		}
+	}
+
+	for _, c := range Plugin(nil, nil).Capabilities {
+		if c.ID != "audit.kube.rbac" {
+			continue
+		}
+		if strings.Contains(c.Description, "system:masters) grades fail") ||
+			!strings.Contains(c.Description, "system:authenticated or system:unauthenticated grades fail") {
+			t.Errorf("the description does not say which bindings grade fail:\n%s", c.Description)
+		}
+	}
+}
+
 func TestWildcardRule(t *testing.T) {
 	cases := []struct {
 		name  string
