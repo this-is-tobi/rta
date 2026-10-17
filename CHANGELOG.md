@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.44.0](https://github.com/this-is-tobi/rta/compare/v0.43.0...v0.44.0) (2026-10-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** a profile links the dashboard views of its environment, as a name or a list
+* **tui:** the search starts on / or enter, and a letter on the search line is a command
+
+### Features
+
+* **audit:** kube eol maps an image to its product from a built-in table and the images setting ([0bd506b](https://github.com/this-is-tobi/rta/commit/0bd506bb6123c7742ea305f56e14d1fbb4a6642b))
+* **config:** a profile links the dashboard views of its environment, as a name or a list ([84be843](https://github.com/this-is-tobi/rta/commit/84be843620d21acfe0a195f45efca2ef5727a02f))
+* **findings:** a row can stand for several checks, and a page can carry a table of its own ([ca1f913](https://github.com/this-is-tobi/rta/commit/ca1f913a833ca7b65c7fe90ed77be863649ab111))
+* **tui:** locking the store asks first, in a dialog over the dimmed screen ([2817741](https://github.com/this-is-tobi/rta/commit/28177416a9e5064d8cc3e0e207f327af0cd89123))
+* **tui:** the search starts on / or enter, and a letter on the search line is a command ([4e25406](https://github.com/this-is-tobi/rta/commit/4e25406b3c199e56330c7ecfa57ab71fb33987e9))
+* **tui:** the V key walks the screens its environment links, and v goes back to the last one ([6a33691](https://github.com/this-is-tobi/rta/commit/6a33691c62fe54c466f72910a4aa4da7cc82af99))
+* **view:** a table column can say how willingly a narrow screen gives it up ([37d839a](https://github.com/this-is-tobi/rta/commit/37d839a226ee7a6aa329f625826d500874e95432))
+
+
+### Bug Fixes
+
+* **audit:** a kube audit tile is re-run every ten minutes, and the eol one every two hours ([2049cd0](https://github.com/this-is-tobi/rta/commit/2049cd036eb358afed0191d23c9da98b6d3b3d2f))
+* **audit:** a kube audit's detail page lists each finding once ([425adb3](https://github.com/this-is-tobi/rta/commit/425adb3322dc949493435f3a39a45172f662d809))
+* **audit:** a name the cluster supplies is listed, not put raw into a kube finding ([d5761f0](https://github.com/this-is-tobi/rta/commit/d5761f0a436b1ec05400caa61ab7f8f709c628ca))
+* **audit:** kube eol counts every image it did not grade, and lists each with a reason ([07b462f](https://github.com/this-is-tobi/rta/commit/07b462f59c99af396e55a84be14b9e870d6ac863))
+* **audit:** kube rbac says RoleBindings are not read, and a slow list is not an unreachable cluster ([88d894d](https://github.com/this-is-tobi/rta/commit/88d894d440dbc7c4a810c186b71058cbb1efd2b9))
+* **audit:** kube rbac's description says which bindings grade fail, and system:masters is not one ([67aaa0e](https://github.com/this-is-tobi/rta/commit/67aaa0e9d9080db6405f03cb39392bb89671af98))
+* **audit:** one product endoflife.date does not answer for no longer sinks a kube eol report ([81687f6](https://github.com/this-is-tobi/rta/commit/81687f65112b7d7283ee72e3085c73dd13f5ff2a))
+* **audit:** the image table knows csi-node-driver-registrar, listed under a longer name ([d936888](https://github.com/this-is-tobi/rta/commit/d9368888e600f28a62e12fa59749afbc8e2e790d))
+* **cli:** a list flag completes the element after the comma ([3abeda5](https://github.com/this-is-tobi/rta/commit/3abeda5161b809e53159ecd8dba33cb05aa5dfbb))
+* **completion:** a candidate is offered once, and a hostname on two lines is one name ([281887f](https://github.com/this-is-tobi/rta/commit/281887fccbe5aff8de58ccf65c4ae8eebc84451f))
+* **completion:** a list of what exists is not padded with what was used ([e30a7eb](https://github.com/this-is-tobi/rta/commit/e30a7ebc91bc55ea392ec42b028f00538c37b65a))
+* **findings:** a page section is sent whole to a model, as the compact table is ([ef35f49](https://github.com/this-is-tobi/rta/commit/ef35f49a693d0423dfe9bc220ca14348360f823c))
+* **kv:** key boxes complete while the store is unlocked in the TUI ([f81e74b](https://github.com/this-is-tobi/rta/commit/f81e74be86474cd56a02de10dd3a613c5d37725e))
+* **theme:** a sealed vault is red on its tile, and unreadable and not initialized are amber ([93a65e5](https://github.com/this-is-tobi/rta/commit/93a65e554a34edcce9d7c3e7da293b0562dbbf8e))
+* **tui:** the arrows walk a list box one item at a time ([0808fc0](https://github.com/this-is-tobi/rta/commit/0808fc0207b86121937fe8759256a4746616be61))
+
 ## [0.43.0](https://github.com/this-is-tobi/rta/compare/v0.42.0...v0.43.0) (2026-10-16)
 
 
