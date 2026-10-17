@@ -17,6 +17,13 @@ import (
 // the values, and here are some of them", which the closed set already
 // answers.
 //
+// A value is offered once. A Suggest that answers one entry per place a value
+// turns up — a hostname on both its IPv4 and its IPv6 line — made a box that
+// stopped twice on the same name and a shell that listed it twice, and the
+// dedupe lives here rather than in each plugin so one that is not in this
+// repository gets it too. Entries are compared by value, whatever description
+// they carry, and the first one wins.
+//
 // A Live Suggest never answers here. This is the per-keystroke channel — the
 // TUI re-evaluates it as siblings change, shell completion builds it a
 // credential-less request — and a network read on that cadence is exactly
@@ -34,7 +41,23 @@ func (f Field) Candidates(ctx context.Context, req Request) []string {
 	if f.Suggest == nil {
 		return nil
 	}
-	return f.Suggest(ctx, req)
+	return uniqueByValue(f.Suggest(ctx, req))
+}
+
+// uniqueByValue keeps the first entry for each value, in order.
+func uniqueByValue(entries []string) []string {
+	if len(entries) == 0 {
+		return entries
+	}
+	seen := make(map[string]bool, len(entries))
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if value := CandidateValue(entry); !seen[value] {
+			seen[value] = true
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 // CompletionRequest is the request a Suggest is answered with: what has been

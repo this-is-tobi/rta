@@ -571,9 +571,6 @@ func withoutLines(lines []string, drop []int) []string {
 	return out
 }
 
-// suggestHostnames completes from the hosts file itself — including the
-// parked ones, since re-enabling an entry you disabled last week is the
-// commonest reason to name it again and the hardest to remember.
 // suggestAddresses completes the address half of a hosts-file entry: the
 // addresses already mapped in this file, and the two everybody types.
 //
@@ -600,20 +597,38 @@ func suggestAddresses(_ context.Context, req plugin.Request) []string {
 	return out
 }
 
+// suggestHostnames completes from the hosts file itself — including the
+// parked ones, since re-enabling an entry you disabled last week is the
+// commonest reason to name it again and the hardest to remember.
+//
+// A name is one suggestion however many lines it is on, with every address it
+// answers to beside it: `localhost` is on the IPv4 and the IPv6 loopback line
+// of nearly every hosts file, and offering it once per line made a box that
+// stopped twice on it. The names keep the order they first appear in.
 func suggestHostnames(_ context.Context, req plugin.Request) []string {
 	lines, verr := readLines(req, hostsPath(req), maxHostsBytes)
 	if verr != nil {
 		return nil
 	}
-	var out []string
+	var order []string
+	states := map[string][]string{}
 	for _, e := range parseHosts(lines) {
 		state := e.ip
 		if !e.enabled {
 			state += " (disabled)"
 		}
 		for _, name := range e.names {
-			out = append(out, name+"\t"+state)
+			if _, seen := states[name]; !seen {
+				order = append(order, name)
+			}
+			if !slices.Contains(states[name], state) {
+				states[name] = append(states[name], state)
+			}
 		}
+	}
+	out := make([]string, 0, len(order))
+	for _, name := range order {
+		out = append(out, name+"\t"+strings.Join(states[name], ", "))
 	}
 	return out
 }

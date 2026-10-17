@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"slices"
 	"testing"
 )
 
@@ -70,5 +71,21 @@ func TestLiveRequestCarriesWhatARunWould(t *testing.T) {
 	}
 	if got := stripped.String("bucket"); got != "backups" {
 		t.Errorf("bucket = %q in a keystroke request, want non-secrets kept", got)
+	}
+}
+
+// A candidate is offered once, whatever description each entry carries: a
+// Suggest that answers one entry per source line — a hostname on both its
+// IPv4 and its IPv6 line — made a box that stopped twice on the same name and
+// a shell that listed it twice. The first entry wins, and the dedupe is here
+// so a plugin that is not in this repository gets it without writing it.
+func TestACandidateIsOfferedOnceWhateverItsDescriptions(t *testing.T) {
+	f := Field{Name: "hostname", Type: String,
+		Suggest: func(context.Context, Request) []string {
+			return []string{"localhost\t127.0.0.1", "app.local\t10.0.0.1", "localhost\t::1", "app.local", "other"}
+		}}
+	want := []string{"localhost\t127.0.0.1", "app.local\t10.0.0.1", "other"}
+	if got := f.Candidates(context.Background(), NewRequest(nil, false, false)); !slices.Equal(got, want) {
+		t.Errorf("Candidates = %q, want %q", got, want)
 	}
 }

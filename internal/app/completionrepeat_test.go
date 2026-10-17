@@ -2,10 +2,13 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/builtin/all"
 	"github.com/this-is-tobi/rta/internal/recent"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -70,6 +73,31 @@ func TestAListOfWhatExistsIsNotPaddedWithWhatWasUsedBefore(t *testing.T) {
 	got := values(complete(t, tidyRegistry(t), "tidy", "done", ""))
 	if !slices.Equal(got, []string{"1", "2", "3"}) {
 		t.Errorf("the offer is %v, want only 1, 2 and 3", got)
+	}
+}
+
+// The hostnames on the machine, through the registry they ship in: a name on
+// both the IPv4 and the IPv6 loopback line is one word to complete, and one
+// already on the line is not offered again.
+func TestAHostnameOnTwoLinesIsCompletedOnce(t *testing.T) {
+	withHistory(t, nil)
+	file := filepath.Join(t.TempDir(), "hosts")
+	hosts := "127.0.0.1 localhost app.local\n::1 localhost\n10.0.0.2 other.local\n"
+	if err := os.WriteFile(file, []byte(hosts), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reg, err := all.Registry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := values(complete(t, reg, "net", "hosts", "rm", "--file", file, ""))
+	if want := []string{"localhost", "app.local", "other.local"}; !slices.Equal(got, want) {
+		t.Errorf("net hosts rm offers %q, want each name once", got)
+	}
+	got = values(complete(t, reg, "net", "hosts", "rm", "--file", file, "app.local", ""))
+	if want := []string{"localhost", "other.local"}; !slices.Equal(got, want) {
+		t.Errorf("after app.local the offer is %q, want the two it does not list", got)
 	}
 }
 

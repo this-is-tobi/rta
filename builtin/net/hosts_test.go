@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -949,5 +950,22 @@ func TestAPermissionFailureNamesTheCommandForWhoeverRunsIt(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A name that sits on more than one line is one name to complete, with the
+// addresses it answers to beside it: `localhost` is on the IPv4 and the IPv6
+// loopback line of nearly every hosts file, and was offered once for each.
+func TestAHostnameOnSeveralLinesIsSuggestedOnceWithEveryAddress(t *testing.T) {
+	path := hostsFixture(t, "127.0.0.1 localhost app.local\n::1 localhost\n# 10.0.0.9 parked.local app.local\n10.0.0.2 other.local\n")
+	got := suggestHostnames(context.Background(), plugin.NewRequest(map[string]any{"file": path}, false, false))
+	want := []string{
+		"localhost\t127.0.0.1, ::1",
+		"app.local\t127.0.0.1, 10.0.0.9 (disabled)",
+		"parked.local\t10.0.0.9 (disabled)",
+		"other.local\t10.0.0.2",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("suggestHostnames = %q, want %q", got, want)
 	}
 }
