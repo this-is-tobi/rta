@@ -77,6 +77,20 @@ type Finding struct {
 	// whose DMARC lookup timed out read "no issues found", a claim about a
 	// record nobody read. Set by AddUnchecked.
 	Unchecked bool
+	// Count is how many checks this finding stands for, where one row says
+	// that fifty-seven images were not graded: zero is one, the row of any
+	// ordinary finding. Worst and Grade count checks, not rows, so that the
+	// overall line does not call fifty-seven checks that could not run one.
+	// Set by AddUncheckedN.
+	Count int
+}
+
+// checks is how many checks the finding stands for.
+func (f Finding) checks() int {
+	if f.Count < 1 {
+		return 1
+	}
+	return f.Count
 }
 
 // Report collects findings as the checks run. The zero value is ready to use.
@@ -102,6 +116,14 @@ func (r *Report) AddUnchecked(g Group, check, detail string, ref Reference) {
 		Finding{Group: g, Check: check, Status: Info, Detail: detail, Ref: ref, Unchecked: true})
 }
 
+// AddUncheckedN is AddUnchecked for one row that stands for n checks that could
+// not run — the images an audit could not grade, which a row per image would
+// bury the graded ones under. The overall line counts n.
+func (r *Report) AddUncheckedN(g Group, check, detail string, ref Reference, n int) {
+	r.Findings = append(r.Findings,
+		Finding{Group: g, Check: check, Status: Info, Detail: detail, Ref: ref, Unchecked: true, Count: n})
+}
+
 // Worst returns the report's overall grade and a tally to explain it.
 //
 // A check that could not run never moves the grade — it is not a mark
@@ -112,11 +134,11 @@ func (r *Report) Worst() (string, string) {
 	for _, f := range r.Findings {
 		switch {
 		case f.Unchecked:
-			unchecked++
+			unchecked += f.checks()
 		case f.Status == Warn:
-			warn++
+			warn += f.checks()
 		case f.Status == Fail:
-			fail++
+			fail += f.checks()
 		}
 	}
 	var parts []string
@@ -239,9 +261,13 @@ func (r *Report) only(g Group) *Report {
 // stops after the summary has still read the answer.
 func (r *Report) Grade() []view.Pair {
 	status, tally := r.Worst()
+	var checks int
+	for _, f := range r.Findings {
+		checks += f.checks()
+	}
 	return []view.Pair{
 		{Key: "grade", Value: status + " — " + tally},
-		{Key: "checks", Value: strconv.Itoa(len(r.Findings))},
+		{Key: "checks", Value: strconv.Itoa(checks)},
 	}
 }
 
@@ -263,7 +289,13 @@ func (r *Report) Grade() []view.Pair {
 // twice" when the check ran once and the page said everything twice. A type
 // that cannot hold a table makes that mistake a compile error instead of
 // something a reader notices on a screen.
-func (r *Report) Page(ctx context.Context, req plugin.Request, order []Group, summary view.KeyValue) view.View {
+//
+// extra are sections that are not groups of findings, placed after the groups
+// and before the references: a table of its own where each row is a thing and
+// not a check, such as the images an audit could not grade and why. A finding's
+// detail is one clipped cell, and a list of fifty-seven names in one cell is
+// how that list came to be unreadable; as a table it is whole on every format.
+func (r *Report) Page(ctx context.Context, req plugin.Request, order []Group, summary view.KeyValue, extra ...view.Section) view.View {
 	p := plugin.NewPage(ctx, req)
 	p.PutAs("summary", "summary", summary)
 	for _, g := range order {
@@ -273,6 +305,9 @@ func (r *Report) Page(ctx context.Context, req plugin.Request, order []Group, su
 		if sub := r.only(g); len(sub.Findings) > 0 {
 			p.PutAs(g.ID, g.Title, sub.section(req.Surface()))
 		}
+	}
+	for _, s := range extra {
+		p.PutAs(s.ID, s.Title, s.View)
 	}
 	p.PutAs("references", "references", r.References())
 	return p.View()
