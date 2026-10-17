@@ -99,6 +99,12 @@ enum ColumnKind {
 message Column {
   string name = 1;
   ColumnKind kind = 2;
+  // How willingly a renderer gives this column up when the table does not fit
+  // its width, with the meaning Kubernetes gives a table column's priority: zero
+  // is never given up, and a higher number goes sooner. A hint for fitting a
+  // screen and never a filter: JSON, YAML, CSV, Markdown and MCP carry every
+  // column. A host that predates the field ignores it and draws as it always did.
+  uint32 priority = 3;
 }
 
 // Cursor carries contract-level pagination state.
