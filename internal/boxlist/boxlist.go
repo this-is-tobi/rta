@@ -103,6 +103,50 @@ func Last(text string) (head, fragment string, quoted bool) {
 	return text[:last.start+gap], last.value, last.quoted
 }
 
+// Extend keeps the entries that continue the element being typed, each
+// rewritten as the whole box it would make: that is what a widget matches
+// against, which compares a suggestion with the entire box and not with the
+// element in it, so without this "recipe, ita" matched nothing and completion
+// stopped working after the first element. An entry is a value, and may carry
+// the description a shell lists beside it after a tab; it is matched on the
+// value and keeps the description.
+//
+// The head keeps exactly the spacing that was typed rather than imposing ", ":
+// a rewritten "recipe, italian" does not match somebody who typed
+// "recipe,ita", and `a,b` with no space is the ordinary way people type a
+// list. The value goes in as an element the box reads back as itself (Element)
+// — and in quotes whenever the element being typed opened with one.
+//
+// An element the head already lists is left out. Naming one twice is a
+// mistake in every list the capabilities declare, and an offer that walks
+// through the suggestions should not invite it; a shell does the same for a
+// positional that takes several values. The element being typed is not in the
+// head, so an entry that is exactly it is still offered.
+func Extend(typed string, entries []string) []string {
+	head, fragment, quoted := Last(typed)
+	elements := scan(typed)
+	listed := make(map[string]bool, len(elements))
+	for _, e := range elements[:len(elements)-1] {
+		listed[e.value] = true
+	}
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		value, description, described := strings.Cut(entry, "\t")
+		if listed[value] || !strings.HasPrefix(strings.ToLower(value), strings.ToLower(fragment)) {
+			continue
+		}
+		text := head + Element(value)
+		if quoted {
+			text = head + Quote(value)
+		}
+		if described {
+			text += "\t" + description
+		}
+		out = append(out, text)
+	}
+	return out
+}
+
 // element is one element of a box's text: where its text starts, just after
 // the comma before it, what it reads as, whether a quote opened it, and why
 // it is no element when it is none.

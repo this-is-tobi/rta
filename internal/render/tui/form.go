@@ -62,6 +62,15 @@ type capForm struct {
 	// expression of "what this field suggests" would be a copy free to drift;
 	// this is the one the field is wired to.
 	offers map[string]func() []string
+	// offersAt is the same question asked of a box that is not the one on
+	// screen, for the fields that hold a list: what would be on offer if the box
+	// read this. The arrows walk a list from the box as it read when the walk
+	// began (browseOffers), and offers answers for the box as it reads now, which
+	// after the first candidate is placed is a box whose last item is that
+	// candidate — so the walk would be over the candidates that begin with the
+	// one it is standing on. Absent for every other field, whose box is the
+	// whole of what a candidate replaces.
+	offersAt map[string]func(box string) []string
 	// suggested is what a cluster fetch last offered each field, because the
 	// widget cannot be asked: tab's fetch-or-accept split (needsFetch) reads
 	// it to know whether anything on offer still extends what is typed.
@@ -568,6 +577,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 		slices:     map[string]*[]string{},
 		inputs:     map[string]*huh.Input{},
 		offers:     map[string]func() []string{},
+		offersAt:   map[string]func(string) []string{},
 		suggested:  map[string][]string{},
 		fetchedFor: map[string]string{},
 		browsed:    map[string]browsed{},
@@ -856,18 +866,22 @@ func (cf *capForm) completing(in *huh.Input, f plugin.Field, typed *syncString, 
 	if how == wholeBox && f.Suggest == nil && len(cf.used.For(cf.profile, cf.cap.ID, f.Name)) == 0 && !cf.fence.Fenced(f) {
 		return in
 	}
-	offer := func() []string {
+	offerAt := func(box string) []string {
 		declared := cf.candidates(f)
 		switch how {
 		case walkingDisk:
-			return pathSuggestions(typed.Get(), declared)
+			return pathSuggestions(box, declared)
 		case lastItem:
-			return extending(typed.Get(), declared)
+			return boxlist.Extend(box, declared)
 		default:
 			return declared
 		}
 	}
+	offer := func() []string { return offerAt(typed.Get()) }
 	cf.offers[f.Name] = offer
+	if how == lastItem {
+		cf.offersAt[f.Name] = offerAt
+	}
 	return in.SuggestionsFunc(offer, cf.watched())
 }
 
@@ -973,35 +987,6 @@ func (cf *capForm) snapshot() map[string]any {
 		if raw := strings.TrimSpace(s.Get()); raw != "" {
 			out[f.Name] = typedValue(f, raw)
 		}
-	}
-	return out
-}
-
-// extending keeps the suggestions that continue the last comma-separated item,
-// rewritten so each one extends the whole box — which is what bubbles matches
-// against.
-//
-// The head keeps exactly the spacing that was typed rather than imposing
-// ", ". bubbles matches by prefix against the whole box, so a rewritten
-// "recipe, italian" does not match somebody who typed "recipe,ita" — and
-// `a,b` with no space is the ordinary way people type a comma list.
-//
-// The item is found and each suggestion written by the box's own grammar
-// (boxlist): a comma inside quotes separates nothing, and a suggestion goes
-// in as an element the box reads back as itself — in quotes when it holds a
-// comma, and whenever the item being typed opened with one.
-func extending(typed string, declared []string) []string {
-	head, fragment, quoted := boxlist.Last(typed)
-	out := make([]string, 0, len(declared))
-	for _, d := range declared {
-		if !strings.HasPrefix(strings.ToLower(d), strings.ToLower(fragment)) {
-			continue
-		}
-		if quoted {
-			out = append(out, head+boxlist.Quote(d))
-			continue
-		}
-		out = append(out, head+boxlist.Element(d))
 	}
 	return out
 }

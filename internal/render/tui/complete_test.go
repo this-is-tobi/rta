@@ -364,10 +364,10 @@ func TestBrowseOnIsTheWholeRule(t *testing.T) {
 	}{
 		{"", browsed{}, true, 0, true},
 		{"", browsed{}, false, 2, true},
-		{"a", browsed{"a", 0}, true, 1, true},
-		{"c", browsed{"c", 2}, true, 0, true},
-		{"a", browsed{"a", 0}, false, 2, true},
-		{"ab", browsed{"a", 0}, true, 0, false},
+		{"a", browsed{value: "a", at: 0}, true, 1, true},
+		{"c", browsed{value: "c", at: 2}, true, 0, true},
+		{"a", browsed{value: "a", at: 0}, false, 2, true},
+		{"ab", browsed{value: "a", at: 0}, true, 0, false},
 		{"a", browsed{}, true, 0, false},
 	}
 	for _, tc := range cases {

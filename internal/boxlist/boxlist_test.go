@@ -137,3 +137,63 @@ func TestLastIsTheElementBeingTyped(t *testing.T) {
 		t.Error("an element no quote opened was said to be")
 	}
 }
+
+// Extend keeps the suggestions that continue the element being typed, each
+// rewritten as the whole box it would make: the head keeps the spacing that
+// was typed, an element the box reads back as itself is written bare and one
+// it would not in quotes, and a quote that opened the element being typed is
+// answered with one.
+func TestExtendWritesEachSuggestionAsTheBoxItWouldMake(t *testing.T) {
+	declared := []string{"a,b", "alpha"}
+	for typed, want := range map[string][]string{
+		"":          {`"a,b"`, "alpha"},
+		"al":        {"alpha"},
+		"AL":        {"alpha"},
+		"x, a":      {`x, "a,b"`, "x, alpha"},
+		`x, "a`:     {`x, "a,b"`, `x, "alpha"`},
+		`"a,b", al`: {`"a,b", alpha`},
+		"x,al":      {"x,alpha"},
+		"x,   al":   {"x,   alpha"},
+		"zzz":       {},
+	} {
+		if got := Extend(typed, declared); !slices.Equal(got, want) {
+			t.Errorf("Extend(%q) = %q, want %q", typed, got, want)
+		}
+	}
+}
+
+// What the box already lists is not offered again, wherever in the head it
+// is: naming one element twice is the mistake a walk through the suggestions
+// should not invite. The element being typed is not in the head, so a
+// suggestion that is exactly it is still offered.
+func TestExtendLeavesOutWhatTheBoxAlreadyLists(t *testing.T) {
+	declared := []string{"a,b", "alpha", "beta"}
+	for typed, want := range map[string][]string{
+		"alpha, ":        {`alpha, "a,b"`, "alpha, beta"},
+		"beta, al":       {"beta, alpha"},
+		`"a,b", alpha, `: {`"a,b", alpha, beta`},
+		"alpha":          {"alpha"},
+		"alpha, alpha":   {},
+	} {
+		if got := Extend(typed, declared); !slices.Equal(got, want) {
+			t.Errorf("Extend(%q) = %q, want %q", typed, got, want)
+		}
+	}
+}
+
+// A suggestion may carry the description a shell lists beside it, after a
+// tab. It is matched and compared on its value alone, and keeps its
+// description in the rewritten entry.
+func TestExtendMatchesTheValueAndKeepsTheDescription(t *testing.T) {
+	declared := []string{"alpha\tthe first", "beta\tthe second"}
+	for typed, want := range map[string][]string{
+		"b":       {"beta\tthe second"},
+		"alpha, ": {"alpha, beta\tthe second"},
+		"the":     {},
+		"x, al":   {"x, alpha\tthe first"},
+	} {
+		if got := Extend(typed, declared); !slices.Equal(got, want) {
+			t.Errorf("Extend(%q) = %q, want %q", typed, got, want)
+		}
+	}
+}
