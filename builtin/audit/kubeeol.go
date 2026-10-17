@@ -153,10 +153,7 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 				maxEOLProducts, strings.Join(names, ", ")), refUnmaintained)
 	}
 
-	if !req.Bool("detail") {
-		return r.TableFor(req.Surface(), true), nil
-	}
-	return r.Page(ctx, req, kubeGroupOrder5, r.TableFor(req.Surface(), true)), nil
+	return finishKube(ctx, req, r, kubeGroupOrder5, sc), nil
 }
 
 // grader looks each product up once and grades versions against it.

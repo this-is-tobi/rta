@@ -195,6 +195,12 @@ func TestPageIsTheFindingsGroupedInOrder(t *testing.T) {
 	if got, want := strings.Join(ids, ","), "summary,vulnerabilities,inventory,references"; got != want {
 		t.Errorf("sections = %s, want %s", got, want)
 	}
+	// The summary says the grade and leaves the findings to their sections: a
+	// finding listed in both is a page that says everything twice.
+	summary, ok := page.Items[0].View.(view.KeyValue)
+	if !ok || len(summary.Pairs) == 0 || summary.Pairs[0].Key != "grade" {
+		t.Errorf("summary = %#v, want a KeyValue opening with the grade", page.Items[0].View)
+	}
 	if page.Items[1].Title != grpVulnerable.Title {
 		t.Errorf("section title = %q, want the group's title", page.Items[1].Title)
 	}

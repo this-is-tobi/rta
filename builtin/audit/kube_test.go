@@ -1,10 +1,13 @@
 package audit
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/findings"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // The shape confirmed against a real k3s cluster's own cluster-admin
@@ -161,5 +164,145 @@ func TestPrivilegedInitAndEphemeralContainersAreGraded(t *testing.T) {
 	}
 	if strings.Contains(rendered, "no pod") {
 		t.Errorf("a pod running privileged graded clean:\n%s", rendered)
+	}
+}
+
+// auditDetailCase is one kube audit with the cluster it reads in the
+// detail-page tests: at least one finding each, built from the same fake
+// kubectl the scope tests use.
+type auditDetailCase struct {
+	name   string
+	bodies map[string]string
+	run    func(ctx context.Context, req plugin.Request) (view.View, error)
+}
+
+func auditDetailCases(t *testing.T) []auditDetailCase {
+	t.Helper()
+	srv, _ := newEOLServer(t)
+	return []auditDetailCase{
+		{"rbac", map[string]string{
+			"clusterrolebindings": `{"items":[{"metadata":{"name":"ops-admin"},"roleRef":{"name":"cluster-admin"},
+				"subjects":[{"kind":"User","name":"alice@example.com"}]}]}`,
+			"roles":        `{"items":[{"metadata":{"namespace":"a","name":"wild"},"rules":[{"verbs":["*"]}]}]}`,
+			"clusterroles": `{"items":[]}`,
+		}, runKubeRBAC},
+		{"podsecurity", map[string]string{
+			"pods": `{"items":[{"metadata":{"namespace":"infra","name":"agent-0"},
+				"spec":{"containers":[{"name":"agent","securityContext":{"privileged":true}}]}}]}`,
+		}, runKubePodSecurity},
+		{"quotas", map[string]string{
+			"namespaces":     `{"items":[{"metadata":{"name":"gitea"}},{"metadata":{"name":"argo-cd"}}]}`,
+			"resourcequotas": `{"items":[]}`,
+		}, runKubeQuotas},
+		{"netpol", map[string]string{
+			"namespaces":      `{"items":[{"metadata":{"name":"gitea"}},{"metadata":{"name":"argo-cd"}}]}`,
+			"networkpolicies": `{"items":[]}`,
+		}, runKubeNetworkPolicy},
+		{"eol", map[string]string{"version": clusterVersionBody, "nodes": clusterNodesBody, "pods": clusterPodsBody},
+			func(ctx context.Context, req plugin.Request) (view.View, error) {
+				return runKubeEOLAt(ctx, req, srv.URL)
+			}},
+	}
+}
+
+func detailPage(t *testing.T, c auditDetailCase) view.Sections {
+	t.Helper()
+	fakeKubectl(t, c.bodies)
+	req := plugin.NewRequest(map[string]any{"detail": true, "warn-days": 90}, false, false)
+	out, err := c.run(t.Context(), req)
+	if err != nil {
+		t.Fatalf("%s: %v", c.name, err)
+	}
+	page, ok := out.(view.Sections)
+	if !ok {
+		t.Fatalf("%s: a detail run returned %T, want view.Sections", c.name, out)
+	}
+	return page
+}
+
+// The "runs twice" report on audit.kube.eol and audit.kube.rbac was never two
+// runs: kubectl and the API are each asked once. It was a detail page whose
+// opening section was the whole findings table, handed over as the page's
+// summary, followed by the group section holding the same rows — so every
+// finding was on the screen twice, and the TUI opens a Detailed capability on
+// the detail page by default. Counted per section, since two findings of one
+// name inside a single section are a different matter.
+func TestKubeAuditDetailPagesListEachCheckOnce(t *testing.T) {
+	for _, c := range auditDetailCases(t) {
+		t.Run(c.name, func(t *testing.T) {
+			page := detailPage(t, c)
+			sections := map[string][]string{}
+			for _, s := range page.Items {
+				table, ok := s.View.(view.Table)
+				if !ok || s.ID == "references" {
+					continue
+				}
+				seen := map[string]bool{}
+				for _, row := range table.Rows {
+					if !seen[row[0]] {
+						seen[row[0]] = true
+						sections[row[0]] = append(sections[row[0]], s.ID)
+					}
+				}
+			}
+			if len(sections) == 0 {
+				t.Fatalf("no findings table on the page: %+v", page.Items)
+			}
+			for check, in := range sections {
+				if len(in) > 1 {
+					t.Errorf("%q is on the detail page in %d sections (%s)", check, len(in), strings.Join(in, ", "))
+				}
+			}
+		})
+	}
+}
+
+// The page opens with the answer: the grade, how many checks stood behind it,
+// and which cluster and scope it was about. Same shape as web, mail, deps and
+// agents, and what Page's summary is for.
+func TestKubeDetailPageOpensWithTheGradeTheContextAndTheScope(t *testing.T) {
+	for _, c := range auditDetailCases(t) {
+		t.Run(c.name, func(t *testing.T) {
+			page := detailPage(t, c)
+			if len(page.Items) == 0 || page.Items[0].ID != "summary" {
+				t.Fatalf("the first section is not the summary: %+v", page.Items)
+			}
+			kv, ok := page.Items[0].View.(view.KeyValue)
+			if !ok {
+				t.Fatalf("summary is %T, want view.KeyValue", page.Items[0].View)
+			}
+			got := map[string]string{}
+			for _, p := range kv.Pairs {
+				got[p.Key] = p.Value
+			}
+			for _, key := range []string{"context", "scope", "grade", "checks"} {
+				if got[key] == "" {
+					t.Errorf("summary has no %q pair: %v", key, kv.Pairs)
+				}
+			}
+			if got["scope"] != "cluster-wide" {
+				t.Errorf("scope = %q, want cluster-wide", got["scope"])
+			}
+		})
+	}
+}
+
+func TestKubeDetailSummaryNamesTheContextAndANarrowedNamespace(t *testing.T) {
+	fakeKubectl(t, map[string]string{"pods": `{"items":[]}`})
+	req := plugin.NewRequest(map[string]any{"detail": true, "namespace": "gitea", "context": "homelab"}, false, false)
+	out, err := runKubePodSecurity(t.Context(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kv, ok := out.(view.Sections).Items[0].View.(view.KeyValue)
+	if !ok {
+		t.Fatalf("summary is %T, want view.KeyValue", out.(view.Sections).Items[0].View)
+	}
+	got := map[string]string{}
+	for _, p := range kv.Pairs {
+		got[p.Key] = p.Value
+	}
+	if got["context"] != "homelab" || got["scope"] != "namespace gitea" {
+		t.Errorf("summary pairs = %v", kv.Pairs)
 	}
 }
