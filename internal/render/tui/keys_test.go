@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -245,12 +246,18 @@ func advertisedScreens() map[string]func(*testing.T) (Model, mode) {
 			m.selected = 1 // a real tile, so its own actions are in play
 			return m, modeDashboard
 		},
-		// The landing screen before anything is selected: the bar holds the
-		// selection and takes letters, so what it advertises is typing and the
-		// few keys it keeps for itself (typing.go).
+		// The landing screen before anything is selected: the search line holds
+		// the selection, and what it advertises is what it answers, which is not
+		// move and not hide (typing.go, grid.go dashOwnItems).
 		"search bar": func(t *testing.T) (Model, mode) {
 			m, _ := realModel(t, 120, 40)
 			return m, modeDashboard
+		},
+		// A question over the dashboard: modal, so its own few keys and nothing of
+		// the screen underneath (dialog.go).
+		"dialog": func(t *testing.T) (Model, mode) {
+			m, _ := realModel(t, 120, 40)
+			return m.openDialog(lockStoreDialog(time.Hour)), modeDashboard
 		},
 		// A dashboard with sections: the keys that fold are on its bar, and the
 		// selection can be on a tile of one or on a header, which is a different
@@ -439,11 +446,15 @@ func keyMsg(key string) tea.KeyPressMsg {
 // what each key is allowed to change would be the same drift this test exists
 // to catch, written twice.
 func fingerprint(m Model) string {
-	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d|%q|%v|%v|%q|%v",
+	asked := "-"
+	if m.dialog != nil {
+		asked = fmt.Sprintf("%d:%d", m.dialog.id, m.dialog.focus)
+	}
+	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d|%q|%v|%v|%q|%v|%s",
 		m.mode, m.selected, m.pluginSel, m.pluginScroll, m.profileSel, m.profileScroll,
 		m.row, m.query, m.searchEditing, m.form != nil, m.themeForm != nil,
 		m.copyPick != nil, len(m.trail), m.flash, m.tickGen, m.armedDelete, m.armed != nil, m.previewing,
-		m.header, m.folds)
+		m.header, m.folds, asked)
 }
 
 // One idea, one word, one notation — everywhere. Three spellings of "the

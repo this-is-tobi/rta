@@ -76,7 +76,7 @@ var (
 	bindHide  = binding{display: "H", keys: []string{"H"}, label: "hide", rank: rankExtra}
 	bindView  = binding{display: "V", keys: []string{"V"}, label: "view", rank: rankExtra}
 	// Unlocks the encrypted store for this session, and locks it again.
-	bindUnlock = binding{display: "U", keys: []string{"U"}, label: "unlock", rank: rankExtra}
+	bindUnlock = binding{display: "U", keys: []string{"U"}, label: "unlock store", rank: rankExtra}
 	bindPlugin = binding{display: "p", keys: []string{"p"}, label: "plugins", rank: rankExtra}
 	bindTheme  = binding{display: "t", keys: []string{"t"}, label: "theme", rank: rankExtra}
 	bindConfig = binding{display: "c", keys: []string{"c"}, label: "configure", rank: rankAction}
@@ -147,7 +147,7 @@ var (
 	// match and does not open the catalogue: two actions, so two words.
 	bindAddResult = binding{display: "+", keys: []string{"+"}, label: "add as tile", rank: rankExtra}
 	bindSearch    = binding{display: "/", keys: []string{"/"}, label: "search", rank: rankExtra}
-	bindToggle = binding{display: "space", keys: []string{" ", "space", "x"}, label: "show/hide", rank: rankPrimary}
+	bindToggle    = binding{display: "space", keys: []string{" ", "space", "x"}, label: "show/hide", rank: rankPrimary}
 	// "approve" rather than "trust", because the footer has to say what the
 	// key does and not what the subsystem is called: somebody looking at a
 	// row marked "not run" is deciding whether to allow it, and that is the
@@ -351,6 +351,9 @@ const footerMaxLines = 2
 // fail on anything that does something without appearing here — which is the
 // only way this stops drifting again the next time a pane gains an action.
 func (m Model) footerItems(screen mode) []hintItem {
+	if m.dialog != nil && screen == m.mode {
+		return m.dialogItems()
+	}
 	items := m.screenItems(screen)
 	// A call waiting is the one thing every screen that can answer it leads
 	// with: the line above says it, and this is the key that answers. The agent

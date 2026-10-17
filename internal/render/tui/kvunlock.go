@@ -20,7 +20,7 @@ import (
 const unlockID = "kv.unlock"
 
 // unlockStore is U on the dashboard: one key to unlock the store for this
-// session, and the same key to lock it again.
+// session, and the same key to lock it again, after asking.
 //
 // A dashboard tile that reads a profile's credential from the store runs every
 // few seconds with nobody there, so a store that needs a passphrase failed the
@@ -35,10 +35,10 @@ const unlockID = "kv.unlock"
 // carries the argument); an agent has no way to press this key, and an MCP
 // server is another process.
 func (m Model) unlockStore() (tea.Model, tea.Cmd) {
-	if _, held := kv.SessionUntil(); held {
-		kv.ForgetSession()
-		m.flash = "store locked — U unlocks it again"
-		return m, tea.Batch(m.syncActive(), m.syncTiles())
+	if until, held := kv.SessionUntil(); held {
+		// Locking is one key away from the keys beside it and costs the
+		// passphrase again, so it asks (dialog.go).
+		return m.openDialog(lockStoreDialog(time.Until(until))), nil
 	}
 	prompt, ok := kv.UnlockPrompt()
 	if !ok {
@@ -77,12 +77,14 @@ func unlockCapability(prompt string) plugin.Capability {
 	}
 }
 
-// unlockItem is the footer's word on the store: "lock" while a session holds it
-// open and "unlock" otherwise. Always offered, because a screen advertises every
+// unlockItem is the footer's word on the store: "lock store" while a session
+// holds it open and "unlock store" otherwise, with the object named because
+// `lock` is also the plugin that freezes an agent and `L lock` on the consent
+// queue. Always offered, because a screen advertises every
 // key it answers to; where there is nothing to unlock, the key says so.
 func (m Model) unlockItem() hintItem {
 	if _, held := kv.SessionUntil(); held {
-		return labelled(bindUnlock, "lock")
+		return labelled(bindUnlock, "lock store")
 	}
 	return item(bindUnlock)
 }
