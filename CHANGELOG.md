@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.1](https://github.com/this-is-tobi/rta/compare/v0.44.0...v0.44.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* **tui:** v walks the views the other way round from V, instead of toggling to the last one ([8cefda2](https://github.com/this-is-tobi/rta/commit/8cefda25d167b43db46f8d8e0e6bab1ac46842d4))
+
 ## [0.44.0](https://github.com/this-is-tobi/rta/compare/v0.43.0...v0.44.0) (2026-10-17)
 
 
