@@ -29,7 +29,7 @@ rta kv init --recipient age1abc...            # let somebody else read it too
 
 `RTA_KV_PASSPHRASE` and `RTA_KV_IDENTITY` supply either without a flag, which keeps them out of shell history.
 
-In [the TUI](./20-tui.md), a passphrase typed into an unlock form is kept in that TUI's memory for fifteen minutes past its last use, so a sitting costs one unlock rather than one per action. That is the only place an unlock outlives the command that made it: the CLI asks once per command, and a server unlocks from nothing but what its environment holds.
+In [the TUI](./20-tui.md), a passphrase typed into an unlock form is kept in that TUI's memory for fifteen minutes past its last use, so a sitting costs one unlock rather than one per action. While the store is unlocked there, the key boxes of the `kv` forms complete from its keys; completing only looks at the unlock, so it does not extend it. That is the only place an unlock outlives the command that made it: the CLI asks once per command, and a server unlocks from nothing but what its environment holds.
 
 ## Storing things
 

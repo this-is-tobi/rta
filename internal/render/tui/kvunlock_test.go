@@ -141,6 +141,49 @@ func TestUWhileUnlockedLocksTheStoreAgain(t *testing.T) {
 	}
 }
 
+// The key box of a kv action walks the store's keys once U has unlocked it. The
+// box offered nothing: the unlock pair has left the form, the completion request
+// is stripped of every secret, and the passphrase the person typed is held where
+// only a run could reach it. Locked again, the box is empty again.
+func TestAKeyBoxBrowsesTheStoreOnceItIsUnlockedWithU(t *testing.T) {
+	m, _ := kvModel(t)
+	lockedStore(t, m)
+	set, _ := m.reg.Capability("kv.set")
+	more := plugin.NewRequest(map[string]any{"key": "api-token", "value": "t", "passphrase": unlockPassphrase}, false, false)
+	if _, err := set.Run(context.Background(), more); err != nil {
+		t.Fatal(err)
+	}
+	rm, _ := m.reg.Capability("kv.rm")
+
+	open := func() (Model, *capForm) {
+		model, _ := m.startForm(rm, nil)
+		next := model.(Model)
+		next.form.form = startedForm(next.form)
+		return next, next.form
+	}
+	locked, cf := open()
+	_ = pressKey(t, locked, downKey)
+	if got := *cf.bindings["key"]; got != "" {
+		t.Fatalf("a locked store filled the key box with %q", got)
+	}
+
+	if verr := kv.StartSession(unlockPassphrase, time.Hour); verr != nil {
+		t.Fatal(verr)
+	}
+	unlocked, cf := open()
+	if _, asked := cf.bindings["passphrase"]; asked {
+		t.Fatal("the unlock pair is still in the form, so this is not the case the unlock is for")
+	}
+	unlocked = pressKey(t, unlocked, downKey)
+	if got := *cf.bindings["key"]; got != "api-token" {
+		t.Fatalf("down on the key box holds %q, want the first key of the store", got)
+	}
+	_ = pressKey(t, unlocked, downKey)
+	if got := *cf.bindings["key"]; got != "db-password" {
+		t.Errorf("second down holds %q, want the next key", got)
+	}
+}
+
 // The screen that opens with every tile failing for want of the store has the
 // search bar selected, and U has to reach the unlock rather than start a query.
 func TestUReachesTheUnlockWhileTheSearchBarHoldsTheSelection(t *testing.T) {
