@@ -55,7 +55,7 @@ func resolveWith(t *testing.T, operator []string, ref string, products ...string
 // the product. The table says which pieces share the product's version, and it
 // keys on the repository's tail so a mirror in front of it changes nothing.
 func TestImageTableResolvesComponentsByBasenameAndSuffix(t *testing.T) {
-	products := []string{"cert-manager", "kyverno", "cilium", "kubernetes", "longhorn"}
+	products := []string{"cert-manager", "kyverno", "cilium", "kubernetes", "longhorn", "kubernetes-csi-node-driver-registrar"}
 	for _, tc := range []struct {
 		name     string
 		operator []string
@@ -69,6 +69,9 @@ func TestImageTableResolvesComponentsByBasenameAndSuffix(t *testing.T) {
 		{"a generic name is qualified by its organisation", nil, "ghcr.io/kyverno/background-controller:v1.14.0", "kyverno", true},
 		{"and another project's generic name is not the product's", nil, "ghcr.io/acme/background-controller:v1.14.0", "", false},
 		{"cilium's own operator", nil, "quay.io/cilium/operator-generic:v1.18.2", "cilium", true},
+		// A product the site tracks under a longer name than the image carries.
+		{"an image named for part of its product", nil, "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.14.0",
+			"kubernetes-csi-node-driver-registrar", true},
 		{"a piece that versions apart is not in the table", nil, "quay.io/cilium/hubble-ui:v0.13.2", "", false},
 		{"an operator entry names a product", []string{"acme/app=postgres"}, "ghcr.io/acme/app:1.2", "postgresql", true},
 		{"an operator entry beats the table", []string{"cert-manager-controller=postgres"},

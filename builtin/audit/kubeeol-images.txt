@@ -12,9 +12,8 @@
 # 1.19.1 and grading it against cert-manager's cycles is true. "Is part of the
 # product" and "is built by the same project" are not the rule: the image gets a
 # verdict, and a verdict under another project's version number is confident
-# and wrong. prometheus-config-reloader, hubble-ui, certgen and
-# csi-node-driver-registrar are the examples that were left out, each
-# versioned on its own.
+# and wrong. prometheus-config-reloader, hubble-ui and certgen are the examples
+# that were left out, each versioned on its own.
 #
 #   - A name another project could plausibly ship (background-controller) is
 #     qualified with its organisation, kyverno/background-controller.
@@ -61,3 +60,6 @@ kube-apiserver=kubernetes
 kube-controller-manager=kubernetes
 kube-scheduler=kubernetes
 kube-proxy=kubernetes
+
+# The site tracks this one under a longer name than the image carries.
+csi-node-driver-registrar=kubernetes-csi-node-driver-registrar
