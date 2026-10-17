@@ -276,10 +276,11 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				// that redraws on a timer with no one having asked for it.
 				NoPreview: true,
 				Description: "Every ClusterRoleBinding to cluster-admin, and every Role/ClusterRole " +
-					"rule using a wildcard verb, resource or apiGroup. cluster-admin bound to a broad " +
-					"group (system:authenticated, system:unauthenticated, system:masters) grades fail; " +
-					"bound to anything else grades warn — sometimes a real operator's binding, always " +
-					"worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3.\n\nNarrowed to a " +
+					"rule using a wildcard verb, resource or apiGroup. cluster-admin bound to " +
+					"system:authenticated or system:unauthenticated grades fail, the default " +
+					"system:masters binding is info, anything else warns — sometimes a real operator's " +
+					"binding, always worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and " +
+					"5.1.3.\n\nNarrowed to a " +
 					"namespace it checks that namespace's Roles only. ClusterRoleBindings and ClusterRoles " +
 					"belong to no namespace, so they are not examined at all — reported in the result " +
 					"rather than left implied, since a scoped run that silently skipped the cluster-admin " +
