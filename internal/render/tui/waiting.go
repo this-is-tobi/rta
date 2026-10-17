@@ -194,7 +194,7 @@ func (m Model) onQueue() bool {
 // the key already. The forms, the pickers and the filter boxes take every
 // letter as text, and a screen that is already the queue has nowhere to go.
 func (m Model) answersWaiting() bool {
-	if len(m.waiting) == 0 || m.help || m.onQueue() {
+	if len(m.waiting) == 0 || m.help || m.dialog != nil || m.onQueue() {
 		return false
 	}
 	if _, ok := m.reg.Capability(queueCapability); !ok {
