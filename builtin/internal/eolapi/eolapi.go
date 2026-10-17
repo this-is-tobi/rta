@@ -42,6 +42,20 @@ const requestTimeout = 10 * time.Second
 // is refusing a runaway response, not rationing a normal one.
 const maxBody = 4 << 20
 
+// TileRefresh is how often a dashboard tile of a capability that asks
+// endoflife.date is re-run, for the person who names one in their config. Each
+// of them is a request per product, and the site's data moves by the day: an
+// end-of-life date announced this afternoon is still news two hours from now,
+// and the alternative — the dashboard's every-few-seconds pace, or the thirty
+// seconds a capability that reaches a cluster gets — is a public API asked the
+// same question a thousand times an hour.
+//
+// Here rather than in either built-in because two of them ask: eol.watch and
+// its siblings, and audit.kube.eol, which lists a cluster and then asks once
+// per distinct product in it. A declared Refresh is a floor an operator's file
+// can lengthen and never shorten.
+const TileRefresh = 2 * time.Hour
+
 // Release is the fields read from one entry in a product's "releases"
 // array. Everything else the API returns (custom, …) is left for a later
 // cut — encoding/json ignores what a struct does not name, so adding a
