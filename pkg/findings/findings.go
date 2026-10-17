@@ -184,7 +184,15 @@ func (r *Report) TableFor(sf plugin.Surface, summary bool) view.Table {
 // ninety-six — so the page that exists to say more said precisely as much,
 // and the advisory list a hit is actually made of ended in an ellipsis on
 // every screen.
-func (r *Report) section() view.Table { return r.build(false, pageDetail) }
+//
+// Per surface for the reason TableFor is: the bound is a paragraph on a screen
+// and nothing at all for a model, which has none.
+func (r *Report) section(sf plugin.Surface) view.Table {
+	if sf == plugin.SurfaceMCP {
+		return r.build(false, math.MaxInt)
+	}
+	return r.build(false, pageDetail)
+}
 
 func (r *Report) build(summary bool, maxDetail int) view.Table {
 	t := view.Table{Columns: []view.Column{
@@ -263,7 +271,7 @@ func (r *Report) Page(ctx context.Context, req plugin.Request, order []Group, su
 		// came back) gets no heading: an empty section reads as a check that
 		// failed to run rather than one that had no subject.
 		if sub := r.only(g); len(sub.Findings) > 0 {
-			p.PutAs(g.ID, g.Title, sub.section())
+			p.PutAs(g.ID, g.Title, sub.section(req.Surface()))
 		}
 	}
 	p.PutAs("references", "references", r.References())

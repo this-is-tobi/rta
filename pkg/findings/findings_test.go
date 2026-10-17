@@ -126,6 +126,37 @@ func TestAModelIsHandedEachDetailWhole(t *testing.T) {
 	}
 }
 
+// A detail page's bound is a layout decision as much as the compact row's is,
+// and a model has no screen either way. The page clipped at 240 on every
+// surface, so the untracked-images row of audit.kube.eol and a long wildcard
+// list reached an agent cut off in the one place the table was meant to be
+// whole.
+func TestAModelIsHandedEachPageSectionDetailWhole(t *testing.T) {
+	long := strings.Repeat("a long list that names every verb a role was given. ", 14)
+	whole := strings.Join(strings.Fields(long), " ")
+	r := &Report{}
+	r.Add(grpInventory, "next step", Info, long, refVulnerableDep)
+
+	detail := func(sf plugin.Surface) string {
+		page, ok := r.Page(context.Background(), plugin.Request{}.WithSurface(sf), []Group{grpInventory},
+			view.KeyValue{Pairs: r.Grade()}).(view.Sections)
+		if !ok {
+			t.Fatal("Page did not return sections")
+		}
+		tbl := page.Items[1].View.(view.Table)
+		return tbl.Rows[0][columnIndex(t, tbl, "Detail")]
+	}
+	if got := detail(plugin.SurfaceMCP); got != whole {
+		t.Errorf("over MCP the page's detail was cut: %d of %d characters", len([]rune(got)), len([]rune(whole)))
+	}
+	for _, sf := range []plugin.Surface{plugin.SurfaceCLI, plugin.SurfaceTUI} {
+		got := detail(sf)
+		if !strings.HasSuffix(got, "…") || len([]rune(got)) != pageDetail {
+			t.Errorf("%v: a long detail on a page was not clipped to a paragraph: %d characters", sf, len([]rune(got)))
+		}
+	}
+}
+
 // The column is earned, not always present: an audit with nothing to link to
 // must not spend width on an empty column, which is exactly the width the
 // prose beside it needed on a narrow terminal.
