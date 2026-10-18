@@ -8,6 +8,7 @@ import (
 	"fmt"
 	stdnet "net"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,10 +24,13 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// hostsFile and resolvConf are vars so tests can point them at fixtures.
+// hostsFile, resolvConf and sysClassNet are vars so tests can point them at
+// fixtures.
 var (
 	hostsFile  = "/etc/hosts"
 	resolvConf = "/etc/resolv.conf"
+	// sysClassNet is where Linux says what each interface is.
+	sysClassNet = "/sys/class/net"
 )
 
 // Plugin returns the net plugin declaration.
@@ -43,7 +47,8 @@ func Plugin() plugin.Plugin {
 				Idempotent:   true,
 				Detailed:     true,
 				Description: "Reports local facts only — it never calls external services, so no " +
-					"public-IP lookup. Proxy credentials are masked. Throughput is sampled over 500ms. " +
+					"public-IP lookup. Proxy credentials are masked. Throughput is sampled over 500ms and " +
+					"leaves out the loopback and, on Linux, the bridges and veth pairs of a container host. " +
 					"With `detail`: every interface with MAC, MTU, flags and addresses, per-interface " +
 					"traffic counters, the full resolver list and proxy environment.",
 				Run: runOverview,
@@ -834,7 +839,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	kv.Pairs = append(kv.Pairs,
 		view.Pair{Key: "dns", Value: dnsServers()},
 		view.Pair{Key: "proxy", Value: proxySummary()},
-		view.Pair{Key: "throughput", Value: throughput(ctx)},
+		view.Pair{Key: throughputKey, Value: throughput(ctx)},
 	)
 	return kv, nil
 }
@@ -1004,10 +1009,19 @@ func hasScheme(s string) bool {
 	return s != ""
 }
 
-// throughput samples total rx/tx over 500ms and reports per-second rates.
+// throughputKey names the row for what it counts, which is not every interface
+// (see countedInterfaces).
+const throughputKey = "throughput (excluding loopback)"
+
+// throughput samples rx/tx over 500ms and reports per-second rates, summed
+// over the interfaces that are counted.
 func throughput(ctx context.Context) string {
 	const sample = 500 * time.Millisecond
-	before, err := gnet.IOCountersWithContext(ctx, false)
+	keep, err := countedInterfaces()
+	if err != nil {
+		return "unreadable"
+	}
+	before, err := gnet.IOCountersWithContext(ctx, true)
 	if err != nil || len(before) == 0 {
 		return "unreadable"
 	}
@@ -1016,19 +1030,75 @@ func throughput(ctx context.Context) string {
 		return "unreadable"
 	case <-time.After(sample):
 	}
-	after, err := gnet.IOCountersWithContext(ctx, false)
+	after, err := gnet.IOCountersWithContext(ctx, true)
 	if err != nil || len(after) == 0 {
 		return "unreadable"
 	}
-	rate := func(now, then uint64) uint64 {
-		if now < then { // counter reset
+	rx, tx := ratesOf(before, after, sample, keep)
+	return fmt.Sprintf("rx %s/s · tx %s/s", format.Bytes(rx), format.Bytes(tx))
+}
+
+// ratesOf is the per-second growth of the counters of the interfaces keep
+// accepts, summed. An interface that is not in the first reading has nothing to
+// be compared with, and a counter that went backwards was reset and reads as
+// nothing.
+func ratesOf(before, after []gnet.IOCountersStat, window time.Duration, keep func(string) bool) (rx, tx uint64) {
+	then := make(map[string]gnet.IOCountersStat, len(before))
+	for _, s := range before {
+		then[s.Name] = s
+	}
+	grown := func(now, was uint64) uint64 {
+		if now < was {
 			return 0
 		}
-		return uint64(float64(now-then) / sample.Seconds())
+		return now - was
 	}
-	return fmt.Sprintf("rx %s/s · tx %s/s",
-		format.Bytes(rate(after[0].BytesRecv, before[0].BytesRecv)),
-		format.Bytes(rate(after[0].BytesSent, before[0].BytesSent)))
+	var recv, sent uint64
+	for _, s := range after {
+		was, ok := then[s.Name]
+		if !ok || !keep(s.Name) {
+			continue
+		}
+		recv += grown(s.BytesRecv, was.BytesRecv)
+		sent += grown(s.BytesSent, was.BytesSent)
+	}
+	return uint64(float64(recv) / window.Seconds()), uint64(float64(sent) / window.Seconds())
+}
+
+// countedInterfaces is which interfaces' counters are traffic on the network.
+// The loopback is not: a copy to 127.0.0.1 is the machine talking to itself,
+// and summed with the rest it read as 20 MiB/s of network. Nor, on Linux, is
+// the plumbing of a container host (containerPlumbing).
+func countedInterfaces() (func(name string) bool, error) {
+	ifs, err := stdnet.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	left := map[string]bool{}
+	for _, in := range ifs {
+		if in.Flags&stdnet.FlagLoopback != 0 || containerPlumbing(in.Name) {
+			left[in.Name] = true
+		}
+	}
+	return func(name string) bool { return !left[name] }, nil
+}
+
+// containerPlumbing reports whether an interface is a bridge or one end of a
+// veth pair, which is what Linux says in /sys/class/net/<name>: a directory
+// named bridge for the first, DEVTYPE=veth in the uevent file for the second.
+// A container host is full of them, and what crosses them is counted again on
+// the interface that leaves the machine. Where there is no such directory, as
+// on macOS, nothing is.
+func containerPlumbing(name string) bool {
+	if strings.ContainsRune(name, '/') {
+		return false
+	}
+	dir := filepath.Join(sysClassNet, name)
+	if info, err := os.Stat(filepath.Join(dir, "bridge")); err == nil && info.IsDir() {
+		return true
+	}
+	uevent, err := os.ReadFile(filepath.Join(dir, "uevent"))
+	return err == nil && strings.Contains("\n"+string(uevent), "\nDEVTYPE=veth\n")
 }
 
 // detailedOverview is the full-page network report, composed from parts: the
@@ -1044,7 +1114,7 @@ func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error
 	p.PutAs("summary", "summary", view.KeyValue{Pairs: append(ifacePairs(),
 		view.Pair{Key: "dns", Value: dnsServers()},
 		view.Pair{Key: "proxy", Value: proxySummary()},
-		view.Pair{Key: "throughput", Value: throughput(ctx)},
+		view.Pair{Key: throughputKey, Value: throughput(ctx)},
 	)})
 	p.PutAs("interfaces", "interfaces", tree)
 	// The hosts file is local network truth: worth a section when non-empty.
