@@ -33,9 +33,10 @@ import (
 const (
 	// glanceGap is the cells between two columns of a glanced table.
 	glanceGap = 2
-	// glanceFlexMin is the narrowest the column that takes the slack is
-	// squeezed to before a column is dropped instead: narrower and the text in
-	// it is a stub nobody can read, which is no better than the column gone.
+	// glanceFlexMin is the narrowest a column that gives is squeezed to before
+	// a column is dropped instead: the one that takes the slack, and a graded
+	// column whose reason is longer than the box. Narrower and the text in it
+	// is a stub nobody can read, which is no better than the column gone.
 	glanceFlexMin = 10
 	// glanceProse is how wide a text column's widest cell has to be to count as
 	// prose, which is what is worth cutting. A column of short words is not cut
@@ -87,6 +88,14 @@ func tileRenderOptions(inner int) cli.Options {
 // duration, a timestamp), then the ones that grade themselves (status, usage):
 // a glance is for a verdict. The rightmost column of prose takes the slack and
 // is cut with an ellipsis before anything else is dropped.
+//
+// A column that grades is cut the same way before it goes. Its first word is
+// the verdict and the rest is its reason, and one host that did not answer put
+// eighty-five cells of reason in the column of every row of the tile, which took
+// the verdict of the hosts that did off the screen with it. So when it is the
+// next to go it is squeezed to ten cells first, the cell keeping the colour its
+// first word gave it, and the prose goes before the verdict does: a path is what
+// a box gives up when it cannot hold the path and the grade.
 func glanceTable(v view.View, inner int) ([]string, bool) {
 	t, ok := view.Redact(v).(view.Table)
 	if !ok || len(t.Rows) == 0 || len(t.Columns) < 2 || inner < glanceFlexMin*2 {
@@ -109,18 +118,17 @@ func glanceTable(v view.View, inner int) ([]string, bool) {
 	if gridWidth(widths) <= inner {
 		return nil, false
 	}
-	kept, flex, ok := glanceKept(t, rows, widths, inner)
+	kept, flex, cut, ok := glanceKept(t, rows, widths, inner)
 	if !ok {
 		return nil, false
 	}
-	slack := inner - glanceSpan(kept, widths, flex)
-	widths[flex] = min(widths[flex], min(widths[flex], glanceFlexMin)+slack)
+	glanceShare(kept, flex, cut, widths, inner-glanceSpan(kept, widths, cut))
 
-	lines := []string{glanceLine(t, kept, widths, flex, func(i int) (string, lipgloss.Style) {
+	lines := []string{glanceLine(t, kept, widths, cut, func(i int) (string, lipgloss.Style) {
 		return strings.ToUpper(t.Columns[i].Name), theme.Header
 	})}
 	for _, row := range rows {
-		lines = append(lines, glanceLine(t, kept, widths, flex, func(i int) (string, lipgloss.Style) {
+		lines = append(lines, glanceLine(t, kept, widths, cut, func(i int) (string, lipgloss.Style) {
 			return row[i], glanceCellStyle(t.Columns[i].Kind, row[i])
 		}))
 	}
@@ -178,9 +186,11 @@ func gridWidth(widths []int) int {
 	return n
 }
 
-// glanceKept picks the columns a glanced table keeps and the one that gives,
-// or says false when even the name and the squeezed flex column do not fit.
-func glanceKept(t view.Table, rows [][]string, widths []int, inner int) (kept []int, flex int, ok bool) {
+// glanceKept picks the columns a glanced table keeps and the ones that give,
+// which are cut to fit: the flex column, and a graded column that was squeezed
+// rather than dropped. It says false when even the name and the squeezed
+// columns do not fit.
+func glanceKept(t view.Table, rows [][]string, widths []int, inner int) (kept []int, flex int, cut map[int]bool, ok bool) {
 	kept = []int{0}
 	for i := 1; i < len(t.Columns); i++ {
 		if !saysNothing(rows, i) {
@@ -193,6 +203,7 @@ func glanceKept(t view.Table, rows [][]string, widths []int, inner int) (kept []
 			flex = i
 		}
 	}
+	cut = map[int]bool{flex: true}
 	var droppable []int
 	for _, tier := range []int{dropSparse, dropPlain, dropTimed, dropGraded} {
 		var of []int
@@ -207,14 +218,27 @@ func glanceKept(t view.Table, rows [][]string, widths []int, inner int) (kept []
 		droppable = append(droppable, of...)
 	}
 	slices.SortStableFunc(droppable, func(a, b int) int { return t.Columns[b].Priority - t.Columns[a].Priority })
-	for glanceSpan(kept, widths, flex) > inner && len(droppable) > 0 {
-		kept = slices.DeleteFunc(kept, func(i int) bool { return i == droppable[0] })
-		droppable = droppable[1:]
+	for glanceSpan(kept, widths, cut) > inner && len(droppable) > 0 {
+		next := droppable[0]
+		switch {
+		case isGraded(t.Columns[next].Kind) && !cut[next] && widths[next] > glanceFlexMin:
+			cut[next] = true
+		case isGraded(t.Columns[next].Kind) && flex != 0:
+			// The prose goes, and the name takes its place as the column that gives.
+			kept = slices.DeleteFunc(kept, func(i int) bool { return i == flex })
+			delete(cut, flex)
+			flex = 0
+			cut[flex] = true
+		default:
+			kept = slices.DeleteFunc(kept, func(i int) bool { return i == next })
+			delete(cut, next)
+			droppable = droppable[1:]
+		}
 	}
-	if glanceSpan(kept, widths, flex) > inner {
-		return nil, 0, false
+	if glanceSpan(kept, widths, cut) > inner {
+		return nil, 0, nil, false
 	}
-	return kept, flex, true
+	return kept, flex, cut, true
 }
 
 // How reluctantly a column is dropped, the least first.
@@ -272,13 +296,13 @@ func saysNothing(rows [][]string, col int) bool {
 
 func isGraded(k view.ColumnKind) bool { return k == view.KindStatus || k == view.KindUsage }
 
-// glanceSpan is the width a set of columns takes with the flex column at the
-// narrowest it is squeezed to.
-func glanceSpan(kept []int, widths []int, flex int) int {
+// glanceSpan is the width a set of columns takes with the ones that give at the
+// narrowest they are squeezed to.
+func glanceSpan(kept []int, widths []int, cut map[int]bool) int {
 	n := glanceGap * (len(kept) - 1)
 	for _, i := range kept {
 		w := widths[i]
-		if i == flex {
+		if cut[i] {
 			w = min(w, glanceFlexMin)
 		}
 		n += w
@@ -286,13 +310,28 @@ func glanceSpan(kept []int, widths []int, flex int) int {
 	return n
 }
 
+// glanceShare gives the slack the squeezed columns left back to them, up to
+// what each one says: the name first when it is the one that gives, then the
+// graded columns, whose reason is worth more than a path, and the prose last.
+func glanceShare(kept []int, flex int, cut map[int]bool, widths []int, slack int) {
+	order := slices.DeleteFunc(slices.Clone(kept), func(i int) bool { return !cut[i] || (i == flex && flex != 0) })
+	if flex != 0 {
+		order = append(order, flex)
+	}
+	for _, i := range order {
+		floor := min(widths[i], glanceFlexMin)
+		grown := min(widths[i]-floor, slack)
+		widths[i], slack = floor+grown, slack-grown
+	}
+}
+
 // glanceLine is one line of a glanced table: a cell for every kept column,
-// padded to the column's width and cut to it where it is the flex column.
-func glanceLine(t view.Table, kept []int, widths []int, flex int, cell func(int) (string, lipgloss.Style)) string {
+// padded to the column's width and cut to it where the column gives.
+func glanceLine(t view.Table, kept []int, widths []int, cut map[int]bool, cell func(int) (string, lipgloss.Style)) string {
 	parts := make([]string, 0, len(kept))
 	for _, i := range kept {
 		text, style := cell(i)
-		if i == flex {
+		if cut[i] {
 			text = shorten(text, widths[i])
 		}
 		pad := strings.Repeat(" ", max(widths[i]-lipgloss.Width(text), 0))
