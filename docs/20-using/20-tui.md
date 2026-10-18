@@ -136,6 +136,7 @@ A capability with a required input, or a write, opens a form built from its decl
 - `ctrl+e` opens `$EDITOR` on a long body.
 - A capability that edits a record, `kv.set` or `note.edit`, asks in two pages: which record, then its contents, seeded with what it holds. The second page names the record in its head, `key mykey`, and on the first the fast key says `next`, since it only moves on to the second.
 - `enter` moves to the next field, and on the last one does what finishing the form does, which the footer says in its place: `enter run` for a call, `enter preview` for a destructive one, which shows what it would do before anything happens, and `enter save` for an editor.
+- A refusal leads the footer and is wrapped across its two rows, the hints giving way to it lowest first and how to leave last. One too long for the width loses its middle, marked `…`, and keeps its end, which is where it says what to do about it.
 - `ctrl+s` accepts every remaining field at its current value, for a form whose defaults are already right. It is the one every terminal can send; `shift+enter` does the same where the terminal reports it, and `alt+enter` where Option is set to act as Meta.
 
 ### Which environment the run goes to
