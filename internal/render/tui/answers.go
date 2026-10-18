@@ -51,6 +51,7 @@ import (
 
 const (
 	allowCapability  = "agent.allow"
+	denyCapability   = "agent.deny"
 	revokeCapability = "grant.revoke"
 	rosterCapability = "grant.list"
 	lockCapability   = "lock.add"
@@ -88,6 +89,18 @@ func (m Model) answer(a capAction, base map[string]any) (tea.Model, tea.Cmd, boo
 		}
 		m.armed = &armedAnswer{act: a, base: base, line: call.allowLine(), done: call.allowedLine()}
 		return m, nil, true
+	case denyCapability:
+		// Declared bare and run as declared: all this adds is the receipt. The
+		// capability's own "agent.deny done" names nothing, and the row leaves the
+		// list, so the answer that cannot be taken back was the one with no proof
+		// of which call it was. A call that is gone by now has nothing to name, and
+		// the deny is the same.
+		id, _ := base["id"].(string)
+		if call, ok := waitingByID(id); ok {
+			m.said = call.deniedLine()
+		}
+		nm, cmd := m.runSeeded(a, base)
+		return nm, cmd, true
 	case revokeCapability:
 		if a.from == rosterCapability && a.src == srcRow && base["exact"] == true {
 			a.bare = true
