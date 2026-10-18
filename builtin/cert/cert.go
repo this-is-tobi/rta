@@ -43,6 +43,14 @@ import (
 // minutes.
 const defaultTimeout = 10 * time.Second
 
+// handshakeRefresh is how often a dashboard tile of a capability that handshakes
+// with a host somebody named is re-run: a floor an operator's file can lengthen
+// and never shorten. Left to the pace a capability gets when it says nothing,
+// five seconds, a tile was 720 handshakes an hour at that host, which its
+// operator reads in their logs as a probe, for an answer that moves by the day.
+// Somebody who just renewed a certificate presses `r`.
+const handshakeRefresh = 5 * time.Minute
+
 // expiryConcurrency bounds runExpiry's fan-out. The limit is not about
 // sockets — forty of those is nothing — it is that an unbounded fan-out over
 // a host list read from a file looks like a scan from the other end, and rta
@@ -99,6 +107,7 @@ func Plugin() plugin.Plugin {
 				Idempotent:  true,
 				Description: overMCPReadsAFile,
 				Inputs:      []plugin.Field{targetField, timeoutField},
+				Refresh:     handshakeRefresh,
 				Run:         runInspect,
 			},
 			{
@@ -108,6 +117,7 @@ func Plugin() plugin.Plugin {
 				Idempotent:  true,
 				Description: overMCPReadsAFile,
 				Inputs:      []plugin.Field{targetField, timeoutField},
+				Refresh:     handshakeRefresh,
 				Run:         runChain,
 			},
 			{
@@ -185,8 +195,9 @@ func Plugin() plugin.Plugin {
 				Description: "Over MCP this always refuses: a file has no handshake to report, and a host is not " +
 					"dialled by this tool. net.probe with `tls` reports a host's TLS version and cipher, with " +
 					"a grant.",
-				Inputs: []plugin.Field{targetField, timeoutField},
-				Run:    runTLS,
+				Inputs:  []plugin.Field{targetField, timeoutField},
+				Refresh: handshakeRefresh,
+				Run:     runTLS,
 			},
 		},
 	}

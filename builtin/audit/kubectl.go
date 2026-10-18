@@ -44,6 +44,15 @@ const kubectlTimeout = 20 * time.Second
 // open. Somebody who just fixed a binding presses `r`.
 const kubeAuditRefresh = 10 * time.Minute
 
+// outwardAuditRefresh is the same floor for the audits that ask somebody else's
+// service: audit.deps sends one request to osv.dev for every dependency a project
+// pins, audit.web an HTTPS request and audit.mail a handful of DNS lookups at the
+// host or domain it was pointed at. At the pace a capability gets when it says
+// nothing, thirty seconds from a Config key among its inputs, a tile was a scan of
+// that service, or of a public API, for as long as a terminal was open. What they
+// say moves by the day.
+const outwardAuditRefresh = time.Hour
+
 // kubectlWaitDelay bounds how long a finished-or-killed kubectl may hold its
 // pipes; see kubectlJSON. It only starts counting once the process has
 // exited or the context has killed it, so a healthy listing is never cut

@@ -87,6 +87,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				// actually reason about.
 				NeedsGrant: true,
 				Scope:      "host",
+				Refresh:    outwardAuditRefresh,
 				Description: "One HTTPS request, graded: TLS version and cipher, certificate validity, expiry and " +
 					"signature algorithm, the security headers a host should send (HSTS, CSP checked for weak " +
 					"directives like unsafe-inline, X-Frame-Options/frame-ancestors, cross-origin isolation), " +
@@ -123,6 +124,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				// stays, and it needs no second one.
 				NeedsGrant: true,
 				Scope:      "domain",
+				Refresh:    outwardAuditRefresh,
 				Description: "Answers \"can somebody send mail as this domain\" from the records the domain publishes: " +
 					"SPF (present, singular, how it ends, how close to RFC 7208's ten-lookup limit), DMARC " +
 					"(policy, rollout percentage, whether anything reports back), DKIM for a given selector, " +
@@ -151,6 +153,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				// and it would send this project's dependency list to osv.dev
 				// every time somebody opened the TUI.
 				NoPreview: true,
+				Refresh:   outwardAuditRefresh,
 				Description: "Reads what a project already declares (go.mod, the JavaScript, Python, Rust, PHP and " +
 					"Ruby lockfiles, or a CycloneDX/SPDX SBOM beside them) and asks osv.dev once about every " +
 					"pinned dependency, reporting which are named in an advisory with its severity and the " +

@@ -530,3 +530,33 @@ func TestTimeLeftIsCountedInTheUnitThatAnswers(t *testing.T) {
 		}
 	}
 }
+
+// A handshake at a host somebody named is a conversation with that host, and a
+// tile of one ran it at the pace a read of this machine gets, every five
+// seconds: 720 handshakes an hour at a production endpoint, which its operator
+// sees in their logs and may take for a probe. What these answer moves by the
+// day, and the person who just renewed a certificate presses `r`. The pace is
+// a floor: a tile that states a faster one is held to it.
+func TestWhatHandshakesWithAHostDeclaresAPaceFloor(t *testing.T) {
+	want := map[string]bool{"cert.tls": false, "cert.chain": false, "cert.inspect": false}
+	for _, c := range Plugin().Capabilities {
+		if _, ok := want[c.ID]; !ok {
+			continue
+		}
+		want[c.ID] = true
+		if c.Pace() != 5*time.Minute {
+			t.Errorf("%s runs on a tile every %s, want 5m0s", c.ID, c.Pace())
+		}
+		if got, cut := plugin.ClampPace(c, 5*time.Second); got != 5*time.Minute || !cut {
+			t.Errorf("%s: a tile asking for 5s runs every %s (cut %v), want the floor of 5m0s", c.ID, got, cut)
+		}
+		if got, cut := plugin.ClampPace(c, 10*time.Minute); got != 10*time.Minute || cut {
+			t.Errorf("%s: a tile asking for 10m runs every %s (cut %v), want it left alone", c.ID, got, cut)
+		}
+	}
+	for id, found := range want {
+		if !found {
+			t.Errorf("%s is not declared", id)
+		}
+	}
+}

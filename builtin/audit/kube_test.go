@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
 	"github.com/this-is-tobi/rta/pkg/findings"
@@ -230,6 +231,34 @@ func TestKubeAuditsDeclareARefresh(t *testing.T) {
 	}
 	if seen != 5 {
 		t.Errorf("found %d audit.kube.* capabilities, want 5", seen)
+	}
+}
+
+// The same for the audits that reach outside: audit.deps sends one request to
+// osv.dev for every dependency a project pins, audit.web an HTTPS request and
+// audit.mail a handful of DNS lookups at a host or a domain somebody named. At
+// the pace a capability gets when it says nothing (thirty seconds, from a Config
+// key among its inputs) that is a scan of somebody else's service, or of a public
+// API, for as long as a terminal is open. What they say moves by the day. The
+// pace is a floor: a tile that states a faster one is held to it.
+func TestTheAuditsThatReachOutDeclareAnHourlyFloor(t *testing.T) {
+	want := map[string]bool{"audit.deps": false, "audit.web": false, "audit.mail": false}
+	for _, c := range Plugin(nil, nil).Capabilities {
+		if _, ok := want[c.ID]; !ok {
+			continue
+		}
+		want[c.ID] = true
+		if c.Pace() != time.Hour {
+			t.Errorf("%s runs on a tile every %s, want 1h0m0s", c.ID, c.Pace())
+		}
+		if got, cut := plugin.ClampPace(c, 30*time.Second); got != time.Hour || !cut {
+			t.Errorf("%s: a tile asking for 30s runs every %s (cut %v), want the floor of 1h0m0s", c.ID, got, cut)
+		}
+	}
+	for id, found := range want {
+		if !found {
+			t.Errorf("%s is not declared", id)
+		}
 	}
 }
 
