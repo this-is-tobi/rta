@@ -53,12 +53,13 @@ profiles:
           password: kv:staging-db-password
       s3:
         set:
-          endpoint: https://s3.staging.internal
+          address: s3.staging.internal
+          tls: true
         secrets:
           secret-key: kv:staging-s3-secret
       vault:
         set:
-          address: https://vault.staging.internal
+          url: https://vault.staging.internal
         secrets:
           token: kv:staging-vault-token
 ```
