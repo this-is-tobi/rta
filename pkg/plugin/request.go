@@ -368,6 +368,30 @@ func (r Request) Values() map[string]any {
 	return out
 }
 
+// OperatorStated returns, by input name, the value of each Local input of c
+// that the operator's own config or a profile supplied for this request, as a
+// copy. Not a default, not the environment's fallback, and never anything the
+// caller sent: Local inputs are refused from a remote caller, so what is left
+// is where the operator pointed the connection.
+//
+// For the host's one reader of it, the MCP bridge, which names these values by
+// what they are in an error it hands an agent: an error says where a connection
+// went ("no address for db.prod.internal") for the person at the terminal, and
+// an agent is not told the operator's network. A handler must not read it; it
+// cannot tell which layer answered, which is the point of Resolve.
+func (r Request) OperatorStated(c Capability) map[string]any {
+	out := map[string]any{}
+	for _, f := range c.Inputs {
+		if _, stated := r.origins[f.Name]; !stated || !f.Local {
+			continue
+		}
+		if v, ok := r.values[f.Name]; ok && v != nil {
+			out[f.Name] = v
+		}
+	}
+	return out
+}
+
 func (r Request) String(name string) string {
 	v, _ := r.values[name].(string)
 	return v

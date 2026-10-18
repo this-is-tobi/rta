@@ -824,10 +824,11 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// it: the refusal quotes the value and names the key that set it, so
 		// run ahead of the gate it would read the operator's config back to
 		// an agent no grant covers, one refused call at a time.
+		stated := statedFor(c, run)
 		if verr := plugin.CheckRequest(c, run); verr != nil {
 			release()
 			refusedBy(rec, verr)
-			return errResult(verr), nil
+			return errResultAs(verr, stated), nil
 		}
 		started := time.Now()
 		v, err := c.Run(ctx, run)
@@ -871,7 +872,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			default:
 				failedBy(rec, ve)
 			}
-			return errResult(ve), nil
+			return errResultAs(ve, stated), nil
 		}
 		rec.Outcome = agentlog.Ran
 		// A built-in's answer is measured whole, before it is cut to what a
@@ -1391,14 +1392,21 @@ func fittedResult(v view.View) (*sdk.CallToolResult, error) {
 	return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: string(raw)}}}, nil
 }
 
-func errResult(e *view.Error) *sdk.CallToolResult {
+func errResult(e *view.Error) *sdk.CallToolResult { return errResultAs(e, nil) }
+
+// errResultAs is errResult for a call that ran against a connection the operator
+// stated (statedFor): what the error says of where it went is told by the
+// profile or the input that holds it, and a hint that probes it is not told.
+func errResultAs(e *view.Error, stated *statedValues) *sdk.CallToolResult {
+	e = stated.agentError(e)
 	// AsError puts a foreign error's own text into Message, so an error is as
 	// much a channel from elsewhere as a result body is. It is also written
 	// for the person at a terminal, who is told where things are: what an agent
 	// is told of the operator's own places is their names (operatorPaths), and
+	// of the connection they pointed the call at, theirs too (stated), and
 	// what it sent in a URL or a header is not repeated to it with its secrets.
 	raw, _ := view.Marshal(view.Envelope{View: view.MapErrorStrings(e, func(s string) string {
-		return withoutOperatorPaths(textclean.Credentials(textclean.Model(s)))
+		return withoutOperatorPaths(textclean.Credentials(stated.mask(textclean.Model(s))))
 	})})
 	return &sdk.CallToolResult{
 		IsError: true,
