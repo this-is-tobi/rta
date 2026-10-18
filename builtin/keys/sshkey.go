@@ -98,6 +98,70 @@ var promptKeyPassphrase = func(path string) (string, error) {
 	return string(secret), err
 }
 
+// promptNewKeyPassphrase asks for the passphrase of a key about to be written,
+// twice, and returns both answers for newKeyPassphrase to compare: a typo in
+// the only prompt there was is a key nobody can unlock. An empty first answer
+// is the choice of none, so nothing is asked again after it. Overridable in
+// tests.
+var promptNewKeyPassphrase = func() (first, again string, err error) {
+	f, err := stdio.ReadSecret("Passphrase for the new key (empty for none): ")
+	if err != nil || len(f) == 0 {
+		return "", "", err
+	}
+	a, err := stdio.ReadSecret("Once more: ")
+	return string(f), string(a), err
+}
+
+// newKeyPassphrase settles the passphrase a key about to be written is locked
+// with: the flag's when one was given, else what a person at a terminal types,
+// and nothing when there is nobody to ask. flag is "passphrase" for keys.add
+// and "new-passphrase" for keys.restore.
+//
+// **Asked, because the flag is the wrong way to type one.** A passphrase on the
+// command line sits in `ps` and in shell history, which is what the CLI's own
+// rule against credentials in argv is about; kv and the guard prompt for theirs.
+// Before this, the only way a terminal got an encrypted key from `keys add` or
+// `keys restore` was that flag, so the unencrypted key was what everyone who
+// never read the help received, in silence. The flag stays, for a script that
+// has no terminal to ask at, and is not asked about again.
+//
+// An empty answer is none, deliberately: an ed25519 key with no passphrase is
+// what `ssh-keygen -N ""` writes and what a good many automated uses want, and
+// refusing it here would only send people to the flag. What replaces the
+// silence is the receipt (passphraseReceipt), which says so.
+func newKeyPassphrase(req plugin.Request, verb, flag string) ([]byte, *view.Error) {
+	if p := req.String(flag); p != "" {
+		return []byte(p), nil
+	}
+	if !canPrompt(req) {
+		return nil, nil
+	}
+	first, again, err := promptNewKeyPassphrase()
+	switch {
+	case err != nil:
+		return nil, view.Errorf("keys."+verb+".passphrase", "reading the passphrase: %v", err)
+	case first != again:
+		return nil, view.Errorf("keys."+verb+".mismatch", "the two answers differ — nothing was written").
+			WithHint("run it again and type the same passphrase both times")
+	}
+	return []byte(first), nil
+}
+
+// passphraseReceipt is the receipt's line about the key's protection. For a key
+// without one it says what that means for the file and how to add one later,
+// since the person may have pressed enter without having read the prompt.
+//
+// It does not lead with the word "none": the renderer draws a value that starts
+// with it in the muted grey of a status that is off, which is the opposite of
+// what this line is for.
+func passphraseReceipt(out string, passphrase []byte) string {
+	if len(passphrase) > 0 {
+		return "set"
+	}
+	return "no passphrase — the key file is unencrypted, so anyone who can read it can use the key; " +
+		"`ssh-keygen -p -f " + plugin.ShellWord(out) + "` adds one"
+}
+
 // promptWords asks for the BIP39 seed phrase at the terminal, masked like a
 // passphrase: the words reconstruct the private key exactly, so they get the
 // same "never lands on the screen or in scrollback" treatment. Overridable in

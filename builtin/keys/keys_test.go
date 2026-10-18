@@ -1502,6 +1502,220 @@ func TestTheNewKeysPassphraseIsNeverReadFromTheEnvironment(t *testing.T) {
 	}
 }
 
+// --- a passphrase for the key being written, asked for at a terminal -----
+
+// newKeyWriters are the two capabilities that write a private key, each with
+// the name its passphrase flag goes by and a way to call it. A key reached by
+// either has to be protected, or deliberately not, by the same rule.
+var newKeyWriters = []struct {
+	verb, flag string
+	run        func(t *testing.T, out string, values map[string]any) (view.View, error)
+}{
+	{"add", "passphrase", func(t *testing.T, out string, values map[string]any) (view.View, error) {
+		t.Helper()
+		values["out"] = out
+		return runAdd(context.Background(), req(values))
+	}},
+	{"restore", "new-passphrase", func(t *testing.T, out string, values map[string]any) (view.View, error) {
+		t.Helper()
+		values["out"] = out
+		values["words"] = freshWords(t)
+		return runRestore(context.Background(), req(values))
+	}},
+}
+
+// atATerminal stands in for a person at a terminal who answers the prompt for
+// a new key's passphrase with first and then again, and returns how many times
+// they were asked. A test that must not be asked anything passes no answers
+// and fails if it is.
+func atATerminal(t *testing.T, answers ...string) *int {
+	t.Helper()
+	oldCan, oldPrompt := canPrompt, promptNewKeyPassphrase
+	asked := new(int)
+	canPrompt = func(plugin.Request) bool { return true }
+	promptNewKeyPassphrase = func() (string, string, error) {
+		*asked++
+		if len(answers) != 2 {
+			t.Error("asked for a new key's passphrase, and nobody was meant to be")
+			return "", "", nil
+		}
+		return answers[0], answers[1], nil
+	}
+	t.Cleanup(func() { canPrompt, promptNewKeyPassphrase = oldCan, oldPrompt })
+	return asked
+}
+
+func isEncrypted(t *testing.T, path string) bool {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ssh.ParseRawPrivateKey(data)
+	return isLocked(err)
+}
+
+// The finding: at a terminal `keys add` printed a fingerprint and never asked
+// for a passphrase, so the one way to encrypt the key it wrote was a flag, which
+// leaves the passphrase in shell history and in `ps`.
+func TestANewKeyIsEncryptedWithThePassphraseTypedAtATerminal(t *testing.T) {
+	for _, w := range newKeyWriters {
+		t.Run(w.verb, func(t *testing.T) {
+			asked := atATerminal(t, "s3cret", "s3cret")
+			out := filepath.Join(t.TempDir(), "id_new")
+			v, err := w.run(t, out, map[string]any{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if *asked != 1 {
+				t.Errorf("asked %d times, want once (the prompt itself types it twice)", *asked)
+			}
+			data, readErr := os.ReadFile(out)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if _, err := ssh.ParseRawPrivateKey(data); !isLocked(err) {
+				t.Fatalf("the key was written unencrypted, parse error = %v", err)
+			}
+			if _, err := ssh.ParseRawPrivateKeyWithPassphrase(data, []byte("s3cret")); err != nil {
+				t.Errorf("the passphrase typed does not unlock the key: %v", err)
+			}
+			if got := pairIn(t, v.(view.KeyValue), "Passphrase"); got != "set" {
+				t.Errorf("receipt says %q, want set", got)
+			}
+		})
+	}
+}
+
+// An empty answer is the choice of no passphrase, and the receipt says what
+// that means for the file rather than leaving the person to find out.
+func TestAnEmptyAnswerWritesAnUnencryptedKeyAndSaysSo(t *testing.T) {
+	for _, w := range newKeyWriters {
+		t.Run(w.verb, func(t *testing.T) {
+			asked := atATerminal(t, "", "")
+			out := filepath.Join(t.TempDir(), "id_new")
+			v, err := w.run(t, out, map[string]any{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if *asked != 1 {
+				t.Errorf("asked %d times, want once", *asked)
+			}
+			if isEncrypted(t, out) {
+				t.Error("an empty answer encrypted the key")
+			}
+			got := pairIn(t, v.(view.KeyValue), "Passphrase")
+			if !strings.HasPrefix(got, "no passphrase") || !strings.Contains(got, "unencrypted") {
+				t.Errorf("receipt says %q, want it to say plainly that the key has none", got)
+			}
+			if !strings.Contains(got, "ssh-keygen -p -f "+out) {
+				t.Errorf("receipt %q does not say how to add one afterwards", got)
+			}
+		})
+	}
+}
+
+// A typo in the only prompt would be a passphrase nobody knows, on a key
+// that cannot be unlocked without it; and both files are still unwritten
+// when it is caught.
+func TestTwoDifferentAnswersWriteNothing(t *testing.T) {
+	for _, w := range newKeyWriters {
+		t.Run(w.verb, func(t *testing.T) {
+			atATerminal(t, "s3cret", "s3cr3t")
+			out := filepath.Join(t.TempDir(), "id_new")
+			_, err := w.run(t, out, map[string]any{})
+			if want := "keys." + w.verb + ".mismatch"; errCode(err) != want {
+				t.Fatalf("code = %q, want %s", errCode(err), want)
+			}
+			for _, path := range []string{out, out + ".pub"} {
+				if _, statErr := os.Stat(path); statErr == nil {
+					t.Errorf("%s was written despite the two answers differing", path)
+				}
+			}
+		})
+	}
+}
+
+// The flag stays for scripts, and a call that carries one is not asked again.
+func TestAPassphraseFlagIsNotAskedForAtATerminal(t *testing.T) {
+	for _, w := range newKeyWriters {
+		t.Run(w.verb, func(t *testing.T) {
+			asked := atATerminal(t)
+			out := filepath.Join(t.TempDir(), "id_new")
+			v, err := w.run(t, out, map[string]any{w.flag: "from-the-flag"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if *asked != 0 {
+				t.Errorf("asked %d times although the flag was given", *asked)
+			}
+			data, readErr := os.ReadFile(out)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if _, err := ssh.ParseRawPrivateKeyWithPassphrase(data, []byte("from-the-flag")); err != nil {
+				t.Errorf("the flag's passphrase does not unlock the key: %v", err)
+			}
+			if got := pairIn(t, v.(view.KeyValue), "Passphrase"); got != "set" {
+				t.Errorf("receipt says %q, want set", got)
+			}
+		})
+	}
+}
+
+// Without a terminal nothing can be asked, and the key is written as it always
+// was; only the receipt now states what it holds.
+func TestWithoutATerminalNothingIsAskedAndTheReceiptSaysNone(t *testing.T) {
+	for _, w := range newKeyWriters {
+		t.Run(w.verb, func(t *testing.T) {
+			old := promptNewKeyPassphrase
+			promptNewKeyPassphrase = func() (string, string, error) {
+				t.Error("asked for a passphrase with nobody at a terminal")
+				return "", "", nil
+			}
+			t.Cleanup(func() { promptNewKeyPassphrase = old })
+			out := filepath.Join(t.TempDir(), "id_new")
+			v, err := w.run(t, out, map[string]any{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if isEncrypted(t, out) {
+				t.Error("the key was encrypted with no passphrase given")
+			}
+			if got := pairIn(t, v.(view.KeyValue), "Passphrase"); !strings.HasPrefix(got, "no passphrase") {
+				t.Errorf("receipt says %q, want no passphrase", got)
+			}
+		})
+	}
+}
+
+// Nobody is asked for a passphrase for a key that will not be written: not on
+// a dry run, and not before the words or the path have been found wanting.
+func TestNobodyIsAskedForAPassphraseForAKeyThatIsNotWritten(t *testing.T) {
+	dir := t.TempDir()
+	atATerminal(t)
+
+	if _, err := runAdd(context.Background(), plugin.NewRequest(map[string]any{"out": filepath.Join(dir, "a")}, true, false)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runRestore(context.Background(), plugin.NewRequest(
+		map[string]any{"out": filepath.Join(dir, "b"), "words": freshWords(t)}, true, false)); err != nil {
+		t.Fatal(err)
+	}
+
+	taken := filepath.Join(dir, "taken")
+	if err := os.WriteFile(taken, []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runAdd(context.Background(), req(map[string]any{"out": taken})); errCode(err) != "keys.add.exists" {
+		t.Errorf("code = %q, want keys.add.exists", errCode(err))
+	}
+	if _, err := runRestore(context.Background(), req(map[string]any{
+		"out": filepath.Join(dir, "c"), "words": "not a seed phrase"})); errCode(err) != "keys.restore.words" {
+		t.Errorf("code = %q, want keys.restore.words", errCode(err))
+	}
+}
+
 // **And there is no keys.rm**, which is a decision rather than an omission:
 // deleting a key file is irreversible loss of access, `rm` is a command
 // everybody already has, and the shell they run it in will ask.
