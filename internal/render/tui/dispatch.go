@@ -470,6 +470,12 @@ func (m Model) addPickKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 func (m Model) formKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.String() {
 	case "esc":
+		// A picker with a filter open or applied answers esc itself, the way a
+		// combobox closes its popup before the dialog around it.
+		if m.form != nil && filterHoldsEsc(m.form.form) {
+			nm, cmd := m.clearPickerFilter()
+			return nm, cmd, true
+		}
 		nm, cmd := m.closeForm()
 		return nm, cmd, true
 	case "ctrl+c":
