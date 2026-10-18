@@ -625,7 +625,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			}
 			cf.bools[f.Name] = &v
 			fields = append(fields, huh.NewConfirm().
-				Title(fieldTitle(f.Name)).
+				Title(fieldLabel(f)).
 				Description(f.Help).
 				Affirmative("yes").Negative("no").
 				Value(&v))
@@ -636,7 +636,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// Capability.validate refuses Suggest on a Text input, so nothing
 			// is being dropped here — see pkg/plugin.
 			fields = append(fields, huh.NewText().
-				Title(fieldTitle(f.Name)).
+				Title(fieldLabel(f)).
 				// ctrl+e opens $EDITOR on the body, which is how a note gets
 				// written in the tool you write in. It works by default; it
 				// is said here because an affordance nobody knows about is
@@ -652,8 +652,8 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// "a, b" — fmt.Sprint would print "[a b]" and break re-submission.
 			typed := cf.bind(f.Name, defaultString(f))
 			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
-				Title(fieldTitle(f.Name)).
-				Description(completionHint(f, fieldDescription(f)+" (comma-separated)")).
+				Title(fieldLabel(f)).
+				Description(completionHint(f, fieldDescription(f))).
 				Accessor(typed).
 				Validate(cf.validator(f)), f, typed, lastItem)))
 		case plugin.Path:
@@ -662,7 +662,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// declared for itself goes first.
 			typed := cf.bind(f.Name, defaultString(f))
 			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
-				Title(fieldTitle(f.Name)).
+				Title(fieldLabel(f)).
 				Description(fieldDescription(f)+" — tab completes paths").
 				Accessor(typed).
 				Validate(cf.validator(f)), f, typed, walkingDisk)))
@@ -676,19 +676,19 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// arm it shares with Secret and not the one it shares with
 			// StringSlice: the box takes the same comma-separated text — the
 			// same typedValue splits it — but it must not be on screen while
-			// somebody types it, and the hint would be the only thing telling
+			// somebody types it, and the description is the only thing telling
 			// them so. That trade is the reason this is masked-and-terse
 			// rather than legible-and-visible.
 			fields = append(fields, cf.record(f.Name, huh.NewInput().
-				Title(fieldTitle(f.Name)).
-				Description(commaHint(f)).
+				Title(fieldLabel(f)).
+				Description(fieldDescription(f)).
 				EchoMode(huh.EchoModePassword).
 				Accessor(cf.bind(f.Name, defaultString(f))).
 				Validate(cf.validator(f))))
 		default:
 			typed := cf.bind(f.Name, defaultString(f))
 			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
-				Title(fieldTitle(f.Name)).
+				Title(fieldLabel(f)).
 				Description(completionHint(f, fieldDescription(f))).
 				Accessor(typed).
 				Validate(cf.validator(f)), f, typed, wholeBox)))
@@ -784,6 +784,9 @@ func (s *syncString) Set(value string) {
 func completionHint(f plugin.Field, desc string) string {
 	if f.Suggest == nil {
 		return desc
+	}
+	if desc == "" {
+		return browseHint("tab completes")
 	}
 	return browseHint(desc + " — tab completes")
 }
@@ -1061,7 +1064,7 @@ func (cf *capForm) selectOne(f plugin.Field) huh.Field {
 		opts = append(opts, huh.NewOption(o, o))
 	}
 	return huh.NewSelect[string]().
-		Title(fieldTitle(f.Name)).
+		Title(fieldLabel(f)).
 		Description(fieldDescription(f)).
 		Options(opts...).
 		Accessor(typed)
@@ -1108,8 +1111,8 @@ func (cf *capForm) multiSelect(f plugin.Field) huh.Field {
 		opts = append(opts, huh.NewOption(o, o).Selected(slices.Contains(v, o)))
 	}
 	return huh.NewMultiSelect[string]().
-		Title(fieldTitle(f.Name)).
-		Description(fieldDescription(f) + " (space to toggle)").
+		Title(fieldLabel(f)).
+		Description(strings.TrimSpace(fieldDescription(f) + " (space to toggle)")).
 		Options(opts...).
 		Value(&v).
 		Validate(func(picked []string) error {
@@ -1145,17 +1148,6 @@ func fieldTitle(name string) string {
 	return name
 }
 
-// commaHint describes a masked box that nonetheless takes a list. A
-// SecretSlice cannot carry the completion hint StringSlice gets — nothing is
-// completed into a masked field — so the shape has to be said in words or it
-// is not said at all.
-func commaHint(f plugin.Field) string {
-	if f.Type == plugin.SecretSlice {
-		return fieldDescription(f) + " (comma-separated)"
-	}
-	return fieldDescription(f)
-}
-
 // requiredHere is whether a form must have f before it submits: a Required
 // input, and a Piped one, which only the CLI can leave out — it reads a pipe
 // then, and a form has none behind it. Asked of the host's rule for this
@@ -1163,16 +1155,61 @@ func commaHint(f plugin.Field) string {
 // the guard then refuses and the two cannot drift.
 func requiredHere(f plugin.Field) bool { return f.RequiredOn(plugin.SurfaceTUI) }
 
-func fieldDescription(f plugin.Field) string {
-	d := f.Help
-	extra := string(f.Type)
+// requiredMark is what a required box's title carries after its name. Words
+// and not a colour or a glyph alone, so it is said on a terminal with neither,
+// and on the title line and not the last words of the help, where it was
+// the third row of a box whose help wrapped.
+const requiredMark = " · required"
+
+// fieldLabel is the title line of a field's box: its name, and that it must be
+// answered when it must.
+func fieldLabel(f plugin.Field) string {
 	if requiredHere(f) {
-		extra += ", required"
+		return fieldTitle(f.Name) + requiredMark
 	}
-	if d == "" {
-		return extra
+	return fieldTitle(f.Name)
+}
+
+// fieldDescription is what is said under a box's title: the field's help and,
+// when the box takes something the help does not already tell, what shape.
+func fieldDescription(f plugin.Field) string {
+	word := shapeWord(f)
+	switch {
+	case word == "":
+		return f.Help
+	case f.Help == "":
+		return word
 	}
-	return d + " (" + extra + ")"
+	return f.Help + " (" + word + ")"
+}
+
+// shapeWord says what a box takes in the words of whoever is filling it in, and
+// nothing for the boxes that need no telling.
+//
+// Not the declared type's name, which is a word for the plugin author: a
+// stringSlice is a list written with commas, and a text is more than one line.
+// A picker says its choices by being a picker, a bool by its yes and no, and a
+// string by being the thing a box holds, so none of the three is told its
+// type. The numbers, a duration, a path and a secret keep theirs, since each
+// narrows what the box accepts or what happens to it. A SecretSlice cannot
+// carry the completion hint a StringSlice gets, since nothing is completed
+// into a masked box, so the shape has to be said in words or it is not said at
+// all.
+func shapeWord(f plugin.Field) string {
+	if len(f.Options) > 0 {
+		return ""
+	}
+	switch f.Type {
+	case plugin.String, plugin.Bool:
+		return ""
+	case plugin.StringSlice:
+		return "list, comma-separated"
+	case plugin.SecretSlice:
+		return "secret list, comma-separated"
+	case plugin.Text:
+		return "multi-line"
+	}
+	return string(f.Type)
 }
 
 // validator is validatorFor plus the form's own rule for the field, if it has

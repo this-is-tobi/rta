@@ -103,8 +103,8 @@ func TestAPipedInputIsRequiredInAForm(t *testing.T) {
 	if err := validatorFor(f)("some text"); err != nil {
 		t.Errorf("a given one was refused: %v", err)
 	}
-	if d := fieldDescription(f); !strings.Contains(d, "required") {
-		t.Errorf("description = %q, want it marked required", d)
+	if l := fieldLabel(f); !strings.Contains(l, "required") {
+		t.Errorf("title = %q, want it marked required", l)
 	}
 }
 
