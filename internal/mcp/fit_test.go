@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"strings"
@@ -8,6 +9,8 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -162,5 +165,86 @@ func TestAShapeThatCannotBeCutIsRefusedAndNamesTheRemedy(t *testing.T) {
 	var got view.Error
 	if err := json.Unmarshal([]byte(text), &got); err != nil || got.Code != "core.mcp.result.toolarge" || got.Hint == "" {
 		t.Errorf("refusal = %+v (%v), want core.mcp.result.toolarge with a hint", got, err)
+	}
+}
+
+// padRegistry is a plugin whose three capabilities each answer with more than
+// a result may hold: a table with an input to bound it, a tree with the three
+// that bound and aim one (and a Local one a model is never offered), and a
+// table with none.
+func padRegistry(t *testing.T) *registry.Registry {
+	t.Helper()
+	table := func(context.Context, plugin.Request) (view.View, error) { return bigTable(2000), nil }
+	tree := func(context.Context, plugin.Request) (view.View, error) {
+		out := view.Tree{}
+		for i := range 5000 {
+			out.Roots = append(out.Roots, view.Node{Label: strings.Repeat("n", 40) + strconv.Itoa(i)})
+		}
+		return out, nil
+	}
+	reg := registry.New()
+	err := reg.Register(plugin.Plugin{Name: "pad", Summary: "pad", Capabilities: []plugin.Capability{
+		{ID: "pad.list", Summary: "a long list", Safety: plugin.Read, Idempotent: true, Run: table,
+			Inputs: []plugin.Field{{Name: "count", Type: plugin.Int, Help: "how many"}, {Name: "length", Type: plugin.Int, Help: "how long"}}},
+		{ID: "pad.tree", Summary: "a large tree", Safety: plugin.Read, Idempotent: true, Run: tree,
+			Inputs: []plugin.Field{{Name: "path", Type: plugin.String, Help: "where"}, {Name: "depth", Type: plugin.Int, Help: "how deep"},
+				{Name: "limit", Type: plugin.Int, Help: "how many"}, {Name: "host", Type: plugin.String, Local: true, Help: "not offered"}}},
+		{ID: "pad.plain", Summary: "a long list with nothing to turn down", Safety: plugin.Read, Idempotent: true, Run: table},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reg
+}
+
+// A tool that is asked for too much has its own words for less, and the hint
+// that sends a model to "a lower limit where the tool has one" leaves it to
+// find them: gen_password has count and no limit, and fs_tree has depth, limit
+// and path. The hint names the ones the tool being called has, and for a table
+// that was cut how many rows fit.
+func TestACutTableNamesTheToolsOwnInputAndHowManyRowsFit(t *testing.T) {
+	s := connectWithData(t, padRegistry(t), Options{})
+	res := callTool(t, s, "pad_list", map[string]any{})
+	var got struct {
+		Rows     [][]string
+		Warnings []view.Error
+	}
+	if err := json.Unmarshal([]byte(res.Content[0].(*sdk.TextContent).Text), &got); err != nil || len(got.Warnings) != 1 {
+		t.Fatalf("%v, %d warnings: want one cut warning", err, len(got.Warnings))
+	}
+	hint := got.Warnings[0].Hint
+	if want := "set `count` to " + strconv.Itoa(len(got.Rows)) + " or less"; !strings.Contains(hint, want) {
+		t.Errorf("the hint does not say %q: %s", want, hint)
+	}
+	if strings.Contains(hint, "limit") || strings.Contains(hint, "where the tool has one") {
+		t.Errorf("the hint names a lever the tool does not have: %s", hint)
+	}
+}
+
+func TestARefusedAnswerNamesTheToolsDepthLimitAndPath(t *testing.T) {
+	s := connectWithData(t, padRegistry(t), Options{})
+	res := callTool(t, s, "pad_tree", map[string]any{})
+	var got view.Error
+	if err := json.Unmarshal([]byte(res.Content[0].(*sdk.TextContent).Text), &got); err != nil || got.Code != "core.mcp.result.toolarge" {
+		t.Fatalf("%v: %+v, want core.mcp.result.toolarge", err, got)
+	}
+	for _, want := range []string{"`limit`", "`depth`", "`path`"} {
+		if !strings.Contains(got.Hint, want) {
+			t.Errorf("the hint does not name %s: %s", want, got.Hint)
+		}
+	}
+	if strings.Contains(got.Hint, "host") || strings.Contains(got.Hint, "where the tool has one") {
+		t.Errorf("the hint names an input the tool does not offer, or is the generic one: %s", got.Hint)
+	}
+}
+
+// A tool with no input that makes an answer smaller keeps the sentence that
+// says what usually does.
+func TestAToolWithNoLeverKeepsTheGenericHint(t *testing.T) {
+	s := connectWithData(t, padRegistry(t), Options{})
+	var got struct{ Warnings []view.Error }
+	if err := json.Unmarshal([]byte(callTool(t, s, "pad_plain", map[string]any{}).Content[0].(*sdk.TextContent).Text), &got); err != nil ||
+		len(got.Warnings) != 1 || !strings.Contains(got.Warnings[0].Hint, "or a lower limit where the tool has one") {
+		t.Errorf("%v: %+v, want the generic hint", err, got.Warnings)
 	}
 }

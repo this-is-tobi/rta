@@ -888,7 +888,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				return errResult(ve), nil
 			}
 		}
-		res, err := fittedResult(cleaned)
+		res, err := fittedResult(cleaned, narrowingFor(c))
 		if err != nil {
 			return nil, err
 		}
@@ -1363,7 +1363,7 @@ func nameUnder(root, p string) bool {
 // And bounded (fitResult): unbounded is what a result may be to a person at a
 // terminal, who scrolls, and what a model's context is not.
 func viewResult(v view.View) (*sdk.CallToolResult, error) {
-	return fittedResult(cleanedView(v))
+	return fittedResult(cleanedView(v), narrowingFor(plugin.Capability{}))
 }
 
 // cleanedView is v masked and made safe to read, whole: what the operator's
@@ -1378,8 +1378,8 @@ func cleanedView(v view.View) view.View {
 
 // fittedResult is a cleaned view cut to what a model can hold (fitResult) and
 // encoded as the one JSON text a result is sent as.
-func fittedResult(v view.View) (*sdk.CallToolResult, error) {
-	v, tooLarge := fitResult(v)
+func fittedResult(v view.View, narrow narrowing) (*sdk.CallToolResult, error) {
+	v, tooLarge := fitResult(v, narrow)
 	if tooLarge != nil {
 		return errResult(tooLarge), nil
 	}
