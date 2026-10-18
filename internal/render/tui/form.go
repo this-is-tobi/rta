@@ -33,6 +33,10 @@ const suggestTimeout = 500 * time.Millisecond
 // stage-one answers).
 type capForm struct {
 	form *huh.Form
+	// widgets is each field's widget, in the order of fields, kept so the
+	// position of the cursor can be told in fields (position): huh knows which
+	// widget has the focus and nothing of which field it was built from.
+	widgets []huh.Field
 	// about is what the panel's title says in place of the capability's
 	// summary, for a form that answers one thing in particular: the parked call
 	// it would allow (answers.go). Empty for every other form.
@@ -548,6 +552,31 @@ func (cf *capForm) asSeeded(f plugin.Field, v any) any {
 	return v
 }
 
+// position says where the cursor is among the boxes being asked, as "3 of 10",
+// and nothing for a form of one box, which has no length to speak of. A box a
+// condition hides (hideUnless) is not asked, so it is not counted; a heading
+// between boxes (withSection) is not a box and was never a widget here.
+func (cf *capForm) position() string {
+	if cf.form == nil || cf.form.State != huh.StateNormal {
+		return ""
+	}
+	focused := cf.form.GetFocusedField()
+	at, total := 0, 0
+	for i, f := range cf.fields {
+		if i >= len(cf.widgets) || cf.hidden(f.Name) {
+			continue
+		}
+		total++
+		if cf.widgets[i] == focused {
+			at = total
+		}
+	}
+	if total < 2 || at == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d of %d", at, total)
+}
+
 // hasInputs reports whether opening this capability warrants a form: any
 // field the user might want to set (required or optional).
 func hasInputs(c plugin.Capability) bool { return len(c.Inputs) > 0 }
@@ -694,6 +723,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 				Validate(cf.validator(f)), f, typed, wholeBox)))
 		}
 	}
+	cf.widgets = fields
 	// After the bindings exist, because a condition reads one of them.
 	for _, opt := range opts {
 		if !opt.early {
