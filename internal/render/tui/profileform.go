@@ -992,7 +992,7 @@ func (m *Model) useSelectedProfile() string {
 	row := m.profiles[m.profileSel]
 	if profile.LoadSelection().Name(time.Now()) == row.name {
 		if verr := profile.SaveSelection(profile.Selection{}); verr != nil {
-			return "not saved: " + verr.Error()
+			return m.refused("not saved: " + verr.Error())
 		}
 		return "switched off " + row.name + " — commands run against the base configuration"
 	}
@@ -1000,7 +1000,7 @@ func (m *Model) useSelectedProfile() string {
 		// Switching to an environment that cannot resolve would leave every
 		// later command failing with a message about a connection the operator
 		// believes they chose deliberately.
-		return row.name + " cannot be used: " + row.problem
+		return m.refused(row.name + " cannot be used: " + row.problem)
 	}
 	sel := profile.Selection{Active: row.name}
 	note := "switched to " + row.name
@@ -1010,7 +1010,7 @@ func (m *Model) useSelectedProfile() string {
 		note += " for " + row.p.TTL
 	}
 	if verr := profile.SaveSelection(sel); verr != nil {
-		return "not saved: " + verr.Error()
+		return m.refused("not saved: " + verr.Error())
 	}
 	return note + " — covers " + strings.Join(row.p.Namespaces(), ", ")
 }
@@ -1029,7 +1029,7 @@ func (m *Model) deleteSelectedProfile() string {
 		delete(cfg.Profiles, row.name)
 		return cfg, true
 	}); err != nil {
-		return "not deleted: " + err.Error()
+		return m.refused("not deleted: " + err.Error())
 	}
 	if sel := profile.LoadSelection(); sel.Active == row.name {
 		_ = profile.SaveSelection(profile.Selection{})
@@ -1059,10 +1059,10 @@ func (m *Model) deleteSelectedConn() string {
 		cfg.Profiles[m.profileOpen] = p
 		return cfg, true
 	}); err != nil {
-		return "not removed: " + err.Error()
+		return m.refused("not removed: " + err.Error())
 	}
 	if gone {
-		return "profile " + m.profileOpen + " is gone"
+		return m.refused("profile " + m.profileOpen + " is gone")
 	}
 	return "removed " + key + " from " + m.profileOpen
 }
@@ -1094,7 +1094,7 @@ func (m *Model) copyExportLine() (string, tea.Cmd) {
 	}
 	row := m.profiles[m.profileSel]
 	if !row.valid() {
-		return row.name + " is not usable — " + row.problem, nil
+		return m.refused(row.name + " is not usable — " + row.problem), nil
 	}
 	var missing []string
 	for _, c := range row.conns {
@@ -1110,14 +1110,14 @@ func (m *Model) copyExportLine() (string, tea.Cmd) {
 	}
 	if len(missing) == 0 {
 		if needed, _ := row.missing(); needed == 0 {
-			return row.name + " needs no credential", nil
+			return m.refused(row.name + " needs no credential"), nil
 		}
-		return row.name + "'s credentials are already resolved — nothing to export", nil
+		return m.refused(row.name + "'s credentials are already resolved — nothing to export"), nil
 	}
 	sort.Strings(missing)
 	return "", copyInBackground(strings.Join(missing, "\n")+"\n", func(err *view.Error) copiedMsg {
 		if err != nil {
-			return copiedMsg{flash: "no clipboard here — " + strings.Join(missing, "; ")}
+			return copiedMsg{refusal: "no clipboard here — " + strings.Join(missing, "; ")}
 		}
 		return copiedMsg{flash: "copied " + format.CountOf(len(missing), "export line") + " — fill in the value and run it"}
 	})
@@ -1318,7 +1318,7 @@ func (m Model) saveCredentialForm() (tea.Model, tea.Cmd) {
 	if source == credSourceEnv {
 		// Nothing to write: the environment path is the operator's shell, and
 		// the honest end of it is the line to paste.
-		m.flash = "press y on the environment to copy the export line for " + input
+		m.guide("press y on the environment to copy the export line for " + input)
 		return m.closeToOrigin()
 	}
 

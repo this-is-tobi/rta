@@ -183,7 +183,7 @@ func (m Model) addTile(c plugin.Capability, ref string) (tea.Model, tea.Cmd) {
 	}
 	if changed {
 		if err := m.save(); err != nil {
-			m.flash += " (this session only: " + err.Error() + ")"
+			m.refuse("not saved: " + m.flash + " (this session only: " + err.Error() + ")")
 		}
 		m.rebuildTiles()
 	}
