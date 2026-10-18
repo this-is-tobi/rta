@@ -110,6 +110,12 @@ type Interrupts struct {
 	// its own (report).
 	onTTY     bool
 	prompting func() bool
+	// deafPrompt is whether a prompt is waiting that cannot hear the command's
+	// context being cancelled (shutdown.DeafPromptOpen), and atPrompt that the
+	// first signal found one: the exit is then at once and says it was a
+	// cancellation, not that a command had not returned.
+	deafPrompt func() bool
+	atPrompt   bool
 	// nested is the command line plugin dev is running, if it is running
 	// one (runningNested).
 	nested func() *commandLine
@@ -132,22 +138,23 @@ func WatchSignals(parent context.Context) (context.Context, *Interrupts) {
 	ctx, cancel := context.WithCancel(parent)
 	saved := savedTerminal()
 	i := &Interrupts{
-		signals:   make(chan os.Signal, 2),
-		cancel:    cancel,
-		grace:     signalGrace,
-		after:     time.After,
-		owned:     shutdownOwned.Load,
-		lent:      shutdown.TerminalLent,
-		settle:    shutdown.Settle,
-		atExit:    shutdown.Exiting,
-		restore:   saved.restore,
-		exit:      os.Exit,
-		stderr:    os.Stderr,
-		onTTY:     stderrIsTerminal(),
-		prompting: shutdown.PromptOpen,
-		nested:    nestedLine.Load,
-		done:      make(chan struct{}),
-		attached:  make(chan struct{}),
+		signals:    make(chan os.Signal, 2),
+		cancel:     cancel,
+		grace:      signalGrace,
+		after:      time.After,
+		owned:      shutdownOwned.Load,
+		lent:       shutdown.TerminalLent,
+		settle:     shutdown.Settle,
+		atExit:     shutdown.Exiting,
+		restore:    saved.restore,
+		exit:       os.Exit,
+		stderr:     os.Stderr,
+		onTTY:      stderrIsTerminal(),
+		prompting:  shutdown.PromptOpen,
+		deafPrompt: shutdown.DeafPromptOpen,
+		nested:     nestedLine.Load,
+		done:       make(chan struct{}),
+		attached:   make(chan struct{}),
 	}
 	signal.Notify(i.signals, os.Interrupt, syscall.SIGTERM)
 	go i.run()
@@ -195,9 +202,25 @@ func (i *Interrupts) run() {
 	// graceFrom starts the command's grace, once there is a command to give
 	// it to (Attach) and one that has not taken its shutdown on itself.
 	graceFrom := func() {
-		if first != nil && attached == nil && !i.owned() {
-			expired = i.after(i.grace)
+		if first == nil || attached != nil || i.owned() {
+			return
 		}
+		// **A prompt that cannot hear the cancellation is not waited for.** It
+		// reads the terminal with a call that does not return when a signal
+		// arrives, so the grace could only run out: ^C at a passphrase, a value,
+		// a seed or a yes cost three seconds and ended in an error written for a
+		// command that hung. The person has just answered it. Prompts that race
+		// their read against the context are left to answer for themselves
+		// (shutdown.PromptingWithContext), and so are commands that own their
+		// shutdown, which the check above has already let go.
+		if i.deafPrompt != nil && i.deafPrompt() {
+			i.atPrompt = true
+			now := make(chan time.Time)
+			close(now)
+			expired = now
+			return
+		}
+		expired = i.after(i.grace)
 	}
 	for {
 		select {
@@ -268,6 +291,13 @@ func (i *Interrupts) run() {
 // report writes the error a forced exit ends with, naming the command line's
 // command, in the format it asked for when there is a command line to ask.
 func (i *Interrupts) report(line commandLine, sig os.Signal) {
+	if i.atPrompt {
+		// The prompt left the cursor after its own words, and the terminal
+		// echoed the ^C there: the word starts a line of its own.
+		fmt.Fprintln(i.stderr)
+		fmt.Fprintln(i.stderr, "cancelled")
+		return
+	}
 	what := "the command"
 	if line.root != nil {
 		if cmd, _, err := line.root.Find(line.args); err == nil && cmd != nil {

@@ -143,7 +143,7 @@ func LendTerminal() (takeBack func()) {
 // TerminalLent reports whether a child process has the terminal.
 func TerminalLent() bool { return lent.Load() > 0 }
 
-var prompts atomic.Int32
+var prompts, hearing atomic.Int32
 
 // Prompting marks a prompt waiting on the terminal for its answer, and returns
 // what marks it answered. A prompt leaves the cursor after its own words, with
@@ -151,11 +151,37 @@ var prompts atomic.Int32
 // "Passphrase:  ERROR core.signal …" — in the file standard error was sent to
 // as much as on a terminal, since a prompt asks whenever standard input is
 // one. The report starts a line of its own while one is open.
+//
+// A prompt marked this way is deaf: it reads the terminal with a call that does
+// not return when the command's context is cancelled, so an interrupt has
+// nothing to wait for from it (DeafPromptOpen). One that races its read against
+// the context says so with PromptingWithContext.
 func Prompting() (answered func()) {
 	prompts.Add(1)
 	var once sync.Once
 	return func() { once.Do(func() { prompts.Add(-1) }) }
 }
 
+// PromptingWithContext is Prompting for a prompt that stops waiting by itself
+// when the context is cancelled, and so answers an interrupt in its own words:
+// ^C is its "no", and what follows is its to say.
+func PromptingWithContext() (answered func()) {
+	prompts.Add(1)
+	hearing.Add(1)
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			prompts.Add(-1)
+			hearing.Add(-1)
+		})
+	}
+}
+
 // PromptOpen reports whether a prompt is waiting for its answer.
 func PromptOpen() bool { return prompts.Load() > 0 }
+
+// DeafPromptOpen reports whether a prompt is waiting that cannot hear its
+// command's context being cancelled: nothing it is waiting on returns when a
+// signal arrives, so the grace an interrupt gives a command to return would be
+// spent for nothing.
+func DeafPromptOpen() bool { return prompts.Load()-hearing.Load() > 0 }
