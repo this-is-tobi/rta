@@ -49,7 +49,6 @@ import (
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/policy"
 	"github.com/this-is-tobi/rta/internal/seal"
-	"github.com/this-is-tobi/rta/internal/shellquote"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -2018,19 +2017,34 @@ func refuseMissing(c plugin.Capability, missing []string, profile, agent string)
 	// looks like — a shell splits it into an extra argument. Quoting only
 	// the scopes that need it keeps the common case (a bare word) reading
 	// exactly as it always has.
+	//
+	// **Spelled by Call, because the record is the agent's.** A word that opens
+	// on a dash is a flag wherever it stands in a command line, and the hint
+	// put the record where the target goes: `grant allow kv.get --agent=other
+	// --agent claude` is a grant on every record, not the one refused, and a
+	// key of --note=… wrote the agent's words into the grant's note. Call puts
+	// the flags first and `--` before the words that may read as flags, and
+	// leaves every other command in the order it always had.
 	command := func(record string) string {
-		scope := shellquote.Arg(record)
-		what := strings.TrimSpace(c.ID + " " + scope)
+		subject := c.ID
 		if profile != "" {
-			what = strings.TrimSpace(Namespace(c.ID)+" "+scope) + " --profile " + profile
+			subject = Namespace(c.ID)
+		}
+		args := []plugin.Arg{{Name: "target", Value: subject, Positional: true}}
+		if record != "" {
+			args = append(args, plugin.Arg{Name: "record", Value: record, Positional: true})
+		}
+		if profile != "" {
+			args = append(args, plugin.Arg{Name: "profile", Value: profile})
 		}
 		// And the agent, for the same reason as the profile: covers() matches
 		// it exactly, so on a server started `--as claude` the command without
 		// `--agent claude` issues a row that authorizes nothing.
 		if agent != "" {
-			what += " --agent " + shellquote.Arg(agent)
+			args = append(args, plugin.Arg{Name: "agent", Value: agent})
 		}
-		return "grant allow " + what + " --ttl 15m"
+		args = append(args, plugin.Arg{Name: "ttl", Value: "15m"})
+		return strings.TrimPrefix(plugin.SurfaceCLI.Call("grant.allow", args...), "rta ")
 	}
 	// One command for each record the call names that nothing covers, because
 	// a grant covers one record: handed only the first of a rename's two keys
