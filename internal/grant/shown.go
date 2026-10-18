@@ -83,8 +83,11 @@ func RosterRecord(scope string) string {
 // never shows two records alike, the roster's word for none is quoted when
 // it is a record, and only a folder gets its width. Proved rather than
 // argued: a reading is accepted only when drawing it again gives the cell.
+// The name Record puts beside a host that is not written in ASCII is not part
+// of the record, and is taken off before the cell is read.
 func RecordOfRoster(cell string) (string, bool) {
 	body, folder := strings.CutSuffix(cell, rosterFolder)
+	body = textclean.WithoutNote(body)
 	scope := body
 	switch {
 	case body == rosterAnyRecord && !folder:

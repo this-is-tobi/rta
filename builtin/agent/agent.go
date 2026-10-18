@@ -1564,7 +1564,7 @@ func noNarrowGrant(sf plugin.Surface, r consent.Request, ttl string) *view.Error
 			return verr
 		}
 		if grant.IsFolderScope(scope) {
-			folders = append(folders, strconv.Quote(scope))
+			folders = append(folders, textclean.Record(scope))
 		}
 	}
 	if len(folders) == 0 {

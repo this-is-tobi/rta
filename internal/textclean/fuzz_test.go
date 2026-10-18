@@ -73,6 +73,7 @@ func FuzzModel(f *testing.F) {
 func FuzzRecord(f *testing.F) {
 	for _, seed := range []string{
 		"prod/db", "prod/db ", " prod/db", "two words", `"quoted"`, `dir\sub\me`, "", "\xff",
+		"https://g" + string(rune(0x456)) + "thub.com/", "g" + string(rune(0x456)) + "thub.com:8443", "https://g%D1%96thub.com/",
 		"prod/db" + string(rune(0xa0)), "prod/db" + string(rune(0x200b)), "a" + string(rune(0xfe0f)),
 		"prod/db" + string(rune(0x2800)),
 		"invoice" + string(rune(0x202e)) + "fdp.exe", "tag" + string(rune(0xe0041)), "tab\tnew\nline",
@@ -80,12 +81,18 @@ func FuzzRecord(f *testing.F) {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
-		out := Record(s)
-		if strings.ContainsFunc(out, func(r rune) bool { return !glyph.Seen(r) }) || !utf8.ValidString(out) {
-			t.Fatalf("Record(%q) = %q still holds a character a reader does not see as itself", s, out)
+		shown := Record(s)
+		if strings.ContainsFunc(shown, func(r rune) bool { return !glyph.Seen(r) }) || !utf8.ValidString(shown) {
+			t.Fatalf("Record(%q) = %q still holds a character a reader does not see as itself", s, shown)
 		}
-		if Terminal(out) != out {
-			t.Fatalf("Record(%q) = %q holds something a terminal acts on", s, out)
+		if Terminal(shown) != shown {
+			t.Fatalf("Record(%q) = %q holds something a terminal acts on", s, shown)
+		}
+		// The record's own spelling is what is left when the note beside a
+		// host is taken off, and a note is there only for a host.
+		out := WithoutNote(shown)
+		if note := hostNote(s); (out != shown) != (note != "") || (note != "" && shown != out+" ("+note+")") {
+			t.Fatalf("Record(%q) = %q, but the note beside it is %q", s, shown, note)
 		}
 		if out == s {
 			if strings.HasPrefix(s, `"`) || strings.ContainsRune(s, ' ') {

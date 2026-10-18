@@ -81,6 +81,10 @@ func TestARosterRecordReadsBackAsTheRecord(t *testing.T) {
 		"db" + string(rune(0xa0)), " db", "db ", "a b", `"quoted`, `back\slash`, "tab\there",
 		"line\nbreak", "\xff", "zw" + string(rune(0x200b)) + "sp", "blank" + string(rune(0x2800)),
 		"prod/" + string(rune(0x200b)) + "/", string(rune(0x202e)) + "fdp.exe",
+		// A host written in anything but ASCII is drawn with its xn-- name
+		// beside it, a folder's width after that.
+		"https://g" + string(rune(0x456)) + "thub.com/", "g" + string(rune(0x456)) + "thub.com",
+		"g" + string(rune(0x456)) + "thub.com:8443", "https://g" + string(rune(0x456)) + "thub.com/\"" + string(rune(0x200b)),
 	}
 	drawn := map[string]string{}
 	for _, r := range records {
@@ -95,7 +99,10 @@ func TestARosterRecordReadsBackAsTheRecord(t *testing.T) {
 		}
 	}
 	// A cell the roster draws for no record reads as none of them.
-	for _, cell := range []string{"prod/", "db (all)", "any (all)", `"unterminated`, `"db"`, `"prod/" (all)`, ""} {
+	// Nor a note the record does not draw: a cell cannot name a record by
+	// claiming what its host is published as.
+	for _, cell := range []string{"prod/", "db (all)", "any (all)", `"unterminated`, `"db"`, `"prod/" (all)`, "",
+		"g" + string(rune(0x456)) + "thub.com (xn--other.com)", "github.com (github.com)"} {
 		if back, ok := RecordOfRoster(cell); ok {
 			t.Errorf("RecordOfRoster(%q) = %q, want it refused: no record is drawn so", cell, back)
 		}
