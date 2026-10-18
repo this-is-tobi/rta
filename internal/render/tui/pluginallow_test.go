@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -58,6 +59,26 @@ func TestTheAllowFormOpensSeededWithTheCurrentGrant(t *testing.T) {
 	}
 	if seen["ssh"] != false {
 		t.Errorf("ssh seeded %v, want it unchecked", seen["ssh"])
+	}
+}
+
+// The decision is about a place on this machine, so the box names the place.
+// "let weather read kubeconfig" asks a person to approve a word; the path is
+// what they recognise, and it is what the command line shows beside the same
+// choice (rta plugin allow). It comes from the table the sandbox denies by, so
+// what the box says and what the plugin is kept out of cannot differ.
+func TestTheAllowFormNamesTheFileEachBoxLetsAPluginRead(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	fields := allowFields(needyRow("kubeconfig", "ssh"), nil)
+	want := map[string]string{"kubeconfig": filepath.Join(home, ".kube"), "ssh": filepath.Join(home, ".ssh")}
+	if len(fields) != 2 {
+		t.Fatalf("fields = %d, want one per declared need", len(fields))
+	}
+	for _, f := range fields {
+		if !strings.Contains(f.Help, want[f.Name]) || !strings.Contains(f.Help, f.Name) {
+			t.Errorf("%s: help = %q, want the path %s and the word the plugin declared", f.Name, f.Help, want[f.Name])
+		}
 	}
 }
 

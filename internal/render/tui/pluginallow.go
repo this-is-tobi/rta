@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/plugintrust"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
@@ -51,11 +52,23 @@ func allowFields(row pluginRow, allowed []string) []plugin.Field {
 		}
 		fields = append(fields, plugin.Field{
 			Name: string(n), Type: plugin.Bool, Default: on,
-			Help: "let " + row.plugin.Name + " read " + string(n),
+			Help: allowHelp(row.plugin.Name, n),
 		})
 	}
 	sort.Slice(fields, func(i, j int) bool { return fields[i].Name < fields[j].Name })
 	return fields
+}
+
+// allowHelp is what a box says it lets the plugin read: the place on this
+// machine, from the table the sandbox keeps the plugin out of it by, and the
+// word the plugin declared. A person approving "kubeconfig" is approving a
+// word; the path is what they recognise, and `rta plugin allow` prints it
+// beside the same choice.
+func allowHelp(name string, n plugin.Need) string {
+	if path := pluginhost.Tier2Path(n); path != "" {
+		return "let " + name + " read " + path + " (" + string(n) + ")"
+	}
+	return "let " + name + " read " + string(n)
 }
 
 // startAllowForm opens the checkbox list for row.
