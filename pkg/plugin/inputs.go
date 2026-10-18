@@ -520,18 +520,37 @@ func (f Field) RequiredOn(s Surface) bool {
 // reads "" and StringSlice reads nil for all four — so a check that counted
 // an empty one as present held the handler to nothing it could tell apart.
 // A number or a switch is never empty: 0 and false are values somebody gave.
+//
+// A required list with a blank entry among its words is missing that entry,
+// for the same reason: `rta cert expiry "$HOST"` with $HOST unset hands the
+// handler one empty target, which is a list with something in it, and it was
+// dialled as ":443" on this machine.
 func Missing(c Capability, values map[string]any, s Surface) []Field {
 	var out []Field
 	for _, f := range c.Inputs {
 		if !f.RequiredOn(s) {
 			continue
 		}
-		if v, present := values[f.Name]; present && !empty(v) {
+		if v, present := values[f.Name]; present && !empty(v) && !hasBlankEntry(v) {
 			continue
 		}
 		out = append(out, f)
 	}
 	return out
+}
+
+func hasBlankEntry(v any) bool {
+	blank := func(s string) bool { return strings.TrimSpace(s) == "" }
+	switch v := v.(type) {
+	case []string:
+		return slices.ContainsFunc(v, blank)
+	case []any:
+		return slices.ContainsFunc(v, func(e any) bool {
+			s, isText := e.(string)
+			return isText && blank(s)
+		})
+	}
+	return false
 }
 
 func empty(v any) bool {

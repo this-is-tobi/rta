@@ -392,6 +392,70 @@ func TestCapabilityErrorRendering(t *testing.T) {
 	}
 }
 
+// A call that has its answer and failed anyway (plugin.AnsweredError) is drawn
+// whole and then fails, as doctor draws its report before it exits 1: stdout is
+// the table, which a pipe into jq reads as it would a success, and stderr the
+// failure, so a script gating on the status and a person reading the log read
+// the same rows.
+func TestAnAnsweredFailureDrawsItsTableThenExitsOne(t *testing.T) {
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{Name: "demo", Summary: "demo plugin", Capabilities: []plugin.Capability{{
+		ID: "demo.item.check", Summary: "checks items", Safety: plugin.Read,
+		Run: func(context.Context, plugin.Request) (view.View, error) {
+			table := view.Table{Columns: []view.Column{{Name: "Item"}, {Name: "Status"}},
+				Rows: [][]string{{"a", "ok"}, {"b", "ERROR: gone"}}, Total: 2}
+			return nil, &plugin.AnsweredError{View: table,
+				Err: view.Errorf("demo.check.failed", "1 of 2 items could not be checked").WithHint("see the rows")}
+		},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, err := run(t, reg, "demo", "item", "check", "-o", "json")
+	if ExitCode(err) != 1 {
+		t.Errorf("exit code = %d (%v), want 1", ExitCode(err), err)
+	}
+	var table view.Table
+	if jerr := json.Unmarshal([]byte(out), &table); jerr != nil || len(table.Rows) != 2 {
+		t.Errorf("stdout is not the whole table (%v):\n%s", jerr, out)
+	}
+	for _, want := range []string{"demo.check.failed", "1 of 2 items could not be checked", "see the rows"} {
+		if !strings.Contains(errOut, want) {
+			t.Errorf("stderr missing %q:\n%s", want, errOut)
+		}
+	}
+	if strings.Contains(out, "demo.check.failed") {
+		t.Errorf("the failure is on stdout, which belongs to the table:\n%s", out)
+	}
+}
+
+// The recipe says a host that cannot be reached makes `rta cert expiry` exit
+// non-zero, and an unset $HOST, which hands it one empty target, is refused
+// rather than dialled as ":443".
+func TestCertExpiryExitsOnAHostItCouldNotCheck(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, err := run(t, reg, "cert", "expiry", "127.0.0.1:1")
+	if ExitCode(err) != 1 {
+		t.Errorf("an unreachable host: exit code = %d (%v), want 1", ExitCode(err), err)
+	}
+	if !strings.Contains(out, "127.0.0.1:1") || !strings.Contains(out, "ERROR") {
+		t.Errorf("an unreachable host: the table is not on stdout:\n%s", out)
+	}
+	if !strings.Contains(errOut, "cert.expiry.failed") || !strings.Contains(errOut, "1 of 1 host could not be checked") {
+		t.Errorf("an unreachable host: stderr does not say why it failed:\n%s", errOut)
+	}
+
+	for _, args := range [][]string{{"cert", "expiry", ""}, {"cert", "expiry", "127.0.0.1:1", ""}} {
+		out, errOut, err = run(t, reg, args...)
+		if ExitCode(err) != 2 || !strings.Contains(errOut, "core.input.missing") || out != "" {
+			t.Errorf("%q: exit %d, stdout %q, stderr %q, want a core.input.missing refusal and no dial",
+				args, ExitCode(err), out, errOut)
+		}
+	}
+}
+
 // A mistake on the command line is refused as core.usage, in the format the
 // command line asked for, and exits 2.
 //

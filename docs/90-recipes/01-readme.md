@@ -120,7 +120,7 @@ rta cert expiry example.com api.example.com -o json \
 
 The fourth column is the verdict — `ok`, `WARN <30d` (the window is `--warn-days`) or `EXPIRED` — and the third is the time left as text, `83d` or `expired 4191d ago`, not a number to compare.
 
-The exit code says whether the check could be made, not what it found: an expired certificate exits 0, and a host that cannot be reached does not. To make a finding fail a job, ask for the verdict:
+The exit code says whether the check could be made, not what it found: an expired certificate exits 0, and a host that cannot be reached does not — the table is printed whole, an `ERROR` row for each host that was down, and the exit code is then `1`. To make a finding fail a job, ask for the verdict:
 
 ```bash
 rta cert expiry example.com -o json | jq -e 'all(.rows[]; .[3] == "ok")' >/dev/null || echo "check failed" >&2
