@@ -466,6 +466,34 @@ func (m *Model) clampScroll() {
 	}
 }
 
+// keepSelectionDrawn moves the selection to the nearest row the window draws
+// when the window has been scrolled away from it. The wheel moves the window
+// and not the selection, and a selection nobody can see is one that enter, H
+// and [ ] would still act on: the tile in front of the reader and the tile the
+// keys answer for have to be the same one. It lands in the column the reader
+// last aimed for, as moving down or up does. The search bar is no row and
+// never scrolls, so there is nothing to leave behind.
+func (m *Model) keepSelectionDrawn() {
+	if m.selected == 0 {
+		return
+	}
+	row, _ := m.selectedRow()
+	if row < 0 {
+		return
+	}
+	rows := m.tileRows()
+	first, last := m.rowWindow(len(rows))
+	if row >= first && row < last {
+		return
+	}
+	nearest := rows[min(max(row, first), last-1)]
+	if nearest.isHeader() {
+		m.selectStop(stop{header: nearest.header.name})
+		return
+	}
+	m.selectStop(stop{tile: nearest.cells[min(m.goalCol, len(nearest.cells)-1)]})
+}
+
 // selectedRow is the row the selection is on and the column in it: a tile's, or
 // the header row of the section that holds the selection, whose column is the
 // one the reader last aimed for. -1 when the selection is on none, which is the
