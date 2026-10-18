@@ -2,6 +2,7 @@ package view
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -32,5 +33,36 @@ func TestPriorityIsKeptWhenAViewsStringsAreMapped(t *testing.T) {
 	out := MapStrings(in, func(s string) string { return s + "!" }).(Table)
 	if out.Columns[1].Priority != 3 || out.Columns[1].Name != "node!" {
 		t.Errorf("MapStrings made %#v", out.Columns[1])
+	}
+}
+
+// How willingly a screen gives a column up is the screen's concern, the way
+// Empty is: a program reading the table, json, yaml, csv or an agent over MCP,
+// has no width to fit and was handed `"priority":2` beside the column's name
+// and kind all the same. The field stays on the contract and on the plugin
+// wire, where a renderer reads it; it is not part of any encoding.
+func TestAColumnsPriorityIsNotEncoded(t *testing.T) {
+	tbl := Table{
+		Columns: []Column{{Name: "pod"}, {Name: "node", Kind: KindStatus, Priority: 2}},
+		Rows:    [][]string{{"a", "n1"}},
+	}
+	raw, err := Marshal(Envelope{View: tbl})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "priority") {
+		t.Errorf("the encoding carries a column's priority: %s", raw)
+	}
+	if !strings.Contains(string(raw), `"kind":"status"`) {
+		t.Errorf("the encoding lost the column's kind, which an agent reads: %s", raw)
+	}
+	m, err := ToMap(tbl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range m["columns"].([]any) {
+		if _, ok := c.(map[string]any)["priority"]; ok {
+			t.Errorf("ToMap carries a column's priority: %v", c)
+		}
 	}
 }
