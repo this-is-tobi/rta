@@ -349,9 +349,10 @@ func (m Model) afterFormUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return m.formError(m.current, err)
 			}
-			_, rest := keyFields(m.current)
+			keys, rest := keyFields(m.current)
 			next := m.runForm(m.current, rest, defaults, base)
-			next.fromResult = m.form.fromResult
+			next.inherit(m.form)
+			next.about = aboutStage(keys, base)
 			m.form = next
 			m.fitForm()
 			return m, m.form.form.Init()
@@ -435,6 +436,26 @@ func (m Model) formRight() string {
 	}
 	if at := m.form.position(); at != "" {
 		parts = append(parts, at)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// aboutStage is what the second stage of a form says the first chose: each
+// identity box and its answer, `key mykey`. The page the value is typed into
+// otherwise names nothing of the record it is for, and the only way to find out
+// was to cancel and begin again.
+//
+// A secret is left out. Its box was masked so it would not be on screen, and a
+// title is the one line that is always drawn.
+func aboutStage(keys []plugin.Field, answers map[string]any) string {
+	var parts []string
+	for _, f := range keys {
+		if f.Type == plugin.Secret || f.Type == plugin.SecretSlice {
+			continue
+		}
+		if v, ok := answers[f.Name]; ok {
+			parts = append(parts, fieldTitle(f.Name)+" "+seedString(v))
+		}
 	}
 	return strings.Join(parts, " · ")
 }

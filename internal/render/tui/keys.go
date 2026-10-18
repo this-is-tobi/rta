@@ -424,15 +424,20 @@ func (m Model) screenItems(screen mode) []hintItem {
 		}
 	case modeForm:
 		var hints []hintItem
-		escWord := "cancel"
+		escWord, fastWord := "cancel", "submit"
 		if m.form != nil {
 			hints = fieldHints(m.form.form, len(m.form.fields), m.form.completes)
 			if filterHoldsEsc(m.form.form) {
 				escWord = "clear"
 			}
+			// The first stage of a form that asks in two only moves on to the
+			// second, whichever of the keys is pressed.
+			if !m.form.final {
+				fastWord = "next"
+			}
 		}
 		return append(hints,
-			labelled(bindOpen, m.formEnterWord()), item(bindFastSubmit), labelled(bindBack, escWord),
+			labelled(bindOpen, m.formEnterWord()), labelled(bindFastSubmit, fastWord), labelled(bindBack, escWord),
 		)
 	case modeTheme:
 		var hints []hintItem

@@ -172,7 +172,7 @@ func (m Model) reseedOnPickerMove() (tea.Model, tea.Cmd, bool) {
 	}
 	values := cf.values()
 	m.form = m.runForm(cf.cap, cf.offered, withoutPicker(cf.cap, values), values)
-	m.form.fromResult = cf.fromResult
+	m.form.inherit(cf)
 	m.fitForm()
 	return m, m.form.form.Init(), true
 }
