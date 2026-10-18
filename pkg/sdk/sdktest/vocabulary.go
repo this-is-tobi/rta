@@ -56,12 +56,19 @@ func Vocabulary() []string { return slices.Clone(vocabulary) }
 // would be confidently wrong advice given to exactly the author most likely
 // to need the word. Warnings rather than errors for this shape of case: a
 // warning that is wrong is still worth avoiding.
+//
+// Also absent, because each names a different act than the word nearest to it,
+// which is how they came to be listed: dump (a backup to a file, where `show`
+// reads one thing out), query (runs a statement the caller wrote, where
+// `search` finds records by a word) and destroy (removes for good what `rm`
+// keeps restorable). The first-party database plugins all carry one of them,
+// and the note was wrong for each. A word belongs here only when it is the
+// same act as the vocabulary word under another name.
 var synonyms = map[string]string{
 	"create":    "add",
 	"insert":    "add",
 	"make":      "add",
 	"new":       "add",
-	"destroy":   "rm",
 	"drop":      "rm",
 	"purge":     "rm",
 	"remove":    "rm",
@@ -79,9 +86,7 @@ var synonyms = map[string]string{
 	"find":      "search",
 	"grep":      "search",
 	"lookup":    "search",
-	"query":     "search",
 	"describe":  "show",
-	"dump":      "show",
 	"print":     "show",
 	"view":      "show",
 	"assign":    "set",

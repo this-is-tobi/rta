@@ -9,12 +9,13 @@ rta plugin new weather        # a plugin that already builds and runs
 cd rta-plugin-weather
 rta plugin dev                # build it, and see what rta sees
 rta plugin dev -- weather greet world
+go test -v                    # the conformance suite, with the notes a plain run leaves out
 go build -o ~/.local/bin/rta-plugin-weather .
 rta plugin trust weather
 rta weather greet world
 ```
 
-That is the whole loop. The mechanical part takes about two seconds; the rest is deciding what your capability should do. `rta plugin dev` builds into a temporary directory and removes it when it exits; `--keep` leaves the binary in place and prints where, for running it by hand or putting a debugger on it. The build line puts the binary in `~/.local/bin`, which has to be on your `$PATH` for the `trust` and the run after it to find the file: `rta plugin trust weather` says so when `rta-plugin-weather` is in `~/.local/bin` and the directory is not.
+That is the whole loop. `go test` passes from the start and prints only `ok`; the suite's advice that does not fail it, such as a verb rta spells another way, is printed under `-v`, which is why the loop reads it there. The mechanical part takes about two seconds; the rest is deciding what your capability should do. `rta plugin dev` builds into a temporary directory and removes it when it exits; `--keep` leaves the binary in place and prints where, for running it by hand or putting a debugger on it. The build line puts the binary in `~/.local/bin`, which has to be on your `$PATH` for the `trust` and the run after it to find the file: `rta plugin trust weather` says so when `rta-plugin-weather` is in `~/.local/bin` and the directory is not.
 
 **The `trust` step is not paperwork.** rta loads a plugin by *running* it — that is how it learns what you declared — so a file called `rta-plugin-*` on `$PATH` would execute before anybody typed a command naming it, including the `rta __complete` a tab press runs. Being on `$PATH` is not consent, so an artifact runs once somebody has approved that exact digest. Rebuild and it needs approving again, which during development is a keystroke and in production is the event worth stopping for. `rta plugin trust` on its own lists what is waiting.
 

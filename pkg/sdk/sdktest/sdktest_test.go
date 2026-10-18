@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/builtin/all"
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -622,6 +623,55 @@ func TestNoVocabularyWordIsAlsoListedAsASynonym(t *testing.T) {
 	for _, std := range synonyms {
 		if !slices.Contains(vocabulary, std) {
 			t.Errorf("synonym points at %q, which is not vocabulary", std)
+		}
+	}
+}
+
+// A synonym is advice to rename, so it has to be right for every plugin that
+// takes it, and a word that means a different act in a domain is not a
+// synonym for the vocabulary word nearest to it. The first three were on the
+// list and told rta's own plugins to rename `pg.query` to `pg.search`,
+// `pg.dump` to `pg.show` and `vault.kv.destroy` to `vault.kv.rm`: a read that
+// runs SQL, a backup to a file, and the irreversible cousin of a delete that
+// `rm` keeps restorable. The rest are the HTTP methods the list's own comment
+// refuses on the same ground; nothing held that comment to what the map does.
+func TestAWordForADifferentActIsNotSomeoneElsesSynonym(t *testing.T) {
+	for word, why := range map[string]string{
+		"dump":    "a backup to a file, where `show` reads one thing out",
+		"query":   "runs a statement the caller wrote, where `search` finds records by a word",
+		"destroy": "removes for good what `rm` keeps restorable",
+		"delete":  "an HTTP method, and the store's own word for a removal that can be undone",
+		"put":     "an HTTP method",
+		"post":    "an HTTP method",
+		"head":    "an HTTP method",
+		"patch":   "an HTTP method",
+	} {
+		if std, listed := synonyms[word]; listed {
+			t.Errorf("%q is listed as a synonym of %q, but it means %s", word, std, why)
+		}
+		rec := &recorder{}
+		checkVerbs(rec, plugin.Plugin{Name: "demo", Capabilities: []plugin.Capability{
+			{ID: "demo.item." + word, Summary: "s", Safety: plugin.Read},
+		}}, noConfig())
+		if strings.Contains(rec.logText(), "rename to") {
+			t.Errorf("demo.item.%s is told to rename itself: %s", word, rec.logText())
+		}
+	}
+}
+
+// The built-ins are the catalogue the synonyms point at, so none of them can
+// end in a word the map tells an author to replace. The plugins in
+// rta-plugins are held to the same on their own side, by reading the notes of
+// their conformance suites under `go test -v`.
+func TestNoBuiltinCapabilityIsAdvisedToRename(t *testing.T) {
+	reg, err := all.Registry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range reg.Capabilities() {
+		words := c.Words()
+		if std, listed := synonyms[words[len(words)-1]]; listed {
+			t.Errorf("%s would be told to rename to %q", c.ID, std)
 		}
 	}
 }

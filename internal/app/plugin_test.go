@@ -141,6 +141,36 @@ func TestScaffoldingRefusesRatherThanOverwrites(t *testing.T) {
 	}
 }
 
+// The suite's notes are test log lines: `go test` prints them for a failing
+// test and under -v, and the scaffold's test passes from the first minute, so
+// an author who only ran `go test ./...` never saw the verb advice, a keyword
+// the ID already carries or a waiver in force. The two places that tell an
+// author how to try the plugin out say how to read them.
+func TestTheScaffoldSaysHowToReadTheConformanceNotes(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "rta-plugin-probe")
+	s := scaffold{Name: "probe", Binary: "rta-plugin-probe", Module: "rta-plugin-probe", RtaMod: rtaModule,
+		GoVersion: "1.26"}
+	if _, err := s.write(dir, false); err != nil {
+		t.Fatal(err)
+	}
+	readme, err := os.ReadFile(filepath.Join(dir, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readme), "go test -v") {
+		t.Errorf("the scaffold's README does not name `go test -v`:\n%s", readme)
+	}
+	var next string
+	for _, p := range scaffoldAnswer(s, dir, nil, false).Pairs {
+		if p.Key == "next" {
+			next = p.Value
+		}
+	}
+	if !strings.Contains(next, "go test -v") {
+		t.Errorf("plugin new's next step does not name `go test -v`: %q", next)
+	}
+}
+
 // The written .gitignore has to cover both names a build can actually
 // produce, not just the installed one — found by running `make plugins`
 // against plugins/pg and plugins/eol, both scaffolded into a short
