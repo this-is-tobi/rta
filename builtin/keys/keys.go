@@ -88,6 +88,9 @@ func Plugin() plugin.Plugin {
 					"`passphrase` encrypts the key being written and is always typed, never read " +
 					"from the environment, for keys.restore's `new-passphrase` reason: generating " +
 					"a key is a one-off act, not a standing credential for the session. " +
+					"At a terminal, left out, it is asked for twice with echo off and an empty answer " +
+					"means none; the flag is for a script, since a passphrase in argv is in `ps` and " +
+					"in shell history. The receipt says whether the key has one. " +
 					"Never an MCP tool, the same rule keys.backup and keys.restore follow: " +
 					"a key an agent generated is a credential nobody watched being made. " +
 					"There is deliberately no keys.rm — deleting a key file is irreversible loss " +
@@ -97,8 +100,8 @@ func Plugin() plugin.Plugin {
 					{Name: "out", Type: plugin.Path, Positional: true, Required: true,
 						Help: "where to write the private key (and <out>.pub)"},
 					{Name: "passphrase", Type: plugin.Secret, Local: true,
-						Help: "encrypt the key with this passphrase; omit for none — " +
-							"typed explicitly every time, never read from the environment"},
+						Help: "encrypt the key with this passphrase; empty for none — " +
+							"asked for at a terminal when left out, never read from the environment"},
 					{Name: "comment", Type: plugin.String, Suggest: suggestComment,
 						Help: "comment for the public key, e.g. me@laptop"},
 				},
@@ -122,6 +125,9 @@ func Plugin() plugin.Plugin {
 					"read from the environment: a restore is a one-off action, not a standing credential for " +
 					"the session, so this always has to be typed explicitly rather than inherited from " +
 					"whatever a scripted backup earlier in the same shell happened to leave set. " +
+					"At a terminal, left out, it is asked for twice with echo off and an empty answer " +
+					"means none; the flag is for a script, since a passphrase in argv is in `ps` and " +
+					"in shell history. The receipt says whether the key has one. " +
 					"Never an MCP tool, the same rule keys.backup follows and for the same reason.",
 				Inputs: []plugin.Field{
 					{Name: "out", Type: plugin.Path, Positional: true, Required: true,
@@ -129,9 +135,9 @@ func Plugin() plugin.Plugin {
 					{Name: "words", Type: plugin.Secret, Piped: true,
 						Help: "24 BIP39 seed words, space-separated"},
 					{Name: "new-passphrase", Type: plugin.Secret, Local: true,
-						Help: "encrypt the restored key with this passphrase; omit for none — " +
-							"typed explicitly every time, not read from the environment, since a restore is a " +
-							"one-off choice rather than a standing credential for the session"},
+						Help: "encrypt the restored key with this passphrase; empty for none — " +
+							"asked for at a terminal when left out, and not read from the environment, since a " +
+							"restore is a one-off choice rather than a standing credential for the session"},
 					{Name: "comment", Type: plugin.String, Suggest: suggestComment,
 						Help: "comment for the restored public key, e.g. me@laptop"},
 				},
@@ -317,7 +323,11 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("keys.add.generate", "generating a key: %v", err)
 	}
-	fp, verr := publishRestoredKey(out, priv, []byte(req.String("passphrase")), req.String("comment"))
+	passphrase, verr := newKeyPassphrase(req, "add", "passphrase")
+	if verr != nil {
+		return nil, verr
+	}
+	fp, verr := publishRestoredKey(out, priv, passphrase, req.String("comment"))
 	if verr != nil {
 		return nil, verr
 	}
@@ -325,6 +335,7 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 		{Key: "Private key", Value: out},
 		{Key: "Public key", Value: pub},
 		{Key: "Fingerprint", Value: fp},
+		{Key: "Passphrase", Value: passphraseReceipt(out, passphrase)},
 		{Key: "Back it up", Value: req.Surface().Call("keys.backup", plugin.Arg{Name: "key", Value: out, Positional: true}) +
 			" — 24 words that restore it exactly"},
 	}}, nil
@@ -370,7 +381,11 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 		return view.Text{Body: fmt.Sprintf("would write %s and %s", out, pub)}, nil
 	}
 
-	fp, verr := publishRestoredKey(out, priv, []byte(req.String("new-passphrase")), req.String("comment"))
+	passphrase, verr := newKeyPassphrase(req, "restore", "new-passphrase")
+	if verr != nil {
+		return nil, verr
+	}
+	fp, verr := publishRestoredKey(out, priv, passphrase, req.String("comment"))
 	if verr != nil {
 		return nil, verr
 	}
@@ -378,6 +393,7 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 		{Key: "Private key", Value: out},
 		{Key: "Public key", Value: pub},
 		{Key: "Fingerprint", Value: fp},
+		{Key: "Passphrase", Value: passphraseReceipt(out, passphrase)},
 	}}, nil
 }
 
