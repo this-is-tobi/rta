@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -254,4 +256,151 @@ func TestSetAsksNobodyAwayFromATerminal(t *testing.T) {
 func refusedAsNoValue(err error) bool {
 	var ve *view.Error
 	return errors.As(err, &ve) && ve.Code == "kv.set.novalue"
+}
+
+// onStderr is what fn writes to standard error.
+func onStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stderr
+	os.Stderr = w
+	defer func() { os.Stderr = orig }()
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+// A value typed after the key is in the shell's history and in `ps`, which is
+// the leak this store exists to close, and the receipt used to be the same
+// line as for a value nobody could see. At a terminal the person is told, in
+// one line on stderr, what the prompt that would have kept it out is.
+func TestSetWithTheValueInArgvAtATerminalSaysWhereItWent(t *testing.T) {
+	setup(t)
+	stubValuePrompt(t, "from the prompt", nil)
+	var v any
+	var err error
+	got := onStderr(t, func() {
+		v, err = runSet(context.Background(), cliReq(map[string]any{
+			"key": "api-key", "value": "hunter2", "passphrase": "correct horse battery staple",
+		}))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := v.(view.Text).Body; !strings.HasPrefix(body, "set api-key (string, 7 B)") {
+		t.Errorf("the answer changed: %q", body)
+	}
+	if strings.Count(got, "\n") != 1 || !strings.HasSuffix(got, "\n") {
+		t.Fatalf("stderr = %q, want one line", got)
+	}
+	for _, want := range []string{"shell history", "process list", "`rta kv set api-key`"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("stderr = %q, does not say %q", got, want)
+		}
+	}
+	if strings.Contains(got, "hunter2") {
+		t.Errorf("the warning repeated the secret: %q", got)
+	}
+}
+
+// Said where it is true and can be acted on, and nowhere else: a value that
+// came through a file or the prompt never was in argv, a script with no
+// terminal cannot be asked, and an agent or the TUI's form has its own way to
+// give one.
+func TestSetSaysNothingAboutArgvWhenTheValueDidNotComeFromIt(t *testing.T) {
+	setup(t)
+	asked := stubValuePrompt(t, "from the prompt", nil)
+	file := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(file, []byte("from a file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pass := "correct horse battery staple"
+
+	given := func(surface plugin.Surface, values map[string]any) plugin.Request {
+		values["passphrase"] = pass
+		return plugin.NewRequest(values, false, false).WithSurface(surface)
+	}
+	cases := map[string]plugin.Request{
+		"a file":     given(plugin.SurfaceCLI, map[string]any{"key": "a", "file": file}),
+		"the prompt": given(plugin.SurfaceCLI, map[string]any{"key": "b"}),
+		"a label":    given(plugin.SurfaceCLI, map[string]any{"key": "g", "description": "x"}),
+		"an agent":   given(plugin.SurfaceMCP, map[string]any{"key": "c", "value": "v"}),
+		"the TUI":    given(plugin.SurfaceTUI, map[string]any{"key": "d", "value": "v"}),
+		"in-process": given(plugin.SurfaceUnknown, map[string]any{"key": "e", "value": "v"}),
+	}
+	for name, r := range cases {
+		t.Run(name, func(t *testing.T) {
+			var err error
+			got := onStderr(t, func() { _, err = runSet(context.Background(), r) })
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != "" {
+				t.Errorf("stderr = %q, want nothing", got)
+			}
+		})
+	}
+
+	t.Run("no terminal", func(t *testing.T) {
+		canPrompt = func(plugin.Request) bool { return false }
+		var err error
+		got := onStderr(t, func() {
+			_, err = runSet(context.Background(), given(plugin.SurfaceCLI, map[string]any{"key": "f", "value": "v"}))
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "" {
+			t.Errorf("stderr = %q, want nothing", got)
+		}
+	})
+	if len(*asked) != 2 {
+		t.Errorf("asked for %q, want the prompt and the new label once each", *asked)
+	}
+}
+
+// A script that pipes into a call with no terminal is sent to the pipe first:
+// it is the way to give a value that is in nobody's history, and the hint put
+// the value-after-the-key form ahead of it.
+func TestSetNoValueHintOffersThePipeBeforeTheArgument(t *testing.T) {
+	setup(t)
+	orig := canPrompt
+	canPrompt = func(plugin.Request) bool { return false }
+	t.Cleanup(func() { canPrompt = orig })
+
+	_, err := runSet(context.Background(), cliReq(map[string]any{"key": "k", "passphrase": "correct horse battery staple"}))
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "kv.set.novalue" {
+		t.Fatalf("err = %v, want kv.set.novalue", err)
+	}
+	pipe, arg := strings.Index(ve.Hint, "--file /dev/stdin"), strings.Index(ve.Hint, "<value>")
+	if pipe < 0 || arg < 0 || pipe > arg {
+		t.Errorf("hint = %q, want --file /dev/stdin before <value>", ve.Hint)
+	}
+}
+
+// And only on the CLI: the TUI has no pipe, and an agent has no file.
+func TestSetNoValueHintOffersAPipeOnlyOnTheCLI(t *testing.T) {
+	setup(t)
+	for _, surface := range []plugin.Surface{plugin.SurfaceMCP, plugin.SurfaceTUI} {
+		r := plugin.NewRequest(map[string]any{"key": "k", "passphrase": "correct horse battery staple"}, false, false).
+			WithSurface(surface)
+		_, err := runSet(context.Background(), r)
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != "kv.set.novalue" {
+			t.Fatalf("%s: err = %v, want kv.set.novalue", surface, err)
+		}
+		if strings.Contains(ve.Hint, "/dev/stdin") {
+			t.Errorf("%s: hint = %q, offers a pipe where there is none", surface, ve.Hint)
+		}
+	}
 }
