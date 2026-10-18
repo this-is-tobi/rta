@@ -303,6 +303,12 @@ func addIndex(ctx context.Context, name, url, ref string, dryRun bool) *view.Err
 	if verr := requireGit("attaching an index"); verr != nil {
 		return verr
 	}
+	// Before the dry run returns, because it needs no network: a preview that
+	// says "would attach" about a directory the real run refuses is a preview
+	// that checked less than it claims.
+	if verr := notARepository(url); verr != nil {
+		return verr
+	}
 	if dryRun {
 		return nil
 	}
@@ -359,9 +365,76 @@ func addIndex(ctx context.Context, name, url, ref string, dryRun bool) *view.Err
 	// for the same reason a failed one is: absence is the one state every
 	// other command interprets correctly.
 	if listed, bad := Manifests(Index{Name: name, Dir: staged}); len(listed) == 0 {
+		if !hasCommit(ctx, staged) {
+			return noCommits(name)
+		}
 		return refuseAttach(name, bad)
 	}
 	return stage.attach(name, dir)
+}
+
+// makeRepository is what turns the directory `rta plugin manifest --index`
+// wrote into something an index can be attached from, said where both of the
+// refusals below need it.
+const makeRepository = "git init && git add index && git commit -m index"
+
+// notARepository refuses a local directory that holds no repository, before
+// the clone that git words as `repository '<path>' does not exist`, about a
+// path that is right there. It is the first thing a publisher meets:
+// `plugin manifest --index ./my-index` writes into a plain directory, and the
+// documented next step attaches it. Said as what it is, with the commands that
+// make it one.
+//
+// Only a directory with neither a .git nor the files of a bare repository: a
+// repository that fails to clone for another reason keeps git's words, and so
+// does a path that is not there or is not a directory, which git describes
+// correctly. A directory inside somebody's project is no repository of its own
+// either — git clones from a path's own repository, not from the one around
+// it — and is said the same way.
+func notARepository(raw string) *view.Error {
+	kind, _ := classifyGitURL(raw)
+	if kind != gitLocalURL {
+		return nil
+	}
+	path := raw
+	if strings.HasPrefix(raw, "file://") {
+		if u, err := url.Parse(raw); err == nil {
+			path = u.Path
+		}
+	}
+	has := func(name string) bool {
+		_, err := os.Lstat(filepath.Join(path, name))
+		return err == nil
+	}
+	// A path that is not there and a file are described correctly by git.
+	if !isDirectory(path) || has(".git") || has("HEAD") && has("objects") {
+		return nil
+	}
+	shown := OriginForDisplay(raw)
+	return view.Errorf("plugin.index.norepo", "%s is a directory, not a git repository", shown).
+		WithHint("an index is a git repository: `" + makeRepository + "` in it makes one, and attaching " +
+			"it again then clones it")
+}
+
+func isDirectory(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// noCommits answers a clone with nothing in it because nothing was ever
+// committed. The clone of an empty repository succeeds, so the refusal that
+// followed was about an index/ directory that is on disk in the source and in
+// no commit.
+func noCommits(name string) *view.Error {
+	return view.Errorf("plugin.index.empty", "%s has no commits, so there is nothing in it to read", name).
+		WithHint("commit what `rta plugin manifest --index` wrote — `git add index && git commit` in it, " +
+			"and push it if it is remote — and attach it again; nothing was attached")
+}
+
+// hasCommit reports whether the clone has a commit to read: an empty
+// repository clones, and has none.
+func hasCommit(ctx context.Context, dir string) bool {
+	return gitCommand(ctx, "-C", dir, "rev-parse", "--verify", "--quiet", "HEAD").Run() == nil
 }
 
 // refuseAttach turns the reason a clone is not a usable index into the refusal

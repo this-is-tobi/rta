@@ -148,13 +148,18 @@ Two things to know before you publish:
 
   That is GoReleaser's own default ldflag, so a release stamps it for free, and an unstamped build says `dev` rather than claiming a version that was never cut. `--version` still overrides, for the case where the tag and the artifact genuinely disagree.
 
-Then attach your own index and take the round trip yourself, before anybody else does:
+Then attach your own index and take the round trip yourself, before anybody else does. `rta plugin manifest --index` writes into a plain directory, and attaching clones the repository, which holds only what was committed, so a directory that is not a repository yet needs these first:
 
 ```bash
+git -C /path/to/my-index init
+git -C /path/to/my-index add index
+git -C /path/to/my-index commit -m "add mytool"
 rta plugin index add mine /path/to/my-index
 rta plugin search mytool
 rta plugin install mine/mytool
 ```
+
+`rta plugin index add` says so when the directory is not a repository (`plugin.index.norepo`) or has no commit (`plugin.index.empty`), with the same commands. A manifest you write later is committed the same way, and `rta plugin index update mine` pulls it.
 
 Install is where claims meet evidence: rta fetches the artifact, hashes it, launches it in the same sandbox any load uses, and refuses if what it declares is not what your index said — naming your index. Earning that refusal on your own machine is the point of running it.
 
