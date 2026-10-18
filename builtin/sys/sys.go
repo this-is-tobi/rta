@@ -303,6 +303,22 @@ func fullestDisk(ctx context.Context) string {
 	return best
 }
 
+// coresChart is one bar per core, each at its share of the window rounded to
+// a tenth of a percent: the precision every surface draws (the pretty chart
+// and the usage line both print one decimal), and the most a window of a few
+// hundred ten-millisecond ticks can resolve. A ratio of tick counts carries
+// digits that mean nothing — 59.999999976716936 — and every machine format
+// printed them as they came.
+func coresChart(s cpuSample) view.Chart {
+	chart := view.Chart{Kind: view.ChartBar, Unit: "%", Max: 100}
+	for i, p := range s.perCore {
+		chart.Series = append(chart.Series, view.Series{
+			Name: fmt.Sprintf("core%d", i), Points: []float64{math.Round(p*10) / 10},
+		})
+	}
+	return chart
+}
+
 func runCPU(ctx context.Context, req plugin.Request) (view.View, error) {
 	if req.Bool("cores") {
 		// Per-core view: one bar per core, fixed 0-100 scale.
@@ -310,13 +326,7 @@ func runCPU(ctx context.Context, req plugin.Request) (view.View, error) {
 		if err != nil {
 			return nil, view.Errorf("sys.cpu.usage", "reading per-core usage: %v", err)
 		}
-		chart := view.Chart{Kind: view.ChartBar, Unit: "%", Max: 100}
-		for i, p := range s.perCore {
-			chart.Series = append(chart.Series, view.Series{
-				Name: fmt.Sprintf("core%d", i), Points: []float64{p},
-			})
-		}
-		return chart, nil
+		return coresChart(s), nil
 	}
 	infos, err := cpu.InfoWithContext(ctx)
 	if err != nil {

@@ -125,7 +125,12 @@ type Column struct {
 	// Priority is how willingly a renderer gives this column up when the table
 	// does not fit the width it has. Zero, which is every table written before
 	// the field existed, is never given up; a higher number goes sooner.
-	Priority int `json:"priority,omitempty"`
+	//
+	// Never encoded, as Table.Empty is not: it is a hint about a screen's
+	// width, and json, yaml, csv and MCP have no width to fit. It was encoded,
+	// and every agent read `"priority":2` beside a column's name and kind. It
+	// crosses the plugin wire, where a renderer on this side of it uses it.
+	Priority int `json:"-"`
 }
 
 // DropOrder is the columns a renderer may give up for width, in the order it

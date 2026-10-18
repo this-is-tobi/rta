@@ -5,6 +5,7 @@ import (
 	"errors"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -74,6 +75,28 @@ func TestCapabilitiesReturnWellFormedViews(t *testing.T) {
 				t.Errorf("unexpected view type %q", view.TypeOf(v))
 			}
 		})
+	}
+}
+
+// The per-core shares are tick ratios, and a ratio is not a round number:
+// 59.999999976716936 reached an agent as it is, fourteen times over, though a
+// screen shows one decimal and the host-wide usage line says one. The points
+// are rounded to the tenth of a percent at the source, which is what every
+// surface draws, so no format carries the noise.
+func TestCoreChartPointsAreRoundedToATenthOfAPercent(t *testing.T) {
+	chart := coresChart(cpuSample{perCore: []float64{59.999999976716936, 100, 0, 12.34000001, 73.68421051019179}})
+	var got []float64
+	for _, s := range chart.Series {
+		if len(s.Points) != 1 {
+			t.Fatalf("%s holds %d points, want one", s.Name, len(s.Points))
+		}
+		got = append(got, s.Points[0])
+	}
+	if want := []float64{60, 100, 0, 12.3, 73.7}; !slices.Equal(got, want) {
+		t.Errorf("points = %v, want %v", got, want)
+	}
+	if chart.Series[0].Name != "core0" || chart.Max != 100 || chart.Unit != "%" || chart.Kind != view.ChartBar {
+		t.Errorf("the chart changed shape: %+v", chart)
 	}
 }
 
