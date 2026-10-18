@@ -457,10 +457,11 @@ func TestSetHoldsASharedKeyToEveryCapabilityReadingIt(t *testing.T) {
 }
 
 // The type hint said `--set <key>=5432` for every integer, and following it
-// for net's timeout (1 to 300) was then refused as out of range; the range
+// for net's count (1 to 100) was then refused as out of range; the range
 // refusal named one reader's input, `count`, where the key typed was
 // `ping.count`. The example is one the declaration takes, for every numeric
-// key a built-in offers, and both refusals name the key.
+// or duration key a built-in offers, and both refusals name the key. A bare
+// number for a duration is refused with an example that spells its unit.
 func TestSetHintsAValueTheKeyTakesAndNamesTheKeyTyped(t *testing.T) {
 	reg, err := all.Registry(nil)
 	if err != nil {
@@ -470,7 +471,7 @@ func TestSetHintsAValueTheKeyTakesAndNamesTheKeyTyped(t *testing.T) {
 	for _, p := range reg.Plugins() {
 		byConfig, _ := declaredFor(p.Name, reg)
 		for key, f := range byConfig {
-			if f.Type != plugin.Int && f.Type != plugin.Float {
+			if f.Type != plugin.Int && f.Type != plugin.Float && f.Type != plugin.Duration {
 				continue
 			}
 			checked++
@@ -500,8 +501,9 @@ func TestSetHintsAValueTheKeyTakesAndNamesTheKeyTyped(t *testing.T) {
 	}
 	for _, tc := range []struct{ pair, code, want string }{
 		{"ping.count=101", "core.profile.set.range", "ping.count takes a value from 1 to 100"},
-		{"ping.timeout=abc", "core.profile.set.type", "ping.timeout is declared int, and takes a whole number from 1 to 300"},
-		{"ping.timeout=9223372036854775808", "core.profile.set.type", "from 1 to 300"},
+		{"ping.timeout=abc", "core.profile.set.type", "ping.timeout is declared duration, and takes a duration from 1s to 5m"},
+		{"ping.timeout=30", "core.profile.set.type", "write it as `--set ping.timeout=10s`"},
+		{"ping.count=9223372036854775808", "core.profile.set.type", "from 1 to 100"},
 	} {
 		_, errOut, err := runWith(t, reg, "", "profile", "set", "p", "--plugin", "net", "--set", tc.pair)
 		if err == nil || !strings.Contains(errOut, tc.code) || !strings.Contains(errOut, tc.want) {

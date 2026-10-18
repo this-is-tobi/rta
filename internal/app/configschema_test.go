@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // The command's whole contract is bytes an editor can parse: raw JSON on
@@ -108,5 +110,56 @@ func TestEveryKeyTheSchemaOffersIsOneConfigSetTakes(t *testing.T) {
 			}
 		}
 		walk(section, "")
+	}
+}
+
+// A length of time is text with a grammar, and no schema keyword holds a range
+// for text: its bounds are said in the description, and `minimum` and `maximum`
+// stay what JSON Schema makes them, numbers. The built-ins' timeouts are
+// durations, and a schema that held "1s" as a minimum was not one an editor or
+// `helm lint` could compile.
+func TestConfigSchemaDescribesADurationAsTextWithAGrammar(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(configSchemaFor(reg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema any
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatal(err)
+	}
+	var walk func(path string, node any)
+	walk = func(path string, node any) {
+		switch n := node.(type) {
+		case map[string]any:
+			for key, child := range n {
+				if _, isNumber := child.(float64); !isNumber && (key == "minimum" || key == "maximum") {
+					t.Errorf("%s.%s = %v (%T), want a number", path, key, child, child)
+				}
+				walk(path+"."+key, child)
+			}
+		case []any:
+			for _, child := range n {
+				walk(path, child)
+			}
+		}
+	}
+	walk("schema", schema)
+
+	var http plugin.Plugin
+	for _, p := range reg.Plugins() {
+		if p.Name == "http" {
+			http = p
+		}
+	}
+	timeout := pluginSchema(reg, http)["properties"].(map[string]any)["timeout"].(map[string]any)
+	if timeout["type"] != "string" || timeout["pattern"] != plugin.DurationPattern || timeout["default"] != "30s" {
+		t.Errorf("http timeout = %v, want a string with the duration grammar defaulting to 30s", timeout)
+	}
+	if d := timeout["description"].(string); !strings.Contains(d, "30s") || !strings.Contains(d, "from 1s to 10m") {
+		t.Errorf("http timeout is described as %q, want the unit and the range said", d)
 	}
 }

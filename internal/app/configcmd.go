@@ -45,7 +45,7 @@ func newConfigCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 			"key takes and keeps the comments you wrote in the file; `rta config edit` is for\n" +
 			"everything a key cannot say, and `rta config check` names what rta ignores.",
 		Example: "  rta config set output json\n" +
-			"  rta config set plugins.http.timeout 10\n" +
+			"  rta config set plugins.http.timeout 10s\n" +
 			"  rta config set theme.primary '#7aa2f7'\n" +
 			"  rta config edit",
 		ValidArgsFunction: cobra.NoFileCompletions,

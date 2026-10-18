@@ -93,7 +93,7 @@ func Plugin() plugin.Plugin {
 		// may reach, and only the person at the terminal may ask (withOwnNetwork).
 		{Name: "local-network", Type: plugin.Bool, Local: true,
 			Help: "allow a loopback or private address — a service of your own; never offered to agents"},
-		{Name: "timeout", Type: plugin.Int, Config: "timeout", Default: 30, Min: 1, Max: 600, Help: "request timeout in seconds"},
+		{Name: "timeout", Type: plugin.Duration, Config: "timeout", Default: "30s", Min: "1s", Max: "10m", Help: "request timeout"},
 	}
 	withBody := append([]plugin.Field{}, common...)
 	withBody = append(withBody, plugin.Field{
@@ -519,7 +519,7 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 	// refuses it there, so this is the second lock on the same door.
 	own := req.Bool("local-network") && req.Surface() != plugin.SurfaceMCP
 	url := withScheme(req.String("url"), own)
-	timeout := time.Duration(req.Int("timeout")) * time.Second
+	timeout := req.Duration("timeout")
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if own {

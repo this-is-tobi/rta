@@ -36,12 +36,12 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// defaultTimeoutSeconds bounds every dial cert makes. Ten seconds is
+// defaultTimeout bounds every dial cert makes. Ten seconds is
 // generous for a TLS handshake and short enough that a host behind a
 // firewall that drops packets rather than refusing them costs ten seconds
 // instead of the OS connect timeout, which on Linux is a little over two
 // minutes.
-const defaultTimeoutSeconds = 10
+const defaultTimeout = 10 * time.Second
 
 // expiryConcurrency bounds runExpiry's fan-out. The limit is not about
 // sockets — forty of those is nothing — it is that an unbounded fan-out over
@@ -85,8 +85,8 @@ func Plugin() plugin.Plugin {
 		Help: "a PEM or DER file, or a host[:port] or https:// URL to connect to (over MCP, a file only)",
 	}
 	timeoutField := plugin.Field{
-		Name: "timeout", Type: plugin.Int, Default: defaultTimeoutSeconds, Min: 1, Max: 120,
-		Help: "connect timeout in seconds",
+		Name: "timeout", Type: plugin.Duration, Default: plugin.FormatDuration(defaultTimeout), Min: "1s", Max: "2m",
+		Help: "connect timeout",
 	}
 	return plugin.Plugin{
 		Name:    "cert",
@@ -199,11 +199,10 @@ func Plugin() plugin.Plugin {
 // would become an already-expired deadline that fails every dial instantly,
 // which is a worse answer than the one the declaration promises.
 func dialTimeout(req plugin.Request) time.Duration {
-	secs := req.Int("timeout")
-	if secs <= 0 {
-		secs = defaultTimeoutSeconds
+	if d := req.Duration("timeout"); d > 0 {
+		return d
 	}
-	return time.Duration(secs) * time.Second
+	return defaultTimeout
 }
 
 // loadCerts fetches the peer chain from a live host or parses a PEM file.

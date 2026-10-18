@@ -242,7 +242,7 @@ func runTrace(ctx context.Context, req plugin.Request) (view.View, error) {
 	host := req.String("host")
 	maxHops := min(max(req.Int("max-hops"), 1), 64)
 	probes := min(max(req.Int("probes"), 1), 10)
-	timeout := time.Duration(max(req.Int("timeout"), 1)) * time.Second
+	timeout := max(req.Duration("timeout"), time.Second)
 
 	ips, err := stdnet.DefaultResolver.LookupIP(ctx, "ip", host)
 	if err != nil || len(ips) == 0 {

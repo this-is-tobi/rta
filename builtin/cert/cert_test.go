@@ -188,7 +188,7 @@ func TestExpiryTable(t *testing.T) {
 // that answered.
 func TestExpiryFailsAfterItsTableWhenAHostCouldNotBeChecked(t *testing.T) {
 	live, _ := startTLS(t)
-	values := map[string]any{"targets": []string{live, "127.0.0.1:1"}, "warn-days": 30, "timeout": 2}
+	values := map[string]any{"targets": []string{live, "127.0.0.1:1"}, "warn-days": 30, "timeout": "2s"}
 
 	v, err := runExpiry(context.Background(), req(values).WithSurface(plugin.SurfaceCLI))
 	var answered *plugin.AnsweredError
@@ -214,14 +214,14 @@ func TestExpiryFailsAfterItsTableWhenAHostCouldNotBeChecked(t *testing.T) {
 		}
 	}
 
-	ok := map[string]any{"targets": []string{live}, "warn-days": 30, "timeout": 2}
+	ok := map[string]any{"targets": []string{live}, "warn-days": 30, "timeout": "2s"}
 	if _, err := runExpiry(context.Background(), req(ok).WithSurface(plugin.SurfaceCLI)); err != nil {
 		t.Errorf("every host checked: err = %v, want none", err)
 	}
 	// A certificate that has ended is a finding the exit status leaves to the
 	// verdict column, as the recipe says: the host could be checked.
 	expired, key := chainOf(t, -day, 400*day, 400*day)
-	gone := map[string]any{"targets": []string{serveChain(t, expired, key)}, "warn-days": 30, "timeout": 2}
+	gone := map[string]any{"targets": []string{serveChain(t, expired, key)}, "warn-days": 30, "timeout": "2s"}
 	if _, err := runExpiry(context.Background(), req(gone).WithSurface(plugin.SurfaceCLI)); err != nil {
 		t.Errorf("an expired certificate: err = %v, want none", err)
 	}
@@ -295,7 +295,7 @@ func TestLiveHostTargetIsUndialableOnceRoutedThroughThePathGate(t *testing.T) {
 		return // refused outright is even safer than corrupted
 	}
 	if _, err := runInspect(context.Background(), req(map[string]any{
-		"target": resolved, "timeout": 2,
+		"target": resolved, "timeout": "2s",
 	})); err == nil {
 		t.Fatal("a host:port value rewritten by the path gate still reached a live host — " +
 			"cert.inspect/chain/pem/tls need NeedsGrant now")
@@ -331,7 +331,7 @@ func TestABoundsRefusalOfTheTargetIsTheAnswer(t *testing.T) {
 		"cert.inspect": runInspect, "cert.chain": runChain, "cert.pem": runPEM, "cert.tls": runTLS,
 	}
 	for _, target := range targets {
-		r := req(map[string]any{"target": target, "timeout": 2}).WithSurface(plugin.SurfaceMCP).
+		r := req(map[string]any{"target": target, "timeout": "2s"}).WithSurface(plugin.SurfaceMCP).
 			WithConfinement(g.Derived).WithBounds(g.Bounds())
 		for id, run := range runs {
 			_, err := run(context.Background(), r)
@@ -396,9 +396,9 @@ func TestEveryCapabilityDeclaresTheSameTimeout(t *testing.T) {
 			t.Errorf("%s dials but declares no timeout", c.ID)
 			continue
 		}
-		if f.Type != plugin.Int || f.Default != defaultTimeoutSeconds || f.Min != 1 || f.Max != 120 {
-			t.Errorf("%s timeout = %+v, want an Int bounded 1..120 defaulting to %d",
-				c.ID, *f, defaultTimeoutSeconds)
+		if f.Type != plugin.Duration || f.Default != plugin.FormatDuration(defaultTimeout) || f.Min != "1s" || f.Max != "2m" {
+			t.Errorf("%s timeout = %+v, want a Duration bounded 1s..2m defaulting to %s",
+				c.ID, *f, plugin.FormatDuration(defaultTimeout))
 		}
 	}
 }
@@ -412,7 +412,7 @@ func TestDialIsBoundedByTheDeclaredTimeout(t *testing.T) {
 	done := make(chan error, 1)
 	start := time.Now()
 	go func() {
-		_, err := runInspect(context.Background(), req(map[string]any{"target": addr, "timeout": 1}))
+		_, err := runInspect(context.Background(), req(map[string]any{"target": addr, "timeout": "1s"}))
 		done <- err
 	}()
 	select {
@@ -439,7 +439,7 @@ func TestExpiryChecksTargetsConcurrentlyAndKeepsInputOrder(t *testing.T) {
 
 	start := time.Now()
 	v, err := runExpiry(context.Background(), req(map[string]any{
-		"targets": targets, "warn-days": 30, "timeout": 1,
+		"targets": targets, "warn-days": 30, "timeout": "1s",
 	}))
 	if err != nil {
 		t.Fatal(err)

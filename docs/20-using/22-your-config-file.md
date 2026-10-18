@@ -45,7 +45,7 @@ SETTINGS ───────────────────────�
 │ dashboard.width      │ 6                             │ file   │
 │ theme.primary        │ #7aa2f7                       │ file   │
 │ dashboard.add        │ 1 tile — `rta dashboard list` │ file   │
-│ plugins.http.timeout │ 10                            │ file   │
+│ plugins.http.timeout │ 10s                           │ file   │
 ╰──────────────────────┴───────────────────────────────┴────────╯
 ```
 
@@ -58,7 +58,7 @@ A key is named the way `rta explain` prints it: `output`, `dashboard.width`, `da
 ```bash
 rta config set theme.primary '#7aa2f7'
 rta config set dashboard.width 6
-rta config set plugins.http.timeout 10
+rta config set plugins.http.timeout 10s
 rta config get plugins.http.timeout
 rta config unset plugins.http.timeout
 ```
@@ -66,20 +66,22 @@ rta config unset plugins.http.timeout
 `set` answers with what it wrote and the line that undoes it:
 
 ```
-wrote  set plugins.http.timeout to 10 in /home/you/.config/rta/config.yaml
-back   `rta config unset plugins.http.timeout` returns it to its default, 30
+wrote  set plugins.http.timeout to 10s in /home/you/.config/rta/config.yaml
+back   `rta config unset plugins.http.timeout` returns it to its default, 30s
 ```
 
 `set` holds the value to what the key takes, so a value no call would accept is refused here and not written to be refused on every call:
 
 ```bash
-rta config set plugins.http.timeout 10s
+rta config set plugins.http.timeout 10
 ```
 
 ```
-ERROR core.config.set.type plugins.http.timeout is declared int, and takes a whole number from 1 to 600
-HINT write it as `rta config set plugins.http.timeout 30`
+ERROR core.config.set.type plugins.http.timeout is declared duration, and takes a duration from 1s to 10m
+HINT write it as `rta config set plugins.http.timeout 30s`
 ```
+
+A length of time is written with its unit everywhere rta takes one, `--timeout` and the `timeout` keys included: `30s`, `5m`, `2h`, `1d`. A bare number does not say whether it counts seconds or minutes, so a flag, a config file or a profile that holds one is refused, and `rta config check` and `rta doctor` say so before a call does.
 
 A key that takes a list takes one argument per element (`rta config set dashboard.hidden gen.overview git.overview`). Setting a key to what it already is writes nothing, so a line in a script that runs on every boot is safe. A name that is a block of keys and not one value (`plugins`, `theme`) is refused with the keys it holds, a misspelled key is answered with the nearest one, and `--dry-run` says what would be written without writing it.
 
@@ -116,7 +118,7 @@ It opens the file in `$VISUAL`, then `$EDITOR`, then `vi`, and holds what you sa
 #
 # plugins:
 #   http:
-#     timeout: 10               # `rta explain http.get` names each key a plugin reads
+#     timeout: 10s              # `rta explain http.get` names each key a plugin reads
 ```
 
 A file that does not parse reopens the editor with the reason and its line at the top, and leaving it as it is cancels. A key rta ignores is saved and named, with its line. `rta config edit` also keeps `config.schema.json` beside the file and points the file's first lines at it, so an editor that speaks yaml-language-server completes each key, flags an unknown one and explains it on hover; `rta config schema` prints the same JSON Schema for a file somewhere else. It needs a terminal (without one it says so and names `rta config set` and `rta config path` instead), and an editor that returns before you have saved loses the edit, so a windowed one needs its wait flag: `EDITOR='code --wait'`.
@@ -178,10 +180,10 @@ theme:
   primary: "#7aa2f7"
 plugins:
   http:
-    timeout: 10
+    timeout: 10s
 ```
 
-That is a dashboard of tiles half the screen wide with the version watchlist added to it, one accent colour, and a shorter timeout for `rta http` calls. Every line of it was one command: `rta config set dashboard.width 6`, `rta dashboard add eol.watch`, `rta config set theme.primary '#7aa2f7'` and `rta config set plugins.http.timeout 10`. What does not belong in it: a credential (use `secrets:` and [the store](./50-secrets.md)), a grant (`rta grant allow`), and a plugin's approval (`rta plugin trust`). The file says what is shown and how a connection is spelled, and the boundary says what an agent may do.
+That is a dashboard of tiles half the screen wide with the version watchlist added to it, one accent colour, and a shorter timeout for `rta http` calls. Every line of it was one command: `rta config set dashboard.width 6`, `rta dashboard add eol.watch`, `rta config set theme.primary '#7aa2f7'` and `rta config set plugins.http.timeout 10s`. What does not belong in it: a credential (use `secrets:` and [the store](./50-secrets.md)), a grant (`rta grant allow`), and a plugin's approval (`rta plugin trust`). The file says what is shown and how a connection is spelled, and the boundary says what an agent may do.
 
 No tool on the [MCP](../95-reference/10-glossary.md#acronyms) surface writes this file, and [the path gate](../95-reference/20-the-path-gate.md) keeps the config directory out of an agent's reach: the file decides what is printed and which connections exist, so an agent that could write it could change its own limits.
 

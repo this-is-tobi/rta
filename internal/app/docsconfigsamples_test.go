@@ -40,9 +40,9 @@ func TestTheConfigPageQuotesWhatTheConfigCommandsPrint(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "config.yaml")
 
-	stdout, stderr, err := runConfigAt(t, reg, path, "config", "set", "plugins.http.timeout", "10")
+	stdout, stderr, err := runConfigAt(t, reg, path, "config", "set", "plugins.http.timeout", "10s")
 	if err != nil {
-		t.Fatalf("rta config set plugins.http.timeout 10: %v\n%s", err, stderr)
+		t.Fatalf("rta config set plugins.http.timeout 10s: %v\n%s", err, stderr)
 	}
 	got := printedLines(stdout, stderr)
 	quoted := 0
@@ -63,12 +63,12 @@ func TestTheConfigPageQuotesWhatTheConfigCommandsPrint(t *testing.T) {
 		t.Fatalf("read %d lines of the set receipt; has its shape changed?", quoted)
 	}
 
-	_, stderr, err = runConfigAt(t, reg, path, "config", "set", "plugins.http.timeout", "10s")
+	_, stderr, err = runConfigAt(t, reg, path, "config", "set", "plugins.http.timeout", "10")
 	if err == nil {
-		t.Fatal("rta config set plugins.http.timeout 10s was accepted")
+		t.Fatal("rta config set plugins.http.timeout 10 was accepted")
 	}
 	got = printedLines("", stderr)
-	for _, line := range codeBlockAfter(t, page, "rta config set plugins.http.timeout 10s\n```") {
+	for _, line := range codeBlockAfter(t, page, "rta config set plugins.http.timeout 10\n```") {
 		if want := squash(line); want != "" && !got[want] {
 			t.Errorf("%s quotes %q, which the refusal did not print:\n%s", rel, line, stderr)
 		}

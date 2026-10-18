@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 
 func req(values map[string]any) plugin.Request {
 	if values["timeout"] == nil {
-		values["timeout"] = 5
+		values["timeout"] = "5s"
 	}
 	return plugin.NewRequest(values, false, false)
 }
@@ -623,7 +623,7 @@ func TestDryRunSendsNothing(t *testing.T) {
 
 	for _, method := range []string{"get", "head", "post", "put", "delete"} {
 		v, err := doRequest(context.Background(), strings.ToUpper(method),
-			plugin.NewRequest(map[string]any{"url": srv.URL, "data": "payload", "timeout": 5}, true, true))
+			plugin.NewRequest(map[string]any{"url": srv.URL, "data": "payload", "timeout": "5s"}, true, true))
 		if err != nil {
 			t.Fatalf("%s: %v", method, err)
 		}
@@ -641,7 +641,7 @@ func TestDryRunSendsNothing(t *testing.T) {
 
 	// …and a real run still does.
 	if _, err := doRequest(context.Background(), "POST",
-		plugin.NewRequest(map[string]any{"url": srv.URL, "timeout": 5}, false, true)); err != nil {
+		plugin.NewRequest(map[string]any{"url": srv.URL, "timeout": "5s"}, false, true)); err != nil {
 		t.Fatal(err)
 	}
 	if hits != 1 {
@@ -653,7 +653,7 @@ func TestDryRunSendsNothing(t *testing.T) {
 // way to print the token you were about to send.
 func TestDryRunMasksCredentials(t *testing.T) {
 	v, err := doRequest(context.Background(), "POST",
-		plugin.NewRequest(map[string]any{"url": "https://example.com", "bearer": "s3cr3t", "timeout": 5}, true, true))
+		plugin.NewRequest(map[string]any{"url": "https://example.com", "bearer": "s3cr3t", "timeout": "5s"}, true, true))
 	if err != nil {
 		t.Fatal(err)
 	}

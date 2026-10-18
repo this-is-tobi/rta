@@ -29,7 +29,7 @@ func TestAuditingARepositoryURLIsRefusedOverMCP(t *testing.T) {
 		run  plugin.Handler
 		args map[string]any
 	}{
-		{"deps", runDeps, map[string]any{"path": "https://127.0.0.1:1/x.git", "timeout": 5}},
+		{"deps", runDeps, map[string]any{"path": "https://127.0.0.1:1/x.git", "timeout": "5s"}},
 		{"why", runWhy, map[string]any{"package": "lodash", "path": "https://127.0.0.1:1/x.git"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -66,7 +66,7 @@ func TestAPersonCanAuditARepositoryTheyHaveNotClonedOut(t *testing.T) {
 
 	for _, surface := range []plugin.Surface{plugin.SurfaceCLI, plugin.SurfaceTUI} {
 		v, err := runDeps(t.Context(), plugin.NewRequest(map[string]any{
-			"path": repo, "offline": true, "timeout": 5,
+			"path": repo, "offline": true, "timeout": "5s",
 		}, false, false).WithSurface(surface))
 		if err != nil {
 			t.Fatalf("surface %q: %v", surface, err)

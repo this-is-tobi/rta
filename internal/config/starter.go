@@ -68,5 +68,5 @@ const starterExamples = `#
 #
 # plugins:
 #   http:
-#     timeout: 10               # ` + "`rta explain http.get`" + ` names each key a plugin reads
+#     timeout: 10s              # ` + "`rta explain http.get`" + ` names each key a plugin reads
 `

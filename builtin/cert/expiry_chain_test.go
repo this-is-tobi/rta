@@ -122,7 +122,7 @@ const day = 24 * time.Hour
 func TestExpiryGradesTheChainNotTheLeaf(t *testing.T) {
 	chain, key := chainOf(t, 80*day, 2*day, 1*day)
 	row := expiryRows(t, req(map[string]any{
-		"targets": []string{serveChain(t, chain, key)}, "warn-days": 30, "timeout": 5,
+		"targets": []string{serveChain(t, chain, key)}, "warn-days": 30, "timeout": "5s",
 	}))[0]
 	if !strings.HasPrefix(row[3], "WARN <30d") || !strings.Contains(row[3], "intermediate inter") {
 		t.Errorf("status = %q, want WARN naming the intermediate", row[3])
@@ -133,14 +133,14 @@ func TestExpiryGradesTheChainNotTheLeaf(t *testing.T) {
 
 	healthy, hkey := chainOf(t, 80*day, 400*day, 1*day)
 	if row := expiryRows(t, req(map[string]any{
-		"targets": []string{serveChain(t, healthy, hkey)}, "warn-days": 30, "timeout": 5,
+		"targets": []string{serveChain(t, healthy, hkey)}, "warn-days": 30, "timeout": "5s",
 	}))[0]; row[3] != "ok" {
 		t.Errorf("a root ending tomorrow graded the host: status = %q, want ok", row[3])
 	}
 
 	gone, gkey := chainOf(t, 80*day, -day, 400*day)
 	if row := expiryRows(t, req(map[string]any{
-		"targets": []string{serveChain(t, gone, gkey)}, "warn-days": 30, "timeout": 5,
+		"targets": []string{serveChain(t, gone, gkey)}, "warn-days": 30, "timeout": "5s",
 	}))[0]; !strings.HasPrefix(row[3], "EXPIRED") || !strings.Contains(row[3], "intermediate inter") {
 		t.Errorf("status = %q, want EXPIRED naming the intermediate", row[3])
 	}
@@ -153,7 +153,7 @@ func TestExpiryGradesTheChainNotTheLeaf(t *testing.T) {
 func TestExpiryReadsCertificateFilesAtATerminalOnly(t *testing.T) {
 	chain, _ := chainOf(t, 80*day, 2*day, 400*day)
 	path := bundleFile(t, chain)
-	values := map[string]any{"targets": []string{path}, "warn-days": 30, "timeout": 2}
+	values := map[string]any{"targets": []string{path}, "warn-days": 30, "timeout": "2s"}
 
 	row := expiryRows(t, req(values))[0]
 	if !strings.HasPrefix(row[3], "WARN <30d") || !strings.Contains(row[3], "intermediate inter") {

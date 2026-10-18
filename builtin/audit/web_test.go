@@ -31,7 +31,7 @@ func req(values map[string]any) plugin.Request {
 // auditRows runs audit.web against srv and returns Check -> row.
 func auditRows(t *testing.T, srv *httptest.Server) map[string][]string {
 	t.Helper()
-	v, err := runWeb(t.Context(), req(map[string]any{"host": srv.URL, "timeout": 5}))
+	v, err := runWeb(t.Context(), req(map[string]any{"host": srv.URL, "timeout": "5s"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -533,7 +533,7 @@ func TestEveryFindingLandsInADeclaredGroup(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	v, err := runWeb(t.Context(), req(map[string]any{"host": srv.URL, "timeout": 5}))
+	v, err := runWeb(t.Context(), req(map[string]any{"host": srv.URL, "timeout": "5s"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,7 +553,7 @@ func TestEveryFindingLandsInADeclaredGroup(t *testing.T) {
 
 func detailSections(t *testing.T, srv *httptest.Server) view.Sections {
 	t.Helper()
-	v, err := runWeb(t.Context(), req(map[string]any{"host": srv.URL, "timeout": 5, "detail": true}))
+	v, err := runWeb(t.Context(), req(map[string]any{"host": srv.URL, "timeout": "5s", "detail": true}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -628,7 +628,7 @@ func TestReferenceURLPointsAtTheCitedCWE(t *testing.T) {
 }
 
 func TestAuditBadHostIsCoded(t *testing.T) {
-	_, err := runWeb(t.Context(), req(map[string]any{"host": "://nope", "timeout": 2}))
+	_, err := runWeb(t.Context(), req(map[string]any{"host": "://nope", "timeout": "2s"}))
 	ve := view.AsError(err, "x")
 	if ve.Code != "audit.web.badhost" && ve.Code != "audit.web.unreachable" {
 		t.Errorf("want coded audit error, got %+v", ve)
@@ -657,7 +657,7 @@ func TestAHostWithCredentialsBeforeItIsRefused(t *testing.T) {
 		"HTTPS://staging.example.com@" + addr,
 		"https:staging.example.com@" + addr,
 	} {
-		_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": 5}))
+		_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": "5s"}))
 		if ve := view.AsError(err, "x"); ve == nil || ve.Code != "audit.web.badhost" {
 			t.Errorf("%s: want audit.web.badhost, got %+v", host, ve)
 		}
@@ -679,7 +679,7 @@ func TestAValueThatNamesNoHostIsRefused(t *testing.T) {
 	t.Cleanup(srv.Close)
 	_, port, _ := strings.Cut(strings.TrimPrefix(srv.URL, "https://"), ":")
 	for _, host := range []string{"//127.0.0.1:" + port, ":" + port, "https://:" + port + "/", "https:///x"} {
-		_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": 5}))
+		_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": "5s"}))
 		if ve := view.AsError(err, "x"); ve == nil || ve.Code != "audit.web.badhost" {
 			t.Errorf("%s: want audit.web.badhost, got %+v", host, ve)
 		}
@@ -899,7 +899,7 @@ func TestAHostWithWhiteSpaceAroundItIsRefusedBeforeAnythingIsRequested(t *testin
 	t.Cleanup(srv.Close)
 	nbsp := string(rune(0xa0))
 	for _, host := range []string{" " + srv.URL, srv.URL + " ", srv.URL + "\n", srv.URL + nbsp, "\t" + srv.URL, " ", "\t"} {
-		_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": 5}))
+		_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": "5s"}))
 		if ve := view.AsError(err, "x"); err == nil || ve.Code != "audit.web.badhost" {
 			t.Errorf("host %q: err = %v, want audit.web.badhost", host, err)
 		} else if !strings.Contains(ve.Message, "white space") {
@@ -929,7 +929,7 @@ func TestAHostHoldingACharacterThatDrawsAsNothingIsRefused(t *testing.T) {
 		unseen := string(cp)
 		for _, host := range []string{"https://" + unseen + addr, unseen + addr,
 			"https://" + addr[:3] + unseen + addr[3:]} {
-			_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": 5}))
+			_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": "5s"}))
 			if ve := view.AsError(err, "x"); err == nil || ve.Code != "audit.web.badhost" {
 				t.Errorf("host %q: err = %v, want audit.web.badhost", host, err)
 			} else if !strings.Contains(ve.Message, "draws as nothing") {
@@ -966,7 +966,7 @@ func TestAHostTheRequestWouldMapToAnotherNameIsRefused(t *testing.T) {
 		"https://127%E3%80%82" + strings.TrimPrefix(rest, "."),
 		"https://%EF%BC%91%EF%BC%92%EF%BC%97" + rest,
 	} {
-		_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": 5}))
+		_, err := runWeb(t.Context(), req(map[string]any{"host": host, "timeout": "5s"}))
 		if ve := view.AsError(err, "x"); err == nil || ve.Code != "audit.web.badhost" {
 			t.Errorf("host %q: err = %v, want audit.web.badhost", host, err)
 		} else if !strings.Contains(ve.Message, "maps to others") || !strings.Contains(ve.Hint, "xn--") {

@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -56,7 +55,7 @@ func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr := checkSelector(selector); verr != nil {
 		return nil, verr
 	}
-	timeout := time.Duration(req.Int("timeout")) * time.Second
+	timeout := req.Duration("timeout")
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 

@@ -76,7 +76,7 @@ func probeSections(t *testing.T, values map[string]any) view.Sections {
 func TestProbeReportsBanner(t *testing.T) {
 	port := listenOnce(t, "SSH-2.0-OpenSSH_9.6\r\n")
 	s := probeSections(t, map[string]any{
-		"host": "127.0.0.1", "port": port, "timeout": 2, "wait": 2,
+		"host": "127.0.0.1", "port": port, "timeout": "2s", "wait": "2s",
 	})
 	body := s.Items[1].View.(view.Text).Body
 	if !strings.Contains(body, "SSH-2.0-OpenSSH_9.6") {
@@ -103,7 +103,7 @@ func TestProbeReportsBanner(t *testing.T) {
 func TestProbeSilenceExplainsItself(t *testing.T) {
 	port := listenOnce(t, "")
 	s := probeSections(t, map[string]any{
-		"host": "127.0.0.1", "port": port, "timeout": 2, "wait": 1,
+		"host": "127.0.0.1", "port": port, "timeout": "2s", "wait": "1s",
 	})
 	response := s.Items[1].View.(view.Text)
 	if response.Body != "" {
@@ -135,7 +135,7 @@ func TestSendSilenceDoesNotOfferSendAgain(t *testing.T) {
 	}()
 	v, err := runSend(context.Background(), plugin.NewRequest(map[string]any{
 		"host": "127.0.0.1", "port": ln.Addr().(*stdnet.TCPAddr).Port,
-		"data": `PING\r\n`, "timeout": 2, "wait": 1,
+		"data": `PING\r\n`, "timeout": "2s", "wait": "1s",
 	}, false, false))
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +170,7 @@ func TestSendThenRead(t *testing.T) {
 
 	v, err := runSend(context.Background(), plugin.NewRequest(map[string]any{
 		"host": "127.0.0.1", "port": ln.Addr().(*stdnet.TCPAddr).Port,
-		"data": `PING\r\n`, "timeout": 2, "wait": 2,
+		"data": `PING\r\n`, "timeout": "2s", "wait": "2s",
 	}, false, false))
 	if err != nil {
 		t.Fatal(err)
@@ -209,7 +209,7 @@ func TestProbeClosedPortIsCoded(t *testing.T) {
 	ln.Close()
 
 	_, err = runProbe(context.Background(), req(map[string]any{
-		"host": "127.0.0.1", "port": port, "timeout": 1, "wait": 1,
+		"host": "127.0.0.1", "port": port, "timeout": "1s", "wait": "1s",
 	}))
 	ve := view.AsError(err, "x")
 	if ve.Code != "net.probe.unreachable" || ve.Hint == "" {
@@ -225,7 +225,7 @@ func TestProbeClosedPortIsCoded(t *testing.T) {
 func TestAHostThatDoesNotResolveIsNotBlamedOnItsPort(t *testing.T) {
 	const host = "no-such-name-rta-test.invalid"
 	_, err := runProbe(context.Background(), req(map[string]any{
-		"host": host, "port": 80, "timeout": 2, "wait": 1,
+		"host": host, "port": 80, "timeout": "2s", "wait": "1s",
 	}))
 	ve := view.AsError(err, "x")
 	if ve.Code != "net.probe.unreachable" {
@@ -235,14 +235,14 @@ func TestAHostThatDoesNotResolveIsNotBlamedOnItsPort(t *testing.T) {
 		t.Errorf("probe of a name that does not resolve points at the port: %q", ve.Hint)
 	}
 
-	_, err = runPing(context.Background(), req(map[string]any{"host": host, "count": 1, "timeout": 2}))
+	_, err = runPing(context.Background(), req(map[string]any{"host": host, "count": 1, "timeout": "2s"}))
 	ve = view.AsError(err, "x")
 	if ve.Code != "net.ping.resolve" || !strings.Contains(ve.Hint, "rta net dns") {
 		t.Errorf("ping of a name that does not resolve names no next step: %+v", ve)
 	}
 
 	// And so does trace, which resolves the name itself.
-	_, err = runTrace(context.Background(), req(map[string]any{"host": host, "max-hops": 2, "probes": 1, "timeout": 1}))
+	_, err = runTrace(context.Background(), req(map[string]any{"host": host, "max-hops": 2, "probes": 1, "timeout": "1s"}))
 	ve = view.AsError(err, "x")
 	if ve.Code != "net.trace.resolve" || !strings.Contains(ve.Hint, "rta net dns") {
 		t.Errorf("trace of a name that does not resolve names no next step: %+v", ve)
@@ -254,7 +254,7 @@ func TestAHostThatDoesNotResolveIsNotBlamedOnItsPort(t *testing.T) {
 // the wrong place. The name is the finding, as it is for probe and ping.
 func TestAScanOfAHostThatDoesNotResolveIsNotAColumnOfClosed(t *testing.T) {
 	_, err := runPort(context.Background(), req(map[string]any{
-		"host": "no-such-name-rta-test.invalid", "ports": "80,443", "timeout": 2,
+		"host": "no-such-name-rta-test.invalid", "ports": "80,443", "timeout": "2s",
 	}))
 	ve := view.AsError(err, "x")
 	if ve.Code != "net.port.resolve" || !strings.Contains(ve.Hint, "rta net dns") {
@@ -288,7 +288,7 @@ func TestProbeTLSHandshakeRespectsTimeout(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := runProbe(context.Background(), req(map[string]any{
-			"host": "127.0.0.1", "port": port, "timeout": 1, "wait": 1, "tls": true,
+			"host": "127.0.0.1", "port": port, "timeout": "1s", "wait": "1s", "tls": true,
 		}))
 		done <- err
 	}()
@@ -341,7 +341,7 @@ func TestProbeBannerReadRespectsWaitAgainstATricklingPeer(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := runProbe(context.Background(), req(map[string]any{
-			"host": "127.0.0.1", "port": port, "timeout": 2, "wait": 1,
+			"host": "127.0.0.1", "port": port, "timeout": "2s", "wait": "1s",
 		}))
 		done <- err
 	}()
@@ -387,7 +387,7 @@ func TestSendDryRunNeverReachesTheNetwork(t *testing.T) {
 	host, portStr, _ := stdnet.SplitHostPort(ln.Addr().String())
 	port, _ := strconv.Atoi(portStr)
 	values := map[string]any{
-		"host": host, "port": port, "data": `FLUSHALL\r\n`, "timeout": 2, "wait": 1,
+		"host": host, "port": port, "data": `FLUSHALL\r\n`, "timeout": "2s", "wait": "1s",
 	}
 	v, err := runSend(t.Context(), plugin.NewRequest(values, true, true))
 	if err != nil {
