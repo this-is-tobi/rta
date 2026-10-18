@@ -114,7 +114,7 @@ func remoteShow(ctx context.Context, req plugin.Request, server, id string) (vie
 // remoteAnswer is `agent allow <id> --server` and `agent deny <id>
 // --server`: fetch the request, derive the digest from what this machine
 // read, and send the answer inside the signed envelope.
-func remoteAnswer(ctx context.Context, req plugin.Request, server, id string, allow bool) (view.View, error) {
+func remoteAnswer(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability, server, id string, allow bool) (view.View, error) {
 	verb := "deny"
 	if allow {
 		verb = "allow"
@@ -167,6 +167,19 @@ func remoteAnswer(ctx context.Context, req plugin.Request, server, id string, al
 			"the entry %s returned for %q does not describe the call it is bound to — refusing to answer it",
 			server, id).
 			WithHint("the server's queue said one thing and bound another; treat that machine as suspect")
+	}
+	// **The call is shown before a signed release leaves, as it is for a local
+	// one** (confirmAllow). The digest above proves the card describes the call
+	// it is bound to, and it was the one thing between the operator's passphrase
+	// and the release: an id copied off a notification was approved without the
+	// call ever being on a screen this person looked at. The operator key is
+	// open by now, so the question costs no second passphrase. Without a
+	// terminal and with --yes it is answered as it always was, for the reason
+	// runAllow gives.
+	if allow && !req.Yes && atTerminal(req) {
+		if !confirmAllow(r, allowQuestion(r, "", ""), revealsValue(catalog, r.Cap)) {
+			return declinedOn(req.Surface(), r, server), nil
+		}
 	}
 	var out operatorid.AnswerOutcome
 	spec := operatorid.AnswerSpec{ID: id, Digest: digest, Allow: allow}

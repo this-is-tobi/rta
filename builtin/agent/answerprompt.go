@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 
@@ -148,12 +149,20 @@ func confirmAllow(r consent.Request, question string, reveals bool) bool {
 // call: a grant that keeps answering it, or the whole role the call's line
 // belongs to. The person who typed --ttl or --role asked for that, and is
 // still shown it, because the card above it is the thing they are agreeing to.
-func allowQuestion(role, ttl, agent string) string {
+//
+// **The grant is named, not "it".** What --ttl issues is the capability on the
+// records the call names and nothing about its other arguments (Authorize), so
+// a net.send to a host on a Redis port with a CONFIG SET for its data, answered
+// "keep allowing it", was a grant of net.send to that host on any port and with
+// any data: the question has to say that, beside the card that shows only the
+// one call.
+func allowQuestion(r consent.Request, role, ttl string) string {
 	switch {
 	case role != "":
-		return "Allow this call, and issue the role " + role + " to " + agentOr(agent) + "?"
+		return "Allow this call, and issue the role " + role + " to " + agentOr(r.Agent) + "?"
 	case ttl != "":
-		return "Allow this call, and keep allowing it for " + ttl + "?"
+		return "Allow this call, and keep allowing " + callNamed(r.Cap, r.Scopes) +
+			", whatever else it is called with, for " + ttl + "?"
 	}
 	return "Allow once?"
 }
@@ -178,15 +187,20 @@ func allowCard(r consent.Request, reveals bool) string {
 	if r.Profile != "" {
 		row("connection", r.Profile)
 	}
-	if args := argsOf(r); args != "" {
-		row("arguments", args)
+	args, cut := argLines(r)
+	for i, line := range args {
+		label := ""
+		if i == 0 {
+			label = "arguments"
+		}
+		row(label, line)
 	}
 	if reveals {
 		row("reveals", revealsLine)
 	}
 	body := r.Preview
 	if body == "" {
-		body = notPreviewedBrief(r)
+		body = notPreviewedBrief(r, cut)
 	}
 	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
 	const most = 12
@@ -207,31 +221,62 @@ func allowCard(r consent.Request, reveals bool) string {
 	return b.String()
 }
 
-// argsOf is a parked call's arguments on one line, as the detail page shows
-// each of them, clipped: the page has the whole of them.
-func argsOf(r consent.Request) string {
-	if len(r.Args) == 0 {
-		return ""
-	}
+// wideArg is how many characters of one argument the card shows, and mostArgs
+// how many arguments: a question has room for a few lines, and the detail page
+// has the whole of them.
+const (
+	wideArg  = 72
+	mostArgs = 8
+)
+
+// argLines is a parked call's arguments as the card shows them: a row each, in
+// name order, each as the detail page shows a value but cut at wideArg
+// characters with a tail that says how much is left and where it is. cut says
+// whether anything was left out, because a card that cuts must not claim to be
+// the whole of the call.
+//
+// One row each, where they were joined on a line cut at sixty characters: the
+// first long value took the line, and the arguments after it, port and data
+// among them, were not on the card at all. They were what the question was
+// about.
+func argLines(r consent.Request) (rows []string, cut bool) {
 	keys := make([]string, 0, len(r.Args))
 	for k := range r.Args {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		parts = append(parts, k+"="+argValue(r.Args[k]))
+	for i, k := range keys {
+		if i == mostArgs {
+			rows = append(rows, "… "+format.Count(len(keys)-mostArgs, "more argument", "more arguments")+
+				" — rta agent show "+r.ID)
+			return rows, true
+		}
+		line := k + "=" + argValue(r.Args[k])
+		if n := utf8.RuneCountInString(line); n > wideArg {
+			line = string([]rune(line)[:wideArg-1]) + "… (" +
+				format.Count(n-(wideArg-1), "more character", "more characters") + " — rta agent show " + r.ID + ")"
+			cut = true
+		}
+		rows = append(rows, line)
 	}
-	return clip(strings.Join(parts, " "))
+	return rows, cut
 }
 
 // declined is the answer to a question the person said no to, or did not
 // answer: nothing was released, and what could be is named.
-func declined(sf plugin.Surface, r consent.Request) view.View {
-	id := plugin.Arg{Name: "id", Value: r.ID, Positional: true}
+func declined(sf plugin.Surface, r consent.Request) view.View { return declinedOn(sf, r, "") }
+
+// declinedOn is declined for a call parked on another machine, whose refusal
+// has to name the server too: the command without it answers this machine's
+// queue, where that call is not.
+func declinedOn(sf plugin.Surface, r consent.Request, server string) view.View {
+	args := []plugin.Arg{{Name: "id", Value: r.ID, Positional: true}}
+	if server != "" {
+		args = append(args, plugin.Arg{Name: "server", Value: server})
+	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: "not allowed", Value: callNamed(r.Cap, r.Scopes) + " is still waiting"},
-		{Key: "to refuse it now", Value: "`" + sf.Call("agent.deny", id) + "`; left alone it expires and the agent is told"},
+		{Key: "to refuse it now", Value: "`" + sf.Call("agent.deny", args...) + "`; left alone it expires and the agent is told"},
 	}}
 }
 
@@ -282,8 +327,10 @@ func kvWarning(r consent.Request) string {
 // notPreviewedBrief is notPreviewed for a card, which has a line for it and
 // not the paragraph the detail page gives: the same three reasons, in the
 // words a question has room for.
-func notPreviewedBrief(r consent.Request) string {
+func notPreviewedBrief(r consent.Request, cut bool) string {
 	switch {
+	case r.Safety != string(plugin.Destructive) && cut:
+		return "no preview — a " + r.Safety + " call, and the arguments above are cut: rta agent show " + r.ID + " has all of them"
 	case r.Safety != string(plugin.Destructive):
 		return "no preview — a " + r.Safety + " call, so the capability and arguments above are all of it"
 	case r.Profile != "":
