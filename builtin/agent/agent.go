@@ -969,11 +969,6 @@ type logColumn struct {
 
 // logColumns decides which columns the rows shown carry, and in which order.
 //
-// Every column but the always-there ones appears only once a row can fill it,
-// which for a record written before agents were named, or before rta could
-// serve over HTTP at all, is never: a column of em dashes on the screen an
-// operator opens in a hurry is a column they learn to skip.
-//
 // **Lower case, unlike every other table.** The column names here are the
 // record's own fields, and `--after` exists so that a shipper can read them
 // from a cursor: renaming one to match the Title Case the rest of the catalogue
@@ -982,13 +977,23 @@ type logColumn struct {
 // package — who is connected, what is waiting — carry no such contract and are
 // in Title Case with the rest.
 //
-// **Two shapes.** The whole table, every field of the entry, is what a script
-// and `--detail` read, and its columns are the record's own. The compact one
-// is what a person scans on a terminal: when, what, the record it named and
-// what became of it, in a row that fits eighty cells. The columns that say
-// who — agent, credential, session — join it only when the rows shown have
-// more than one to tell apart, because a column of one constant value says
-// nothing and takes a fifth of the width.
+// **Two shapes.** The compact one is what a person scans on a terminal: when,
+// what, the record it named and what became of it, in a row that fits eighty
+// cells. Its columns that say who — agent, credential, session — join it only
+// when the rows shown have more than one to tell apart, because a column of
+// one constant value says nothing and takes a fifth of the width, and a column
+// of em dashes on the screen an operator opens in a hurry is a column they
+// learn to skip.
+//
+// The whole table, every field of the entry, is what a script and `--detail`
+// read, and its columns are the record's own. **It is the same columns in the
+// same order whatever the rows hold**: a column that appeared only once a row
+// could fill it put `outcome` at index 7 in one batch and at 8 in the next, and
+// an archive appended run after run from `--after` was a file whose lines could
+// not be read by position — nor by name, from `.rows[]`, which drops them. Its
+// `at` is the record's own instant, RFC 3339 in UTC: a bare time of day, or a
+// date only when the rows were not all from today, is what a person wants to
+// read minutes later and what an archive cannot be read by, a month on.
 func logColumns(shown []agentlog.Entry, terse, detail bool) []logColumn {
 	has := func(f func(agentlog.Entry) bool) bool { return slices.ContainsFunc(shown, f) }
 	several := func(f func(agentlog.Entry) string) bool {
@@ -1006,6 +1011,8 @@ func logColumns(shown []agentlog.Entry, terse, detail bool) []logColumn {
 
 	at := logColumn{view.Column{Name: "at", Kind: view.KindTimestamp},
 		func(e agentlog.Entry, stamp string) string { return e.At.Local().Format(stamp) }}
+	atUTC := logColumn{view.Column{Name: "at", Kind: view.KindTimestamp},
+		func(e agentlog.Entry, _ string) string { return e.At.UTC().Format(time.RFC3339) }}
 	capability := logColumn{view.Column{Name: "capability"},
 		func(e agentlog.Entry, _ string) string { return e.Cap }}
 	agent := logColumn{view.Column{Name: "agent"},
@@ -1037,63 +1044,41 @@ func logColumns(shown []agentlog.Entry, terse, detail bool) []logColumn {
 
 	cols := []logColumn{
 		{view.Column{Name: "seq"}, func(e agentlog.Entry, _ string) string { return strconv.FormatInt(e.Seq, 10) }},
-		at, capability,
+		atUTC, capability, agent,
 	}
-	if has(func(e agentlog.Entry) bool { return e.Agent != "" || e.Client != "" }) {
-		cols = append(cols, agent)
-		// What the client called itself, beside the name the operator gave it:
-		// the pair the docs describe, one a person chose and one that only the
-		// client asserts. Only on the full page, so that the exact rows a log
-		// shipper reads do not grow a field they were not written against.
-		if detail && has(func(e agentlog.Entry) bool { return e.Client != "" }) {
-			cols = append(cols, logColumn{view.Column{Name: "client"},
-				func(e agentlog.Entry, _ string) string { return dashed(e.Client) }})
-		}
+	// What the client called itself, beside the name the operator gave it: the
+	// pair the docs describe, one a person chose and one that only the client
+	// asserts. Only on the full page, so that the exact rows a log shipper reads
+	// do not grow a field they were not written against.
+	if detail {
+		cols = append(cols, logColumn{view.Column{Name: "client"},
+			func(e agentlog.Entry, _ string) string { return dashed(e.Client) }})
 	}
-	if has(func(e agentlog.Entry) bool { return e.Credential != "" }) {
-		cols = append(cols, credential)
-	}
-	if has(func(e agentlog.Entry) bool { return e.Session != "" }) {
-		cols = append(cols, session)
-	}
-	if has(func(e agentlog.Entry) bool { return e.Role != "" }) {
-		cols = append(cols, logColumn{view.Column{Name: "role"},
-			func(e agentlog.Entry, _ string) string { return dashed(e.Role) }})
-	}
-	// The records as the call named them, shown as every other surface
-	// shows a record (textclean.Record): the arguments beside them are
-	// kept cleaned, and a record padded with a zero-width character read
-	// there as the bare one.
-	if recorded {
-		cols = append(cols, record)
-	}
-	cols = append(cols,
+	cols = append(cols, credential, session,
+		logColumn{view.Column{Name: "role"}, func(e agentlog.Entry, _ string) string { return dashed(e.Role) }},
+		// The records as the call named them, shown as every other surface
+		// shows a record (textclean.Record): the arguments beside them are
+		// kept cleaned, and a record padded with a zero-width character read
+		// there as the bare one.
+		record,
 		logColumn{view.Column{Name: "arguments"}, func(e agentlog.Entry, _ string) string { return argsLine(e.Args) }},
 		logColumn{view.Column{Name: "profile"}, func(e agentlog.Entry, _ string) string { return e.Profile }},
 		logColumn{view.Column{Name: "outcome", Kind: view.KindStatus},
 			func(e agentlog.Entry, _ string) string { return string(e.Outcome) }},
 		logColumn{view.Column{Name: "authorized"}, func(e agentlog.Entry, _ string) string { return string(e.Auth) }},
-	)
-	// Appears when filled, like role and code: a column that is empty on every
-	// call of a record with no reveal in it says nothing, and one that is there
-	// says which calls put a stored value in front of the agent.
-	if has(func(e agentlog.Entry) bool { return e.Revealed }) {
-		cols = append(cols, logColumn{view.Column{Name: "revealed"}, func(e agentlog.Entry, _ string) string {
+		// Which calls put a stored value in front of the agent.
+		logColumn{view.Column{Name: "revealed"}, func(e agentlog.Entry, _ string) string {
 			if e.Revealed {
 				return "yes"
 			}
 			return "-"
-		}})
-	}
-	// Same appears-when-filled rule as the columns above: a record written
-	// before the code/reason split — or one where nothing has gone wrong —
-	// shows no code column at all, rather than a column of blanks. Old rows
-	// keep their glued "code: message" in why; new rows carry the code here,
-	// exactly, which is the cell a shipped copy of this table gets matched on.
-	if has(func(e agentlog.Entry) bool { return e.Code != "" }) {
-		cols = append(cols, logColumn{view.Column{Name: "code"}, func(e agentlog.Entry, _ string) string { return e.Code }})
-	}
-	return append(cols, logColumn{view.Column{Name: "why"}, func(e agentlog.Entry, _ string) string { return whyLine(e) }})
+		}},
+		// New rows carry the code exactly, which is the cell a shipped copy of
+		// this table gets matched on; old rows keep their glued "code: message"
+		// in why, from before the code/reason split.
+		logColumn{view.Column{Name: "code"}, func(e agentlog.Entry, _ string) string { return e.Code }},
+		logColumn{view.Column{Name: "why"}, func(e agentlog.Entry, _ string) string { return whyLine(e) }})
+	return cols
 }
 
 func runPending(ctx context.Context, req plugin.Request) (view.View, error) {
@@ -1956,14 +1941,13 @@ func parseSince(raw string) (time.Time, string, *view.Error) {
 
 // stampFormat decides how much of an instant a row has to carry.
 //
-// The same table answers two questions. "What did it touch while I was in
-// that meeting" is read on a terminal minutes later, where a date on every
-// row is width taken from the arguments column; an archive is read months
-// later, where a bare `15:04:05` is a row nobody can place. So the date
-// appears exactly when it is load-bearing: when the rows are not all from
-// today.
+// It is the compact listing's: "what did it touch while I was in that
+// meeting" is read on a terminal minutes later, where a date on every row is
+// width taken from the arguments column. So the date appears exactly when it
+// is load-bearing: when the rows are not all from today. What an archive is
+// read from months later carries the record's own instant instead (logColumns).
 //
-// The same shape as the agent column above it, which appears only once a row
+// The same shape as the agent column beside it, which appears only once a row
 // can fill it — a column that says nothing is a column people learn to skip.
 //
 // Today is now's, passed in rather than read here: a test that makes its rows

@@ -121,7 +121,8 @@ func TestWhoColumnsJoinTheCompactLogOnlyWhenThereIsMoreThanOne(t *testing.T) {
 // a person who asks for the detail.
 func TestAPipeAndDetailKeepEveryField(t *testing.T) {
 	seed(t)
-	full := []string{"seq", "at", "capability", "agent", "session", "record", "arguments", "profile", "outcome", "authorized", "code", "why"}
+	full := []string{"seq", "at", "capability", "agent", "credential", "session", "role", "record", "arguments",
+		"profile", "outcome", "authorized", "revealed", "code", "why"}
 	func() {
 		defer compact.Pretend(false)()
 		if got := columnNames(logTable(t, nil)); !slices.Equal(got, full) {
@@ -134,8 +135,56 @@ func TestAPipeAndDetailKeepEveryField(t *testing.T) {
 	if !slices.Equal(columnNames(got), withClient) {
 		t.Errorf("--detail: columns = %v, want %v", columnNames(got), withClient)
 	}
-	if got.Rows[0][4] != "claude-code" {
-		t.Errorf("the client's own claim is %q, want what the client announced", got.Rows[0][4])
+	if c := cell(t, got, 0, "client"); c != "claude-code" {
+		t.Errorf("the client's own claim is %q, want what the client announced", c)
+	}
+}
+
+// **A shipper reads the log by name from a cursor, run after run, into one
+// file.** The columns it finds must be the same ones in the same order whatever
+// the rows of that batch hold, and `at` must be the record's own instant: with
+// the columns following the batch, `outcome` was index 7 in one line of the
+// archive and 8 in the next, and a bare time of day, which is all a batch from
+// today got, left an archive of rows nobody could place.
+func TestTheFullLogIsTheSameColumnsWhateverTheRowsHoldAndAtIsTheRecordsOwnInstant(t *testing.T) {
+	defer compact.Pretend(false)()
+	isolate(t)
+	appendRow(t, agentlog.Entry{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open})
+	plain := logTable(t, nil)
+
+	isolate(t)
+	appendRow(t, agentlog.Entry{Cap: "kv.get", Agent: "claude", Credential: "gateway", Session: "aaaa1111",
+		Role: "dev", Records: []string{"db-password"}, Revealed: true,
+		Outcome: agentlog.Refused, Auth: agentlog.Blocked, Code: "core.grant.required", Reason: "no active grant"})
+	rich := logTable(t, nil)
+
+	if got, want := columnNames(rich), columnNames(plain); !slices.Equal(got, want) {
+		t.Errorf("a batch with every field filled has columns %v, a plain one %v", got, want)
+	}
+	for _, name := range []string{"credential", "role", "record", "revealed", "code"} {
+		if !slices.Contains(columnNames(plain), name) {
+			t.Errorf("a batch of plain calls has no %q column, which a batch with one filled does", name)
+		}
+	}
+
+	at := cell(t, plain, 0, "at")
+	when, err := time.Parse(time.RFC3339, at)
+	if err != nil || !strings.HasSuffix(at, "Z") {
+		t.Fatalf("at = %q, want the record's RFC 3339 instant in UTC", at)
+	}
+	if time.Since(when) > time.Minute {
+		t.Errorf("at = %q, which is not when the call was written", at)
+	}
+}
+
+// The compact listing is the one a person reads at a terminal, and it keeps
+// the local time of day.
+func TestTheCompactLogKeepsTheLocalTimeOfDay(t *testing.T) {
+	defer compact.Pretend(true)()
+	seed(t)
+	at := cell(t, logTable(t, nil), 0, "at")
+	if _, err := time.ParseInLocation("15:04:05", at, time.Local); err != nil {
+		t.Errorf("at = %q, want the time of day alone on a screen", at)
 	}
 }
 
