@@ -611,9 +611,9 @@ func (m Model) fitResult() Model {
 }
 
 // fitCatalogue sizes the catalogue's list to what is left of the window once
-// its own column header and the hint bar are drawn, which is the room it has
-// — otherwise its last rows land under the footer and the scroll position
-// lies about what is reachable.
+// its own column header, the line for the selected row and the hint bar are
+// drawn, which is the room it has — otherwise its last rows land under the
+// footer and the scroll position lies about what is reachable.
 //
 // **After every message, because the footer is not one height.** It was done
 // once, when the window's size arrived, with whatever the footer said then; a
@@ -626,7 +626,8 @@ func (m Model) fitCatalogue() Model {
 	if m.height <= 0 {
 		return m
 	}
-	w, h := m.width, max(m.height-1-lipgloss.Height(m.browseFooter()), 3)
+	h, _ := m.catalogueRows(m.browseFooter())
+	w := m.width
 	if m.list.Width() != w || m.list.Height() != h {
 		m.list.SetSize(w, h)
 	}

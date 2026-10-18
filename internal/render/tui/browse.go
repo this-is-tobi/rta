@@ -302,10 +302,61 @@ func (m Model) browseView() string {
 	// opens with one), and a list sized for one pushed the frame a row past the
 	// terminal, which cut the bar's second line: the one with esc and q. The
 	// list keeps its cursor across a resize, so the page it lands on follows.
+	rows, line := m.catalogueRows(footer)
 	if m.height > 0 {
-		m.list.SetSize(width, max(m.height-1-lipgloss.Height(footer), 3))
+		m.list.SetSize(width, rows)
 	}
-	return m.browseHeader(width) + "\n" + m.list.View() + "\n" + footer
+	frame := m.browseHeader(width) + "\n" + m.list.View() + "\n"
+	if line {
+		frame += m.selectedLine(width) + "\n"
+	}
+	return frame + footer
+}
+
+// minCatalogueRows is the fewest rows the list keeps when the line for the
+// selected row is drawn. Below it the line gives way and the list does not: at 44
+// columns by 14 lines the list has eleven rows, and a twelfth that said one of
+// them in full would be taken from the rows there are to choose from.
+const minCatalogueRows = 12
+
+// catalogueRows is how the window is divided: the height of the list, and
+// whether the line for the selected row is drawn between it and the bar. The one
+// sum, because the list is sized after every message (fitCatalogue) and the frame
+// is drawn from it, and two that disagreed made a frame a line taller than the
+// terminal, which cuts the bar off.
+func (m Model) catalogueRows(footer string) (rows int, line bool) {
+	rows = max(m.height-1-lipgloss.Height(footer), 3)
+	if m.height > 0 && rows-1 >= minCatalogueRows {
+		return rows - 1, true
+	}
+	return rows, false
+}
+
+// selectedLine is the one line above the bar that says the row under the cursor
+// in full: its summary, which the list cuts to what the columns leave it
+// (seventeen cells at 80 columns, where the ID and the permission take the rest),
+// and what an agent needs for it. Muted, and cut at the width with the ellipsis
+// like everything else that is drawn in one. Blank when the cursor is on
+// nothing, which a filter that found no match leaves it on: the row is reserved
+// either way, so the list does not jump as the matches come and go.
+//
+// The permission follows the summary as a sentence when the whole of it fits,
+// as the column's own words when only those do, and is left to the column
+// otherwise. Never a sentence cut in two: "· read…" says less than the column
+// beside it, and the summary is what the line is for.
+func (m Model) selectedLine(width int) string {
+	it, ok := m.list.SelectedItem().(capItem)
+	if !ok {
+		return ""
+	}
+	line := strings.Repeat(" ", marker) + textclean.Terminal(it.c.Summary)
+	for _, said := range []string{permissionSentence(it.c), permissionText(it.c)} {
+		if joined := line + "  ·  " + said; lipgloss.Width(joined) <= width {
+			line = joined
+			break
+		}
+	}
+	return theme.Subtle.Render(ansi.Truncate(line, width, "…"))
 }
 
 // browseFooter is the catalogue's hint bar, in the app's own vocabulary.
@@ -345,6 +396,20 @@ func permissionText(c plugin.Capability) string {
 		s += " · agents need grant"
 	}
 	return s
+}
+
+// permissionSentence is permissionText said out for the row under the cursor, in
+// the words the docs use for the column: a capability an agent can call at once,
+// one it can call once a person has issued a grant, and one it can never call.
+func permissionSentence(c plugin.Capability) string {
+	s := string(c.Safety) + " · "
+	switch {
+	case c.HumanOnly:
+		return s + "never for an agent — yours alone"
+	case grant.Required(c, ""):
+		return s + "an agent needs a grant you issue first"
+	}
+	return s + "an agent can call it at once"
 }
 
 // permissionLabel is the styled permission value: what this capability is
