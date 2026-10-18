@@ -612,16 +612,8 @@ func TestToolsGrammarAndListing(t *testing.T) {
 	if _, verr := parseTools([]string{"kubectl-neat=github:itaysk/kubectl-neat", "bad"}); verr == nil || verr.Code != "pkg.tools.entry" {
 		t.Errorf("bad entry = %+v", verr)
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/repos/junegunn/fzf/releases/latest" {
-			w.Write([]byte(`{"tag_name":"v0.55.0","assets":[]}`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
 	c := newRegistryClient()
-	c.github = srv.URL
+	c.web = latestTags(t, map[string]string{"junegunn/fzf": "v0.55.0"})
 	f := &fake{bins: map[string]bool{"fzf": true}, answers: map[string]fakeAnswer{
 		"fzf --version": {out: "0.50.0 (brew)\n"},
 	}}
@@ -649,17 +641,8 @@ func TestToolsGrammarAndListing(t *testing.T) {
 func TestAReleaseTagIsReadForTheVersionInIt(t *testing.T) {
 	tags := map[string]string{"oven-sh/bun": "bun-v1.1.38", "jqlang/jq": "jq-1.7.1", "openai/codex": "rust-v0.47.0",
 		"junegunn/fzf": "v0.55.0", "some/nightly": "nightly"}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		repo := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/repos/"), "/releases/latest")
-		if tag, ok := tags[repo]; ok {
-			_, _ = w.Write([]byte(`{"tag_name":"` + tag + `","assets":[]}`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
 	c := newRegistryClient()
-	c.github = srv.URL
+	c.web = latestTags(t, tags)
 	f := &fake{bins: map[string]bool{"bun": true, "jq": true, "codex": true, "fzf": true, "nightly": true}, answers: map[string]fakeAnswer{
 		"bun --version":     {out: "1.1.20\n"},
 		"jq --version":      {out: "jq-1.6\n"},

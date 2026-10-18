@@ -120,7 +120,7 @@ profiles:
       pkg:
         set:
           # <binary on $PATH>=github:<owner>/<repo>: rta runs `<binary> --version` and compares it with
-          # the repository's latest release. At most thirty entries, one GitHub call each.
+          # the repository's latest release. At most thirty entries, one request to github.com each, none of them spent from the GitHub API's hourly allowance.
           tools:
             - kubectl-cnpg=github:cloudnative-pg/cloudnative-pg
             - kubectl-stern=github:stern/stern
