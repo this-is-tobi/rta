@@ -2107,6 +2107,16 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		if note := ConfigNotApplied(c); note != "" {
 			ve = ve.WithHint(strings.TrimSpace(ve.Hint + " · " + note))
 		}
+		// A failure that carries its answer (plugin.AnsweredError) is drawn
+		// first, whole, as doctor draws its report before it exits 1: stdout is
+		// the table either way, and stderr and the status say it was not a clean
+		// one.
+		var answered *plugin.AnsweredError
+		if errors.As(runErr, &answered) && answered.View != nil {
+			if err := cli.Render(cmd.OutOrStdout(), answered.View, renderOpts); err != nil {
+				return err
+			}
+		}
 		_ = cli.RenderError(cmd.ErrOrStderr(), ve, renderOpts)
 		return Rendered(ve)
 	}

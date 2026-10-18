@@ -545,6 +545,30 @@ type Field struct {
 // Handler executes a capability. Implementations must honor ctx cancellation.
 type Handler func(ctx context.Context, req Request) (view.View, error)
 
+// AnsweredError is the failure of a call that has its whole answer and still
+// failed: a table with a row for every host, one of which could not be reached.
+// It is how a handler asks the surface that can exit to draw View first and
+// then fail with Err, the way `rta doctor` prints its report before it exits 1,
+// so a script gating on the status and a person reading the log read the same
+// rows.
+//
+// **Only for a surface that exits.** Every other reader of a handler's error
+// takes it for a plain failure (Unwrap gives Err) and drops View, which would
+// throw away the rows that did answer: an agent asking about forty hosts must
+// not get one error back for the one that was down. A handler therefore
+// returns it when req.Surface() is SurfaceCLI and returns the View alone
+// everywhere else.
+//
+// A built-in's. A plugin in its own process sends the host only the failure,
+// the wire has no place for the answer beside it, so there it is a plain error.
+type AnsweredError struct {
+	View view.View
+	Err  *view.Error
+}
+
+func (e *AnsweredError) Error() string { return e.Err.Error() }
+func (e *AnsweredError) Unwrap() error { return e.Err }
+
 // Failure is what err, returned by a handler, says about its call: err
 // itself, or nil when err is a *view.Error that is nil.
 //

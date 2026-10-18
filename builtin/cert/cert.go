@@ -944,7 +944,31 @@ feed:
 	}}
 	t.Rows = append(t.Rows, rows...)
 	t.Total = len(t.Rows)
+	// **The exit status says whether every host could be checked**, not what
+	// the certificates say: an expired one is a finding in its row, and a host
+	// that could not be reached has no finding at all, which a cron job built on
+	// the exit status would otherwise pass without a certificate read. The table
+	// is drawn first, whole (plugin.AnsweredError), because the thirty-nine
+	// hosts that did answer are why one row failing must not become one error.
+	// Only the CLI exits; the other surfaces are handed the table alone, as
+	// they always were.
+	if failed := unreachableRows(rows); failed > 0 && req.Surface() == plugin.SurfaceCLI {
+		return nil, &plugin.AnsweredError{View: t, Err: view.Errorf("cert.expiry.failed",
+			"%d of %s could not be checked", failed, format.Count(len(rows), "host", "hosts")).
+			WithHint("the rows marked ERROR above say which, and why")}
+	}
 	return t, nil
+}
+
+// unreachableRows counts the rows expiryRow could not grade.
+func unreachableRows(rows [][]string) int {
+	n := 0
+	for _, r := range rows {
+		if strings.HasPrefix(r[3], "ERROR") {
+			n++
+		}
+	}
+	return n
 }
 
 // expiryRow grades one target. An unreachable host is a row saying so rather

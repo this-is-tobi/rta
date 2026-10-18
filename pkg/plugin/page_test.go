@@ -3,6 +3,7 @@ package plugin_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -236,5 +237,25 @@ func TestHandlerFailureFillsInOnlyWhatTheHandlerLeftOut(t *testing.T) {
 	var none *view.Error
 	if plugin.HandlerFailure(none, "x.list", "x.list.failed") != nil {
 		t.Error("a nil *view.Error became a failure")
+	}
+}
+
+// A handler that has its answer and failed anyway hands both on: the failure is
+// the *view.Error it carries, to everything that reads a handler's error, and
+// the answer is there for the one surface that can draw it before exiting.
+func TestAnAnsweredErrorIsItsFailureAndKeepsItsAnswer(t *testing.T) {
+	answer := view.Table{Columns: []view.Column{{Name: "Target"}}, Rows: [][]string{{"a"}}}
+	failure := view.Errorf("x.check.failed", "1 of 2 could not be checked").WithHint("see the rows")
+	var err error = &plugin.AnsweredError{View: answer, Err: failure}
+
+	if got := view.AsError(err, "fallback"); got != failure {
+		t.Errorf("AsError = %#v, want the carried failure", got)
+	}
+	var answered *plugin.AnsweredError
+	if !errors.As(fmt.Errorf("wrapped: %w", err), &answered) || answered.View == nil {
+		t.Errorf("the answer did not survive wrapping: %v", answered)
+	}
+	if err.Error() != failure.Message {
+		t.Errorf("Error() = %q, want %q", err.Error(), failure.Message)
 	}
 }

@@ -616,3 +616,36 @@ func TestABoundIsWrittenTheWayItIsTyped(t *testing.T) {
 		}
 	}
 }
+
+// A required list holding a blank entry is missing that entry: `rta cert expiry
+// "$HOST"` with $HOST unset hands the handler one empty target, which a list
+// "with nothing in it" does not cover, and a dial of ":443" answered for it.
+func TestARequiredListWithABlankEntryIsMissing(t *testing.T) {
+	c := Capability{ID: "demo.check", Summary: "demo", Safety: Read, Inputs: []Field{
+		{Name: "targets", Type: StringSlice, Positional: true, Required: true},
+	}}
+	for _, tc := range []struct {
+		targets any
+		missing bool
+	}{
+		{[]string{"example.com"}, false},
+		{[]string{"example.com", "api.example.com"}, false},
+		{[]string{""}, true},
+		{[]string{"example.com", ""}, true},
+		{[]string{"example.com", "  "}, true},
+		{[]any{"example.com", ""}, true},
+		{[]any{"example.com"}, false},
+		{[]string{}, true},
+	} {
+		got := len(Missing(c, map[string]any{"targets": tc.targets}, SurfaceCLI)) > 0
+		if got != tc.missing {
+			t.Errorf("targets %q: missing = %v, want %v", tc.targets, got, tc.missing)
+		}
+	}
+	optional := Capability{ID: "demo.check", Summary: "demo", Safety: Read, Inputs: []Field{
+		{Name: "targets", Type: StringSlice, Positional: true},
+	}}
+	if got := Missing(optional, map[string]any{"targets": []string{""}}, SurfaceCLI); len(got) != 0 {
+		t.Errorf("an optional list was held to a blank entry: %v", got)
+	}
+}

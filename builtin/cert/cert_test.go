@@ -3,6 +3,7 @@ package cert
 import (
 	"context"
 	"encoding/pem"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -176,6 +177,53 @@ func TestExpiryTable(t *testing.T) {
 	}
 	if !strings.HasPrefix(tbl.Rows[1][3], "ERROR") {
 		t.Errorf("unreachable host status = %q", tbl.Rows[1][3])
+	}
+}
+
+// The exit status of `rta cert expiry` says whether every host could be checked,
+// as the recipe promises. The table is the whole answer and is still drawn: the
+// failure carries it (plugin.AnsweredError) for the one surface that exits.
+// Every other surface is handed the table alone, since an agent or a tile that
+// asked about forty hosts and got one error back would lose the thirty-nine
+// that answered.
+func TestExpiryFailsAfterItsTableWhenAHostCouldNotBeChecked(t *testing.T) {
+	live, _ := startTLS(t)
+	values := map[string]any{"targets": []string{live, "127.0.0.1:1"}, "warn-days": 30, "timeout": 2}
+
+	v, err := runExpiry(context.Background(), req(values).WithSurface(plugin.SurfaceCLI))
+	var answered *plugin.AnsweredError
+	if !errors.As(err, &answered) {
+		t.Fatalf("at a terminal: err = %v (view %v), want the table carried by a failure", err, v)
+	}
+	rows := answered.View.(view.Table).Rows
+	if len(rows) != 2 || strings.HasPrefix(rows[0][3], "ERROR") || !strings.HasPrefix(rows[1][3], "ERROR") {
+		t.Errorf("the carried table = %v, want the live host's row and the failed host's", rows)
+	}
+	verr := view.AsError(err, "x")
+	if verr.Code != "cert.expiry.failed" || verr.Message != "1 of 2 hosts could not be checked" ||
+		!strings.Contains(verr.Hint, "ERROR") {
+		t.Errorf("failure = %s %q (%q)", verr.Code, verr.Message, verr.Hint)
+	}
+
+	for _, surface := range []plugin.Surface{plugin.SurfaceMCP, plugin.SurfaceTUI, plugin.SurfaceUnknown} {
+		v, err := runExpiry(context.Background(), req(values).WithSurface(surface))
+		if err != nil {
+			t.Errorf("surface %q: err = %v, want the table alone", surface, err)
+		} else if n := len(v.(view.Table).Rows); n != 2 {
+			t.Errorf("surface %q: %d rows, want 2", surface, n)
+		}
+	}
+
+	ok := map[string]any{"targets": []string{live}, "warn-days": 30, "timeout": 2}
+	if _, err := runExpiry(context.Background(), req(ok).WithSurface(plugin.SurfaceCLI)); err != nil {
+		t.Errorf("every host checked: err = %v, want none", err)
+	}
+	// A certificate that has ended is a finding the exit status leaves to the
+	// verdict column, as the recipe says: the host could be checked.
+	expired, key := chainOf(t, -day, 400*day, 400*day)
+	gone := map[string]any{"targets": []string{serveChain(t, expired, key)}, "warn-days": 30, "timeout": 2}
+	if _, err := runExpiry(context.Background(), req(gone).WithSurface(plugin.SurfaceCLI)); err != nil {
+		t.Errorf("an expired certificate: err = %v, want none", err)
 	}
 }
 
