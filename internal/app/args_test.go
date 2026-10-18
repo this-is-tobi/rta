@@ -353,7 +353,7 @@ func TestARequiredFlagIsSaidToBeRequiredWhereItIsDescribed(t *testing.T) {
 	if !ok {
 		t.Fatal("knob.turn is not registered")
 	}
-	if got, want := cliForm(capability), "rta knob turn --by <string> [--host <string>] [--token <secret>] [--loud <bool>]"; got != want {
+	if got, want := cliForm(capability), "rta knob turn --by <string> [--host <string>] [--token <secret>] [--loud]"; got != want {
 		t.Errorf("the explain card shows %q, want %q", got, want)
 	}
 	out, _, err := run(t, reg, "knob", "turn", "--help")

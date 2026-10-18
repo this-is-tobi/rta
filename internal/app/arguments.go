@@ -2,6 +2,7 @@ package app
 
 import (
 	"cmp"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -58,6 +59,42 @@ func argumentsBlock(args []argDoc) string {
 		}
 	}
 	return b.String()
+}
+
+// backticked is a word in backticks that could be the name of an input.
+var backticked = regexp.MustCompile("`([a-z][a-z0-9-]*)`")
+
+// cliProse is a capability's prose as the command line says it. A description
+// is written once for every surface, and an input in it is a word in backticks:
+// `detail`, `ttl`, `max-uses`. That is the name an agent gives it, and on the
+// command line it is a flag — `--detail`, `--ttl` — which is what a person
+// types and what the usage line beside it shows. 57 help pages named their
+// inputs bare, so the one place that said how to ask for the detail did not say
+// how to type it.
+//
+// Only a flag is spelled with its dashes. A positional input is given by its
+// place, and the word in backticks is left as the sentence has it. The
+// capability's own text (Description) is not touched: it is what an agent reads.
+func cliProse(c plugin.Capability, text string) string {
+	flags := map[string]bool{}
+	for _, f := range c.Inputs {
+		if !f.Positional && !argvRefused(f) {
+			flags[f.Name] = true
+		}
+	}
+	// The host's own flag, which no declaration lists (attach adds it).
+	if c.Detailed {
+		flags["detail"] = true
+	}
+	if len(flags) == 0 {
+		return text
+	}
+	return backticked.ReplaceAllStringFunc(text, func(m string) string {
+		if name := m[1 : len(m)-1]; flags[name] {
+			return "`--" + name + "`"
+		}
+		return m
+	})
 }
 
 // withArguments appends the block to a command's long text. The one joiner

@@ -57,7 +57,7 @@ rta explain sys.cpu
 id           sys.cpu
 summary      Show CPU model, core count and current usage
 safety       read
-cli          rta sys cpu [--cores <bool>]
+cli          rta sys cpu [--cores]
 ```
 
 Those are the rows to read first: what it is, what it does, whether it can change anything (`read` cannot), and the command line. The full card has a few more around them, such as whether the call is idempotent, the MCP tool name, the config keys the capability reads, where the config file is and the command that sets one, and what the dashboard does with it. They mean more once you use those parts, and `rta explain sys.cpu` prints them all.

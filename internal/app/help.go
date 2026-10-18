@@ -230,7 +230,18 @@ func (h *helper) arguments(b *strings.Builder, block string) {
 // usage is the usage line as it is typed: the command path and its arguments,
 // then what else it takes.
 func (h *helper) usage(cmd *cobra.Command) string {
+	// The root's flags are merged into a command's own when it is run, which
+	// is how `rta sys --help` knew it had flags and `rta help sys` did not:
+	// the second door never parses anything, and 85 of the 214 pages it drew
+	// ended their usage line without the [--flags] the first drew. Merged here
+	// so that both doors are one builder.
+	cmd.InheritedFlags()
 	use := strings.ReplaceAll(cmd.UseLine(), "[flags]", "[--flags]")
+	// cobra's own completion scripts leave the flags out of their usage line
+	// and list them below it all the same.
+	if cmd.DisableFlagsInUseLine && !strings.Contains(use, "[--flags]") {
+		use += " [--flags]"
+	}
 	if cmd.HasAvailableSubCommands() && !strings.Contains(use, "[command") {
 		before, after, found := strings.Cut(use, " [--flags]")
 		// A group that takes a verb's arguments itself (`rta lock claude`)
@@ -379,7 +390,8 @@ var readOnlyCommands = map[string]bool{
 	"rta profile show": true, "rta dashboard list": true, "rta plugin list": true,
 	"rta plugin search": true, "rta plugin outdated": true, "rta plugin doc": true,
 	"rta plugin manifest": true, "rta plugin index list": true, "rta policy show": true,
-	"rta mcp serve": true,
+	"rta mcp serve": true, "rta config get": true, "rta config path": true, "rta config check": true,
+	"rta config show": true,
 }
 
 // listsFlag says whether cmd's help lists f.

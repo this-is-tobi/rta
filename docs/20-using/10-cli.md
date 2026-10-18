@@ -187,7 +187,7 @@ id           sys.cpu
 summary      Show CPU model, core count and current usage
 safety       read
 idempotent   true
-cli          rta sys cpu [--cores <bool>]
+cli          rta sys cpu [--cores]
 mcp-tool     sys_cpu
 profiles     --profile <name> runs this against a configured connection; over MCP that always needs `rta grant allow sys --profile <name>`
 input:cores  bool, from config plugins.sys.cpu.cores — per-core usage as a bar chart

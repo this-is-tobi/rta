@@ -1205,6 +1205,20 @@ func groupRoot(root *cobra.Command, reg *registry.Registry) {
 	root.SetCompletionCommandGroupID(groupSetup)
 }
 
+// groupSummaries are the sentences for the nouns that are worth one, keyed by
+// the command's path. A noun without an entry is named after its verbs, which
+// is the right answer for a group a plugin brings and none of this knows.
+//
+// `rta grant --help` listed `guard: off, on, remote, status` beside real
+// sentences: for the switch that puts a passphrase in front of issuing grants,
+// the line that says what it is for was its own name and its verbs.
+var groupSummaries = map[string]string{
+	"rta audit kube":   "Grade a cluster: end-of-life software, network policies, pod security, quotas and RBAC",
+	"rta grant guard":  "A passphrase in front of issuing grants: turn it on or off, see its state, or trust remote operators to sign",
+	"rta net hosts":    "Read and change the hosts file: add, remove or switch off an entry",
+	"rta net resolver": "Show the system resolver and set the nameservers",
+}
+
 // describeGroups gives every noun command the summary findOrCreate could
 // not: a noun exists before its verbs do, so it is named after them here,
 // once the tree is complete. `rta grant guard --help` used to open with
@@ -1213,6 +1227,10 @@ func describeGroups(cmd *cobra.Command) {
 	for _, sub := range cmd.Commands() {
 		describeGroups(sub)
 		if sub.Short != sub.Name()+" operations" || !sub.HasSubCommands() {
+			continue
+		}
+		if summary, ok := groupSummaries[sub.CommandPath()]; ok {
+			sub.Short = summary
 			continue
 		}
 		verbs := make([]string, 0, len(sub.Commands()))
@@ -1246,7 +1264,7 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 		Use:   use,
 		Short: c.Summary,
 		Long: withArguments(
-			strings.TrimSpace(c.Summary+"\n\n"+c.Description),
+			cliProse(c, strings.TrimSpace(c.Summary+"\n\n"+c.Description)),
 			capabilityArgs(c, positionals),
 		),
 		Example: capabilityExamples(c),
@@ -1982,7 +2000,7 @@ func requiredOnCommandLine(f plugin.Field) bool {
 // declaration does not already say: Field.Piped is what makes the CLI read
 // standard input, so the sentence is generated from it here.
 func flagUsage(c plugin.Capability, f plugin.Field) string {
-	usage := f.Help
+	usage := cliProse(c, f.Help)
 	if len(f.Options) > 0 {
 		set := "one of: " + strings.Join(f.Options, "|")
 		if usage == "" {
