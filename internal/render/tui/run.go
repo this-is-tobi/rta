@@ -224,12 +224,20 @@ func (m Model) reseedOnPickerMove() (tea.Model, tea.Cmd, bool) {
 	// seeded from an answer nobody has given yet, so it is asked first, and
 	// the form is rebuilt on what it states (adhoc.go).
 	//
+	// Asked when the entry is chosen and not when the cursor lands on it: huh
+	// writes the binding on every move, so a form that opened on the landing
+	// would open on the way past, and nothing listed below the entry could be
+	// walked to.
+	//
 	// Before the state is looked at, because a form can complete on it: a
 	// fast submit (ctrl+s) accepts every field at the cursor's value, and a
 	// cursor sent to the last entry with End or G does not write the binding
 	// until it is submitted. That form used to run with the entry as its
 	// environment and fail with "not held any more".
-	if *b == adHocPickLabel && cf.form.State != huh.StateAborted {
+	if *b == adHocPickLabel {
+		if !cf.choseEntry() {
+			return m, nil, false
+		}
 		nm, cmd := m.startAdHocForm(cf, nil)
 		return nm, cmd, true
 	}
@@ -241,6 +249,28 @@ func (m Model) reseedOnPickerMove() (tea.Model, tea.Cmd, bool) {
 	m.form.inherit(cf)
 	m.fitForm()
 	return m, m.form.form.Init(), true
+}
+
+// choseEntry reports whether the picker's entry that asks has been chosen, as
+// opposed to the cursor being on it: the form completed with the cursor there, or
+// the cursor has moved on to the next box, which is what enter or tab on the
+// picker does. An aborted form chose nothing.
+//
+// The move off the picker arrives a message after the key (huh's Select answers
+// enter with a command that advances the focus), so a form seen right after the
+// key is still on the picker and the next update is the one that sees it leave.
+func (cf *capForm) choseEntry() bool {
+	switch cf.form.State {
+	case huh.StateCompleted:
+		return true
+	case huh.StateNormal:
+		for i, f := range cf.fields {
+			if f.Name == profileInput && i < len(cf.widgets) {
+				return cf.widgets[i] != cf.form.GetFocusedField()
+			}
+		}
+	}
+	return false
 }
 
 // forwardDisplays is what the endpoint boxes show under a connection that
