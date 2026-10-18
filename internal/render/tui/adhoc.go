@@ -407,9 +407,10 @@ func (m Model) leaveAdHocForm() (tea.Model, tea.Cmd) {
 	return m.backToRunForm(from, from.builtOn)
 }
 
-// backToRunForm rebuilds the run form the ad hoc form was opened from, with its
-// picker on pick and everything the person had typed in it kept — the move
-// reseedOnPickerMove makes for any other answer.
+// backToRunForm rebuilds a run form with its picker on pick and everything the
+// person had typed in it kept — the move reseedOnPickerMove makes for any other
+// answer — for the ad hoc form that was opened from it and for the entries that
+// change which environments the picker lists (changeEnvironmentScope).
 func (m Model) backToRunForm(from *capForm, pick string) (tea.Model, tea.Cmd) {
 	values := from.values()
 	values[profileInput] = pick

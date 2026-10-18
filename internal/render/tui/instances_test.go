@@ -189,14 +189,17 @@ func TestLabeledInstanceCredentialsHaveNoEnvChannel(t *testing.T) {
 	}
 }
 
-// With an environment on, the picker opens on its targets and lists the others
-// after them: a form for a call in the homelab does not lead with production.
+// Once the others are brought in, the picker still opens on the targets of the
+// environment that is on and lists the others after them: a form for a call in
+// the homelab does not lead with production. (Before they are brought in the
+// others are not listed at all — pickerscope_test.go.)
 func TestThePickerListsTheEnvironmentThatIsOnBeforeTheOthers(t *testing.T) {
 	m := profileModel(t, config.Config{Profiles: map[string]config.Profile{
 		"alpha": {Plugins: map[string]config.Connection{"db": {Set: map[string]any{"host": "alpha.internal"}}}},
 		"zulu":  {Plugins: map[string]config.Connection{"db": {Set: map[string]any{"host": "zulu.internal"}}}},
 	}})
 	switchOn(t, &m, "zulu")
+	m.allEnvironments = true
 	f := m.profilePicker(dbPlugin().Capabilities[0], "")
 	if f == nil {
 		t.Fatal("no picker")

@@ -220,25 +220,33 @@ func (m Model) reseedOnPickerMove() (tea.Model, tea.Cmd, bool) {
 	if !ok || *b == cf.builtOn {
 		return m, nil, false
 	}
-	// Not an environment: the entry that asks for one. The boxes cannot be
-	// seeded from an answer nobody has given yet, so it is asked first, and
-	// the form is rebuilt on what it states (adhoc.go).
+	// Not an environment: an entry that asks. One asks for a connection, and the
+	// boxes cannot be seeded from an answer nobody has given yet, so it is
+	// asked first and the form is rebuilt on what it states (adhoc.go). The
+	// two others change which environments the list shows, and the form is
+	// rebuilt on the new list (profiles.go).
 	//
 	// Asked when the entry is chosen and not when the cursor lands on it: huh
-	// writes the binding on every move, so a form that opened on the landing
-	// would open on the way past, and nothing listed below the entry could be
-	// walked to.
+	// writes the binding on every move, so a form that acted on the landing
+	// would act on the way past, and the entry below the ad hoc one could not
+	// be walked to.
 	//
 	// Before the state is looked at, because a form can complete on it: a
 	// fast submit (ctrl+s) accepts every field at the cursor's value, and a
 	// cursor sent to the last entry with End or G does not write the binding
 	// until it is submitted. That form used to run with the entry as its
 	// environment and fail with "not held any more".
-	if *b == adHocPickLabel {
+	if *b == adHocPickLabel || isScopePick(*b) {
 		if !cf.choseEntry() {
 			return m, nil, false
 		}
-		nm, cmd := m.startAdHocForm(cf, nil)
+		var nm tea.Model
+		var cmd tea.Cmd
+		if isScopePick(*b) {
+			nm, cmd = m.changeEnvironmentScope(cf, *b)
+		} else {
+			nm, cmd = m.startAdHocForm(cf, nil)
+		}
 		return nm, cmd, true
 	}
 	if cf.form.State != huh.StateNormal {
