@@ -449,7 +449,7 @@ func TestTheConnectionEditorSaysWhereEachSectionStarts(t *testing.T) {
 			t.Errorf("the form has no %q heading:\n%s", want, out)
 		}
 	}
-	// A heading is passed over, not tabbed into: huh's Note skips itself.
+	// A heading is a row of the box under it, so tab can only land on that box.
 	first := nm.form.form.GetFocusedField()
 	nm = pressTab(t, nm)
 	nm = pressTab(t, nm) // off the plugin box, which lists then advances
