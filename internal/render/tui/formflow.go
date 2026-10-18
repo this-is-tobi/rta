@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -410,10 +411,30 @@ func (m Model) formView() string {
 	// nothing can render past the last row whatever the field mix turns out
 	// to cost.
 	head := capHead(m.current)
+	head.Right = m.formRight()
 	if about := m.formAbout(); about != "" {
 		head.Note = about
 	}
 	return panel(head, "\n"+m.form.form.View(), m.width, m.height-lipgloss.Height(footer), true) + "\n" + footer
+}
+
+// formRight is the right of the form's head: what class of call this is when it
+// is above a read, in the word the permission column and the result's meta line
+// use, and how far down the form the cursor is.
+//
+// The title carries only a glyph for a write, which says nothing to somebody who
+// has not learned it, and a form of a dozen boxes scrolls inside its frame with
+// no mark of where it ends. Both are the form's to say before the last box, since
+// that is when the call runs.
+func (m Model) formRight() string {
+	var parts []string
+	if s := m.current.Safety; s != plugin.Read && s != "" {
+		parts = append(parts, string(s))
+	}
+	if at := m.form.position(); at != "" {
+		parts = append(parts, at)
+	}
+	return strings.Join(parts, " · ")
 }
 
 // formAbout is what the panel's title says in place of the capability's
