@@ -227,6 +227,7 @@ func runClients(ctx context.Context, req plugin.Request, catalog func() []plugin
 	if req.Bool("fix") {
 		return fixPage(req.Surface(), r), nil
 	}
+	clipForScreens(req, &r.Report)
 	if req.Bool("detail") {
 		summary := append([]view.Pair{
 			{Key: "files read", Value: findings.Plural(found, "file")},

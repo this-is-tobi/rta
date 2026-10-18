@@ -96,6 +96,14 @@ func (f Finding) checks() int {
 // Report collects findings as the checks run. The zero value is ready to use.
 type Report struct {
 	Findings []Finding
+	// Whole says the reader is a program or a document and not a screen, so
+	// every detail is sent as written. A detail is cut at the length a person
+	// can scan (compactDetail, pageDetail), and that is a layout decision:
+	// `-o json` is the one exact format, and `audit web -o md >> report` is a
+	// document, and both ended their rows in an ellipsis. The producer knows
+	// whom it answers, so it says so; the zero value keeps the cut, which is
+	// what a plugin that never sets it has always had.
+	Whole bool
 }
 
 // Add records one graded check.
@@ -217,6 +225,9 @@ func (r *Report) section(sf plugin.Surface) view.Table {
 }
 
 func (r *Report) build(summary bool, maxDetail int) view.Table {
+	if r.Whole {
+		maxDetail = math.MaxInt
+	}
 	t := view.Table{Columns: []view.Column{
 		{Name: "Check"},
 		{Name: "Status", Kind: view.KindStatus},
@@ -248,7 +259,7 @@ func (r *Report) build(summary bool, maxDetail int) view.Table {
 // only narrows a report to one group, so a section renders through exactly
 // the same table builder the compact view uses.
 func (r *Report) only(g Group) *Report {
-	out := &Report{}
+	out := &Report{Whole: r.Whole}
 	for _, f := range r.Findings {
 		if f.Group == g {
 			out.Findings = append(out.Findings, f)

@@ -157,6 +157,40 @@ func TestAModelIsHandedEachPageSectionDetailWhole(t *testing.T) {
 	}
 }
 
+// **The clip is a screen's, and a report says whether its reader has one.**
+// `-o json` is the one exact format and `audit web -o md >> report` is a
+// document: both ended their rows in an ellipsis, because the cut was made
+// here for every reader but a model's. Whole is the producer's word that the
+// reader is a program, and it sends every detail as written in the compact
+// table and on the page alike.
+func TestAReportMarkedWholeSendsEveryDetailUnclipped(t *testing.T) {
+	long := strings.Repeat("a long list that names every verb a role was given. ", 14)
+	whole := strings.Join(strings.Fields(long), " ")
+	r := &Report{Whole: true}
+	r.Add(grpInventory, "next step", Info, long, refVulnerableDep)
+
+	for _, sf := range []plugin.Surface{plugin.SurfaceCLI, plugin.SurfaceTUI} {
+		tbl := r.TableFor(sf, false)
+		if got := tbl.Rows[0][columnIndex(t, tbl, "Detail")]; got != whole {
+			t.Errorf("%v: the compact table cut a whole report's detail to %d of %d characters", sf, len([]rune(got)), len([]rune(whole)))
+		}
+		page, ok := r.Page(context.Background(), plugin.Request{}.WithSurface(sf), []Group{grpInventory},
+			view.KeyValue{Pairs: r.Grade()}).(view.Sections)
+		if !ok {
+			t.Fatal("Page did not return sections")
+		}
+		pt := page.Items[1].View.(view.Table)
+		if got := pt.Rows[0][columnIndex(t, pt, "Detail")]; got != whole {
+			t.Errorf("%v: the page cut a whole report's detail to %d of %d characters", sf, len([]rune(got)), len([]rune(whole)))
+		}
+	}
+
+	r.Whole = false
+	if got := r.Table(false).Rows[0][2]; !strings.HasSuffix(got, "…") || len([]rune(got)) != compactDetail {
+		t.Errorf("a report not marked whole is no longer clipped for a screen: %d characters", len([]rune(got)))
+	}
+}
+
 // The column is earned, not always present: an audit with nothing to link to
 // must not spend width on an empty column, which is exactly the width the
 // prose beside it needed on a narrow terminal.

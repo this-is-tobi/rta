@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/builtin/internal/compact"
 	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -354,5 +355,62 @@ func TestAnEmptyHomeStillReportsNothingToGrade(t *testing.T) {
 	}
 	if _, ok := rows["unreadable"]; ok {
 		t.Errorf("an empty home reported something unreadable: %v", rows)
+	}
+}
+
+// **A finding is cut at the length a screen can scan, and only on a screen.**
+// `-o json` is the one exact format and a CI gate reads it: the sentence that
+// says an agent which can run commands can run rta itself ended in an ellipsis
+// there, as it does for a person at a terminal.
+func TestAFindingIsClippedOnAScreenAndWholeEverywhereElse(t *testing.T) {
+	fakeHome(t, map[string]struct {
+		body string
+		mode os.FileMode
+	}{".claude/settings.json": {`{"permissions":{"allow":["Bash","Read"]}}`, 0o600}})
+
+	detailOf := func(detail bool) string {
+		t.Helper()
+		v, err := runClients(t.Context(), req(map[string]any{"detail": detail}).WithSurface(plugin.SurfaceCLI), testCatalog)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tables := []view.Table{}
+		switch v := v.(type) {
+		case view.Table:
+			tables = append(tables, v)
+		case view.Sections:
+			for _, s := range v.Items {
+				if tbl, ok := s.View.(view.Table); ok {
+					tables = append(tables, tbl)
+				}
+			}
+		}
+		for _, tbl := range tables {
+			for _, row := range tbl.Rows {
+				if row[0] == "rta itself" {
+					return row[2]
+				}
+			}
+		}
+		t.Fatalf("no rta itself finding in %v", v)
+		return ""
+	}
+
+	func() {
+		defer compact.Pretend(true)()
+		if got := detailOf(false); !strings.HasSuffix(got, "…") || len([]rune(got)) != 96 {
+			t.Errorf("at a terminal the compact table is not one scannable line: %d characters", len([]rune(got)))
+		}
+		if got := detailOf(true); len([]rune(got)) > 240 {
+			t.Errorf("at a terminal the page is not a paragraph: %d characters", len([]rune(got)))
+		}
+	}()
+	defer compact.Pretend(false)()
+	for _, detail := range []bool{false, true} {
+		// Whole ends in the closing parenthesis of the path the sentence names, the part
+		// a clip takes first.
+		if got := detailOf(detail); strings.Contains(got, "…") || !strings.HasSuffix(got, ")") {
+			t.Errorf("detail=%v off a screen: the finding is cut (%d characters): %q", detail, len([]rune(got)), got)
+		}
 	}
 }
