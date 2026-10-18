@@ -107,6 +107,7 @@ func (s suggestion) byKeyword(word string) bool {
 // asks for help on a subject (`rta help security`) is no typo of anything, and
 // asks for names alone.
 func suggestCommands(group *cobra.Command, word string, likenesses bool) suggestion {
+	word = headVerb(word)
 	items, cmds := commandItems(group, true)
 	if lead, ok := firstChoice[strings.ToLower(word)]; ok && !group.HasParent() {
 		if first := commandAt(group, lead); first != nil {
@@ -140,6 +141,18 @@ func suggestCommands(group *cobra.Command, word string, likenesses bool) suggest
 		return suggestion{commands: likely[:min(len(likely), manyHits)]}
 	}
 	return suggestion{}
+}
+
+// headVerb is the verb a synonym stands for (verbSynonyms): `ls` is `list`, so
+// at the root, where no command is named either, `rta ls` is told what `rta list`
+// is — the verb belongs to many commands — and not that `fs` is its neighbour.
+func headVerb(word string) string {
+	for _, set := range verbSynonyms {
+		if slices.Contains(set, strings.ToLower(word)) {
+			return set[0]
+		}
+	}
+	return word
 }
 
 // outermost drops what repeats: a command listed twice, and one under another

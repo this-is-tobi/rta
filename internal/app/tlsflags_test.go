@@ -114,3 +114,33 @@ func TestAFlagThatSwallowedTheNextFlagSaysItNeedsAValue(t *testing.T) {
 		t.Errorf("a flag that does not exist was told it needs a value: %v", err)
 	}
 }
+
+// `--json` is the first thing typed by anyone who has used a tool that has it,
+// and the format here is a value of the one flag every command takes.
+func TestAFlagThatNamesAnOutputFormatIsAnsweredWithTheOutputFlag(t *testing.T) {
+	cpu := tlsDemo("demo.sys.cpu", plugin.Field{Name: "cores", Type: plugin.Bool})
+	for flag, want := range map[string]string{
+		"--json": "-o json", "--yaml": "-o yaml", "--csv": "-o csv", "--md": "-o md",
+		"--format": "-o <format>",
+	} {
+		ve := usageOf(t, cpu, flag)
+		if !strings.Contains(ve.Hint, want) || !strings.Contains(ve.Hint, "rta sys cpu --help") {
+			t.Errorf("%s: hint = %q, want it to say %q and keep the pointer to --help", flag, ve.Hint, want)
+		}
+		if ve.Message != "unknown flag: "+flag {
+			t.Errorf("%s: message = %q", flag, ve.Message)
+		}
+	}
+	// `--format json` is the same mistake with its value after it.
+	if ve := usageOf(t, cpu, "--format", "json"); !strings.Contains(ve.Hint, "-o <format>") {
+		t.Errorf("--format json: hint = %q", ve.Hint)
+	}
+	// A capability that has a flag of that very name keeps it.
+	own := tlsDemo("demo.sys.cpu", plugin.Field{Name: "format", Type: plugin.String})
+	root := &cobra.Command{Use: "rta", SilenceUsage: true, SilenceErrors: true}
+	attach(root, own, &globalOpts{})
+	root.SetArgs([]string{"sys", "cpu", "--format", "x"})
+	if err := root.Execute(); err != nil {
+		t.Errorf("a capability's own --format was refused: %v", err)
+	}
+}

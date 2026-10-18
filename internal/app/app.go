@@ -1401,8 +1401,13 @@ func flagValueError(cmd *cobra.Command, err error, c *plugin.Capability) error {
 					Hint: "--" + typed + " moved to " + plugin.SurfaceCLI.CapabilityName(to)}
 			}
 		}
-		// Before the nearest spelling, which for a flag that says TLS is the
+		// Before the nearest spelling, which for `--json` is whichever flag of this
+		// command is a letter or two away, and for a flag that says TLS is the
 		// name of one that does nothing without it (tlsFlagHint).
+		if hint := outputFlagHint(typed); hint != "" {
+			return &view.Error{Code: CodeUsage, Message: err.Error(),
+				Hint: hint + " — `" + cmd.CommandPath() + " --help` lists what it takes"}
+		}
 		if c != nil {
 			if hint := tlsFlagHint(*c, typed); hint != "" {
 				return &view.Error{Code: CodeUsage, Message: err.Error(),
