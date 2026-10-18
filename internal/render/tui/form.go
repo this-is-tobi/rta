@@ -210,6 +210,14 @@ type capForm struct {
 	// one as it goes — its second stage, the same boxes on another environment,
 	// the run form behind an ad hoc connection — hand it on.
 	fromResult bool
+	// opened is what every box held when the form was built (state), which is what
+	// a box showing its default is told from one somebody has typed in: the text
+	// of a default is not kept anywhere else once it is in the widget.
+	opened map[string]string
+	// engaged names the text boxes a key has reached since the form was built, and
+	// a paste. A box that holds its default and is not engaged takes the first
+	// character typed as its answer (retype).
+	engaged map[string]bool
 }
 
 // formOption tunes a form beyond the fields it collects.
@@ -586,6 +594,72 @@ func (cf *capForm) position() string {
 	return fmt.Sprintf("%d of %d", at, total)
 }
 
+// state is what every box holds right now, as text and by field name: the whole
+// of what a person can have changed.
+func (cf *capForm) state() map[string]string {
+	out := make(map[string]string, len(cf.bindings)+len(cf.bools)+len(cf.slices))
+	for name, text := range cf.bindings {
+		out[name] = *text
+	}
+	for name, on := range cf.bools {
+		out[name] = strconv.FormatBool(*on)
+	}
+	for name, picked := range cf.slices {
+		out[name] = strings.Join(*picked, "\x00")
+	}
+	return out
+}
+
+// showsDefault reports whether a text box still holds exactly the default the form
+// showed it: derived from the environment, the config or the declaration, and
+// not touched since.
+//
+// A value somebody gave, in a previous run `e` reopens or a record being edited,
+// is not a default: it is theirs, and editing it is what they came to do. The
+// provenance is displayed's own — a derived mark, or no seed at all — so the two
+// agree on which boxes are displays.
+func (cf *capForm) showsDefault(name string) bool {
+	shown := cf.opened[name]
+	bound, ok := cf.bindings[name]
+	if shown == "" || !ok || *bound != shown || cf.engaged[name] {
+		return false
+	}
+	_, seeded := cf.seed[name]
+	return cf.derived[name] || !seeded
+}
+
+// retype is what a box that shows its default does with a message before the
+// widget sees it: the first character typed replaces the default.
+//
+// A default is text in the box, and typing into text adds to it, so a timeout
+// showing 5 became 59 when 9 was pressed, and `now` in a time box became
+// `nowEurope/Paris`. A browser selects the text on entering a box; this is the
+// same expectation met without a selection, which huh's input has no notion of.
+// Any other key, a paste included, edits the text as it always did, and so ends
+// the replacing: arrows and home and end are somebody positioning the cursor in
+// what is there, and once the box has been touched it is a box like any other,
+// whatever it reads. Enter and tab move between boxes without editing one, so the
+// default is still there to be replaced when the cursor comes back.
+//
+// The box is emptied through its accessor, which is how huh reloads the widget's
+// text: the input has no way to set it directly.
+func (cf *capForm) retype(name string, msg tea.Msg) {
+	switch k := msg.(type) {
+	case tea.KeyPressMsg:
+		switch k.String() {
+		case "enter", "tab", "shift+tab":
+			return
+		}
+		if k.Text != "" && k.Mod&(tea.ModCtrl|tea.ModAlt) == 0 && cf.showsDefault(name) {
+			cf.syncs[name].Set("")
+			cf.inputs[name].Accessor(cf.syncs[name])
+		}
+		cf.engaged[name] = true
+	case tea.PasteMsg:
+		cf.engaged[name] = true
+	}
+}
+
 // inherit takes from the form this one replaces what is about the screen and
 // not about the boxes, so a form rebuilt under the person's hands (its second
 // stage, the same boxes on another environment, the run form behind an ad hoc
@@ -630,6 +704,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 		fetchedFor: map[string]string{},
 		browsed:    map[string]browsed{},
 		syncs:      map[string]*syncString{},
+		engaged:    map[string]bool{},
 		used:       recent.Load(),
 	}
 	for _, opt := range opts {
@@ -762,6 +837,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 	// required box left blank refused the run and nothing on screen said
 	// why. The footer carries the message now (footerFor), where the height
 	// is already budgeted.
+	cf.opened = cf.state()
 	cf.form = huh.NewForm(cf.groups(fields, names)...).WithKeyMap(formKeyMap()).
 		WithTheme(cf.theme()).WithShowHelp(false).WithShowErrors(false)
 	return cf

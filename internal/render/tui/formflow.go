@@ -296,6 +296,9 @@ func (m Model) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = modeBrowse
 		return m, nil
 	}
+	if name, ok := m.focusedInput(); ok {
+		m.form.retype(name, msg)
+	}
 	model, cmd := m.form.form.Update(msg)
 	if f, ok := model.(*huh.Form); ok {
 		m.form.form = f
