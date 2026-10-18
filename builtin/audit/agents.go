@@ -829,13 +829,19 @@ func gradePermissions(r *agentReport, f agentFile, doc any) {
 		}
 		// `Bash` with no bracketed pattern is every command. `Bash(git
 		// status:*)` is a decision; `Bash` is the absence of one.
-		if strings.EqualFold(strings.TrimSpace(rule), "bash") {
-			r.Add(grpAgentTools, "shell", findings.Fail,
-				"`Bash` is allowed unrestricted in "+shortPath(f.path)+
-					" — the agent can run any command, which includes every tool that reaches "+
-					"the things rta gates", refExcessivePriv)
+		if how := shellRule(rule); how != shellScoped {
+			rule = strings.TrimSpace(rule)
+			detail := "`" + rule + "` is allowed unrestricted in " + shortPath(f.path) +
+				" — the agent can run any command, which includes every tool that reaches " +
+				"the things rta gates"
+			if how == shellInterpreter {
+				detail = "`" + rule + "` is allowed in " + shortPath(f.path) + " — an interpreter given anything to " +
+					"run is `Bash` unrestricted by another name: the agent can run any command, which includes " +
+					"every tool that reaches the things rta gates"
+			}
+			r.Add(grpAgentTools, "shell", findings.Fail, detail, refExcessivePriv)
 			r.addFix("shell", f.label+" — scope the shell",
-				"Replace the bare \"Bash\" entry in "+shortPath(f.path)+" with the command "+
+				"Replace the \""+rule+"\" entry in "+shortPath(f.path)+" with the command "+
 					"families you mean to hand over — each entry is a decision:\n\n"+
 					"  \"permissions\": {\n"+
 					"    \"allow\": [\n"+
@@ -850,6 +856,65 @@ func gradePermissions(r *agentReport, f agentFile, doc any) {
 			return
 		}
 	}
+}
+
+// How a Bash permission rule bounds the shell.
+const (
+	// shellScoped: the rule names commands, or is not a shell's at all.
+	shellScoped = iota
+	// shellOpen: every command, as the bare rule and its argument-less spellings.
+	shellOpen
+	// shellInterpreter: an interpreter and anything after it, which runs any command.
+	shellInterpreter
+)
+
+// shellInterpreters are the programs that run whatever they are handed, so a
+// rule allowing one with a wildcard allows every command by another way in. A
+// version of python is one too (python3, python3.12).
+var shellInterpreters = regexp.MustCompile(`^(sh|bash|zsh|env|xargs|npx|node|python(\d+(\.\d+)*)?)$`)
+
+// shellRule reads a Claude Code permission rule for how much of a shell it
+// allows.
+//
+// Only the bare `Bash` was graded, so rewriting the flagged entry as `Bash(*)`
+// turned the row green and `Bash(sh:*)` never had one. `*`, `:*` and `**` in the
+// brackets say nothing about which command and are the bare rule. A prefix that
+// is an interpreter, alone or with only its flags (`sh -c`, `python3 -c`), and
+// then a wildcard, is the interpreter running anything: `Bash(git status:*)` is a
+// decision about git, and `Bash(python3 script.py)` about one script. A prefix
+// with another word in it (`python3 -m pytest`, `npx prettier`, `xargs grep`)
+// names what runs and is left alone, even though a wildcard follows.
+func shellRule(rule string) int {
+	rule = strings.TrimSpace(rule)
+	name, args, bracketed := strings.Cut(rule, "(")
+	if !strings.EqualFold(strings.TrimSpace(name), "bash") {
+		return shellScoped
+	}
+	if !bracketed {
+		return shellOpen
+	}
+	args, closed := strings.CutSuffix(strings.TrimSpace(args), ")")
+	if !closed {
+		return shellScoped
+	}
+	args = strings.TrimSpace(args)
+	if args != "" && strings.Trim(args, "*: ") == "" {
+		return shellOpen
+	}
+	prefix, wildcard := strings.CutSuffix(args, "*")
+	if !wildcard {
+		return shellScoped
+	}
+	words := strings.Fields(strings.TrimSuffix(strings.TrimSpace(prefix), ":"))
+	if len(words) == 0 || !shellInterpreters.MatchString(words[0]) {
+		return shellScoped
+	}
+	for _, w := range words[1:] {
+		if !strings.HasPrefix(w, "-") {
+			return shellScoped
+		}
+	}
+	return shellInterpreter
 }
 
 // orElse fills a hole a shallow parse could not, so a fix never prints an
