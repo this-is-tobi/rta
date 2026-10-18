@@ -161,7 +161,7 @@ func TestPathFieldCompletesWhileTyping(t *testing.T) {
 	}
 	// The rest of the only matching file, offered as you type it.
 	waitFor(t, tm, ".pem")
-	quit(t, tm)
+	quitFromADirtyForm(t, tm)
 }
 
 // The last separator ends the directory being listed, and only the platform's

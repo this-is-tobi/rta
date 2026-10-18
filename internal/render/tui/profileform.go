@@ -475,6 +475,9 @@ func (m Model) connForm(key, chosen string, seed map[string]any) (tea.Model, tea
 	m.form.profileTarget = key
 	m.form.connEditing = true
 	m.form.builtOn = chosen
+	// A rebuild starts from what the operator typed, so by what it opened with it
+	// would read as untouched (touched).
+	m.form.edited = seed != nil
 	m.origin = modeProfilePlugins
 	m.fitForm()
 	m.mode = modeForm
