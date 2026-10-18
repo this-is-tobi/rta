@@ -230,6 +230,12 @@ func cardOf(reg *registry.Registry, c plugin.Capability) view.KeyValue {
 			// looks up why an agent's call or a form insists on it.
 			detail += ", read from a pipe on the CLI when left out, required everywhere else"
 		}
+		// The block a form shows the input in, from the one function every
+		// surface asks (plugin.Group), so a connection input a plugin never
+		// grouped reads here as it is drawn there.
+		if group := plugin.Group(c, f); group != "" {
+			detail += ", group " + group
+		}
 		// An empty string is no default: the card said "string, default ,
 		// local" for every input that takes nothing unless asked to, a blank
 		// where "none" belongs on 334 of the first-party plugins' inputs.

@@ -221,3 +221,15 @@ func TestPluginDocSaysWhereAProfileCanLockAConfiguredValue(t *testing.T) {
 		}
 	}
 }
+
+// The README is the card, so it says which block a form shows each input in with
+// the line `rta explain` does, and the layout of the page is otherwise the same.
+func TestPluginDocCardsCarryTheGroupOfEachInput(t *testing.T) {
+	card := docSection(t, docPage(t, groupedPlugin()), "svc.get").(view.KeyValue)
+	if got := pairValue(card, "input:host"); !strings.HasPrefix(got, "string, group network, ") {
+		t.Errorf("input:host = %q, want the fallback group after the type", got)
+	}
+	if got := pairValue(card, "input:bucket"); !strings.HasPrefix(got, "string, required, group storage") {
+		t.Errorf("input:bucket = %q, want the declared group", got)
+	}
+}

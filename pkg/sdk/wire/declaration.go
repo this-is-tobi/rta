@@ -300,6 +300,7 @@ func FieldToProto(f plugin.Field) *rtav1.Field {
 		TlsAdjacent: f.TLSAdjacent,
 		Piped:       f.Piped,
 		Short:       f.Short,
+		Group:       f.Group,
 	}
 }
 
@@ -331,6 +332,7 @@ func FieldFromProto(f *rtav1.Field) (plugin.Field, bool) {
 		TLSAdjacent: f.GetTlsAdjacent(),
 		Piped:       f.GetPiped(),
 		Short:       f.GetShort(),
+		Group:       f.GetGroup(),
 	}, ok
 }
 
