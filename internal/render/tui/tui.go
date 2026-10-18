@@ -222,6 +222,9 @@ type Model struct {
 	// TERM=dumb, a pipe), told once by tea.ColorProfileMsg. Focus is a border
 	// colour, so it is what makes the focused tile heavy-framed instead.
 	noColor bool
+	// noColorFlag is --no-color: the person asked for no colour whatever the
+	// terminal could show (WithNoColor).
+	noColorFlag bool
 
 	// Profiles panes: the operator's environments, which one is switched on,
 	// and — one level in — the plugins each one covers.
@@ -329,6 +332,15 @@ func WithView(view string) Option {
 		m.view = view
 		m.dashOnDisk = dashStamp(view, m.dash)
 	}
+}
+
+// WithNoColor is --no-color. The program reads NO_COLOR and TERM from the
+// environment and nothing else, and the flag is not in the environment, so it
+// is handed over here and reaches the program as the colour profile NO_COLOR
+// gives it (colorOptions). The model is told at once as well, so that nothing it
+// draws before the program's own word on the profile is coloured.
+func WithNoColor() Option {
+	return func(m *Model) { m.noColor, m.noColorFlag = true, true }
 }
 
 // WithUntrusted supplies the plugin artifacts discovery found on $PATH and
@@ -1094,6 +1106,20 @@ func Run(ctx context.Context, reg *registry.Registry, dash config.Dashboard,
 	// depend on its caller having done so, and so that what the model believes
 	// about the palette is true from its first paint on.
 	m.syncPalette(readStamps())
-	_, err := tea.NewProgram(m, tea.WithContext(ctx), tea.WithInput(stdio.Real())).Run()
+	program := []tea.ProgramOption{tea.WithContext(ctx), tea.WithInput(stdio.Real())}
+	_, err := tea.NewProgram(m, append(program, colorOptions(m)...)...).Run()
 	return err
+}
+
+// colorOptions say to the program what --no-color said. ASCII is the profile
+// NO_COLOR gives on a terminal: the renderer drops every colour from every frame
+// and keeps the text attributes (bold, reverse) that stand in for it, which is
+// what the model's heavy borders and bracketed answers rely on. It is set on the
+// program and not through the process environment: NO_COLOR set here would reach
+// every plugin launched afterwards, which the flag does not ask for.
+func colorOptions(m Model) []tea.ProgramOption {
+	if !m.noColorFlag {
+		return nil
+	}
+	return []tea.ProgramOption{tea.WithColorProfile(colorprofile.ASCII)}
 }

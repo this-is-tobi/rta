@@ -1052,8 +1052,13 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 			// that a plugin they installed is not being provided.
 			// The screen of the switched-on profile, when it selects one.
 			drawn := drawnView(cfg)
-			return tuiExit(tui.Run(cmd.Context(), reg, cfg.TrustedDashboardFor(drawn), pluginConfig,
-				tui.WithView(drawn), tui.WithUntrusted(untrustedPluginsFound), tui.WithFailed(failedPluginsFound)))
+			session := []tui.Option{
+				tui.WithView(drawn), tui.WithUntrusted(untrustedPluginsFound), tui.WithFailed(failedPluginsFound),
+			}
+			if opts.noColor {
+				session = append(session, tui.WithNoColor())
+			}
+			return tuiExit(tui.Run(cmd.Context(), reg, cfg.TrustedDashboardFor(drawn), pluginConfig, session...))
 		},
 	}
 	pf := root.PersistentFlags()
