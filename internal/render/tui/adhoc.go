@@ -429,8 +429,10 @@ func (m Model) backToRunForm(from *capForm, pick string) (tea.Model, tea.Cmd) {
 // none, it is a field every form of a plugin a forward can fill has gained for
 // somebody who never asked for it: the first key they press would land in a
 // picker that reads "j" as down, and the form they have used for a year would
-// want an enter before the host box. It stays in the form, listed, one up-arrow
-// away — which is how it is found — and the cursor starts where it always did.
+// want an enter before the host box. It stays in the form, listed, one shift+tab
+// away — the arrows belong to the box under the cursor — and the footer says so
+// (bindEnvironment), which is how it is found; the cursor starts where it always
+// did.
 func (m Model) firstFocus() tea.Cmd {
 	init := m.form.form.Init()
 	if len(m.form.fields) > 0 {
