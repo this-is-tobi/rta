@@ -149,7 +149,7 @@ func readTools(ctx context.Context, c *registryClient, raw []string) ([]toolStat
 		} else {
 			st.Note = "not on $PATH"
 		}
-		rel, found, verr := c.latestRelease(ctx, t.Owner, t.Repo)
+		tag, found, verr := c.latestTag(ctx, t.Owner, t.Repo)
 		switch {
 		case verr != nil:
 			st.Note = verr.Message
@@ -163,8 +163,8 @@ func readTools(ctx context.Context, c *registryClient, raw []string) ([]toolStat
 			// tool with a release it did not have read ok. A tag with no
 			// version in it leaves Latest empty, which is "could not
 			// compare", never "current".
-			st.Tag = rel.Tag
-			if m := versionRe.FindStringSubmatch(rel.Tag); m != nil {
+			st.Tag = tag
+			if m := versionRe.FindStringSubmatch(tag); m != nil {
 				st.Latest = m[1]
 			}
 		}
