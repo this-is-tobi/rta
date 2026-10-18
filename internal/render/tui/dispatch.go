@@ -615,6 +615,11 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// no field for travel beside them.
 		if m.current.Run != nil && hasInputs(m.current) {
 			nm, cmd := m.startForm(m.current, m.lastValues)
+			// The result stays held under the form, and esc comes back to it.
+			if opened, ok := nm.(Model); ok && opened.form != nil {
+				opened.form.fromResult = true
+				nm = opened
+			}
 			return nm, cmd, true
 		}
 	case "y":

@@ -350,7 +350,9 @@ func (m Model) afterFormUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 				return m.formError(m.current, err)
 			}
 			_, rest := keyFields(m.current)
-			m.form = m.runForm(m.current, rest, defaults, base)
+			next := m.runForm(m.current, rest, defaults, base)
+			next.fromResult = m.form.fromResult
+			m.form = next
 			m.fitForm()
 			return m, m.form.form.Init()
 		}
@@ -451,16 +453,37 @@ func (m Model) formAbout() string {
 	return ""
 }
 
-// closeForm dismisses the current form: back to the actionable view it was
-// opened from, or to the origin.
+// liveTick arms the refresh of a live result, which stops being re-run in place
+// while another screen is up (the tick that finds the mode changed ends its
+// chain). A new chain, so the one left running is the only one in force.
+func (m *Model) liveTick() tea.Cmd {
+	m.tickGen++
+	gen := m.tickGen
+	return tea.Tick(tileRefreshInterval, func(time.Time) tea.Msg { return tickMsg{gen: gen} })
+}
+
+// closeForm dismisses the current form: back to the result it was opened from
+// by `e`, the actionable view it was opened from, or the origin.
 func (m Model) closeForm() (tea.Model, tea.Cmd) {
 	// The form that asks for an ad hoc connection was opened from a run form,
 	// and leaving it is going back to that one, not out of the run.
 	if m.form != nil && m.form.adHocFrom != nil {
 		return m.leaveAdHocForm()
 	}
+	resume := m.form != nil && m.form.fromResult && (m.result.view != nil || m.result.err != nil)
 	m.form = nil
 	m.refreshPending, m.subjectGone = false, false
+	// The result `e` was pressed on, still held: shown again as it was, the error
+	// of a run that failed included, rather than re-run (reopenTop) or left for
+	// the dashboard.
+	if resume {
+		m.mode = modeResult
+		m.renderResult()
+		if m.current.Live {
+			return m, m.liveTick()
+		}
+		return m, nil
+	}
 	if len(m.trail) > 0 {
 		return m.reopenTop()
 	}
