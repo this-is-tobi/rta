@@ -396,10 +396,10 @@ func TestARevokeRowNamesEverySelector(t *testing.T) {
 }
 
 // An operator's grant.issue and grant.revoke keep the record they named in
-// the row's records, exactly as it was spelled. The arguments are cleaned for
-// whoever reads them next, which drops a zero-width space, so an issue on
-// "prod/db" and one, its own record to the gate and granting nothing on the
-// bare key, was recorded as scope=prod/db: the one record it did not name.
+// the row's records, exactly as it was spelled, and the arguments beside them
+// say the same: they used to be cleaned, which drops a zero-width space, so an
+// issue on "prod/db" and one, its own record to the gate and granting nothing on
+// the bare key, was recorded as scope=prod/db: the one record it did not name.
 func TestAnOperatorGrantRowKeepsTheRecordItNamed(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	padded := "prod/db" + string(rune(0x200b))
@@ -436,8 +436,8 @@ func TestAnOperatorGrantRowKeepsTheRecordItNamed(t *testing.T) {
 	if got := entries[0].Records; len(got) != 1 || got[0] != padded {
 		t.Errorf("the revoke row keeps records %q, want the padded scope exactly", got)
 	}
-	if entries[0].Args["scope"] != "prod/db" {
-		t.Errorf("the revoke row's scope argument is %q, want it cleaned as every argument is", entries[0].Args["scope"])
+	if entries[0].Args["scope"] != padded {
+		t.Errorf("the revoke row's scope argument is %q, want what the request carried, exactly: %q", entries[0].Args["scope"], padded)
 	}
 
 	// A revoke naming no record keeps none.

@@ -191,15 +191,28 @@ func record(e agentlog.Entry) {
 	}
 }
 
-// auditArgs is what the ledger and the consent prompt are allowed to show
-// of a caller's arguments.
+// auditArgs is what the ledger and the consent prompt keep of a caller's
+// arguments.
 //
 // Two rules, both non-negotiable. A Secret input is masked — a credential
 // that reaches a log file has leaked exactly as thoroughly as one that
-// reaches a model, and this file is meant to be read. And every string is
-// put through textclean.Model, the same treatment results already get: an
-// argument is attacker-influenced text that will be read back by a person
-// in a terminal and, sooner or later, by an agent grepping the ledger.
+// reaches a model, and this file is meant to be read. And a string is kept
+// exactly as the call runs with it, less what Credentials masks.
+//
+// **Exact, not cleaned.** Every string used to go through textclean.Model, the
+// treatment results get, and the card a person answers showed the cleaned
+// text: a note whose body held a window-title escape carrying a command, a
+// zero-width run and a tag character was listed as "Looks fine. Thanks", and
+// stored whole once allowed. The question was answered about one document and
+// the call ran another, and the ledger, which exists to say what ran, never
+// held the rest. Cleaning is right of what is sent on to a terminal or a model
+// and wrong of what a person decides on or audits: they need to see that the
+// text is not what it seems and what is in it. Every surface that shows these
+// values already does (textclean.Record quotes one and names each character it
+// will not draw as itself), and the ledger file holds none of them raw
+// (agentlog.marshalLine), which is also how the records beside them are kept.
+// The consent digest binds the same text, so an answer is to the call that runs
+// and not to a cleaned copy of it.
 func auditArgs(c plugin.Capability, values map[string]any) map[string]any {
 	if len(values) == 0 {
 		return nil
@@ -216,7 +229,7 @@ func auditArgs(c plugin.Capability, values map[string]any) map[string]any {
 		case secret[k]:
 			out[k] = view.Mask
 		default:
-			out[k] = cleanValue(v)
+			out[k] = maskedValue(v)
 		}
 	}
 	return out
@@ -246,20 +259,38 @@ func namedRecords(c plugin.Capability, values map[string]any) []string {
 	return out
 }
 
-func cleanValue(v any) any {
+// maskedString is s with the credentials in it masked and nothing else changed.
+//
+// The shapes Credentials finds are visible ones, and an invisible character
+// between a URL's scheme and its // would stand between a credential and the
+// shape that finds it, so the cleaned text is read as well: when that one holds
+// a credential the cleaned, masked text is what is kept, the only case in which
+// anything is removed.
+func maskedString(s string) string {
+	if masked := textclean.Credentials(s); masked != s {
+		return masked
+	}
+	cleaned := textclean.Model(s)
+	if masked := textclean.Credentials(cleaned); masked != cleaned {
+		return masked
+	}
+	return s
+}
+
+func maskedValue(v any) any {
 	switch t := v.(type) {
 	case string:
-		return textclean.Credentials(textclean.Model(t))
+		return maskedString(t)
 	case []string:
 		out := make([]string, len(t))
 		for i, s := range t {
-			out[i] = textclean.Credentials(textclean.Model(s))
+			out[i] = maskedString(s)
 		}
 		return out
 	case []any:
 		out := make([]any, len(t))
 		for i, e := range t {
-			out[i] = cleanValue(e)
+			out[i] = maskedValue(e)
 		}
 		return out
 	default:
