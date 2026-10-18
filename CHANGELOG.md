@@ -1,5 +1,69 @@
 # Changelog
 
+## [0.45.0](https://github.com/this-is-tobi/rta/compare/v0.44.1...v0.45.0) (2026-10-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **builtin:** take every timeout and wait as a duration with its unit, not as seconds
+* **cert:** cert expiry exits 1 after its table when a host could not be checked
+* **agent:** give the full log one fixed set of columns and the record's own instant
+* **passkey:** `rta grant guard on`, `rta operator init` and the first write to a new kv store now refuse a passphrase under eight characters. Existing guards, operator keys and stores with a shorter one keep opening.
+* **policy:** `rta policy init --force` over a file that is not the starter now asks at a terminal and refuses without one unless --yes is given, and refuses outright when the starter would loosen the ceiling in the file.
+* **audit:** an agent that called audit_kube_eol, audit_kube_netpol, audit_kube_podsecurity, audit_kube_quotas or audit_kube_rbac with no grant is now refused with core.grant.required. `rta grant allow audit.kube.rbac --agent <name>` allows one for the whole cluster, and naming a namespace after the capability narrows it to that namespace.
+
+### Features
+
+* **tui:** a form's head says what class of call it is and where the cursor is ([d59a8f7](https://github.com/this-is-tobi/rta/commit/d59a8f79fff24769768398c164fa1d31b145d847))
+* **tui:** an empty box shows the first example its capability declares ([1cb3c3e](https://github.com/this-is-tobi/rta/commit/1cb3c3ecaf6806ce06718a752d16bae22aefcc82))
+
+
+### Bug Fixes
+
+* **agent:** give the full log one fixed set of columns and the record's own instant ([f1cc8cf](https://github.com/this-is-tobi/rta/commit/f1cc8cf71c37990bdf8d2cbecf1585c73ffd88f8))
+* **agent:** the allow card shows every argument, and a remote allow shows the call it signs ([f91f2cc](https://github.com/this-is-tobi/rta/commit/f91f2ccea0315a927fed7922bb453340a718bc1c))
+* **app:** ^C at a prompt ends the command at once and says it was cancelled ([f7b446f](https://github.com/this-is-tobi/rta/commit/f7b446f7f093368731c55a57ced07dab7c865c9f))
+* **audit:** clip a finding to a line only where a person is scanning a screen ([70d4909](https://github.com/this-is-tobi/rta/commit/70d49096c4cf386b407f9285fccc71caff9d15aa))
+* **audit:** grade every spelling of an unrestricted shell, not only the bare rule ([92f7e12](https://github.com/this-is-tobi/rta/commit/92f7e123767eb6e221643a7b188ca531b667d480))
+* **audit:** the five kube audits cost a grant, narrowed to a namespace ([17496b9](https://github.com/this-is-tobi/rta/commit/17496b9f7436b3b98a90c459c64b24245799a089))
+* **builtin:** take every timeout and wait as a duration with its unit, not as seconds ([5484c09](https://github.com/this-is-tobi/rta/commit/5484c09a8ae6a73f2b0f6c3e6987ace77ab33f97))
+* **cert:** cert expiry exits 1 after its table when a host could not be checked ([64064f9](https://github.com/this-is-tobi/rta/commit/64064f9d5e8a09624a4e41a9dbbff90d29a670d7))
+* **cli:** answer --json, now and ls with what they mean ([464ea1d](https://github.com/this-is-tobi/rta/commit/464ea1d2bde7c8eca190c904264b5526de83eee9))
+* **grant:** a refusal's command keeps what the agent chose out of its flags and its shell ([2c0cd7c](https://github.com/this-is-tobi/rta/commit/2c0cd7c8cf601f53dced8af6b4ce7876f3b643ac))
+* **grant:** say how far a role line or a remote grant reaches, as grant allow does ([78cbb20](https://github.com/this-is-tobi/rta/commit/78cbb20fcc824f5139476f49cd853527613427cc))
+* **help:** one usage line, a switch drawn bare, and the groups described ([3d79065](https://github.com/this-is-tobi/rta/commit/3d790658ab3131a6bf6666c181db0e99327f5b8c))
+* **http:** a piped body is the one fetched, and --dry-run sends nothing for a get or a head ([6d7df15](https://github.com/this-is-tobi/rta/commit/6d7df15fbc70eb78a54098012cb2fbfec6f7acf7))
+* **keys:** ask for a new key's passphrase at a terminal rather than writing it bare ([8d60fe3](https://github.com/this-is-tobi/rta/commit/8d60fe3b8f837b23d0ad43f0e2e732ddedd929d2))
+* **kv:** name what moving to a key file costs, and stop suggesting the flag ([a7251ed](https://github.com/this-is-tobi/rta/commit/a7251ed2e2af3acc369f6183a609db61db333504))
+* **kv:** say that a value given after the key is in the history, and offer the pipe first ([b27acd0](https://github.com/this-is-tobi/rta/commit/b27acd0468d271e652f8ade9b59e0e39d1296e6a))
+* **mcp:** a cut or too-large result names the called tool's own levers ([47c4055](https://github.com/this-is-tobi/rta/commit/47c4055ea79a9aec2fa71b6c1ac056474d38af01))
+* **mcp:** a profile written under a running server reaches the tool list the client holds ([03cc9fa](https://github.com/this-is-tobi/rta/commit/03cc9fa22f246f9de951cd59e7f3e15f0e9c5883))
+* **mcp:** an error handed to an agent names the connection the operator stated by its profile ([d0a009f](https://github.com/this-is-tobi/rta/commit/d0a009f6b2eb869fe40d142eac264a69a734c65e))
+* **mcp:** the arguments a call is approved and logged with are the ones it runs with ([a47da39](https://github.com/this-is-tobi/rta/commit/a47da3950af85bcc31a42208a12e9274ad115c52))
+* **passkey:** a new passphrase needs at least eight characters, counted as runes ([22e5c0b](https://github.com/this-is-tobi/rta/commit/22e5c0ba36772c1ef989b83266320757d4d0fd4a))
+* **paths:** say once that a directory rta cannot write is not a lock problem ([55a1366](https://github.com/this-is-tobi/rta/commit/55a1366fd805832863bb3d3e1c26079d64713522))
+* **plugin:** index add says a plain directory is not a repository and an uncommitted one is empty ([10d1d52](https://github.com/this-is-tobi/rta/commit/10d1d522aa7ecc8d72df6c72a063c73835bf4f29))
+* **policy:** policy init --force never writes a ceiling looser than the one that stands ([e8f8fa6](https://github.com/this-is-tobi/rta/commit/e8f8fa6cfe0fb98c8f534482ab5f71d4a70e5506))
+* **sdktest:** name go test -v where the notes are, and stop advising dump, query and destroy ([39712ba](https://github.com/this-is-tobi/rta/commit/39712babca634ad4d984ae5f8f19660c3ab427f5))
+* **textclean:** a record naming a host that is not ASCII shows the host's xn-- name beside it ([0eb2f53](https://github.com/this-is-tobi/rta/commit/0eb2f53116daad13271344887ec22b263018966e))
+* **tui:** --no-color reaches the TUI as the colour profile NO_COLOR gives ([b14ec57](https://github.com/this-is-tobi/rta/commit/b14ec57a8440c5781b76bcb7b81559386a0962c8))
+* **tui:** a form marks a required box on its title and drops Go's type names ([84457bf](https://github.com/this-is-tobi/rta/commit/84457bfe7dfbf50441696ed12a9360a948e11a80))
+* **tui:** a form's refusal is wrapped across the footer and keeps its remedy ([b0a8ed3](https://github.com/this-is-tobi/rta/commit/b0a8ed34dab78c20fa4824ad07e761544949c1d5))
+* **tui:** a save the file refused and a key with nothing to do are flashed with the cross ([edc075d](https://github.com/this-is-tobi/rta/commit/edc075d6e0fc455d5b89013e93dab74a412fb005))
+* **tui:** an empty search box suggests what to type ([7855d98](https://github.com/this-is-tobi/rta/commit/7855d9867b886b4d923d02d0252f519030d157e0))
+* **tui:** denying a parked call leaves a receipt that names it ([1e7b12f](https://github.com/this-is-tobi/rta/commit/1e7b12f1427ef463ab0472b11f7909b34d39615e))
+* **tui:** end and a shrunk window keep the selected tile in the rows the dashboard draws ([9cdd268](https://github.com/this-is-tobi/rta/commit/9cdd268c440ef5b17f224b3ee05e226f023ea172))
+* **tui:** esc clears a picker's filter before it cancels the form ([80926ae](https://github.com/this-is-tobi/rta/commit/80926ae9fd410a5a7c99e6e1ee53a03680a5e53f))
+* **tui:** esc on the form e opened goes back to the result it came from ([39dcb52](https://github.com/this-is-tobi/rta/commit/39dcb52f57e071d08f59a81014a7ebd58b185ca5))
+* **tui:** the catalogue names its applied filter, labels esc truthfully and teaches its paging keys ([333ecd4](https://github.com/this-is-tobi/rta/commit/333ecd4c64767db72c6e1e0ac83559c3a85a4a33))
+* **tui:** the footer names the key that reaches the environment picker ([b2a26be](https://github.com/this-is-tobi/rta/commit/b2a26be40be8b8415201996c9fc530e96ba6fce6))
+* **tui:** the key overlay takes two columns on a short terminal and the dialog keeps off its bar ([09fc4a1](https://github.com/this-is-tobi/rta/commit/09fc4a1a93f057e26db9edfd77c0befcaed6b501))
+* **tui:** the plugin allow form names the file each box lets a plugin read ([b20bb8c](https://github.com/this-is-tobi/rta/commit/b20bb8cf76b5539183c80a7e93bfffa77ef6c740))
+* **tui:** the plugins and profiles panes draw information in the muted colour, not the border's ([d0fa199](https://github.com/this-is-tobi/rta/commit/d0fa1990ff0f5a3983d025f5ae5fdec89c7bc9e3))
+* **tui:** the second stage of a form names the record the first chose ([b7aaf59](https://github.com/this-is-tobi/rta/commit/b7aaf59eab09d8376d62a1f20fb803f7c1d57a82))
+* **tui:** the wheel brings the selection to the nearest row the dashboard still draws ([e87fa74](https://github.com/this-is-tobi/rta/commit/e87fa74e2a6ddf14cd30231111c9b265f09c89f3))
+* **view:** leave a column's priority and a core's float noise out of what an agent reads ([8d92874](https://github.com/this-is-tobi/rta/commit/8d928747b2f75163e228c2b2363fdb87080fe065))
+
 ## [0.44.1](https://github.com/this-is-tobi/rta/compare/v0.44.0...v0.44.1) (2026-10-17)
 
 
