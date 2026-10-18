@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	gnet "github.com/shirou/gopsutil/v4/net"
+
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -484,7 +486,7 @@ func TestInfoIsWellFormed(t *testing.T) {
 		}
 		keys[p.Key] = true
 	}
-	for _, want := range []string{"dns", "proxy", "throughput"} {
+	for _, want := range []string{"dns", "proxy", throughputKey} {
 		if !keys[want] {
 			t.Errorf("missing %q pair", want)
 		}
@@ -617,4 +619,122 @@ func TestADNSTypeThatCouldNotBeAskedBecomesARow(t *testing.T) {
 	if got := dnsFailureRows(nil, types); len(got) != 0 {
 		t.Errorf("a run with no failures added %v", got)
 	}
+}
+
+func counters(rows map[string][2]uint64) []gnet.IOCountersStat {
+	var out []gnet.IOCountersStat
+	for name, c := range rows {
+		out = append(out, gnet.IOCountersStat{Name: name, BytesRecv: c[0], BytesSent: c[1]})
+	}
+	return out
+}
+
+// **A copy over 127.0.0.1 is not network traffic.** The row summed every
+// interface, so a 20 MiB/s transfer to a local server read as 20 MiB/s of
+// network, and so did everything a container host moves between its veth pairs
+// and its bridge. The rates are the sum of the interfaces that are counted, and
+// an interface that appeared between the two samples has nothing to be compared
+// with and is left out of the sum.
+func TestThroughputCountsOnlyTheInterfacesThatAreCounted(t *testing.T) {
+	const mib = 1 << 20
+	before := counters(map[string][2]uint64{"lo0": {0, 0}, "en0": {1000, 2000}, "en1": {5, 5}})
+	after := counters(map[string][2]uint64{
+		"lo0": {10 * mib, 10 * mib}, "en0": {1500, 3000}, "en1": {5, 5}, "utun9": {9 * mib, 9 * mib},
+	})
+	keep := func(name string) bool { return name != "lo0" }
+
+	rx, tx := ratesOf(before, after, time.Second, keep)
+	if rx != 500 || tx != 1000 {
+		t.Errorf("rates = %d, %d; want 500 and 1000, the one interface that moved and is counted", rx, tx)
+	}
+	rx, tx = ratesOf(before, after, 500*time.Millisecond, keep)
+	if rx != 1000 || tx != 2000 {
+		t.Errorf("rates over half a second = %d, %d; want them per second", rx, tx)
+	}
+	if rx, tx = ratesOf(after, before, time.Second, keep); rx != 0 || tx != 0 {
+		t.Errorf("a counter that went backwards read %d, %d; want a reset to read as nothing", rx, tx)
+	}
+}
+
+// The machine's own loopback is never counted, whatever it is called there
+// (lo on Linux, lo0 on macOS): it is read from the interface's flag and not
+// from its name.
+func TestTheLoopbackInterfaceIsNotCounted(t *testing.T) {
+	keep, err := countedInterfaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ifs, err := stdnet.Interfaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := false
+	for _, in := range ifs {
+		if in.Flags&stdnet.FlagLoopback != 0 {
+			seen = true
+			if keep(in.Name) {
+				t.Errorf("%s is the loopback and is counted", in.Name)
+			}
+		}
+	}
+	if !seen {
+		t.Skip("this machine has no loopback interface to ask about")
+	}
+	if !keep("an-interface-the-machine-does-not-list") {
+		t.Error("an interface that is not known to be loopback or plumbing is not counted")
+	}
+}
+
+// On Linux a bridge (docker0, br-…, virbr0, cni0) and the ends of a veth pair
+// carry what a container host moves between its containers, and the same bytes
+// are counted again on the interface that leaves the machine. The kernel says
+// which they are in /sys/class/net, and on a machine without it nothing is.
+func TestABridgeAndAVethAreContainerPlumbingAndAnEthernetIsNot(t *testing.T) {
+	root := t.TempDir()
+	for name, files := range map[string]map[string]string{
+		"br-1a2b": {"bridge/bridge_id": "8000.0242\n"},
+		"veth9f3": {"uevent": "INTERFACE=veth9f3\nDEVTYPE=veth\n"},
+		"eth0":    {"uevent": "INTERFACE=eth0\n"},
+		"wg0":     {"uevent": "INTERFACE=wg0\nDEVTYPE=wireguard\n"},
+	} {
+		for file, content := range files {
+			path := filepath.Join(root, name, file)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	old := sysClassNet
+	sysClassNet = root
+	t.Cleanup(func() { sysClassNet = old })
+
+	for name, want := range map[string]bool{
+		"br-1a2b": true, "veth9f3": true, "eth0": false, "wg0": false, "not-there": false,
+	} {
+		if got := containerPlumbing(name); got != want {
+			t.Errorf("containerPlumbing(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+// The row says what it leaves out, on the tile and on the page: a figure
+// that is lower than the sum of every interface has to be read as lower
+// on purpose.
+func TestThroughputNamesWhatItLeavesOut(t *testing.T) {
+	v, err := runOverview(context.Background(), req(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range v.(view.KeyValue).Pairs {
+		if strings.HasPrefix(p.Key, "throughput") {
+			if p.Key != throughputKey || !strings.Contains(p.Key, "loopback") {
+				t.Errorf("row = %q, want %q", p.Key, throughputKey)
+			}
+			return
+		}
+	}
+	t.Error("the overview has no throughput row")
 }
