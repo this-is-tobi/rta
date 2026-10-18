@@ -59,9 +59,26 @@ func checkWording(t reporter, p plugin.Plugin, cfg config) {
 		}
 		checkSummaryStyle(t, c)
 		checkInputNames(t, c)
+		checkInputHelp(t, c)
 		if !c.HumanOnly {
 			checkAgentWords(t, c)
 		}
+	}
+}
+
+// checkInputHelp notes the inputs an agent is offered that have no Help. It is
+// the description of the input's property in the schema, word for word, and
+// with none a model has a name and a type to work out what a value means from:
+// `{"description": "", "type": "boolean"}` for a bool called shout. A note and
+// never a failure, since an input can be its own explanation, and the author
+// who thinks `limit` needs no gloss says so with Skip.
+func checkInputHelp(t reporter, c plugin.Capability) {
+	t.Helper()
+
+	if fields := c.AgentInputsWithoutHelp(); len(fields) > 0 {
+		t.Logf("sdktest: %s: %s gives an agent no Help for %s, so its description in the tool's schema is empty. "+
+			"Say in Help what the value means: it is the one sentence an agent reads about the input", RuleWording, c.ID,
+			quotedNames(fields))
 	}
 }
 

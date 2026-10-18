@@ -1368,7 +1368,16 @@ func viewResult(v view.View) (*sdk.CallToolResult, error) {
 
 // cleanedView is v masked and made safe to read, whole: what the operator's
 // limit on an answer is measured against (the call), before anything is cut.
+//
+// A handler with nothing to show may return no view, which is legal and which
+// the encoding writes as {"type":"unknown"}: a shape the handshake tells a
+// model nothing about, sent as a success. It is told the one it does know, an
+// empty text, so that "nothing to show" reads the same as an answer whose body
+// is empty.
 func cleanedView(v view.View) view.View {
+	if v == nil {
+		v = view.Text{}
+	}
 	// The operator's own places are named by what they are in a result as they
 	// are in an error (operatorPaths): kv.status says where the store is, and
 	// that is for the person who runs it.

@@ -673,6 +673,36 @@ func TestCallToolReturnsEnvelope(t *testing.T) {
 	}
 }
 
+// A handler with nothing to show may return no view at all (view.View), and
+// the CLI prints nothing for it. What a model was sent for it was
+// {"type":"unknown"} as a success, a shape the handshake tells it nothing
+// about; it is now the empty text the "text" shape it knows already is.
+func TestACallThatReturnsNoViewIsAnExplicitEmptyText(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{Name: "quiet", Summary: "says nothing", Capabilities: []plugin.Capability{{
+		ID: "quiet.item.nothing", Summary: "Return no view", Safety: plugin.Read, Idempotent: true,
+		Run: func(context.Context, plugin.Request) (view.View, error) { return nil, nil },
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	s := connectWith(t, reg, Options{})
+	res, err := s.CallTool(context.Background(), &sdk.CallToolParams{Name: "quiet_item_nothing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.IsError {
+		t.Fatalf("a handler with nothing to show failed: %+v", res.Content)
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(res.Content[0].(*sdk.TextContent).Text), &m); err != nil {
+		t.Fatalf("content is not a JSON envelope: %v", err)
+	}
+	if body, has := m["body"]; m["type"] != "text" || !has || body != "" {
+		t.Errorf("no view was sent as %v, want an empty text", m)
+	}
+}
+
 func TestCallToolErrorCarriesCodeAndHint(t *testing.T) {
 	s := connect(t, Options{})
 	res, err := s.CallTool(context.Background(), &sdk.CallToolParams{Name: "demo_item_fail"})

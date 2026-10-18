@@ -387,6 +387,44 @@ func checkReach(t reporter, p plugin.Plugin, cfg config) {
 	}
 }
 
+// checkAgentSecrets says when a capability offered to agents has a credential
+// input an agent is asked to fill: a Secret that is not Local. The model is
+// then to put the value in its tool call, and so holds it in its context, which
+// is the exposure Local exists to keep a credential out of — the operator
+// supplies a Local one from the environment or a profile, and no call is ever
+// asked to carry it.
+//
+// A note and never a failure, since a Secret is also the type of a value an
+// agent is meant to give and have kept, and a capability that stores one is
+// legitimate: kv.set's value is such an input. The way out is Local, with an
+// EnvFallback, or a Skip that says why the agent is the one who has the value.
+func checkAgentSecrets(t reporter, p plugin.Plugin, cfg config) {
+	t.Helper()
+
+	for _, c := range p.Capabilities {
+		if cfg.skipped(RuleDeclaration, c.ID) {
+			continue
+		}
+		if fields := c.AgentSecretInputs(); len(fields) > 0 {
+			t.Logf("sdktest: %s: %s is offered to agents with a credential among the inputs they fill: %s. A Secret "+
+				"that is not Local is an argument the model puts in its tool call, and so holds in its context. "+
+				"Declare it Local: true, EnvFallback: true so the operator supplies it ahead of time; if the agent "+
+				"is the one that has the value, as for a value to store, waive this note with "+
+				"sdktest.Skip(sdktest.RuleDeclaration, %q, why)", RuleDeclaration, c.ID, quotedNames(fields), c.ID)
+		}
+	}
+}
+
+// quotedNames is the names of fields as an author reads them in a declaration:
+// `"key"`, or `"key", "token"`.
+func quotedNames(fields []plugin.Field) string {
+	names := make([]string, len(fields))
+	for i, f := range fields {
+		names[i] = fmt.Sprintf("%q", f.Name)
+	}
+	return strings.Join(names, ", ")
+}
+
 // repeatVerbs are last ID segments for an act that is done again each time it
 // is called: restarting a service restarts it again, a request is a new one,
 // and rotating a credential issues another. A capability that ends in one and
