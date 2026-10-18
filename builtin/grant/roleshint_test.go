@@ -20,7 +20,7 @@ import (
 // missing is the useful half, so both now say it, from one function.
 func TestAnUnknownRoleGetsTheSameAnswerOnEverySurface(t *testing.T) {
 	roleSetup(t)
-	_, err := runRoles(context.Background(), req(map[string]any{"role": "nosuchrole"}))
+	_, err := rolesH(context.Background(), req(map[string]any{"role": "nosuchrole"}))
 	verr, ok := err.(*view.Error)
 	if !ok {
 		t.Fatalf("err = %T (%v), want a *view.Error", err, err)

@@ -229,6 +229,25 @@ func breadthNote(catalog func() []plugin.Capability, g core.Grant) string {
 		g.Target, format.Count(len(gated), "capability", "capabilities"), which)
 }
 
+// reachNotes are the sentences that say how far a grant reaches, in the order
+// `grant allow` prints them: how many capabilities a plugin-wide one covers and
+// which are destructive (breadthNote), and what one with no record named lets an
+// agent read (revealNote).
+//
+// One list for every place a grant is issued or prepared, because it was said
+// where it was typed and nowhere else: a role's lines were issued on the strength
+// of the words they were written in, and a grant issued on a server was
+// signed here on a receipt that did not say what the server would let it do.
+func reachNotes(catalog func() []plugin.Capability, g core.Grant) []string {
+	var notes []string
+	for _, n := range []string{breadthNote(catalog, g), revealNote(catalog, g)} {
+		if n != "" {
+			notes = append(notes, n)
+		}
+	}
+	return notes
+}
+
 // revealNote says what a grant with no record named lets an agent read. A
 // capability that reveals a stored value is gated by the grant alone, so the
 // grant is the whole consent: named to one record it hands over that record's
@@ -1164,9 +1183,7 @@ func PrepareRemote(catalog func() []plugin.Capability,
 		if n := profilelessNote(catalog, g); n != "" {
 			p.Notes = append(p.Notes, n)
 		}
-		if n := revealNote(catalog, g); n != "" {
-			p.Notes = append(p.Notes, n)
-		}
+		p.Notes = append(p.Notes, reachNotes(catalog, g)...)
 		if n := credentialNote(catalog, g); n != "" {
 			p.Notes = append(p.Notes, n)
 		}
