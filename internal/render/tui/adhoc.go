@@ -421,8 +421,7 @@ func (m Model) backToRunForm(from *capForm, pick string) (tea.Model, tea.Cmd) {
 }
 
 // firstFocus is what a run form that has just been opened does next: starts, and
-// — when the picker has nothing to choose but the base configuration and the
-// entry that states a connection — moves past it.
+// moves the cursor to the box it should begin on (firstToAsk).
 //
 // The picker is first because it changes what every other answer means, and
 // with an environment configured that is the question to be asked first. With
@@ -431,17 +430,46 @@ func (m Model) backToRunForm(from *capForm, pick string) (tea.Model, tea.Cmd) {
 // picker that reads "j" as down, and the form they have used for a year would
 // want an enter before the host box. It stays in the form, listed, one shift+tab
 // away — the arrows belong to the box under the cursor — and the footer says so
-// (bindEnvironment), which is how it is found; the cursor starts where it always
-// did.
+// (bindEnvironment), which is how it is found.
 func (m Model) firstFocus() tea.Cmd {
 	init := m.form.form.Init()
-	if len(m.form.fields) > 0 {
-		f := m.form.fields[0]
-		if f.Name == profileInput && len(f.Options) == 2 && f.Options[1] == adHocPickLabel {
-			return tea.Batch(init, huh.NextField)
+	moves := m.form.firstToAsk()
+	if moves == 0 {
+		return init
+	}
+	cmds := make([]tea.Cmd, 0, moves+1)
+	cmds = append(cmds, init)
+	for range moves {
+		cmds = append(cmds, huh.NextField)
+	}
+	return tea.Batch(cmds...)
+}
+
+// firstToAsk is how many boxes down the cursor starts. A form that opens on an
+// optional box makes the person look for the one that has to be answered, and
+// the connection settings declared first are what put it there (vault.kv.get
+// opened on its mount with the path second), so it starts on the first box that
+// is required and holds nothing, and on the first box when there is none.
+//
+// An environment picker with something to choose keeps the cursor, being the
+// question the rest depends on. One with nothing to choose but the base
+// configuration and the entry that states a connection is passed over: it is
+// there, listed, for whoever goes looking, and a form that opened on it would
+// make every other form of the plugin want an enter before its first box.
+func (cf *capForm) firstToAsk() int {
+	start := 0
+	if len(cf.fields) > 0 && cf.fields[0].Name == profileInput && plugin.Profilable(cf.cap) {
+		if len(cf.fields[0].Options) != 2 || cf.fields[0].Options[1] != adHocPickLabel {
+			return 0
+		}
+		start = 1
+	}
+	for i := start; i < len(cf.fields); i++ {
+		if _, answered := cf.answer(cf.fields[i]); !answered && requiredHere(cf.fields[i]) {
+			return i
 		}
 	}
-	return init
+	return start
 }
 
 // adHocCompletionTarget is the box a tab would cluster-complete in the ad hoc
