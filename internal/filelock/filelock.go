@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,7 +25,9 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/shutdown"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Defaults match what internal/grant used before this package existed.
@@ -82,6 +85,9 @@ func Acquire(path string, stale, retry, timeout time.Duration) (release func(), 
 	// the directory's mode for the life of the machine, and it used to decide
 	// it wider than paths.EnsureData does.
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		if verr := paths.Unwritable(filepath.Dir(path), err); verr != nil {
+			return nil, verr
+		}
 		return nil, fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
 	}
 	mine, err := token()
@@ -95,6 +101,9 @@ func Acquire(path string, stale, retry, timeout time.Duration) (release func(), 
 		// created it, anything else names the holder that beat us.
 		held, err := atomicfile.Publish(path, mine, 0o600, maxToken)
 		if err != nil {
+			if verr := paths.Unwritable(filepath.Dir(path), err); verr != nil {
+				return nil, verr
+			}
 			return nil, fmt.Errorf("acquiring lock: %w", err)
 		}
 		if bytes.Equal(held, mine) {
@@ -128,6 +137,31 @@ func Acquire(path string, stale, retry, timeout time.Duration) (release func(), 
 		}
 		time.Sleep(retry)
 	}
+}
+
+// Failed is the error a caller returns when Acquire did not give it the lock.
+//
+// A directory rta cannot write comes back as it is (paths.Unwritable): it is
+// the same problem whichever command met it, and wrapped in the caller's own
+// code and "acquiring the X lock" it was six different errors, none of which
+// said whose directory it was. Anything else is the caller's code and its
+// sentence, with the cause after it.
+func Failed(err error, code, what string) *view.Error {
+	if verr := Unwritable(err); verr != nil {
+		return verr
+	}
+	return view.Errorf(code, "%s: %v", what, err)
+}
+
+// Unwritable is err as the unwritable-directory error when that is what it is,
+// for a caller that returns a plain error and has no code of its own to give
+// the rest: it passes this one on as it is and wraps anything else its own way.
+func Unwritable(err error) *view.Error {
+	var verr *view.Error
+	if errors.As(err, &verr) && verr != nil && verr.Code == paths.CodeUnwritable {
+		return verr
+	}
+	return nil
 }
 
 func token() ([]byte, error) {

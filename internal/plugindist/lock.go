@@ -117,6 +117,9 @@ func LockedFor(name string) (LockEntry, bool) {
 func mutateLock(fn func([]LockEntry) []LockEntry) *view.Error {
 	dir := filepath.Dir(LockPath())
 	if _, err := paths.EnsureData(); err != nil {
+		if verr := filelock.Unwritable(err); verr != nil {
+			return verr
+		}
 		return view.Errorf("plugin.lock.write", "%v", err)
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -125,7 +128,7 @@ func mutateLock(fn func([]LockEntry) []LockEntry) *view.Error {
 	release, err := filelock.Acquire(filepath.Join(dir, "rta.lock.lock"),
 		5*time.Second, 10*time.Millisecond, 2*time.Second)
 	if err != nil {
-		return view.Errorf("plugin.lock.lock", "acquiring the lockfile's lock: %v", err)
+		return filelock.Failed(err, "plugin.lock.lock", "acquiring the lockfile's lock")
 	}
 	defer release()
 

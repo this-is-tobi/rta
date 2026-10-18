@@ -608,7 +608,7 @@ func lock() (func(), error) {
 	release, err := filelock.Acquire(filepath.Join(filepath.Dir(path), filepath.Base(path)+lockFile),
 		filelock.DefaultStale, filelock.DefaultRetry, filelock.DefaultTimeout)
 	if err != nil {
-		return nil, view.Errorf("config.lock", "acquiring the config file lock: %v", err)
+		return nil, filelock.Failed(err, "config.lock", "acquiring the config file lock")
 	}
 	return release, nil
 }

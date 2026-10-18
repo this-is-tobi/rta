@@ -672,8 +672,7 @@ func transitionLock() (func(), *view.Error) {
 	release, err := filelock.Acquire(Path()+".lock",
 		15*time.Second, 5*time.Millisecond, 10*time.Second)
 	if err != nil {
-		return nil, view.Errorf("core.guard.locked",
-			"another rta is changing the guard state: %v", err)
+		return nil, filelock.Failed(err, "core.guard.locked", "another rta is changing the guard state")
 	}
 	return release, nil
 }
