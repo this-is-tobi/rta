@@ -471,9 +471,9 @@ func cliForm(c plugin.Capability) string {
 		switch {
 		case f.Positional, argvRefused(f):
 		case requiredOnCommandLine(f):
-			parts = append(parts, fmt.Sprintf("--%s <%s>", f.Name, f.Type))
+			parts = append(parts, strings.TrimSpace("--"+f.Name+" "+valuePlaceholder(f)))
 		default:
-			parts = append(parts, fmt.Sprintf("[--%s <%s>]", f.Name, f.Type))
+			parts = append(parts, "["+strings.TrimSpace("--"+f.Name+" "+valuePlaceholder(f))+"]")
 		}
 	}
 	// --detail is a host flag rather than a declared input, which is why the
@@ -485,6 +485,24 @@ func cliForm(c plugin.Capability) string {
 		parts = append(parts, "[--detail]")
 	}
 	return strings.Join(parts, " ")
+}
+
+// valuePlaceholder is what follows a flag on a command line to stand for its
+// value: the type of one, `<int>`, `<secret>`. A switch has none, because it is
+// on by being named and `--cores true` is refused as an unexpected argument
+// (switchValueHint), and a flag that is given again for each value, or takes a
+// list, is a value and three dots. The dots are the repeat, and `value` the
+// element: a list of strings reads the same whatever the strings are.
+func valuePlaceholder(f plugin.Field) string {
+	switch f.Type {
+	case plugin.Bool:
+		return ""
+	case plugin.StringSlice:
+		return "<value>..."
+	case plugin.SecretSlice:
+		return "<secret>..."
+	}
+	return fmt.Sprintf("<%s>", f.Type)
 }
 
 // capabilityNotFound returns a coded error with closest-match suggestions.
