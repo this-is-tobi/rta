@@ -3,9 +3,11 @@ package mcp
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -28,17 +30,79 @@ const maxResultBytes = 80 << 10
 // a whole one.
 //
 // The view is already masked and cleaned (viewResult), so this only removes.
-func fitResult(v view.View) (view.View, *view.Error) {
+// narrow words the way to a smaller answer for the tool that was called.
+func fitResult(v view.View, narrow narrowing) (view.View, *view.Error) {
 	if size(v) <= maxResultBytes {
 		return v, nil
 	}
-	if cut, ok := shrink(v, maxResultBytes); ok {
+	if cut, ok := shrink(v, maxResultBytes, narrow); ok {
 		return cut, nil
 	}
 	return nil, view.Errorf("core.mcp.result.toolarge",
 		"the answer is %d KiB, over the %d KiB a tool result may hold, and this kind of answer cannot be cut",
 		size(v)>>10, maxResultBytes>>10).
-		WithHint("narrow the call: a smaller path, a tighter filter or range, or a lower limit where the tool has one")
+		WithHint(narrow(0))
+}
+
+// narrowing is the hint that says how to ask for less, given how many rows of
+// a table were kept (0 when the answer is not one that was cut to rows).
+type narrowing func(rowsKept int) string
+
+// genericNarrowing is what is true of any tool, for one that has no input
+// whose job is to make an answer smaller.
+const genericNarrowing = "narrow the call: a smaller path, a tighter filter or range, or a lower limit where the tool has one"
+
+// narrowingFor words the hint from the inputs the called tool offers: the ones
+// that bound how much comes back (limit, count, depth) and the one that aims
+// it (path), and for a table that was cut the number of rows that fit. A
+// model told to "lower a limit where the tool has one" has to go and find out
+// whether it does, and gen_password has count and no limit.
+//
+// From the inputs an agent is offered and nothing else: a Local one is not in
+// the schema, so naming it would send a model after an argument that is
+// refused. The names are the catalogue's own (sdktest holds a plugin to
+// `limit`), so a tool that spells its bound another way keeps the generic
+// sentence rather than a guess.
+func narrowingFor(c plugin.Capability) narrowing {
+	offered := map[string]bool{}
+	for _, f := range c.Inputs {
+		if !f.Local {
+			offered[f.Name] = true
+		}
+	}
+	return func(rowsKept int) string {
+		var clauses, lower []string
+		for _, name := range []string{"limit", "count"} {
+			switch {
+			case !offered[name]:
+			case rowsKept > 0:
+				clauses = append(clauses, "set `"+name+"` to "+strconv.Itoa(rowsKept)+" or less")
+			default:
+				lower = append(lower, "`"+name+"`")
+			}
+		}
+		if offered["depth"] {
+			lower = append(lower, "`depth`")
+		}
+		if len(lower) > 0 {
+			clauses = append(clauses, "lower "+joinWith(lower, ", ", " or "))
+		}
+		if offered["path"] {
+			clauses = append(clauses, "give a narrower `path`")
+		}
+		if len(clauses) == 0 {
+			return genericNarrowing
+		}
+		return "narrow the call: " + joinWith(clauses, ", ", ", or ")
+	}
+}
+
+// joinWith joins items with sep, and the last with last.
+func joinWith(items []string, sep, last string) string {
+	if len(items) < 2 {
+		return strings.Join(items, "")
+	}
+	return strings.Join(items[:len(items)-1], sep) + last + items[len(items)-1]
 }
 
 // size is what v weighs once encoded the way viewResult sends it.
@@ -56,16 +120,16 @@ func size(v view.View) int {
 
 // shrink returns v cut to encode within limit bytes, and false when v is of a
 // shape that cannot be, or when nothing of it is left to show.
-func shrink(v view.View, limit int) (view.View, bool) {
+func shrink(v view.View, limit int, narrow narrowing) (view.View, bool) {
 	switch t := v.(type) {
 	case view.Table:
-		return shrinkTable(t, limit)
+		return shrinkTable(t, limit, narrow)
 	case view.Text:
 		return shrinkText(t, limit)
 	case view.KeyValue:
 		return shrinkPairs(t, limit)
 	case view.Sections:
-		return shrinkSections(t, limit)
+		return shrinkSections(t, limit, narrow)
 	}
 	return nil, false
 }
@@ -76,7 +140,7 @@ func largest(n int, fits func(k int) bool) int {
 	return sort.Search(n, func(i int) bool { return !fits(i + 1) })
 }
 
-func shrinkTable(t view.Table, limit int) (view.View, bool) {
+func shrinkTable(t view.Table, limit int, narrow narrowing) (view.View, bool) {
 	rows, total := t.Rows, max(t.Total, len(t.Rows))
 	with := func(k int) view.Table {
 		out := t
@@ -95,7 +159,7 @@ func shrinkTable(t view.Table, limit int) (view.View, bool) {
 			Code: "core.mcp.result.cut",
 			Message: fmt.Sprintf("showing %d of %d rows: the answer is too large for one tool result",
 				k, total),
-			Hint: "narrow the call: a smaller path, a tighter filter or range, or a lower limit where the tool has one",
+			Hint: narrow(k),
 		})
 		return out
 	}
@@ -168,7 +232,7 @@ func shrinkPairs(kv view.KeyValue, limit int) (view.View, bool) {
 // shrinkSections cuts the largest section, and then the next, until the page
 // fits; a section that cannot be cut is left whole, and a page whose parts
 // all are too big is refused.
-func shrinkSections(s view.Sections, limit int) (view.View, bool) {
+func shrinkSections(s view.Sections, limit int, narrow narrowing) (view.View, bool) {
 	items := append([]view.Section(nil), s.Items...)
 	out := func() view.Sections { o := s; o.Items = items; return o }
 	stuck := make([]bool, len(items))
@@ -183,7 +247,7 @@ func shrinkSections(s view.Sections, limit int) (view.View, bool) {
 			return nil, false
 		}
 		excess := size(out()) - limit
-		cut, ok := shrink(items[pick].View, max(size(items[pick].View)-excess, 0))
+		cut, ok := shrink(items[pick].View, max(size(items[pick].View)-excess, 0), narrow)
 		if !ok {
 			stuck[pick] = true
 			continue
