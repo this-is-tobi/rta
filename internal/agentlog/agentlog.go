@@ -261,10 +261,14 @@ type Entry struct {
 	// Args are the values the call runs with — what the caller sent, laid
 	// over the operator's config and the declared defaults, and the
 	// profile's once it is filled — not only what the agent typed, so an
-	// entry says what ran. They are already redacted and model-cleaned by
-	// the bridge — the same treatment the result gets, for
-	// the same reason: this file is read by people and by the next agent
-	// that greps it.
+	// entry says what ran. The bridge redacts them (a Secret input whole, the
+	// credentials by shape in the rest) and changes nothing else: a cleaned copy
+	// is a different document from the one that ran, and the row exists to say
+	// what ran. Like the records beside them they are written to the file with
+	// every character a reader would not see as itself as a JSON escape
+	// (marshalLine), and shown quoted with each one named (textclean.Record),
+	// so this file is read by people and by the next agent that greps it
+	// without any of them being hidden.
 	Args map[string]any `json:"args,omitempty"`
 	// Agent is the name the operator launched this server under (`rta mcp
 	// serve --as claude-desktop`), empty when they did not name it. It is the

@@ -433,13 +433,15 @@ func OperatorLedgerCaps() []string {
 }
 
 // putArg records one string field, skipping empties so rows stay as tight
-// as the specs that made them, and cleaned because every value here
-// crossed the network inside a payload rta did not write.
+// as the specs that made them. Masked and otherwise exactly as it arrived:
+// every value here crossed the network inside a payload rta did not write,
+// and the row says what the operator's request carried, which a cleaned copy
+// would not (see auditArgs).
 func putArg(args map[string]any, key, val string) {
 	if val == "" {
 		return
 	}
-	args[key] = cleanValue(val)
+	args[key] = maskedValue(val)
 }
 
 // statusFor sorts a dispatch refusal into its HTTP class — and, because

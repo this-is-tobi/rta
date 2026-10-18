@@ -1824,11 +1824,12 @@ func callNamed(capID string, records []string) string {
 // as textclean.Record shows one, since an argument is where the record came
 // from, and anything else as it prints.
 //
-// The arguments are the cleaned copy, though: the bridge drops the
-// zero-width, direction and tag characters before the ledger or a parked
-// request holds them, so an argument can still read as the bare record. The
-// exact one is kept beside it, a ledger row's Records and a request's
-// Scopes, and those are what the record column and pair show.
+// The arguments are the text the call runs with, exactly (the bridge masks
+// credentials and changes nothing else), so a character that draws as nothing
+// is in the value and Record names it: an argument can no longer read as the
+// bare record. The records the call named are kept beside them, a ledger row's
+// Records and a request's Scopes, and those are what the record column and pair
+// show.
 //
 // A list element by element, in the brackets Go prints one in, since a list
 // is where a capability taking several records names them — net hosts add's
