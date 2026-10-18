@@ -14,6 +14,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -245,7 +246,13 @@ func (m Model) catalogueCount() string {
 				shown++
 			}
 		}
-		return fmt.Sprintf("%d of %d ", shown, total)
+		// The term itself, because once the filter is applied its box is gone
+		// and nothing else on the screen says what the rows were narrowed by.
+		term := ""
+		if q := strings.TrimSpace(m.list.FilterValue()); q != "" {
+			term = "filter: " + ansi.Truncate(textclean.Terminal(q), 24, "…") + " · "
+		}
+		return fmt.Sprintf("%s%d of %d ", term, shown, total)
 	}
 	// Where you are, not just how much there is.
 	//

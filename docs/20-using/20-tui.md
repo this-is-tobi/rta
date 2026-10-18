@@ -118,7 +118,7 @@ On the lock list `x` lifts the lock under the cursor. The queue refreshes itself
 
 ## The catalogue
 
-Every capability as a table grouped by plugin — one row each, with its ID, its [safety class](../95-reference/10-glossary.md#terms) and its summary. The filter stays live, every pane is bounded by the terminal and scrolls inside it, and the mouse wheel works. `enter` runs the row; `+` puts it on the dashboard.
+Every capability as a table grouped by plugin — one row each, with its ID, its [safety class](../95-reference/10-glossary.md#terms) and its summary. The filter stays live, every pane is bounded by the terminal and scrolls inside it, and the mouse wheel works. `enter` runs the row; `+` puts it on the dashboard. `pgup` and `pgdn` move a page and `home` and `end` go to the first row and the last. Once a filter is applied the header says `filter: pass · 9 of 131`, and `esc` clears it before a second `esc` goes back.
 
 The permission column says what an AI agent needs for the row, after its safety class: nothing more than the class (`read`) is a capability an agent can call at once, `agents need grant` is one it can call only once you have issued a grant, and `not for agents` is one it can never call — yours alone. The plugins that are all of the last kind (`agent`, `grant`, `lock`, `operator`, `pkg`) come after the others, so the first page is what you or an agent can run.
 
