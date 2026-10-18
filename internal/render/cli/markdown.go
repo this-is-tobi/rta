@@ -71,6 +71,7 @@ func markdownPairs(b *strings.Builder, kv view.KeyValue) {
 	if len(kv.Pairs) == 0 {
 		return
 	}
+	kv = kv.WithoutLayout()
 	rows := make([][]string, 0, len(kv.Pairs))
 	for _, p := range kv.Pairs {
 		rows = append(rows, []string{p.Key, p.Value})
@@ -172,6 +173,10 @@ func markdownTree(b *strings.Builder, t view.Tree) {
 		markdownEmpty(b, t.Empty)
 		return
 	}
+	// The marker a branch ends in is a line for the screen; a report says what
+	// was left out under the tree, as a table's does, and not as an entry
+	// pasted into a ticket.
+	t, cuts := t.WithoutCuts()
 	b.WriteString("\n")
 	var walk func(nodes []view.Node, depth int)
 	walk = func(nodes []view.Node, depth int) {
@@ -185,6 +190,7 @@ func markdownTree(b *strings.Builder, t view.Tree) {
 		}
 	}
 	walk(t.Roots, 0)
+	markdownWarnings(b, cuts)
 }
 
 // Markdown has no chart, and pretending otherwise with block characters would

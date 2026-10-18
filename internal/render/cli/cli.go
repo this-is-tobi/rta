@@ -269,6 +269,7 @@ func csvTable(v view.View) (view.Table, error) {
 	case view.Table:
 		return t, nil
 	case view.KeyValue:
+		t = t.WithoutLayout()
 		rows := make([][]string, len(t.Pairs))
 		for i, p := range t.Pairs {
 			rows[i] = []string{p.Key, p.Value}

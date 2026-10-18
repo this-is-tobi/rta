@@ -140,7 +140,7 @@ func (b *treeBuilder) children(ctx context.Context, dir *pathin.Dir, depth int) 
 	items, err := dir.ReadDir()
 	if err != nil {
 		b.stats.unreadable++
-		return []view.Node{{Label: "…", Detail: "unreadable: " + reason(err)}}
+		return []view.Node{{Label: view.CutLabel, Detail: "unreadable: " + reason(err)}}
 	}
 
 	kept := make([]os.DirEntry, 0, len(items))
@@ -229,10 +229,10 @@ func (b *treeBuilder) children(ctx context.Context, dir *pathin.Dir, depth int) 
 		}
 	}
 	if truncated > 0 {
-		nodes = append(nodes, view.Node{Label: "…", Detail: fmt.Sprintf("%d more", truncated)})
+		nodes = append(nodes, view.Node{Label: view.CutLabel, Detail: fmt.Sprintf("%d more", truncated)})
 	}
 	if hiddenCount > 0 {
-		nodes = append(nodes, view.Node{Label: "…", Detail: fmt.Sprintf("%d hidden (%s)", hiddenCount, b.surface.InputName("all"))})
+		nodes = append(nodes, view.Node{Label: view.CutLabel, Detail: fmt.Sprintf("%d hidden (%s)", hiddenCount, b.surface.InputName("all"))})
 	}
 	return nodes
 }

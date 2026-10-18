@@ -7,6 +7,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/internal/textclean/glyph"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // Quote names each character a reader does not see by its code point and
@@ -38,6 +39,26 @@ func TestQuoteNamesWhatAReaderDoesNotSeeAndReadsBack(t *testing.T) {
 	if got, want := glyph.Quote("prod/db"+string(rune(0x3164))),
 		`"prod/db`+strings.Trim(strconv.QuoteRuneToASCII(0x3164), "'")+`"`; got != want {
 		t.Errorf("a Hangul filler = %s, want %s", got, want)
+	}
+}
+
+// A tree draws the entries it does not list as a leaf labelled with one
+// ellipsis (view.CutLabel), and the machine encodings drop it by that label. A
+// file or an object really named "…" shown as it is would be the same label,
+// and vanish from `fs tree -o json` — a name an attacker picks to hide an
+// entry — so a name that is only that character is shown quoted, as one that
+// opens with a quotation mark is, and is never mistaken for the marker.
+func TestANameThatIsTheCutMarkerIsQuoted(t *testing.T) {
+	if got, want := glyph.Name(view.CutLabel), `"`+view.CutLabel+`"`; got != want {
+		t.Errorf("Name(%q) = %s, want %s", view.CutLabel, got, want)
+	}
+	if got := textclean.Name(view.CutLabel); got == view.CutLabel {
+		t.Errorf("textclean.Name(%q) = %s, the label of a cut marker", view.CutLabel, got)
+	}
+	for _, s := range []string{"…a", "a…", "...", "…/"} {
+		if got := glyph.Name(s); got != s {
+			t.Errorf("Name(%q) = %s, want it as it is: only the lone marker is ambiguous", s, got)
+		}
 	}
 }
 

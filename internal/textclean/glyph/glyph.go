@@ -55,10 +55,13 @@ func Seen(r rune) bool {
 // shows it: as it is when it reads as itself, spaces and accents included, and
 // Quote otherwise. One with a space at either end, which draws as nothing, or
 // opening with a quotation mark is quoted too, so a name shown as it is can
-// never be mistaken for one shown quoted. textclean.Name and the plugin SDK's
-// ListedName are this, in the one place so that they cannot disagree.
+// never be mistaken for one shown quoted. So is a name that is only an
+// ellipsis, the label a tree gives the leaf standing for the entries it does
+// not list (view.CutLabel): the machine formats drop that leaf by its label,
+// and an entry of that name would go with it. textclean.Name and the plugin
+// SDK's ListedName are this, in the one place so that they cannot disagree.
 func Name(s string) string {
-	if s != "" && s[0] != '"' && utf8.ValidString(s) && strings.TrimSpace(s) == s &&
+	if s != "" && s != "…" && s[0] != '"' && utf8.ValidString(s) && strings.TrimSpace(s) == s &&
 		!strings.ContainsFunc(s, func(r rune) bool { return r != ' ' && !Seen(r) }) {
 		return s
 	}
