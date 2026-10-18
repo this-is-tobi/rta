@@ -38,7 +38,7 @@
   },
   {
     "name": "audit_kube_eol",
-    "description": "Software past or near its end of life: the control plane, the kubelets, and every image's release\n\nThe control plane's version, every node's kubelet and the release each running image's tag names, graded against endoflife.date as `eol_check` grades one product: past its end of life fails, within warn-days of it warns, supported passes with the date. An image is recognised by its name through the catalogue's aliases and its tag read as a release (15.4 is postgresql 15, bookworm is debian 12). An image endoflife.date does not track, a floating tag and a digest with no tag count in the overall line as checks that could not run, and the detail page lists each with its reason. Narrowed to a namespace it grades that namespace's images and the control plane, and says the nodes were not examined.\n\nAlso called: kubernetes, outdated, unsupported, upgrade, stale, components.\n\nSafety: read.",
+    "description": "Software past or near its end of life: the control plane, the kubelets, and every image's release\n\nThe control plane's version, every node's kubelet and the release each running image's tag names, graded against endoflife.date as `eol_check` grades one product: past its end of life fails, within warn-days of it warns, supported passes with the date. An image is recognised by its name through the catalogue's aliases and its tag read as a release (15.4 is postgresql 15, bookworm is debian 12). An image endoflife.date does not track, a floating tag and a digest with no tag count in the overall line as checks that could not run, and the detail page lists each with its reason. Narrowed to a namespace it grades that namespace's images and the control plane, and says the nodes were not examined.\n\nAlso called: kubernetes, outdated, unsupported, upgrade, stale, components.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"namespace\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.kube.eol`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -64,7 +64,7 @@
   },
   {
     "name": "audit_kube_netpol",
-    "description": "Namespaces with no NetworkPolicy — unrestricted pod-to-pod traffic\n\nEvery non-system namespace checked for at least one NetworkPolicy. With none, the cluster's default applies: every pod in the namespace can reach every other pod, in either direction. Cites CIS Kubernetes Benchmark 2.0.1 5.3.2.\n\nNarrowed to a namespace it checks that one, including a system namespace if you name it explicitly.\n\nSafety: read.",
+    "description": "Namespaces with no NetworkPolicy — unrestricted pod-to-pod traffic\n\nEvery non-system namespace checked for at least one NetworkPolicy. With none, the cluster's default applies: every pod in the namespace can reach every other pod, in either direction. Cites CIS Kubernetes Benchmark 2.0.1 5.3.2.\n\nNarrowed to a namespace it checks that one, including a system namespace if you name it explicitly.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"namespace\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.kube.netpol`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -85,7 +85,7 @@
   },
   {
     "name": "audit_kube_podsecurity",
-    "description": "Pods running privileged, in a host namespace, or with root not excluded\n\nEvery pod cluster-wide, checked against three Pod Security Standards controls: a privileged container (fail), hostNetwork/hostPID/hostIPC (fail), and whether anything in the pod asserts non-root (warn), meaning that neither the pod nor any container sets runAsNonRoot or a non-zero runAsUser. Init and ephemeral containers count as main ones. The non-root check approximates Kubernetes' securityContext merge rather than simulating it: a pod that asserts non-root at the pod level and never overrides it per container is not flagged, while one relying only on an image's own non-root USER is. A namespace narrows which pods are read, and a clean result says so, never that no pod in the cluster is affected.\n\nSafety: read.",
+    "description": "Pods running privileged, in a host namespace, or with root not excluded\n\nEvery pod cluster-wide, checked against three Pod Security Standards controls: a privileged container (fail), hostNetwork/hostPID/hostIPC (fail), and whether anything in the pod asserts non-root (warn), meaning that neither the pod nor any container sets runAsNonRoot or a non-zero runAsUser. Init and ephemeral containers count as main ones. The non-root check approximates Kubernetes' securityContext merge rather than simulating it: a pod that asserts non-root at the pod level and never overrides it per container is not flagged, while one relying only on an image's own non-root USER is. A namespace narrows which pods are read, and a clean result says so, never that no pod in the cluster is affected.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"namespace\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.kube.podsecurity`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -106,7 +106,7 @@
   },
   {
     "name": "audit_kube_quotas",
-    "description": "Namespaces with no ResourceQuota — unbounded resource consumption\n\nEvery non-system namespace checked for at least one ResourceQuota. CIS Kubernetes Benchmark has no numbered control for this — confirmed absent rather than assumed — so this cites NSA/CISA Kubernetes Hardening Guidance's \"Resource policies\" section instead.\n\nNarrowed to a namespace it checks that one, including a system namespace if you name it explicitly — the system-namespace filter exists so a cluster-wide sweep stays quiet, not to refuse a direct question.\n\nSafety: read.",
+    "description": "Namespaces with no ResourceQuota — unbounded resource consumption\n\nEvery non-system namespace checked for at least one ResourceQuota. CIS Kubernetes Benchmark has no numbered control for this — confirmed absent rather than assumed — so this cites NSA/CISA Kubernetes Hardening Guidance's \"Resource policies\" section instead.\n\nNarrowed to a namespace it checks that one, including a system namespace if you name it explicitly — the system-namespace filter exists so a cluster-wide sweep stays quiet, not to refuse a direct question.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"namespace\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.kube.quotas`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -127,7 +127,7 @@
   },
   {
     "name": "audit_kube_rbac",
-    "description": "Broad RBAC: cluster-admin bindings and wildcard rules\n\nEvery ClusterRoleBinding to cluster-admin, and every Role/ClusterRole rule using a wildcard verb, resource or apiGroup. cluster-admin bound to system:authenticated or system:unauthenticated grades fail, the default system:masters binding is info, anything else warns — sometimes a real operator's binding, always worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3.\n\nNarrowed to a namespace it checks that namespace's Roles only. ClusterRoleBindings and ClusterRoles belong to no namespace, so they are not examined at all — reported in the result rather than left implied, since a scoped run that silently skipped the cluster-admin check would read as a clean RBAC posture. RoleBindings are never read; the result says so.\n\nSafety: read.",
+    "description": "Broad RBAC: cluster-admin bindings and wildcard rules\n\nEvery ClusterRoleBinding to cluster-admin, and every Role/ClusterRole rule using a wildcard verb, resource or apiGroup. cluster-admin bound to system:authenticated or system:unauthenticated grades fail, the default system:masters binding is info, anything else warns — sometimes a real operator's binding, always worth reading. Cites CIS Kubernetes Benchmark 2.0.1 5.1.1 and 5.1.3.\n\nNarrowed to a namespace it checks that namespace's Roles only. ClusterRoleBindings and ClusterRoles belong to no namespace, so they are not examined at all — reported in the result rather than left implied, since a scoped run that silently skipped the cluster-admin check would read as a clean RBAC posture. RoleBindings are never read; the result says so.\n\nSafety: read.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"namespace\"). You cannot issue one yourself — ask the operator to run `rta grant allow audit.kube.rbac`.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {

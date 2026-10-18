@@ -97,7 +97,7 @@ as          claude
 ran         /usr/local/bin/claude mcp add rta -- /usr/local/bin/rta mcp serve --as claude
 scope       this directory only (/home/you/project) — add --global for every project
 next        restart Claude Code in this directory, ask it to call sys_overview, and `rta agent overview` shows it connected
-reach       read-only until you say otherwise — `rta grant allow <capability> --agent claude` lets one more thing through, and it expires on its own
+reach       only the reads that aim nowhere it chooses until you say otherwise — `rta grant allow <capability> --agent claude` lets one more thing through, and it expires on its own
 ```
 
 That registers rta with Claude Code for the directory you ran it in, under the name `claude` (the `scope` line says so, and `--global` registers it for every project). The name matters: grants you issue while talking to one client do not follow every other client on this machine. A client with no command of its own gets the block to add printed instead, and rta writes nothing: `rta mcp install cursor --show`. [Connecting your AI tool](../30-boundary/60-ai-clients.md) has every client.
@@ -144,7 +144,7 @@ That loop is the whole product: the agent asks, rta refuses what it was never gi
 
 ### What the agent can reach now
 
-**Reads that aim nowhere the agent chooses, and nothing else.** `sys.cpu`, `git status`, `fs usage` and the other reads that describe this machine run without asking, and so do a few that ask a fixed service or your own cluster, which [MCP and the safety gate](../30-boundary/20-mcp.md#what-is-exposed-before-you-decide-anything) lists. A read aimed at a destination the agent chooses does not: `net.dns`, `net.ping`, `net.port`, `net.probe`, `net.trace`, `http.get`, `http.head`, `cert.expiry`, `audit.web` and `audit.mail` need a grant as a write does, and the grant can name the one host — `rta grant allow net.dns example.org --agent claude`. `rta explain net.dns` shows `grant required (mcp)` on its card, and so does any capability run against a configured connection. Writes and deletes are listed as tools, so the agent can ask for them, and every one is refused until you allow it. The secret store is no exception: `kv.get` is a write, and there is no store to read until you create one.
+**Reads that aim nowhere the agent chooses, and nothing else.** `sys.cpu`, `git status`, `fs usage` and the other reads that describe this machine run without asking, and so do a few that ask a fixed service, which [MCP and the safety gate](../30-boundary/20-mcp.md#what-is-exposed-before-you-decide-anything) lists. A read aimed at a destination the agent chooses does not: `net.dns`, `net.ping`, `net.port`, `net.probe`, `net.trace`, `http.get`, `http.head`, `cert.expiry`, `audit.web` and `audit.mail` need a grant as a write does, and the grant can name the one host — `rta grant allow net.dns example.org --agent claude`. So do the five `audit.kube.eol`, `audit.kube.netpol`, `audit.kube.podsecurity`, `audit.kube.quotas` and `audit.kube.rbac`, which read the cluster you have current, and a grant can name one namespace. `rta explain net.dns` shows `grant required (mcp)` on its card, and so does any capability run against a configured connection. Writes and deletes are listed as tools, so the agent can ask for them, and every one is refused until you allow it. The secret store is no exception: `kv.get` is a write, and there is no store to read until you create one.
 
 That is the default with no configuration, no flags, and no decisions from you.
 

@@ -67,8 +67,9 @@ ran         claude mcp add rta -- /opt/homebrew/bin/rta mcp serve --as claude
 scope       this directory only (/work/shop) — add --global for every project
 next        restart Claude Code in this directory, ask it to call sys_overview, and `rta agent
             overview` shows it connected
-reach       read-only until you say otherwise — `rta grant allow <capability> --agent claude` lets
-            one more thing through, and it expires on its own
+reach       only the reads that aim nowhere it chooses until you say otherwise —
+            `rta grant allow <capability> --agent claude` lets one more thing through, and it
+            expires on its own
 ```
 
 The `scope` line is there because Claude Code's own default is the directory you ran the command in and nothing else: an agent opened in any other project sees no rta. `--global` registers it for every project. When a client's command is missing or fails, the block is the answer and a `why` pair comes before it saying which: `claude is not on PATH, so rta ran nothing`.

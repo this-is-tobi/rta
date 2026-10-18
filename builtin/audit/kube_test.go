@@ -233,6 +233,32 @@ func TestKubeAuditsDeclareARefresh(t *testing.T) {
 	}
 }
 
+// The kube audits reach whichever cluster kubectl has current, and an agent
+// is never offered the context, so what it can aim them at is only a
+// namespace. That is the record a grant names: a grant on `payments` covers
+// that namespace and not the cluster, and a call naming none is about the
+// whole cluster, which only an unscoped grant covers. Declared with a Scope
+// and not a Required input, because the namespace is optional and a
+// whole-cluster audit is the default question.
+func TestKubeAuditsCostAGrantNarrowedToANamespace(t *testing.T) {
+	var seen int
+	for _, c := range Plugin(nil, nil).Capabilities {
+		if !strings.HasPrefix(c.ID, "audit.kube.") {
+			continue
+		}
+		seen++
+		if !c.NeedsGrant {
+			t.Errorf("%s needs no grant, so an agent with none runs kubectl on the operator's current context", c.ID)
+		}
+		if c.Scope != "namespace" {
+			t.Errorf("%s scopes a grant by %q, want the namespace it narrows to", c.ID, c.Scope)
+		}
+	}
+	if seen != 5 {
+		t.Errorf("found %d audit.kube.* capabilities, want 5", seen)
+	}
+}
+
 // auditDetailCase is one kube audit with the cluster it reads in the
 // detail-page tests: at least one finding each, built from the same fake
 // kubectl the scope tests use.
