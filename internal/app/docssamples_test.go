@@ -207,15 +207,16 @@ func TestTheTreesPageShowsWhatFsTreePrints(t *testing.T) {
 	}
 }
 
-// The rule the docs give an agent's day one is that a read is free unless an
-// argument it sends can aim it somewhere, and that is two lists the pages
-// have to carry whole. The reads that cost a grant are every read the
-// registry marks as needing one, which a reader checks with `rta explain` and
-// finds on the card. The free reads that still leave the machine, to a
-// service nobody chose per call or to the cluster `kubectl` has current, are
-// named on the MCP page so that "stays on this machine" is never the whole
-// sentence: this test keeps each of them a free read, and when one starts
-// costing a grant it fails here and the capability moves to the other list.
+// The rule the docs give an agent's day one is that a read is free unless it
+// aims somewhere an agent chose or somewhere the operator's own machine
+// points at, such as the cluster `kubectl` has current, and that is two lists
+// the pages have to carry whole. The reads that cost a grant are every read
+// the registry marks as needing one, which a reader checks with `rta explain`
+// and finds on the card. The free reads that still leave the machine, to a
+// service nobody chose per call, are named on the MCP page so that "stays on
+// this machine" is never the whole sentence: this test keeps each of them a
+// free read, and when one starts costing a grant it fails here and the
+// capability moves to the other list.
 func TestTheDocsNameTheReadsThatCostAGrantAndTheFreeOnesThatLeaveTheMachine(t *testing.T) {
 	reg, err := NewRegistry()
 	if err != nil {
@@ -228,7 +229,7 @@ func TestTheDocsNameTheReadsThatCostAGrantAndTheFreeOnesThatLeaveTheMachine(t *t
 	for _, page := range markdownPages(t, root) {
 		for i, line := range strings.Split(readDoc(t, root, page), "\n") {
 			if strings.Contains(line, "stay on this machine") || strings.Contains(line, "stays on this machine") {
-				t.Errorf("%s:%d says a read stays on this machine; a few free reads ask a fixed service or the current cluster, so say that it aims nowhere the agent chooses", page, i+1)
+				t.Errorf("%s:%d says a read stays on this machine; a few free reads ask a fixed service, so say that it aims nowhere the agent chooses", page, i+1)
 			}
 		}
 	}
@@ -249,10 +250,7 @@ func TestTheDocsNameTheReadsThatCostAGrantAndTheFreeOnesThatLeaveTheMachine(t *t
 		t.Fatalf("found %d reads that cost a grant; has the rule moved?", costly)
 	}
 
-	for _, id := range []string{
-		"eol.check", "eol.products", "eol.watch", "audit.deps",
-		"audit.kube.eol", "audit.kube.netpol", "audit.kube.podsecurity", "audit.kube.quotas", "audit.kube.rbac",
-	} {
+	for _, id := range []string{"eol.check", "eol.products", "eol.watch", "audit.deps"} {
 		c, ok := reg.Capability(id)
 		if !ok {
 			t.Errorf("%s is named on the MCP page as a free read that leaves the machine, and is not a capability", id)

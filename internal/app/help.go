@@ -46,7 +46,7 @@ const docsURL = "https://this-is-tobi.com/rta/introduction"
 var startHere = []row{
 	{key: "rta sys overview", desc: "try it: this machine's health, nothing to set up"},
 	{key: "rta", desc: "the dashboard: no arguments opens it"},
-	{key: "rta init", desc: "connect your agent clients, one question each: they start read-only until you grant more"},
+	{key: "rta init", desc: "connect your agent clients, one question each: they start with only the reads that aim nowhere they choose"},
 	{key: "rta doctor", desc: "what an agent could reach from here"},
 }
 

@@ -28,7 +28,7 @@ func (o initOffer) question() string { return "Register rta with " + o.client.la
 // explain is where it registers and the command it runs: the answer to "what
 // does yes do", on the page that asks.
 func (o initOffer) explain() string {
-	return o.scope + "\n$ " + o.line + "\nRead-only until you grant more (`rta grant allow`)."
+	return o.scope + "\n$ " + o.line + "\nOnly the reads that aim nowhere it chooses, until you grant more (`rta grant allow`)."
 }
 
 // later is the command that makes this registration by hand.

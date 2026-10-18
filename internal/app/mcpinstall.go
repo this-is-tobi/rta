@@ -1089,8 +1089,8 @@ func (r installReceipt) nextAndReach() (next, reach string) {
 		}
 		next = "restart " + c.label + where + ", ask it to call sys_overview, and `rta agent overview` shows it connected"
 	}
-	reach = "read-only until you say otherwise — `rta grant allow <capability> --agent " + as +
-		"` lets one more thing through, and it expires on its own"
+	reach = "only the reads that aim nowhere it chooses until you say otherwise — " +
+		"`rta grant allow <capability> --agent " + as + "` lets one more thing through, and it expires on its own"
 	if r.req.serve.consent {
 		reach = "a call that needs a grant waits for your answer — `rta agent pending` lists it; " +
 			"`rta grant allow <capability> --agent " + as + "` grants ahead of time, and it expires on its own"

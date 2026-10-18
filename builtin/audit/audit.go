@@ -271,6 +271,27 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
+				// **The five audit.kube.* checks cost a grant, for the reason
+				// audit.web does.** They were free reads on the argument that
+				// no input an agent sends can aim them: the context is Local,
+				// so a remote caller is never offered it. True, and not the
+				// question. They run kubectl against whichever context the
+				// operator has current, which is a destination somebody chose
+				// once and an agent never did, and what comes back — every
+				// ClusterRoleBinding, every pod's security context and image,
+				// every namespace's policy state — lands in a model's context.
+				// A tool with a connection refuses a call that names no
+				// profile, so that production is never reachable with no
+				// grant at all; these reached the same cluster through the
+				// kubeconfig instead of a profile, and nothing asked.
+				//
+				// Scoped to the namespace they already take, and not to a new
+				// input: "audit payments for the next fifteen minutes" is a
+				// sentence an operator can reason about, and a call naming no
+				// namespace is the whole-cluster question, covered only by a
+				// grant that names none. A person at the CLI or in the TUI is
+				// unaffected, since grants gate agents.
+				NeedsGrant: true,
 				// Reaches a configured cluster the same way kube.pod.list
 				// does, so it gets the same treatment: not on a dashboard
 				// that redraws on a timer with no one having asked for it.
@@ -296,6 +317,8 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
+				// Costs a grant for the reason audit.kube.rbac does, above.
+				NeedsGrant: true,
 				NoPreview:  true,
 				Description: "Every pod cluster-wide, checked against three Pod Security Standards controls: a " +
 					"privileged container (fail), hostNetwork/hostPID/hostIPC (fail), and whether anything in " +
@@ -317,6 +340,8 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
+				// Costs a grant for the reason audit.kube.rbac does, above.
+				NeedsGrant: true,
 				NoPreview:  true,
 				Description: "Every non-system namespace checked for at least one ResourceQuota. CIS " +
 					"Kubernetes Benchmark has no numbered control for this — confirmed absent rather " +
@@ -335,6 +360,8 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
+				// Costs a grant for the reason audit.kube.rbac does, above.
+				NeedsGrant: true,
 				NoPreview:  true,
 				Description: "Every non-system namespace checked for at least one NetworkPolicy. With " +
 					"none, the cluster's default applies: every pod in the namespace can reach every " +
@@ -352,6 +379,8 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Detailed:   true,
+				// Costs a grant for the reason audit.kube.rbac does, above.
+				NeedsGrant: true,
 				NoPreview:  true,
 				Description: "The control plane's version, every node's kubelet and the release each running image's " +
 					"tag names, graded against endoflife.date as `eol.check` grades one product: past its end " +

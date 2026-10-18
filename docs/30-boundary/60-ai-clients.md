@@ -183,7 +183,7 @@ grant              10   write         Permissions for AI agents that expire on t
 kv                 16   destructive   Encrypted local store for secrets, certificates and key files
 ```
 
-So of those four, an agent reaches every `audit` check but four: the two about this machine's own setup, `audit clients` and `audit doctor`, which are never a tool, and the two that name a host, `audit web` and `audit mail`, which need a grant; and it reaches the read half of `kv`, which is names and metadata and never a value; and nothing of `agent` or `grant` at all. Those two answer to the person at the terminal whatever their safety class, and are [never a tool](./20-mcp.md#never-a-tool).
+So of those four, an agent reaches two `audit` checks with no grant, `audit deps` and `audit why`. The two about this machine's own setup, `audit clients` and `audit doctor`, are never a tool, and the rest need a grant: `audit web` and `audit mail`, which name a host, and the five `audit kube` checks, which read the cluster you have current and can be allowed for one namespace. It reaches the read half of `kv`, which is names and metadata and never a value; and nothing of `agent` or `grant` at all. Those two answer to the person at the terminal whatever their safety class, and are [never a tool](./20-mcp.md#never-a-tool).
 
 Everything else is a grant a person issues — for a plugin, one capability, or one record of it — and that is [MCP and the safety gate](./20-mcp.md) and [Grants](./30-grants.md).
 

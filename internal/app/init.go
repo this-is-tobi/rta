@@ -35,8 +35,9 @@ func newInitCommand(opts *globalOpts) *cobra.Command {
 		Long: "rta works with no configuration, so this writes none. It looks at what is on this machine " +
 			"and offers the few things worth doing once, each shown as the command it runs and each " +
 			"skipped by pressing Enter: registering rta with each AI client it finds, for every project " +
-			"where the client has a flag for that and read-only until you grant more (`rta mcp install " +
-			"<client>` does the same by hand, with --consent, --root and --max-result); the line that " +
+			"where the client has a flag for that and limited to the reads that aim nowhere it chooses until " +
+			"you grant more (`rta mcp install <client>` does the same by hand, with --consent, --root and " +
+			"--max-result); the line that " +
 			"turns on tab completion for your shell; and the first-party plugin index, which at a " +
 			"terminal it asks to attach (and --yes answers) and otherwise names the command for.\n\n" +
 			"rta never writes a client's own file: the client's own command does, as for `rta mcp " +
