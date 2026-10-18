@@ -122,7 +122,10 @@ func Plugin() plugin.Plugin {
 					{Name: "type", Type: plugin.String, Default: "auto",
 						Options: append([]string{"auto"}, dnsTypes...),
 						Help:    "which record type to ask for"},
-					{Name: "server", Type: plugin.String, Config: "dns.server", Local: true, Suggest: suggestResolvers,
+					// Declared because the fallback would file `server` under target, the
+					// block for what is selected inside a service: a resolver is where the
+					// query goes.
+					{Name: "server", Type: plugin.String, Config: "dns.server", Local: true, Group: "network", Suggest: suggestResolvers,
 						Help: "resolver to query, e.g. 1.1.1.1 or 9.9.9.9:53 (default: the system resolver)"},
 					{Name: "timeout", Type: plugin.Duration, Config: "dns.timeout", Default: "5s", Min: "1s", Max: "2m", Help: "query timeout"},
 				},

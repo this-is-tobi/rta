@@ -62,9 +62,13 @@ const (
 // agent sends. An MCP server unlocks the store from its own environment,
 // which is the operator's decision to make when they launch it — not a
 // question to put in front of a model.
+//
+// Declared into the credentials block of a form: the store has no connection for
+// the fallback to find them in (no config states one), and they are what
+// authenticates to it all the same.
 var (
 	passphraseField = plugin.Field{
-		Name: "passphrase", Type: plugin.Secret, Local: true, EnvFallback: true,
+		Name: "passphrase", Type: plugin.Secret, Local: true, EnvFallback: true, Group: "credentials",
 		Help: "the passphrase this store is locked with",
 	}
 	// kv.set is the one operation that makes a store, and says what that commits
@@ -75,11 +79,11 @@ var (
 	// store that exists, and a sentence about one not made yet would only be
 	// read as something it has to do with it.
 	newStorePassphraseField = plugin.Field{
-		Name: "passphrase", Type: plugin.Secret, Local: true, EnvFallback: true,
+		Name: "passphrase", Type: plugin.Secret, Local: true, EnvFallback: true, Group: "credentials",
 		Help: "the store's passphrase; a store not made yet is locked with it, and nothing recovers it",
 	}
 	identityField = plugin.Field{
-		Name: "identity", Type: plugin.Path, Local: true, EnvFallback: true,
+		Name: "identity", Type: plugin.Path, Local: true, EnvFallback: true, Group: "credentials",
 		Help: "private key to unlock with, e.g. ~/.ssh/id_ed25519",
 		// The keys this machine has, offered before the filesystem is walked
 		// for them: one of these is nearly always the answer.
