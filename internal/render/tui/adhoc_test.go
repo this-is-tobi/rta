@@ -170,16 +170,85 @@ func openFormCmd(t *testing.T, m Model, c plugin.Capability) (Model, tea.Cmd) {
 	return nm, cmd
 }
 
-// pickAdHoc moves the picker to the entry that asks for a connection and lets
-// the form react, as the update loop does after every key.
+// typedThenBackAtPicker types text into a box the way a person does — walking to
+// it, pressing the characters — and walks back to the picker. A binding assigned
+// directly is not an answer the form holds: the first message the form handles
+// after it writes the box's own, empty, value over it, and moving the cursor off
+// the picker is such a message.
+func typedThenBackAtPicker(t *testing.T, m Model, box, text string) Model {
+	t.Helper()
+	form := m.form
+	steps := len(form.fields)
+	for i := 0; i < steps && form.form.GetFocusedField() != huh.Field(form.inputs[box]); i++ {
+		form.form = settleForm(form.form, keyEnter)
+	}
+	if form.form.GetFocusedField() != huh.Field(form.inputs[box]) {
+		t.Fatalf("the cursor never reached the %s box", box)
+	}
+	form.form = typeInto(form.form, text)
+	for i := 0; i < steps && form.form.GetFocusedField() != form.widgets[0]; i++ {
+		form.form = settleForm(form.form, shiftTab)
+	}
+	if form.form.GetFocusedField() != form.widgets[0] {
+		t.Fatal("the cursor never came back to the picker")
+	}
+	return m
+}
+
+// hoverOn moves the picker's cursor to an entry without choosing it: huh writes
+// the binding on every move, and the form reacts as the update loop lets it after
+// each key.
+func hoverOn(m Model, label string) (Model, bool) {
+	*m.form.bindings[profileInput] = label
+	nm, _, rebuilt := m.reseedOnPickerMove()
+	if rebuilt {
+		return nm.(Model), true
+	}
+	return m, false
+}
+
+// chooseEntry hovers on an entry and then leaves the picker, which is what enter
+// on it does: the cursor moves on to the next box, and the form reacts to that.
+func chooseEntry(m Model, label string) (Model, bool) {
+	*m.form.bindings[profileInput] = label
+	m.form.form = settleForm(m.form.form, huh.NextField())
+	nm, _, rebuilt := m.reseedOnPickerMove()
+	if rebuilt {
+		return nm.(Model), true
+	}
+	return m, false
+}
+
+// pickAdHoc chooses the entry that asks for a connection, as enter on it does.
 func pickAdHoc(t *testing.T, m Model) Model {
 	t.Helper()
-	*m.form.bindings[profileInput] = adHocPickLabel
-	nm, _, rebuilt := m.reseedOnPickerMove()
-	if !rebuilt {
-		t.Fatal("moving the picker to the ad hoc entry did not open the form")
+	nm, opened := chooseEntry(m, adHocPickLabel)
+	if !opened {
+		t.Fatal("choosing the ad hoc entry did not open the form")
 	}
-	return nm.(Model)
+	return nm
+}
+
+// Passing over the entry on the way down the list asks nothing: the cursor lands
+// on it for as long as it takes to press the key again, and a form that opened
+// then would make everything below the entry unreachable by walking to it. Only
+// leaving the picker on it, or completing the form with the cursor there, asks.
+func TestPassingOverTheAdHocEntryDoesNotOpenItsForm(t *testing.T) {
+	m := adHocModel(t, adHocPlugin(nil))
+	nm := openFormOn(t, m, capNamed(t, m, "pgx.status"))
+
+	passed, rebuilt := hoverOn(nm, adHocPickLabel)
+	if rebuilt || passed.form.adHocFrom != nil || passed.form.cap.ID != "pgx.status" {
+		t.Fatalf("hovering on the entry opened the form that asks (form of %q)", passed.form.cap.ID)
+	}
+	if got := *passed.form.bindings[profileInput]; got != adHocPickLabel {
+		t.Errorf("the cursor was moved off the entry it is on: %q", got)
+	}
+
+	chosen, opened := chooseEntry(passed, adHocPickLabel)
+	if !opened || chosen.form.adHocFrom == nil {
+		t.Error("leaving the picker on the entry did not open the form that asks")
+	}
 }
 
 func statePgxConnection(t *testing.T, m Model) Model {
@@ -332,7 +401,7 @@ func TestLeavingTheAdHocFormGoesBackToTheEnvironmentItCameFrom(t *testing.T) {
 			model, _ := m.startForm(c, map[string]any{profileInput: tc.pick(m)})
 			nm := model.(Model)
 			nm.form.form = startedForm(nm.form)
-			*nm.form.bindings["user"] = "app"
+			nm = typedThenBackAtPicker(t, nm, "user", "app")
 			if got := *nm.form.bindings[profileInput]; got != tc.pick(m) {
 				t.Fatalf("%s: the form did not open on it: %q", name, got)
 			}
@@ -980,9 +1049,9 @@ func TestStatingAConnectionWritesNothing(t *testing.T) {
 	}
 }
 
-// The whole thing as a person does it: down to the entry, the coordinate and a
-// reference typed into their boxes, enter to the end — and the form they came
-// from is back, on the connection they stated, ready to run.
+// The whole thing as a person does it: down to the entry and enter on it, the
+// coordinate and a reference typed into their boxes, enter to the end — and the
+// form they came from is back, on the connection they stated, ready to run.
 func TestStatingAConnectionWithTheKeysAPersonPresses(t *testing.T) {
 	fakeForward(t)
 	m := adHocModel(t, adHocPlugin(nil))
@@ -993,8 +1062,12 @@ func TestStatingAConnectionWithTheKeysAPersonPresses(t *testing.T) {
 	}
 
 	nm = keyThrough(t, nm, keyDown)
+	if nm.form == nil || nm.form.adHocFrom != nil || *nm.form.bindings[profileInput] != adHocPickLabel {
+		t.Fatal("down onto the entry should leave the cursor on it and ask nothing yet")
+	}
+	nm = keyThrough(t, nm, keyEnter)
 	if nm.form == nil || nm.form.adHocFrom == nil {
-		t.Fatal("down onto the entry did not ask for the connection")
+		t.Fatal("enter on the entry did not ask for the connection")
 	}
 
 	nm = typeKeysThrough(t, nm, stagingPg)
