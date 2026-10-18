@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -171,8 +172,11 @@ func (m Model) dialogGeometry() dialogGeometry {
 
 	body := strings.Split(ansi.Wrap(textclean.Terminal(d.body), inner, " "), "\n")
 	// The buttons are the one thing a short terminal may not lose, so the body
-	// gives way first: the question is already in the title.
-	if room := m.height - 6; room > 0 && len(body) > room {
+	// gives way first: the question is already in the title. What the body has
+	// is the screen less the bar, which overlayDialog keeps clear, and less the
+	// box's own four lines: two borders, the gap above the buttons, the buttons.
+	bar := lipgloss.Height(m.footerFor(m.mode))
+	if room := m.height - bar - 4; room > 0 && len(body) > room {
 		body = append(body[:max(room-1, 0)], "…")
 	}
 	rows := append(append(body, ""), buttonLine)
@@ -181,7 +185,7 @@ func (m Model) dialogGeometry() dialogGeometry {
 	lines := strings.Split(box, "\n")
 	g := dialogGeometry{lines: lines, boxWidth: width}
 	g.x = max((m.width-width)/2, 0)
-	g.y = max((m.height-len(lines))/2, 0)
+	g.y = max((m.height-bar-len(lines))/2, 0)
 	g.buttonRow = g.y + 1 + len(body) + 1
 	g.confirm = [2]int{g.x + 2 + pad, g.x + 2 + pad + lipgloss.Width(confirm)}
 	g.cancel = [2]int{g.confirm[1] + dialogGap, g.confirm[1] + dialogGap + lipgloss.Width(cancel)}
@@ -211,10 +215,27 @@ func (m Model) dialogClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 }
 
 // overlayDialog draws the dialog over the screen that is behind it: the
-// screen dimmed to one muted colour, as a backdrop is, and the box centred.
+// screen dimmed to one muted colour, as a backdrop is, and the box centred above
+// the key bar.
+//
+// **The bar is moved to the bottom row of the screen, and the box is centred on
+// what is above it.** The dialog's keys are on the bar, and a screen whose
+// content is shorter than the terminal draws its bar right under the content, not
+// on the last row: the box, centred on the whole height, sat on it at 80x14 and
+// 44x14 and left the first word of the bar showing beside it. Pinning the bar
+// makes the rows the box may have the same on every screen and every terminal
+// (dialogGeometry), and the click test the same as the paint.
 func (m Model) overlayDialog(base string) string {
 	g := m.dialogGeometry()
 	lines := strings.Split(base, "\n")
+	if bar := lipgloss.Height(m.footerFor(m.mode)); len(lines) >= bar {
+		keys := slices.Clone(lines[len(lines)-bar:]) // padding below appends over these slots
+		lines = lines[:len(lines)-bar]
+		for len(lines) < m.height-bar {
+			lines = append(lines, "")
+		}
+		lines = append(lines, keys...)
+	}
 	for len(lines) < m.height {
 		lines = append(lines, "")
 	}
