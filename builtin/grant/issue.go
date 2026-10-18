@@ -507,13 +507,20 @@ func (i issuance) build(sf plugin.Surface, catalog func() []plugin.Capability, a
 		if i.role != nil {
 			g.Role = i.role.Name
 		}
-		for _, s := range []string{cappedNote(n), inactiveProfileNote(g), unusableProfileNote(catalog, artifact, g)} {
+		said := []string{cappedNote(n), inactiveProfileNote(g), unusableProfileNote(catalog, artifact, g)}
+		// How far a line reaches, said for a role's as it is for a typed grant: a
+		// role is read as a list of words, and `kv` among them is every capability
+		// of the store. A bundle's rows each name one capability.
+		if i.role != nil {
+			said = append(said, reachNotes(catalog, g)...)
+		}
+		for _, s := range said {
 			if s == "" {
 				continue
 			}
 			switch {
 			case i.role != nil:
-				notes = append(notes, l.Raw+": "+s)
+				notes = append(notes, l.Raw+": "+strings.TrimPrefix(s, "note: "))
 			// Said once for a bundle: the window, the ceiling and the
 			// environment are the same on every row, and the same sentence
 			// a hundred times is a sentence nobody reads.
@@ -587,6 +594,11 @@ func (i issuance) listBeforeSigning(w io.Writer, sf plugin.Surface, prepared []c
 		}
 		fmt.Fprintln(w, line)
 	}
+	// What the dry run and the receipt say of the lines, said before the
+	// passphrase too: it is the last place to stop.
+	for _, n := range notes {
+		fmt.Fprintln(w, "  note: "+n)
+	}
 }
 
 // equivalentOf is the standing grant a new one would replace: Issue's own
@@ -653,7 +665,7 @@ func dash(s string) string {
 	return s
 }
 
-func runRoles(_ context.Context, req plugin.Request) (view.View, error) {
+func runRoles(_ context.Context, req plugin.Request, catalog func() []plugin.Capability) (view.View, error) {
 	all, verr := role.Available()
 	if verr != nil {
 		return nil, verr
@@ -675,6 +687,7 @@ func runRoles(_ context.Context, req plugin.Request) (view.View, error) {
 	}}
 	for _, s := range all {
 		t.Rows = append(t.Rows, []string{s.Name, sourceWord(s), dash(s.Role.Agent), windowWords(s), strings.Join(s.Role.Grants, "\n")})
+		t.Warnings = append(t.Warnings, reachWarnings(catalog, s)...)
 	}
 	t.Total = len(t.Rows)
 	// The table even when no role is defined, and the sentence beside it for
@@ -685,6 +698,26 @@ func runRoles(_ context.Context, req plugin.Request) (view.View, error) {
 			"roles:\n  dev:\n    ttl: 8h\n    grants:\n      - kv.get db-password\n      - pg.query --profile staging"
 	}
 	return t, nil
+}
+
+// reachWarnings say how far each line of a role reaches, beside its rows: the
+// sentences `grant allow` prints for the same line typed, as advisories, since
+// the rows are all there. A line that cannot be read says nothing here; issuing
+// the role is what refuses it.
+func reachWarnings(catalog func() []plugin.Capability, s role.Source) []view.Error {
+	lines, err := s.Lines()
+	if err != nil {
+		return nil
+	}
+	var out []view.Error
+	for _, l := range lines {
+		g := core.Grant{Target: core.Normalize(l.Target), Scope: l.Scope, Profile: l.Profile}
+		for _, n := range reachNotes(catalog, g) {
+			out = append(out, view.Error{Code: "grant.wide", Advisory: true,
+				Message: fmt.Sprintf("role %s, %s: %s", s.Name, l.Raw, strings.TrimPrefix(n, "note: "))})
+		}
+	}
+	return out
 }
 
 // roleArg is a role given to a grant call Surface.Call spells, by its place.

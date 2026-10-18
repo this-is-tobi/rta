@@ -193,7 +193,9 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					{Name: "role", Type: plugin.String, Positional: true, Suggest: suggestRoles,
 						Help: "show one role's lines"},
 				},
-				Run: runRoles,
+				Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
+					return runRoles(ctx, req, catalog)
+				},
 			},
 			{
 				ID: "grant.renew", Summary: "Push out the deadline on grants you already have",
@@ -768,9 +770,9 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// is running, and a 15-minute grant issued and then noticed is most of a
 	// grant wasted. Said on a dry run too: finding this out is what the dry
 	// run was for.
-	for _, n := range []string{cappedNote(notes), breadthNote(catalog, g), revealNote(catalog, g), credentialNote(catalog, g),
-		inactiveProfileNote(g), unusableProfileNote(catalog, artifact, g), profilelessNote(catalog, g),
-		unknownAgentNote(seen, g.Agent), olderServerNote()} {
+	for _, n := range append(append([]string{cappedNote(notes)}, reachNotes(catalog, g)...),
+		credentialNote(catalog, g), inactiveProfileNote(g), unusableProfileNote(catalog, artifact, g),
+		profilelessNote(catalog, g), unknownAgentNote(seen, g.Agent), olderServerNote()) {
 		if n != "" {
 			msg += "\n" + n
 		}

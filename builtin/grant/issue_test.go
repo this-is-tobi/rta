@@ -299,12 +299,12 @@ func TestRolesSayTheWindowEachWillReallyGet(t *testing.T) {
 	configDir, repo := roleSetup(t)
 	teamPolicy(t, repo, "maxTTL: 1h\n")
 	ownRole(t, configDir, "  dev:\n    ttl: 8h\n    grants: [kv.env]\n  quick:\n    ttl: 30m\n    grants: [kv.env]\n")
-	v := run(t, runRoles, nil)
+	v := run(t, rolesH, nil)
 	rows := v.(view.Table).Rows
 	if len(rows) != 2 || !strings.HasPrefix(rows[0][3], "8h, capped to 1h by ") || rows[1][3] != "30m" {
 		t.Fatalf("roles = %+v", rows)
 	}
-	one := run(t, runRoles, map[string]any{"role": "quick"})
+	one := run(t, rolesH, map[string]any{"role": "quick"})
 	if len(one.(view.Table).Rows) != 1 {
 		t.Fatalf("roles quick = %+v", one)
 	}
@@ -315,7 +315,7 @@ func TestRolesSayTheWindowEachWillReallyGet(t *testing.T) {
 // '.rows[]'` met a text view, and -o csv refused one and exited 2.
 func TestNoRoleDefinedIsATableToAParser(t *testing.T) {
 	roleSetup(t)
-	v := run(t, runRoles, nil)
+	v := run(t, rolesH, nil)
 	tbl, ok := v.(view.Table)
 	if !ok || len(tbl.Rows) != 0 || !strings.Contains(tbl.Empty, "no role is defined") {
 		t.Fatalf("roles = %+v, want an empty table saying no role is defined", v)
