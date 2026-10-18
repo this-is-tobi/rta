@@ -52,7 +52,7 @@ type tool struct {
 func parseTools(raw []string) ([]tool, *view.Error) {
 	if len(raw) > maxTools {
 		return nil, view.Errorf("pkg.tools.toomany", "%d tools listed; the cap is %d", len(raw), maxTools).
-			WithHint("each one is a call to the GitHub API, which allows sixty an hour unauthenticated")
+			WithHint("each one is a request to github.com on a refresh, and github.com answers a few at a time")
 	}
 	var out []tool
 	for _, entry := range raw {
@@ -94,7 +94,9 @@ func toolsCapability() plugin.Capability {
 		Description: "The binaries no package manager knows about. Each entry in `plugins: pkg: " +
 			"tools:` names a binary on $PATH and the GitHub repository that releases it; " +
 			"the installed version is what `<binary> --version` says, the latest is " +
-			"the repository's latest release. Binaries placed by `go install` need no " +
+			"the repository's latest release, asked of github.com once in ten minutes: " +
+			"when it refuses, or cannot be reached, the first row says so and the rows " +
+			"after it say they were not checked. Binaries placed by `go install` need no " +
 			"entry — they carry their module path, and the Go module proxy knows the " +
 			"latest; they are listed under the go manager in pkg.outdated.\n\n" +
 			"Sources come from configuration only, never from a caller: a network " +
@@ -141,6 +143,11 @@ func readTools(ctx context.Context, c *registryClient, raw []string) ([]toolStat
 		return nil, verr
 	}
 	var out []toolState
+	// stopped is the answer after which the rest of the list is not asked: a
+	// refusal to answer at all, or a host that cannot be reached, is what every
+	// further name would get too, at a request each and, for an unreachable
+	// host, ten seconds each.
+	var stopped *view.Error
 	for _, t := range tools {
 		st := toolState{tool: t, Installed: "-"}
 		if p, err := lookPath(t.Bin); err == nil {
@@ -149,10 +156,18 @@ func readTools(ctx context.Context, c *registryClient, raw []string) ([]toolStat
 		} else {
 			st.Note = "not on $PATH"
 		}
+		if stopped != nil {
+			st.Note = "not checked — " + stopped.Message
+			out = append(out, st)
+			continue
+		}
 		tag, found, verr := c.latestTag(ctx, t.Owner, t.Repo)
 		switch {
 		case verr != nil:
-			st.Note = verr.Message
+			st.Note = withRemedy(verr)
+			if verr.Code == codeRateLimited || verr.Code == codeUnreachable {
+				stopped = verr
+			}
 		case !found:
 			st.Note = "no release on GitHub"
 		default:
@@ -171,6 +186,17 @@ func readTools(ctx context.Context, c *registryClient, raw []string) ([]toolStat
 		out = append(out, st)
 	}
 	return out, nil
+}
+
+// withRemedy is a refusal as a status cell carries it: what happened, and the
+// first clause of its hint when it has one, which is where an error's hint
+// puts what to do. The cell is all a glance shows of it.
+func withRemedy(verr *view.Error) string {
+	clause, _, _ := strings.Cut(verr.Hint, ";")
+	if clause = strings.TrimSpace(clause); clause != "" {
+		return verr.Message + " — " + clause
+	}
+	return verr.Message
 }
 
 var versionRe = regexp.MustCompile(`v?(\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?)`)
