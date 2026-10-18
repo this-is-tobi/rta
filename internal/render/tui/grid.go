@@ -1041,6 +1041,26 @@ func (m Model) searchStartHint() string {
 	return "press / to search"
 }
 
+// searchEmptyHints are what the open box says while nothing is typed, longest
+// first: three words that find something on a first run, and the shape of an
+// exact answer. The box is drawn at the width of the terminal, down to forty
+// columns, so the line gives up its tail before it is cut.
+var searchEmptyHints = []string{
+	"try: password · dns · trust · or an ID such as sys.cpu",
+	"try: password · dns · trust · sys.cpu",
+	"try: password · dns · sys.cpu",
+}
+
+// searchEmptyHint is the longest of them that fits in width cells.
+func searchEmptyHint(width int) string {
+	for _, h := range searchEmptyHints {
+		if lipgloss.Width(h) <= width {
+			return h
+		}
+	}
+	return ansi.Truncate(searchEmptyHints[len(searchEmptyHints)-1], max(width, 1), "…")
+}
+
 // renderSearchTile draws the full-width live search box: a query line and a
 // window over the matches, updating on every keystroke.
 func (m Model) renderSearchTile(width int, selected bool) string {
@@ -1087,6 +1107,10 @@ func (m Model) renderSearchTile(width int, selected bool) string {
 		lines = append(lines, theme.Subtle.Render(ansi.Truncate("  "+hint, max(inner, 1), "…")))
 	case m.query != "" && len(results) == 0:
 		lines = append(lines, theme.Subtle.Render("  no matches"))
+	case m.query == "":
+		// An empty query matches nothing (rankItems), so the rows the matches
+		// would take are empty and the box was a prompt over blank lines.
+		lines = append(lines, theme.Subtle.Render("  "+searchEmptyHint(max(inner-2, 1))))
 	}
 
 	// The border keeps to the box's own business; what `+` and the rest do while
