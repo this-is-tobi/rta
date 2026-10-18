@@ -587,6 +587,8 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		}
 	}
 	switch msg.String() {
+	case "home", "end":
+		return m.toEnd(msg.String() == "end"), nil, true
 	case "q":
 		return m, tea.Quit, true
 	case "esc":
