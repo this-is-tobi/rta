@@ -188,6 +188,20 @@ var (
 		keys:    []string{"up", "down", "k", "j"},
 		label:   "select", rank: rankPrimary,
 	}
+	// The catalogue's way through a list that is longer than the screen. The
+	// bubbles list answers to these, vim's page and end keys among them, and rta
+	// never wrote them, so for as long as nothing named them they were on no bar
+	// and in no overlay: eight pages and the only way to the last was down.
+	bindPage = binding{
+		display: "pgup/pgdn",
+		keys:    []string{"pgup", "pgdown", "left", "right", "h", "l", "b", "u", "f", "d"},
+		label:   "page", rank: rankExtra,
+	}
+	bindEnds = binding{
+		display: "home/end",
+		keys:    []string{"home", "end", "g", "G"},
+		label:   "first/last", rank: rankExtra,
+	}
 )
 
 // hintItem is one entry in a footer: a binding, or an ad-hoc pair for the
@@ -418,9 +432,15 @@ func (m Model) screenItems(screen mode) []hintItem {
 		if m.list.FilterState() == list.Filtering {
 			return filteringItems()
 		}
+		// While a filter is applied the first esc clears it and a second leaves
+		// (browseKeys), so the one word "back" was untrue for the first press.
+		back := item(bindBack)
+		if m.list.FilterState() == list.FilterApplied {
+			back = labelled(bindBack, "clear filter")
+		}
 		return []hintItem{
-			item(bindColumn), labelled(bindOpen, "run"), item(bindAdd), labelled(bindSearch, "filter"),
-			item(bindBack), item(bindQuit),
+			item(bindColumn), item(bindPage), item(bindEnds), labelled(bindOpen, "run"), item(bindAdd),
+			labelled(bindSearch, "filter"), back, item(bindQuit),
 		}
 	case modeForm:
 		var hints []hintItem

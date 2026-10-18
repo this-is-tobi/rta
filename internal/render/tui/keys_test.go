@@ -309,6 +309,19 @@ func advertisedScreens() map[string]func(*testing.T) (Model, mode) {
 		"roster": func(t *testing.T) (Model, mode) {
 			return twoGrants(t), modeResult
 		},
+		// The catalogue, whole and with a filter applied: the bubbles list answers
+		// to keys of its own (pages, the ends, hjkl) that nothing in rta writes,
+		// which is exactly how they went unadvertised. Typing a filter is the one
+		// state left out, for the reason above.
+		"catalogue": func(t *testing.T) (Model, mode) {
+			m, _ := realModel(t, 120, 40)
+			m.mode = modeBrowse
+			return m, modeBrowse
+		},
+		"catalogue with a filter applied": func(t *testing.T) (Model, mode) {
+			m := filterFor(t, browsing(t), "demo")
+			return pump(t, m, tea.KeyPressMsg{Code: tea.KeyEnter}), modeBrowse
+		},
 		"profilePlugins": func(t *testing.T) (Model, mode) {
 			m := profileModel(t, twoProfileConfig())
 			m.profileOpen = "staging"
@@ -450,11 +463,11 @@ func fingerprint(m Model) string {
 	if m.dialog != nil {
 		asked = fmt.Sprintf("%d:%d", m.dialog.id, m.dialog.focus)
 	}
-	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d|%q|%v|%v|%q|%v|%s",
+	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d|%q|%v|%v|%q|%v|%s|%d|%v",
 		m.mode, m.selected, m.pluginSel, m.pluginScroll, m.profileSel, m.profileScroll,
 		m.row, m.query, m.searchEditing, m.form != nil, m.themeForm != nil,
 		m.copyPick != nil, len(m.trail), m.flash, m.tickGen, m.armedDelete, m.armed != nil, m.previewing,
-		m.header, m.folds, asked)
+		m.header, m.folds, asked, m.list.Index(), m.list.FilterState())
 }
 
 // One idea, one word, one notation — everywhere. Three spellings of "the

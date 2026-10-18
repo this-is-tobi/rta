@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"slices"
 	"strings"
+	"unicode"
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
@@ -89,6 +91,9 @@ func screenName(screen mode) string {
 // hiddenKeys are the keys an entry answers to beyond what its display says:
 // the aliases the bar has no room for.
 func hiddenKeys(it hintItem) []string {
+	// Whole names, not substrings: the display "pgup/pgdn" holds the letters u and
+	// d, and the page keys u and d went unlisted for it.
+	shown := strings.FieldsFunc(it.display, func(r rune) bool { return r == '/' || unicode.IsSpace(r) })
 	var out []string
 	for _, k := range it.keys {
 		// A key that is only whitespace is the space bar under the name a
@@ -97,7 +102,7 @@ func hiddenKeys(it hintItem) []string {
 		if strings.TrimSpace(k) == "" {
 			continue
 		}
-		if k != it.display && !strings.Contains(it.display, k) {
+		if k != it.display && !slices.Contains(shown, k) {
 			out = append(out, k)
 		}
 	}
