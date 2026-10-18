@@ -818,9 +818,16 @@ func (m Model) canRerun() bool {
 func (m Model) resultFooterItems() []hintItem {
 	var keys []hintItem
 	rerunnable := m.canRerun()
+	scrolls := m.scrolls()
 	if m.atTop() {
-		if m.interactive() {
-			keys = append(keys, labelled(bindColumn, "row"))
+		// home and end are the first row and the last on a list, where the
+		// cursor goes with them, and the ends of the pane on a page that scrolls;
+		// aliases of the arrows, which a hand reaches for and a bar need not say.
+		switch {
+		case m.interactive():
+			keys = append(keys, alias(labelled(bindColumn, "row"), "home", "end"))
+		case scrolls:
+			keys = append(keys, alias(item(bindScroll), "home", "end"))
 		}
 		for _, a := range capActions(m.reg, m.current.ID) {
 			if a.src == srcRow && !m.interactive() {
@@ -851,7 +858,7 @@ func (m Model) resultFooterItems() []hintItem {
 		if rerunnable {
 			keys = append(keys, item(bindRerun))
 		}
-		keys = append(keys, item(bindScroll))
+		keys = append(keys, alias(item(bindScroll), "home", "end"))
 	}
 	// Outside the branch: `e` answers at any scroll position, and a pane that
 	// only advertises it halfway down is advertising it where nobody is.
@@ -864,16 +871,105 @@ func (m Model) resultFooterItems() []hintItem {
 	if hint, ok := copyHint(m.current, m.result.view); ok {
 		keys = append(keys, hint)
 	}
+	// Last of the extras, so it is the first the bar gives up: on a narrow
+	// terminal `e edit inputs` and `y copy json` were there before it, and the
+	// overlay still lists the paging keys when the bar has no room for them.
+	if scrolls {
+		keys = append(keys, m.pagingHint(keys))
+	}
 	return append(keys, item(bindBack), item(bindQuit))
+}
+
+// toEnd is home and end on a result: the pane to its top or its bottom, and on
+// a list the cursor to the first row or the last. The cursor goes with the pane
+// because the row an action acts on is the one under it, and a pane sent to the
+// bottom with the cursor left at the top acts on a row nobody can see. The render
+// keeps the row in view, which on a page with more under its table than the pane
+// holds is the one case where the bottom is not where the last row is.
+func (m Model) toEnd(last bool) Model {
+	tbl, _, _ := rowTable(m.result.raw)
+	walked := m.interactive()
+	if walked {
+		m.row = 0
+		if last {
+			m.row = max(len(tbl.Rows)-1, 0)
+		}
+	}
+	if last {
+		m.viewport.GotoBottom()
+	} else {
+		m.viewport.GotoTop()
+	}
+	if walked {
+		m.renderResult()
+	}
+	return m
+}
+
+// scrolls says whether the answer is taller than the pane at its tallest, which
+// is the window less the panel's two borders and a bar of one line. Asked of the
+// answer and not of the pane's height at the moment, which the bar decides
+// (fitResult): a hint that lengthened the bar would shrink the pane, and the
+// shorter pane would be what made the hint needed.
+func (m Model) scrolls() bool {
+	return m.height > 3 && m.viewport.TotalLineCount() > m.height-3
+}
+
+// pagingHint is the entry for the pager's keys, without the ones the other
+// entries of the screen answer to or one of the view's own actions does. Those
+// are handled first (resultKeys), so on a list of notes `d` checks one off and
+// does not page.
+func (m Model) pagingHint(others []hintItem) hintItem {
+	var taken []string
+	for _, it := range others {
+		taken = append(taken, it.keys...)
+	}
+	for _, a := range capActions(m.reg, m.current.ID) {
+		taken = append(taken, a.key)
+	}
+	return without(item(bindPageView), taken)
+}
+
+// scrollMark is how far down the pane is in an answer taller than it, as the
+// percentage of the way, for the top border beside the time. A percentage, and
+// not the words "↓ more": it is three or four cells where the words are six, in
+// a border that at forty-four columns already holds the capability's id, its
+// summary and the time, and it says where in the answer the pane is as well as
+// that there is more of it. Nothing for an answer that fits, which has nowhere
+// to be.
+//
+// 0% is the top and 100% the bottom and neither is anything else: a line down
+// from the top is 1% however long the answer, and a line up from the bottom 99%,
+// where rounding would have said the ends of a long answer when the pane was a
+// line from them.
+func (m Model) scrollMark() string {
+	v := m.viewport
+	if v.TotalLineCount() <= v.Height() {
+		return ""
+	}
+	switch {
+	case v.AtTop():
+		return "0%"
+	case v.AtBottom():
+		return "100%"
+	}
+	return strconv.Itoa(min(max(int(v.ScrollPercent()*100), 1), 99)) + "%"
 }
 
 // resultView frames the result in a titled panel: identity in the top
 // border, cost on the right, contextual keys below.
 func (m Model) resultView() string {
 	head := capHead(m.current)
-	if m.result.elapsed > 0 {
-		head.Right = m.result.elapsed.Round(time.Millisecond).String()
+	// How far down the answer the pane is, and what the run cost; the ad hoc
+	// marker joins them below and outlasts both on a narrow terminal.
+	var right []string
+	if mark := m.scrollMark(); mark != "" {
+		right = append(right, mark)
 	}
+	if m.result.elapsed > 0 {
+		right = append(right, m.result.elapsed.Round(time.Millisecond).String())
+	}
+	head.Right = strings.Join(right, " · ")
 	if where := m.adHocNote(); where != "" {
 		head.Right = m.markedRight(head, where, head.Right)
 	}

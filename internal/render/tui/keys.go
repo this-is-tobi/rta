@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/list"
@@ -205,6 +206,17 @@ var (
 		keys:    []string{"home", "end", "g", "G"},
 		label:   "first/last", rank: rankExtra,
 	}
+	// The result pane's way through an answer taller than it. The viewport under
+	// it is a pager and answers to a pager's keys (a page on pgup and pgdn, the
+	// space bar, f and b; half a page on u and d and their ctrl forms), which rta
+	// never wrote down, so they were on no bar and in no overlay. Not bindPage:
+	// that one is the catalogue's list, which turns its pages on the arrows and
+	// on h and l as well, and a result's arrows scroll a line.
+	bindPageView = binding{
+		display: "pgup/pgdn",
+		keys:    []string{"pgup", "pgdown", "space", " ", "f", "b", "u", "d", "ctrl+u", "ctrl+d"},
+		label:   "page", rank: rankExtra,
+	}
 )
 
 // hintItem is one entry in a footer: a binding, or an ad-hoc pair for the
@@ -260,6 +272,15 @@ func labelled(b binding, label string) hintItem {
 // not guess from the displayed key belongs in its own entry.
 func alias(it hintItem, extra ...string) hintItem {
 	it.keys = append(append([]string{}, it.keys...), extra...)
+	return it
+}
+
+// without is it with the keys in taken left out. A key does one thing on a
+// screen, and an entry that teaches the keys of a pager has to leave the ones a
+// row action or a toggle of the same screen has already claimed to them: `d`
+// pages the pane of a text and checks a note off on the list of notes.
+func without(it hintItem, taken []string) hintItem {
+	it.keys = slices.DeleteFunc(slices.Clone(it.keys), func(k string) bool { return slices.Contains(taken, k) })
 	return it
 }
 

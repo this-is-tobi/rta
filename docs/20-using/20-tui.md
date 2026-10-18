@@ -196,8 +196,14 @@ A destructive capability never runs from its form. What opens instead is its own
 | `r` | Re-run |
 | `y` | Copy as JSON |
 | `d` | Delete |
+| `pgup/pgdn` or `space` | A page up or down an answer taller than the pane: `space` and `f` page down, `b` pages up |
+| `ctrl+u` or `ctrl+d` | Half a page up or down, as `u` and `d` do where the view has no key of its own on them |
+| `home` or `end` | The top of the answer and the bottom — on a list, the first row and the last, with the cursor |
 | `esc` | Stop a run that is still going; on a result, go back |
+| `q` or `ctrl+c` | Quit |
 | `?` | Every key the screen answers — on any screen where a key is a command rather than text |
+
+An answer taller than the pane says how far down it is in the top border, beside the time: `0%` at the top, `100%` at the bottom, and nothing at all when it fits. The footer teaches `pgup/pgdn page` only then, and `?` lists the rest.
 
 A log — `agent log`, or any table that declares its newest row last — opens on that row, scrolled to the end, so what just happened is under the cursor and the past is a key up.
 

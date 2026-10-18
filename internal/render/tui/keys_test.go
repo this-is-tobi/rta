@@ -50,16 +50,10 @@ func footerOf(view string, lines int) string {
 	return plain(strings.Join(all[len(all)-lines:], "\n"))
 }
 
-// The docs' table of the dashboard's keys named `c` as "Configure" — which is
-// the plugin inventory's key, one screen over; on the dashboard it copies a
-// tile's value — and left out `f` and `b`, the two keys that open the profiles
-// pane and the catalogue. A reader learning the screen from the page was told
-// of a key that does something else and not told of two that do.
-//
-// The footer is what the screen answers, so the table is held to it: every key
-// in the footer's entries for the dashboard, the arrows aside, is a row of the
-// table.
-func TestTheDocsTableOfTheDashboardsKeysHasEveryKeyTheFooterOffers(t *testing.T) {
+// documentedKeys are the keys the TUI page's table under heading puts in code in
+// its first column, one row each: what a reader looking a key up finds.
+func documentedKeys(t *testing.T, heading string) map[string]bool {
+	t.Helper()
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -78,9 +72,9 @@ func TestTheDocsTableOfTheDashboardsKeysHasEveryKeyTheFooterOffers(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, after, found := strings.Cut(string(raw), "## The landing dashboard")
+	_, after, found := strings.Cut(string(raw), heading)
 	if !found {
-		t.Fatal(`docs/20-using/20-tui.md no longer has a section called "The landing dashboard"`)
+		t.Fatalf("docs/20-using/20-tui.md no longer has a section called %q", heading)
 	}
 	section, _, _ := strings.Cut(after, "\n##")
 	documented := map[string]bool{}
@@ -95,8 +89,22 @@ func TestTheDocsTableOfTheDashboardsKeysHasEveryKeyTheFooterOffers(t *testing.T)
 		}
 	}
 	if len(documented) < 5 {
-		t.Fatalf("found only %d keys in the table; the test no longer reads it", len(documented))
+		t.Fatalf("found only %d keys in the table under %q; the test no longer reads it", len(documented), heading)
 	}
+	return documented
+}
+
+// The docs' table of the dashboard's keys named `c` as "Configure" — which is
+// the plugin inventory's key, one screen over; on the dashboard it copies a
+// tile's value — and left out `f` and `b`, the two keys that open the profiles
+// pane and the catalogue. A reader learning the screen from the page was told
+// of a key that does something else and not told of two that do.
+//
+// The footer is what the screen answers, so the table is held to it: every key
+// in the footer's entries for the dashboard, the arrows aside, is a row of the
+// table.
+func TestTheDocsTableOfTheDashboardsKeysHasEveryKeyTheFooterOffers(t *testing.T) {
+	documented := documentedKeys(t, "## The landing dashboard")
 
 	m, _ := realModel(t, 200, 40)
 	for _, it := range m.footerItems(modeDashboard) {
@@ -299,6 +307,16 @@ func advertisedScreens() map[string]func(*testing.T) (Model, mode) {
 			m := listResult(t, listRegistry(t, &doneLog))
 			return m, modeResult
 		},
+		// An answer taller than the pane, as a page and as a list: the pane is a
+		// pager and answers to the pager's keys, and a list's cursor to the ends.
+		// What they move is the pane's scroll and the cursor's row, which the
+		// fingerprint reads.
+		"a long result": func(t *testing.T) (Model, mode) {
+			return longModel(t, 100, 14, 40), modeResult
+		},
+		"a long list": func(t *testing.T) (Model, mode) {
+			return longList(t, 100, 14, 30), modeResult
+		},
 		// The two screens where something is answered, against the real
 		// catalogue: the capitals beside their lower-case keys, and what each
 		// does without a form.
@@ -448,8 +466,8 @@ func keyMsg(key string) tea.KeyPressMsg {
 	if code := keyCodeFor(key); code != 0 {
 		return tea.KeyPressMsg{Code: code}
 	}
-	if key == "ctrl+c" {
-		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
+	if letter, ok := strings.CutPrefix(key, "ctrl+"); ok && len(letter) == 1 {
+		return tea.KeyPressMsg{Code: rune(letter[0]), Mod: tea.ModCtrl}
 	}
 	return tea.KeyPressMsg{Code: rune(key[0]), Text: key}
 }
@@ -463,11 +481,11 @@ func fingerprint(m Model) string {
 	if m.dialog != nil {
 		asked = fmt.Sprintf("%d:%d", m.dialog.id, m.dialog.focus)
 	}
-	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d|%q|%v|%v|%q|%v|%s|%d|%v",
+	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d|%q|%v|%v|%q|%v|%s|%d|%v|%d",
 		m.mode, m.selected, m.pluginSel, m.pluginScroll, m.profileSel, m.profileScroll,
 		m.row, m.query, m.searchEditing, m.form != nil, m.themeForm != nil,
 		m.copyPick != nil, len(m.trail), m.flash, m.tickGen, m.armedDelete, m.armed != nil, m.previewing,
-		m.header, m.folds, asked, m.list.Index(), m.list.FilterState())
+		m.header, m.folds, asked, m.list.Index(), m.list.FilterState(), m.viewport.YOffset())
 }
 
 // One idea, one word, one notation — everywhere. Three spellings of "the
@@ -753,6 +771,10 @@ func keyCodeFor(name string) rune {
 		return tea.KeyHome
 	case "end":
 		return tea.KeyEnd
+	case "pgup":
+		return tea.KeyPgUp
+	case "pgdown":
+		return tea.KeyPgDown
 	}
 	return 0
 }

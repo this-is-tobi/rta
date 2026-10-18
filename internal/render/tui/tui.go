@@ -571,9 +571,43 @@ func (m Model) reopenTop() (tea.Model, tea.Cmd) {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.update(msg)
 	if nm, ok := next.(Model); ok {
-		return nm.fitCatalogue(), cmd
+		return nm.fitCatalogue().fitResult(), cmd
 	}
 	return next, cmd
+}
+
+// fitResult sizes the pane that shows a result, or a confirmation's preview, to
+// the room the bar under it leaves. The pane is the window less the panel's two
+// borders and the bar, and the bar is one line or two: at two it was one line
+// taller than the room, the panel cut the pane's last line, and the final line of
+// every answer longer than the screen was out of reach, wherever the pane said it
+// was at the bottom. Wrapped at 80 columns for a result with an action of its own
+// and for every one at 44.
+//
+// After every message, for fitCatalogue's reason, and measured without the flash:
+// that is gone with the next key, and a pane that grew and shrank by a line with
+// it would move what the reader was looking at each time. The size is only set
+// when it changed, which leaves the scroll position alone on the many messages
+// that change nothing, and a pane at the bottom stays there.
+func (m Model) fitResult() Model {
+	if m.height <= 0 || (m.mode != modeResult && m.mode != modeConfirm) {
+		return m
+	}
+	quiet := m
+	quiet.flash = ""
+	room := max(m.height-2-lipgloss.Height(quiet.footerFor(m.mode)), 1)
+	if m.viewport.Height() == room {
+		return m
+	}
+	atBottom := m.viewport.AtBottom()
+	m.viewport.SetHeight(room)
+	if atBottom {
+		m.viewport.GotoBottom()
+	}
+	if m.mode == modeResult {
+		m.renderResult()
+	}
+	return m
 }
 
 // fitCatalogue sizes the catalogue's list to what is left of the window once
