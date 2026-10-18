@@ -187,8 +187,13 @@ func heldBySession(req plugin.Request, mode keyMode, lerr *view.Error) bool {
 // this page cannot open without it. On the TUI the box is not on the page, so it
 // says the keys that reach it: `e` from the page, and from a tile `enter` first.
 func supplyPassphrase(req plugin.Request) string {
-	if req.Surface() != plugin.SurfaceTUI {
-		return passphraseHint(req.Surface())
+	if sf := req.Surface(); sf != plugin.SurfaceTUI {
+		// This page never asks, at a terminal or not, so "run it at a terminal"
+		// is not the answer here: the variable is, and `kv list` beside it asks.
+		if sf == plugin.SurfaceMCP {
+			return passphraseHint(sf)
+		}
+		return "set " + passphraseEnv
 	}
 	keys := "e"
 	if isTile(req) {

@@ -104,6 +104,8 @@ rta kv rekey --generate                              # move to a dedicated key
 rta kv rekey --only --recipient age1me...            # drop every other reader
 ```
 
+**Moving a passphrase store to a generated key is a trade, and both pages that offer it say so.** The passphrase stops opening the store, and the key file, which needs no passphrase, opens it for anything running as you; `kv recipients` says it beside the offer, and the preview and the result of `rekey --generate` say it again before and after.
+
 `rekey` always refuses to lock you out. That is not a courtesy — it is the difference between a key-rotation command you can use and one you use once.
 
 ## Backing up, and restoring
