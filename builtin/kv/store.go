@@ -210,11 +210,18 @@ func passphraseSource(req plugin.Request) string {
 }
 
 // passphraseHint is how a caller on sf is told to supply the store's passphrase.
+//
+// Never as an argument on the command line: it lands in the shell's history and
+// in `ps`, which is what the variable and the prompt are for. A command line that
+// got here had no terminal to ask at, so the answer is one, or the variable.
 func passphraseHint(sf plugin.Surface) string {
-	if sf == plugin.SurfaceMCP {
+	switch sf {
+	case plugin.SurfaceMCP:
 		return "ask the operator to set " + passphraseEnv + " in the environment rta mcp serve runs in"
+	case plugin.SurfaceTUI:
+		return fmt.Sprintf("set %s or give %s", passphraseEnv, sf.InputName("passphrase"))
 	}
-	return fmt.Sprintf("set %s or give %s", passphraseEnv, sf.InputName("passphrase"))
+	return "run it at a terminal, or set " + passphraseEnv
 }
 
 // promptPassphrase is overridable in tests; it reads from the terminal.

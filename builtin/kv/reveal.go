@@ -147,10 +147,10 @@ func reveal(sf plugin.Surface, key string) (string, *view.Error) {
 // hostOpenHint is the refusal load gave to open the store, with the passphrase
 // hint worded for what this open can actually be given.
 //
-// load words "no passphrase provided" for a call that has a flag — "set
-// RTA_KV_PASSPHRASE or give --passphrase" — and the request the host reads
-// with carries none: it is built from the environment alone (hostPassphrase)
-// and never prompts. A person who ran `rta pg query --profile staging` was told
+// load words "no passphrase provided" for a call that can be run at a terminal —
+// "run it at a terminal, or set RTA_KV_PASSPHRASE" — and the request the host
+// reads with carries none: it is built from the environment alone
+// (hostPassphrase) and never prompts. A person who ran `rta pg query --profile staging` was told
 // to give a flag that command does not have. What opens the store here is the
 // variable, in the environment of whatever resolves the credential: this
 // process at a terminal, and over MCP the server's own, which is the one an

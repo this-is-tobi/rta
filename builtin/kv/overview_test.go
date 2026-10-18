@@ -346,7 +346,7 @@ func TestTheOverviewOfAStoreItCannotOpenSaysWhatItNeeds(t *testing.T) {
 	seeded(t)
 
 	for surface, supplied := range map[plugin.Surface]string{
-		plugin.SurfaceCLI: "set RTA_KV_PASSPHRASE or give --passphrase",
+		plugin.SurfaceCLI: "set RTA_KV_PASSPHRASE",
 		plugin.SurfaceTUI: "or type the passphrase: enter, then e",
 		plugin.SurfaceMCP: "ask the operator to set RTA_KV_PASSPHRASE",
 	} {

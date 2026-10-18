@@ -40,7 +40,7 @@ func TestTheOverviewAtATerminalSaysOnceThatKvListAsks(t *testing.T) {
 	atATerminal(t)
 
 	kv := overviewPairs(t, cliReq(nil))
-	if got, want := pairValue(kv, "inventory"), "needs a key at hand — set RTA_KV_PASSPHRASE or give --passphrase"; got != want {
+	if got, want := pairValue(kv, "inventory"), "needs a key at hand — set RTA_KV_PASSPHRASE"; got != want {
 		t.Errorf("inventory = %q, want %q", got, want)
 	}
 	if got, want := pairValue(kv, "unlocks here"), "on request — `rta kv list` asks, this page does not"; got != want {
@@ -135,7 +135,7 @@ func TestTheOverviewNamesALockedKeyOnce(t *testing.T) {
 		keyPassphrases = map[string]string{}
 		kv := overviewPairs(t, cliReq(map[string]any{"identity": path}))
 		inventory := pairValue(kv, "inventory")
-		if want := "needs a key at hand — the key's own passphrase: set RTA_KV_PASSPHRASE or give --passphrase"; inventory != want {
+		if want := "needs a key at hand — the key's own passphrase: set RTA_KV_PASSPHRASE"; inventory != want {
 			t.Errorf("inventory = %q, want %q", inventory, want)
 		}
 		if got, want := pairValue(kv, "unlocks here"), "on request — identity "+path+" is passphrase-protected, `rta kv list` asks, this page does not"; got != want {

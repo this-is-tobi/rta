@@ -1076,6 +1076,9 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 	if req.DryRun {
 		return view.Text{Body: rekeyPreview(generate, only, want, stored)}, nil
 	}
+	// A store with no recipients is the passphrase's: whatever it is re-keyed
+	// to, the passphrase stops being one of the ways in.
+	passphraseLock := len(stored) == 0
 
 	var generated string
 	if generate {
@@ -1102,7 +1105,7 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 	// answer would fail on its next use, and that is not a wrong-passphrase
 	// message an operator should have to decode after a rekey they asked for.
 	forgetSession()
-	return view.Text{Body: rekeySummary(sf, generated, want, stored)}, nil
+	return view.Text{Body: rekeySummary(sf, generated, want, stored, passphraseLock)}, nil
 }
 
 // dropped returns the recipients in stored that the new set leaves out.
@@ -1121,6 +1124,12 @@ func rekeyPreview(generate, only bool, want, stored []string) string {
 	if generate {
 		body += "\ngenerating a key at " + defaultIdentity()
 	}
+	if len(stored) == 0 {
+		body += "\nthe passphrase would no longer open the store"
+		if generate {
+			body += " — the key would, and anything running as you can read the key file"
+		}
+	}
 	if only {
 		if gone := dropped(want, stored); len(gone) > 0 && !generate {
 			body += "\ndropping " + format.CountOf(len(gone), "reader") + " — they could no longer open it"
@@ -1131,12 +1140,15 @@ func rekeyPreview(generate, only bool, want, stored []string) string {
 	return body
 }
 
-func rekeySummary(sf plugin.Surface, generated string, want, stored []string) string {
+func rekeySummary(sf plugin.Surface, generated string, want, stored []string, passphraseLock bool) string {
 	body := format.CountOf(len(want), "key") + " can open the store — " + sf.CapabilityName("kv.recipients") + " lists them"
+	if passphraseLock {
+		body += "\nthe passphrase no longer opens the store"
+	}
 	if generated != "" {
 		body += "\n\ngenerated a key at " + generated + " (mode 0600)\n" +
 			"back it up: losing it loses every secret it is the only key to\n" +
-			"it is found automatically, so nothing needs to name it"
+			"it is found automatically, so nothing needs to name it — and anything running as you can read the key file and open the store"
 	}
 	if gone := dropped(want, stored); len(gone) > 0 {
 		body += "\n\ndropped " + format.CountOf(len(gone), "reader") + ": they cannot open the store from now on.\n" +
@@ -1336,7 +1348,8 @@ func runRecipients(_ context.Context, req plugin.Request) (view.View, error) {
 			"To switch to " + whose + ":\n" +
 			"  " + operatorsCall(sf, "kv.rekey", plugin.Arg{Name: "only", Value: true},
 			plugin.Arg{Name: "recipient", Value: ownKey}) + "\n" +
-			"or to one made for the job, which needs no passphrase at all:\n" +
+			"or to one made for the job, which needs no passphrase at all — so the passphrase stops opening the store,\n" +
+			"and anything running as you can read the key file and open it:\n" +
 			"  " + sf.Call("kv.rekey", plugin.Arg{Name: "only", Value: true}, plugin.Arg{Name: "generate", Value: true})
 		return t, nil
 	}
