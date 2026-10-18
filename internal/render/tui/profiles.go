@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/this-is-tobi/rta/builtin/kv"
@@ -48,7 +49,31 @@ import (
 const (
 	profileInput     = "profile"
 	profileNoneLabel = "— base configuration —"
+
+	// The two entries that move the picker between the environment that is
+	// switched on and all of them. Like the ad hoc entry they ask and are never an
+	// answer: a profile reference cannot hold a space or a dash (config.ValidRef),
+	// so neither can be mistaken for one.
+	otherEnvironmentsPrefix = "— other environments ("
+	onlyEnvironmentPrefix   = "— only "
 )
+
+// otherEnvironmentsLabel is the entry that adds the connections of every other
+// environment to the list, with how many there are.
+func otherEnvironmentsLabel(n int) string {
+	return fmt.Sprintf("%s%d) —", otherEnvironmentsPrefix, n)
+}
+
+// onlyEnvironmentLabel is the entry that takes them off again.
+func onlyEnvironmentLabel(active string) string {
+	return onlyEnvironmentPrefix + active + " —"
+}
+
+// isScopePick reports whether a picker answer is one of the two entries that
+// change which environments the list shows, and not an environment.
+func isScopePick(s string) bool {
+	return strings.HasPrefix(s, otherEnvironmentsPrefix) || strings.HasPrefix(s, onlyEnvironmentPrefix)
+}
 
 // profilePicker is the field that chooses an environment at the moment somebody
 // runs something, or nil when there is nothing to choose.
@@ -59,6 +84,30 @@ const (
 // than an absent one — and "base configuration" is always first, because a
 // list where the ordinary case is not offered makes the ordinary case feel
 // like a mistake.
+//
+// **With an environment switched on, the list is that environment's.** A list
+// that also holds every other environment's connections — production's, while
+// the person is working in their homelab — is a screenful of targets they are not
+// working in, one keystroke from the wrong one, so those wait behind one last
+// entry that says how many there are (otherEnvironmentsLabel). Choosing it lists
+// them, the switched-on environment's still first, and ends the list with the
+// entry that goes back (onlyEnvironmentLabel); the choice is the session's, held
+// like the ad hoc connection, because a person who went looking for another
+// environment once is going to again, and it is not written anywhere.
+//
+// **A way to keep a reflex off the wrong target, and not a boundary.** Nothing
+// here fences anything: the call names its profile, a grant is for that profile,
+// and what the selection holds an agent to is read from the selection by the
+// code that runs the call. The other environments are one entry away on purpose.
+//
+// With nothing switched on there is nothing to isolate to, and the list is every
+// environment in its own order.
+//
+// **A choice made earlier is still shown.** The connection a tile is pinned to,
+// or the one the last run went through, can belong to an environment that is not
+// the one switched on, and listing it only after the person had gone looking would
+// open the form on the base configuration under a choice they made deliberately.
+// The list is expanded for that form, and the session's switch is left alone.
 func (m Model) profilePicker(c plugin.Capability, on string) *plugin.Field {
 	if !plugin.Profilable(c) {
 		return nil
@@ -67,45 +116,23 @@ func (m Model) profilePicker(c plugin.Capability, on string) *plugin.Field {
 	if err != nil {
 		return nil
 	}
-	ns := plugin.Namespace(c.ID)
-	bad := map[string]bool{}
-	for _, p := range profile.Check(cfg, m.installed()) {
-		bad[p.Name] = true
-	}
-	options := []string{profileNoneLabel}
-	// The environment that is on first, then the rest in their own order: a
-	// list that opens with another environment's production targets, while the
-	// person is working in their homelab, is a picker one keystroke from the
-	// wrong answer. Only ordered, not narrowed, because a picker has no way to
-	// ask for "the others" the way a shell's name/ does.
-	names := cfg.ProfilesFor(ns)
-	if active := profile.Active(); active != "" {
-		slices.SortStableFunc(names, func(a, b string) int {
-			switch {
-			case a == active && b != active:
-				return -1
-			case b == active && a != active:
-				return 1
-			}
-			return 0
-		})
-	}
-	for _, name := range names {
-		if bad[name] {
-			continue
-		}
-		// The refs a call would accept: an environment holding several
-		// connections to this plugin lists as staging/analytics beside
-		// staging, because a bare name over several labeled entries is
-		// exactly what Lookup refuses — a picker option that can only fail
-		// is worse than an absent one.
-		options = append(options, profile.InstanceRefs(cfg.Profiles[name], name, ns)...)
+	active, here, elsewhere := m.environmentRefs(cfg, c)
+	options := append([]string{profileNoneLabel}, here...)
+	wide := len(elsewhere) > 0 && (m.allEnvironments || slices.Contains(elsewhere, on))
+	if wide {
+		options = append(options, elsewhere...)
 	}
 	// Last, after every environment the operator keeps: a connection stated for
 	// one call is the exception to the list above and the list is not what it
 	// is the exception to when nothing is configured (adhoc.go).
 	adHoc := m.adHocOptions(c)
 	options = append(options, adHoc...)
+	switch {
+	case wide:
+		options = append(options, onlyEnvironmentLabel(active))
+	case len(elsewhere) > 0:
+		options = append(options, otherEnvironmentsLabel(len(elsewhere)))
+	}
 	if len(options) == 1 {
 		// Nothing configured for this plugin: a picker with one entry is a
 		// question with one answer, which is not a question.
@@ -128,6 +155,62 @@ func (m Model) profilePicker(c plugin.Capability, on string) *plugin.Field {
 		Name: profileInput, Type: plugin.String, Options: options, Default: on,
 		Help: help,
 	}
+}
+
+// environmentRefs are the connections to c's plugin a picker may offer, split at
+// the environment that is switched on: here are its, elsewhere are every other
+// environment's, each environment's in the order the configuration keeps them.
+// With nothing switched on everything is here, and there is no elsewhere.
+//
+// The refs a call would accept: an environment holding several connections to
+// this plugin lists as staging/analytics beside staging, because a bare name over
+// several labeled entries is exactly what Lookup refuses — a picker option that
+// can only fail is worse than an absent one. An environment that cannot be used is
+// in neither list.
+func (m Model) environmentRefs(cfg config.Config, c plugin.Capability) (active string, here, elsewhere []string) {
+	ns := plugin.Namespace(c.ID)
+	bad := map[string]bool{}
+	for _, p := range profile.Check(cfg, m.installed()) {
+		bad[p.Name] = true
+	}
+	active = profile.Active()
+	for _, name := range cfg.ProfilesFor(ns) {
+		if bad[name] {
+			continue
+		}
+		refs := profile.InstanceRefs(cfg.Profiles[name], name, ns)
+		if active == "" || name == active {
+			here = append(here, refs...)
+		} else {
+			elsewhere = append(elsewhere, refs...)
+		}
+	}
+	return active, here, elsewhere
+}
+
+// changeEnvironmentScope answers the choice of "other environments" or "only":
+// the picker lists every environment's connections or just the switched-on
+// one's, and the same form is built again with what was typed in it kept, the
+// cursor on the first connection the new list is about.
+//
+// That is the first connection of another environment when they were just brought
+// in, which is what the person went looking for, and the switched-on environment's
+// first when they are put away again. The boxes are seeded from it as from any
+// other pick, so the form never shows one environment's values under another's
+// name.
+func (m Model) changeEnvironmentScope(cf *capForm, entry string) (tea.Model, tea.Cmd) {
+	m.allEnvironments = strings.HasPrefix(entry, otherEnvironmentsPrefix)
+	landing := profileNoneLabel
+	if cfg, err := config.LoadFile(); err == nil {
+		_, here, elsewhere := m.environmentRefs(cfg, cf.cap)
+		switch {
+		case m.allEnvironments && len(elsewhere) > 0:
+			landing = elsewhere[0]
+		case !m.allEnvironments && len(here) > 0:
+			landing = here[0]
+		}
+	}
+	return m.backToRunForm(cf, landing)
 }
 
 // withoutPicker is values as a handler must see them: without the environment
@@ -178,7 +261,7 @@ func (m Model) pickedProfile(c plugin.Capability, base map[string]any) string {
 			// The entry that asks is never an answer to start on: a form that
 			// reopened with the cursor on it (`e` after a run that was refused)
 			// would be built on the entry, and nothing could move it off to ask.
-			if s == profileNoneLabel || s == adHocPickLabel {
+			if s == profileNoneLabel || s == adHocPickLabel || isScopePick(s) {
 				return ""
 			}
 			return s

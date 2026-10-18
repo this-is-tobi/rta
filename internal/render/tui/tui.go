@@ -248,6 +248,13 @@ type Model struct {
 	// a Model is copied on every message.
 	adHoc map[string]config.Connection
 
+	// allEnvironments is whether a run form's picker lists the connections of
+	// every environment, and not only those of the one that is switched on. Set by
+	// choosing the picker's "other environments" entry and cleared by "only", held
+	// until the TUI quits like the ad hoc connection above and shared by every form
+	// (profilePicker).
+	allEnvironments bool
+
 	// active is the environment switched on, refreshed with the tiles rather
 	// than read at paint time. The dashboard has to show it — "am I in
 	// production" is the question a header answers — and paint runs on every
