@@ -184,7 +184,7 @@ A destructive capability never runs from its form. What opens instead is its own
 | Key | What it does |
 | --- | --- |
 | `enter` | Open the row |
-| `e` | Edit inputs and run again |
+| `e` | Edit inputs and run again; `esc` on that form comes back to this result, an error included |
 | `r` | Re-run |
 | `y` | Copy as JSON |
 | `d` | Delete |

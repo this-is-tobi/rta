@@ -201,6 +201,15 @@ type capForm struct {
 	// (fitForm): a yes/no box is drawn with brackets then, since the fill that
 	// said which answer was chosen is not there to say it.
 	noColor bool
+	// fromResult says `e` opened this form from a result that is still held
+	// (resultKeys), so cancelling it puts that result back instead of closing to
+	// where the flow began (closeForm). On the form and not on the model, so it
+	// dies with the form: a flag on the model outlives a form that is submitted
+	// or abandoned some other way, and the next form, opened from the dashboard,
+	// would go back to a result it never came from. The forms that replace this
+	// one as it goes — its second stage, the same boxes on another environment,
+	// the run form behind an ad hoc connection — hand it on.
+	fromResult bool
 }
 
 // formOption tunes a form beyond the fields it collects.

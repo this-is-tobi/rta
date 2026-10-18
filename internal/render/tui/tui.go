@@ -844,9 +844,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.GotoTop()
 		}
 		if msg.cap.Live {
-			m.tickGen++
-			gen := m.tickGen
-			return m, tea.Tick(tileRefreshInterval, func(time.Time) tea.Msg { return tickMsg{gen: gen} })
+			return m, m.liveTick()
 		}
 		return m, nil
 
