@@ -586,6 +586,16 @@ func (cf *capForm) position() string {
 	return fmt.Sprintf("%d of %d", at, total)
 }
 
+// inherit takes from the form this one replaces what is about the screen and
+// not about the boxes, so a form rebuilt under the person's hands (its second
+// stage, the same boxes on another environment, the run form behind an ad hoc
+// connection) is still the one they were on: where esc goes back to, and what
+// the head says it is about.
+func (cf *capForm) inherit(from *capForm) {
+	cf.fromResult = from.fromResult
+	cf.about = from.about
+}
+
 // hasInputs reports whether opening this capability warrants a form: any
 // field the user might want to set (required or optional).
 func hasInputs(c plugin.Capability) bool { return len(c.Inputs) > 0 }

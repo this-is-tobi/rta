@@ -415,7 +415,7 @@ func (m Model) backToRunForm(from *capForm, pick string) (tea.Model, tea.Cmd) {
 	values[profileInput] = pick
 	m.current = from.cap
 	m.form = m.runForm(from.cap, from.offered, withoutPicker(from.cap, values), values)
-	m.form.fromResult = from.fromResult
+	m.form.inherit(from)
 	m.fitForm()
 	return m, m.form.form.Init()
 }
