@@ -906,16 +906,8 @@ func TestParseVersionReadsTheFirstThingThatLooksLikeOne(t *testing.T) {
 // default turned that into "ok", the same word a genuinely current tool
 // gets. pkg.overview then counted it among "N current".
 func TestAToolWhoseVersionCouldNotBeReadIsNotOk(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/repos/junegunn/fzf/releases/latest" {
-			w.Write([]byte(`{"tag_name":"v0.55.0","assets":[]}`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
 	c := newRegistryClient()
-	c.github = srv.URL
+	c.web = latestTags(t, map[string]string{"junegunn/fzf": "v0.55.0"})
 	// On $PATH, answering --version with something that holds no version:
 	// a wrapper script, a tool that prints only a commit hash, a binary
 	// whose flag means something else.
