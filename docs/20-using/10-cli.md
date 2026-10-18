@@ -39,7 +39,7 @@ export RTA_OUTPUT=json
 
 The config file's `output:` key sets it too, under `RTA_OUTPUT`, and a typed `-o` wins over both. A default that names no format stops every command that renders, before it runs, as `core.output.invalid`: the error names `RTA_OUTPUT` or the key and its file, lists the formats, and is written in `pretty`, since the format asked for is the broken thing. `rta doctor` still runs and reports it as a failing `output` row, and answers in `pretty`; `rta mcp serve`, which renders nothing, is unaffected.
 
-**A command whose answer is one value prints that value into a pipe.** `rta gen password | pbcopy` copies the password and not the table drawn around it, `rta gen uuid` and `rta gen token` print the identifier and the token, and `rta http get URL | jq .` is handed the response body. One value to a line, so `--count 3` is three lines. What else the answer says, such as the entropy of a password or the status and size of a response, goes to standard error, each line marked `#`, so a script keeps the data and a person still sees whether the request was a 404. A terminal, `-o json` and the other formats are unchanged, and so is a response with no body, such as a `HEAD`.
+**A command whose answer is one value prints that value into a pipe.** `rta gen password | pbcopy` copies the password and not the table drawn around it, `rta gen uuid` and `rta gen token` print the identifier and the token, and `rta http get URL | jq .` is handed the response body, as the server sent it and not as a terminal shows it: a text or JSON body is not cut to a screenful or laid out again, up to the 1 MiB rta reads, and a longer one is written as far as it goes before the command exits `1` with `http.body.truncated`. One value to a line, so `--count 3` is three lines. What else the answer says, such as the entropy of a password or the status and size of a response, goes to standard error, each line marked `#`, so a script keeps the data and a person still sees whether the request was a 404. A terminal, `-o json` and the other formats are unchanged, and so is a response with no body, such as a `HEAD`.
 
 **Say what you want in a script.** `pretty` is a rendering choice made for humans, and it is the one format whose shape is allowed to change.
 
@@ -139,6 +139,8 @@ Reports what would happen without doing it, on any capability that changes somet
 rta net hosts add 10.0.0.5 db.local --dry-run
 rta note rm 4 --dry-run
 ```
+
+The one read it applies to is the http client: `rta http get URL --bearer-file /dev/stdin --dry-run` prints the request as it would leave, the token masked, and sends nothing, so a mistyped host is found before the token reaches it. Every other read runs, since it changes nothing.
 
 This is not only a convenience for you — it is what rta shows an operator on a [parked agent call](../30-boundary/35-roles-consent-and-the-guard.md#live-consent-when-you-would-rather-be-asked), which turns "may this agent call `note.rm`" into "may it remove **this note**", and it is what [the TUI](./20-tui.md#running-something) shows you before a destructive run, for the same reason.
 

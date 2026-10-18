@@ -10,6 +10,14 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
+// PrimaryAlone is whether an answer with a declared Primary of this name is
+// written as that value alone: pretty, going to a pipe or a file. The question
+// is asked before the call runs too, so that a handler can give the value whole
+// to the one place that will print it (plugin.Request.WithPipedPrimary).
+func PrimaryAlone(name string, opts Options) bool {
+	return name != "" && opts.Format == Pretty && !opts.Screen
+}
+
 // PrintPrimary writes the one value a capability's answer is — its declared
 // Primary: the password a generator made, the response body, the token — and
 // nothing around it, when the answer is going to a pipe or a file. It reports
@@ -32,7 +40,7 @@ import (
 // never what a pipe was asking for; and for a shape that is neither a table
 // nor a key/value list.
 func PrintPrimary(w io.Writer, v view.View, name string, opts Options) bool {
-	if name == "" || v == nil || opts.Format != Pretty || opts.Screen {
+	if v == nil || !PrimaryAlone(name, opts) {
 		return false
 	}
 	v = view.Redact(sanitize(v))

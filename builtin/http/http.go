@@ -580,7 +580,13 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 	// on somebody else's system, and a --dry-run that sends the request
 	// anyway is worse than none at all: it reports what "would" happen after
 	// it has already happened.
-	if req.DryRun && method != stdhttp.MethodGet && method != stdhttp.MethodHead {
+	//
+	// A GET and a HEAD are held to it as well, although they change nothing
+	// there: every command accepts --dry-run, and the person who adds it to
+	// a request carrying a token is asking to see where it would go before it
+	// goes. A read that ran anyway sent that token to a mistyped host, which
+	// the preview is for.
+	if req.DryRun {
 		return dryRunView(method, url, httpReq, data), nil
 	}
 
@@ -646,8 +652,19 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 		view.Pair{Key: "content-type", Value: resp.Header.Get("Content-Type")},
 		view.Pair{Key: "size", Value: sizeValue},
 	)
+	cutAtTheCap := false
 	if len(bodyBytes) > 0 && method != stdhttp.MethodHead {
 		body, cut := formatBody(bodyBytes, resp.Header.Get("Content-Type"), truncated)
+		// A pipe is handed the body the server sent, up to the cap, and not
+		// what a screen shows of it: a program asked for the document, and
+		// `jq .` or `> file` of a cut or re-indented one carried on with it.
+		// A body that is not text keeps its dump, which no view can carry as
+		// the bytes they are.
+		if req.PipedPrimary() {
+			if fetched, ok := bodyAsFetched(bodyBytes, truncated); ok {
+				body, cut, cutAtTheCap = fetched, truncated, truncated
+			}
+		}
 		// How much of the body is shown is said beside it, never in it. The
 		// note was appended to the text it described, and every renderer
 		// cleans a value with ansi.Strip, which reads an OSC or DCS left open
@@ -662,7 +679,34 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 		}
 		pairs = append(pairs, view.Pair{Key: "body", Value: body})
 	}
-	return view.KeyValue{Pairs: pairs}, nil
+	answer := view.KeyValue{Pairs: pairs}
+	if cutAtTheCap {
+		return nil, &plugin.AnsweredError{View: answer, Err: bodyCutAtTheCap(req.Surface(), size)}
+	}
+	return answer, nil
+}
+
+// bodyAsFetched is body as the server sent it, or ok false for one that is not
+// text. A body cut at the cap loses the character it was cut in, as it does on
+// a screen.
+func bodyAsFetched(body []byte, truncated bool) (fetched string, ok bool) {
+	if truncated {
+		body = withoutPartialRune(body)
+	}
+	if !format.PlainText(body) {
+		return "", false
+	}
+	return string(body), true
+}
+
+// bodyCutAtTheCap is the failure of a pipe that was handed the first megabyte
+// of a longer response. What was written is a prefix of a document, and a
+// script that took it for the document would carry on with half of one.
+func bodyCutAtTheCap(sf plugin.Surface, size string) *view.Error {
+	return view.Errorf("http.body.truncated",
+		"the response body is %s, and rta reads at most 1 MiB of one: the first 1 MiB was written", size).
+		WithHint("ask for the rest in parts with a Range header (" + sf.InputName("header") +
+			" 'Range: bytes=1048576-'), or fetch it with a tool that streams, such as curl")
 }
 
 // sizeOf is the size of a response body as far as it is known: the bytes

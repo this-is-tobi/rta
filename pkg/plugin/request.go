@@ -80,6 +80,8 @@ type Request struct {
 	limit   int
 	DryRun  bool
 	Yes     bool
+
+	pipedPrimary bool
 }
 
 // link is a symbolic link a caller named, which the surface resolved before
@@ -307,6 +309,23 @@ func (r Request) WithResultLimit(bytes int) Request {
 
 // ResultLimit is the bound WithResultLimit stamped, or 0.
 func (r Request) ResultLimit() int { return r.limit }
+
+// WithPipedPrimary stamps that the command line will write this call's Primary
+// value to a pipe or a file, and nothing else of the answer. Called once, at the
+// boundary, by the one surface that knows where its output goes.
+//
+// A handler that shapes its Primary value for a screen — cuts a long body to
+// what can be read at a glance, lays a document out — gives it whole instead,
+// because a pipe is a program's and is handed what was fetched, not a view of
+// it. Not carried across the plugin-host wire: a plugin in its own process
+// shapes for the screen, as it always has.
+func (r Request) WithPipedPrimary() Request {
+	r.pipedPrimary = true
+	return r
+}
+
+// PipedPrimary is whether WithPipedPrimary was stamped.
+func (r Request) PipedPrimary() bool { return r.pipedPrimary }
 
 // Bounds is the reach this call was given, the zero Bounds when it was given
 // none. For the package that opens what a path names (Bounds says which);
