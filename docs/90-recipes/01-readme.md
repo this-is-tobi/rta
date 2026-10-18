@@ -329,7 +329,7 @@ rta profile set staging --note "shared staging" --ttl 8h \
     --plugin pg --set host=db.staging.internal --set sslmode=require \
     --secret password=kv:staging-db-password
 
-rta profile set staging --plugin s3 --set endpoint=https://s3.staging.internal
+rta profile set staging --plugin s3 --set address=s3.staging.internal --set tls=true
 
 # The ceiling, in your own policy file rather than in any repository.
 rta policy require
@@ -367,7 +367,7 @@ profiles:
         kube: staging/shop/svc/postgres-analytics:5432
         secrets: {password: kube:analytics-creds/password}
       s3@a586c1f19b04:
-        set: {endpoint: https://s3.staging.internal, bucket: shop-assets}
+        set: {address: s3.staging.internal, tls: true, bucket: shop-assets}
         secrets: {secret-key: kv:shop-staging-s3}
   shop-prod:
     note: "shop, production — grants only, short ones"

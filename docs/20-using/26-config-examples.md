@@ -75,7 +75,7 @@ profiles:
     plugins:
       vault:
         set:
-          address: https://vault.example.com
+          url: https://vault.example.com
           kv-mount: secret   # the KV v2 engine's mount path
           # ca-file: ~/.config/shop/vault-ca.crt   # a PEM bundle to trust beyond the system's own; keep it outside ~/.config/rta
         secrets: {token: "kv:shop-vault-token"}
@@ -87,7 +87,7 @@ profiles:
         secrets: {client-secret: "kv:shop-keycloak-client-secret"}
       s3:
         set:
-          endpoint: s3.fr-par.scw.cloud   # host[:port], no scheme
+          address: s3.fr-par.scw.cloud    # host[:port], no scheme
           region: fr-par
           tls: true
           access-key: SCWXXXXXXXXXXXXXXXXX   # an identifier, not a secret

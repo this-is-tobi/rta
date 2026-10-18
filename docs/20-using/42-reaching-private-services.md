@@ -44,7 +44,7 @@ A connection states **at most one** of `kube` and `ssh`; both at once is refused
 Most of what you do against a database in a cluster is not worth a profile: look at the replication of the one in `databases`, once, now. The choice used to be a profile written for the purpose, or `kubectl port-forward` and `psql` and a password copied by hand — which is how a credential reaches a shell history. The same connection can be stated on the command line of the one call:
 
 ```bash
-rta pg replication --kube staging/databases/svc/postgres:5432 --secret password=kube:postgres-app/password --user app
+rta pg replication status --kube staging/databases/svc/postgres:5432 --secret password=kube:postgres-app/password --user app
 rta redis overview --secrets-from staging/cache --secret password=kube:redis/password --address redis.internal:6379
 ```
 

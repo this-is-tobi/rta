@@ -26,11 +26,11 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		// Point anything that connects at somewhere nothing is listening, so
 		// a dry run that stops being dry fails as a refused connection rather
 		// than as a request against somebody's real service.
-		"acme.thing.set": {"endpoint": "127.0.0.1:1", "name": "conformance"},
+		"acme.thing.set": {"address": "127.0.0.1:1", "name": "conformance"},
 		// Point every path inside dir, which is the directory the suite
 		// watches — a write that should not have happened is then a test
 		// failure rather than a file in a temp directory nobody looks at.
-		"acme.thing.get": {"endpoint": "127.0.0.1:1", "out": filepath.Join(dir, "got")},
+		"acme.thing.get": {"address": "127.0.0.1:1", "out": filepath.Join(dir, "got")},
 	}
 }
 ```
