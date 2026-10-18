@@ -53,7 +53,7 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 | `enter` | Open — on the search line, start the search — or fold and unfold a [section](./25-dashboard-and-theme.md#sections-group-tiles-and-fold-the-group), on its header (`space` does the same there) |
 | `esc` | Back |
 | `q` or `ctrl+c` | Quit |
-| `?` | Every key the screen answers, aliases included — what the footer had no room for |
+| `?` | Every key the screen answers, aliases included — what the footer had no room for. On a terminal with fewer rows than the list has lines it takes two columns, so none is cut |
 | `[` `]` | Move a tile — or the whole section, with its header selected |
 | `H` | Hide a tile — or remove it, when it is one you added |
 | `z` | Fold or unfold the section of the selected tile or header. For this session only — nothing is written |
@@ -86,7 +86,7 @@ The config file the dashboard and the colours are stated in is [Your config file
 
 ## Asking first
 
-A key that costs something to undo asks before it acts, in a box over the dimmed screen: a title that is the question, a sentence saying what will happen, and two buttons named for what they do. `U` on an unlocked store is the first, `Lock the store?`; the answer is `enter` on the focused button, `y` for the first button, `n` or `esc` to cancel, `tab` or the arrows to move the focus, or a click on a button. While the box is up nothing underneath hears a key, a scroll or a paste, and a stray key does not dismiss it; `ctrl+c` still quits. The focus starts on the answer that loses nothing: the lock itself, since locking is the direction that narrows what is open and a reflex `enter` should land there. No setting turns the question off. The questions are few and each costs something, and a setting that removed a consent step would be writable by anything running as you.
+A key that costs something to undo asks before it acts, in a box over the dimmed screen, above the key bar that names its keys: a title that is the question, a sentence saying what will happen, and two buttons named for what they do. `U` on an unlocked store is the first, `Lock the store?`; the answer is `enter` on the focused button, `y` for the first button, `n` or `esc` to cancel, `tab` or the arrows to move the focus, or a click on a button. While the box is up nothing underneath hears a key, a scroll or a paste, and a stray key does not dismiss it; `ctrl+c` still quits. The focus starts on the answer that loses nothing: the lock itself, since locking is the direction that narrows what is open and a reflex `enter` should land there. No setting turns the question off. The questions are few and each costs something, and a setting that removed a consent step would be writable by anything running as you.
 
 ## Answering agents
 

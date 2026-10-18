@@ -132,10 +132,99 @@ func wrapWords(s string, width int) []string {
 	return lines
 }
 
+// helpGutter is the space between the two columns of the overlay.
+const helpGutter = 3
+
+// helpEntries are the lines each key the screen answers takes, in the bar's
+// order: its row, with the aliases beside it in the muted colour or, when avail
+// has no room for that, on lines of their own beneath it. An entry is never
+// split, so a key's aliases stay with it wherever the layout breaks the list.
+func helpEntries(items []hintItem, keyW, avail int) [][]string {
+	entries := make([][]string, 0, len(items))
+	for _, it := range items {
+		row := theme.Key.Render(it.display) + strings.Repeat(" ", keyW-lipgloss.Width(it.display)+2) + it.label
+		entry := []string{row}
+		if also := hiddenKeys(it); len(also) > 0 {
+			suffix := "also " + strings.Join(also, " ")
+			if lipgloss.Width(row)+2+lipgloss.Width(suffix) <= avail {
+				entry[0] += "  " + theme.Subtle.Render(suffix)
+			} else {
+				indent := strings.Repeat(" ", keyW+2)
+				for _, chunk := range wrapWords(suffix, avail-len(indent)) {
+					entry = append(entry, indent+theme.Subtle.Render(chunk))
+				}
+			}
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+// helpLines is the entries one after the other.
+func helpLines(entries [][]string) []string {
+	var lines []string
+	for _, e := range entries {
+		lines = append(lines, e...)
+	}
+	return lines
+}
+
+// helpColumns lays the keys out in two columns, for a terminal with fewer rows
+// than the list has lines. The overlay cannot scroll, so a list taller than the
+// screen lost its tail, and the tail is where esc, q and ? are: the keys that
+// say how to leave.
+//
+// The split is the one that leaves the shorter tall column, among those that
+// fit the terminal's width, and falls to the narrower of two equally tall ones.
+// Aliases wrap inside their column, since half the width is what each has. It
+// reports false when no split fits both ways, and the overlay is cut as before.
+func (m Model) helpColumns(items []hintItem, keyW int) ([]string, bool) {
+	if m.width <= 0 || m.height <= 0 {
+		return nil, false
+	}
+	entries := helpEntries(items, keyW, (m.width-4-helpGutter)/2)
+	widest := func(lines []string) int {
+		w := 0
+		for _, l := range lines {
+			w = max(w, lipgloss.Width(l))
+		}
+		return w
+	}
+	best, bestRows, bestWidth := 0, 0, 0
+	for k := 1; k < len(entries); k++ {
+		left, right := helpLines(entries[:k]), helpLines(entries[k:])
+		rows, width := max(len(left), len(right)), widest(left)+helpGutter+widest(right)
+		if rows+2 > m.height || width+4 > m.width {
+			continue
+		}
+		if best == 0 || rows < bestRows || (rows == bestRows && width < bestWidth) {
+			best, bestRows, bestWidth = k, rows, width
+		}
+	}
+	if best == 0 {
+		return nil, false
+	}
+	left, right := helpLines(entries[:best]), helpLines(entries[best:])
+	leftW := widest(left)
+	lines := make([]string, bestRows)
+	for i := range lines {
+		l, r := "", ""
+		if i < len(left) {
+			l = left[i]
+		}
+		if i < len(right) {
+			r = right[i]
+		}
+		lines[i] = l + strings.Repeat(" ", leftW-lipgloss.Width(l)+helpGutter) + r
+	}
+	return lines, true
+}
+
 // helpView draws the overlay in the panel grammar of every other pane: one
 // line per key the screen answers, its aliases beside it in the muted
 // colour or, when the terminal is too narrow for that, on their own line
 // beneath — a label the bar could not show must not be truncated here too.
+// Where the list is taller than the terminal it takes two columns (helpColumns).
 func (m Model) helpView() string {
 	items := m.footerItems(m.mode)
 	keyW := 0
@@ -146,23 +235,11 @@ func (m Model) helpView() string {
 	if m.width <= 0 {
 		avail = 200
 	}
-	lines := make([]string, 0, len(items)+2)
-	for _, it := range items {
-		row := theme.Key.Render(it.display) + strings.Repeat(" ", keyW-lipgloss.Width(it.display)+2) + it.label
-		if also := hiddenKeys(it); len(also) > 0 {
-			suffix := "also " + strings.Join(also, " ")
-			if lipgloss.Width(row)+2+lipgloss.Width(suffix) <= avail {
-				row += "  " + theme.Subtle.Render(suffix)
-			} else {
-				lines = append(lines, row)
-				indent := strings.Repeat(" ", keyW+2)
-				for _, chunk := range wrapWords(suffix, avail-len(indent)) {
-					lines = append(lines, indent+theme.Subtle.Render(chunk))
-				}
-				continue
-			}
+	lines := helpLines(helpEntries(items, keyW, avail))
+	if m.height > 0 && len(lines)+2 > m.height {
+		if columns, ok := m.helpColumns(items, keyW); ok {
+			lines = columns
 		}
-		lines = append(lines, row)
 	}
 	body := strings.Join(lines, "\n")
 	// How to close it is in the border, not in a last line of the body: on a
