@@ -65,6 +65,11 @@ func Plugin() plugin.Plugin {
 			Help: "request header as 'Key: Value', repeatable"},
 	}
 	options := []plugin.Field{
+		// The four ways to authenticate are one block of a form. They are declared
+		// into it rather than left to the fallback because that names the
+		// connection of a capability whose config states one, and a request has
+		// none: its address is the call.
+		//
 		// Secret, not String, and it always should have been: both are
 		// credentials, so both belong masked in a form rather than drawn in
 		// the clear, and neither is a value anything should keep. Declaring
@@ -73,8 +78,8 @@ func Plugin() plugin.Plugin {
 		//
 		// Not Local: an agent granted a URL may legitimately supply its own
 		// authorization for it, which is what Local would take away.
-		{Name: "bearer", Type: plugin.Secret, Help: "bearer token (Authorization: Bearer ...)"},
-		{Name: "basic", Type: plugin.Secret, Help: "basic auth as user:password"},
+		{Name: "bearer", Type: plugin.Secret, Group: "credentials", Help: "bearer token (Authorization: Bearer ...)"},
+		{Name: "basic", Type: plugin.Secret, Group: "credentials", Help: "basic auth as user:password"},
 		// Local, unlike the two above, and for the opposite reason: a path is a
 		// place on this machine, and an agent that could name one would read any
 		// file the server can into a request it sends to a host of its own
@@ -88,9 +93,9 @@ func Plugin() plugin.Plugin {
 		// would follow every granted URL an agent names, so a token exported for
 		// one host went to whichever other the agent was allowed, the redirect
 		// Resolve skips a profile to avoid. A file or a pipe is chosen per call.
-		{Name: "bearer-file", Type: plugin.Path, Local: true,
+		{Name: "bearer-file", Type: plugin.Path, Local: true, Group: "credentials",
 			Help: "read the bearer token from this file (/dev/stdin for a pipe), which a shell does not keep and ps does not show"},
-		{Name: "basic-file", Type: plugin.Path, Local: true,
+		{Name: "basic-file", Type: plugin.Path, Local: true, Group: "credentials",
 			Help: "read user:password from this file (/dev/stdin for a pipe), which a shell does not keep and ps does not show"},
 		// Local, for the reason the two files above are: it widens what the request
 		// may reach, and only the person at the terminal may ask (withOwnNetwork).
