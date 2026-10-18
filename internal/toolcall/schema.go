@@ -165,8 +165,9 @@ func InputSchema(c plugin.Capability, profiles []string, config map[string]any) 
 	// answers, and it was refused on all of them. The property is published
 	// under the condition the refusal holds under, because both ask
 	// TakesProfile; the one difference is a profile written after the server
-	// started, which the refusal sees at once and the schema, sent once, does
-	// not.
+	// started, which the refusal sees at once and the schema when the tool is
+	// next listed or called (internal/mcp's profileTools), which is also what
+	// sends tools/list_changed.
 	if TakesProfile(c, profiles) {
 		props["profile"] = map[string]any{
 			"type": "string",

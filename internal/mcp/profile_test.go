@@ -37,6 +37,9 @@ type profileFixture struct {
 	// a second server over the same grants with a different config — which is
 	// what "somebody edited the environment" actually looks like.
 	dir string
+	// listChanged receives one value for each tools/list_changed notification
+	// the client was sent.
+	listChanged <-chan struct{}
 }
 
 func newProfileFixture(t *testing.T, yaml string, tweaks ...func(*Options)) *profileFixture {
@@ -127,14 +130,22 @@ func newProfileFixtureIn(t *testing.T, yaml, dir string, tweaks ...func(*Options
 	if _, err := server.Connect(ctx, st, nil); err != nil {
 		t.Fatal(err)
 	}
-	client := sdk.NewClient(&sdk.Implementation{Name: "agent", Version: "0"}, nil)
+	listChanged := make(chan struct{}, 8)
+	client := sdk.NewClient(&sdk.Implementation{Name: "agent", Version: "0"}, &sdk.ClientOptions{
+		ToolListChangedHandler: func(context.Context, *sdk.ToolListChangedRequest) {
+			select {
+			case listChanged <- struct{}{}:
+			default:
+			}
+		},
+	})
 	session, err := client.Connect(ctx, ct, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { session.Close() })
 	return &profileFixture{session: session, sawHost: &host, sawPass: &pass, sawSQL: &sql,
-		ranOther: &ran, ranGated: &ranGated, profiles: cfg, dir: dir}
+		ranOther: &ran, ranGated: &ranGated, profiles: cfg, dir: dir, listChanged: listChanged}
 }
 
 // pin is the stamp of one of this fixture's connections, which is what a grant

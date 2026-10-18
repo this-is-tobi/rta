@@ -104,7 +104,7 @@ func NewServer(reg *registry.Registry, version string, opts Options) *sdk.Server
 		server.AddTool(toolDef(c, opts), handler(c, opts, reg))
 		known[plugin.ToolName(c.ID)] = true
 	}
-	server.AddReceivingMiddleware(recordUnknownTools(known, opts))
+	server.AddReceivingMiddleware(recordUnknownTools(known, opts), followProfiles(server, reg, opts, offered))
 	return server
 }
 
@@ -1019,7 +1019,9 @@ func takeProfile(c plugin.Capability, values map[string]any, cfg config.Config, 
 		if toolcall.TakesProfile(c, cfg.ProfilesFor(plugin.Namespace(c.ID))) {
 			return "", view.Errorf("core.profile.required",
 				"%s has configured connections, so a call must name which one", plugin.ToolName(c.ID)).
-				WithHint("ask the operator which profile to use and for a grant naming it")
+				WithHint(`pass "profile" naming a connection: ask the operator which one to use and for a grant naming ` +
+					`it; if the tool lists no "profile" argument, fetch the tool list again, or have the operator ` +
+					`restart this server`)
 		}
 		return "", nil
 	}
