@@ -380,6 +380,25 @@ func (m Model) fastSubmitForm() (tea.Model, tea.Cmd) {
 	return m.afterFormUpdate(nil)
 }
 
+// clearPickerFilter answers esc for a picker whose filter is in force: the
+// filter goes, the list is whole again, and the form stays where it is.
+//
+// huh takes two presses for that, one to close the filter box and keep what it
+// narrowed to and a second to drop the narrowing. The first only matters to
+// somebody who wants to walk a short list with j and k, and the arrows work
+// while the box is open, so esc here means what the footer says it means in one
+// press (clear filter) and the key after it is the one that cancels.
+func (m Model) clearPickerFilter() (tea.Model, tea.Cmd) {
+	esc := tea.KeyPressMsg{Code: tea.KeyEscape}
+	for range 2 {
+		m.form.form = settleForm(m.form.form, esc)
+		if !filterHoldsEsc(m.form.form) {
+			break
+		}
+	}
+	return m.afterFormUpdate(nil)
+}
+
 // formView frames the input form in an accent panel.
 func (m Model) formView() string {
 	if m.form == nil {

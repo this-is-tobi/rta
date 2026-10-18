@@ -128,7 +128,7 @@ The permission column says what an AI agent needs for the row, after its safety 
 
 A capability with a required input, or a write, opens a form built from its declaration:
 
-- Fields that declare `Options` become a picker.
+- Fields that declare `Options` become a picker. `/` filters it, and `esc` clears the filter before it cancels the form, so what you typed in the boxes above is not lost to a filter you were done with.
 - Fields that declare `Suggest` complete from what exists on your machine — your tags, your keys, your hosts file.
 - `Path` fields complete directory by directory as you type.
 - `ctrl+e` opens `$EDITOR` on a long body.

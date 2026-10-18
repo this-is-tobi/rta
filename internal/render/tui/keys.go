@@ -424,11 +424,15 @@ func (m Model) screenItems(screen mode) []hintItem {
 		}
 	case modeForm:
 		var hints []hintItem
+		escWord := "cancel"
 		if m.form != nil {
 			hints = fieldHints(m.form.form, len(m.form.fields), m.form.completes)
+			if filterHoldsEsc(m.form.form) {
+				escWord = "clear"
+			}
 		}
 		return append(hints,
-			labelled(bindOpen, m.formEnterWord()), item(bindFastSubmit), labelled(bindBack, "cancel"),
+			labelled(bindOpen, m.formEnterWord()), item(bindFastSubmit), labelled(bindBack, escWord),
 		)
 	case modeTheme:
 		var hints []hintItem

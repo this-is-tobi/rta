@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+
 	huh "charm.land/huh/v2"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -68,6 +70,32 @@ func onLastField(f *huh.Form) bool {
 	}
 	for _, b := range f.GetFocusedField().KeyBinds() {
 		if b.Enabled() && b.Help().Desc == "submit" {
+			return true
+		}
+	}
+	return false
+}
+
+// filterHoldsEsc is whether the picker under the cursor has a filter in force,
+// typed into or already applied, which is when esc is the picker's to answer.
+//
+// huh's own knowledge again: a Select or MultiSelect binds esc to "set filter"
+// while its filter box is open and to "clear filter" once a narrowed list is
+// left behind, and enables the binding only in that state. Asking the binding
+// agrees with the widget where reading its filter could not, since the filter
+// text is not exposed.
+func filterHoldsEsc(f *huh.Form) bool {
+	if f == nil || f.State != huh.StateNormal {
+		return false
+	}
+	field := f.GetFocusedField()
+	switch field.(type) {
+	case *huh.Select[string], *huh.MultiSelect[string]:
+	default:
+		return false
+	}
+	for _, b := range field.KeyBinds() {
+		if b.Enabled() && slices.Contains(b.Keys(), "esc") {
 			return true
 		}
 	}
