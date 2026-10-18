@@ -102,6 +102,35 @@ func filterHoldsEsc(f *huh.Form) bool {
 	return false
 }
 
+// environmentAbove is whether the run form's environment picker is above the box
+// under the cursor, which is when the footer says how to reach it.
+//
+// Not on the picker itself, and not in a form that has none: the picker is rta's
+// only where the capability is one a profile can fill (reseedOnPickerMove asks
+// the same), since a capability may declare an input of that name for itself.
+func (cf *capForm) environmentAbove() bool {
+	if cf.form == nil || cf.form.State != huh.StateNormal || !plugin.Profilable(cf.cap) {
+		return false
+	}
+	focused := cf.form.GetFocusedField()
+	picker := -1
+	for i, f := range cf.fields {
+		if f.Name == profileInput && i < len(cf.widgets) {
+			picker = i
+			break
+		}
+	}
+	if picker < 0 {
+		return false
+	}
+	for i := picker + 1; i < len(cf.widgets); i++ {
+		if cf.widgets[i] == focused {
+			return true
+		}
+	}
+	return false
+}
+
 // formEnterWord names enter by what it does where the cursor is: "next" on every
 // field but the last, and on the last the thing that completing the form does,
 // which afterFormUpdate decides and this reads in the same order.

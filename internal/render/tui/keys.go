@@ -93,6 +93,9 @@ var (
 	bindNew     = binding{display: "n", keys: []string{"n"}, label: "new", rank: rankAction}
 	bindRemove  = binding{display: "d", keys: []string{"d"}, label: "delete", rank: rankAction}
 	bindSecret  = binding{display: "s", keys: []string{"s"}, label: "credential", rank: rankAction}
+	// The run form's environment picker sits above its first box, and the arrows
+	// belong to the box, so shift+tab is the way up to it.
+	bindEnvironment = binding{display: "⇧tab", keys: []string{"shift+tab"}, label: "environment", rank: rankAction}
 	// shift+enter accepts whatever is currently bound across every
 	// remaining field, exactly as pressing enter on each in turn would —
 	// the shortcut for a form where the defaults are already fine and the
@@ -584,6 +587,9 @@ func (m Model) screenItems(screen mode) []hintItem {
 		escWord, fastWord := "cancel", "submit"
 		if m.form != nil {
 			hints = fieldHints(m.form.form, len(m.form.fields), m.form.completes)
+			if m.form.environmentAbove() {
+				hints = append(hints, item(bindEnvironment))
+			}
 			if filterHoldsEsc(m.form.form) {
 				escWord = "clear"
 			}
