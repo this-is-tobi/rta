@@ -1353,7 +1353,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 		return nil, verr
 	}
 	if server := strings.TrimSpace(req.String("server")); server != "" {
-		return remoteAnswer(ctx, req, server, id, true)
+		return remoteAnswer(ctx, req, catalog, server, id, true)
 	}
 	r, ok := consent.Find(id)
 	if !ok {
@@ -1376,7 +1376,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 		if verr := checkCeiling(r); verr != nil {
 			return nil, verr
 		}
-		if !confirmAllow(r, allowQuestion(roleName, ttl, r.Agent), revealsValue(catalog, r.Cap)) {
+		if !confirmAllow(r, allowQuestion(r, roleName, ttl), revealsValue(catalog, r.Cap)) {
 			return declined(req.Surface(), r), nil
 		}
 	}
@@ -1723,7 +1723,7 @@ func runDeny(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	if server := strings.TrimSpace(req.String("server")); server != "" {
-		return remoteAnswer(ctx, req, server, id, false)
+		return remoteAnswer(ctx, req, nil, server, id, false)
 	}
 	r, ok := consent.Find(id)
 	if !ok {

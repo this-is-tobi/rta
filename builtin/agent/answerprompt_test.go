@@ -296,14 +296,74 @@ func TestWithoutATerminalAllowKeepsItsOldBehaviour(t *testing.T) {
 }
 
 func TestTheQuestionSaysWhatAYesGoesBeyondTheOneCall(t *testing.T) {
+	r := consent.Request{Cap: "kv.get", Scopes: []string{"db-password"}, Agent: "claude"}
 	for _, c := range []struct{ role, ttl, want string }{
 		{"", "", "Allow once?"},
-		{"", "15m", "Allow this call, and keep allowing it for 15m?"},
+		{"", "15m", "Allow this call, and keep allowing kv.get db-password, whatever else it is called with, for 15m?"},
 		{"dev", "", "Allow this call, and issue the role dev to claude?"},
 	} {
-		if got := allowQuestion(c.role, c.ttl, "claude"); got != c.want {
+		if got := allowQuestion(r, c.role, c.ttl); got != c.want {
 			t.Errorf("role %q ttl %q: %q, want %q", c.role, c.ttl, got, c.want)
 		}
+	}
+}
+
+// What a person is asked to allow is the whole of it, or the card says that it
+// is not. The arguments used to be joined alphabetically on one line cut at
+// sixty characters: a net.send to a Redis port whose data was a CONFIG SET of
+// the cron directory showed the data cut mid-command, the port gone, and then
+// the card said the capability and arguments above were all of it.
+func TestTheCardShowsEveryArgumentOnARowAndSaysWhenItCutOne(t *testing.T) {
+	isolate(t)
+	data := strings.Repeat("CONFIG SET dir /var/spool/cron/crontabs ", 6)
+	p, err := consent.Ask(consent.Call{
+		Cap: "net.send", Safety: "write", Scopes: []string{"10.0.0.5"}, Agent: "claude",
+		Args: map[string]any{"host": "10.0.0.5", "port": 6379, "data": data, "timeout": "5s"},
+		Why:  "no active grant for net_send",
+	}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+	q := terminal(t, "n")
+	if _, err := allowAt(t, map[string]any{"id": p.Request.ID}, false, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"data=", "host=", "port=", "timeout="} {
+		rows := 0
+		for _, line := range strings.Split(q.card, "\n") {
+			if strings.Contains(line, "  "+name) || strings.HasPrefix(strings.TrimSpace(line), name) || strings.Contains(line, "arguments  "+name) {
+				rows++
+			}
+		}
+		if rows != 1 {
+			t.Errorf("%s is on %d rows of the card, want one of its own:\n%s", name, rows, q.card)
+		}
+	}
+	if !strings.Contains(q.card, "rta agent show "+p.Request.ID) {
+		t.Errorf("the cut argument does not say where the rest is:\n%s", q.card)
+	}
+	if strings.Contains(q.card, "are all of it") {
+		t.Errorf("the card claims to be all of it after cutting an argument:\n%s", q.card)
+	}
+}
+
+func TestACardThatCutNothingStillSaysItIsAllOfIt(t *testing.T) {
+	isolate(t)
+	p, err := consent.Ask(consent.Call{
+		Cap: "note.add", Safety: "write", Agent: "claude",
+		Args: map[string]any{"title": "harmless", "body": "short"}, Why: "no active grant for note_add",
+	}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+	q := terminal(t, "n")
+	if _, err := allowAt(t, map[string]any{"id": p.Request.ID}, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(q.card, "arguments above are all of it") {
+		t.Errorf("a card that cut nothing lost its statement that it is whole:\n%s", q.card)
 	}
 }
 
