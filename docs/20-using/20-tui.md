@@ -78,7 +78,7 @@ The header is somewhere the selection rests, as a tile is: the arrows go to it, 
 
 The selected tile is the one with the coloured border. On a terminal that shows no colour (`NO_COLOR`, `TERM=dumb`) its border is drawn in heavy lines instead, so the selection never rests on colour alone. The idle search line has no border to colour: when it is the selection its `⌕` becomes a `❯`. The chosen answer of a yes/no box in a form is the same: its fill is the colour, so without colour it is drawn between brackets, `[ yes ]     no`.
 
-What a key did is said in the footer, beside the keys: a green `✓` for something done and a red `✗` for something that did not happen, such as a save the file refused or an approval that was turned down. The mark carries the difference where colour does not show.
+What a key did is said in the footer, beside the keys: a green `✓` for something done, a red `✗` for something that did not happen, and a `→` for what to do next. A save the file refused is a `✗`, and its line leads with `not saved` and says the change holds for this session only; so are an approval that was turned down and a key with nothing to act on, such as `t` on a built-in plugin or `U` with no store. The mark carries the difference where colour does not show.
 
 **The colours follow the environment that is on.** A profile can have a colour and a `theme:` of its own ([a palette per environment](./25-dashboard-and-theme.md#a-palette-per-environment)), and the TUI draws in them: `u` on the profiles pane repaints everything, a result on screen included, and `rta use` from another terminal, a deadline lapsing and an edit of the profile in force reach it on the next refresh. Switching off puts your own colours back.
 

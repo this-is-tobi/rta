@@ -620,6 +620,14 @@ func (m *Model) guide(msg string) {
 	m.flash, m.flashGuide = msg, msg
 }
 
+// refused is refuse for the helpers that hand their line back to be assigned,
+// `m.flash = m.trustSelected()`: the mark follows the text, and the text that
+// comes back is the one that was refused.
+func (m *Model) refused(msg string) string {
+	m.refuse(msg)
+	return msg
+}
+
 // formErrors is what the form on screen refuses to accept right now: huh's
 // per-field validation messages, for the footer to show.
 func (m Model) formErrors(screen mode) []error {

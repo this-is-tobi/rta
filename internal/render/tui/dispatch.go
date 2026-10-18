@@ -238,7 +238,7 @@ func (m Model) pluginsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			// it — a dead end that reads as a broken catalogue rather
 			// than as a decision waiting to be made.
 			if row := m.plugins[m.pluginSel]; !row.usable() {
-				m.flash = untrustedNote(row)
+				m.refuse(untrustedNote(row))
 				return m, nil, true
 			}
 			m.mode = modeDashboard
@@ -273,7 +273,7 @@ func (m Model) pluginsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			// open an empty form and write a `plugins:` section that
 			// nothing reads.
 			if row := m.plugins[m.pluginSel]; !row.usable() {
-				m.flash = untrustedNote(row)
+				m.refuse(untrustedNote(row))
 				return m, nil, true
 			}
 			nm, cmd := m.startConfigForm(m.plugins[m.pluginSel])

@@ -407,7 +407,7 @@ func (m *Model) toggleShown(idx int) string {
 	}
 	row := &m.plugins[idx]
 	if !row.usable() {
-		return untrustedNote(*row)
+		return m.refused(untrustedNote(*row))
 	}
 	if !row.canTile() {
 		// Saying why beats a key that silently does nothing — and saying the
@@ -416,7 +416,7 @@ func (m *Model) toggleShown(idx int) string {
 		// happen. Through NoTileReason rather than a sentence of its own: this
 		// was the third copy of "needs to be told what to look at", which is
 		// wrong for every plugin that simply declines to run unasked.
-		return row.plugin.Name + " has no dashboard tile: " + NoTileReason(row.plugin)
+		return m.refused(row.plugin.Name + " has no dashboard tile: " + NoTileReason(row.plugin))
 	}
 	row.shown = !row.shown
 
@@ -439,7 +439,7 @@ func (m *Model) toggleShown(idx int) string {
 	}
 	note := verb + " " + row.tile
 	if err := m.save(); err != nil {
-		return note + " (this session only: " + err.Error() + ")"
+		return m.refused("not saved: " + note + " (this session only: " + err.Error() + ")")
 	}
 	return note
 }
@@ -814,14 +814,14 @@ func (m *Model) trustSelected() string {
 	}
 	row := m.plugins[m.pluginSel]
 	if row.failed != nil {
-		return failedNote(row)
+		return m.refused(failedNote(row))
 	}
 	if !row.external() && !row.waiting {
-		return row.plugin.Name + " is built into rta — there is no artifact to approve"
+		return m.refused(row.plugin.Name + " is built into rta — there is no artifact to approve")
 	}
 	if row.waiting {
 		if verr := plugintrust.Add(row.origin.Digest, row.plugin.Name, row.origin.Path); verr != nil {
-			return "not approved: " + verr.Message
+			return m.refused("not approved: " + verr.Message)
 		}
 		m.plugins[m.pluginSel].decided = decidedTrust
 		return "approved " + row.plugin.Name + " (" + row.origin.Short() +
@@ -829,10 +829,10 @@ func (m *Model) trustSelected() string {
 	}
 	n, verr := plugintrust.Remove(row.plugin.Name)
 	if verr != nil {
-		return "not withdrawn: " + verr.Message
+		return m.refused("not withdrawn: " + verr.Message)
 	}
 	if n == 0 {
-		return row.plugin.Name + " was not in the trusted list"
+		return m.refused(row.plugin.Name + " was not in the trusted list")
 	}
 	// The row stays as it was: what went was the operator's copy of an
 	// artifact the system root trusts too, and it runs again next time.

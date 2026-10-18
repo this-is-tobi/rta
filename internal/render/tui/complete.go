@@ -170,7 +170,7 @@ func (m Model) completeFromCluster(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// cannot answer costs one press and not every press: the error is
 	// flashed, and the next tab leaves the field instead of asking again.
 	cf.fetchedFor[field] = typed
-	m.flash = "completing…"
+	m.guide("completing…")
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), completeTimeout)
 		defer cancel()
@@ -282,7 +282,7 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Same as the cluster path: one fetch per value, so a service that
 	// answers nothing leaves tab free to move on rather than asking again.
 	cf.fetchedFor[f.Name] = partial
-	m.flash = "completing…"
+	m.guide("completing…")
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), completeTimeout)
 		defer cancel()
@@ -431,7 +431,7 @@ func (m Model) applyCompletion(msg completeMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if len(msg.c.Items) == 0 {
-		m.flash = "no " + msg.c.What
+		m.refuse("no " + msg.c.What)
 		return m, nil
 	}
 	// A field with a suggestion function is told through the form, not through

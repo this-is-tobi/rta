@@ -133,7 +133,7 @@ func (m Model) armedKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		nm, cmd := m.runSeeded(armed.act, armed.base)
 		return nm, cmd, true
 	}
-	m.flash = "nothing allowed — the call is still waiting"
+	m.refuse("nothing allowed — the call is still waiting")
 	return m, nil, true
 }
 

@@ -98,7 +98,7 @@ func (m *Model) hideSelected() string {
 	m.clampScroll()
 
 	if err := m.save(); err != nil {
-		return note + " (this session only: " + err.Error() + ")"
+		return m.refused("not saved: " + note + " (this session only: " + err.Error() + ")")
 	}
 	return note
 }
@@ -234,7 +234,7 @@ func (m *Model) moveSelected(delta int) string {
 	m.dash.Tiles = reorderTiles(m.dash.Tiles, m.dash.Order)
 	m.dash.Add = reorderTiles(m.dash.Add, m.dash.Order)
 	if err := m.save(); err != nil {
-		return "reordered (this session only: " + err.Error() + ")"
+		return m.refused("not saved: reordered (this session only: " + err.Error() + ")")
 	}
 	return "saved the new order"
 }

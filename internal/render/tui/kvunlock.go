@@ -42,7 +42,7 @@ func (m Model) unlockStore() (tea.Model, tea.Cmd) {
 	}
 	prompt, ok := kv.UnlockPrompt()
 	if !ok {
-		m.flash = "nothing to unlock — there is no store yet, or the environment already opens it"
+		m.refuse("nothing to unlock — there is no store yet, or the environment already opens it")
 		return m, nil
 	}
 	return m.open(unlockCapability(prompt))
