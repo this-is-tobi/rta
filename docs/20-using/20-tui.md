@@ -131,6 +131,7 @@ A capability with a required input, or a write, opens a form built from its decl
 - Fields that declare `Options` become a picker. `/` filters it, and `esc` clears the filter before it cancels the form, so what you typed in the boxes above is not lost to a filter you were done with.
 - A box that must be answered says so on its title line, `url · required`, in words that show on a terminal with no colour. Under the title is the field's own help, and after it a word for the shape only where the shape narrows what the box takes: `int`, `duration`, `path`, `secret`, `list, comma-separated`, `multi-line`.
 - The form's head says on the right what class of call it is when it is above a read, `write` or `destructive`, and where the cursor is among the boxes, `3 of 10`. A form of one box has no length to give, and a read says no class.
+- A box no value fills shows the value a capability's first example gives it, `e.g. Go, macOS`, muted and led by those words so it still reads as an example with no colour. It is a placeholder and never an answer: `enter` on it submits nothing for the box, and a required box is still refused as empty.
 - Fields that declare `Suggest` complete from what exists on your machine — your tags, your keys, your hosts file.
 - `Path` fields complete directory by directory as you type.
 - `ctrl+e` opens `$EDITOR` on a long body.

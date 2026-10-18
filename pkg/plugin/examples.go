@@ -11,11 +11,11 @@ import (
 //
 // **Declared as values, not as a command line.** The same example is shown at
 // a terminal as `rta sys ps --sort mem --limit 5`, to an agent as the sys_ps
-// tool and its arguments, and in the TUI as a filled-in form, and one string
-// cannot be all three — the plugin would write the one it knows, and the
-// other readers would be told to type a flag they do not have (the reason
-// Summary and Description may not spell one). Declared as the inputs it
-// gives, each surface spells it the way its reader makes the call
+// tool and its arguments, and in the TUI as the example an empty box shows,
+// and one string cannot be all three — the plugin would write the one it
+// knows, and the other readers would be told to type a flag they do not have
+// (the reason Summary and Description may not spell one). Declared as the
+// inputs it gives, each surface spells it the way its reader makes the call
 // (Capability.ExampleCall), and Validate holds it to the capability it
 // belongs to: an example naming a flag that was renamed is a declaration that
 // fails to load, not a line in a help page that nobody tries until a reader

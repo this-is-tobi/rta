@@ -685,6 +685,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// is being dropped here — see pkg/plugin.
 			fields = append(fields, huh.NewText().
 				Title(fieldLabel(f)).
+				Placeholder(cf.placeholder(f)).
 				// ctrl+e opens $EDITOR on the body, which is how a note gets
 				// written in the tool you write in. It works by default; it
 				// is said here because an affordance nobody knows about is
@@ -701,6 +702,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			typed := cf.bind(f.Name, defaultString(f))
 			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
 				Title(fieldLabel(f)).
+				Placeholder(cf.placeholder(f)).
 				Description(completionHint(f, fieldDescription(f))).
 				Accessor(typed).
 				Validate(cf.validator(f)), f, typed, lastItem)))
@@ -711,6 +713,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			typed := cf.bind(f.Name, defaultString(f))
 			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
 				Title(fieldLabel(f)).
+				Placeholder(cf.placeholder(f)).
 				Description(fieldDescription(f)+" — tab completes paths").
 				Accessor(typed).
 				Validate(cf.validator(f)), f, typed, walkingDisk)))
@@ -737,6 +740,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			typed := cf.bind(f.Name, defaultString(f))
 			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
 				Title(fieldLabel(f)).
+				Placeholder(cf.placeholder(f)).
 				Description(completionHint(f, fieldDescription(f))).
 				Accessor(typed).
 				Validate(cf.validator(f)), f, typed, wholeBox)))
@@ -1203,6 +1207,41 @@ func fieldTitle(name string) string {
 // surface, the one its guard refuses a run by, so a form never submits what
 // the guard then refuses and the two cannot drift.
 func requiredHere(f plugin.Field) bool { return f.RequiredOn(plugin.SurfaceTUI) }
+
+// exampleMark leads a placeholder so it reads as the example it is. A muted
+// colour says so on a terminal that has one, and with none (NO_COLOR, a copy of
+// the screen) the same text would read as an answer already typed: a box that
+// shows `select 1` and a box that was typed `select 1` look alike, and enter on
+// the first would seem to submit it. The words say what the colour does not.
+const exampleMark = "e.g. "
+
+// placeholder is what an empty box shows of the capability's examples: the
+// value the first of them gives the box, which is the one declared first
+// because it is the one written to be pasted first. Nothing for a box no
+// example speaks of, and none is wanted for a picker, which shows its choices.
+//
+// Declared text on its way to a terminal, so it is cleaned like any other, and
+// only ever a placeholder: huh draws it while the box is empty and never reads
+// it back, so enter on an untouched box answers nothing and a required one
+// still refuses to be empty (validatorFor).
+func (cf *capForm) placeholder(f plugin.Field) string {
+	for _, e := range cf.cap.Examples {
+		v, given := e.Inputs[f.Name]
+		if !given {
+			continue
+		}
+		var text string
+		if list, ok := v.([]string); ok {
+			text, _ = boxlist.Join(list, ", ")
+		} else if v != nil {
+			text = fmt.Sprint(v)
+		}
+		if text = textclean.Terminal(text); text != "" {
+			return exampleMark + text
+		}
+	}
+	return ""
+}
 
 // requiredMark is what a required box's title carries after its name. Words
 // and not a colour or a glyph alone, so it is said on a terminal with neither,
