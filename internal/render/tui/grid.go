@@ -350,7 +350,12 @@ func (m Model) gridRowAt(y int) (gridRow, bool) {
 
 // dashRowsVisible reports how many tile rows fit under header + search bar,
 // starting from the current scroll position.
-func (m Model) dashRowsVisible() int {
+func (m Model) dashRowsVisible() int { return m.rowsVisibleFrom(m.scroll) }
+
+// rowsVisibleFrom is how many tile rows fit when the window opens on row first.
+// The count depends on which rows they are, so it has to be asked of the row the
+// window really starts on, not of an offset it was moved away from.
+func (m Model) rowsVisibleFrom(first int) int {
 	if m.height <= 0 {
 		// Size unknown. Model.View paints nothing in that state, but this is
 		// still reached: clampScroll asks the same question, and a keypress
@@ -359,7 +364,7 @@ func (m Model) dashRowsVisible() int {
 		// makes clampScroll's min a no-op instead of a guess.
 		return 1 << 30
 	}
-	return visibleRowCount(m.rowHeights(), m.scroll, m.dashRowBudget())
+	return visibleRowCount(m.rowHeights(), first, m.dashRowBudget())
 }
 
 // dashRowBudget is how many lines the tile rows have between the header with
@@ -379,14 +384,17 @@ func (m Model) tilesFit() bool {
 }
 
 // rowWindow is the half-open range of tile rows on screen: from the scroll
-// offset, as many as dashRowsVisible admits.
+// offset, as many as fit from there.
 func (m Model) rowWindow(rows int) (first, last int) {
 	// Capped by where the window can start, because the room is not constant:
 	// closing the search hands back four lines, and an offset that was right
 	// with the box open would leave the last row alone above dead space until
-	// the next tile answered and clampScroll caught up.
+	// the next tile answered and clampScroll caught up. The rows that fit are
+	// counted from the capped start, not from the offset: rows are not all one
+	// height, so the count from a start further down can be one short, and the
+	// window would end a row above the selection that clampScroll had kept in it.
 	first = min(m.scroll, rows-1, m.maxScroll())
-	return first, min(first+m.dashRowsVisible(), rows)
+	return first, min(first+m.rowsVisibleFrom(first), rows)
 }
 
 // drawnHeights is what the rows in [first, last) are drawn at, and what tileAt
@@ -448,10 +456,13 @@ func (m *Model) clampScroll() {
 			m.scroll = selRow - 1
 		}
 	}
-	// Asked after the window has moved: how many rows fit depends on which rows
-	// they are, and the header that came along may leave room for one fewer.
-	if visible := m.dashRowsVisible(); selRow >= m.scroll+visible {
-		m.scroll = selRow - visible + 1
+	// One row at a time, asking after each step what the window now holds: how
+	// many rows fit depends on which rows they are, so the offset that puts the
+	// selection last cannot be computed from the one it started at. It stops at
+	// maxScroll, past which rowWindow would start the window there anyway.
+	limit := m.maxScroll()
+	for m.scroll < limit && selRow >= m.scroll+m.dashRowsVisible() {
+		m.scroll++
 	}
 }
 
