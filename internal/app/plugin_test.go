@@ -1537,10 +1537,10 @@ func TestPluginDevRefusesABuiltInNamespaceAndSaysWhoseItIs(t *testing.T) {
 // The first thing a newcomer copies off the inputs page is its example, and an
 // example that declares a Secret without Local is an input an agent is asked
 // to fill: an API key typed into a tool call, against the same page's rule
-// that a credential is `Local: true, EnvFallback: true`. Nothing else flags
-// it — the suite, plugin dev and explain all stay quiet about a Secret an
-// agent may give, because a value to store is a legitimate one — so the page
-// is the only guidance there is.
+// that a credential is `Local: true, EnvFallback: true`. Nothing refuses it,
+// because a value to store is a legitimate Secret for an agent to give; the
+// suite and plugin dev only note it, to an author who has already copied the
+// example, so the page is the guidance that comes first.
 func TestTheDocsDeclareACredentialInputLocal(t *testing.T) {
 	root := repoRoot(t)
 	page := readDoc(t, root, "docs/40-plugins/21-declaring-inputs.md")
@@ -1637,6 +1637,134 @@ func TestTheDevReportSaysHowTheDashboardTileWasChosen(t *testing.T) {
 			Inputs: []plugin.Field{{Name: "name", Type: plugin.String, Required: true}}}}})
 	if !strings.Contains(none, "none") || !strings.Contains(none, "declare acme.overview") {
 		t.Errorf("a plugin with no tile is not told what to do: %q", none)
+	}
+}
+
+// Two declarations are valid and leave the agent surface poor, and the author
+// who wrote them sees nothing: a credential an agent is asked to fill (a
+// Secret that is not Local) and an input an agent is offered with no Help,
+// whose description in the tool's schema is empty. `go test` passes and the
+// report stayed silent, so the report says so — beside the page, as an advisory
+// warning, since the page is whole and the plugin loads — naming the capability
+// and the inputs and saying what to change.
+func TestTheDevReportNotesWhatLeavesTheAgentSurfacePoor(t *testing.T) {
+	read := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil }
+	report := func(c plugin.Capability) view.Sections {
+		p := plugin.Plugin{Name: "acme", Summary: "a plugin", Capabilities: []plugin.Capability{c}}
+		reg := registry.New()
+		if err := reg.RegisterFrom(p, registry.Origin{Path: "/tmp/rta-plugin-acme", Digest: "sha256:acme"}); err != nil {
+			t.Fatal(err)
+		}
+		sections, ok := devReport(reg, &pluginhost.Client{Declared: p}).(view.Sections)
+		if !ok {
+			t.Fatal("the dev report is not a page of sections")
+		}
+		return sections
+	}
+
+	got := report(plugin.Capability{ID: "acme.thing.get", Summary: "Get a thing", Safety: plugin.Read, Run: read,
+		Inputs: []plugin.Field{
+			{Name: "apikey", Type: plugin.Secret, Help: "the key"},
+			{Name: "shout", Type: plugin.Bool},
+			{Name: "token", Type: plugin.Secret, Local: true, EnvFallback: true},
+			{Name: "region", Type: plugin.String, Local: true},
+			{Name: "city", Type: plugin.String, Help: "which city"},
+		}})
+	byCode := map[string]view.Error{}
+	for _, w := range got.Warnings {
+		byCode[w.Code] = w
+	}
+	if len(got.Warnings) != 2 {
+		t.Fatalf("warnings = %v, want one for the credential and one for the input with no help", got.Warnings)
+	}
+	credential, help := byCode["plugin.dev.credential"], byCode["plugin.dev.help"]
+	for _, w := range []view.Error{credential, help} {
+		if !w.Advisory {
+			t.Errorf("%s is a note beside a whole page, and was drawn as one that accounts for a gap", w.Code)
+		}
+		if !strings.Contains(w.Message, "acme.thing.get") {
+			t.Errorf("%s does not name the capability: %q", w.Code, w.Message)
+		}
+	}
+	if !strings.Contains(credential.Message, `"apikey"`) || strings.Contains(credential.Message, `"token"`) ||
+		!strings.Contains(credential.Hint, "Local: true, EnvFallback: true") {
+		t.Errorf("the credential note: %q / %q", credential.Message, credential.Hint)
+	}
+	if !strings.Contains(help.Message, `"shout"`) || strings.Contains(help.Message, `"region"`) ||
+		strings.Contains(help.Message, `"city"`) || !strings.Contains(help.Hint, "Help") {
+		t.Errorf("the help note: %q / %q", help.Message, help.Hint)
+	}
+
+	// Seen by the author where they look: the pretty report.
+	var buf bytes.Buffer
+	if err := cli.Render(&buf, got, cli.Options{Format: cli.Pretty, NoColor: true, Width: 200}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"plugin.dev.credential", "plugin.dev.help", `"apikey"`, `"shout"`} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("the report does not show %q:\n%s", want, buf.String())
+		}
+	}
+
+	// A declaration with neither slip, or a capability no agent is offered, says nothing.
+	clean := plugin.Capability{ID: "acme.thing.get", Summary: "Get a thing", Safety: plugin.Read, Run: read,
+		Inputs: []plugin.Field{{Name: "token", Type: plugin.Secret, Local: true, EnvFallback: true, Help: "the key"},
+			{Name: "city", Type: plugin.String, Help: "which city"}}}
+	if w := report(clean).Warnings; len(w) != 0 {
+		t.Errorf("a declaration with nothing to note was warned about: %v", w)
+	}
+	humanOnly := plugin.Capability{ID: "acme.thing.get", Summary: "Get a thing", Safety: plugin.Read, Run: read,
+		HumanOnly: true, Inputs: []plugin.Field{{Name: "apikey", Type: plugin.Secret}, {Name: "shout", Type: plugin.Bool}}}
+	if w := report(humanOnly).Warnings; len(w) != 0 {
+		t.Errorf("a capability no agent is offered was warned about: %v", w)
+	}
+}
+
+// What the notes above say of the plugins rta ships. A credential an agent is
+// asked to fill is a choice, and each one here was made on purpose, for the
+// reason its declaration gives (a bearer an agent granted a URL may bring, a
+// value to store, a token handed over to be read), so they are listed and a new
+// one is not: a built-in that starts offering an agent a credential has to be
+// added here with the same care. And no built-in leaves an input an agent is
+// offered without a Help.
+func TestNoBuiltinOffersAnAgentACredentialOrAnUndescribedInputUnlessItIsOnPurpose(t *testing.T) {
+	onPurpose := map[string][]string{
+		"codec.jwk":   {"key"},
+		"codec.jwt":   {"token", "key"},
+		"http.delete": {"bearer", "basic"},
+		"http.get":    {"bearer", "basic"},
+		"http.head":   {"bearer", "basic"},
+		"http.post":   {"bearer", "basic"},
+		"http.put":    {"bearer", "basic"},
+		"kv.set":      {"value"},
+	}
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := func(fields []plugin.Field) []string {
+		var out []string
+		for _, f := range fields {
+			out = append(out, f.Name)
+		}
+		return out
+	}
+	seen := map[string]bool{}
+	for _, c := range reg.Capabilities() {
+		if got := names(c.AgentSecretInputs()); len(got) > 0 {
+			seen[c.ID] = true
+			if want := onPurpose[c.ID]; !slices.Equal(got, want) {
+				t.Errorf("%s offers an agent the credential inputs %v; the ones on purpose are %v", c.ID, got, want)
+			}
+		}
+		if got := names(c.AgentInputsWithoutHelp()); len(got) > 0 {
+			t.Errorf("%s offers an agent %v with no Help, which is the whole of what the agent reads of it", c.ID, got)
+		}
+	}
+	for id := range onPurpose {
+		if !seen[id] {
+			t.Errorf("%s no longer offers an agent a credential; take it off the list", id)
+		}
 	}
 }
 

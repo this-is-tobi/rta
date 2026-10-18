@@ -649,3 +649,41 @@ func TestARequiredListWithABlankEntryIsMissing(t *testing.T) {
 		t.Errorf("an optional list was held to a blank entry: %v", got)
 	}
 }
+
+// What an agent is offered of a capability is every input that is not Local,
+// and only when the capability is a tool at all. Two things an author says
+// about those inputs slip past every check: a credential among them, which an
+// agent is then asked to carry in its tool call, and one with no Help, whose
+// description in the agent's schema is empty.
+func TestTheInputsAnAgentIsOfferedAreHeldToTheirDeclaredKind(t *testing.T) {
+	c := Capability{ID: "demo.thing.get", Summary: "demo", Safety: Read, Inputs: []Field{
+		{Name: "apikey", Type: Secret, Help: "the key"},
+		{Name: "keys", Type: SecretSlice, Help: "the keys"},
+		{Name: "token", Type: Secret, Local: true, EnvFallback: true},
+		{Name: "shout", Type: Bool},
+		{Name: "city", Type: String, Help: "  "},
+		{Name: "region", Type: String, Local: true},
+		{Name: "limit", Type: Int, Help: "how many"},
+	}}
+	names := func(fs []Field) string {
+		var out []string
+		for _, f := range fs {
+			out = append(out, f.Name)
+		}
+		return strings.Join(out, ",")
+	}
+	if got := names(c.AgentSecretInputs()); got != "apikey,keys" {
+		t.Errorf("credentials offered to an agent = %q, want the two that are not Local", got)
+	}
+	if got := names(c.AgentInputsWithoutHelp()); got != "shout,city" {
+		t.Errorf("offered with no help = %q, want the two a Local, or a described, input does not make", got)
+	}
+
+	c.HumanOnly = true
+	if got := c.AgentSecretInputs(); got != nil {
+		t.Errorf("a HumanOnly capability is no tool, and was said to offer %v", got)
+	}
+	if got := c.AgentInputsWithoutHelp(); got != nil {
+		t.Errorf("a HumanOnly capability is no tool, and was said to offer %v", got)
+	}
+}

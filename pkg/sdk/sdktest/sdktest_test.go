@@ -1042,6 +1042,113 @@ func TestACapabilityNoAgentCanCallIsNotedForItsAuthor(t *testing.T) {
 	}
 }
 
+// A Secret an agent is offered is a credential the model is asked to carry in
+// its tool call, and nothing else flags it: the declaration is valid, because
+// a value to store is a legitimate one. So it is noted for the author, who
+// either meant Local, with the operator supplying it, or knows the agent is
+// the one that has the value and waives the note saying why.
+func TestACredentialAnAgentIsOfferedIsNotedForItsAuthor(t *testing.T) {
+	declared := func(change func(*plugin.Capability)) *recorder {
+		c := ok()
+		c.Inputs = append(c.Inputs, plugin.Field{Name: "apikey", Type: plugin.Secret, Help: "the key"})
+		change(&c)
+		rec := &recorder{}
+		checkAgentSecrets(rec, plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}, noConfig())
+		return rec
+	}
+
+	rec := declared(func(*plugin.Capability) {})
+	for _, want := range []string{"demo.item.list", `"apikey"`, "Local: true", "EnvFallback", "sdktest.Skip"} {
+		if !strings.Contains(rec.logText(), want) {
+			t.Errorf("the note does not say %q: %q", want, rec.logText())
+		}
+	}
+	if len(rec.errs) > 0 {
+		t.Errorf("the note was made an error: %s", rec.errText())
+	}
+
+	for name, change := range map[string]func(*plugin.Capability){
+		"Local":     func(c *plugin.Capability) { c.Inputs[len(c.Inputs)-1].Local = true },
+		"HumanOnly": func(c *plugin.Capability) { c.HumanOnly = true },
+		"not a Secret": func(c *plugin.Capability) {
+			c.Inputs[len(c.Inputs)-1].Type = plugin.String
+		},
+	} {
+		if rec := declared(change); rec.logText() != "" {
+			t.Errorf("%s: an input no agent carries a credential in was noted: %q", name, rec.logText())
+		}
+	}
+
+	waived := noConfig()
+	waived.skips[RuleDeclaration] = map[string]string{"demo.item.list": "the agent has the value to store"}
+	c := ok()
+	c.Inputs = append(c.Inputs, plugin.Field{Name: "keys", Type: plugin.SecretSlice, Help: "the keys"})
+	both := &recorder{}
+	checkAgentSecrets(both, plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}, noConfig())
+	if !strings.Contains(both.logText(), `"keys"`) {
+		t.Errorf("a SecretSlice an agent is offered was not noted: %q", both.logText())
+	}
+	silent := &recorder{}
+	checkAgentSecrets(silent, plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}, waived)
+	if silent.logText() != "" {
+		t.Errorf("a Skip did not silence the note: %q", silent.logText())
+	}
+}
+
+// An input an agent is offered with no Help is a property with an empty
+// description in every session's tool list: a bool called shout, for the model
+// to guess at. Noted, never failed, and the neighbours of the rule are left
+// alone: a Local input is not in the schema, so its help is the person's to
+// write, and one that has Help is said nothing of.
+func TestAnInputAnAgentIsOfferedWithNoHelpIsNotedForItsAuthor(t *testing.T) {
+	declared := func(change func(*plugin.Capability)) *recorder {
+		c := ok()
+		c.Summary = "List items"
+		c.Inputs = []plugin.Field{
+			{Name: "limit", Type: plugin.Int, Default: 10, Min: 1, Max: 100, Help: "how many"},
+			{Name: "shout", Type: plugin.Bool},
+		}
+		change(&c)
+		rec := &recorder{}
+		checkWording(rec, plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}, noConfig())
+		return rec
+	}
+
+	rec := declared(func(*plugin.Capability) {})
+	for _, want := range []string{"demo.item.list", `"shout"`, "Help", "description"} {
+		if !strings.Contains(rec.logText(), want) {
+			t.Errorf("the note does not say %q: %q", want, rec.logText())
+		}
+	}
+	if strings.Contains(rec.logText(), `"limit"`) {
+		t.Errorf("an input with Help was noted: %q", rec.logText())
+	}
+	if len(rec.errs) > 0 {
+		t.Errorf("the note was made an error: %s", rec.errText())
+	}
+
+	for name, change := range map[string]func(*plugin.Capability){
+		"Local":     func(c *plugin.Capability) { c.Inputs[1].Local = true },
+		"HumanOnly": func(c *plugin.Capability) { c.HumanOnly = true },
+		"Help":      func(c *plugin.Capability) { c.Inputs[1].Help = "upper-case the result" },
+	} {
+		if rec := declared(change); rec.logText() != "" {
+			t.Errorf("%s: an input that is described to no one was noted: %q", name, rec.logText())
+		}
+	}
+
+	waived := noConfig()
+	waived.skips[RuleWording] = map[string]string{"demo.item.list": "the name says it"}
+	c := ok()
+	c.Summary = "List items"
+	c.Inputs = []plugin.Field{{Name: "shout", Type: plugin.Bool}}
+	silent := &recorder{}
+	checkWording(silent, plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}, waived)
+	if silent.logText() != "" {
+		t.Errorf("a Skip did not silence the note: %q", silent.logText())
+	}
+}
+
 // A priority is a hint for fitting a width, and a negative one has no meaning
 // to a host that sends it as zero: the plugin meant something else.
 func TestANegativeColumnPriorityIsAConformanceFailure(t *testing.T) {

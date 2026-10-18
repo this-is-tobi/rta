@@ -588,6 +588,41 @@ func (c Capability) OperatorOnlyInput() (Field, bool) {
 	return Field{}, false
 }
 
+// AgentSecretInputs are the inputs of c that hold a credential and that an
+// agent is offered: a Secret or SecretSlice that is not Local. An agent's
+// schema has the input, so the model is asked to carry the value in its tool
+// call and to have it in its context, which is what Local keeps a credential
+// out of. It is legitimate for a value an agent is meant to give and have
+// stored, and the commonest way to ask a model to hold a credential it should
+// never see; so it is something to say to an author and not a declaration to
+// refuse. A capability that is HumanOnly is no tool, and offers nothing.
+func (c Capability) AgentSecretInputs() []Field {
+	return c.agentInputs(func(f Field) bool { return f.Type.Sensitive() })
+}
+
+// AgentInputsWithoutHelp are the inputs of c that an agent is offered and
+// that say nothing of themselves: Help is what an agent reads of an input,
+// word for word, as the description of its property, and a bool or a string
+// with none is a name and a type for the model to guess the meaning of.
+func (c Capability) AgentInputsWithoutHelp() []Field {
+	return c.agentInputs(func(f Field) bool { return strings.TrimSpace(f.Help) == "" })
+}
+
+// agentInputs is the inputs an agent is offered, as the schema builds its
+// properties (a Local input is left out), that keep accepts.
+func (c Capability) agentInputs(keep func(Field) bool) []Field {
+	if c.HumanOnly {
+		return nil
+	}
+	var out []Field
+	for _, f := range c.Inputs {
+		if !f.Local && keep(f) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // CheckRequired reports the first input a request must carry and does not —
 // see Missing — or nil, named the way the request's surface names it.
 func CheckRequired(c Capability, req Request) *view.Error {

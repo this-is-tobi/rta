@@ -19,7 +19,8 @@ import (
 // A nil View is legal everywhere one is accepted: a handler may return
 // (nil, nil) to mean "nothing to show", a Section may carry a title and no
 // view, and every renderer skips it rather than treating it as an error. It
-// encodes as {"type":"unknown"}.
+// encodes as {"type":"unknown"}, except as the whole answer over MCP, where a
+// model is sent an empty text instead.
 type View interface{ isView() }
 
 // Text is free-form text, optionally markdown to be rendered by the host.

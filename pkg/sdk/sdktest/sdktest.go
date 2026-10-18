@@ -76,7 +76,8 @@ const (
 	// check at load time, so a plugin failing it does not load, and no Skip
 	// waives it. Its notes, which a Skip does waive, say when a search keyword
 	// adds nothing, when a capability offered to agents has an input only a
-	// person at a terminal can give, and when a capability that is done again
+	// person at a terminal can give or a credential an agent is asked to fill
+	// (a Secret that is not Local), and when a capability that is done again
 	// each time it is called declares that running it again changes nothing.
 	RuleDeclaration Rule = "declaration"
 	// RuleViews: every view a capability returns survives the JSON encoding
@@ -120,7 +121,8 @@ const (
 	// of time says its unit. Notes, never failures: a summary written unlike the
 	// catalogue's, the catalogue's word `limit` spelled another way, an Agent
 	// text that is the Description, a time that is an Int where a Duration
-	// would carry its unit. Skipped by capability ID.
+	// would carry its unit, an input an agent is offered with no Help. Skipped
+	// by capability ID.
 	RuleWording Rule = "wording"
 )
 
@@ -222,6 +224,7 @@ func checkAll(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[st
 	checkVerbs(t, p, cfg)
 	checkKeywords(t, p, cfg)
 	checkReach(t, p, cfg)
+	checkAgentSecrets(t, p, cfg)
 	checkRepeats(t, p, cfg)
 	checkSpelling(t, p, cfg)
 	checkWording(t, p, cfg)

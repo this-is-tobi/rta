@@ -1193,7 +1193,44 @@ func devReport(reg *registry.Registry, c *pluginhost.Client) view.View {
 			"%s declares %s, which this rta does not understand", id, strings.Join(fields, ", ")).
 			WithHint("the plugin may have been built against a newer rta"))
 	}
+	for _, c := range p.Capabilities {
+		warnings = append(warnings, agentSurfaceNotes(c)...)
+	}
 	return view.Sections{Items: sections, Warnings: warnings}
+}
+
+// agentSurfaceNotes are the two things a valid declaration can leave poor for
+// an agent that nothing else tells its author: a credential the agent is asked
+// to fill, and an input it is offered with no Help to read. The same two the
+// conformance suite notes (sdktest), asked of the declaration as rta decoded
+// it. Advisory, since the page they sit beside is whole and the plugin loads.
+func agentSurfaceNotes(c plugin.Capability) []view.Error {
+	var notes []view.Error
+	if fields := c.AgentSecretInputs(); len(fields) > 0 {
+		note := view.Errorf("plugin.dev.credential",
+			"%s asks an agent for a credential (%s): a Secret that is not Local is an argument the model puts "+
+				"in its tool call, and so holds in its context", c.ID, quotedInputs(fields)).
+			WithHint("declare it Local: true, EnvFallback: true so the operator supplies it; leave it as it " +
+				"is only when the agent is the one that has the value, as for one to store")
+		note.Advisory = true
+		notes = append(notes, *note)
+	}
+	if fields := c.AgentInputsWithoutHelp(); len(fields) > 0 {
+		note := view.Errorf("plugin.dev.help",
+			"%s gives an agent no description of %s: its Help is empty", c.ID, quotedInputs(fields)).
+			WithHint("say in Help what the value means: it is the one sentence an agent reads about an input")
+		note.Advisory = true
+		notes = append(notes, *note)
+	}
+	return notes
+}
+
+func quotedInputs(fields []plugin.Field) string {
+	names := make([]string, len(fields))
+	for i, f := range fields {
+		names[i] = strconv.Quote(f.Name)
+	}
+	return strings.Join(names, ", ")
 }
 
 // agentReach says what it takes for an MCP caller to reach a capability,
