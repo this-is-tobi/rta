@@ -93,3 +93,93 @@ func TestShrinkingTheTerminalKeepsTheSelectionDrawn(t *testing.T) {
 		}
 	}
 }
+
+// The wheel moves the window and not the selection, so a selection the window
+// left stayed where nobody could see it, with enter, H and [ ] still acting on
+// it. The catalogue's wheel moves its cursor; the dashboard's now brings the
+// selection to the nearest row it draws.
+func TestTheWheelBringsTheSelectionToTheNearestDrawnRow(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	m := filled(t, New(heightRegistry(t), scrollTiles("tall.info", "tall.info", "short.info", "short.info", "short.info"), nil), 60, 24)
+	wheel := func(m Model, button tea.MouseButton, notches int) Model {
+		for range notches {
+			m = sent(t, m, tea.MouseWheelMsg{Button: button})
+		}
+		return m
+	}
+	rowOf := func(m Model) int { row, _ := m.selectedRow(); return row }
+
+	m.selected = 1
+	m.clampScroll()
+	if first, last := m.rowWindow(5); first != 0 || last != 2 || rowOf(m) != 0 {
+		t.Fatalf("the fixture drifted: window [%d, %d), selection on row %d, want [0, 2) and 0", first, last, rowOf(m))
+	}
+
+	// Down to the end: the window is [2, 5) and the selection was on row 0.
+	down := wheel(m, tea.MouseWheelDown, 2)
+	if first, last := down.rowWindow(5); first != 2 || last != 5 {
+		t.Fatalf("two notches down leave the window at [%d, %d), want [2, 5)", first, last)
+	}
+	if row := rowOf(down); row != 2 {
+		t.Errorf("the selection is on row %d, want 2, the first row the window draws", row)
+	}
+
+	// A selection the window still holds is left where it is: row 1 stays in
+	// [1, 3) after one notch.
+	held := m
+	held.selected = 2
+	if one := wheel(held, tea.MouseWheelDown, 1); one.selected != held.selected {
+		t.Errorf("one notch moved the selection from tile %d to %d, though row 1 is still drawn", held.selected, one.selected)
+	}
+
+	// Up from the end with the selection on the last row: the window is [0, 2) again.
+	m.selectEdge(true)
+	if row := rowOf(m); row != 4 {
+		t.Fatalf("end selected row %d, want 4", row)
+	}
+	up := wheel(m, tea.MouseWheelUp, 2)
+	if first, last := up.rowWindow(5); first != 0 || last != 2 {
+		t.Fatalf("two notches up leave the window at [%d, %d), want [0, 2)", first, last)
+	}
+	if row := rowOf(up); row != 1 {
+		t.Errorf("the selection is on row %d, want 1, the last row the window draws", row)
+	}
+
+	// The search bar is not a row: it never scrolls, so nothing leaves it behind.
+	bar := m
+	bar.selected = 0
+	if got := wheel(bar, tea.MouseWheelDown, 2); got.selected != 0 {
+		t.Errorf("the wheel moved the selection off the search bar to tile %d", got.selected)
+	}
+}
+
+// Sections add a header row that can be the selection, and rows of a different
+// height than the tiles under them. Whatever the wheel does from wherever the
+// selection is, what it selects is on the screen.
+func TestTheWheelNeverLeavesTheSelectionOffScreen(t *testing.T) {
+	var tiles []config.Tile
+	for i := range 8 {
+		tiles = append(tiles, config.Tile{ID: "alpha.status", Profile: fmt.Sprintf("p%d", i), Section: fmt.Sprintf("s%d", i/2)})
+	}
+	base := sectioned(t, config.Dashboard{Tiles: tiles}, 40, 16)
+	starts := map[string]func(Model) Model{
+		"first tile": func(m Model) Model { m.selected = 1; return m },
+		"last tile":  func(m Model) Model { m.selectEdge(true); return m },
+		"a header":   func(m Model) Model { m.selectStop(stop{header: "s1"}); return m },
+	}
+	for name, start := range starts {
+		for _, button := range []tea.MouseButton{tea.MouseWheelDown, tea.MouseWheelUp} {
+			m := start(base)
+			m.clampScroll()
+			for notch := 1; notch <= len(m.tileRows()); notch++ {
+				m = sent(t, m, tea.MouseWheelMsg{Button: button})
+				if !selectionIsDrawn(m) {
+					first, last := m.rowWindow(len(m.tileRows()))
+					row, _ := m.selectedRow()
+					t.Errorf("from %s, notch %d of %v: the selection is on row %d and the window is [%d, %d)", name, notch, button, row, first, last)
+					break
+				}
+			}
+		}
+	}
+}

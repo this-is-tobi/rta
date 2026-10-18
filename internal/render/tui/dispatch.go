@@ -716,8 +716,9 @@ func (m Model) wheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 		case tea.MouseWheelUp:
 			m.scroll = max(m.scroll-1, 0)
 		case tea.MouseWheelDown:
-			m.scroll = min(m.scroll+1, max(0, m.dashRows()-m.dashRowsVisible()))
+			m.scroll = min(m.scroll+1, m.maxScroll())
 		}
+		m.keepSelectionDrawn()
 		return m, nil
 	case modeResult, modeConfirm:
 		switch msg.Button {
