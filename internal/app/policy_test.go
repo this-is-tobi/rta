@@ -51,9 +51,11 @@ func TestPolicyShowCountsTheGrantsItSuppresses(t *testing.T) {
 	}
 }
 
-// A policy file already there is refused, coded and in the format asked for,
-// with --force named: it was the plain error fang styled as a box under
-// `-o json`, which is where a script that sets a repository up would read it.
+// A policy file already there is refused, coded and in the format asked for:
+// it was the plain error fang styled as a box under `-o json`, which is where
+// a script that sets a repository up would read it. The way out it offers is
+// the file, not --force: it used to teach the flag, and the flag replaced a
+// team's ceiling with the starter and asked nothing.
 func TestPolicyInitOverAnExistingFileIsACodedRefusal(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if _, errOut, err := run(t, testRegistry(t), "policy", "init"); err != nil {
@@ -61,12 +63,224 @@ func TestPolicyInitOverAnExistingFileIsACodedRefusal(t *testing.T) {
 	}
 	_, _, err := run(t, testRegistry(t), "policy", "init", "-o", "json")
 	var ve *view.Error
-	if !errors.As(err, &ve) || ve.Code != "core.policy.exists" || !strings.Contains(ve.Hint, "--force") {
-		t.Fatalf("err = %#v, want core.policy.exists naming --force", err)
+	if !errors.As(err, &ve) || ve.Code != "core.policy.exists" {
+		t.Fatalf("err = %#v, want core.policy.exists", err)
+	}
+	if strings.Contains(ve.Hint, "--force") || !strings.Contains(ve.Hint, "edit") {
+		t.Errorf("hint = %q, want the file to edit and not --force", ve.Hint)
 	}
 	var buf bytes.Buffer
 	if !RenderTopLevelError(&buf, NewRoot(testRegistry(t), "test"), err) {
 		t.Fatal("the refusal was left for fang")
+	}
+}
+
+// The ceiling a team wrote, which a starter written over it would loosen on
+// every axis: a five-minute cap, three targets nobody may be granted, a
+// connection nobody may name and a target that may only be granted for one
+// record.
+const teamCeiling = "maxTTL: 5m\nnever: [pg.dump, vault.snapshot, kv.get]\n" +
+	"neverProfile: [production]\nrequireScope: [kv.get]\n"
+
+// writePolicyHere puts body where `rta policy init` looks, in the directory
+// the test is in.
+func writePolicyHere(t *testing.T, body string) {
+	t.Helper()
+	if err := os.WriteFile(policy.RepoFile, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func policyHere(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(policy.RepoFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// `policy init --force` used to replace a team's ceiling with the starter and
+// ask nothing, though the command says "never silently" two lines above the
+// write. A ceiling is replaced by one no looser than it or not at all, and
+// that holds whoever is asking: a person at a terminal who answers yes, and a
+// script that passes --yes, are refused alike, with the axes that would have
+// loosened named and the file left as it was.
+func TestPolicyInitForceNeverWritesAStarterLooserThanTheCeilingThatStands(t *testing.T) {
+	for name, setup := range map[string]func(t *testing.T) *[]string{
+		"without a terminal": func(t *testing.T) *[]string { return new([]string) },
+		"at a terminal":      func(t *testing.T) *[]string { return askedOf(t, "y", nil) },
+	} {
+		for _, args := range [][]string{{"policy", "init", "--force"}, {"policy", "init", "--force", "--yes"}} {
+			t.Run(name+" "+strings.Join(args[2:], " "), func(t *testing.T) {
+				t.Chdir(t.TempDir())
+				writePolicyHere(t, teamCeiling)
+				asked := setup(t)
+				_, _, err := run(t, testRegistry(t), args...)
+				var ve *view.Error
+				if !errors.As(err, &ve) || ve.Code != "core.policy.loosens" {
+					t.Fatalf("err = %#v, want core.policy.loosens", err)
+				}
+				for _, axis := range []string{"maxTTL 5m would become 1h", "never: pg.dump, vault.snapshot, kv.get",
+					"neverProfile: production", "requireScope: kv.get"} {
+					if !strings.Contains(ve.Message, axis) {
+						t.Errorf("the refusal does not name %q: %s", axis, ve.Message)
+					}
+				}
+				if !strings.Contains(ve.Hint, "edit") || strings.Contains(ve.Hint, "--force") {
+					t.Errorf("hint = %q, want editing the file on purpose as the way and not --force", ve.Hint)
+				}
+				if got := policyHere(t); got != teamCeiling {
+					t.Errorf("the ceiling was rewritten:\n%s", got)
+				}
+				if len(*asked) != 0 {
+					t.Errorf("asked %q about a replacement that could not happen", *asked)
+				}
+			})
+		}
+	}
+}
+
+// A replacement that loosens nothing is still somebody's file, and what goes
+// with it (their comments, their roles, a cap longer than the starter's) is
+// theirs to give up. With a person at a terminal that is a question showing
+// what stands; with nobody there it is a refusal, and only --yes answers it
+// for a script.
+func TestPolicyInitForceAsksBeforeReplacingAFileThatIsNotTheStarter(t *testing.T) {
+	const looser = "# our cap\nmaxTTL: 2h\n"
+
+	t.Run("without a terminal --force alone refuses", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		writePolicyHere(t, looser)
+		_, _, err := run(t, testRegistry(t), "policy", "init", "--force")
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != CodeConfirmRequired {
+			t.Fatalf("err = %#v, want %s", err, CodeConfirmRequired)
+		}
+		if !strings.Contains(ve.Hint, "--yes") {
+			t.Errorf("hint = %q, want the one flag that answers for a script", ve.Hint)
+		}
+		if got := policyHere(t); got != looser {
+			t.Errorf("the file was rewritten:\n%s", got)
+		}
+	})
+
+	t.Run("without a terminal --yes answers for a script", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		writePolicyHere(t, looser)
+		if _, errOut, err := run(t, testRegistry(t), "policy", "init", "--force", "--yes"); err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+		if got := policyHere(t); got != starterPolicy {
+			t.Errorf("the file was not replaced:\n%s", got)
+		}
+	})
+
+	t.Run("a dry run refuses as the real one would", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		writePolicyHere(t, looser)
+		_, _, err := run(t, testRegistry(t), "policy", "init", "--force", "--dry-run")
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != CodeConfirmRequired {
+			t.Fatalf("err = %#v, want %s", err, CodeConfirmRequired)
+		}
+	})
+
+	t.Run("at a terminal it shows what stands and asks", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		writePolicyHere(t, looser)
+		asked := askedOf(t, "n", nil)
+		_, errOut, err := run(t, testRegistry(t), "policy", "init", "--force")
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != CodeConfirmRequired {
+			t.Fatalf("a no was answered with %#v, want the declined confirmation", err)
+		}
+		if len(*asked) != 1 || !strings.Contains((*asked)[0], "[y/N]") {
+			t.Errorf("asked %q, want one y/N question", *asked)
+		}
+		if !strings.Contains(errOut, "maxTTL") || !strings.Contains(errOut, "2h") || !strings.Contains(errOut, policy.RepoFile) {
+			t.Errorf("the ceiling that stands was not shown before the question:\n%s", errOut)
+		}
+		if got := policyHere(t); got != looser {
+			t.Errorf("a no rewrote the file:\n%s", got)
+		}
+	})
+
+	t.Run("at a terminal a yes replaces it", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		writePolicyHere(t, looser)
+		asked := askedOf(t, "y", nil)
+		out, errOut, err := run(t, testRegistry(t), "policy", "init", "--force", "-o", "json")
+		if err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+		if len(*asked) != 1 || answerPairs(t, out)["replaced"] == "" {
+			t.Errorf("asked %q, answered %q", *asked, out)
+		}
+		if got := policyHere(t); got != starterPolicy {
+			t.Errorf("the file was not replaced:\n%s", got)
+		}
+	})
+
+	t.Run("at a terminal --yes does not ask", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		writePolicyHere(t, looser)
+		asked := askedOf(t, "n", nil)
+		if _, errOut, err := run(t, testRegistry(t), "policy", "init", "--force", "--yes"); err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+		if len(*asked) != 0 || policyHere(t) != starterPolicy {
+			t.Errorf("asked %q, and the file holds:\n%s", *asked, policyHere(t))
+		}
+	})
+
+	t.Run("a dry run at a terminal asks nothing and writes nothing", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		writePolicyHere(t, looser)
+		asked := askedOf(t, "n", nil)
+		out, errOut, err := run(t, testRegistry(t), "policy", "init", "--force", "--dry-run", "-o", "json")
+		if err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+		if _, ok := answerPairs(t, out)["would replace"]; !ok || len(*asked) != 0 || policyHere(t) != looser {
+			t.Errorf("asked %q, answered %q, and the file holds:\n%s", *asked, out, policyHere(t))
+		}
+	})
+
+	t.Run("the starter itself is replaced without a word", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		writePolicyHere(t, starterPolicy)
+		if _, errOut, err := run(t, testRegistry(t), "policy", "init", "--force"); err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+	})
+}
+
+// A file that cannot be read says nothing about what it holds, and `nevr:`
+// for `never:` is exactly how a bound goes missing while the file still looks
+// like one. So it is not judged by a flag that answers for a script: a person
+// is shown why it does not read and asked.
+func TestPolicyInitForceAsksAboutAFileThatDoesNotRead(t *testing.T) {
+	const broken = "nevr: [pg.dump]\n"
+
+	t.Chdir(t.TempDir())
+	writePolicyHere(t, broken)
+	_, _, err := run(t, testRegistry(t), "policy", "init", "--force", "--yes")
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != CodeConfirmRequired {
+		t.Fatalf("--yes alone replaced a file nobody could read: %#v", err)
+	}
+	if policyHere(t) != broken {
+		t.Fatal("the file was rewritten")
+	}
+
+	asked := askedOf(t, "y", nil)
+	_, errOut, err := run(t, testRegistry(t), "policy", "init", "--force", "--yes")
+	if err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if len(*asked) != 1 || !strings.Contains(errOut, "nevr") || policyHere(t) != starterPolicy {
+		t.Errorf("asked %q, showed %q, and the file holds:\n%s", *asked, errOut, policyHere(t))
 	}
 }
 

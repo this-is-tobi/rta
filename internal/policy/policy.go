@@ -36,6 +36,7 @@ import (
 	"github.com/this-is-tobi/rta/pkg/format"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -365,6 +366,15 @@ func read(path string, mustExist bool) (Ceiling, *view.Error) {
 	if err != nil {
 		return Ceiling{}, view.Errorf("policy.unreadable", "reading %s: %v", path, err)
 	}
+	return Parse(path, data)
+}
+
+// Parse is read's decoding, for a caller that already holds the bytes and
+// wants them judged as the gate would judge them: `rta policy init --force`
+// says what a file stands for before it replaces it, and a second reading of
+// the grammar would drift from this one the first time a key was added. path
+// only names the file in what it says.
+func Parse(path string, data []byte) (Ceiling, *view.Error) {
 	var c Ceiling
 	// Before the decode, because the expansion *is* the decode. This file is
 	// the most exposed of the three rta parses: Load walks up to 64 parents
@@ -431,6 +441,60 @@ func read(path string, mustExist bool) (Ceiling, *view.Error) {
 	}
 	c.RawRoles = nil
 	return c, nil
+}
+
+// Loosens lists, one sentence per axis, what replacing the ceiling standing
+// with next would stop forbidding, and nothing when next forbids all that
+// standing does.
+//
+// **Whatever a command writes in place of a ceiling must pass through this
+// first.** The subtract-only property this package rests on is about a
+// hostile edit and says nothing about a helpful one: a starter written over a
+// team's `never: [pg.dump]` takes a bound out of the file, and nobody asked
+// for that. Replacing a ceiling with a looser one is a decision to loosen,
+// and a person makes it by editing the file.
+//
+// Entries are compared as the gate compares them (Forbids): an entry naming a
+// plugin covers every capability in it, and one naming a connection covers
+// each of its instances, so `pg` kept in place of `pg.dump` loosens nothing
+// and `pg.dump` kept in place of `pg` loosens the rest of the plugin.
+// requireRepoPolicy and roles are not compared: the first is honoured only
+// from the operator's own file, and a role grants nothing by being written.
+func Loosens(standing, next Ceiling) []string {
+	var out []string
+	if standing.MaxTTL > 0 && (next.MaxTTL == 0 || next.MaxTTL > standing.MaxTTL) {
+		to := "no limit"
+		if next.MaxTTL > 0 {
+			to = format.Duration(next.MaxTTL)
+		}
+		out = append(out, fmt.Sprintf("maxTTL %s would become %s", format.Duration(standing.MaxTTL), to))
+	}
+	targetCovers := func(kept, dropped string) bool {
+		return kept == dropped || kept == plugin.Namespace(dropped)
+	}
+	profileCovers := func(kept, dropped string) bool {
+		return kept == dropped || kept == config.RefName(dropped)
+	}
+	for _, axis := range []struct {
+		name, consequence string
+		standing, next    []string
+		covers            func(kept, dropped string) bool
+	}{
+		{"never", "would be grantable", standing.Never, next.Never, targetCovers},
+		{"neverProfile", "could be named by a grant", standing.NeverProfile, next.NeverProfile, profileCovers},
+		{"requireScope", "could be granted without naming a record", standing.RequireScope, next.RequireScope, targetCovers},
+	} {
+		var dropped []string
+		for _, s := range axis.standing {
+			if !slices.ContainsFunc(axis.next, func(kept string) bool { return axis.covers(kept, s) }) {
+				dropped = append(dropped, s)
+			}
+		}
+		if len(dropped) > 0 {
+			out = append(out, fmt.Sprintf("%s: %s %s", axis.name, strings.Join(dropped, ", "), axis.consequence))
+		}
+	}
+	return out
 }
 
 // intersect takes the strictest value on every axis.

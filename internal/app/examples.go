@@ -120,7 +120,7 @@ var examples = map[string][]string{
 	},
 	"rta policy init": {
 		"rta policy init         # a commented .rta-policy.yaml, to commit",
-		"rta policy init --force",
+		"rta policy init --force  # replace it, never with a looser ceiling",
 	},
 	"rta doctor": {
 		"rta doctor",
