@@ -926,24 +926,24 @@
  ✓ saved the new order · ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move
  H remove · V/v view · + add tile · U unlock store · b browse · / search · q quit · ? help
 === spanned 100x30 last-tile ===
- rta  dashboard  ↕ more
+ rta  dashboard  ↑ more
  ⌕ 3 plugins · 3 capabilities — press / to search
-╭─ tall.info ───────────────────────────────────╮ ╭─ mid.info  staging ────────────────────────────╮
-│ line                                          │ │ line                                           │
-│ line                                          │ │ line                                           │
-│ line                                          │ │ line                                           │
-│ line                                          │ │ line                                           │
-│ line                                          │ │ line                                           │
-│ line                                          │ │ line                                           │
-│ line                                          │ │                                                │
-│ line                                          │ │                                                │
-│ … enter for details                           │ │                                                │
-╰───────────────────────────────────────────────╯ ╰────────────────────────────────────────────────╯
 ╭─ short.info ─────────────────────────────────────────────────────────────────────────────────────╮
 │ one line                                                                                         │
 │                                                                                                  │
 │                                                                                                  │
 │                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ tall.info ──────────────────────────────────────────────────────────────────────────────────────╮
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ line                                                                                             │
+│ … enter for details                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
  ↑↓←→ select · enter details · f profiles · p plugins · t theme · [ ] move · H remove · V/v view
  + add tile · U unlock store · b browse · / search · q quit · ? help
