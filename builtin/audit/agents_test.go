@@ -2,9 +2,11 @@ package audit
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -412,5 +414,75 @@ func TestAFindingIsClippedOnAScreenAndWholeEverywhereElse(t *testing.T) {
 		if got := detailOf(detail); strings.Contains(got, "…") || !strings.HasSuffix(got, ")") {
 			t.Errorf("detail=%v off a screen: the finding is cut (%d characters): %q", detail, len([]rune(got)), got)
 		}
+	}
+}
+
+// **A shell is a shell however the rule is spelled.** Only the bare `Bash` was
+// graded; rewriting the flagged entry as `Bash(*)` turned the row green, and
+// `Bash(sh:*)` or `Bash(python3:*)` gave the agent the same shell with no row at
+// all. The argument-less spellings are the bare rule, and an interpreter with
+// anything after it is a way to run any command.
+func TestEverySpellingOfAnUnrestrictedShellIsGradedAsOne(t *testing.T) {
+	for _, rule := range []string{
+		"Bash", "bash", " Bash ", "Bash(*)", "Bash(:*)", "Bash(**)", "Bash( * )", "Bash(*:*)",
+		"Bash(sh:*)", "Bash(bash:*)", "Bash(zsh:*)", "Bash(python:*)", "Bash(python3:*)", "Bash(python3.12:*)",
+		"Bash(node:*)", "Bash(env:*)", "Bash(xargs:*)", "Bash(npx:*)", "Bash(sh -c:*)", "Bash(bash -lc *)",
+		"Bash(python3 -c:*)", "Bash(node -e *)", "Bash(sh *)",
+	} {
+		t.Run(rule, func(t *testing.T) {
+			fakeHome(t, map[string]struct {
+				body string
+				mode os.FileMode
+			}{".claude/settings.json": {`{"permissions":{"allow":["Read",` + strconv.Quote(rule) + `]}}`, 0o600}})
+
+			shell, ok := agentRows(t, plugin.SurfaceCLI)["shell"]
+			if !ok {
+				t.Fatalf("%q produced no shell finding", rule)
+			}
+			if shell[1] != findings.Fail {
+				t.Errorf("%q graded %q, want fail: %s", rule, shell[1], shell[2])
+			}
+			if !strings.Contains(shell[2], strings.TrimSpace(rule)) {
+				t.Errorf("the finding does not name the rule it is about: %s", shell[2])
+			}
+		})
+	}
+}
+
+// And a rule that is a decision about some commands is not a finding: a
+// specific interpreter invocation, a tool that is not a shell, a prefix that
+// merely begins like one.
+func TestARuleThatNamesTheCommandsItAllowsIsNotAShell(t *testing.T) {
+	for _, rule := range []string{
+		"Bash(git status:*)", "Bash(go test:*)", "Bash(npm run test:*)", "Bash(ls)", "Bash(sh)",
+		"Bash(python3 script.py)", "Bash(python3 -m pytest:*)", "Bash(npx prettier:*)", "Bash(xargs grep:*)",
+		"Bash(env FOO=bar git:*)", "Bash(shred:*)", "Bash(bashful:*)", "Bash(pythonista:*)", "Bash(nodemon:*)",
+		"Read", "Read(*)", "WebFetch(*)", "Edit(**)", "Bashful", "Bash(rta grant:*)",
+	} {
+		t.Run(rule, func(t *testing.T) {
+			fakeHome(t, map[string]struct {
+				body string
+				mode os.FileMode
+			}{".claude/settings.json": {`{"permissions":{"allow":[` + strconv.Quote(rule) + `]}}`, 0o600}})
+
+			if shell, found := agentRows(t, plugin.SurfaceCLI)["shell"]; found {
+				t.Errorf("%q was graded as an unrestricted shell: %v", rule, shell)
+			}
+		})
+	}
+}
+
+// The fix names the entry it is about, whichever spelling it was.
+func TestTheFixForAShellNamesTheEntryItReplaces(t *testing.T) {
+	fakeHome(t, map[string]struct {
+		body string
+		mode os.FileMode
+	}{".claude/settings.json": {`{"permissions":{"allow":["Bash(python3:*)"]}}`, 0o600}})
+	v, err := runClients(t.Context(), req(map[string]any{"fix": true}).WithSurface(plugin.SurfaceCLI), testCatalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := fmt.Sprintf("%+v", v); !strings.Contains(body, `\"Bash(python3:*)\"`) && !strings.Contains(body, "Bash(python3:*)") {
+		t.Errorf("the fix does not name the entry to replace:\n%s", body)
 	}
 }
