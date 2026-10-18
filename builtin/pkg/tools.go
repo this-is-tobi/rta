@@ -201,21 +201,21 @@ func withRemedy(verr *view.Error) string {
 
 var versionRe = regexp.MustCompile(`v?(\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?)`)
 
-// installedVersion asks the binary itself. `--version` is the convention
-// nearly every Go and Rust tool follows; `version` is the other one. The
-// first thing that looks like a version in the output is the answer,
-// whatever the status: `kubectl version` and `docker version` print the
-// client's and then exit 1 over a server they cannot reach, and output
-// with no version in it reads as unknown, never as current.
+// installedVersion asks the binary itself, and `--version` only: the
+// convention nearly every Go and Rust tool follows, and the one a binary
+// answers alone. `version` is the other convention, and for kubectl, argocd,
+// istioctl, linkerd and docker it is the subcommand that also asks the server
+// in the current context, so every refresh of a tile reached a cluster or a
+// daemon that the tools list never named. The first thing that looks like a
+// version in the output is the answer, whatever the status, and output with
+// no version in it reads as unknown, never as current.
 func installedVersion(ctx context.Context, bin string) string {
-	for _, args := range [][]string{{"--version"}, {"version"}} {
-		st, verr := runStatus(ctx, bin, args...)
-		if verr != nil {
-			continue
-		}
-		if m := versionRe.FindStringSubmatch(st.out); m != nil {
-			return m[1]
-		}
+	st, verr := runStatus(ctx, bin, "--version")
+	if verr != nil {
+		return "-"
+	}
+	if m := versionRe.FindStringSubmatch(st.out); m != nil {
+		return m[1]
 	}
 	return "-"
 }

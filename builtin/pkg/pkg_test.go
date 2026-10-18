@@ -913,7 +913,6 @@ func TestAToolWhoseVersionCouldNotBeReadIsNotOk(t *testing.T) {
 	// whose flag means something else.
 	f := &fake{bins: map[string]bool{"fzf": true}, answers: map[string]fakeAnswer{
 		"fzf --version": {out: "built from source\n"},
-		"fzf version":   {out: "built from source\n"},
 	}}
 	install(t, f)
 
@@ -928,5 +927,37 @@ func TestAToolWhoseVersionCouldNotBeReadIsNotOk(t *testing.T) {
 		t.Errorf("a tool whose installed version could not be read is reported %q", status)
 	} else if !strings.Contains(status, "unknown") {
 		t.Errorf("status = %q, want it to say the comparison could not be made", status)
+	}
+}
+
+// **A listed tool is asked `--version` and nothing else.** The second form it
+// used to try, `<bin> version`, is the subcommand that asks a server: kubectl,
+// argocd, istioctl, linkerd and docker answer it by calling the one in the
+// current context, so every refresh of a tile reached a cluster or a daemon
+// that the tools list never named. A tool whose `--version` yields no version
+// reads as unknown, which is what every other tool that cannot be read reads.
+func TestAToolIsNeverAskedForItsVersionTheSecondWay(t *testing.T) {
+	c := newRegistryClient()
+	c.web = latestTags(t, map[string]string{"kubernetes/kubectl": "v1.31.0"})
+	f := &fake{bins: map[string]bool{"kubectl": true}, answers: map[string]fakeAnswer{
+		"kubectl --version": {code: 1, stderr: "error: unknown flag: --version\n"},
+		"kubectl version":   {out: "Client Version: v1.30.0\nServer Version: v1.29.0\n"},
+	}}
+	install(t, f)
+
+	states, verr := readTools(context.Background(), c, []string{"kubectl=github:kubernetes/kubectl"})
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	for _, ran := range f.ran {
+		if ran != "kubectl --version" {
+			t.Errorf("the tool was run as %q, want %q only", ran, "kubectl --version")
+		}
+	}
+	if states[0].Installed != "-" {
+		t.Errorf("installed = %q, want it unread", states[0].Installed)
+	}
+	if status := toolsTable(states).Rows[0][4]; status != "unknown — its version could not be read" {
+		t.Errorf("status = %q, want it unknown", status)
 	}
 }
