@@ -37,6 +37,10 @@ func Plugin() plugin.Plugin {
 			{
 				ID:      "time.at",
 				Summary: "Convert an instant between epoch, UTC, local time and a named zone",
+				// What the time is, said the way it is asked: `rta now` and `rta
+				// date` are what a person types, and neither is in the ID or the
+				// summary.
+				Keywords: []string{"now", "date", "clock"},
 				// Not HostSpecific, though two of its rows come from this
 				// machine. The answer to `time at 1516242622` is the same
 				// everywhere, and the two rows that are not — `local`, and

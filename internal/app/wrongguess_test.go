@@ -58,6 +58,9 @@ func TestAWordNamedSomewhereElseInTheTreeIsAnsweredWithWhereItIs(t *testing.T) {
 		"hosts":          "`rta net hosts`",
 		"uuidd":          "`rta gen uuid`",
 		"certificate":    "`rta cert`",
+		"now":            "`rta time at`",
+		"date":           "`rta time at`",
+		"clock":          "`rta time at`",
 	} {
 		ve := hintFor(t, strings.Fields(line)...)
 		if !strings.Contains(ve.Hint, want) {
@@ -329,5 +332,37 @@ func TestAFlagGivenNoValueNamesTheOptionsItTakes(t *testing.T) {
 	// A flag with no declared options keeps the answer it had.
 	if ve := hintFor(t, "net", "dns", "example.org", "--server"); strings.Contains(ve.Hint, "takes one of") {
 		t.Errorf("a free-text flag was told it takes one of a list: %q", ve.Hint)
+	}
+}
+
+// `ls` is the spelling of `list` that every shell taught, and a command answers
+// to it wherever there is one (verbSynonyms). At the root, where `list` is told
+// it belongs to many commands, `ls` was told its nearest neighbour was `fs`.
+func TestLsAtTheRootIsAnsweredLikeList(t *testing.T) {
+	list, ls := hintFor(t, "list"), hintFor(t, "ls")
+	if !strings.Contains(ls.Hint, "`ls` is under many commands") {
+		t.Errorf("`rta ls` was told %q, not that it is under many commands", ls.Hint)
+	}
+	if ls.Message != `unknown command "ls" for "rta"` || strings.Contains(ls.Message, "closest") {
+		t.Errorf("`rta ls` was also told a neighbour: %q", ls.Message)
+	}
+	if got, want := strings.ReplaceAll(ls.Hint, "`ls`", "`list`"), list.Hint; got != want {
+		t.Errorf("`rta ls` was told %q, `rta list` %q", ls.Hint, list.Hint)
+	}
+}
+
+// A person who wants the time types the word for it, and `rta explain` finds
+// the capability by the same word.
+func TestTheWordsForTheTimeFindTimeAt(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, word := range []string{"now", "date", "clock"} {
+		_, _, err = run(t, reg, "explain", word)
+		var ve *view.Error
+		if !errors.As(err, &ve) || !strings.Contains(ve.Hint, "time.at") {
+			t.Errorf("`rta explain %s` ended in %v, which does not offer time.at", word, err)
+		}
 	}
 }
