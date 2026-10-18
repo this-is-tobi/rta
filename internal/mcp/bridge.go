@@ -1130,13 +1130,22 @@ func withoutCredentialedCommand(verr *view.Error) *view.Error {
 // the command they would have to run is spelled out, because the agent cannot
 // issue a grant itself and the whole exchange terminates at a human anyway.
 func ungranted(c plugin.Capability, name, agent string) *view.Error {
-	cmd := "grant allow " + plugin.Namespace(c.ID) + " --profile " + name
-	if agent != "" {
-		cmd += " --agent " + agent
+	// Spelled by Call, as the gate's own hint is (grant.refuseMissing): the name
+	// and the agent are words a person pastes into a shell, so each is quoted
+	// when it has to be, and none is left to read as a flag or as a second
+	// command.
+	args := []plugin.Arg{
+		{Name: "target", Value: plugin.Namespace(c.ID), Positional: true},
+		{Name: "profile", Value: name},
 	}
+	if agent != "" {
+		args = append(args, plugin.Arg{Name: "agent", Value: agent})
+	}
+	args = append(args, plugin.Arg{Name: "ttl", Value: "15m"})
+	cmd := strings.TrimPrefix(plugin.SurfaceCLI.Call("grant.allow", args...), "rta ")
 	return view.Errorf("core.grant.required",
 		"agents may not use %s on profile %q without a person's consent", plugin.ToolName(c.ID), name).
-		WithHint(plugin.AskOperator(cmd + " --ttl 15m"))
+		WithHint(plugin.AskOperator(cmd))
 }
 
 // ValidateArgs checks every argument the caller actually supplied
