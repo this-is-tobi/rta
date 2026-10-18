@@ -84,3 +84,35 @@ func TestTheEnvironmentNamesAFormatAndTheCommandLineOverridesIt(t *testing.T) {
 		t.Error("-o pretty on the command line wins over the environment")
 	}
 }
+
+// Screen is the question under For and under every clip that is a screen's:
+// the TUI, or the command line writing the pretty format to a terminal. It
+// does not ask for detail, which changes how many columns a person reads and
+// not whether a person is reading.
+func TestAScreenIsATerminalNotAskedForAMachineFormat(t *testing.T) {
+	defer Pretend(true)()
+	if !Screen(request(plugin.SurfaceCLI, nil)) || !Screen(request(plugin.SurfaceCLI, map[string]any{"detail": true})) {
+		t.Error("a person at a terminal, with or without --detail, is reading a screen")
+	}
+	commandLine = func() []string { return []string{"audit", "web", "example.org", "-o", "json"} }
+	if Screen(request(plugin.SurfaceCLI, nil)) {
+		t.Error("-o json at a terminal is a program's reading, and the format is exact")
+	}
+	envOutput = func() string { return "md" }
+	commandLine = func() []string { return nil }
+	if Screen(request(plugin.SurfaceCLI, nil)) {
+		t.Error("RTA_OUTPUT=md is a document, not a screen")
+	}
+	if !Screen(request(plugin.SurfaceTUI, nil)) {
+		t.Error("the TUI is a screen")
+	}
+	for _, sf := range []plugin.Surface{plugin.SurfaceMCP, plugin.SurfaceUnknown} {
+		if Screen(request(sf, nil)) {
+			t.Errorf("surface %v is a screen", sf)
+		}
+	}
+	defer Pretend(false)()
+	if Screen(request(plugin.SurfaceCLI, nil)) {
+		t.Error("pretty written to a pipe or a file is data nobody scans")
+	}
+}

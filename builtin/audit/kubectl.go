@@ -319,6 +319,7 @@ func scopeLabel(ns string) string {
 // decision, made here.
 func finishKube(ctx context.Context, req plugin.Request, r *findings.Report, order []findings.Group, sc scope,
 	extra ...view.Section) view.View {
+	clipForScreens(req, r)
 	if !req.Bool("detail") {
 		return r.TableFor(req.Surface(), true)
 	}

@@ -198,6 +198,7 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 	auditCookies(r, resp)
 	auditExposure(r, resp.Header)
 
+	clipForScreens(req, r)
 	if req.Bool("detail") {
 		return detailedWeb(ctx, req, r, u, resp)
 	}

@@ -114,6 +114,7 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 			refVulnerableDep)
 	}
 
+	clipForScreens(req, r)
 	if req.Bool("detail") {
 		summary := append([]view.Pair{
 			{Key: "path", Value: remoteLabel(path)},

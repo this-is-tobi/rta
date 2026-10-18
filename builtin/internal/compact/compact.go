@@ -38,11 +38,26 @@ import (
 // is compact when a person is reading it, which is a terminal on stdout, no
 // machine format asked for, and no `--detail`.
 func For(req plugin.Request) bool {
+	if req.Surface() == plugin.SurfaceCLI && req.Bool("detail") {
+		return false
+	}
+	return Screen(req)
+}
+
+// Screen reports whether req's result is drawn for a person to scan: the TUI,
+// or the command line writing the pretty format to a terminal.
+//
+// It is the question under For, without `--detail`, which changes how much a
+// person is shown and not whether a person is reading. Anything that is cut to
+// fit a screen — a column dropped, a sentence clipped to a line — is cut only
+// where this is true, because json is the one exact format and a document
+// written with `-o md` is not a scrollback.
+func Screen(req plugin.Request) bool {
 	switch req.Surface() {
 	case plugin.SurfaceTUI:
 		return true
 	case plugin.SurfaceCLI:
-		return !req.Bool("detail") && stdoutIsTerminal() && !machineFormatAsked(commandLine())
+		return stdoutIsTerminal() && !machineFormatAsked(commandLine())
 	}
 	return false
 }

@@ -24,10 +24,21 @@ package audit
 import (
 	"context"
 
+	"github.com/this-is-tobi/rta/builtin/internal/compact"
 	"github.com/this-is-tobi/rta/builtin/internal/eolapi"
+	"github.com/this-is-tobi/rta/pkg/findings"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
+
+// clipForScreens has r cut a finding's detail to what a person can scan only
+// where one is scanning (compact.Screen), and send it as written to anything
+// else: `-o json` is the one exact format, and `audit web -o md >> report` is
+// a document. Called by whatever renders the report, which is the one place
+// that knows the request.
+func clipForScreens(req plugin.Request, r *findings.Report) {
+	r.Whole = !compact.Screen(req)
+}
 
 // Plugin returns the audit plugin declaration.
 // Plugin takes the catalogue because one of its fixes is derived from it:

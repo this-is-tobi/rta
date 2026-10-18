@@ -67,6 +67,7 @@ func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	r := gradeMail(f)
+	clipForScreens(req, r)
 
 	if req.Bool("detail") {
 		summary := append([]view.Pair{{Key: "domain", Value: domain}}, r.Grade()...)
