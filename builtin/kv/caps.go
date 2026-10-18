@@ -516,6 +516,9 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, err
 	}
+	if given && filename == "" && !piped {
+		noteValueInArgv(req, key)
+	}
 	kind := strings.TrimSpace(req.String("kind"))
 	if kind != "" && !slices.Contains(kinds, kind) {
 		return nil, view.Errorf("kv.set.badkind", "unknown kind %q", kind).
@@ -551,12 +554,20 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		// file is Local: an agent's schema has no such argument, so an agent
 		// is offered the value alone.
 		sf := req.Surface()
-		from := sf.ArgumentName("value")
-		if sf != plugin.SurfaceMCP {
-			from += ", or " + sf.InputName("file") + " to read one from disk"
+		give := "give " + sf.ArgumentName("value")
+		switch sf {
+		case plugin.SurfaceMCP:
+		case plugin.SurfaceCLI:
+			// The pipe first: it is the way to give a value that is in nobody's
+			// history, where an argument is in the shell's and in `ps`. The TUI
+			// has no pipe to offer.
+			give = "pipe it in with " + sf.InputName("file") + " /dev/stdin, " + give + ", or read one from disk with " +
+				sf.InputName("file") + " <path>"
+		default:
+			give += ", or " + sf.InputName("file") + " to read one from disk"
 		}
 		return nil, view.Errorf("kv.set.novalue", "no value given").
-			WithHint("give " + from + " — or " + sf.InputName("description") + " or " + sf.InputName("kind") +
+			WithHint(give + " — or " + sf.InputName("description") + " or " + sf.InputName("kind") +
 				" to change what an existing entry is labelled without touching the secret")
 	}
 	if given && kind == "" {
@@ -672,6 +683,30 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 		msg += "\nstore re-encrypted — " + req.Surface().CapabilityName("kv.recipients") + " lists who can read it"
 	}
 	return view.Text{Body: msg}, nil
+}
+
+// noteValueInArgv tells the person at a terminal, on stderr and in one line,
+// that the value they gave after the key is in their shell's history and in
+// the process list, and that the prompt is the way to give it instead.
+//
+// The receipt was the same line as for a value nobody could see, and this
+// store's whole reason to exist is that a secret typed on a command line is
+// kept in both of those places. It is said only where it can be acted on: the
+// prompt is the CLI's, at a terminal (canPrompt), and a script with none, an
+// agent and the TUI's masked box have their own ways to give a value and no
+// shell history of the kind to warn about. A value that came from a file or a
+// pipe never was in argv and is not mentioned. It is a note and not a refusal
+// like `profile set`'s: by the time rta runs, the value is in the history
+// already, and refusing it would protect nothing.
+//
+// The key is named as it is spelled on the line, and the value is never
+// repeated.
+func noteValueInArgv(req plugin.Request, key string) {
+	if !canPrompt(req) {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "a value given on the command line is in your shell history and in the process list; "+
+		"`%s` prompts for it instead, with echo off\n", req.Surface().Call("kv.set", keyArg(key)))
 }
 
 // wouldSet is a dry run's answer for a value it was given or was typed.
