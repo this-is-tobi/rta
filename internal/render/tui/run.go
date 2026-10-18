@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -89,48 +88,65 @@ type formEnv struct {
 	conn config.Connection
 }
 
-// connectionSection heads the settings of the connection the operator states in
-// their config, which come after the call's own inputs (connectionLast).
-const connectionSection = "connection, stated in your config"
-
-// connectionLast puts the connection settings after the call's own inputs, each
-// group as declared, and names the first setting when there is something above
-// it for a heading to set it apart from.
+// blocked orders a run form's inputs the way a person reads them, and names the
+// box that opens each block of them.
 //
-// A database declares a dozen settings to the one or two inputs the call is about,
-// and a form asks in the order of the declaration: pg.table.list showed its
-// schema and its limit among eleven boxes of the same look, and vault.kv.get opened
-// on its optional mount with the path it needs second.
+// The call's own inputs come first, as declared: the one or two a caller came to
+// answer, which a database declares among a dozen settings (pg.table.list showed
+// its schema and its limit among eleven boxes of the same look, and vault.kv.get
+// opened on its optional mount with the path it needs second). Then the blocks, one
+// per group, in the order each name first appears in the declaration: the call's
+// own inputs that declare a group, and after them the connection — a host, a port,
+// a database, how to verify the server, and the credential the environment
+// supplies, each in the group it declares or the one plugin.Group falls back to.
+// The inputs of one name are one block wherever they came from, so a call's input
+// that names a group a connection input is in sits with it.
 //
-// A setting is an input only the person at the terminal may give (Local) that an
-// environment's connection can fill (ProfileFillable): a host, a port, how to
-// verify the server, and the credential the environment supplies, which no config
-// states but is as much the connection as the host beside it — left among the
-// call's inputs, pg.status would open on its password with every other box
-// headed under it. A capability whose config states none of them has no
-// connection to set apart: the passphrase of a store is Local and fillable too,
-// and is not the connection of anything. An input with a default from the config
-// that an agent may also give (a limit, a prefix) is the call's own.
+// A block of one box is headed too: the name says what the box is a part of, and a
+// box with no heading under a column of headed ones reads as belonging to the
+// block above it. An input in no group, a call's own, is under none.
 //
-// A form of nothing but settings has no call to separate them from, and a heading
-// over its first box says nothing the title does not.
-func connectionLast(c plugin.Capability, fs []plugin.Field) (ordered []plugin.Field, first string) {
-	if !slices.ContainsFunc(fs, func(f plugin.Field) bool { return f.Local && f.Config != "" }) {
-		return fs, ""
+// A connection input is one the operator's config states or the environment
+// supplies (plugin.Connection), and an input with a default from the config that an
+// agent may also give (a limit, a prefix) is the call's own: it is only in a block
+// when it says so.
+func blocked(c plugin.Capability, fs []plugin.Field) (ordered []plugin.Field, firsts map[string]string) {
+	var (
+		own     []plugin.Field
+		names   []string
+		members = map[string][]plugin.Field{}
+	)
+	join := func(name string, f plugin.Field) {
+		if _, seen := members[name]; !seen {
+			names = append(names, name)
+		}
+		members[name] = append(members[name], f)
 	}
-	ordered = make([]plugin.Field, 0, len(fs))
-	var settings []plugin.Field
 	for _, f := range fs {
-		if f.Local && plugin.ProfileFillable(c, f) {
-			settings = append(settings, f)
+		if plugin.Connection(c, f) {
 			continue
 		}
-		ordered = append(ordered, f)
+		if group := plugin.Group(c, f); group != "" {
+			join(group, f)
+		} else {
+			own = append(own, f)
+		}
 	}
-	if len(settings) == 0 || len(ordered) == 0 {
-		return fs, ""
+	for _, f := range fs {
+		if plugin.Connection(c, f) {
+			join(plugin.Group(c, f), f)
+		}
 	}
-	return append(ordered, settings...), settings[0].Name
+	if len(names) == 0 {
+		return fs, nil
+	}
+	ordered = own
+	firsts = make(map[string]string, len(names))
+	for _, name := range names {
+		firsts[members[name][0].Name] = name
+		ordered = append(ordered, members[name]...)
+	}
+	return ordered, firsts
 }
 
 // runForm builds a form whose completion runs c.
@@ -154,10 +170,11 @@ func (m Model) runForm(c plugin.Capability, fs []plugin.Field, defaults, base ma
 		}
 	}
 	shown = environmentNotes(c, shown, seed, env.name, env.conn)
-	shown, firstSetting := connectionLast(c, shown)
-	opts := []formOption{withEnvironment(env.name, profile.FenceOf(env.conn))}
-	if firstSetting != "" {
-		opts = append(opts, withSection(firstSetting, connectionSection))
+	shown, firsts := blocked(c, shown)
+	opts := make([]formOption, 0, 1+len(firsts))
+	opts = append(opts, withEnvironment(env.name, profile.FenceOf(env.conn)))
+	for field, group := range firsts {
+		opts = append(opts, withSection(field, group))
 	}
 	cf := newCapForm(c, m.withPicker(c, shown, on, forwarded, env.conn), seed, true, base, opts...)
 	cf.derived = derived

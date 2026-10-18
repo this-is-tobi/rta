@@ -300,13 +300,32 @@ func hideUnless(name string, want func(*capForm) bool) formOption {
 // boundaries from a `set.` prefix. A heading is one line and it turns the
 // column into three short answers.
 //
-// A huh Note rather than a group, deliberately: huh renders one group per
-// page, so grouping for legibility would have cost an extra keypress between
-// every section — the opposite of what this is for. A Note skips itself when
-// the cursor moves (charm.land/huh/v2, NewNote defaults skip: true), so the
-// heading is passed over rather than tabbed into.
+// **The heading is the first row of that field's box**, not a widget of its own
+// (label draws it). It was a huh Note between the boxes, and a Note is wrong for
+// two reasons that only show once a form scrolls.
+//
+// huh scrolls a group so that the focused box is the top of what is drawn, and a
+// Note above it is not part of the box: with the cursor on the first box of a
+// section, which is where a person enters it, the heading was the row just
+// scrolled off, and the heading of the section the cursor is in was never on
+// screen at all — only the headings of the sections still to come. A heading
+// that is a row of the box under it is scrolled with it.
+//
+// And a Note costs what any box in the column costs: the gap huh puts between all
+// of them, and the margin its title style carries, so a heading was three rows of
+// a screen that has twenty-four. Here it is the one row that is the rule.
+//
+// A box a condition hides (hideUnless) takes its heading with it, which is right
+// for a section that box was the only one of. A section opened by a box that comes
+// and goes, with boxes that stay behind it, would lose its name with the box; no
+// form is built so, and the heading would have to move to the box after it if one
+// were.
+//
+// Not a group, deliberately: huh renders one group per page, so grouping for
+// legibility would have cost an extra keypress between every section — the
+// opposite of what this is for.
 func withSection(field, title string) formOption {
-	return formOption{apply: func(cf *capForm) {
+	return formOption{early: true, apply: func(cf *capForm) {
 		if cf.heads == nil {
 			cf.heads = map[string]string{}
 		}
@@ -314,39 +333,24 @@ func withSection(field, title string) formOption {
 	}}
 }
 
-// sectioned splices the headings in, keeping fields and names index-aligned —
-// groups() reads names[i] to find the field a widget was built from, and a
-// Note is built from none.
-func (cf *capForm) sectioned(fields []huh.Field, names []string) ([]huh.Field, []string) {
-	if len(cf.heads) == 0 {
-		return fields, names
+// label is the title of a field's box: its name, and above it the rule of the
+// section it opens, when it opens one (withSection).
+func (cf *capForm) label(f plugin.Field) string {
+	if head, ok := cf.heads[f.Name]; ok {
+		return sectionRule(head) + "\n" + fieldLabel(f)
 	}
-	outF := make([]huh.Field, 0, len(fields)+len(cf.heads))
-	outN := make([]string, 0, len(names)+len(cf.heads))
-	for i, field := range fields {
-		if i < len(names) {
-			if head, ok := cf.heads[names[i]]; ok {
-				outF = append(outF, huh.NewNote().Title(sectionRule(head)))
-				outN = append(outN, "")
-			}
-		}
-		outF = append(outF, field)
-		if i < len(names) {
-			outN = append(outN, names[i])
-		}
-	}
-	return outF, outN
+	return fieldLabel(f)
 }
 
 // sectionRule is what a heading looks like: a named rule.
 //
-// huh gives a Note's title the same bold primary as a field's, so a heading
-// written as plain words is a field name with no box under it — which is
-// worse than no heading at all. Pre-styling it does not work either: a style
-// applied over text that already carries ANSI ends at the first reset inside
-// it, the lesson profileCovers records. So the distinction is typographic
-// rather than chromatic, and it is the one this app already uses for exactly
-// this — the band lists draw a section as a rule with a name in it.
+// A box's title is drawn in the same bold primary whatever it says, so a heading
+// written as plain words is a field name with no box under it — which is worse
+// than no heading at all. Pre-styling it does not work either: a style applied
+// over text that already carries ANSI ends at the first reset inside it, the
+// lesson profileCovers records. So the distinction is typographic rather than
+// chromatic, and it is the one this app already uses for exactly this — the band
+// lists draw a section as a rule with a name in it.
 func sectionRule(title string) string { return "── " + title + " " + strings.Repeat("─", 4) }
 
 // hidden reports whether a field is currently not being asked about.
@@ -360,7 +364,6 @@ func (cf *capForm) hidden(name string) bool {
 // goes. Fields keep their declared order, so a form with no conditions is a
 // single group exactly as before.
 func (cf *capForm) groups(fields []huh.Field, names []string) []*huh.Group {
-	fields, names = cf.sectioned(fields, names)
 	if len(cf.show) == 0 {
 		return []*huh.Group{huh.NewGroup(fields...)}
 	}
@@ -576,7 +579,7 @@ func (cf *capForm) asSeeded(f plugin.Field, v any) any {
 // position says where the cursor is among the boxes being asked, as "3 of 10",
 // and nothing for a form of one box, which has no length to speak of. A box a
 // condition hides (hideUnless) is not asked, so it is not counted; a heading
-// between boxes (withSection) is not a box and was never a widget here.
+// (withSection) is a row of the box it opens and counts for nothing of its own.
 func (cf *capForm) position() string {
 	if cf.form == nil || cf.form.State != huh.StateNormal {
 		return ""
@@ -771,7 +774,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			}
 			cf.bools[f.Name] = &v
 			fields = append(fields, huh.NewConfirm().
-				Title(fieldLabel(f)).
+				Title(cf.label(f)).
 				Description(f.Help).
 				Affirmative("yes").Negative("no").
 				Value(&v))
@@ -782,7 +785,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// Capability.validate refuses Suggest on a Text input, so nothing
 			// is being dropped here — see pkg/plugin.
 			fields = append(fields, huh.NewText().
-				Title(fieldLabel(f)).
+				Title(cf.label(f)).
 				Placeholder(cf.placeholder(f)).
 				// ctrl+e opens $EDITOR on the body, which is how a note gets
 				// written in the tool you write in. It works by default; it
@@ -799,7 +802,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// "a, b" — fmt.Sprint would print "[a b]" and break re-submission.
 			typed := cf.bind(f.Name, defaultString(f))
 			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
-				Title(fieldLabel(f)).
+				Title(cf.label(f)).
 				Placeholder(cf.placeholder(f)).
 				Description(completionHint(f, fieldDescription(f))).
 				Accessor(typed).
@@ -810,7 +813,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// declared for itself goes first.
 			typed := cf.bind(f.Name, defaultString(f))
 			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
-				Title(fieldLabel(f)).
+				Title(cf.label(f)).
 				Placeholder(cf.placeholder(f)).
 				Description(fieldDescription(f)+" — tab completes paths").
 				Accessor(typed).
@@ -829,7 +832,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 			// them so. That trade is the reason this is masked-and-terse
 			// rather than legible-and-visible.
 			fields = append(fields, cf.record(f.Name, huh.NewInput().
-				Title(fieldLabel(f)).
+				Title(cf.label(f)).
 				Description(fieldDescription(f)).
 				EchoMode(huh.EchoModePassword).
 				Accessor(cf.bind(f.Name, defaultString(f))).
@@ -837,7 +840,7 @@ func newCapForm(c plugin.Capability, fs []plugin.Field, defaults map[string]any,
 		default:
 			typed := cf.bind(f.Name, defaultString(f))
 			fields = append(fields, cf.record(f.Name, cf.completing(huh.NewInput().
-				Title(fieldLabel(f)).
+				Title(cf.label(f)).
 				Placeholder(cf.placeholder(f)).
 				Description(completionHint(f, fieldDescription(f))).
 				Accessor(typed).
@@ -1216,7 +1219,7 @@ func (cf *capForm) selectOne(f plugin.Field) huh.Field {
 		opts = append(opts, huh.NewOption(o, o))
 	}
 	return huh.NewSelect[string]().
-		Title(fieldLabel(f)).
+		Title(cf.label(f)).
 		Description(fieldDescription(f)).
 		Options(opts...).
 		Accessor(typed)
@@ -1263,7 +1266,7 @@ func (cf *capForm) multiSelect(f plugin.Field) huh.Field {
 		opts = append(opts, huh.NewOption(o, o).Selected(slices.Contains(v, o)))
 	}
 	return huh.NewMultiSelect[string]().
-		Title(fieldLabel(f)).
+		Title(cf.label(f)).
 		Description(strings.TrimSpace(fieldDescription(f) + " (space to toggle)")).
 		Options(opts...).
 		Value(&v).
