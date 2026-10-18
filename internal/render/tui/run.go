@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -88,6 +89,50 @@ type formEnv struct {
 	conn config.Connection
 }
 
+// connectionSection heads the settings of the connection the operator states in
+// their config, which come after the call's own inputs (connectionLast).
+const connectionSection = "connection, stated in your config"
+
+// connectionLast puts the connection settings after the call's own inputs, each
+// group as declared, and names the first setting when there is something above
+// it for a heading to set it apart from.
+//
+// A database declares a dozen settings to the one or two inputs the call is about,
+// and a form asks in the order of the declaration: pg.table.list showed its
+// schema and its limit among eleven boxes of the same look, and vault.kv.get opened
+// on its optional mount with the path it needs second.
+//
+// A setting is an input only the person at the terminal may give (Local) that an
+// environment's connection can fill (ProfileFillable): a host, a port, how to
+// verify the server, and the credential the environment supplies, which no config
+// states but is as much the connection as the host beside it — left among the
+// call's inputs, pg.status would open on its password with every other box
+// headed under it. A capability whose config states none of them has no
+// connection to set apart: the passphrase of a store is Local and fillable too,
+// and is not the connection of anything. An input with a default from the config
+// that an agent may also give (a limit, a prefix) is the call's own.
+//
+// A form of nothing but settings has no call to separate them from, and a heading
+// over its first box says nothing the title does not.
+func connectionLast(c plugin.Capability, fs []plugin.Field) (ordered []plugin.Field, first string) {
+	if !slices.ContainsFunc(fs, func(f plugin.Field) bool { return f.Local && f.Config != "" }) {
+		return fs, ""
+	}
+	ordered = make([]plugin.Field, 0, len(fs))
+	var settings []plugin.Field
+	for _, f := range fs {
+		if f.Local && plugin.ProfileFillable(c, f) {
+			settings = append(settings, f)
+			continue
+		}
+		ordered = append(ordered, f)
+	}
+	if len(settings) == 0 || len(ordered) == 0 {
+		return fs, ""
+	}
+	return append(ordered, settings...), settings[0].Name
+}
+
 // runForm builds a form whose completion runs c.
 //
 // One constructor rather than the picker and the seed being assembled side by
@@ -109,8 +154,12 @@ func (m Model) runForm(c plugin.Capability, fs []plugin.Field, defaults, base ma
 		}
 	}
 	shown = environmentNotes(c, shown, seed, env.name, env.conn)
-	cf := newCapForm(c, m.withPicker(c, shown, on, forwarded, env.conn), seed, true, base,
-		withEnvironment(env.name, profile.FenceOf(env.conn)))
+	shown, firstSetting := connectionLast(c, shown)
+	opts := []formOption{withEnvironment(env.name, profile.FenceOf(env.conn))}
+	if firstSetting != "" {
+		opts = append(opts, withSection(firstSetting, connectionSection))
+	}
+	cf := newCapForm(c, m.withPicker(c, shown, on, forwarded, env.conn), seed, true, base, opts...)
 	cf.derived = derived
 	cf.offered = fs
 	if b, ok := cf.bindings[profileInput]; ok {

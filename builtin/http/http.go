@@ -16,6 +16,7 @@ import (
 	"net/http/httptrace"
 	"net/netip"
 	neturl "net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -54,7 +55,7 @@ var client = &stdhttp.Client{
 
 // Plugin returns the http plugin declaration.
 func Plugin() plugin.Plugin {
-	common := []plugin.Field{
+	target := []plugin.Field{
 		{Name: "url", Type: plugin.String, Positional: true, Required: true, Help: "request URL"},
 		// Worded for every surface it reaches. It said "-H 'Key: Value'",
 		// curl's flag, which rta never had (the CLI spells it --header), and
@@ -62,6 +63,8 @@ func Plugin() plugin.Plugin {
 		// label, where no flag is typed at all.
 		{Name: "header", Type: plugin.StringSlice, Suggest: suggestHeaders,
 			Help: "request header as 'Key: Value', repeatable"},
+	}
+	options := []plugin.Field{
 		// Secret, not String, and it always should have been: both are
 		// credentials, so both belong masked in a form rather than drawn in
 		// the clear, and neither is a value anything should keep. Declaring
@@ -95,8 +98,8 @@ func Plugin() plugin.Plugin {
 			Help: "allow a loopback or private address — a service of your own; never offered to agents"},
 		{Name: "timeout", Type: plugin.Duration, Config: "timeout", Default: "30s", Min: "1s", Max: "10m", Help: "request timeout"},
 	}
-	withBody := append([]plugin.Field{}, common...)
-	withBody = append(withBody, plugin.Field{
+	common := slices.Concat(target, options)
+	body := []plugin.Field{{
 		// The help used to promise "@file to read from a file, - for stdin".
 		// Neither was ever implemented, so a body of "@secrets.env" was sent
 		// literally — and a declaration is published verbatim as an MCP tool
@@ -127,8 +130,14 @@ func Plugin() plugin.Plugin {
 		// would be a value the CLI reads from disk and MCP sends as it is, and the
 		// same text meaning two things on two surfaces is how a path ends up read
 		// for an agent.
-		plugin.Field{Name: "data-file", Type: plugin.Path, Local: true,
-			Help: "read the request body from this file (/dev/stdin for a pipe) in place of data"})
+		{Name: "data-file", Type: plugin.Path, Local: true,
+			Help: "read the request body from this file (/dev/stdin for a pipe) in place of data"},
+	}
+	// The body follows the url and the header and comes before the credentials
+	// and the timeout. A form asks in the order the inputs are declared, and the
+	// body is what a POST is for: declared last it was the ninth box, eight
+	// enters from the url.
+	withBody := slices.Concat(target, body, options)
 	return plugin.Plugin{
 		Name:    "http",
 		Summary: "Request any endpoint and inspect the response — a REST client",
