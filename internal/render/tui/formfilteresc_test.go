@@ -62,9 +62,12 @@ func TestEscClosesAPickersFilterBeforeItClosesTheForm(t *testing.T) {
 		t.Errorf("with no filter held esc cancels, and the footer does not say so:\n%s", bar)
 	}
 
-	m = press(t, m, "esc")
-	if m.mode == modeForm {
-		t.Error("esc on a picker with no filter did not cancel the form")
+	// Something is typed in the first box, so leaving asks (formdiscard_test.go).
+	if m = press(t, m, "esc"); m.dialog == nil || m.mode != modeForm {
+		t.Fatal("esc on a picker with no filter did not ask about the form")
+	}
+	if m = press(t, m, "y"); m.mode == modeForm {
+		t.Error("discarding did not close the form")
 	}
 }
 
@@ -99,7 +102,11 @@ func TestEscAfterAnEmptyFilterIsClosedStillCancels(t *testing.T) {
 	if m.mode != modeForm {
 		t.Fatalf("esc on an open, empty filter left the form (mode %v)", m.mode)
 	}
-	if m = press(t, m, "esc"); m.mode == modeForm {
-		t.Error("esc with the filter closed did not cancel the form")
+	// Something is typed in the first box, so leaving asks (formdiscard_test.go).
+	if m = press(t, m, "esc"); m.dialog == nil || m.mode != modeForm {
+		t.Fatal("esc with the filter closed did not ask about the form")
+	}
+	if m = press(t, m, "y"); m.mode == modeForm {
+		t.Error("discarding did not close the form")
 	}
 }

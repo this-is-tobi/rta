@@ -397,7 +397,8 @@ func TestShiftEnterStopsAtATwoStagePrefillBoundary(t *testing.T) {
 	// Stage two opens, seeded from Prefill — not the run itself.
 	waitFor(t, tm, "prefilled-from-record")
 
-	quit(t, tm)
+	// The identity typed on the first page is something typed.
+	quitFromADirtyForm(t, tm)
 }
 
 // fastSubmitThemeForm: every field is valid when left empty, so racing

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strconv"
@@ -218,6 +219,9 @@ type capForm struct {
 	// a paste. A box that holds its default and is not engaged takes the first
 	// character typed as its answer (retype).
 	engaged map[string]bool
+	// edited is set on a form rebuilt from the answers of one that had been
+	// changed, so that rebuilding does not forget it (touched).
+	edited bool
 }
 
 // formOption tunes a form beyond the fields it collects.
@@ -594,11 +598,19 @@ func (cf *capForm) position() string {
 	return fmt.Sprintf("%d of %d", at, total)
 }
 
-// state is what every box holds right now, as text and by field name: the whole
-// of what a person can have changed.
+// state is what every box holds right now, as text and by field name: what a
+// person can have changed by answering the form, bar the environment picker.
+//
+// The picker is a choice of where the call goes and not an answer typed into the
+// form: moving it rebuilds the boxes on the environment it names, the entry that
+// states a connection is a detour that comes back with the pick put as it was, and
+// a form only looked at on another environment has lost nothing by being closed.
 func (cf *capForm) state() map[string]string {
 	out := make(map[string]string, len(cf.bindings)+len(cf.bools)+len(cf.slices))
 	for name, text := range cf.bindings {
+		if name == profileInput && plugin.Profilable(cf.cap) {
+			continue
+		}
 		out[name] = *text
 	}
 	for name, on := range cf.bools {
@@ -660,6 +672,16 @@ func (cf *capForm) retype(name string, msg tea.Msg) {
 	}
 }
 
+// touched reports whether the form differs from what it opened with: something typed,
+// a choice made or a switch flipped, and not undone. A box typed in and emptied
+// again is the box it was, which is why this compares the form with how it
+// opened and does not count the keys that were pressed.
+//
+// A form rebuilt under the person's hands starts from what they typed, so by what
+// it opened with it would read as untouched; edited carries the answer from the
+// form it replaced (inherit).
+func (cf *capForm) touched() bool { return cf.edited || !maps.Equal(cf.state(), cf.opened) }
+
 // inherit takes from the form this one replaces what is about the screen and
 // not about the boxes, so a form rebuilt under the person's hands (its second
 // stage, the same boxes on another environment, the run form behind an ad hoc
@@ -668,6 +690,7 @@ func (cf *capForm) retype(name string, msg tea.Msg) {
 func (cf *capForm) inherit(from *capForm) {
 	cf.fromResult = from.fromResult
 	cf.about = from.about
+	cf.edited = from.touched()
 }
 
 // hasInputs reports whether opening this capability warrants a form: any

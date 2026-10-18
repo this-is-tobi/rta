@@ -476,9 +476,17 @@ func (m Model) formKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			nm, cmd := m.clearPickerFilter()
 			return nm, cmd, true
 		}
+		if m.form != nil && m.form.touched() {
+			return m.openDialog(discardFormDialog()), nil, true
+		}
 		nm, cmd := m.closeForm()
 		return nm, cmd, true
 	case "ctrl+c":
+		// Asks first like esc, and quits from the question as it does from any
+		// other: a second ctrl+c is the answer for somebody who meant to leave.
+		if m.form != nil && m.form.touched() {
+			return m.openDialog(discardFormDialog()), nil, true
+		}
 		return m.quit()
 	case "shift+enter", "alt+enter", "ctrl+s":
 		nm, cmd := m.fastSubmitForm()

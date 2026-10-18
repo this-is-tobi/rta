@@ -50,6 +50,7 @@ type dialogID int
 
 const (
 	dialogLockStore dialogID = iota + 1
+	dialogDiscardForm
 )
 
 const (
@@ -109,6 +110,8 @@ func (m Model) answerDialog(yes bool) (tea.Model, tea.Cmd) {
 	switch d.id {
 	case dialogLockStore:
 		return m.lockStoreAnswer(yes)
+	case dialogDiscardForm:
+		return m.discardFormAnswer(yes)
 	}
 	return m, nil
 }
@@ -275,6 +278,37 @@ func lockStoreDialog(left time.Duration) dialog {
 		cancel:  "Cancel",
 		focus:   focusConfirm,
 	}
+}
+
+// discardFormDialog is the question behind esc and ctrl+c on a form where
+// something differs from what it opened with.
+//
+// The focus starts on Keep editing, the answer that loses nothing: unlike the
+// lock, discarding is not the direction that narrows what is open. The sentence
+// says what the key does and not what it costs, since the cost is whatever was
+// typed and is on the screen behind the question.
+func discardFormDialog() dialog {
+	return dialog{
+		id:    dialogDiscardForm,
+		title: "Discard what you typed?",
+		body: "Closing the form forgets what you entered in it, and nothing is run or saved. " +
+			"Keep editing returns to the form as you left it.",
+		confirm: "Discard",
+		cancel:  "Keep editing",
+		focus:   focusCancel,
+	}
+}
+
+// discardFormAnswer is what a yes does to the form; a no leaves it as it was.
+//
+// The form may be gone when the answer comes: the question is over the form's
+// screen and nothing else closes it, but an answer that finds no form has nothing
+// to discard and must not close the screen it finds in its place.
+func (m Model) discardFormAnswer(yes bool) (tea.Model, tea.Cmd) {
+	if !yes || m.form == nil || m.mode != modeForm {
+		return m, nil
+	}
+	return m.closeForm()
 }
 
 // lockStoreAnswer is what a yes or a no does to the store.
