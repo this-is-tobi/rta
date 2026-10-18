@@ -10,6 +10,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -406,5 +407,133 @@ func TestAGlancedCellWithALineBreakStaysOnItsRow(t *testing.T) {
 	}
 	if !strings.Contains(lines[1], "past due") {
 		t.Errorf("the row lost its words: %q", lines[1])
+	}
+}
+
+// certExpiry is cert.expiry's table with one host that did not answer: the
+// reason is the dead host's status cell, and it is eighty-odd cells.
+func certExpiry() view.Table {
+	return view.Table{
+		Columns: []view.Column{
+			{Name: "Target"},
+			{Name: "Expires", Kind: view.KindTimestamp},
+			{Name: "In", Kind: view.KindDuration},
+			{Name: "Status", Kind: view.KindStatus},
+		},
+		Rows: [][]string{
+			{"localhost:18443", "2026-10-28", "9d", "WARN <30d"},
+			{"localhost:18444", "2027-05-06", "199d", "ok"},
+			{"localhost:18445", "-", "-", "ERROR: connecting to localhost:18445: dial tcp 127.0.0.1:18445: connect: connection refused"},
+		},
+	}
+}
+
+// toolsList is pkg.tools's table with a lookup that failed: the status cell
+// carries the refusal and the first clause of its remedy.
+func toolsList() view.Table {
+	return view.Table{
+		Columns: []view.Column{
+			{Name: "Target"}, {Name: "Source"}, {Name: "Installed"}, {Name: "Latest"},
+			{Name: "Status", Kind: view.KindStatus}, {Name: "Where"},
+		},
+		Rows: [][]string{
+			{"kubectl-cnpg", "github:cloudnative-pg/cloudnative-pg", "1.30.1", "",
+				"info github.com: Forbidden — the latest-version lookup needs github.com", "/Users/someone/.krew/bin/kubectl-cnpg"},
+			{"stern", "github:stern/stern", "1.31.0", "1.32.0", "outdated", "/opt/homebrew/bin/stern"},
+		},
+	}
+}
+
+// **A long status cell takes the verdict off every row of a tile.** One host
+// that did not answer put eighty-five cells in the Status column, and the
+// column that grades is the last to go, but go it did: it was wider than the
+// box, so it was dropped, and the tile showed the three host names and
+// nothing about their certificates. A verdict's first word is the verdict and
+// the rest is its reason, so the column is cut to the room there is, with an
+// ellipsis, before it is dropped, and what it says first is what stays.
+func TestAGradedColumnTooWideIsCutBeforeItIsDropped(t *testing.T) {
+	for _, inner := range []int{34, 36, 40, 60} {
+		lines := glanced(t, certExpiry(), inner)
+		if !strings.Contains(lines[0], "STATUS") {
+			t.Errorf("%d cells: the column that grades is gone:\n%s", inner, strings.Join(lines, "\n"))
+		}
+		for i, want := range []string{"WARN <30d", "ok", "ERROR"} {
+			if !strings.Contains(lines[i+1], want) {
+				t.Errorf("%d cells: row %d lost its verdict %q: %q", inner, i, want, lines[i+1])
+			}
+		}
+		if !strings.Contains(lines[3], "…") {
+			t.Errorf("%d cells: the long reason is not cut: %q", inner, lines[3])
+		}
+		for i, want := range []string{"localhost:18443", "localhost:18444", "localhost:18445"} {
+			if !strings.Contains(lines[i+1], want) {
+				t.Errorf("%d cells: the row is not named any more, so two hosts read alike: %q", inner, lines[i+1])
+			}
+		}
+	}
+}
+
+// The cut cell is still the verdict's colour: the style is the whole cell's, read
+// from its first word, so a red ERROR stays red with its reason cut short.
+func TestACutVerdictKeepsItsColour(t *testing.T) {
+	tbl := certExpiry()
+	lines, ok := glanceTable(tbl, 34)
+	if !ok {
+		t.Fatal("the table was left to the renderer")
+	}
+	dead := plain(lines[3])
+	cut := strings.TrimSpace(dead[strings.Index(dead, "localhost:18445")+len("localhost:18445"):])
+	if want := theme.StatusStyle(tbl.Rows[2][3]).Render(cut); !strings.Contains(lines[3], want) {
+		t.Errorf("the cut reason %q is not drawn in the colour of its verdict:\n%q", cut, lines[3])
+	}
+	if theme.StatusStyle(tbl.Rows[2][3]).Render("x") == theme.Plain.Render("x") {
+		t.Fatal("the fixture's verdict has no colour, so the check says nothing")
+	}
+}
+
+// The prose goes before the verdict does. A path is what the box gives up when
+// it cannot hold the path and the grade, and "a glance is for a verdict".
+func TestAProseColumnGoesBeforeTheVerdictDoes(t *testing.T) {
+	narrow := glanced(t, toolsList(), 34)
+	if strings.Contains(narrow[0], "WHERE") || !strings.Contains(narrow[0], "STATUS") {
+		t.Errorf("at 34 cells the path outlived the grade:\n%s", strings.Join(narrow, "\n"))
+	}
+	if !strings.Contains(narrow[1], "info") || !strings.Contains(narrow[2], "outdated") {
+		t.Errorf("a row lost its verdict:\n%s", strings.Join(narrow, "\n"))
+	}
+	wide := glanced(t, toolsList(), 76)
+	for _, want := range []string{"TARGET", "STATUS"} {
+		if !strings.Contains(wide[0], want) {
+			t.Errorf("at 76 cells %s is gone:\n%s", want, strings.Join(wide, "\n"))
+		}
+	}
+}
+
+// The same on the dashboard, through the model: a certificate tile with a host
+// that does not answer, beside one without, and a tools tile with a lookup that
+// failed, at the size of the smallest terminal the tiles are drawn on.
+func TestTheTilesShowTheirVerdictWithALongStatusAt80x24(t *testing.T) {
+	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
+	reg := registry.New()
+	cert, tools := certExpiry(), toolsList()
+	if err := reg.Register(plugin.Plugin{Name: "cert", Summary: "cert", Capabilities: []plugin.Capability{{
+		ID: "cert.expiry", Summary: "expiry", Safety: plugin.Read,
+		Run: func(context.Context, plugin.Request) (view.View, error) { return cert, nil },
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Register(plugin.Plugin{Name: "pkg", Summary: "pkg", Capabilities: []plugin.Capability{{
+		ID: "pkg.tools", Summary: "tools", Safety: plugin.Read,
+		Run: func(context.Context, plugin.Request) (view.View, error) { return tools, nil },
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	m := New(reg, config.Dashboard{Tiles: []config.Tile{{ID: "cert.expiry"}, {ID: "pkg.tools"}}}, nil)
+	m = filled(t, m, 80, 24)
+	screen := plain(m.View().Content)
+	for _, want := range []string{"STATUS", "WARN <30d", "ERROR", "outdated", "info"} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("the dashboard does not show %q:\n%s", want, screen)
+		}
 	}
 }
