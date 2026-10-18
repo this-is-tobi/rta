@@ -336,6 +336,62 @@ func TestAForcedExitOnATerminalIsReportedOnALineOfItsOwn(t *testing.T) {
 	}
 }
 
+// A prompt for a secret, a value, a seed or a yes reads the terminal with a call
+// that does not return when a signal arrives, so ^C at one cost the whole grace
+// and ended in an error written for a hung command: "stopped by SIGINT: `rta kv
+// set` had not returned 3s after being asked to stop". Nothing is going to
+// return, and the person has just answered. The exit is at once and says what
+// happened, on a line of its own, with the status a shell expects.
+func TestAnInterruptAtAPromptThatCannotHearItEndsAtOnceAndSaysSo(t *testing.T) {
+	for sig, want := range map[os.Signal]int{os.Interrupt: 130, syscall.SIGTERM: 143} {
+		w := newWatch(t, time.Hour, never, never, nil)
+		w.prompting = func() bool { return true }
+		w.deafPrompt = func() bool { return true }
+		w.signals <- sig
+		code, ok := w.exited(owed)
+		if !ok || code != want {
+			t.Fatalf("%v: exited %v with %d, want %d at once", sig, ok, code, want)
+		}
+		got := w.stderr.String()
+		if !strings.HasPrefix(got, "\n") || !strings.Contains(got, "cancelled") || strings.Contains(got, "had not returned") {
+			t.Errorf("%v: stderr = %q, want a line of its own that says cancelled and no hung-command report", sig, got)
+		}
+		if w.closed.Load() != 1 || w.undone.Load() != 1 || w.restored.Load() != 1 {
+			t.Errorf("%v: plugins closed %d times, locks given back %d times, terminal restored %d times, "+
+				"want once each", sig, w.closed.Load(), w.undone.Load(), w.restored.Load())
+		}
+	}
+}
+
+// A prompt that stops waiting by itself when the context is cancelled answers
+// the interrupt in its own words ("Not confirmed — nothing was changed", its
+// own status), so the exit leaves it to.
+func TestAnInterruptAtAPromptThatHearsTheContextIsLeftToItsOwnAnswer(t *testing.T) {
+	w := newWatch(t, time.Hour, never, never, nil)
+	w.prompting = func() bool { return true }
+	w.deafPrompt = func() bool { return false }
+	w.signals <- os.Interrupt
+	select {
+	case <-w.ctx.Done():
+	case <-time.After(owed):
+		t.Fatal("the interrupt did not cancel the command's context")
+	}
+	if code, ok := w.exited(300 * time.Millisecond); ok {
+		t.Fatalf("exited with %d before the prompt answered", code)
+	}
+}
+
+// A command that owns its shutdown has no grace to cut short.
+func TestACommandThatOwnsItsShutdownIsNotCutShortAtAPrompt(t *testing.T) {
+	w := newWatch(t, time.Hour, func() bool { return true }, never, nil)
+	w.prompting = func() bool { return true }
+	w.deafPrompt = func() bool { return true }
+	w.signals <- os.Interrupt
+	if code, ok := w.exited(300 * time.Millisecond); ok {
+		t.Fatalf("exited with %d though the command owns its shutdown", code)
+	}
+}
+
 // The report is the command line's error, in the format it asked for.
 func TestAForcedExitIsReportedInTheFormatAskedFor(t *testing.T) {
 	root := NewRoot(registry.New(), "test")

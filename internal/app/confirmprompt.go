@@ -63,7 +63,7 @@ var confirmTerminal = func() bool {
 //
 // A variable, so a test can answer without a terminal.
 var askLine = func(ctx context.Context, prompt string) (string, error) {
-	defer shutdown.Prompting()()
+	defer shutdown.PromptingWithContext()()
 	fmt.Fprint(os.Stderr, prompt)
 	return readLineOrDone(ctx, bufio.NewReader(stdio.Real()).ReadString)
 }

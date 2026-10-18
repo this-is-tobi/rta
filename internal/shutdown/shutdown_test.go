@@ -99,3 +99,34 @@ func TestAnOpenPromptIsCountedAndAnswered(t *testing.T) {
 		t.Error("still open after every prompt was answered")
 	}
 }
+
+// A prompt is open while it waits, and only one that cannot hear its command's
+// context being cancelled is a deaf one: the interrupt has no answer to wait for
+// from that kind (internal/app's Interrupts).
+func TestAPromptIsDeafUnlessItHearsTheContext(t *testing.T) {
+	if PromptOpen() || DeafPromptOpen() {
+		t.Fatal("a prompt open before any was asked")
+	}
+	deaf := Prompting()
+	if !PromptOpen() || !DeafPromptOpen() {
+		t.Error("a prompt that cannot hear the context is not deaf")
+	}
+	deaf()
+	deaf()
+	if PromptOpen() || DeafPromptOpen() {
+		t.Error("answered twice is answered once, and the count went below zero")
+	}
+	hearing := PromptingWithContext()
+	if !PromptOpen() || DeafPromptOpen() {
+		t.Errorf("open %v, deaf %v: a prompt that hears the context is open and not deaf", PromptOpen(), DeafPromptOpen())
+	}
+	both := Prompting()
+	if !DeafPromptOpen() {
+		t.Error("a deaf prompt beside a hearing one is hidden by it")
+	}
+	both()
+	hearing()
+	if PromptOpen() {
+		t.Error("a prompt is open after all were answered")
+	}
+}
