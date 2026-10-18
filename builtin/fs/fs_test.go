@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -901,4 +902,24 @@ func TestTreeRefusesAWalkThatWasCancelled(t *testing.T) {
 	if code := view.AsError(err, "").Code; code != "fs.tree.cancelled" {
 		t.Errorf("code = %q, want fs.tree.cancelled", code)
 	}
+}
+
+// fs.usage walks a tree on every run: 0.46 s for 100,000 files, and a home
+// directory is more. A tile of it ran at the pace a read of this machine gets,
+// every five seconds, which is a core kept busy to say what changes by the hour.
+// The pace is a floor, so a tile that states a faster one is held to it.
+func TestUsageDeclaresAPaceFloor(t *testing.T) {
+	for _, c := range Plugin().Capabilities {
+		if c.ID != "fs.usage" {
+			continue
+		}
+		if c.Pace() != 5*time.Minute {
+			t.Errorf("fs.usage runs on a tile every %s, want 5m0s", c.Pace())
+		}
+		if got, cut := plugin.ClampPace(c, 5*time.Second); got != 5*time.Minute || !cut {
+			t.Errorf("a tile asking for 5s runs every %s (cut %v), want the floor of 5m0s", got, cut)
+		}
+		return
+	}
+	t.Error("fs.usage is not declared")
 }

@@ -16,6 +16,8 @@
 package fs
 
 import (
+	"time"
+
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -24,6 +26,13 @@ import (
 func pathField(help string) plugin.Field {
 	return plugin.Field{Name: "path", Type: plugin.Path, Positional: true, Default: ".", Help: help}
 }
+
+// usageRefresh is how often a dashboard tile of fs.usage is re-run, a floor an
+// operator's file can lengthen and never shorten. A run walks the tree it was
+// pointed at: 0.46 s of one core for 100,000 files, more for a home directory,
+// and at the pace a read of this machine gets, every five seconds, that is a
+// core kept busy to say what changes by the hour.
+const usageRefresh = 5 * time.Minute
 
 // Plugin returns the fs plugin declaration.
 func Plugin() plugin.Plugin {
@@ -43,6 +52,9 @@ func Plugin() plugin.Plugin {
 				// ruinous in a home directory. fs.tree is the fs tile: same
 				// question, bounded by construction.
 				NoPreview: true,
+				// A floor, for the person who names it in their config anyway:
+				// a run is a walk of the tree, and what it says moves by the hour.
+				Refresh: usageRefresh,
 				Description: "Totals every entry under a path and ranks them. Directories are summed " +
 					"recursively; the share column is of the scanned total, not of the disk. A size is the disk a " +
 					"file takes, as du counts it: a sparse file by what is written, a file with several hard links " +
