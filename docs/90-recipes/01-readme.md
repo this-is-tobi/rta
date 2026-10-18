@@ -246,15 +246,19 @@ Every row carries the sequence number the record assigned it, and `--after` take
 
 ```bash
 ARCHIVE=~/audit/rta.jsonl
-cursor=$(jq -rs 'map(.[0] | tonumber) | max // 0' "$ARCHIVE" 2>/dev/null || echo 0)
-rta agent log --after "$cursor" --limit 500 -o json | jq -c '.rows[]' >> "$ARCHIVE"
+cursor=$(jq -rs 'map(.seq | tonumber) | max // 0' "$ARCHIVE" 2>/dev/null)
+cursor=${cursor:-0}
+rta agent log --after "$cursor" --limit 500 -o json \
+  | jq -c '[.columns[].name] as $c | .rows[] | [$c, .] | transpose | map({(.[0]): .[1]}) | add' >> "$ARCHIVE"
 ```
+
+Each line of the archive is one call keyed by column name (`seq`, `at`, `capability`, `outcome`, `authorized`, `why`...), so it is read the same by `jq`, by Promtail and by whoever opens it in a month. A run on a machine with no archive yet starts from `0`: `jq` finds no file, prints nothing, and the second line gives the cursor its start.
 
 Run it on a timer and the archive grows by what happened and nothing else. The cursor lives in the archive itself, so there is no second file to lose, and a run that finds nothing new writes nothing.
 
 `--since` asks the same question the way a person does — `--since 2h` while something is going wrong, `--since 2026-08-30` when writing it up. It is the right flag for reading and the wrong one for shipping: a duration has a boundary, and a sequence number does not.
 
-The date appears on a row exactly when the rows are not all from today, so a live view stays narrow and an archive is still readable a month later.
+Anything that is not a terminal gets the same columns in the same order whatever the batch holds, and `at` is the record's own instant in [UTC](../95-reference/10-glossary.md#acronyms) (`2026-10-18T14:46:24Z`), so an archive is still readable a month later; only the one-line view at a terminal shows the time of day, local, and the columns a row has something to say in.
 
 ## Put it on a dashboard
 

@@ -66,7 +66,7 @@ An empty listing is still its table — the columns, and `rows` an empty array �
 
 `-o csv` writes a table as its rows and any other result as rows of its own: key/value pairs under `key,value`, text as one cell under `text`, and a tree, a chart or a page of sections as every value it holds under `path,value`, the path being where `-o json` puts it. A result that is not a table is never a reason for csv to fail — a write has already happened by the time its result is written.
 
-A column's name is Title Case on every built-in table (`Expires In`, `Would Do`), the same word for the same field wherever it appears, so a script that reads a `-o csv` header or `columns[].name` meets one spelling. `rta agent log` is the one exception: its columns are the record's own fields (`seq`, `outcome`, `authorized`), which a log shipper reads by name and a rename would break.
+A column's name is Title Case on every built-in table (`Expires In`, `Would Do`), the same word for the same field wherever it appears, so a script that reads a `-o csv` header or `columns[].name` meets one spelling. `rta agent log` is the one exception: its columns are the record's own fields (`seq`, `outcome`, `authorized`), which a log shipper reads by name and a rename would break. Everywhere but the one-line view at a terminal it has the same columns in the same order whatever its rows hold, and `at` is the record's own instant in [UTC](../95-reference/10-glossary.md#acronyms), written `2026-10-18T14:46:24Z`.
 
 A cell can hold more than one line: a description typed with a line break in it, or the grants of a role in `rta grant roles`, one to a line. The grid draws a rule between the rows of a table that has such a cell, so the second line is read inside the row it belongs to and not as a row with a blank key; a table without one keeps the compact grid. `-o json` and `-o yaml` keep the line break in the string, `-o csv` quotes it, and `-o md` writes it as `<br>`.
 
@@ -87,7 +87,8 @@ rta plugin trust -o json | jq -r '.rows[][0]' | xargs -rn1 rta plugin trust
 rta profile list -o json | jq -r '.rows[] | "\(.[0])\t\(.[1])"'
 
 # Ship the record onward from where you left off.
-rta agent log --after "$cursor" -o json | jq -c '.rows[]'
+rta agent log --after "$cursor" -o json \
+  | jq -c '[.columns[].name] as $c | .rows[] | [$c, .] | transpose | map({(.[0]): .[1]}) | add'
 ```
 
 Exit codes make the loop safe to write, and they are the next thing worth knowing.

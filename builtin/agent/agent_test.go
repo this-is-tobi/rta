@@ -699,10 +699,13 @@ func TestAPaddedRecordIsNeverShownAsTheBareOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows := lv.(view.Table).Rows
-	args := func(row []string) string { return row[3] }
-	if len(rows) != 2 || args(rows[0]) != "key=prod/db" || args(rows[1]) == args(rows[0]) {
-		t.Errorf("the ledger shows the two calls' arguments as %q and %q", args(rows[0]), args(rows[len(rows)-1]))
+	table := lv.(view.Table)
+	if len(table.Rows) != 2 {
+		t.Fatalf("%d rows, want the two calls", len(table.Rows))
+	}
+	first, second := cell(t, table, 0, "arguments"), cell(t, table, 1, "arguments")
+	if first != "key=prod/db" || second == first {
+		t.Errorf("the ledger shows the two calls' arguments as %q and %q", first, second)
 	}
 }
 
@@ -746,8 +749,8 @@ func TestAListArgumentShowsEachRecordAsTheGateComparesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rows := lv.(view.Table).Rows; len(rows) != 1 || rows[0][3] != "hostname="+want {
-		t.Errorf("the ledger shows %q, want hostname=%s", rows, want)
+	if table := lv.(view.Table); len(table.Rows) != 1 || cell(t, table, 0, "arguments") != "hostname="+want {
+		t.Errorf("the ledger shows %q, want hostname=%s", table.Rows, want)
 	}
 }
 
@@ -1023,9 +1026,10 @@ func TestTheLogShowsTheCodeAsItsOwnColumn(t *testing.T) {
 		t.Fatalf("code column on a clean row = %q, want blank", got)
 	}
 
-	// Same rule as agent and credential: a record with no coded row — one
-	// written before the code/reason split, or one where nothing has gone
-	// wrong — grows no column at all.
+	// A record with no coded row — one written before the code/reason split,
+	// or one where nothing has gone wrong — has the column all the same: the
+	// full table is the same columns whatever the rows hold, or a shipper
+	// reading it by name finds the field in one batch and not the next.
 	isolate(t)
 	if err := agentlog.Append(agentlog.Entry{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open}); err != nil {
 		t.Fatal(err)
@@ -1034,10 +1038,8 @@ func TestTheLogShowsTheCodeAsItsOwnColumn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range v.(view.Table).Columns {
-		if c.Name == "code" {
-			t.Fatal("code column appeared with nothing to fill it")
-		}
+	if got := cell(t, v.(view.Table), 0, "code"); got != "" {
+		t.Fatalf("code column on a record with no coded row = %q, want it there and blank", got)
 	}
 }
 
@@ -1064,10 +1066,10 @@ func TestTheLogShowsWhichCredentialAuthenticatedEachCall(t *testing.T) {
 		t.Fatalf("credential column for a stdio call = %q, want the placeholder", got)
 	}
 
-	// The column disappears entirely when nothing on this connection ever
-	// carried a bearer credential — the same rule the "agent" column
-	// already follows, so a quiet stdio-only server does not grow a column
-	// of dashes nobody can fill.
+	// The full table keeps the column when nothing on this connection ever
+	// carried a bearer credential, as a dash: a shipper reads the field by
+	// name, and the compact listing is the one that leaves a column of dashes
+	// out (TestWhoColumnsJoinTheCompactLogOnlyWhenThereIsMoreThanOne).
 	isolate(t)
 	if err := agentlog.Append(agentlog.Entry{Cap: "sys.cpu", Outcome: agentlog.Ran, Auth: agentlog.Open}); err != nil {
 		t.Fatal(err)
@@ -1076,18 +1078,15 @@ func TestTheLogShowsWhichCredentialAuthenticatedEachCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range v.(view.Table).Columns {
-		if c.Name == "credential" {
-			t.Fatal("credential column appeared with nothing to fill it")
-		}
+	if got := cell(t, v.(view.Table), 0, "credential"); got != "—" {
+		t.Fatalf("credential column of a stdio-only record = %q, want it there as a dash", got)
 	}
 }
 
 // The records a call named have a column of their own, beside the
 // arguments and after whoever called: the arguments are kept cleaned, and a
 // record padded with a zero-width space read there as the bare one. Each
-// record is shown as a record is everywhere else, and the column appears
-// only once a row can fill it.
+// record is shown as a record is everywhere else.
 func TestTheLogShowsTheRecordsEachCallNamed(t *testing.T) {
 	isolate(t)
 	padded := "prod/db" + string(rune(0x200b))
@@ -1128,10 +1127,8 @@ func TestTheLogShowsTheRecordsEachCallNamed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range v.(view.Table).Columns {
-		if c.Name == "record" {
-			t.Fatal("record column appeared with nothing to fill it")
-		}
+	if got := cell(t, v.(view.Table), 0, "record"); got != "—" {
+		t.Fatalf("record column of a call that named none = %q, want it there as a dash", got)
 	}
 }
 

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/agentlog"
@@ -36,42 +37,30 @@ func TestTheRevealedFilterKeepsOnlyTheCallsThatRevealed(t *testing.T) {
 	}
 }
 
-// The column is there when a row has something to say in it, as role and code
-// are, and absent from a record with no reveal in it.
-func TestTheRevealedColumnAppearsOnlyWhenARowRevealed(t *testing.T) {
-	names := func(rows []agentlog.Entry) []string {
-		var out []string
+// The column is in the full table whatever the rows hold, as every column of
+// it is, so that a shipper finds the same fields in every batch.
+func TestTheRevealedColumnIsInTheFullTableWhateverTheRowsHold(t *testing.T) {
+	quiet := []agentlog.Entry{{Cap: "sys.cpu", Outcome: agentlog.Ran}}
+	loud := append(slices.Clone(quiet), agentlog.Entry{Cap: "kv.get", Outcome: agentlog.Ran, Revealed: true})
+	revealed := func(rows []agentlog.Entry) (col logColumn, ok bool) {
 		for _, c := range logColumns(rows, false, true) {
-			out = append(out, c.Name)
-		}
-		return out
-	}
-	has := func(cols []string) bool {
-		for _, c := range cols {
-			if c == "revealed" {
-				return true
+			if c.Name == "revealed" {
+				return c, true
 			}
 		}
-		return false
+		return logColumn{}, false
 	}
-	quiet := []agentlog.Entry{{Cap: "sys.cpu", Outcome: agentlog.Ran}}
-	if has(names(quiet)) {
-		t.Error("a record with no reveal in it has a revealed column")
+	if _, ok := revealed(quiet); !ok {
+		t.Error("a record with no reveal in it has no revealed column")
 	}
-	loud := append(quiet, agentlog.Entry{Cap: "kv.get", Outcome: agentlog.Ran, Revealed: true})
-	cols := logColumns(loud, false, true)
-	if !has(names(loud)) {
+	col, ok := revealed(loud)
+	if !ok {
 		t.Fatal("a record with a reveal in it has no revealed column")
 	}
-	for _, c := range cols {
-		if c.Name != "revealed" {
-			continue
-		}
-		if got := c.cell(loud[1], ""); got != "yes" {
-			t.Errorf("the revealing row reads %q", got)
-		}
-		if got := c.cell(loud[0], ""); got != "-" {
-			t.Errorf("the other row reads %q", got)
-		}
+	if got := col.cell(loud[1], ""); got != "yes" {
+		t.Errorf("the revealing row reads %q", got)
+	}
+	if got := col.cell(loud[0], ""); got != "-" {
+		t.Errorf("the other row reads %q", got)
 	}
 }
