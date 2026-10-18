@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.46.0](https://github.com/this-is-tobi/rta/compare/v0.45.0...v0.46.0) (2026-10-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **view:** a script that read `rta profile show -o json|yaml|csv|md` for a key with leading spaces (`  set:timeout`, `  credential:password`) now meets the key without them. One that read `rta fs tree -o json|yaml|csv|md`, or an agent that read fs_tree, and counted or skipped the child labelled "…" now finds no such child: the cut is in `warnings`, entries coded core.tree.cut. Match the key without its indent, drop the code that skipped "…" entries, and read `warnings` where a tree must say it was partial. A file named "…" is now listed in quotes.
+
+### Features
+
+* **builtin:** declare the group of an input where the fallback would miss it or get it wrong ([20fc721](https://github.com/this-is-tobi/rta/commit/20fc721c3d6d355f7c35be6c182265b21f1d6939))
+* **plugin:** an input can name the block of a form it is shown in ([98ec1f9](https://github.com/this-is-tobi/rta/commit/98ec1f9803efa051d68a705536fe0275cbbfa00d))
+* **tui:** a run form asks the call's own inputs first and the connection under a heading ([d4ab4fc](https://github.com/this-is-tobi/rta/commit/d4ab4fc331baf66efd43a9214c138d364feb708d))
+* **tui:** a run form draws its inputs in named blocks, one row each ([ddce3ed](https://github.com/this-is-tobi/rta/commit/ddce3ed1017fc58fc8264ae12294e2f2e9a836c6))
+
+
+### Bug Fixes
+
+* **pkg:** tools read their latest tag from github.com, not from the rate-limited API ([bbfa9ed](https://github.com/this-is-tobi/rta/commit/bbfa9ed89db46c6622d80f88731796b132b29629))
+* **plugin:** note an agent-offered secret and an input without help; send no view as an empty text ([45e8a12](https://github.com/this-is-tobi/rta/commit/45e8a1237bfe9639dce7f08c3057ae7b935721a4))
+* **tui:** a long result shows how far down it is, ends on home and end, and teaches paging ([c97aeb3](https://github.com/this-is-tobi/rta/commit/c97aeb34b26d0a21eee678e73f7b5914f3349935))
+* **tui:** choose the ad hoc entry with enter, not by passing the cursor over it ([3c75401](https://github.com/this-is-tobi/rta/commit/3c75401bea7bcd21528c4736ad17b447b3eadfec))
+* **tui:** esc and ctrl+c ask before they discard a form where something was typed ([3b3f52c](https://github.com/this-is-tobi/rta/commit/3b3f52ca412234d5efb4508ff424c14545df8b8c))
+* **tui:** list only the environment that is on in a run form's picker ([fbf4c10](https://github.com/this-is-tobi/rta/commit/fbf4c100fb87fe84ff51b0e0a352d67f6f7ece59))
+* **tui:** the catalogue says the selected row in full on a line above the bar ([06ac143](https://github.com/this-is-tobi/rta/commit/06ac143010474a9605a3247b7e4745c969127a67))
+* **tui:** the first key typed in a box that shows a default replaces it ([84d7e80](https://github.com/this-is-tobi/rta/commit/84d7e80bf3fd968bfcae0b27fd0f7e6b80ff4f7e))
+* **view:** leave a key's layout and a cut tree's last line out of the formats a program reads ([70c9ab6](https://github.com/this-is-tobi/rta/commit/70c9ab65d30c40d2bf7c694c4c0166317b31a9ff))
+
 ## [0.45.0](https://github.com/this-is-tobi/rta/compare/v0.44.1...v0.45.0) (2026-10-18)
 
 
