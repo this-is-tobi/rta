@@ -171,6 +171,14 @@ func (w waitingCall) allowedLine() string {
 	return "allowed " + w.call + " once"
 }
 
+// deniedLine is the receipt for a call that was turned down.
+func (w waitingCall) deniedLine() string {
+	if w.agent != "" {
+		return "denied " + w.agent + "'s " + w.call
+	}
+	return "denied " + w.call
+}
+
 // allowLine is what pressing a would do, said as the question it answers.
 func (w waitingCall) allowLine() string {
 	s := "allow " + w.call + " once"
