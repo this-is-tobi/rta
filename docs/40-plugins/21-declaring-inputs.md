@@ -93,6 +93,17 @@ plugins:
 | `-U` | `user` | `pg` |
 | `-u` | `user` | `keycloak`, `mariadb`, `mysql` |
 
+## Group the boxes of a form
+
+A service's connection alone is a dozen inputs. `Group` names the block an input belongs to, so the inputs that share a name are shown together under it. It is a heading and nothing more — it changes nothing about who may supply the input, what a profile fences or what an agent is offered, so a `Secret` is grouped like any other input — and is one to 24 printable ASCII characters, lowercase, with no space at either end. A connection input that declares none is placed by its name and its type, so a plugin released before the field existed reads as grouped: a `Secret` or `SecretSlice`, or `user`, `username`, `password`, `token`, `access-key`, `secret-key`, `client-id` or `client-secret`, is `credentials`; a name holding `tls`, `ssl`, `ca-file`, `cert` or `key-file` is `tls`; `address`, `host`, `port`, `url`, `socket`, `endpoint`, `context` and `region` are `network`; anything else is `target`. A declared group always wins, any other short name is a block of your own, and `rta explain` prints each input's as `group network`. The conventional four:
+
+| Group | What is in it |
+| --- | --- |
+| `network` | where the service is: address, host, port, url, socket, endpoint, context, region |
+| `tls` | how the server is verified: sslmode, ca-file, tls-server-name, certificates and keys |
+| `credentials` | who is asking: user, password, token, access and secret keys, client id and secret |
+| `target` | what is selected inside the service: database, realm, mount, namespace, db |
+
 ## A connection a profile can fill
 
 A plugin that talks to a service has a connection — where it is, and what authenticates to it — and an operator states one once, in a [profile](../20-using/40-profiles.md), instead of retyping it on every call. There is nothing profile-specific for you to write: a profile fills inputs you already declared, by rules rta applies to the declaration, and `rta explain <capability>` shows the config key each fillable input answers to.

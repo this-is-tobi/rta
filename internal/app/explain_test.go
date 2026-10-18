@@ -488,3 +488,55 @@ func TestExplainCardSaysAScopeIsNamedByTheCallAndNotByAProfile(t *testing.T) {
 		t.Errorf("the card says a profile never fills an input it does fill:\n%s", out)
 	}
 }
+
+func groupedPlugin() plugin.Plugin {
+	return plugin.Plugin{
+		Name: "svc", Summary: "svc plugin",
+		Capabilities: []plugin.Capability{{
+			ID: "svc.get", Summary: "get", Safety: plugin.Read,
+			Inputs: []plugin.Field{
+				{Name: "bucket", Type: plugin.String, Required: true, Help: "bucket", Group: "storage"},
+				{Name: "limit", Type: plugin.Int, Config: "limit", Help: "limit"},
+				{Name: "host", Type: plugin.String, Local: true, Config: "host", Help: "host"},
+				{Name: "user", Type: plugin.String, Local: true, Config: "user", Help: "user", Group: "login"},
+			},
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+		}},
+	}
+}
+
+func inputLine(out, name string) string {
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "input:"+name+" ") {
+			return line
+		}
+	}
+	return ""
+}
+
+// The card lists each input with the block a form shows it in, in the words it
+// uses for every other fact about the input: the declared name where there is
+// one, the name a connection input falls back to where there is not, and nothing
+// for a call's own input that is in no block.
+func TestExplainCardSaysWhichBlockEachInputIsShownIn(t *testing.T) {
+	reg := registry.New()
+	if err := reg.Register(groupedPlugin()); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := run(t, reg, "explain", "svc.get")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"bucket": "string, required, group storage",
+		"host":   "string, group network",
+		"user":   "string, group login",
+	} {
+		if line := inputLine(out, name); !strings.Contains(line, want) {
+			t.Errorf("input %s: %q, want %q", name, line, want)
+		}
+	}
+	if line := inputLine(out, "limit"); strings.Contains(line, "group") {
+		t.Errorf("a call's own input with no group declared is placed in one: %q", line)
+	}
+}

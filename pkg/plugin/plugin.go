@@ -540,6 +540,21 @@ type Field struct {
 	// in the request. Registration refuses Live without Suggest, beside
 	// Options, or on anything but a String input.
 	Live bool
+	// Group names the block of a form this input is shown in, with the others
+	// that name it: `network`, `tls`, `credentials`, `target`, or a short word of
+	// your own. A run form puts the call's own inputs first and the connection
+	// after them, and draws each block under its name as one row.
+	//
+	// **A heading and nothing else.** It decides nothing about who may supply the
+	// input, what a profile fences or what an agent is offered, so a credential
+	// may be grouped like any other box. Optional: a connection input that leaves
+	// it out is placed by its name and its type (Group), which is how a plugin
+	// released before this field existed reads as grouped; a call's own input is
+	// in no block unless it says so.
+	//
+	// One to 24 printable ASCII characters, lowercase, with no space at either
+	// end — refused at registration otherwise.
+	Group string
 }
 
 // Handler executes a capability. Implementations must honor ctx cancellation.

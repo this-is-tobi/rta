@@ -284,6 +284,9 @@ func (c Capability) validate(ns string) error {
 		if err := checkShort(c.ID, f, seenShorts); err != nil {
 			return err
 		}
+		if err := checkGroup(c.ID, f.Name, f.Group); err != nil {
+			return err
+		}
 		if why, reserved := reservedInputs[f.Name]; reserved {
 			return fmt.Errorf("capability %q: input %q is reserved by the host (%s); rename it",
 				c.ID, f.Name, why)

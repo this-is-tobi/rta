@@ -425,8 +425,12 @@ func fullDeclaration() plugin.Plugin {
 				// The address role rather than host/port, because those two
 				// are legal only as a pair and this fixture needs one input
 				// carrying a non-zero Endpoint, not a connection.
+				//
+				// Group crosses as data too: a host that dropped it would draw
+				// every block of an updated plugin under the heading its name
+				// falls back to.
 				{Name: "addr", Type: plugin.String, Help: "address", Local: true,
-					Config: "connection.addr", Endpoint: plugin.EndpointAddress},
+					Config: "connection.addr", Endpoint: plugin.EndpointAddress, Group: "network"},
 				// Live crosses as data even though the Suggest it marks is a
 				// handler: a host that loses this bit would call the plugin's
 				// service listing per keystroke.

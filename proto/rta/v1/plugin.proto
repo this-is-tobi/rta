@@ -208,6 +208,14 @@ message Field {
   // list excludes, and only the plugin knows which of its inputs does that.
   // Must be a bool naming another input of the same capability.
   string widens = 22;
+  // The block of a form this input is shown in beside the others that name it:
+  // network, tls, credentials, target, or a short name of the plugin's own. A
+  // heading and nothing else — it changes nothing about who may supply the
+  // input, what a profile fences or what an agent is offered. One to 24
+  // printable ASCII characters, lowercase, with no space at either end; a host
+  // refuses a declaration whose group is not. Empty means none declared, and a
+  // connection input is then placed by its name and its type.
+  string group = 23;
 }
 
 // EndpointRole is which part of a resolved tunnel an input takes.
