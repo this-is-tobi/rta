@@ -106,7 +106,13 @@ func declinedConfirmation(w io.Writer) error {
 // askToProceed asks the question and reports whether the answer was yes. Only
 // "y" and "yes" are: anything else, an empty line and ^D included, is no.
 func askToProceed(ctx context.Context, w io.Writer) bool {
-	answer, err := askLine(ctx, "Go ahead? [y/N] ")
+	return askYes(ctx, w, "Go ahead? [y/N] ")
+}
+
+// askYes is askToProceed for a question with its own words, for the command
+// that has to say what a yes would do.
+func askYes(ctx context.Context, w io.Writer, prompt string) bool {
+	answer, err := askLine(ctx, prompt)
 	if err != nil {
 		// The question's line is still open: ^D and ^C are not a newline, and what
 		// comes next would run on from the prompt.

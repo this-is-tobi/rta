@@ -161,7 +161,7 @@ rta policy require     # and this machine now refuses to run without one
 rta policy show        # what is in force, and where rta looked
 ```
 
-`policy init` writes all four axes with one active, so tightening it later is an edit rather than a trip back to this page. Commit it.
+`policy init` writes all four axes with one active, so tightening it later is an edit rather than a trip back to this page. Commit it. It does not write over a file that is there: `--force` replaces one with the starter, but never one the starter would loosen, which is a cap shorter than an hour or anything in `never`, `neverProfile` or `requireScope`, and the refusal names the axes. Loosening a ceiling on purpose is an edit of the file. A file the starter keeps every bound of is shown to you and you are asked first; with no terminal to ask at, `--yes` answers for a script.
 
 ## Checking what is in force
 

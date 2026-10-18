@@ -292,3 +292,78 @@ func TestMaxTTLTakesADay(t *testing.T) {
 		t.Errorf("MaxTTL = %v, want 24h", c.MaxTTL)
 	}
 }
+
+// A file is judged from its bytes by the same code that loads it, so what a
+// command says a file holds is what the gate will enforce, with the same
+// refusals: a key nothing claims is not dropped on the way.
+func TestParseReadsABufferAsLoadReadsAFile(t *testing.T) {
+	c, verr := Parse("p.yaml", []byte("maxTTL: 5m\nnever: [pg.dump]\n"))
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if c.MaxTTL != 5*time.Minute || len(c.Never) != 1 || c.Never[0] != "pg.dump" || c.Where() != "p.yaml" {
+		t.Errorf("parsed %+v", c)
+	}
+	if _, verr := Parse("p.yaml", []byte("nevr: [pg.dump]\n")); verr == nil || verr.Code != "policy.unknownkey" {
+		t.Errorf("a misspelt key was read as %v, want policy.unknownkey", verr)
+	}
+}
+
+// Replacing a ceiling with another is a loosening on any axis where something
+// it forbade stops being forbidden, and each axis says what, so a refusal can
+// name them and a person can see which line of their file was about to go.
+func TestLoosensNamesEveryAxisThatWouldStopForbidding(t *testing.T) {
+	standing := Ceiling{
+		MaxTTL:       5 * time.Minute,
+		Never:        []string{"pg.dump", "vault.snapshot", "kv.get"},
+		NeverProfile: []string{"production"},
+		RequireScope: []string{"kv.get"},
+	}
+	got := strings.Join(Loosens(standing, Ceiling{MaxTTL: time.Hour}), "\n")
+	for _, want := range []string{
+		"maxTTL 5m would become 1h",
+		"never: pg.dump, vault.snapshot, kv.get",
+		"neverProfile: production",
+		"requireScope: kv.get",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("no line says %q:\n%s", want, got)
+		}
+	}
+	if n := len(Loosens(standing, Ceiling{MaxTTL: time.Hour})); n != 4 {
+		t.Errorf("%d loosenings, want one per axis (4):\n%s", n, got)
+	}
+	if got := Loosens(standing, Ceiling{}); len(got) != 4 || !strings.Contains(got[0], "maxTTL 5m would become no limit") {
+		t.Errorf("a ceiling with no cap loosens maxTTL to nothing, got %q", got)
+	}
+}
+
+// Tightening, or standing still, is not a loosening, and what a wider entry
+// already covers is not dropped: `pg` in never forbids `pg.dump` too, and the
+// reverse is a loosening, since a plugin's other capabilities would open.
+func TestLoosensLeavesWhatIsKeptAlone(t *testing.T) {
+	for name, c := range map[string]struct{ standing, next Ceiling }{
+		"nothing stands":    {Ceiling{}, Ceiling{MaxTTL: time.Hour}},
+		"a longer cap":      {Ceiling{MaxTTL: 2 * time.Hour}, Ceiling{MaxTTL: time.Hour}},
+		"the same cap":      {Ceiling{MaxTTL: time.Hour}, Ceiling{MaxTTL: time.Hour}},
+		"a cap where none":  {Ceiling{Never: []string{"pg.dump"}}, Ceiling{MaxTTL: time.Hour, Never: []string{"pg.dump"}}},
+		"a wider never":     {Ceiling{Never: []string{"pg.dump"}}, Ceiling{Never: []string{"pg"}}},
+		"the same profile":  {Ceiling{NeverProfile: []string{"prod"}}, Ceiling{NeverProfile: []string{"prod"}}},
+		"a whole instance":  {Ceiling{NeverProfile: []string{"prod/analytics"}}, Ceiling{NeverProfile: []string{"prod"}}},
+		"a wider requireSc": {Ceiling{RequireScope: []string{"kv.get"}}, Ceiling{RequireScope: []string{"kv"}}},
+	} {
+		if got := Loosens(c.standing, c.next); len(got) != 0 {
+			t.Errorf("%s: reported %q", name, got)
+		}
+	}
+	for name, c := range map[string]struct{ standing, next Ceiling }{
+		"a narrower never":  {Ceiling{Never: []string{"pg"}}, Ceiling{Never: []string{"pg.dump"}}},
+		"another profile":   {Ceiling{NeverProfile: []string{"prod"}}, Ceiling{NeverProfile: []string{"staging"}}},
+		"a narrower prof":   {Ceiling{NeverProfile: []string{"prod"}}, Ceiling{NeverProfile: []string{"prod/analytics"}}},
+		"another requireSc": {Ceiling{RequireScope: []string{"kv.get"}}, Ceiling{RequireScope: []string{"s3.object.get"}}},
+	} {
+		if got := Loosens(c.standing, c.next); len(got) != 1 {
+			t.Errorf("%s: reported %q, want the one axis", name, got)
+		}
+	}
+}

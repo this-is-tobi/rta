@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -116,18 +117,7 @@ func policyShowCommand(render func(*cobra.Command, view.View, *view.Error) error
 				return render(cmd, view.KeyValue{Pairs: pairs}, nil)
 			}
 
-			if ceiling.MaxTTL > 0 {
-				pairs = append(pairs, view.Pair{Key: "maxTTL", Value: format.Duration(ceiling.MaxTTL)})
-			}
-			if len(ceiling.Never) > 0 {
-				pairs = append(pairs, view.Pair{Key: "never", Value: strings.Join(ceiling.Never, ", ")})
-			}
-			if len(ceiling.NeverProfile) > 0 {
-				pairs = append(pairs, view.Pair{Key: "neverProfile", Value: strings.Join(ceiling.NeverProfile, ", ")})
-			}
-			if len(ceiling.RequireScope) > 0 {
-				pairs = append(pairs, view.Pair{Key: "requireScope", Value: strings.Join(ceiling.RequireScope, ", ")})
-			}
+			pairs = append(pairs, axisPairs(ceiling)...)
 			pairs = append(pairs, view.Pair{Key: "requireRepoPolicy", Value: yesNo(ceiling.RequireRepo)})
 			if n := grant.Suppressed(); n > 0 {
 				pairs = append(pairs, view.Pair{Key: "grants suppressed", Value: fmt.Sprintf(
@@ -138,6 +128,26 @@ func policyShowCommand(render func(*cobra.Command, view.View, *view.Error) error
 			return render(cmd, view.KeyValue{Pairs: pairs}, nil)
 		},
 	}
+}
+
+// axisPairs is the axes of a ceiling that bound something, one pair each: what
+// `policy show` reports as in force, and what `policy init --force` shows of
+// the file it is asked to replace.
+func axisPairs(c policy.Ceiling) []view.Pair {
+	var pairs []view.Pair
+	if c.MaxTTL > 0 {
+		pairs = append(pairs, view.Pair{Key: "maxTTL", Value: format.Duration(c.MaxTTL)})
+	}
+	if len(c.Never) > 0 {
+		pairs = append(pairs, view.Pair{Key: "never", Value: strings.Join(c.Never, ", ")})
+	}
+	if len(c.NeverProfile) > 0 {
+		pairs = append(pairs, view.Pair{Key: "neverProfile", Value: strings.Join(c.NeverProfile, ", ")})
+	}
+	if len(c.RequireScope) > 0 {
+		pairs = append(pairs, view.Pair{Key: "requireScope", Value: strings.Join(c.RequireScope, ", ")})
+	}
+	return pairs
 }
 
 func repoPolicyText(c policy.Ceiling) string {
@@ -220,7 +230,11 @@ func policyInitCommand(opts *globalOpts) *cobra.Command {
 		ValidArgsFunction: cobra.NoFileCompletions,
 		Long: "Writes a commented " + policy.RepoFile + " with every axis named and one of them" +
 			" active, so tightening it later is an edit rather than a trip to the documentation.\n\n" +
-			"Commit it. It needs no seal — it can only subtract.",
+			"Commit it. It needs no seal — it can only subtract.\n\n" +
+			"--force replaces a file that is there, and never with a looser ceiling than the one it" +
+			" holds: a file whose cap, never, neverProfile or requireScope the starter would loosen is" +
+			" refused, and loosening one on purpose is an edit of the file. Otherwise it shows what the" +
+			" file holds and asks; with no terminal to ask at, --yes answers for a script.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			path := policy.RepoFile
 			_, statErr := os.Stat(path)
@@ -228,9 +242,17 @@ func policyInitCommand(opts *globalOpts) *cobra.Command {
 			if exists && !force {
 				// Never silently. This file is a security boundary somebody
 				// else may have written, and overwriting one because a command
-				// was run twice is the kind of help nobody asked for.
+				// was run twice is the kind of help nobody asked for. The way
+				// on is to edit it: the hint used to offer --force, which
+				// replaced a team's ceiling with the starter and asked nothing.
 				return view.Errorf("core.policy.exists", "%s already exists", path).
-					WithHint("`rta policy show` says what it does, or pass --force to replace it")
+					WithHint("`rta policy show` says what it does; edit the file to change it, since " +
+						"this command only writes a starter")
+			}
+			if exists {
+				if err := confirmReplacement(cmd, opts, path); err != nil {
+					return err
+				}
 			}
 			if !opts.dryRun {
 				if err := atomicfile.Write(path, []byte(starterPolicy), 0o644); err != nil {
@@ -240,8 +262,103 @@ func policyInitCommand(opts *globalOpts) *cobra.Command {
 			return renderView(cmd, opts, policyInitAnswer(path, exists, opts.dryRun))
 		},
 	}
-	cmd.Flags().BoolVar(&force, "force", false, "replace an existing "+policy.RepoFile)
+	cmd.Flags().BoolVar(&force, "force", false,
+		"replace an existing "+policy.RepoFile+" with the starter, unless that would loosen it, after asking")
 	return cmd
+}
+
+// confirmReplacement decides whether `policy init --force` may replace the
+// policy file at path, and asks a person when only a person can say.
+//
+// **A ceiling is replaced by one no looser than it, or not at all.** The
+// starter bounds one axis and leaves the other three empty, and the people
+// who run `--force` are the ones with a ceiling worth keeping: a team that
+// wrote maxTTL 5m and `never: [pg.dump]` and typed the flag because the
+// refusal offered it lost both, with no question and no word. So the starter
+// is compared with what stands first (policy.Loosens), and a file it would
+// loosen is refused whoever answers, a person at a terminal and a script
+// passing --yes alike. Loosening a ceiling is a decision, and it is made by
+// editing the file.
+//
+// What is left, a file the starter keeps every bound of, is still somebody's
+// file, and the comments and roles written in it go with it. A person at a
+// terminal is shown what stands and asked; with nobody to ask, the flag alone
+// refuses and --yes answers for a script, as it does for every other
+// confirmation. A file that does not read is the exception: nothing says what
+// it holds, and a key misspelt (`nevr:`) is how a bound goes missing while
+// the file still looks like one, so only a person's yes replaces it. The
+// starter itself is replaced without a word, as there is nothing in it to
+// lose.
+func confirmReplacement(cmd *cobra.Command, opts *globalOpts, path string) error {
+	data, err := atomicfile.ReadCapped(path, 1<<20)
+	if err != nil {
+		return view.Errorf("core.policy.read", "reading %s: %v", path, err)
+	}
+	if string(data) == starterPolicy {
+		return nil
+	}
+	starter, verr := policy.Parse(policy.RepoFile, []byte(starterPolicy))
+	if verr != nil {
+		return verr
+	}
+	standing, unreadable := policy.Parse(path, data)
+	if unreadable == nil {
+		if loosened := policy.Loosens(standing, starter); len(loosened) > 0 {
+			return view.Errorf("core.policy.loosens", "the starter would loosen the ceiling in %s: %s",
+				path, strings.Join(loosened, "; ")).
+				WithHint("this command writes a starter and never a looser ceiling than the one that " +
+					"stands — to loosen one on purpose, edit the file")
+		}
+		if opts.yes {
+			return nil
+		}
+	}
+	if !confirmTerminal() {
+		if unreadable != nil {
+			return view.Errorf(CodeConfirmRequired,
+				"%s does not read, so there is no telling what it holds, and replacing it asks a person", path).
+				WithHint("fix what it names, or remove the file and run this again — --yes does not " +
+					"answer for a file nobody could read")
+		}
+		return view.Errorf(CodeConfirmRequired,
+			"%s is not the starter, and replacing it asks first; there is no terminal to ask at", path).
+			WithHint("`rta policy show` says what it holds, and `--force --yes` replaces it without " +
+				"asking")
+	}
+	if opts.dryRun {
+		return nil
+	}
+	w := cmd.ErrOrStderr()
+	_ = cli.Render(w, view.KeyValue{Pairs: standingPairs(path, standing, unreadable)},
+		renderOptions(cmd, cli.Pretty, opts.noColor))
+	if !askYes(cmd.Context(), w, "Replace it with the starter (maxTTL "+starterTTL+", the other axes empty)? [y/N] ") {
+		return declinedConfirmation(w)
+	}
+	return nil
+}
+
+// standingPairs is what the file --force is asked to replace holds, as the
+// question shows it: the axes that bound something, and the roles that go
+// with the file; or why it does not read.
+func standingPairs(path string, standing policy.Ceiling, unreadable *view.Error) []view.Pair {
+	pairs := []view.Pair{{Key: "file", Value: path}}
+	if unreadable != nil {
+		return append(pairs, view.Pair{Key: "does not read", Value: unreadable.Message})
+	}
+	axes := axisPairs(standing)
+	if len(axes) == 0 {
+		axes = []view.Pair{{Key: "bounds", Value: "nothing"}}
+	}
+	pairs = append(pairs, axes...)
+	if len(standing.Roles) > 0 {
+		names := make([]string, 0, len(standing.Roles))
+		for _, r := range standing.Roles {
+			names = append(names, r.Name)
+		}
+		slices.Sort(names)
+		pairs = append(pairs, view.Pair{Key: "roles", Value: strings.Join(names, ", ") + " — replaced with the file"})
+	}
+	return pairs
 }
 
 // starterTTL is the one axis starterPolicy sets, named once so the file and
