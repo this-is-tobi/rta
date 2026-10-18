@@ -2,7 +2,7 @@
 
 ## Testing
 
-`rta plugin new` ships a `main_test.go` wired to `pkg/sdk/sdktest`, so `go test` passes from the first minute:
+`rta plugin new` ships a `main_test.go` wired to `pkg/sdk/sdktest`, so `go test` passes from the first minute, and prints only `ok` when it does. Run `go test -v` to read what the suite advises without failing — a verb rta spells another way, a search keyword that adds nothing, each rule you waived and why — because those notes are test log lines and a passing run does not show them:
 
 ```go
 func TestPlugin(t *testing.T) {
@@ -41,7 +41,7 @@ The values you supply go through the same input check the host puts in front of 
 
 ## Conventions worth following
 
-Use the shared verb vocabulary. `sdktest` warns on a novel verb, and when your word has a standard spelling it names it — it will tell you rta writes `delete` as `rm`, in four places already. The whole list:
+Use the shared verb vocabulary. `sdktest` warns on a novel verb, and when your word has a standard spelling it names it — it will tell you rta writes `remove` as `rm`, in four places already. A word that names a different act in your domain is not rewritten for you: `delete` stays where an HTTP method or a store's own verb means it, and `dump`, `query` and `destroy` are not taken for `show`, `search` and `rm`. The whole list:
 
 ```
 add  done  edit  get  init  inspect  list  overview

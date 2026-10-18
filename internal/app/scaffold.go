@@ -233,7 +233,8 @@ func scaffoldAnswer(s scaffold, dir string, files []string, dryRun bool) view.Ke
 		full = abs
 	}
 	label, next := "created", "`cd "+dir+"`, then `rta plugin dev` builds it and shows what rta "+
-		"sees, and `rta plugin dev -- "+s.Name+" greet world` runs it"
+		"sees, `rta plugin dev -- "+s.Name+" greet world` runs it, and `go test -v` runs the "+
+		"conformance suite and prints its notes, which a plain `go test` leaves out"
 	if dryRun {
 		label, next = "would create", "run without --dry-run to write it"
 	}
@@ -407,6 +408,11 @@ An [rta](https://github.com/this-is-tobi/rta) plugin.
 
     rta plugin dev                        # build and check what rta sees
     rta plugin dev -- {{.Name}} greet world     # build and run it
+    go test -v                            # the conformance suite, and its notes
+
+A passing ` + "`" + `go test` + "`" + ` prints only ` + "`" + `ok` + "`" + `. What the suite advises without failing — a verb
+rta spells another way, a search keyword that adds nothing, a rule you waived —
+is printed under ` + "`" + `-v` + "`" + `, so read it there.
 
 ## Install
 
