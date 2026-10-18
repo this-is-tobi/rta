@@ -941,7 +941,7 @@ func profileCovers(row profileRow) string {
 	keys := row.p.PluginKeys()
 	styled := make([]string, 0, len(keys))
 	for _, key := range keys {
-		styled = append(styled, theme.Faded.Render(textclean.Terminal(key)))
+		styled = append(styled, theme.Subtle.Render(textclean.Terminal(key)))
 	}
 	detail := strings.Join(styled, theme.Subtle.Render(" · "))
 	// The screen the environment shows, when it states one, because the pane
@@ -953,14 +953,14 @@ func profileCovers(row profileRow) string {
 	// are as long as the environment has them, pins included: after them the screen
 	// was the part that fell off, on the environment with the most to say.
 	if screen := profileScreen(row.p.Dashboard); screen != "" {
-		detail = theme.Faded.Render(textclean.Terminal(screen)) + theme.Subtle.Render(" · ") + detail
+		detail = theme.Subtle.Render(textclean.Terminal(screen)) + theme.Subtle.Render(" · ") + detail
 	}
 	// That switching to it changes what the screen looks like, said where the
 	// profile is listed. Counted and not spelled: which colours is `show`'s, and
 	// the pane has the one line. What is applied is counted: an entry the palette
 	// leaves out paints nothing, and the note beside this says so.
 	if row.themed > 0 {
-		detail += theme.Subtle.Render(" · ") + theme.Faded.Render(format.CountOf(row.themed, "theme colour"))
+		detail += theme.Subtle.Render(" · ") + theme.Subtle.Render(format.CountOf(row.themed, "theme colour"))
 	}
 	// A note takes the place of the operator's own, as it takes the Note
 	// column in `rta profile list`: the credential line under this one is
@@ -1015,9 +1015,9 @@ func profileDetail(row profileRow) string {
 	// failed on it.
 	switch {
 	case needed == 0:
-		return theme.Faded.Render("no credential needed")
+		return theme.Subtle.Render("no credential needed")
 	case unset == 0 && storeless == 0:
-		return theme.Faded.Render(format.CountOf(needed, "credential") + " mapped")
+		return theme.Subtle.Render(format.CountOf(needed, "credential") + " mapped")
 	case unset == 0:
 		return theme.WarnText.Render(fmt.Sprintf("%s mapped · no store on this machine yet",
 			format.CountOf(needed, "credential")))
@@ -1117,7 +1117,7 @@ func connSummary(c connRow) string {
 	for _, k := range fenced {
 		parts = append(parts, textclean.Terminal("only "+k+"="+fenceText(c.conn.Only[k])))
 	}
-	return theme.Faded.Render(strings.Join(parts, " "))
+	return theme.Subtle.Render(strings.Join(parts, " "))
 }
 
 // fenceText is an allowlist as the pane prints it: its entries joined by a
@@ -1148,7 +1148,7 @@ func connDetail(c connRow) string {
 		return theme.BadText.Render(textclean.Terminal(c.problem))
 	}
 	if len(c.credentials) == 0 {
-		return theme.Faded.Render("no credential needed")
+		return theme.Subtle.Render("no credential needed")
 	}
 	parts := make([]string, 0, len(c.credentials))
 	for _, cr := range c.credentials {
@@ -1157,7 +1157,7 @@ func connDetail(c connRow) string {
 			parts = append(parts, theme.WarnText.Render(text))
 			continue
 		}
-		parts = append(parts, theme.Faded.Render(text))
+		parts = append(parts, theme.Subtle.Render(text))
 	}
 	return strings.Join(parts, theme.Subtle.Render(" · "))
 }

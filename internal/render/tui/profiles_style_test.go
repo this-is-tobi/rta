@@ -30,7 +30,7 @@ func TestEveryPluginInAProfileRowIsStyledTheSame(t *testing.T) {
 	// The style's own escape sequence, taken from the theme rather than
 	// written out here: a palette change must not turn this into a test of
 	// what the colour used to be.
-	open := strings.SplitN(theme.Faded.Render("x"), "x", 2)[0]
+	open := strings.SplitN(theme.Subtle.Render("x"), "x", 2)[0]
 	if open == "" {
 		t.Skip("colour is disabled in this environment, so there is nothing to assert")
 	}

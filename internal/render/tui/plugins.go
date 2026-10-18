@@ -586,7 +586,7 @@ func (m Model) pluginsView() string {
 			rule := max(inner-lipgloss.Width(label)-2, 0)
 			b.WriteString(theme.Subtle.Render("──"+label+strings.Repeat("─", rule)) + "\n")
 			b.WriteString(ansi.Truncate(
-				strings.Repeat(" ", pluginTextAt)+theme.Faded.Render(g.caption()), inner, "…") + "\n")
+				strings.Repeat(" ", pluginTextAt)+theme.Subtle.Render(g.caption()), inner, "…") + "\n")
 		}
 
 		// The band: "─❯ KV ───────────── [on] · destructive ─".
@@ -660,7 +660,7 @@ func (m Model) pluginsView() string {
 			summary = theme.WarnText.Render("approval taken back — it stays loaded until rta exits, and will not run again")
 		}
 		b.WriteString(ansi.Truncate(indent+summary, inner, "…") + "\n")
-		b.WriteString(ansi.Truncate(indent+theme.Faded.Render(pluginDetail(row)), inner, "…") + "\n")
+		b.WriteString(ansi.Truncate(indent+theme.Subtle.Render(pluginDetail(row)), inner, "…") + "\n")
 	}
 
 	right := fmt.Sprintf("%d installed", len(m.plugins))
