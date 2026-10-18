@@ -192,6 +192,16 @@ func Deceives(s string) bool {
 // are ever shown alike — the property a byte-for-byte judge needs from what
 // the person answering it reads.
 //
+// A record that names a host in anything but ASCII is followed by that host's
+// ASCII form, its xn-- name, in parentheses (hostNote): a lookalike host reads
+// as the one a person knows however carefully its characters are shown, and the
+// name it is published under is the one thing that tells them apart. The note
+// is ASCII and repeats the host alone, so it cannot hold what the quoting is
+// for, and it cannot be taken for a record: a record that is drawn as it is
+// holds no space, and a quoted one ends in its quotation mark, so the text of
+// a note after either is never the showing of another record. WithoutNote
+// takes it off again for what reads a drawing back.
+//
 // Not a cleaner, and not for values: a record shown this way is text for a
 // person, and what anybody acts on is the record itself.
 //
@@ -199,10 +209,14 @@ func Deceives(s string) bool {
 // value with too, so the call and the record the gate names beside it are
 // one spelling rather than two copies kept alike.
 func Record(s string) string {
-	if readsAsItself(s) {
-		return s
+	shown := s
+	if !readsAsItself(s) {
+		shown = glyph.Quote(s)
 	}
-	return glyph.Quote(s)
+	if name := hostNote(s); name != "" {
+		return shown + noteOpen + name + ")"
+	}
+	return shown
 }
 
 // Name is a name read off a disk or out of a store — a file in a listing, a

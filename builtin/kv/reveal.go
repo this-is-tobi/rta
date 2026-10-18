@@ -190,12 +190,17 @@ func hostOpenHint(sf plugin.Surface, verr *view.Error) *view.Error {
 // makeStoreHint is the command that makes the store and the entry a profile
 // maps a credential onto, as the reader on sf runs it: handed on as the
 // operator's over MCP, and the reader's own anywhere else.
+//
+// The key is the command's argument, so it is spelled as a command spells one
+// (Surface.Call), and over MCP as the record is drawn but for the name Record
+// puts beside a host: that is a note to read, and typed it would be part of
+// the key.
 func makeStoreHint(sf plugin.Surface, key string) string {
 	const result = "creates the store, locked with a passphrase you choose, and the entry"
 	if sf == plugin.SurfaceMCP {
-		return plugin.AskOperator("kv set "+textclean.Record(key)) + " — it " + result
+		return plugin.AskOperator("kv set "+textclean.WithoutNote(textclean.Record(key))) + " — it " + result
 	}
-	return "`" + sf.Call("kv.set", keyArg(textclean.Record(key))) + "` " + result
+	return "`" + sf.Call("kv.set", keyArg(key)) + "` " + result
 }
 
 // listEntriesHint is where to see what the store holds, as the reader on sf

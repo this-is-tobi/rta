@@ -482,7 +482,7 @@ func TestATTLOnSeveralRecordsOneAFolderGrantsNone(t *testing.T) {
 		pairs[p.Key] = p.Value
 	}
 	if pairs["for"] != "this call only" || !strings.Contains(pairs["grant"], "not issued") ||
-		!strings.Contains(pairs["grant"], `"prod/"`) {
+		!strings.Contains(pairs["grant"], "prod/ ends in a slash") {
 		t.Errorf("answered %+v, want the call alone allowed and the folder named", pairs)
 	}
 	for _, want := range []string{"rta grant allow kv.rename prod/ --ttl 1h", "rta grant allow kv.rename scratch/db-password --ttl 1h"} {
