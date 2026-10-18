@@ -98,6 +98,27 @@ func TestThePassphraseFlagIsRefusedOnTheCLI(t *testing.T) {
 	}
 }
 
+// The operator key is the identity a server's roster trusts, wrapped under the
+// passphrase chosen here, so a passphrase too short to stand against a guess
+// from a copy of the file is refused at the moment it is chosen and no key is
+// minted.
+func TestInitRefusesAShortPassphrase(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	_, err := capability(t, "operator.init").Run(context.Background(),
+		plugin.NewRequest(map[string]any{"passphrase": "short", "label": "tobi"}, false, true).
+			WithSurface(plugin.SurfaceTUI))
+	verr, ok := err.(*view.Error)
+	if !ok || verr.Code != "core.operator.passphrase.short" {
+		t.Fatalf("err = %v, want core.operator.passphrase.short", err)
+	}
+	if !strings.Contains(verr.Message, "the operator key") || !strings.Contains(verr.Message, "at least 8") {
+		t.Errorf("message = %q, want the key and the floor", verr.Message)
+	}
+	if id.Exists() {
+		t.Error("an operator key was minted under a passphrase that was refused")
+	}
+}
+
 // The full client flow against the real handler: remotes.yaml names the
 // server, the passphrase unlocks the key, the envelope signs, the server
 // verifies against its roster and answers. One process playing both

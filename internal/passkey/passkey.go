@@ -12,7 +12,8 @@
 // here, and each caller supplies only its own words and error codes. The kv
 // store is deliberately not a caller: its env fallback is its design, and
 // folding it in would put the one place an unlock may be inherited next to
-// the two places it must never be.
+// the two places it must never be. What the store does share is CheckNew, the
+// floor on a passphrase being chosen: a pure check, with no channel in it.
 package passkey
 
 import (
@@ -24,6 +25,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"unicode/utf8"
 
 	"filippo.io/age"
 	"golang.org/x/term"
@@ -99,6 +101,47 @@ func Unwrap(cipher, passphrase string) (ed25519.PrivateKey, error) {
 	return ed25519.PrivateKey(priv), nil
 }
 
+// MinLength is the fewest characters a passphrase being set may have.
+const MinLength = 8
+
+// CheckNew refuses a passphrase that is being set, as opposed to entered, when
+// it is shorter than MinLength, counted in characters and not bytes: eight
+// letters in a script that spends three bytes on each are as long as eight in
+// ASCII, and three of them are not.
+//
+// **The floor is on setting and never on using.** A key wrapped, or a store
+// locked, under a shorter passphrase before this existed keeps opening, since
+// refusing to open it would strand what it holds and shorten nothing; so this
+// is called where a passphrase is chosen (Prompt asked to confirm, a store
+// about to be created) and not where one is entered, and Unwrap does not call
+// it.
+//
+// The reason is in the refusal, and there is no flag that waives it. What a
+// passphrase wraps sits in a file anyone who can read the disk, a backup or a
+// stolen laptop can copy, and from a copy the passphrase is the only thing in
+// the way of a guess made offline, at whatever rate the guesser can afford.
+// scrypt makes each try cost something and a short passphrase has few enough
+// tries that the cost is paid. An override would be the flag every script
+// passes. Eight characters is a floor and not a recommendation: it turns away
+// the passphrases that are a word, and says nothing in favour of the ones
+// that are a word and a digit.
+//
+// codes is the caller's error code prefix and subject names the key as the
+// subject of a sentence, as in PromptText.
+func CheckNew(passphrase, codes, subject string) *view.Error {
+	n := utf8.RuneCountInString(passphrase)
+	if n >= MinLength {
+		return nil
+	}
+	return view.Errorf(codes+".short",
+		"%s passphrase has %d characters, and a new one needs at least %d — what it protects sits in "+
+			"a file that can be copied, and from a copy a short passphrase falls to guessing offline, "+
+			"however slowly scrypt makes each guess",
+		subject, n, MinLength).
+		WithHint("choose a longer one; several unrelated words are easier to remember than symbols " +
+			"and harder to guess")
+}
+
 // PromptText is the wording one caller's prompt carries: the flow is shared,
 // the words are not, so a refusal names the key it is actually about.
 type PromptText struct {
@@ -119,7 +162,9 @@ type PromptText struct {
 // is there to answer one — echo off, prompt to stderr so an eval'd or
 // redirected command never captures it, read from the real stdin because
 // main repoints os.Stdin at /dev/null before spawning plugins. confirm asks
-// twice, for the moments where a typo becomes a passphrase nobody knows.
+// twice, for the moments where a typo becomes a passphrase nobody knows, and
+// is the mark of a passphrase being set: it is held to CheckNew's floor on
+// every channel, the field and the prompt alike.
 //
 // A non-empty field value is refused on the CLI surface outright: it
 // travelled on argv, which every process running as you can read while the
@@ -158,6 +203,11 @@ func Prompt(req plugin.Request, confirm bool, text PromptText) (string, *view.Er
 		if verr := Argv(req, text.Codes); verr != nil {
 			return "", verr
 		}
+		if confirm {
+			if verr := CheckNew(p, text.Codes, text.Subject); verr != nil {
+				return "", verr
+			}
+		}
 		return p, nil
 	}
 	if req.Surface() != plugin.SurfaceCLI || !term.IsTerminal(int(stdio.Real().Fd())) {
@@ -180,6 +230,11 @@ func Prompt(req plugin.Request, confirm bool, text PromptText) (string, *view.Er
 		return "", view.Errorf(text.Codes+".empty", "%s", text.Empty)
 	}
 	if confirm {
+		// Before the second asking: a person who has just typed a short one
+		// twice has been made to confirm what is about to be refused.
+		if verr := CheckNew(p, text.Codes, text.Subject); verr != nil {
+			return "", verr
+		}
 		again, verr := read("Once more: ")
 		if verr != nil {
 			return "", verr

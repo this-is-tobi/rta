@@ -20,6 +20,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/filelock"
+	"github.com/this-is-tobi/rta/internal/passkey"
 	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/stdio"
@@ -230,10 +231,10 @@ var promptPassphrase = func() (string, error) {
 // inherits an environment and has no terminal — opens a passphrase store only
 // from the passphrase in that environment (docs/20-using/50-secrets.md).
 func newStoreNote() string {
-	return "New store — choose a passphrase. You type it each time, and it cannot be\n" +
-		"recovered. " + plugin.SurfaceCLI.CapabilityWith("kv.init", "generate") + " uses a key file instead, which anything\n" +
-		"running as you can read. Agents cannot use a passphrase store unless\n" +
-		passphraseEnv + " is set in their server's environment."
+	return "New store — choose a passphrase of at least 8 characters. You type it each\n" +
+		"time, and it cannot be recovered. " + plugin.SurfaceCLI.CapabilityWith("kv.init", "generate") + " uses a\n" +
+		"key file instead, which anything running as you can read. Agents cannot use a\n" +
+		"passphrase store unless " + passphraseEnv + " is set in their server's environment."
 }
 
 // promptNewPassphrase asks for the passphrase of a store about to be created,
@@ -298,7 +299,42 @@ var prompted string
 // reaches a CLI argument, and the interactive path never needs one either.
 // Surfaces that cannot prompt get the coded error: a refusal they can act
 // on, rather than a process blocked forever on a read nobody will answer.
+//
+// **No store on disk is what makes the answer a new passphrase**, the same
+// test askPassphrase uses to decide between asking and choosing, and it is
+// held to passkey's floor on whichever channel it arrived by: the flag, the
+// environment, a form's box or the prompt. A store that exists is opened
+// with the passphrase it was made with and chosen nothing, so one locked
+// under a shorter passphrase before the floor keeps opening and keeps taking
+// writes: the floor is on setting a passphrase, never on using one.
 func resolvePassphrase(req plugin.Request) (string, *view.Error) {
+	p, verr := givenOrAskedPassphrase(req)
+	if verr != nil {
+		return "", verr
+	}
+	if !fileExists(storePath()) {
+		if verr := checkNewPassphrase(req, p); verr != nil {
+			return "", verr
+		}
+	}
+	return p, nil
+}
+
+// checkNewPassphrase holds the passphrase a store is about to be made with to
+// the floor. Over MCP the passphrase is the environment's, which is the
+// operator's, so the refusal says whose it is to change.
+func checkNewPassphrase(req plugin.Request, passphrase string) *view.Error {
+	verr := passkey.CheckNew(passphrase, "kv.passphrase", "the store")
+	if verr != nil && req.Surface() == plugin.SurfaceMCP {
+		verr = verr.WithHint("ask the operator to set a longer " + passphraseEnv +
+			" in the environment rta mcp serve runs in")
+	}
+	return verr
+}
+
+// givenOrAskedPassphrase is resolvePassphrase's finding of the passphrase,
+// before any judgement of it.
+func givenOrAskedPassphrase(req plugin.Request) (string, *view.Error) {
 	if p := lookupPassphrase(req); p != "" {
 		return p, nil
 	}
