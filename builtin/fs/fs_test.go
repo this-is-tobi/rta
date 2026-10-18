@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -383,6 +384,59 @@ func TestTreeSaysWhatItIsNotShowing(t *testing.T) {
 	}
 	if !found {
 		t.Error("a truncated directory did not say how many entries it hid")
+	}
+}
+
+// `fs tree -o json` had a child named "…" for each branch that was cut, and an
+// entry really named that was the same label: dropped with them it would make
+// a file disappear from the answer an agent reads, so the marker is told from
+// the name by the name being shown quoted, and the cut is said in the warnings.
+func TestTreeEncodesWhatItCutAsWarningsAndKeepsAnEntryNamedLikeTheMarker(t *testing.T) {
+	files := map[string]int{".hidden": 1, "…": 3}
+	for _, n := range []string{"a", "b", "c"} {
+		files["many/"+n] = 1
+	}
+	root := fixture(t, files)
+
+	data, err := view.Marshal(view.Envelope{View: run(t, runTree, map[string]any{"path": root, "depth": 2, "limit": 2})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Roots []struct {
+			Children []struct {
+				Label    string `json:"label"`
+				Children []struct {
+					Label string `json:"label"`
+				} `json:"children"`
+			} `json:"children"`
+		} `json:"roots"`
+		Warnings []struct{ Code, Message string } `json:"warnings"`
+	}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	var top []string
+	for _, c := range m.Roots[0].Children {
+		top = append(top, c.Label)
+		for _, g := range c.Children {
+			if g.Label == view.CutLabel {
+				t.Errorf("%s has a cut marker among its entries: %s", c.Label, data)
+			}
+		}
+	}
+	if !slices.Contains(top, `"…"`) {
+		t.Errorf("the entry named like the marker is gone or unquoted: %q\n%s", top, data)
+	}
+	var said []string
+	for _, w := range m.Warnings {
+		if w.Code != "core.tree.cut" {
+			t.Errorf("warning %+v", w)
+		}
+		said = append(said, w.Message)
+	}
+	if len(said) != 2 || !strings.HasSuffix(said[0], "many/: 1 more") || !strings.HasSuffix(said[1], ": 1 hidden (--all)") {
+		t.Errorf("warnings = %q, want the branch cut at its limit and the hidden one", said)
 	}
 }
 

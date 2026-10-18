@@ -274,6 +274,10 @@ type Node struct {
 }
 
 // Tree is hierarchical data (schemas, key prefixes, cert chains, ...).
+//
+// A branch that does not list everything ends in a leaf labelled CutLabel,
+// whose Detail says what it left out. That is a line for a screen: json, yaml,
+// csv, md and MCP carry it as a warning instead (WithoutCuts).
 type Tree struct {
 	Roots []Node `json:"roots"`
 	// Empty is what a person is told in place of a tree with no roots. The

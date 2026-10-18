@@ -156,7 +156,8 @@ func (s Section) MarshalJSON() ([]byte, error) {
 // returning a titled section it could not fill kills the server for every
 // other tool the agent had open.
 func (e Envelope) MarshalJSON() ([]byte, error) {
-	body, err := Marshal(withArrays(e.View))
+	v, cuts := forPrograms(e.View)
+	body, err := Marshal(withArrays(v))
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +169,24 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 		m = map[string]any{}
 	}
 	m["type"] = TypeOf(e.View)
+	if len(cuts) > 0 {
+		m["warnings"] = cuts
+	}
 	return Marshal(m)
+}
+
+// forPrograms is v as a program reads it: without the layout of a key and the
+// markers of a cut tree (machine.go), and the warnings that stand for those.
+// Those are the part of a view written for the screen that is drawn as data,
+// and this is the one encoding every json, yaml and MCP answer goes through.
+func forPrograms(v View) (View, []Error) {
+	switch t := v.(type) {
+	case KeyValue:
+		return t.WithoutLayout(), nil
+	case Tree:
+		return t.WithoutCuts()
+	}
+	return v, nil
 }
 
 // withArrays is v with every collection its JSON names — the ones without
