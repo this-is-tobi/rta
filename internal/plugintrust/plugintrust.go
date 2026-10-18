@@ -243,12 +243,12 @@ const (
 
 func lock() (func(), *view.Error) {
 	if dir, err := paths.EnsureData(); err != nil {
-		return nil, view.Errorf("plugin.trust.mkdir", "creating %s: %v", dir, err)
+		return nil, filelock.Failed(err, "plugin.trust.mkdir", "creating "+dir)
 	}
 	release, err := filelock.Acquire(filepath.Join(paths.Data(), "trusted.lock"),
 		lockStale, lockRetry, lockTimeout)
 	if err != nil {
-		return nil, view.Errorf("plugin.trust.lock", "acquiring the trust file lock: %v", err)
+		return nil, filelock.Failed(err, "plugin.trust.lock", "acquiring the trust file lock")
 	}
 	return release, nil
 }

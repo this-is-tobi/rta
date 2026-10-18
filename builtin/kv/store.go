@@ -148,7 +148,7 @@ func lockStore() (release func(), verr *view.Error) {
 	path := filepath.Join(itemstore.DataDir(), "kv.lock")
 	release, err := filelock.Acquire(path, filelock.DefaultStale, filelock.DefaultRetry, filelock.DefaultTimeout)
 	if err != nil {
-		return nil, view.Errorf("kv.store.lock", "acquiring the store lock: %v", err)
+		return nil, filelock.Failed(err, "kv.store.lock", "acquiring the store lock")
 	}
 	return release, nil
 }
@@ -559,7 +559,7 @@ func saveTo(sf plugin.Surface, s store, recipients []age.Recipient, specs []stri
 
 func writeAtomic(data []byte) *view.Error {
 	if dir, err := paths.EnsureData(); err != nil {
-		return view.Errorf("kv.store.mkdir", "creating %s: %v", dir, err)
+		return filelock.Failed(err, "kv.store.mkdir", "creating "+dir)
 	}
 	// 0600, applied before the file exists under its real name: the
 	// ciphertext is age-encrypted, but a store nobody else can open is still

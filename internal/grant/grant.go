@@ -2357,7 +2357,7 @@ func acquireLock() (release func(), verr *view.Error) {
 	path := filepath.Join(paths.Data(), lockFile)
 	release, err := filelock.Acquire(path, lockStale, lockRetry, lockTimeout)
 	if err != nil {
-		return nil, view.Errorf("core.grant.lock", "acquiring the grant file lock: %v", err)
+		return nil, filelock.Failed(err, "core.grant.lock", "acquiring the grant file lock")
 	}
 	return release, nil
 }

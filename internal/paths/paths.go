@@ -209,7 +209,13 @@ func EnsureData() (string, error) {
 	if problem != nil {
 		return dir, problem
 	}
-	return dir, os.MkdirAll(dir, 0o700)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		if verr := Unwritable(dir, err); verr != nil {
+			return dir, verr
+		}
+		return dir, err
+	}
+	return dir, nil
 }
 
 // Indexes is the directory under the data directory the plugin indexes are

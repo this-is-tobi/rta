@@ -373,7 +373,7 @@ func save(locks []Lock) *view.Error {
 func mutate(f func([]Lock) ([]Lock, bool)) *view.Error {
 	release, err := filelock.Acquire(Path()+".lock", 10*time.Second, 25*time.Millisecond, 5*time.Second)
 	if err != nil {
-		return view.Errorf("core.lock.busy", "another rta is changing the locks: %v", err)
+		return filelock.Failed(err, "core.lock.busy", "another rta is changing the locks")
 	}
 	defer release()
 	stored, _, verr := load()

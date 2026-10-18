@@ -901,6 +901,9 @@ func begin() (key []byte, release func(), err error) {
 	// append to a file the first one is in the middle of renaming.
 	release, err = filelock.Acquire(Path()+".lock", lockStale, lockRetry, lockTimeout)
 	if err != nil {
+		if verr := filelock.Unwritable(err); verr != nil {
+			return nil, nil, verr
+		}
 		return nil, nil, fmt.Errorf("the agent log is busy: %w", err)
 	}
 	return key, release, nil
@@ -1395,6 +1398,9 @@ func Verify() (Report, error) {
 	defer appendMu.Unlock()
 	release, err := filelock.Acquire(Path()+".lock", lockStale, lockRetry, lockTimeout)
 	if err != nil {
+		if verr := filelock.Unwritable(err); verr != nil {
+			return rep, verr
+		}
 		return rep, fmt.Errorf("the agent log is busy: %w", err)
 	}
 	defer release()

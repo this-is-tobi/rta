@@ -163,8 +163,7 @@ func Init(passphrase string) (Signer, *view.Error) {
 	release, err := filelock.Acquire(Path()+".lock",
 		15*time.Second, 5*time.Millisecond, 10*time.Second)
 	if err != nil {
-		return Signer{}, view.Errorf("core.operator.locked",
-			"another rta is changing the operator key: %v", err)
+		return Signer{}, filelock.Failed(err, "core.operator.locked", "another rta is changing the operator key")
 	}
 	defer release()
 	if _, err := os.Stat(Path()); err == nil {

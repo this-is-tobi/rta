@@ -322,6 +322,9 @@ func Ask(c Call, wait time.Duration) (*Parked, error) {
 	}
 	release, err := filelock.Acquire(Dir()+".lock", 5*time.Second, 5*time.Millisecond, 3*time.Second)
 	if err != nil {
+		if verr := filelock.Unwritable(err); verr != nil {
+			return nil, verr
+		}
 		return nil, fmt.Errorf("the request queue is busy: %w", err)
 	}
 	defer release()

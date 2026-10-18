@@ -18,6 +18,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/consent"
+	"github.com/this-is-tobi/rta/internal/filelock"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/internal/lockdown"
@@ -381,6 +382,14 @@ func doctorDataDir(add func(check, status, detail string)) {
 		return
 	}
 	dataDir := paths.Data()
+	// Asked before the mode is read, and an error: every call that needs a grant
+	// is refused while the record cannot be written, so a directory rta cannot
+	// write is the first thing an operator should meet here and not an agent's
+	// refusal. Said with the words any command gives for it.
+	if verr := paths.CheckWritable(dataDir); verr != nil {
+		add("data", "error", verr.Message+"; "+verr.Hint)
+		return
+	}
 	switch info, err := os.Stat(dataDir); {
 	case err != nil:
 		add("data", "ok", dataDir+" (nothing written yet)")
@@ -1419,7 +1428,11 @@ func doctorRecord(add func(check, status, detail string)) {
 			strings.Join(rep.Foreign, ", ")))
 	}
 	if lerr != nil {
-		add("agent log", "warn", lerr.Error())
+		// A data directory rta cannot write is the data row's to say, once; the
+		// record is no more broken for it.
+		if filelock.Unwritable(lerr) == nil {
+			add("agent log", "warn", lerr.Error())
+		}
 	} else if rep.Broken != 0 {
 		// Said whether or not anything is left: "the whole record has been
 		// removed" is precisely the case where rep.Entries is zero.

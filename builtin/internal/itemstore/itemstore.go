@@ -141,6 +141,9 @@ func Lock(file string) (release func(), err error) {
 	path := filepath.Join(dataDir(), file+".lock")
 	release, err = filelock.Acquire(path, lockStale, lockRetry, lockTimeout)
 	if err != nil {
+		if verr := filelock.Unwritable(err); verr != nil {
+			return nil, verr
+		}
 		return nil, fmt.Errorf("acquiring the %s lock: %w", file, err)
 	}
 	return release, nil
@@ -151,7 +154,7 @@ func Lock(file string) (release func(), err error) {
 func Save(file, ns string, s Store) error {
 	dir, err := paths.EnsureData()
 	if err != nil {
-		return view.Errorf(ns+".store.mkdir", "creating %s: %v", dir, err)
+		return filelock.Failed(err, ns+".store.mkdir", "creating "+dir)
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {

@@ -36,6 +36,7 @@ import (
 	"github.com/this-is-tobi/rta/builtin/internal/sshkeys"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/filelock"
 	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -71,7 +72,7 @@ func loadRecipients() ([]string, *view.Error) {
 
 func saveRecipients(specs []string) *view.Error {
 	if dir, err := paths.EnsureData(); err != nil {
-		return view.Errorf("kv.recipients.write", "creating %s: %v", dir, err)
+		return filelock.Failed(err, "kv.recipients.write", "creating "+dir)
 	}
 	body := "# Public keys that can decrypt kv.age. Public: safe to read, safe to commit.\n" +
 		strings.Join(specs, "\n") + "\n"
