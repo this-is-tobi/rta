@@ -210,6 +210,11 @@ type hintItem struct {
 	// uses it: a confirmation is an answer rather than something to press, and
 	// it has read green since it existed.
 	style *lipgloss.Style
+	// wrap says the label is a sentence and not a pair of words: a form's
+	// refusal, which ends in what to do about it. It is wrapped across the rows
+	// the bar has, in place of being cut at the width, and is never the entry
+	// dropped to make room.
+	wrap bool
 }
 
 func item(b binding) hintItem {
@@ -257,6 +262,12 @@ func alias(it hintItem, extra ...string) hintItem {
 // A bar that still had to drop something ends in "…", because a footer that
 // quietly shows less than the truth is how a key becomes undiscoverable.
 func fitHintBar(width, maxLines int, items ...hintItem) string {
+	return fitBar(width, maxLines, false, items...)
+}
+
+// fitBar is fitHintBar, and for the bars of the forms, whose rows are shared
+// out: see layout.
+func fitBar(width, maxLines int, balance bool, items ...hintItem) string {
 	if len(items) == 0 {
 		return ""
 	}
@@ -268,15 +279,17 @@ func fitHintBar(width, maxLines int, items ...hintItem) string {
 		keep[i] = true
 	}
 	for {
-		bar, lines := layout(items, keep, width)
+		bar, lines := layout(items, keep, width, maxLines, balance)
 		if width <= 0 || lines <= maxLines {
 			return bar
 		}
 		// Highest rank goes first, and within a rank the rightmost — so the
-		// bar shortens from its tail, which is where the eye stops looking.
+		// bar shortens from its tail, which is where the eye stops looking. A
+		// sentence is not in the running: it is what the bar is saying, and it
+		// has already been fitted to the rows the bar has.
 		victim, worst := -1, -1
 		for i, k := range keep {
-			if k && items[i].rank >= worst {
+			if k && !items[i].wrap && items[i].rank >= worst {
 				victim, worst = i, items[i].rank
 			}
 		}
@@ -287,54 +300,198 @@ func fitHintBar(width, maxLines int, items ...hintItem) string {
 	}
 }
 
+// barCell is one piece of a laid-out row. fixed marks a row of a wrapped
+// sentence, which is drawn where it fell and is not moved to even a bar out.
+type barCell struct {
+	text  string
+	w     int
+	fixed bool
+}
+
 // layout packs the kept hints into lines, greedily, and reports how many it
 // took. Hints are never split: a half-rendered key is worse than a missing
 // one. The ellipsis is packed like any other part, so a bar that had to drop
 // something cannot overflow by announcing it.
-func layout(items []hintItem, keep []bool, width int) (string, int) {
-	parts := make([]string, 0, len(items)+1)
+//
+// A sentence (hintItem.wrap) leads its own rows when it takes more than one,
+// the first marked and the rest indented under it, and the hints carry on from
+// the end of its last row. It is fitted to leave that row room for how to leave
+// the screen (rankLeave), since a bar that said what was wrong and not how to
+// get out of it is the one the ranks above exist to prevent. Its ellipsis is
+// left out when no row is left to put it on: the sentence has filled the bar,
+// and "…" on a third row would be the bar's only overflow.
+//
+// balance shares two rows out when the second would hold a single hint beside
+// a first that holds several: `esc cancel` alone under four others reads as a
+// different kind of thing from the keys above it, and the last hint moved down
+// leaves both rows a plain list. Only the forms ask for it.
+func layout(items []hintItem, keep []bool, width, maxLines int, balance bool) (string, int) {
+	sep := theme.Subtle.Render(" · ")
+	sepW := lipgloss.Width(sep)
+	// What a sentence leaves the end of its last row free for: the hints that
+	// say how to leave, which are the last of the rest to be dropped.
+	reserve := 0
+	for i, it := range items {
+		if keep[i] && !it.wrap && it.rank <= rankLeave {
+			reserve += sepW + lipgloss.Width(it.display+" "+it.label)
+		}
+	}
+
+	var parts [][]string
 	dropped := false
+	sentence := false
 	for i, it := range items {
 		if !keep[i] {
 			dropped = true
 			continue
 		}
-		if it.style != nil {
-			parts = append(parts, it.style.Render(it.display+" "+it.label))
-			continue
+		switch {
+		case it.wrap && width > 0:
+			parts = append(parts, sentenceRows(it, width, maxLines, reserve))
+			sentence = true
+		case it.style != nil:
+			parts = append(parts, []string{it.style.Render(it.display + " " + it.label)})
+		default:
+			parts = append(parts, []string{hint(it.display, it.label)})
 		}
-		parts = append(parts, hint(it.display, it.label))
 	}
 	if len(parts) == 0 {
 		return "", 0
 	}
-	if dropped {
-		parts = append(parts, theme.Subtle.Render("…"))
-	}
 
-	sep := theme.Subtle.Render(" · ")
-	sepW := lipgloss.Width(sep)
-	var lines []string
-	var cur strings.Builder
-	curW := 0
-	for _, p := range parts {
-		pw := lipgloss.Width(p)
-		switch {
-		case curW == 0:
-			cur.WriteString(" " + p)
-			curW = 1 + pw
-		case width > 0 && curW+sepW+pw > width:
-			lines = append(lines, cur.String())
-			cur.Reset()
-			cur.WriteString(" " + p)
-			curW = 1 + pw
-		default:
-			cur.WriteString(sep + p)
-			curW += sepW + pw
+	var (
+		rows [][]barCell
+		cur  []barCell
+		curW int
+	)
+	flush := func() {
+		if len(cur) > 0 {
+			rows = append(rows, cur)
+			cur, curW = nil, 0
 		}
 	}
-	lines = append(lines, cur.String())
+	begin := func(c barCell) {
+		cur, curW = append(make([]barCell, 0, 4), c), 1+c.w
+	}
+	put := func(c barCell) {
+		switch {
+		case curW == 0:
+			begin(c)
+		case width > 0 && curW+sepW+c.w > width:
+			flush()
+			begin(c)
+		default:
+			cur, curW = append(cur, c), curW+sepW+c.w
+		}
+	}
+	for _, p := range parts {
+		if len(p) == 1 {
+			put(barCell{text: p[0], w: lipgloss.Width(p[0])})
+			continue
+		}
+		flush()
+		for _, r := range p[:len(p)-1] {
+			rows = append(rows, []barCell{{text: r, w: lipgloss.Width(r), fixed: true}})
+		}
+		last := p[len(p)-1]
+		begin(barCell{text: last, w: lipgloss.Width(last), fixed: true})
+	}
+	if dropped {
+		more := barCell{text: theme.Subtle.Render("…"), w: 1}
+		noRoom := sentence && width > 0 && curW+sepW+more.w > width && len(rows)+1 >= maxLines
+		if !noRoom {
+			put(more)
+		}
+	}
+	flush()
+
+	if balance && len(rows) >= 2 {
+		prev, last := rows[len(rows)-2], rows[len(rows)-1]
+		if moved := prev[len(prev)-1]; len(last) == 1 && !last[0].fixed && len(prev) >= 2 && !moved.fixed &&
+			(width <= 0 || 1+moved.w+sepW+last[0].w <= width) {
+			rows[len(rows)-2] = prev[:len(prev)-1]
+			rows[len(rows)-1] = []barCell{moved, last[0]}
+		}
+	}
+
+	lines := make([]string, len(rows))
+	for i, row := range rows {
+		texts := make([]string, len(row))
+		for j, c := range row {
+			texts[j] = c.text
+		}
+		lines[i] = " " + strings.Join(texts, sep)
+	}
 	return strings.Join(lines, "\n"), len(lines)
+}
+
+// sentenceRows is a sentence wrapped to the width, each row styled as the
+// entry is, the first led by its mark and the rest indented to stand under the
+// words. One that will not fit the rows the bar has loses its middle (elide).
+func sentenceRows(it hintItem, width, maxLines, reserve int) []string {
+	w := max(width-3, 8) // the bar's lead, and the mark or the indent that stands for it
+	if reserve >= w/2 {
+		reserve = 0 // no room to keep any: the sentence is what the bar is for
+	}
+	lines := wrapped(it.label, w, maxLines, reserve)
+	if lines == nil {
+		lines = wrapped(elide(it.label, w, maxLines, reserve), w, maxLines, 0)
+	}
+	if lines == nil {
+		lines = []string{ansi.Truncate(it.label, w, "…")}
+	}
+	rows := make([]string, len(lines))
+	for i, line := range lines {
+		lead := "  "
+		if i == 0 {
+			lead = it.display + " "
+		}
+		rows[i] = lead + line
+		if it.style != nil {
+			rows[i] = it.style.Render(rows[i])
+		}
+	}
+	return rows
+}
+
+// wrapped is text in rows of w cells, or nil when it needs more than maxLines of
+// them or would leave the last of those less than reserve cells short of w.
+func wrapped(text string, w, maxLines, reserve int) []string {
+	lines := strings.Split(ansi.Wrap(text, w, ""), "\n")
+	if len(lines) > maxLines || (len(lines) == maxLines && ansi.StringWidth(lines[len(lines)-1]) > w-reserve) {
+		return nil
+	}
+	return lines
+}
+
+// elide cuts the middle out of text until what is left wraps into maxLines rows
+// of w cells, the last with reserve cells free. The start stays, since it says
+// what went wrong, and so does more of the end, since that is where a remedy
+// goes; the cut is marked, and made between words where there is a word to cut
+// at.
+func elide(text string, w, maxLines, reserve int) string {
+	capacity := maxLines*w - reserve - 2 // the mark of the cut and the space after it
+	headCells := capacity / 3
+	total := ansi.StringWidth(text)
+	head := ansi.Truncate(text, headCells, "")
+	if len(head) < len(text) && text[len(head)] != ' ' {
+		if i := strings.LastIndexByte(head, ' '); i > 0 {
+			head = head[:i]
+		}
+	}
+	for tailCells := capacity - headCells; tailCells > 0; tailCells-- {
+		tail := ansi.TruncateLeft(text, total-tailCells, "")
+		if from := len(text) - len(tail); from > 0 && text[from-1] != ' ' {
+			if i := strings.IndexByte(tail, ' '); i >= 0 {
+				tail = tail[i+1:]
+			}
+		}
+		cut := strings.TrimRight(head, " ") + "… " + strings.TrimLeft(tail, " ")
+		if wrapped(cut, w, maxLines, reserve) != nil {
+			return cut
+		}
+	}
+	return ansi.Truncate(text, w*maxLines-reserve, "…")
 }
 
 // footerMaxLines bounds how tall a hint bar may grow. Two lines is enough
@@ -552,15 +709,20 @@ func (m Model) footerFor(screen mode) string {
 	// moving the fields it is about.
 	if screen == m.mode {
 		bad := theme.BadText
+		var refusals []hintItem
 		for _, err := range m.formErrors(screen) {
 			// Cleaned for the flash's reason below: a validator's message can
 			// quote what was typed or pasted.
-			label := textclean.Terminal(err.Error())
-			if m.width > 0 {
-				label = ansi.Truncate(label, max(m.width-3, 8), "…")
-			}
-			items = append(items, hintItem{display: "✗", label: label, rank: rankNotice, style: &bad})
+			//
+			// Wrapped across the rows the bar has, not cut at the width: the
+			// end of a refusal is what to do about it, and it was the end that
+			// went. It leads the bar for the flash's reason as well, so the
+			// hints that give way are the ones after it.
+			refusals = append(refusals, hintItem{
+				display: "✗", label: textclean.Terminal(err.Error()), rank: rankNotice, style: &bad, wrap: true,
+			})
 		}
+		items = append(refusals, items...)
 	}
 	if m.flash != "" {
 		// Packed with everything else rather than appended after it, which is
@@ -601,12 +763,27 @@ func (m Model) footerFor(screen mode) string {
 		// a server's error reordered the footer. Display only, so a
 		// character that reorders text is spelled out rather than dropped.
 		flash := textclean.Terminal(m.flash)
-		if m.width > 0 {
+		// A refusal on a form is the one flash with a remedy at its end, the
+		// connection editor's most of all (`rta plugin install pg installs it`),
+		// and is wrapped like the form's own errors. Any other is a sentence
+		// of confirmation, and is cut.
+		refusal := m.flash == m.flashBad && formScreen(screen)
+		if m.width > 0 && !refusal {
 			flash = ansi.Truncate(flash, max(m.width-3, 8), "…")
 		}
-		items = append([]hintItem{{display: mark, label: flash, rank: rankNotice, style: &style}}, items...)
+		items = append([]hintItem{{display: mark, label: flash, rank: rankNotice, style: &style, wrap: refusal}}, items...)
 	}
-	return fitHintBar(m.width, footerMaxLines, items...)
+	return fitBar(m.width, footerMaxLines, formScreen(screen), items...)
+}
+
+// formScreen is whether the screen is a form, whose bar speaks of the boxes and
+// whose refusals are about what was typed in them.
+func formScreen(screen mode) bool {
+	switch screen {
+	case modeForm, modeTheme, modeCopyPick, modeAddPick:
+		return true
+	}
+	return false
 }
 
 // refuse is a flash that says what the key just pressed did not do: a save
