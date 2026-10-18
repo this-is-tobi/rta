@@ -110,7 +110,7 @@ The seal's limit above has an answer, and it is opt-in:
 rta grant guard on
 ```
 
-From then on, issuing or renewing a grant asks for a passphrase — including `rta agent allow --ttl`, which also mints one. Every grant is signed with a key that exists only encrypted under that passphrase, and a grant without a valid signature is not honoured. The difference from the seal is one of kind, not degree: the seal's key sits on disk where anything running as you can read it, while the guard's passphrase lives in your head. An agent that runs `rta grant allow` from its shell is *refused*, however it invokes the binary — the ordinary self-granting path moves from detection (the Origin column, after the fact) to prevention.
+From then on, issuing or renewing a grant asks for a passphrase — including `rta agent allow --ttl`, which also mints one. A passphrase being set, here and for [the operator key](./66-operators.md), needs at least eight characters, counted as characters and not bytes, because the key it wraps sits in a file that can be copied and a short passphrase then falls to guessing offline; there is no flag to waive it, and a key wrapped under a shorter one before the rule keeps opening. Every grant is signed with a key that exists only encrypted under that passphrase, and a grant without a valid signature is not honoured. The difference from the seal is one of kind, not degree: the seal's key sits on disk where anything running as you can read it, while the guard's passphrase lives in your head. An agent that runs `rta grant allow` from its shell is *refused*, however it invokes the binary — the ordinary self-granting path moves from detection (the Origin column, after the fact) to prevention.
 
 Honest edges, stated rather than implied:
 

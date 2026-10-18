@@ -377,7 +377,7 @@ func TestAParkedKvCallWarnsWhenNothingHereOpensTheStore(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("RTA_KV_IDENTITY", "")
-	t.Setenv("RTA_KV_PASSPHRASE", "hunter2")
+	t.Setenv("RTA_KV_PASSPHRASE", "hunter2-hunter2")
 	if verr := kv.Store("db-password", "s3cret", "", "test"); verr != nil {
 		t.Fatal(verr)
 	}

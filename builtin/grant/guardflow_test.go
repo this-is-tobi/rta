@@ -46,6 +46,26 @@ func guardOn(t *testing.T, pass string) {
 	}
 }
 
+// The guard is only as strong as the passphrase its key is wrapped under, and
+// the wrapped key sits in a file that can be copied, so a passphrase this short
+// is refused at the moment it is chosen, with the reason, and the guard stays
+// off: nothing was cleared and nothing was written.
+func TestGuardOnRefusesAShortPassphrase(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	_, err := guardCap(t, "grant.guard.on").Run(context.Background(),
+		reqTUI(map[string]any{"passphrase": "short"}))
+	verr, ok := err.(*view.Error)
+	if !ok || verr.Code != "core.guard.passphrase.short" {
+		t.Fatalf("err = %v, want core.guard.passphrase.short", err)
+	}
+	if !strings.Contains(verr.Message, "5 characters") || !strings.Contains(verr.Message, "at least 8") {
+		t.Errorf("message = %q, want the length and the floor", verr.Message)
+	}
+	if guard.Enabled() {
+		t.Error("the guard was enabled under a passphrase that was refused")
+	}
+}
+
 func code(t *testing.T, err error) string {
 	t.Helper()
 	verr, ok := err.(*view.Error)
