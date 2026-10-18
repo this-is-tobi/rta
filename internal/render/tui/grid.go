@@ -733,7 +733,7 @@ func tileLines(t tile, width int, selected bool) []string {
 			break
 		}
 		var buf bytes.Buffer
-		_ = cli.RenderError(&buf, t.err, cli.Options{Format: cli.Pretty, Width: inner})
+		_ = cli.RenderError(&buf, pausedAs(t), cli.Options{Format: cli.Pretty, Width: inner})
 		body = buf.String()
 	case t.view != nil:
 		body = tileBody(keyPromised(t, selected), inner)
@@ -1143,6 +1143,9 @@ func (m Model) dashFooterItems() []hintItem {
 		}
 		if hint, ok := copyHint(t.cap, m.tileReturned(m.selected)); ok {
 			items = append(items, hint)
+		}
+		if t.paused() {
+			items = append(items, labelled(bindRerun, "ask again"))
 		}
 		if t.withdraws() {
 			for i, h := range own {

@@ -40,6 +40,23 @@ func quietSentence(t tile) (string, bool) {
 	return say, ok
 }
 
+// pausedAs is the error a tile draws: its own, or — once its credential has been
+// refused credentialRefusals times in a row and it is no longer run — the same
+// error under the sentence that says why it has stopped and the key that asks
+// again. Said in the failed tile's own vocabulary, with the refusal beside it,
+// because a tile that stopped on its own and said nothing would look like one
+// that was fine, and the person has to know which credential it was.
+func pausedAs(t tile) *view.Error {
+	if !t.paused() {
+		return t.err
+	}
+	hint := "r asks again once it is fixed"
+	if t.err.Hint != "" {
+		hint = t.err.Hint + " — " + hint
+	}
+	return &view.Error{Code: t.err.Code, Message: "paused — credentials refused: " + t.err.Message, Hint: hint}
+}
+
 // waitingKey is the label of the line agent.overview puts a count of parked
 // calls under. The dashboard reads the number off it rather than asking the
 // agent plugin, which it knows nothing else about; TestTheAgentTilesWaitingLineIsTheOneTheDashboardReads

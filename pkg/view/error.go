@@ -3,6 +3,7 @@ package view
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Error is the first-class error contract. Renderers show Message and a
@@ -43,6 +44,33 @@ type Error struct {
 }
 
 func (e *Error) Error() string { return e.Message }
+
+// CredentialRefused reports whether the service understood the call and refused
+// the credential that came with it, which is the one failure a dashboard is
+// right to stop repeating: the same credential gets the same answer, and a
+// wrong password asked for every few seconds is how an account on a database
+// that locks is locked. A timeout, a refused connection, an unreachable host and
+// a rate limit are not this, and a tile that stopped asking after two of them
+// would be hiding an outage.
+//
+// It is a reading of the code and nothing else, because the code is what
+// crosses the wire from a plugin and is stable. A refused credential is named
+// by a code ending in `.auth.failed` — the account was not accepted: pg, mysql,
+// mariadb, redis, etcd, qdrant, keycloak and s3 — or in `.denied` — the
+// account is known and may not do this: those eight and vault, docker, cnpg
+// and the host's tunnels, and the finer ones (`mysql.database.denied`,
+// `mysql.host.denied`). Every code that ends so says that and nothing else.
+//
+// Read from the codes that exist, so it leaves out the ones that say the same in
+// another word: `kube.unauthorized` and `kube.forbidden`, `cnpg.unauthenticated`,
+// `redis.auth.required` and `tunnel.unauthenticated`. A tile with one of those
+// keeps refreshing, as it always did; renaming a code to end as these do is the
+// plugin's to decide. A policy refusal (Refusal) is about who is asking, not
+// about a credential, whatever its code ends in.
+func (e *Error) CredentialRefused() bool {
+	return e != nil && !e.Refusal &&
+		(strings.HasSuffix(e.Code, ".auth.failed") || strings.HasSuffix(e.Code, ".denied"))
+}
 
 func (*Error) isView() {}
 

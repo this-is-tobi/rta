@@ -108,6 +108,42 @@ type tile struct {
 	// storeOpen is whether the store session was open when this tile was last
 	// dispatched, for a tile that says something about it (watchesStoreSession).
 	storeOpen bool
+	// refused is how many runs in a row the service refused this tile's
+	// credential (view.Error.CredentialRefused). At credentialRefusals the tile
+	// is paused: it is not run again until something asks it to (resume).
+	refused int
+}
+
+// credentialRefusals is how many answers in a row that refuse a tile's
+// credential stop the tile from asking again. One may be a typo that is fixed a
+// moment later; two are the credential.
+//
+// A tile that kept asking was a login every refresh for ever — a pg tile on a
+// role that did not exist put a FATAL in the server's log every thirty seconds,
+// 2880 a day, and on a database that locks an account that is the way to lock
+// it. Only a refusal of the credential counts (a timeout and a refused
+// connection are a service that is not there, which the tile has to keep asking
+// to say is back), and only in a row.
+const credentialRefusals = 2
+
+// paused says the tile has been refused its credential often enough that it is
+// no longer run.
+func (t tile) paused() bool { return t.refused >= credentialRefusals }
+
+// resume takes the pause off and makes the tile due at the next refresh, which
+// is what the person pressing r asks for, and what a connection that changed
+// under the tile calls for.
+func (t *tile) resume() {
+	t.lastFired, t.inFlight, t.refused = time.Time{}, false, 0
+}
+
+// refusedAfter is the count of refusals in a row once an answer arrives: one
+// more when it refused the credential, none when it did anything else.
+func refusedAfter(count int, answer *view.Error) int {
+	if answer.CredentialRefused() {
+		return count + 1
+	}
+	return 0
 }
 
 // tileSource is where a tile came from: picked for its plugin by the
@@ -788,7 +824,7 @@ func (m *Model) rebuildTiles() {
 	for i := range fresh {
 		if prev, ok := old[fresh[i].key()]; ok {
 			fresh[i].view, fresh[i].err, fresh[i].lastFired, fresh[i].storeOpen = prev.view, prev.err, prev.lastFired, prev.storeOpen
-			fresh[i].inFlight = prev.inFlight
+			fresh[i].inFlight, fresh[i].refused = prev.inFlight, prev.refused
 		}
 	}
 	m.tiles = fresh
@@ -1032,7 +1068,8 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 	}
 }
 
-// due reports whether this tile should run at now.
+// due reports whether this tile should run at now. A paused one never does:
+// something has to resume it first.
 //
 // A capability that declared no Refresh runs on every tick, exactly as every
 // tile did before the field existed. One that declared a pace waits it out:
@@ -1045,7 +1082,7 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 // that stops being what it said (watchesStoreSession): it paces what it costs,
 // and what it costs is the decrypt, which a look at the session does not make.
 func (t tile) due(now time.Time) bool {
-	if t.search {
+	if t.search || t.paused() {
 		return false
 	}
 	// Before the store-session rule below, which must not start a second run on
@@ -1078,7 +1115,7 @@ func (t tile) due(now time.Time) bool {
 func resetDue(tiles []tile, profile string) {
 	for i := range tiles {
 		if tiles[i].profile == profile {
-			tiles[i].lastFired, tiles[i].inFlight = time.Time{}, false
+			tiles[i].resume()
 		}
 	}
 }
