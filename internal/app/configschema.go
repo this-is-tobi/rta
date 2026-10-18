@@ -131,19 +131,34 @@ func keySchema(reg *registry.Registry, ns, key string, readers []plugin.Field) m
 	case plugin.StringSlice:
 		out["type"] = "array"
 		out["items"] = map[string]any{"type": "string"}
+	case plugin.Duration:
+		out["type"] = "string"
+		out["pattern"] = plugin.DurationPattern
 	default:
 		out["type"] = "string"
 	}
-	if f.Min != nil {
-		out["minimum"] = f.Min
-	}
-	if f.Max != nil {
-		out["maximum"] = f.Max
+	// A bound of a duration is text ("1s"), and `minimum` is a number's: a
+	// schema holding one was not one a validator could compile. The range is
+	// said in the description, as the MCP schema says it.
+	if f.Type != plugin.Duration {
+		if f.Min != nil {
+			out["minimum"] = f.Min
+		}
+		if f.Max != nil {
+			out["maximum"] = f.Max
+		}
 	}
 	if f.Default != nil {
 		out["default"] = f.Default
 	}
 	description := f.Help
+	if f.Type == plugin.Duration {
+		description += " (a duration with its unit, such as 30s, 5m or 2h"
+		if bounds := f.Bounds(); bounds != "" {
+			description += "; " + bounds
+		}
+		description += ")"
+	}
 	if len(f.Options) > 0 {
 		out["examples"] = f.Options
 		description += " — one of " + strings.Join(f.Options, ", ")

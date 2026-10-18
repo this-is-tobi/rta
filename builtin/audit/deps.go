@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/this-is-tobi/rta/builtin/internal/gitclone"
 	"github.com/this-is-tobi/rta/pkg/findings"
@@ -87,7 +86,7 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 		capped  bool
 	)
 	if !offline && len(inv.queryable) > 0 {
-		timeout := time.Duration(req.Int("timeout")) * time.Second
+		timeout := req.Duration("timeout")
 		qctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		client := &stdhttp.Client{Timeout: timeout}

@@ -17,7 +17,7 @@ import (
 // rows runs audit.web against a target and returns check -> row.
 func rows(t *testing.T, target string) map[string][]string {
 	t.Helper()
-	v, err := runWeb(t.Context(), req(map[string]any{"host": target, "timeout": 5}))
+	v, err := runWeb(t.Context(), req(map[string]any{"host": target, "timeout": "5s"}))
 	if err != nil {
 		t.Fatalf("audit web %s: %v", target, err)
 	}

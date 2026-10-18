@@ -90,7 +90,7 @@ func Plugin() plugin.Plugin {
 					{Name: "host", Type: plugin.String, Positional: true, Required: true,
 						Suggest: suggestHostnames, Help: "host to ping"},
 					{Name: "count", Type: plugin.Int, Config: "ping.count", Default: 4, Min: 1, Max: 100, Help: "number of probes"},
-					{Name: "timeout", Type: plugin.Int, Config: "ping.timeout", Default: 10, Min: 1, Max: 300, Help: "overall timeout in seconds"},
+					{Name: "timeout", Type: plugin.Duration, Config: "ping.timeout", Default: "10s", Min: "1s", Max: "5m", Help: "overall timeout"},
 					{Name: "graph", Type: plugin.Bool, Help: "plot per-probe latency instead of summary stats"},
 				},
 				Run: runPing,
@@ -124,7 +124,7 @@ func Plugin() plugin.Plugin {
 						Help:    "which record type to ask for"},
 					{Name: "server", Type: plugin.String, Config: "dns.server", Local: true, Suggest: suggestResolvers,
 						Help: "resolver to query, e.g. 1.1.1.1 or 9.9.9.9:53 (default: the system resolver)"},
-					{Name: "timeout", Type: plugin.Int, Config: "dns.timeout", Default: 5, Min: 1, Max: 120, Help: "query timeout in seconds"},
+					{Name: "timeout", Type: plugin.Duration, Config: "dns.timeout", Default: "5s", Min: "1s", Max: "2m", Help: "query timeout"},
 				},
 				Run: runDNS,
 			},
@@ -147,7 +147,7 @@ func Plugin() plugin.Plugin {
 						Suggest: suggestHostnames, Help: "host to trace"},
 					{Name: "max-hops", Type: plugin.Int, Config: "trace.max-hops", Default: 30, Min: 1, Max: 64, Help: "stop after this many hops"},
 					{Name: "probes", Type: plugin.Int, Config: "trace.probes", Default: 3, Min: 1, Max: 10, Help: "probes per hop"},
-					{Name: "timeout", Type: plugin.Int, Config: "trace.timeout", Default: 2, Min: 1, Max: 60, Help: "timeout per probe, in seconds"},
+					{Name: "timeout", Type: plugin.Duration, Config: "trace.timeout", Default: "2s", Min: "1s", Max: "1m", Help: "timeout per probe"},
 					{Name: "resolve", Type: plugin.Bool, Config: "trace.resolve", Default: true, Help: "resolve hop addresses back to names"},
 				},
 				Run: runTrace,
@@ -179,8 +179,8 @@ func Plugin() plugin.Plugin {
 					{Name: "port", Type: plugin.Int, Positional: true, Required: true, Min: 1, Max: 65535, Help: "port to connect to"},
 					{Name: "tls", Type: plugin.Bool,
 						Help: "complete a TLS handshake after connecting, in whatever protocol the host speaks, TLS 1.0 on"},
-					{Name: "timeout", Type: plugin.Int, Config: "probe.timeout", Default: 5, Min: 1, Max: 120, Help: "connect timeout in seconds"},
-					{Name: "wait", Type: plugin.Int, Default: 2, Min: 1, Max: 120, Help: "seconds to wait for the service to say something"},
+					{Name: "timeout", Type: plugin.Duration, Config: "probe.timeout", Default: "5s", Min: "1s", Max: "2m", Help: "connect timeout"},
+					{Name: "wait", Type: plugin.Duration, Default: "2s", Min: "1s", Max: "2m", Help: "how long to wait for the service to say something"},
 				},
 				Run: runProbe,
 			},
@@ -212,8 +212,8 @@ func Plugin() plugin.Plugin {
 					{Name: "data", Type: plugin.String, Required: true, Help: `bytes to send, e.g. "GET / HTTP/1.0\r\n\r\n"`},
 					{Name: "tls", Type: plugin.Bool,
 						Help: "complete a TLS handshake before sending, in TLS 1.2 or newer since the payload crosses it"},
-					{Name: "timeout", Type: plugin.Int, Config: "send.timeout", Default: 5, Min: 1, Max: 120, Help: "connect timeout in seconds"},
-					{Name: "wait", Type: plugin.Int, Default: 2, Min: 1, Max: 120, Help: "seconds to wait for a reply"},
+					{Name: "timeout", Type: plugin.Duration, Config: "send.timeout", Default: "5s", Min: "1s", Max: "2m", Help: "connect timeout"},
+					{Name: "wait", Type: plugin.Duration, Default: "2s", Min: "1s", Max: "2m", Help: "how long to wait for a reply"},
 				},
 				Run: runSend,
 			},
@@ -236,7 +236,7 @@ func Plugin() plugin.Plugin {
 						Suggest: suggestHostnames, Help: "host to scan"},
 					{Name: "ports", Type: plugin.String, Default: "22,80,443",
 						Help: "ports and ranges, comma-separated: 22,80,8000-8010 (up to 4096 at a time)"},
-					{Name: "timeout", Type: plugin.Int, Config: "port.timeout", Default: 2, Min: 1, Max: 60, Help: "timeout per port, in seconds"},
+					{Name: "timeout", Type: plugin.Duration, Config: "port.timeout", Default: "2s", Min: "1s", Max: "1m", Help: "timeout per port"},
 				},
 				Run: runPort,
 			},
@@ -373,7 +373,7 @@ func runPing(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, resolveFailed("net.ping.resolve", req.Surface(), host, err)
 	}
 	pinger.Count = req.Int("count")
-	pinger.Timeout = time.Duration(req.Int("timeout")) * time.Second
+	pinger.Timeout = req.Duration("timeout")
 	// Unprivileged UDP ping works without root on macOS and (with sysctl
 	// ping_group_range) on Linux.
 	pinger.SetPrivileged(false)
@@ -535,9 +535,9 @@ func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 	if rtype == "" {
 		rtype = "AUTO"
 	}
-	if timeout := req.Int("timeout"); timeout > 0 {
+	if timeout := req.Duration("timeout"); timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
 	resolver, label := resolverFor(req.String("server"))
@@ -734,7 +734,7 @@ func runPort(ctx context.Context, req plugin.Request) (view.View, error) {
 	if len(ports) == 0 {
 		return nil, view.Errorf("net.port.empty", "no ports to scan")
 	}
-	timeout := time.Duration(req.Int("timeout")) * time.Second
+	timeout := req.Duration("timeout")
 
 	type result struct {
 		port int

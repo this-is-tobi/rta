@@ -94,7 +94,7 @@ func TestHopStatus(t *testing.T) {
 
 func TestTraceBadHostIsCoded(t *testing.T) {
 	_, err := runTrace(context.Background(), req(map[string]any{
-		"host": "no-such-host.invalid", "max-hops": 1, "probes": 1, "timeout": 1,
+		"host": "no-such-host.invalid", "max-hops": 1, "probes": 1, "timeout": "1s",
 	}))
 	ve := view.AsError(err, "x")
 	if ve.Code != "net.trace.resolve" {
@@ -107,7 +107,7 @@ func TestTraceBadHostIsCoded(t *testing.T) {
 // machine — but ICMP sockets are not always available in a sandbox.
 func TestTraceLoopbackReachesTargetInOneHop(t *testing.T) {
 	v, err := runTrace(context.Background(), req(map[string]any{
-		"host": "127.0.0.1", "max-hops": 5, "probes": 1, "timeout": 1, "resolve": false,
+		"host": "127.0.0.1", "max-hops": 5, "probes": 1, "timeout": "1s", "resolve": false,
 	}))
 	if err != nil {
 		if ve := view.AsError(err, "x"); ve.Code == "net.trace.socket" {
@@ -166,7 +166,7 @@ func TestTraceStoppedMidwayKeepsTheHopsItCollected(t *testing.T) {
 	defer cancel()
 	withRoute(t, &route{cancelAt: 3, cancel: cancel})
 	v, err := runTrace(ctx, req(map[string]any{
-		"host": "127.0.0.1", "max-hops": 10, "probes": 2, "timeout": 1, "resolve": false,
+		"host": "127.0.0.1", "max-hops": 10, "probes": 2, "timeout": "1s", "resolve": false,
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -194,7 +194,7 @@ func TestTraceStoppedBeforeTheFirstHopIsCoded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	withRoute(t, &route{})
-	_, err := runTrace(ctx, req(map[string]any{"host": "127.0.0.1", "max-hops": 3, "probes": 1, "timeout": 1}))
+	_, err := runTrace(ctx, req(map[string]any{"host": "127.0.0.1", "max-hops": 3, "probes": 1, "timeout": "1s"}))
 	if ve := view.AsError(err, "x"); ve.Code != "net.trace.stopped" {
 		t.Errorf("want net.trace.stopped, got %+v", ve)
 	}

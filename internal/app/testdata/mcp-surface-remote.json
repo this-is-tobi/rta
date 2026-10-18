@@ -131,11 +131,10 @@
           "type": "string"
         },
         "timeout": {
-          "default": 15,
-          "description": "lookup timeout in seconds",
-          "maximum": 300,
-          "minimum": 1,
-          "type": "integer"
+          "default": "15s",
+          "description": "lookup timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "required": [
@@ -162,11 +161,10 @@
           "type": "string"
         },
         "timeout": {
-          "default": 15,
-          "description": "request timeout in seconds",
-          "maximum": 300,
-          "minimum": 1,
-          "type": "integer"
+          "default": "15s",
+          "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "required": [
@@ -188,11 +186,10 @@
           "type": "string"
         },
         "timeout": {
-          "default": 10,
-          "description": "connect timeout in seconds",
-          "maximum": 120,
-          "minimum": 1,
-          "type": "integer"
+          "default": "10s",
+          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "required": [
@@ -217,11 +214,10 @@
           "type": "array"
         },
         "timeout": {
-          "default": 10,
-          "description": "connect timeout in seconds",
-          "maximum": 120,
-          "minimum": 1,
-          "type": "integer"
+          "default": "10s",
+          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         },
         "warn-days": {
           "default": 30,
@@ -248,11 +244,10 @@
           "type": "string"
         },
         "timeout": {
-          "default": 10,
-          "description": "connect timeout in seconds",
-          "maximum": 120,
-          "minimum": 1,
-          "type": "integer"
+          "default": "10s",
+          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "required": [
@@ -284,11 +279,10 @@
           "type": "string"
         },
         "timeout": {
-          "default": 10,
-          "description": "connect timeout in seconds",
-          "maximum": 120,
-          "minimum": 1,
-          "type": "integer"
+          "default": "10s",
+          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "required": [
@@ -310,11 +304,10 @@
           "type": "string"
         },
         "timeout": {
-          "default": 10,
-          "description": "connect timeout in seconds",
-          "maximum": 120,
-          "minimum": 1,
-          "type": "integer"
+          "default": "10s",
+          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "required": [
@@ -739,11 +732,10 @@
           "type": "array"
         },
         "timeout": {
-          "default": 30,
-          "description": "request timeout in seconds",
-          "maximum": 600,
-          "minimum": 1,
-          "type": "integer"
+          "default": "30s",
+          "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 10m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         },
         "url": {
           "description": "request URL",
@@ -780,11 +772,10 @@
           "type": "array"
         },
         "timeout": {
-          "default": 30,
-          "description": "request timeout in seconds",
-          "maximum": 600,
-          "minimum": 1,
-          "type": "integer"
+          "default": "30s",
+          "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 10m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         },
         "url": {
           "description": "request URL",
@@ -821,11 +812,10 @@
           "type": "array"
         },
         "timeout": {
-          "default": 30,
-          "description": "request timeout in seconds",
-          "maximum": 600,
-          "minimum": 1,
-          "type": "integer"
+          "default": "30s",
+          "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 10m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         },
         "url": {
           "description": "request URL",
@@ -865,11 +855,10 @@
           "type": "array"
         },
         "timeout": {
-          "default": 30,
-          "description": "request timeout in seconds",
-          "maximum": 600,
-          "minimum": 1,
-          "type": "integer"
+          "default": "30s",
+          "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 10m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         },
         "url": {
           "description": "request URL",
@@ -910,11 +899,10 @@
           "type": "array"
         },
         "timeout": {
-          "default": 30,
-          "description": "request timeout in seconds",
-          "maximum": 600,
-          "minimum": 1,
-          "type": "integer"
+          "default": "30s",
+          "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 10m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         },
         "url": {
           "description": "request URL",
@@ -1256,11 +1244,10 @@
           "type": "string"
         },
         "timeout": {
-          "default": 5,
-          "description": "query timeout in seconds",
-          "maximum": 120,
-          "minimum": 1,
-          "type": "integer"
+          "default": "5s",
+          "description": "query timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         },
         "type": {
           "default": "auto",
@@ -1309,11 +1296,10 @@
           "type": "string"
         },
         "timeout": {
-          "default": 10,
-          "description": "overall timeout in seconds",
-          "maximum": 300,
-          "minimum": 1,
-          "type": "integer"
+          "default": "10s",
+          "description": "overall timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "required": [
@@ -1340,11 +1326,10 @@
           "type": "string"
         },
         "timeout": {
-          "default": 2,
-          "description": "timeout per port, in seconds",
-          "maximum": 60,
-          "minimum": 1,
-          "type": "integer"
+          "default": "2s",
+          "description": "timeout per port (a duration with its unit, such as 30s, 5m or 2h; from 1s to 1m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "required": [
@@ -1372,22 +1357,20 @@
           "type": "integer"
         },
         "timeout": {
-          "default": 5,
-          "description": "connect timeout in seconds",
-          "maximum": 120,
-          "minimum": 1,
-          "type": "integer"
+          "default": "5s",
+          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         },
         "tls": {
           "description": "complete a TLS handshake after connecting, in whatever protocol the host speaks, TLS 1.0 on",
           "type": "boolean"
         },
         "wait": {
-          "default": 2,
-          "description": "seconds to wait for the service to say something",
-          "maximum": 120,
-          "minimum": 1,
-          "type": "integer"
+          "default": "2s",
+          "description": "how long to wait for the service to say something (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "required": [
@@ -1419,22 +1402,20 @@
           "type": "integer"
         },
         "timeout": {
-          "default": 5,
-          "description": "connect timeout in seconds",
-          "maximum": 120,
-          "minimum": 1,
-          "type": "integer"
+          "default": "5s",
+          "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         },
         "tls": {
           "description": "complete a TLS handshake before sending, in TLS 1.2 or newer since the payload crosses it",
           "type": "boolean"
         },
         "wait": {
-          "default": 2,
-          "description": "seconds to wait for a reply",
-          "maximum": 120,
-          "minimum": 1,
-          "type": "integer"
+          "default": "2s",
+          "description": "how long to wait for a reply (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "required": [
@@ -1477,11 +1458,10 @@
           "type": "boolean"
         },
         "timeout": {
-          "default": 2,
-          "description": "timeout per probe, in seconds",
-          "maximum": 60,
-          "minimum": 1,
-          "type": "integer"
+          "default": "2s",
+          "description": "timeout per probe (a duration with its unit, such as 30s, 5m or 2h; from 1s to 1m)",
+          "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|µs|μs|ms|s|m|h|d|w))+)$",
+          "type": "string"
         }
       },
       "required": [

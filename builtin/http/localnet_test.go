@@ -54,7 +54,7 @@ func TestOwnNetworkNeverOpensTheMetadataAddresses(t *testing.T) {
 	useRealBlocklist(t)
 	for _, host := range []string{"169.254.169.254", "100.100.100.200", "[fe80::1]", "[fd00:ec2::254]", "240.0.0.1", "0.0.0.0"} {
 		_, err := doRequest(context.Background(), "GET",
-			req(map[string]any{"url": "http://" + host + ":9/", "local-network": true, "timeout": 1}).WithSurface(plugin.SurfaceCLI))
+			req(map[string]any{"url": "http://" + host + ":9/", "local-network": true, "timeout": "1s"}).WithSurface(plugin.SurfaceCLI))
 		blocked := err != nil && view.AsError(err, "x").Code == "http.request.blocked"
 		if !blocked {
 			t.Errorf("%s with local-network was not refused: %v", host, err)

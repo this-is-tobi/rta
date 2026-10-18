@@ -146,7 +146,7 @@ func TestACertificateNotValidYetIsSaidSo(t *testing.T) {
 			Subject:   pkix.Name{CommonName: "ok"},
 			NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(200 * 24 * time.Hour),
 		})},
-		"warn-days": 30, "timeout": 5,
+		"warn-days": 30, "timeout": "5s",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -175,14 +175,14 @@ func codeOf(err error) string {
 // agent was handed that path inside a failed DNS lookup of it.
 func TestAPathThatNamesNoFileIsNotDialledAsAHost(t *testing.T) {
 	for _, target := range []string{"certs/tls.crt", "./nope.pem", "leaf.pem", `C:\certs\a.cer`} {
-		_, err := runInspect(context.Background(), req(map[string]any{"target": target, "timeout": 2}))
+		_, err := runInspect(context.Background(), req(map[string]any{"target": target, "timeout": "2s"}))
 		if code := codeOf(err); code != "cert.file.notfound" || !strings.Contains(err.Error(), "no certificate file at "+target) {
 			t.Errorf("%s: %v, want it said that there is no such file, and not dialled", target, err)
 		}
 	}
 
 	v, err := runExpiry(context.Background(), req(map[string]any{
-		"targets": []string{"/etc/ssl/leaf.pem"}, "warn-days": 30, "timeout": 2,
+		"targets": []string{"/etc/ssl/leaf.pem"}, "warn-days": 30, "timeout": "2s",
 	}).WithSurface(plugin.SurfaceMCP))
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +193,7 @@ func TestAPathThatNamesNoFileIsNotDialledAsAHost(t *testing.T) {
 	// At a terminal expiry reads files too, so the same mistyped path is a
 	// missing file there, not a host and not a lookup.
 	v, err = runExpiry(context.Background(), req(map[string]any{
-		"targets": []string{"/etc/ssl/leaf.pem"}, "warn-days": 30, "timeout": 2,
+		"targets": []string{"/etc/ssl/leaf.pem"}, "warn-days": 30, "timeout": "2s",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -203,7 +203,7 @@ func TestAPathThatNamesNoFileIsNotDialledAsAHost(t *testing.T) {
 	}
 
 	addr, _ := startTLS(t)
-	mcp := req(map[string]any{"target": addr, "timeout": 2}).WithSurface(plugin.SurfaceMCP)
+	mcp := req(map[string]any{"target": addr, "timeout": "2s"}).WithSurface(plugin.SurfaceMCP)
 	_, err = runInspect(context.Background(), mcp)
 	if codeOf(err) != "cert.file.notfound" {
 		t.Errorf("over MCP, a target that is no file: %v, want cert.file.notfound and no dial", err)
@@ -244,7 +244,7 @@ func TestOverMCPAnUnreadableCertificateFileIsNotSaidToBeMissing(t *testing.T) {
 func TestAnHTTPSURLIsReadAsTheHostItNames(t *testing.T) {
 	addr, _ := startTLS(t)
 	for _, target := range []string{"https://" + addr, "https://" + addr + "/", "HTTPS://" + addr + "/a/b?c=d"} {
-		v, err := runInspect(context.Background(), req(map[string]any{"target": target, "timeout": 5}))
+		v, err := runInspect(context.Background(), req(map[string]any{"target": target, "timeout": "5s"}))
 		if err != nil {
 			t.Errorf("inspect %s: %v, want the certificate of %s", target, err, addr)
 			continue
@@ -252,13 +252,13 @@ func TestAnHTTPSURLIsReadAsTheHostItNames(t *testing.T) {
 		if kv := v.(view.KeyValue); len(kv.Pairs) == 0 {
 			t.Errorf("inspect %s answered no rows", target)
 		}
-		if _, err := runChain(context.Background(), req(map[string]any{"target": target, "timeout": 5})); err != nil {
+		if _, err := runChain(context.Background(), req(map[string]any{"target": target, "timeout": "5s"})); err != nil {
 			t.Errorf("chain %s: %v", target, err)
 		}
 	}
 
 	v, err := runExpiry(context.Background(), req(map[string]any{
-		"targets": []string{"https://" + addr}, "warn-days": 30, "timeout": 5,
+		"targets": []string{"https://" + addr}, "warn-days": 30, "timeout": "5s",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +269,7 @@ func TestAnHTTPSURLIsReadAsTheHostItNames(t *testing.T) {
 	}
 
 	for _, target := range []string{"ftp://" + addr, "http://" + addr, "https://", "ssh://"} {
-		_, err := runInspect(context.Background(), req(map[string]any{"target": target, "timeout": 2}))
+		_, err := runInspect(context.Background(), req(map[string]any{"target": target, "timeout": "2s"}))
 		if codeOf(err) != "cert.target.invalid" {
 			t.Errorf("%s: %v, want cert.target.invalid", target, err)
 		}

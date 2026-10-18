@@ -402,11 +402,10 @@
                   "additionalProperties": false,
                   "properties": {
                     "timeout": {
-                      "default": 30,
-                      "description": "query timeout in seconds (read by audit.deps)",
-                      "maximum": 300,
-                      "minimum": 1,
-                      "type": "integer"
+                      "default": "30s",
+                      "description": "query timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m) (read by audit.deps)",
+                      "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                      "type": "string"
                     }
                   },
                   "type": "object"
@@ -422,11 +421,10 @@
                   "additionalProperties": false,
                   "properties": {
                     "timeout": {
-                      "default": 15,
-                      "description": "lookup timeout in seconds (read by audit.mail)",
-                      "maximum": 300,
-                      "minimum": 1,
-                      "type": "integer"
+                      "default": "15s",
+                      "description": "lookup timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m) (read by audit.mail)",
+                      "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                      "type": "string"
                     }
                   },
                   "type": "object"
@@ -452,11 +450,10 @@
                   "additionalProperties": false,
                   "properties": {
                     "timeout": {
-                      "default": 15,
-                      "description": "request timeout in seconds (read by audit.web)",
-                      "maximum": 300,
-                      "minimum": 1,
-                      "type": "integer"
+                      "default": "15s",
+                      "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m) (read by audit.web)",
+                      "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                      "type": "string"
                     }
                   },
                   "type": "object"
@@ -668,11 +665,10 @@
               "description": "Request any endpoint and inspect the response \u2014 a REST client",
               "properties": {
                 "timeout": {
-                  "default": 30,
-                  "description": "request timeout in seconds (read by http.delete, http.get, http.head, http.post, http.put)",
-                  "maximum": 600,
-                  "minimum": 1,
-                  "type": "integer"
+                  "default": "30s",
+                  "description": "request timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 10m) (read by http.delete, http.get, http.head, http.post, http.put)",
+                  "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                  "type": "string"
                 }
               },
               "type": "object"
@@ -715,11 +711,10 @@
                       "type": "string"
                     },
                     "timeout": {
-                      "default": 5,
-                      "description": "query timeout in seconds (read by net.dns)",
-                      "maximum": 120,
-                      "minimum": 1,
-                      "type": "integer"
+                      "default": "5s",
+                      "description": "query timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m) (read by net.dns)",
+                      "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                      "type": "string"
                     }
                   },
                   "type": "object"
@@ -735,11 +730,10 @@
                       "type": "integer"
                     },
                     "timeout": {
-                      "default": 10,
-                      "description": "overall timeout in seconds (read by net.ping)",
-                      "maximum": 300,
-                      "minimum": 1,
-                      "type": "integer"
+                      "default": "10s",
+                      "description": "overall timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 5m) (read by net.ping)",
+                      "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                      "type": "string"
                     }
                   },
                   "type": "object"
@@ -748,11 +742,10 @@
                   "additionalProperties": false,
                   "properties": {
                     "timeout": {
-                      "default": 2,
-                      "description": "timeout per port, in seconds (read by net.port)",
-                      "maximum": 60,
-                      "minimum": 1,
-                      "type": "integer"
+                      "default": "2s",
+                      "description": "timeout per port (a duration with its unit, such as 30s, 5m or 2h; from 1s to 1m) (read by net.port)",
+                      "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                      "type": "string"
                     }
                   },
                   "type": "object"
@@ -761,11 +754,10 @@
                   "additionalProperties": false,
                   "properties": {
                     "timeout": {
-                      "default": 5,
-                      "description": "connect timeout in seconds (read by net.probe)",
-                      "maximum": 120,
-                      "minimum": 1,
-                      "type": "integer"
+                      "default": "5s",
+                      "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m) (read by net.probe)",
+                      "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                      "type": "string"
                     }
                   },
                   "type": "object"
@@ -774,11 +766,10 @@
                   "additionalProperties": false,
                   "properties": {
                     "timeout": {
-                      "default": 5,
-                      "description": "connect timeout in seconds (read by net.send)",
-                      "maximum": 120,
-                      "minimum": 1,
-                      "type": "integer"
+                      "default": "5s",
+                      "description": "connect timeout (a duration with its unit, such as 30s, 5m or 2h; from 1s to 2m) (read by net.send)",
+                      "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                      "type": "string"
                     }
                   },
                   "type": "object"
@@ -806,11 +797,10 @@
                       "type": "boolean"
                     },
                     "timeout": {
-                      "default": 2,
-                      "description": "timeout per probe, in seconds (read by net.trace)",
-                      "maximum": 60,
-                      "minimum": 1,
-                      "type": "integer"
+                      "default": "2s",
+                      "description": "timeout per probe (a duration with its unit, such as 30s, 5m or 2h; from 1s to 1m) (read by net.trace)",
+                      "pattern": "^(?:0|(?:[0-9]+(?:\\.[0-9]+)?(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h|d|w))+)$",
+                      "type": "string"
                     }
                   },
                   "type": "object"

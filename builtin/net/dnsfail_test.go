@@ -25,7 +25,7 @@ func TestADNSLookupThatCouldNotBeMadeIsNotNoRecords(t *testing.T) {
 	// container with no network answers nothing. Driven through the declared
 	// input rather than a test-only seam, so what is exercised is what ships.
 	_, err := runDNS(t.Context(), plugin.NewRequest(map[string]any{
-		"name": "example.com", "type": "auto", "server": "127.0.0.1:9", "timeout": 2,
+		"name": "example.com", "type": "auto", "server": "127.0.0.1:9", "timeout": "2s",
 	}, false, false))
 	if err == nil {
 		t.Fatal("an unreachable resolver produced no error at all")
@@ -55,7 +55,7 @@ func TestADNSLookupThatCouldNotBeMadeIsNotNoRecords(t *testing.T) {
 // turning every empty result into a failure.
 func TestANameThatDoesNotExistIsStillNoRecords(t *testing.T) {
 	_, err := runDNS(t.Context(), plugin.NewRequest(map[string]any{
-		"name": "no-such-name-rta-test.invalid", "type": "auto", "timeout": 5,
+		"name": "no-such-name-rta-test.invalid", "type": "auto", "timeout": "5s",
 	}, false, false))
 	if err == nil {
 		t.Skip("this resolver answers for .invalid, so there is nothing to assert")

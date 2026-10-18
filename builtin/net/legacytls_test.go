@@ -38,7 +38,7 @@ func legacyTLSPort(t *testing.T) int {
 // takes what the host speaks and names it.
 func TestProbeNamesALegacyProtocol(t *testing.T) {
 	s := probeSections(t, map[string]any{
-		"host": "127.0.0.1", "port": legacyTLSPort(t), "tls": true, "timeout": 2, "wait": 1,
+		"host": "127.0.0.1", "port": legacyTLSPort(t), "tls": true, "timeout": "2s", "wait": "1s",
 	})
 	var got string
 	for _, p := range s.Items[0].View.(view.KeyValue).Pairs {
@@ -57,7 +57,7 @@ func TestProbeNamesALegacyProtocol(t *testing.T) {
 func TestSendKeepsTheTLSFloor(t *testing.T) {
 	_, err := runSend(context.Background(), plugin.NewRequest(map[string]any{
 		"host": "127.0.0.1", "port": legacyTLSPort(t), "tls": true,
-		"data": `PING\r\n`, "timeout": 2, "wait": 1,
+		"data": `PING\r\n`, "timeout": "2s", "wait": "1s",
 	}, false, false))
 	if ve := view.AsError(err, ""); ve == nil || ve.Code != "net.probe.tls" {
 		t.Fatalf("err = %v, want net.probe.tls", err)

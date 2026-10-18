@@ -182,7 +182,7 @@ func TestPortScan(t *testing.T) {
 	v, err := runPort(context.Background(), req(map[string]any{
 		"host":    "127.0.0.1",
 		"ports":   strconv.Itoa(openPort) + ",1",
-		"timeout": 2,
+		"timeout": "2s",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -201,7 +201,7 @@ func TestPortScan(t *testing.T) {
 }
 
 func TestPortBadSpec(t *testing.T) {
-	_, err := runPort(context.Background(), req(map[string]any{"host": "x", "ports": "nope", "timeout": 1}))
+	_, err := runPort(context.Background(), req(map[string]any{"host": "x", "ports": "nope", "timeout": "1s"}))
 	ve := view.AsError(err, "x")
 	if ve.Code != "net.port.badspec" || ve.Hint == "" {
 		t.Errorf("want coded badspec error with hint, got %+v", ve)
@@ -222,7 +222,7 @@ func TestARefusalOverMCPNamesArgumentsAndTools(t *testing.T) {
 			`the address goes in the "ip" argument and the names in the "hostname" argument`},
 		"no hostname": {runHostsAdd, mcp(map[string]any{"ip": "127.0.0.1"}),
 			`give the "hostname" argument the names to point at 127.0.0.1`},
-		"a bad port list": {runPort, mcp(map[string]any{"host": "x", "ports": "nope", "timeout": 1}),
+		"a bad port list": {runPort, mcp(map[string]any{"host": "x", "ports": "nope", "timeout": "1s"}),
 			`the "ports" argument takes a list such as 22,80,8000-8010`},
 		"nothing to send": {runSend, mcp(map[string]any{"host": "x", "port": 1, "data": " "}),
 			"give it in the \"data\" argument, or use the `net_probe` tool to listen without speaking"},
@@ -318,7 +318,7 @@ func TestDNSAutoPicksTypesFromTheQuery(t *testing.T) {
 }
 
 func TestDNSAutoReverseResolvesLoopback(t *testing.T) {
-	v, err := runDNS(context.Background(), req(map[string]any{"name": "127.0.0.1", "type": "auto", "timeout": 5}))
+	v, err := runDNS(context.Background(), req(map[string]any{"name": "127.0.0.1", "type": "auto", "timeout": "5s"}))
 	if err != nil {
 		t.Skipf("no reverse record for the loopback here: %v", err)
 	}
@@ -332,7 +332,7 @@ func TestDNSAutoReverseResolvesLoopback(t *testing.T) {
 // because asking broadly means most questions come back empty.
 func TestDNSNoRecordsIsCoded(t *testing.T) {
 	_, err := runDNS(context.Background(), req(map[string]any{
-		"name": "no-such-host.invalid", "type": "A", "timeout": 5,
+		"name": "no-such-host.invalid", "type": "A", "timeout": "5s",
 	}))
 	ve := view.AsError(err, "x")
 	if ve.Code != "net.dns.failed" && ve.Code != "net.dns.norecords" {
@@ -384,7 +384,7 @@ func TestResolverForLabelsAndDefaultsPort(t *testing.T) {
 }
 
 func TestPingLocalhost(t *testing.T) {
-	v, err := runPing(context.Background(), req(map[string]any{"host": "127.0.0.1", "count": 1, "timeout": 3}))
+	v, err := runPing(context.Background(), req(map[string]any{"host": "127.0.0.1", "count": 1, "timeout": "3s"}))
 	if err != nil {
 		// Unprivileged ICMP is environment-dependent; skip rather than flake.
 		t.Skipf("ping unavailable in this environment: %v", err)
@@ -539,7 +539,7 @@ func TestThePortScanDoesNotSpawnAGoroutinePerPort(t *testing.T) {
 
 	// 2000 distinct ports, all closed. Enough that a goroutine-per-port shape
 	// is unmistakable against a 1ms sampler.
-	r := req(map[string]any{"host": "127.0.0.1", "ports": "1-2000", "timeout": 1})
+	r := req(map[string]any{"host": "127.0.0.1", "ports": "1-2000", "timeout": "1s"})
 	if _, err := runPort(t.Context(), r); err != nil {
 		t.Fatalf("scan: %v", err)
 	}

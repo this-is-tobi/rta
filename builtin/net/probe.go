@@ -62,8 +62,8 @@ const drainWait = 200 * time.Millisecond
 // each — every read after the first got a fresh drainWait (200ms) no matter
 // how long the call had already run, so a server sending exactly one byte
 // every <200ms kept the call alive for up to 4096*200ms, about 13.6 minutes,
-// regardless of what --wait actually asked for (documented, capped at 120s,
-// as "seconds to wait for a reply"). deadline is the one ceiling every
+// regardless of what --wait actually asked for (documented, capped at 2m,
+// as how long to wait for a reply). deadline is the one ceiling every
 // per-read patience now shrinks to fit inside, so the promise --wait makes
 // is the promise it keeps.
 func readBanner(conn stdnet.Conn, wait time.Duration) ([]byte, error) {
@@ -179,8 +179,8 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 		return nil, view.Errorf("net.probe.badport", "port %d is out of range", port).
 			WithHint("use a port between 1 and 65535")
 	}
-	timeout := time.Duration(max(req.Int("timeout"), 1)) * time.Second
-	wait := time.Duration(max(req.Int("wait"), 1)) * time.Second
+	timeout := max(req.Duration("timeout"), time.Second)
+	wait := max(req.Duration("wait"), time.Second)
 	address := stdnet.JoinHostPort(host, strconv.Itoa(port))
 
 	start := time.Now()

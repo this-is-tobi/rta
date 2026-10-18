@@ -121,7 +121,7 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 			textclean.Record(host)).
 			WithHint("pass an internationalised name in its xn-- form, the name the request resolves")
 	}
-	timeout := time.Duration(req.Int("timeout")) * time.Second
+	timeout := req.Duration("timeout")
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
