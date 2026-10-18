@@ -2124,6 +2124,21 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		}
 		req = plugin.ResolveRequest(c, inputs, false, true).WithSurface(plugin.SurfaceCLI)
 	}
+	// A handler shapes its Primary value for a screen unless it is told the
+	// value is all a pipe will be handed (see PrintPrimary): `http get URL |
+	// jq .` is the document, not the 4 KiB a terminal shows of it. A dry run's
+	// view is the request that was not sent, and a body in it is the one that
+	// would have been: never the answer a pipe is asking for.
+	piping := !opts.dryRun && cli.PrimaryAlone(c.Primary, renderOpts)
+	if piping {
+		req = req.WithPipedPrimary()
+	}
+	show := func(v view.View) error {
+		if piping && cli.PrintPrimary(cmd.OutOrStdout(), v, c.Primary, renderOpts) {
+			return nil
+		}
+		return cli.Render(cmd.OutOrStdout(), v, renderOpts)
+	}
 	v, runErr := c.Run(ctx, req)
 	if runErr != nil {
 		ve := view.AsError(runErr, c.ID+".failed")
@@ -2141,7 +2156,7 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		// one.
 		var answered *plugin.AnsweredError
 		if errors.As(runErr, &answered) && answered.View != nil {
-			if err := cli.Render(cmd.OutOrStdout(), answered.View, renderOpts); err != nil {
+			if err := show(answered.View); err != nil {
 				return err
 			}
 		}
@@ -2158,12 +2173,7 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	if v == nil {
 		return nil
 	}
-	// A dry run's view is the request that was not sent, and a body in it is
-	// the one that would have been: never the answer a pipe is asking for.
-	if !opts.dryRun && cli.PrintPrimary(cmd.OutOrStdout(), v, c.Primary, renderOpts) {
-		return nil
-	}
-	return cli.Render(cmd.OutOrStdout(), v, renderOpts)
+	return show(v)
 }
 
 func collectValues(cmd *cobra.Command, c plugin.Capability, args []string) (map[string]any, error) {

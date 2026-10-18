@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	stdnet "net"
 	stdhttp "net/http"
@@ -467,6 +468,94 @@ func TestABodyCutAtTheCapIsNotLaidOutAsJSON(t *testing.T) {
 	}
 }
 
+// served is the body a test server sends, as the content type says.
+func served(t *testing.T, contentType, body string) string {
+	t.Helper()
+	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
+		w.Header().Set("Content-Type", contentType)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// `rta http get URL | jq .` and `> file` take the response as the server sent
+// it. The body was cut to the 4 KiB a screen shows and a JSON document was
+// re-indented, so a pipe received 4097 bytes of a 28 KB file with exit 0 and a
+// document that was not the server's. What the screen shows is the screen's
+// business and does not change.
+func TestAPipedBodyIsTheBodyAsFetched(t *testing.T) {
+	text := strings.Repeat("a line of text in the file\n", 1100)
+	compact := `{"items":[` + strings.TrimSuffix(strings.Repeat(`{"id":1,"name":"item"},`, 1500), ",") + `]}`
+	for name, tc := range map[string]struct{ contentType, body string }{
+		"text": {"text/plain", text},
+		"yaml": {"application/yaml", strings.Repeat("key: value\n", 3000)},
+		"json": {"application/json", compact},
+	} {
+		url := served(t, tc.contentType, tc.body)
+		v, err := doRequest(context.Background(), "GET", req(map[string]any{"url": url}).WithPipedPrimary())
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		pairs := pairsOf(t, v)
+		if pairs["body"] != tc.body {
+			t.Errorf("%s: the piped body is %d bytes of the %d the server sent", name, len(pairs["body"]), len(tc.body))
+		}
+		if _, cut := pairs["body shown"]; cut {
+			t.Errorf("%s: a body written whole says it was cut: %q", name, pairs["body shown"])
+		}
+
+		v, err = doRequest(context.Background(), "GET", req(map[string]any{"url": url}))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if shown := pairsOf(t, v)["body"]; shown == tc.body {
+			t.Errorf("%s: the screen's body is no longer shaped for the screen", name)
+		}
+	}
+}
+
+// A body longer than the 1 MiB rta reads is written as far as it was read and
+// then fails, naming the cap: a pipeline that took the first megabyte of a
+// file for the file would carry on with a truncated document and exit 0. The
+// screen keeps saying so beside its 4 KiB and exits 0, as it did.
+func TestAPipedBodyCutAtTheCapFailsAfterWritingWhatWasRead(t *testing.T) {
+	line := "0123456789abcdef\n"
+	whole := strings.Repeat(line, maxBody/len(line))
+	whole += strings.Repeat("x", maxBody-len(whole))
+	longer := whole + "and a little more\n"
+	piped := func(body string) (view.View, error) {
+		return doRequest(context.Background(), "GET",
+			req(map[string]any{"url": served(t, "text/plain", body)}).WithPipedPrimary())
+	}
+
+	v, err := piped(longer)
+	var answered *plugin.AnsweredError
+	if !errors.As(err, &answered) {
+		t.Fatalf("a body past the cap: err = %v, want the body carried by a failure", err)
+	}
+	if got := pairsOf(t, answered.View)["body"]; got != whole {
+		t.Errorf("the body written is %d bytes, want the first %d", len(got), len(whole))
+	}
+	verr := view.AsError(err, "x")
+	if verr.Code != "http.body.truncated" || !strings.Contains(verr.Message, "1 MiB") {
+		t.Errorf("failure = %s %q, want http.body.truncated naming the 1 MiB cap", verr.Code, verr.Message)
+	}
+	if v != nil {
+		t.Errorf("the answer is also returned beside the failure: %v", v)
+	}
+
+	if _, err := piped(whole); err != nil {
+		t.Errorf("a body of exactly the cap failed: %v", err)
+	}
+	v, err = doRequest(context.Background(), "GET", req(map[string]any{"url": served(t, "text/plain", longer)}))
+	if err != nil {
+		t.Errorf("on a screen: err = %v, want the display and exit 0", err)
+	} else if _, cut := pairsOf(t, v)["body shown"]; !cut {
+		t.Error("on a screen: the cut body does not say how much is shown")
+	}
+}
+
 // A HEAD response's size is the length it declares for the body a GET would
 // receive, which is what a HEAD is usually sent to learn. It has no body of
 // its own, and the size counted that: "0 B" beside a Content-Length of
@@ -521,7 +610,9 @@ func TestNormalResponseIsNotMarkedTruncated(t *testing.T) {
 }
 
 // A --dry-run that sends the request anyway is worse than none at all: it
-// reports what "would" happen after it has already happened.
+// reports what "would" happen after it has already happened. That holds for a
+// GET and a HEAD as much as for a write: a dry run is how a person checks, with
+// a token in the command, where it would go before it leaves.
 func TestDryRunSendsNothing(t *testing.T) {
 	hits := 0
 	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, _ *stdhttp.Request) {
@@ -530,7 +621,7 @@ func TestDryRunSendsNothing(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	for _, method := range []string{"post", "put", "delete"} {
+	for _, method := range []string{"get", "head", "post", "put", "delete"} {
 		v, err := doRequest(context.Background(), strings.ToUpper(method),
 			plugin.NewRequest(map[string]any{"url": srv.URL, "data": "payload", "timeout": 5}, true, true))
 		if err != nil {
