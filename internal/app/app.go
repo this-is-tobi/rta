@@ -20,6 +20,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"golang.org/x/term"
 
 	"github.com/this-is-tobi/rta/builtin/all"
@@ -1627,6 +1628,12 @@ func declareCompletion(cmd *cobra.Command, c plugin.Capability, positionals []pl
 				// its cursor against it, since a comma may follow. A
 				// positional is not this: it takes one value per word, and
 				// withoutTyped drops the ones already given.
+				//
+				// A flag given more than once is one list, so what an earlier
+				// occurrence named is chosen as surely as what is ahead of the
+				// comma, and is left out the same way: the TUI's box holds the
+				// whole list in one place, and a shell holds it across words.
+				out = without(out, givenElements(cmd, f))
 				return boxlist.Extend(toComplete, out), directive | cobra.ShellCompDirectiveNoSpace
 			})
 	}
@@ -1670,13 +1677,33 @@ func withoutTyped(out []cobra.Completion, f plugin.Field, positionals []plugin.F
 	if start < 0 || start >= len(args) {
 		return out
 	}
-	typed := make(map[string]bool, len(args)-start)
-	for _, a := range args[start:] {
-		typed[a] = true
+	return without(out, args[start:])
+}
+
+// givenElements is what the line has already given a list flag, across every
+// occurrence of it: the elements the flag holds once cobra has read the words
+// before the one being completed. A flag nobody gave holds its default, which is
+// not something the line chose.
+func givenElements(cmd *cobra.Command, f plugin.Field) []string {
+	flag := cmd.Flags().Lookup(f.Name)
+	if flag == nil || !flag.Changed {
+		return nil
+	}
+	if list, ok := flag.Value.(pflag.SliceValue); ok {
+		return list.GetSlice()
+	}
+	return nil
+}
+
+// without compares on the value alone: a candidate may carry a description after
+// a tab, and a name that was given is the same name whatever it is described as.
+func without(out []cobra.Completion, given []string) []cobra.Completion {
+	if len(given) == 0 {
+		return out
 	}
 	kept := make([]cobra.Completion, 0, len(out))
 	for _, o := range out {
-		if !typed[plugin.CandidateValue(o)] {
+		if !slices.Contains(given, plugin.CandidateValue(o)) {
 			kept = append(kept, o)
 		}
 	}
