@@ -26,6 +26,7 @@ package theme
 import (
 	"fmt"
 	"image/color"
+	"maps"
 	"math"
 	"regexp"
 	"slices"
@@ -188,6 +189,14 @@ func Fields() []string {
 	return out
 }
 
+// keys are the entries a `theme:` block takes: the palette's colours and the
+// setting about how status is drawn, sorted.
+func keys() []string {
+	out := append(Fields(), GradesKey)
+	sort.Strings(out)
+	return out
+}
+
 // HexColor is the one shape Apply accepts: truecolor, the same as every
 // built-in value above. Named colors and ANSI codes are not offered — one
 // format that always degrades correctly (package doc, above) is worth more
@@ -234,7 +243,8 @@ func (p Problem) String() string {
 }
 
 // Apply sets the palette from overrides, keyed the way Fields lists them,
-// each a "#rrggbb" string. Called at startup, before anything renders, and
+// each a "#rrggbb" string, and the way status is drawn from GradesKey, if the
+// map states one. Called at startup, before anything renders, and
 // again whenever the environment in force changes: every field resets to its
 // built-in first, so a second call with a different (or empty) map is a fresh
 // decision rather than one layered on the last.
@@ -251,7 +261,12 @@ func Apply(overrides map[string]string) []Problem {
 	for _, e := range fields {
 		e.set(e.builtin)
 	}
+	grades = GradesAll
 	for k, v := range usable {
+		if k == GradesKey {
+			grades, _ = ParseGrades(v)
+			continue
+		}
 		fields[k].set(v)
 	}
 	rebuildStyles()
@@ -278,16 +293,27 @@ func validate(source, as string, colors map[string]string) (map[string]string, [
 		}
 		_, known := fields[k]
 		switch {
+		// A choice among three words and not a colour, judged by its own rule before
+		// the colour rules below can tell it that it "is not a color".
+		case k == GradesKey:
+			if _, ok := ParseGrades(v); !ok {
+				problems = append(problems, Problem{Source: source, Field: written,
+					Reason: fmt.Sprintf("%q is not a way to draw status", v),
+					Hint: "one of: " + strings.Join(GradeModes(), ", ") +
+						" — all draws every status colour, alerts only warn and bad, off none"})
+				break
+			}
+			usable[k] = v
 		case !known:
 			// The guess is in the reason and not the hint: a note on a profile's pane
 			// is cut to its reason, and the mistake it exists to catch is a name
 			// one letter or one case from the right one.
 			reason := "not a color this rta understands"
-			if guess := NearestSlot(k); guess != "" {
+			if guess := near.Word(k, keys()); guess != "" {
 				reason += " — did you mean `" + guess + "`?"
 			}
 			problems = append(problems, Problem{Source: source, Field: written,
-				Reason: reason, Hint: "one of: " + strings.Join(Fields(), ", ")})
+				Reason: reason, Hint: "one of: " + strings.Join(keys(), ", ")})
 		// **An unquoted # is the likeliest mistake in a colour, and it arrives as
 		// nothing.** `label: #C792EA` is a label with a comment after it, which
 		// YAML reads as no value at all, and "\"\" is not a color" tells a person
@@ -406,10 +432,12 @@ var primaryApart = []distinct{
 // `theme:` of a file nobody named) is held to three rules, each leaving the
 // entry out, the layer beneath it standing, and a problem naming it:
 //
-//   - it may not state the status colours at all (statusSlots). Nearly equal,
-//     swapped, or the badge's text a digit from its background are all ways of
-//     making one thing read as another, and a threshold would have to guess what
-//     is too near for everybody's eyes; a slot it cannot state needs no guess.
+//   - it may not state the status colours at all (statusSlots), nor the setting
+//     about how they are drawn (GradesKey), which could make a failure read as
+//     plain text. Nearly equal, swapped, or the badge's text a digit from its
+//     background are all ways of making one thing read as another, and a
+//     threshold would have to guess what is too near for everybody's eyes; a slot
+//     it cannot state needs no guess.
 //   - a colour for text keeps contrastFloor against black and against white, so
 //     that it is not invisible on one of the two kinds of terminal.
 //   - the primary, whether stated or derived from a profile's colour, is not
@@ -474,14 +502,28 @@ func primaryOfAStatus(palette map[string]string) (distinct, bool) {
 	return distinct{}, false
 }
 
-// withoutStatus is the colours a guarded layer states that are not a status
-// colour, and a problem for each that is. Judged before the colour is, so that
-// `good: red` is told it is a status and not that it is not a colour: fixing
-// the second would only find the first.
+// withoutStatus is the entries a guarded layer states that are not a status
+// colour or the setting about drawing status, and a problem for each that is.
+// Judged before the colour is, so that `good: red` is told it is a status and not
+// that it is not a colour: fixing the second would only find the first.
+//
+// **The setting is held to the rule the colours are, for the same reason.** An
+// environment that could say `status: off` would make a failure read as plain
+// text on the operator's screen as surely as one that could say `bad` is the
+// colour of `good`, and a repository's ./.rta.yaml could do it to whoever opened
+// a terminal in the directory. Nobody who cloned a repository wrote that, so it
+// is the operator's, in their own named config file.
 func withoutStatus(l Layer, colors map[string]string) (map[string]string, []Problem) {
 	var problems []Problem
 	rest := make(map[string]string, len(colors))
 	for _, slot := range sortedKeys(colors) {
+		if slot == GradesKey {
+			problems = append(problems, Problem{Source: l.Source, Field: l.written(slot),
+				Reason: "sets how status is drawn, which only your own config file does",
+				Hint: "left out, so status is drawn as your own config file says — set it under theme: " +
+					"there, e.g. `rta config set theme.status alerts`"})
+			continue
+		}
 		if !IsStatus(slot) {
 			rest[slot] = colors[slot]
 			continue
@@ -569,7 +611,8 @@ func ApplyLayers(layers ...Layer) []Problem {
 // Effective is every slot's colour once overrides are applied over the
 // built-ins, without touching the live palette: what Current will answer after
 // Apply, for a caller that has to know whether applying would change anything,
-// or what a form would show.
+// or what a form would show. Colours only: the way status is drawn is not one,
+// and Changes answers for both.
 func Effective(overrides map[string]string) map[string]string {
 	usable, _ := validate("", "", overrides)
 	out := make(map[string]string, len(fields))
@@ -577,7 +620,9 @@ func Effective(overrides map[string]string) map[string]string {
 		out[slot] = e.builtin
 	}
 	for slot, hex := range usable {
-		out[slot] = hex
+		if slot != GradesKey {
+			out[slot] = hex
+		}
 	}
 	return out
 }
@@ -590,6 +635,23 @@ func Current() map[string]string {
 		out[k] = e.hex
 	}
 	return out
+}
+
+// Changes reports whether applying overrides would change what is drawn: a
+// colour, or the way status is drawn. The question the TUI asks on every tick of
+// the screen it is repainting for the environment in force, where repainting
+// for nothing is a cost every tick pays.
+func Changes(overrides map[string]string) bool {
+	return GradesOf(overrides) != grades || !maps.Equal(Effective(overrides), Current())
+}
+
+// GradesOf is the way status would be drawn once overrides are applied: the one
+// they state, if it is one, and otherwise the default, every grade in its colour.
+// Effective's counterpart for the entry that is not a colour.
+func GradesOf(overrides map[string]string) Grades {
+	usable, _ := validate("", "", overrides)
+	g, _ := ParseGrades(usable[GradesKey])
+	return g
 }
 
 // StatusKind classifies a status string for semantic coloring.
@@ -783,19 +845,10 @@ func ClassifyUsage(cell string) StatusKind {
 	}
 }
 
-// UsageStyle returns the style for a usage cell.
-func UsageStyle(cell string) lipgloss.Style {
-	switch ClassifyUsage(cell) {
-	case StatusGood:
-		return GoodText
-	case StatusWarn:
-		return WarnText
-	case StatusBad:
-		return BadText
-	default:
-		return Plain
-	}
-}
+// UsageStyle returns the style for a usage cell, graded the way StatusStyle
+// grades a word: under "alerts" the comfortable band is plain and the two that
+// ask for something keep their colour.
+func UsageStyle(cell string) lipgloss.Style { return Grade(ClassifyUsage(cell)) }
 
 // Badge renders text as a filled block in a colour chosen outside the palette
 // — today, the one an operator gave a profile.
@@ -876,18 +929,13 @@ func channel(pair string) float64 {
 	return math.Pow((c+0.055)/1.055, 2.4)
 }
 
-// StatusStyle returns the style for a status string.
+// StatusStyle returns the style for a status string: the colour of its grade,
+// as far as the way status is drawn (Grades) lets that grade have one. A safety
+// or trust cue (Cue) has no grade to quiet and is drawn in its colour whatever
+// the setting is.
 func StatusStyle(s string) lipgloss.Style {
-	switch ClassifyStatus(s) {
-	case StatusGood:
-		return GoodText
-	case StatusWarn:
-		return WarnText
-	case StatusBad:
-		return BadText
-	case StatusMuted:
-		return Subtle
-	default:
-		return Plain
+	if style, ok := Cue(s); ok {
+		return style
 	}
+	return Grade(ClassifyStatus(s))
 }

@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"encoding/json"
-	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -388,7 +387,7 @@ func (m *Model) syncPalette(s stamps) bool {
 		return false
 	}
 	overrides, _ := theme.Resolve(profile.ThemeLayers(s.cfg, m.active)...)
-	if maps.Equal(theme.Effective(overrides), theme.Current()) {
+	if !theme.Changes(overrides) {
 		return false
 	}
 	theme.Apply(overrides)
