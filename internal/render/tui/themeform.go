@@ -18,7 +18,9 @@ import (
 
 // The theme editor: every palette field theme.Fields() names, an empty box
 // for "no override" and the color it resolves to either way, written back
-// the same load-modify-write way arrange.go's dashboard saves already do.
+// the same load-modify-write way arrange.go's dashboard saves already do. And,
+// last, in the operator's own block alone, the one entry of `theme:` that is not
+// a colour: `status`, how much of the colour that grades is drawn.
 //
 // Purpose-built rather than routed through capForm: a color is a hex string
 // with one validator, not a plugin.Field carrying Positional/Local/Config
@@ -51,6 +53,20 @@ var themeFieldHelp = map[string]string{
 	"ink":     "text on a Warn background (the HINT badge)",
 }
 
+// gradesFieldHelp is the line for the one box that is no colour and takes a word
+// instead: it quiets the green, amber and red that grade, and leaves every word,
+// number and border drawn. Beside themeFieldHelp and not in it, which holds the
+// palette's slots and nothing else.
+const gradesFieldHelp = "how much green, amber and red is drawn: all, alerts (warn and bad only) or off"
+
+// fieldHelp is the line under a box.
+func fieldHelp(key string) string {
+	if key == theme.GradesKey {
+		return gradesFieldHelp
+	}
+	return themeFieldHelp[key]
+}
+
 // themeTarget is a place the palette is written down: the top-level `theme:`
 // block, or one profile's.
 //
@@ -80,26 +96,27 @@ type themeTarget struct {
 }
 
 // fields are the boxes this place offers, in the form's own order: every colour
-// for the operator's own block, and for a guarded one all but the status
-// colours, which only the operator's own named config file can state
-// (theme.Resolve). A box that saves a line the palette always leaves out is the
-// wrong thing to offer.
+// and then `status` for the operator's own block, and for a guarded one all but
+// the status colours and the setting, which only the operator's own named config
+// file can state (theme.Resolve). A box that saves a line the palette always
+// leaves out is the wrong thing to offer.
 func (t themeTarget) fields() []string {
 	if !t.guarded {
-		return themeFieldOrder
+		return append(slices.Clone(themeFieldOrder), theme.GradesKey)
 	}
 	return slices.DeleteFunc(slices.Clone(themeFieldOrder), theme.IsStatus)
 }
 
-// droppedStatuses are the status colours stored in a block that has no box for
-// them, which a save of the form leaves behind: sorted, for the notice.
+// droppedStatuses are the status colours, and the setting about drawing them,
+// stored in a block that has no box for them, which a save of the form leaves
+// behind: sorted, for the notice.
 func (t themeTarget) droppedStatuses() []string {
 	if !t.guarded {
 		return nil
 	}
 	var out []string
 	for slot := range t.stored {
-		if theme.IsStatus(slot) {
+		if theme.IsStatus(slot) || slot == theme.GradesKey {
 			out = append(out, slot)
 		}
 	}
@@ -119,6 +136,9 @@ func (t themeTarget) layers(colors map[string]string) []theme.Layer {
 // The picture the editor shows is this and not the live palette, which is
 // another place's as often as not: the environment in force is a different
 // screen from the one being edited.
+//
+// And under `status`, which is no colour, the way status would be drawn: the
+// word a box with that name shows as what it is "currently".
 func (t themeTarget) palette(typed map[string]string) (colours map[string]string, left map[string]theme.Problem) {
 	overrides, problems := theme.Resolve(t.layers(typed)...)
 	left = map[string]theme.Problem{}
@@ -127,7 +147,9 @@ func (t themeTarget) palette(typed map[string]string) (colours map[string]string
 			left[p.Field] = p
 		}
 	}
-	return theme.Effective(overrides), left
+	colours = theme.Effective(overrides)
+	colours[theme.GradesKey] = theme.GradesOf(overrides).String()
+	return colours, left
 }
 
 // themeTargetFor is the target for a profile, or for the top-level block with
@@ -217,11 +239,11 @@ func newThemeForm(target themeTarget) *themeForm {
 	for _, key := range offered {
 		v := target.stored[key] // "" when this field has no override on disk
 		tf.bindings[key] = &v
-		tf.offers[key] = paletteFor(key, live)
+		tf.offers[key] = offersFor(key, live)
 		in := huh.NewInput().
 			Title(key).
 			Description(fmt.Sprintf("%s (currently %s) — tab completes, ↑↓ browse",
-				themeFieldHelp[key], live[key])).
+				fieldHelp(key), live[key])).
 			Suggestions(tf.offers[key]).
 			Value(&v).
 			Validate(tf.validator(key))
@@ -277,6 +299,15 @@ func (tf *themeForm) focusedInput() (string, bool) {
 	return "", false
 }
 
+// offersFor is what a box can be completed to: the three ways to draw status for
+// the box that is about that, and the palette for every colour.
+func offersFor(key string, live map[string]string) []string {
+	if key == theme.GradesKey {
+		return theme.GradeModes()
+	}
+	return paletteFor(key, live)
+}
+
 // paletteFor is what this field can be completed to: its own current value
 // first, then the rest of the live palette.
 //
@@ -300,6 +331,18 @@ func paletteFor(key string, live map[string]string) []string {
 		out = append(out, live[other])
 	}
 	return out
+}
+
+// gradesOrEmpty accepts one of the ways to draw status or nothing at all, which
+// is hexOrEmpty's rule for the one box that is about a choice and not a colour.
+func gradesOrEmpty(s string) error {
+	if s = strings.TrimSpace(s); s == "" {
+		return nil
+	}
+	if _, ok := theme.ParseGrades(s); !ok {
+		return fmt.Errorf("must be %s", strings.Join(theme.GradeModes(), ", "))
+	}
+	return nil
 }
 
 // hexOrEmpty accepts theme.HexColor's shape or nothing at all — clearing a
@@ -326,6 +369,9 @@ func hexOrEmpty(s string) error {
 // what the preview's cross and `rta doctor` say.
 func (tf *themeForm) validator(key string) func(string) error {
 	return func(s string) error {
+		if key == theme.GradesKey {
+			return gradesOrEmpty(s)
+		}
 		if err := hexOrEmpty(s); err != nil {
 			return err
 		}
@@ -612,7 +658,11 @@ func (m Model) saveTheme() (tea.Model, tea.Cmd) {
 	// vanishes unannounced is a line somebody looks for. Not after a notice that
 	// ends on a command, which must be the last words on the line.
 	if dropped := target.droppedStatuses(); len(dropped) > 0 && len(problems) == 0 {
-		m.flash += " — dropped " + strings.Join(dropped, ", ") + ": the status colours are only set in your own config file"
+		why := "the status colours are only set in your own config file"
+		if slices.Contains(dropped, theme.GradesKey) {
+			why = "the status colours, and how they are drawn, are only set in your own config file"
+		}
+		m.flash += " — dropped " + strings.Join(dropped, ", ") + ": " + why
 	}
 	m.tickGen++
 	return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor)
