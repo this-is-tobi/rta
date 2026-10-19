@@ -1,10 +1,10 @@
 // Package theme is the single source of truth for styling across every
-// renderer. Sober but warm: one identity color, one sparing
+// renderer. Sober: one identity color, one sparing
 // accent, semantic state colors, and — the detail that makes structure
 // recede and content pop — two distinct grays: Faint for chrome (borders,
 // fills) and Muted for secondary text. No other renderer defines colors.
 //
-// One counterweight to the warm identity: Label, for the name of a pane. It
+// One counterweight to the identity: Label, for the name of a pane. It
 // exists because a panel title and the keys inside that panel were both
 // Primary, so a tile announced itself in exactly the colour of its own
 // contents and the eye had nothing to separate them by.
@@ -46,29 +46,77 @@ import (
 // "what hex was that" later; Apply and Current both need the string form, so
 // it is named here and the color is built from it, once.
 const (
-	primaryHex = "#D97757" // clay orange — identity, keys, selection
+	// primaryHex is the colour that says "you are here": the selection's border,
+	// the keys, the titles. So the palette is drawn around what it must never be
+	// taken for. The statuses are red, amber and green, and the clay orange this
+	// replaced sat in the middle of the first two. Every figure below is ΔE
+	// (CIEDE2000, where about 20 is the least that reads as another colour and not
+	// another shade), and says whose eyes it is for. The orange was 20 from warn
+	// and 14 from bad in normal vision, and 8 from warn and 0.9 from bad for a
+	// deuteranope, for whom a selected tile and a failed one were the same border.
+	// Violet is the hue no status uses, at the orange's own relative luminance
+	// (0.28: 5.4:1 on ink, 3.2:1 on white), so nothing else about how it reads
+	// moved. Its nearest status is bad in normal vision (31.6) and for a protanope
+	// (40.2), and good for a deuteranope (35.6). palette_guard_test.go holds it to
+	// 30 from every status for all three kinds of eye.
+	primaryHex = "#BA73DE" // orchid violet — identity, keys, selection
 	// The status colours and the accent sit at relative luminance 0.26, which
 	// is 3.4 against white and 6.2 against black. They were brighter, and a
 	// "warn" that was 13 against black was 1.6 against white: a light terminal
 	// showed "ok" and "warn" as near-white text on white. One palette that
 	// reads on both is worth more than a pretty dark one plus a guess at which
 	// terminal this is, and detecting it is a query some terminals never
-	// answer. Hue and saturation are the old ones, so a status still reads as
-	// the colour it was.
-	accentHex = "#D77015" // amber — sparing highlights (filter matches)
+	// answer. The status colours keep the hue and saturation they always had, so
+	// a status still reads as the colour it was.
+	//
+	// The accent is the one that moved with the primary, because it was an amber
+	// 11 ΔE from warn in normal vision and 1 from it to a deuteranope. It is a blue
+	// because of what the other colours leave, searched against these limits: 25
+	// from warn in normal vision (10 as a protanope or a deuteranope sees it), 20
+	// from bad, good and the primary in normal vision, enough chroma (40, in
+	// CIELAB) to read as a colour and not a grey, and 4.5:1 on ink and 3.0:1 on
+	// white. Only blues clear all of them, CIELAB hues 248° to 292°: a
+	// yellow-green falls short of good and warn, a pink of the primary and bad,
+	// an orange or a red of warn and bad. It is the blue with the most room on the
+	// tightest limit, at the status colours' own luminance, and as far from the
+	// label beside it as that family goes (15, and 17 to 18 colour-blind). What it
+	// actually holds is 55 from warn (58 and 62 colour-blind), 45 to 47 from bad
+	// and good in normal vision, and 29 from the primary in normal vision.
+	//
+	// What it gives up is the primary: a violet and a blue are two blues to a
+	// protanope or a deuteranope, so there the pair is 4.5 and 8.7 apart, and no
+	// colour the search found that meets the limits above is further than 7.5 and
+	// 10. The accent marks a prompt and a cursor glyph, which sit beside text and
+	// are told by where they are, and not a state.
+	accentHex = "#108CFE" // azure — sparing highlights (filter matches)
 	mutedHex  = "#8B8B96" // secondary text
 	faintHex  = "#4A4A56" // structure: borders, chart fills
-	// labelHex is Label's color, chosen against four constraints rather than
-	// by eye: hue 212° against Primary's 15°, near enough opposite that a
-	// title can never read as content; calibrated to Primary's exact relative
-	// luminance (0.286 both), so it sits beside the orange as a peer instead
-	// of shouting over it or fading under it, and keeps Primary's 3.12
-	// contrast on a light terminal — the 3.0 floor for bold text, which every
-	// brighter candidate fell through; only 30% saturated, so it stays
-	// subordinate to the content it names; and 57° from Good, the nearest
-	// status hue, since tile bodies are full of coloured statuses and a title
-	// that reads as one is worse than a title that reads as a key.
-	labelHex   = "#7794B6" // slate blue — pane names
+	// labelHex is Label's colour, found by search and not by eye among the colours
+	// near the slate blue it replaces, for the most room on the tightest of
+	// several constraints, in ΔE (CIEDE2000) for the eyes named: quiet, a CIELAB
+	// chroma of 18 against the primary's 64, since a pane's name is subordinate to
+	// the content it names; at least 20 from the primary in normal vision and 12
+	// as a protanope or a deuteranope sees it, so a title never reads as a key,
+	// where the slate blue was 20 and then 11 and 8, a blue and a violet being two
+	// blues to those eyes (this one is 21.7, then 14.9 and 12.7); at least 25 from
+	// every status colour in normal vision, since tile bodies are full of coloured
+	// statuses and a title that reads as one is worse than a title that reads as
+	// a key (27 from good, the nearest), and under colour-blindness 24.8 from bad
+	// for a protanope and 25.0 from good for a deuteranope, which the guard holds
+	// to 20; and 4.5:1 on ink and 3.0:1 on white, the floor for bold text. The 4.5
+	// on ink is what fixes its brightness, a little dimmer than the primary
+	// (relative luminance 0.23 against 0.28), which suits the subordinate one.
+	// Steel teal is what is left in that corner. The very nearest colour to the
+	// slate blue clears the primary by 0.2 in normal vision and for a deuteranope;
+	// this one clears it by 1.7 and 0.7.
+	//
+	// What it gives up is the muted text beside it: 15.9 in normal vision, but 4.5
+	// for a protanope and 8.3 for a deuteranope, where the slate blue was 11.8,
+	// 9.2 and 10.0. No colour the search found that meets the limits above does
+	// better than 5.2 for a protanope, so this is the corner and not the pick; a
+	// pane's name is bold and sits in the border, and muted text is the body, told
+	// by where it is.
+	labelHex   = "#5D8A9C" // steel teal — pane names
 	goodHex    = "#229F6C"
 	warnHex    = "#BF7E00"
 	badHex     = "#FF4357"

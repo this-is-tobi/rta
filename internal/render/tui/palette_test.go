@@ -54,6 +54,16 @@ func hexOf(c color.Color) string {
 	return fmt.Sprintf("#%02X%02X%02X", r>>8, g>>8, b>>8)
 }
 
+// sgrOf is a "#RRGGBB" as the "38;2;r;g;b" a terminal receives for it as a
+// foreground, so a test names the built-in it expects and not its digits.
+func sgrOf(hex string) string {
+	var r, g, b uint8
+	if _, err := fmt.Sscanf(hex, "#%02x%02x%02x", &r, &g, &b); err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("38;2;%d;%d;%d", r, g, b)
+}
+
 func TestASessionOpensInTheColoursOfTheEnvironmentThatIsOn(t *testing.T) {
 	resetTheme(t)
 	m := profileModel(t, themedProfiles())
@@ -98,7 +108,7 @@ func TestSwitchingEnvironmentRepaintsTheScreenAndSwitchingOffPutsItBack(t *testi
 	m.result = resultMsg{cap: c, view: shown, raw: shown}
 	m = m.fitToWindow()
 	m.renderResult()
-	if got := fgBefore(t, m.viewport.View(), "used"); got != "38;2;217;119;87" {
+	if got := fgBefore(t, m.viewport.View(), "used"); got != sgrOf(builtin("primary")) {
 		t.Fatalf("a key on the result is %s before the switch, want the built-in primary", got)
 	}
 
@@ -130,7 +140,7 @@ func TestSwitchingEnvironmentRepaintsTheScreenAndSwitchingOffPutsItBack(t *testi
 	if got := hexOf(m.spinner.Style.GetForeground()); got != strings.ToUpper(builtin("primary")) {
 		t.Errorf("the spinner is %s after switching off", got)
 	}
-	if got := fgBefore(t, m.viewport.View(), "used"); got != "38;2;217;119;87" {
+	if got := fgBefore(t, m.viewport.View(), "used"); got != sgrOf(builtin("primary")) {
 		t.Errorf("a key on the result is %s after switching off, want the built-in primary", got)
 	}
 }
