@@ -138,6 +138,25 @@ func TestLastIsTheElementBeingTyped(t *testing.T) {
 	}
 }
 
+// Listed is what the box has chosen already: every element but the one being
+// typed, read the way Split reads them, so a quoted one holding a comma is one.
+func TestListedIsWhatTheBoxHasChosenAlready(t *testing.T) {
+	for text, want := range map[string][]string{
+		"":               {},
+		"alpha":          {},
+		"alpha, ":        {"alpha"},
+		"alpha,be":       {"alpha"},
+		`"a,b", alpha, `: {"a,b", "alpha"},
+		"x,  y ,z":       {"x", "y"},
+		`a, "b,c`:        {"a"},
+		"a,,":            {"a", ""},
+	} {
+		if got := Listed(text); !slices.Equal(got, want) {
+			t.Errorf("Listed(%q) = %q, want %q", text, got, want)
+		}
+	}
+}
+
 // Extend keeps the suggestions that continue the element being typed, each
 // rewritten as the whole box it would make: the head keeps the spacing that
 // was typed, an element the box reads back as itself is written bare and one

@@ -103,6 +103,18 @@ func Last(text string) (head, fragment string, quoted bool) {
 	return text[:last.start+gap], last.value, last.quoted
 }
 
+// Listed is the elements the box lists ahead of the one being typed, which is
+// what a completion leaves out: an empty box lists none, and neither does a box
+// holding a single element, since that one is still being typed.
+func Listed(text string) []string {
+	elements := scan(text)
+	out := make([]string, 0, len(elements)-1)
+	for _, e := range elements[:len(elements)-1] {
+		out = append(out, e.value)
+	}
+	return out
+}
+
 // Extend keeps the entries that continue the element being typed, each
 // rewritten as the whole box it would make: that is what a widget matches
 // against, which compares a suggestion with the entire box and not with the
@@ -124,10 +136,10 @@ func Last(text string) (head, fragment string, quoted bool) {
 // head, so an entry that is exactly it is still offered.
 func Extend(typed string, entries []string) []string {
 	head, fragment, quoted := Last(typed)
-	elements := scan(typed)
-	listed := make(map[string]bool, len(elements))
-	for _, e := range elements[:len(elements)-1] {
-		listed[e.value] = true
+	already := Listed(typed)
+	listed := make(map[string]bool, len(already))
+	for _, v := range already {
+		listed[v] = true
 	}
 	out := make([]string, 0, len(entries))
 	for _, entry := range entries {
