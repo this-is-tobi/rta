@@ -486,7 +486,7 @@ func TestInfoIsWellFormed(t *testing.T) {
 		}
 		keys[p.Key] = true
 	}
-	for _, want := range []string{"dns", "proxy", throughputKey} {
+	for _, want := range []string{"status", "route", "traffic", "dns", "hosts", "ip"} {
 		if !keys[want] {
 			t.Errorf("missing %q pair", want)
 		}
@@ -660,14 +660,11 @@ func TestThroughputCountsOnlyTheInterfacesThatAreCounted(t *testing.T) {
 // (lo on Linux, lo0 on macOS): it is read from the interface's flag and not
 // from its name.
 func TestTheLoopbackInterfaceIsNotCounted(t *testing.T) {
-	keep, err := countedInterfaces()
-	if err != nil {
-		t.Fatal(err)
-	}
 	ifs, err := stdnet.Interfaces()
 	if err != nil {
 		t.Fatal(err)
 	}
+	keep := countedIn(ifs)
 	seen := false
 	for _, in := range ifs {
 		if in.Flags&stdnet.FlagLoopback != 0 {
@@ -720,15 +717,19 @@ func TestABridgeAndAVethAreContainerPlumbingAndAnEthernetIsNot(t *testing.T) {
 	}
 }
 
-// The row says what it leaves out, on the tile and on the page: a figure
-// that is lower than the sum of every interface has to be read as lower
-// on purpose.
+// The throughput says what it leaves out, where there is room to: a figure that
+// is lower than the sum of every interface has to be read as lower on purpose.
+// The tile's row is keyed "traffic", because a key of thirty characters pushes
+// every value of the tile under its key and doubles its height; the page that
+// enter opens keeps the long key, and the capability's text, which an agent
+// reads, says the same.
 func TestThroughputNamesWhatItLeavesOut(t *testing.T) {
-	v, err := runOverview(context.Background(), req(nil))
-	if err != nil {
-		t.Fatal(err)
+	for _, c := range Plugin().Capabilities {
+		if c.ID == "net.overview" && !strings.Contains(c.Description, "loopback") {
+			t.Errorf("the description of %s does not say the throughput leaves out the loopback: %q", c.ID, c.Description)
+		}
 	}
-	for _, p := range v.(view.KeyValue).Pairs {
+	for _, p := range calm().summary().Pairs {
 		if strings.HasPrefix(p.Key, "throughput") {
 			if p.Key != throughputKey || !strings.Contains(p.Key, "loopback") {
 				t.Errorf("row = %q, want %q", p.Key, throughputKey)
@@ -736,5 +737,5 @@ func TestThroughputNamesWhatItLeavesOut(t *testing.T) {
 			return
 		}
 	}
-	t.Error("the overview has no throughput row")
+	t.Error("the detailed summary has no throughput row")
 }

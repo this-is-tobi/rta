@@ -32,14 +32,14 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 │ host    laptop.home · up 4d 19h     │ │ … enter for details                  │
 ╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
 ╭─ grant.list ────────────────────────╮ ╭─ net.overview ───────────────────────╮
-│ guard  off — any process running as │ │ en0         192.168.1.20 ·           │
-│ you can issue a grant               │ │             2001:db8:b23:68c0:14cd:  │
-│ (grant.guard.on)                    │ │             1a1e:1cea:bc2f           │
-│                                     │ │ dns         192.168.1.99 · 9.9.9.9 · │
-│ No grant is standing — agents reach │ │             9.9.9.10 · 192.168.1.254 │
-│ only what needs none.               │ │             · 8.8.8.8 ·              │
-│ Allow one with: grant.allow         │ │             fd0f:ee:b0::1            │
-│ target=<capability> ttl=15m         │ │ … enter for details                  │
+│ guard  off — any process running as │ │ status   ok                          │
+│ you can issue a grant               │ │ route    via 192.168.1.254 on en0    │
+│ (grant.guard.on)                    │ │ traffic  rx 8.8 · tx 25.5 KiB/s      │
+│                                     │ │ dns      192.168.1.99 (+5 fallback)  │
+│ No grant is standing — agents reach │ │ hosts    5 custom                    │
+│ only what needs none.               │ │ ip       192.168.1.20                │
+│ Allow one with: grant.allow         │ │                                      │
+│ target=<capability> ttl=15m         │ │                                      │
 ╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
  ↑↓←→ select · enter search · f profiles · p plugins · t theme · V view
  + add tile · U unlock store · b browse · q quit · ? help
