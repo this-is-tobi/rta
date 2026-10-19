@@ -560,6 +560,11 @@ type Field struct {
 	// entry ending in a separator composes within an element the same way
 	// it does in a String box.
 	//
+	// When the answer leaves nothing the fence holds for the input being
+	// completed, the host offers the fence's own entries in its place and
+	// says the service gave no answer, or that none of its names are in the
+	// fence.
+	//
 	// Registration refuses Live without Suggest, beside Options, or on
 	// anything but a String or a StringSlice input.
 	Live bool

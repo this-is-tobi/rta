@@ -58,7 +58,25 @@ type completeMsg struct {
 	field string
 	c     tunnel.Completion
 	err   *view.Error
+	// offer says whose the items are, which the line under the form then says.
+	offer offerKind
 }
+
+// offerKind is whose entries a completion offers. The profile's own are not the
+// service's answer, and why the press fell back to them is two statements: that the
+// service said nothing, and that it said names the connection does not reach.
+type offerKind int
+
+const (
+	// offerService: the items are what the service answered, held to the fence.
+	offerService offerKind = iota
+	// offerNoAnswer: the service listed none, or could not — a Suggest has no way
+	// to say which.
+	offerNoAnswer
+	// offerOutside: the service listed names and the connection reaches none of
+	// them. It did answer, and the line must not say it did not.
+	offerOutside
+)
 
 // completionTarget is the field a tab would cluster-complete right now: the
 // coordinate field of the connection editor, or the Secret-reference field of
@@ -369,14 +387,38 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A list box takes each name once, so the ones it lists already are
 		// not candidates: the answer is counted and named for the box as it
 		// stands, and a press that leaves nothing says so.
-		raw := fence.Filter(f, suggest(ctx, req))
+		//
+		// And when nothing the fence holds is left of the answer — the service
+		// listed none, or could not (a Suggest has no way to say which), or
+		// listed only what the connection does not reach — the fence's own
+		// entries are what the box offers, as on the keystroke channel, where
+		// Narrow gives a Live box the allowlist. A credential bound in each of
+		// the namespaces cannot list them cluster-wide, and "no completions" over
+		// a box whose profile names the namespaces would be the one answer that
+		// is not true. Narrow and not a second reading of the fence, so the two
+		// channels cannot offer different lists; narrowed to the text, since the
+		// service would have been, and so the line counts what the box can take.
+		//
+		// The last of the three is told apart from the first two, since the
+		// service did answer and a line saying it did not would be false; what
+		// it answered is never listed, as it is the service's whole view.
+		answer := suggest(ctx, req)
+		raw := fence.Filter(f, answer)
+		offer := offerService
+		if len(raw) == 0 {
+			raw = startingWith(fence.Narrow(f, nil), box.partial)
+			offer = offerNoAnswer
+			if len(answer) > 0 {
+				offer = offerOutside
+			}
+		}
 		items := make([]string, 0, len(raw))
 		for _, entry := range raw {
 			if v := plugin.CandidateValue(entry); !textclean.Deceives(v) && !slices.Contains(box.listed, v) {
 				items = append(items, v)
 			}
 		}
-		return completeMsg{form: cf, field: f.Name,
+		return completeMsg{form: cf, field: f.Name, offer: offer,
 			c: tunnel.Completion{Items: items, Names: items, What: what}}
 	}
 }
@@ -450,6 +492,19 @@ func continuesAnEntry(fence plugin.Fence, f plugin.Field, text string) bool {
 	return slices.ContainsFunc(fence.Offer(f), func(entry string) bool {
 		return strings.HasPrefix(entry, text)
 	})
+}
+
+// startingWith keeps the entries that continue partial, in the case-insensitive
+// way a box compares a suggestion with what is typed (boxlist.Extend, the widget).
+func startingWith(entries []string, partial string) []string {
+	low := strings.ToLower(partial)
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if strings.HasPrefix(strings.ToLower(plugin.CandidateValue(entry)), low) {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 // completeLocally is tab on every other field, and it is where the sentence
@@ -602,9 +657,27 @@ func (m Model) applyCompletion(msg completeMsg) (tea.Model, tea.Cmd) {
 	// a non-empty value, so on an empty box there is no ghost yet and the
 	// names themselves are the answer; once something is typed the ghost is
 	// on screen and what is worth saying is how to drive it.
-	if strings.TrimSpace(*m.form.bindings[msg.field]) == "" {
+	//
+	// An offer that is the profile's own says whose it is and why, in a guide's
+	// colour: the service did not confirm that any of it exists, and a check mark
+	// would.
+	empty := strings.TrimSpace(*m.form.bindings[msg.field]) == ""
+	why := ""
+	switch msg.offer {
+	case offerNoAnswer:
+		why = "the service gave no answer; "
+	case offerOutside:
+		why = "none of the service's names are in the profile's fence; "
+	}
+	switch {
+	case why != "" && empty:
+		m.guide(why + "the profile's entries for " + msg.field + ": " + strings.Join(msg.c.Names, ", "))
+	case why != "":
+		m.guide(fmt.Sprintf("%s%d of the profile's entries for %s — ↓ cycles, tab completes",
+			why, len(msg.c.Items), msg.field))
+	case empty:
 		m.flash = msg.c.What + ": " + strings.Join(msg.c.Names, ", ")
-	} else {
+	default:
 		m.flash = fmt.Sprintf("%d %s — ↓ cycles, tab completes", len(msg.c.Items), msg.c.What)
 	}
 	if wired {

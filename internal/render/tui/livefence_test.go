@@ -464,3 +464,229 @@ func TestATabAfterAHeldPressMovesOn(t *testing.T) {
 		t.Errorf("the service was asked %d times", lr.calls())
 	}
 }
+
+// A fenced box being completed: the service may not be able to list what the
+// profile reaches. A credential bound by a Role in each namespace cannot list
+// them cluster-wide, so its answer is empty, or an error the plugin keeps silent,
+// and "no completions" over a box whose fence names the namespaces says nothing
+// true. The keystroke channel already offers the allowlist there.
+
+// What the service could not say, the fence does: the allowlist narrowed to what is
+// typed, the line says whose answer it is, and a tab takes one without asking again.
+// The line says why as well, and truthfully: a service that gave names none of which
+// the connection reaches did answer, and "no answer" over it would be false — nor
+// does the line list the names the fence left out, which are the service's whole view.
+func TestAFencedLiveBoxOffersTheFenceWhenTheServiceHasNoAnswer(t *testing.T) {
+	noHistory(t)
+	const noAnswer = "the service gave no answer"
+	const outside = "none of the service's names are in the profile's fence"
+	for name, tc := range map[string]struct {
+		answers []string
+		lead    string
+		absent  []string
+	}{
+		"a failed answer": {nil, noAnswer, nil},
+		"an empty answer": {[]string{}, noAnswer, nil},
+		"an answer outside the fence": {[]string{"unrelated", "elsewhere"}, outside,
+			[]string{"no answer", "unrelated", "elsewhere"}},
+	} {
+		answers := tc.answers
+		t.Run(name, func(t *testing.T) {
+			lr := &liveRecorder{}
+			m, c := liveFenceModel(t, shopFence, namespaceListLive(lr, answers...))
+			nm := openBox(t, m, c, "")
+
+			nm = fetchLive(t, nm)
+			if lr.calls() != 1 {
+				t.Fatalf("the service was asked %d times, want once", lr.calls())
+			}
+			if got, want := nm.form.suggested["namespace"], []string{"shop", "jobs", "audit"}; !slices.Equal(got, want) {
+				t.Errorf("suggested = %v, want the fence's own entries", got)
+			}
+			for _, want := range []string{tc.lead, "the profile's entries for namespace", "shop, jobs, audit"} {
+				if !strings.Contains(nm.flash, want) {
+					t.Errorf("flash = %q, want it to say %q", nm.flash, want)
+				}
+			}
+			for _, leaked := range tc.absent {
+				if strings.Contains(nm.flash, leaked) {
+					t.Errorf("flash = %q says %q", nm.flash, leaked)
+				}
+			}
+			// A guide's colour: the service did not confirm that any of it exists.
+			if !flashedAsGuide(nm) {
+				t.Errorf("flash %q is not drawn as a guide (guide %q, refusal %q)", nm.flash, nm.flashGuide, nm.flashBad)
+			}
+
+			// Narrowed to what is typed, the elements already listed left out.
+			again, c2 := liveFenceModel(t, shopFence, namespaceListLive(lr, answers...))
+			nm = openBox(t, again, c2, "shop, j")
+			nm = fetchLive(t, nm)
+			if got, want := nm.form.suggested["namespace"], []string{"jobs"}; !slices.Equal(got, want) {
+				t.Errorf("suggested = %v after typing, want only the entry that continues j", got)
+			}
+			if want := tc.lead + "; 1 of the profile's entries for namespace"; !strings.Contains(nm.flash, want) {
+				t.Errorf("flash = %q, want it to say %q", nm.flash, want)
+			}
+			for _, leaked := range tc.absent {
+				if strings.Contains(nm.flash, leaked) {
+					t.Errorf("flash = %q says %q", nm.flash, leaked)
+				}
+			}
+			if !flashedAsGuide(nm) {
+				t.Errorf("flash %q is not drawn as a guide", nm.flash)
+			}
+			if got, want := offeredIn(nm, "namespace"), []string{"shop, jobs"}; !slices.Equal(got, want) {
+				t.Errorf("the box offers %q, want the entry once", got)
+			}
+
+			// Taken in place, with no further call.
+			calls := lr.calls()
+			next, _ := nm.Update(tabKey)
+			nm = next.(Model)
+			if got := *nm.form.bindings["namespace"]; got != "shop, jobs" {
+				t.Errorf("tab left the box at %q, want the entry taken", got)
+			}
+			if lr.calls() != calls {
+				t.Errorf("the accept called the service (%d calls)", lr.calls())
+			}
+		})
+	}
+}
+
+// The same on a box that holds one value, where the typed text is the whole box.
+func TestAFencedLiveStringBoxOffersTheFenceWhenTheServiceHasNoAnswer(t *testing.T) {
+	noHistory(t)
+	lr := &liveRecorder{}
+	m, c := liveFenceModel(t, shopFence, namespaceOneLive(lr))
+	nm := openBox(t, m, c, "j")
+
+	nm = fetchLive(t, nm)
+	if got, want := nm.form.suggested["namespace"], []string{"jobs"}; !slices.Equal(got, want) {
+		t.Errorf("suggested = %v, want the entry that continues j", got)
+	}
+	if !strings.Contains(nm.flash, "profile") || !strings.Contains(nm.flash, "no answer") {
+		t.Errorf("flash = %q, want it to say whose answer this is", nm.flash)
+	}
+}
+
+// The one entry that continues what is typed is already in the box: no completions,
+// said the usual way. (Text that continues no entry at all never gets this far: it
+// holds the press.)
+func TestAFencedLiveBoxWithNothingLeftToContinueTheTextSaysSo(t *testing.T) {
+	noHistory(t)
+	lr := &liveRecorder{}
+	m, c := liveFenceModel(t, shopFence, namespaceListLive(lr))
+	nm := openBox(t, m, c, "shop, sh")
+
+	nm = fetchLive(t, nm)
+	if nm.flash != "no namespace completions" || nm.flash != nm.flashBad {
+		t.Errorf("flash = %q, want the plain refusal", nm.flash)
+	}
+	if got := nm.form.suggested["namespace"]; len(got) != 0 {
+		t.Errorf("suggested = %v, want nothing", got)
+	}
+}
+
+// The fence's own entries are offered by the same rule the service's answer is
+// held to: a list box takes each name once, so the ones it lists already are not on
+// offer, and a box that lists every entry has nothing left to say but that.
+func TestTheFencesOwnEntriesLeaveOutWhatTheListBoxAlreadyHolds(t *testing.T) {
+	noHistory(t)
+	lr := &liveRecorder{}
+	m, c := liveFenceModel(t, shopFence, namespaceListLive(lr))
+	nm := openBox(t, m, c, "shop, ")
+
+	nm = fetchLive(t, nm)
+	if got, want := nm.form.suggested["namespace"], []string{"jobs", "audit"}; !slices.Equal(got, want) {
+		t.Errorf("suggested = %v, want the entries the box does not list", got)
+	}
+	if want := "the service gave no answer; 2 of the profile's entries for namespace"; !strings.Contains(nm.flash, want) {
+		t.Errorf("flash = %q, want it to count %q", nm.flash, want)
+	}
+
+	again, c2 := liveFenceModel(t, shopFence, namespaceListLive(lr))
+	nm = openBox(t, again, c2, "shop, jobs, audit, ")
+	nm = fetchLive(t, nm)
+	if nm.flash != "no namespace completions" || !flashedAsRefusal(nm) {
+		t.Errorf("flash = %q, want the plain refusal for a box that lists every entry", nm.flash)
+	}
+	if got := nm.form.suggested["namespace"]; len(got) != 0 {
+		t.Errorf("suggested = %v, want nothing", got)
+	}
+}
+
+// An entry that would display as something else is not offered either, however it
+// got into the fence: a completion is typed into the box as it is offered, and one
+// holding a bidi override reads as another name than the one the run is checked for.
+func TestAFenceEntryThatWouldDisplayAsSomethingElseIsNotOffered(t *testing.T) {
+	noHistory(t)
+	deceptive := "jobs" + string(rune(0x202e)) + "dua"
+	fence := map[string]any{"namespace": []any{"shop", deceptive, "audit"}}
+
+	lr := &liveRecorder{}
+	m, c := liveFenceModel(t, fence, namespaceListLive(lr))
+	nm := openBox(t, m, c, "")
+	nm = fetchLive(t, nm)
+	if got, want := nm.form.suggested["namespace"], []string{"shop", "audit"}; !slices.Equal(got, want) {
+		t.Errorf("suggested = %q, want only the entries that display as themselves", got)
+	}
+
+	again, c2 := liveFenceModel(t, fence, namespaceListLive(lr))
+	nm = openBox(t, again, c2, "jo")
+	nm = fetchLive(t, nm)
+	if nm.flash != "no namespace completions" {
+		t.Errorf("flash = %q, want the plain refusal: the only entry that continues jo is not offered", nm.flash)
+	}
+	if got := nm.form.suggested["namespace"]; len(got) != 0 {
+		t.Errorf("suggested = %q, want nothing", got)
+	}
+}
+
+// An answer with entries the fence holds is the answer, as it always was: the
+// fence's other entries do not join it, and the line does not talk of the profile.
+func TestAFencedLiveBoxKeepsAnAnswerThatHasEntries(t *testing.T) {
+	noHistory(t)
+	lr := &liveRecorder{}
+	m, c := liveFenceModel(t, shopFence, namespaceListLive(lr, "shop", "unrelated", "audit"))
+	nm := openBox(t, m, c, "")
+
+	nm = fetchLive(t, nm)
+	if got, want := nm.form.suggested["namespace"], []string{"shop", "audit"}; !slices.Equal(got, want) {
+		t.Errorf("suggested = %v, want the answer held to the fence", got)
+	}
+	if strings.Contains(nm.flash, "profile") || !strings.Contains(nm.flash, "shop, audit") {
+		t.Errorf("flash = %q, want the plain listing of the answer", nm.flash)
+	}
+}
+
+// The box being completed is not held by what is typed in it, and the request
+// carries it as the partial: the answer is the fence's to filter.
+func TestAPressOnAFencedBoxIsNotHeldByItsOwnText(t *testing.T) {
+	noHistory(t)
+	lr := &liveRecorder{}
+	m, c := liveFenceModel(t, shopFence, namespaceOneLive(lr, "shop", "shoes"))
+	nm := openBox(t, m, c, "sh")
+
+	nm = fetchLive(t, nm)
+	if got := lr.last(t).String("namespace"); got != "sh" {
+		t.Errorf("the request carries %q, want the text typed", got)
+	}
+	if got, want := nm.form.suggested["namespace"], []string{"shop"}; !slices.Equal(got, want) {
+		t.Errorf("suggested = %v, want the answer held to the fence", got)
+	}
+}
+
+// A box the profile does not fence has nothing to fall back on.
+func TestAnUnfencedLiveBoxWithNoAnswerStaysEmptyHanded(t *testing.T) {
+	noHistory(t)
+	lr := &liveRecorder{}
+	m, c := liveFenceModel(t, shopFence, namespaceListLive(lr))
+	nm := openLiveList(t, m, c)
+	setBox(nm.form, "namespace", "")
+
+	nm = fetchLive(t, nm)
+	if nm.flash != "no namespace completions" {
+		t.Errorf("flash = %q, want the plain refusal with no profile in force", nm.flash)
+	}
+}
