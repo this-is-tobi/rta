@@ -223,8 +223,9 @@ func TestAClusterThatDidNotAnswerIsToldAsThat(t *testing.T) {
 	if secret.Code != "tunnel.cluster.unreachable" || !strings.Contains(secret.Hint, "kubectl -n databases get secrets") {
 		t.Errorf("a secret read against a cluster that did not answer: %s / %s", secret.Code, secret.Hint)
 	}
-	// A login that failed before any dial is still about the login.
-	if got := kubectlFailed("fwd", homelab, `Unable to connect to the server: getting credentials: exec: executable tsh failed`); got.Code != "tunnel.unauthenticated" {
+	// A login that failed before any dial is still about the login, and it is
+	// a credential that is not there, not one the cluster refused.
+	if got := kubectlFailed("fwd", homelab, `Unable to connect to the server: getting credentials: exec: executable tsh failed`); got.Code != "tunnel.credential.missing" {
 		t.Errorf("a credential plugin failure became %q", got.Code)
 	}
 }
@@ -247,14 +248,18 @@ func TestEveryKubectlFailureIsClassified(t *testing.T) {
 		// create on pods/portforward", which is an afternoon in the wrong
 		// place.
 		{"expired login", `error: You must be logged in to the server (Unauthorized)`,
-			"tunnel.unauthenticated"},
+			"tunnel.auth.failed"},
 		{"401 from the api server", `Error from server (Unauthorized): unknown`,
-			"tunnel.unauthenticated"},
+			"tunnel.auth.failed"},
 		// The helper failing before a request exists at all: whatever it
-		// says, it cannot be a permissions answer, because nothing asked.
+		// says, it cannot be a permissions answer, because nothing asked, and
+		// it is no refused login either: the credential is not there.
 		{"credential plugin failed",
 			`Unable to connect to the server: getting credentials: exec: executable tsh failed`,
-			"tunnel.unauthenticated"},
+			"tunnel.credential.missing"},
+		{"credential plugin kubectl cannot use",
+			`error: exec plugin: invalid apiVersion "client.authentication.k8s.io/v1alpha1"`,
+			"tunnel.credential.missing"},
 		// The helper not installed at all. kubectl's message carries "not
 		// found", and read as a missing service it sent somebody to check a
 		// namespace for a tool missing from their own machine.
@@ -312,7 +317,7 @@ esac
 	if verr == nil {
 		t.Fatal("a failing kubectl produced no error")
 	}
-	if verr.Code != "tunnel.unauthenticated" {
+	if verr.Code != "tunnel.auth.failed" {
 		t.Fatalf("code = %q", verr.Code)
 	}
 	if !strings.Contains(verr.Hint, "tsh kube login dso") {
