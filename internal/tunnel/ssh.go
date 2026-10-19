@@ -468,7 +468,13 @@ func sshFailed(name string, spec sshSpec, stderr string) *view.Error {
 	}
 	switch {
 	case strings.Contains(s, "Permission denied"):
-		return view.Errorf("tunnel.auth.denied", "%s: %s refused the key", name, spec.host).
+		// BatchMode prints this for a key the bastion did not accept and just
+		// the same when no key was offered at all (no agent, a key whose
+		// passphrase it cannot ask for), and the message cannot tell them
+		// apart. A tile pausing on it is the honest outcome in both: the next
+		// run offers what this one did, and nothing changes until the person
+		// does something about the keys.
+		return view.Errorf("tunnel.auth.failed", "%s: %s refused the key", name, spec.host).
 			WithHint("BatchMode is on, so nothing here can prompt — `ssh " + spec.host +
 				"` by hand shows what it wants (an agent, a passphrase, a different key)")
 	case strings.Contains(s, "Host key verification failed") ||
