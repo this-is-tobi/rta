@@ -88,7 +88,7 @@ func TestTilesOnSameRowAreUniform(t *testing.T) {
 // The colour and not the SGR sequence, because the first version of this
 // compared sequences and could not fail: the title carries a reset left over
 // from the border segment before it and the body key does not, so two
-// identical oranges compared unequal, and painting the title with the content
+// identical colours compared unequal, and painting the title with the content
 // colour still passed. A bold style and a plain one carry the same colour
 // under different prefixes for the same reason.
 func fgBefore(t *testing.T, rendered, text string) string {
@@ -106,7 +106,7 @@ func fgBefore(t *testing.T, rendered, text string) string {
 
 // A tile drew its own name in the same Primary its contents use for their
 // keys, so `sys.mem` in the border and `used` in the body were the identical
-// orange and the eye had nothing to separate the pane from what was in it.
+// colour and the eye had nothing to separate the pane from what was in it.
 //
 // The fix is not a nicer colour, it is that panel() paints its own title:
 // four call sites each rendered their own, and each independently reached for

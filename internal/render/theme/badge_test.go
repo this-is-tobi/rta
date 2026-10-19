@@ -26,7 +26,7 @@ func TestABadgeChoosesInkThatCanBeReadOnIt(t *testing.T) {
 		{warnHex, true, "the palette's amber — the case white ink fails on"},
 		{inkHex, false, "the palette's own ink — the case dark ink disappears into"},
 		{goodHex, true, "a mid green: green carries most of the luminance"},
-		{primaryHex, true, "clay orange at luminance 0.286, the figure Label was calibrated against"},
+		{primaryHex, true, "orchid violet at luminance 0.28, light enough for dark ink"},
 		{badHex, true, "the palette's red, which is light enough for dark ink"},
 	} {
 		if got := relativeLuminance(c.hex) > 0.179; got != c.dark {
