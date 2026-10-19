@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -64,5 +65,46 @@ func TestAnExternalPluginsSuggestIsToldItIsAKeystroke(t *testing.T) {
 	}
 	if saw != plugin.SurfaceUnknown {
 		t.Errorf("an unset surface decoded to %q, want the in-process zero", saw)
+	}
+}
+
+// The Suggest of a Live list is handed the element being typed, as the string
+// the host sends under the field's own name: it reads it as a string, or as the
+// list of that one element, and an empty one as no element at all.
+func TestAnExternalPluginsLiveListSuggestIsHandedTheElementBeingTyped(t *testing.T) {
+	var asString string
+	var asList []string
+	p := plugin.Plugin{
+		Name: "demo", Summary: "d",
+		Capabilities: []plugin.Capability{{
+			ID: "demo.run", Summary: "r", Safety: plugin.Read,
+			Inputs: []plugin.Field{{Name: "bucket", Type: plugin.StringSlice, Live: true,
+				Suggest: func(_ context.Context, req plugin.Request) []string {
+					asString, asList = req.String("bucket"), req.StringSlice("bucket")
+					return []string{"media"}
+				}}},
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil },
+		}},
+	}
+	if err := p.Validate(); err != nil {
+		t.Fatalf("a Live list was refused: %v", err)
+	}
+	s := newServer(p)
+
+	for typed, want := range map[string][]string{"me": {"me"}, "": nil} {
+		asString, asList = "?", nil
+		if _, err := s.Suggest(context.Background(), &rtav1.SuggestRequest{
+			CapabilityId: "demo.run", Field: "bucket",
+			Values:  wire.ValuesToProto(map[string]any{"bucket": typed}),
+			Surface: wire.SurfaceToProto(plugin.SurfaceCompletion),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if asString != typed {
+			t.Errorf("req.String = %q for %q typed", asString, typed)
+		}
+		if !slices.Equal(asList, want) {
+			t.Errorf("req.StringSlice = %q for %q typed, want %q", asList, typed, want)
+		}
 	}
 }
