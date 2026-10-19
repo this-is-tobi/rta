@@ -23,7 +23,7 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
  ❯ 21 plugins · 131 capabilities — press / or enter to search
 ╭─ sys.overview ──────────────────────╮ ╭─ agent.overview ─────────────────────╮
 │ host  laptop.home · darwin 26.5.2   │ │ waiting on you          0            │
-│       (arm64) · up 4d 19h 5m        │ │ connected now                        │
+│       (arm64) · up 4d 19h           │ │ connected now                        │
 │ cpu   10.9% of 14 cores             │ │   none — no client has an rta server │
 │ mem   25.7 GiB / 36.0 GiB (71.5%)   │ │   open; `rta mcp install claude`,    │
 │ swap  20.9 GiB / 22.0 GiB (95.2%)   │ │   then restart the client            │

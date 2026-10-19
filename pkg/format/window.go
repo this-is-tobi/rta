@@ -36,6 +36,33 @@ func Duration(d time.Duration) string {
 	}
 }
 
+// Uptime renders how long something has been up, in the two units a person
+// steers by: "14d 2h", then "5h 12m" under a day, "12m" under an hour and "45s"
+// under a minute. A host that has been up a fortnight is not described by its
+// minutes, and the plugins spelled this four ways (`336h`, `4d 4h`, a date, and
+// `18d 0h 33m`) until there was one place to say it.
+//
+// Truncated and not rounded, since it counts time that has passed: 59m59s has
+// not been an hour. Never negative, because a clock stepped back between the
+// boot and the read is not an uptime less than nothing. Unlike Duration it is
+// not something a person types back in, and has a space between its units.
+func Uptime(d time.Duration) string {
+	d = max(d, 0)
+	days := int64(d / (24 * time.Hour))
+	hours := int64(d % (24 * time.Hour) / time.Hour)
+	mins := int64(d % time.Hour / time.Minute)
+	switch {
+	case days > 0:
+		return fmt.Sprintf("%dd %dh", days, hours)
+	case hours > 0:
+		return fmt.Sprintf("%dh %dm", hours, mins)
+	case mins > 0:
+		return fmt.Sprintf("%dm", mins)
+	default:
+		return fmt.Sprintf("%ds", int64(d/time.Second))
+	}
+}
+
 // Clock renders a moment for a sentence that says "until": the time of day
 // alone while that day is today, the weekday in front of it inside the
 // week, the date past that. A day-long grant issued at 06:20 used to read

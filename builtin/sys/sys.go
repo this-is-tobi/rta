@@ -704,7 +704,7 @@ func runHost(ctx context.Context, _ plugin.Request) (view.View, error) {
 	add("os", osLine(info))
 	add("kernel", info.KernelVersion)
 	if info.Uptime > 0 {
-		add("uptime", humanDuration(uptimeOf(info.Uptime)))
+		add("uptime", format.Uptime(uptimeOf(info.Uptime)))
 	}
 	if info.Procs > 0 {
 		add("procs", fmt.Sprintf("%d", info.Procs))
@@ -781,7 +781,7 @@ func hostLine(info *host.InfoStat) string {
 		parts = append(parts, platform)
 	}
 	if info.Uptime > 0 {
-		parts = append(parts, "up "+humanDuration(uptimeOf(info.Uptime)))
+		parts = append(parts, "up "+format.Uptime(uptimeOf(info.Uptime)))
 	}
 	return strings.Join(parts, " · ")
 }
@@ -1118,18 +1118,4 @@ func runTemp(ctx context.Context, _ plugin.Request) (view.View, error) {
 		})
 	}
 	return t, nil
-}
-
-func humanDuration(d time.Duration) string {
-	days := int(d.Hours()) / 24
-	hours := int(d.Hours()) % 24
-	mins := int(d.Minutes()) % 60
-	switch {
-	case days > 0:
-		return fmt.Sprintf("%dd %dh %dm", days, hours, mins)
-	case hours > 0:
-		return fmt.Sprintf("%dh %dm", hours, mins)
-	default:
-		return fmt.Sprintf("%dm", mins)
-	}
 }

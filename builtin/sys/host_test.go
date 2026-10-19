@@ -2,6 +2,7 @@ package sys
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/shirou/gopsutil/v4/host"
@@ -59,6 +60,19 @@ func TestTheHostLinesNameOnlyWhatWasRead(t *testing.T) {
 	full := &host.InfoStat{Hostname: "build-1", Platform: "darwin", PlatformVersion: "26.0", KernelArch: "arm64", Uptime: 3600}
 	if got := hostLine(full); got != "build-1 · darwin 26.0 (arm64) · up 1h 0m" {
 		t.Errorf("full host line = %q", got)
+	}
+	// The family's one spelling of an uptime (format.Uptime): two units, days and
+	// hours past a day, so a host up for a week does not print its minutes.
+	for secs, want := range map[uint64]string{
+		30 * 60:                       "up 30m",
+		90 * 60:                       "up 1h 30m",
+		4*86400 + 19*3600 + 5*60:      "up 4d 19h",
+		14*86400 + 2*3600 + 59*60 + 1: "up 14d 2h",
+	} {
+		line := hostLine(&host.InfoStat{Hostname: "build-1", Uptime: secs})
+		if !strings.HasSuffix(line, want) {
+			t.Errorf("an uptime of %d seconds reads %q, want it to end %q", secs, line, want)
+		}
 	}
 	noVersion := &host.InfoStat{Hostname: "build-1", Platform: "darwin", KernelArch: "arm64"}
 	if got := hostLine(noVersion); got != "build-1 · darwin (arm64)" {
