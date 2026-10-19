@@ -1792,7 +1792,7 @@
   },
   {
     "name": "net_overview",
-    "description": "Local network overview: interfaces, DNS, proxy, throughput\n\nReports local facts only — it never calls external services, so no public-IP lookup. Proxy credentials are masked. Throughput is sampled over 500ms and leaves out the loopback and, on Linux, the bridges and veth pairs of a container host. With `detail`: every interface with MAC, MTU, flags and addresses, per-interface traffic counters, the full resolver list and proxy environment.\n\nSafety: read.",
+    "description": "Local network overview: default route, traffic, DNS, hosts file, addresses\n\nLocal network state, read from this host alone: nothing leaves the machine. `status` is ok, or fail for no default route or no resolver; then `route` (gateway and interface), `traffic` (rx and tx per second over 500ms, leaving out the loopback and a container host's bridges and veth pairs), `dns` (the first resolver and how many fall back), `hosts` (names the hosts file adds, and how many are parked), `ip` (IPv4 addresses, the default route's interface first) and `proxy` when one is set, credentials masked. A line that cannot be read says so, and so does the status. `numbers` has the figures. `detail` adds every interface, the IPv6 addresses, every resolver and the hosts file.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {

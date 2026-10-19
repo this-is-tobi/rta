@@ -18,7 +18,6 @@ import (
 	probing "github.com/prometheus-community/pro-bing"
 	gnet "github.com/shirou/gopsutil/v4/net"
 
-	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -41,16 +40,30 @@ func Plugin() plugin.Plugin {
 		Capabilities: []plugin.Capability{
 			{
 				ID:           "net.overview",
-				Summary:      "Local network overview: interfaces, DNS, proxy, throughput",
+				Summary:      "Local network overview: default route, traffic, DNS, hosts file, addresses",
 				Safety:       plugin.Read,
 				HostSpecific: true,
 				Idempotent:   true,
 				Detailed:     true,
 				Description: "Reports local facts only — it never calls external services, so no " +
-					"public-IP lookup. Proxy credentials are masked. Throughput is sampled over 500ms and " +
-					"leaves out the loopback and, on Linux, the bridges and veth pairs of a container host. " +
-					"With `detail`: every interface with MAC, MTU, flags and addresses, per-interface " +
-					"traffic counters, the full resolver list and proxy environment.",
+					"public-IP lookup. A verdict first (`status`: ok, or no default route or no resolver), " +
+					"then the default route, the traffic on it, the first resolver and how many fall back, " +
+					"how many names the hosts file adds and how many are parked, and the IPv4 addresses, " +
+					"the default route's interface first. Traffic is sampled over 500ms and leaves out the " +
+					"loopback and, on Linux, the bridges and veth pairs of a container host. A proxy shows " +
+					"when one is set, with its credentials masked. A line that cannot be read says so, and " +
+					"so does the status. `numbers` carries the figures behind the lines for a program. " +
+					"With `detail`: every interface with MAC, MTU, flags and addresses of both families, " +
+					"per-interface traffic counters, the full resolver list, the proxy environment and " +
+					"the hosts file.",
+				Agent: "Local network state, read from this host alone: nothing leaves the machine. `status` is " +
+					"ok, or fail for no default route or no resolver; then `route` (gateway and interface), " +
+					"`traffic` (rx and tx per second over 500ms, leaving out the loopback and a container " +
+					"host's bridges and veth pairs), `dns` (the first resolver and how many fall back), " +
+					"`hosts` (names the hosts file adds, and how many are parked), `ip` (IPv4 addresses, the " +
+					"default route's interface first) and `proxy` when one is set, credentials masked. A line " +
+					"that cannot be read says so, and so does the status. `numbers` has the figures. `detail` " +
+					"adds every interface, the IPv6 addresses, every resolver and the hosts file.",
 				Run: runOverview,
 			},
 			{
@@ -835,13 +848,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	if req.Bool("detail") {
 		return detailedOverview(ctx, req)
 	}
-	kv := view.KeyValue{Pairs: ifacePairs()}
-	kv.Pairs = append(kv.Pairs,
-		view.Pair{Key: "dns", Value: dnsServers()},
-		view.Pair{Key: "proxy", Value: proxySummary()},
-		view.Pair{Key: throughputKey, Value: throughput(ctx)},
-	)
-	return kv, nil
+	return readNetFacts(ctx, req).page(), nil
 }
 
 // ifacePairs lists active non-loopback interfaces with their addresses,
@@ -887,30 +894,15 @@ func ifacePairs() []view.Pair {
 	return pairs
 }
 
-// dnsServers reads the configured resolvers. On macOS resolv.conf mirrors
-// the primary resolver, which is enough for an overview.
+// dnsServers is the configured resolvers as the detailed page lists them. On
+// macOS resolv.conf mirrors the primary resolver, which is enough for an
+// overview.
 //
 // Read as a file nobody named (pathin.ReadFile) and to net.resolver.list's
 // cap: it was the one read of the file left whole and blocking, on the
 // overview every surface opens, so a pipe in its place held the call for
 // good and a file of any size was read to its end.
-func dnsServers() string {
-	data, err := pathin.ReadFile(resolvConf, maxResolvBytes)
-	if err != nil {
-		return "unknown"
-	}
-	var servers []string
-	for _, line := range strings.Split(string(data), "\n") {
-		f := strings.Fields(strings.TrimSpace(line))
-		if len(f) >= 2 && f[0] == "nameserver" {
-			servers = append(servers, f[1])
-		}
-	}
-	if len(servers) == 0 {
-		return "none configured"
-	}
-	return strings.Join(servers, " · ")
-}
+func dnsServers() string { return readDNS().text() }
 
 // proxyEnvVars in the order net/http consults them; both cases are honored.
 var proxyEnvVars = []string{"https_proxy", "http_proxy", "all_proxy", "no_proxy"}
@@ -1013,31 +1005,6 @@ func hasScheme(s string) bool {
 // (see countedInterfaces).
 const throughputKey = "throughput (excluding loopback)"
 
-// throughput samples rx/tx over 500ms and reports per-second rates, summed
-// over the interfaces that are counted.
-func throughput(ctx context.Context) string {
-	const sample = 500 * time.Millisecond
-	keep, err := countedInterfaces()
-	if err != nil {
-		return "unreadable"
-	}
-	before, err := gnet.IOCountersWithContext(ctx, true)
-	if err != nil || len(before) == 0 {
-		return "unreadable"
-	}
-	select {
-	case <-ctx.Done():
-		return "unreadable"
-	case <-time.After(sample):
-	}
-	after, err := gnet.IOCountersWithContext(ctx, true)
-	if err != nil || len(after) == 0 {
-		return "unreadable"
-	}
-	rx, tx := ratesOf(before, after, sample, keep)
-	return fmt.Sprintf("rx %s/s · tx %s/s", format.Bytes(rx), format.Bytes(tx))
-}
-
 // ratesOf is the per-second growth of the counters of the interfaces keep
 // accepts, summed. An interface that is not in the first reading has nothing to
 // be compared with, and a counter that went backwards was reset and reads as
@@ -1065,22 +1032,18 @@ func ratesOf(before, after []gnet.IOCountersStat, window time.Duration, keep fun
 	return uint64(float64(recv) / window.Seconds()), uint64(float64(sent) / window.Seconds())
 }
 
-// countedInterfaces is which interfaces' counters are traffic on the network.
-// The loopback is not: a copy to 127.0.0.1 is the machine talking to itself,
-// and summed with the rest it read as 20 MiB/s of network. Nor, on Linux, is
-// the plumbing of a container host (containerPlumbing).
-func countedInterfaces() (func(name string) bool, error) {
-	ifs, err := stdnet.Interfaces()
-	if err != nil {
-		return nil, err
-	}
+// countedIn is which interfaces' counters are traffic on the network. The
+// loopback is not: a copy to 127.0.0.1 is the machine talking to itself, and
+// summed with the rest it read as 20 MiB/s of network. Nor, on Linux, is the
+// plumbing of a container host (containerPlumbing).
+func countedIn(ifs []stdnet.Interface) func(name string) bool {
 	left := map[string]bool{}
 	for _, in := range ifs {
 		if in.Flags&stdnet.FlagLoopback != 0 || containerPlumbing(in.Name) {
 			left[in.Name] = true
 		}
 	}
-	return func(name string) bool { return !left[name] }, nil
+	return func(name string) bool { return !left[name] }
 }
 
 // containerPlumbing reports whether an interface is a bridge or one end of a
@@ -1111,11 +1074,7 @@ func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error
 		return nil, err
 	}
 	p := plugin.NewPage(ctx, req)
-	p.PutAs("summary", "summary", view.KeyValue{Pairs: append(ifacePairs(),
-		view.Pair{Key: "dns", Value: dnsServers()},
-		view.Pair{Key: "proxy", Value: proxySummary()},
-		view.Pair{Key: throughputKey, Value: throughput(ctx)},
-	)})
+	p.PutAs("summary", "summary", readNetFacts(ctx, req).summary())
 	p.PutAs("interfaces", "interfaces", tree)
 	// The hosts file is local network truth: worth a section when non-empty.
 	// Page.Run rather than AddAs precisely so a failure can be decided on
