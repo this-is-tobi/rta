@@ -4,6 +4,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
+
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -55,6 +59,110 @@ func pausedAs(t tile) *view.Error {
 		hint = t.err.Hint + " — " + hint
 	}
 	return &view.Error{Code: t.err.Code, Message: "paused — credentials refused: " + t.err.Message, Hint: hint}
+}
+
+// slowLaunch is the pace from which a tile is not run when the TUI opens: a
+// capability that declares an hour or more between runs (Refresh) is saying
+// that its answer moves by the hour and that a run costs something somebody
+// else answers for, an OSV lookup per dependency, a handshake per host, a
+// kubectl audit. The pace used to bound a running TUI and never a launch, so
+// each start spent every tile's budget at once.
+const slowLaunch = time.Hour
+
+// deferSlowLaunches marks the tiles that wait out their first pace, from now, or
+// until r. It is called once, as the TUI opens: a tile that joins the dashboard
+// later was asked for by somebody who is looking at it, and is run.
+//
+// By what the capability declares and not by the pace the tile ends up with: a
+// configuration that slows a cheap tile to an hour has not made its run costly,
+// and an empty tile for an hour would be the price of having said so.
+func deferSlowLaunches(tiles []tile, now time.Time) {
+	for i, t := range tiles {
+		if !t.search && t.cap.Run != nil && t.cap.Refresh >= slowLaunch {
+			tiles[i].notBefore = now.Add(t.pace())
+		}
+	}
+}
+
+// deferred is whether this tile has been left unrun at launch and its first pace
+// has not yet elapsed.
+func (t tile) deferred(now time.Time) bool {
+	return t.lastFired.IsZero() && now.Before(t.notBefore)
+}
+
+// notRunYet is what a deferred tile says, in the voice of a tile with nothing to
+// report: muted, since nothing is wrong, and naming the key that runs it.
+const notRunYet = "not run yet — r runs it"
+
+// keptAnswer is the answer a tile is drawn from instead of its latest run: the
+// last good one while the runs fail, or the latest one once it has gone old.
+// Either way it is drawn dimmed, with when it was current.
+//
+// A tile used to be overwritten by every answer, success or failure, so a
+// backend that went away turned every tile into an error badge with no word of
+// when it had last been fine, and a run that took a minute left the old rows
+// unchanged, looking current, for that minute. What the tile knew is still worth
+// reading; what is wrong is that it cannot be told from what is true now.
+type keptAnswer struct {
+	view view.View
+	at   time.Time
+	// failed says the latest run failed, as against merely being long ago.
+	failed bool
+}
+
+// keepAnswer is what the tile is drawn from, when that is not its latest answer,
+// given the raw record of its answers and now.
+//
+// **Old is twice the pace**, not once: a run takes a while, and a tile whose
+// next answer is on its way is not yet stale. A paused tile keeps its pause
+// wording and nothing else, since what it has to say is that the credential was
+// refused; and a failure with no good answer before it is drawn as it is, the
+// error and its hint, which is the only thing the tile knows.
+func keepAnswer(t tile, r returned, now time.Time) *keptAnswer {
+	if t.search || t.cap.Run == nil || t.paused() {
+		return nil
+	}
+	switch {
+	case t.err != nil:
+		if _, quiet := quietSentence(t); quiet || r.good == nil {
+			return nil
+		}
+		return &keptAnswer{view: r.good, at: r.goodAt, failed: true}
+	case t.view != nil && !r.at.IsZero() && now.Sub(r.at) > 2*t.pace():
+		return &keptAnswer{view: t.view, at: r.at}
+	}
+	return nil
+}
+
+// says is the panel's right-hand side for a kept answer, in the fullest form
+// that leaves the title room in a border width cells wide: `as of 14:02 · refresh
+// failed`, then the briefer ones a tile a third of a screen wide can hold. The
+// time carries its day when it is not today's, since yesterday's 14:02 is not.
+func (k keptAnswer) says(now time.Time, titleWidth, width int) string {
+	stamp := k.at.Local().Format("15:04")
+	if y, m, d := k.at.Local().Date(); y != now.Year() || m != now.Month() || d != now.Day() {
+		stamp = k.at.Local().Format("Jan 2 15:04")
+	}
+	forms := []string{"as of " + stamp, stamp}
+	if k.failed {
+		forms = []string{"as of " + stamp + " · refresh failed", "as of " + stamp + " · failed", stamp + " · failed"}
+	}
+	for _, f := range forms {
+		if width-(lipgloss.Width(f)+2)-7 >= titleWidth {
+			return f
+		}
+	}
+	return forms[len(forms)-1]
+}
+
+// dimmed is a tile body with its colours taken off and the muted one put on: an
+// answer that is not current does not get to be green.
+func dimmed(body string) string {
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		lines[i] = theme.Subtle.Render(ansi.Strip(line))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // waitingKey is the label of the line agent.overview puts a count of parked
@@ -114,6 +222,10 @@ func tileGrade(t tile) (g grade, answered bool) {
 		return gradeBad, true
 	case t.view != nil:
 		return viewGrade(t.view), true
+	case t.deferred(time.Now()):
+		// It has said all it will until it is run, and a header that read it as
+		// still loading would say so for the hour.
+		return gradeNone, true
 	}
 	return gradeNone, false
 }

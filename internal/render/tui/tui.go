@@ -437,6 +437,7 @@ func New(reg *registry.Registry, dash config.Dashboard,
 	// follows it may expand into its connections; the first build above
 	// had no environment in hand.
 	m.rebuildTiles()
+	deferSlowLaunches(m.tiles, time.Now())
 	m.notePins(readStamps())
 	return m
 }
@@ -709,7 +710,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					raw[rawKey(t)] = r
 				}
 			}
-			raw[rawKey(m.tiles[idx])] = returned{view: msg.v, err: msg.err}
+			raw[rawKey(m.tiles[idx])] = answeredWith(m.tileRaw[rawKey(m.tiles[idx])], msg.v, msg.err, time.Now())
 			m.tileRaw = raw
 			// An answer sets its row's height, which sets how many rows fit —
 			// the one thing clampScroll exists to keep honest, and the one
@@ -771,13 +772,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// declared: the environment just changed, and a tile's answer
 			// for the previous one is wrong however recently it was
 			// computed.
-			resetDue(m.tiles, "")
+			m.connectionChanged("")
 			landed = true
 		}
 		if pin, ok := m.pins[msg.name]; ok && pin.stamp == msg.stamp {
 			pin.bound, pin.ready = msg.bound, true
 			m.pins[msg.name] = pin
-			resetDue(m.tiles, msg.name)
+			m.connectionChanged(msg.name)
 			landed = true
 		}
 		if !landed || m.mode != modeDashboard {

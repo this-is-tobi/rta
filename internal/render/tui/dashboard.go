@@ -112,6 +112,14 @@ type tile struct {
 	// credential (view.Error.CredentialRefused). At credentialRefusals the tile
 	// is paused: it is not run again until something asks it to (resume).
 	refused int
+	// notBefore is when a tile whose capability declares an hour or more between
+	// runs may first be run: the moment the TUI opened plus that pace, set once
+	// for those tiles (deferSlowLaunches) and zero for every other. Until then the
+	// tile is not run and says so, and only r or the clock lifts it.
+	notBefore time.Time
+	// kept is the answer the tile is drawn from in place of its latest run, set by
+	// asReturned for drawing and never stored: nil for a tile drawn as it answered.
+	kept *keptAnswer
 }
 
 // credentialRefusals is how many answers in a row that refuse a tile's
@@ -134,7 +142,7 @@ func (t tile) paused() bool { return t.refused >= credentialRefusals }
 // is what the person pressing r asks for, and what a connection that changed
 // under the tile calls for.
 func (t *tile) resume() {
-	t.lastFired, t.inFlight, t.refused = time.Time{}, false, 0
+	t.lastFired, t.inFlight, t.refused, t.notBefore = time.Time{}, false, 0, time.Time{}
 }
 
 // refusedAfter is the count of refusals in a row once an answer arrives: one
@@ -824,7 +832,7 @@ func (m *Model) rebuildTiles() {
 	for i := range fresh {
 		if prev, ok := old[fresh[i].key()]; ok {
 			fresh[i].view, fresh[i].err, fresh[i].lastFired, fresh[i].storeOpen = prev.view, prev.err, prev.lastFired, prev.storeOpen
-			fresh[i].inFlight, fresh[i].refused = prev.inFlight, prev.refused
+			fresh[i].inFlight, fresh[i].refused, fresh[i].notBefore = prev.inFlight, prev.refused, prev.notBefore
 		}
 	}
 	m.tiles = fresh
@@ -1069,7 +1077,8 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 }
 
 // due reports whether this tile should run at now. A paused one never does:
-// something has to resume it first.
+// something has to resume it first. A deferred one does not either, until the
+// clock or r lifts the deferral.
 //
 // A capability that declared no Refresh runs on every tick, exactly as every
 // tile did before the field existed. One that declared a pace waits it out:
@@ -1082,7 +1091,7 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 // that stops being what it said (watchesStoreSession): it paces what it costs,
 // and what it costs is the decrypt, which a look at the session does not make.
 func (t tile) due(now time.Time) bool {
-	if t.search || t.paused() {
+	if t.search || t.paused() || t.deferred(now) {
 		return false
 	}
 	// Before the store-session rule below, which must not start a second run on
@@ -1112,12 +1121,37 @@ func (t tile) due(now time.Time) bool {
 // inputs is wrong however recent it is. Scoped to the connection that
 // moved: a tile pinned to prod is about prod whatever was switched, and its
 // two-hour pace should not restart because somebody flipped to staging.
+//
+// A tile that is deferred has no answer to be wrong, and the environment
+// settling a moment after launch is the commonest reason to be here: letting it
+// through would run every slow tile at once, the burst the deferral is for.
 func resetDue(tiles []tile, profile string) {
+	now := time.Now()
 	for i := range tiles {
-		if tiles[i].profile == profile {
+		if tiles[i].profile == profile && !tiles[i].deferred(now) {
 			tiles[i].resume()
 		}
 	}
+}
+
+// connectionChanged is resetDue for a model, and the other half of it: a tile
+// that falls back on its last good answer while its runs fail would, after the
+// connection it reads moved, draw the previous environment's numbers under this
+// one's name, dimmed and timed and still the wrong destination. What a tile last
+// knew about a connection that has changed is not kept.
+func (m *Model) connectionChanged(profile string) {
+	resetDue(m.tiles, profile)
+	raw := make(map[string]returned, len(m.tileRaw))
+	for k, r := range m.tileRaw {
+		raw[k] = r
+	}
+	for _, t := range m.tiles {
+		if r, ok := raw[rawKey(t)]; ok && t.profile == profile {
+			r.good, r.goodAt = nil, time.Time{}
+			raw[rawKey(t)] = r
+		}
+	}
+	m.tileRaw = raw
 }
 
 // tileConn is what a tile runs against: the connection its pinned profile
