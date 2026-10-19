@@ -870,6 +870,15 @@ func renderTile(t tile, width, height int, selected, heavy bool) string {
 	// production is the one panel whose name must not be the first thing
 	// to go.
 	head := panelHead{Title: t.cap.ID, Note: t.profile, NoteColor: t.color, Heavy: heavy}
+	// The border says how bad the tile's answer is, in the two colours a folded
+	// section's header uses for the same grade and for the same reason: the row
+	// that carries the verdict is not always one the tile has room for, and a
+	// border that was one grey in every state left the person reading each tile
+	// to find out. It is the grade of the whole answer, cut rows included, and
+	// the words stay in the cells for a terminal that shows no colour.
+	if g, _ := tileGrade(t); g >= gradeWarn {
+		head.Attention, head.Severe = true, g == gradeBad
+	}
 	// A tile that says calls are parked is the one panel on the screen with a
 	// clock on it, and it is not always on the first row of a dashboard somebody
 	// arranged: the badge is in the border, where the eye is on the way past, and

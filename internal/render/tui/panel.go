@@ -39,6 +39,10 @@ type panelHead struct {
 	// primary colour, because the selection has to stay visible on the panel
 	// somebody is looking at.
 	Attention bool
+	// Severe draws an Attention panel in the bad colour instead of the warning
+	// one: a tile that says something is down and not merely short. It means
+	// nothing without Attention, and the words still carry the difference.
+	Severe bool
 	// Heavy draws a focused panel in heavy lines. Focus is otherwise the
 	// border's primary colour and nothing else, so on a terminal that shows no
 	// colour (NO_COLOR, TERM=dumb) the selected tile of the dashboard was
@@ -79,8 +83,12 @@ func panel(h panelHead, body string, width, height int, focus bool) string {
 	h.Title, h.Note, h.Right = textclean.Terminal(h.Title),
 		textclean.Terminal(h.Note), textclean.Terminal(h.Right)
 	border := theme.Border
+	asking, askingText := theme.Warn, theme.WarnText
+	if h.Severe {
+		asking, askingText = theme.Bad, theme.BadText
+	}
 	if h.Attention {
-		border = lipgloss.NewStyle().Foreground(theme.Warn)
+		border = lipgloss.NewStyle().Foreground(asking)
 	}
 	box := roundedBox
 	if focus {
@@ -97,7 +105,7 @@ func panel(h panelHead, body string, width, height int, focus bool) string {
 	if h.Right != "" {
 		right := theme.Subtle
 		if h.Attention {
-			right = theme.WarnText
+			right = askingText
 		}
 		rightSeg = " " + right.Render(h.Right) + " "
 	}
