@@ -904,6 +904,23 @@ func TestTreeRefusesAWalkThatWasCancelled(t *testing.T) {
 	}
 }
 
+// A path the operating system will not let rta read is not a refused credential:
+// `.denied` is what a dashboard tile stops asking on, and a tile on a directory
+// that a chmod makes readable has to see it. Said as unreadable, the word the
+// tree uses for a directory it could not open.
+func TestAPathTheOSRefusesIsUnreadableAndNotARefusedCredential(t *testing.T) {
+	denied := &os.PathError{Op: "open", Path: "/var/log/secure", Err: os.ErrPermission}
+	for _, code := range []string{"fs.tree", "fs.hash", "fs.usage"} {
+		verr := pathError(code, "/var/log/secure", denied)
+		if verr.Code != code+".unreadable" {
+			t.Errorf("%s: code = %q, want %s.unreadable", code, verr.Code, code)
+		}
+		if verr.CredentialRefused() {
+			t.Errorf("%s: a file the OS refused is read as a refused credential", verr.Code)
+		}
+	}
+}
+
 // fs.usage walks a tree on every run: 0.46 s for 100,000 files, and a home
 // directory is more. A tile of it ran at the pace a read of this machine gets,
 // every five seconds, which is a core kept busy to say what changes by the hour.
