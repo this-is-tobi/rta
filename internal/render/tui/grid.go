@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -665,6 +666,23 @@ func (m *Model) selectEdge(last bool) {
 type returned struct {
 	view view.View
 	err  *view.Error
+	// at is when this answer arrived.
+	at time.Time
+	// good is the last answer that was not an error, and goodAt when it arrived:
+	// what a tile falls back on, dimmed, while its runs fail (keepAnswer). Carried
+	// across the failures that follow it and replaced by the next good one.
+	good   view.View
+	goodAt time.Time
+}
+
+// answeredWith is what a tile holds once an answer arrives, given what it held
+// before: the answer itself, and the last good one, which an error leaves alone.
+func answeredWith(prev returned, v view.View, err *view.Error, now time.Time) returned {
+	r := returned{view: v, err: err, at: now, good: prev.good, goodAt: prev.goodAt}
+	if err == nil && v != nil {
+		r.good, r.goodAt = v, now
+	}
+	return r
 }
 
 // rawKey names a tile in Model.tileRaw: its key and the values it runs with.
@@ -694,6 +712,7 @@ func (m Model) asReturned(i int) tile {
 	}
 	if r, ok := m.tileRaw[rawKey(t)]; ok {
 		t.view, t.err = r.view, r.err
+		t.kept = keepAnswer(t, r, time.Now())
 	}
 	return t
 }
@@ -727,6 +746,13 @@ func tileLines(t tile, width int, selected bool) []string {
 	inner := width - 4
 	body := ""
 	switch {
+	case t.kept != nil:
+		// The answer the tile last had, as a tile that has lost touch with its
+		// source draws it: every colour off, so that an old green is not read as a
+		// current one, and the panel's border says when it was current.
+		kept := t
+		kept.view = t.kept.view
+		body = dimmed(tileBody(keyPromised(kept, selected), inner))
 	case t.err != nil:
 		if say, quiet := quietSentence(t); quiet {
 			body = theme.Subtle.Render(ansi.Wordwrap(say, max(inner, 1), ""))
@@ -737,6 +763,8 @@ func tileLines(t tile, width int, selected bool) []string {
 		body = buf.String()
 	case t.view != nil:
 		body = tileBody(keyPromised(t, selected), inner)
+	case t.deferred(time.Now()):
+		body = theme.Subtle.Render(ansi.Wordwrap(notRunYet, max(inner, 1), ""))
 	default:
 		body = theme.Subtle.Render("loading…")
 	}
@@ -852,6 +880,15 @@ func tileRowHeight(t tile, width int) int {
 	return min(max(h, tileMinHeight), tileHeight)
 }
 
+// noteWidth is the cells a panel's note takes in its top border, with the two
+// spaces that set it off from the title.
+func noteWidth(note string) int {
+	if note == "" {
+		return 0
+	}
+	return 2 + lipgloss.Width(note)
+}
+
 // renderTile draws one preview panel at the given height — its row's height,
 // shared by every tile in that row so neighbors still align exactly the way
 // they did under the old fixed tileHeight. The panel primitive guarantees
@@ -885,6 +922,11 @@ func renderTile(t tile, width, height int, selected, heavy bool) string {
 	// not only in a line the tile has to be read to find.
 	if n := waitingCalls(t.view); n > 0 {
 		head.Right, head.Attention = fmt.Sprintf("● %d waiting", n), true
+	}
+	// A tile drawn from an answer it already had says when that was current, over
+	// the badge of a count that is no longer current either.
+	if t.kept != nil {
+		head.Right = t.kept.says(time.Now(), lipgloss.Width(head.Title)+noteWidth(head.Note), width)
 	}
 	return panel(head, strings.Join(lines, "\n"), width, height, selected)
 }
@@ -1155,6 +1197,9 @@ func (m Model) dashFooterItems() []hintItem {
 		}
 		if t.paused() {
 			items = append(items, labelled(bindRerun, "ask again"))
+		}
+		if t.deferred(time.Now()) {
+			items = append(items, labelled(bindRerun, "run"))
 		}
 		if t.withdraws() {
 			for i, h := range own {

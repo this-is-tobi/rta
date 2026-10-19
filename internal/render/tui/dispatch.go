@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"time"
+
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 
@@ -169,11 +171,13 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		m.flash = m.moveSelected(1)
 		return m, nil, true
 	case "r":
-		// Asks a paused tile again, and nothing else: a tile that is running
-		// needs no key, and the footer offers this one only on a tile that has
-		// stopped. `r` is the key every screen answers to re-run
-		// (plugin.ReservedActionKeys), so no tile's action can have it.
-		if m.selected > 0 && m.selected < len(m.tiles) && m.tiles[m.selected].paused() {
+		// Asks a paused tile again, or runs one that was left for its first pace,
+		// and nothing else: a tile that is running needs no key, and the footer
+		// offers this one only on a tile that has stopped or has not started. `r`
+		// is the key every screen answers to re-run (plugin.ReservedActionKeys),
+		// so no tile's action can have it.
+		if m.selected > 0 && m.selected < len(m.tiles) &&
+			(m.tiles[m.selected].paused() || m.tiles[m.selected].deferred(time.Now())) {
 			m.tiles[m.selected].resume()
 			m.tickGen++
 			return m, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor), true
