@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -171,12 +172,13 @@ func TestExpiryTable(t *testing.T) {
 	if len(tbl.Rows) != 2 {
 		t.Fatalf("rows = %d, want 2", len(tbl.Rows))
 	}
-	// Reachable host resolves to a status; unreachable one reports the error inline.
-	if tbl.Rows[0][3] == "" {
-		t.Error("empty status for live host")
+	// Reachable host resolves to a status; unreachable one reports the error
+	// inline, and comes first: it is the row that needs somebody.
+	if !strings.HasPrefix(tbl.Rows[0][3], "ERROR") {
+		t.Errorf("unreachable host status = %q", tbl.Rows[0][3])
 	}
-	if !strings.HasPrefix(tbl.Rows[1][3], "ERROR") {
-		t.Errorf("unreachable host status = %q", tbl.Rows[1][3])
+	if tbl.Rows[1][3] == "" {
+		t.Error("empty status for live host")
 	}
 }
 
@@ -196,8 +198,8 @@ func TestExpiryFailsAfterItsTableWhenAHostCouldNotBeChecked(t *testing.T) {
 		t.Fatalf("at a terminal: err = %v (view %v), want the table carried by a failure", err, v)
 	}
 	rows := answered.View.(view.Table).Rows
-	if len(rows) != 2 || strings.HasPrefix(rows[0][3], "ERROR") || !strings.HasPrefix(rows[1][3], "ERROR") {
-		t.Errorf("the carried table = %v, want the live host's row and the failed host's", rows)
+	if len(rows) != 2 || !strings.HasPrefix(rows[0][3], "ERROR") || strings.HasPrefix(rows[1][3], "ERROR") {
+		t.Errorf("the carried table = %v, want the failed host's row and the live host's", rows)
 	}
 	verr := view.AsError(err, "x")
 	if verr.Code != "cert.expiry.failed" || verr.Message != "1 of 2 hosts could not be checked" ||
@@ -430,10 +432,11 @@ func TestDialIsBoundedByTheDeclaredTimeout(t *testing.T) {
 
 // Two guarantees at once. The walk used to be sequential, so one filtered
 // host cost a whole timeout before the next was dialed and `cert expiry`
-// across forty hosts took forty timeouts back to back. And the fix must not
-// reorder the answer: the row position is the only thing tying a status back
-// to the target the caller listed.
-func TestExpiryChecksTargetsConcurrentlyAndKeepsInputOrder(t *testing.T) {
+// across forty hosts took forty timeouts back to back. And the sort that puts
+// the urgent rows first must not lose or double one: every target listed is
+// one row, named in its first cell, the ones that failed in the order they were
+// listed and the live one after them.
+func TestExpiryChecksTargetsConcurrentlyAndNamesEveryRow(t *testing.T) {
 	live, _ := startTLS(t)
 	targets := []string{live, blackhole(t), blackhole(t), blackhole(t), blackhole(t)}
 
@@ -454,15 +457,16 @@ func TestExpiryChecksTargetsConcurrentlyAndKeepsInputOrder(t *testing.T) {
 	if len(tbl.Rows) != len(targets) {
 		t.Fatalf("rows = %d, want %d", len(tbl.Rows), len(targets))
 	}
-	for i, want := range targets {
-		if tbl.Rows[i][0] != want {
-			t.Errorf("row %d target = %q, want %q — results are not in input order", i, tbl.Rows[i][0], want)
+	want := append(slices.Clone(targets[1:]), targets[0])
+	for i, w := range want {
+		if tbl.Rows[i][0] != w {
+			t.Errorf("row %d target = %q, want %q — the failed hosts in the order they were listed, then the live one", i, tbl.Rows[i][0], w)
 		}
 	}
-	if strings.HasPrefix(tbl.Rows[0][3], "ERROR") {
-		t.Errorf("live host reported %q", tbl.Rows[0][3])
+	if strings.HasPrefix(tbl.Rows[len(targets)-1][3], "ERROR") {
+		t.Errorf("live host reported %q", tbl.Rows[len(targets)-1][3])
 	}
-	for i := 1; i < len(targets); i++ {
+	for i := 0; i < len(targets)-1; i++ {
 		if !strings.HasPrefix(tbl.Rows[i][3], "ERROR") {
 			t.Errorf("row %d status = %q, want an inline ERROR", i, tbl.Rows[i][3])
 		}
