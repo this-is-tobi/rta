@@ -17,6 +17,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/boxlist"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/internal/testenv"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -54,8 +55,20 @@ func TestMain(m *testing.M) {
 	// test and a surprising thing to do to somebody's machine. Set for every
 	// test rather than in the helpers, because the rule is about the package
 	// and a helper is something a new test can forget to call.
+	//
+	// And the person's own configuration is out of reach for a worse reason: New
+	// reads the config file and the environment that is switched on, so the
+	// tests that build a Model without naming a config file of their own, a
+	// fifth of the package, read whatever the developer's `~/.config/rta/config.yaml`
+	// holds, and a `theme:`, a profile or a dashboard there changes what they
+	// draw. testenv.Isolate points HOME, every XDG directory and RTA_CONFIG at an
+	// empty place of this binary's own; a test that wants a config file names it
+	// with t.Setenv.
 	dir, err := os.MkdirTemp("", "rta-tui-tests")
 	if err != nil {
+		panic(err)
+	}
+	if err := testenv.Isolate(dir); err != nil {
 		panic(err)
 	}
 	os.Setenv("RTA_DATA_DIR", dir)

@@ -3,6 +3,8 @@ package app
 import (
 	"os"
 	"testing"
+
+	"github.com/this-is-tobi/rta/internal/testenv"
 )
 
 // A data directory of this binary's own, for the whole package.
@@ -21,9 +23,20 @@ import (
 // exports it wrapped every refusal and every explain page at that width,
 // and assertions written for one unbroken line failed on that machine
 // alone. A test that wants a width says so itself, with t.Setenv.
+//
+// The person's own configuration is out of reach for a worse reason. NewRoot loads
+// the config file and the environment that is switched on, so the tests that build a
+// root without naming a config file of their own read whatever the developer's
+// `~/.config/rta/config.yaml` holds, and a `theme:`, an `output:` or a profile there
+// changes what they draw. testenv.Isolate points HOME, every XDG directory and
+// RTA_CONFIG at an empty place of this binary's own; a test that wants a config file
+// names it with t.Setenv, as the config tests do.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "rta-app-tests")
 	if err != nil {
+		panic(err)
+	}
+	if err := testenv.Isolate(dir); err != nil {
 		panic(err)
 	}
 	os.Setenv("RTA_DATA_DIR", dir)
