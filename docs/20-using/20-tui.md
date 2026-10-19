@@ -62,7 +62,7 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 | `U` | Unlock the encrypted store for this sitting, and lock it again after asking: a masked box for the passphrase (the key's own, for a store locked to a passphrase-protected key) and one for how long to keep it open, from a minute to twelve hours — the store asks once per sitting, below |
 | `+` | Add a tile — on the dashboard it opens the catalogue; on a catalogue row or a search match it adds that one |
 | `p` | Plugin inventory — where a hidden automatic tile comes back |
-| `t` | Theme — a choice of whose palette (yours, or one profile's; the environment that is on is already chosen), then one box per colour with the palette it produces drawn above |
+| `t` | Theme — a choice of whose palette (yours, or one profile's; the environment that is on is already chosen), then one box per colour with the palette it produces drawn above, and in yours a last box for `status`, how much of the green, amber and red that grades is drawn |
 | `f` | Profiles — your configured environments, which one is on |
 | `b` or `:` | Browse the whole catalogue |
 | `w` | The queue of calls parked for you, while one waits |
@@ -80,6 +80,8 @@ The header is somewhere the selection rests, as a tile is: the arrows go to it, 
 The selected tile is the one with the coloured border. On a terminal that shows no colour (`NO_COLOR`, `TERM=dumb`), or when you ask for none with `rta --no-color`, its border is drawn in heavy lines instead, so the selection never rests on colour alone. The idle search line has no border to colour: when it is the selection its `⌕` becomes a `❯`. The chosen answer of a yes/no box in a form is the same: its fill is the colour, so without colour it is drawn between brackets, `[ yes ]     no`.
 
 What a key did is said in the footer, beside the keys: a green `✓` for something done, a red `✗` for something that did not happen, and a `→` for what to do next. A save the file refused is a `✗`, and its line leads with `not saved` and says the change holds for this session only; so are an approval that was turned down and a key with nothing to act on, such as `t` on a built-in plugin or `U` with no store. The mark carries the difference where colour does not show.
+
+**Green, amber and red can be quieted.** `status: alerts` in the `theme:` block draws ok plain and keeps the amber and the red, and `status: off` draws none of the three, on a status word, a usage percentage, a tile's border and a folded header alike; the words, the numbers and the borders stay, and so does the grade a header counts. A tile with calls waiting on you keeps its amber border and its count under both, because that is a request and not a grade, and so do the [safety class](../95-reference/10-glossary.md#terms) of a call and the trust words of a plugin. [Quieting the colours that grade](./25-dashboard-and-theme.md#quieting-the-colours-that-grade) has the whole of it, and `t` ends on a box for it.
 
 **The colours follow the environment that is on.** A profile can have a colour and a `theme:` of its own ([a palette per environment](./25-dashboard-and-theme.md#a-palette-per-environment)), and the TUI draws in them: `u` on the profiles pane repaints everything, a result on screen included, and `rta use` from another terminal, a deadline lapsing and an edit of the profile in force reach it on the next refresh. Switching off puts your own colours back.
 
