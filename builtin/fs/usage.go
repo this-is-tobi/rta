@@ -439,7 +439,12 @@ func pathError(code, path string, err error) *view.Error {
 		return view.Errorf(code+".notfound", "no such path: %s", path).
 			WithHint("check its spelling, and that it exists on the machine running rta")
 	case os.IsPermission(err):
-		return view.Errorf(code+".denied", "cannot read %s: permission denied", path).
+		// Not `.denied`: that ending says a service refused the account, and a
+		// dashboard tile stops asking on it (view.Error.CredentialRefused). The
+		// operating system refusing a file is not a credential, a chmod fixes it
+		// with nobody to lock out, and a tile that stopped on it would keep
+		// saying "credentials refused" about a path after it became readable.
+		return view.Errorf(code+".unreadable", "cannot read %s: permission denied", path).
 			WithHint("read it as a user that can, rather than running the whole tool elevated")
 	}
 	var pathErr *fs.PathError
