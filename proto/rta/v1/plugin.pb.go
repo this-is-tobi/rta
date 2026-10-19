@@ -665,7 +665,8 @@ type Field struct {
 	// a mount table — instead of computing locally. A live listing runs only
 	// on a deliberate completion press and with the credentials a run would
 	// get; the per-keystroke channel never calls it and carries none. Requires
-	// has_suggest, refused beside options, and the input must be a string.
+	// has_suggest, refused beside options, and the input must be a string or a
+	// list of strings.
 	Live bool `protobuf:"varint,15,opt,name=live,proto3" json:"live,omitempty"`
 	// Points the call at another machine — the server a queue is parked
 	// on. A form the TUI opens by acting on one of this machine's own
