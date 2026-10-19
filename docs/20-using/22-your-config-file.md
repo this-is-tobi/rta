@@ -114,7 +114,7 @@ It opens the file in `$VISUAL`, then `$EDITOR`, then `vi`, and holds what you sa
 #   hidden: [gen.overview]      # tiles to leave off the screen
 #
 # theme:
-#   primary: '#D97757'          # the ten palette slots; `rta config schema` names them
+#   primary: '#BA73DE'          # the ten palette slots; `rta config schema` names them
 #   status: alerts              # all, alerts or off: how much of the green/amber/red that grades is drawn
 #
 # plugins:

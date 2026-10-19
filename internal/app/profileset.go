@@ -91,7 +91,7 @@ func profileSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts
 			"      --set host=db.staging.internal --set port=5432 \\\n" +
 			"      --secret password=kv:staging-db-password\n" +
 			"  rta profile set staging --note 'shared staging' --ttl 8h\n" +
-			"  rta profile set staging --color '#dd3333' --theme label='#C792EA' --theme accent='#FFB000'\n" +
+			"  rta profile set staging --color '#dd3333' --theme label='" + theme.Builtin("label") + "' --theme accent='" + theme.Builtin("accent") + "'\n" +
 			"  rta profile set staging --plugin pg \\\n" +
 			"      --only database=app --only database=app-jobs\n" +
 			"  rta profile set staging --plugin pg/analytics \\\n" +
@@ -187,7 +187,7 @@ func parseThemeFlags(pairs []string) (map[string]string, *view.Error) {
 	// refusal.
 	offered := slices.DeleteFunc(slices.Clone(slots), theme.IsStatus)
 	order, raw, verr := collectPairs(pairs, nil, flagWords{
-		flag: "theme", example: "primary=#D97757", shape: "core.profile.theme.shape",
+		flag: "theme", example: "primary=" + theme.Builtin("primary"), shape: "core.profile.theme.shape",
 		empty: func(k string) *view.Error {
 			return view.Errorf("core.profile.theme.empty", "`--theme %s=` states no colour", k).
 				WithHint("`--theme` states the whole block, so leave a slot out to take it from yours — " +
@@ -227,7 +227,7 @@ func parseThemeFlags(pairs []string) (map[string]string, *view.Error) {
 		colour := strings.TrimSpace(values[0])
 		if !theme.HexColor.MatchString(colour) {
 			return nil, view.Errorf("core.profile.theme.color", "%s is not a colour: %q", slot, colour).
-				WithHint("write it as `#rrggbb`, quoted since # starts a comment in a shell: `--theme " + slot + "='#D97757'`")
+				WithHint("write it as `#rrggbb`, quoted since # starts a comment in a shell: `--theme " + slot + "='" + theme.Builtin(slot) + "'`")
 		}
 		block[slot] = colour
 	}
