@@ -130,11 +130,16 @@ func linesAbove(page view.Sections, at int, opts cli.Options) int {
 // resultMeta is the context line under the panel title: safety class in the
 // shared status colors, idempotency, and the shape of what came back. It
 // carries real information and keeps sparse results from floating in space.
+//
+// The safety class is a cue (theme.Cue) and no grade: it says what the call may
+// do, so it keeps its colour under every setting of how status is drawn.
 func (m Model) resultMeta() string {
 	if m.result.err != nil {
 		return ""
 	}
-	parts := []string{theme.StatusStyle(string(m.current.Safety)).Render(string(m.current.Safety))}
+	safety := string(m.current.Safety)
+	class, _ := theme.Cue(safety)
+	parts := []string{class.Render(safety)}
 	warn := ""
 	if m.current.Idempotent {
 		parts = append(parts, theme.Subtle.Render("idempotent"))

@@ -912,8 +912,10 @@ func renderTile(t tile, width, height int, selected, heavy bool) string {
 	// that carries the verdict is not always one the tile has room for, and a
 	// border that was one grey in every state left the person reading each tile
 	// to find out. It is the grade of the whole answer, cut rows included, and
-	// the words stay in the cells for a terminal that shows no colour.
-	if g, _ := tileGrade(t); g >= gradeWarn {
+	// the words stay in the cells for a terminal that shows no colour. A grade the
+	// theme's `status:` setting quiets leaves the border grey: the grade is the
+	// same, and the cells and the header still say it.
+	if g, _ := tileGrade(t); g >= gradeWarn && theme.Coloured(g.kind()) {
 		head.Attention, head.Severe = true, g == gradeBad
 	}
 	// A tile that says calls are parked is the one panel on the screen with a

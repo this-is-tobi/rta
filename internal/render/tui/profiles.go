@@ -996,12 +996,12 @@ func profileState(row profileRow) string {
 // machine has not made, ok.
 func profileStatus(row profileRow) string {
 	if !row.valid() {
-		return theme.BadText.Render("invalid")
+		return theme.Grade(theme.StatusBad).Render("invalid")
 	}
 	if row.note != "" {
-		return theme.WarnText.Render("warn")
+		return theme.Grade(theme.StatusWarn).Render("warn")
 	}
-	return theme.GoodText.Render("ok")
+	return theme.Grade(theme.StatusGood).Render("ok")
 }
 
 // profileCovers is the second line: which plugins this environment reaches.
@@ -1155,13 +1155,13 @@ func (m Model) connsView() string {
 func connBands(row profileRow) []band {
 	bands := make([]band, 0, len(row.conns))
 	for _, c := range row.conns {
-		status := theme.GoodText.Render("ok")
+		status := theme.Grade(theme.StatusGood).Render("ok")
 		note := ""
 		switch {
 		case !c.valid():
-			status = theme.BadText.Render("invalid")
+			status = theme.Grade(theme.StatusBad).Render("invalid")
 		case c.note != "":
-			status, note = theme.WarnText.Render("warn"), c.note
+			status, note = theme.Grade(theme.StatusWarn).Render("warn"), c.note
 		}
 		bands = append(bands, band{
 			name:   c.key,
