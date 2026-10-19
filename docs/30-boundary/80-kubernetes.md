@@ -148,7 +148,7 @@ extraObjects:
 The ClusterRole is the part to think about rather than copy. `plugins/kube/rbac.go` in [rta-plugins](https://github.com/this-is-tobi/rta-plugins) already maps each capability to the rules it needs — it is what `kube.serviceaccount.provision` uses — and its header says what it deliberately leaves out. Two of those omissions are worth keeping out here too:
 
 - **`nodes/proxy`**, needed by `kube.metrics.pressure` and `kube.pvc.usage`. It cannot be subdivided, and it is effectively code execution against every pod on the node. Left out, those two capabilities degrade per node with `could not be read — Forbidden` rather than failing the call, which is the right shape.
-- **`secrets: get,list`**, needed by `kube.cert.list`. RBAC cannot scope a Secret rule by type, so granting it to read [TLS](../95-reference/10-glossary.md#acronyms) Secrets grants reading all of them. Left out, the capability refuses with `kube.forbidden` and a hint naming the missing permission.
+- **`secrets: get,list`**, needed by `kube.cert.list`. RBAC cannot scope a Secret rule by type, so granting it to read [TLS](../95-reference/10-glossary.md#acronyms) Secrets grants reading all of them. Left out, the capability refuses with `kube.denied` and a hint naming the missing permission.
 
 A read-only starting point, cluster-scoped because `namespace.list`, `node.list` and `metrics.node` are:
 

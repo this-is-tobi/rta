@@ -24,9 +24,11 @@ profiles:
         set:
           context: my-cluster
           serviceaccount.ttl: 1h   # how long `rta kube serviceaccount provision` mints a token for
-        # The fence: a call naming a namespace outside this list is refused, so is one naming none,
-        # and --all-namespaces is refused. It holds what a call carries; a capability with no
-        # namespace input (kube.overview, kube.node.list) reads what the credential allows.
+        # The fence: a call naming a namespace outside this list is refused, and so is
+        # --all-namespaces. A call naming none reads the whole list for kube.overview,
+        # kube.namespace.list and kube.pvc.usage, and is refused where the namespace is the scope of
+        # a grant (kube.pod.list and its siblings take --namespace shop-web,shop-billing).
+        # A capability with no namespace input (kube.node.list) reads what the credential allows.
         only:
           namespace: [shop-web, shop-billing]
 
@@ -143,7 +145,8 @@ A role is a day of grants under one word. It grants nothing by being in the file
 ```yaml
 roles:
   # Health and inventory: no row of a table and no secret value reaches the agent. kube.overview reads
-  # every TLS Secret of the cluster into rta's own process on each call, so it carries a rate.
+  # the TLS Secrets of every namespace it covers (the profile's fence, under one) into rta's own
+  # process on each call, so it carries a rate.
   shop-look:
     agent: claude
     ttl: 8h
