@@ -127,8 +127,8 @@ func TestExpiryGradesTheChainNotTheLeaf(t *testing.T) {
 	if !strings.HasPrefix(row[3], "WARN <30d") || !strings.Contains(row[3], "intermediate inter") {
 		t.Errorf("status = %q, want WARN naming the intermediate", row[3])
 	}
-	if want := chain[1].NotAfter.Format("2006-01-02"); row[1] != want {
-		t.Errorf("expires = %q, want the intermediate's %q", row[1], want)
+	if want := chain[1].NotAfter.Format("2006-01-02"); row[2] != want {
+		t.Errorf("expires = %q, want the intermediate's %q", row[2], want)
 	}
 
 	healthy, hkey := chainOf(t, 80*day, 400*day, 1*day)

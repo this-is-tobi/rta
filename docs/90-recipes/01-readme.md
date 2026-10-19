@@ -115,10 +115,10 @@ rta agent log --refused
 
 ```bash
 rta cert expiry example.com api.example.com -o json \
-  | jq -r '.rows[] | select(.[3] != "ok") | .[0] + ": " + .[2]'
+  | jq -r '.rows[] | select(.[3] != "ok") | .[0] + ": " + .[1]'
 ```
 
-The fourth column is the verdict — `ok`, `WARN <30d` (the window is `--warn-days`) or `EXPIRED` — and the third is the time left as text, `83d` or `expired 4191d ago`, not a number to compare.
+The fourth column is the verdict — `ok`, `WARN <30d` (the window is `--warn-days`) or `EXPIRED` — and the second is the time left as text, `83d` or `expired 4191d ago`, not a number to compare; the third is the date. Rows are the most urgent first, not in the order the hosts were listed: a host that could not be checked, then by the time left, soonest first, each row naming its host in the first column. A `cert.expiry` tile re-runs every ten minutes at the soonest, since the answer moves by the day and each run is a handshake with every host listed.
 
 The exit code says whether the check could be made, not what it found: an expired certificate exits 0, and a host that cannot be reached does not — the table is printed whole, an `ERROR` row for each host that was down, and the exit code is then `1`. To make a finding fail a job, ask for the verdict:
 

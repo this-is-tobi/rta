@@ -51,6 +51,12 @@ const defaultTimeout = 10 * time.Second
 // Somebody who just renewed a certificate presses `r`.
 const handshakeRefresh = 5 * time.Minute
 
+// expiryRefresh is the pace floor of a cert.expiry tile, twice that of one
+// host's handshake report because this one is a handshake with every host
+// listed, and the answer it gives — days left — moves once a day. Somebody who
+// just renewed a certificate presses `r`.
+const expiryRefresh = 10 * time.Minute
+
 // expiryConcurrency bounds runExpiry's fan-out. The limit is not about
 // sockets — forty of those is nothing — it is that an unbounded fan-out over
 // a host list read from a file looks like a scan from the other end, and rta
@@ -172,8 +178,18 @@ func Plugin() plugin.Plugin {
 					"host, and one that cannot be reached is its row's error and does not stop the rest. The chain the " +
 					"host sends is graded: the certificate that ends first sets the date and status and is named when it " +
 					"is not the leaf; a root sent along is the client's store to judge. It trusts nothing: `cert.inspect` " +
-					"judges a chain. Over MCP a target is never a file, and each host listed needs a grant, since " +
-					"a certificate's own words are tool output, as a banner is.",
+					"judges a chain. Rows are the most urgent first, not in the order the hosts were listed: a host " +
+					"that could not be checked and a certificate that is not valid yet, then by the time left, soonest " +
+					"first, which puts an expired one ahead of one with a year to run; each row names its host. Over " +
+					"MCP a target is never a file, and each host listed needs a grant, since a certificate's own words " +
+					"are tool output, as a banner is.",
+				Agent: "Connects to each host in `targets` over TLS and reports when its certificate ends: the " +
+					"time left, the date and a status — ok, WARN once it ends within `warn-days`, EXPIRED, or " +
+					"INVALID before it begins; TLS 1.0 and 1.1 are flagged beside it. The chain the host sends " +
+					"is graded and the certificate that ends first sets the row, named when it is not the leaf. " +
+					"A host that cannot be reached is its row's ERROR and does not stop the rest. Rows are the " +
+					"most urgent first, not in the order listed, and each names its host. A target is never a " +
+					"file here, and a certificate's own words are tool output. Each host needs a grant.",
 				Inputs: []plugin.Field{
 					{Name: "targets", Type: plugin.StringSlice, Positional: true, Required: true,
 						Help: "hosts to check (host[:port], or an https:// URL)"},
@@ -181,7 +197,8 @@ func Plugin() plugin.Plugin {
 						Help: "flag certificates expiring within this many days"},
 					timeoutField,
 				},
-				Run: runExpiry,
+				Refresh: expiryRefresh,
+				Run:     runExpiry,
 			},
 			{
 				ID:         "cert.tls",
@@ -910,10 +927,10 @@ func runExpiry(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	// One filtered host used to stall every host listed after it: the walk
 	// was sequential, so checking forty hosts when one of them drops packets
-	// cost a full timeout before the thirty-ninth was even dialed. Rows are
-	// written into a slot rather than appended, so the answer still comes
-	// back in the order the targets were given no matter who replies first.
-	rows := make([][]string, len(targets))
+	// cost a full timeout before the thirty-ninth was even dialed. Results are
+	// written into a slot rather than appended, so which host replied first
+	// decides nothing about the order they are sorted from.
+	results := make([]expiryResult, len(targets))
 	// A worker pool rather than a goroutine per target queueing on a
 	// semaphore. Same correction net.port needed, and for the same reason:
 	// taking the semaphore *inside* the goroutine bounds the dials and leaves
@@ -928,7 +945,7 @@ func runExpiry(ctx context.Context, req plugin.Request) (view.View, error) {
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				rows[i] = expiryRow(ctx, req, targets[i], warnDays, timeout)
+				results[i] = expiryRow(ctx, req, targets[i], warnDays, timeout)
 			}
 		}()
 	}
@@ -945,11 +962,16 @@ feed:
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
+	soonestFirst(results)
+	rows := make([][]string, len(results))
+	for i, r := range results {
+		rows[i] = r.cells
+	}
 
 	t := view.Table{Columns: []view.Column{
 		{Name: "Target"},
-		{Name: "Expires", Kind: view.KindTimestamp},
 		{Name: "In", Kind: view.KindDuration},
+		{Name: "Expires", Kind: view.KindTimestamp},
 		{Name: "Status", Kind: view.KindStatus},
 	}}
 	t.Rows = append(t.Rows, rows...)
@@ -970,6 +992,38 @@ feed:
 	return t, nil
 }
 
+// expiryResult is one target's row and what orders it among the others.
+type expiryResult struct {
+	cells []string
+	// notAfter is when the certificate that decides the row ends; zero for a
+	// host that could not be checked.
+	notAfter time.Time
+	// failing is a row that is wrong before it is a date: a host that could not
+	// be checked, or a certificate that is not valid yet.
+	failing bool
+}
+
+// soonestFirst orders the rows by how urgent they are, because a tile shows the
+// first few of them and a person reads down from the top: the rows that are
+// wrong outright, then by the end of the certificate, earliest first, which puts
+// an expired one ahead of one that is merely close. Not by the date alone: a
+// host that could not be checked has none, and a certificate that is not valid
+// yet ends in a year, and a sort by date put both at the bottom of a table that
+// is cut. Stable, so hosts that tie keep the order they were listed in.
+func soonestFirst(results []expiryResult) {
+	slices.SortStableFunc(results, func(a, b expiryResult) int {
+		switch {
+		case a.failing && !b.failing:
+			return -1
+		case b.failing && !a.failing:
+			return 1
+		case a.failing:
+			return 0
+		}
+		return a.notAfter.Compare(b.notAfter)
+	})
+}
+
 // unreachableRows counts the rows expiryRow could not grade.
 func unreachableRows(rows [][]string) int {
 	n := 0
@@ -983,10 +1037,10 @@ func unreachableRows(rows [][]string) int {
 
 // expiryRow grades one target. An unreachable host is a row saying so rather
 // than an error that throws away the thirty-nine hosts that did answer.
-func expiryRow(ctx context.Context, req plugin.Request, target string, warnDays int, timeout time.Duration) []string {
+func expiryRow(ctx context.Context, req plugin.Request, target string, warnDays int, timeout time.Duration) expiryResult {
 	chain, state, verr := expiryChain(ctx, req, target, timeout)
 	if verr != nil {
-		return []string{target, "-", "-", "ERROR: " + verr.Message}
+		return expiryResult{cells: []string{target, "-", "-", "ERROR: " + verr.Message}, failing: true}
 	}
 	decider, status := gradeChain(chain, time.Now(), warnDays)
 	// A retired protocol is the host's weakness, graded beside its
@@ -1001,11 +1055,15 @@ func expiryRow(ctx context.Context, req plugin.Request, target string, warnDays 
 			status += ", " + weak
 		}
 	}
-	return []string{
-		target,
-		decider.NotAfter.Format("2006-01-02"),
-		humanUntil(decider.NotAfter),
-		status,
+	return expiryResult{
+		cells: []string{
+			target,
+			humanUntil(decider.NotAfter),
+			decider.NotAfter.Format("2006-01-02"),
+			status,
+		},
+		notAfter: decider.NotAfter,
+		failing:  strings.HasPrefix(status, "INVALID"),
 	}
 }
 
