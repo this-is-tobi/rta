@@ -43,10 +43,13 @@ func Plugin() plugin.Plugin {
 				HostSpecific: true,
 				Idempotent:   true,
 				Detailed:     true,
-				Description: "A dense one-line-per-subsystem summary. With `detail` it " +
-					"expands into a full report: identity, per-core usage, " +
-					"memory and swap breakdown, every filesystem, sensors and top processes. " +
-					"Lines a platform cannot provide are omitted rather than failing the view.",
+				Description: "The host's health as a verdict and one line per subsystem, worst first: " +
+					"`status` (ok, or the worst fact), the fullest filesystem, memory by the kernel's " +
+					"pressure level (used memory where the kernel publishes none), load per core, cpu, " +
+					"swap, then the host's name and uptime. A line that cannot be read says so, and so " +
+					"does the status. `numbers` carries the figures behind the lines for a program. " +
+					"With `detail` it expands into a full report: identity, per-core usage, " +
+					"memory and swap breakdown, every filesystem, sensors and top processes.",
 				Run: runOverview,
 			},
 			{
@@ -123,44 +126,16 @@ func Plugin() plugin.Plugin {
 	}
 }
 
-// runOverview composes one dense line per subsystem — the grouped system
-// tile. Each line degrades independently: what a platform cannot read is
-// simply absent. On a full page (req "detail") it expands into a report.
+// runOverview is the grouped system tile: a verdict, then one dense line per
+// subsystem, worst-first (overviewFacts.page). A line that cannot be read says
+// so, in its own row and in the verdict. On a full page (req "detail") it
+// expands into a report.
 func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	if req.Bool("detail") {
 		return detailedOverview(ctx, req)
 	}
-	kv := view.KeyValue{}
-	add := func(key, value string) {
-		if value != "" {
-			kv.Pairs = append(kv.Pairs, view.Pair{Key: key, Value: value})
-		}
-	}
-
-	if info, err := hostInfo(ctx); err == nil {
-		add("host", hostLine(info))
-	}
-	cores, _ := cpu.CountsWithContext(ctx, true)
-	if s, err := sampleCPU(ctx); err == nil {
-		add("cpu", fmt.Sprintf("%.1f%% of %d cores", s.total, cores))
-	}
-	if vm, err := mem.VirtualMemoryWithContext(ctx); err == nil {
-		add("mem", fmt.Sprintf("%s / %s (%.1f%%)", format.Bytes(vm.Used), format.Bytes(vm.Total), vm.UsedPercent))
-	}
-	if sw, err := mem.SwapMemoryWithContext(ctx); err == nil && sw.Total > 0 {
-		add("swap", fmt.Sprintf("%s / %s (%.1f%%)", format.Bytes(sw.Used), format.Bytes(sw.Total), sw.UsedPercent))
-	}
-	if avg, err := load.AvgWithContext(ctx); err == nil {
-		v := fmt.Sprintf("%.2f · %.2f · %.2f", avg.Load1, avg.Load5, avg.Load15)
-		if cores > 0 {
-			perCore := avg.Load1 / float64(cores)
-			v += fmt.Sprintf(" (%.0f%%/core, %s)", perCore*100, loadVerdict(perCore))
-		}
-		add("load", v)
-	}
-	add("disk", fullestDisk(ctx))
-
-	if len(kv.Pairs) == 0 {
+	kv, ok := readOverview(ctx).page()
+	if !ok {
 		return nil, view.Errorf("sys.overview.unavailable", "no host telemetry readable on this platform")
 	}
 	return kv, nil
@@ -279,28 +254,6 @@ func withRoot(kept, all []disk.PartitionStat) []disk.PartitionStat {
 		}
 	}
 	return kept
-}
-
-// fullestDisk summarizes the most-used real filesystem — the one that pages
-// you first.
-func fullestDisk(ctx context.Context) string {
-	parts, err := realPartitions(ctx)
-	if err != nil {
-		return ""
-	}
-	best, bestPct := "", -1.0
-	for _, p := range parts {
-		u, err := disk.UsageWithContext(ctx, p.Mountpoint)
-		if err != nil || u.Total == 0 {
-			continue
-		}
-		if u.UsedPercent > bestPct {
-			bestPct = u.UsedPercent
-			best = fmt.Sprintf("%s %s / %s (%.0f%%, %s)", p.Mountpoint,
-				format.Bytes(u.Used), format.Bytes(u.Total), u.UsedPercent, usageStatus(u.UsedPercent))
-		}
-	}
-	return best
 }
 
 // coresChart is one bar per core, each at its share of the window rounded to
@@ -604,9 +557,9 @@ func systemVolume(mountpoint string) bool {
 // loadVerdict grades a per-core load average in the shared vocabulary.
 func loadVerdict(perCore float64) string {
 	switch {
-	case perCore >= 1.0:
+	case perCore >= loadOverloaded:
 		return "overloaded"
-	case perCore >= 0.7:
+	case perCore >= loadBusy:
 		return "busy"
 	default:
 		return "ok"
@@ -768,22 +721,6 @@ func osLine(info *host.InfoStat) string {
 		line = strings.TrimSpace(line + " (" + info.KernelArch + ")")
 	}
 	return line
-}
-
-// hostLine is the overview's one line for the host: its name, what it runs and
-// how long it has been up, each only if it was read.
-func hostLine(info *host.InfoStat) string {
-	var parts []string
-	if info.Hostname != "" {
-		parts = append(parts, info.Hostname)
-	}
-	if platform := osLine(info); platform != "" {
-		parts = append(parts, platform)
-	}
-	if info.Uptime > 0 {
-		parts = append(parts, "up "+format.Uptime(uptimeOf(info.Uptime)))
-	}
-	return strings.Join(parts, " · ")
 }
 
 // hostAddrs returns up to four non-loopback unicast addresses, IPv4 first —
