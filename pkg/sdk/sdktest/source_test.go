@@ -267,6 +267,69 @@ func TestWithSourceHoldsThePluginsOwnSource(t *testing.T) {
 	}
 }
 
+// The host stops running a dashboard tile on a code's ending alone, `.auth.failed`
+// or `.denied`, so a plugin that words a refusal `.forbidden`, `.unauthorized` or
+// `.unauthenticated` has a tile that keeps asking with a wrong password, and the
+// run says nothing. The scan notes it, naming the ending to use, without failing:
+// it reads a spelling and not what the code means. It reads a code as a literal
+// of lower-case words joined by single dots, or the bare ending a code is built
+// with, and not a sentence that says the word (with a dot in it or without), a
+// word on its own, a code that is already read, or anything in a test.
+func TestASourceThatWordsARefusalAnotherWayIsNotedAndNotFailed(t *testing.T) {
+	dir := t.TempDir()
+	writeSource(t, dir, "codes.go", "package main\n\n"+
+		"var a = view.Errorf(\"demo.forbidden\", \"no\")\n"+
+		"var b = view.Errorf(code+\".unauthorized\", \"no\")\n"+
+		"var c = view.Errorf(\"demo.conn.unauthenticated\", \"no\")\n"+
+		"var d = view.Errorf(\"demo.denied\", \"no\")\n"+
+		"var e = view.Errorf(\"demo.auth.failed\", \"no\")\n"+
+		"var f = \"the request was forbidden\"\n"+
+		"var g = \"forbidden\"\n"+
+		"var h = \"Demo.forbidden\"\n"+
+		"var i = \"demo.forbidden.soon\"\n"+
+		// The first four end `.forbidden`, so they get as far as the check of
+		// what stands before it (a sentence, a leading dot, a trailing dot, a
+		// double dot), and none of them is a code. The last is a sentence with a
+		// dot in it that ends in the word and never gets that far.
+		"var j = \"no such file.forbidden\"\n"+
+		"var k = \".demo.forbidden\"\n"+
+		"var l = \"demo..forbidden\"\n"+
+		"var m = \"a..b.forbidden\"\n"+
+		"var n = \"no such file. it is forbidden\"\n")
+	writeSource(t, dir, "codes_test.go", "package main\n\nvar fixture = \"demo.test.forbidden\"\n")
+
+	rec := &recorder{}
+	cfg := noConfig()
+	WithSource(dir)(&cfg)
+	checkAll(rec, sourceDemo(), cfg, t.TempDir(), nil)
+
+	if len(rec.errs) > 0 {
+		t.Errorf("a code worded another way failed the suite:\n%s", rec.errText())
+	}
+	file := filepath.Join(dir, "codes.go")
+	for _, want := range []string{
+		"sdktest: codes: " + file + `:3:21 spells the code "demo.forbidden"`,
+		`name it "demo.denied"`,
+		"sdktest: codes: " + file + `:4:26 spells the code ".unauthorized"`,
+		`name it ".auth.failed"`,
+		"sdktest: codes: " + file + `:5:21 spells the code "demo.conn.unauthenticated"`,
+		`name it "demo.conn.auth.failed"`,
+	} {
+		if !strings.Contains(rec.logText(), want) {
+			t.Errorf("the suite did not note %q:\n%s", want, rec.logText())
+		}
+	}
+	noted := 0
+	for _, l := range rec.logs {
+		if strings.HasPrefix(l, "sdktest: codes: ") {
+			noted++
+		}
+	}
+	if noted != 3 {
+		t.Errorf("want a note for each of the three codes and none for the rest, got %d:\n%s", noted, rec.logText())
+	}
+}
+
 // A directory with no source in it is refused rather than read as clean: a
 // WithSource naming the wrong place would otherwise pass for good.
 func TestWithSourceRefusesADirectoryWithNothingToRead(t *testing.T) {
