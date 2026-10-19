@@ -22,14 +22,14 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
  rta  dashboard  ↓ more
  ❯ 21 plugins · 131 capabilities — press / or enter to search
 ╭─ sys.overview ──────────────────────╮ ╭─ agent.overview ─────────────────────╮
-│ host  laptop.home · darwin 26.5.2   │ │ waiting on you          0            │
-│       (arm64) · up 4d 19h           │ │ connected now                        │
-│ cpu   10.9% of 14 cores             │ │   none — no client has an rta server │
-│ mem   25.7 GiB / 36.0 GiB (71.5%)   │ │   open; `rta mcp install claude`,    │
-│ swap  20.9 GiB / 22.0 GiB (95.2%)   │ │   then restart the client            │
-│ load  3.05 · 3.74 · 4.56 (22%/core, │ │ locked                  nothing      │
-│       ok)                           │ │ roles in force          none         │
-│ … enter for details                 │ │ … enter for details                  │
+│ status  ok                          │ │ waiting on you          0            │
+│ disk    ok — 41% of / (380.1 of     │ │ connected now                        │
+│         926.4 GiB)                  │ │   none — no client has an rta server │
+│ mem     ok — 25.7 of 36.0 GiB       │ │   open; `rta mcp install claude`,    │
+│ load    ok — 22%/core               │ │   then restart the client            │
+│ cpu     10.9% of 14 cores           │ │ locked                  nothing      │
+│ swap    20.9 of 22.0 GiB (95%)      │ │ roles in force          none         │
+│ host    laptop.home · up 4d 19h     │ │ … enter for details                  │
 ╰─────────────────────────────────────╯ ╰──────────────────────────────────────╯
 ╭─ grant.list ────────────────────────╮ ╭─ net.overview ───────────────────────╮
 │ guard  off — any process running as │ │ en0         192.168.1.20 ·           │

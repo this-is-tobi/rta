@@ -2,8 +2,8 @@ package sys
 
 import (
 	"context"
-	"strings"
 	"testing"
+	"time"
 
 	"github.com/shirou/gopsutil/v4/host"
 
@@ -55,30 +55,32 @@ func TestOverviewKeepsItsHostLineWhenTheSystemToolsAreNotOnPATH(t *testing.T) {
 }
 
 // A piece that could not be read leaves its words out of the line, not a
-// dangling "()" or a double space in it.
+// dangling "()" or a double space in it. The overview's host row is the name and
+// the uptime; the platform and the architecture are the detailed report's.
 func TestTheHostLinesNameOnlyWhatWasRead(t *testing.T) {
-	full := &host.InfoStat{Hostname: "build-1", Platform: "darwin", PlatformVersion: "26.0", KernelArch: "arm64", Uptime: 3600}
-	if got := hostLine(full); got != "build-1 · darwin 26.0 (arm64) · up 1h 0m" {
-		t.Errorf("full host line = %q", got)
+	full := &host.InfoStat{Platform: "darwin", PlatformVersion: "26.0", KernelArch: "arm64"}
+	if got := osLine(full); got != "darwin 26.0 (arm64)" {
+		t.Errorf("full os line = %q", got)
 	}
-	// The family's one spelling of an uptime (format.Uptime): two units, days and
-	// hours past a day, so a host up for a week does not print its minutes.
-	for secs, want := range map[uint64]string{
-		30 * 60:                       "up 30m",
-		90 * 60:                       "up 1h 30m",
-		4*86400 + 19*3600 + 5*60:      "up 4d 19h",
-		14*86400 + 2*3600 + 59*60 + 1: "up 14d 2h",
-	} {
-		line := hostLine(&host.InfoStat{Hostname: "build-1", Uptime: secs})
-		if !strings.HasSuffix(line, want) {
-			t.Errorf("an uptime of %d seconds reads %q, want it to end %q", secs, line, want)
-		}
-	}
-	noVersion := &host.InfoStat{Hostname: "build-1", Platform: "darwin", KernelArch: "arm64"}
-	if got := hostLine(noVersion); got != "build-1 · darwin (arm64)" {
-		t.Errorf("host line without a version = %q", got)
+	noVersion := &host.InfoStat{Platform: "darwin", KernelArch: "arm64"}
+	if got := osLine(noVersion); got != "darwin (arm64)" {
+		t.Errorf("os line without a version = %q", got)
 	}
 	if got := osLine(&host.InfoStat{}); got != "" {
 		t.Errorf("os line of nothing = %q", got)
+	}
+
+	row := func(h hostFact) string {
+		f := overviewFacts{host: h}
+		return f.hostRow().value
+	}
+	if got := row(hostFact{name: "build-1", uptime: time.Hour}); got != "build-1 · up 1h 0m" {
+		t.Errorf("host row = %q", got)
+	}
+	if got := row(hostFact{name: "build-1"}); got != "build-1" {
+		t.Errorf("host row without an uptime = %q", got)
+	}
+	if got := row(hostFact{uptime: time.Hour}); got != "up 1h 0m" {
+		t.Errorf("host row without a name = %q", got)
 	}
 }

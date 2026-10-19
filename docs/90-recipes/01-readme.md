@@ -91,7 +91,7 @@ rta agent overview
 rta doctor
 ```
 
-`sys overview` is host health grouped rather than seven commands. `agent overview` is the last hour of agent calls, how many were refused, and anything parked waiting on you. `doctor` is what rta can reach — read the `info` rows, not just the failures.
+`sys overview` is the host's health in one answer rather than seven commands: its first line is `ok` or the worst thing it found, and the fullest filesystem, memory pressure and load follow in that order. `agent overview` is the last hour of agent calls, how many were refused, and anything parked waiting on you. `doctor` is what rta can reach — read the `info` rows, not just the failures.
 
 Once a week, the machine itself:
 

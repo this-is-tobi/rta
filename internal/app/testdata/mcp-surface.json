@@ -2362,7 +2362,7 @@
   },
   {
     "name": "sys_overview",
-    "description": "One-screen host health: cpu, memory, load, disk, uptime\n\nA dense one-line-per-subsystem summary. With `detail` it expands into a full report: identity, per-core usage, memory and swap breakdown, every filesystem, sensors and top processes. Lines a platform cannot provide are omitted rather than failing the view.\n\nSafety: read.",
+    "description": "One-screen host health: cpu, memory, load, disk, uptime\n\nThe host's health as a verdict and one line per subsystem, worst first: `status` (ok, or the worst fact), the fullest filesystem, memory by the kernel's pressure level (used memory where the kernel publishes none), load per core, cpu, swap, then the host's name and uptime. A line that cannot be read says so, and so does the status. `numbers` carries the figures behind the lines for a program. With `detail` it expands into a full report: identity, per-core usage, memory and swap breakdown, every filesystem, sensors and top processes.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {

@@ -349,8 +349,9 @@ func TestPSHasRSSColumn(t *testing.T) {
 	}
 }
 
-// TestOverviewGroupsSubsystems: the grouped view carries one dense line per
-// subsystem; the essentials must be present on any host running the tests.
+// TestOverviewGroupsSubsystems: the grouped view carries the verdict and one
+// dense line per subsystem; the essentials must be present on any host running
+// the tests.
 func TestOverviewGroupsSubsystems(t *testing.T) {
 	v, err := runOverview(context.Background(), plugin.NewRequest(nil, false, false))
 	if err != nil {
@@ -364,13 +365,13 @@ func TestOverviewGroupsSubsystems(t *testing.T) {
 		}
 		keys[p.Key] = p.Value
 	}
-	for _, want := range []string{"host", "cpu", "mem", "disk"} {
+	for _, want := range []string{"status", "host", "cpu", "mem", "disk"} {
 		if keys[want] == "" {
 			t.Errorf("overview missing %q line (got %v)", want, keys)
 		}
 	}
-	if !strings.Contains(keys["mem"], " / ") {
-		t.Errorf("mem line not used/total: %q", keys["mem"])
+	if !strings.Contains(keys["mem"], " of ") && !strings.Contains(keys["mem"], " / ") {
+		t.Errorf("mem line not used and total: %q", keys["mem"])
 	}
 	if !strings.Contains(keys["cpu"], "cores") {
 		t.Errorf("cpu line missing core count: %q", keys["cpu"])
