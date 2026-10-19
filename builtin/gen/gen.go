@@ -20,6 +20,7 @@ import (
 	"math"
 	"math/big"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -54,19 +55,33 @@ func Plugin() plugin.Plugin {
 			{
 				ID:      "gen.overview",
 				Summary: "A sampler of the shapes worth generating, ready to use",
-				// Being called `overview` is what makes this gen's dashboard
-				// tile, so the decision lives here rather than in a map inside
-				// the TUI: the tile refreshes on a timer with fresh, real,
-				// usable secrets on it, and the shoulder-surf and screen-share
-				// risk that carries was raised explicitly and accepted — on the
-				// same "H hides it" basis every other tile's visibility rests
-				// on, and the same basis kv.overview and grant.list already show
-				// state some viewers would rather not have on a projector. It
-				// is the overview and not gen.password because the question at
-				// a glance is "which shape do I need" — a password, an actual
-				// 32-byte key, a UUID — and a column of passwords cannot answer
-				// it.
+				// Being called `overview` would make this gen's dashboard tile, and
+				// the host leaves it off the automatic dashboard on purpose
+				// (tui.leftOff): a table of fresh secrets is not a status. It is one
+				// `rta dashboard add` away for somebody who wants it, and what is
+				// on it is real, usable secrets, whose shoulder-surf and
+				// screen-share risk was raised explicitly and accepted — on the
+				// same "H hides it" basis every other tile's visibility rests on,
+				// and the same basis kv.overview and grant.list already show state
+				// some viewers would rather not have on a projector. It is the
+				// overview and not gen.password because the question at a glance is
+				// "which shape do I need" — a password, an actual 32-byte key, a
+				// UUID — and a column of passwords cannot answer it.
 				//
+				// **Rolled once a day at most, because a value that changes every
+				// five seconds cannot be read, let alone copied, before it is
+				// gone.** An added tile ran at the timer's tick like any local read,
+				// and the password on it was a different one each time a person
+				// looked up from copying the last. Refresh is a floor that a
+				// configuration can lengthen and never shorten: a day is also over the
+				// hour from which the host leaves a tile unrun when the TUI opens, so
+				// the tile rolls when a person presses `r` and then once a day, and
+				// no secret is drawn that nobody asked for. NoPreview is
+				// not the declaration for this — it governs the automatic dashboard,
+				// which leftOff already keeps this off, and a plugin whose overview
+				// is NoPreview falls through to gen.password, which is the same
+				// re-rolled secret as one line.
+				Refresh: 24 * time.Hour,
 				// Wide enough for a 44-character base64 key and its label.
 				// Everything here is a real value somebody is meant to read
 				// and copy, and a value that wrapped or got an ellipsis is

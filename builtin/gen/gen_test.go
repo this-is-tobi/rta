@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -202,6 +203,28 @@ func TestUUIDv7IsTimeOrdered(t *testing.T) {
 	}
 	if id.Version() != 7 {
 		t.Errorf("version = %d, want 7", id.Version())
+	}
+}
+
+// A tile somebody added re-rolled every five seconds, which is a value that
+// cannot be read, let alone copied, before it is replaced. The overview is paced
+// at a floor of a day, which a configuration can lengthen and never shorten: a
+// roll when a person presses `r`, then once a day.
+func TestAnAddedOverviewTileIsNotRerolledMoreOftenThanOnceADay(t *testing.T) {
+	var c plugin.Capability
+	for _, cc := range Plugin().Capabilities {
+		if cc.ID == "gen.overview" {
+			c = cc
+		}
+	}
+	if c.Pace() != 24*time.Hour {
+		t.Errorf("gen.overview is paced at %s, want 24h", c.Pace())
+	}
+	if got, cut := plugin.ClampPace(c, 5*time.Second); got != 24*time.Hour || !cut {
+		t.Errorf("a configured 5s pace = %s (cut: %v), want the floor", got, cut)
+	}
+	if got, cut := plugin.ClampPace(c, 48*time.Hour); got != 48*time.Hour || cut {
+		t.Errorf("a configured 48h pace = %s (cut: %v), want it kept", got, cut)
 	}
 }
 
