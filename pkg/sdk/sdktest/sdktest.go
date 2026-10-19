@@ -124,6 +124,14 @@ const (
 	// would carry its unit, an input an agent is offered with no Help. Skipped
 	// by capability ID.
 	RuleWording Rule = "wording"
+	// RuleCodes: an error code the plugin's source spells out names a refused
+	// credential in a word the host does not read — `.forbidden`,
+	// `.unauthorized` or `.unauthenticated` — where `.denied` (the account is
+	// known and may not do this) or `.auth.failed` (it was not accepted) is
+	// what a dashboard stops running a tile on. Notes, never failures, and
+	// only given WithSource, which is where a code is read from: a literal
+	// belongs to no capability, so no Skip waives it.
+	RuleCodes Rule = "codes"
 )
 
 // runTimeout bounds one capability. A handler that ignores ctx would

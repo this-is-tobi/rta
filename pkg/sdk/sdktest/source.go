@@ -23,7 +23,8 @@ import (
 // reader can make, every connection setting it names through SettingName,
 // SettingTo or CAHint is an input it declares Local, and every input it
 // gives through InputTo is one an agent gives as an argument (see
-// checkSource).
+// checkSource). It notes, under RuleCodes and without failing, a code the
+// source spells that ends `.forbidden`, `.unauthorized` or `.unauthenticated`.
 //
 // An option rather than the default because Check is not always called from
 // the plugin's own directory: rta runs it over every built-in from the
@@ -53,6 +54,15 @@ func WithSource(dir string) Option {
 // No Skip waives it: a sentence the scan misreads is one to word through the
 // naming helpers, which is what the scan asks for anyway, and none of the
 // official plugins' copies ever needed a waiver.
+//
+// The one thing it only notes is a code (RuleCodes). The host reads a refused
+// credential from the ending of the code alone (view.Error.CredentialRefused),
+// so a plugin that says it with another word has a dashboard tile that keeps
+// asking with a wrong password, and nothing in the run fails to say so: the
+// codes a capability returns are seen only for the one run of its defaults,
+// which is rarely a refusal, and the source holds them all. A note rather than
+// a failure because the word is also right for something that is not a refusal
+// of a credential, and the scan reads a spelling, not what the code means.
 func checkSource(t reporter, p plugin.Plugin, dir string) {
 	t.Helper()
 
@@ -86,7 +96,76 @@ func checkSource(t reporter, p plugin.Plugin, dir string) {
 				t.Errorf("sdktest: %s: %s: %s", RuleSpelling, fset.Position(st.pos), problem)
 			}
 		}
+		for _, c := range wordedRefusals(f) {
+			t.Logf("sdktest: %s: %s spells the code %q, which says a credential was refused in a word the host "+
+				"does not read. A refused credential ends `.auth.failed` when the service did not accept the "+
+				"account and `.denied` when it knows the account and it may not do this, and a dashboard stops "+
+				"running a tile the service has refused twice in a row on those endings alone; a code ending "+
+				"otherwise keeps asking. If this is a refusal, name it %q; if it is something else, a login "+
+				"that is missing or a rate limit, say what it is", RuleCodes, fset.Position(c.pos), c.code, c.use)
+		}
 	}
+}
+
+// refusalWords are the endings a code gets for a refused credential that the
+// host does not read, and the ending it reads in each one's place: what a
+// service found forbidden is an account that may not do this, and what it
+// found unauthorized or unauthenticated is one it did not accept.
+var refusalWords = map[string]string{
+	"forbidden":       "denied",
+	"unauthorized":    "auth.failed",
+	"unauthenticated": "auth.failed",
+}
+
+// wordedRefusal is a string the source spells that is a code ending in one of
+// the refusalWords, and the code it would be read as.
+type wordedRefusal struct {
+	pos  token.Pos
+	code string
+	use  string
+}
+
+// wordedRefusals returns the codes in f that end in a word of refusalWords.
+//
+// A code is lower-case words, digits and hyphens joined by dots, with no space
+// in it, so a sentence that says "forbidden" is not read. A literal that is
+// only the ending, `".forbidden"`, is read too, since a namespace's codes are
+// often built as `code + ".forbidden"`; its replacement is the bare ending. A
+// code held in a variable or built by a call is not seen, as for every scan
+// here that reads a literal.
+func wordedRefusals(f *ast.File) []wordedRefusal {
+	var out []wordedRefusal
+	ast.Inspect(f, func(n ast.Node) bool {
+		lit, ok := n.(*ast.BasicLit)
+		if !ok {
+			return true
+		}
+		code, ok := stringLit(lit)
+		if !ok {
+			return true
+		}
+		dot := strings.LastIndexByte(code, '.')
+		if dot < 0 {
+			return true
+		}
+		stem := code[:dot]
+		if replacement, known := refusalWords[code[dot+1:]]; known && isCodeStem(stem) {
+			out = append(out, wordedRefusal{lit.Pos(), code, stem + "." + replacement})
+		}
+		return true
+	})
+	return out
+}
+
+// isCodeStem reports whether s can come before the last word of a code: nothing,
+// or lower-case words, digits and hyphens joined by dots.
+func isCodeStem(s string) bool {
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '.' {
+			return false
+		}
+	}
+	return !strings.HasPrefix(s, ".") && !strings.HasSuffix(s, ".") && !strings.Contains(s, "..")
 }
 
 // Sentence is one string a plugin's Go source spells out (Sentences).
