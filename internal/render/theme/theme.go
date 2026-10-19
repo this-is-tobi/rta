@@ -616,10 +616,14 @@ const (
 // the callers learning to say "fail overloaded".
 //
 // TestEveryStatusWordTheBuiltinsUseIsColoured is what keeps this honest: it
-// carries the literals the plugins actually emit, so adding a fourth unknown
-// word fails a test instead of silently losing a colour.
+// carries the literals the built-ins actually emit, so adding a fourth unknown
+// word fails a test instead of silently losing a colour, and
+// TestEveryStatusWordThePluginsUseIsColouredAsItsTroubleDeserves carries the
+// first-party plugins', which the host cannot derive: a NotReady node and an
+// unhealthy container were the worst thing their tiles could say and the
+// plainest thing on them.
 func ClassifyStatus(s string) StatusKind {
-	v := strings.ToLower(strings.TrimSpace(s))
+	v := initStageOf(strings.ToLower(strings.TrimSpace(s)))
 	switch {
 	case v == "" || isName(v):
 		return StatusNeutral
@@ -645,7 +649,16 @@ func ClassifyStatus(s string) StatusKind {
 		// An overview with no reading of its backend, or of a backend that is up
 		// and has not been set up: docker and qdrant already lead with the first,
 		// and a Vault that was never initialised is the second.
-		strings.HasPrefix(v, "unreadable") || strings.HasPrefix(v, "not initialized"):
+		strings.HasPrefix(v, "unreadable") || strings.HasPrefix(v, "not initialized") ||
+		// Unwell and not yet down, in the words the orchestrators and the container
+		// runtime use: a node or a pod nobody can say anything of, one that is
+		// being removed, a container the runtime keeps starting again, a
+		// certificate with days left, a service running short of what it
+		// promised. Amber, because the next thing to read is the reason, and a
+		// word that is neither red nor green was drawn plain before.
+		strings.HasPrefix(v, "unknown") || strings.HasPrefix(v, "terminating") ||
+		strings.HasPrefix(v, "restarting") || strings.HasPrefix(v, "expiring") ||
+		strings.HasPrefix(v, "degraded"):
 		return StatusWarn
 	case strings.HasPrefix(v, "error") || strings.HasPrefix(v, "expired") ||
 		strings.HasPrefix(v, "invalid") || strings.HasPrefix(v, "fail") ||
@@ -665,7 +678,15 @@ func ClassifyStatus(s string) StatusKind {
 		strings.HasPrefix(v, "answered, and refused") || strings.HasPrefix(v, "answered, and did not accept") ||
 		// A store that is up and answers nothing until somebody opens it: Vault's
 		// seal state, the one thing its overview exists to report.
-		strings.HasPrefix(v, "sealed"):
+		strings.HasPrefix(v, "sealed") ||
+		// What a node, a pod or a container says when it is not serving, as
+		// kubectl and the runtimes spell it: not one of these begins with "fail"
+		// or "error", and each was drawn plain beside an "ok" in green. Redis's
+		// INFO reports a failed save as "err".
+		strings.HasPrefix(v, "notready") || strings.HasPrefix(v, "crashloop") ||
+		strings.HasPrefix(v, "imagepull") || strings.HasPrefix(v, "errimage") ||
+		strings.HasPrefix(v, "oomkilled") || strings.HasPrefix(v, "evicted") ||
+		strings.HasPrefix(v, "unhealthy") || isWord(v, "dead") || isWord(v, "err"):
 		return StatusBad
 	case strings.HasPrefix(v, "closed") || isWord(v, "info") ||
 		isWord(v, "none") || strings.HasPrefix(v, "disabled") ||
@@ -674,6 +695,19 @@ func ClassifyStatus(s string) StatusKind {
 	default:
 		return StatusNeutral
 	}
+}
+
+// initStageOf is v without the `Init:` kubectl puts in front of the word for a
+// pod that is stuck in an init container — `Init:CrashLoopBackOff`,
+// `Init:Error` — so the stage does not hide the state from the stems below.
+// `Init:0/1`, the ordinary wait, is left a name for isName to refuse, and a
+// colon followed by a space is somebody's sentence and is left as it is.
+func initStageOf(v string) string {
+	rest, ok := strings.CutPrefix(v, "init:")
+	if !ok || rest == "" || rest[0] == ' ' {
+		return v
+	}
+	return rest
 }
 
 // isName is whether the text leads with a name rather than a word of the
