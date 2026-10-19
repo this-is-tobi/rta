@@ -76,6 +76,21 @@ func TestFenceNarrowOffersTheAllowlistWhereThereIsNothingElse(t *testing.T) {
 			t.Errorf("%s: Narrow = %q, want %q", tc.name, joined(got), tc.want)
 		}
 	}
+	// A list input is fenced a name at a time, and completes the same way: a
+	// Live Suggest on one answers nothing on this channel either, so the
+	// allowlist is what there is, and what the service says on the deliberate
+	// press is narrowed to it.
+	list := func(f Field) Field { f.Name, f.Config, f.Type = "x", "x", StringSlice; return f }
+	live := list(Field{Suggest: suggest, Live: true})
+	if got := fence.Narrow(live, nil); joined(got) != "beta,delta" {
+		t.Errorf("a Live list: Narrow = %q, want the allowlist", got)
+	}
+	if got := fence.Narrow(list(Field{}), nil); joined(got) != "beta,delta" {
+		t.Errorf("a list with nothing of its own: Narrow = %q, want the allowlist", got)
+	}
+	if got := fence.Filter(live, []string{"alpha\tgone", "beta\tkept", "gamma", "delta"}); joined(got) != "beta\tkept,delta" {
+		t.Errorf("a Live list's answer: Filter = %q, want only what the fence holds", got)
+	}
 	// Unfenced, a list is whole and an empty one stays empty.
 	plain := Field{Name: "y", Type: String, Config: "y"}
 	if got := fence.Narrow(plain, []string{"a"}); joined(got) != "a" {
