@@ -147,7 +147,8 @@ func resolve(c Capability, in Inputs) (map[string]any, map[string]origin) {
 			out[f.Name] = f.Default
 		}
 	}
-	// An input the connection's fence allows one value of is that value, when
+	// An input the connection's fence allows one value of is that value, and a
+	// list-shaped input is every value the fence allows (fenceDefault), when
 	// nothing above this says otherwise. Over the declared default and under
 	// every layer that states something: the operator who wrote a one-entry list
 	// has said where this connection goes, and the plugin's own default is the
@@ -164,8 +165,10 @@ func resolve(c Capability, in Inputs) (map[string]any, map[string]origin) {
 	// the gate never saw. Left unset it reads blank, and blank is outside the
 	// list, so the call has to name the value and the gate sees it.
 	for _, f := range c.Inputs {
-		if allowed, fenced := in.Fence.of(f); fenced && len(allowed) == 1 && ProfileFillable(c, f) {
-			out[f.Name] = fenceDefault(f, allowed[0])
+		if allowed, fenced := in.Fence.of(f); fenced && ProfileFillable(c, f) {
+			if v, filled := fenceDefault(f, allowed); filled {
+				out[f.Name] = v
+			}
 		}
 	}
 	// Between the defaults and the caller's values, so it beats the first and
