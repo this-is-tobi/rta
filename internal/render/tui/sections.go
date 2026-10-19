@@ -465,15 +465,15 @@ func (m Model) sectionSummary(run sectionRun) headerSummary {
 	sum := headerSummary{count: theme.Subtle.Render(format.Count(run.size(), "tile", "tiles"))}
 	switch {
 	case counts[gradeBad] > 0:
-		sum.problem = theme.BadText.Render(fmt.Sprintf("● %d bad", counts[gradeBad]))
+		sum.problem = theme.Grade(theme.StatusBad).Render(fmt.Sprintf("● %d bad", counts[gradeBad]))
 	case counts[gradeWarn] > 0:
-		sum.problem = theme.WarnText.Render(fmt.Sprintf("● %d warn", counts[gradeWarn]))
+		sum.problem = theme.Grade(theme.StatusWarn).Render(fmt.Sprintf("● %d warn", counts[gradeWarn]))
 	}
 	switch {
 	case loading > 0:
 		sum.rest = theme.Subtle.Render(fmt.Sprintf("%d loading", loading))
 	case counts[gradeBad]+counts[gradeWarn] == 0 && counts[gradeGood] > 0:
-		sum.rest = theme.GoodText.Render("ok")
+		sum.rest = theme.Grade(theme.StatusGood).Render("ok")
 	}
 	return sum
 }

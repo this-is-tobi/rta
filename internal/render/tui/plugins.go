@@ -608,6 +608,12 @@ func (m Model) pluginsView() string {
 		}
 		label := " " + strings.ToUpper(row.plugin.Name) + " "
 
+		// **The words of this band are drawn in the status colours by hand and not
+		// through theme.Grade, and that is the rule.** Whether a tile is on, and
+		// whether rta runs an artifact, approved, untrusted, failed to start or not
+		// run, say what the code on this machine is allowed to do and not how well
+		// anything is, so no setting of how status is drawn quiets them
+		// (theme.Cue). The reach beside them is safetyStyle, for the same reason.
 		state := theme.Subtle.Render("—")
 		switch {
 		case row.canTile() && row.shown:
@@ -781,19 +787,11 @@ func pluginDetail(row pluginRow) string {
 	return detail
 }
 
-// reachLabel styles the worst thing a plugin can do, in the same colours the
-// rest of the app uses for the same three words. Read is deliberately muted:
-// it is the majority and the safe one, and a screen where everything is
-// coloured says nothing.
+// reachLabel styles the worst thing a plugin can do as the catalogue styles the
+// safety class of a capability (safetyStyle): the status colours for write and
+// destructive in every setting of how status is drawn, and read muted.
 func reachLabel(row pluginRow, text string) string {
-	switch row.reach() {
-	case plugin.Destructive:
-		return theme.BadText.Render(text)
-	case plugin.Write:
-		return theme.WarnText.Render(text)
-	default:
-		return theme.Subtle.Render(text)
-	}
+	return safetyStyle(row.reach()).Render(text)
 }
 
 // trustSelected takes the trust decision the pane is showing, without leaving

@@ -195,6 +195,19 @@ const (
 	gradeBad
 )
 
+// kind is the theme's name for a grade, to ask how the `status:` setting draws it.
+func (g grade) kind() theme.StatusKind {
+	switch g {
+	case gradeGood:
+		return theme.StatusGood
+	case gradeWarn:
+		return theme.StatusWarn
+	case gradeBad:
+		return theme.StatusBad
+	}
+	return theme.StatusNeutral
+}
+
 // gradeOf maps the theme's classification onto the three that count.
 func gradeOf(k theme.StatusKind) grade {
 	switch k {

@@ -416,14 +416,21 @@ func permissionSentence(c plugin.Capability) string {
 // allowed to do, and what an agent needs before it may. The search tile
 // shows it right-aligned; the catalogue pads it into a column.
 func permissionLabel(c plugin.Capability) string {
-	style := theme.Subtle
-	switch c.Safety {
-	case plugin.Write:
-		style = theme.WarnText
-	case plugin.Destructive:
-		style = theme.BadText
+	return safetyStyle(c.Safety).Render(permissionText(c))
+}
+
+// safetyStyle is the colour of a safety class where read is the majority and the
+// safe one, and a screen where everything is coloured says nothing: muted for read,
+// and the status colours for the two classes that change something. It is a cue
+// (theme.Cue) and no grade, so no setting of how status is drawn quiets it: a
+// destructive call is as red under "off" as under "all".
+func safetyStyle(s plugin.Safety) lipgloss.Style {
+	if s != plugin.Read {
+		if style, ok := theme.Cue(string(s)); ok {
+			return style
+		}
 	}
-	return style.Render(permissionText(c))
+	return theme.Subtle
 }
 
 // permissionCell is permissionLabel padded to a column width, with the
