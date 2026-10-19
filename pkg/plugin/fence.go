@@ -224,14 +224,27 @@ func (fn Fence) of(f Field) ([]any, bool) {
 	return list, fenced
 }
 
-// fenceDefault is what an input a fence allows exactly one value of resolves to
-// when nobody supplied one: that value, in the shape the input reads — a
-// list-shaped input holds a list of one.
-func fenceDefault(f Field, only any) any {
-	if f.Type == StringSlice {
-		return stringSlice(only)
+// fenceDefault is what an input the fence allows values of resolves to when
+// nobody supplied one, and whether it resolves to anything.
+//
+// An input that holds one value is that value when the fence allows exactly one:
+// the operator who wrote a one-entry list has said where the connection goes. An
+// input that holds a list is every value the fence allows, however many: the
+// list is what the connection reaches, a handler given a list reads each of its
+// entries, and a call that names none has asked for what it may have. That is
+// the same reach a call naming every entry would have, so it widens nothing, and
+// it is the one way for a call to say "all of mine" to a connection that fences
+// a dozen namespaces without a call per namespace. An input that holds one value
+// and has several to choose from gets none: somebody has to say which, and a
+// blank is not in a list that does not hold it.
+func fenceDefault(f Field, allowed []any) (value any, filled bool) {
+	switch {
+	case f.Type == StringSlice && len(allowed) > 0:
+		return stringSlice(allowed), true
+	case len(allowed) == 1:
+		return allowed[0], true
 	}
-	return only
+	return nil, false
 }
 
 // Fenced reports whether the fence has an allowlist for f.

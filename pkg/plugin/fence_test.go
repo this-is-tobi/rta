@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -167,10 +168,62 @@ func TestAFenceWithOneValueIsTheDefaultOfTheInput(t *testing.T) {
 		}
 	}
 
-	// Two entries is no default: somebody has to say which.
+	// Two entries is no default for an input that holds one value: somebody has
+	// to say which.
 	two := Fence{"namespace": {"staging", "staging-jobs"}}
 	if got := Resolve(c, Inputs{Fence: two}); got["namespace"] != nil {
 		t.Errorf("namespace = %v from a list of two", got["namespace"])
+	}
+}
+
+// An input that holds a list is every value its fence allows, when nobody
+// supplied one: the list is what the connection reaches, and a call that names
+// none has asked for what it may have, which is no more than naming every entry
+// would. A handler reads the list it is given, so a connection that fences a
+// dozen namespaces is read across all of them without a call per namespace.
+func TestAFenceOfSeveralValuesIsTheWholeListOfAListInput(t *testing.T) {
+	c := fenceCapability()
+	fence := Fence{"names": {"a", "b", "c"}}
+	got := Resolve(c, Inputs{Fence: fence})
+	if names, _ := got["names"].([]string); !slices.Equal(names, []string{"a", "b", "c"}) {
+		t.Fatalf("names = %#v, want every value the fence allows", got["names"])
+	}
+	if breach := CheckFence(c, Inputs{Fence: fence}); breach != nil {
+		t.Errorf("the list the fence itself supplied was refused: %+v", breach)
+	}
+
+	// What somebody states still wins, and is still held to the list.
+	for name, in := range map[string]Inputs{
+		"the caller":  {Fence: fence, Caller: map[string]any{"names": []string{"a"}}},
+		"the profile": {Fence: fence, Profile: map[string]any{"names": []string{"b"}}, ProfileName: "p"},
+		"the config":  {Fence: fence, Config: map[string]any{"names": []string{"c"}}},
+	} {
+		if names, _ := Resolve(c, in)["names"].([]string); len(names) != 1 {
+			t.Errorf("%s: names = %v, want the one value it stated", name, names)
+		}
+		if breach := CheckFence(c, in); breach != nil {
+			t.Errorf("%s: a value inside the fence was refused: %+v", name, breach)
+		}
+	}
+	outside := Inputs{Fence: fence, Caller: map[string]any{"names": []string{"a", "z"}}}
+	if CheckFence(c, outside) == nil {
+		t.Error("a list with a value outside the fence was not refused")
+	}
+}
+
+// The list default is for an input a profile may fill. The one a grant names as
+// its scope is checked against the records a call names, before anything is
+// resolved, and a list filled in afterwards would be records the gate never saw.
+func TestAFenceDoesNotFillAListInputTheGrantNamesAsItsScope(t *testing.T) {
+	c := Capability{ID: "demo.pods", Scope: "namespace", Inputs: []Field{
+		{Name: "namespace", Type: StringSlice, Config: "namespace"},
+	}}
+	fence := Fence{"namespace": {"a", "b"}}
+	if got := Resolve(c, Inputs{Fence: fence}); got["namespace"] != nil {
+		t.Errorf("the scope input was filled with %v by a fence the grant gate never saw", got["namespace"])
+	}
+	if CheckFence(c, Inputs{Fence: fence}) == nil {
+		t.Error("a call that named no value for a fenced scope was not refused")
 	}
 }
 
