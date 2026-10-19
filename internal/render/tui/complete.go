@@ -3,12 +3,14 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
 
+	"github.com/this-is-tobi/rta/internal/boxlist"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/internal/tunnel"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -212,6 +214,45 @@ func (m Model) liveTarget() (plugin.Field, bool) {
 	return plugin.Field{}, false
 }
 
+// liveBox is what a tab on a Live box reads out of it.
+type liveBox struct {
+	// typed is the box as tab's accept-or-fetch-or-advance decision and the
+	// record of what was fetched for (capForm.settled) see it.
+	typed string
+	// partial is the text the request carries under the field's own name.
+	partial string
+	// onOffer is what the last answer still has to offer, in the shape the
+	// widget draws it against typed, so needsFetch asks it the one question
+	// every completing box asks.
+	onOffer []string
+	// listed is the elements of a list box ahead of the one being typed, which
+	// an answer leaves out.
+	listed []string
+}
+
+// liveBox reads the box of a Live field the way its type holds a value.
+//
+// A String is one value: the box, trimmed, is the partial, and what the last
+// fetch brought back is what is on offer. A StringSlice is a list in one box,
+// and what a press completes is the element being typed — the text after the
+// last comma, as the box reads it (boxlist.Last) — so the partial is that,
+// what is on offer is rewritten as the whole boxes the widget draws
+// (boxlist.Extend, which leaves out the elements already listed, the rule the
+// keystroke channel's ghosts already follow), and the box is kept as typed,
+// since the spacing after a comma is what those whole boxes begin with.
+func (cf *capForm) liveBox(f plugin.Field) liveBox {
+	raw := *cf.bindings[f.Name]
+	if f.Type != plugin.StringSlice {
+		typed := strings.TrimSpace(raw)
+		return liveBox{typed: typed, partial: typed, onOffer: cf.suggested[f.Name]}
+	}
+	_, partial, _ := boxlist.Last(raw)
+	return liveBox{
+		typed: raw, partial: partial, listed: boxlist.Listed(raw),
+		onOffer: boxlist.Extend(raw, cf.suggested[f.Name]),
+	}
+}
+
 // completeFromService is tab on a field whose plugin marked its Suggest Live:
 // resolve what the run would see — on the event loop, exactly as startRun
 // does — and ask the plugin off it, bounded by completeTimeout.
@@ -222,17 +263,22 @@ func (m Model) liveTarget() (plugin.Field, bool) {
 // done here is a dial: a connection naming a cluster is refused with the
 // reason, because a forward opens per call and a completion is
 // not a call — the plugin would list against a port nothing listens on.
+//
+// A list box is asked about its last element and nothing else (liveBox): the
+// plugin is handed the one name being typed, and the elements the box lists
+// already are taken out of its answer here, so a Suggest neither tracks what
+// was chosen nor can offer it twice.
 func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 	f, ok := m.liveTarget()
 	if !ok {
 		return m.completeLocally(msg)
 	}
 	cf := m.form
-	partial := strings.TrimSpace(*cf.bindings[f.Name])
-	if !needsFetch(partial, cf.suggested[f.Name]) {
+	box := cf.liveBox(f)
+	if !needsFetch(box.typed, box.onOffer) {
 		return m.updateForm(msg)
 	}
-	if cf.settled(f.Name, partial) {
+	if cf.settled(f.Name, box.typed) {
 		return m.advanceForm()
 	}
 	c := cf.cap
@@ -274,14 +320,17 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		ConfigSection: cfg.section,
 	})
 	// The box's own text is the partial, whatever any layer had in mind for
-	// this field: a listing narrows on what is typed, not on a default.
-	resolved[f.Name] = partial
+	// this field: a listing narrows on what is typed, not on a default. For a
+	// list that text is the element being typed, as the string it is: the
+	// chosen ones are no business of the plugin's, and req.StringSlice reads
+	// the one name as a list of one.
+	resolved[f.Name] = box.partial
 	req := plugin.LiveRequest(resolved)
 	suggest := f.Suggest
 	what := f.Name + " completions"
 	// Same as the cluster path: one fetch per value, so a service that
 	// answers nothing leaves tab free to move on rather than asking again.
-	cf.fetchedFor[f.Name] = partial
+	cf.fetchedFor[f.Name] = box.typed
 	m.guide("completing…")
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), completeTimeout)
@@ -293,10 +342,14 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// And to the connection's fence: the listing is the service's whole
 		// answer, which is every namespace or bucket the connection can see,
 		// and the connection says it reaches fewer.
+		//
+		// A list box takes each name once, so the ones it lists already are
+		// not candidates: the answer is counted and named for the box as it
+		// stands, and a press that leaves nothing says so.
 		raw := cf.fence.Filter(f, suggest(ctx, req))
 		items := make([]string, 0, len(raw))
 		for _, entry := range raw {
-			if v := plugin.CandidateValue(entry); !textclean.Deceives(v) {
+			if v := plugin.CandidateValue(entry); !textclean.Deceives(v) && !slices.Contains(box.listed, v) {
 				items = append(items, v)
 			}
 		}
