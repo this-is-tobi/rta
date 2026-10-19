@@ -216,7 +216,7 @@ func TestEverySSHFailureIsClassified(t *testing.T) {
 		stderr string
 		code   string
 	}{
-		{"tobi@bastion.example: Permission denied (publickey).", "tunnel.auth.denied"},
+		{"tobi@bastion.example: Permission denied (publickey).", "tunnel.auth.failed"},
 		{"No ED25519 host key is known for bastion.example and you have requested strict checking.\nHost key verification failed.", "tunnel.hostkey.unknown"},
 		{"ssh: Could not resolve hostname bastion.example: nodename nor servname provided, or not known", "tunnel.host.unknown"},
 		{"ssh: connect to host bastion.example port 2222: Connection refused", "tunnel.bastion.unreachable"},
@@ -233,6 +233,12 @@ func TestEverySSHFailureIsClassified(t *testing.T) {
 			_, verr := Open(context.Background(), "bastion-vault", Target{SSH: bastion})
 			if verr == nil || verr.Code != tc.code {
 				t.Fatalf("verr = %v, want code %s", verr, tc.code)
+			}
+			// Only a key the bastion refused is a credential refused, which a
+			// dashboard tile stops asking with; a host key, a name, a bastion
+			// that did not answer and a far end that refused are not.
+			if got, want := verr.CredentialRefused(), tc.code == "tunnel.auth.failed"; got != want {
+				t.Errorf("%s read as a refused credential = %v, want %v", tc.code, got, want)
 			}
 		})
 	}
