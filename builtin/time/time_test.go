@@ -3,6 +3,7 @@ package time
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -312,5 +313,60 @@ func TestTheEpochRowsAndTheUTCRowDescribeOneInstant(t *testing.T) {
 	}
 	if got := value(kv, "relative"); !strings.Contains(got, "ago") {
 		t.Errorf("relative = %q, want a past instant to read as past", got)
+	}
+}
+
+func keysOf(kv view.KeyValue) []string {
+	keys := make([]string, len(kv.Pairs))
+	for i, p := range kv.Pairs {
+		keys[i] = p.Key
+	}
+	return keys
+}
+
+// A tile is `when` left at now, and on a clock "relative" is always "just now"
+// and a millisecond epoch is a precision nobody reads: they are two of the five
+// rows of a tile that is read at a glance. They are the detailed page's.
+func TestTheClockOfATileHasNoRelativeRowAndNoMillisecondEpoch(t *testing.T) {
+	if got, want := keysOf(at(t, nil)), []string{"utc", "local", "epoch"}; !slices.Equal(got, want) {
+		t.Errorf("now, compact: rows = %v, want %v", got, want)
+	}
+	if got, want := keysOf(at(t, map[string]any{"when": "NOW"})), []string{"utc", "local", "epoch"}; !slices.Equal(got, want) {
+		t.Errorf("NOW, compact: rows = %v, want %v", got, want)
+	}
+	if got, want := keysOf(at(t, map[string]any{"detail": true})),
+		[]string{"utc", "local", "relative", "epoch", "epoch-ms"}; !slices.Equal(got, want) {
+		t.Errorf("now, detailed: rows = %v, want %v", got, want)
+	}
+}
+
+// …but a conversion is the capability's reason to exist, and "how long ago" and
+// the millisecond epoch of a stamp somebody pasted are the answer to it: only
+// the clock loses them.
+func TestAnInstantSomebodyNamedKeepsEveryRow(t *testing.T) {
+	want := []string{"utc", "local", "relative", "epoch", "epoch-ms"}
+	for _, when := range []string{"2018-01-18T02:30:22Z", "2018-01-18", "90m ago", "in 2h"} {
+		if got := keysOf(at(t, map[string]any{"when": when})); !slices.Equal(got, want) {
+			t.Errorf("%q: rows = %v, want %v", when, got, want)
+		}
+	}
+}
+
+func TestAZoneIsStillShownOnTheClockOfATile(t *testing.T) {
+	if got, want := keysOf(at(t, map[string]any{"zone": "UTC"})), []string{"utc", "local", "UTC", "epoch"}; !slices.Equal(got, want) {
+		t.Errorf("rows = %v, want %v", got, want)
+	}
+}
+
+// The tile shows seconds, and a pace derived from `zone` having a config key
+// was thirty of them: an instant up to thirty seconds old under a row that said
+// "just now". The clock is paced at the timer's own tick.
+func TestTheClockIsRerunAtTheTimersTick(t *testing.T) {
+	c := Plugin().Capabilities[0]
+	if c.Refresh != plugin.PaceLocal || c.Pace() != plugin.PaceLocal {
+		t.Errorf("Refresh = %s, Pace = %s, want the timer's %s", c.Refresh, c.Pace(), plugin.PaceLocal)
+	}
+	if !c.Detailed {
+		t.Error("time.at is not Detailed, so the rows a tile drops have no page to be on")
 	}
 }

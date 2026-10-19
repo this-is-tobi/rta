@@ -58,6 +58,14 @@ func Plugin() plugin.Plugin {
 				// common reason to want any of this.
 				Safety:     plugin.Read,
 				Idempotent: true,
+				Detailed:   true,
+				// The seconds on a tile are read as the time, so the pace of a
+				// capability that reads no connection is the timer's own tick.
+				// Left to itself it was thirty seconds, because `zone` has a
+				// config key and any capability with one is taken to reach a
+				// connection (plugin.Profilable): an instant up to half a minute
+				// old, beside a row that said "just now".
+				Refresh: plugin.PaceLocal,
 				// An RFC3339 stamp with its zone is 29 cells and does not
 				// survive being wrapped — half of one is not a timestamp.
 				MinWidth: 40,
@@ -65,12 +73,21 @@ func Plugin() plugin.Plugin {
 					"precision, an RFC3339 stamp, a plain date, or a duration either side of now " +
 					"(`90m ago`, `in 2h`, `+90m`) — and shows it as UTC, as local time, as epoch " +
 					"seconds and milliseconds, and as how long ago or away it is. With `zone`, in a " +
-					"third timezone too.\n\n" +
+					"third timezone too. For `now` the how-long-ago row and the millisecond epoch say " +
+					"nothing a clock needs, so they are left out unless `detail` asks for them; an " +
+					"instant that was named keeps every row.\n\n" +
 					"A bare number carries no unit, so the unit is chosen by magnitude and then " +
 					"stated back to you in the `read-as` row: between 1970 and 1973 the ranges " +
 					"overlap and no rule can resolve it. A time of day the local clock showed twice, the " +
 					"night it went back, is answered as one of the two with the other named in an " +
 					"`ambiguous` row; one it never showed is refused.",
+				Agent: "`when` takes an epoch number at any precision, an RFC3339 stamp, a plain date, or a " +
+					"duration either side of now (`90m ago`, `in 2h`, `+90m`); a bare number's unit is chosen " +
+					"by magnitude and stated in the `read-as` row. `zone` adds an IANA timezone. For now the " +
+					"rows are utc, " +
+					"local and epoch; `detail` adds `relative` and `epoch-ms`, and a named instant always " +
+					"gets them. A local time the clock showed twice is answered as one, with the other in " +
+					"`ambiguous`; one it never showed is refused.",
 				Inputs: []plugin.Field{
 					{Name: "when", Type: plugin.String, Positional: true, Default: "now",
 						Help: "an instant: now, an epoch number, 2026-09-04T12:00:00Z, 2026-09-04, or a relative duration like \"90m ago\""},
@@ -84,10 +101,15 @@ func Plugin() plugin.Plugin {
 }
 
 func runAt(_ context.Context, req plugin.Request) (view.View, error) {
-	t, unit, err := resolve(strings.TrimSpace(req.String("when")), stdtime.Now())
+	when := strings.TrimSpace(req.String("when"))
+	t, unit, err := resolve(when, stdtime.Now())
 	if err != nil {
 		return nil, err
 	}
+	// A clock keeps to the three rows it can tell you something with. The other
+	// two are the answer to a conversion and stay on it, and on the page that
+	// `detail` asks for.
+	clock := isNow(when) && !req.Bool("detail")
 
 	pairs := []view.Pair{
 		{Key: "utc", Value: t.UTC().Format(stdtime.RFC3339)},
@@ -103,11 +125,13 @@ func runAt(_ context.Context, req plugin.Request) (view.View, error) {
 		pairs = append(pairs, view.Pair{Key: loc.String(), Value: withZone(t.In(loc))})
 	}
 
-	pairs = append(pairs,
-		view.Pair{Key: "relative", Value: format.Relative(t)},
-		view.Pair{Key: "epoch", Value: strconv.FormatInt(t.Unix(), 10)},
-		view.Pair{Key: "epoch-ms", Value: strconv.FormatInt(t.UnixMilli(), 10)},
-	)
+	if !clock {
+		pairs = append(pairs, view.Pair{Key: "relative", Value: format.Relative(t)})
+	}
+	pairs = append(pairs, view.Pair{Key: "epoch", Value: strconv.FormatInt(t.Unix(), 10)})
+	if !clock {
+		pairs = append(pairs, view.Pair{Key: "epoch-ms", Value: strconv.FormatInt(t.UnixMilli(), 10)})
+	}
 	// Only when a unit was guessed. On every other input there was nothing to
 	// assume, and a row saying so would be noise on the common path.
 	if unit != "" {
@@ -119,6 +143,9 @@ func runAt(_ context.Context, req plugin.Request) (view.View, error) {
 	return view.KeyValue{Pairs: pairs}, nil
 }
 
+// isNow is whether what somebody typed means the present: nothing, or the word.
+func isNow(raw string) bool { return raw == "" || strings.EqualFold(raw, "now") }
+
 // resolve turns what somebody typed into an instant, and names the epoch unit
 // when it had to pick one.
 //
@@ -128,7 +155,7 @@ func runAt(_ context.Context, req plugin.Request) (view.View, error) {
 // correctness — except the unsigned-duration case at the end, which is a
 // refusal and has to come after every form that would have succeeded.
 func resolve(raw string, now stdtime.Time) (stdtime.Time, timefmt.Unit, *view.Error) {
-	if raw == "" || strings.EqualFold(raw, "now") {
+	if isNow(raw) {
 		return now, "", nil
 	}
 	if d, ok := relativeDuration(raw); ok {

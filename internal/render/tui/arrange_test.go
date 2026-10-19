@@ -1199,14 +1199,10 @@ func TestEveryBuiltinTileHasAFullScreenView(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Capabilities whose compact view is already the whole answer. Add an
-	// entry with the reason, do not delete the test.
-	sameAtAnySize := map[string]string{
-		// One instant rendered six ways. There is no seventh way worth a
-		// screen: a detail page would have to invent rows — the ISO week, the
-		// day of the year — that nobody opened it for, which is padding
-		// dressed as depth. The tile is the answer at any size.
-		"time.at": "one instant in every form there is; a bigger pane holds the same six rows",
-	}
+	// entry with the reason, do not delete the test. None today: time.at was
+	// the one, until its tile became a three-row clock and the relative row and
+	// the millisecond epoch moved to the page that opening it gives.
+	sameAtAnySize := map[string]string{}
 
 	for _, ti := range buildTiles(reg, config.Dashboard{}) {
 		if ti.search {
