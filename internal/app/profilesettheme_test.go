@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/render/theme"
 )
 
 // `rta profile set --theme` states a profile's palette the way `--set` and
@@ -126,7 +127,8 @@ func TestProfileSetThemeRefusesWhatTheFileWouldCarryAsALineNothingPaints(t *test
 		{"a colour that is not one", []string{"--theme", "primary=red"}, "core.profile.theme.color", "#rrggbb"},
 		{"a value that is only three digits", []string{"--theme", "primary=#123"}, "core.profile.theme.color", "#rrggbb"},
 		{"no colour at all", []string{"--theme", "primary="}, "core.profile.theme.empty", "expanded"},
-		{"no pair", []string{"--theme", "primary"}, "core.profile.theme.shape", "primary=#D97757"},
+		{"no pair", []string{"--theme", "primary"}, "core.profile.theme.shape", "primary=" + theme.Builtin("primary")},
+		{"a colour that is not one, for a slot with a built-in of its own", []string{"--theme", "label=red"}, "core.profile.theme.color", "--theme label='" + theme.Builtin("label") + "'"},
 		{"a slot twice", []string{"--theme", "primary=#3366AA", "--theme", "primary=#445566"}, "core.profile.theme.repeated", "once"},
 		{"a theme and its removal", []string{"--theme", "primary=#3366AA", "--untheme"}, "core.profile.theme.both", "one or the other"},
 	} {
@@ -433,7 +435,7 @@ func TestAnUnquotedColourIsToldAsAHashThatStartedAComment(t *testing.T) {
 	}
 	for key, slot := range map[string]string{"theme.muted": "muted", "profiles.nullval.theme.label": "label"} {
 		got := said[key]
-		if strings.Contains(got, `""`) || !strings.Contains(got, "YAML comment") || !strings.Contains(got, slot+`: "#D97757"`) {
+		if strings.Contains(got, `""`) || !strings.Contains(got, "YAML comment") || !strings.Contains(got, slot+`: "`+theme.Builtin(slot)+`"`) {
 			t.Errorf("config check says %q of %s, want a value-less colour with the quoted form shown", got, key)
 		}
 	}

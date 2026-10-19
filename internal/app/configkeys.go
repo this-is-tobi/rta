@@ -211,18 +211,22 @@ func capabilityListKey(reg *registry.Registry, name, help, def string, field fun
 	}
 }
 
+// themeKey's example is the slot's own built-in colour, the one colour known to
+// clear the palette guard in that slot, so a person who copies the line from a
+// listing or a refusal does not set one the guard would refuse.
 func themeKey(slot string) configKey {
 	read, write, drop := themeEntry(slot)
+	example := theme.Builtin(slot)
 	return configKey{
-		Name: "theme." + slot, Help: "the " + slot + " colour of the palette", Example: "#D97757",
+		Name: "theme." + slot, Help: "the " + slot + " colour of the palette", Example: example,
 		Default: "the built-in colour", Honoured: !theme.IsStatus(slot),
 		parse: func(values []string) (any, *view.Error) {
-			if verr := oneValue("theme."+slot, "'#D97757'", values); verr != nil {
+			if verr := oneValue("theme."+slot, "'"+example+"'", values); verr != nil {
 				return nil, verr
 			}
 			if !theme.HexColor.MatchString(values[0]) {
 				return nil, view.Errorf("core.config.set.color", "theme.%s takes a colour as #rrggbb", slot).
-					WithHint("quote it, since # starts a comment in a shell: `rta config set theme." + slot + " '#D97757'`")
+					WithHint("quote it, since # starts a comment in a shell: `rta config set theme." + slot + " '" + example + "'`")
 			}
 			return values[0], nil
 		},

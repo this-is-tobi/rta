@@ -12,6 +12,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/internal/render/theme"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -158,7 +159,7 @@ func TestConfigSetRefusesWhatTheKeyDoesNotTake(t *testing.T) {
 	}{
 		{"an output nothing renders", "core.config.set.option", []string{"output", "jsno"}, "rta config set output json"},
 		{"two values for one key", "core.config.set.arity", []string{"output", "json", "yaml"}, ""},
-		{"a colour that is not one", "core.config.set.color", []string{"theme.primary", "red"}, "'#D97757'"},
+		{"a colour that is not one", "core.config.set.color", []string{"theme.primary", "red"}, "'" + theme.Builtin("primary") + "'"},
 		{"a status that is no mode", "core.config.set.option", []string{"theme.status", "loud"}, "rta config set theme.status alerts"},
 		{"a width that is not a number", "core.config.set.type", []string{"dashboard.width", "wide"}, ""},
 		{"a negative width", "core.config.set.type", []string{"dashboard.width", "--", "-1"}, ""},
@@ -183,6 +184,31 @@ func TestConfigSetRefusesWhatTheKeyDoesNotTake(t *testing.T) {
 				t.Errorf("a refused value was written:\n%s", file)
 			}
 		})
+	}
+}
+
+// What a listing or a refusal shows a person to copy for a colour is the slot's
+// own built-in, for every slot, and not one colour typed once for all ten: the
+// built-in is the one colour known to clear the palette guard in that slot.
+func TestEveryThemeKeyOffersItsOwnBuiltInColourToCopy(t *testing.T) {
+	reg := configRegistry(t)
+	offered := map[string]string{}
+	for _, key := range settingKeys(reg) {
+		if slot, ok := strings.CutPrefix(key.Name, "theme."); ok && slot != theme.GradesKey {
+			offered[slot] = key.Example
+		}
+	}
+	if len(offered) != len(theme.Fields()) {
+		t.Fatalf("%d colour keys offered for %d slots: %v", len(offered), len(theme.Fields()), offered)
+	}
+	for _, slot := range theme.Fields() {
+		if offered[slot] != theme.Builtin(slot) {
+			t.Errorf("theme.%s is listed with the example %q, want its own built-in %q", slot, offered[slot], theme.Builtin(slot))
+		}
+		_, errOut, _, err := configRun(t, reg, "", "config", "set", "theme."+slot, "red")
+		if err == nil || !strings.Contains(errOut, "theme."+slot+" '"+theme.Builtin(slot)+"'") {
+			t.Errorf("the refusal of a bad theme.%s does not show its own built-in %q:\n%s", slot, theme.Builtin(slot), errOut)
+		}
 	}
 }
 

@@ -254,15 +254,17 @@ A config file rta does not honour — the `./.rta.yaml` it falls back to when th
 
 ## Colours
 
+The built-in colours are chosen to be told apart, and a test holds them to it by measuring how far apart each pair looks, in normal vision and as a protanope or a deuteranope sees it. The identity colour is a violet because no status uses that hue, so a selected tile's border is never taken for a warning or a failure, by a reader with red-green colour blindness included; a `primary` of your own that is close to the amber, red or green of the statuses gives that up, which is yours to choose. The accent is a blue (`#108CFE`) because it has to stay clear of the warning amber, the failure red, the success green and that violet, and only a blue does all four. What that costs is that a violet and a blue are both blue to a protanope or a deuteranope, so for them the accent and the primary are close; they never stand for the same thing, since the accent marks a prompt, a cursor or a filter match and the primary a key, a title or the selection, and each is told by where it sits. The pane name is a quiet steel teal (`#5D8A9C`), far enough from the violet and from every status that a title is not taken for a key or a state; for a protanope it is close to the grey of secondary text, and a pane's name is bold and sits in the border.
+
 `t` opens the theme editor, a form with one box per colour and a preview above it, and saves what you changed into the config file — into the top-level block, or into one profile's ([a palette per environment](#a-palette-per-environment)). The same block can be written by hand, and the CLI draws with it too:
 
 ```yaml
 theme:
-  primary: "#D97757"     # identity: keys, titles, the selection
+  primary: "#BA73DE"     # identity: keys, titles, the selection
   good: "#3ED598"        # a status that is fine
 ```
 
-There are ten colours to name — `primary`, `accent`, `muted`, `faint`, `label`, `good`, `warn`, `bad`, `inverse` and `ink` — each as `#rrggbb`, and one you leave out keeps the built-in. The block also takes one entry that is a word and not a colour, `status`, which [quiets the colours that grade](#quieting-the-colours-that-grade). `faint` is structure (borders, chart fills), `muted` is secondary text, `label` is the name of a pane, `good`, `warn` and `bad` are the three status colours, and `inverse` and `ink` are the text on a coloured badge. Anything else, or a colour that is not that form, is left out and costs only its own line: the rest apply and `rta doctor` reports the entry. A name that is nearly a slot (`Label`, `primry`) is reported with the one it nearly is. A colour is quoted in the file because a `#` starts a YAML comment: `label: #C792EA` states nothing, and is reported as a colour with no value, with the quoted form to write. `rta config schema` describes the block to an editor, so a name or colour that will not apply is marked as you type it.
+There are ten colours to name — `primary`, `accent`, `muted`, `faint`, `label`, `good`, `warn`, `bad`, `inverse` and `ink` — each as `#rrggbb`, and one you leave out keeps the built-in. The block also takes one entry that is a word and not a colour, `status`, which [quiets the colours that grade](#quieting-the-colours-that-grade). `faint` is structure (borders, chart fills), `muted` is secondary text, `label` is the name of a pane, `good`, `warn` and `bad` are the three status colours, and `inverse` and `ink` are the text on a coloured badge. Anything else, or a colour that is not that form, is left out and costs only its own line: the rest apply and `rta doctor` reports the entry. A name that is nearly a slot (`Label`, `primry`) is reported with the one it nearly is. A colour is quoted in the file because a `#` starts a YAML comment: `label: #5D8A9C` states nothing, and is reported as a colour with no value, with the quoted form to write. `rta config schema` describes the block to an editor, so a name or colour that will not apply is marked as you type it.
 
 ### Quieting the colours that grade
 
@@ -287,12 +289,12 @@ An environment can have colours of its own, so that switching to it changes what
 
 ```yaml
 theme:
-  accent: "#D77015"
+  accent: "#108CFE"
 profiles:
   shop-prod:
     color: "#FF6B7A"
     theme:
-      label: "#C792EA"
+      label: "#5D8A9C"
     plugins:
       pg:
         set: { host: db.internal }
@@ -303,7 +305,7 @@ While `shop-prod` is in force what is drawn comes from these, each over the one 
 From a script, or without opening the file:
 
 ```bash
-rta profile set shop-prod --plugin pg --set host=db.internal --color '#FF6B7A' --theme label='#C792EA'   # the entry above, written from flags
+rta profile set shop-prod --plugin pg --set host=db.internal --color '#FF6B7A' --theme label='#5D8A9C'   # the entry above, written from flags
 rta profile set shop-prod --untheme                                                                      # take its theme: block off
 ```
 
@@ -317,7 +319,7 @@ rta profile set shop-prod --untheme                                             
 
 **An environment cannot make one thing read as another.** The status colours — `good`, `warn` and `bad`, and `inverse` and `ink`, the text of the two badges that say the last two — and the `status` setting that chooses how much of them is drawn are what you read a screen by, and they are yours: only your own config file sets them. A profile's `theme:` may not state them at all, nor may the top-level `theme:` of a config file you did not name (a `./.rta.yaml` in a repository you cloned). An environment can then neither make a failure read as success, nor nudge a status a digit from another, nor put the badge's text a digit from its own background, and no threshold has to guess how near is too near: the entry is left out, the colour beneath it stands, and `rta doctor` names the line and how to set it yourself (`rta config set theme.good '#3ED598'`).
 
-The colours that are text — `primary`, `accent`, `muted`, `faint` and `label` — may be stated, and must stay visible on either kind of terminal: one under 1.5:1 contrast against pure black, or against pure white, is left out, and the line says the ratio it measured. That is a floor against being invisible, and not a standard for legibility — the built-in colours are at 3.4:1 or better on white and 6.2:1 on black, and a near-black `muted` would draw a screen nobody could read on a dark terminal — so what you chose to see passes it, `#dd3333`, `#C792EA` and `#FFB000` among them. A profile's `color:` is held to it as the screen's primary: one too dim is skipped there, and its badge keeps it, since the badge picks its own text. The primary, stated or taken from the profile's colour, is also left out when it is exactly a status colour that stands, because the selection would read as ok, warn or failed. Your own top-level `theme:`, in a file you named, is held to none of this: stating `good` and `bad` alike, or a primary you cannot see, is a choice about your own screen.
+The colours that are text — `primary`, `accent`, `muted`, `faint` and `label` — may be stated, and must stay visible on either kind of terminal: one under 1.5:1 contrast against pure black, or against pure white, is left out, and the line says the ratio it measured. That is a floor against being invisible, and not a standard for legibility — the built-in text colours are at 3.2:1 or better on white and 5.6:1 on black, and a near-black `muted` would draw a screen nobody could read on a dark terminal — so what you chose to see passes it, `#dd3333` and the built-in `#5D8A9C` among them. A profile's `color:` is held to it as the screen's primary: one too dim is skipped there, and its badge keeps it, since the badge picks its own text. The primary, stated or taken from the profile's colour, is also left out when it is exactly a status colour that stands, because the selection would read as ok, warn or failed. Your own top-level `theme:`, in a file you named, is held to none of this: stating `good` and `bad` alike, or a primary you cannot see, is a choice about your own screen.
 
 **Whose file.** A profile in a config file you did not name is not honoured at all, and what it says about colour is not either: a repository cannot repaint an environment's screen any more than it can point one at a database. The top-level `theme:` of such a file still applies, as it did before environments had colours of their own, less the status colours it cannot state and held to the floor above. The same holds for a drop-in: a profile's `theme:` lives in the file that states the profile.
 

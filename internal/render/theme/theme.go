@@ -363,17 +363,17 @@ func validate(source, as string, colors map[string]string) (map[string]string, [
 			problems = append(problems, Problem{Source: source, Field: written,
 				Reason: reason, Hint: "one of: " + strings.Join(keys(), ", ")})
 		// **An unquoted # is the likeliest mistake in a colour, and it arrives as
-		// nothing.** `label: #C792EA` is a label with a comment after it, which
+		// nothing.** `label: #5D8A9C` is a label with a comment after it, which
 		// YAML reads as no value at all, and "\"\" is not a color" tells a person
 		// they wrote an empty string they did not write.
 		case strings.TrimSpace(v) == "":
 			problems = append(problems, Problem{Source: source, Field: written,
 				Reason: "has no value — a # starts a YAML comment, so an unquoted color reads as nothing",
-				Hint:   "quote it: " + quotedExample(written)})
+				Hint:   "quote it: " + quotedExample(written, k)})
 		case !HexColor.MatchString(v):
 			problems = append(problems, Problem{Source: source, Field: written,
 				Reason: fmt.Sprintf("%q is not a color", v),
-				Hint:   "the form is #rrggbb, quoted in the file: " + quotedExample(written)})
+				Hint:   "the form is #rrggbb, quoted in the file: " + quotedExample(written, k)})
 		default:
 			usable[k] = v
 		}
@@ -382,8 +382,21 @@ func validate(source, as string, colors map[string]string) (map[string]string, [
 }
 
 // quotedExample is a line that works, for a hint to show: the key as it was
-// written, and a colour in quotes, which is the form that survives YAML.
-func quotedExample(key string) string { return key + `: "#D97757"` }
+// written, and a colour in quotes, which is the form that survives YAML. The
+// colour is the slot's own built-in and not one picked for how it looks in a
+// hint: it is the one colour known to clear the palette guard in that slot, so a
+// person who copies the line does not set one the guard would refuse.
+func quotedExample(key, slot string) string { return key + `: "` + Builtin(slot) + `"` }
+
+// Builtin is the colour a slot has when nothing overrides it, or "" for a name
+// that is no slot. What a hint or a help line offers a person to write is this,
+// for the reason quotedExample gives.
+func Builtin(slot string) string {
+	if e, ok := fields[slot]; ok {
+		return e.builtin
+	}
+	return ""
+}
 
 // NearestSlot is the palette slot a mistyped name was most likely meant to be,
 // or "" when none is near enough to say. Slot names are lower case only, so a

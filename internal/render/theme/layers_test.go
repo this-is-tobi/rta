@@ -355,7 +355,7 @@ func TestIsStatusNamesTheFiveSlotsOnlyTheOperatorSets(t *testing.T) {
 
 // The colours the documentation tells a person to write.
 func TestTheColoursTheDocumentationShowsClearTheFloor(t *testing.T) {
-	for _, hex := range []string{"#dd3333", "#DD3333", "#C792EA", "#FFB000", "#FF6B7A", "#D97757", "#D77015", "#7794B6", "#8B8B96", "#4A4A56"} {
+	for _, hex := range []string{"#dd3333", "#DD3333", "#FF6B7A", "#BA73DE", "#108CFE", "#5D8A9C", "#8B8B96", "#4A4A56"} {
 		overrides, problems := Resolve(colour(hex), own(map[string]string{"label": hex, "muted": hex, "faint": hex, "accent": hex}))
 		if len(problems) != 0 || len(overrides) != 5 {
 			t.Errorf("%s was refused: %v", hex, problems)
@@ -409,7 +409,7 @@ func TestAMiscasedSlotIsMetWithTheOneItNearlyIs(t *testing.T) {
 	}
 }
 
-// An unquoted # starts a YAML comment, so `label: #C792EA` is a label with no
+// An unquoted # starts a YAML comment, so `label: #5D8A9C` is a label with no
 // value at all: the most likely mistake in a colour, and the message used to say
 // the person had written an empty string.
 func TestAnEmptyColourIsToldAsAnUnquotedHash(t *testing.T) {
@@ -425,20 +425,37 @@ func TestAnEmptyColourIsToldAsAnUnquotedHash(t *testing.T) {
 		if strings.Contains(p.Reason, `""`) || !strings.Contains(p.Reason, "no value") {
 			t.Errorf("the reason does not say there is no value: %q", p.Reason)
 		}
-		if !strings.Contains(p.Reason, "YAML comment") || !strings.Contains(p.Hint, `label: "#`) {
+		if !strings.Contains(p.Reason, "YAML comment") || !strings.Contains(p.Hint, `label: "`+Effective(nil)["label"]+`"`) {
 			t.Errorf("the line does not say a # starts a comment and show the quoted form: %q (%s)", p.Reason, p.Hint)
 		}
 	}
 	// And the example in the generic hint is quoted, since copying it as shown
 	// is how the mistake is made.
 	_, problems := Resolve(global(map[string]string{"label": "red"}))
-	if len(problems) != 1 || !strings.Contains(problems[0].Hint, `label: "#`) {
+	if len(problems) != 1 || !strings.Contains(problems[0].Hint, `label: "`+Effective(nil)["label"]+`"`) {
 		t.Errorf("the hint's own example is not quoted: %v", problems)
 	}
 	// The profile's colour is written as `color`, and the example follows the line.
 	_, problems = Resolve(Layer{Source: "profiles.prod", Colors: map[string]string{"primary": ""}, As: "color", Guarded: true})
-	if len(problems) != 1 || !strings.Contains(problems[0].Hint, `color: "#`) {
+	if len(problems) != 1 || !strings.Contains(problems[0].Hint, `color: "`+Effective(nil)["primary"]+`"`) {
 		t.Errorf("the example does not use the key as written: %v", problems)
+	}
+}
+
+// What a hint shows a person to copy is the slot's own built-in colour, for every
+// slot the palette has, so no hint offers a colour the palette guard refuses: the
+// guard holds the built-ins and nothing else a hint could name. The example is
+// built from the palette and not typed beside it, so it follows a retuning.
+func TestTheColourAHintShowsIsTheSlotsOwnBuiltIn(t *testing.T) {
+	for _, slot := range Fields() {
+		want := slot + `: "` + Effective(nil)[slot] + `"`
+		if got := quotedExample(slot, slot); got != want {
+			t.Errorf("the example for %s is %s, want %s", slot, got, want)
+		}
+		_, problems := Resolve(global(map[string]string{slot: "not-a-colour"}))
+		if len(problems) != 1 || !strings.Contains(problems[0].Hint, want) {
+			t.Errorf("the hint for a bad %s does not show %s: %v", slot, want, problems)
+		}
 	}
 }
 
