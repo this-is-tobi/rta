@@ -104,6 +104,7 @@ func TestConfigSetWritesAKeyHeldToWhatItTakes(t *testing.T) {
 		{"an output format", []string{"output", "json"}, "output: json"},
 		{"the long name of a format", []string{"output", "markdown"}, "output: md"},
 		{"a colour", []string{"theme.primary", "#7aa2f7"}, "primary: \"#7aa2f7\""},
+		{"how status is drawn", []string{"theme.status", "alerts"}, "status: alerts"},
 		{"a grid width", []string{"dashboard.width", "3"}, "width: 3"},
 		{"a number a plugin declares", []string{"plugins.net.timeout", "20"}, "timeout: 20"},
 		{"a nested key", []string{"plugins.net.ping.count", "7"}, "ping:\n      count: 7"},
@@ -158,6 +159,7 @@ func TestConfigSetRefusesWhatTheKeyDoesNotTake(t *testing.T) {
 		{"an output nothing renders", "core.config.set.option", []string{"output", "jsno"}, "rta config set output json"},
 		{"two values for one key", "core.config.set.arity", []string{"output", "json", "yaml"}, ""},
 		{"a colour that is not one", "core.config.set.color", []string{"theme.primary", "red"}, "'#D97757'"},
+		{"a status that is no mode", "core.config.set.option", []string{"theme.status", "loud"}, "rta config set theme.status alerts"},
 		{"a width that is not a number", "core.config.set.type", []string{"dashboard.width", "wide"}, ""},
 		{"a negative width", "core.config.set.type", []string{"dashboard.width", "--", "-1"}, ""},
 		{"a word for an int", "core.config.set.type", []string{"plugins.net.timeout", "soon"}, "rta config set plugins.net.timeout"},
@@ -568,6 +570,15 @@ func TestConfigSetRefusesWhatAWorkingDirectoryFileWouldNotHonour(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(".rta.yaml"); strings.Contains(string(b), "#3ED598") {
 		t.Errorf(".rta.yaml holds a status colour nothing reads:\n%s", b)
+	}
+	// And neither is how status is drawn: a repository's config does not get to
+	// make a failure read as plain text.
+	errOut, err = run("config", "set", "theme.status", "off")
+	if err == nil || codeOf(t, errOut) != "core.config.untrusted" {
+		t.Errorf("theme.status was written to a file that cannot state it: %v\n%s", err, errOut)
+	}
+	if b, _ := os.ReadFile(".rta.yaml"); strings.Contains(string(b), "status") {
+		t.Errorf(".rta.yaml holds a status nothing reads:\n%s", b)
 	}
 	if errOut, err := run("config", "set", "output", "json"); err != nil {
 		t.Errorf("the output format is honoured from there: %v\n%s", err, errOut)

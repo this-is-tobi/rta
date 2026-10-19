@@ -259,7 +259,9 @@ type Config struct {
 	Profiles map[string]Profile `yaml:"profiles,omitempty" json:"profiles,omitempty"`
 	// Theme overrides the built-in palette. Keys are the names
 	// internal/render/theme.Fields lists ("primary", "good", "label", …),
-	// each a "#rrggbb" string.
+	// each a "#rrggbb" string — and "status", the one entry that is a choice
+	// among the words theme.GradeModes lists and not a colour: how much of the
+	// colour that grades is drawn.
 	//
 	// Untyped for the same reason Plugins is: what a key means and whether a
 	// value is valid is internal/render/theme's decision (Apply for this block,

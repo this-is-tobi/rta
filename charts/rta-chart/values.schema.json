@@ -921,7 +921,18 @@
             "pattern": "^#[0-9a-fA-F]{6}$",
             "type": "string"
           },
-          "description": "Overrides the built-in palette: primary, accent, muted, faint, label, good, warn, bad, inverse, ink, each a #rrggbb string. A name or colour rta cannot use is left out and reported by `rta doctor`; the rest apply. The status colours (good, warn, bad, inverse, ink) count only in your own config file, and a file nobody named, such as a ./.rta.yaml in a repository, may state none of them, nor a text colour under 1.5:1 against black or white.",
+          "description": "Overrides the built-in palette: primary, accent, muted, faint, label, good, warn, bad, inverse, ink, each a #rrggbb string, and sets with `status` how much of the colour that grades is drawn. A name or colour rta cannot use is left out and reported by `rta doctor`; the rest apply. The status colours (good, warn, bad, inverse, ink) and `status` count only in your own config file, and a file nobody named, such as a ./.rta.yaml in a repository, may state none of them, nor a text colour under 1.5:1 against black or white.",
+          "properties": {
+            "status": {
+              "default": "all",
+              "description": "How much of the colour that grades is drawn: the status words, usage percentages, a tile's border by its worst grade and a folded section's marker. `all` draws green, amber and red; `alerts` only amber and red, the ok grade plain; `off` none, with every word, number and border still drawn. Selection, titles, errors, a consent request waiting, the safety class of a call and a plugin's trust words are not grades and keep their colour. NO_COLOR and --no-color still win.",
+              "enum": [
+                "all",
+                "alerts",
+                "off"
+              ]
+            }
+          },
           "propertyNames": {
             "enum": [
               "primary",
@@ -933,7 +944,8 @@
               "warn",
               "bad",
               "inverse",
-              "ink"
+              "ink",
+              "status"
             ]
           },
           "type": "object"

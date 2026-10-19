@@ -14,7 +14,7 @@ import (
 
 // A config key is one setting of the file that `rta config get`, `set` and
 // `unset` address by the dotted name `rta explain` prints it under:
-// `output`, `theme.primary`, `dashboard.columns`, `plugins.http.timeout`.
+// `output`, `theme.primary`, `dashboard.width`, `plugins.http.timeout`.
 //
 // Each carries its own parse, read and write, because what a key accepts is
 // decided where the thing it configures is: an output format by the renderer, a
@@ -45,7 +45,7 @@ type configKey struct {
 // the file declares them.
 func settingKeys(reg *registry.Registry) []configKey {
 	slots := theme.Fields()
-	keys := make([]configKey, 0, 4+len(slots))
+	keys := make([]configKey, 0, 5+len(slots))
 	keys = append(keys, outputKey(), widthKey(), heightKey(), refreshKey(),
 		capabilityListKey(reg, "dashboard.hidden", "tiles to leave off the screen",
 			"nothing is hidden",
@@ -56,7 +56,7 @@ func settingKeys(reg *registry.Registry) []configKey {
 	for _, slot := range slots {
 		keys = append(keys, themeKey(slot))
 	}
-	return keys
+	return append(keys, themeStatusKey())
 }
 
 func oneValue(name, example string, values []string) *view.Error {
@@ -212,6 +212,7 @@ func capabilityListKey(reg *registry.Registry, name, help, def string, field fun
 }
 
 func themeKey(slot string) configKey {
+	read, write, drop := themeEntry(slot)
 	return configKey{
 		Name: "theme." + slot, Help: "the " + slot + " colour of the palette", Example: "#D97757",
 		Default: "the built-in colour", Honoured: !theme.IsStatus(slot),
@@ -225,23 +226,61 @@ func themeKey(slot string) configKey {
 			}
 			return values[0], nil
 		},
-		read: func(c config.Config) (any, bool) {
-			v, ok := c.Theme[slot]
-			return v, ok
-		},
-		write: func(c *config.Config, v any) {
-			if c.Theme == nil {
-				c.Theme = map[string]string{}
-			}
-			c.Theme[slot] = v.(string)
-		},
-		drop: func(c *config.Config) bool {
-			_, had := c.Theme[slot]
-			delete(c.Theme, slot)
-			if len(c.Theme) == 0 {
-				c.Theme = nil
-			}
-			return had
-		},
+		read: read, write: write, drop: drop,
 	}
+}
+
+// themeStatusKey is theme.status, the entry of the palette that is a choice among
+// three words and not a colour. Not honoured from a file nobody named, for the
+// reason the status colours are not (theme.Resolve): a repository's own config does
+// not get to make a failure read as plain text.
+func themeStatusKey() configKey {
+	const name = "theme." + theme.GradesKey
+	read, write, drop := themeEntry(theme.GradesKey)
+	return configKey{
+		Name: name, Help: "how much of the colour that grades is drawn: all, only the alerts, or none",
+		Default: theme.GradesAll.String(), Example: "alerts", Options: theme.GradeModes(),
+		parse: func(values []string) (any, *view.Error) {
+			if verr := oneValue(name, "alerts", values); verr != nil {
+				return nil, verr
+			}
+			if _, ok := theme.ParseGrades(values[0]); !ok {
+				return nil, view.Errorf("core.config.set.option", "%s takes one of %s",
+					name, strings.Join(theme.GradeModes(), ", ")).
+					WithHint("all draws every status colour, alerts only warn and bad, off none: " +
+						"`rta config set " + name + " alerts`")
+			}
+			return values[0], nil
+		},
+		read: read, write: write, drop: drop,
+	}
+}
+
+// themeEntry is how a key of the `theme:` block is read, written and dropped,
+// which is the same for a colour and for the one entry that is not: the block is a
+// map of strings, and what a value must be is each key's parse.
+func themeEntry(slot string) (
+	read func(config.Config) (any, bool),
+	write func(*config.Config, any),
+	drop func(*config.Config) bool,
+) {
+	read = func(c config.Config) (any, bool) {
+		v, ok := c.Theme[slot]
+		return v, ok
+	}
+	write = func(c *config.Config, v any) {
+		if c.Theme == nil {
+			c.Theme = map[string]string{}
+		}
+		c.Theme[slot] = v.(string)
+	}
+	drop = func(c *config.Config) bool {
+		_, had := c.Theme[slot]
+		delete(c.Theme, slot)
+		if len(c.Theme) == 0 {
+			c.Theme = nil
+		}
+		return had
+	}
+	return read, write, drop
 }

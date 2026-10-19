@@ -122,6 +122,7 @@ func TestProfileSetThemeRefusesWhatTheFileWouldCarryAsALineNothingPaints(t *test
 		{"a slot in another case", []string{"--theme", "LABEL=#C792EA"}, "core.profile.theme.slot", "did you mean `label`"},
 		{"a status colour", []string{"--theme", "good=#00aa66"}, "core.profile.theme.status", "rta config set theme.good"},
 		{"the other status colours", []string{"--theme", "ink=#00aa66"}, "core.profile.theme.status", "your own config file"},
+		{"the setting about drawing status", []string{"--theme", "status=off"}, "core.profile.theme.status", "rta config set theme.status"},
 		{"a colour that is not one", []string{"--theme", "primary=red"}, "core.profile.theme.color", "#rrggbb"},
 		{"a value that is only three digits", []string{"--theme", "primary=#123"}, "core.profile.theme.color", "#rrggbb"},
 		{"no colour at all", []string{"--theme", "primary="}, "core.profile.theme.empty", "expanded"},
