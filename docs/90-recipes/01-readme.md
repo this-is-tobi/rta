@@ -205,7 +205,7 @@ rta git status -o json | jq '.rows'
 rta git blame internal/grant/grant.go
 ```
 
-`git overview` is the branch, what it tracks, how far it has drifted, any rebase or merge left half-finished, staged/modified/untracked told apart, and the last commit's age. It works against a local checkout or a remote URL cloned in memory, and it is read-only.
+`git overview` opens with a `status` row, `ok` or `warn — …` when the next command depends on something: a rebase or merge left half-finished, paths left unmerged, an upstream that is gone. Then the branch, what it tracks and how far it has drifted — `none — never pushed` for a branch with no upstream, and `fetched 9d ago` inside the brackets once the last fetch is more than a day old, since `up to date` is only the picture that fetch left — the interrupted operation, staged/modified/untracked told apart, how many stashes there are, and the last commit's age. The fetch age is the modification time of the repository's `FETCH_HEAD`, so a clone nobody has fetched since shows none, and nothing here reaches the network. It works against a local checkout or a remote URL cloned in memory, and it is read-only.
 
 **A remote URL is a person's affordance, and rta refuses one over MCP.** Every `git` capability is read-only and needs no grant, which is what puts it on an agent's tool list with nothing asked — and a URL an agent composes is an outbound request on the way there and a stranger's commit messages arriving in the model's context on the way back. That is `http.get`, which is gated. Point an agent at a checkout you made.
 

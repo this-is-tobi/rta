@@ -177,7 +177,7 @@ func TestStatusReportsUnmergedPathsAsGitDoes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := kvValue(t, v.(view.KeyValue), "working tree"); got != "4 unmerged" {
+	if got := kvValue(t, v.(view.KeyValue), "working tree"); got != "warn — 4 unmerged" {
 		t.Errorf("working tree = %q, want the four unmerged paths counted once and as what they are", got)
 	}
 }
