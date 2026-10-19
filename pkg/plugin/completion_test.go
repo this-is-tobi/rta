@@ -108,3 +108,37 @@ func TestACandidateIsOfferedOnceWhateverItsDescriptions(t *testing.T) {
 		t.Errorf("Candidates = %q, want %q", got, want)
 	}
 }
+
+// The deliberate channel offers a value once as well, and by the same rule: a
+// live Suggest that answers one entry per place a value turns up — the same
+// cluster name in two namespaces — listed it twice in the box and in the count.
+// The first entry wins and keeps its description, and the dedupe is one function
+// for both channels, so a plugin outside this repository gets it on either.
+func TestALiveAnswerIsOfferedOnceWhateverItsDescriptions(t *testing.T) {
+	f := Field{Name: "cluster", Type: StringSlice, Live: true,
+		Suggest: func(context.Context, Request) []string {
+			return []string{"orders\tin shop", "billing\tin shop", "orders\tin jobs", "billing", "audit"}
+		}}
+	want := []string{"orders\tin shop", "billing\tin shop", "audit"}
+	if got := f.LiveCandidates(context.Background(), NewRequest(nil, false, false)); !slices.Equal(got, want) {
+		t.Errorf("LiveCandidates = %q, want %q", got, want)
+	}
+}
+
+// LiveCandidates is the live field's channel and no other's: it answers for a
+// field that marked itself Live and calls nothing for one that did not, so the
+// gate Candidates keeps stays one decision with two sides.
+func TestLiveCandidatesAnswerOnlyForALiveField(t *testing.T) {
+	called := 0
+	f := Field{Name: "hostname", Type: String,
+		Suggest: func(context.Context, Request) []string {
+			called++
+			return []string{"localhost"}
+		}}
+	if got := f.LiveCandidates(context.Background(), NewRequest(nil, false, false)); got != nil || called != 0 {
+		t.Errorf("LiveCandidates = %v after %d calls for a field that is not live, want nothing and no call", got, called)
+	}
+	if got := (Field{Name: "x", Type: String, Live: true}).LiveCandidates(context.Background(), NewRequest(nil, false, false)); got != nil {
+		t.Errorf("LiveCandidates = %v for a live field with no Suggest, want nothing", got)
+	}
+}

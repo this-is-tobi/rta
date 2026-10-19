@@ -367,7 +367,6 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// the one name as a list of one.
 	resolved[f.Name] = box.partial
 	req := plugin.LiveRequest(resolved)
-	suggest := f.Suggest
 	what := f.Name + " completions"
 	// Same as the cluster path: one fetch per value, so a service that
 	// answers nothing leaves tab free to move on rather than asking again.
@@ -402,7 +401,7 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The last of the three is told apart from the first two, since the
 		// service did answer and a line saying it did not would be false; what
 		// it answered is never listed, as it is the service's whole view.
-		answer := suggest(ctx, req)
+		answer := f.LiveCandidates(ctx, req)
 		raw := fence.Filter(f, answer)
 		offer := offerService
 		if len(raw) == 0 {

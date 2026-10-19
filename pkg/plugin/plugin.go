@@ -548,6 +548,9 @@ type Field struct {
 	// with the box's text as the partial — the field's own name carries it
 	// in the request.
 	//
+	// An answer that gives a value more than once is offered once, the first
+	// entry keeping its description, so a Suggest need not dedupe.
+	//
 	// On a StringSlice the element being typed is what is completed: the
 	// text after the last comma of the box, which the request carries under
 	// the field's own name as a string — req.String(name) is the partial,
