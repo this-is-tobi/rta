@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.49.0](https://github.com/this-is-tobi/rta/compare/v0.48.0...v0.49.0) (2026-10-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **theme:** the built-in primary, accent and label colours change from orange, amber and slate blue to violet, azure and steel teal. Anyone who relied on the default look sees the new one; nobody who states a theme: block or a profile color: is affected. To keep the old look, set theme.primary to '#D97757', theme.accent to '#D77015' and theme.label to '#7794B6'.
+
+### Bug Fixes
+
+* **theme:** hints, help and docs offer a slot's own built-in colour as the example ([ef28159](https://github.com/this-is-tobi/rta/commit/ef281597c61ab60dcc41a778c880c19396e69a04))
+* **theme:** the default primary is a violet, apart from every status colour ([3f24605](https://github.com/this-is-tobi/rta/commit/3f246057d2eed329746c9007acc8fc7a449a5471))
+
 ## [0.48.0](https://github.com/this-is-tobi/rta/compare/v0.47.0...v0.48.0) (2026-10-19)
 
 
