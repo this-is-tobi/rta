@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.48.0](https://github.com/this-is-tobi/rta/compare/v0.47.0...v0.48.0) (2026-10-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **audit:** a script or an agent that branches on audit.kube.failed for an expired login or a failed credential plugin reads audit.kube.auth.failed or audit.kube.credential.missing instead.
+* **fs:** a script or an agent that branches on fs.tree.denied, fs.hash.denied or fs.usage.denied reads the same code ending `.unreadable` instead.
+* **tunnel:** a script or an agent that branches on the code tunnel.auth.denied reads tunnel.auth.failed instead.
+* **tunnel:** a script or an agent that branches on the code tunnel.unauthenticated reads tunnel.auth.failed instead for a login the cluster did not accept, and tunnel.credential.missing for a credential plugin that failed.
+* **audit:** a script or an agent that branches on the code audit.kube.forbidden reads audit.kube.denied instead. Nothing else about the answer changed.
+
+### Features
+
+* **app:** a list flag leaves out what an earlier occurrence of it gave ([1a29855](https://github.com/this-is-tobi/rta/commit/1a298555bd102931a1ed69ef5be6289ae52cd3c7))
+* **audit:** a kubectl refusal of the account is audit.kube.denied ([b78b392](https://github.com/this-is-tobi/rta/commit/b78b392832c06416b207bb571589f95ec2f3b1b9))
+* **audit:** an expired kube login is audit.kube.auth.failed ([ed872b4](https://github.com/this-is-tobi/rta/commit/ed872b4512ae3f1ce53003c41dff0ca984130fb3))
+* **config:** theme.status on every surface that writes or reads the theme block ([562729b](https://github.com/this-is-tobi/rta/commit/562729bf5d0570a932bf7da927e0845b70fccda7))
+* **plugin:** accept Live completion on a list input ([ad88ee9](https://github.com/this-is-tobi/rta/commit/ad88ee9874228995e5aaacccf8b165aab0cddee7))
+* **sdktest:** note a code that words a refused credential another way ([3c8f139](https://github.com/this-is-tobi/rta/commit/3c8f139c12fadd708d9c8db01e6117980a249612))
+* **theme:** a status setting that quiets the colours that grade ([41519b3](https://github.com/this-is-tobi/rta/commit/41519b3fca0f2c972d273100216732b0a840e6a4))
+* **tui:** a status box in the theme editor ([d03c29b](https://github.com/this-is-tobi/rta/commit/d03c29b0143b1a4c2ca8d8c9ba37d4d8093dac85))
+* **tui:** a tab on a live list asks the service for the element being typed ([c2955b6](https://github.com/this-is-tobi/rta/commit/c2955b661b857f67e6ded9ae7d20e5e83cf48adc))
+* **tui:** draw the grades the dashboard builds itself by the status setting ([0953a0f](https://github.com/this-is-tobi/rta/commit/0953a0f4368d5f1467beaa99b6cc8944cbb350bb))
+* **tunnel:** a login the cluster did not accept is tunnel.auth.failed ([4dc7a28](https://github.com/this-is-tobi/rta/commit/4dc7a2800cc86183db1cb99ae0009c86a53f4832))
+
+
+### Bug Fixes
+
+* **config:** name dashboard.width in the config help, not the key that is gone ([3ad3da1](https://github.com/this-is-tobi/rta/commit/3ad3da1fe4acca5e19e4253c9db6c10db7eb0f48))
+* **fs:** a path the operating system refuses is unreadable, not denied ([2a05102](https://github.com/this-is-tobi/rta/commit/2a05102181d94d01bed0c5d00b7e7fda452d40b7))
+* **tui:** a live completion resolves with the connection's fence, as the run does ([de9c331](https://github.com/this-is-tobi/rta/commit/de9c331c5f8c5a9a7831a0e9a207de23711444ea))
+* **tunnel:** a key the bastion refused is tunnel.auth.failed too ([b131b3e](https://github.com/this-is-tobi/rta/commit/b131b3efa6c2701f2976a903b90fca45981ed8fd))
+
 ## [0.47.0](https://github.com/this-is-tobi/rta/compare/v0.46.0...v0.47.0) (2026-10-19)
 
 
