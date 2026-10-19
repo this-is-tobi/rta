@@ -418,6 +418,9 @@ func TestPressingCOnTheRealGenTileEndToEnd(t *testing.T) {
 	for range back {
 		tm.Send(tea.KeyPressMsg{Code: tea.KeyLeft})
 	}
+	// The overview is paced at a day, which leaves it unrun when the dashboard
+	// opens; `r` is the person asking for it, and it runs the selected tile.
+	tm.Send(tea.KeyPressMsg{Code: 'r', Text: "r"})
 	// **The tile's own answer is what `c` copies from, and it is a command of
 	// its own, answered when it is.** The title this test first waited on is
 	// on the first frame, ahead of the run that fills the tile, and the keys
