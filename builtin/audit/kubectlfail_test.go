@@ -34,6 +34,34 @@ func TestASlowListIsSaidToBeSlowNotUnreachable(t *testing.T) {
 	}
 }
 
+// The cluster knowing the account and refusing it the list is a refused
+// credential, named so (`.denied`), which is what lets a dashboard tile stop
+// asking after two of them; a cluster that did not answer, or a kubectl that
+// ran out of time, is not, and the tile has to keep asking to say it is back.
+func TestAForbiddenListIsARefusedCredentialAndAnOutageIsNot(t *testing.T) {
+	forbidden := `Error from server (Forbidden): pods is forbidden: User "u" cannot list resource "pods" ` +
+		`in API group "" at the cluster scope`
+	verr := classifyKubectl(context.Background(), errors.New("exit status 1"), forbidden, "pods")
+	if verr.Code != "audit.kube.denied" {
+		t.Fatalf("code = %q, want audit.kube.denied: %s", verr.Code, verr.Message)
+	}
+	if !verr.CredentialRefused() {
+		t.Error("a list the cluster refused the account is not read as a refused credential")
+	}
+
+	refused := `E1003 14:46:33 memcache.go:265] "Unhandled Error" err="couldn't get current server API group ` +
+		`list: Get \"https://127.0.0.1:1/api?timeout=32s\": dial tcp 127.0.0.1:1: connect: connection refused"`
+	if verr := classifyKubectl(context.Background(), errors.New("exit status 1"), refused, "pods"); verr.CredentialRefused() {
+		t.Errorf("%s is read as a refused credential, and the cluster refused nothing", verr.Code)
+	}
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	if verr := classifyKubectl(ctx, errors.New("signal: killed"), "", "pods"); verr.CredentialRefused() {
+		t.Errorf("%s is read as a refused credential, and the cluster did not answer in time", verr.Code)
+	}
+}
+
 // A cluster that did not answer is told as that. The current kubectl says it
 // as a klog line — a timestamp, a process id and a source file around the one
 // clause that matters — and the audit put that line in front of the reader as
