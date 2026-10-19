@@ -2,53 +2,147 @@ package view
 
 import "testing"
 
-// **The rule is read from the codes that exist, not made up.** These are the
-// codes the first-party plugins and the host name a refused credential with,
-// and the ones they name a failure that is not one with: a timeout, a refused
-// connection, an unreachable host and a bad input are the same answer on the
-// next try, or a different one, and a tile that stopped asking after two of them
-// would be hiding an outage. A code that is in neither list is a code the rule
-// has not been shown, and pausing on it is a guess.
-func TestACredentialRefusedIsNamedByTheCodesTheServicesUse(t *testing.T) {
-	refused := []string{
+// **The rule is read from the codes that exist, not made up.** Each case is a
+// code the first-party plugins or the host return, under the reason it is or is
+// not a refused credential, except the few marked constructed, which no code is
+// today and which hold a precedence. The two endings are the whole of it: a code
+// ending `.auth.failed` or `.denied` is a refusal, and everything else is not,
+// however it is worded — a refusal in another word, a credential that is not
+// there, a service that did not answer, one that answered with a limit, a file
+// the operating system refused. A tile that stopped asking after a timeout would
+// be hiding an outage, and one that kept asking after a refusal is how an account
+// that locks gets locked.
+func TestACredentialRefusedIsNamedByTheEndingsAndByNothingElse(t *testing.T) {
+	cases := []struct {
+		why     string
+		code    string
+		refusal bool
+		want    bool
+	}{
 		// The account was not accepted.
-		"pg.auth.failed", "mysql.auth.failed", "mariadb.auth.failed", "redis.auth.failed",
-		"etcd.auth.failed", "qdrant.auth.failed", "keycloak.auth.failed", "s3.auth.failed",
+		{"the account was not accepted", "pg.auth.failed", false, true},
+		{"the account was not accepted", "mysql.auth.failed", false, true},
+		{"the account was not accepted", "mariadb.auth.failed", false, true},
+		{"the account was not accepted", "redis.auth.failed", false, true},
+		{"the account was not accepted", "etcd.auth.failed", false, true},
+		{"the account was not accepted", "qdrant.auth.failed", false, true},
+		{"the account was not accepted", "keycloak.auth.failed", false, true},
+		{"the account was not accepted", "s3.auth.failed", false, true},
+		{"a login the cluster or the bastion did not accept", "tunnel.auth.failed", false, true},
+		{"a login the cluster did not accept", "audit.kube.auth.failed", false, true},
+
 		// The account is known and may not do what was asked.
-		"pg.denied", "mysql.denied", "mariadb.denied", "redis.denied", "etcd.denied", "qdrant.denied",
-		"vault.denied", "s3.denied", "keycloak.denied", "docker.denied", "cnpg.denied",
-		"mysql.database.denied", "mysql.host.denied", "etcd.snapshot.denied",
-		"tunnel.denied", "tunnel.auth.denied", "tunnel.secret.denied",
+		{"the account is known and may not do this", "pg.denied", false, true},
+		{"the account is known and may not do this", "mysql.denied", false, true},
+		{"the account is known and may not do this", "mariadb.denied", false, true},
+		{"the account is known and may not do this", "redis.denied", false, true},
+		{"the account is known and may not do this", "etcd.denied", false, true},
+		{"the account is known and may not do this", "qdrant.denied", false, true},
+		{"the account is known and may not do this", "vault.denied", false, true},
+		{"the account is known and may not do this", "s3.denied", false, true},
+		{"the account is known and may not do this", "keycloak.denied", false, true},
+		{"the account is known and may not do this", "docker.denied", false, true},
+		{"a finer refusal", "mysql.database.denied", false, true},
+		{"a finer refusal", "mysql.host.denied", false, true},
+		{"a finer refusal", "etcd.snapshot.denied", false, true},
+		{"the cluster refused the audit its list", "audit.kube.denied", false, true},
+		{"the cluster refused the forward", "tunnel.denied", false, true},
+		{"the cluster refused the secret", "tunnel.secret.denied", false, true},
+		{"the cluster refused the completion's list", "tunnel.list.denied", false, true},
+
+		// A credential that is not there is not a refusal: the tile keeps asking, and
+		// answers the moment the person has set it.
+		{"the identity is not given", "kv.identity.required", false, false},
+		{"the identity is locked", "kv.identity.locked", false, false},
+		{"the passphrase is not given", "kv.passphrase.missing", false, false},
+		{"the guard's passphrase is not given", "core.guard.passphrase.required", false, false},
+		{"the credential plugin failed before any request", "tunnel.credential.missing", false, false},
+		{"the credential plugin failed before any request", "audit.kube.credential.missing", false, false},
+		{"the password is not given", "redis.auth.required", false, false},
+		{"the tool that asks is not on the machine", "audit.kube.missing", false, false},
+
+		// A refusal worded another way is not read, whatever the word: the rule is
+		// the two endings, and a tile on one of these keeps asking.
+		{"a refusal worded forbidden", "kube.forbidden", false, false},
+		{"a refusal worded forbidden", "cnpg.forbidden", false, false},
+		{"a refusal worded unauthorized", "kube.unauthorized", false, false},
+		{"a refusal worded unauthenticated", "cnpg.unauthenticated", false, false},
+
+		// The service did not answer, or not in time.
+		{"the host is unreachable", "pg.conn.unreachable", false, false},
+		{"the host is unreachable", "docker.unreachable", false, false},
+		{"the host is unreachable", "kube.unreachable", false, false},
+		{"the host is unreachable", "cnpg.unreachable", false, false},
+		{"the host is unreachable", "audit.kube.unreachable", false, false},
+		{"the host is unreachable", "tunnel.cluster.unreachable", false, false},
+		{"the host is unreachable", "tunnel.bastion.unreachable", false, false},
+		{"the host is unreachable", "tunnel.dest.unreachable", false, false},
+		{"the host is unreachable", "pkg.registry.unreachable", false, false},
+		{"the connection timed out", "pg.timeout", false, false},
+		{"the connection timed out", "mysql.timeout", false, false},
+		{"the connection timed out", "mariadb.timeout", false, false},
+		{"the connection timed out", "redis.timeout", false, false},
+		{"the connection timed out", "etcd.timeout", false, false},
+		{"the connection timed out", "qdrant.timeout", false, false},
+		{"the connection timed out", "keycloak.timeout", false, false},
+		{"the connection timed out", "vault.timeout", false, false},
+		{"the connection timed out", "s3.timeout", false, false},
+		{"the connection timed out", "audit.kube.timeout", false, false},
+		{"the connection timed out", "tunnel.open.timeout", false, false},
+		{"the connection timed out", "tunnel.secret.timeout", false, false},
+		{"the connection timed out", "tui.refresh.timeout", false, false},
+		{"the connection failed", "pg.conn.failed", false, false},
+		{"the connection was refused", "pg.conn.refused", false, false},
+		{"the connection was refused", "mysql.conn.refused", false, false},
+		{"the connection dropped", "redis.conn.closed", false, false},
+		{"the service is not ready", "etcd.unavailable", false, false},
+		{"the service is sealed", "vault.sealed", false, false},
+
+		// The service answered with a limit, which is a service that is there.
+		{"a rate limit", "qdrant.ratelimited", false, false},
+		{"a rate limit", "pkg.registry.ratelimited", false, false},
+
+		// The operating system refused a file, which is no credential.
+		{"a file the OS refused", "fs.tree.unreadable", false, false},
+		{"a file the OS refused", "fs.hash.unreadable", false, false},
+		{"a file the OS refused", "fs.usage.unreadable", false, false},
+		{"a file the OS refused", "net.sysfile.permission", false, false},
+
+		// The tile's own inputs, or a TLS answer.
+		{"the database is not there", "pg.database.missing", false, false},
+		{"a TLS answer", "pg.tls.rejected", false, false},
+		{"a TLS answer", "pg.tls.required", false, false},
+		{"an input", "http.auth.file", false, false},
+		{"an input", "http.auth.twice", false, false},
+		{"an input", "redis.auth.unneeded", false, false},
+		{"a name that did not resolve", "pg.host.unknown", false, false},
+		{"a name that did not resolve", "net.port.resolve", false, false},
+
+		// What is not a code, and what only looks like the ending.
+		{"no code", "", false, false},
+		{"a bare word is not a code", "denied", false, false},
+		// Constructed: no code puts a word after the ending.
+		{"the ending is the last word", "pg.denied.soon", false, false},
+
+		// A policy gate says no to who is asking, whatever its code ends in.
+		{"a policy gate", "git.remote.mcp", true, false},
+		// Constructed: no gate ends so today, and the precedence is what is held.
+		{"a policy gate ending `.denied`", "git.remote.denied", true, false},
+		{"a policy gate ending `.auth.failed`", "git.remote.auth.failed", true, false},
 	}
-	for _, code := range refused {
-		if e := Errorf(code, "x"); !e.CredentialRefused() {
-			t.Errorf("%s is a refused credential and is not read as one", code)
+	for _, tc := range cases {
+		build := Errorf
+		if tc.refusal {
+			build = Refusef
 		}
-	}
-	notRefused := []string{
-		// The service did not answer, or not in time, or not with that.
-		"pg.conn.refused", "pg.conn.timeout", "pg.conn.unreachable", "pg.conn.failed", "pg.host.unknown",
-		"mysql.conn.refused", "redis.timeout", "redis.conn.closed", "etcd.timeout", "etcd.unavailable",
-		"qdrant.timeout", "qdrant.ratelimited", "keycloak.timeout", "vault.conn.timeout", "vault.sealed",
-		"s3.conn.timeout", "docker.unreachable", "cnpg.timeout", "kube.unreachable", "tui.refresh.timeout",
-		"pkg.registry.ratelimited", "pkg.registry.unreachable",
-		// The tile's own inputs, or a TLS answer, or a file.
-		"pg.database.missing", "pg.tls.rejected", "pg.tls.required", "http.auth.file", "http.auth.twice",
-		"redis.auth.unneeded", "net.port.resolve", "",
-	}
-	for _, code := range notRefused {
-		if e := Errorf(code, "x"); e.CredentialRefused() {
-			t.Errorf("%q is read as a refused credential, and the service did not refuse one", code)
+		if got := build(tc.code, "x").CredentialRefused(); got != tc.want {
+			t.Errorf("%q (%s): read as a refused credential = %v, want %v", tc.code, tc.why, got, tc.want)
 		}
 	}
 }
 
-// A policy gate says no to who is asking and not to a credential, whatever its
-// code ends in; and an error that is not there is not a refusal.
-func TestAPolicyRefusalIsNotACredentialRefused(t *testing.T) {
-	if Refusef("core.grant.denied", "x").CredentialRefused() {
-		t.Error("a policy refusal is read as a refused credential")
-	}
+// An error that is not there is not a refusal.
+func TestNoErrorIsNotACredentialRefused(t *testing.T) {
 	var none *Error
 	if none.CredentialRefused() {
 		t.Error("no error is read as a refused credential")
