@@ -108,6 +108,7 @@ One plugin per invocation. A profile spanning three plugins is three lines, and 
 | `--only …` together with `--unfence` | one states the fence and the other removes it |
 | `--theme primry=#112233`, `--theme primary=red` | the palette has ten slots, five of which a profile may state, and each takes `#rrggbb`; a typo is answered with the nearest slot — `core.profile.theme.slot`, `core.profile.theme.color` |
 | `--theme good=#00AA66` (or `warn`, `bad`, `inverse`, `ink`) | the status colours are only set in your own config file, so a profile cannot state them; the hint names `rta config set theme.good` — `core.profile.theme.status` |
+| `--theme status=off` | how status is drawn is only set in your own config file, for every environment, so a profile cannot state it; the hint names `rta config set theme.status` — `core.profile.theme.status` |
 | `--theme …` together with `--untheme`, or a slot given twice | one states the block and the other removes it, and two colours for a slot have no order to rank them by |
 | `--kube …` and `--ssh …` together | a call opens one forward |
 | `--tunnel-tls` with neither `--kube` nor `--ssh` in effect (this run or already stored) | it states something about the far side of a forward that does not exist — `--direct` clears a stored `tunnelTLS: true` for the same reason |
