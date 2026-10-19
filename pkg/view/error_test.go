@@ -62,11 +62,12 @@ func TestACredentialRefusedIsNamedByTheEndingsAndByNothingElse(t *testing.T) {
 		{"the tool that asks is not on the machine", "audit.kube.missing", false, false},
 
 		// A refusal worded another way is not read, whatever the word: the rule is
-		// the two endings, and a tile on one of these keeps asking.
-		{"a refusal worded forbidden", "kube.forbidden", false, false},
-		{"a refusal worded forbidden", "cnpg.forbidden", false, false},
-		{"a refusal worded unauthorized", "kube.unauthorized", false, false},
-		{"a refusal worded unauthenticated", "cnpg.unauthenticated", false, false},
+		// the two endings, and a tile on one of these keeps asking. These are the
+		// words the first-party plugins used before they took the two endings, kept
+		// as constructed shapes since no code of theirs is worded so any more.
+		{"a refusal worded forbidden", "thing.forbidden", false, false},
+		{"a refusal worded unauthorized", "thing.unauthorized", false, false},
+		{"a refusal worded unauthenticated", "thing.unauthenticated", false, false},
 
 		// The service did not answer, or not in time.
 		{"the host is unreachable", "pg.conn.unreachable", false, false},
