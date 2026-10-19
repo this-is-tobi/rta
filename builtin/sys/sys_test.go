@@ -349,22 +349,6 @@ func TestPSHasRSSColumn(t *testing.T) {
 	}
 }
 
-func TestHumanDuration(t *testing.T) {
-	tests := []struct {
-		in   time.Duration
-		want string
-	}{
-		{30 * time.Minute, "30m"},
-		{90 * time.Minute, "1h 30m"},
-		{25*time.Hour + 5*time.Minute, "1d 1h 5m"},
-	}
-	for _, tt := range tests {
-		if got := humanDuration(tt.in); got != tt.want {
-			t.Errorf("humanDuration(%v) = %q, want %q", tt.in, got, tt.want)
-		}
-	}
-}
-
 // TestOverviewGroupsSubsystems: the grouped view carries one dense line per
 // subsystem; the essentials must be present on any host running the tests.
 func TestOverviewGroupsSubsystems(t *testing.T) {

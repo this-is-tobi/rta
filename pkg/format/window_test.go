@@ -25,6 +25,34 @@ func TestDurationReadsLikeSomethingAPersonWouldType(t *testing.T) {
 	}
 }
 
+// One spelling of how long something has been up, in the two units a person
+// steers by: a host that has been up a fortnight is "14d 2h", and nobody reads
+// the minutes of it. Truncated and not rounded, since this counts time that has
+// passed and 59m59s has not been an hour.
+func TestUptimeIsTheTwoUnitsAPersonSteersBy(t *testing.T) {
+	cases := map[time.Duration]string{
+		14*24*time.Hour + 2*time.Hour + 59*time.Minute: "14d 2h",
+		24 * time.Hour:                  "1d 0h",
+		23*time.Hour + 59*time.Minute:   "23h 59m",
+		time.Hour:                       "1h 0m",
+		90 * time.Minute:                "1h 30m",
+		59*time.Minute + 59*time.Second: "59m",
+		time.Minute:                     "1m",
+		45 * time.Second:                "45s",
+		0:                               "0s",
+		900 * time.Millisecond:          "0s",
+		-time.Hour:                      "0s",
+		365*24*time.Hour + 5*time.Hour:  "365d 5h",
+		time.Duration(1<<63 - 1):        "106751d 23h",
+		4*24*time.Hour + 19*time.Hour + 5*time.Minute: "4d 19h",
+	}
+	for d, want := range cases {
+		if got := Uptime(d); got != want {
+			t.Errorf("Uptime(%v) = %q, want %q", d, got, want)
+		}
+	}
+}
+
 // The days are in mid-July because clockAt reads them in the machine's own
 // zone, and the table steps in whole days of 24 hours: across a change of
 // the clocks one of those lands an hour off the time it was written for.
