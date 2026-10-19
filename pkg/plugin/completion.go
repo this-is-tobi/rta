@@ -27,8 +27,8 @@ import (
 // A Live Suggest never answers here. This is the per-keystroke channel — the
 // TUI re-evaluates it as siblings change, shell completion builds it a
 // credential-less request — and a network read on that cadence is exactly
-// what this channel exists to prevent. The deliberate channel calls f.Suggest itself,
-// with LiveRequest, on a completion press. One gate at the fork rather than
+// what this channel exists to prevent. The deliberate channel is LiveCandidates,
+// called with LiveRequest on a completion press. One gate at the fork rather than
 // one per surface, for CompletionRequest's reason: a rule that lives in two
 // places is a rule that will hold in one of them.
 func (f Field) Candidates(ctx context.Context, req Request) []string {
@@ -39,6 +39,23 @@ func (f Field) Candidates(ctx context.Context, req Request) []string {
 		return f.Options
 	}
 	if f.Suggest == nil {
+		return nil
+	}
+	return uniqueByValue(f.Suggest(ctx, req))
+}
+
+// LiveCandidates is Candidates for the deliberate channel: what a Live field's
+// Suggest answers to a completion press, called with the request the caller
+// built (LiveRequest) and offered by the same rule — a value once, the first
+// entry winning and keeping its description. A Suggest that answers one entry
+// per place a value turns up (the same cluster name in two namespaces) is thereby
+// counted and drawn once on this channel as on the other, and the rule is the
+// host's rather than something every plugin has to remember.
+//
+// Nothing for a field that is not Live: that field's Suggest is the keystroke
+// channel's, and this is the one door the fork in Candidates leaves for the other.
+func (f Field) LiveCandidates(ctx context.Context, req Request) []string {
+	if !f.Live || f.Suggest == nil {
 		return nil
 	}
 	return uniqueByValue(f.Suggest(ctx, req))

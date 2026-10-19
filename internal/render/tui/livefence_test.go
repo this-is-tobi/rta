@@ -690,3 +690,66 @@ func TestAnUnfencedLiveBoxWithNoAnswerStaysEmptyHanded(t *testing.T) {
 		t.Errorf("flash = %q, want the plain refusal with no profile in force", nm.flash)
 	}
 }
+
+// A value the service answers twice is offered once. The same cluster name in two
+// namespaces is one name to put in a box, and counting it twice told the person
+// there were more to choose from than there are.
+func TestALiveAnswerListsAValueOnce(t *testing.T) {
+	noHistory(t)
+	for name, live := range map[string]func(*liveRecorder, ...string) plugin.Field{
+		"a list live box":   clusterList,
+		"a single live box": clusterOne,
+	} {
+		t.Run(name, func(t *testing.T) {
+			lr := &liveRecorder{}
+			m, c := liveFenceModel(t, map[string]any{"cluster": []any{"orders-db", "billing-db", "audit-db"}},
+				live(lr, "orders-db\tin shop", "billing-db\tin shop", "orders-db\tin jobs", "billing-db", "audit-db"),
+				namespaceList())
+			nm := openFenced(t, m, c, "shop, jobs")
+			setBox(nm.form, "cluster", "")
+
+			nm = fetchLive(t, nm)
+			if got, want := nm.form.suggested["cluster"], []string{"orders-db", "billing-db", "audit-db"}; !slices.Equal(got, want) {
+				t.Errorf("suggested = %v, want each name once", got)
+			}
+			if want := "orders-db, billing-db, audit-db"; !strings.Contains(nm.flash, want) {
+				t.Errorf("flash = %q, want %q", nm.flash, want)
+			}
+
+			// And the count of a box with text in it is of names, not of answers.
+			again, c2 := liveFenceModel(t, map[string]any{"cluster": []any{"orders-db", "billing-db", "audit-db"}},
+				live(lr, "orders-db\tin shop", "orders-db\tin jobs", "billing-db"), namespaceList())
+			nm = openFenced(t, again, c2, "shop, jobs")
+			setBox(nm.form, "cluster", "o")
+			nm = fetchLive(t, nm)
+			if want := "2 cluster completions"; !strings.Contains(nm.flash, want) {
+				t.Errorf("flash = %q, want %q", nm.flash, want)
+			}
+		})
+	}
+}
+
+// What the keystroke channel offers does not move with the press: a fenced live
+// box offers its allowlist and calls nothing, an unfenced one offers nothing, and a
+// press landing an answer does not change what typing is offered.
+func TestTheKeystrokeChannelOfALiveBoxIsUnchanged(t *testing.T) {
+	noHistory(t)
+	lr := &liveRecorder{}
+	m, c := liveFenceModel(t, shopFence, namespaceListLive(lr, "shop", "shop", "unrelated"))
+	nm := openBox(t, m, c, "")
+	field := c.Inputs[0]
+
+	if got, want := nm.form.candidates(field), []string{"shop", "jobs", "audit"}; !slices.Equal(got, want) {
+		t.Errorf("a fenced live box offers %v per keystroke, want its allowlist", got)
+	}
+	if lr.calls() != 0 {
+		t.Fatalf("the keystroke channel called the live Suggest (%d calls)", lr.calls())
+	}
+	nm = fetchLive(t, nm)
+	if got, want := nm.form.candidates(field), []string{"shop", "jobs", "audit"}; !slices.Equal(got, want) {
+		t.Errorf("after a press the box offers %v per keystroke, want the allowlist once, and not the answer beside it", got)
+	}
+	if lr.calls() != 1 {
+		t.Errorf("typing and the press made %d calls, want the press's one", lr.calls())
+	}
+}
