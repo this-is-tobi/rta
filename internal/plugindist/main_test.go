@@ -3,6 +3,8 @@ package plugindist
 import (
 	"os"
 	"testing"
+
+	"github.com/this-is-tobi/rta/internal/testenv"
 )
 
 // A data directory of this binary's own, for the whole package.
@@ -21,9 +23,16 @@ import (
 // as pluginhost's and internal/app's are, because the rule is about the
 // package and a helper is something a new test can forget to call; a test that
 // wants a directory of its own still sets one.
+//
+// The configuration is out of reach for the same reason: a test that reached it,
+// as one did, read whatever the developer's `~/.config/rta/config.yaml` holds.
+// testenv.Isolate points HOME, every XDG directory and RTA_CONFIG at an empty place.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "rta-plugindist-tests")
 	if err != nil {
+		panic(err)
+	}
+	if err := testenv.Isolate(dir); err != nil {
 		panic(err)
 	}
 	os.Setenv("RTA_DATA_DIR", dir)

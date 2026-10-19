@@ -16,6 +16,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/this-is-tobi/rta/internal/testenv"
 )
 
 // End-to-end, through the real binary.
@@ -64,6 +66,12 @@ func TestMain(m *testing.M) {
 	build := exec.Command("go", "build", "-tags", "slowhost", "-o", binary, ".")
 	if out, err := build.CombinedOutput(); err != nil {
 		panic("building rta: " + err.Error() + "\n" + string(out))
+	}
+	// After the build, which finds its caches through HOME, and before any test
+	// starts the binary: the server a test starts loads the configuration, and
+	// would read whatever the developer's `~/.config/rta/config.yaml` holds.
+	if err := testenv.Isolate(dir); err != nil {
+		panic(err)
 	}
 	code := m.Run()
 	os.RemoveAll(dir)
