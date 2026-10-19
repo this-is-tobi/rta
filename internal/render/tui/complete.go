@@ -11,6 +11,7 @@ import (
 	huh "charm.land/huh/v2"
 
 	"github.com/this-is-tobi/rta/internal/boxlist"
+	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/internal/tunnel"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -315,9 +316,20 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	cfg := m.configFor(c)
+	// The connection's fence resolves too, as it does for a run: a sibling a
+	// fence of one entry fills, or a list it fills whole, is what the call will
+	// carry, and a listing that depends on it (the clusters of the namespaces)
+	// is otherwise asked about nothing.
+	//
+	// And it is the one fence of this press. The answer below is held to it as
+	// well, and not to the copy the form took when it was built (capForm.fence):
+	// this is the connection whose credentials the listing runs with and whose
+	// allowlist the run will be gated by, so a config edited under an open form
+	// moves the request and the answer together, never one without the other.
+	fence := profile.FenceOf(conn)
 	resolved := plugin.Resolve(c, plugin.Inputs{
 		Caller: values, Profile: filled, ProfileName: name, Config: cfg.values,
-		ConfigSection: cfg.section,
+		ConfigSection: cfg.section, Fence: fence,
 	})
 	// The box's own text is the partial, whatever any layer had in mind for
 	// this field: a listing narrows on what is typed, not on a default. For a
@@ -346,7 +358,7 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A list box takes each name once, so the ones it lists already are
 		// not candidates: the answer is counted and named for the box as it
 		// stands, and a press that leaves nothing says so.
-		raw := cf.fence.Filter(f, suggest(ctx, req))
+		raw := fence.Filter(f, suggest(ctx, req))
 		items := make([]string, 0, len(raw))
 		for _, entry := range raw {
 			if v := plugin.CandidateValue(entry); !textclean.Deceives(v) && !slices.Contains(box.listed, v) {
