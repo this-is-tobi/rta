@@ -54,18 +54,19 @@ func (e *Error) Error() string { return e.Message }
 // would be hiding an outage.
 //
 // It is a reading of the code and nothing else, because the code is what
-// crosses the wire from a plugin and is stable. A refused credential is named
-// by a code ending in `.auth.failed` — the account was not accepted: pg, mysql,
-// mariadb, redis, etcd, qdrant, keycloak and s3 — or in `.denied` — the
-// account is known and may not do this: those eight and vault, docker, cnpg
-// and the host's tunnels, and the finer ones (`mysql.database.denied`,
-// `mysql.host.denied`). Every code that ends so says that and nothing else.
+// crosses the wire from a plugin and is stable. A code ending in `.auth.failed`
+// says the account was not accepted (`pg.auth.failed`), and one ending in
+// `.denied` says the account is known and may not do this (`pg.denied`,
+// `mysql.database.denied`). The rule holds in both directions. A code that ends
+// so says that and nothing else, so a file the operating system will not let rta
+// read is `.unreadable` and never `.denied`; and a refusal of a credential ends
+// so and no other way, since a code that ends otherwise is never taken for one
+// and its tile keeps asking.
 //
-// Read from the codes that exist, so it leaves out the ones that say the same in
-// another word: `kube.unauthorized` and `kube.forbidden`, `cnpg.unauthenticated`,
-// `redis.auth.required` and `tunnel.unauthenticated`. A tile with one of those
-// keeps refreshing, as it always did; renaming a code to end as these do is the
-// plugin's to decide. A policy refusal (Refusal) is about who is asking, not
+// A credential that is not there is not a refusal and ends in neither: no token
+// is configured, a login plugin is not installed or failed before there was a
+// request to refuse, a passphrase is not given. The tile has nothing to stop
+// asking about, and it is right to ask again the moment the person has set it. A policy refusal (Refusal) is about who is asking, not
 // about a credential, whatever its code ends in.
 func (e *Error) CredentialRefused() bool {
 	return e != nil && !e.Refusal &&
