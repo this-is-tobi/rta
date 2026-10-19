@@ -62,6 +62,82 @@ func TestAForbiddenListIsARefusedCredentialAndAnOutageIsNot(t *testing.T) {
 	}
 }
 
+// An expired login is the ordinary daily failure of a cluster reached through an
+// exec credential plugin, and it was audit.kube.failed with kubectl's first line,
+// so a tile of an audit on it started kubectl and the plugin again at every
+// refresh until the person had logged in. The cluster not accepting the login is
+// a refused credential (`.auth.failed`), which a tile stops asking on. A
+// credential plugin that failed, or that this machine lacks, never reached the
+// cluster: nothing was refused, the credential is not there, and a tile that
+// stopped on it would stay paused after the person had logged in again.
+func TestAnExpiredLoginIsARefusedCredentialAndAFailedCredentialPluginIsNot(t *testing.T) {
+	for _, tc := range []struct {
+		name, stderr, code string
+		refused            bool
+		message            string
+	}{
+		{"expired login", `error: You must be logged in to the server (Unauthorized)`,
+			"audit.kube.auth.failed", true, "You must be logged in to the server (Unauthorized)"},
+		{"a 401 from the api server", `Error from server (Unauthorized): unknown`,
+			"audit.kube.auth.failed", true, "Unauthorized"},
+		{"a request without a credential",
+			`error: You must be logged in to the server (the server has asked for the client to provide credentials)`,
+			"audit.kube.auth.failed", true, "asked for the client to provide credentials"},
+		{"a credential plugin that failed",
+			"Unable to connect to the server: getting credentials: exec: executable tsh failed with exit code 1\n",
+			"audit.kube.credential.missing", false, "credential plugin"},
+		{"a credential plugin kubectl cannot use", `error: exec plugin: invalid apiVersion "client.authentication.k8s.io/v1alpha1"`,
+			"audit.kube.credential.missing", false, "credential plugin"},
+		{"an auth provider kubectl no longer ships", `error: no Auth Provider found for name "gcp"`,
+			"audit.kube.credential.missing", false, "credential plugin"},
+		{"a credential plugin that is not installed",
+			`Unable to connect to the server: getting credentials: exec: executable tsh not found`,
+			"audit.kube.credential.missing", false, "tsh, the context's credential plugin, is not installed"},
+		{"a credential plugin named by its path",
+			`Unable to connect to the server: getting credentials: exec: fork/exec /opt/acme/acme-auth: no such file or directory`,
+			"audit.kube.credential.missing", false, "acme-auth, the context's credential plugin, is not installed"},
+		// The words that ended in a refused login before, and still do not
+		// when the cluster simply did not answer.
+		{"a cluster that did not answer", `Unable to connect to the server: dial tcp 10.0.0.9:6443: i/o timeout`,
+			"audit.kube.unreachable", false, "i/o timeout"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			verr := classifyKubectl(context.Background(), errors.New("exit status 1"), tc.stderr, "pods")
+			if verr.Code != tc.code {
+				t.Fatalf("code = %q, want %s: %s", verr.Code, tc.code, verr.Message)
+			}
+			if verr.CredentialRefused() != tc.refused {
+				t.Errorf("%s read as a refused credential = %v, want %v", verr.Code, verr.CredentialRefused(), tc.refused)
+			}
+			if !strings.Contains(verr.Message, tc.message) {
+				t.Errorf("message %q does not say %q", verr.Message, tc.message)
+			}
+			if verr.Hint == "" && tc.code != "audit.kube.failed" {
+				t.Errorf("%s has no hint saying what to do", verr.Code)
+			}
+		})
+	}
+}
+
+// A narrowed audit asks for its namespace first, and a login that expired is
+// what that first call meets: the audit says so rather than going on, the way
+// it does for a namespace the account may not read.
+func TestAnExpiredLoginStopsANarrowedAuditBeforeItsNamespaceCheck(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "kubectl")
+	body := "#!/bin/sh\necho 'error: You must be logged in to the server (Unauthorized)' >&2\nexit 1\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := kubectlBin
+	kubectlBin = script
+	t.Cleanup(func() { kubectlBin = orig })
+
+	if _, verr := scopeOf(context.Background(), newScopedRequest("prod")); verr == nil || verr.Code != "audit.kube.auth.failed" {
+		t.Fatalf("verr = %v, want audit.kube.auth.failed", verr)
+	}
+}
+
 // A cluster that did not answer is told as that. The current kubectl says it
 // as a klog line — a timestamp, a process id and a source file around the one
 // clause that matters — and the audit put that line in front of the reader as
