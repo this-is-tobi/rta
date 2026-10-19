@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/this-is-tobi/rta/internal/kubeerr"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -269,18 +270,17 @@ func listFailed(what, stderr string) *view.Error {
 	if i := strings.IndexByte(one, '\n'); i >= 0 {
 		one = one[:i]
 	}
-	if exe, ok := credentialPluginMissing(s); ok {
+	if exe, ok := kubeerr.CredentialPluginMissing(s); ok {
 		return credentialMissing("listing "+what, exe).
 			WithHint("the kubeconfig's exec block for this context names it; the field still takes typing")
 	}
 	switch {
-	case notAuthenticated(s):
+	case kubeerr.CredentialHelperFailed(s), kubeerr.NotAuthenticated(s):
 		// Lowest stakes of the three — "type it instead" is good advice
 		// either way — but the same words, because an operator who reads
 		// "refused" here and "refused" on the forward should be reading about
 		// the same thing.
-		return view.Errorf("tunnel.unauthenticated",
-			"listing %s: this cluster does not know who you are", what).
+		return loginFailed("listing "+what, s).
 			WithHint("authenticate again and tab will answer; the field takes typing meanwhile")
 	case strings.Contains(s, "forbidden"):
 		return view.Errorf("tunnel.list.denied", "the cluster refused listing %s", what).

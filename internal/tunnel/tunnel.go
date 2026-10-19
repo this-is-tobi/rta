@@ -450,7 +450,7 @@ func kubectlFailed(name, spec, stderr string) *view.Error {
 	if i := strings.IndexByte(one, '\n'); i >= 0 {
 		one = one[:i]
 	}
-	if exe, ok := credentialPluginMissing(s); ok {
+	if exe, ok := kubeerr.CredentialPluginMissing(s); ok {
 		return credentialMissing(fmt.Sprintf("profile %q", name), exe)
 	}
 	switch {
@@ -465,7 +465,7 @@ func kubectlFailed(name, spec, stderr string) *view.Error {
 	case strings.Contains(s, "not found"):
 		return view.Errorf("tunnel.service.missing", "%s: %s", name, one).
 			WithHint("check the namespace and the service name in `" + spec + "`")
-	case notAuthenticated(s):
+	case kubeerr.CredentialHelperFailed(s), kubeerr.NotAuthenticated(s):
 		// **401 and 403 are different questions and were one answer.** Both
 		// landed on "not allowed to port-forward there — the verb is `create`
 		// on `pods/portforward`", which sends somebody to audit RBAC when
@@ -474,9 +474,7 @@ func kubectlFailed(name, spec, stderr string) *view.Error {
 		// `gke-gcloud-auth-plugin`, an OIDC refresh — that is the ordinary
 		// daily failure, and it is the one this said the least useful thing
 		// about.
-		return view.Errorf("tunnel.unauthenticated",
-			"profile %q: this cluster does not know who you are", name).
-			WithHint(loginHint(spec))
+		return loginFailed(fmt.Sprintf("profile %q", name), s).WithHint(loginHint(spec))
 	case kubeerr.Unreachable(s) != "":
 		kubeContext, _, _ := strings.Cut(spec, "/")
 		return clusterUnreachableError(name, s, "kubectl --context "+kubeContext+" get namespaces")
@@ -496,39 +494,33 @@ func kubectlFailed(name, spec, stderr string) *view.Error {
 	}
 }
 
-// execPluginMissing matches kubectl's two spellings of an exec credential
-// plugin this machine does not have: a bare name looked up on $PATH, and an
-// absolute path that is not there. Both captured from a real kubectl.
-var execPluginMissing = regexp.MustCompile(
-	`exec: (?:executable (\S+) not found|fork/exec (\S+): no such file or directory)`)
-
-// credentialPluginMissing reports which credential plugin the kubeconfig
-// names and this machine lacks, when that is what stderr says.
-//
-// Read ahead of every other classification, because the message carries
-// "not found" and, read after the fact, became three different wrong
-// answers: a missing service on the forward, a missing secret on the read,
-// and "authenticate again" on a listing — each sending somebody to fix a
-// thing that is fine, for a tool they do not have. The kube plugin met the
-// same message and draws the same line.
-func credentialPluginMissing(stderr string) (string, bool) {
-	m := execPluginMissing.FindStringSubmatch(stderr)
-	if m == nil {
-		return "", false
-	}
-	exe := m[1]
-	if exe == "" {
-		exe = m[2]
-	}
-	return filepath.Base(exe), true
-}
-
 // credentialMissing is the one refusal for that, whatever was being
 // attempted; subject says what.
 func credentialMissing(subject, exe string) *view.Error {
 	return view.Errorf("tunnel.credential.missing",
 		"%s: %s, the context's credential plugin, is not installed", subject, exe).
 		WithHint("the kubeconfig's exec block for this context names it — install it, or put it on PATH")
+}
+
+// loginFailed is the answer for a kubectl that had no login to present, or whose
+// login the cluster did not accept, for the forward, the secret read and the
+// listing alike; subject says which. The caller gives the hint, since what
+// renews a login depends on what was being attempted.
+//
+// **Two different things with one fix, and a dashboard tile treats them
+// differently.** The cluster answering 401 refused a login: tunnel.auth.failed,
+// and a tile refused twice in a row stops asking, because the same login gets
+// the same answer. A credential plugin that failed never reached the cluster, so
+// nothing was refused and the credential is not there, which is
+// tunnel.credential.missing beside the plugin that is not installed: ending in
+// neither of the refusal endings, so the tile keeps asking and recovers on its
+// own the moment the person has logged in again.
+func loginFailed(subject, stderr string) *view.Error {
+	if kubeerr.CredentialHelperFailed(stderr) {
+		return view.Errorf("tunnel.credential.missing",
+			"%s: the context's credential plugin gave no credential", subject)
+	}
+	return view.Errorf("tunnel.auth.failed", "%s: this cluster does not know who you are", subject)
 }
 
 // clusterUnreachableError is the refusal for a cluster that did not answer, for
@@ -546,28 +538,6 @@ func clusterUnreachableError(name, stderr, byHand string) *view.Error {
 	return view.Errorf("tunnel.cluster.unreachable", "profile %q: the cluster%s cannot be reached — %s",
 		name, at, kubeerr.Unreachable(stderr)).
 		WithHint("the network, a VPN or the cluster itself, not rta — `" + byHand + "` fails the same way by hand")
-}
-
-// notAuthenticated reports whether kubectl's stderr is about identity rather
-// than permission.
-//
-// The two shapes are the API server's 401 and the credential plugin failing
-// before there is a request to make at all. The second one never reached the
-// cluster, so it cannot be a permissions answer however it is worded.
-func notAuthenticated(stderr string) bool {
-	for _, s := range []string{
-		"Unauthorized",
-		"You must be logged in to the server",
-		"getting credentials", // kubectl's own wrapper around an exec plugin
-		"exec plugin",         // "exec plugin: invalid apiVersion", and friends
-		"credential plugin",   //
-		"no Auth Provider found",
-	} {
-		if strings.Contains(stderr, s) {
-			return true
-		}
-	}
-	return false
 }
 
 // loginHint names the command that fixes it, by asking kubectl locally which

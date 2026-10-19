@@ -161,7 +161,7 @@ func secretFailed(name, ns, secret, stderr string) *view.Error {
 	if i := strings.IndexByte(one, '\n'); i >= 0 {
 		one = one[:i]
 	}
-	if exe, ok := credentialPluginMissing(s); ok {
+	if exe, ok := kubeerr.CredentialPluginMissing(s); ok {
 		return credentialMissing(fmt.Sprintf("profile %q", name), exe)
 	}
 	switch {
@@ -169,13 +169,12 @@ func secretFailed(name, ns, secret, stderr string) *view.Error {
 		return view.Errorf("tunnel.secret.missing",
 			"profile %q names secret %q, which does not exist in namespace %q", name, secret, ns).
 			WithHint("`kubectl -n " + ns + " get secrets` lists them")
-	case notAuthenticated(s):
+	case kubeerr.CredentialHelperFailed(s), kubeerr.NotAuthenticated(s):
 		// The same split the forward's own classifier makes, and it matters
 		// more here: this is the path that fetches a credential, so "not
 		// allowed to read secret X" sends somebody to argue about RBAC for a
 		// secret they can read perfectly well once they log in again.
-		return view.Errorf("tunnel.unauthenticated",
-			"profile %q: this cluster does not know who you are", name).
+		return loginFailed(fmt.Sprintf("profile %q", name), s).
 			WithHint("nothing was refused — the request never got that far. " +
 				"`kubectl -n " + ns + " get secrets` fails the same way, and succeeds " +
 				"once you have authenticated again")

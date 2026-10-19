@@ -43,8 +43,8 @@ func TestAnExpiredLoginReadingASecretIsNotReportedAsRBAC(t *testing.T) {
 	if verr == nil {
 		t.Fatal("a failing kubectl produced no error")
 	}
-	if verr.Code != "tunnel.unauthenticated" {
-		t.Errorf("code = %q, want tunnel.unauthenticated", verr.Code)
+	if verr.Code != "tunnel.auth.failed" {
+		t.Errorf("code = %q, want tunnel.auth.failed", verr.Code)
 	}
 	if strings.Contains(verr.Hint, "verb is `get`") {
 		t.Errorf("hint sends the operator to RBAC for an authentication failure: %q", verr.Hint)
