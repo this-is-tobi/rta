@@ -300,6 +300,46 @@ func TestCheckFenceRefusesAWideningSwitchWhileItsInputIsFenced(t *testing.T) {
 	}
 }
 
+// An input being typed is not tested for its value, and nothing else is spared:
+// the switch that widens it and every other fenced input are held as a run holds
+// them. The fence on the input itself stays on the connection, which is what keeps
+// its switches in the check.
+func TestCheckFenceLeavesOnlyTheValueOfTheUnfinishedInputUntested(t *testing.T) {
+	c := fenceCapability()
+	fence := Fence{"namespace": {"staging"}, "names": {"a", "b"}}
+	valid := map[string]any{"names": []string{"a"}}
+	with := func(extra map[string]any, unfinished string) Inputs {
+		caller := map[string]any{}
+		for k, v := range valid {
+			caller[k] = v
+		}
+		for k, v := range extra {
+			caller[k] = v
+		}
+		return Inputs{Fence: fence, Caller: caller, Unfinished: unfinished}
+	}
+
+	for name, value := range map[string]any{"another value": "prod", "a blank": ""} {
+		if CheckFence(c, with(map[string]any{"namespace": value}, "")) == nil {
+			t.Fatalf("%s: the whole check let the value through, so this proves nothing", name)
+		}
+		if breach := CheckFence(c, with(map[string]any{"namespace": value}, "namespace")); breach != nil {
+			t.Errorf("%s: the value of the input being typed was tested: %+v", name, breach)
+		}
+	}
+	if breach := CheckFence(c, with(map[string]any{"namespace": "pr", "all-namespaces": true}, "namespace")); breach == nil ||
+		!breach.Widened() || breach.Switch.Name != "all-namespaces" || breach.Input.Name != "namespace" {
+		t.Errorf("a switch that widens the input being typed was let through: %+v", breach)
+	}
+	if breach := CheckFence(c, with(map[string]any{"namespace": "pr", "names": []string{"z"}}, "namespace")); breach == nil ||
+		breach.Input.Name != "names" {
+		t.Errorf("another fenced input outside the fence was let through: %+v", breach)
+	}
+	if breach := CheckFence(c, with(map[string]any{"namespace": "pr", "names": []string{"z"}}, "limit")); breach == nil {
+		t.Error("naming an input that is not fenced spared one that is")
+	}
+}
+
 // A list-shaped input is fenced a name at a time.
 func TestCheckFenceHoldsEveryElementOfAListInput(t *testing.T) {
 	c := fenceCapability()

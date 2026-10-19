@@ -55,6 +55,14 @@ type Inputs struct {
 	// runs without it would run the input blank.
 	Fence Fence
 
+	// Unfinished names the input whose value is still being typed, for a check
+	// made on a call that is not complete: CheckFence leaves that value untested,
+	// since what a box holds mid-typing is the start of a value and not a value of
+	// the call. Only the value — a switch that widens the input is still held, being
+	// a way past the fence whatever the input holds. Not a layer and not read by
+	// Resolve; a surface that checks a finished call leaves it empty.
+	Unfinished string
+
 	// Config is the operator's plugins:<ns@pin> section, keyed by Field.Config.
 	Config map[string]any
 

@@ -379,6 +379,13 @@ type FenceBreach struct {
 // fence, whatever the input says. The host cannot read a handler to find that
 // out; the declaration is how it knows.
 //
+// A call still being typed names the input whose value is unfinished
+// (Inputs.Unfinished), and that value alone is left untested: it is the start of a
+// value and not a value of the call. A switch that widens the input is still held
+// to the fence, since the box being completed is exactly the input such a switch
+// widens, and leaving the input out of the fence altogether would let a press
+// through that a run of the same values is refused for.
+//
 // Pure, and made before anything is fetched or opened: a credential is not
 // read and a forward is not raised for a call that is about to be refused.
 func CheckFence(c Capability, in Inputs) *FenceBreach {
@@ -388,7 +395,7 @@ func CheckFence(c Capability, in Inputs) *FenceBreach {
 	resolved := Resolve(c, in)
 	for _, f := range c.Inputs {
 		allowed, fenced := in.Fence.of(f)
-		if !fenced {
+		if !fenced || f.Name == in.Unfinished {
 			continue
 		}
 		if !FenceAllows(f, allowed, resolved[f.Name]) {
