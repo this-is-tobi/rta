@@ -160,7 +160,7 @@ func classifyKubectl(ctx context.Context, err error, stderr, what string) *view.
 	case strings.Contains(low, "(notfound)"):
 		return view.Errorf("audit.kube.notfound", "%s", msg)
 	case strings.Contains(low, "forbidden"), strings.Contains(low, "is not allowed"):
-		return view.Errorf("audit.kube.forbidden", "%s", msg).
+		return view.Errorf("audit.kube.denied", "%s", msg).
 			WithHint("the credential this context uses does not have permission to list this resource")
 	case kubeerr.Unreachable(stderr) != "":
 		// Before the generic case, which would show the first line of stderr:
@@ -263,7 +263,7 @@ func scopeOf(ctx context.Context, req plugin.Request) (scope, *view.Error) {
 	switch verr := kubectlJSON(ctx, args, "namespace "+ns, &got); {
 	case verr == nil:
 		return scope{ns: ns}, nil
-	case verr.Code == "audit.kube.forbidden":
+	case verr.Code == "audit.kube.denied":
 		return scope{ns: ns, unconfirmed: true}, nil
 	case verr.Code == "audit.kube.notfound":
 		where := "the current kubeconfig context"
