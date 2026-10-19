@@ -102,6 +102,8 @@ rta pkg outdated          # the packages, with the exact upgrade command on ever
 rta pkg upgrade brew      # one manager at a time, never everything; apt and friends print the sudo command instead
 ```
 
+`pkg overview` opens with a `status` row, `ok` or `warn — …` naming the worst thing it found: a manager, a tool or the OS that could not be read (said in its own row, as `could not be read — <why>`, and never as "nothing behind"), a reboot owed, or what is behind. Then the total behind and whether a reboot is owed, the OS's updates or the kernel when there is something to say, the managers that have something behind or could not be read, one row each, and the ones that are current as one row, `12 current`; `--detail` lists every manager, the current ones too. The managers are asked at the same time, and on a dashboard tile all of the asking is held to one deadline a little shorter than the tile's own, so a manager that is slow is a row that could not be read and not a tile that timed out; by hand there is only the minute each command is given.
+
 Binaries you installed from GitHub releases have no manager; list them once under `plugins: pkg: tools:` as `- gh=github:cli/cli` and `rta pkg tools` compares each against its latest release, and `rta pkg upgrade gh` installs it in place — fetched, hashed, checked against the digest the release publishes, swapped in atomically. It takes the release's .tar.gz or bare binary for your OS and architecture and nothing else: a release that ships only a .tar.xz or a .zip is refused, and so is a download whose bytes are not a program this machine runs. Binaries from `go install` need no entry: they carry their module path, and appear under the go manager.
 
 Then the detail on whatever looked wrong:

@@ -54,6 +54,10 @@ func (s osState) kernelBehind() bool {
 		semverLess(s.KernelRunning, s.KernelNewest)
 }
 
+// osReader is how the overview and pkg.os read the OS, a seam for the tests so
+// that the rows are the same on macOS and on Linux.
+var osReader = readOS
+
 func readOS(ctx context.Context) osState {
 	if runtime.GOOS == "darwin" {
 		return readMacOS(ctx)
@@ -156,7 +160,7 @@ func newestInstalledKernel(ctx context.Context) string {
 }
 
 func runOS(ctx context.Context, req plugin.Request) (view.View, error) {
-	st := readOS(ctx)
+	st := osReader(ctx)
 	p := plugin.NewPage(ctx, req)
 	p.PutAs("state", "state", osStatePairs(st))
 	if len(st.Updates) > 0 {
@@ -176,32 +180,56 @@ func runOS(ctx context.Context, req plugin.Request) (view.View, error) {
 	return p.View(), nil
 }
 
+// osStatePairs is the OS's lines of a page: what it offers, or the kernel, then
+// whether a reboot is owed.
 func osStatePairs(st osState) view.KeyValue {
-	kv := view.KeyValue{}
+	return view.KeyValue{Pairs: append(osFacts(st), rebootPair(st))}
+}
+
+// osFacts are the OS's lines other than the reboot: the updates it offers on
+// macOS and the kernel on Linux. A read that failed says so in the line that
+// would have answered, since "none offered" is a claim about a machine nobody
+// looked at; the failure is the line, and not a note beside a claim it
+// contradicts.
+func osFacts(st osState) []view.Pair {
+	if len(st.Notes) > 0 {
+		return []view.Pair{{Key: "os updates", Value: "unreadable — " + strings.Join(st.Notes, "; ")}}
+	}
+	var pairs []view.Pair
 	switch runtime.GOOS {
 	case "darwin":
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: "os updates", Value: countText(len(st.Updates), "offered")})
+		pairs = append(pairs, view.Pair{Key: "os updates", Value: countText(len(st.Updates), "offered")})
 	case "linux":
 		if st.KernelRunning != "" {
-			kv.Pairs = append(kv.Pairs, view.Pair{Key: "kernel running", Value: st.KernelRunning})
+			pairs = append(pairs, view.Pair{Key: "kernel running", Value: st.KernelRunning})
 		}
 		if st.KernelNewest != "" {
 			newest := st.KernelNewest
 			if st.kernelBehind() {
 				newest += " — newer than the one running"
 			}
-			kv.Pairs = append(kv.Pairs, view.Pair{Key: "kernel installed", Value: newest})
+			pairs = append(pairs, view.Pair{Key: "kernel installed", Value: newest})
 		}
 	}
-	reboot := "ok"
-	if st.RebootRequired {
-		reboot = "pending reboot — " + st.RebootReason
+	return pairs
+}
+
+// quiet reports whether the OS has nothing to say besides the reboot: no update
+// offered, no kernel behind, and a read that worked.
+func (s osState) quiet() bool {
+	return len(s.Notes) == 0 && len(s.Updates) == 0 && !s.kernelBehind()
+}
+
+// rebootPair is whether a reboot is owed, or that the OS could not be read to
+// say: "ok" is a claim that somebody looked.
+func rebootPair(st osState) view.Pair {
+	switch {
+	case len(st.Notes) > 0:
+		return view.Pair{Key: "reboot", Value: "unknown"}
+	case st.RebootRequired:
+		return view.Pair{Key: "reboot", Value: "pending reboot — " + st.RebootReason}
 	}
-	kv.Pairs = append(kv.Pairs, view.Pair{Key: "reboot", Value: reboot})
-	for _, n := range st.Notes {
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: "note", Value: n})
-	}
-	return kv
+	return view.Pair{Key: "reboot", Value: "ok"}
 }
 
 func countText(n int, what string) string {

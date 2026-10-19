@@ -147,7 +147,8 @@ func (s status) failed(name string) *view.Error {
 // A timeout, a missing binary and a process that never ran are failures
 // here too: none of them answered anything.
 func runStatus(ctx context.Context, name string, args ...string) (status, *view.Error) {
-	ctx, cancel := context.WithTimeout(ctx, listTimeout)
+	limit := budget(ctx, listTimeout)
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	out, stderr, err := runCommand(ctx, name, args...)
 	// ErrWaitDelay is only ever returned for a process that exited zero —
@@ -156,7 +157,7 @@ func runStatus(ctx context.Context, name string, args ...string) (status, *view.
 		return status{out: out}, nil
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return status{}, view.Errorf("pkg.manager.timeout", "%s did not answer within %s", name, listTimeout).
+		return status{}, view.Errorf("pkg.manager.timeout", "%s did not answer within %s", name, limit).
 			WithHint("a manager hung on its registry looks exactly like this — try it by hand")
 	}
 	var notFound *exec.Error
@@ -168,6 +169,20 @@ func runStatus(ctx context.Context, name string, args ...string) (status, *view.
 		return status{out: out, code: exit.ExitCode(), reason: firstLine(stderr, ""), stderr: stderr}, nil
 	}
 	return status{}, view.Errorf("pkg.manager.failed", "%s: %s", name, firstLine(stderr, err.Error()))
+}
+
+// budget is the longest a command run under ctx can take, for saying so: the
+// limit it is given, or the time left to a page deadline when that is the
+// shorter. A command killed by the page's deadline said it had not answered
+// within a minute, which was the limit it was given and not the one that fired.
+func budget(ctx context.Context, limit time.Duration) time.Duration {
+	if deadline, ok := ctx.Deadline(); ok {
+		limit = min(limit, time.Until(deadline))
+	}
+	if limit >= time.Second {
+		return limit.Round(time.Second)
+	}
+	return limit.Round(10 * time.Millisecond)
 }
 
 func firstLine(s, fallback string) string {

@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/this-is-tobi/rta/builtin/internal/verdict"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -21,40 +24,52 @@ type listing struct {
 	present []manager
 }
 
+// collect asks every detected manager what is behind, at the same time: each is
+// its own process or its own registry, they share nothing but the client, and
+// the sum of their waits is the time a machine with a dozen of them took.
 func collect(ctx context.Context, c *registryClient, only string) listing {
 	l := listing{failed: map[string]*view.Error{}}
 	for _, m := range detected() {
-		if only != "" && m.name != only {
+		if only == "" || m.name == only {
+			l.present = append(l.present, m)
+		}
+	}
+	type answer struct {
+		rows []outdated
+		verr *view.Error
+	}
+	answers := make([]answer, len(l.present))
+	var wg sync.WaitGroup
+	for i, m := range l.present {
+		wg.Go(func() { answers[i].rows, answers[i].verr = m.list(ctx, c) })
+	}
+	wg.Wait()
+	for i, m := range l.present {
+		if answers[i].verr != nil {
+			l.failed[m.name] = answers[i].verr
 			continue
 		}
-		l.present = append(l.present, m)
-		rows, verr := m.list(ctx, c)
-		if verr != nil {
-			l.failed[m.name] = verr
-			continue
-		}
-		l.rows = append(l.rows, rows...)
+		l.rows = append(l.rows, answers[i].rows...)
 	}
 	sortOutdated(l.rows)
 	return l
 }
 
-// managerStatus is the overview's line for one manager: what failed, or how
-// much is behind, and how many of its packages it could not read, counted
-// apart as the tools line counts the ones it could not check.
+// managerStatus is the overview's line for one manager: that it could not be
+// read, or how much is behind, and how many of its packages it could not read,
+// counted apart as the tools line counts the ones it could not.
 func managerStatus(l listing, name string) string {
 	if verr, failed := l.failed[name]; failed {
-		return "fail " + verr.Message
+		return "could not be read — " + verr.Message
 	}
 	n, broken := l.countFor(name), l.brokenFor(name)
-	unread := fmt.Sprintf("%d could not be read", broken)
 	switch {
 	case n > 0 && broken > 0:
-		return fmt.Sprintf("outdated %d (%s)", n, unread)
+		return fmt.Sprintf("outdated %d (%d could not be read)", n, broken)
 	case n > 0:
 		return fmt.Sprintf("outdated %d", n)
 	case broken > 0:
-		return unread
+		return "could not be read — " + format.CountOf(broken, "package")
 	}
 	return "ok"
 }
@@ -189,10 +204,15 @@ func overviewCapability() plugin.Capability {
 		Safety:     plugin.Read,
 		Idempotent: true,
 		Detailed:   true,
-		Description: "The glance: which package managers are here and how many packages each has " +
-			"behind, how many of your GitHub-release binaries have a newer release, " +
-			"whether the OS offers updates, whether a reboot is owed, and the kernel gap. " +
-			"`detail` adds the tables themselves.\n\n" +
+		Description: "The glance: a verdict first (ok, or warn with the worst thing it found), the total " +
+			"behind and whether a reboot is owed, then the package managers that have something behind or " +
+			"could not be read, one row each, and the ones that are current as one row; how many of your " +
+			"GitHub-release binaries have a newer release; and whether the OS offers updates and the " +
+			"kernel gap. A read that failed says so in its row, and the verdict with it, instead of " +
+			"claiming nothing is behind. The managers are asked at the same time, and on a dashboard tile " +
+			"under one deadline shorter than the tile's own, so one that is slow is a row that could not " +
+			"be read and not a tile that timed out. `detail` adds every manager, the current ones too, " +
+			"and the tables themselves.\n\n" +
 			"Not on the automatic dashboard: this runs a dozen tools and asks four " +
 			"registries. Name it in `dashboard: tiles:` once you have decided that is fine " +
 			"every few seconds — most people want it once a morning, which is pkg.overview run by hand.\n\n" +
@@ -203,26 +223,95 @@ func overviewCapability() plugin.Capability {
 	})
 }
 
+// tileDeadline is the one deadline a dashboard tile's run of the overview holds
+// all of its asking to: the managers, the tools and the OS together. A tile gets
+// thirty seconds (the TUI's refreshTimeout), and a run that used them all was
+// cut off as a whole, whichever line it was in the middle of; held to a little
+// less, a line that is still waiting is the one that says it could not be read,
+// and the rest are answered. By hand there is no such deadline, only the minute
+// a command is given. A var for the tests.
+var tileDeadline = 25 * time.Second
+
+// isTile reports whether this is the dashboard's run of the overview: the
+// compact answer on the TUI, which refreshes on a timer. The page enter opens is
+// the detailed one, and is not on the dashboard's clock.
+func isTile(req plugin.Request) bool {
+	return req.Surface() == plugin.SurfaceTUI && !req.Bool("detail")
+}
+
 func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
-	c := newRegistryClient()
-	l := collect(ctx, c, "")
-	tools, verr := readTools(ctx, c, req.StringSlice("tools"))
-	if verr != nil {
+	return overviewWith(ctx, req, newRegistryClient())
+}
+
+// shown says on which of the overview's answers a row appears. A row that says
+// nothing is the matter — no tools listed, no update offered, a manager that is
+// current — is on the page enter opens and not in the compact answer, where a
+// dozen of them were the news that nothing was wrong; and the managers that are
+// current are one row there instead.
+type shown int
+
+const (
+	always shown = iota
+	compactOnly
+	detailOnly
+)
+
+type overviewRow struct {
+	view.Pair
+	shown shown
+}
+
+// overviewWith is the overview asking through c. The managers, the tools and
+// the OS are asked at the same time, since they share nothing, and the verdict
+// is made of what came back: what could not be read first, since not knowing is
+// the part of the page the rest depends on, then a reboot that is owed, then
+// what is behind.
+func overviewWith(ctx context.Context, req plugin.Request, c *registryClient) (view.View, error) {
+	raw := req.StringSlice("tools")
+	// A list that is not in the grammar is a mistake in the configuration, said
+	// before anything is asked.
+	if _, verr := parseTools(raw); verr != nil {
 		return nil, verr
 	}
-	st := readOS(ctx)
-
-	kv := view.KeyValue{}
-	if len(l.present) == 0 {
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: "managers", Value: "none found on $PATH"})
+	if isTile(req) {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, tileDeadline)
+		defer cancel()
 	}
+	var (
+		l     listing
+		tools []toolState
+		st    osState
+		wg    sync.WaitGroup
+	)
+	wg.Go(func() { l = collect(ctx, c, "") })
+	wg.Go(func() { tools, _ = readTools(ctx, c, raw) }) //nolint:errcheck // parsed above, which is all it fails on
+	wg.Go(func() { st = osReader(ctx) })
+	wg.Wait()
+
+	var found verdict.Verdict
+	var rows, unreadable, behindRows, okRows []overviewRow
+	var unreadableNames []string
 	total := 0
 	for _, m := range l.present {
-		if _, failed := l.failed[m.name]; !failed {
+		value := managerStatus(l, m.name)
+		row := overviewRow{Pair: view.Pair{Key: m.name, Value: value}}
+		_, failed := l.failed[m.name]
+		if !failed {
 			total += l.countFor(m.name)
 		}
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: m.name, Value: managerStatus(l, m.name)})
+		switch {
+		case failed || strings.HasPrefix(value, "could not be read"):
+			unreadable = append(unreadable, row)
+			unreadableNames = append(unreadableNames, m.name)
+		case value == "ok":
+			row.shown = detailOnly
+			okRows = append(okRows, row)
+		default:
+			behindRows = append(behindRows, row)
+		}
 	}
+
 	behind, unchecked := 0, 0
 	for _, t := range tools {
 		switch {
@@ -236,26 +325,77 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 			unchecked++
 		}
 	}
+	toolsRow := overviewRow{Pair: view.Pair{Key: "tools"}}
 	switch {
 	case len(tools) == 0:
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tools", Value: "none listed — `plugins: pkg: tools:`"})
+		toolsRow.Value, toolsRow.shown = "none listed — `plugins: pkg: tools:`", detailOnly
 	case behind == 0 && unchecked == 0:
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tools", Value: fmt.Sprintf("ok — %d current", len(tools))})
+		toolsRow.Value = fmt.Sprintf("ok — %d current", len(tools))
 	case behind == 0:
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tools",
-			Value: fmt.Sprintf("%d current, %d could not be checked", len(tools)-unchecked, unchecked)})
+		toolsRow.Value = fmt.Sprintf("could not be read — %d of %d", unchecked, len(tools))
 	default:
-		v := fmt.Sprintf("outdated %d of %d", behind, len(tools))
+		toolsRow.Value = fmt.Sprintf("outdated %d of %d", behind, len(tools))
 		if unchecked > 0 {
-			v += fmt.Sprintf(" (%d could not be checked)", unchecked)
+			toolsRow.Value += fmt.Sprintf(" (%d could not be read)", unchecked)
 		}
-		kv.Pairs = append(kv.Pairs, view.Pair{Key: "tools", Value: v})
 	}
-	kv.Pairs = append(kv.Pairs, osStatePairs(st).Pairs...)
-	kv.Pairs = append(kv.Pairs, view.Pair{Key: "total behind",
-		Value: format.CountOf(total, "package") + ", " + format.CountOf(behind, "tool")})
 
-	if !req.Bool("detail") {
+	switch {
+	case len(l.present) == 0:
+		found.Warn("no package manager found")
+	case len(unreadableNames) > 0:
+		found.Warn(strings.Join(unreadableNames, ", ") + " could not be read")
+	}
+	if unchecked > 0 {
+		found.Warn(format.CountOf(unchecked, "tool") + " could not be read")
+	}
+	if len(st.Notes) > 0 {
+		found.Warn("os updates could not be read")
+	}
+	if st.RebootRequired {
+		found.Warn("reboot owed")
+	}
+	if total > 0 || behind > 0 {
+		var parts []string
+		if total > 0 {
+			parts = append(parts, format.CountOf(total, "package"))
+		}
+		if behind > 0 {
+			parts = append(parts, format.CountOf(behind, "tool"))
+		}
+		found.Warn(strings.Join(parts, ", ") + " behind")
+	}
+
+	rows = append(rows, overviewRow{Pair: view.Pair{Key: "total behind",
+		Value: format.CountOf(total, "package") + ", " + format.CountOf(behind, "tool")}})
+	rows = append(rows, overviewRow{Pair: rebootPair(st)})
+	for _, p := range osFacts(st) {
+		row := overviewRow{Pair: p}
+		if st.quiet() {
+			row.shown = detailOnly
+		}
+		rows = append(rows, row)
+	}
+	rows = append(rows, unreadable...)
+	rows = append(rows, behindRows...)
+	rows = append(rows, okRows...)
+	switch {
+	case len(l.present) == 0:
+		rows = append(rows, overviewRow{Pair: view.Pair{Key: "managers", Value: "none found on $PATH"}})
+	case len(okRows) > 0:
+		rows = append(rows, overviewRow{Pair: view.Pair{Key: "managers", Value: fmt.Sprintf("%d current", len(okRows))}, shown: compactOnly})
+	}
+	rows = append(rows, toolsRow)
+
+	detail := req.Bool("detail")
+	kv := view.KeyValue{Pairs: []view.Pair{{Key: "status", Value: found.String()}}}
+	for _, r := range rows {
+		if (r.shown == compactOnly && detail) || (r.shown == detailOnly && !detail) {
+			continue
+		}
+		kv.Pairs = append(kv.Pairs, r.Pair)
+	}
+	if !detail {
 		return kv, nil
 	}
 	p := plugin.NewPage(ctx, req)
