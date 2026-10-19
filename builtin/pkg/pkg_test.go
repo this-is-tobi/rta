@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/render/cli"
@@ -25,6 +26,8 @@ import (
 type fake struct {
 	bins    map[string]bool
 	answers map[string]fakeAnswer
+	// mu guards ran: the managers are asked at the same time.
+	mu      sync.Mutex
 	ran     []string
 	upgrade [][]string
 	// What the scripted upgrade writes as the manager's own output, whether
@@ -46,7 +49,9 @@ func install(t *testing.T, f *fake) {
 	oldRun, oldLook, oldUp, oldRoot := runCommand, lookPath, runUpgrade, isRoot
 	runCommand = func(_ context.Context, name string, args ...string) (string, string, error) {
 		key := strings.Join(append([]string{name}, args...), " ")
+		f.mu.Lock()
 		f.ran = append(f.ran, key)
+		f.mu.Unlock()
 		a, ok := f.answers[key]
 		if !ok {
 			if !f.bins[name] {
@@ -479,7 +484,7 @@ func TestAPipxVenvThatIsBrokenIsNamedAndTheRestGraded(t *testing.T) {
 	if rows := outdatedTable(l).Rows; len(rows) != 1 || rows[0][4] != "fail pipx: something new went wrong" {
 		t.Errorf("rows = %v, want pipx's own reason on a row", rows)
 	}
-	if got := managerStatus(l, "pipx"); got != "1 could not be read" {
+	if got := managerStatus(l, "pipx"); got != "could not be read — 1 package" {
 		t.Errorf("overview says %q for pipx", got)
 	}
 
