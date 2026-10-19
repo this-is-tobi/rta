@@ -43,6 +43,7 @@ func liveListModel(t *testing.T, lr *liveRecorder, profiles map[string]config.Pr
 			{Name: "bucket", Type: plugin.StringSlice, Config: "bucket", Live: true, Help: "buckets",
 				Suggest: lr.suggest(answers...)},
 			{Name: "region", Type: plugin.String, Config: "region", Help: "region"},
+			{Name: "namespace", Type: plugin.StringSlice, Config: "namespace", Help: "namespaces"},
 			{Name: "endpoint", Type: plugin.String, Config: "endpoint", Local: true,
 				Endpoint: plugin.EndpointURL, Help: "endpoint"},
 			{Name: "secret-key", Type: plugin.Secret, Local: true, EnvFallback: true, Help: "secret"},
@@ -366,15 +367,32 @@ func TestALiveListElementOpenedWithAQuoteIsAskedForWithoutIt(t *testing.T) {
 	}
 }
 
+// emptyBox empties a box the form opened holding a default. A fence fills a list
+// whole, so the box of a fenced list opens holding the allowlist, and these cases
+// are about the box somebody typed into.
+func emptyBox(cf *capForm, name string) {
+	cf.syncs[name].Set("")
+	cf.inputs[name].Accessor(cf.syncs[name])
+}
+
+// stagingFencing is a staging environment whose s3 connection reaches three of
+// the buckets, which is what a fenced list is held to.
+func stagingFencing() map[string]config.Profile {
+	return map[string]config.Profile{"staging": {Plugins: map[string]config.Connection{
+		"s3": {Only: map[string]any{"bucket": []any{"backups", "logs", "audit"}}},
+	}}}
+}
+
 // The fence narrows a list the way it narrows a String: the allowlist is what
 // the keystroke channel offers, and the service's answer is held to it, so a
 // press never offers a value the call would be refused for.
 func TestAFencedLiveListOffersOnlyWhatTheFenceHolds(t *testing.T) {
 	noHistory(t)
 	lr := &liveRecorder{}
-	m, c := liveListModel(t, lr, nil, "backups", "media", "logs", "metrics")
+	m, c := liveListModel(t, lr, stagingFencing(), "backups", "media", "logs", "metrics")
+	switchOn(t, &m, "staging")
 	nm := openLiveList(t, m, c)
-	nm.form.fence = plugin.Fence{"bucket": {"backups", "logs", "audit"}}
+	emptyBox(nm.form, "bucket")
 	bucket := c.Inputs[0]
 
 	if got := strings.Join(nm.form.candidates(bucket), ","); got != "backups,logs,audit" {
@@ -392,9 +410,10 @@ func TestAFencedLiveListOffersOnlyWhatTheFenceHolds(t *testing.T) {
 	// With the first element chosen, the answer is the fence's and the box's
 	// together: what the service said, held to the fence and without backups,
 	// beside the rest of the allowlist.
-	again, c2 := liveListModel(t, lr, nil, "backups", "media", "logs", "metrics")
+	again, c2 := liveListModel(t, lr, stagingFencing(), "backups", "media", "logs", "metrics")
+	switchOn(t, &again, "staging")
 	nm = openLiveList(t, again, c2)
-	nm.form.fence = plugin.Fence{"bucket": {"backups", "logs", "audit"}}
+	emptyBox(nm.form, "bucket")
 	nm.form.form = typeInto(nm.form.form, "backups,")
 	nm = fetchLive(t, nm)
 	if got, want := nm.form.suggested["bucket"], []string{"logs"}; !slices.Equal(got, want) {
@@ -402,6 +421,71 @@ func TestAFencedLiveListOffersOnlyWhatTheFenceHolds(t *testing.T) {
 	}
 	if got, want := offeredIn(nm, "bucket"), []string{"backups,logs", "backups,audit"}; !slices.Equal(got, want) {
 		t.Errorf("the box offers %q, want the rest of the allowlist beside the fetched answer", got)
+	}
+}
+
+// One press has one fence. The request a press makes and the answer it is held to
+// both come from the connection the press resolved, the one whose credentials the
+// listing runs with and whose allowlist the run will be gated by, and not from the
+// copy the form took when it was built: a config edited under an open form moves
+// them together, never one without the other.
+func TestAPressTakesTheFenceOfTheRequestAndOfTheAnswerFromOneConnection(t *testing.T) {
+	noHistory(t)
+	lr := &liveRecorder{}
+	opened := map[string]config.Profile{"staging": {Plugins: map[string]config.Connection{
+		"s3": {Only: map[string]any{
+			"bucket": []any{"backups", "logs"}, "region": []any{"eu-west-1"},
+		}},
+	}}}
+	m, c := liveListModel(t, lr, opened, "backups", "media", "logs")
+	switchOn(t, &m, "staging")
+	nm := openLiveList(t, m, c)
+	emptyBox(nm.form, "bucket")
+	if got := strings.Join(nm.form.candidates(c.Inputs[0]), ","); got != "backups,logs" {
+		t.Fatalf("the form opened on the fence %q, want backups,logs", got)
+	}
+
+	if err := config.Write(config.Config{Profiles: map[string]config.Profile{"staging": {
+		Plugins: map[string]config.Connection{"s3": {Only: map[string]any{
+			"bucket": []any{"media", "audit"}, "region": []any{"us-east-1"},
+		}}},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	nm = fetchLive(t, nm)
+	if got := lr.last(t).String("region"); got != "us-east-1" {
+		t.Errorf("the request carries region %q, want the one the fence the press resolved gives", got)
+	}
+	if got, want := nm.form.suggested["bucket"], []string{"media"}; !slices.Equal(got, want) {
+		t.Errorf("suggested = %v, want the answers the same fence holds", got)
+	}
+}
+
+// What a run would fill from a fence is in the request a press makes, so a
+// listing that depends on a sibling sees the sibling the call will have: the
+// one value a fence of one entry gives, and the whole list a fence gives a list
+// that the box leaves blank.
+func TestALiveRequestCarriesTheSiblingsAFenceFills(t *testing.T) {
+	noHistory(t)
+	lr := &liveRecorder{}
+	m, c := liveListModel(t, lr, map[string]config.Profile{
+		"staging": {Plugins: map[string]config.Connection{
+			"s3": {Only: map[string]any{
+				"region": []any{"eu-west-1"}, "namespace": []any{"shop", "jobs"},
+			}},
+		}},
+	}, "backups")
+	nm := openLiveList(t, m, c)
+	*nm.form.bindings[profileInput] = "staging"
+
+	nm = fetchLive(t, nm)
+	req := lr.last(t)
+	if got := req.String("region"); got != "eu-west-1" {
+		t.Errorf("the request carries region %q, want the one the fence gives the call", got)
+	}
+	if got := req.StringSlice("namespace"); !slices.Equal(got, []string{"shop", "jobs"}) {
+		t.Errorf("the request carries namespace %q, want the whole list the fence gives the call", got)
 	}
 }
 
