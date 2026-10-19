@@ -79,10 +79,10 @@ func TestTheKvTileCountsTheStoreFromTheEnvironmentAndKeepsNoSession(t *testing.T
 	}
 }
 
-// With nothing that opens the store at hand the tile says where it is and that
-// the counts need a key, in the words of the surface it is drawn on — the keys
-// that reach the passphrase box, since the tile shows none — and does not wait
-// for an answer.
+// With nothing that opens the store at hand the tile says that the count could
+// not be read and why, in a few words — the sentence that names the keys that
+// reach the passphrase box is the page's, since the tile has no room for it —
+// and does not wait for an answer.
 func TestTheKvTileOfAStoreItCannotOpenSaysWhatItNeeds(t *testing.T) {
 	kv.ForgetSession()
 	t.Cleanup(kv.ForgetSession)
@@ -98,8 +98,11 @@ func TestTheKvTileOfAStoreItCannotOpenSaysWhatItNeeds(t *testing.T) {
 
 	tileView := kvTile(t, "")
 	line := tilePair(tileView, "inventory")
-	if want := "needs a key at hand — set RTA_KV_PASSPHRASE, or type the passphrase: enter, then e"; line != want {
+	if want := "could not be read — no key at hand"; line != want {
 		t.Errorf("the tile says inventory = %q, want %q", line, want)
+	}
+	if got, want := tilePair(tileView, "status"), "warn — locked"; got != want {
+		t.Errorf("the tile says status = %q, want %q", got, want)
 	}
 	if strings.Contains(line, "box") {
 		t.Errorf("the tile names a box, and none is on it: %q", line)
@@ -133,7 +136,7 @@ func TestTheKvTileSaysTheStoreIsUnlockedAndDoesNotKeepItSo(t *testing.T) {
 		if got, want := tilePair(tileView, "inventory"), "unlocked in this session — enter to see"; got != want {
 			t.Errorf("the tile says inventory = %q, want %q", got, want)
 		}
-		if got, want := tilePair(tileView, "unlocks here"), "yes — unlocked in this session"; got != want {
+		if got, want := tilePair(tileView, "unlocks here"), "yes"; got != want {
 			t.Errorf("the tile says unlocks here = %q, want %q", got, want)
 		}
 	}

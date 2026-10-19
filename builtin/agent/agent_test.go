@@ -1173,7 +1173,7 @@ func TestOverviewCountsWhatMatters(t *testing.T) {
 	if got["calls in the last hour"] != "3" {
 		t.Fatalf("recent = %q", got["calls in the last hour"])
 	}
-	if want := "1 — kv.get db-password; `rta agent log --refused` lists them"; got["needs your grant"] != want {
+	if want := "pending 1 — kv.get db-password; `rta agent log --refused` lists them"; got["needs your grant"] != want {
 		t.Fatalf("needs your grant = %q, want %q", got["needs your grant"], want)
 	}
 	if got["you approved live"] != "1" {
@@ -1221,7 +1221,7 @@ func TestOverviewWaitingIsUnreadableWhenTheQueueCannotBeRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := overviewPair(t, v, "waiting on you"); !strings.HasPrefix(got, "unreadable") {
+	if got := overviewPair(t, v, "waiting on you"); !strings.HasPrefix(got, "could not be read") {
 		t.Fatalf("waiting on you = %q, want it to say the queue could not be read", got)
 	}
 
@@ -1235,7 +1235,7 @@ func TestOverviewWaitingIsUnreadableWhenTheQueueCannotBeRead(t *testing.T) {
 			continue
 		}
 		found = true
-		if body := sec.View.(view.Text).Body; !strings.HasPrefix(body, "unreadable") {
+		if body := sec.View.(view.Text).Body; !strings.HasPrefix(body, "could not be read") {
 			t.Fatalf("waiting section = %q, want it to say the queue could not be read", body)
 		}
 	}

@@ -85,8 +85,11 @@ func overviewCapability() plugin.Capability {
 func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	facts, verr := readStoreFacts(req)
 	if verr != nil {
-		return nil, verr
+		// A page, not an error: the one line it can say is the verdict, and a tile
+		// that answers with an error says less than one that says what failed.
+		return finishOverview(ctx, req, view.KeyValue{Pairs: unreadableStore(verr)}, storeFacts{}, nil), nil
 	}
+	tile := isTile(req)
 	// What is in the store leads, then how it is locked, then where the file is:
 	// a tile is cut from the bottom, and what a glance wants first is the count.
 	// On a tile the lock comes straight after the count, since the lines between
@@ -96,33 +99,52 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	var pairs []view.Pair
 	var counted *inventory
 	var lock []view.Pair
-	if facts.mode != "" {
+	status := "ok"
+	switch facts.mode {
+	case "":
+		status = "ok — no store yet"
+	default:
 		s, lerr := load(unattended(req))
 		switch {
 		case lerr == nil:
 			inv := inventoryOf(s)
 			counted = &inv
-			pairs = append(pairs, inv.pairs(req.Surface(), isTile(req))...)
+			pairs = append(pairs, inv.pairs(req.Surface(), tile)...)
 		case heldBySession(req, facts.mode, lerr):
+			status = "ok — unlocked in this session"
 			pairs = append(pairs, view.Pair{Key: "inventory", Value: "unlocked in this session — enter to see"})
 		default:
-			pairs = append(pairs, view.Pair{Key: "inventory", Value: cannotOpen(req, lerr)})
+			status = notOpened(req, lerr)
+			value := cannotOpen(req, lerr)
+			if tile {
+				value = couldNotRead(whyNot(req, lerr))
+			}
+			pairs = append(pairs, view.Pair{Key: "inventory", Value: value})
 		}
 		lock = facts.lock(unlocksHere(req, facts.mode, lerr))
+		if tile {
+			for i := range lock {
+				lock[i].Value = leadingWords(lock[i].Value)
+			}
+		}
 	}
 	at := len(pairs)
-	if isTile(req) {
+	if tile {
 		at = min(1, at)
 	}
-	pairs = append(slices.Insert(pairs, at, lock...), facts.where...)
-	summary := view.KeyValue{Pairs: pairs, Numbers: overviewNumbers(facts, counted)}
-	if !req.Bool("detail") {
-		return summary, nil
-	}
+	pairs = append(slices.Insert(pairs, at, lock...), facts.whereOn(tile)...)
+	pairs = slices.Insert(pairs, 0, view.Pair{Key: "status", Value: status})
+	return finishOverview(ctx, req, view.KeyValue{Pairs: pairs, Numbers: overviewNumbers(facts, counted)}, facts, counted), nil
+}
 
-	// The compact answer first, so the page opens with what the tile says. The
-	// readers do not need the store open — they are public keys, kept in plain
-	// text beside it — so a locked store still lists who can open it.
+// finishOverview is the compact answer as it stands, or the page that opens with
+// it: the compact answer first, so the page opens with what the tile says. The
+// readers do not need the store open — they are public keys, kept in plain
+// text beside it — so a locked store still lists who can open it.
+func finishOverview(ctx context.Context, req plugin.Request, summary view.KeyValue, facts storeFacts, counted *inventory) view.View {
+	if !req.Bool("detail") {
+		return summary
+	}
 	p := plugin.NewPage(ctx, req)
 	p.PutAs("summary", "summary", summary)
 	if counted != nil && counted.folders > 0 {
@@ -131,7 +153,61 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 	if facts.mode == modeKeys {
 		p.AddAs("readers", "readers", runRecipients, plugin.Read, nil)
 	}
-	return p.View(), nil
+	return p.View()
+}
+
+// couldNotRead is a line the page could not fill, in the words every overview
+// uses for one, which the theme draws as a warning.
+func couldNotRead(why string) string { return "could not be read — " + why }
+
+// unreadableStore is the page of a store the file system would not let this
+// process look at: the verdict, and the line that says what was refused with the
+// hint beside it, since an error that was said here would have carried both.
+func unreadableStore(verr *view.Error) []view.Pair {
+	why := verr.Message
+	if verr.Hint != "" {
+		why += "; " + verr.Hint
+	}
+	return []view.Pair{
+		{Key: "status", Value: "fail — unreadable store"},
+		{Key: "store", Value: couldNotRead(why)},
+	}
+}
+
+// notOpened is the verdict of a store the call could not open: locked when what
+// was missing or refused was the key, and not opened when it was something else,
+// which a lock is not the name of.
+func notOpened(req plugin.Request, lerr *view.Error) string {
+	if keyMissing(req, lerr) || keyRefused(req, lerr) {
+		return "warn — locked"
+	}
+	return "warn — not opened"
+}
+
+// whyNot is the few words a tile has for why the store did not open, where the
+// page has cannotOpen's sentence: that no key was at hand, that the one at hand
+// was not accepted, or what the store itself said.
+func whyNot(req plugin.Request, lerr *view.Error) string {
+	switch {
+	case keyMissing(req, lerr):
+		return "no key at hand"
+	case keyRefused(req, lerr):
+		return "key not accepted"
+	}
+	return lerr.Message
+}
+
+// leadingWords is a sentence as far as the dash or the bracket that starts what
+// a tile has no room for: "yes — identity /home/you/.config/rta/kv.identity" is
+// "yes", and "no passphrase available (set RTA_KV_PASSPHRASE)" is "no passphrase
+// available".
+func leadingWords(line string) string {
+	for _, cut := range []string{" — ", " ("} {
+		if i := strings.Index(line, cut); i >= 0 {
+			line = line[:i]
+		}
+	}
+	return line
 }
 
 // unattended is req as a call nobody is there to answer, which is what a read
@@ -376,12 +452,15 @@ func (inv inventory) pairs(sf plugin.Surface, glance bool) []view.Pair {
 			held += ", " + format.CountOf(inv.folders, "folder")
 			// Every folder at every depth, which is not what the folders table
 			// lists: that is the top level, and a reader who is shown two numbers
-			// is told which is which.
-			if inv.folders > len(inv.top) {
+			// is told which is which. A tile has room for neither that nor the
+			// bytes: both are one key away, and in the numbers.
+			if inv.folders > len(inv.top) && !glance {
 				held += " (" + strconv.Itoa(len(inv.top)) + " at the top)"
 			}
 		}
-		held += ", " + format.Bytes(inv.valueBytes) + " of values"
+		if !glance {
+			held += ", " + format.Bytes(inv.valueBytes) + " of values"
+		}
 		pairs = append(pairs, view.Pair{Key: "keys", Value: held},
 			view.Pair{Key: "kinds", Value: inv.kindsLine()})
 		if line := inv.setLine(); line != "" {
@@ -389,7 +468,10 @@ func (inv inventory) pairs(sf plugin.Surface, glance bool) []view.Pair {
 		}
 	}
 	var kept []string
-	if inv.earlier > 0 {
+	switch {
+	case inv.earlier > 0 && glance:
+		kept = append(kept, strconv.Itoa(inv.earlier)+" earlier")
+	case inv.earlier > 0:
 		kept = append(kept, format.CountOf(inv.earlier, "earlier value"))
 	}
 	if inv.removed > 0 && glance {
@@ -422,7 +504,11 @@ func overviewNumbers(facts storeFacts, inv *inventory) map[string]float64 {
 	if facts.readers > 0 {
 		n["readers"] = float64(facts.readers)
 	}
+	if facts.mode != "" {
+		n["unlocked"] = 0
+	}
 	if inv != nil {
+		n["unlocked"] = 1
 		n["keys"] = float64(inv.keys)
 		n["folders"] = float64(inv.folders)
 		n["top_level_folders"] = float64(len(inv.top))

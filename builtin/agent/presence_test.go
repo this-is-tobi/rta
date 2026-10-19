@@ -62,7 +62,7 @@ func TestConnectedNowIsUnreadableWhenTheSessionStoreCannotBeRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := overviewPair(t, v, "connected now"); !strings.HasPrefix(got, "unreadable") {
+	if got := overviewPair(t, v, "connected now"); !strings.HasPrefix(got, "could not be read") {
 		t.Fatalf("connected now = %q, want it to say the session store could not be read", got)
 	}
 }

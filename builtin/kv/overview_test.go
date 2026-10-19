@@ -197,9 +197,10 @@ func TestTheOverviewCarriesWhatStatusSays(t *testing.T) {
 	}
 }
 
-// A tile is cut from the bottom, and a glance wants the count before it wants
-// where the file is: the inventory leads, then how the store is locked, then the
-// file. When the inventory cannot be had, the line that says why leads instead.
+// A tile is cut from the bottom, and a glance wants the verdict, then the count,
+// before it wants where the file is: the inventory leads, then how the store is
+// locked, then the file. When the inventory cannot be had, the line that says why
+// leads instead.
 func TestTheOverviewLeadsWithTheCountAndEndsWithTheFile(t *testing.T) {
 	seeded(t)
 	keysOf := func(kv view.KeyValue) []string {
@@ -210,11 +211,11 @@ func TestTheOverviewLeadsWithTheCountAndEndsWithTheFile(t *testing.T) {
 		return out
 	}
 	opened := keysOf(overviewPairs(t, req(nil, false)))
-	if want := []string{"keys", "kinds", "last set", "history", "locked with", "unlocks here", "store", "size", "changed"}; !slices.Equal(opened, want) {
+	if want := []string{"status", "keys", "kinds", "last set", "history", "locked with", "unlocks here", "store", "size", "changed"}; !slices.Equal(opened, want) {
 		t.Errorf("an open store reads %v, want %v", opened, want)
 	}
 	locked := keysOf(overviewPairs(t, plugin.NewRequest(nil, false, false)))
-	if want := []string{"inventory", "locked with", "unlocks here", "store", "size", "changed"}; !slices.Equal(locked, want) {
+	if want := []string{"status", "inventory", "locked with", "unlocks here", "store", "size", "changed"}; !slices.Equal(locked, want) {
 		t.Errorf("a store nothing opened reads %v, want %v", locked, want)
 	}
 }
@@ -235,10 +236,10 @@ func TestTheTileLeadsWithTheCountAndTheLock(t *testing.T) {
 	}
 	opened := plugin.NewRequest(map[string]any{"passphrase": "correct horse battery staple"}, false, false)
 	tile := overviewPairs(t, opened.WithSurface(plugin.SurfaceTUI))
-	if want := []string{"keys", "locked with", "unlocks here", "kinds", "last set", "history", "store", "size", "changed"}; !slices.Equal(keysOf(tile), want) {
+	if want := []string{"status", "keys", "locked with", "unlocks here", "kinds", "last set", "history", "store"}; !slices.Equal(keysOf(tile), want) {
 		t.Errorf("a tile reads %v, want %v", keysOf(tile), want)
 	}
-	if got, want := pairValue(tile, "history"), "1 earlier value, 2 removed"; got != want {
+	if got, want := pairValue(tile, "history"), "1 earlier, 2 removed"; got != want {
 		t.Errorf("the tile's history = %q, want %q", got, want)
 	}
 
@@ -249,7 +250,7 @@ func TestTheTileLeadsWithTheCountAndTheLock(t *testing.T) {
 		"a caller":   opened,
 	} {
 		kv := overviewPairs(t, r)
-		if want := []string{"keys", "kinds", "last set", "history", "locked with", "unlocks here", "store", "size", "changed"}; !slices.Equal(keysOf(kv), want) {
+		if want := []string{"status", "keys", "kinds", "last set", "history", "locked with", "unlocks here", "store", "size", "changed"}; !slices.Equal(keysOf(kv), want) {
 			t.Errorf("%s reads %v, want %v", name, keysOf(kv), want)
 		}
 		if got := pairValue(kv, "history"); got != whole {
@@ -261,8 +262,8 @@ func TestTheTileLeadsWithTheCountAndTheLock(t *testing.T) {
 	if got := pairValue(page, "history"); got != whole {
 		t.Errorf("the opened page's history = %q, want %q", got, whole)
 	}
-	if got := keysOf(page); got[1] != "kinds" {
-		t.Errorf("the opened page reads %v: the inventory leads it", got)
+	if got := keysOf(page); got[0] != "status" || got[2] != "kinds" {
+		t.Errorf("the opened page reads %v: the verdict and then the inventory lead it", got)
 	}
 }
 
@@ -275,7 +276,7 @@ func TestTheTileOfAStoreItCannotOpenKeepsTheLockBeforeTheFile(t *testing.T) {
 	for i, p := range kv.Pairs {
 		got[i] = p.Key
 	}
-	if want := []string{"inventory", "locked with", "unlocks here", "store", "size", "changed"}; !slices.Equal(got, want) {
+	if want := []string{"status", "inventory", "locked with", "unlocks here", "store"}; !slices.Equal(got, want) {
 		t.Errorf("a tile reads %v, want %v", got, want)
 	}
 }
@@ -347,11 +348,15 @@ func TestTheOverviewOfAStoreItCannotOpenSaysWhatItNeeds(t *testing.T) {
 
 	for surface, supplied := range map[plugin.Surface]string{
 		plugin.SurfaceCLI: "set RTA_KV_PASSPHRASE",
-		plugin.SurfaceTUI: "or type the passphrase: enter, then e",
+		plugin.SurfaceTUI: "or type the passphrase: e",
 		plugin.SurfaceMCP: "ask the operator to set RTA_KV_PASSPHRASE",
 	} {
 		r := plugin.NewRequest(nil, false, false).WithSurface(surface)
 		kv := overviewPairs(t, r)
+		if surface == plugin.SurfaceTUI {
+			// The sentence is the page's: a tile says it could not be read, in a few words.
+			kv = sectionByID(t, overviewPage(t, r), "summary").(view.KeyValue)
+		}
 		line := pairValue(kv, "inventory")
 		if !strings.HasPrefix(line, "needs a key at hand — ") || !strings.Contains(line, supplied) {
 			t.Errorf("%s: the inventory line = %q, want it to say a key is needed and %q", surface, line, supplied)
@@ -380,8 +385,10 @@ func TestTheOverviewNamesTheKeysThatReachThePassphraseBox(t *testing.T) {
 	seeded(t)
 	tui := plugin.NewRequest(nil, false, false).WithSurface(plugin.SurfaceTUI)
 
+	// The tile has no room for the keys, and says so in four words: `U` in the
+	// footer is the way in, and the page enter opens has the rest.
 	tile := pairValue(overviewPairs(t, tui), "inventory")
-	if want := "needs a key at hand — set RTA_KV_PASSPHRASE, or type the passphrase: enter, then e"; tile != want {
+	if want := "could not be read — no key at hand"; tile != want {
 		t.Errorf("the tile says %q, want %q", tile, want)
 	}
 	page := pairValue(sectionByID(t, overviewPage(t, tui), "summary").(view.KeyValue), "inventory")
@@ -469,8 +476,8 @@ func TestTheOverviewBeforeThereIsAStore(t *testing.T) {
 	if got := pairValue(kv, "state"); !strings.Contains(got, "no store yet") {
 		t.Errorf("state = %q", got)
 	}
-	if len(kv.Pairs) != 2 {
-		t.Errorf("a store that does not exist has more to say than where it would be: %v", kv.Pairs)
+	if len(kv.Pairs) != 3 {
+		t.Errorf("a store that does not exist has more to say than the verdict and where it would be: %v", kv.Pairs)
 	}
 	// Nor does the detailed page invent a section for it.
 	if got := sectionIDs(overviewPage(t, req(nil, false))); !slices.Equal(got, []string{"summary"}) {

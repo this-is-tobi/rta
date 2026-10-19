@@ -37,7 +37,8 @@ func TestTheTileSaysTheStoreIsUnlockedInThisSessionWithoutUsingIt(t *testing.T) 
 		if got, want := pairValue(kv, "inventory"), "unlocked in this session — enter to see"; got != want {
 			t.Errorf("inventory = %q, want %q", got, want)
 		}
-		if got, want := pairValue(kv, "unlocks here"), "yes — unlocked in this session"; got != want {
+		// A tile says the word; the page enter opens says which session.
+		if got, want := pairValue(kv, "unlocks here"), "yes"; got != want {
 			t.Errorf("unlocks here = %q, want %q", got, want)
 		}
 		if got := pairValue(kv, "keys"); got != "" {
@@ -60,7 +61,7 @@ func TestTheTileOfALapsedSessionSaysWhatItNeeds(t *testing.T) {
 	*clock = clock.Add(sessionIdle + time.Second)
 
 	kv := overviewPairs(t, tileOf(t))
-	if got := pairValue(kv, "inventory"); !strings.HasPrefix(got, "needs a key at hand — ") {
+	if got := pairValue(kv, "inventory"); got != "could not be read — no key at hand" {
 		t.Errorf("inventory = %q", got)
 	}
 	if got := pairValue(kv, "unlocks here"); strings.HasPrefix(got, "yes") {

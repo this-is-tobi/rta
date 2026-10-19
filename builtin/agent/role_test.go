@@ -91,8 +91,11 @@ func TestTheOverviewSaysWhichRolesStand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := pairValue(v, "roles in force"); got != "none" {
-		t.Fatalf("roles in force = %q on a clean machine", got)
+	if got := pairValue(v, "roles in force"); got != "" {
+		t.Fatalf("roles in force = %q on a clean machine, where the compact answer leaves the quiet line out", got)
+	}
+	if got := valueOf(t, activityOf(t, plugin.SurfaceCLI), "roles in force"); got != "none" {
+		t.Fatalf("roles in force = %q on a clean machine's detail page, which says none is", got)
 	}
 	if verr := core.Issue(core.Grant{Target: "kv.set", Agent: "claude", Role: "dev", Issued: time.Now(), Expires: time.Now().Add(2 * time.Hour)}, true); verr != nil {
 		t.Fatal(verr)
@@ -129,7 +132,7 @@ func TestOverviewRolesIsUnreadableWhenTheGrantsFileCannotBeRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := pairValue(v, "roles in force"); !strings.HasPrefix(got, "unreadable") {
+	if got := pairValue(v, "roles in force"); !strings.HasPrefix(got, "could not be read") {
 		t.Fatalf("roles in force = %q, want it to say the grants file could not be read", got)
 	}
 }
