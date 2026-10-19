@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.47.0](https://github.com/this-is-tobi/rta/compare/v0.46.0...v0.47.0) (2026-10-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **pkg:** `rta pkg overview` and `rta pkg os`, and the pairs a script reads from them, changed. There is a new first row "status", with "total behind" and "reboot" under it. A manager that is current has no row in the compact answer: read it from `--detail`, or count it in "managers N current". A manager that failed reads "could not be read — <why>" where it read "fail <why>", and a tool that could not be held against its release reads "could not be read" where it read "could not be checked". After a failed OS read "os updates" starts "unreadable — ", "reboot" is "unknown" and the "note" row is gone. And "tools" is absent from the compact answer while no tool is listed.
+* **git:** `rta git overview` and the pairs a script reads from it have a new first row "status". "state" and "tracking" (when gone) and "working tree" (when unmerged) start with "warn — ", so a comparison with "merge in progress" or "origin/main (gone)" must expect the prefix; a branch with no upstream has a "tracking" row, "none — never pushed", where it had none; and an unreadable working tree starts "could not be read — " where it started "unreadable — ".
+* **builtin:** `rta agent overview` and `rta kv overview`, and the pairs a script reads from them, have a new first row "status". In agent overview "needs your grant" moved up under "waiting on you" and a count above zero starts with "pending " ("pending 2 — kv.get db-password"); "locked", "roles in force" and "you approved live" are absent while they say nothing, so read them from `rta agent overview --detail` (the "activity" section) or treat a missing row as nothing/none/0; an unreadable row starts "could not be read — " where it started "unreadable — ". In kv overview an unreadable store answers with "status: fail — unreadable store" and exit 0 where it was the error kv.store.unreadable. The dashboard tile of either carries the shorter keys and values above.
+* **time:** `rta time at` with no instant (or `now`), and the tool time_at called the same way, no longer print the "relative" and "epoch-ms" rows. Add `--detail` (the `detail` argument over MCP) to get them back, or name the instant: `rta time at now --detail`.
+* **cert:** anyone reading the rows of `rta cert expiry` (or the tool cert_expiry) by position gets the time left in the second cell and the date in the third, where they were the other way round, and the rows in urgency order and not in the order of the hosts given. The verdict is still the fourth cell and the host the first, so a filter such as `select(.[3] != "ok")` keeps working; read the time left as `.[1]` and the date as `.[2]`, or match a row to its host by `.[0]`.
+* **net:** anyone parsing the pairs of `rta net overview` (or the tool net_overview) loses the per-interface rows, the "proxy" row when no proxy is set, and the long throughput key, and gets "status", "route", "traffic", "hosts" and "ip". Read `numbers` for the figures, and `rta net overview --detail` for the interfaces, the IPv6 addresses and every resolver.
+* **sys:** anyone parsing the pairs of `rta sys overview` (or the tool sys_overview) gets a new first pair, "status", and different values: "host" is last and holds the name and uptime only (the OS and architecture are in --detail), "mem" is led by a verdict word and the pressure instead of "used / total (percent)", and "disk", "load" and "swap" are reworded. Read the figures from `numbers` (`-o json | jq .numbers.disk_percent`) instead of the sentences.
+* **pkg:** a tool listed under `plugins: pkg: tools:` whose binary answers only to a `version` subcommand (kubectl, argocd, istioctl, linkerd, helm) no longer shows its installed version in `pkg.tools` and `pkg.overview`; its Installed cell is "-" and its status is unknown. There is nothing to change in the configuration that brings the version back, because rta no longer runs that form: read it by hand (`kubectl version --client`), or take the entry off the list if an unknown row is noise.
+
+### Features
+
+* **builtin:** lead the agent and kv overviews with a verdict and keep the sentences off the tile ([7e4c8ba](https://github.com/this-is-tobi/rta/commit/7e4c8ba854d35997a14bc2c8f6c9e8c0aa880dcf))
+* **cert:** list the most urgent certificate first and run its tile every ten minutes at most ([6f4aeba](https://github.com/this-is-tobi/rta/commit/6f4aebaabda2be129ad9ce8a97baaaf906f3e285))
+* **format:** add Uptime for how long something has been up, and say sys's uptime with it ([7a4912c](https://github.com/this-is-tobi/rta/commit/7a4912c49bc09c8315a7e2ce820cd321cc924028))
+* **git:** lead the git overview with a verdict and say what a push depends on ([cea7107](https://github.com/this-is-tobi/rta/commit/cea7107cc34fe8767c14b1551e70e51bb1177b85))
+* **net:** lead the network overview with a verdict and the default route ([e4cb6b9](https://github.com/this-is-tobi/rta/commit/e4cb6b997f7f9f42cae40feddf3451bdc7ca151a))
+* **pkg:** lead the pkg overview with a verdict, fold the current managers, ask them together ([527f4a9](https://github.com/this-is-tobi/rta/commit/527f4a9ffa2272e97281a83fea944673a61614a2))
+* **plugin:** a list input is every value its fence allows when a call names none ([56e64d3](https://github.com/this-is-tobi/rta/commit/56e64d339d2537044de8ab6ba090ca354eb5d414))
+* **sys:** lead the host overview with a verdict and grade what it shows ([4ae9a96](https://github.com/this-is-tobi/rta/commit/4ae9a965f1f349ff7af23773ce52fd9a2a34e9c1))
+* **time:** keep a clock to utc, local and epoch and run its tile at the timer's tick ([98a9398](https://github.com/this-is-tobi/rta/commit/98a9398183eeb5bfb430aa4371a3434004e09581))
+* **tui:** a tile says when its answer is from, and slow tiles are not run at launch ([2aa8b2a](https://github.com/this-is-tobi/rta/commit/2aa8b2a4b019397bfa6ab1f6985b507f13f5c596))
+
+
+### Bug Fixes
+
+* **builtin:** tiles of capabilities that reach out declare a pace floor ([ee453bf](https://github.com/this-is-tobi/rta/commit/ee453bf6ae98fd0bd2fef2c3b4270bad97dc1ed2))
+* **gen:** an added overview tile rolls its secrets once a day, not every five seconds ([92585b6](https://github.com/this-is-tobi/rta/commit/92585b69275a50eca957c7aa7e5ec1dc5cb8dbe4))
+* **net:** the overview's throughput leaves out the loopback and a container host's plumbing ([a6f2098](https://github.com/this-is-tobi/rta/commit/a6f20984119b5450464be2d3220f2c735da1c9e0))
+* **pkg:** read a listed tool's version with --version alone, never with `<bin> version` ([26678fd](https://github.com/this-is-tobi/rta/commit/26678fde743c1abaa840a277c1bc2098bca8b73b))
+* **pkg:** tools ask github.com once in ten minutes and stop at the first refusal ([0696fa1](https://github.com/this-is-tobi/rta/commit/0696fa189b5ece26bfab57434f217dcdb3e55534))
+* **tui:** a graded column too wide for its tile is cut before it is dropped ([736d713](https://github.com/this-is-tobi/rta/commit/736d7139b56b501223bdde018019cc21f32b879c))
+* **tui:** a tile whose credential is refused twice in a row stops asking until it is told to ([4800cd0](https://github.com/this-is-tobi/rta/commit/4800cd0112392e1bf2af9c88feedc4f63ea3ff41))
+* **tui:** grade the words trouble is told in and draw a tile's border by its grade ([9bb7eb4](https://github.com/this-is-tobi/rta/commit/9bb7eb4c2775de4dc49443c83df53d2de1d504bb))
+
 ## [0.46.0](https://github.com/this-is-tobi/rta/compare/v0.45.0...v0.46.0) (2026-10-18)
 
 
