@@ -10,6 +10,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/lockdown"
 	"github.com/this-is-tobi/rta/internal/render/cli"
+	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -105,8 +106,11 @@ func TestTheOverviewNamesWhatIsLocked(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := pairValue(v, "locked"); got != "nothing" {
-		t.Fatalf("locked = %q on a clean machine", got)
+	if got := pairValue(v, "locked"); got != "" {
+		t.Fatalf("locked = %q on a clean machine, where the compact answer leaves the quiet line out", got)
+	}
+	if got := valueOf(t, activityOf(t, plugin.SurfaceCLI), "locked"); got != "nothing" {
+		t.Fatalf("locked = %q on a clean machine's detail page, which says nothing is", got)
 	}
 	lock(t, "claude")
 	v, err = run(t, "agent.overview", nil)

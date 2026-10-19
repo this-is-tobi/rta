@@ -1208,6 +1208,20 @@ func (f storeFacts) lock(unlocks string) []view.Pair {
 	return []view.Pair{f.locked, {Key: "unlocks here", Value: unlocks}}
 }
 
+// whereOn is the lines about the file for a page, or for a tile (the TUI's
+// compact answer): one line, how big the file is and when it changed, since the
+// path fits no tile and the line is the one a glance reads it for. A store that
+// is not there says so, and what makes one, in a few words.
+func (f storeFacts) whereOn(tile bool) []view.Pair {
+	if !tile {
+		return f.where
+	}
+	if f.mode == "" {
+		return []view.Pair{{Key: "state", Value: plugin.SurfaceTUI.CapabilityName("kv.set") + " creates one"}}
+	}
+	return []view.Pair{{Key: "store", Value: format.Bytes(f.size) + ", changed " + itemstore.Age(f.changed)}}
+}
+
 func readStoreFacts(req plugin.Request) (storeFacts, *view.Error) {
 	path := storePath()
 	where := []view.Pair{{Key: "store", Value: path}}

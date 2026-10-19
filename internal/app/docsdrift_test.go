@@ -320,9 +320,9 @@ func TestTheRecordPageNamesEveryRefusalRowAgentOverviewPrints(t *testing.T) {
 	between := false
 	for _, p := range pairs.Pairs {
 		switch p.Key {
-		case "calls in the last hour":
+		case "waiting on you":
 			between = true
-		case "you approved live":
+		case "connected now":
 			between = false
 		default:
 			if between {
@@ -331,7 +331,7 @@ func TestTheRecordPageNamesEveryRefusalRowAgentOverviewPrints(t *testing.T) {
 		}
 	}
 	if len(refusals) != 3 {
-		t.Fatalf("agent overview printed %d rows between the hour's count and the approvals, want the three kinds of refusal: %v", len(refusals), refusals)
+		t.Fatalf("agent overview printed %d rows between the calls waiting and who is connected, want the three kinds of refusal: %v", len(refusals), refusals)
 	}
 	for _, key := range refusals {
 		if !strings.Contains(page, "`"+key+"`") {

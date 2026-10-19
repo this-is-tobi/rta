@@ -33,6 +33,7 @@ import (
 	rtagrant "github.com/this-is-tobi/rta/builtin/grant"
 	"github.com/this-is-tobi/rta/builtin/internal/compact"
 	"github.com/this-is-tobi/rta/builtin/internal/timefmt"
+	"github.com/this-is-tobi/rta/builtin/internal/verdict"
 	"github.com/this-is-tobi/rta/internal/agentlog"
 	"github.com/this-is-tobi/rta/internal/consent"
 	"github.com/this-is-tobi/rta/internal/grant"
@@ -62,9 +63,12 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 			{
 				ID:      "agent.overview",
 				Summary: "Agent activity at a glance: recent calls, refusals, anything waiting",
-				Description: "The last hour of calls that arrived over MCP, the refusals told apart " +
+				Description: "A verdict first (ok, warn or fail), then the last hour of calls that " +
+					"arrived over MCP, the refusals told apart " +
 					"by who can act on them — what needs your grant, what the agent got wrong — " +
-					"and how many requests are parked waiting for you to answer right now. With " +
+					"and how many requests are parked waiting for you to answer right now. The lines " +
+					"that say nothing is the matter (nothing locked, no role standing) are left out " +
+					"until they do, and `detail` lists them. With " +
 					"`agent`: one agent's part of it. With " +
 					"`detail`: the chain's integrity, where the record lives and how big it is.",
 				Safety:     plugin.Read,
@@ -466,18 +470,76 @@ func nothingWaiting(sf plugin.Surface) string {
 func connectedView(agent string) view.View {
 	t, err := connectedTable(agent)
 	if err != nil {
-		return view.Text{Body: "unreadable — " + err.Error()}
+		return view.Text{Body: couldNotRead(err.Error())}
 	}
 	return t
 }
 
 func waitingView(sf plugin.Surface, reqs []consent.Request, err error) view.View {
 	if err != nil {
-		return view.Text{Body: "unreadable — " + err.Error()}
+		return view.Text{Body: couldNotRead(err.Error())}
 	}
 	return pendingTable(sf, reqs)
 }
 
+// activityRow is one line of the overview. quiet marks a line that says nothing
+// is the matter — nothing locked, no role in force, nothing approved live — which
+// the compact answer leaves out, because a zero on a tile reads as a thing
+// somebody is meant to watch. The detail page keeps every line, so that moving
+// the quiet ones out of the glance loses none of them.
+type activityRow struct {
+	view.Pair
+	quiet bool
+}
+
+// waitingVerdict and needsGrantVerdict are the verdict's words for the two things
+// that ask something of the operator. A tile's are shorter: the room beside the
+// key is the room the verdict has, and the row under it says the rest.
+func waitingVerdict(n int, tile bool) string {
+	if tile {
+		return strconv.Itoa(n) + " waiting"
+	}
+	return format.CountOf(n, "call") + " waiting on you"
+}
+
+func needsGrantVerdict(n int, tile bool) string {
+	if tile {
+		return strconv.Itoa(n) + " need grant"
+	}
+	return format.CountOf(n, "call") + " " + format.Plural(n, "needs", "need") + " your grant"
+}
+
+// tileKeys are the shorter words a tile calls the keys that are long. The key
+// column is as wide as the longest key, and a tile has about thirty-five cells:
+// beside "malformed or unknown calls" a value has room for nothing, so every row
+// hung its value under its key and a tile showed three rows in eight lines. The
+// keys that stay (waiting on you, connected now) are the ones other screens read
+// or the docs name.
+var tileKeys = map[string]string{
+	"needs your grant":           "needs grant",
+	"refused otherwise":          "refused",
+	"malformed or unknown calls": "malformed",
+	"calls in the last hour":     "last hour",
+	"you approved live":          "approved live",
+}
+
+// couldNotRead is a row the page could not fill, in the words every overview
+// uses for one, which the theme draws as a warning.
+func couldNotRead(why string) string { return "could not be read — " + why }
+
+// isTile reports whether this is the dashboard's run of the overview: the
+// compact answer on the TUI, in a box a third of the screen wide. The page
+// enter opens is the detailed one, and a terminal has its width to spend, so the
+// sentences that say what to type are theirs and a tile says the word they are
+// about.
+func isTile(req plugin.Request) bool {
+	return req.Surface() == plugin.SurfaceTUI && !req.Bool("detail")
+}
+
+// runOverview answers what an operator glances at: the verdict first, then what
+// asks something of them (a call waiting, a refusal only a grant would answer),
+// who is attached, and what happened in the last hour. A tile is cut from the
+// bottom, so the order is the order of what is worth acting on.
 func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	agent := strings.TrimSpace(req.String("agent"))
 	hour := time.Now().Add(-time.Hour)
@@ -516,6 +578,9 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 			approved++
 		}
 	}
+
+	sf, tile := req.Surface(), isTile(req)
+	var found verdict.Verdict
 	// The one line on this tile that is about the present rather than the
 	// past, and the only one that asks for anything. A bare count reads as
 	// another statistic beside the other three; the number and the key to
@@ -524,69 +589,143 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	nowWaiting := fmt.Sprintf("%d", len(waiting))
 	switch {
 	case pendingErr != nil:
-		nowWaiting = "unreadable — " + pendingErr.Error()
-	case len(waiting) > 0 && req.Surface() == plugin.SurfaceTUI:
+		nowWaiting = couldNotRead(pendingErr.Error())
+		found.Warn("waiting queue could not be read")
+	case len(waiting) > 0 && sf == plugin.SurfaceTUI:
 		nowWaiting += " — press w to answer"
 	case len(waiting) > 0:
 		// A key is the TUI's, and a terminal command line has none: the same
 		// line printed there told somebody to press a key their shell does not
 		// bind, in the one place that should name the command that answers.
-		nowWaiting += " — see " + req.Surface().CapabilityName("agent.pending")
+		nowWaiting += " — see " + sf.CapabilityName("agent.pending")
 	}
-	// Presence before activity: "is anything attached" is the question
-	// every zero below raises, and it is the one the ledger cannot answer.
-	connected, n, connErr := connectedFor(agent)
-	switch {
-	case connErr != nil:
-		connected = "unreadable — " + connErr.Error()
-	case n == 0 && agent != "":
-		connected = "none — no server named " + agent + " has an rta server open"
-	case n == 0:
-		connected = "none — no client has an rta server open; `rta mcp install claude`, then restart the client"
+	if len(waiting) > 0 {
+		found.Warn(waitingVerdict(len(waiting), tile))
 	}
-	sf := req.Surface()
-	listed := sf.CapabilityWith("agent.log", "refused") + " lists them"
-	why := sf.CapabilityWith("agent.log", "refused", "detail") + " says why"
-	pairs := []view.Pair{
-		{Key: "waiting on you", Value: nowWaiting},
-		{Key: "connected now", Value: connected},
-		{Key: "locked", Value: lockedLine(sf)},
-		{Key: "roles in force", Value: rolesLine()},
-		{Key: "calls in the last hour", Value: fmt.Sprintf("%d", recent)},
-		{Key: "needs your grant", Value: refusalCount(needsGrant, listed)},
+
+	// Which of the refusals only a grant would answer is the operator's to act
+	// on, so it leads with the word the theme draws as pending, and a tile does
+	// not spend its lines on where to read them: `g` opens the log from it.
+	listed, why := sf.CapabilityWith("agent.log", "refused")+" lists them", sf.CapabilityWith("agent.log", "refused", "detail")+" says why"
+	listing := 4
+	if tile {
+		listed, why, listing = "", "", 0
+	}
+	needs := "0"
+	if len(needsGrant) > 0 {
+		needs = "pending " + refusalCount(needsGrant, listed, listing)
+		found.Warn(needsGrantVerdict(len(needsGrant), tile))
+	}
+	rows := []activityRow{
+		{Pair: view.Pair{Key: "waiting on you", Value: nowWaiting}},
+		{Pair: view.Pair{Key: "needs your grant", Value: needs}},
 	}
 	// Only when there are some: a zero on a tile is read as a thing that is
-	// watched, and these are not what an operator watches for.
-	if len(malformed) > 0 {
-		pairs = append(pairs, view.Pair{Key: "malformed or unknown calls", Value: refusalCount(malformed, "")})
-	}
+	// watched, and these are not what an operator watches for. Beside the grant
+	// row, since they are the same question asked of the same hour.
 	if len(other) > 0 {
 		// With where the reason is: this bucket is every refusal that is neither a
 		// grant nor a malformed call — a lock, a path outside the roots, a pace, a
 		// connection or credential the server could not use — and the compact log
 		// keeps each to a few words. The last of those is the operator's to fix and
 		// the sentence that says what is only under --detail.
-		pairs = append(pairs, view.Pair{Key: "refused otherwise", Value: refusalCount(other, why)})
+		rows = append(rows, activityRow{Pair: view.Pair{Key: "refused otherwise", Value: refusalCount(other, why, listing)}})
 	}
-	pairs = append(pairs, view.Pair{Key: "you approved live", Value: fmt.Sprintf("%d", approved)})
+	if len(malformed) > 0 {
+		rows = append(rows, activityRow{Pair: view.Pair{Key: "malformed or unknown calls", Value: refusalCount(malformed, "", listing)}})
+	}
+
+	// A record that cannot be written is the state in which every call that needs
+	// a grant is refused, and the one a tile must not leave to be found by an
+	// agent's refusal: it outranks a call waiting.
 	if agentlog.Started() {
 		if err := agentlog.Writable(); err != nil {
-			pairs = append(pairs, view.Pair{Key: "recording",
-				Value: "cannot be written — a call that needs a grant is refused until it can, and the rest are not recorded"})
+			recording := "fail — cannot be written"
+			if !tile {
+				recording += " — a call that needs a grant is refused until it can, and the rest are not recorded"
+			}
+			rows = append(rows, activityRow{Pair: view.Pair{Key: "recording", Value: recording}})
+			found.Fail("recording cannot be written")
 		}
 	}
-	pairs = append(pairs, view.Pair{Key: "last call", Value: lastCall(agent)})
+
+	// Presence before activity: "is anything attached" is the question
+	// every zero below raises, and it is the one the ledger cannot answer.
+	connected, n, connErr := connectedFor(agent)
+	switch {
+	case connErr != nil:
+		connected = couldNotRead(connErr.Error())
+		found.Warn("connected clients could not be read")
+	case n == 0 && tile:
+		connected = "none"
+	case tile:
+		// The names and their calls; how many there are is the number of names.
+		_, connected, _ = strings.Cut(connected, " — ")
+	case n == 0 && agent != "":
+		connected = "none — no server named " + agent + " has an rta server open"
+	case n == 0:
+		connected = "none — no client has an rta server open; `rta mcp install claude`, then restart the client"
+	}
+	rows = append(rows, activityRow{Pair: view.Pair{Key: "connected now", Value: connected}})
+
+	locked, lockErr := lockedLine(sf, tile)
+	switch {
+	case lockErr != nil:
+		locked = couldNotRead(lockErr.Message)
+		found.Warn("locks could not be read")
+	case locked == "":
+		locked = "nothing"
+	}
+	rows = append(rows, activityRow{Pair: view.Pair{Key: "locked", Value: locked}, quiet: locked == "nothing"})
+
+	roles, rolesErr := rolesLine()
+	switch {
+	case rolesErr != nil:
+		roles = couldNotRead(rolesErr.Message)
+		found.Warn("roles could not be read")
+	case roles == "":
+		roles = "none"
+	}
+	rows = append(rows, activityRow{Pair: view.Pair{Key: "roles in force", Value: roles}, quiet: roles == "none"})
+
+	rows = append(rows,
+		activityRow{Pair: view.Pair{Key: "calls in the last hour", Value: fmt.Sprintf("%d", recent)}},
+		activityRow{Pair: view.Pair{Key: "you approved live", Value: fmt.Sprintf("%d", approved)}, quiet: approved == 0},
+		activityRow{Pair: view.Pair{Key: "last call", Value: lastCallOn(agent, tile)}})
+
+	all := []view.Pair{{Key: "status", Value: found.String()}}
+	compact := slices.Clone(all)
+	for _, r := range rows {
+		all = append(all, r.Pair)
+		if r.quiet {
+			continue
+		}
+		if short, ok := tileKeys[r.Key]; ok && tile {
+			r.Key = short
+		}
+		compact = append(compact, r.Pair)
+	}
 	if !req.Bool("detail") {
-		return view.KeyValue{Pairs: pairs}, nil
+		return view.KeyValue{Pairs: compact}, nil
 	}
 
 	rep, verr := agentlog.Verify()
 	return view.Sections{Items: []view.Section{
-		{ID: "activity", Title: "Activity", View: view.KeyValue{Pairs: pairs}},
+		{ID: "activity", Title: "Activity", View: view.KeyValue{Pairs: all}},
 		{ID: "connected", Title: "Connected now", View: connectedView(agent)},
 		{ID: "record", Title: "The record", View: view.KeyValue{Pairs: recordPairs(rep, verr)}},
 		{ID: "waiting", Title: "Waiting on you", View: waitingView(req.Surface(), waiting, pendingErr)},
 	}}, nil
+}
+
+// lastCallOn is lastCall for the page, or for a tile, where an empty record is
+// "none yet" and not a sentence that wraps over two lines.
+func lastCallOn(agent string, tile bool) string {
+	last := lastCall(agent)
+	if tile && strings.HasPrefix(last, "nothing recorded yet") {
+		return "none yet"
+	}
+	return last
 }
 
 // lastCall is the newest call on the record, or the newest one an agent made
@@ -610,50 +749,50 @@ func lastCall(agent string) string {
 }
 
 // refusalCount is how many refusals of one kind the hour held, which calls they
-// were, and — beside the first kind only, the one that is the operator's to
-// act on — where to read them.
-func refusalCount(entries []agentlog.Entry, where string) string {
-	if len(entries) == 0 {
-		return "0"
+// were (the first few, most; none on a tile, which has no room for names beside
+// a count and opens the log on `g`), and — beside the kinds the operator can act
+// on — where to read them.
+func refusalCount(entries []agentlog.Entry, where string, most int) string {
+	if len(entries) == 0 || most == 0 {
+		return strconv.Itoa(len(entries))
 	}
-	line := fmt.Sprintf("%d — %s", len(entries), callList(entries))
+	line := fmt.Sprintf("%d — %s", len(entries), callList(entries, most))
 	if where != "" {
 		line += "; " + where
 	}
 	return line
 }
 
-// lockedLine says which principals are frozen, on the one screen an
-// operator glances at. A lock used to be visible on `lock list` and nowhere
-// else, so an agent frozen during an incident and forgotten stayed frozen
-// with nothing on the dashboard saying so.
-// rolesLine is which roles stand for which agents, the way the roster
-// says it — the overview is the screen the dashboard tile opens onto, and
-// "is dev still issued to claude" belongs beside connected and locked.
-func rolesLine() string {
-	force, verr := rtagrant.RolesInForce()
-	if verr != nil {
-		return "unreadable — " + verr.Message
-	}
-	if force != "" {
-		return strings.ReplaceAll(force, "\n", "; ")
-	}
-	return "none"
-}
-
-func lockedLine(sf plugin.Surface) string {
+// lockedLine says which principals are frozen, on the one screen an operator
+// glances at, and "" when none is. A lock used to be visible on `lock list` and
+// nowhere else, so an agent frozen during an incident and forgotten stayed
+// frozen with nothing on the dashboard saying so. A tile leaves out where the
+// reasons are: `L` and the lock list are one key away.
+func lockedLine(sf plugin.Surface, tile bool) (string, *view.Error) {
 	locks, verr := lockdown.Load()
-	if verr != nil {
-		return "unreadable — " + verr.Message
-	}
-	if len(locks) == 0 {
-		return "nothing"
+	if verr != nil || len(locks) == 0 {
+		return "", verr
 	}
 	names := make([]string, 0, len(locks))
 	for _, l := range locks {
 		names = append(names, l.Label())
 	}
-	return strings.Join(names, ", ") + " — " + sf.CapabilityName("lock.list") + " says why"
+	line := strings.Join(names, ", ")
+	if !tile {
+		line += " — " + sf.CapabilityName("lock.list") + " says why"
+	}
+	return line, nil
+}
+
+// rolesLine is which roles stand for which agents, the way the roster says it,
+// and "" when none does — the overview is the screen the dashboard tile opens
+// onto, and "is dev still issued to claude" belongs beside connected and locked.
+func rolesLine() (string, *view.Error) {
+	force, verr := rtagrant.RolesInForce()
+	if verr != nil {
+		return "", verr
+	}
+	return strings.ReplaceAll(force, "\n", "; "), nil
 }
 
 func recordPairs(rep agentlog.Report, verr error) []view.Pair {

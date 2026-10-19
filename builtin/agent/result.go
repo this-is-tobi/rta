@@ -180,9 +180,8 @@ func outcomePhrase(e agentlog.Entry) string {
 }
 
 // callList names calls the way a sentence lists them: each once, in the order
-// it was first made, the first few and a count of the rest.
-func callList(entries []agentlog.Entry) string {
-	const most = 4
+// it was first made, the first few (most) and a count of the rest.
+func callList(entries []agentlog.Entry, most int) string {
 	var seen []string
 	for _, e := range entries {
 		if name := callNamed(e.Cap, e.Records); !slices.Contains(seen, name) {
