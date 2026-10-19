@@ -39,6 +39,25 @@ func TestALiveSuggestNeverAnswersTheKeystrokeChannel(t *testing.T) {
 	}
 }
 
+// The gate is the mark and not the type: a list input marked Live is no more
+// the keystroke channel's than a String is. Each of its elements would
+// otherwise be a service read per keystroke of the box.
+func TestALiveSuggestOnAListNeverAnswersTheKeystrokeChannel(t *testing.T) {
+	called := 0
+	f := Field{Name: "bucket", Type: StringSlice, Live: true,
+		Suggest: func(context.Context, Request) []string {
+			called++
+			return []string{"backups", "media"}
+		}}
+	req := NewRequest(map[string]any{"bucket": []string{"backups"}}, false, false)
+	if got := f.Candidates(context.Background(), req); got != nil {
+		t.Errorf("Candidates = %v for a live list, want nothing offered", got)
+	}
+	if called != 0 {
+		t.Errorf("the live Suggest of a list ran %d times on the keystroke channel", called)
+	}
+}
+
 // LiveRequest carries what a run would, and CompletionRequest still does not.
 //
 // The pair is the whole design: same recipient, different cadence. A

@@ -537,8 +537,22 @@ type Field struct {
 	// Entries may end in a separator ("backups/") to compose: an accepted
 	// segment stops extending the box, so the next press fetches deeper
 	// with the box's text as the partial — the field's own name carries it
-	// in the request. Registration refuses Live without Suggest, beside
-	// Options, or on anything but a String input.
+	// in the request.
+	//
+	// On a StringSlice the element being typed is what is completed: the
+	// text after the last comma of the box, which the request carries under
+	// the field's own name as a string — req.String(name) is the partial,
+	// and req.StringSlice(name) reads it as a list of that one element, or
+	// of none while it is empty. Nothing else of the box reaches the
+	// Suggest. The host removes the entries the box already lists from the
+	// answer and narrows it to the profile's fence, so a Suggest answers
+	// with what exists and neither tracks what was chosen nor what a fence
+	// holds; an accepted candidate replaces the element being typed. An
+	// entry ending in a separator composes within an element the same way
+	// it does in a String box.
+	//
+	// Registration refuses Live without Suggest, beside Options, or on
+	// anything but a String or a StringSlice input.
 	Live bool
 	// Group names the block of a form this input is shown in, with the others
 	// that name it: `network`, `tls`, `credentials`, `target`, or a short word of

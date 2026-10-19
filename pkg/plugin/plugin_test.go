@@ -137,6 +137,21 @@ func TestDeclaredActionsAreAdmitted(t *testing.T) {
 	}
 }
 
+// Live completion types into a text box: a String's, and a StringSlice's, where
+// it completes the one element being typed. A plugin that turned a selector
+// into a list kept the names in the service and lost the completion of them
+// when registration refused the mark there.
+func TestLiveIsAdmittedOnAStringAndOnAStringSlice(t *testing.T) {
+	suggest := func(context.Context, Request) []string { return []string{"alpha"} }
+	for _, typ := range []FieldType{String, StringSlice} {
+		p := validPlugin()
+		p.Capabilities[0].Inputs = []Field{{Name: "bucket", Type: typ, Live: true, Suggest: suggest}}
+		if err := p.Validate(); err != nil {
+			t.Errorf("a Live %s input was refused: %v", typ, err)
+		}
+	}
+}
+
 func TestValidateFailures(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -178,7 +193,24 @@ func TestValidateFailures(t *testing.T) {
 		{"live on an int", func(p *Plugin) {
 			p.Capabilities[0].Inputs = []Field{{Name: "port", Type: Int, Live: true,
 				Suggest: func(context.Context, Request) []string { return nil }}}
-		}, "String box"},
+		}, "String or StringSlice box"},
+		{"live on a path", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "file", Type: Path, Live: true,
+				Suggest: func(context.Context, Request) []string { return nil }}}
+		}, "String or StringSlice box"},
+		{"live on a list with no suggest", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "bucket", Type: StringSlice, Live: true}}
+		}, "no Suggest"},
+		{"live on a list beside options", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "bucket", Type: StringSlice, Live: true,
+				Options: []string{"a"}, Suggest: func(context.Context, Request) []string { return nil }}}
+		}, "beside Options"},
+		// A credential list is masked, and a completion list is drawn in plain
+		// text beside the box: Suggest is refused there before Live is asked.
+		{"live on a secret list", func(p *Plugin) {
+			p.Capabilities[0].Inputs = []Field{{Name: "token", Type: SecretSlice, Live: true,
+				Suggest: func(context.Context, Request) []string { return nil }}}
+		}, "cannot declare Suggest"},
 		{"scope names no input", func(p *Plugin) { p.Capabilities[0].Scope = "nope" }, "names no input"},
 		// A short flag is one letter the command line can give this input.
 		{"short flag of two letters", func(p *Plugin) {

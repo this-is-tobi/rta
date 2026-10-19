@@ -455,9 +455,15 @@ func (c Capability) validate(ns string) error {
 		// these rules keep it coherent: it marks a Suggest, so one must
 		// exist; a closed set is already the whole answer (Options wins over
 		// Suggest in Candidates, so a live one would never run); and live
-		// completion types into a String box — the other types have their
-		// own machinery, and widening this is a decision for the field that
-		// needs it, not a default.
+		// completion types into a text box — a String's, or a StringSlice's,
+		// where it completes the one element being typed. The other types have
+		// their own machinery, and widening this is a decision for the field
+		// that needs it, not a default.
+		//
+		// A StringSlice is allowed because the plugins that turned a selector
+		// into a list (a bucket, a namespace) are exactly the ones whose names
+		// live in the service, and refusing it left them with no completion
+		// of those names at all.
 		if f.Live {
 			if f.Suggest == nil {
 				return fmt.Errorf("capability %q: input %q declares Live with no Suggest to run",
@@ -467,9 +473,9 @@ func (c Capability) validate(ns string) error {
 				return fmt.Errorf("capability %q: input %q declares Live beside Options; "+
 					"a closed set is already the whole answer", c.ID, f.Name)
 			}
-			if f.Type != String {
+			if f.Type != String && f.Type != StringSlice {
 				return fmt.Errorf("capability %q: input %q declares Live but is a %s; "+
-					"live completion types into a String box", c.ID, f.Name, f.Type)
+					"live completion types into a String or StringSlice box", c.ID, f.Name, f.Type)
 			}
 		}
 		// Every surface switches on Field.Type with a default branch meaning
