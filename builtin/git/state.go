@@ -1,10 +1,13 @@
 package git
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -43,6 +46,10 @@ type tracking struct {
 	// gone is an upstream configured for the branch that this repository has
 	// no remote-tracking ref for, so nothing was counted.
 	gone bool
+	// staleDays is how many days ago this repository last fetched, when that was
+	// more than a day ago, and 0 otherwise: the age of the picture the counts
+	// above were taken from.
+	staleDays int
 }
 
 // String renders the drift the way `git status` says it, and says nothing at
@@ -63,7 +70,10 @@ func (t tracking) String() string {
 		parts = append(parts, fmt.Sprintf("%s behind", plus(t.behind, t.capped)))
 	}
 	if len(parts) == 0 {
-		return t.upstream + " (up to date)"
+		parts = append(parts, "up to date")
+	}
+	if t.staleDays > 0 {
+		parts = append(parts, fmt.Sprintf("fetched %dd ago", t.staleDays))
 	}
 	return t.upstream + " (" + strings.Join(parts, ", ") + ")"
 }
@@ -103,7 +113,66 @@ func trackingOf(repo *git.Repository, tracks map[string]upstream, head *plumbing
 	}
 	ahead, aok := notIn(repo, head.Hash(), ref.Hash())
 	behind, bok := notIn(repo, ref.Hash(), head.Hash())
-	return tracking{upstream: name, ahead: ahead, behind: behind, capped: !aok || !bok}
+	t := tracking{upstream: name, ahead: ahead, behind: behind, capped: !aok || !bok}
+	if at, fetched := lastFetch(repo); fetched && time.Since(at) > staleAfter {
+		t.staleDays = int(time.Since(at) / (24 * time.Hour))
+	}
+	return t
+}
+
+// staleAfter is how old the last fetch has to be before the tracking row says
+// how old it is: a picture from this morning needs no caveat, and one from last
+// week is the reason "up to date" can mislead.
+const staleAfter = 24 * time.Hour
+
+// lastFetch is when this repository last fetched, as the modification time of
+// its FETCH_HEAD, which every `git fetch` and `git pull` rewrites, and false
+// where it has none: a clone nobody has fetched since has no FETCH_HEAD, and
+// says nothing of its age rather than a time nothing recorded. It is the git
+// directory's own file, so a linked worktree reads its own, and a repository
+// opened in memory has none. A look at the file's metadata, never at its content,
+// through the handle every read of the repository goes through.
+func lastFetch(repo *git.Repository) (time.Time, bool) {
+	fs, ok := repo.Storer.(*filesystem.Storage)
+	if !ok {
+		return time.Time{}, false
+	}
+	info, err := fs.Filesystem().Stat("FETCH_HEAD")
+	if err != nil || !info.Mode().IsRegular() {
+		return time.Time{}, false
+	}
+	return info.ModTime(), true
+}
+
+// stashLogLimit is how much of the stash's reflog is counted. A line is some
+// hundred bytes, so a mebibyte is thousands of entries, and the count is a floor
+// past it, which nobody keeps a stash that long for.
+const stashLogLimit = 1 << 20
+
+// stashCount is how many entries `git stash list` would show: the lines of the
+// reflog of refs/stash, which git keeps in the common directory and removes with
+// the last entry. The file is opened through the repository's own handle, which
+// opens nothing that is not a regular file, and read no further than
+// stashLogLimit.
+func stashCount(repo *git.Repository) int {
+	fs, ok := repo.Storer.(*filesystem.Storage)
+	if !ok {
+		return 0
+	}
+	f, err := fs.Filesystem().Open("logs/refs/stash")
+	if err != nil {
+		return 0
+	}
+	defer func() { _ = f.Close() }()
+	n, buf := 0, make([]byte, 32<<10)
+	r := io.LimitReader(f, stashLogLimit)
+	for {
+		read, err := r.Read(buf)
+		n += bytes.Count(buf[:read], []byte{'\n'})
+		if err != nil {
+			return n
+		}
+	}
 }
 
 // upstreamOf reads branch.<name>.remote and branch.<name>.merge, as tracks
@@ -590,6 +659,17 @@ func inProgress(repo *git.Repository) string {
 		}
 	}
 	return ""
+}
+
+// countUnmerged is how many paths of status a merge left undecided.
+func countUnmerged(status git.Status) int {
+	n := 0
+	for _, s := range status {
+		if isUnmerged(s) {
+			n++
+		}
+	}
+	return n
 }
 
 // worktreeSummary counts a status by what a person would do about it: what is

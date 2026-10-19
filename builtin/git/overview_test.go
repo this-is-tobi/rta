@@ -106,7 +106,7 @@ func TestOverviewSaysWhenItCouldNotReadTheWorkingTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := kvValue(t, v.(view.KeyValue), "working tree"); !strings.HasPrefix(got, "unreadable — ") {
+	if got := kvValue(t, v.(view.KeyValue), "working tree"); !strings.HasPrefix(got, "could not be read — ") {
 		t.Errorf("working tree = %q, want it said that the status could not be read", got)
 	}
 }

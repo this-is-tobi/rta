@@ -39,8 +39,8 @@ func tracks(t *testing.T, dir string) (branches, overview, byGit string, asked b
 		t.Fatal(err)
 	}
 	for _, p := range v.(view.KeyValue).Pairs {
-		if p.Key == "tracking" {
-			overview, _, _ = strings.Cut(p.Value, " (")
+		if p.Key == "tracking" && !strings.HasPrefix(p.Value, "none — ") {
+			overview, _, _ = strings.Cut(strings.TrimPrefix(p.Value, "warn — "), " (")
 		}
 	}
 	byGit, asked = gitSays(t, dir, "rev-parse", "--abbrev-ref", "master@{upstream}")

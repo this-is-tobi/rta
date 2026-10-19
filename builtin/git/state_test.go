@@ -101,28 +101,23 @@ func TestAnUpstreamWithNoRefIsGoneInTheOverview(t *testing.T) {
 	commitFile(t, repo, dir, "a.txt", "v1\n", "initial commit")
 	trackRemote(t, repo, "master", "origin")
 
-	if got := overviewValue(t, dir, "tracking"); got != "origin/master (gone)" {
-		t.Errorf("tracking = %q, want origin/master gone", got)
+	if got := overviewValue(t, dir, "tracking"); got != "warn — origin/master (gone)" {
+		t.Errorf("tracking = %q, want origin/master gone, led by the warning", got)
 	}
 	if got := rowFor(t, table(t, runBranches, req(t, dir, nil)), "Name", "master"); got[3] != "gone" {
 		t.Errorf("git.branches master = %v, want it gone", got)
 	}
 }
 
-// A branch that tracks nothing says nothing. An empty line on a tile is worse
-// than a missing one — it reads as a fact that failed to load.
-func TestAnUntrackedBranchReportsNoTracking(t *testing.T) {
+// A branch that tracks nothing says that it does and why it matters, in the
+// muted word: a row that is not there reads as a repository with nothing to say
+// about where it pushes, and an empty one as a fact that failed to load.
+func TestAnUntrackedBranchSaysItWasNeverPushed(t *testing.T) {
 	dir, repo := testRepo(t)
 	commitFile(t, repo, dir, "a.txt", "v1\n", "initial commit")
 
-	v, err := runOverview(context.Background(), req(t, dir, nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, p := range v.(view.KeyValue).Pairs {
-		if p.Key == "tracking" {
-			t.Errorf("tracking = %q on a branch that tracks nothing", p.Value)
-		}
+	if got := overviewValue(t, dir, "tracking"); got != "none — never pushed" {
+		t.Errorf("tracking = %q on a branch that tracks nothing", got)
 	}
 }
 
@@ -131,12 +126,12 @@ func TestAnUntrackedBranchReportsNoTracking(t *testing.T) {
 // commit or a file list says it is happening.
 func TestAnInterruptedOperationIsReported(t *testing.T) {
 	for _, c := range []struct{ marker, want string }{
-		{"MERGE_HEAD", "merge in progress"},
-		{"CHERRY_PICK_HEAD", "cherry-pick in progress"},
-		{"REVERT_HEAD", "revert in progress"},
-		{"BISECT_LOG", "bisect in progress"},
-		{"rebase-merge/head-name", "rebase in progress"},
-		{"rebase-apply/next", "rebase in progress"},
+		{"MERGE_HEAD", "warn — merge in progress"},
+		{"CHERRY_PICK_HEAD", "warn — cherry-pick in progress"},
+		{"REVERT_HEAD", "warn — revert in progress"},
+		{"BISECT_LOG", "warn — bisect in progress"},
+		{"rebase-merge/head-name", "warn — rebase in progress"},
+		{"rebase-apply/next", "warn — rebase in progress"},
 	} {
 		t.Run(c.want, func(t *testing.T) {
 			dir, repo := testRepo(t)
@@ -167,7 +162,7 @@ func TestARebaseStoppedOnAConflictReportsTheRebase(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".git", "MERGE_HEAD"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := overviewValue(t, dir, "state"); got != "rebase in progress" {
+	if got := overviewValue(t, dir, "state"); got != "warn — rebase in progress" {
 		t.Errorf("state = %q, want the rebase", got)
 	}
 }
@@ -252,7 +247,7 @@ func TestABranchWithARemoteAndNoMergeTracksNothing(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, p := range v.(view.KeyValue).Pairs {
-			if p.Key == "tracking" {
+			if p.Key == "tracking" && p.Value != "none — never pushed" {
 				t.Errorf("with remote %q, tracking = %q, want none", remote, p.Value)
 			}
 		}
