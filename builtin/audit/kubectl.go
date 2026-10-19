@@ -156,9 +156,34 @@ func classifyKubectl(ctx context.Context, err error, stderr, what string) *view.
 	}
 	msg = strings.TrimSpace(strings.TrimPrefix(msg, "error:"))
 	low := strings.ToLower(msg)
+	// Ahead of the rest, as in internal/tunnel: its message carries "not found".
+	if exe, ok := kubeerr.CredentialPluginMissing(stderr); ok {
+		return view.Errorf("audit.kube.credential.missing", "%s, the context's credential plugin, is not installed", exe).
+			WithHint("the kubeconfig's exec block for this context names it — install it, or put it on PATH")
+	}
 	switch {
 	case strings.Contains(low, "(notfound)"):
 		return view.Errorf("audit.kube.notfound", "%s", msg)
+	case kubeerr.CredentialHelperFailed(stderr):
+		// **No credential, which is not a credential refused.** The helper
+		// failed before there was a request, so the cluster refused nothing,
+		// and the tile of an audit on it has to keep asking to see the
+		// credential come back once the person has logged in: ending this in
+		// `.auth.failed` would pause it on a login that is renewed a moment
+		// later. Read ahead of the 401 below and of forbidden, since a helper
+		// that reached an identity provider and was refused there says so in
+		// its own words.
+		return view.Errorf("audit.kube.credential.missing", "the context's credential plugin gave no credential").
+			WithHint("the login it renews has usually expired — `kubectl get namespaces` by hand against this " +
+				"context shows what the plugin says, and this audit runs once there is a credential")
+	case kubeerr.NotAuthenticated(stderr):
+		// 401, which is not the 403 below: the cluster does not know who is
+		// asking, so no verb was refused and RBAC is not where to look. It is
+		// a login the cluster did not accept, the same one at the next refresh,
+		// which is what lets a dashboard tile stop asking until it is renewed.
+		return view.Errorf("audit.kube.auth.failed", "%s", msg).
+			WithHint("the cluster did not accept this context's login — authenticate again; `kubectl get " +
+				"namespaces` by hand fails the same way until you have")
 	case strings.Contains(low, "forbidden"), strings.Contains(low, "is not allowed"):
 		return view.Errorf("audit.kube.denied", "%s", msg).
 			WithHint("the credential this context uses does not have permission to list this resource")
