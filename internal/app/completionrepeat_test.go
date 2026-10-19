@@ -159,6 +159,53 @@ func TestAListFlagCompletesTheElementAfterTheComma(t *testing.T) {
 	}
 }
 
+// A list flag given again is the same list: the tag the first occurrence named is
+// not offered to the second, as it is not offered after a comma.
+func TestAListFlagGivenAgainDoesNotOfferWhatTheFirstGave(t *testing.T) {
+	withHistory(t, nil)
+	reg := tagRegistry(t)
+
+	got, _ := completeDirective(t, reg, "tidy", "tag", "--tag", "recipe", "--tag", "")
+	if want := []string{"ideas", "italian\tcooking"}; !slices.Equal(got, want) {
+		t.Errorf("after --tag recipe the offer is %q, want the two it does not name", got)
+	}
+	got, _ = completeDirective(t, reg, "tidy", "tag", "--tag", "recipe,ideas", "--tag", "")
+	if want := []string{"italian\tcooking"}; !slices.Equal(got, want) {
+		t.Errorf("after --tag recipe,ideas the offer is %q, want the one left", got)
+	}
+}
+
+// A list flag nobody gave holds its default, and a default is not something the
+// line chose: it is no reason to hide the value from the offer, however it
+// reads back from the flag.
+func TestAListFlagsOwnDefaultIsStillOffered(t *testing.T) {
+	withHistory(t, nil)
+	reg := registry.New()
+	err := reg.Register(plugin.Plugin{
+		Name: "dflt", Summary: "dflt plugin",
+		Capabilities: []plugin.Capability{{
+			ID: "dflt.list", Summary: "list", Safety: plugin.Read,
+			Inputs: []plugin.Field{{
+				Name: "tag", Type: plugin.StringSlice, Default: []string{"x"}, Help: "tags",
+				Suggest: func(context.Context, plugin.Request) []string { return []string{"x", "y"} },
+			}},
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := completeDirective(t, reg, "dflt", "list", "--tag", "")
+	if want := []string{"x", "y"}; !slices.Equal(got, want) {
+		t.Errorf("an unset --tag offers %q, want its default among the candidates", got)
+	}
+	got, _ = completeDirective(t, reg, "dflt", "list", "--tag", "x", "--tag", "")
+	if want := []string{"y"}; !slices.Equal(got, want) {
+		t.Errorf("after --tag x the offer is %q, want only the one not given", got)
+	}
+}
+
 // A flag that takes one value keeps its space, and an argument that takes
 // several is one value per word: only a list inside one word runs on.
 func TestOnlyAListFlagRunsOnAfterACompletion(t *testing.T) {
