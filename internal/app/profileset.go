@@ -199,6 +199,12 @@ func parseThemeFlags(pairs []string) (map[string]string, *view.Error) {
 	}
 	block := make(map[string]string, len(order))
 	for _, slot := range order {
+		if slot == theme.GradesKey {
+			return nil, view.Errorf("core.profile.theme.status",
+				"%s sets how status is drawn, which only your own config file does", slot).
+				WithHint("an environment cannot decide how failures are drawn on your screen; " +
+					"`rta config set theme." + slot + " alerts` sets it in your own, for every environment")
+		}
 		if !slices.Contains(slots, slot) {
 			hint := "one of: " + strings.Join(offered, ", ")
 			if guess := theme.NearestSlot(slot); guess != "" {

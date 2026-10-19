@@ -137,17 +137,19 @@ func configSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts)
 		Short:       "Set a key, held to what it takes",
 		Long: "Writes one key of the config file and leaves the rest of it, comments included, as it\n" +
 			"was. The value is held to what the key takes: an output format for `output`, a\n" +
-			"#rrggbb colour for a `theme.` slot, a whole number of twelfths for `dashboard.width`,\n" +
-			"and for a plugin's key whatever that plugin declares, so a value no call would accept\n" +
-			"is refused here instead of written and then refused on every call.\n\n" +
+			"#rrggbb colour for a `theme.` slot, all, alerts or off for `theme.status`, a whole\n" +
+			"number of twelfths for `dashboard.width`, and for a plugin's key whatever that plugin\n" +
+			"declares, so a value no call would accept is refused here instead of written and\n" +
+			"then refused on every call.\n\n" +
 			"The keys are `output`, `dashboard.width`, `dashboard.height`, `dashboard.refresh`,\n" +
-			"`dashboard.hidden`, `dashboard.order`, `theme.<slot>` and `plugins.<plugin>.<key>`.\n" +
-			"`rta explain` prints a plugin's keys in that form, and ends the card with the line\n" +
-			"that sets one. A key that takes a list takes its elements as further arguments.\n" +
-			"Setting a key to what it already is writes nothing, so it is safe in a script that\n" +
-			"runs on every boot.",
+			"`dashboard.hidden`, `dashboard.order`, `theme.<slot>`, `theme.status` and\n" +
+			"`plugins.<plugin>.<key>`. `rta explain` prints a plugin's keys in that form, and ends\n" +
+			"the card with the line that sets one. A key that takes a list takes its elements as\n" +
+			"further arguments. Setting a key to what it already is writes nothing, so it is safe\n" +
+			"in a script that runs on every boot.",
 		Example: "  rta config set output json\n" +
 			"  rta config set dashboard.width 6\n" +
+			"  rta config set theme.status alerts\n" +
 			"  rta config set plugins.net.timeout 20\n" +
 			"  rta config set dashboard.hidden gen.overview git.overview",
 		Args:              cobra.MinimumNArgs(2),

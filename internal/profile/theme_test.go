@@ -258,3 +258,37 @@ func TestAnOperatorsOwnBadEntryIsNotTheEnvironmentsProblem(t *testing.T) {
 		t.Errorf("the profile was blamed for the operator's block: %v", problems)
 	}
 }
+
+// How status is drawn is the operator's to say and no environment's: a profile
+// that carries it by hand has it named as a problem on the profile's own line,
+// does not count it among the entries that stand, and leaves the operator's
+// setting beneath it in force.
+func TestAnEnvironmentThatStatesStatusIsToldItIsNotItsToSayAndNothingMoves(t *testing.T) {
+	cfg := load(t, `
+theme:
+  status: alerts
+profiles:
+  prod:
+    theme:
+      status: "off"
+      label: "#C792EA"
+    plugins:
+      pg:
+        set: {host: p}
+`)
+	if got, want := ThemeStanding(cfg, "prod"), (map[string]string{"label": "#C792EA"}); !reflect.DeepEqual(got, want) {
+		t.Errorf("prod stands as %v, want only the colour: the status is not its to state", got)
+	}
+	problems := ThemeProblems(cfg, "prod")
+	if len(problems) != 1 || problems[0].Key() != "profiles.prod.theme.status" {
+		t.Fatalf("problems = %v, want the one entry named by the line to open", problems)
+	}
+	overrides, _ := theme.Resolve(ThemeLayers(cfg, "prod")...)
+	if overrides["status"] != "alerts" {
+		t.Errorf("status in force under prod is %q, want the operator's alerts", overrides["status"])
+	}
+	// The operator's own block is not blamed on the environment either way.
+	if problems := ThemeProblems(load(t, "theme:\n  status: loud\nprofiles:\n  prod:\n    plugins:\n      pg:\n        set: {host: p}\n"), "prod"); len(problems) != 0 {
+		t.Errorf("the profile was blamed for the operator's status: %v", problems)
+	}
+}

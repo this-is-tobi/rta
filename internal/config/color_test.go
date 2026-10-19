@@ -90,3 +90,28 @@ func TestAProfileColourIsJudgedByThatGrammar(t *testing.T) {
 		t.Error("a word was accepted as a colour")
 	}
 }
+
+// The values `status:` takes are written down twice too, as the palette's own
+// list and as the enum the schema gives an editor, and a mode added to one and not
+// the other is a value the editor marks as a mistake or one it never offers. A
+// profile's block has no `status` at all: an environment may not decide how
+// failures are drawn on the operator's screen (theme.Resolve), so an editor marks
+// it as the mistake it is while it is typed.
+func TestTheSchemaOffersStatusTheModesThePaletteTakesAndNoProfile(t *testing.T) {
+	if !reflect.DeepEqual(gradeModes, theme.GradeModes()) {
+		t.Fatalf("the schema's status modes are %v, the palette's are %v", gradeModes, theme.GradeModes())
+	}
+	s := Schema()
+	global := s["properties"].(map[string]any)["theme"].(map[string]any)
+	status := global["properties"].(map[string]any)["status"].(map[string]any)
+	if !reflect.DeepEqual(status["enum"], gradeModes) || status["default"] != "all" {
+		t.Errorf("status is described as %v, want the modes %v defaulting to all", status, gradeModes)
+	}
+	profile := s["$defs"].(map[string]any)["profile"].(map[string]any)["properties"].(map[string]any)["theme"].(map[string]any)
+	if _, has := profile["properties"]; has {
+		t.Errorf("a profile's theme describes properties of its own: %v", profile["properties"])
+	}
+	if slices.Contains(profile["propertyNames"].(map[string]any)["enum"].([]string), "status") {
+		t.Error("a profile's theme is offered status")
+	}
+}

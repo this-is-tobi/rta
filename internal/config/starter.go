@@ -65,6 +65,7 @@ const starterExamples = `#
 #
 # theme:
 #   primary: '#D97757'          # the ten palette slots; ` + "`rta config schema`" + ` names them
+#   status: alerts              # all, alerts or off: how much of the green/amber/red that grades is drawn
 #
 # plugins:
 #   http:

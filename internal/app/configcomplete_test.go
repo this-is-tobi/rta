@@ -31,7 +31,7 @@ func completionsFor(t *testing.T, args ...string) []string {
 func TestConfigSetCompletesEveryKeyItTakes(t *testing.T) {
 	got := completionsFor(t, "config", "set")
 	for _, want := range []string{"output", "dashboard.width", "dashboard.hidden", "dashboard.order",
-		"theme.primary", "plugins.net.timeout", "plugins.net.ping.count", "plugins.gen.password.symbols"} {
+		"theme.primary", "theme.status", "plugins.net.timeout", "plugins.net.ping.count", "plugins.gen.password.symbols"} {
 		if !slices.Contains(got, want) {
 			t.Errorf("%s is not offered: %v", want, got)
 		}
@@ -56,6 +56,7 @@ func TestConfigSetCompletesTheValuesAKeyTakes(t *testing.T) {
 	set, _, _ := root.Find([]string{"config", "set"})
 	for key, want := range map[string][]string{
 		"output":                       {"pretty", "json", "yaml", "csv", "md"},
+		"theme.status":                 {"all", "alerts", "off"},
 		"plugins.net.encoding":         {"b64", "hex"},
 		"plugins.gen.password.symbols": {"true", "false"},
 	} {

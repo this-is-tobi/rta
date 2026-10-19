@@ -189,8 +189,9 @@ func TestTheSchemaDescribesAProfileThemeLikeTheTopLevelOne(t *testing.T) {
 
 // The status colours are the operator's to set in their own named config file,
 // and what the schema tells an editor says so: the top-level block names all
-// ten slots and a profile's names the five an environment can state, so a
-// `good:` under a profile is marked as the mistake it is while it is typed.
+// ten slots and `status`, the setting about drawing them, and a profile's names
+// the five an environment can state, so a `good:` or a `status:` under a profile is
+// marked as the mistake it is while it is typed.
 func TestTheSchemaDoesNotOfferAProfileTheStatusColours(t *testing.T) {
 	s := Schema()
 	global := s["properties"].(map[string]any)["theme"].(map[string]any)
@@ -199,8 +200,8 @@ func TestTheSchemaDoesNotOfferAProfileTheStatusColours(t *testing.T) {
 	names := func(block map[string]any) []string {
 		return block["propertyNames"].(map[string]any)["enum"].([]string)
 	}
-	if got := names(global); len(got) != 10 {
-		t.Errorf("the top-level theme names %v, want the ten slots", got)
+	if got := names(global); len(got) != 11 || got[10] != "status" {
+		t.Errorf("the top-level theme names %v, want the ten slots and status", got)
 	}
 	if got, want := names(profile), []string{"primary", "accent", "muted", "faint", "label"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("a profile's theme names %v, want the five text colours %v", got, want)

@@ -44,6 +44,11 @@ var (
 // which this leaf does not import, so a test holds the two lists to one answer.
 var themeKeys = []string{"primary", "accent", "muted", "faint", "label", "good", "warn", "bad", "inverse", "ink"}
 
+// gradeModes are the values the top-level theme's `status:` takes, in the order
+// they quiet the screen. Held to the palette's own answer by a test, for the
+// reason themeKeys is.
+var gradeModes = []string{"all", "alerts", "off"}
+
 // statusThemeKeys are the slots only the operator's own named config file can
 // state: the colours that mean ok, warn and failed, and the text of the two
 // badges that say the last two. An environment's palette and a file nobody named
@@ -107,12 +112,13 @@ func Schema() map[string]any {
 				"propertyNames":        map[string]any{"pattern": profileName.String()},
 				"additionalProperties": map[string]any{"$ref": "#/$defs/profile"},
 			},
-			"theme": themeBlock("Overrides the built-in palette: "+strings.Join(themeKeys, ", ")+
-				", each a #rrggbb string. A name or colour rta cannot use is left out and "+
+			"theme": withGradeSetting(themeBlock("Overrides the built-in palette: "+strings.Join(themeKeys, ", ")+
+				", each a #rrggbb string, and sets with `status` how much of the colour that grades is "+
+				"drawn. A name or colour rta cannot use is left out and "+
 				"reported by `rta doctor`; the rest apply. The status colours (good, warn, bad, "+
-				"inverse, ink) count only in your own config file, and a file nobody named, such as a "+
+				"inverse, ink) and `status` count only in your own config file, and a file nobody named, such as a "+
 				"./.rta.yaml in a repository, may state none of them, nor a text colour under 1.5:1 "+
-				"against black or white.", themeKeys),
+				"against black or white.", append(slices.Clone(themeKeys), "status"))),
 			"roles": map[string]any{
 				"description": "Bundles `rta grant issue <role>` issues whole, under one passphrase: " +
 					"grant lines in the grammar `rta grant allow` takes, and how long the grants last.",
@@ -352,6 +358,25 @@ func themeBlock(description string, keys []string) map[string]any {
 		"propertyNames":        map[string]any{"enum": keys},
 		"additionalProperties": map[string]any{"type": "string", "pattern": schemaColor},
 	}
+}
+
+// withGradeSetting is the top-level theme block with `status`, the one entry of
+// it that is a choice and not a colour. A profile's block does not have it: an
+// environment may not decide how failures are drawn on the operator's screen.
+func withGradeSetting(block map[string]any) map[string]any {
+	block["properties"] = map[string]any{
+		"status": map[string]any{
+			"description": "How much of the colour that grades is drawn: the status words, usage " +
+				"percentages, a tile's border by its worst grade and a folded section's marker. " +
+				"`all` draws green, amber and red; `alerts` only amber and red, the ok grade plain; " +
+				"`off` none, with every word, number and border still drawn. Selection, titles, " +
+				"errors, a consent request waiting, the safety class of a call and a plugin's trust " +
+				"words are not grades and keep their colour. NO_COLOR and --no-color still win.",
+			"enum":    gradeModes,
+			"default": "all",
+		},
+	}
+	return block
 }
 
 // dashboardFields are the six keys of a dashboard arrangement, which the
