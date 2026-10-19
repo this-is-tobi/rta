@@ -534,6 +534,15 @@ type Field struct {
 	// calls it and carries no credentials: Candidates answers nil for a
 	// live input.
 	//
+	// The press is held to the connection's fence first, as a run is: when
+	// another input holds a value the connection does not reach, a fenced
+	// one is left blank, or a switch reads past one, Suggest is not called at
+	// all, so it is never asked to list with a value the call would be
+	// refused for. Nor is it called when this input is fenced and the text
+	// typed in it (the element being typed, on a StringSlice) is not the start
+	// of an entry of its fence, so for a fenced input what Suggest reads under
+	// the field's own name is empty or begins an entry the fence holds.
+	//
 	// Entries may end in a separator ("backups/") to compose: an accepted
 	// segment stops extending the box, so the next press fetches deeper
 	// with the box's text as the partial — the field's own name carries it

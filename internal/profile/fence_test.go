@@ -309,6 +309,45 @@ func TestFencedWordsTheRefusalForWhoeverCanActOnIt(t *testing.T) {
 	}
 }
 
+// The form completing a box asks the same question with that box left out: its
+// text is the start of a value, and what the connection and the environment say of
+// the other inputs, and the switch that reads past the box, are held as a run holds
+// them.
+func TestFenceBreachedLeavesOutTheValueOfTheUnfinishedBox(t *testing.T) {
+	c := appCapability(t)
+	conn := config.Connection{Only: map[string]any{
+		"namespace": []any{"staging"}, "mode": []any{"safe"},
+	}}
+	ask := func(caller map[string]any, look func(string) (string, bool)) *plugin.FenceBreach {
+		return FenceBreached("staging", conn, c, plugin.Inputs{Caller: caller, Unfinished: "namespace"}, look)
+	}
+
+	if breach := FenceBreached("staging", conn, c, plugin.Inputs{Caller: map[string]any{"namespace": "pr", "mode": "safe"}}, noEnv); breach == nil {
+		t.Fatal("the whole check let the value through, so this proves nothing")
+	}
+	if breach := ask(map[string]any{"namespace": "pr", "mode": "safe"}, noEnv); breach != nil {
+		t.Errorf("the box being typed was tested: %+v", breach)
+	}
+	if breach := ask(map[string]any{"namespace": "pr", "mode": "safe", "all-namespaces": true}, noEnv); breach == nil || !breach.Widened() {
+		t.Errorf("the switch that reads past the box was let through: %+v", breach)
+	}
+	if breach := ask(map[string]any{"namespace": "pr", "mode": "fast"}, noEnv); breach == nil || breach.Input.Name != "mode" {
+		t.Errorf("another input outside the fence was let through: %+v", breach)
+	}
+	env := func(name string) (string, bool) {
+		if name == "RTA_PROFILE_STAGING_MODE" {
+			return "fast", true
+		}
+		return "", false
+	}
+	if breach := ask(map[string]any{"namespace": "pr"}, env); breach == nil || breach.Input.Name != "mode" {
+		t.Errorf("what the environment fills in was not seen: %+v", breach)
+	}
+	if breach := FenceBreached("staging", config.Connection{}, c, plugin.Inputs{Caller: map[string]any{"all-namespaces": true}, Unfinished: "namespace"}, noEnv); breach != nil {
+		t.Errorf("a connection with no fence held a call: %+v", breach)
+	}
+}
+
 // What a profile reads from the environment for an input is one of the values
 // the check sees: a fence that held `set:` and not `RTA_PROFILE_<P>_<INPUT>`
 // would be one the next export walks through.

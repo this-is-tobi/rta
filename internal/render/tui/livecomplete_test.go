@@ -192,6 +192,25 @@ func TestALiveAnswerThatWouldDisplayAsSomethingElseIsDropped(t *testing.T) {
 	}
 }
 
+// poisonKubectl puts a kubectl first on PATH that records being run and fails,
+// and returns the file it leaves behind when it was: the assertion that a press
+// read no `kube:` Secret out of a cluster, which is a real access in its audit
+// log.
+func poisonKubectl(t *testing.T) string {
+	t.Helper()
+	poison := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(poison, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ran := filepath.Join(poison, "kubectl-ran")
+	if err := os.WriteFile(filepath.Join(poison, "kubectl"),
+		[]byte("#!/bin/sh\ntouch "+ran+"\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", poison+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return ran
+}
+
 // A live fetch under a cluster connection is refused with the reason — for
 // the environment the picker names, and before anything is fetched.
 //
@@ -207,16 +226,7 @@ func TestALiveAnswerThatWouldDisplayAsSomethingElseIsDropped(t *testing.T) {
 // kubectl is the assertion that no completion press ever does that again.
 func TestALiveFetchUnderACoordinateIsRefused(t *testing.T) {
 	noHistory(t)
-	poison := filepath.Join(t.TempDir(), "bin")
-	if err := os.MkdirAll(poison, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	ran := filepath.Join(poison, "kubectl-ran")
-	if err := os.WriteFile(filepath.Join(poison, "kubectl"),
-		[]byte("#!/bin/sh\ntouch "+ran+"\nexit 1\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", poison+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ran := poisonKubectl(t)
 
 	lr := &liveRecorder{}
 	m, c := liveModel(t, lr, map[string]config.Profile{

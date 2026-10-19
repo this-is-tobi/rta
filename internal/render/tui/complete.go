@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	huh "charm.land/huh/v2"
 
 	"github.com/this-is-tobi/rta/internal/boxlist"
+	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/internal/tunnel"
@@ -309,6 +311,15 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refuse("completion cannot reach " + name + "'s " + what + " — the forward opens per call")
 		return m, nil
 	}
+	if words := m.heldByFence(name, conn, c, f, values, box.partial); words != "" {
+		// A press with nothing to offer settles like any other (capForm.settled):
+		// the next tab leaves the box, which is what the line says. Without it
+		// a live box above a fenced one still blank asked again on every tab, and
+		// only enter moved on.
+		cf.fetchedFor[f.Name] = box.typed
+		m.refuse(words + " — tab moves on")
+		return m, nil
+	}
 	if filled == nil && name != "" {
 		if filled, verr = m.fillConn(name, conn, c, values); verr != nil {
 			m.refuse(verr.Message)
@@ -368,6 +379,77 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return completeMsg{form: cf, field: f.Name,
 			c: tunnel.Completion{Items: items, Names: items, What: what}}
 	}
+}
+
+// heldByFence is the press's look at the connection's fence before anything is
+// read, and the sentence for the flash line when the press is outside it — empty
+// when it is not.
+//
+// A press reads the service with what the other boxes hold, and the fence is
+// about what a call asks of the service: a cluster listing of the namespaces a
+// sibling box names reads a namespace the fence leaves out, exactly as the run
+// would, and what the answer is filtered to afterwards cannot unread it. So the
+// check is the run's (profile.FenceBreached, which binds the connection's layer
+// the way profile.Fenced does), made on the values the form holds and before the
+// credential is resolved, since a press that is about to be refused must not read
+// one — the reason the coordinate above is checked first as well.
+//
+// The box being completed is held on its own terms, since what it holds is the
+// start of a value and not a value of the call, and a press that asked "is `sh`
+// one of the namespaces" would hold every first keystroke. Its value is left out
+// of the run's check (plugin.Inputs.Unfinished); its fence stays in it, because a
+// switch that reads past the box is a way across whatever the box holds. Every
+// other fenced input is held as a run holds it — a blank one included, which a run
+// refuses as the widest reach there is — and so is a switch that reads past one.
+//
+// What the box holds is also what the plugin is handed, and a Suggest may read at
+// it: the keys of a bucket under the prefix typed. The filter below drops what the
+// fence does not hold from the answer, but it cannot unread the listing, so a fenced
+// box is held when its text continues no entry of the fence (continuesAnEntry) —
+// `sh` for an entry `shop` passes, `secrets/` for `backups/` does not. An empty box
+// is the start of every entry, and a box the profile does not fence is not held by
+// its text.
+//
+// The sentence names the input and not the allowlist, and never the text typed: the
+// line is on a screen somebody else may be reading, and the fence is the operator's
+// inventory. The run's own refusal (profile.FenceRefusal) lists what the connection
+// reaches, which is for the person who has to change the call.
+func (m Model) heldByFence(ref string, conn config.Connection, c plugin.Capability, f plugin.Field,
+	values map[string]any, partial string,
+) string {
+	cfg := m.configFor(c)
+	b := profile.FenceBreached(ref, conn, c, plugin.Inputs{
+		Caller: values, Config: cfg.values, ConfigSection: cfg.section, Unfinished: f.Name,
+	}, os.LookupEnv)
+	if b == nil && !continuesAnEntry(profile.FenceOf(conn), f, partial) {
+		b = &plugin.FenceBreach{Input: f}
+	}
+	if b == nil {
+		return ""
+	}
+	input := profile.FenceInput(b.Input, plugin.SurfaceTUI)
+	switch {
+	case b.Widened():
+		return fmt.Sprintf("%s reads past %s, which profile %q fences, so the service was not asked",
+			profile.FenceInput(b.Switch, plugin.SurfaceTUI), input, ref)
+	case b.Blank:
+		return fmt.Sprintf("%s is blank, and profile %q fences it, so the service was not asked", input, ref)
+	}
+	return fmt.Sprintf("%s is outside what profile %q reaches, so the service was not asked", input, ref)
+}
+
+// continuesAnEntry says whether text, the start of a value for f, is the start of
+// one the fence allows: an entry that begins with it, the entry itself included.
+// Compared as the fence compares a value, case and all, since a listing under `SH`
+// is a listing the run's `SH` would be refused for. Empty text begins every entry,
+// and an input the fence does not name has none to fall short of.
+func continuesAnEntry(fence plugin.Fence, f plugin.Field, text string) bool {
+	if !fence.Fenced(f) {
+		return true
+	}
+	return slices.ContainsFunc(fence.Offer(f), func(entry string) bool {
+		return strings.HasPrefix(entry, text)
+	})
 }
 
 // completeLocally is tab on every other field, and it is where the sentence
