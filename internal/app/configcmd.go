@@ -40,7 +40,7 @@ func newConfigCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 		Long: "Bare `rta config` says where the config file is, whether it exists, and every key it\n" +
 			"states with where each value comes from. rta works with no file at all: a key is\n" +
 			"written only when you set it.\n\n" +
-			"Keys are named the way `rta explain` prints them: `output`, `dashboard.columns`,\n" +
+			"Keys are named the way `rta explain` prints them: `output`, `dashboard.width`,\n" +
 			"`theme.primary`, `plugins.http.timeout`. `rta config set` holds the value to what the\n" +
 			"key takes and keeps the comments you wrote in the file; `rta config edit` is for\n" +
 			"everything a key cannot say, and `rta config check` names what rta ignores.",
@@ -127,7 +127,7 @@ func configGetCommand(reg *registry.Registry, render renderFn) *cobra.Command {
 }
 
 // configKeyDoc is the argument every config key command takes.
-var configKeyDoc = argDoc{"key", "a key as `rta explain` prints it — `output`, `dashboard.columns`, " +
+var configKeyDoc = argDoc{"key", "a key as `rta explain` prints it — `output`, `dashboard.width`, " +
 	"`theme.primary`, `plugins.http.timeout`"}
 
 func configSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts) *cobra.Command {
@@ -137,16 +137,17 @@ func configSetCommand(reg *registry.Registry, render renderFn, opts *globalOpts)
 		Short:       "Set a key, held to what it takes",
 		Long: "Writes one key of the config file and leaves the rest of it, comments included, as it\n" +
 			"was. The value is held to what the key takes: an output format for `output`, a\n" +
-			"#rrggbb colour for a `theme.` slot, a whole number for `dashboard.columns`, and for a\n" +
-			"plugin's key whatever that plugin declares, so a value no call would accept is\n" +
-			"refused here instead of written and then refused on every call.\n\n" +
-			"The keys are `output`, `dashboard.columns`, `dashboard.hidden`, `dashboard.order`,\n" +
-			"`theme.<slot>` and `plugins.<plugin>.<key>`. `rta explain` prints a plugin's keys in\n" +
-			"that form, and ends the card with the line that sets one. A key that takes a list\n" +
-			"takes its elements as further arguments. Setting a key to what it already is\n" +
-			"writes nothing, so it is safe in a script that runs on every boot.",
+			"#rrggbb colour for a `theme.` slot, a whole number of twelfths for `dashboard.width`,\n" +
+			"and for a plugin's key whatever that plugin declares, so a value no call would accept\n" +
+			"is refused here instead of written and then refused on every call.\n\n" +
+			"The keys are `output`, `dashboard.width`, `dashboard.height`, `dashboard.refresh`,\n" +
+			"`dashboard.hidden`, `dashboard.order`, `theme.<slot>` and `plugins.<plugin>.<key>`.\n" +
+			"`rta explain` prints a plugin's keys in that form, and ends the card with the line\n" +
+			"that sets one. A key that takes a list takes its elements as further arguments.\n" +
+			"Setting a key to what it already is writes nothing, so it is safe in a script that\n" +
+			"runs on every boot.",
 		Example: "  rta config set output json\n" +
-			"  rta config set dashboard.columns 3\n" +
+			"  rta config set dashboard.width 6\n" +
 			"  rta config set plugins.net.timeout 20\n" +
 			"  rta config set dashboard.hidden gen.overview git.overview",
 		Args:              cobra.MinimumNArgs(2),
