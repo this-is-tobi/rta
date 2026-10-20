@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"os"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -750,20 +751,45 @@ func (t tile) pace() time.Duration {
 // the entry is the tile, in the position the tile had, rather than a twin
 // beside it refreshing the same answer twice. H on it withdraws the entry,
 // and the automatic tile is back on the next build.
+//
+// **It takes the place of the tile it is, and of no other.** The key names a
+// capability and a connection, not what the tile is about, and a stated list may
+// hold many tiles of one key (a kube.pod.list for each namespace). An entry that
+// took the place of whichever of them came last, whatever it asked about, replaced
+// the last of the nine with a tenth and left the screen one tile short with
+// nothing said. A stated tile is replaced by an entry that asks the same thing;
+// the automatic one has no inputs of its own to differ in, so any entry of its
+// key replaces it; anything else joins the list.
 func joinTiles(tiles, added []tile) []tile {
-	at := make(map[string]int, len(tiles))
-	for i, t := range tiles {
-		at[t.key()] = i
-	}
 	for _, t := range added {
-		if i, ok := at[t.key()]; ok {
+		if i := sameTileAt(tiles, t); i >= 0 {
 			tiles[i] = t
 			continue
 		}
-		at[t.key()] = len(tiles)
 		tiles = append(tiles, t)
 	}
 	return tiles
+}
+
+// sameTileAt is where on the screen the tile t already is, or -1: the last
+// tile of its key that is the automatic one or asks about the same inputs.
+func sameTileAt(tiles []tile, t tile) int {
+	at := -1
+	for i, o := range tiles {
+		if o.key() == t.key() && (o.source == tileAuto || sameInputs(o.values, t.values)) {
+			at = i
+		}
+	}
+	return at
+}
+
+// sameInputs says two tiles are about the same thing; no inputs and none stated
+// are the same.
+func sameInputs(a, b map[string]any) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	return reflect.DeepEqual(a, b)
 }
 
 // expandTiles turns a tile whose profile names no instance into one panel
