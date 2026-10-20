@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.49.1](https://github.com/this-is-tobi/rta/compare/v0.49.0...v0.49.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **plugin:** list a value once when a live press gets it from the service twice ([7772c7d](https://github.com/this-is-tobi/rta/commit/7772c7d8dc934cf71ae77d99da20dc004f24e53f))
+* **tui:** an added tile takes the place of the tile it is, not of the last one of its key ([ef9ee7d](https://github.com/this-is-tobi/rta/commit/ef9ee7d2385b330271b0765e5afeb3bab7b575c4))
+* **tui:** hold a live completion press to the profile's fence before it reads ([88b5207](https://github.com/this-is-tobi/rta/commit/88b5207c67b21f182a702f164cf45cdbc547e272))
+* **tui:** offer the profile's own entries when a live press on a fenced box gets no answer ([9d17419](https://github.com/this-is-tobi/rta/commit/9d17419a608334bb425867d3bc627a168f070d59))
+
 ## [0.49.0](https://github.com/this-is-tobi/rta/compare/v0.48.0...v0.49.0) (2026-10-19)
 
 
