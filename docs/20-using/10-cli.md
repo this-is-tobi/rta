@@ -143,7 +143,7 @@ rta net hosts add 10.0.0.5 db.local --dry-run
 rta note rm 4 --dry-run
 ```
 
-The one read it applies to is the http client: `rta http get URL --bearer-file /dev/stdin --dry-run` prints the request as it would leave, the token masked, and sends nothing, so a mistyped host is found before the token reaches it. Every other read runs, since it changes nothing.
+The reads it applies to are the ones that send something or write a file, and their `--help` lists it: `rta http get URL --bearer-file /dev/stdin --dry-run` prints the request as it would leave, the token masked, and sends nothing, so a mistyped host is found before the token reaches it; `rta http head` does the same, `rta net probe` shows the address it would dial and the payload after escapes, and `rta cert pem --out` says what it would write where. Every other read runs, since it changes nothing.
 
 This is not only a convenience for you — it is what rta shows an operator on a [parked agent call](../30-boundary/35-roles-consent-and-the-guard.md#live-consent-when-you-would-rather-be-asked), which turns "may this agent call `note.rm`" into "may it remove **this note**", and it is what [the TUI](./20-tui.md#running-something) shows you before a destructive run, for the same reason.
 

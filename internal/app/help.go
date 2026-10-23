@@ -394,13 +394,27 @@ var readOnlyCommands = map[string]bool{
 	"rta config show": true,
 }
 
+// previewingReads are the reads whose --dry-run means something: the request
+// goes somewhere — a URL with a token on it, a host and a payload — or ends in
+// a file, and the preview shows where before anything leaves. A read of this
+// machine has nothing to preview, which is why commandWrites hides the flag on
+// every other read; these are named here rather than declared, as
+// readOnlyCommands are, because a plugin's Read cannot say it honours a dry
+// run and the host would list the flag on a capability that ignores it.
+var previewingReads = map[string]bool{
+	"rta http get": true, "rta http head": true, "rta net probe": true, "rta cert pem": true,
+}
+
 // listsFlag says whether cmd's help lists f.
 func listsFlag(cmd *cobra.Command, f *pflag.Flag) bool {
 	if _, unlisted := f.Annotations[annotUnlisted]; unlisted {
 		return false
 	}
-	if f.Name == "yes" || f.Name == "dry-run" {
+	switch f.Name {
+	case "yes":
 		return commandWrites(cmd)
+	case "dry-run":
+		return commandWrites(cmd) || previewingReads[cmd.CommandPath()]
 	}
 	return true
 }
