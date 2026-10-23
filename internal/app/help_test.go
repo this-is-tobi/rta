@@ -143,9 +143,10 @@ func TestASummaryIsDrawnTheWayItWasWritten(t *testing.T) {
 }
 
 // A flag is listed where it means something. --yes and --dry-run are for a
-// command that writes, and the --profile every capability gets is for one with a
-// connection to point it at; listing them on `rta sys cpu` taught people that
-// the flags were decoration. A command's own --profile (`grant allow` narrows a
+// command that writes — and --dry-run for the few reads that preview where a
+// request or a file would go (previewingReads) — and the --profile every
+// capability gets is for one with a connection to point it at; listing them on
+// `rta sys cpu` taught people that the flags were decoration. A command's own --profile (`grant allow` narrows a
 // grant by it) is listed whatever it connects to. They are accepted everywhere
 // all the same — a script that passes --yes to every command keeps working.
 func TestAFlagIsListedOnlyWhereItMeansSomething(t *testing.T) {
@@ -172,7 +173,11 @@ func TestAFlagIsListedOnlyWhereItMeansSomething(t *testing.T) {
 		{[]string{"sys", "cpu"}, []string{"--cores", "--output"}, []string{"--dry-run", "--yes", "--profile"}},
 		{[]string{"note", "add"}, []string{"--dry-run", "--yes"}, []string{"--profile"}},
 		{[]string{"note", "rm"}, []string{"--dry-run", "--yes"}, []string{"--profile"}},
-		{[]string{"http", "get"}, []string{"--output"}, []string{"--yes", "--dry-run", "--profile"}},
+		{[]string{"http", "get"}, []string{"--output", "--dry-run"}, []string{"--yes", "--profile"}},
+		{[]string{"http", "head"}, []string{"--dry-run"}, []string{"--yes"}},
+		{[]string{"net", "probe"}, []string{"--dry-run"}, []string{"--yes"}},
+		{[]string{"cert", "pem"}, []string{"--dry-run"}, []string{"--yes"}},
+		{[]string{"cert", "expiry"}, []string{"--output"}, []string{"--yes", "--dry-run"}},
 		{[]string{"conn", "ping"}, []string{"--profile", "--host"}, []string{"--yes", "--dry-run"}},
 		{[]string{"kv"}, []string{"--output"}, []string{"--yes", "--dry-run"}},
 		{[]string{"doctor"}, []string{"--output"}, []string{"--yes", "--dry-run"}},
