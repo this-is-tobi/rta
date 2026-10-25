@@ -264,6 +264,9 @@ type observed struct {
 	cap  plugin.Capability
 	view view.View
 	err  error
+	// dry says the view is a dry run's: what the capability would do, which
+	// is not the answer it gives when it does it.
+	dry bool
 }
 
 func (c config) skipped(rule Rule, id string) bool {
@@ -376,7 +379,7 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 		v, err := c.Run(ctx, req)
 		err = plugin.Failure(err)
 		cancel()
-		out = append(out, observed{cap: c, view: v, err: err})
+		out = append(out, observed{cap: c, view: v, err: err, dry: mutating})
 
 		if !mutating {
 			continue

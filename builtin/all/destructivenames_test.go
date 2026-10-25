@@ -13,22 +13,34 @@ import (
 // the TUI's form alike, so `net hosts rm`, `note rm` and `kv rm` complete the
 // thing they remove, and a capability added later cannot be the one that does not.
 //
-// There is no list of exceptions: today every such input completes. One that
+// The inputs that are not such a name are listed below with the reason, and a
+// listed one that stops being a required text input of a destructive
+// capability fails here, so the list cannot outlive what it excuses. One that
 // names a value which does not exist yet (the new name of a rename) is not
-// destructive on that input, and a capability with such an input beside a
-// destructive one is the first reason to say so here.
+// destructive on that input.
+var notNames = map[string]string{
+	// The URL names a resource on another machine, which rta has no listing
+	// of and no business asking for one: what this person sent before is
+	// offered back (internal/recent), as it is for every input.
+	"http.delete/url": "a resource on another machine",
+}
+
 func TestEveryDestructiveCapabilityCompletesTheNamesItActsOn(t *testing.T) {
 	reg, err := Registry(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	checked := 0
+	checked, waived := 0, map[string]bool{}
 	for _, c := range reg.Capabilities() {
 		if c.Safety != plugin.Destructive {
 			continue
 		}
 		for _, f := range c.Inputs {
 			if !f.Required || (f.Type != plugin.String && f.Type != plugin.StringSlice) {
+				continue
+			}
+			if _, listed := notNames[c.ID+"/"+f.Name]; listed {
+				waived[c.ID+"/"+f.Name] = true
 				continue
 			}
 			checked++
@@ -40,5 +52,11 @@ func TestEveryDestructiveCapabilityCompletesTheNamesItActsOn(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no input of a destructive capability was checked: the declarations changed shape under this test")
+	}
+	for key, why := range notNames {
+		if !waived[key] {
+			t.Errorf("%s is listed as not a name (%s), and is no required text input of a destructive capability: "+
+				"drop it from the list", key, why)
+		}
 	}
 }

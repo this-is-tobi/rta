@@ -901,6 +901,27 @@ func TestTheNoteOnRepeatedActsLeavesWhatTheCatalogueClaimsAlone(t *testing.T) {
 	}
 }
 
+// A dry run answers what the call would do, and Copy and Primary name what it
+// answers when it does it: a destructive capability whose dry run is the one
+// line the host previews is not held to a Primary of the answer it gives for
+// real, which the suite never sees, since it never runs a write.
+func TestADryRunIsNotHeldToTheAnswersPrimary(t *testing.T) {
+	c := ok()
+	c.ID, c.Safety, c.Primary = "demo.item.rm", plugin.Destructive, "body"
+	c.Run = func(_ context.Context, req plugin.Request) (view.View, error) {
+		if req.DryRun {
+			return view.Text{Body: "would remove the item"}, nil
+		}
+		return view.KeyValue{Pairs: []view.Pair{{Key: "body", Value: "removed"}}}, nil
+	}
+	p := plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}
+	rec := &recorder{}
+	checkActions(rec, drive(rec, p, noConfig(), t.TempDir(), nil), noConfig())
+	if len(rec.errs) > 0 {
+		t.Fatalf("a dry run's one line was held to the answer's Primary:\n%s", rec.errText())
+	}
+}
+
 // Primary is what a pipe is handed in place of the table around it, so a name
 // the view lacks hands it nothing, and a name the view masks hands it the
 // mask. Both are findings only a run can make.

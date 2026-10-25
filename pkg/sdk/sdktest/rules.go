@@ -660,7 +660,15 @@ func checkActions(t reporter, seen []observed, cfg config) {
 
 	for _, o := range seen {
 		c := o.cap
-		if (c.Copy == "" && c.Primary == "") || o.err != nil || cfg.skipped(RuleActions, c.ID) {
+		// Not on a dry run's view: it says what the call would do, and Copy
+		// and Primary name a column or a key of what it answers when it
+		// does it. A Write or a Destructive capability is only ever seen
+		// here dry, so its names are held to a preview they were never
+		// about: a destructive dry run answers one line, as the host
+		// previews it, and a Primary of the response body failed there; a
+		// request's dry run that happened to show the request's body
+		// passed, for the wrong body.
+		if (c.Copy == "" && c.Primary == "") || o.err != nil || o.dry || cfg.skipped(RuleActions, c.ID) {
 			continue
 		}
 		if c.Copy != "" {
