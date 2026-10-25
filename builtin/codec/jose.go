@@ -3,6 +3,7 @@ package codec
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -268,13 +269,37 @@ func splitDialect(dialect string) (form string, loose bool) {
 func decodeHeader(seg, what string) (object, string, *view.Error) {
 	raw, dialect, err := decodeSegment(seg)
 	if err != nil {
-		return object{}, "", view.Errorf("codec.jwt.invalid", "decoding the %s: %v", what, err)
+		return object{}, "", notBase64URL(what, err)
 	}
 	header, err := decodeObject(raw)
 	if err != nil {
-		return object{}, "", view.Errorf("codec.jwt.invalid", "decoding the %s: %v", what, err)
+		return object{}, "", notAnObject(what, err)
 	}
 	return header, dialect, nil
+}
+
+// segmentHint is what a refused part of a token was supposed to be, for the
+// person who pasted it: most often a token cut short, or something that is not
+// a token at all, both of which the two shapes below tell from a real one.
+const segmentHint = "every part of a token is base64url, and its header decodes to a JSON object — " +
+	"check that the whole token was pasted"
+
+// notBase64URL refuses a part of a token that no base64 dialect reads.
+func notBase64URL(what string, err error) *view.Error {
+	return view.Errorf("codec.jwt.invalid", "the %s is not base64url: %v", what, err).WithHint(segmentHint)
+}
+
+// notAnObject refuses a header that decoded and is not one JSON object. Bytes
+// that are not JSON at all, the usual case, are said to be that: the decoder's
+// own words were "invalid character '\u009e' looking for beginning of value",
+// for `not.a.jwt`, which names a byte nobody typed. JSON that goes wrong
+// further in keeps what the decoder says about where.
+func notAnObject(what string, err error) *view.Error {
+	var syntax *json.SyntaxError
+	if errors.Is(err, errNotObject) || errors.As(err, &syntax) && syntax.Offset <= 1 {
+		return view.Errorf("codec.jwt.invalid", "the %s does not decode to a JSON object", what).WithHint(segmentHint)
+	}
+	return view.Errorf("codec.jwt.invalid", "the %s is not a JSON object: %v", what, err).WithHint(segmentHint)
 }
 
 // page collects the sections a decode produces and what it noticed on the way,
@@ -482,7 +507,7 @@ func (p *page) payload(header object, seg string, depth int) (object, *view.Erro
 		var dialect string
 		var err error
 		if raw, dialect, err = decodeSegment(seg); err != nil {
-			return object{}, view.Errorf("codec.jwt.invalid", "decoding the payload: %v", err)
+			return object{}, notBase64URL("payload", err)
 		}
 		p.dialect("payload", dialect)
 	}
@@ -778,7 +803,7 @@ func decodeJWE(parts []string) (view.View, *view.Error) {
 func (p *page) part(kv *view.KeyValue, name, seg string) *view.Error {
 	raw, dialect, err := decodeSegment(seg)
 	if err != nil {
-		return view.Errorf("codec.jwt.invalid", "decoding the %s: %v", name, err)
+		return notBase64URL(name, err)
 	}
 	p.dialect(name, dialect)
 	size := "none"
@@ -799,7 +824,7 @@ func (p *page) part(kv *view.KeyValue, name, seg string) *view.Error {
 func (p *page) encryptedKey(kv *view.KeyValue, header object, seg, name string) *view.Error {
 	raw, dialect, err := decodeSegment(seg)
 	if err != nil {
-		return view.Errorf("codec.jwt.invalid", "decoding the %s: %v", name, err)
+		return notBase64URL(name, err)
 	}
 	p.dialect(name, dialect)
 	alg := visible(header.str("alg"))
