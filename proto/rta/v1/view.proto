@@ -41,6 +41,11 @@ message Error {
   // it: the rows are all there, and this is something a person should know
   // about them. A host heads a page partial only for a warning without it.
   bool advisory = 6;
+  // The declared input this error is about, by its name, when one input is
+  // the thing to change: a form reopens on that box, and an agent knows which
+  // argument to send again. A host acts on it only when it names an input the
+  // capability declares.
+  string input = 7;
 }
 
 // Text is free-form text, optionally markdown for the host to render.

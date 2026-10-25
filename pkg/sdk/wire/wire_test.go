@@ -250,9 +250,10 @@ func everyViewType() map[string]view.View {
 		// Refusal and Advisory set so the round-trip proves the flags survive
 		// the wire: a plugin's policy gate that arrives stripped would ledger
 		// host-side as the work breaking, and an advisory warning stripped
-		// would head a complete answer as partial.
+		// would head a complete answer as partial. Input, so a plugin's
+		// refusal of one input still reopens the form on that box.
 		"error": &view.Error{Code: "x.y.z", Message: "it failed", Hint: "do this", Retryable: true, Refusal: true,
-			Advisory: true},
+			Advisory: true, Input: "city"},
 	}
 }
 

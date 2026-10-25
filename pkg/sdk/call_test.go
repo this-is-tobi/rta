@@ -151,6 +151,38 @@ func TestAFailureWithNothingInItCrossesCodedAndWorded(t *testing.T) {
 	}
 }
 
+// A refusal of one input names it across the process, on a call and on the
+// prefill a form asks before its second stage: the host reopens the form on that
+// box, and it can only do that with the name the handler wrote.
+func TestARefusalOfOneInputCrossesNamingIt(t *testing.T) {
+	refused := view.Errorf("demo.nosuchitem", "no item 7").WithInput("id")
+	p := plugin.Plugin{
+		Name: "demo", Summary: "d",
+		Capabilities: []plugin.Capability{{
+			ID: "demo.item.show", Summary: "s", Safety: plugin.Read,
+			Inputs:  []plugin.Field{{Name: "id", Type: plugin.String, Positional: true, Required: true}},
+			Run:     func(context.Context, plugin.Request) (view.View, error) { return nil, refused },
+			Prefill: func(context.Context, plugin.Request) (map[string]any, error) { return nil, refused },
+		}},
+	}
+	s := newServer(p)
+	resp, err := s.Call(context.Background(), &rtav1.CallRequest{CapabilityId: "demo.item.show"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pre, err := s.Prefill(context.Background(), &rtav1.PrefillRequest{CapabilityId: "demo.item.show"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for what, e := range map[string]*rtav1.Error{
+		"call": roundTrip(t, resp).GetError(), "prefill": roundTrip(t, pre).GetError(),
+	} {
+		if got := wire.ErrorFromProto(e); got == nil || got.Input != "id" || got.Code != "demo.nosuchitem" {
+			t.Errorf("the %s crossed as %+v, want demo.nosuchitem naming id", what, got)
+		}
+	}
+}
+
 // A handler that wrapped its empty Error in words of its own described the
 // failure, and those words are the message: view.AsError hands back the
 // Error inside, and read alone, a failure the handler said something about

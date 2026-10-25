@@ -11,9 +11,26 @@ import (
 // Code they can branch on and a Hint they can act on.
 type Error struct {
 	// Code is stable and namespaced, e.g. "pg.conn.refused".
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	Hint      string `json:"hint,omitempty"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Hint    string `json:"hint,omitempty"`
+	// Input names the declared input this error is about, by its Field.Name,
+	// when one input is the thing to change: "agent" for a grant that names
+	// none, "passphrase" for one the store refused, "url" for a request no
+	// URL parser takes. Message and Hint say it in the words of whoever reads
+	// them; this says it to whatever acts on it, which words cannot do — a
+	// form reopens on that box with the reason under it (the TUI), and an
+	// agent knows which argument to send again (MCP).
+	//
+	// About one input or none. A refusal of two that conflict, of a
+	// combination, of stored state, of the connection, of a network that did
+	// not answer, names none: there is no one box that holds the fix, and a
+	// form reopened on one of them would point at the wrong half.
+	//
+	// A name the capability does not declare names nothing: a plugin's error
+	// crosses the wire holding whatever its handler wrote, so every surface
+	// that acts on it asks plugin.Capability.ErrorInput first.
+	Input     string `json:"input,omitempty"`
 	Retryable bool   `json:"retryable,omitempty"`
 	// Refusal separates "you may not ask this" from "the work broke", and
 	// only the error's author knows which happened — by the time an error
@@ -93,6 +110,14 @@ func Refusef(code, format string, args ...any) *Error {
 func (e *Error) WithHint(hint string) *Error {
 	c := *e
 	c.Hint = hint
+	return &c
+}
+
+// WithInput returns a copy of the error naming the declared input it is about
+// (Input), or naming none for "".
+func (e *Error) WithInput(name string) *Error {
+	c := *e
+	c.Input = name
 	return &c
 }
 

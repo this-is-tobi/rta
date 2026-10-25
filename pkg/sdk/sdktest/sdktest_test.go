@@ -69,6 +69,37 @@ func TestACorrectPluginPassesEveryRule(t *testing.T) {
 	}
 }
 
+// An error names the input it is about by a name the capability declares, or
+// a host acts on nothing: the form does not reopen and an agent is not told.
+// One naming an input that is not there points at a box that is not there. A
+// warning crosses the wire as an error does, and is held to the same rule.
+func TestAnErrorNamingAnInputItDoesNotDeclareIsRejected(t *testing.T) {
+	refused := func(name string) (view.View, error) {
+		return nil, view.Errorf("demo.item.unknown", "no such item").WithInput(name)
+	}
+	warned := func(name string) (view.View, error) {
+		return view.Table{Columns: []view.Column{{Name: "name"}}, Warnings: []view.Error{
+			{Code: "demo.item.partial", Message: "one page was not read", Input: name},
+		}}, nil
+	}
+	check := func(run func(string) (view.View, error), name string) *recorder {
+		c := ok()
+		c.Run = func(context.Context, plugin.Request) (view.View, error) { return run(name) }
+		rec := &recorder{}
+		p := plugin.Plugin{Name: "demo", Summary: "demo", Capabilities: []plugin.Capability{c}}
+		checkViews(rec, drive(rec, p, noConfig(), t.TempDir(), nil), noConfig())
+		return rec
+	}
+	for what, run := range map[string]func(string) (view.View, error){"an error": refused, "a warning": warned} {
+		if rec := check(run, "item"); !strings.Contains(rec.errText(), `"item", which it does not declare`) {
+			t.Errorf("%s naming an undeclared input was accepted: %q", what, rec.errText())
+		}
+		if rec := check(run, "limit"); len(rec.errs) > 0 {
+			t.Errorf("%s naming a declared input was refused: %s", what, rec.errText())
+		}
+	}
+}
+
 // Copy names the column `c` copies from a result, and only a run can say
 // whether the column is there: Validate sees a well-formed name, and a name
 // that misses the view is a copy key that hints on the footer and never
