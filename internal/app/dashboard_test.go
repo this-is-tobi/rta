@@ -202,6 +202,33 @@ func TestDashboardRemoveTakesDownOneKeyAndNamesTheOthers(t *testing.T) {
 	}
 }
 
+// A preview says what the run would do, as `config set --dry-run` does ("would
+// set"): the dashboard's said "would have added", and hide's "would have hid".
+func TestADashboardPreviewSaysWhatItWouldDo(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := session(t, reg)
+	if _, errOut, err := run("dashboard", "add", "sys.mem"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	for args, want := range map[string]string{
+		"dashboard add sys.cpu --dry-run":           "would add sys.cpu",
+		"dashboard add sys.mem --width 2 --dry-run": "would update sys.mem",
+		"dashboard rm sys.mem --dry-run":            "would remove sys.mem",
+		"dashboard hide sys.overview --dry-run":     "would hide sys.overview",
+	} {
+		out, errOut, err := run(strings.Fields(args)...)
+		if err != nil {
+			t.Fatalf("%s: %v %q", args, err, errOut)
+		}
+		if !strings.Contains(out, want) || strings.Contains(out, "would have") {
+			t.Errorf("`rta %s` = %q, want %q", args, out, want)
+		}
+	}
+}
+
 // A read of this machine runs at the host's pace and its receipt speaks of no
 // connection: an added sys.cpu ran every thirty seconds beside sys.mem's five
 // and was promised a panel per sys connection, because its one setting is an
