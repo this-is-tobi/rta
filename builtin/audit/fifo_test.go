@@ -70,6 +70,9 @@ func TestDepsRefusesANamedPipeOverMCPAtOnce(t *testing.T) {
 		if !ok || !strings.HasSuffix(verr.Code, ".notafile") || !strings.Contains(verr.Message, "a named pipe") {
 			t.Errorf("%s: err = %v, want a notafile refusal naming the pipe", run.name, err)
 		}
+		if ok && verr.Input != "path" {
+			t.Errorf("%s: the refusal names the input %q, want path", run.name, verr.Input)
+		}
 	}
 }
 
@@ -141,6 +144,9 @@ func TestAManifestPastItsCapIsNotReadWhole(t *testing.T) {
 	_, verr := openProject(t.Context(), req(map[string]any{}).WithSurface(plugin.SurfaceMCP), big)
 	if verr == nil || verr.Code != "audit.deps.toolarge" || !strings.Contains(verr.Message, big) {
 		t.Errorf("named: err = %v, want audit.deps.toolarge naming the file", verr)
+	}
+	if verr != nil && verr.Input != "path" {
+		t.Errorf("named: the refusal names the input %q, want path", verr.Input)
 	}
 	proj, verr := openProject(t.Context(), req(map[string]any{}).WithSurface(plugin.SurfaceMCP), dir)
 	if verr != nil {

@@ -43,7 +43,8 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 	name := strings.TrimSpace(req.String("package"))
 	if name == "" {
 		return nil, view.Errorf("audit.why.nopackage", "no package named").
-			WithHint(req.Surface().ArgumentName("package") + " takes the name as the lockfile spells it, lodash say")
+			WithHint(req.Surface().ArgumentName("package") + " takes the name as the lockfile spells it, lodash say").
+			WithInput("package")
 	}
 	path := strings.TrimSpace(req.String("path"))
 	if path == "" {
@@ -58,7 +59,7 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, view.Errorf("audit.why.nopath", "no such path: %s", path).
 				WithHint("pass the directory holding the lockfile or SBOM, the file itself, " +
-					"or a repository URL")
+					"or a repository URL").WithInput("path")
 		}
 		return nil, view.Errorf("audit.why.path", "reading %s: %v", path, err)
 	}
@@ -74,7 +75,7 @@ func runWhy(ctx context.Context, req plugin.Request) (view.View, error) {
 		}
 		return nil, view.Errorf("audit.why.nomanifest", "no lockfile or SBOM in %s", remoteLabel(path)).
 			WithHint("reads what a project already declares, so one of these has to exist: " +
-				strings.Join(ecosystems, "; "))
+				strings.Join(ecosystems, "; ")).WithInput("path")
 	}
 
 	inv := read(proj.fsys, names, shown)
@@ -150,7 +151,7 @@ func matching(all []component, name string) []component {
 // that lists what it does have, as sf, the surface asking, makes it.
 func notInstalled(sf plugin.Surface, name string, inv inventory) *view.Error {
 	near := nearby(name, inv.all)
-	err := view.Errorf("audit.why.absent", "nothing in this project declares %q", name)
+	err := view.Errorf("audit.why.absent", "nothing in this project declares %q", name).WithInput("package")
 	if len(near) > 0 {
 		return err.WithHint("did you mean: " + strings.Join(near, ", "))
 	}

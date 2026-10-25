@@ -85,7 +85,7 @@ func runCheck(ctx context.Context, req plugin.Request) (view.View, error) {
 }
 
 func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View, error) {
-	product, cycle := req.String("product"), req.String("cycle")
+	product, cycle, cycleInput := req.String("product"), req.String("cycle"), "cycle"
 	// The watch list spells an entry product@cycle, and somebody who learned
 	// it there types it here too — `rta eol check postgresql@15` was "no
 	// product named postgresql@15", a dead end one character from the
@@ -98,12 +98,13 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 					plugin.Arg{Name: "product", Value: name, Positional: true},
 					plugin.Arg{Name: "cycle", Value: at, Positional: true}) + "`")
 		}
-		product, cycle = name, at
+		product, cycle, cycleInput = name, at, "product"
 	}
 	result, verr := eolapi.FetchProduct(ctx, http.DefaultClient, base, product)
 	if verr != nil {
 		if verr.Code == "eol.product.notfound" {
 			verr.Hint += " — " + req.Surface().CapabilityName("eol.products") + " searches it"
+			verr = verr.WithInput("product")
 		}
 		return nil, verr
 	}
@@ -112,11 +113,11 @@ func runCheckAt(ctx context.Context, req plugin.Request, base string) (view.View
 	if cycle != "" {
 		sel, verr := parseSelector(cycle)
 		if verr != nil {
-			return nil, verr
+			return nil, verr.WithInput(cycleInput)
 		}
 		if releases = sel.pick(releases); len(releases) == 0 {
 			return nil, view.Errorf("eol.cycle.notfound", "no release %q for %q", cycle, product).
-				WithHint("available cycles: " + cycleNames(result.Releases))
+				WithHint("available cycles: " + cycleNames(result.Releases)).WithInput(cycleInput)
 		}
 	}
 

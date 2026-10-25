@@ -59,7 +59,7 @@ func openProject(ctx context.Context, req plugin.Request, target string) (*proje
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, view.Errorf("audit.deps.nopath", "no such path: %s", target).
 				WithHint("pass the directory holding the lockfile or SBOM, the file itself, " +
-					"or a repository URL")
+					"or a repository URL").WithInput("path")
 		}
 		return nil, view.Errorf("audit.deps.path", "reading %s: %v", target, err)
 	case !info.IsDir():
@@ -110,10 +110,10 @@ func namedProject(req plugin.Request, target string) (*project, *view.Error) {
 	switch {
 	case errors.As(err, &notAFile):
 		return nil, view.Errorf("audit.deps.notafile", "%v", err).
-			WithHint("name the lockfile, requirements file or SBOM itself, or the directory holding it")
+			WithHint("name the lockfile, requirements file or SBOM itself, or the directory holding it").WithInput("path")
 	case errors.As(err, &tooLarge):
 		return nil, view.Errorf("audit.deps.toolarge", "%v, more than any lockfile or SBOM holds", err).
-			WithHint("name the manifest itself, or the directory holding it")
+			WithHint("name the manifest itself, or the directory holding it").WithInput("path")
 	case err != nil:
 		named.err = err
 	}
@@ -138,7 +138,7 @@ func namedProject(req plugin.Request, target string) (*project, *view.Error) {
 // about a file nobody read.
 func notAManifest(target string) *view.Error {
 	return view.Errorf("audit.deps.format", "%s is not a lockfile, a requirements file or an SBOM", target).
-		WithHint("the formats read are " + strings.Join(ecosystems, "; "))
+		WithHint("the formats read are " + strings.Join(ecosystems, "; ")).WithInput("path")
 }
 
 // whyUnread says why a file could not be read, without the path the sentence

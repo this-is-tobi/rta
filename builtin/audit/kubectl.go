@@ -274,7 +274,7 @@ type scope struct {
 func scopeOf(ctx context.Context, req plugin.Request) (scope, *view.Error) {
 	ns := req.String("namespace")
 	if verr := checkNamespace(ns); verr != nil {
-		return scope{}, verr
+		return scope{}, verr.WithInput("namespace")
 	}
 	if ns == "" {
 		return scope{}, nil
@@ -296,7 +296,8 @@ func scopeOf(ctx context.Context, req plugin.Request) (scope, *view.Error) {
 			where = "context " + kubeContext
 		}
 		return scope{}, view.Errorf("audit.kube.namespace.notfound", "namespace %q does not exist in %s", ns, where).
-			WithHint("check the spelling — every check would otherwise report on a namespace with nothing in it")
+			WithHint("check the spelling — every check would otherwise report on a namespace with nothing in it").
+			WithInput("namespace")
 	default:
 		return scope{}, verr
 	}

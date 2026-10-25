@@ -49,7 +49,7 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, view.Errorf("audit.deps.nopath", "no such path: %s", path).
 				WithHint("pass the directory holding the lockfile or SBOM, the file itself, " +
-					"or a repository URL")
+					"or a repository URL").WithInput("path")
 		}
 		return nil, view.Errorf("audit.deps.path", "reading %s: %v", path, err)
 	}
@@ -73,7 +73,7 @@ func runDeps(ctx context.Context, req plugin.Request) (view.View, error) {
 			hint += ". In a monorepo the manifests are a level down: try " + req.Surface().InputName("recursive")
 		}
 		return nil, view.Errorf("audit.deps.nomanifest", "no lockfile or SBOM in %s", remoteLabel(path)).
-			WithHint(hint)
+			WithHint(hint).WithInput("path")
 	}
 
 	inv := read(proj.fsys, names, shown)

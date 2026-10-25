@@ -73,9 +73,23 @@ func runProductsAt(ctx context.Context, req plugin.Request, base string) (view.V
 	}
 	if len(t.Rows) == 0 {
 		return nil, view.Errorf("eol.products.none", "nothing in the catalogue matches %q", req.String("term")).
-			WithHint(req.Surface().CapabilityName("eol.products") + " with no term lists what endoflife.date tracks")
+			WithHint(req.Surface().CapabilityName("eol.products") + " with no term lists what endoflife.date tracks").
+			WithInput(soleFilter(term, category))
 	}
 	return t, nil
+}
+
+// soleFilter is the input an empty listing is about: the one filter that
+// narrowed it, and none when both did, since either may be the one to change,
+// or when neither did and the catalogue itself came back empty.
+func soleFilter(term, category string) string {
+	switch {
+	case category == "" && term != "":
+		return "term"
+	case term == "" && category != "":
+		return "category"
+	}
+	return ""
 }
 
 // matchesTerm is a substring match over the three things a person might

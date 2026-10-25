@@ -49,11 +49,11 @@ const spfLookupLimit = 10
 func runMail(ctx context.Context, req plugin.Request) (view.View, error) {
 	domain, err := mailDomain(req.String("domain"))
 	if err != nil {
-		return nil, err
+		return nil, err.WithInput("domain")
 	}
 	selector := strings.TrimSpace(req.String("selector"))
 	if verr := checkSelector(selector); verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("selector")
 	}
 	timeout := req.Duration("timeout")
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -838,7 +838,7 @@ func requireDomain(ctx context.Context, res *stdnet.Resolver, f mailFacts) *view
 				f.surface.InputName("timeout"))
 	}
 	return view.Errorf("audit.mail.nxdomain", "%q does not exist in DNS", f.domain).
-		WithHint("check the spelling — every check would otherwise report its record as missing")
+		WithHint("check the spelling — every check would otherwise report its record as missing").WithInput("domain")
 }
 
 // notFound distinguishes an empty answer from a broken lookup.
