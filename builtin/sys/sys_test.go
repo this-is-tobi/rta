@@ -331,6 +331,17 @@ func TestPSSortValidation(t *testing.T) {
 	if ve.Code != "sys.ps.badsort" || ve.Hint == "" {
 		t.Errorf("want sys.ps.badsort with hint, got %+v", ve)
 	}
+	// It is a refusal of that one input, and names it as sys.ps declares it, so
+	// a form opens again on the box.
+	var ps plugin.Capability
+	for _, c := range Plugin().Capabilities {
+		if c.ID == "sys.ps" {
+			ps = c
+		}
+	}
+	if f, ok := ps.ErrorInput(ve); !ok || f.Name != "sort" {
+		t.Errorf("sys.ps.badsort names the input %q, want sort, which sys.ps declares", ve.Input)
+	}
 	// Empty sort defaults to cpu (handlers may be called without CLI defaults).
 	if _, err := runPS(context.Background(), plugin.NewRequest(map[string]any{"limit": 1}, false, false)); err != nil {
 		t.Errorf("empty sort should default to cpu: %v", err)

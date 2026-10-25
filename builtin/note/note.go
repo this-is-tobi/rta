@@ -312,7 +312,7 @@ func find(sf plugin.Surface, s itemstore.Store, id int) (int, *view.Error) {
 		return i, nil
 	}
 	return 0, view.Errorf("note.notfound", "no note with id %d", id).
-		WithHint(sf.CapabilityWith("note.list", "all") + " lists every note")
+		WithHint(sf.CapabilityWith("note.list", "all") + " lists every note").WithInput("id")
 }
 
 func hasAnyTag(it itemstore.Item, tags []string) bool {
@@ -656,7 +656,7 @@ func applyTags(raw []string) []string {
 func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	title := strings.TrimSpace(req.String("title"))
 	if title == "" {
-		return nil, view.Errorf("note.add.empty", "note title is empty")
+		return nil, view.Errorf("note.add.empty", "note title is empty").WithInput("title")
 	}
 	// Held across the whole load-decide-save below: two calls racing this
 	// (an ordinary pattern for pipelined MCP tool calls) can otherwise both
@@ -675,12 +675,12 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	if parent != 0 {
 		if _, ok := index(s, parent); !ok {
 			return nil, view.Errorf("note.add.badparent", "parent note %d does not exist", parent).
-				WithHint(req.Surface().CapabilityName("note.list") + " lists the notes there are")
+				WithHint(req.Surface().CapabilityName("note.list") + " lists the notes there are").WithInput("parent")
 		}
 	}
 	due, err := itemstore.ParseDue(req.String("due"), time.Now())
 	if err != nil {
-		return nil, view.Errorf("note.add.baddue", "%v", err)
+		return nil, view.Errorf("note.add.baddue", "%v", err).WithInput("due")
 	}
 	item := itemstore.Item{
 		ID: s.NextID, Title: title, Body: req.String("body"),
@@ -764,11 +764,11 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if parent != noParentChange {
 		if parent == id {
-			return nil, view.Errorf("note.edit.selfparent", "a note cannot be its own parent")
+			return nil, view.Errorf("note.edit.selfparent", "a note cannot be its own parent").WithInput("parent")
 		}
 		if parent != 0 {
 			if _, ok := index(s, parent); !ok {
-				return nil, view.Errorf("note.edit.badparent", "parent note %d does not exist", parent)
+				return nil, view.Errorf("note.edit.badparent", "parent note %d does not exist", parent).WithInput("parent")
 			}
 		}
 		// Nor under one of its own sub-notes, however far down: the two
@@ -781,7 +781,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 				"note %d is under note %d, so note %d cannot go under it", parent, id, id).
 				WithHint("move note " + strconv.Itoa(parent) + " out first — `" +
 					sf.Call("note.edit", idArg(parent), plugin.Arg{Name: "parent", Value: 0}) +
-					"` puts it at the top")
+					"` puts it at the top").WithInput("parent")
 		}
 	}
 	var due *time.Time
@@ -791,7 +791,7 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	} else if rawDue != "" {
 		due, err = itemstore.ParseDue(rawDue, time.Now())
 		if err != nil {
-			return nil, view.Errorf("note.edit.baddue", "%v", err)
+			return nil, view.Errorf("note.edit.baddue", "%v", err).WithInput("due")
 		}
 		dueChanged = true
 	}
@@ -839,7 +839,7 @@ func namedIDs(sf plugin.Surface, req plugin.Request) ([]int, *view.Error) {
 				hint = "several ids are separate arguments, not one joined: `" +
 					sf.Call("note.done", plugin.Arg{Name: "id", Value: []string{"1", "2"}, Positional: true}) + "`"
 			}
-			return nil, view.Errorf("note.id.invalid", "%q is not a note id", raw).WithHint(hint)
+			return nil, view.Errorf("note.id.invalid", "%q is not a note id", raw).WithHint(hint).WithInput("id")
 		}
 		if !seen[n] {
 			seen[n] = true
@@ -848,7 +848,8 @@ func namedIDs(sf plugin.Surface, req plugin.Request) ([]int, *view.Error) {
 	}
 	if len(ids) == 0 {
 		return nil, view.Errorf("note.id.none", "no note id given").
-			WithHint("name the note, or several: " + sf.Call("note.done", plugin.Arg{Name: "id", Value: []string{"3", "4"}, Positional: true}))
+			WithHint("name the note, or several: " + sf.Call("note.done", plugin.Arg{Name: "id", Value: []string{"3", "4"}, Positional: true})).
+			WithInput("id")
 	}
 	return ids, nil
 }

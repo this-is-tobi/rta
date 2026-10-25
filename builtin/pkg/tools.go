@@ -52,7 +52,8 @@ type tool struct {
 func parseTools(raw []string) ([]tool, *view.Error) {
 	if len(raw) > maxTools {
 		return nil, view.Errorf("pkg.tools.toomany", "%d tools listed; the cap is %d", len(raw), maxTools).
-			WithHint("each one is a request to github.com on a refresh, and github.com answers a few at a time")
+			WithHint("each one is a request to github.com on a refresh, and github.com answers a few at a time").
+			WithInput("tools")
 	}
 	var out []tool
 	for _, entry := range raw {
@@ -82,7 +83,8 @@ func validName(s string) bool { return nameRe.MatchString(s) && !strings.HasPref
 
 func badTool(entry string) *view.Error {
 	return view.Errorf("pkg.tools.entry", "%q is not bin=github:owner/repo", entry).
-		WithHint("write the list under `plugins: pkg: tools:` as `- kubectl-neat=github:itaysk/kubectl-neat`")
+		WithHint("write the list under `plugins: pkg: tools:` as `- kubectl-neat=github:itaysk/kubectl-neat`").
+		WithInput("tools")
 }
 
 func toolsCapability() plugin.Capability {
