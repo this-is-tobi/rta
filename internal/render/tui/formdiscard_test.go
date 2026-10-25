@@ -202,8 +202,14 @@ func TestAFormThatRebuildsItselfStillRemembersWhatWasTyped(t *testing.T) {
 	if second.form == nil || !second.form.final {
 		t.Fatalf("enter did not open the second page (form %v)", second.form != nil)
 	}
-	if asked := press(t, second, "esc"); asked.dialog == nil {
-		t.Error("esc on the second page forgot that a key was typed on the first")
+	// esc on the second page goes back to the first (backToStageOne), and
+	// leaving the form from there still knows the key was typed.
+	back := press(t, second, "esc")
+	if back.form == nil || back.form.final {
+		t.Fatalf("esc on the second page did not go back to the first (form %v)", back.form != nil)
+	}
+	if asked := press(t, back, "esc"); asked.dialog == nil {
+		t.Error("esc on the first page, come back to, forgot that a key was typed on it")
 	}
 }
 

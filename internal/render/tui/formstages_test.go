@@ -103,3 +103,65 @@ func TestTheSecondStageNeverRepeatsASecretTheFirstAsked(t *testing.T) {
 		t.Errorf("stage two head = %q, want the key still named", head)
 	}
 }
+
+// esc on the second stage closed the whole form, so somebody who typed the wrong
+// key had to start again from the dashboard. It goes back to the first stage with
+// the key in its box, and the bar says so.
+func TestEscOnTheSecondStageGoesBackToTheFirst(t *testing.T) {
+	m := stageOne(t, stagedCap(plugin.Field{Name: "key", Type: plugin.String, Positional: true, Required: true}))
+	second := pressEnter(t, typed(t, m, "mykey"))
+	if bar := plain(second.footerFor(modeForm)); !strings.Contains(bar, "esc back") {
+		t.Errorf("stage two bar = %q, want esc to say back", bar)
+	}
+	first := press(t, second, "esc")
+	if first.dialog != nil || first.form == nil || first.mode != modeForm || first.form.final {
+		t.Fatalf("esc on an untouched second stage: dialog %v, form %v, mode %v; want the first stage",
+			first.dialog != nil, first.form != nil, first.mode)
+	}
+	if got := boxText(first, "key"); got != "mykey" {
+		t.Errorf("the first stage's box reads %q, want the key it was answered", got)
+	}
+	if bar := plain(first.footerFor(modeForm)); !strings.Contains(bar, "esc cancel") {
+		t.Errorf("stage one bar = %q, want esc to say cancel again", bar)
+	}
+	// The key was typed, so leaving the first stage now asks, as it would have.
+	if asked := press(t, first, "esc"); asked.dialog == nil || asked.dialog.id != dialogDiscardForm {
+		t.Errorf("esc on the first stage after coming back asked %v, want the discard question", asked.dialog)
+	}
+}
+
+func TestEscOnASecondStageTypedInAsksBeforeGoingBack(t *testing.T) {
+	m := stageOne(t, stagedCap(plugin.Field{Name: "key", Type: plugin.String, Positional: true, Required: true}))
+	second := strike(pressEnter(t, typed(t, m, "mykey")), "x")
+	asked := press(t, second, "esc")
+	if asked.dialog == nil || asked.dialog.id != dialogDiscardStep {
+		t.Fatalf("esc on a second stage typed in asked %v, want the step question", asked.dialog)
+	}
+	if kept := press(t, asked, "n"); kept.form == nil || !kept.form.final {
+		t.Errorf("keep editing left the second stage")
+	}
+	back := press(t, asked, "y")
+	if back.form == nil || back.form.final || boxText(back, "key") != "mykey" {
+		t.Errorf("discard did not go back to the first stage with its key")
+	}
+}
+
+// A secret is the one answer that never reseeds a form: going back asks it again.
+func TestGoingBackDoesNotPutASecretBackInItsBox(t *testing.T) {
+	m := stageOne(t, stagedCap(
+		plugin.Field{Name: "key", Type: plugin.String, Positional: true, Required: true},
+		plugin.Field{Name: "pass", Type: plugin.Secret, Positional: true, Required: true},
+	))
+	m = pressEnter(t, typed(t, m, "mykey"))
+	second := pressEnter(t, typed(t, m, "hunter2"))
+	first := press(t, second, "esc")
+	if first.form == nil || first.form.final {
+		t.Fatal("esc did not go back to the first stage")
+	}
+	if got := boxText(first, "key"); got != "mykey" {
+		t.Errorf("key box = %q, want mykey", got)
+	}
+	if got := boxText(first, "pass"); got != "" {
+		t.Errorf("the secret came back in its box: %q", got)
+	}
+}

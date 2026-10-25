@@ -51,6 +51,7 @@ type dialogID int
 const (
 	dialogLockStore dialogID = iota + 1
 	dialogDiscardForm
+	dialogDiscardStep
 )
 
 const (
@@ -112,6 +113,8 @@ func (m Model) answerDialog(yes bool) (tea.Model, tea.Cmd) {
 		return m.lockStoreAnswer(yes)
 	case dialogDiscardForm:
 		return m.discardFormAnswer(yes)
+	case dialogDiscardStep:
+		return m.discardStepAnswer(yes)
 	}
 	return m, nil
 }
@@ -287,6 +290,21 @@ func lockStoreDialog(left time.Duration) dialog {
 // lock, discarding is not the direction that narrows what is open. The sentence
 // says what the key does and not what it costs, since the cost is whatever was
 // typed and is on the screen behind the question.
+// discardStepDialog is discardFormDialog for esc on the second stage of a form
+// that asks in two, which goes back to the first rather than closing: the
+// question is the same and so is its answer, and only where it leads differs.
+func discardStepDialog() dialog {
+	return dialog{
+		id:    dialogDiscardStep,
+		title: "Discard what you typed?",
+		body: "Going back to the first step forgets what you entered on this one, and nothing is run " +
+			"or saved. Keep editing returns to the form as you left it.",
+		confirm: "Discard",
+		cancel:  "Keep editing",
+		focus:   focusCancel,
+	}
+}
+
 func discardFormDialog() dialog {
 	return dialog{
 		id:    dialogDiscardForm,
@@ -316,6 +334,16 @@ func (m Model) discardFormAnswer(yes bool) (tea.Model, tea.Cmd) {
 		return m.closeForm()
 	}
 	return m, nil
+}
+
+// discardStepAnswer is what a yes does on the second stage of a form that asks
+// in two: back to the first, as esc does where nothing was typed. A form that
+// is gone or is no second stage any more has nothing to go back from.
+func (m Model) discardStepAnswer(yes bool) (tea.Model, tea.Cmd) {
+	if !yes || m.form == nil || m.mode != modeForm || m.form.firstStage == nil {
+		return m, nil
+	}
+	return m.backToStageOne()
 }
 
 // lockStoreAnswer is what a yes or a no does to the store.
