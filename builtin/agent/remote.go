@@ -217,7 +217,7 @@ func findRemote(cl operatorid.ConsentList, server, id string) (consent.Request, 
 			WithHint("something rewrote it after rta parked it — whatever can write that server's " +
 				"data directory is the thing to look at")
 	}
-	e := view.Errorf("agent.request.unknown", "no request %q is waiting on %s", id, server)
+	e := view.Errorf("agent.request.unknown", "no request %q is waiting on %s", id, server).WithInput("id")
 	if len(cl.Waiting) == 0 {
 		return consent.Request{}, e.WithHint("nothing is waiting there — a parked call expires on its own, and the agent is told")
 	}

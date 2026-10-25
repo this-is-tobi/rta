@@ -2,11 +2,14 @@ package pathin
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -62,4 +65,28 @@ func TestOpenRefusesADirectoryOffTheCLI(t *testing.T) {
 // a handler.
 func on(sf plugin.Surface) plugin.Request {
 	return plugin.NewRequest(nil, false, false).WithSurface(sf)
+}
+
+// The path is what is wrong when nothing is there, something other than a file
+// is, or a file larger than the call reads, and a refusal names its input; a
+// file that is there and cannot be read is not, and names none.
+func TestOnlyAWrongPathNamesItsInput(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want string
+	}{
+		{&os.PathError{Op: "open", Path: "/x", Err: syscall.ENOENT}, "file"},
+		{&os.PathError{Op: "open", Path: "/x/y", Err: syscall.ENOTDIR}, "file"},
+		{&os.PathError{Op: "read", Path: "/x", Err: syscall.EISDIR}, "file"},
+		{&NotAFileError{Path: "/x", Mode: fs.ModeNamedPipe}, "file"},
+		{&TooLargeError{Path: "/x", Max: 1}, "file"},
+		{&os.PathError{Op: "read", Path: "/x", Err: atomicfile.ErrNotRegular}, "file"},
+		{&os.PathError{Op: "open", Path: "/x", Err: syscall.EACCES}, ""},
+		{&os.PathError{Op: "read", Path: "/x", Err: syscall.EIO}, ""},
+		{errors.New("no path in it"), ""},
+	} {
+		if got := Input("file", c.err); got != c.want {
+			t.Errorf("Input(file, %v) = %q, want %q", c.err, got, c.want)
+		}
+	}
 }

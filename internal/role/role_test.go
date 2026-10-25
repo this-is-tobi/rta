@@ -77,8 +77,8 @@ func TestRolesComeFromBothFilesAndSayWhich(t *testing.T) {
 	if verr != nil || len(dev.Role.Grants) != 2 {
 		t.Fatalf("Find(dev) = %+v, %v", dev, verr)
 	}
-	if _, verr := Find("nope"); verr == nil || verr.Code != "role.unknown" {
-		t.Fatalf("Find(nope) = %v", verr)
+	if _, verr := Find("nope"); verr == nil || verr.Code != "role.unknown" || verr.Input != "role" {
+		t.Fatalf("Find(nope) = %v, want role.unknown naming the role input", verr)
 	}
 }
 

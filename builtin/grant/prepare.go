@@ -51,7 +51,7 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 	if target == "" {
 		return core.Grant{}, notes, view.Errorf("grant.notarget", "name what to allow").
 			WithHint("for example `" + sf.Call("grant.allow", plugin.Arg{Name: "target", Value: "kv.get", Positional: true},
-				plugin.Arg{Name: "scope", Value: "db-password", Positional: true}, plugin.Arg{Name: "ttl", Value: "15m"}) + "`")
+				plugin.Arg{Name: "scope", Value: "db-password", Positional: true}, plugin.Arg{Name: "ttl", Value: "15m"}) + "`").WithInput("target")
 	}
 	// A grant that authorizes nothing is worse than an error: `grant list`
 	// shows it looking exactly like a working one, so a typo — kv.gett for
@@ -63,7 +63,7 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 			hint += "; " + more
 		}
 		return core.Grant{}, notes, view.Errorf("grant.unknowntarget", "%q does not name a registered capability or plugin", target).
-			WithHint(hint)
+			WithHint(hint).WithInput("target")
 	}
 	if verr := grantNeeded(sf, catalog, target, spec.Profile); verr != nil {
 		return core.Grant{}, notes, verr
@@ -97,7 +97,7 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 		return core.Grant{}, notes, verr
 	}
 	if verr := core.CheckScope(scope); verr != nil {
-		return core.Grant{}, notes, verr
+		return core.Grant{}, notes, verr.WithInput("scope")
 	}
 	// A scope only ever narrows a grant by matching the record a call names
 	// through the capability's own Scope field. If nothing under target
@@ -109,7 +109,7 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 	if scope != "" && !scopable(catalog, target) {
 		return core.Grant{}, notes, view.Errorf("grant.scope.unscoped",
 			"%s has no scoped input — every capability it reaches takes no record, so a scope here would never match a call", target).
-			WithHint("leave " + sf.ArgumentName("scope") + " out to grant the whole target")
+			WithHint("leave " + sf.ArgumentName("scope") + " out to grant the whole target").WithInput("scope")
 	}
 	// Named, never inferred here. `rta grant allow` resolves an omitted
 	// --agent from this machine's own known agents before it builds a spec
@@ -122,10 +122,10 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 		return core.Grant{}, notes, view.Errorf("grant.noagent",
 			"name the agent this is for, with %s", sf.InputName("agent")).
 			WithHint("the name is the one from `rta mcp serve --as`, which " +
-				"`rta mcp install <client>` sets to the client's name")
+				"`rta mcp install <client>` sets to the client's name").WithInput("agent")
 	}
 	if verr := core.CheckAgent(agent); verr != nil {
-		return core.Grant{}, notes, verr
+		return core.Grant{}, notes, verr.WithInput("agent")
 	}
 	now := time.Now()
 	return core.Grant{
@@ -159,7 +159,7 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 func checkMaxUses(sf plugin.Surface, n int) *view.Error {
 	if n < 0 {
 		return view.Errorf("grant.badmaxuses", "%s cannot be negative", sf.InputName("max-uses")).
-			WithHint("0 means unlimited within the TTL, which is also the default")
+			WithHint("0 means unlimited within the TTL, which is also the default").WithInput("max-uses")
 	}
 	return nil
 }
@@ -437,7 +437,7 @@ func givenRecord(sf plugin.Surface, scope string) *view.Error {
 	}
 	return view.Errorf("grant.scope.blank", "%s is %q, only white space, which names no record",
 		sf.ArgumentName("scope"), scope).
-		WithHint("name the record, or leave " + sf.ArgumentName("scope") + " out to mean every record")
+		WithHint("name the record, or leave " + sf.ArgumentName("scope") + " out to mean every record").WithInput("scope")
 }
 
 // exactField is the switch that makes revoke's and renew's selectors name
@@ -525,7 +525,7 @@ func (s selector) check(sf plugin.Surface) *view.Error {
 	if s.target == "" {
 		return view.Errorf("grant.exact.target", "%s names one grant, and a grant names what it allows — give %s",
 			sf.InputName("exact"), sf.ArgumentName("target")).
-			WithHint(sf.CapabilityName("grant.list") + " shows the grants, one row each")
+			WithHint(sf.CapabilityName("grant.list") + " shows the grants, one row each").WithInput("target")
 	}
 	return nil
 }
@@ -692,7 +692,7 @@ func unknownRevokeTarget(sf plugin.Surface, server string, catalog func() []plug
 		hint = "did you mean " + nearest + "? `" + sf.Call("grant.revoke", args...) + "` takes it back; " + hint
 	}
 	return view.Errorf("grant.unknowntarget", "%q does not name a registered capability or plugin, and no grant is held under it", spec.Target).
-		WithHint(hint)
+		WithHint(hint).WithInput("target")
 }
 
 // holdsUnder reports whether an active grant names target, or lies inside it
@@ -875,9 +875,11 @@ func grantNeeded(sf plugin.Surface, catalog func() []plugin.Capability, target, 
 	// "agents can already call it" is true only of a call that names no
 	// profile — and a grant that names one is the one somebody who reached
 	// this refusal with a service's name in hand was after.
-	until := ""
+	// And a read's refusal is answered on the box that would have made it one:
+	// the profile, when the target takes one, and otherwise the target itself.
+	until, fix := "", "target"
 	if takesProfile {
-		until = " " + plugin.UntilAProfile
+		until, fix = " "+plugin.UntilAProfile, "profile"
 		hint += "; a call that names a connection needs one: `" + sf.Call("grant.allow",
 			plugin.Arg{Name: "target", Value: target, Positional: true}, plugin.Arg{Name: "profile", Value: "<name>"}) + "`"
 	}
@@ -885,19 +887,19 @@ func grantNeeded(sf plugin.Surface, catalog func() []plugin.Capability, target, 
 	case human == len(caps) && len(caps) == 1:
 		return view.Errorf("grant.needless",
 			"%s is never a tool — only the person at the terminal runs it, so no call could spend a grant on it", target).
-			WithHint(hint)
+			WithHint(hint).WithInput("target")
 	case human == len(caps):
 		return view.Errorf("grant.needless",
 			"%s has nothing an agent can call — everything in it is for the person at the terminal", target).
-			WithHint(hint)
+			WithHint(hint).WithInput("target")
 	case len(caps) == 1:
 		return view.Errorf("grant.needless",
 			"%s needs no grant — it is a read, and agents can already call it%s", target, until).
-			WithHint(hint)
+			WithHint(hint).WithInput(fix)
 	default:
 		return view.Errorf("grant.needless",
 			"%s needs no grant — everything in it is a read, and agents can already call those%s", target, until).
-			WithHint(hint)
+			WithHint(hint).WithInput(fix)
 	}
 }
 

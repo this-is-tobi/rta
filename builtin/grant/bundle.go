@@ -99,7 +99,7 @@ func bundleClass(raw string) (plugin.Safety, *view.Error) {
 		return c, nil
 	}
 	return "", view.Errorf("grant.issue.safety", "%q is not a class a bundle can reach", raw).
-		WithHint("read, write or destructive — each takes in the ones before it, and read is the default")
+		WithHint("read, write or destructive — each takes in the ones before it, and read is the default").WithInput("safety")
 }
 
 // classWords is what a class reaches, as a sentence says it.
@@ -174,12 +174,12 @@ func expandEnvironment(sf plugin.Surface, catalog func() []plugin.Capability, en
 		held := connectionsIn(p, name)
 		if !slices.Contains(held, env) {
 			return b, view.Errorf("grant.unknowninstance", "profile %q has no connection called %q", name, instance).
-				WithHint("it has: " + strings.Join(held, ", "))
+				WithHint("it has: " + strings.Join(held, ", ")).WithInput("profile")
 		}
 		return b, view.Errorf("grant.issue.instance", "%q is one connection of %s, and a bundle covers every connection in it", env, name).
 			WithHint("name the environment, `" + name + "`; one connection is a grant of its own: `" +
 				sf.Call("grant.allow", plugin.Arg{Name: "target", Value: "<capability>", Positional: true},
-					plugin.Arg{Name: "profile", Value: env}) + "`")
+					plugin.Arg{Name: "profile", Value: env}) + "`").WithInput("profile")
 	}
 	ceiling, verr := core.Ceiling()
 	if verr != nil {
@@ -339,7 +339,7 @@ func (b environmentBundle) nothingToIssue(sf plugin.Surface) *view.Error {
 	for _, c := range bundleClasses[classRank(b.class)+1:] {
 		if len(b.wider[c]) > 0 {
 			return view.Errorf("grant.issue.empty", "%s has nothing to issue among %s", b.name, classWords(b.class)).
-				WithHint(ask(sf, c) + " takes in " + format.Count(len(b.wider[c]), "capability", "capabilities") + " more")
+				WithHint(ask(sf, c) + " takes in " + format.Count(len(b.wider[c]), "capability", "capabilities") + " more").WithInput("safety")
 		}
 	}
 	return view.Errorf("grant.issue.empty", "everything %s's plugins offer is for the person at the terminal, or takes no profile, so no grant on a connection covers it",

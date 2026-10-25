@@ -48,7 +48,7 @@ func requestNamed(req plugin.Request, target string) (string, *view.Error) {
 	sf := req.Surface()
 	if server := strings.TrimSpace(req.String("server")); server != "" {
 		return "", view.Errorf("agent.request.unnamed", "name the request parked on %s", server).
-			WithHint(sf.CapabilityName("agent.pending") + " with the server lists them")
+			WithHint(sf.CapabilityName("agent.pending") + " with the server lists them").WithInput("id")
 	}
 	q, err := consent.Scan()
 	if err != nil {
@@ -62,7 +62,7 @@ func requestNamed(req plugin.Request, target string) (string, *view.Error) {
 				"%s is waiting, and nothing here would show it to you before it is allowed, so name it",
 				callNamed(only.Cap, only.Scopes)).
 				WithHint("`" + sf.Call(target, plugin.Arg{Name: "id", Value: only.ID, Positional: true}) +
-					"` allows it; at a terminal `" + sf.Call(target) + "` alone shows the call and asks")
+					"` allows it; at a terminal `" + sf.Call(target) + "` alone shows the call and asks").WithInput("id")
 		}
 		return only.ID, nil
 	case 0:
@@ -85,7 +85,7 @@ func requestNamed(req plugin.Request, target string) (string, *view.Error) {
 	}
 	return "", view.Errorf("agent.request.several", "%d calls are waiting, so say which:\n%s",
 		len(waiting), strings.Join(lines, "\n")).
-		WithHint("`" + sf.Call(target, plugin.Arg{Name: "id", Value: "<id>", Positional: true}) + "`")
+		WithHint("`" + sf.Call(target, plugin.Arg{Name: "id", Value: "<id>", Positional: true}) + "`").WithInput("id")
 }
 
 // atTerminal reports whether a person can be asked something: the command line,

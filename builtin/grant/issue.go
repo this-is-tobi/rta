@@ -400,14 +400,14 @@ func bundleFlagRefusal(sf plugin.Surface, src role.Source, name string) *view.Er
 		return view.Errorf("grant.issue.bundleflag", "%s is for an environment: a role names its capabilities itself, so there is no class for it to pick",
 			sf.InputName(name)).
 			WithHint("`" + sf.Call("grant.issue", plugin.Arg{Name: "profile", Value: "<env>"}, plugin.Arg{Name: "safety", Value: "write"}) +
-				"` issues an environment's capabilities of that class")
+				"` issues an environment's capabilities of that class").WithInput(name)
 	}
 	stem := "<capability>"
 	if lines, err := src.Lines(); err == nil {
 		stem = strings.TrimSpace(lines[0].Target + " " + lines[0].Scope)
 	}
 	return view.Errorf("grant.issue.bundleflag", "%s is for an environment: a role's lines carry their own", sf.InputName(name)).
-		WithHint("write it on the role's line, `" + stem + " --" + name + " …`, or give " + sf.InputName("profile") + " instead of the role")
+		WithHint("write it on the role's line, `" + stem + " --" + name + " …`, or give " + sf.InputName("profile") + " instead of the role").WithInput(name)
 }
 
 func planEnvironment(req plugin.Request, catalog func() []plugin.Capability, env string) (issuance, *view.Error) {
@@ -418,7 +418,7 @@ func planEnvironment(req plugin.Request, catalog func() []plugin.Capability, env
 	}
 	agent, verr := resolveAgent(sf, req.String("agent"))
 	if verr != nil {
-		return issuance{}, verr
+		return issuance{}, verr.WithInput("agent")
 	}
 	// The day a role's own default is: the command is the same one line for a
 	// day's work, and the ceiling caps it as it caps a role.
@@ -429,7 +429,7 @@ func planEnvironment(req plugin.Request, catalog func() []plugin.Capability, env
 	window, err := format.ParseDuration(ttl)
 	if err != nil || window <= 0 {
 		return issuance{}, view.Errorf("grant.issue.ttl", "%q is not a duration the grants can stand for", ttl).
-			WithHint("4h, 12h — the most a grant can last is 24h")
+			WithHint("4h, 12h — the most a grant can last is 24h").WithInput("ttl")
 	}
 	run := bundleRun{agent: agent, window: window, maxUses: req.Int("max-uses"), rate: strings.TrimSpace(req.String("rate"))}
 	if verr := checkShared(sf, run); verr != nil {
@@ -452,7 +452,7 @@ func planEnvironment(req plugin.Request, catalog func() []plugin.Capability, env
 // went looking for a line that is not in any role or config.
 func checkShared(sf plugin.Surface, run bundleRun) *view.Error {
 	if verr := core.CheckAgent(run.agent); verr != nil {
-		return verr
+		return verr.WithInput("agent")
 	}
 	if verr := checkMaxUses(sf, run.maxUses); verr != nil {
 		return verr

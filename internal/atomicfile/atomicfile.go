@@ -75,9 +75,9 @@ func ReadCapped(path string, max int) ([]byte, error) {
 	return data, nil
 }
 
-// errNotRegular is the refusal of a path that names something other than a
-// regular file.
-var errNotRegular = errors.New("is not a regular file")
+// ErrNotRegular is the refusal of a path that names something other than a
+// regular file, wrapped in the *fs.PathError that names the path.
+var ErrNotRegular = errors.New("is not a regular file")
 
 // openRegular opens path to read, if it names a regular file, and never waits
 // for one that does not.
@@ -106,7 +106,7 @@ func openRegular(path string) (*os.File, error) {
 	}
 	if !info.Mode().IsRegular() {
 		_ = f.Close()
-		return nil, &fs.PathError{Op: "read", Path: path, Err: errNotRegular}
+		return nil, &fs.PathError{Op: "read", Path: path, Err: ErrNotRegular}
 	}
 	return f, nil
 }
@@ -138,7 +138,7 @@ func OpenAppend(path string, perm fs.FileMode) (*os.File, error) {
 	}
 	info, err := f.Stat()
 	if err == nil && !info.Mode().IsRegular() {
-		err = &fs.PathError{Op: "append", Path: path, Err: errNotRegular}
+		err = &fs.PathError{Op: "append", Path: path, Err: ErrNotRegular}
 	}
 	if err != nil {
 		cerr := f.Close()
