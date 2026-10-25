@@ -109,7 +109,7 @@ func runSend(ctx context.Context, req plugin.Request) (view.View, error) {
 	if strings.TrimSpace(data) == "" {
 		return nil, view.Errorf("net.send.nodata", "nothing to send").
 			WithHint("give it in " + req.Surface().InputName("data") + ", or use " +
-				req.Surface().CapabilityName("net.probe") + " to listen without speaking")
+				req.Surface().CapabilityName("net.probe") + " to listen without speaking").WithInput("data")
 	}
 	// A dry run must not reach the network — the same rule http.post learned
 	// the hard way, and this capability is the one with the
@@ -129,7 +129,7 @@ func runSend(ctx context.Context, req plugin.Request) (view.View, error) {
 		port := req.Int("port")
 		if port < 1 || port > 65535 {
 			return nil, view.Errorf("net.probe.badport", "port %d is out of range", port).
-				WithHint("use a port between 1 and 65535")
+				WithHint("use a port between 1 and 65535").WithInput("port")
 		}
 		payload := unescape(data)
 		over := ""
@@ -174,12 +174,23 @@ func resolveFailed(code string, sf plugin.Surface, host string, err error) *view
 			" directly, and says whether the name or the lookup is what failed")
 }
 
+// namingHost is verr naming the host input when err is the resolver's answer
+// that the name does not exist, which is what a mistyped host gets. A resolver
+// that did not answer, or answered with a failure of its own, names none: the
+// host may be right, and the network is what failed.
+func namingHost(verr *view.Error, err error) *view.Error {
+	if !isNotFound(err) {
+		return verr
+	}
+	return verr.WithInput("host")
+}
+
 func probe(ctx context.Context, req plugin.Request, send string) (view.View, error) {
 	host := req.String("host")
 	port := req.Int("port")
 	if port < 1 || port > 65535 {
 		return nil, view.Errorf("net.probe.badport", "port %d is out of range", port).
-			WithHint("use a port between 1 and 65535")
+			WithHint("use a port between 1 and 65535").WithInput("port")
 	}
 	timeout := max(req.Duration("timeout"), time.Second)
 	wait := max(req.Duration("wait"), time.Second)
@@ -188,8 +199,8 @@ func probe(ctx context.Context, req plugin.Request, send string) (view.View, err
 	start := time.Now()
 	conn, err := (&stdnet.Dialer{Timeout: timeout}).DialContext(ctx, "tcp", address)
 	if err != nil {
-		return nil, view.Errorf("net.probe.unreachable", "connecting to %s: %v", address, err).
-			WithHint(dialHint(req.Surface(), host, err))
+		return nil, namingHost(view.Errorf("net.probe.unreachable", "connecting to %s: %v", address, err).
+			WithHint(dialHint(req.Surface(), host, err)), err)
 	}
 	defer func() { _ = conn.Close() }()
 	connected := time.Since(start)

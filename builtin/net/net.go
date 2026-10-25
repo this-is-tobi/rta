@@ -394,7 +394,7 @@ func runPing(ctx context.Context, req plugin.Request) (view.View, error) {
 	host := req.String("host")
 	pinger, err := probing.NewPinger(host)
 	if err != nil {
-		return nil, resolveFailed("net.ping.resolve", req.Surface(), host, err)
+		return nil, namingHost(resolveFailed("net.ping.resolve", req.Surface(), host, err), err)
 	}
 	pinger.Count = req.Int("count")
 	pinger.Timeout = req.Duration("timeout")
@@ -553,7 +553,7 @@ func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 	name := req.String("name")
 	if name != strings.TrimSpace(name) {
 		return nil, view.Errorf("net.dns.badname", "%q has white space around it, which no name or address has", name).
-			WithHint("give the name as it is written, with nothing around it")
+			WithHint("give the name as it is written, with nothing around it").WithInput("name")
 	}
 	rtype := strings.ToUpper(strings.TrimSpace(req.String("type")))
 	if rtype == "" {
@@ -583,7 +583,7 @@ func runDNS(ctx context.Context, req plugin.Request) (view.View, error) {
 			// An unknown type is a usage error whatever else happens.
 			var ve *view.Error
 			if errors.As(err, &ve) {
-				return nil, ve
+				return nil, ve.WithInput("type")
 			}
 			lastErr = err
 			failures[rt] = err
@@ -749,14 +749,14 @@ func runPort(ctx context.Context, req plugin.Request) (view.View, error) {
 	if errors.Is(err, errTooManyPorts) {
 		return nil, view.Errorf("net.port.toomany", "%v", err).
 			WithHint(fmt.Sprintf("scan up to %d ports at a time — this is a diagnostic, and a "+
-				"full sweep is nmap's job", maxScanPorts))
+				"full sweep is nmap's job", maxScanPorts)).WithInput("ports")
 	}
 	if err != nil {
 		return nil, view.Errorf("net.port.badspec", "%v", err).
-			WithHint(req.Surface().InputName("ports") + " takes a list such as 22,80,8000-8010")
+			WithHint(req.Surface().InputName("ports") + " takes a list such as 22,80,8000-8010").WithInput("ports")
 	}
 	if len(ports) == 0 {
-		return nil, view.Errorf("net.port.empty", "no ports to scan")
+		return nil, view.Errorf("net.port.empty", "no ports to scan").WithInput("ports")
 	}
 	timeout := req.Duration("timeout")
 
@@ -824,7 +824,7 @@ feed:
 	if unresolved != nil {
 		var dnsErr *stdnet.DNSError
 		errors.As(unresolved, &dnsErr)
-		return nil, resolveFailed("net.port.resolve", req.Surface(), host, dnsErr)
+		return nil, namingHost(resolveFailed("net.port.resolve", req.Surface(), host, dnsErr), dnsErr)
 	}
 
 	t := view.Table{Columns: []view.Column{

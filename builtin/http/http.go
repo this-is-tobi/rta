@@ -248,7 +248,7 @@ func requestFailed(sf plugin.Surface, method, url string, err error) *view.Error
 	// Nothing was sent: the transport refused the URL's scheme before it
 	// dialled, which reachability and a longer deadline cannot change.
 	if strings.Contains(err.Error(), "unsupported protocol scheme") {
-		return verr.WithHint("this client speaks http and https; write the URL with one of them")
+		return verr.WithHint("this client speaks http and https; write the URL with one of them").WithInput("url")
 	}
 	// The server answered, in plain http, to a request that spoke TLS: it was
 	// reached, so reachability is not the question, and the scheme is the fix. A
@@ -259,7 +259,7 @@ func requestFailed(sf plugin.Surface, method, url string, err error) *view.Error
 		if parsed, perr := neturl.Parse(url); perr == nil && parsed.Host != "" {
 			hint = "the server answered in plain http; write the URL as http://" + parsed.Host + parsed.RequestURI()
 		}
-		return verr.WithHint(hint)
+		return verr.WithHint(hint).WithInput("url")
 	}
 	// The handshake got an answer, and the certificate in it did not pass: the
 	// host is reachable and a longer deadline would change nothing. This client
@@ -283,6 +283,15 @@ func requestFailed(sf plugin.Surface, method, url string, err error) *view.Error
 		if parsed, perr := neturl.Parse(url); perr == nil && parsed.Hostname() != "" {
 			hint += " — `" + sf.Call("net.dns", plugin.Arg{Name: "name", Value: parsed.Hostname(), Positional: true}) +
 				"` asks the resolver for it directly"
+			// The URL is the input to change only when the resolver answered that
+			// its host does not exist, which is what a mistyped name gets. A
+			// resolver that did not answer names none, since the URL may be right
+			// and the network is what failed; and nor does a name that is not the
+			// URL's, which the proxy the environment names can be, looked up on
+			// the way to the host.
+			if dnsErr.IsNotFound && strings.EqualFold(dnsErr.Name, parsed.Hostname()) {
+				verr = verr.WithInput("url")
+			}
 		}
 		return verr.WithHint(hint)
 	}
@@ -372,15 +381,16 @@ func credential(req plugin.Request, name string) (string, *view.Error) {
 	var tooLarge *pathin.TooLargeError
 	switch {
 	case errors.As(err, &tooLarge):
-		return "", view.Errorf("http.auth.file", "%s is more than a %s holds", file, name)
+		return "", view.Errorf("http.auth.file", "%s is more than a %s holds", file, name).WithInput(name + "-file")
 	case err != nil:
-		return "", pipeSpelling(view.Errorf("http.auth.file", "reading the %s from %s: %v", name, file, err), file)
+		return "", pipeSpelling(view.Errorf("http.auth.file", "reading the %s from %s: %v", name, file, err).
+			WithInput(pathin.Input(name+"-file", err)), file)
 	}
 	if got := strings.TrimRight(string(data), "\r\n"); got != "" {
 		return got, nil
 	}
 	return "", view.Errorf("http.auth.file", "%s holds no %s", file, name).
-		WithHint("an empty file, or nothing was piped to it")
+		WithHint("an empty file, or nothing was piped to it").WithInput(name + "-file")
 }
 
 // setCredential puts the credential under name on r, in the header it is sent
@@ -428,7 +438,7 @@ func curlFileForm(req plugin.Request, data string) *view.Error {
 		return nil
 	}
 	return view.Errorf("http.data.atfile", "the body %q is how curl names a file, and %s sends text as written", data, req.Surface().InputName("data")).
-		WithHint("to send the file, give it to " + req.Surface().InputName("data-file") + ": " + name)
+		WithHint("to send the file, give it to " + req.Surface().InputName("data-file") + ": " + name).WithInput("data")
 }
 
 func namesAFile(req plugin.Request, name string) bool {
@@ -461,9 +471,10 @@ func requestBody(req plugin.Request) (string, *view.Error) {
 	switch {
 	case errors.As(err, &tooLarge):
 		return "", view.Errorf("http.data.file", "%s is more than %d MiB, which is the most a request body takes",
-			file, maxRequestBody>>20)
+			file, maxRequestBody>>20).WithInput("data-file")
 	case err != nil:
-		return "", pipeSpelling(view.Errorf("http.data.file", "reading the body from %s: %v", file, err), file)
+		return "", pipeSpelling(view.Errorf("http.data.file", "reading the body from %s: %v", file, err).
+			WithInput(pathin.Input("data-file", err)), file)
 	}
 	return string(got), nil
 }
@@ -575,13 +586,13 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 	}
 	httpReq, err := stdhttp.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
-		return nil, view.Errorf("http.request.invalid", "building request: %v", err)
+		return nil, view.Errorf("http.request.invalid", "building request: %v", err).WithInput("url")
 	}
 	for _, h := range wholeHeaders(req.Surface(), req.StringSlice("header")) {
 		key, value, found := strings.Cut(h, ":")
 		if !found {
 			return nil, view.Errorf("http.header.invalid", "invalid header %q", h).
-				WithHint("use 'Key: Value' form")
+				WithHint("use 'Key: Value' form").WithInput("header")
 		}
 		httpReq.Header.Set(strings.TrimSpace(key), strings.TrimSpace(value))
 	}

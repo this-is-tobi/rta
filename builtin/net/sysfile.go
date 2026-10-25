@@ -70,13 +70,32 @@ func opening(req plugin.Request) plugin.Request {
 	return req.WithBounds(plugin.Bounds{})
 }
 
+// namingFile is verr naming the file input, when the file it is about is the
+// one that input names (opening). The system's own file, which a call that
+// names none works on, is no input's: a form reopened on the empty box would
+// point at nothing anybody typed.
+func namingFile(verr *view.Error, req plugin.Request) *view.Error {
+	if strings.TrimSpace(req.String("file")) == "" {
+		return verr
+	}
+	return verr.WithInput("file")
+}
+
 // readLines reads a configuration file as lines, keeping them exactly as
 // written. req is the call asking, for pathin's line on what a path may name
 // and where it opens from (opening), and max the file's cap.
+//
+// A refusal names the file input when the path is what is wrong (pathin.Input)
+// and the path is the one that input names (namingFile): one that is there and
+// cannot be read is answered by a chmod, not by the box.
 func readLines(req plugin.Request, path string, max int) ([]string, *view.Error) {
 	data, err := pathin.Read(opening(req), path, max)
 	if err != nil {
-		return nil, unreadable(path, err)
+		verr := unreadable(path, err)
+		if pathin.WrongPath(err) {
+			verr = namingFile(verr, req)
+		}
+		return nil, verr
 	}
 	text := strings.TrimSuffix(string(data), "\n")
 	if text == "" {
