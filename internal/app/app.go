@@ -1437,6 +1437,10 @@ func flagValueError(cmd *cobra.Command, err error, c *plugin.Capability) error {
 					Hint: hint + " — `" + cmd.CommandPath() + " --help` lists what it takes"}
 			}
 		}
+		if hint := oppositeFlagHint(cmd, typed); hint != "" {
+			return &view.Error{Code: CodeUsage, Message: err.Error(),
+				Hint: hint + " — `" + cmd.CommandPath() + " --help` lists what it takes"}
+		}
 		if near := nearestFlags(cmd, typed); len(near) > 0 {
 			return &view.Error{Code: CodeUsage, Message: err.Error(),
 				Hint: "did you mean " + strings.Join(near, " or ") + "? `" + cmd.CommandPath() + " --help` lists what it takes"}
