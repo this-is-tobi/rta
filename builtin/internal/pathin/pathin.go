@@ -40,12 +40,14 @@
 package pathin
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"syscall"
 
+	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
@@ -71,6 +73,30 @@ type TooLargeError struct {
 
 func (e *TooLargeError) Error() string {
 	return fmt.Sprintf("%s is larger than %s", e.Path, format.Bytes(e.Max))
+}
+
+// WrongPath reports whether err says the path a call was given is what is
+// wrong: nothing is there, a directory or something other than a file is, or a
+// file larger than the call reads. Another path is the fix for each of them.
+// A file that is there and cannot be read — permission denied, an I/O error —
+// is not one: the path is right, and the fix is a chmod or the machine.
+func WrongPath(err error) bool {
+	var notAFile *NotAFileError
+	var tooLarge *TooLargeError
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.EISDIR) ||
+		errors.Is(err, atomicfile.ErrNotRegular) || errors.As(err, &notAFile) || errors.As(err, &tooLarge)
+}
+
+// Input is the input a refusal to read the path it holds names
+// (view.Error.Input): input itself when the path is what is wrong (WrongPath),
+// so the form the call came from opens again on that box, and none when the
+// file is there and cannot be read, which no box answers. fs.tree, fs.hash and
+// fs.usage hold their paths to the same line, in their own words.
+func Input(input string, err error) string {
+	if WrongPath(err) {
+		return input
+	}
+	return ""
 }
 
 // Kind names what a mode says a path is, for a refusal to say what was found

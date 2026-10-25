@@ -3,6 +3,7 @@ package operator
 import (
 	"crypto/ed25519"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -158,6 +159,9 @@ func (r Roster) Operators() []OperatorInfo {
 	return out
 }
 
+// ErrWeakMode is what a roster refused for its mode wraps (LoadRoster).
+var ErrWeakMode = errors.New("weak permissions")
+
 // LoadRoster reads a roster file: one "label base64-pubkey" pair per
 // non-blank, non-comment line — the line RosterLine prints — optionally
 // followed by key=value annotations: `role=read` and `expires=YYYY-MM-DD`.
@@ -172,6 +176,8 @@ func (r Roster) Operators() []OperatorInfo {
 // group read only warns — unlike a token file the roster holds no secret
 // at all, but a group-writable one is enrollment for whoever shares the
 // group.
+//
+// A roster refused for its mode wraps ErrWeakMode, which a chmod answers.
 func LoadRoster(path string) (Roster, bool, error) {
 	f, err := atomicfile.Open(path)
 	if err != nil {
@@ -185,9 +191,9 @@ func LoadRoster(path string) (Roster, bool, error) {
 	mode := info.Mode().Perm()
 	if mode&0o037 != 0 {
 		return Roster{}, false, fmt.Errorf(
-			"%s has weak permissions (mode %s) — someone besides its owner can write or execute "+
+			"%s has %w (mode %s) — someone besides its owner can write or execute "+
 				"it, or any account on this machine can read it, and it decides who may operate "+
-				"this server; chmod 600 it", path, mode)
+				"this server; chmod 600 it", path, ErrWeakMode, mode)
 	}
 	groupReadable := mode&0o040 != 0
 	raw, err := io.ReadAll(f)

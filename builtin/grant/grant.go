@@ -610,7 +610,7 @@ func checkProfile(target, ref string) (string, string, *view.Error) {
 	if ns != "" && !p.Covers(ns) {
 		return "", "", view.Errorf("grant.profilemismatch",
 			"profile %q says nothing about %s", name, ns).
-			WithHint(profileCovers(p, name))
+			WithHint(profileCovers(p, name)).WithInput("profile")
 	}
 	// One instance, exactly. Consent is a decision about a connection, and
 	// "analytics, not the main database" is precisely the distinction the
@@ -628,12 +628,12 @@ func checkProfile(target, ref string) (string, string, *view.Error) {
 		if !ok {
 			return "", "", view.Errorf("grant.unknowninstance",
 				"profile %q has no %s instance called %q", name, ns, instance).
-				WithHint("it has: " + strings.Join(profiles.InstanceRefs(p, name, ns), ", "))
+				WithHint("it has: " + strings.Join(profiles.InstanceRefs(p, name, ns), ", ")).WithInput("profile")
 		}
 	case p.Ambiguous(ns):
 		return "", "", view.Errorf("grant.instancerequired",
 			"profile %q holds several %s connections, and consent must name which one", name, ns).
-			WithHint("one of: " + strings.Join(profiles.InstanceRefs(p, name, ns), ", "))
+			WithHint("one of: " + strings.Join(profiles.InstanceRefs(p, name, ns), ", ")).WithInput("profile")
 	default:
 		key, conn, ok = p.For(ns)
 	}
@@ -655,7 +655,7 @@ func configuredEnvironment(cfg config.Config, name, ns string) (config.Profile, 
 	p, ok := cfg.Profiles[name]
 	if !ok {
 		return config.Profile{}, view.Errorf("grant.unknownprofile", "no profile named %q", name).
-			WithHint(profileHint(cfg, ns))
+			WithHint(profileHint(cfg, ns)).WithInput("profile")
 	}
 	if !p.Trusted() {
 		return config.Profile{}, view.Errorf("grant.untrustedprofile",
@@ -703,7 +703,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// buildGrant.
 	agent, verr := resolveAgent(req.Surface(), req.String("agent"))
 	if verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("agent")
 	}
 	g, notes, verr := buildGrant(req.Surface(), catalog, artifact, operatorid.IssueSpec{
 		Target:  req.String("target"),
@@ -806,7 +806,7 @@ func parseRate(sf plugin.Surface, raw string) (int, string, *view.Error) {
 	}
 	bad := func(why string) *view.Error {
 		return view.Errorf("grant.badrate", "%q is not a rate: %s", raw, why).
-			WithHint("write it as calls/window — 10/1h, 1/30s, 100/24h")
+			WithHint("write it as calls/window — 10/1h, 1/30s, 100/24h").WithInput("rate")
 	}
 	n, window, ok := strings.Cut(raw, "/")
 	if !ok {
@@ -901,12 +901,12 @@ func parseTTL(sf plugin.Surface, raw, target string) (ttl, asked time.Duration, 
 		// "1d" here as it is in a lock and a profile's deadline. A grant lasts a day
 		// at most, which is what the clamp below says when more is asked.
 		hint := "write it with a unit: 30s, 15m, 2h, 1d"
-		return 0, 0, false, "", view.Errorf("grant.badttl", "%q is not a duration", raw).WithHint(hint)
+		return 0, 0, false, "", view.Errorf("grant.badttl", "%q is not a duration", raw).WithHint(hint).WithInput("ttl")
 	}
 	if parsed <= 0 {
 		return 0, 0, false, "", view.Errorf("grant.badttl", "a grant must last longer than zero").
 			WithHint("to take access away, use `" + sf.Call("grant.revoke",
-				plugin.Arg{Name: "target", Value: target, Positional: true}) + "`")
+				plugin.Arg{Name: "target", Value: target, Positional: true}) + "`").WithInput("ttl")
 	}
 	// Two ceilings, and the tighter one wins: rta's own day, and whatever the
 	// team's policy file says.

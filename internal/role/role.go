@@ -157,7 +157,8 @@ func Available() ([]Source, *view.Error) {
 func Unknown(name string) *view.Error {
 	return view.Errorf("role.unknown", "no role named %q", name).
 		WithHint("`rta grant roles` with no argument lists what this machine can issue; a role " +
-			"is a `roles:` entry in " + policy.RepoFile + ", in your policy file, or in your config")
+			"is a `roles:` entry in " + policy.RepoFile + ", in your policy file, or in your config").
+		WithInput("role")
 }
 
 // Find is the one role `grant issue` issues under this name.

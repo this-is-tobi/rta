@@ -889,7 +889,7 @@ func runLog(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	since, sinceNote, sinceErr := parseSince(req.String("since"))
 	if sinceErr != nil {
-		return nil, sinceErr
+		return nil, sinceErr.WithInput("since")
 	}
 	f := logFilter{
 		refused:  req.Bool("refused"),
@@ -1892,7 +1892,7 @@ func unknownRequest(sf plugin.Surface, id string) *view.Error {
 					"rta's data directory is the thing to look at")
 		}
 	}
-	e := view.Errorf("agent.request.unknown", "no request %q is waiting", id)
+	e := view.Errorf("agent.request.unknown", "no request %q is waiting", id).WithInput("id")
 	if err != nil || len(q.Waiting) == 0 {
 		return e.WithHint("nothing is waiting — a parked call expires on its own, and the agent is told")
 	}

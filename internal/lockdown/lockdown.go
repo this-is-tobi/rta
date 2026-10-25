@@ -87,7 +87,7 @@ func CheckKind(k string) (Kind, *view.Error) {
 		return Kind(k), nil
 	}
 	return "", view.Errorf("core.lock.kind",
-		"%q is not something a lock can freeze — agent, credential and operator are", k)
+		"%q is not something a lock can freeze — agent, credential and operator are", k).WithInput("kind")
 }
 
 // Everyone is the agent name that stands for every agent: a lock on it
@@ -193,11 +193,14 @@ func checkName(kind Kind, name string) *view.Error {
 		if name == "" || name != textclean.Terminal(strings.TrimSpace(name)) || len(name) > maxCredentialName {
 			return view.Errorf("core.lock.name",
 				"a credential lock names the exact value the agent log's credential column shows — "+
-					"%q is not one", name)
+					"%q is not one", name).WithInput("name")
 		}
 		return nil
 	}
-	return grant.CheckAgent(name)
+	if verr := grant.CheckAgent(name); verr != nil {
+		return verr.WithInput("name")
+	}
+	return nil
 }
 
 // Path is where the locks live.
@@ -405,7 +408,7 @@ func Build(kind, name, note, ttl, by string) (Lock, *view.Error) {
 	// accepts "", and match() treats "" as no principal, so nothing else
 	// stops a row that reads as protection and can match nothing.
 	if strings.TrimSpace(name) == "" {
-		return Lock{}, view.Errorf("core.lock.name", "a lock needs the principal's name")
+		return Lock{}, view.Errorf("core.lock.name", "a lock needs the principal's name").WithInput("name")
 	}
 	if verr := checkName(k, name); verr != nil {
 		return Lock{}, verr
@@ -414,14 +417,14 @@ func Build(kind, name, note, ttl, by string) (Lock, *view.Error) {
 	if len(trimmed) > maxNote {
 		return Lock{}, view.Errorf("core.lock.note",
 			"the note is what the locked party reads on every refusal — %d bytes is a document, not a sentence (%d is the most)",
-			len(trimmed), maxNote)
+			len(trimmed), maxNote).WithInput("note")
 	}
 	l := Lock{Kind: k, Name: name, Note: trimmed, By: by, At: now()}
 	if s := strings.TrimSpace(ttl); s != "" {
 		d, err := format.ParseWindow(s)
 		if err != nil || d <= 0 {
 			return Lock{}, view.Errorf("core.lock.ttl",
-				"%q is not a lock window — 30m, 2h, 1d; leave it off for a lock that stands until removed", ttl)
+				"%q is not a lock window — 30m, 2h, 1d; leave it off for a lock that stands until removed", ttl).WithInput("ttl")
 		}
 		l.Expires = l.At.Add(d)
 	}
@@ -439,7 +442,7 @@ func Add(l Lock) *view.Error {
 	// match() treats "" as no principal, so an empty-named row would be
 	// dead weight that reads as protection.
 	if strings.TrimSpace(l.Name) == "" {
-		return view.Errorf("core.lock.name", "a lock needs the principal's name")
+		return view.Errorf("core.lock.name", "a lock needs the principal's name").WithInput("name")
 	}
 	if verr := checkName(l.Kind, l.Name); verr != nil {
 		return verr

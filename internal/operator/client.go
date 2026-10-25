@@ -97,7 +97,7 @@ func ServerURL(name string) (string, *view.Error) {
 			hint = "configured servers: " + strings.Join(known, ", ")
 		}
 		return "", view.Errorf("core.operator.server", "%s names no server in %s", name, RemotesPath()).
-			WithHint(hint)
+			WithHint(hint).WithInput("server")
 	}
 	return CanonicalServerURL(name, s.URL)
 }

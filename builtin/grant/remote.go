@@ -118,7 +118,7 @@ func remoteAllow(ctx context.Context, req plugin.Request, server string) (view.V
 		return nil, view.Errorf("grant.noagent",
 			"name the agent this is for on %s, with %s", server, sf.InputName("agent")).
 			WithHint("`" + sf.Call("operator.status", plugin.Arg{Name: "server", Value: server}) +
-				"` says what that server runs as")
+				"` says what that server runs as").WithInput("agent")
 	}
 	spec := operatorid.IssueSpec{
 		Target:  req.String("target"),
@@ -246,7 +246,7 @@ func checkPrepared(sf plugin.Surface, spec operatorid.IssueSpec, server string, 
 	if raw := strings.TrimSpace(spec.TTL); raw != "" {
 		parsed, err := format.ParseDuration(raw)
 		if err != nil || parsed <= 0 {
-			return view.Errorf("grant.badttl", "%q is not a duration", raw)
+			return view.Errorf("grant.badttl", "%q is not a duration", raw).WithInput("ttl")
 		}
 		asked = parsed
 	}

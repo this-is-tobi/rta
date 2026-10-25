@@ -2,11 +2,14 @@ package grant
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"strings"
 
 	"golang.org/x/term"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	core "github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
@@ -144,6 +147,21 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 	}}, nil
 }
 
+// rosterInput is the input a roster refused names: operators, when the path is
+// wrong (pathin.Input) or the file holds no roster, and none when the file is
+// there and cannot be read, or is refused for its mode — a chmod answers
+// those, not another path.
+func rosterInput(err error) string {
+	var read *fs.PathError
+	switch {
+	case errors.Is(err, operatorid.ErrWeakMode):
+		return ""
+	case errors.As(err, &read):
+		return pathin.Input("operators", err)
+	}
+	return "operators"
+}
+
 // runGuardRemote is the provisioning-time enrollment: this machine's guard
 // becomes the roster's public keys, and nothing else, ever. It shares
 // guard-on's ordering — clear first, enable second — and its crash story.
@@ -157,22 +175,22 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("core.guard.remote.roster", "name the roster file to enroll").
 			WithHint("for example `" + req.Surface().Call("grant.guard.remote",
 				plugin.Arg{Name: "operators", Value: "operators.txt", Positional: true},
-				plugin.Arg{Name: "url", Value: "https://rta.example.com"}) + "`")
+				plugin.Arg{Name: "url", Value: "https://rta.example.com"}) + "`").WithInput("operators")
 	}
 	rawURL := strings.TrimSpace(req.String("url"))
 	if rawURL == "" {
 		return nil, view.Errorf("core.guard.remote.server",
 			"a remote guard needs this server's canonical URL (%s) — it is signed into every "+
 				"grant, so a grant issued for this server verifies on no other", req.Surface().InputName("url")).
-			WithHint("the exact URL operators write in their remotes.yaml, and `rta mcp serve --operators-url` carries")
+			WithHint("the exact URL operators write in their remotes.yaml, and `rta mcp serve --operators-url` carries").WithInput("url")
 	}
 	canonical, verr := operatorid.CanonicalServerURL(req.Surface().InputName("url"), rawURL)
 	if verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("url")
 	}
 	roster, groupReadable, err := operatorid.LoadRoster(path)
 	if err != nil {
-		return nil, view.Errorf("core.guard.remote.roster", "%v", err)
+		return nil, view.Errorf("core.guard.remote.roster", "%v", err).WithInput(rosterInput(err))
 	}
 	// Entries is already the signing subset: read-only rows never reach the
 	// guard, and neither does a row whose expires= day has arrived (the

@@ -188,7 +188,7 @@ func principal(req plugin.Request, ask string) (kind, name string, verr *view.Er
 	if !req.Bool("all") {
 		if strings.TrimSpace(name) == "" {
 			return "", "", view.Errorf("core.lock.name", "a lock needs the principal's name").
-				WithHint(fmt.Sprintf(ask, sf.InputName("all")))
+				WithHint(fmt.Sprintf(ask, sf.InputName("all"))).WithInput("name")
 		}
 		return kind, name, nil
 	}
