@@ -127,6 +127,9 @@ func runFanOut(ctx context.Context, cmd *cobra.Command, c plugin.Capability, val
 			failed++
 			w := *verr
 			w.Message = target + ": " + w.Message
+			// The input that target's refusal names is one of the call made for
+			// it, and the page is every target's: no input is the page's to fix.
+			w.Input = ""
 			page.Warnings = append(page.Warnings, w)
 			continue
 		}

@@ -71,7 +71,7 @@ func CheckInputs(c Capability, req Request) *view.Error {
 			verr = checkBoundsOf(c, f, v, s)
 		}
 		if verr != nil {
-			return fromSource(verr, how, c, f, req)
+			return fromSource(verr.WithInput(f.Name), how, c, f, req)
 		}
 	}
 	return nil
@@ -635,6 +635,52 @@ func (c Capability) ErrorInput(verr *view.Error) (Field, bool) {
 	return inputOf(c, verr.Input)
 }
 
+// HeldWarnings is v with the input every warning in it names — the page's and
+// each section's, at any depth — held to c as an error's is (ErrorInput): kept
+// for an input c declares that keep allows, and cleared otherwise. A warning
+// crosses the plugin wire as an error does, holding whatever name its handler
+// wrote, and no surface acts on one, so what a reader is told of it is held to
+// what a reader is told of an error.
+func (c Capability) HeldWarnings(v view.View, keep func(Field) bool) view.View {
+	switch t := v.(type) {
+	case view.Table:
+		t.Warnings = c.heldWarnings(t.Warnings, keep)
+		return t
+	case view.Sections:
+		t.Warnings = c.heldWarnings(t.Warnings, keep)
+		if len(t.Items) > 0 {
+			items := make([]view.Section, len(t.Items))
+			for i, s := range t.Items {
+				s.View = c.HeldWarnings(s.View, keep)
+				items[i] = s
+			}
+			t.Items = items
+		}
+		return t
+	}
+	return v
+}
+
+func (c Capability) heldWarnings(ws []view.Error, keep func(Field) bool) []view.Error {
+	var out []view.Error
+	for i, w := range ws {
+		if w.Input == "" {
+			continue
+		}
+		if f, ok := c.ErrorInput(&w); ok && keep(f) {
+			continue
+		}
+		if out == nil {
+			out = slices.Clone(ws)
+		}
+		out[i].Input = ""
+	}
+	if out == nil {
+		return ws
+	}
+	return out
+}
+
 // CheckRequired reports the first input a request must carry and does not —
 // see Missing — or nil, named the way the request's surface names it.
 func CheckRequired(c Capability, req Request) *view.Error {
@@ -663,7 +709,17 @@ func CheckRequired(c Capability, req Request) *view.Error {
 // was the ID on every surface, "kube.serviceaccount.provision needs --grant"
 // at a terminal that had typed `rta kube serviceaccount provision`, and a
 // refusal of the value that same flag was given named the command.
+//
+// And it names f to whatever acts on it (view.Error.Input), on every surface:
+// a form reopens on the box, and an agent is told the argument — except one
+// that is Local, which the bridge leaves out of what it tells an agent for
+// the reason the hint above names no argument.
 func MissingInput(c Capability, f Field, s Surface) *view.Error {
+	return missingWords(c, f, s).WithInput(f.Name)
+}
+
+// missingWords is MissingInput's refusal in the words of the surface.
+func missingWords(c Capability, f Field, s Surface) *view.Error {
 	const code = "core.input.missing"
 	config := ""
 	if f.Config != "" {

@@ -347,7 +347,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			!connectionsKnown && plugin.Profilable(c)
 		if verr := toolcall.Validate(c, takesProfile, values); verr != nil {
 			refusedBy(rec, verr)
-			return errResult(verr), nil
+			return errResult(forAgent(c, verr)), nil
 		}
 		// The profile comes out of the arguments here — before defaults, before
 		// Local-stripping, and above all before the gate — because it is the
@@ -415,7 +415,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		}
 		if verr := toolcall.Require(c, gated, profileName != ""); verr != nil {
 			refusedBy(rec, verr)
-			return errResult(verr), nil
+			return errResult(forAgent(c, verr)), nil
 		}
 		// Recorded here, so the ledger shows the call as it would run, and
 		// before the gate, so a refusal records what was asked for. Once the
@@ -448,7 +448,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		links, verr := checkPaths(c, gated, opts.Paths)
 		if verr != nil {
 			refusedBy(rec, verr)
-			return errResult(verr), nil
+			return errResult(forAgent(c, verr)), nil
 		}
 		// checkPaths writes the path it judged over the one it was given, and
 		// the handler has to receive that one (checkPaths says why). The run
@@ -694,7 +694,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				Caller: values, Config: opts.pluginConfig(c), ConfigSection: opts.configSection(c),
 			}, os.LookupEnv); breach != nil {
 				release()
-				return errResult(fencedRefusal(rec, c, profileName, conn, breach)), nil
+				return errResult(forAgent(c, fencedRefusal(rec, c, profileName, conn, breach))), nil
 			}
 			fence = profile.FenceOf(conn)
 			// After the gate, never before: a secret must not be fetched, and a
@@ -828,7 +828,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		if verr := plugin.CheckRequest(c, run); verr != nil {
 			release()
 			refusedBy(rec, verr)
-			return errResultAs(verr, stated), nil
+			return errResultAs(forAgent(c, verr), stated), nil
 		}
 		started := time.Now()
 		v, err := c.Run(ctx, run)
@@ -872,7 +872,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			default:
 				failedBy(rec, ve)
 			}
-			return errResultAs(ve, stated), nil
+			return errResultAs(forAgent(c, ve), stated), nil
 		}
 		rec.Outcome = agentlog.Ran
 		// A built-in's answer is measured whole, before it is cut to what a
@@ -880,7 +880,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// is the answer, which a model cannot read at that size and an SDK would
 		// encode a second time for the structured copy. The operator's limit is
 		// on what the call produced, not on what is left once it is shortened.
-		cleaned := cleanedView(v)
+		cleaned := cleanedView(c.HeldWarnings(v, func(f plugin.Field) bool { return !f.Local }))
 		if limit := opts.resultLimit(); limit > 0 {
 			if n := size(cleaned); n > limit {
 				ve := plugin.ResultTooLarge(c.ID, n, limit)
@@ -955,7 +955,10 @@ func fencedRefusal(rec *agentlog.Entry, c plugin.Capability, ref string, conn co
 			tool, input)
 		hint = "name a value for it, or ask the operator which one that connection covers"
 	}
-	agent = agent.WithHint(hint)
+	// The input the person's refusal names, which the agent's words are
+	// rebuilt from rather than copied, and which the call site holds to the
+	// tool's schema (forAgent).
+	agent = agent.WithHint(hint).WithInput(person.Input)
 	refusedBy(rec, agent)
 	rec.Note = cut(textclean.Credentials(person.Message), maxReason)
 	return agent
@@ -1193,11 +1196,11 @@ func checkPaths(c plugin.Capability, values map[string]any, g *pathguard.Guard) 
 			// that ever stops holding, this is the line that turns it into an
 			// unconfined read rather than an error.
 			return nil, view.Errorf("core.mcp.path.unresolvable",
-				"%s: expected a path, got %s", f.Name, toolcall.JSONKind(v))
+				"%s: expected a path, got %s", f.Name, toolcall.JSONKind(v)).WithInput(f.Name)
 		}
 		resolved, verr := g.Check(f.Name, s)
 		if verr != nil {
-			return nil, verr
+			return nil, verr.WithInput(f.Name)
 		}
 		if l, ok := finalLink(g, f.Name, s); ok {
 			if links == nil {
@@ -1405,6 +1408,29 @@ func fittedResult(v view.View, narrow narrowing) (*sdk.CallToolResult, error) {
 
 func errResult(e *view.Error) *sdk.CallToolResult { return errResultAs(e, nil) }
 
+// forAgent is verr as an agent is told it: naming the input it is about only
+// when that input is an argument of the tool. One c does not declare names
+// nothing (plugin.Capability.ErrorInput), and a Local one is the operator's
+// to set, which the schema hides and the bridge drops unread: named, it would
+// send the agent to pass an argument it does not have, the dead end
+// MissingInput's own words for a Local input are written to avoid.
+//
+// The two arguments the host adds to a tool's schema are arguments of the tool
+// as much as its own inputs are: detail on a Detailed one, and profile on one a
+// connection can be named for, which the argument check refuses naming.
+func forAgent(c plugin.Capability, verr *view.Error) *view.Error {
+	if verr == nil || verr.Input == "" {
+		return verr
+	}
+	if f, ok := c.ErrorInput(verr); ok && !f.Local {
+		return verr
+	}
+	if (verr.Input == "detail" && c.Detailed) || (verr.Input == "profile" && plugin.Profilable(c)) {
+		return verr
+	}
+	return verr.WithInput("")
+}
+
 // errResultAs is errResult for a call that ran against a connection the operator
 // stated (statedFor): what the error says of where it went is told by the
 // profile or the input that holds it, and a hint that probes it is not told.
@@ -1416,9 +1442,20 @@ func errResultAs(e *view.Error, stated *statedValues) *sdk.CallToolResult {
 	// is told of the operator's own places is their names (operatorPaths), and
 	// of the connection they pointed the call at, theirs too (stated), and
 	// what it sent in a URL or a header is not repeated to it with its secrets.
-	raw, _ := view.Marshal(view.Envelope{View: view.MapErrorStrings(e, func(s string) string {
+	told := view.MapErrorStrings(e, func(s string) string {
 		return withoutOperatorPaths(textclean.Credentials(stated.mask(textclean.Model(s))))
-	})})
+	})
+	// The input is a name from the tool's own schema, which forAgent holds it
+	// to, and never a value: read for the operator's stated values, a setting
+	// whose value is a word equal to an input's name would rename the argument
+	// the agent is told to send again. It is cleaned as any text is, and no
+	// further.
+	if told != nil && told.Input != textclean.Model(e.Input) {
+		named := *told
+		named.Input = textclean.Model(e.Input)
+		told = &named
+	}
+	raw, _ := view.Marshal(view.Envelope{View: told})
 	return &sdk.CallToolResult{
 		IsError: true,
 		Content: []sdk.Content{&sdk.TextContent{Text: string(raw)}},

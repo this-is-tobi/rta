@@ -338,22 +338,22 @@ func FenceRefusal(ref string, conn config.Connection, c plugin.Capability, b *pl
 		return view.Errorf("core.profile.fenced.switch",
 			"%s reads past %s, which profile %q fences to: %s",
 			named(b.Switch), named(b.Input), ref, reaches).
-			WithHint("leave " + named(b.Switch) + " out, or " + cross)
+			WithHint("leave " + named(b.Switch) + " out, or " + cross).WithInput(b.Switch.Name)
 	case b.Blank:
 		if stated, ok := conn.Set[b.Input.Config]; ok && plugin.IsScope(c, b.Input) {
 			return view.Errorf("core.profile.fenced",
 				"%s is not given: profile %q states %s: %s, but a call has to name it",
 				named(b.Input), ref, b.Input.Config, textclean.Terminal(fmt.Sprint(stated))).
 				WithHint(c.ID + " takes it as its scope, which a profile never fills — give it one of " +
-					reaches + ", or " + cross)
+					reaches + ", or " + cross).WithInput(b.Input.Name)
 		}
 		return view.Errorf("core.profile.fenced",
 			"%s is blank, and profile %q reaches only: %s", named(b.Input), ref, reaches).
-			WithHint("give it one of those, or " + cross)
+			WithHint("give it one of those, or " + cross).WithInput(b.Input.Name)
 	}
 	return view.Errorf("core.profile.fenced",
 		"%s is outside what profile %q reaches: %s", named(b.Input), ref, reaches).
-		WithHint("give it one of those, or " + cross)
+		WithHint("give it one of those, or " + cross).WithInput(b.Input.Name)
 }
 
 // maxFenceShown is how many allowed values a refusal lists before it counts the

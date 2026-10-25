@@ -127,7 +127,7 @@ func Validate(c plugin.Capability, takesProfile bool, values map[string]any) *vi
 			if f.Help != "" {
 				hint += ": " + f.Help
 			}
-			return view.Errorf("core.mcp.badargs", "%s %v", input, err).WithHint(hint)
+			return view.Errorf("core.mcp.badargs", "%s %v", input, err).WithHint(hint).WithInput(f.Name)
 		}
 		return held(c, f, v)
 	}

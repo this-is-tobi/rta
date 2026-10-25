@@ -27,7 +27,7 @@ const instructions = "rta is a security boundary in front of this machine, not a
 	"Every tool answers with one JSON object whose \"type\" names its shape (table, keyvalue, text, sections, ...). " +
 	"A table is cut when its \"total\" is more than the rows sent, or when it has none " +
 	"and a warning says the list continues; the tool's \"limit\" or a narrower call shows the rest. " +
-	"A failure is {\"type\":\"error\",\"code\",\"message\",\"hint\"}: the hint says what to change in the call, " +
+	"A failure is {\"type\":\"error\",\"code\",\"message\",\"hint\",\"input\"}: the hint says what to change in the call, " +
 	"or whose the fix is. A command in a hint (`rta ...`) is the operator's to run and you have no terminal, so say what " +
 	"is needed and ask the operator rather than retrying. A tool that needs a grant is refused until a person issues one for you: " +
 	"every one whose Safety is above read, and some reads that reach out or reveal; a tool's own text says when it needs one. " +
