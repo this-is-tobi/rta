@@ -1436,6 +1436,13 @@ func flagValueError(cmd *cobra.Command, err error, c *plugin.Capability) error {
 			return &view.Error{Code: CodeUsage, Message: err.Error(),
 				Hint: "did you mean " + strings.Join(near, " or ") + "? `" + cmd.CommandPath() + " --help` lists what it takes"}
 		}
+		if named := helpWordFlag(cmd, typed); named != "" {
+			// The help up to its first aside: "hash algorithm (one of: …)" in
+			// parentheses of its own read as a sentence that lost its way.
+			usage, _, _ := strings.Cut(cmd.Flags().Lookup(strings.TrimPrefix(named, "--")).Usage, " (")
+			return &view.Error{Code: CodeUsage, Message: err.Error(),
+				Hint: "did you mean " + named + " (" + strings.ToLower(usage[:1]) + usage[1:] + ")? `" + cmd.CommandPath() + " --help` lists what it takes"}
+		}
 	}
 	return usageError(cmd, err)
 }

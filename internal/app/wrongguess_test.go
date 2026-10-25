@@ -236,6 +236,19 @@ func TestTheOppositeOfACommandIsNotOffered(t *testing.T) {
 	}
 }
 
+// A flag named by a word of another flag's help is offered that flag: `rta gen
+// token` reports its size as "bytes" and takes it as --length, "bytes of
+// entropy". A word in the help of several flags names none of them.
+func TestAFlagNamedByAWordOfAnothersHelpIsOfferedIt(t *testing.T) {
+	ve := hintFor(t, "gen", "token", "--bytes", "16")
+	if !strings.Contains(ve.Hint, "did you mean --length (bytes of entropy)?") {
+		t.Errorf("`rta gen token --bytes 16` was told %q", ve.Hint)
+	}
+	if ve := hintFor(t, "sys", "cpu", "--zzzzzz"); strings.Contains(ve.Hint, "did you mean") {
+		t.Errorf("a flag like nothing was offered %q", ve.Hint)
+	}
+}
+
 // Only a flag the help lists is offered: `--dry-run` is accepted by a command
 // that only reads and listed by none, so `sys cpu --dryrun` is not sent to a
 // help screen that does not mention it.
