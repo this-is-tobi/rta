@@ -208,6 +208,13 @@ func TestAWordThatReadsAsAVerbIsNotFrozenAsAName(t *testing.T) {
 			t.Errorf("`rta lock %s` hints %q, want the command that means it or the verbs the noun has", word, ve.Hint)
 		}
 	}
+	// With the name after it, the verb is still the mistake, and the hint is
+	// the command that means it with the name carried over.
+	_, _, err = run(t, reg, "lock", "unlock", "claude", "--no-color")
+	var ve *view.Error
+	if !errors.As(err, &ve) || !strings.Contains(ve.Message, `unknown command "unlock"`) || !strings.Contains(ve.Hint, "`rta lock rm claude`") {
+		t.Errorf("`rta lock unlock claude` answered %v (%q), want the verb refused and `rta lock rm claude` offered", err, hintOf(ve))
+	}
 	if out, _, err := run(t, reg, "lock", "add", "unlock", "--dry-run", "--no-color"); err != nil ||
 		!strings.Contains(out, "would lock agent unlock") {
 		t.Errorf("`lock add unlock` is a name when asked for as one: %q %v", out, err)
@@ -292,4 +299,12 @@ func TestAVerbTheDenyListNamesAloneHasNoAlias(t *testing.T) {
 			t.Errorf("`rta %s` is denied by name and answers to %v as well", verb, cmd.Aliases)
 		}
 	}
+}
+
+// hintOf is a refusal's hint, or nothing for no refusal.
+func hintOf(ve *view.Error) string {
+	if ve == nil {
+		return ""
+	}
+	return ve.Hint
 }
