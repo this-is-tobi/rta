@@ -1,6 +1,6 @@
 module github.com/this-is-tobi/rta
 
-go 1.26.9
+go 1.26.10
 
 require (
 	charm.land/bubbles/v2 v2.1.1
