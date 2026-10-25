@@ -653,3 +653,24 @@ func TestNoTokenOffTheCLIIsRefusedRatherThanReadFromStdin(t *testing.T) {
 		}
 	}
 }
+
+// A part that does not decode is refused in words about the token, with what
+// a token is: `not.a.jwt` was told "decoding the header: invalid character
+// '\u009e' looking for beginning of value", with no hint.
+func TestAPartThatDoesNotDecodeSaysWhatATokenIs(t *testing.T) {
+	for token, want := range map[string]string{
+		"not.a.jwt":     "the header does not decode to a JSON object",
+		"W10.e30.x":     "the header does not decode to a JSON object",
+		"eyJhIjox.e30.": "the header is not a JSON object: ",
+		"e30.e30!.x":    "the payload is not base64url: ",
+		"e3!.e30.x":     "the header is not base64url: ",
+	} {
+		verr := joseErr(t, token)
+		if verr.Code != "codec.jwt.invalid" || !strings.Contains(verr.Message, want) || !strings.Contains(verr.Hint, "base64url") {
+			t.Errorf("%q: got %s %q (%q), want %q with a hint", token, verr.Code, verr.Message, verr.Hint, want)
+		}
+		if strings.Contains(verr.Message, "\\u") {
+			t.Errorf("%q: the message names an escaped byte: %q", token, verr.Message)
+		}
+	}
+}
