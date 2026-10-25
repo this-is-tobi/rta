@@ -305,10 +305,17 @@ func discardFormDialog() dialog {
 // screen and nothing else closes it, but an answer that finds no form has nothing
 // to discard and must not close the screen it finds in its place.
 func (m Model) discardFormAnswer(yes bool) (tea.Model, tea.Cmd) {
-	if !yes || m.form == nil || m.mode != modeForm {
+	switch {
+	case !yes:
 		return m, nil
+	case m.mode == modeTheme && m.themeForm != nil:
+		m.themeForm = nil
+		m.mode = modeDashboard
+		return m, nil
+	case m.mode == modeForm && m.form != nil:
+		return m.closeForm()
 	}
-	return m.closeForm()
+	return m, nil
 }
 
 // lockStoreAnswer is what a yes or a no does to the store.
