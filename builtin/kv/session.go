@@ -148,7 +148,7 @@ func StartSession(passphrase string, ttl time.Duration) *view.Error {
 			WithHint("from " + MinSessionTTL.String() + " to " + MaxSessionTTL.String())
 	}
 	if passphrase == "" {
-		return view.Errorf("kv.passphrase.missing", "no passphrase given")
+		return view.Errorf("kv.passphrase.missing", "no passphrase given").WithInput("passphrase")
 	}
 	if _, ok := UnlockPrompt(); !ok {
 		return view.Errorf("kv.session.nothing", "there is nothing to unlock").

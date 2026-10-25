@@ -70,6 +70,11 @@ func unlockCapability(prompt string) plugin.Capability {
 		Run: func(_ context.Context, req plugin.Request) (view.View, error) {
 			ttl := req.Duration("for")
 			if verr := kv.StartSession(req.String("passphrase"), ttl); verr != nil {
+				// The store names the passphrase it refuses; the length is this
+				// form's own box, whose name the store does not know.
+				if verr.Code == "kv.session.ttl" {
+					return nil, verr.WithInput("for")
+				}
 				return nil, verr
 			}
 			return view.Text{Body: fmt.Sprintf("store unlocked for %s — U locks it again", ttlText(ttl))}, nil
