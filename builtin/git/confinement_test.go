@@ -81,6 +81,26 @@ func TestARepositoryAboveTheRootIsNotOpened(t *testing.T) {
 	}
 }
 
+// The refusal of the walk is said as the search it was: no repository was
+// found within the roots, and going further up is what is refused. It read
+// "path: <parent>, which this call reached from the path it was given, is
+// outside", for a call that named nothing, and only pointed at widening the
+// roots, which brings nothing in when no repository is up there.
+func TestTheWalkOutOfTheRootSaysWhatItWasLookingFor(t *testing.T) {
+	root := t.TempDir()
+	_, err := runStatus(context.Background(), guarded(t, root, root))
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "core.mcp.path.outside" {
+		t.Fatalf("err = %v, want core.mcp.path.outside", err)
+	}
+	if !strings.Contains(ve.Message, "no git repository at "+root) || !strings.Contains(ve.Message, filepath.Dir(root)) {
+		t.Errorf("message = %q, want the search and the directory it would have read", ve.Message)
+	}
+	if !strings.Contains(ve.Hint, "--root") || !strings.Contains(ve.Hint, "inside a checkout") {
+		t.Errorf("hint = %q, want both ways out", ve.Hint)
+	}
+}
+
 // The whole point of walking upward survives inside the root: a caller allowed
 // to read a checkout may name any directory in it.
 func TestASubdirectoryOfAnAllowedRepositoryStillResolves(t *testing.T) {

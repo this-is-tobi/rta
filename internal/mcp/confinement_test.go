@@ -83,8 +83,11 @@ func TestAHandlerCannotDeriveAPathOutOfTheRoot(t *testing.T) {
 		t.Errorf("the outer repository's history came back in the refusal itself: %s", text)
 	}
 	// The agent sent inner, which is inside; the repository the walk found
-	// is what is not, and no path it could send would move that.
-	if strings.Contains(text, "use a path inside") || !strings.Contains(text, "reached from the path it was given") {
+	// is what is not, and no path it could send would move that. The refusal
+	// says what the search did (builtin/git's searchLeftTheRoots) rather than
+	// telling the agent to send a path inside.
+	if strings.Contains(text, "use a path inside") || !strings.Contains(text, "no git repository at ") ||
+		!strings.Contains(text, "looking further up would read") {
 		t.Errorf("the refusal is worded as though the agent had sent the path the handler found: %s", text)
 	}
 }

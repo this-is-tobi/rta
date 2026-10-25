@@ -794,6 +794,9 @@ func repoRoot(req plugin.Request, path string) (string, *view.Error) {
 	defer look.close()
 	for cur := abs; ; {
 		checked, verr := req.Confine("path", cur)
+		if verr != nil && cur != abs {
+			return "", searchLeftTheRoots(verr, abs, cur)
+		}
 		if verr != nil {
 			return "", verr
 		}
@@ -814,6 +817,25 @@ func repoRoot(req plugin.Request, path string) (string, *view.Error) {
 		}
 		cur = parent
 	}
+}
+
+// searchLeftTheRoots is the gate's refusal of a directory the search for a
+// repository climbed to, said as what happened: the code stays the gate's,
+// since the walk out of the roots is refused as what it is and never reported
+// as a missing repository, and the words are about the search.
+//
+// The gate's own words were about a path "this call reached from the path it
+// was given", which `git_status` with no argument at all was told, and its hint
+// sent the operator to widen the roots, which brings in nothing when there is no
+// repository up there either. The search cannot say which it is without looking
+// past the roots, so the hint gives both.
+func searchLeftTheRoots(refused *view.Error, from, above string) *view.Error {
+	e := *refused
+	e.Message = fmt.Sprintf("no git repository at %s within this server's roots: looking further up would read %s, "+
+		"which is outside them", from, above)
+	e.Hint = "if the repository is above the roots, ask the operator to serve its directory (`rta mcp serve --root <dir>`); " +
+		"otherwise name a directory inside a checkout under the roots"
+	return &e
 }
 
 // isGitDir reports whether dir is itself a git directory, by the signs git's
