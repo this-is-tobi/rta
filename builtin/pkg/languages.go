@@ -494,7 +494,8 @@ func goInstallTarget(ctx context.Context, bin string) (string, *view.Error) {
 	}
 	pkgPath, _, _ := goModuleOf(st.out)
 	if pkgPath == "" {
-		return "", view.Errorf("pkg.go.unknown", "%s in %s was not built by go install, or carries no module path", bin, dir)
+		return "", view.Errorf("pkg.go.unknown", "%s in %s was not built by go install, or carries no module path", bin, dir).
+			WithInput("package")
 	}
 	return pkgPath, nil
 }

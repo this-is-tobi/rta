@@ -782,7 +782,7 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	if sortBy != "cpu" && sortBy != "mem" {
 		return nil, view.Errorf("sys.ps.badsort", "unknown sort %q", sortBy).
-			WithHint(req.Surface().InputName("sort") + " takes cpu or mem")
+			WithHint(req.Surface().InputName("sort") + " takes cpu or mem").WithInput("sort")
 	}
 	procs, err := process.ProcessesWithContext(ctx)
 	if err != nil {

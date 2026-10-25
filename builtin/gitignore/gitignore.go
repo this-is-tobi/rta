@@ -147,10 +147,11 @@ func runShowAt(ctx context.Context, req plugin.Request, src *source) (view.View,
 	asked := splitNames(req.StringSlice("templates"))
 	if len(asked) == 0 {
 		return nil, view.Errorf("gitignore.templates.none", "no template was named").
-			WithHint(req.Surface().CapabilityName("gitignore.list") + " lists the ones that exist")
+			WithHint(req.Surface().CapabilityName("gitignore.list") + " lists the ones that exist").WithInput("templates")
 	}
 	if len(asked) > maxTemplates {
-		return nil, view.Errorf("gitignore.templates.toomany", "%d templates were named, and at most %d are printed in one file", len(asked), maxTemplates)
+		return nil, view.Errorf("gitignore.templates.toomany", "%d templates were named, and at most %d are printed in one file", len(asked), maxTemplates).
+			WithInput("templates")
 	}
 
 	// A listing a long-lived process kept can be older than the repository: a
@@ -192,13 +193,13 @@ func resolveAll(req plugin.Request, cat *catalogue, asked []string) ([]entry, *v
 		switch how {
 		case ambiguous:
 			return nil, view.Errorf("gitignore.template.ambiguous", "%q could be %s", name, strings.Join(refs, " or ")).
-				WithHint("give the qualified name of the one meant, as in " + refs[0])
+				WithHint("give the qualified name of the one meant, as in " + refs[0]).WithInput("templates")
 		case unknown:
 			hint := req.Surface().CapabilityName("gitignore.list") + " lists the ones that exist"
 			if len(refs) > 0 {
 				hint = "did you mean " + strings.Join(refs, ", ") + "? " + hint
 			}
-			return nil, view.Errorf("gitignore.template.unknown", "no template is called %q", name).WithHint(hint)
+			return nil, view.Errorf("gitignore.template.unknown", "no template is called %q", name).WithHint(hint).WithInput("templates")
 		}
 		if !seen[e.Path] {
 			seen[e.Path] = true

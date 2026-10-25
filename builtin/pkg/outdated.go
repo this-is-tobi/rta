@@ -143,7 +143,7 @@ func outdatedCapability() plugin.Capability {
 func unknownManager(sf plugin.Surface, name string) *view.Error {
 	return view.Errorf("pkg.manager.unknown", "%q is not a manager pkg knows", name).
 		WithHint("one of " + strings.Join(allManagerNames(), ", ") + "; " + sf.CapabilityName("pkg.managers") +
-			" shows which are on this machine")
+			" shows which are on this machine").WithInput("manager")
 }
 
 func allManagerNames() []string {

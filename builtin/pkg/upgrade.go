@@ -96,7 +96,7 @@ func runUpgradeCapability(ctx context.Context, req plugin.Request) (view.View, e
 	// internal/tunnel makes of a coordinate, for the same reason.
 	if strings.HasPrefix(pkg, "-") {
 		return nil, view.Errorf("pkg.upgrade.package", "%q is not a package name", pkg).
-			WithHint("a name beginning with a dash would reach the manager as a flag")
+			WithHint("a name beginning with a dash would reach the manager as a flag").WithInput("package")
 	}
 
 	if m, ok := managerByName(target); ok {
@@ -110,7 +110,7 @@ func runUpgradeCapability(ctx context.Context, req plugin.Request) (view.View, e
 		if t.Bin == target {
 			if pkg != "" {
 				return nil, view.Errorf("pkg.upgrade.package", "%s does not apply to a tool; %s is one binary",
-					req.Surface().InputName("package"), target)
+					req.Surface().InputName("package"), target).WithInput("package")
 			}
 			v, verr := installTool(ctx, req.Surface(), newRegistryClient(), t, req.Bool("unverified"), req.DryRun)
 			if verr != nil {
@@ -120,7 +120,7 @@ func runUpgradeCapability(ctx context.Context, req plugin.Request) (view.View, e
 		}
 	}
 	return nil, view.Errorf("pkg.upgrade.unknown", "%q is neither a manager pkg knows nor a tool in `plugins: pkg: tools:`", target).
-		WithHint("managers: " + strings.Join(allManagerNames(), ", ") + "; tools are the bin names in your config")
+		WithHint("managers: " + strings.Join(allManagerNames(), ", ") + "; tools are the bin names in your config").WithInput("target")
 }
 
 func upgradeManager(ctx context.Context, req plugin.Request, m manager, pkg string) (view.View, error) {
@@ -131,7 +131,7 @@ func upgradeManager(ctx context.Context, req plugin.Request, m manager, pkg stri
 	if argv == nil {
 		return nil, view.Errorf("pkg.upgrade.package", "%s upgrades one package at a time", m.name).
 			WithHint("`" + req.Surface().Call("pkg.outdated", plugin.Arg{Name: "manager", Value: m.name, Positional: true}) +
-				"` lists them; give one in " + req.Surface().InputName("package"))
+				"` lists them; give one in " + req.Surface().InputName("package")).WithInput("package")
 	}
 	if m.name == "go" && pkg != "" {
 		// `go install` wants the package path, and the binary carries it.
