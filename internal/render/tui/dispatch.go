@@ -471,6 +471,10 @@ func (m Model) browseKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 func (m Model) addPickKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.String() {
 	case "esc":
+		if m.addPick != nil && filterHoldsEsc(m.addPick.form) {
+			m.addPick.form = clearFilter(m.addPick.form)
+			return m, nil, true
+		}
 		nm, cmd := m.closeAddPick()
 		return nm, cmd, true
 	case "ctrl+c":
@@ -529,6 +533,10 @@ func (m Model) themeKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	if m.themePick != nil {
 		switch msg.String() {
 		case "esc":
+			if filterHoldsEsc(m.themePick.form) {
+				m.themePick.form = clearFilter(m.themePick.form)
+				return m, nil, true
+			}
 			m.themePick = nil
 			m.mode = modeDashboard
 			return m, nil, true
@@ -574,6 +582,10 @@ func (m Model) themeKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 func (m Model) copyPickKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.String() {
 	case "esc":
+		if m.copyPick != nil && filterHoldsEsc(m.copyPick.form) {
+			m.copyPick.form = clearFilter(m.copyPick.form)
+			return m, nil, true
+		}
 		nm, cmd := m.closeCopyPick()
 		return nm, cmd, true
 	case "ctrl+c":

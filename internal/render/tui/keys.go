@@ -631,9 +631,7 @@ func (m Model) screenItems(screen mode) []hintItem {
 			if m.form.environmentAbove() {
 				hints = append(hints, item(bindEnvironment))
 			}
-			if filterHoldsEsc(m.form.form) {
-				escWord = "clear"
-			}
+			escWord = escLabel(m.form.form)
 			// The first stage of a form that asks in two only moves on to the
 			// second, whichever of the keys is pressed.
 			if !m.form.final {
@@ -647,7 +645,7 @@ func (m Model) screenItems(screen mode) []hintItem {
 		var hints []hintItem
 		if m.themePick != nil {
 			return append(fieldHints(m.themePick.form, 1, nil),
-				labelled(bindOpen, "edit"), item(bindFastSubmit), labelled(bindBack, "cancel"),
+				labelled(bindOpen, "edit"), item(bindFastSubmit), labelled(bindBack, escLabel(m.themePick.form)),
 			)
 		}
 		if m.themeForm != nil {
@@ -665,19 +663,23 @@ func (m Model) screenItems(screen mode) []hintItem {
 		)
 	case modeCopyPick:
 		var hints []hintItem
+		esc := "cancel"
 		if m.copyPick != nil {
 			hints = fieldHints(m.copyPick.form, 1, nil)
+			esc = escLabel(m.copyPick.form)
 		}
 		return append(hints,
-			labelled(bindOpen, "copy"), item(bindFastSubmit), labelled(bindBack, "cancel"),
+			labelled(bindOpen, "copy"), item(bindFastSubmit), labelled(bindBack, esc),
 		)
 	case modeAddPick:
 		var hints []hintItem
+		esc := "cancel"
 		if m.addPick != nil {
 			hints = fieldHints(m.addPick.form, 1, nil)
+			esc = escLabel(m.addPick.form)
 		}
 		return append(hints,
-			labelled(bindOpen, "add"), item(bindFastSubmit), labelled(bindBack, "cancel"),
+			labelled(bindOpen, "add"), item(bindFastSubmit), labelled(bindBack, esc),
 		)
 	case modeRunning:
 		// "stop it" over "cancel": cancel is already this binding's label

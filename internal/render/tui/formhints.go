@@ -76,6 +76,16 @@ func onLastField(f *huh.Form) bool {
 	return false
 }
 
+// escLabel is what the key bar calls esc on a screen that is a form or a
+// picker: "clear" while a filter is in force, since that is what the first
+// press does there (clearFilter), and "cancel" otherwise.
+func escLabel(f *huh.Form) string {
+	if filterHoldsEsc(f) {
+		return "clear"
+	}
+	return "cancel"
+}
+
 // filterHoldsEsc is whether the picker under the cursor has a filter in force,
 // typed into or already applied, which is when esc is the picker's to answer.
 //
