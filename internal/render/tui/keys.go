@@ -632,6 +632,9 @@ func (m Model) screenItems(screen mode) []hintItem {
 				hints = append(hints, item(bindEnvironment))
 			}
 			escWord = escLabel(m.form.form)
+			if escWord == "cancel" && m.form.firstStage != nil {
+				escWord = "back"
+			}
 			// The first stage of a form that asks in two only moves on to the
 			// second, whichever of the keys is pressed.
 			if !m.form.final {

@@ -119,8 +119,14 @@ func TestTheWayBackSurvivesTheFormRebuildingItself(t *testing.T) {
 	if second.form == nil || !second.form.final {
 		t.Fatalf("enter did not open the second stage (form %v)", second.form != nil)
 	}
-	if back := press(t, second, "esc"); back.mode != modeResult {
-		t.Errorf("esc on the second stage left mode %v, want the result", back.mode)
+	// esc on the second stage goes back to the first, and from there to the
+	// result the form was opened from.
+	first = press(t, second, "esc")
+	if first.form == nil || first.form.final {
+		t.Fatalf("esc on the second stage did not go back to the first (form %v)", first.form != nil)
+	}
+	if back := press(t, first, "esc"); back.mode != modeResult {
+		t.Errorf("esc on the first stage left mode %v, want the result", back.mode)
 	}
 
 	env := referencedModel(t)

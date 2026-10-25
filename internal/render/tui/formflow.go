@@ -356,6 +356,8 @@ func (m Model) afterFormUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			next := m.runForm(m.current, rest, defaults, base)
 			next.inherit(m.form)
 			next.about = aboutStage(keys, base)
+			next.firstStage = &firstStage{carry: m.form.base, answers: base, about: m.form.about, touched: m.form.touched()}
+			next.stepEdited = false
 			m.form = next
 			m.fitForm()
 			return m, m.form.form.Init()
@@ -385,6 +387,30 @@ func (m Model) fastSubmitForm() (tea.Model, tea.Cmd) {
 	}
 	m.form.form = advanceFormBySyntheticEnter(m.form.form)
 	return m.afterFormUpdate(nil)
+}
+
+// backToStageOne is esc on the second stage of a form that asks in two (the
+// record's identity, then its contents seeded with what it holds): the first
+// stage again, with its answer in its box, instead of the whole form closing on
+// somebody who typed the wrong key and wanted another. The second stage's boxes
+// are forgotten, which discardFormDialog's step variant asks about first when
+// something was typed in them.
+//
+// A secret answered on the first stage is not put back: it is the one value
+// that never reseeds a form (startForm), and it is asked again.
+func (m Model) backToStageOne() (tea.Model, tea.Cmd) {
+	back := m.form.firstStage
+	c := m.current
+	keys, _ := keyFields(c)
+	answered := withoutSecrets(c, asked(c, back.answers))
+	seed, _, _ := m.formSeed(c, answered, m.pickedProfile(c, back.carry))
+	first := newCapForm(c, keys, seed, false, back.carry)
+	first.fromResult = m.form.fromResult
+	first.about = back.about
+	first.edited = back.touched
+	m.form = first
+	m.fitForm()
+	return m, m.firstFocus()
 }
 
 // clearPickerFilter answers esc for a picker of a form whose filter is in

@@ -222,6 +222,25 @@ type capForm struct {
 	// edited is set on a form rebuilt from the answers of one that had been
 	// changed, so that rebuilding does not forget it (touched).
 	edited bool
+	// stepEdited is edited for this step's boxes alone. A second stage inherits
+	// edited from the first, whose answer is always something typed, so closing
+	// it asks; going back to the first loses only this step's boxes, and asks
+	// about them alone (stepTouched).
+	stepEdited bool
+	// firstStage is the first stage a second stage was opened from — what it
+	// carried, what it was answered, how it stood — so esc on the second stage
+	// goes back to it (backToStageOne) instead of closing the whole form. Nil on
+	// every other form. Handed on with the screen (inherit), since a second
+	// stage rebuilt on another environment is still the second stage.
+	firstStage *firstStage
+}
+
+// firstStage is what rebuilding a first stage needs: the values it carried and
+// did not ask, the answers it was given, and the screen it was on.
+type firstStage struct {
+	carry, answers map[string]any
+	about          string
+	touched        bool
 }
 
 // formOption tunes a form beyond the fields it collects.
@@ -685,6 +704,10 @@ func (cf *capForm) retype(name string, msg tea.Msg) {
 // form it replaced (inherit).
 func (cf *capForm) touched() bool { return cf.edited || !maps.Equal(cf.state(), cf.opened) }
 
+// stepTouched is touched for this step's boxes alone, which is what going back
+// from a second stage forgets: the first stage's answer goes back with it.
+func (cf *capForm) stepTouched() bool { return cf.stepEdited || !maps.Equal(cf.state(), cf.opened) }
+
 // inherit takes from the form this one replaces what is about the screen and
 // not about the boxes, so a form rebuilt under the person's hands (its second
 // stage, the same boxes on another environment, the run form behind an ad hoc
@@ -694,6 +717,8 @@ func (cf *capForm) inherit(from *capForm) {
 	cf.fromResult = from.fromResult
 	cf.about = from.about
 	cf.edited = from.touched()
+	cf.stepEdited = from.stepTouched()
+	cf.firstStage = from.firstStage
 }
 
 // hasInputs reports whether opening this capability warrants a form: any

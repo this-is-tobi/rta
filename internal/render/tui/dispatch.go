@@ -495,6 +495,15 @@ func (m Model) formKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			nm, cmd := m.clearPickerFilter()
 			return nm, cmd, true
 		}
+		// The second stage of a form that asks in two goes back to the first,
+		// which is a step of the same form and not a way out of it.
+		if m.form != nil && m.form.firstStage != nil {
+			if m.form.stepTouched() {
+				return m.openDialog(discardStepDialog()), nil, true
+			}
+			nm, cmd := m.backToStageOne()
+			return nm, cmd, true
+		}
 		if m.form != nil && m.form.touched() {
 			return m.openDialog(discardFormDialog()), nil, true
 		}
