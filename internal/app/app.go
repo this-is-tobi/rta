@@ -826,14 +826,17 @@ func helpRunE(cmd *cobra.Command, args []string) error {
 // is a small fraction of the word, so a suggestion is kept when it is one edit
 // away, or two for a word of six letters or more; a prefix is kept whatever its
 // length, which is how `rta sy` finds `sys`. A swap of two neighbouring
-// letters is one edit, since that is the typo (`lsit`).
+// letters is one edit, since that is the typo (`lsit`). The other side of the
+// word is never kept (opposite): `uninstall` is two letters from `install` and
+// the reverse of it, so a closest match that offers one for the other is a
+// wrong answer given with a straight face.
 func plausibleSuggestions(arg string, near []string) []string {
 	arg = strings.ToLower(arg)
 	allowed := max(1, len([]rune(arg))/3)
 	var kept []string
 	for _, n := range near {
 		lower := strings.ToLower(n)
-		if undoes(arg, lower) {
+		if opposite(arg, lower) {
 			continue
 		}
 		if strings.HasPrefix(lower, arg) || match.Distance(arg, lower) <= allowed {
@@ -841,18 +844,6 @@ func plausibleSuggestions(arg string, near []string) []string {
 		}
 	}
 	return kept
-}
-
-// undoes says whether typed is name with a prefix that reverses it: `uninstall`
-// is two letters from `install` and the opposite of it, so a closest match
-// that offers one for the other is a wrong answer given with a straight face.
-func undoes(typed, name string) bool {
-	for _, prefix := range []string{"un", "de"} {
-		if typed == prefix+name {
-			return true
-		}
-	}
-	return false
 }
 
 // notACommandHint says where a word typed at the root may live when it is no

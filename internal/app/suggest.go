@@ -133,7 +133,12 @@ func suggestCommands(group *cobra.Command, word string, likenesses bool) suggest
 	items, cmds = commandItems(group, false)
 	var likely []*cobra.Command
 	for _, r := range match.Nearest(word, items) {
-		if r.Score >= match.Likely {
+		// A likeness is never the other side of the word: `rta mcp uninstall`
+		// was offered `rta mcp install`, two letters away and the reverse of
+		// what was asked. A whole-word match above is left alone, since a
+		// command that names the word among its keywords (plugin remove, for
+		// uninstall) is the answer.
+		if r.Score >= match.Likely && !opposite(strings.ToLower(word), cmds[r.Index].Name()) {
 			likely = append(likely, cmds[r.Index])
 		}
 	}
@@ -272,8 +277,8 @@ func nearestFlags(cmd *cobra.Command, typed string) []string {
 
 // oppositePrefixes are the starts a word and its opposite differ by, the rest
 // being the same: encode and decode, enable and disable, include and exclude,
-// lock and unlock, color and no-color.
-var oppositePrefixes = [][2]string{{"en", "de"}, {"en", "dis"}, {"in", "ex"}, {"", "un"}, {"", "no-"}}
+// lock and unlock, activate and deactivate, color and no-color.
+var oppositePrefixes = [][2]string{{"en", "de"}, {"en", "dis"}, {"in", "ex"}, {"", "un"}, {"", "de"}, {"", "no-"}}
 
 // opposite says whether a and b are the two sides of one switch by how they
 // start (oppositePrefixes), over a shared rest of three letters or more so that
