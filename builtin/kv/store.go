@@ -358,7 +358,8 @@ func givenOrAskedPassphrase(req plugin.Request) (string, *view.Error) {
 			return p, nil
 		}
 	}
-	return "", view.Errorf("kv.passphrase.missing", "no passphrase provided").WithHint(passphraseHint(req.Surface()))
+	return "", view.Errorf("kv.passphrase.missing", "no passphrase provided").WithHint(passphraseHint(req.Surface())).
+		WithInput("passphrase")
 }
 
 // askPassphrase is the terminal's answer to "what is the passphrase", or "" when
@@ -491,10 +492,11 @@ func wrongKey(req plugin.Request, endSession bool) *view.Error {
 	}
 	if identityPath(req) != "" {
 		return view.Errorf("kv.wrongkey", "that key cannot decrypt the store").
-			WithHint(req.Surface().CapabilityName("kv.recipients") + " lists the public keys it was encrypted to")
+			WithHint(req.Surface().CapabilityName("kv.recipients") + " lists the public keys it was encrypted to").
+			WithInput("identity")
 	}
 	return view.Errorf("kv.wrongpass", "could not decrypt the store").
-		WithHint("wrong passphrase, or the store file is corrupt")
+		WithHint("wrong passphrase, or the store file is corrupt").WithInput("passphrase")
 }
 
 // save encrypts and writes the store atomically: tmp file + rename, same

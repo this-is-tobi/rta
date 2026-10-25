@@ -174,6 +174,10 @@ type Model struct {
 	current    plugin.Capability // capability being viewed/run
 	lastValues map[string]any    // inputs of the last run, reused by re-run
 	lastYes    bool
+	// submitted is the form the run in flight was sent from, until the run
+	// answers, so that a refusal of one of its boxes is answered on the form
+	// (reopenOn).
+	submitted  *submission
 	result     resultMsg
 	flash      string // one-shot footer notice (e.g. "copied"), cleared on next key
 	flashBad   string // the flash when it reports what did not happen (see refuse)
@@ -819,6 +823,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.releaseRun()
+		// A dry run that refuses one of the boxes the form sent is answered on
+		// the form, as the run's own refusal is (reopenOn).
+		if sub := m.submitted; sub != nil && msg.err != nil && msg.seq == sub.seq {
+			if nm, cmd, ok := m.reopenOn(sub, msg.cap, msg.err); ok {
+				return nm, cmd
+			}
+		}
 		m.showConfirm(resultMsg{cap: msg.cap, view: msg.view, err: msg.err, elapsed: msg.elapsed, seq: msg.seq})
 		return m, nil
 
@@ -847,6 +858,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			staleAfter(m.tiles, msg.cap)
 		}
+		// The form this run was sent from, taken off the model with the answer
+		// to it, whatever that answer is and whichever branch below takes it:
+		// it holds what the form sent, a credential typed into it included.
+		sub := m.submitted
+		if sub != nil && msg.seq != 0 && msg.seq == sub.seq {
+			m.submitted = nil
+		} else {
+			sub = nil
+		}
 		// The unlock form answered: back to the dashboard it was opened from,
 		// with the tiles that were failing run again at once, and the answer as
 		// a footer line. The result page that every other Read gets would hold
@@ -858,22 +878,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.origin = modeDashboard
 			return m.closeToOrigin()
 		}
-		// A passphrase the store refused is answered on the form, as a login
-		// answers one: the box is empty again, the reason is the bar's line,
-		// and the next enter tries again. It opened an error page whose first
-		// key, `r re-run`, ran the same wrong passphrase again, and the way to
-		// type another was `e`. Only the refusals of the passphrase: anything
-		// else that goes wrong unlocking is a page to read.
-		if msg.cap.ID == unlockID && msg.err != nil && wrongPassphrase(msg.err.Code) {
-			m.current = msg.cap
-			nm, cmd := m.startForm(msg.cap, m.lastValues)
-			again := nm.(Model)
-			reason := msg.err.Message
-			if msg.err.Hint != "" {
-				reason += " — " + msg.err.Hint
-			}
-			again.refuse(reason)
-			return again, cmd
+		// A refusal of the call a form sent, naming one of its boxes, is
+		// answered on that form (reopenOn): a passphrase the store refused,
+		// on the unlock form, among them.
+		if nm, cmd, ok := m.reopenOn(sub, msg.cap, msg.err); ok {
+			return nm, cmd
 		}
 		// A mutating action finished cleanly: flash its outcome and return
 		// to the view it was launched from, reloaded. If it destroyed that

@@ -51,8 +51,9 @@ func TestUnlockNeedsTheRightPassphrase(t *testing.T) {
 	}
 	if _, verr := Unlock("wrong horse"); verr == nil {
 		t.Fatal("a wrong passphrase unlocked the key")
-	} else if verr.Code != "core.guard.passphrase" {
-		t.Fatalf("code = %s, want core.guard.passphrase", verr.Code)
+	} else if verr.Code != "core.guard.passphrase" || verr.Input != "passphrase" {
+		// Named, so the TUI opens the form that asked for it again on its box.
+		t.Fatalf("%s naming %q, want core.guard.passphrase naming passphrase", verr.Code, verr.Input)
 	}
 	s, verr := Unlock("correct horse")
 	if verr != nil {

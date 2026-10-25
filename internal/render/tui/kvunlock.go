@@ -77,12 +77,6 @@ func unlockCapability(prompt string) plugin.Capability {
 	}
 }
 
-// wrongPassphrase says whether code is the store refusing the passphrase it was
-// given: its own, or that of the key a store is locked to (builtin/kv).
-func wrongPassphrase(code string) bool {
-	return code == "kv.wrongpass" || code == "kv.identity.locked"
-}
-
 // unlockItem is the footer's word on the store: "lock store" while a session
 // holds it open and "unlock store" otherwise, with the object named because
 // `lock` is also the plugin that freezes an agent and `L lock` on the consent

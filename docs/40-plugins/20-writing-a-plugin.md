@@ -95,10 +95,11 @@ The same applies to failure. Return a `view.Error` rather than a bare error wher
 
 ```go
 return nil, view.Errorf("weather.nosuchcity", "no station for %q", city).
-	WithHint(req.Surface().CapabilityName("weather.stations") + " lists the ones that exist")
+	WithHint(req.Surface().CapabilityName("weather.stations") + " lists the ones that exist").
+	WithInput("city")
 ```
 
-The code is stable enough for a script to branch on, and the hint is what the person does next. Both are lost by `fmt.Errorf`. An error with a hint and no code — `view.Errorf("", …)`, or a `view.Error` literal with only a message and a hint — keeps its hint and is answered as `weather.station.show.failed`, the one code every uncoded error of that capability shares, so a script cannot tell your cases apart: give each its own.
+The code is stable enough for a script to branch on, the hint is what the person does next, and the input it names is the box a form opens again on and the argument an agent sends again. All three are lost by `fmt.Errorf`. An error with a hint and no code — `view.Errorf("", …)`, or a `view.Error` literal with only a message and a hint — keeps its hint and is answered as `weather.station.show.failed`, the one code every uncoded error of that capability shares, so a script cannot tell your cases apart: give each its own.
 
 This is the shape of every answer a plugin gives. [Declaring inputs](./21-declaring-inputs.md) is what it takes, [Answers, errors and hints](./22-answers-errors-and-hints.md) is everything else an answer can carry, and [Safety, credentials and what rta does to your process](./23-safety-and-credentials.md) is the part that decides what an agent may do with it.
 

@@ -51,8 +51,9 @@ func TestAWrongPassphraseIsNamedAsSuch(t *testing.T) {
 	if verr == nil {
 		t.Fatal("a wrong passphrase unlocked the key")
 	}
-	if verr.Code != "core.operator.passphrase" {
-		t.Fatalf("code = %s, want core.operator.passphrase", verr.Code)
+	if verr.Code != "core.operator.passphrase" || verr.Input != "passphrase" {
+		// Named, so the TUI opens the form that asked for it again on its box.
+		t.Fatalf("%s naming %q, want core.operator.passphrase naming passphrase", verr.Code, verr.Input)
 	}
 }
 

@@ -668,10 +668,24 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		// result was produced with, and the view toggles the form has
 		// no field for travel beside them.
 		if m.current.Run != nil && hasInputs(m.current) {
+			refused := m.result.err
 			nm, cmd := m.startForm(m.current, m.lastValues)
 			// The result stays held under the form, and esc comes back to it.
 			if opened, ok := nm.(Model); ok && opened.form != nil {
 				opened.form.fromResult = true
+				// And a refusal that names one of the boxes opens it there,
+				// as the form that sent the call would have been (reopenOn):
+				// a run of a tile, a quick run and `r` reach this page with
+				// no form behind them.
+				// The walk moves the cursor itself, so what is asked of the
+				// event loop after it is the form's start and no move of
+				// firstFocus's on top.
+				if f, named := opened.current.ErrorInput(refused); named && opened.form.asks(f.Name) {
+					if note, ok := opened.form.answerAgain(f.Name, m.lastValues); ok && note != "" {
+						opened.refuse(note)
+					}
+					cmd = opened.form.form.Init()
+				}
 				nm = opened
 			}
 			return nm, cmd, true
@@ -742,6 +756,7 @@ func (m Model) runningKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			m.cancelRun = nil
 		}
 		m.runSeq++ // whatever arrives now belongs to nobody
+		m.submitted = nil
 		m.refreshPending, m.subjectGone = false, false
 		m.said = ""
 		m.previewing = false

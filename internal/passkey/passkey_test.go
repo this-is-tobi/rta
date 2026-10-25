@@ -135,8 +135,13 @@ func TestPromptHoldsANewPassphraseToTheFloorAndAnExistingOneToNothing(t *testing
 	text := PromptText{Subject: "the key", Prompt: "p: ", Codes: "test.passphrase", Empty: "e"}
 	tui := plugin.NewRequest(map[string]any{"passphrase": "short"}, false, false).WithSurface(plugin.SurfaceTUI)
 
-	if got, verr := Prompt(tui, true, text); verr == nil || verr.Code != "test.passphrase.short" || got != "" {
-		t.Errorf("a new five-character passphrase from the TUI field = %q, %v, want test.passphrase.short", got, verr)
+	if got, verr := Prompt(tui, true, text); verr == nil || verr.Code != "test.passphrase.short" || verr.Input != "passphrase" || got != "" {
+		t.Errorf("a new five-character passphrase from the TUI field = %q, %v, want test.passphrase.short naming passphrase", got, verr)
+	}
+	// Off a terminal, a passphrase left out is the form's box to fill.
+	empty := plugin.NewRequest(nil, false, false).WithSurface(plugin.SurfaceTUI)
+	if _, verr := Prompt(empty, false, text); verr == nil || verr.Code != "test.passphrase.required" || verr.Input != "passphrase" {
+		t.Errorf("no passphrase and no terminal = %v, want test.passphrase.required naming passphrase", verr)
 	}
 	if got, verr := Prompt(tui, false, text); verr != nil || got != "short" {
 		t.Errorf("entering an existing five-character passphrase = %q, %v, want it handed back", got, verr)

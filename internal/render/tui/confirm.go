@@ -52,10 +52,20 @@ type previewMsg struct {
 // The run itself waits for enter on the screen this produces; until then
 // nothing has been done, whatever the preview shows.
 func (m *Model) startConfirm(c plugin.Capability, values map[string]any) tea.Cmd {
+	m.submitted = nil
 	m.current = c
 	m.lastValues, m.lastYes = values, false
 	if c.Run == nil || m.external(c) {
-		m.showConfirm(resultMsg{cap: c, view: inputsOnly(c, values, m.external(c))})
+		// A screen of its own, as the dry run's is: what was in flight is
+		// cancelled, and its answer belongs to nobody, so that it can neither
+		// replace this screen nor be taken for the answer to the form that
+		// asked for it.
+		if m.cancelRun != nil {
+			m.cancelRun()
+			m.cancelRun = nil
+		}
+		m.runSeq++
+		m.showConfirm(resultMsg{cap: c, view: inputsOnly(c, values, m.external(c)), seq: m.runSeq})
 		return nil
 	}
 	if m.cancelRun != nil {
@@ -148,9 +158,23 @@ func (m Model) confirmKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.String() {
 	case "enter":
 		m.lastYes = true
-		return m, m.startRun(m.current, m.lastValues, true), true
+		// The form the preview was of goes on to the run it now starts, so
+		// the run's refusal of one of its boxes is answered there too.
+		sub := m.submitted
+		if sub != nil && sub.seq != m.runSeq {
+			sub = nil
+		}
+		m.submitted = nil
+		cmd := m.startRun(m.current, m.lastValues, true)
+		if sub == nil {
+			return m, cmd, true
+		}
+		moved := *sub
+		nm, next := m.sent(&moved, cmd)
+		return nm, next, true
 	case "e":
 		if hasInputs(m.current) {
+			m.submitted = nil
 			nm, cmd := m.startForm(m.current, m.lastValues)
 			return nm, cmd, true
 		}
@@ -167,6 +191,7 @@ func (m Model) confirmKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 // cancelConfirm leaves without running: back to the list the action came
 // from, or to wherever the capability was opened.
 func (m Model) cancelConfirm() (tea.Model, tea.Cmd) {
+	m.submitted = nil
 	m.refreshPending, m.subjectGone = false, false
 	m.flash = "cancelled — nothing ran"
 	if len(m.trail) > 0 {
