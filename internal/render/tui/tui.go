@@ -858,6 +858,23 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.origin = modeDashboard
 			return m.closeToOrigin()
 		}
+		// A passphrase the store refused is answered on the form, as a login
+		// answers one: the box is empty again, the reason is the bar's line,
+		// and the next enter tries again. It opened an error page whose first
+		// key, `r re-run`, ran the same wrong passphrase again, and the way to
+		// type another was `e`. Only the refusals of the passphrase: anything
+		// else that goes wrong unlocking is a page to read.
+		if msg.cap.ID == unlockID && msg.err != nil && wrongPassphrase(msg.err.Code) {
+			m.current = msg.cap
+			nm, cmd := m.startForm(msg.cap, m.lastValues)
+			again := nm.(Model)
+			reason := msg.err.Message
+			if msg.err.Hint != "" {
+				reason += " — " + msg.err.Hint
+			}
+			again.refuse(reason)
+			return again, cmd
+		}
 		// A mutating action finished cleanly: flash its outcome and return
 		// to the view it was launched from, reloaded. If it destroyed that
 		// view's subject (removing the very task whose page we were on),
