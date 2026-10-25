@@ -76,12 +76,13 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 	if len(entries) == 0 {
 		return nil, view.Errorf("eol.watch.empty", "nothing to watch").
 			WithHint("write the list once — `plugins: eol: products: [postgresql@15, nodejs]` in your " +
-				"config or a profile — or give them in " + req.Surface().InputName("products"))
+				"config or a profile — or give them in " + req.Surface().InputName("products")).
+			WithInput("products")
 	}
 	if len(entries) > maxWatch {
 		return nil, view.Errorf("eol.watch.toomany", "%d entries to watch, and one call grades at most %d",
 			len(entries), maxWatch).
-			WithHint("one request per product, so split the list — by team or by profile")
+			WithHint("one request per product, so split the list — by team or by profile").WithInput("products")
 	}
 
 	// The whole list is read before any of it is fetched: a malformed entry
@@ -101,7 +102,8 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 		product = strings.TrimSpace(product)
 		if product == "" {
 			return nil, view.Errorf("eol.watch.entry", "%q names no product", entry).
-				WithHint("an entry is product or product@cycle — postgresql@15, postgresql@13..16, nodejs")
+				WithHint("an entry is product or product@cycle — postgresql@15, postgresql@13..16, nodejs").
+				WithInput("products")
 		}
 		// The spelling this list had before `@`. No product on endoflife.date
 		// carries a slash, so an entry with one is a list written for an
@@ -111,11 +113,11 @@ func runWatchAt(ctx context.Context, req plugin.Request, base string) (view.View
 		if strings.Contains(product, "/") {
 			old, oldCycle, _ := strings.Cut(product, "/")
 			return nil, view.Errorf("eol.watch.entry", "%q is the old product/cycle spelling; a cycle follows @ now", entry).
-				WithHint("write it as " + old + "@" + oldCycle)
+				WithHint("write it as " + old + "@" + oldCycle).WithInput("products")
 		}
 		sel, verr := parseSelector(cycle)
 		if verr != nil {
-			return nil, verr
+			return nil, verr.WithInput("products")
 		}
 		parsed = append(parsed, watchEntry{product: product, cycle: cycle, sel: sel})
 	}

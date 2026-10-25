@@ -63,7 +63,7 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 	host := req.String("host")
 	if strings.TrimSpace(host) != host {
 		return nil, view.Errorf("audit.web.badhost", "%q has white space around it, which no host or URL holds", host).
-			WithHint("pass the host or URL as it is spelled, with nothing around it")
+			WithHint("pass the host or URL as it is spelled, with nothing around it").WithInput("host")
 	}
 	// Nor a character a reader does not see as itself, wherever it stands
 	// (glyph.Seen), and for the same reason: the request drops one from a
@@ -77,13 +77,14 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("audit.web.badhost",
 			"%s holds white space or a character that draws as nothing, so it names a host other than the one it reads as",
 			textclean.Record(host)).
-			WithHint("pass the host or URL with nothing unseen in it; an internationalised name goes in its xn-- form")
+			WithHint("pass the host or URL with nothing unseen in it; an internationalised name goes in its xn-- form").
+			WithInput("host")
 	}
 	target := normalizeURL(host)
 	u, err := url.Parse(target)
 	if err != nil {
 		return nil, view.Errorf("audit.web.badhost", "invalid host %q: %v", req.String("host"), err).
-			WithHint("pass a host like example.com or a full https:// URL")
+			WithHint("pass a host like example.com or a full https:// URL").WithInput("host")
 	}
 	// Refused rather than trimmed, as audit.mail refuses it, and for the
 	// reason it does: the grant gate, the consent prompt and the ledger row
@@ -96,14 +97,14 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("audit.web.badhost",
 			"%q carries credentials before the host, so the host it audits is not the one it reads as",
 			req.String("host")).
-			WithHint("pass the host itself — the part after the @")
+			WithHint("pass the host itself — the part after the @").WithInput("host")
 	}
 	// A value with no host in it — `//x`, a path, `:8443` — was requested as
 	// it stood: refused as unreachable, a hint to check the host was up, or,
 	// for a bare port, dialled on this machine, which is not what it reads as.
 	if u.Hostname() == "" {
 		return nil, view.Errorf("audit.web.badhost", "%q names no host", req.String("host")).
-			WithHint("pass a host like example.com or a full https:// URL")
+			WithHint("pass a host like example.com or a full https:// URL").WithInput("host")
 	}
 	// Nor a host in anything but ASCII, however it was spelled: typed, or
 	// percent-encoded, which url.Parse decodes in a host. The check for an
@@ -119,7 +120,8 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("audit.web.badhost",
 			"%s names its host in characters the request maps to others before the name resolves",
 			textclean.Record(host)).
-			WithHint("pass an internationalised name in its xn-- form, the name the request resolves")
+			WithHint("pass an internationalised name in its xn-- form, the name the request resolves").
+			WithInput("host")
 	}
 	timeout := req.Duration("timeout")
 	ctx, cancel := context.WithTimeout(ctx, timeout)

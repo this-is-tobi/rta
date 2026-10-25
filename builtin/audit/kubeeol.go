@@ -114,7 +114,7 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 	// not one is theirs to fix, and needs neither a cluster nor the network.
 	rules, verr := parseImageRules(req.StringSlice("images"))
 	if verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("images")
 	}
 	sc, verr := scopeOf(ctx, req)
 	if verr != nil {
@@ -158,7 +158,7 @@ func runKubeEOLAt(ctx context.Context, req plugin.Request, base string) (view.Vi
 	// product named wrongly costs one request and not thirty.
 	images, verr := newImageMap(rules, index)
 	if verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("images")
 	}
 	g := &grader{ctx: ctx, base: base, warnDays: req.Int("warn-days"), now: time.Now(),
 		index: index, images: images, fetched: map[string]*eolapi.Product{}, skipped: map[string]bool{},
