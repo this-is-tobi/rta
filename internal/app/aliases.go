@@ -190,6 +190,14 @@ func makeDefaultVerb(group *cobra.Command, name string) {
 		if len(args) == 0 || takes == nil {
 			return nil
 		}
+		// A verb in the name's place is the mistake whatever follows it. Asked
+		// here and not only in the run below, which the argument count is
+		// checked before: `rta lock unlock claude` was refused for the extra
+		// argument, and the word that was wrong, and the command that means it,
+		// went unsaid.
+		if readsAsAVerb(cmd, args[0]) {
+			return usageError(cmd, unknownCommand(cmd, args[0], args[1:]...))
+		}
 		return takes(cmd, args)
 	}
 	group.RunE = func(cmd *cobra.Command, args []string) error {
