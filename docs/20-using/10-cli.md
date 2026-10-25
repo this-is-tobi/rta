@@ -127,6 +127,7 @@ rta kv get missing-key -o json
 {
   "code": "kv.notfound",
   "hint": "`rta kv list` lists every key",
+  "input": "key",
   "message": "no key missing-key",
   "type": "error"
 }
@@ -134,7 +135,7 @@ rta kv get missing-key -o json
 
 The code is stable across versions; the message is not. Match on the code.
 
-An error about one input names it in `input`, the way the capability declares it, so a script can tell which flag to change without reading the sentence: `rta gen password --length 0 -o json` answers `core.input.range` with `"input": "length"`. An error that is not about one input, a connection that failed or two flags that conflict, has none.
+An error about one input names it in `input`, the way the capability declares it, so a script can tell which flag to change without reading the sentence — `key` above, the key that is not there — and `rta gen password --length 0 -o json` answers `core.input.range` with `"input": "length"`. An error that is not about one input — a connection that failed, two flags that conflict, a flag the command does not have — has none.
 
 ## `--dry-run`
 
