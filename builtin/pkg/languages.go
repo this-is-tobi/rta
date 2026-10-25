@@ -486,6 +486,15 @@ func goInstallTarget(ctx context.Context, bin string) (string, *view.Error) {
 	if verr != nil {
 		return "", verr
 	}
+	// A name, never a path: it is joined onto GOBIN, so `../../usr/local/bin/gh`
+	// read the build info of a binary outside it and installed whatever package
+	// that one named. Every binary go install puts in GOBIN is a name in it.
+	// Not by filepath.Base, whose answer for "/" is "/": joined, that is GOBIN
+	// itself, and go read every binary there and installed the last one listed.
+	if bin == "" || bin == "." || bin == ".." || strings.ContainsRune(bin, filepath.Separator) {
+		return "", view.Errorf("pkg.upgrade.package", "%q is not the name of a binary in %s", bin, dir).
+			WithHint("name the binary as it is there, gopls say, without a path").WithInput("package")
+	}
 	// A status of 1 is a file go cannot read build info from, which is
 	// the refusal below and not a failure of go's.
 	st, verr := runStatus(ctx, "go", "version", "-m", filepath.Join(dir, bin))

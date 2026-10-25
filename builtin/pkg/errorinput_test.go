@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -15,6 +16,24 @@ import (
 // tools list too, which comes from the configuration and which a form shows in
 // its box to be overridden for one run. What this machine is — a manager not on
 // $PATH, rta not root — names none, since no value typed differently changes it.
+// go's package is the name of a binary in GOBIN, and a path out of it is
+// refused before go is asked about anything there.
+func TestGoUpgradesABinaryInGOBINAndNeverAPathOutOfIt(t *testing.T) {
+	f := &fake{bins: map[string]bool{"go": true}, answers: map[string]fakeAnswer{"go env GOBIN": {out: t.TempDir() + "\n"}}}
+	install(t, f)
+	for _, bin := range []string{"../../usr/local/bin/gh", "sub/gopls", "..", ".", "/", "gopls/", ""} {
+		_, verr := goInstallTarget(context.Background(), bin)
+		if verr == nil || verr.Code != "pkg.upgrade.package" || verr.Input != "package" {
+			t.Errorf("%q = %v, want pkg.upgrade.package naming the package", bin, verr)
+		}
+	}
+	for _, ran := range f.ran {
+		if strings.HasPrefix(ran, "go version") {
+			t.Errorf("go was asked about a path out of GOBIN: %s", ran)
+		}
+	}
+}
+
 func TestARefusalOfOneInputNamesIt(t *testing.T) {
 	gobin := t.TempDir()
 	tooMany := make([]string, maxTools+1)
