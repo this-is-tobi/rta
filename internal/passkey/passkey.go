@@ -139,7 +139,7 @@ func CheckNew(passphrase, codes, subject string) *view.Error {
 			"however slowly scrypt makes each guess",
 		subject, n, MinLength).
 		WithHint("choose a longer one; several unrelated words are easier to remember than symbols " +
-			"and harder to guess")
+			"and harder to guess").WithInput("passphrase")
 }
 
 // PromptText is the wording one caller's prompt carries: the flow is shared,
@@ -213,7 +213,7 @@ func Prompt(req plugin.Request, confirm bool, text PromptText) (string, *view.Er
 	if req.Surface() != plugin.SurfaceCLI || !term.IsTerminal(int(stdio.Real().Fd())) {
 		return "", view.Errorf(text.Codes+".required",
 			"%s needs its passphrase, and there is no terminal to ask at", text.Subject).
-			WithHint("run this at a terminal, or fill the passphrase field in the TUI form")
+			WithHint("run this at a terminal, or fill the passphrase field in the TUI form").WithInput("passphrase")
 	}
 	read := func(prompt string) (string, *view.Error) {
 		secret, err := stdio.ReadSecret(prompt)

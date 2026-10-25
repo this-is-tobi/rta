@@ -584,7 +584,8 @@ func Unlock(passphrase string) (Signer, *view.Error) {
 		if errors.Is(err, passkey.ErrPassphrase) {
 			return Signer{}, view.Errorf("core.guard.passphrase", "that is not the guard's passphrase").
 				WithHint("forgotten? `rm " + Path() + " " + grantsHint() + "` starts clean — every grant " +
-					"is cleared, and grants last a day at most, so what is lost is re-issued in minutes")
+					"is cleared, and grants last a day at most, so what is lost is re-issued in minutes").
+				WithInput(PassphraseField.Name)
 		}
 		return Signer{}, view.Errorf("core.guard.corrupt",
 			"%s carries an unreadable key", Path())

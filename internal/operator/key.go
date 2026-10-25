@@ -205,7 +205,8 @@ func Unlock(passphrase string) (Signer, *view.Error) {
 			return Signer{}, view.Errorf("core.operator.passphrase",
 				"that is not the operator key's passphrase").
 				WithHint("forgotten? `rm " + Path() + "` and `rta operator init` mint a fresh key; " +
-					"every server roster naming the old one must then be updated")
+					"every server roster naming the old one must then be updated").
+				WithInput(PassphraseField.Name)
 		}
 		return Signer{}, view.Errorf("core.operator.corrupt",
 			"%s carries an unreadable key", Path())

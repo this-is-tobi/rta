@@ -537,6 +537,10 @@ func (m *Model) refreshInPlace(c plugin.Capability, values map[string]any, yes b
 // deadline, each for a reason written where it lives: a run that opened a
 // port-forward (forwardCeiling), and the refresh paths (refreshTimeout).
 func (m *Model) startRun(c plugin.Capability, values map[string]any, yes bool) tea.Cmd {
+	// A run of anything is not the run a recorded form sent, whose record goes,
+	// a credential typed into it with it: the two that do send one, a form's
+	// last box and enter on its confirmation, record it again after this.
+	m.submitted = nil
 	if m.cancelRun != nil {
 		m.cancelRun()
 	}

@@ -350,29 +350,41 @@ func (m Model) afterFormUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			base := m.form.values()
 			defaults, err := prefill(m.current, base)
 			if err != nil {
+				if nm, cmd, ok := m.refusedAtStageOne(err, base); ok {
+					return nm, cmd
+				}
 				return m.formError(m.current, err)
 			}
 			keys, rest := keyFields(m.current)
-			next := m.runForm(m.current, rest, defaults, base)
+			next := m.runForm(m.current, rest, over(defaults, m.form.secondAnswers), base)
 			next.inherit(m.form)
 			next.about = aboutStage(keys, base)
 			next.firstStage = &firstStage{carry: m.form.base, answers: base, about: m.form.about, touched: m.form.touched()}
-			next.stepEdited = false
+			// Answers carried back from a refusal of the key are this step's
+			// own, so going back from it asks before they are lost.
+			next.stepEdited = len(m.form.secondAnswers) > 0
 			m.form = next
 			m.fitForm()
 			return m, m.form.form.Init()
 		}
-		values := m.form.values()
+		// Kept until the run answers, so that its refusal of one of these
+		// boxes is answered on them (reopenOn). Each start is a statement of
+		// its own: it changes m, and the order in which one expression reads m
+		// and calls what changes it is not Go's to promise.
+		sub := m.submitting()
+		values := sub.values
 		m.form = nil
 		if m.current.Safety == plugin.Destructive {
 			// The form collected the inputs; the confirmation screen shows
 			// what the call would do with them and takes the consent. Fast
 			// submit lands there too — racing through a form is a way to
 			// accept its defaults, never a way past the gate.
-			return m, m.startConfirm(m.current, values)
+			cmd := m.startConfirm(m.current, values)
+			return m.sent(sub, cmd)
 		}
 		m.lastValues, m.lastYes = values, false
-		return m, m.startRun(m.current, values, false)
+		cmd := m.startRun(m.current, values, false)
+		return m.sent(sub, cmd)
 	case huh.StateAborted:
 		return m.closeForm()
 	}
@@ -399,18 +411,22 @@ func (m Model) fastSubmitForm() (tea.Model, tea.Cmd) {
 // A secret answered on the first stage is not put back: it is the one value
 // that never reseeds a form (startForm), and it is asked again.
 func (m Model) backToStageOne() (tea.Model, tea.Cmd) {
-	back := m.form.firstStage
-	c := m.current
+	m.form = m.stageOne(m.current, m.form.firstStage, m.form.fromResult)
+	m.fitForm()
+	return m, m.firstFocus()
+}
+
+// stageOne is the first stage of c's two, built again from back: its answer in
+// its box, and the screen it was on.
+func (m Model) stageOne(c plugin.Capability, back *firstStage, fromResult bool) *capForm {
 	keys, _ := keyFields(c)
 	answered := withoutSecrets(c, asked(c, back.answers))
 	seed, _, _ := m.formSeed(c, answered, m.pickedProfile(c, back.carry))
 	first := newCapForm(c, keys, seed, false, back.carry)
-	first.fromResult = m.form.fromResult
+	first.fromResult = fromResult
 	first.about = back.about
 	first.edited = back.touched
-	m.form = first
-	m.fitForm()
-	return m, m.firstFocus()
+	return first
 }
 
 // clearPickerFilter answers esc for a picker of a form whose filter is in

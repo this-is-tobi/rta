@@ -342,16 +342,18 @@ func unlockSSHKey(req plugin.Request, path string, data []byte) (any, *view.Erro
 			fmt.Fprintln(os.Stderr, "Wrong passphrase.")
 		}
 		return nil, view.Errorf("kv.identity.locked", "could not unlock %s", path).
-			WithHint("that is the key's own passphrase, not the store's — or " + keyThatNeedsNone(req.Surface()))
+			WithHint("that is the key's own passphrase, not the store's — or " + keyThatNeedsNone(req.Surface())).
+			WithInput("passphrase")
 	}
 	if supplied != "" {
 		return nil, view.Errorf("kv.identity.locked", "wrong passphrase for %s", path).
-			WithHint("this is the passphrase of the key itself, not of the store")
+			WithHint("this is the passphrase of the key itself, not of the store").WithInput("passphrase")
 	}
 	return nil, view.Errorf("kv.identity.locked", "%s is passphrase-protected", path).
 		WithHint(fmt.Sprintf(
 			"ssh-agent cannot unlock it — an agent signs, it does not decrypt. "+
-				"Set %s to the key's passphrase, or %s", passphraseEnv, keyThatNeedsNone(req.Surface())))
+				"Set %s to the key's passphrase, or %s", passphraseEnv, keyThatNeedsNone(req.Surface()))).
+		WithInput("passphrase")
 }
 
 // keyThatNeedsNone is the way to a key with no passphrase of its own, from

@@ -233,6 +233,20 @@ type capForm struct {
 	// every other form. Handed on with the screen (inherit), since a second
 	// stage rebuilt on another environment is still the second stage.
 	firstStage *firstStage
+	// walking is set while focusField moves the cursor over the boxes before
+	// the one it is taking it to, which a box takes as being left, and
+	// validates: a credential asked again is empty, and every box passed would
+	// have said it is required, over the reason the form was opened to give.
+	walking bool
+	// cleared names the credential boxes of a form built again after a refusal
+	// that the call had been sent with: each refuses to be left empty
+	// (answerAgain says why).
+	cleared map[string]bool
+	// secondAnswers is what the second stage of a form that asks in two was
+	// answered with, kept on its first stage when a refusal of the key sent it
+	// back there, and laid over what the record holds when the first stage is
+	// answered again (afterFormUpdate).
+	secondAnswers map[string]any
 }
 
 // firstStage is what rebuilding a first stage needs: the values it carried and
@@ -1433,6 +1447,12 @@ func shapeWord(f plugin.Field) string {
 func (cf *capForm) validator(f plugin.Field) func(string) error {
 	base := validatorFor(f)
 	return func(s string) error {
+		if cf.walking {
+			return nil
+		}
+		if cf.cleared[f.Name] && strings.TrimSpace(s) == "" {
+			return fmt.Errorf("%s was cleared when the form came back — give it again, or esc to leave", f.Name)
+		}
 		if err := base(s); err != nil {
 			return err
 		}
@@ -1555,21 +1575,39 @@ func advanceFormBySyntheticEnter(f *huh.Form) *huh.Form {
 // built, by moving it there a field at a time as the person would — each move
 // is the form's own, so what a field does as the cursor leaves it still happens.
 //
-// For a form rebuilt to say a save was refused, which opens on its first field:
-// of a form ninety lines long, the one the refusal is about may be out of sight,
-// and every other refused box already keeps the cursor. Fields are widgets in
-// the order they were given, and a heading a form draws between them skips
-// itself, so the nth field is n moves from the first.
-func (cf *capForm) focusField(name string) {
+// For a form rebuilt to say a save or a run was refused, which opens on its
+// first field: of a form ninety lines long, the one the refusal is about may be
+// out of sight, and every other refused box already keeps the cursor.
+//
+// It walks to the box's own widget and stops there, and says whether it got
+// there, rather than counting moves: a group a condition hides is a box the
+// count would have stepped past, and a move from the last box submits the form,
+// which this must never do. The boxes it passes are not validated as they are
+// left (walking), and are when the person leaves them.
+func (cf *capForm) focusField(name string) bool {
+	at := -1
 	for i, f := range cf.fields {
-		if f.Name != name {
-			continue
+		if f.Name == name {
+			at = i
+			break
 		}
-		for range i {
-			cf.form = settleForm(cf.form, huh.NextField())
-		}
-		return
 	}
+	if at < 0 || at >= len(cf.widgets) || cf.hidden(name) {
+		return false
+	}
+	target, last := cf.widgets[at], cf.widgets[len(cf.widgets)-1]
+	cf.walking = true
+	defer func() { cf.walking = false }()
+	for i := 0; i < formAdvanceLimit && cf.form.State == huh.StateNormal; i++ {
+		switch cf.form.GetFocusedField() {
+		case target:
+			return true
+		case last:
+			return false
+		}
+		cf.form = settleForm(cf.form, huh.NextField())
+	}
+	return cf.form.State == huh.StateNormal && cf.form.GetFocusedField() == target
 }
 
 // refocusLeftBehindError takes the cursor back to a field that was left with an
