@@ -204,6 +204,8 @@ func TestAWriteThatSucceededIsNotRerunByTheRefreshKey(t *testing.T) {
 		"an idempotent write":            {plugin.Capability{ID: "kv.set", Safety: plugin.Write, Idempotent: true, Run: run}, resultMsg{view: done}, true},
 		"a write that is not":            {plugin.Capability{ID: "note.add", Safety: plugin.Write, Run: run}, resultMsg{view: done}, false},
 		"a destructive call that is not": {plugin.Capability{ID: "docker.container.rm", Safety: plugin.Destructive, Run: run}, resultMsg{view: done}, false},
+		"a destructive call that is":     {plugin.Capability{ID: "http.delete", Safety: plugin.Destructive, Idempotent: true, Run: run}, resultMsg{view: done}, false},
+		"the same destructive, failed":   {plugin.Capability{ID: "http.delete", Safety: plugin.Destructive, Idempotent: true, Run: run}, resultMsg{err: view.Errorf("http.request.failed", "no")}, true},
 		"the same write, failed":         {plugin.Capability{ID: "note.add", Safety: plugin.Write, Run: run}, resultMsg{err: view.Errorf("note.add.failed", "no")}, true},
 		"nothing yet":                    {plugin.Capability{ID: "note.list", Safety: plugin.Read, Run: run}, resultMsg{}, false},
 	} {
