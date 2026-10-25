@@ -623,6 +623,18 @@ func (c Capability) agentInputs(keep func(Field) bool) []Field {
 	return out
 }
 
+// ErrorInput is the input of c that verr says it is about (view.Error.Input),
+// and false when it names none, or names one c does not declare: a plugin's
+// error crosses the wire holding whatever name its handler wrote, so this is
+// the question every surface asks before it acts on one — a form reopening on
+// that box, an agent told which argument to change.
+func (c Capability) ErrorInput(verr *view.Error) (Field, bool) {
+	if verr == nil || verr.Input == "" {
+		return Field{}, false
+	}
+	return inputOf(c, verr.Input)
+}
+
 // CheckRequired reports the first input a request must carry and does not —
 // see Missing — or nil, named the way the request's surface names it.
 func CheckRequired(c Capability, req Request) *view.Error {

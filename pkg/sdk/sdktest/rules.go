@@ -87,9 +87,26 @@ func checkViews(t reporter, seen []observed, cfg config) {
 				t.Logf("sdktest: %s: %s returned a plain error (%v); return view.Errorf so callers get a stable code",
 					RuleViews, o.cap.ID, o.err)
 			}
+			checkErrorInput(t, o.cap, coded)
 			continue
 		}
 		walkViews(o.view, func(v view.View) { checkOneView(t, o.cap, v) })
+	}
+}
+
+// checkErrorInput holds an error's Input to the capability that returned it:
+// the name of an input it declares. A host acts on no other — the form does
+// not reopen, and an agent is not told — so a name that misses the
+// declaration is a refusal that points at a box that is not there.
+func checkErrorInput(t reporter, c plugin.Capability, verr *view.Error) {
+	t.Helper()
+	if verr == nil || verr.Input == "" {
+		return
+	}
+	if _, ok := c.ErrorInput(verr); !ok {
+		t.Errorf("sdktest: %s: %s answers %s naming the input %q, which it does not declare; "+
+			"name an input by its Field.Name, or none for a refusal that is not about one input",
+			RuleViews, c.ID, verr.Code, verr.Input)
 	}
 }
 
@@ -130,6 +147,7 @@ func checkOneView(t reporter, c plugin.Capability, v view.View) {
 				// by anything that is not a person reading English.
 				t.Logf("sdktest: %s: %s carries an uncoded warning %q", RuleViews, c.ID, w.Message)
 			}
+			checkErrorInput(t, c, &w)
 		}
 		checkCursor(t, c, t2)
 		for i, col := range t2.Columns {
@@ -183,6 +201,7 @@ func checkOneView(t reporter, c plugin.Capability, v view.View) {
 				// anything that is not a person reading English.
 				t.Logf("sdktest: %s: %s carries an uncoded warning %q", RuleViews, c.ID, w.Message)
 			}
+			checkErrorInput(t, c, &w)
 		}
 	}
 }

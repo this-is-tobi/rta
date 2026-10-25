@@ -134,15 +134,17 @@ func greet(_ context.Context, req plugin.Request) (view.View, error) {
 	word, ok := languages[lang]
 	if !ok {
 		// A view.Error, not a bare error. The code is stable enough for a
-		// script to branch on and the hint is what the person does next —
-		// both of which a plain error string loses, on every surface.
+		// script to branch on, the hint is what the person does next, and the
+		// input it names is the box a form reopens on and the argument an
+		// agent sends again — all of which a plain error string loses, on
+		// every surface.
 		known := make([]string, 0, len(languages))
 		for code := range languages {
 			known = append(known, code)
 		}
 		sort.Strings(known)
 		return nil, view.Errorf("hello.unknownlang", "no greeting for language %q", lang).
-			WithHint("known languages: " + strings.Join(known, ", "))
+			WithHint("known languages: " + strings.Join(known, ", ")).WithInput("lang")
 	}
 
 	msg := fmt.Sprintf("%s, %s!", word, req.String("name"))

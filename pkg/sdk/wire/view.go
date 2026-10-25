@@ -103,6 +103,7 @@ func ErrorToProto(e *view.Error) *rtav1.Error {
 		Retryable: e.Retryable,
 		Refusal:   e.Refusal,
 		Advisory:  e.Advisory,
+		Input:     e.Input,
 	}
 }
 
@@ -118,6 +119,7 @@ func ErrorFromProto(e *rtav1.Error) *view.Error {
 		Retryable: e.GetRetryable(),
 		Refusal:   e.GetRefusal(),
 		Advisory:  e.GetAdvisory(),
+		Input:     e.GetInput(),
 	}
 }
 

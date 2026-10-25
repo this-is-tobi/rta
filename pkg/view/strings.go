@@ -262,7 +262,7 @@ func mapErrors(in []Error, f func(string) string) ([]Error, bool) {
 }
 
 func mapError(e Error, f func(string) string) Error {
-	e.Code, e.Message, e.Hint = f(e.Code), f(e.Message), f(e.Hint)
+	e.Code, e.Message, e.Hint, e.Input = f(e.Code), f(e.Message), f(e.Hint), f(e.Input)
 	return e
 }
 
