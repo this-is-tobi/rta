@@ -72,24 +72,33 @@ func runProductsAt(ctx context.Context, req plugin.Request, base string) (view.V
 		t.Rows = t.Rows[:limit]
 	}
 	if len(t.Rows) == 0 {
-		return nil, view.Errorf("eol.products.none", "nothing in the catalogue matches %q", req.String("term")).
-			WithHint(req.Surface().CapabilityName("eol.products") + " with no term lists what endoflife.date tracks").
-			WithInput(soleFilter(term, category))
+		return nil, noProducts(req, term, category)
 	}
 	return t, nil
 }
 
-// soleFilter is the input an empty listing is about: the one filter that
-// narrowed it, and none when both did, since either may be the one to change,
-// or when neither did and the catalogue itself came back empty.
-func soleFilter(term, category string) string {
+// noProducts is the refusal of a listing nothing in the catalogue fills, worded
+// by the filters that narrowed it and naming the one input to change when one
+// filter did: both is a choice between them. It quoted the term whatever was
+// given, so a category nothing is in read `nothing in the catalogue matches ""`,
+// about a term nobody gave, under a hint about the term.
+func noProducts(req plugin.Request, term, category string) *view.Error {
+	sf := req.Surface()
+	termText, categoryText := strings.TrimSpace(req.String("term")), strings.TrimSpace(req.String("category"))
 	switch {
-	case category == "" && term != "":
-		return "term"
-	case term == "" && category != "":
-		return "category"
+	case term != "" && category != "":
+		return view.Errorf("eol.products.none", "nothing in the category %q matches %q", categoryText, termText).
+			WithHint("drop one of them; " + sf.CapabilityName("eol.products") + " with neither lists what endoflife.date tracks")
+	case category != "":
+		return view.Errorf("eol.products.none", "nothing in the catalogue is in the category %q", categoryText).
+			WithHint(sf.CapabilityName("eol.products") + " with no category lists every product beside its own").
+			WithInput("category")
+	case term != "":
+		return view.Errorf("eol.products.none", "nothing in the catalogue matches %q", termText).
+			WithHint(sf.CapabilityName("eol.products") + " with no term lists what endoflife.date tracks").
+			WithInput("term")
 	}
-	return ""
+	return view.Errorf("eol.products.none", "endoflife.date sent an empty catalogue")
 }
 
 // matchesTerm is a substring match over the three things a person might
