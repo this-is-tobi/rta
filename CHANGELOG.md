@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.50.0](https://github.com/this-is-tobi/rta/compare/v0.49.1...v0.50.0) (2026-10-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **net:** `rta net send` asks at a terminal, and exits 3 where there is none unless it is given --yes. An environment's grant bundle issued with --safety write no longer takes in net.send; --safety destructive does.
+* **http:** `rta http delete` asks at a terminal, and exits 3 where there is none unless it is given --yes, as `rta note rm` does. An environment's grant bundle issued with --safety write no longer takes in http.delete; --safety destructive does.
+
+### Features
+
+* a certificate, a path, a repository or a key refused names its input ([ef24883](https://github.com/this-is-tobi/rta/commit/ef248831db3e2c4cb59fd9d5744ca3e0ffdf753e))
+* a note, a template, a package or a sort refused names its input ([4ad9acc](https://github.com/this-is-tobi/rta/commit/4ad9acca5791a578a9b83dbf154fcb0fe4431c14))
+* **app:** offer the flag whose help names the word typed as a flag ([9266742](https://github.com/this-is-tobi/rta/commit/9266742f9e8aa0d21f21518dec0f474efdcde73a))
+* **audit:** a host, a domain, a path or a product refused names its input ([c698eaf](https://github.com/this-is-tobi/rta/commit/c698eaf8718fa0cbfaeabe00b10043bb3ed486e2))
+* **codec:** a value, a token or a key that does not decode names the input ([26a1100](https://github.com/this-is-tobi/rta/commit/26a1100370a3b301ea7940c6f5d8f19477b5f16e))
+* **grant:** a grant, a lock or an answer refused over one input names it ([c53ef6b](https://github.com/this-is-tobi/rta/commit/c53ef6ba95f3b9990de3c4e4d4aa5a25295ed581))
+* **kv:** the store's refusals of one input name it ([61a1d6a](https://github.com/this-is-tobi/rta/commit/61a1d6a60f03aaa1e82f4fcc156f2a17dd829e40))
+* **net:** a host that does not exist, a bad port or a file refused names its input ([276fb95](https://github.com/this-is-tobi/rta/commit/276fb9520f88379e72a54030a829992d9875b549))
+* the host's refusal of one input names it, to an agent and to a script ([bceca88](https://github.com/this-is-tobi/rta/commit/bceca881f38bcd3976145deb044f4b3d2b6449e7))
+* **tui:** a refusal of one box opens the form that sent the call again, on that box ([d7d39ce](https://github.com/this-is-tobi/rta/commit/d7d39cea79880a192ec4636bbc5a29db10d5aea5))
+* **tui:** esc on the second step of a two-step form goes back to the first ([88d2ef0](https://github.com/this-is-tobi/rta/commit/88d2ef073116e0669710ef89428c0e98d0e1fdd1))
+* **view:** an error can name the input it is about ([3bd9b40](https://github.com/this-is-tobi/rta/commit/3bd9b406d16f793cd56713c1f7e723a1f8fb0583))
+
+
+### Bug Fixes
+
+* **app:** a mistyped command is never offered the command that does the reverse ([664a1a1](https://github.com/this-is-tobi/rta/commit/664a1a184ead568549f645324a69af6fe4c9e11b))
+* **app:** answer `rta version` with the flag whatever the plugins' keywords say ([1d35d82](https://github.com/this-is-tobi/rta/commit/1d35d82a531fbecc2ec5f06f06c09ec5a464d2c7))
+* **app:** never offer the other side of a switch for a mistyped flag ([fd6f734](https://github.com/this-is-tobi/rta/commit/fd6f7345e515f8e6d738eeb8c11dc03f1e09f65c))
+* **codec:** a token part that does not decode says what a token is, not which byte failed ([0701a80](https://github.com/this-is-tobi/rta/commit/0701a8018aac6f5c681d0e6bf83b2090fb148077))
+* **dashboard:** a preview says what the change would do, not what it would have done ([0a06525](https://github.com/this-is-tobi/rta/commit/0a06525b364d5cbc55508afc1bb8c6ee87c1bda0))
+* **eol:** an empty listing says which filter found nothing ([5b28e0d](https://github.com/this-is-tobi/rta/commit/5b28e0d4d50bf03623fe9ea1ac2cbabde2983e0d))
+* **git:** the walk out of the roots says it found no repository within them ([a8ad2e6](https://github.com/this-is-tobi/rta/commit/a8ad2e68f5b05f804fc1ef9c730a1758a2d642a5))
+* **help:** list --dry-run on the reads that preview where a request or a file would go ([fc937c4](https://github.com/this-is-tobi/rta/commit/fc937c49d9331e31eedb1fa41a8027d8180f9b99))
+* **http:** a DELETE is destructive, and a dry run reads no credential and looks up no host ([bd1303d](https://github.com/this-is-tobi/rta/commit/bd1303d804d03fd15869bb49474a23423280c37a))
+* **http:** a header or a URL net/http will not send is refused before anything leaves ([2cec076](https://github.com/this-is-tobi/rta/commit/2cec076f2729fc5f1683e67c6f34bec376bd6dd7))
+* **lock:** a verb in the name's place is refused as one even with a name after it ([3fe8fa8](https://github.com/this-is-tobi/rta/commit/3fe8fa82d6c51eed653e092d3e09fa545786ed2a))
+* **net:** net.send is destructive, as the DELETE it can send already is ([9c3d335](https://github.com/this-is-tobi/rta/commit/9c3d3352d9bb6451dc1681dd0d1972f857f9fdc1))
+* **pkg:** go's package is the name of a binary in GOBIN, never a path out of it ([67a3edd](https://github.com/this-is-tobi/rta/commit/67a3edd3e67b92014bba20cf0fa8cf2f1d28a23f))
+* **plugin:** plugin trust given a path says it takes the name a plugin is installed under ([4356ee8](https://github.com/this-is-tobi/rta/commit/4356ee8aa76f42befb297de5278d2de258bf0d66))
+* **sys:** an added cpu, disk or ps tile runs at the host's pace and promises no connection ([606b28c](https://github.com/this-is-tobi/rta/commit/606b28cdf1662e2e8058358d8487173155501991))
+* **tui:** a change made from the dashboard runs the tiles of its plugin again ([64cf6d9](https://github.com/this-is-tobi/rta/commit/64cf6d9dba45a7492d3b4d3ca84b0dea77bb240d))
+* **tui:** a passphrase the store refuses brings the unlock form back, not an error page ([6041679](https://github.com/this-is-tobi/rta/commit/60416797a83faef83f8a7abe8e52182aee45c8b3))
+* **tui:** esc clears an add, copy or theme picker's filter before it closes the picker ([b6d794a](https://github.com/this-is-tobi/rta/commit/b6d794a2ccde3fd6f0ef99af506ce4b18cd1a83b))
+* **tui:** r does not send a destructive call that succeeded again ([b2b92d6](https://github.com/this-is-tobi/rta/commit/b2b92d65b7295e17b040d1283693ca36faf2454d))
+* **tui:** the theme editor asks before esc or ctrl+c throws its colours away ([80cc80f](https://github.com/this-is-tobi/rta/commit/80cc80f39f247cf21943cb9bac1b8b57e0a50d36))
+
+
+### Dependencies
+
+* **deps:** move to Go 1.26.10, which distrusts compromised intermediate certificates ([c563757](https://github.com/this-is-tobi/rta/commit/c563757433ecb06f4c34b0c5e10c1e98b9dd11bb))
+
 ## [0.49.1](https://github.com/this-is-tobi/rta/compare/v0.49.0...v0.49.1) (2026-10-20)
 
 
