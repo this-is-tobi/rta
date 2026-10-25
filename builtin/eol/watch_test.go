@@ -255,6 +255,26 @@ func TestProductsSaysWhenNothingMatches(t *testing.T) {
 	}
 }
 
+// An empty listing says which filter found nothing: it quoted the term whatever
+// was given, so a category nothing is in read as a term nobody gave matching
+// nothing.
+func TestAnEmptyListingSaysWhichFilterFoundNothing(t *testing.T) {
+	srv := newCatalogueServer(t)
+	for _, tc := range []struct {
+		values map[string]any
+		says   string
+	}{
+		{map[string]any{"category": "zzz"}, `nothing in the catalogue is in the category "zzz"`},
+		{map[string]any{"term": "postgres", "category": "os"}, `nothing in the category "os" matches "postgres"`},
+	} {
+		_, err := runProductsAt(context.Background(), reqFor(t, "eol.products", tc.values), srv.URL)
+		var verr *view.Error
+		if !errors.As(err, &verr) || verr.Message != tc.says {
+			t.Errorf("%v answered %v, want %q", tc.values, err, tc.says)
+		}
+	}
+}
+
 // --- eol.check completion ---
 
 func TestSuggestProductsOffersNamesAndAliasesTogether(t *testing.T) {
@@ -308,5 +328,20 @@ func TestFetchCatalogueReportsAnUnexpectedStatus(t *testing.T) {
 	_, verr := eolapi.FetchCatalogue(context.Background(), srv.Client(), srv.URL)
 	if verr == nil || verr.Code != "eol.request.status" {
 		t.Fatalf("verr = %v, want eol.request.status", verr)
+	}
+}
+
+// A catalogue with nothing in it, asked with no filter, is endoflife.date's
+// answer and no box's: it says so, and names no input.
+func TestAnEmptyCatalogueNamesNoFilter(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"result":[]}`)
+	}))
+	t.Cleanup(srv.Close)
+	_, err := runProductsAt(context.Background(), reqFor(t, "eol.products", nil), srv.URL)
+	var verr *view.Error
+	if !errors.As(err, &verr) || verr.Code != "eol.products.none" || verr.Input != "" ||
+		verr.Message != "endoflife.date sent an empty catalogue" {
+		t.Errorf("an empty catalogue answered %+v, want eol.products.none naming no input", err)
 	}
 }
