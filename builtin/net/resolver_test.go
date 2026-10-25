@@ -222,8 +222,8 @@ func TestResolverListRefusesAFileNoResolvConfIsThatLarge(t *testing.T) {
 // --- Safety classes ---------------------------------------------------------
 
 // Editing name resolution for every process on the machine is not an
-// ordinary write: a wrong entry reroutes traffic instead of failing, so an
-// agent needs a per-capability allowlist rather than blanket --allow-write.
+// ordinary write: a wrong entry reroutes traffic instead of failing, so a
+// person is asked first and an agent's client is told the tool destroys.
 func TestSystemFileEditsAreDestructive(t *testing.T) {
 	want := map[string]plugin.Safety{
 		"net.hosts.list":    plugin.Read,

@@ -141,8 +141,7 @@ func TestAStalePinReachesNothingAndSaysWhichIsInstalled(t *testing.T) {
 	}
 }
 
-// An empty pin is not a prefix of everything: it is a missing decision. The
-// same rule destructiveAllowed applies to --allow-destructive.
+// An empty pin is not a prefix of everything: it is a missing decision.
 func TestAnEmptyPinMatchesNothing(t *testing.T) {
 	cfg := config.Config{Plugins: map[string]map[string]any{
 		"pg@": {"host": "db.internal"},

@@ -806,11 +806,8 @@ func TestDetailedListSplitsEveryCapabilityByWhetherItNeedsAGrant(t *testing.T) {
 			continue
 		}
 		want := "reachable by default"
-		switch {
-		case core.Required(c, ""):
+		if core.Required(c, "") {
 			want = "needs a grant a person issues"
-		case c.Safety != plugin.Read:
-			want = "needs --allow-write on the server"
 		}
 		if where != want {
 			t.Errorf("%s listed under %q, want %q", c.ID, where, want)

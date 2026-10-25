@@ -14,8 +14,8 @@ import (
 // **A Read capability with no grant must not reach a host the caller picked.**
 //
 // Every capability in this plugin is Read, which is the class that costs
-// nothing to reach: it goes onto every `rta mcp serve` with no --allow-write,
-// no grant and read_only_hint: true. A remote --path made that class into
+// nothing to reach: it goes onto every `rta mcp serve` with no grant and
+// read_only_hint: true. A remote --path made that class into
 // http.get with extra steps — an HTTP request to a path the caller composed,
 // and the stranger's own commit messages, diffs and config coming back into a
 // model's context. http.get carries NeedsGrant with Scope "url" for exactly
