@@ -84,9 +84,7 @@ func TestNoInputBehavesLikeAFileWithoutBeingDeclaredOne(t *testing.T) {
 	var tested, unstable, undrivable []string
 	for _, c := range reg.Capabilities() {
 		// Destructive is excluded even under dry run: it is the one class
-		// where a handler that ignores the flag is unrecoverable, and it is
-		// also the class an MCP caller cannot reach without a pinned
-		// --allow-destructive and a human-issued grant.
+		// where a handler that ignores the flag is unrecoverable.
 		if c.Safety == plugin.Destructive {
 			continue
 		}

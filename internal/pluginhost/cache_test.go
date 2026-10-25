@@ -262,8 +262,8 @@ func TestACacheWriteIsHeldOffAStoppingProcess(t *testing.T) {
 // every Open and is the anchor for every authorisation — and never
 // reads the data directory, because the proto shape is public. One file write
 // re-authors what rta believes, and the declaration carries the Safety class
-// that decides whether an agent needs --allow-destructive and a human-issued
-// grant, plus the Summary and Description that reach a model verbatim.
+// that decides whether an agent needs a human-issued grant and whether a person
+// is asked first, plus the Summary and Description that reach a model verbatim.
 //
 // Read to Destructive is asserted here because the example plugin has no
 // destructive capability to downgrade. It is the same write in the harmless
