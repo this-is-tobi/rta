@@ -246,7 +246,7 @@ func runTrace(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	ips, err := stdnet.DefaultResolver.LookupIP(ctx, "ip", host)
 	if err != nil || len(ips) == 0 {
-		return nil, resolveFailed("net.trace.resolve", req.Surface(), host, err)
+		return nil, namingHost(resolveFailed("net.trace.resolve", req.Surface(), host, err), err)
 	}
 	target := ips[0]
 

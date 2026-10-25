@@ -104,12 +104,12 @@ func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
 	servers := req.StringSlice("server")
 	if len(servers) == 0 {
 		return nil, view.Errorf("net.resolver.noserver", "no nameserver given").
-			WithHint(req.Surface().ArgumentName("server") + " takes the nameservers' addresses, such as 1.1.1.1 and 9.9.9.9")
+			WithHint(req.Surface().ArgumentName("server") + " takes the nameservers' addresses, such as 1.1.1.1 and 9.9.9.9").WithInput("server")
 	}
 	for _, s := range servers {
 		if stdnet.ParseIP(s) == nil {
 			return nil, view.Errorf("net.resolver.badserver", "%q is not an IP address", s).
-				WithHint("resolv.conf takes addresses, not names — a name would need a resolver to look up")
+				WithHint("resolv.conf takes addresses, not names — a name would need a resolver to look up").WithInput("server")
 		}
 	}
 	path := resolverPath(req)

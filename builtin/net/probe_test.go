@@ -215,6 +215,9 @@ func TestProbeClosedPortIsCoded(t *testing.T) {
 	if ve.Code != "net.probe.unreachable" || ve.Hint == "" {
 		t.Errorf("want net.probe.unreachable with hint, got %+v", ve)
 	}
+	if ve.Input != "" {
+		t.Errorf("a refused connection names input %q: the host is there, and so is the port", ve.Input)
+	}
 }
 
 // A name that does not resolve never reached a port, and the hint said the
@@ -234,11 +237,17 @@ func TestAHostThatDoesNotResolveIsNotBlamedOnItsPort(t *testing.T) {
 	if strings.Contains(ve.Hint, "closed or filtered") || !strings.Contains(ve.Hint, "rta net dns") {
 		t.Errorf("probe of a name that does not resolve points at the port: %q", ve.Hint)
 	}
+	if want := notFoundInput(ve); ve.Input != want {
+		t.Errorf("probe: names input %q, want %q: %s", ve.Input, want, ve.Message)
+	}
 
 	_, err = runPing(context.Background(), req(map[string]any{"host": host, "count": 1, "timeout": "2s"}))
 	ve = view.AsError(err, "x")
 	if ve.Code != "net.ping.resolve" || !strings.Contains(ve.Hint, "rta net dns") {
 		t.Errorf("ping of a name that does not resolve names no next step: %+v", ve)
+	}
+	if want := notFoundInput(ve); ve.Input != want {
+		t.Errorf("ping: names input %q, want %q: %s", ve.Input, want, ve.Message)
 	}
 
 	// And so does trace, which resolves the name itself.
@@ -246,6 +255,9 @@ func TestAHostThatDoesNotResolveIsNotBlamedOnItsPort(t *testing.T) {
 	ve = view.AsError(err, "x")
 	if ve.Code != "net.trace.resolve" || !strings.Contains(ve.Hint, "rta net dns") {
 		t.Errorf("trace of a name that does not resolve names no next step: %+v", ve)
+	}
+	if want := notFoundInput(ve); ve.Input != want {
+		t.Errorf("trace: names input %q, want %q: %s", ve.Input, want, ve.Message)
 	}
 }
 
@@ -259,6 +271,9 @@ func TestAScanOfAHostThatDoesNotResolveIsNotAColumnOfClosed(t *testing.T) {
 	ve := view.AsError(err, "x")
 	if ve.Code != "net.port.resolve" || !strings.Contains(ve.Hint, "rta net dns") {
 		t.Errorf("scan of a name that does not resolve = %+v, want net.port.resolve pointing at net dns", ve)
+	}
+	if want := notFoundInput(ve); ve.Input != want {
+		t.Errorf("scan: names input %q, want %q: %s", ve.Input, want, ve.Message)
 	}
 }
 

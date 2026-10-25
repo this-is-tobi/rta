@@ -65,7 +65,7 @@ func knownStatusCodes() []int {
 func runStatus(_ context.Context, req plugin.Request) (view.View, error) {
 	lo, hi, verr := statusRange(req.String("code"))
 	if verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("code")
 	}
 	if lo == hi {
 		return statusCard(req.Surface(), lo)
@@ -83,7 +83,7 @@ func runStatus(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	t.Total = len(t.Rows)
 	if len(t.Rows) == 0 {
-		return nil, view.Errorf("http.status.unknown", "no status codes between %d and %d", lo, hi)
+		return nil, view.Errorf("http.status.unknown", "no status codes between %d and %d", lo, hi).WithInput("code")
 	}
 	return t, nil
 }
@@ -126,7 +126,7 @@ func statusCard(sf plugin.Surface, code int) (view.View, error) {
 	text := stdhttp.StatusText(code)
 	if text == "" {
 		return nil, view.Errorf("http.status.unknown", "%d is not a status code net/http knows", code).
-			WithHint(sf.CapabilityName("http.status") + " with no code lists every one it knows")
+			WithHint(sf.CapabilityName("http.status") + " with no code lists every one it knows").WithInput("code")
 	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: "code", Value: strconv.Itoa(code)},
