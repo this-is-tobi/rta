@@ -1160,6 +1160,34 @@ func resetDue(tiles []tile, profile string) {
 	}
 }
 
+// staleAfter makes due every tile of the plugin a call just changed, so the
+// dashboard it goes back to is not drawn with the answer from before the change:
+// `a` on the notes tile added a note, and the tile went on saying "Nothing here
+// yet" until its thirty seconds were up, beside the result page that said the
+// note was added.
+//
+// A change is a call that is not a read and is either declared Flash (a
+// mutation that answers with a confirmation) or reveals nothing: kv.get is a
+// write for what it discloses and changes nothing, so the store's tile is not
+// opened again for it, and kv.edit, which reveals and then writes, is a change.
+// Every tile of the plugin and not only the one the action was pressed on,
+// since a note added from the search bar is the notes tile's news too. A tile
+// that is paused, deferred or waiting for an answer keeps its reason.
+func staleAfter(tiles []tile, c plugin.Capability) {
+	if c.Safety == plugin.Read || (c.Reveals && !c.Flash) {
+		return
+	}
+	ns := plugin.Namespace(c.ID)
+	now := time.Now()
+	for i := range tiles {
+		t := &tiles[i]
+		if t.search || t.inFlight || t.paused() || t.deferred(now) || plugin.Namespace(t.cap.ID) != ns {
+			continue
+		}
+		t.lastFired = time.Time{}
+	}
+}
+
 // connectionChanged is resetDue for a model, and the other half of it: a tile
 // that falls back on its last good answer while its runs fail would, after the
 // connection it reads moved, draw the previous environment's numbers under this
