@@ -33,6 +33,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/builtin/internal/sshkeys"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/config"
@@ -223,7 +224,8 @@ func parseIdentities(req plugin.Request, path string) ([]identity, *view.Error) 
 	data, err := os.ReadFile(pathguard.ExpandTilde(path))
 	if err != nil {
 		return nil, view.Errorf("kv.identity.unreadable", "reading %s: %v", path, err).
-			WithHint(identityName(req.Surface()) + " takes a private key file, e.g. ~/.ssh/id_ed25519")
+			WithHint(identityName(req.Surface()) + " takes a private key file, e.g. ~/.ssh/id_ed25519").
+			WithInput(pathin.Input("identity", err))
 	}
 	// An age identity file: one or more "AGE-SECRET-KEY-1…" lines, comments
 	// and blank lines allowed. Checked by the first meaningful line the same
@@ -237,7 +239,7 @@ func parseIdentities(req plugin.Request, path string) ([]identity, *view.Error) 
 			}
 			id, err := age.ParseX25519Identity(line)
 			if err != nil {
-				return nil, view.Errorf("kv.identity.invalid", "parsing %s: %v", path, err)
+				return nil, view.Errorf("kv.identity.invalid", "parsing %s: %v", path, err).WithInput("identity")
 			}
 			ids = append(ids, identity{age: id, spec: id.Recipient().String()})
 		}
@@ -254,19 +256,19 @@ func parseIdentities(req plugin.Request, path string) ([]identity, *view.Error) 
 	}
 	if err != nil {
 		return nil, view.Errorf("kv.identity.invalid", "parsing %s: %v", path, err).
-			WithHint("supported: age identity files, ssh-ed25519 and ssh-rsa private keys")
+			WithHint("supported: age identity files, ssh-ed25519 and ssh-rsa private keys").WithInput("identity")
 	}
 
 	ageID, err := ageIdentityFromSSH(raw)
 	if err != nil {
 		return nil, view.Errorf("kv.identity.invalid", "%s: %v", path, err).
-			WithHint("age supports ssh-ed25519 and ssh-rsa keys")
+			WithHint("age supports ssh-ed25519 and ssh-rsa keys").WithInput("identity")
 	}
 	// The authorized-keys line is exactly the spec --recipient accepts, so
 	// the key that wrote the store can be recorded as one of its readers.
 	signer, err := ssh.NewSignerFromKey(raw)
 	if err != nil {
-		return nil, view.Errorf("kv.identity.invalid", "%s: %v", path, err)
+		return nil, view.Errorf("kv.identity.invalid", "%s: %v", path, err).WithInput("identity")
 	}
 	spec := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey())))
 	// The .pub sibling carries the comment ("me@laptop"), which is the only
@@ -641,7 +643,7 @@ func readKeys(req plugin.Request, ciphertext []byte) ([]age.Identity, *view.Erro
 	}
 	id, err := age.NewScryptIdentity(passphrase)
 	if err != nil {
-		return nil, view.Errorf("kv.passphrase.invalid", "%v", err)
+		return nil, view.Errorf("kv.passphrase.invalid", "%v", err).WithInput("passphrase")
 	}
 	return []age.Identity{id}, nil
 }
@@ -722,7 +724,7 @@ func writeKeys(req plugin.Request, embedded []string) (recipients []age.Recipien
 		}
 		r, err := age.NewScryptRecipient(passphrase)
 		if err != nil {
-			return nil, nil, nil, view.Errorf("kv.passphrase.invalid", "%v", err)
+			return nil, nil, nil, view.Errorf("kv.passphrase.invalid", "%v", err).WithInput("passphrase")
 		}
 		if scryptWorkFactor > 0 {
 			r.SetWorkFactor(scryptWorkFactor)
@@ -738,7 +740,8 @@ func writeKeys(req plugin.Request, embedded []string) (recipients []age.Recipien
 		_, canonical, err := parseRecipient(spec)
 		if err != nil {
 			return nil, nil, nil, view.Errorf("kv.recipient.invalid", "%v", err).
-				WithHint(req.Surface().InputName("recipient") + " takes an age recipient, an SSH public key, or a path to one")
+				WithHint(req.Surface().InputName("recipient") + " takes an age recipient, an SSH public key, or a path to one").
+				WithInput("recipient")
 		}
 		want = mergeSpec(want, canonical)
 	}
@@ -803,14 +806,15 @@ func refuseSilentIdentity(req plugin.Request) *view.Error {
 	sf := req.Surface()
 	return view.Errorf("kv.identity.wrongmode", "this store is locked with a passphrase, not keys").
 		WithHint(identityName(sf) + " cannot open it, and writing does not change the lock — to switch it to " +
-			"that key, " + rekeyOnly(sf, "that key"))
+			"that key, " + rekeyOnly(sf, "that key")).WithInput("identity")
 }
 
 // identityRequired is the refusal of a store locked to keys that was given no
 // key to open it with. specs are the recipients it is locked to.
 func identityRequired(sf plugin.Surface, specs []string) *view.Error {
 	return view.Errorf("kv.identity.required", "this store is encrypted to keys, not a passphrase").
-		WithHint(giveIdentity(sf, specs) + " — " + sf.CapabilityName("kv.recipients") + " lists who can read it")
+		WithHint(giveIdentity(sf, specs) + " — " + sf.CapabilityName("kv.recipients") + " lists who can read it").
+		WithInput("identity")
 }
 
 // giveIdentity says how the caller on sf names the private key that opens a

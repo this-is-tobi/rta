@@ -219,3 +219,14 @@ func TestATilesRefusalNamesTheKeyThatUnlocksTheStore(t *testing.T) {
 		t.Fatalf("verr = %+v", verr)
 	}
 }
+
+// The store refuses a session's length without knowing which box asked for it,
+// and the unlock form names its own, so it opens again on the for box rather
+// than on the passphrase the store names for its other refusals.
+func TestAnUnlockForTooShortATimeNamesTheForBox(t *testing.T) {
+	c := unlockCapability("the store's passphrase")
+	_, err := c.Run(context.Background(), plugin.NewRequest(map[string]any{"passphrase": "pp", "for": "10s"}, false, false))
+	if verr := view.AsError(err, "x"); verr == nil || verr.Code != "kv.session.ttl" || verr.Input != "for" {
+		t.Errorf("a ten-second session = %+v, want kv.session.ttl naming for", verr)
+	}
+}

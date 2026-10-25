@@ -586,7 +586,7 @@ func writeAtomic(data []byte) *view.Error {
 // of them; otherwise the listing. s is the store as loaded, for the hint that
 // reads it.
 func notFound(sf plugin.Surface, s store, key string) *view.Error {
-	verr := view.Errorf("kv.notfound", "no key %s", textclean.Record(key))
+	verr := view.Errorf("kv.notfound", "no key %s", textclean.Record(key)).WithInput("key")
 	if !fileExists(storePath()) {
 		return verr.WithHint("no store yet — " + NoStoreNext(sf, key))
 	}

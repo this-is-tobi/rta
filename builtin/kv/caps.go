@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/builtin/internal/itemstore"
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/pathguard"
@@ -226,7 +227,7 @@ func runGet(_ context.Context, req plugin.Request) (view.View, error) {
 	// stored, too: a round trip, not an editorial pass deciding whether
 	// something needed a trailing newline.
 	if verr := writeOut(pathguard.ExpandTilde(out), e.Value); verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("out")
 	}
 	return view.Text{Body: fmt.Sprintf("wrote %s to %s (%s, mode 0600)", textclean.Record(key), out, format.Bytes(len(e.Value)))}, nil
 }
@@ -288,7 +289,7 @@ func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
 	}
 	if syntax != "export" && syntax != "dotenv" {
 		return nil, view.Errorf("kv.env.badformat", "unknown format %q", syntax).
-			WithHint("use export (for eval) or dotenv (for a .env file)")
+			WithHint("use export (for eval) or dotenv (for a .env file)").WithInput("format")
 	}
 
 	keys := req.StringSlice("key")
@@ -369,16 +370,16 @@ func valueToStore(req plugin.Request) (value []byte, filename string, piped, giv
 	if path := req.String("file"); path != "" {
 		f, err := os.Open(pathguard.ExpandTilde(path))
 		if err != nil {
-			return nil, "", false, false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err)
+			return nil, "", false, false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err).WithInput(pathin.Input("file", err))
 		}
 		defer func() { _ = f.Close() }()
 		info, err := f.Stat()
 		if err != nil {
-			return nil, "", false, false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err)
+			return nil, "", false, false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err).WithInput(pathin.Input("file", err))
 		}
 		data, err := io.ReadAll(f)
 		if err != nil {
-			return nil, "", false, false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err)
+			return nil, "", false, false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err).WithInput(pathin.Input("file", err))
 		}
 		// Exactly what was on disk. Trimming a trailing newline was a
 		// convenience for text, and it cost every other file its last bytes —
@@ -504,10 +505,10 @@ func prefillSet(_ context.Context, req plugin.Request) (map[string]any, error) {
 func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	key := req.String("key")
 	if key == "" {
-		return nil, view.Errorf("kv.set.nokey", "key is empty")
+		return nil, view.Errorf("kv.set.nokey", "key is empty").WithInput("key")
 	}
 	if verr := checkKeyName(key); verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("key")
 	}
 	if verr := refuseSilentIdentity(req); verr != nil {
 		return nil, verr
@@ -522,7 +523,7 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	kind := strings.TrimSpace(req.String("kind"))
 	if kind != "" && !slices.Contains(kinds, kind) {
 		return nil, view.Errorf("kv.set.badkind", "unknown kind %q", kind).
-			WithHint("use one of: " + strings.Join(kinds, ", "))
+			WithHint("use one of: " + strings.Join(kinds, ", ")).WithInput("kind")
 	}
 	// A call that names neither a value nor anything to relabel is asking for
 	// nothing at all, and saying so beats storing an empty secret.
@@ -794,11 +795,11 @@ func runRename(_ context.Context, req plugin.Request) (view.View, error) {
 			WithHint("give " + req.Surface().ArgumentName("key") + " and " + req.Surface().ArgumentName("new-name"))
 	}
 	if from == to {
-		return nil, view.Errorf("kv.rename.samename", "%s is already its name", textclean.Record(from))
+		return nil, view.Errorf("kv.rename.samename", "%s is already its name", textclean.Record(from)).WithInput("new-name")
 	}
 	// The same guard set has: a rename is the other way to arrive at a name.
 	if verr := checkKeyName(to); verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("new-name")
 	}
 	if verr := refuseSilentIdentity(req); verr != nil {
 		return nil, verr
@@ -823,7 +824,7 @@ func runRename(_ context.Context, req plugin.Request) (view.View, error) {
 	if _, taken := s.Entries[to]; taken {
 		return nil, view.Errorf("kv.rename.taken", "%s already exists", textclean.Record(to)).
 			WithHint("renaming onto it would destroy the secret it holds — remove that first: `" +
-				req.Surface().Call("kv.rm", keyArg(to)) + "`")
+				req.Surface().Call("kv.rm", keyArg(to)) + "`").WithInput("new-name")
 	}
 	if req.DryRun {
 		return view.Text{Body: fmt.Sprintf("would rename %s to %s (%s, %s)",
@@ -1050,7 +1051,7 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 		if err != nil {
 			return nil, view.Errorf("kv.recipient.invalid", "%v", err).
 				WithHint(sf.InputName("recipient") + " takes an age recipient, an SSH public key, or a path to either — " +
-					"including the private key itself, whose public half is all that is read")
+					"including the private key itself, whose public half is all that is read").WithInput("recipient")
 		}
 		want = mergeSpec(want, canonical)
 		// Naming a private key you have is proof you have it, which is what
