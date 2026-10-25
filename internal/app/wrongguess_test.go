@@ -193,6 +193,33 @@ func TestAMistypedFlagIsAnsweredWithTheNearestOne(t *testing.T) {
 	}
 }
 
+// The other side of a switch is told what leaving the switch out does. `rta
+// codec b64 --encode` was offered --decode, two letters away and the one flag
+// that does the reverse of what was asked.
+func TestTheOppositeOfASwitchIsToldWhatLeavingItOutDoes(t *testing.T) {
+	for line, want := range map[string]string{
+		"codec b64 hello --encode": "`--encode` is what `rta codec b64` does without --decode",
+		"codec url hello --encode": "`--encode` is what `rta codec url` does without --decode",
+		"sys cpu --color":          "`--color` is what `rta sys cpu` does without --no-color",
+	} {
+		ve := hintFor(t, strings.Fields(line)...)
+		if !strings.Contains(ve.Hint, want) || strings.Contains(ve.Hint, "did you mean") {
+			t.Errorf("`rta %s` was told %q", line, ve.Hint)
+		}
+	}
+	for _, pair := range [][2]string{{"encode", "decode"}, {"decrypt", "encrypt"}, {"enable", "disable"},
+		{"include", "exclude"}, {"lock", "unlock"}, {"unwrap", "wrap"}, {"color", "no-color"}} {
+		if !opposite(pair[0], pair[1]) {
+			t.Errorf("%s and %s are not read as opposites", pair[0], pair[1])
+		}
+	}
+	for _, pair := range [][2]string{{"decode", "decode"}, {"in", "ex"}, {"index", "exdent"}, {"cores", "core"}, {"limit", "unlimit-x"}} {
+		if opposite(pair[0], pair[1]) {
+			t.Errorf("%s and %s are read as opposites", pair[0], pair[1])
+		}
+	}
+}
+
 // Only a flag the help lists is offered: `--dry-run` is accepted by a command
 // that only reads and listed by none, so `sys cpu --dryrun` is not sent to a
 // help screen that does not mention it.

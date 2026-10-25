@@ -247,6 +247,12 @@ func nearestFlags(cmd *cobra.Command, typed string) []string {
 		if f.Hidden || f.Name == "help" || f.Name == "version" || !listsFlag(cmd, f) {
 			return
 		}
+		// Never the other side of what was typed: `--encode` is two letters
+		// from --decode, and offering it sent the person to the one flag that
+		// does the reverse of what they asked for (oppositeFlagHint answers it).
+		if opposite(typed, f.Name) {
+			return
+		}
 		switch d := match.Distance(typed, f.Name); {
 		case len(typed) >= 3 && strings.HasPrefix(f.Name, typed):
 			found = append(found, scored{f.Name, 0})
@@ -262,6 +268,45 @@ func nearestFlags(cmd *cobra.Command, typed string) []string {
 		out = append(out, "--"+f.name)
 	}
 	return out
+}
+
+// oppositePrefixes are the starts a word and its opposite differ by, the rest
+// being the same: encode and decode, enable and disable, include and exclude,
+// lock and unlock, color and no-color.
+var oppositePrefixes = [][2]string{{"en", "de"}, {"en", "dis"}, {"in", "ex"}, {"", "un"}, {"", "no-"}}
+
+// opposite says whether a and b are the two sides of one switch by how they
+// start (oppositePrefixes), over a shared rest of three letters or more so that
+// a short word is not matched by chance.
+func opposite(a, b string) bool {
+	for _, p := range oppositePrefixes {
+		for _, pair := range [][2]string{p, {p[1], p[0]}} {
+			if rest, ok := strings.CutPrefix(a, pair[0]); ok && len(rest) >= 3 && pair[1]+rest == b {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// oppositeFlagHint answers a flag that is the other side of one of cmd's
+// switches. `rta codec b64 --encode` was offered --decode, the nearest
+// spelling and the one flag that does the reverse of what was asked: encoding
+// is what the command does when --decode is left out, and the sentence says
+// that. Only a switch that is off unless given has a side that is the
+// command's own default. "" when typed is no such switch's opposite.
+func oppositeFlagHint(cmd *cobra.Command, typed string) string {
+	typed = strings.ToLower(typed)
+	var hint string
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if hint != "" || f.Hidden || f.Value.Type() != "bool" || f.DefValue != "false" || !listsFlag(cmd, f) {
+			return
+		}
+		if opposite(typed, f.Name) {
+			hint = "`--" + typed + "` is what `" + cmd.CommandPath() + "` does without --" + f.Name
+		}
+	})
+	return hint
 }
 
 // unknownBeforeFlag is the refusal of a group's unknown word that a flag after
