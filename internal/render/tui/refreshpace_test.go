@@ -5,7 +5,9 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 func TestATileWithNoDeclaredPaceIsDueOnEveryTick(t *testing.T) {
@@ -164,5 +166,64 @@ func TestResolvePaceTakesTheNearestStatementAndSaysWhereItWas(t *testing.T) {
 	}
 	if got, from := resolvePace(tile{cap: remote}, config.Dashboard{}); got != plugin.PaceRemote || from != "" {
 		t.Errorf("with nothing stated a connection runs at %v from %q", got, from)
+	}
+}
+
+// A tile is run again once a call has changed what it shows: `a` on the notes
+// tile added a note, and the tile went on saying "Nothing here yet" until its
+// thirty seconds were up.
+func TestAChangeMakesTheTilesOfItsPluginDue(t *testing.T) {
+	now := time.Now()
+	tiles := []tile{
+		{search: true},
+		{cap: plugin.Capability{ID: "note.list", Safety: plugin.Read}, lastFired: now},
+		{cap: plugin.Capability{ID: "note.tags", Safety: plugin.Read}, lastFired: now, inFlight: true},
+		{cap: plugin.Capability{ID: "kv.overview", Safety: plugin.Read}, lastFired: now},
+		{cap: plugin.Capability{ID: "note.overdue", Safety: plugin.Read}, lastFired: now, refused: credentialRefusals},
+	}
+	staleAfter(tiles, plugin.Capability{ID: "note.add", Safety: plugin.Write, Flash: true})
+	if !tiles[1].lastFired.IsZero() {
+		t.Error("the notes tile was not made due by a note added")
+	}
+	if tiles[2].lastFired.IsZero() {
+		t.Error("a tile waiting for its answer was made due, which would run it twice")
+	}
+	if tiles[3].lastFired.IsZero() == true {
+		t.Error("another plugin's tile was made due")
+	}
+	if tiles[4].lastFired.IsZero() {
+		t.Error("a paused tile was made due, which the pause exists to stop")
+	}
+
+	tiles[3].lastFired = now
+	staleAfter(tiles, plugin.Capability{ID: "kv.get", Safety: plugin.Write, Reveals: true})
+	if tiles[3].lastFired.IsZero() {
+		t.Error("a reveal, which changes nothing, made the store's tile due")
+	}
+	staleAfter(tiles, plugin.Capability{ID: "kv.edit", Safety: plugin.Write, Reveals: true, Flash: true})
+	if !tiles[3].lastFired.IsZero() {
+		t.Error("an edit of a stored value did not make the store's tile due")
+	}
+	tiles[3].lastFired = now
+	staleAfter(tiles, plugin.Capability{ID: "kv.list", Safety: plugin.Read})
+	if tiles[3].lastFired.IsZero() {
+		t.Error("a read made a tile due")
+	}
+}
+
+// Through the model: the answer of a change marks the tiles, and a failed one
+// does not, since nothing changed.
+func TestTheAnswerOfAChangeMakesItsTilesDue(t *testing.T) {
+	m := New(registry.New(), config.Dashboard{}, nil)
+	now := time.Now()
+	m.tiles = []tile{{cap: plugin.Capability{ID: "note.list", Safety: plugin.Read}, lastFired: now}}
+	add := plugin.Capability{ID: "note.add", Safety: plugin.Write, Flash: true}
+	failed, _ := m.Update(resultMsg{cap: add, err: view.Errorf("note.write", "disk full")})
+	if failed.(Model).tiles[0].lastFired.IsZero() {
+		t.Error("a change that failed made its tiles due")
+	}
+	done, _ := m.Update(resultMsg{cap: add, view: view.Text{Body: "added note 1: milk"}})
+	if !done.(Model).tiles[0].lastFired.IsZero() {
+		t.Error("the answer of a note added left the notes tile waiting out its pace")
 	}
 }
