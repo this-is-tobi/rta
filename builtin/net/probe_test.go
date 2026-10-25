@@ -401,26 +401,32 @@ func TestSendDryRunNeverReachesTheNetwork(t *testing.T) {
 		t.Errorf("--dry-run opened %d connection(s); the payload was delivered", got)
 	}
 
-	kv, ok := v.(view.KeyValue)
+	line, ok := v.(view.Text)
 	if !ok {
-		t.Fatalf("dry run returned %T, want a KeyValue report", v)
+		t.Fatalf("dry run returned %T, want the one line a destructive capability previews in", v)
 	}
-	var target, payload string
-	for _, p := range kv.Pairs {
-		switch p.Key {
-		case "target":
-			target = p.Value
-		case "payload":
-			payload = p.Value
-		}
-	}
-	if target != ln.Addr().String() {
-		t.Errorf("dry run named %q, not the address it would have dialled (%s)", target, ln.Addr())
+	if !strings.Contains(line.Body, "to "+ln.Addr().String()+":") {
+		t.Errorf("dry run %q does not name the address it would have dialled (%s)", line.Body, ln.Addr())
 	}
 	// The escapes are interpreted in the report, because interpreting them is
 	// the half people get wrong and a preview showing the literal backslash
-	// would hide exactly that.
-	if !strings.Contains(payload, `\r\n`) || strings.Contains(payload, `\\r`) {
-		t.Errorf("payload %q should show the interpreted bytes, quoted", payload)
+	// would hide exactly that; quoted, so the line breaks stay on one line.
+	if !strings.Contains(line.Body, `"FLUSHALL\r\n"`) || strings.Contains(line.Body, `\\r`) ||
+		strings.Contains(line.Body, "\n") {
+		t.Errorf("dry run %q should show the interpreted bytes, quoted, on one line", line.Body)
 	}
+}
+
+// net.send sends whatever any protocol takes — a DELETE, a FLUSHALL — so it is
+// destructive, as the narrowest of the requests it can make already is.
+func TestSendIsDestructive(t *testing.T) {
+	for _, c := range Plugin().Capabilities {
+		if c.ID == "net.send" {
+			if c.Safety != plugin.Destructive {
+				t.Errorf("net.send is %s, want destructive", c.Safety)
+			}
+			return
+		}
+	}
+	t.Fatal("net.send is not declared")
 }

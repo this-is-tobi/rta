@@ -93,7 +93,9 @@ func TestEveryCallerChosenDestinationNeedsAGrantScopedToItself(t *testing.T) {
 				continue
 			}
 			found++
-			if !c.NeedsGrant {
+			// A read asks for the grant through NeedsGrant; a write or a
+			// destructive one needs it by its class (grant.Required).
+			if !c.NeedsGrant && c.Safety == plugin.Read {
 				t.Errorf("%s: input %q is a caller-chosen destination but the capability declares no NeedsGrant",
 					c.ID, f.Name)
 			}

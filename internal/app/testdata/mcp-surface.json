@@ -1958,8 +1958,8 @@
   },
   {
     "name": "net_send",
-    "description": "Send bytes to a TCP port and report what comes back\n\nOpens a TCP connection, writes what you give it, and shows the reply — how you poke a protocol that expects the client to speak first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in `data` are interpreted. `tls` speaks it over TLS. This is a write: what arrives is executed by whatever is listening, so it needs an explicit grant before an AI agent can use it. `net_probe` is the read-only half — connect, handshake, listen — and carries the same grant, since the destination is still the caller's to choose either way.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.send`.",
-    "destructive_hint": false,
+    "description": "Send bytes to a TCP port and report what comes back\n\nOpens a TCP connection, writes what you give it, and shows the reply — how you poke a protocol that expects the client to speak first (SMTP, Redis, HTTP/1.0). \\r\\n and \\n in `data` are interpreted. `tls` speaks it over TLS. What arrives is executed by whatever is listening, and FLUSHALL empties a Redis, so it is destructive: a person is asked before it sends, and an AI agent needs an explicit grant. `net_probe` is the read-only half — connect, handshake, listen — and carries the same grant, since the destination is still the caller's to choose either way.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"host\"). You cannot issue one yourself — ask the operator to run `rta grant allow net.send`.",
+    "destructive_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {

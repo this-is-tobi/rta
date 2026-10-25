@@ -23,6 +23,8 @@ var notNames = map[string]string{
 	// of and no business asking for one: what this person sent before is
 	// offered back (internal/recent), as it is for every input.
 	"http.delete/url": "a resource on another machine",
+	// The bytes net.send writes, which name nothing.
+	"net.send/data": "the bytes it sends",
 }
 
 func TestEveryDestructiveCapabilityCompletesTheNamesItActsOn(t *testing.T) {
