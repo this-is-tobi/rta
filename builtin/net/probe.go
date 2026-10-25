@@ -120,7 +120,10 @@ func runSend(ctx context.Context, req plugin.Request) (view.View, error) {
 	//
 	// Everything is resolved before the refusal so the report is the real
 	// one: the address it would have dialled, and the payload after escape
-	// interpretation, which is the half people get wrong.
+	// interpretation, which is the half people get wrong — quoted, so the
+	// line breaks it sends stay on the one line a destructive capability's
+	// dry run is, which a person is asked about and an operator reads on a
+	// parked agent call.
 	if req.DryRun {
 		host := req.String("host")
 		port := req.Int("port")
@@ -129,13 +132,12 @@ func runSend(ctx context.Context, req plugin.Request) (view.View, error) {
 				WithHint("use a port between 1 and 65535")
 		}
 		payload := unescape(data)
-		return view.KeyValue{Pairs: []view.Pair{
-			{Key: "dry run", Value: "nothing was sent"},
-			{Key: "target", Value: stdnet.JoinHostPort(host, strconv.Itoa(port))},
-			{Key: "tls", Value: fmt.Sprintf("%t", req.Bool("tls"))},
-			{Key: "bytes", Value: strconv.Itoa(len(payload))},
-			{Key: "payload", Value: strconv.Quote(payload)},
-		}}, nil
+		over := ""
+		if req.Bool("tls") {
+			over = " over TLS"
+		}
+		return view.Text{Body: fmt.Sprintf("would send %s to %s%s: %s", format.CountOf(len(payload), "byte"),
+			stdnet.JoinHostPort(host, strconv.Itoa(port)), over, strconv.Quote(payload))}, nil
 	}
 	return probe(ctx, req, data)
 }

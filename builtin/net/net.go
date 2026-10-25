@@ -210,22 +210,25 @@ func Plugin() plugin.Plugin {
 				Summary: "Send bytes to a TCP port and report what comes back",
 				// Writing attacker-chosen bytes to an arbitrary port is a
 				// remote write primitive, and a strictly more capable one than
-				// http.post — which this same catalogue classifies Write.
-				// "FLUSHALL\r\n" to 6379 empties a Redis; a hand-rolled
-				// "DELETE /orders/7 HTTP/1.0" performs exactly the request
-				// http.delete is gated to prevent. It shipped as Read, which
+				// any request the http client makes: "FLUSHALL\r\n" to 6379
+				// empties a Redis, and a hand-rolled "DELETE /orders/7
+				// HTTP/1.0" performs exactly the request http.delete is
+				// destructive for. A class is the widest thing a capability can
+				// be asked to do, so this one is destructive as well: a write
+				// beside a destructive DELETE told every client that the more
+				// capable of the two only ever adds. It shipped as Read, which
 				// put it on every MCP server with no flag, no grant, and a
 				// readOnlyHint the client was entitled to believe.
-				Safety:     plugin.Write,
-				NeedsGrant: true,
-				Scope:      "host",
+				Safety: plugin.Destructive,
+				Scope:  "host",
 				Description: "Opens a TCP connection, writes what you give it, and shows the reply — " +
 					"how you poke a protocol that expects the client to speak first (SMTP, Redis, " +
 					"HTTP/1.0). \\r\\n and \\n in `data` are interpreted. `tls` speaks it over TLS. " +
-					"This is a write: what arrives is executed by whatever is listening, so it needs " +
-					"an explicit grant before an AI agent can use it. `net.probe` is the read-only " +
-					"half — connect, handshake, listen — and carries the same grant, since the " +
-					"destination is still the caller's to choose either way.",
+					"What arrives is executed by whatever is listening, and FLUSHALL empties a Redis, " +
+					"so it is destructive: a person is asked before it sends, and an AI agent needs an " +
+					"explicit grant. `net.probe` is the read-only half — connect, handshake, listen — " +
+					"and carries the same grant, since the destination is still the caller's to " +
+					"choose either way.",
 				Inputs: []plugin.Field{
 					{Name: "host", Type: plugin.String, Positional: true, Required: true,
 						Suggest: suggestHostnames, Help: "host to connect to"},
