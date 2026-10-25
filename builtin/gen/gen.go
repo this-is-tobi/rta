@@ -223,10 +223,10 @@ func specFrom(req plugin.Request) (passwordSpec, *view.Error) {
 	length := req.Int("length")
 	if length <= 0 {
 		return passwordSpec{}, view.Errorf("gen.password.tooshort", "length %d: a password needs at least one character", length).
-			WithHint("leave " + req.Surface().InputName("length") + " out for the default of 20")
+			WithHint("leave " + req.Surface().InputName("length") + " out for the default of 20").WithInput("length")
 	}
 	if length > maxPasswordLength {
-		return passwordSpec{}, view.Errorf("gen.password.toolong", "length %d exceeds the %d-character limit", length, maxPasswordLength)
+		return passwordSpec{}, view.Errorf("gen.password.toolong", "length %d exceeds the %d-character limit", length, maxPasswordLength).WithInput("length")
 	}
 	a := alphabet(!req.Bool("no-lower"), !req.Bool("no-upper"), !req.Bool("no-digits"),
 		req.Bool("symbols"), req.Bool("exclude-ambiguous"))
@@ -291,10 +291,10 @@ func runToken(_ context.Context, req plugin.Request) (view.View, error) {
 	length := req.Int("length")
 	if length <= 0 {
 		return nil, view.Errorf("gen.token.tooshort", "length %d: a token needs at least one byte", length).
-			WithHint("leave " + req.Surface().InputName("length") + " out for the default of 32")
+			WithHint("leave " + req.Surface().InputName("length") + " out for the default of 32").WithInput("length")
 	}
 	if length > maxTokenBytes {
-		return nil, view.Errorf("gen.token.toolong", "length %d exceeds the %d-byte limit", length, maxTokenBytes)
+		return nil, view.Errorf("gen.token.toolong", "length %d exceeds the %d-byte limit", length, maxTokenBytes).WithInput("length")
 	}
 	encoded, err := token(length, req.String("encoding"))
 	if err != nil {
@@ -335,10 +335,10 @@ func boundedCount(req plugin.Request) (int, *view.Error) {
 	count := req.Int("count")
 	if count <= 0 {
 		return 0, view.Errorf("gen.count.toofew", "count %d: generating needs a count of at least one", count).
-			WithHint("leave " + req.Surface().InputName("count") + " out for one")
+			WithHint("leave " + req.Surface().InputName("count") + " out for one").WithInput("count")
 	}
 	if count > maxCount {
-		return 0, view.Errorf("gen.count.toomany", "count %d exceeds the %d limit", count, maxCount)
+		return 0, view.Errorf("gen.count.toomany", "count %d exceeds the %d limit", count, maxCount).WithInput("count")
 	}
 	return count, nil
 }

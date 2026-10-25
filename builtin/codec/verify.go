@@ -25,6 +25,7 @@ import (
 	"unicode"
 	"unicode/utf16"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/builtin/internal/pipein"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -89,10 +90,14 @@ const maxSecretFile = 64 << 10
 // editor or `echo` leaves at the end, and as base64 of the bytes rather than
 // the bytes. s is the surface asking, for the name its refusals give the
 // inputs.
+//
+// Every refusal names secret-file but one: a file that is there and cannot be
+// read (pathin.Input), which a chmod answers and not the box.
 func secretFrom(path string, s plugin.Surface) (candidate, *view.Error) {
 	f, err := os.Open(plugin.ExpandHome(path))
 	if err != nil {
-		return candidate{}, view.Errorf("codec.jwt.secret", "reading the secret file: %v", err)
+		return candidate{}, view.Errorf("codec.jwt.secret", "reading the secret file: %v", err).
+			WithInput(pathin.Input("secret-file", err))
 	}
 	defer func() { _ = f.Close() }()
 	raw, err := pipein.ReadFrom(f, maxSecretFile)
@@ -100,11 +105,12 @@ func secretFrom(path string, s plugin.Surface) (candidate, *view.Error) {
 	case errors.Is(err, pipein.ErrTooLarge):
 		return candidate{}, view.Errorf("codec.jwt.secret", "%s holds more than the %s a shared secret could be",
 			quote(path), format.Bytes(maxSecretFile)).
-			WithHint(s.InputName("secret-file") + " names a file holding the secret and nothing else")
+			WithHint(s.InputName("secret-file") + " names a file holding the secret and nothing else").WithInput("secret-file")
 	case err != nil:
-		return candidate{}, view.Errorf("codec.jwt.secret", "reading the secret file: %v", err)
+		return candidate{}, view.Errorf("codec.jwt.secret", "reading the secret file: %v", err).
+			WithInput(pathin.Input("secret-file", err))
 	case raw == "":
-		return candidate{}, view.Errorf("codec.jwt.secret", "the secret file %s is empty", quote(path))
+		return candidate{}, view.Errorf("codec.jwt.secret", "the secret file %s is empty", quote(path)).WithInput("secret-file")
 	}
 	text := asText(raw)
 	// Whitespace alone is no secret either. `echo "$SECRET" > f` with SECRET
@@ -113,7 +119,7 @@ func secretFrom(path string, s plugin.Surface) (candidate, *view.Error) {
 	// after it was signed.
 	if trimText(text) == "" {
 		return candidate{}, view.Errorf("codec.jwt.secret", "the secret file %s holds only whitespace", quote(path)).
-			WithHint(`a file written with echo "$VAR" while VAR is unset holds a line break and nothing else`)
+			WithHint(`a file written with echo "$VAR" while VAR is unset holds a line break and nothing else`).WithInput("secret-file")
 	}
 	// Every reading the file may be taken in is checked, not only the bytes
 	// as they are: DER with a line break after it parses as no key at all,
@@ -123,7 +129,7 @@ func secretFrom(path string, s plugin.Surface) (candidate, *view.Error) {
 	trimmed := strings.TrimSuffix(strings.TrimSuffix(raw, "\n"), "\r")
 	for _, b := range []string{raw, trimmed, text} {
 		if what := publicKeyIn([]byte(b)); what != "" {
-			return candidate{}, keyAsSecret(path, what, s)
+			return candidate{}, keyAsSecret(path, what, s).WithInput("secret-file")
 		}
 	}
 	// Decoded once, for the guard and for the reading alike: two decodings
@@ -131,7 +137,7 @@ func secretFrom(path string, s plugin.Surface) (candidate, *view.Error) {
 	decoded, derr := decodeAnyBase64(strings.Join(strings.Fields(trimText(text)), ""))
 	if derr == nil {
 		if what := publicKeyIn(decoded); what != "" {
-			return candidate{}, keyAsSecret(path, what+", in base64", s)
+			return candidate{}, keyAsSecret(path, what+", in base64", s).WithInput("secret-file")
 		}
 	}
 	// An oct JWK is how a shared secret is written as a key, and --key sends
@@ -153,7 +159,7 @@ func secretFrom(path string, s plugin.Surface) (candidate, *view.Error) {
 	case err == nil && doc.str("kty") == "oct":
 		secret := octSecret(doc)
 		if secret == nil {
-			return candidate{}, view.Errorf("codec.jwt.secret", "the oct key in %s has no k that decodes", quote(path))
+			return candidate{}, view.Errorf("codec.jwt.secret", "the oct key in %s has no k that decodes", quote(path)).WithInput("secret-file")
 		}
 		k := readJWK(doc)
 		return candidate{secret: secret, label: "the oct key in " + quote(path), use: k.use, alg: k.alg, ops: k.ops,
@@ -161,7 +167,8 @@ func secretFrom(path string, s plugin.Surface) (candidate, *view.Error) {
 	case err == nil && doc.has("keys"):
 		return candidate{}, view.Errorf("codec.jwt.secret", "the secret file %s holds a key set, and it takes one shared secret",
 			quote(path)).
-			WithHint(`put the one oct key the token was signed with in the file, as {"kty":"oct","k":…}, and not the set`)
+			WithHint(`put the one oct key the token was signed with in the file, as {"kty":"oct","k":…}, and not the set`).
+			WithInput("secret-file")
 	}
 	c := candidate{secret: []byte(raw), label: "the secret in " + quote(path)}
 	if trimmed != raw {
@@ -925,7 +932,7 @@ func (v *verifier) check(header object, input string, sigSeg string) (string, *v
 	}
 	sig, _, err := decodeSegment(sigSeg)
 	if err != nil {
-		return "", view.Errorf("codec.jwt.invalid", "decoding the signature: %v", err)
+		return "", view.Errorf("codec.jwt.invalid", "decoding the signature: %v", err).WithInput("token")
 	}
 	candidates := v.keys
 	if v.secret != nil {
@@ -933,7 +940,7 @@ func (v *verifier) check(header object, input string, sigSeg string) (string, *v
 	}
 	if a.kind == "a shared secret" && !anySecret(candidates) {
 		return "", view.Errorf("codec.jwt.alg", "an %s signature is made with a shared secret, and only a public key was given", alg).
-			WithHint(secretHint(v.surface) + " — a public key checking an HMAC signature is the algorithm-confusion attack, so it is never tried")
+			WithHint(secretHint(v.surface) + " — a public key checking an HMAC signature is the algorithm-confusion attack, so it is never tried").WithInput("secret-file")
 	}
 
 	// What was tried and what was skipped are kept apart. One list used to
@@ -963,7 +970,7 @@ func (v *verifier) check(header object, input string, sigSeg string) (string, *v
 				return "", view.Errorf("codec.jwt.key", "checking this takes more than the %d key checks one call makes: "+
 					"every key given that fits is tried against every signature", maxKeyChecks).
 					WithHint("give the key the token was signed with — its kid is in the header, and " +
-						v.surface.CapabilityName("codec.jwk") + " lists the kids in a set")
+						v.surface.CapabilityName("codec.jwk") + " lists the kids in a set").WithInput("key")
 			}
 			v.keyChecks++
 		}
@@ -992,7 +999,7 @@ func (v *verifier) check(header object, input string, sigSeg string) (string, *v
 	case len(tried) > 0 && len(refused) == len(tried):
 		return "", view.Errorf("codec.jwt.key", "the %s signature was never compared with a key: crypto/rsa refuses %s",
 			alg, strings.Join(refused, "; ")).
-			WithHint("the key is what is wrong, not the token: no signature checks against it")
+			WithHint("the key is what is wrong, not the token: no signature checks against it").WithInput("key")
 	case len(tried) > 0:
 		what := tried[0]
 		if len(tried) > 1 {
@@ -1025,13 +1032,13 @@ func (v *verifier) check(header object, input string, sigSeg string) (string, *v
 		return "", view.Errorf("codec.jwt.key", "the key given under kid %s, the one the header names, cannot check "+
 			"anything: %s", quote(kid), strings.Join(why, "; ")).
 			WithHint("the key is in the set and its producer wrote it wrongly; " + v.surface.CapabilityName("codec.jwk") +
-				" says the same of it")
+				" says the same of it").WithInput("key")
 	// Only keys that carry kids can be missing the right one: a PEM key or a
 	// secret has none, and blaming a kid for them hides the real mismatch.
 	case kid != "" && anyKid(candidates, "") && !anyKid(candidates, kid):
 		return "", view.Errorf("codec.jwt.nokey", "no key given has kid %s, the one the header names", quote(kid)).
 			WithHint("the issuer may have rotated its keys — fetch its current key set; " +
-				v.surface.CapabilityName("codec.jwk") + " lists the kids in one")
+				v.surface.CapabilityName("codec.jwk") + " lists the kids in one").WithInput("key")
 	}
 	return "", view.Errorf("codec.jwt.nokey", "no key given can check %s signature: %s", withArticle(alg), strings.Join(skipped, "; ")).
 		WithHint(skippedHint(alg, skips))

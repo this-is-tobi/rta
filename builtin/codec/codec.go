@@ -155,7 +155,7 @@ func runB64(_ context.Context, req plugin.Request) (view.View, error) {
 		raw, err := decodeB64(value)
 		if err != nil {
 			return nil, view.Errorf("codec.b64.invalid", "not valid base64: %v", err).
-				WithHint("base64 is letters, digits, + and / (- and _ in the URL form); a character outside those, or a value cut short, fails")
+				WithHint("base64 is letters, digits, + and / (- and _ in the URL form); a character outside those, or a value cut short, fails").WithInput("value")
 		}
 		return decoded(raw), nil
 	}
@@ -207,7 +207,7 @@ func runHex(_ context.Context, req plugin.Request) (view.View, error) {
 		raw, err := decodeHex(value)
 		if err != nil {
 			return nil, view.Errorf("codec.hex.invalid", "not valid hex: %v", err).
-				WithHint("pairs of 0-9 and a-f; a 0x prefix and colon, space or dash separators are taken as they are")
+				WithHint("pairs of 0-9 and a-f; a 0x prefix and colon, space or dash separators are taken as they are").WithInput("value")
 		}
 		return decoded(raw), nil
 	}
@@ -285,7 +285,7 @@ func runURL(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 		out, err := unescape(value)
 		if err != nil {
-			return nil, view.Errorf("codec.url.invalid", "not a valid URL-escaped value: %v", err)
+			return nil, view.Errorf("codec.url.invalid", "not a valid URL-escaped value: %v", err).WithInput("value")
 		}
 		return decoded([]byte(out)), nil
 	}

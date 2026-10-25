@@ -393,18 +393,18 @@ func runJWK(_ context.Context, req plugin.Request) (view.View, error) {
 		case strings.Count(raw, ".") == 2 || strings.Count(raw, ".") == 4:
 			hint = "that looks like a token — " + req.Surface().CapabilityName("codec.jwt") + " reads those"
 		}
-		return nil, view.Errorf("codec.jwk.invalid", "not a JSON Web Key: %v", err).WithHint(hint)
+		return nil, view.Errorf("codec.jwk.invalid", "not a JSON Web Key: %v", err).WithHint(hint).WithInput("key")
 	}
 	if keys, ok := doc.values["keys"]; ok {
 		list, ok := keys.([]any)
 		if !ok {
-			return nil, view.Errorf("codec.jwk.invalid", "the keys member of a key set is not a list")
+			return nil, view.Errorf("codec.jwk.invalid", "the keys member of a key set is not a list").WithInput("key")
 		}
 		return keySetView(doc, list), nil
 	}
 	if !doc.has("kty") {
 		return nil, view.Errorf("codec.jwk.invalid", "a JSON object, but not a key: it has neither kty nor keys").
-			WithHint("a JWK is a JSON object with a kty member, and a key set one with a keys list")
+			WithHint("a JWK is a JSON object with a kty member, and a key set one with a keys list").WithInput("key")
 	}
 	return keyView(doc), nil
 }
