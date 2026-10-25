@@ -550,7 +550,10 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 	case ref != "":
 		pairsOut = append(pairsOut, view.Pair{Key: "profile",
 			Value: ref + " — the tile is about this connection whatever `rta use` switched on"})
-	case plugin.Profilable(c):
+	case hasConnection(c):
+		// A connection, not merely an input a profile can fill: sys.cpu takes
+		// a setting from one, and its receipt promised a panel per sys
+		// connection the environment holds, of which there are none.
 		pairsOut = append(pairsOut, view.Pair{Key: "profile",
 			Value: "none — the tile follows whatever `rta use` switched on, one panel per " +
 				plugin.Namespace(id) + " connection that environment holds; --profile <name> pins it"})

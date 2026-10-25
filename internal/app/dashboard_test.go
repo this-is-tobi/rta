@@ -202,6 +202,27 @@ func TestDashboardRemoveTakesDownOneKeyAndNamesTheOthers(t *testing.T) {
 	}
 }
 
+// A read of this machine runs at the host's pace and its receipt speaks of no
+// connection: an added sys.cpu ran every thirty seconds beside sys.mem's five
+// and was promised a panel per sys connection, because its one setting is an
+// input a profile can fill.
+func TestAnAddedReadOfThisMachineRunsAtTheHostsPace(t *testing.T) {
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := session(t, reg)
+	for _, id := range []string{"sys.cpu", "sys.disk", "sys.ps"} {
+		out, errOut, err := run("dashboard", "add", id, "--dry-run")
+		if err != nil {
+			t.Fatalf("%s: %v %q", id, err, errOut)
+		}
+		if !strings.Contains(out, "every 5s") || strings.Contains(out, "connection") {
+			t.Errorf("%s: receipt = %q, want every 5s and no connection", id, out)
+		}
+	}
+}
+
 // A profile holding several connections to the plugin expands: the receipt
 // names every panel, and `list` shows each one. hide takes one panel down
 // by its connection and unhide brings it back; an added tile is withdrawn,

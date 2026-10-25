@@ -30,6 +30,16 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
+// localRead is the pace a dashboard tile of a sys read keeps when the read
+// takes a setting from the config (cpu.cores, disk.all, ps.limit): the host's
+// own, as sys.mem and sys.load keep without stating it.
+//
+// Stated because the setting is what the pace rule reads as a connection
+// (plugin.Capability.Pace derives the thirty-second pace of a service from an
+// input a profile can fill), so an added sys.cpu tile ran every thirty seconds
+// beside sys.mem's five, and the docs promise a read of this machine five.
+const localRead = plugin.PaceLocal
+
 // Plugin returns the sys plugin declaration.
 func Plugin() plugin.Plugin {
 	return plugin.Plugin{
@@ -58,6 +68,7 @@ func Plugin() plugin.Plugin {
 				Safety:       plugin.Read,
 				HostSpecific: true,
 				Idempotent:   true,
+				Refresh:      localRead,
 				Inputs: []plugin.Field{
 					{Name: "cores", Type: plugin.Bool, Config: "cpu.cores", Help: "per-core usage as a bar chart"},
 				},
@@ -77,6 +88,7 @@ func Plugin() plugin.Plugin {
 				Safety:       plugin.Read,
 				HostSpecific: true,
 				Idempotent:   true,
+				Refresh:      localRead,
 				Inputs: []plugin.Field{
 					{Name: "all", Type: plugin.Bool, Config: "disk.all", Help: "include pseudo, duplicate and zero-size filesystems"},
 				},
@@ -104,6 +116,7 @@ func Plugin() plugin.Plugin {
 				Safety:       plugin.Read,
 				HostSpecific: true,
 				Idempotent:   true,
+				Refresh:      localRead,
 				Description: "Ranks the processes this account can read, by CPU over a 200ms window or by memory. " +
 					"Another user's processes cannot be read without privileges, and one that ends during " +
 					"the scan is gone before it is, so both are left out and counted in a note under the table.",
