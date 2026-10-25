@@ -10,6 +10,7 @@ import (
 	stdhttp "net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -66,6 +67,10 @@ func TestSafetyClasses(t *testing.T) {
 		case "http.get", "http.head", "http.status":
 			if c.Safety != plugin.Read {
 				t.Errorf("%s should be read", c.ID)
+			}
+		case "http.delete":
+			if c.Safety != plugin.Destructive {
+				t.Errorf("%s should be destructive: it removes what the URL names", c.ID)
 			}
 		default:
 			if c.Safety != plugin.Write {
@@ -627,6 +632,13 @@ func TestDryRunSendsNothing(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", method, err)
 		}
+		if method == "delete" {
+			// One line, as every destructive capability's dry run is.
+			if line, ok := v.(view.Text); !ok || !strings.HasPrefix(line.Body, "would send DELETE "+srv.URL) {
+				t.Errorf("delete dry run = %#v, want the line it would be asked about", v)
+			}
+			continue
+		}
 		kv, ok := v.(view.KeyValue)
 		if !ok {
 			t.Fatalf("%s dry run = %s", method, view.TypeOf(v))
@@ -663,6 +675,56 @@ func TestDryRunMasksCredentials(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "s3cr3t") {
 		t.Fatalf("the dry run echoed the credential: %s", raw)
+	}
+}
+
+// A dry run reads no credential file and asks no resolver. The file is named,
+// because a preview that read a pipe left nothing in it for the run the person
+// said yes to; and the host is not looked up, because the preview of a parked
+// agent call runs before anybody has agreed to anything, and a lookup sends the
+// name the agent chose to a resolver. A .invalid name never resolves (RFC
+// 6761) and a file that is not there cannot be read, so either one being asked
+// for fails the dry run.
+func TestADryRunReadsNoCredentialFileAndResolvesNoName(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "token")
+	for _, method := range []string{"GET", "POST", "DELETE"} {
+		v, err := doRequest(context.Background(), method, plugin.NewRequest(map[string]any{
+			"url": "https://rta-dry-run.invalid/orders/7", "bearer-file": missing, "timeout": "5s",
+		}, true, true))
+		if err != nil {
+			t.Fatalf("%s dry run read the file or looked the host up: %v", method, err)
+		}
+		raw, err := json.Marshal(view.Envelope{View: view.Redact(v)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), missing) {
+			t.Errorf("%s dry run does not say where the token would come from: %s", method, raw)
+		}
+	}
+}
+
+// A DELETE is asked about before it runs, and an operator reads its preview on
+// a parked agent call: one line, naming where it goes and what it carries,
+// with no credential in it.
+func TestADeleteIsPreviewedInOneLine(t *testing.T) {
+	v, err := doRequest(context.Background(), "DELETE", plugin.NewRequest(map[string]any{
+		"url": "api.example.com/orders/7", "bearer": "s3cr3t",
+		"header": []string{"If-Match: \"v7\"", "Authorization: Bearer other"}, "timeout": "5s",
+	}, true, true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	line, ok := v.(view.Text)
+	if !ok {
+		t.Fatalf("a DELETE dry run = %s, want one line", view.TypeOf(v))
+	}
+	want := "would send DELETE https://api.example.com/orders/7 with a bearer token and the header If-Match"
+	if line.Body != want {
+		t.Errorf("the preview = %q, want %q", line.Body, want)
+	}
+	if strings.Contains(line.Body, "s3cr3t") || strings.Contains(line.Body, "other") || strings.Contains(line.Body, "\n") {
+		t.Errorf("the preview carries a credential or a second line: %q", line.Body)
 	}
 }
 

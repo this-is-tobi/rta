@@ -143,7 +143,7 @@ rta net hosts add 10.0.0.5 db.local --dry-run
 rta note rm 4 --dry-run
 ```
 
-The reads it applies to are the ones that send something or write a file, and their `--help` lists it: `rta http get URL --bearer-file /dev/stdin --dry-run` prints the request as it would leave, the token masked, and sends nothing, so a mistyped host is found before the token reaches it; `rta http head` does the same, `rta net probe` shows the address it would dial and the payload after escapes, and `rta cert pem --out` says what it would write where. Every other read runs, since it changes nothing.
+The reads it applies to are the ones that send something or write a file, and their `--help` lists it: `rta http get URL --bearer-file /dev/stdin --dry-run` prints the request as it would leave and sends nothing — the token stays in its file and its header is shown masked, and the host is not even looked up — so a mistyped host is found before the token reaches it; `rta http head` does the same, `rta net probe` shows the address it would dial and the payload after escapes, and `rta cert pem --out` says what it would write where. Every other read runs, since it changes nothing.
 
 This is not only a convenience for you — it is what rta shows an operator on a [parked agent call](../30-boundary/35-roles-consent-and-the-guard.md#live-consent-when-you-would-rather-be-asked), which turns "may this agent call `note.rm`" into "may it remove **this note**", and it is what [the TUI](./20-tui.md#running-something) shows you before a destructive run, for the same reason.
 
@@ -255,6 +255,8 @@ The second line is the one that matters: it is how a credential another command 
 `--local-network` reaches `localhost`, `::1` and `127.0.0.1` alike, and a name with two addresses is tried on each until one answers. A URL written without a scheme is `https://`, except that with `--local-network` a host that is `localhost` or a loopback or private address is `http://` (port 443 keeps `https://`): `rta http get localhost:8080 --local-network`. A name that merely might be private, like `grafana.internal` or `app.localhost`, keeps `https://`, since the scheme is chosen before the name is looked up and a DNS server decides where such a name goes; write `http://` for it.
 
 A body that is a JSON object or array goes out as `Content-Type: application/json`, so `rta http post https://api.example.com/items --data '{"name":"x"}'` needs no header; a plain value, a form or a bare `42` is sent with no type claimed. Every request asks for `Accept: application/json, */*` and names itself `User-Agent: rta/<version>`. A `--header` of your own always wins, and an empty one (`--header 'User-Agent:'`) takes the default away; `--dry-run` shows the request as it would leave. `--data-file` reads the body from a file or from `/dev/stdin`, as the credential files above do, and like them an agent cannot name a path. curl's `--data @payload.json` and `--data @-` are refused at a terminal when they name a file or a pipe, and say to use `--data-file`, rather than sending the text `@payload.json`.
+
+`rta http delete` removes what the URL names, so it is destructive and asks the way `rta note rm` does: at a terminal it shows the request on one line — `would send DELETE https://api.example.com/orders/7 with the bearer token in token.txt` — and asks before sending it, and a script says `--yes`. `rta http post` and `rta http put` change what the URL names and are sent without a question, as every write is.
 
 ## Scripting notes
 

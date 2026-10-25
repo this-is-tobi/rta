@@ -1082,8 +1082,8 @@
   },
   {
     "name": "http_delete",
-    "description": "DELETE a URL\n\nAlso called: api, endpoint, request.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.delete`.",
-    "destructive_hint": false,
+    "description": "DELETE a URL\n\nAlso called: api, endpoint, request.\n\nSafety: destructive.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"url\"). You cannot issue one yourself — ask the operator to run `rta grant allow http.delete`.",
+    "destructive_hint": true,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,

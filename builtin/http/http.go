@@ -183,16 +183,22 @@ func Plugin() plugin.Plugin {
 				Inputs: common,
 				Run:    runMethod(stdhttp.MethodHead),
 			},
-			// POST/PUT/DELETE mutate remote state: write class, confirmed on
-			// production profiles once those exist.
+			// POST and PUT change what the URL names: writes, as an overwrite
+			// is (kv.set). DELETE removes it, and nothing rta can offer brings
+			// it back, so it is destructive: a person is shown the request and
+			// asked before it is sent, a script says --yes, and an agent's
+			// client is told the tool destroys (MCP's destructiveHint). It was
+			// a write beside the other two, classed by method rather than by
+			// what each one does, which told every client that a DELETE only
+			// ever adds.
 			//
-			// They need the grant for every reason GET does and one more: a
-			// body. Leaving them ungated while GET is gated would have been
-			// backwards — one switch for the whole registry,
-			// so an operator who turned it on for `note add` would have handed
-			// an agent an unlimited, unlogged POST to anywhere, which is a
-			// larger egress channel than the one two capabilities above are
-			// gated for.
+			// They need the grant for every reason GET does, and the two with
+			// a body for one more. Leaving them ungated while GET is gated would
+			// have been backwards — one switch for the whole registry, so an
+			// operator who turned it on for `note add` would have handed an
+			// agent an unlimited, unlogged POST to anywhere, which is a larger
+			// egress channel than the one two capabilities above are gated
+			// for. DELETE's class asks for the grant itself, as kv.rm's does.
 			{
 				ID: "http.post", Summary: "POST to a URL with an optional body", Keywords: []string{"api", "endpoint", "request", "submit"},
 				Safety:     plugin.Write,
@@ -215,8 +221,8 @@ func Plugin() plugin.Plugin {
 			},
 			{
 				ID: "http.delete", Summary: "DELETE a URL", Keywords: []string{"api", "endpoint", "request"},
-				Safety: plugin.Write, Idempotent: true,
-				NeedsGrant: true, Scope: "url",
+				Safety: plugin.Destructive, Idempotent: true,
+				Scope:  "url",
 				Inputs: common,
 				// The body alone when the answer goes to a pipe, so
 				// `http get URL | jq .` is handed the document and the status stays on stderr.
@@ -341,19 +347,26 @@ func wholeHeaders(s plugin.Surface, pieces []string) []string {
 // in a file.
 const maxCredential = 64 << 10
 
-// credential is the credential the call carries under name, from its input
-// or from the file named by name+"-file", never both: two answers to one
-// question are a refusal, not a guess. The file is read as the CLI reads any
-// path, so /dev/stdin is a pipe, and a line break the editor or `echo` left
-// at its end is no part of a token.
-func credential(req plugin.Request, name string) (string, *view.Error) {
-	value, file := req.String(name), req.String(name+"-file")
-	switch {
-	case file == "":
-		return value, nil
-	case value != "":
-		return "", view.Errorf("http.auth.twice", "%s is given as a value and as a file", name).
+// credentialInput is where the credential under name comes from: its input,
+// or the file named by name+"-file", never both — two answers to one question
+// are a refusal, not a guess. Nothing is read: a dry run names the file and
+// leaves what is in it where it is (dryRunOf).
+func credentialInput(req plugin.Request, name string) (value, file string, verr *view.Error) {
+	value, file = req.String(name), req.String(name+"-file")
+	if value != "" && file != "" {
+		return "", "", view.Errorf("http.auth.twice", "%s is given as a value and as a file", name).
 			WithHint("give one: " + req.Surface().InputName(name) + " or " + req.Surface().InputName(name+"-file"))
+	}
+	return value, file, nil
+}
+
+// credential is the credential the call carries under name (credentialInput).
+// A file is read as the CLI reads any path, so /dev/stdin is a pipe, and a
+// line break the editor or `echo` left at its end is no part of a token.
+func credential(req plugin.Request, name string) (string, *view.Error) {
+	value, file, verr := credentialInput(req, name)
+	if verr != nil || file == "" {
+		return value, verr
 	}
 	data, err := pathin.Read(req, file, maxCredential)
 	var tooLarge *pathin.TooLargeError
@@ -368,6 +381,18 @@ func credential(req plugin.Request, name string) (string, *view.Error) {
 	}
 	return "", view.Errorf("http.auth.file", "%s holds no %s", file, name).
 		WithHint("an empty file, or nothing was piped to it")
+}
+
+// setCredential puts the credential under name on r, in the header it is sent
+// in.
+func setCredential(r *stdhttp.Request, name, value string) {
+	switch name {
+	case "bearer":
+		r.Header.Set("Authorization", "Bearer "+value)
+	case "basic":
+		user, pass, _ := strings.Cut(value, ":")
+		r.SetBasicAuth(user, pass)
+	}
 }
 
 // pipeSpelling points a `-` that named a file at the spelling a Path input
@@ -560,20 +585,31 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 		}
 		httpReq.Header.Set(strings.TrimSpace(key), strings.TrimSpace(value))
 	}
-	bearer, verr := credential(req, "bearer")
-	if verr != nil {
-		return nil, verr
+
+	// A dry run must not reach the network. POST, PUT and DELETE change
+	// somebody else's system, and a --dry-run that sends the request anyway
+	// is worse than none at all: it reports what "would" happen after it has
+	// already happened.
+	//
+	// A GET and a HEAD are held to it as well, although they change nothing
+	// there: every command accepts --dry-run, and the person who adds it to
+	// a request carrying a token is asking to see where it would go before it
+	// goes. A read that ran anyway sent that token to a mistyped host, which
+	// the preview is for.
+	//
+	// So it returns before the credentials are read and before the host is
+	// looked up, both of which are dryRunOf's to explain.
+	if req.DryRun {
+		return dryRunOf(req, method, url, httpReq, data)
 	}
-	basic, verr := credential(req, "basic")
-	if verr != nil {
-		return nil, verr
-	}
-	if bearer != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+bearer)
-	}
-	if basic != "" {
-		user, pass, _ := strings.Cut(basic, ":")
-		httpReq.SetBasicAuth(user, pass)
+	for _, name := range []string{"bearer", "basic"} {
+		value, verr := credential(req, name)
+		if verr != nil {
+			return nil, verr
+		}
+		if value != "" {
+			setCredential(httpReq, name, value)
+		}
 	}
 	setDefaultHeaders(httpReq.Header, data)
 
@@ -589,20 +625,6 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 		return nil, requestFailed(req.Surface(), method, url, err)
 	}
 	httpReq = withTrustedProxy(httpReq)
-
-	// A dry run must not reach the network. POST, PUT and DELETE are writes
-	// on somebody else's system, and a --dry-run that sends the request
-	// anyway is worse than none at all: it reports what "would" happen after
-	// it has already happened.
-	//
-	// A GET and a HEAD are held to it as well, although they change nothing
-	// there: every command accepts --dry-run, and the person who adds it to
-	// a request carrying a token is asking to see where it would go before it
-	// goes. A read that ran anyway sent that token to a mistyped host, which
-	// the preview is for.
-	if req.DryRun {
-		return dryRunView(method, url, httpReq, data), nil
-	}
 
 	// Coarse phase timing via httptrace.
 	var dnsDone, connectDone, firstByte time.Time
@@ -746,11 +768,99 @@ func sizeOf(resp *stdhttp.Response, method string, read int, truncated bool) str
 	return fmt.Sprintf("more than %d B", read)
 }
 
+// dryRunOf is what a dry run answers: the request as it would leave, built
+// without reading a credential file and without looking the host up.
+//
+// A file is named rather than read. A preview that read a pipe or a process
+// substitution left nothing in it for the run the person then said yes to,
+// which failed on a file that "holds no bearer" — and a DELETE is asked about
+// with its preview in front of the question, at a terminal and in the TUI, so
+// its preview is always read before its run.
+//
+// The host is not looked up, because a lookup sends the name to a resolver,
+// which is reaching the network, and the preview of a parked agent call
+// (internal/mcp's propose) runs before anybody has agreed to anything: a name
+// the agent chose went out with nobody's leave, and a name is enough to carry
+// what an agent wants to send somewhere. The address is held to the guard when
+// the request is sent, as it always was (checkDestination).
+func dryRunOf(req plugin.Request, method, url string, httpReq *stdhttp.Request, data string) (view.View, error) {
+	var from []view.Pair
+	for _, name := range []string{"bearer", "basic"} {
+		value, file, verr := credentialInput(req, name)
+		if verr != nil {
+			return nil, verr
+		}
+		if file != "" {
+			// The header is shown masked, as one carrying a value given in
+			// the call is, and where it would come from beside it.
+			value = "unread"
+			from = append(from, view.Pair{Key: name + " from", Value: file})
+		}
+		if value != "" {
+			setCredential(httpReq, name, value)
+		}
+	}
+	setDefaultHeaders(httpReq.Header, data)
+	if method == stdhttp.MethodDelete {
+		return wouldDelete(req, url, httpReq.Header, from), nil
+	}
+	return dryRunView(method, url, httpReq, data, from), nil
+}
+
+// wouldDelete is a DELETE's dry run: one line, as every destructive
+// capability's is, because it is the line a person is asked about before it
+// runs, at a terminal and in the TUI, and the one an operator reads on a parked
+// agent call, which shows a preview of one line and nothing else
+// (internal/mcp's propose).
+//
+// The credential it would carry is named by where it comes from, and every
+// other header the call gives by its name alone: a value is the caller's to
+// know, and the one that matters here is masked everywhere else.
+func wouldDelete(req plugin.Request, url string, header stdhttp.Header, from []view.Pair) view.Text {
+	line := "would send DELETE " + url
+	var with []string
+	files := map[string]string{}
+	for _, p := range from {
+		files[strings.TrimSuffix(p.Key, " from")] = p.Value
+	}
+	switch auth := header.Get("Authorization"); {
+	case files["basic"] != "":
+		with = append(with, "the user:password in "+files["basic"])
+	case req.String("basic") != "":
+		with = append(with, "a user and password")
+	case files["bearer"] != "":
+		with = append(with, "the bearer token in "+files["bearer"])
+	case req.String("bearer") != "":
+		with = append(with, "a bearer token")
+	case auth != "":
+		with = append(with, "the Authorization header given")
+	}
+	var named []string
+	for _, h := range wholeHeaders(req.Surface(), req.StringSlice("header")) {
+		key, _, _ := strings.Cut(h, ":")
+		if key = stdhttp.CanonicalHeaderKey(strings.TrimSpace(key)); key != "Authorization" {
+			named = append(named, key)
+		}
+	}
+	switch len(named) {
+	case 0:
+	case 1:
+		with = append(with, "the header "+named[0])
+	default:
+		with = append(with, "the headers "+strings.Join(named, ", "))
+	}
+	if len(with) > 0 {
+		line += " with " + strings.Join(with, " and ")
+	}
+	return view.Text{Body: line}
+}
+
 // dryRunView shows the request that was not sent, in enough detail to check
-// it — including the headers, with anything carrying a credential masked.
-// The point is to inspect a request before it leaves, not to reprint the
-// secret you are about to send.
-func dryRunView(method, url string, httpReq *stdhttp.Request, data string) view.View {
+// it — including the headers, with anything carrying a credential masked, and
+// the file a credential would be read from (from) beside them. The point is
+// to inspect a request before it leaves, not to reprint the secret you are
+// about to send.
+func dryRunView(method, url string, httpReq *stdhttp.Request, data string, from []view.Pair) view.View {
 	pairs := []view.Pair{
 		{Key: "dry run", Value: "nothing was sent"},
 		{Key: "method", Value: method},
@@ -770,6 +880,7 @@ func dryRunView(method, url string, httpReq *stdhttp.Request, data string) view.
 		}
 		pairs = append(pairs, view.Pair{Key: key, Value: value})
 	}
+	pairs = append(pairs, from...)
 	if data != "" {
 		pairs = append(pairs,
 			view.Pair{Key: "body size", Value: fmt.Sprintf("%d B", len(data))},

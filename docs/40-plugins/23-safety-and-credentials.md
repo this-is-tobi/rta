@@ -10,7 +10,7 @@ It decides what an AI agent can reach without a human, so it is a statement abou
 |---|---|---|
 | `Read` | changes nothing, reveals nothing sensitive | nothing |
 | `Write` | changes something, **or reveals a secret** | a grant a person issued |
-| `Destructive` | removes something with no undo | a grant a person issued, naming the capability |
+| `Destructive` | removes something with no undo | a grant a person issued, as for `Write` |
 
 The rule that catches people: **a capability that reveals a secret's plaintext is `Write`, even though it mutates nothing.** `kv get` is the canonical case. If yours prints a token, signs with a private key, or dumps an environment, it is not `Read`. The suite cannot see this one, and it does not claim to: it asks about a capability that takes a `Secret` or needs a grant, and for a `Read` it only notes, by name, a key or column ending in `token`, `password`, `secret`, `api-key` or the like that nothing marks `Redacted`. Class the capability by what its answer holds, whatever the suite says.
 
