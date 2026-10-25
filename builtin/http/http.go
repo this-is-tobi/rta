@@ -22,6 +22,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"golang.org/x/net/http/httpguts"
+
 	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/internal/headerlist"
 	"github.com/this-is-tobi/rta/internal/session"
@@ -588,13 +590,33 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 	if err != nil {
 		return nil, view.Errorf("http.request.invalid", "building request: %v", err).WithInput("url")
 	}
+	// What net/http itself will not send is refused here, before anything
+	// leaves, a dry run included. A URL with no host, `http:///x`, builds a
+	// request, and a header name with a space in it or a value holding a line
+	// break is set on one; each failed only inside the transport, after the
+	// host was looked up, as a request that "failed" under the hint for a host
+	// that does not answer.
+	if (httpReq.URL.Scheme == "http" || httpReq.URL.Scheme == "https") && httpReq.URL.Host == "" {
+		return nil, view.Errorf("http.request.invalid", "%s names no host", url).
+			WithHint("write the URL with the host in it, as https://api.example.com/items").WithInput("url")
+	}
 	for _, h := range wholeHeaders(req.Surface(), req.StringSlice("header")) {
 		key, value, found := strings.Cut(h, ":")
 		if !found {
 			return nil, view.Errorf("http.header.invalid", "invalid header %q", h).
 				WithHint("use 'Key: Value' form").WithInput("header")
 		}
-		httpReq.Header.Set(strings.TrimSpace(key), strings.TrimSpace(value))
+		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
+		// Named and not quoted whole: the value is where a credential goes.
+		switch {
+		case !httpguts.ValidHeaderFieldName(key):
+			return nil, view.Errorf("http.header.invalid", "%q is not a header name net/http will send", key).
+				WithHint("a header name is one word of letters, digits and dashes, as Content-Type").WithInput("header")
+		case !httpguts.ValidHeaderFieldValue(value):
+			return nil, view.Errorf("http.header.invalid", "the value of %s is not one net/http will send", key).
+				WithHint("a header value is one line, with no control characters in it").WithInput("header")
+		}
+		httpReq.Header.Set(key, value)
 	}
 
 	// A dry run must not reach the network. POST, PUT and DELETE change

@@ -122,6 +122,35 @@ func TestARefusalOfOneInputNamesIt(t *testing.T) {
 // the resolver says does not exist. A resolver that did not answer, a name
 // that is not the URL's (the proxy the environment names), a certificate, a
 // refusal and a deadline are failures the URL as typed did not cause.
+// What net/http itself will not send is refused before anything leaves, dry
+// run or not, naming the input: it failed inside the transport, after a lookup
+// of the host, as a request to a host that does not answer.
+func TestWhatNetHTTPWouldRefuseIsRefusedBeforeTheRequestLeaves(t *testing.T) {
+	for _, tc := range []struct {
+		name, input string
+		values      map[string]any
+	}{
+		{"a URL with no host", "url", map[string]any{"url": "http:///orders/7"}},
+		{"a header name with a space", "header", map[string]any{"url": "https://rta-dry-run.invalid/x", "header": []string{"Bad Key: v"}}},
+		{"a header value on two lines", "header", map[string]any{"url": "https://rta-dry-run.invalid/x", "header": []string{"X-Note: a\nb"}}},
+	} {
+		tc.values["timeout"] = "5s"
+		for _, dry := range []bool{true, false} {
+			_, err := doRequest(context.Background(), "GET", plugin.NewRequest(tc.values, dry, true))
+			var verr *view.Error
+			if !errors.As(err, &verr) || verr.Input != tc.input ||
+				(verr.Code != "http.request.invalid" && verr.Code != "http.header.invalid") {
+				t.Errorf("%s (dry run %v) = %v, want a refusal naming %s", tc.name, dry, err, tc.input)
+			}
+		}
+	}
+	// An empty value is one net/http sends, and how a default header is taken away.
+	if _, err := doRequest(context.Background(), "GET", plugin.NewRequest(map[string]any{
+		"url": "https://rta-dry-run.invalid/x", "header": []string{"User-Agent:"}, "timeout": "5s"}, true, true)); err != nil {
+		t.Errorf("an empty header value was refused: %v", err)
+	}
+}
+
 func TestOnlyAFailureOfTheURLAsTypedNamesIt(t *testing.T) {
 	const target = "https://nope.example:8443/x"
 	failed := func(err error) error { return &url.Error{Op: "Get", URL: target, Err: err} }
