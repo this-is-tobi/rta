@@ -34,7 +34,7 @@ func runTree(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	if !info.IsDir() {
 		return nil, view.Errorf("fs.tree.notadir", "%s is %s, not a directory", path, notADir(info.Mode())).
-			WithHint("pass the directory holding it")
+			WithHint("pass the directory holding it").WithInput("path")
 	}
 	// Walked through the directory held open rather than by path names
 	// (pathin.Dir): a name a walk looked at and then read by name is one a
@@ -329,7 +329,7 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 		}
 		sort.Strings(names)
 		return nil, view.Errorf("fs.hash.algo", "unknown algorithm %q", algo).
-			WithHint("one of: " + strings.Join(names, ", "))
+			WithHint("one of: " + strings.Join(names, ", ")).WithInput("algo")
 	}
 	// An expect with no checksum in it is refused rather than skipped. The
 	// comparison is the point of the capability, and a skipped one leaves a
@@ -340,7 +340,8 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 	expect := normalizeChecksum(rawExpect)
 	if expect == "" && strings.TrimSpace(rawExpect) != "" {
 		return nil, view.Errorf("fs.hash.expect", "%q holds no checksum to compare against", rawExpect).
-			WithHint(req.Surface().InputName("expect") + " takes the checksum itself, bare or as shasum prints it")
+			WithHint(req.Surface().InputName("expect") + " takes the checksum itself, bare or as shasum prints it").
+			WithInput("expect")
 	}
 	if expect != "" {
 		if verr := checkChecksumShape(req.Surface(), algo, expect, newHash().Size()); verr != nil {
@@ -360,7 +361,7 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	if info.IsDir() {
 		return nil, view.Errorf("fs.hash.isdir", "%s is a directory", path).
-			WithHint("hash a file; " + req.Surface().CapabilityName("fs.usage") + " measures a directory")
+			WithHint("hash a file; " + req.Surface().CapabilityName("fs.usage") + " measures a directory").WithInput("path")
 	}
 
 	f, info, err := pathin.Open(req, path)
@@ -368,7 +369,7 @@ func runHash(ctx context.Context, req plugin.Request) (view.View, error) {
 	switch {
 	case errors.As(err, &notAFile):
 		return nil, view.Errorf("fs.hash.notafile", "%v", err).
-			WithHint("name a regular file to hash")
+			WithHint("name a regular file to hash").WithInput("path")
 	case err != nil:
 		return nil, pathError("fs.hash", path, err)
 	}
@@ -418,7 +419,8 @@ func checkChecksumShape(sf plugin.Surface, algo, expect string, size int) *view.
 	for _, r := range expect {
 		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
 			return view.Errorf("fs.hash.expect", "%q is not a checksum: it holds %q, outside 0-9 and a-f", expect, r).
-				WithHint(sf.InputName("expect") + " takes the checksum itself, bare or as shasum prints it")
+				WithHint(sf.InputName("expect") + " takes the checksum itself, bare or as shasum prints it").
+				WithInput("expect")
 		}
 	}
 	if len(expect) == size*2 {
@@ -432,12 +434,18 @@ func checkChecksumShape(sf plugin.Surface, algo, expect string, size int) *view.
 	}
 	sort.Strings(same)
 	hint := "a checksum is given whole; one cut short compares as different from the file"
+	input := "expect"
 	if len(same) > 0 {
 		hint = "that is the length of a " + strings.Join(same, " or ") + " checksum: give " +
 			sf.InputName("algo") + " " + same[0]
+		// Named as neither input: the checksum is a whole one of another
+		// algorithm, so it and algo disagree, and changing either one settles
+		// it. A form reopened on expect would send somebody to replace a
+		// checksum that is right.
+		input = ""
 	}
 	return view.Errorf("fs.hash.expect", "the expected checksum is %s, where a %s is %d",
-		format.CountOf(len(expect), "hex digit"), algo, size*2).WithHint(hint)
+		format.CountOf(len(expect), "hex digit"), algo, size*2).WithHint(hint).WithInput(input)
 }
 
 // normalizeChecksum takes a checksum as it was pasted: any case, wrapped in

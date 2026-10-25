@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/builtin/internal/sshkeys"
 	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -237,7 +238,7 @@ func runBackup(_ context.Context, req plugin.Request) (view.View, error) {
 	data, err := os.ReadFile(full)
 	if err != nil {
 		return nil, view.Errorf("keys.backup.unreadable", "reading %s: %v", path, err).
-			WithHint("pass the private key file, e.g. ~/.ssh/id_ed25519")
+			WithHint("pass the private key file, e.g. ~/.ssh/id_ed25519").WithInput(pathin.Input("key", err))
 	}
 	raw, verr := unlockKey(req, path, data)
 	if verr != nil {
@@ -247,7 +248,7 @@ func runBackup(_ context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("keys.backup.unsupported", "%s: %v", path, err).
 			WithHint("word-based backup supports ed25519 keys only (`ssh-keygen -t ed25519` makes one) — " +
-				"RSA and ECDSA keys have no single seed to encode")
+				"RSA and ECDSA keys have no single seed to encode").WithInput("key")
 	}
 	words, err := toMnemonic(priv.Seed())
 	if err != nil {
@@ -299,10 +300,10 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 	out := pathguard.ExpandTilde(req.String("out"))
 	pub := out + ".pub"
 	if verr := checkComment(req.String("comment")); verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("comment")
 	}
 	if verr := checkOutDir("add", out); verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("out")
 	}
 	// Both checked before anything is generated, and the message says what is
 	// at stake: unlike a restore, there is nothing to recover an overwritten
@@ -311,7 +312,7 @@ func runAdd(_ context.Context, req plugin.Request) (view.View, error) {
 		if fileExists(path) {
 			return nil, view.Errorf("keys.add.exists", "%s already exists", path).
 				WithHint("name a different file — overwriting a private key destroys access to " +
-					"everything it authorises, and nothing here could put it back")
+					"everything it authorises, and nothing here could put it back").WithInput("out")
 		}
 	}
 
@@ -345,18 +346,18 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 	out := pathguard.ExpandTilde(req.String("out"))
 	pub := out + ".pub"
 	if verr := checkComment(req.String("comment")); verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("comment")
 	}
 	if verr := checkOutDir("restore", out); verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("out")
 	}
 	if fileExists(out) {
 		return nil, view.Errorf("keys.restore.exists", "%s already exists", out).
-			WithHint("name a new file — a restored key is never written over an existing one")
+			WithHint("name a new file — a restored key is never written over an existing one").WithInput("out")
 	}
 	if fileExists(pub) {
 		return nil, view.Errorf("keys.restore.exists", "%s already exists", pub).
-			WithHint("name a new file — a restored key is never written over an existing one")
+			WithHint("name a new file — a restored key is never written over an existing one").WithInput("out")
 	}
 
 	words, verr := resolveWords(req)
@@ -367,13 +368,13 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 	if err != nil {
 		return nil, view.Errorf("keys.restore.words", "%v", err).
 			WithHint("check the words are typed correctly, in order and space-separated, and came from " +
-				req.Surface().CapabilityName("keys.backup"))
+				req.Surface().CapabilityName("keys.backup")).WithInput("words")
 	}
 	if len(seed) != ed25519.SeedSize {
 		return nil, view.Errorf("keys.restore.words",
 			"decoded %d bytes of entropy, want %d — this is not a 24-word backup made by keys.backup",
 			len(seed), ed25519.SeedSize).
-			WithHint(req.Surface().CapabilityName("keys.backup") + " always makes exactly 24 words")
+			WithHint(req.Surface().CapabilityName("keys.backup") + " always makes exactly 24 words").WithInput("words")
 	}
 	priv := ed25519.NewKeyFromSeed(seed)
 
@@ -430,5 +431,5 @@ func resolveWords(req plugin.Request) (string, *view.Error) {
 	if sf := req.Surface(); sf == plugin.SurfaceTUI || sf == plugin.SurfaceMCP {
 		hint = "give them in " + sf.InputName("words")
 	}
-	return "", view.Errorf("keys.restore.nowords", "no seed words provided").WithHint(hint)
+	return "", view.Errorf("keys.restore.nowords", "no seed words provided").WithHint(hint).WithInput("words")
 }

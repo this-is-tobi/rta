@@ -68,7 +68,7 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	file, verr := repoFile(repo, req.String("file"), req.Surface(), req.Surface().ArgumentName("file"))
 	if verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("file")
 	}
 	// Put to the gate where git would check it out, as a diff's files are
 	// (pathGate). In a checkout that is where the boundary judged it already;
@@ -84,7 +84,7 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 	// answer, from a file a caller need only have committed.
 	toolarge := func(msg string, args ...any) *view.Error {
 		return view.Errorf("git.blame.toolarge", msg, args...).
-			WithHint(req.Surface().CapabilityWith("git.log", "file") + " names the commits that touched it")
+			WithHint(req.Surface().CapabilityWith("git.log", "file") + " names the commits that touched it").WithInput("file")
 	}
 	if tree, terr := commit.Tree(); terr == nil {
 		if size, serr := tree.Size(file); serr == nil && size > maxDiffBytes {
@@ -103,10 +103,12 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 		// "file not found" for a directory that is there blamed the wrong
 		// thing: it was found, and it is not a file.
 		return nil, view.Errorf("git.blame.isdir", "%s is a directory at HEAD, and blame takes a file", file).
-			WithHint(req.Surface().CapabilityWith("git.log", "file") + " names the commits that touched anything in it")
+			WithHint(req.Surface().CapabilityWith("git.log", "file") + " names the commits that touched anything in it").
+			WithInput("file")
 	case err != nil:
 		return nil, view.Errorf("git.blame.failed", "%s: %v", file, err).
-			WithHint("the file must be tracked at HEAD: a new one has no history to blame until it is committed")
+			WithHint("the file must be tracked at HEAD: a new one has no history to blame until it is committed").
+			WithInput("file")
 	}
 
 	t := view.Table{Columns: []view.Column{
@@ -125,7 +127,7 @@ func runBlame(ctx context.Context, req plugin.Request) (view.View, error) {
 		from := req.Surface().InputName("from")
 		return nil, view.Errorf("git.blame.range", "%s has %s, and %s is %d",
 			file, format.CountOf(total, "line"), from, first+1).
-			WithHint(from + " counts from 1; the file's last line is " + strconv.Itoa(total))
+			WithHint(from + " counts from 1; the file's last line is " + strconv.Itoa(total)).WithInput("from")
 	}
 	last := total
 	if limit := req.Int("limit"); limit > 0 {

@@ -212,7 +212,8 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	if !info.IsDir() {
 		return nil, view.Errorf("fs.usage.notadir", "%s is %s, not a directory", path, notADir(info.Mode())).
-			WithHint(req.Surface().CapabilityName("fs.hash") + " inspects one file — or pass the directory holding it")
+			WithHint(req.Surface().CapabilityName("fs.hash") + " inspects one file — or pass the directory holding it").
+			WithInput("path")
 	}
 	dir, openErr := pathin.OpenDir(req, path)
 	if openErr != nil {
@@ -412,7 +413,7 @@ func resolvePath(raw string) (string, *view.Error) {
 	p = pathguard.ExpandTilde(p)
 	abs, err := filepath.Abs(p)
 	if err != nil {
-		return "", view.Errorf("fs.path", "resolving %q: %v", raw, err)
+		return "", view.Errorf("fs.path", "resolving %q: %v", raw, err).WithInput("path")
 	}
 	return abs, nil
 }
@@ -437,7 +438,7 @@ func pathError(code, path string, err error) *view.Error {
 	switch {
 	case os.IsNotExist(err):
 		return view.Errorf(code+".notfound", "no such path: %s", path).
-			WithHint("check its spelling, and that it exists on the machine running rta")
+			WithHint("check its spelling, and that it exists on the machine running rta").WithInput("path")
 	case os.IsPermission(err):
 		// Not `.denied`: that ending says a service refused the account, and a
 		// dashboard tile stops asking on it (view.Error.CredentialRefused). The

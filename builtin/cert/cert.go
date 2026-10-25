@@ -272,7 +272,7 @@ func loadCerts(ctx context.Context, req plugin.Request, target string, timeout t
 		}
 		return nil, nil, view.Errorf("cert.file.notfound", "no certificate file at %s", target).
 			WithHint("over MCP this reads a PEM or DER file under the server's roots and dials no host; " +
-				req.Surface().CapabilityName("cert.expiry") + " checks a live host, with a grant")
+				req.Surface().CapabilityName("cert.expiry") + " checks a live host, with a grant").WithInput("target")
 	}
 	if host, isURL, verr := urlTarget(target); isURL {
 		if verr != nil {
@@ -287,7 +287,7 @@ func loadCerts(ctx context.Context, req plugin.Request, target string, timeout t
 	if looksLikeFile(target) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil, view.Errorf("cert.file.notfound", "no certificate file at %s", target).
-				WithHint("name a PEM or DER file that exists, or a host[:port] to connect to")
+				WithHint("name a PEM or DER file that exists, or a host[:port] to connect to").WithInput("target")
 		}
 		return nil, nil, view.Errorf("cert.file.unreadable", "reading %s: %v", target, err)
 	}
@@ -312,12 +312,12 @@ func urlTarget(target string) (host string, isURL bool, verr *view.Error) {
 	u, err := url.Parse(target)
 	if err != nil || u.Hostname() == "" {
 		return "", true, view.Errorf("cert.target.invalid", "invalid target %q: a URL with no host in it", target).
-			WithHint("use host, host:port, or an https:// URL for its host")
+			WithHint("use host, host:port, or an https:// URL for its host").WithInput("target")
 	}
 	if !strings.EqualFold(u.Scheme, "https") {
 		return "", true, view.Errorf("cert.target.invalid", "%q is a %s URL, and a certificate is read from a TLS host",
 			target, strings.ToLower(u.Scheme)).
-			WithHint("use host, host:port, or an https:// URL for its host")
+			WithHint("use host, host:port, or an https:// URL for its host").WithInput("target")
 	}
 	port := u.Port()
 	if port == "" {
@@ -358,12 +358,12 @@ func dialCerts(ctx context.Context, sf plugin.Surface, target string, timeout ti
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, nil, view.Errorf("cert.target.invalid", "invalid target %q: %v", target, err).
-			WithHint("use host, host:port, or a PEM file path")
+			WithHint("use host, host:port, or a PEM file path").WithInput("target")
 	}
 	if looksLikeFile(target) || looksLikeFile(host) {
 		return nil, nil, view.Errorf("cert.target.notahost", "%q is a file path, not a host[:port]", target).
 			WithHint(sf.CapabilityName("cert.expiry") + " checks hosts; " + sf.CapabilityName("cert.inspect") +
-				" reads a certificate file that exists")
+				" reads a certificate file that exists").WithInput("target")
 	}
 	// We are inspecting, not trusting: report what the host presents even if
 	// the chain is invalid, since verification status is part of the output,
@@ -407,10 +407,10 @@ func readPEM(req plugin.Request, path string) ([]*x509.Certificate, error) {
 	switch {
 	case errors.As(err, &notAFile):
 		return nil, view.Errorf("cert.file.notafile", "%v", err).
-			WithHint("name a PEM file, or a host to fetch the chain from")
+			WithHint("name a PEM file, or a host to fetch the chain from").WithInput("target")
 	case errors.As(err, &tooLarge):
 		return nil, view.Errorf("cert.file.toolarge", "%v, more than any certificate file holds", err).
-			WithHint("name the PEM file itself — a certificate bundle is kilobytes")
+			WithHint("name the PEM file itself — a certificate bundle is kilobytes").WithInput("target")
 	case err != nil:
 		return nil, view.Errorf("cert.file.unreadable", "reading %s: %v", path, err)
 	}
@@ -484,7 +484,8 @@ func readPEM(req plugin.Request, path string) ([]*x509.Certificate, error) {
 	if endsInsideBlock(rest) {
 		return nil, view.Errorf("cert.file.truncated",
 			"%s ends inside a PEM block, so it holds at least one certificate this could not read", path).
-			WithHint("the file is truncated or corrupt — fetch it again, and check whatever wrote it finished")
+			WithHint("the file is truncated or corrupt — fetch it again, and check whatever wrote it finished").
+			WithInput("target")
 	}
 	unreadable(beginTypes(rest))
 	// Refused, not skipped: a file is read as one chain, and a chain with a
@@ -496,7 +497,7 @@ func readPEM(req plugin.Request, path string) ([]*x509.Certificate, error) {
 		if blocks > 1 {
 			where = fmt.Sprintf("certificate %d of %d in %s", failedAt, blocks, path)
 		}
-		verr := view.Errorf("cert.parse.failed", "parsing %s: %v", where, failed)
+		verr := view.Errorf("cert.parse.failed", "parsing %s: %v", where, failed).WithInput("target")
 		switch {
 		case errors.Is(failed, errNotPEM):
 			verr = verr.WithHint("a character in it was changed or lost — fetch the file again, or export the certificate again")
@@ -519,7 +520,7 @@ func readPEM(req plugin.Request, path string) ([]*x509.Certificate, error) {
 	if len(certs) == 0 {
 		return nil, view.Errorf("cert.file.empty", "no CERTIFICATE blocks found in %s", path).
 			WithHint("a PEM file with BEGIN CERTIFICATE blocks and a DER certificate are read; " +
-				"a private key, a PKCS#12 bundle or a keystore is not a certificate file")
+				"a private key, a PKCS#12 bundle or a keystore is not a certificate file").WithInput("target")
 	}
 	return certs, nil
 }
@@ -868,17 +869,18 @@ func runPEM(ctx context.Context, req plugin.Request) (view.View, error) {
 	// outd: file exists", the temporary file's name in the middle of it.
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		return nil, view.Errorf("cert.out.isdir", "%s is a directory", out).
-			WithHint("name the file to write the PEM to, " + req.Surface().InputName("out") + " " + filepath.Join(out, "chain.pem"))
+			WithHint("name the file to write the PEM to, " + req.Surface().InputName("out") + " " + filepath.Join(out, "chain.pem")).
+			WithInput("out")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, view.Errorf("cert.out.unwritable", "creating %s: %v", filepath.Dir(path), err)
+		return nil, view.Errorf("cert.out.unwritable", "creating %s: %v", filepath.Dir(path), err).WithInput("out")
 	}
 	// 0644 and not 0600: this is a certificate, which is public by
 	// construction, and the file's whole purpose is to be read by something
 	// else — a container build, a system trust store, another user's tool.
 	// Atomic, so a half-written bundle never exists for anything to pick up.
 	if err := atomicfile.Write(path, []byte(body), 0o644); err != nil {
-		return nil, view.Errorf("cert.out.unwritable", "writing %s: %v", path, err)
+		return nil, view.Errorf("cert.out.unwritable", "writing %s: %v", path, err).WithInput("out")
 	}
 	return view.Text{Body: fmt.Sprintf("wrote %s from %s to %s (%d bytes, mode 0644)",
 		format.Count(len(chosen), "certificate", "certificates"), target, out, len(body))}, nil
@@ -902,12 +904,12 @@ func include(sf plugin.Surface, certs []*x509.Certificate, which string) ([]*x50
 			return nil, view.Errorf("cert.chain.leafonly",
 				"only the leaf certificate was presented, so there are no issuers to print").
 				WithHint("many servers omit their intermediates; " + sf.InputName("include") +
-					" set to chain prints what did arrive")
+					" set to chain prints what did arrive").WithInput("include")
 		}
 		return certs[1:], nil
 	}
 	return nil, view.Errorf("cert.include.invalid", "unknown include %q", which).
-		WithHint("one of: chain, issuers, leaf")
+		WithHint("one of: chain, issuers, leaf").WithInput("include")
 }
 
 func encodePEM(certs []*x509.Certificate) (string, *view.Error) {
@@ -1172,7 +1174,7 @@ func runTLS(ctx context.Context, req plugin.Request) (view.View, error) {
 			hint = sf.CapabilityName("net.probe") + " with `tls` reports a host's TLS version and cipher, with a grant"
 		}
 		return nil, view.Errorf("cert.tls.filetarget", "%q is a file; cert.tls needs a live host", target).
-			WithHint(hint)
+			WithHint(hint).WithInput("target")
 	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: "version", Value: protocolOf(state.Version)},

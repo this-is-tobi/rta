@@ -83,7 +83,7 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	wt, err := repo.Worktree()
 	if err != nil {
 		return nil, view.Errorf("git.status.worktree", "no working tree here: %v", err).
-			WithHint("a bare repository has no working tree to report on")
+			WithHint("a bare repository has no working tree to report on").WithInput("path")
 	}
 	status, ignored, err := worktreeStatus(ctx, statusDeadline(ctx), repo, wt, req)
 	if err != nil {

@@ -70,7 +70,7 @@ func runDiff(ctx context.Context, req plugin.Request) (view.View, error) {
 		if errors.As(err, &verr) && verr.Code == "git.diff.unresolved" {
 			sf := req.Surface()
 			return nil, verr.WithHint(sf.CapabilityName("git.log") + " lists the commits and " +
-				sf.CapabilityName("git.branches") + " the branches")
+				sf.CapabilityName("git.branches") + " the branches").WithInput("commit")
 		}
 		return v, err
 	}
