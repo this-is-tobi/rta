@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -273,6 +274,34 @@ func nearestFlags(cmd *cobra.Command, typed string) []string {
 		out = append(out, "--"+f.name)
 	}
 	return out
+}
+
+// helpWordFlag is the one flag of cmd whose help names the word that was typed
+// as a flag, when no spelling is near it: `rta gen token` answers with
+// "bytes: 32" and takes the number as --length, whose help is "bytes of
+// entropy", so `--bytes 16` was told only to read --help. A word in the help of
+// two flags or more says nothing about which was meant, and a short one is too
+// common to go by. "" when there is no such flag.
+func helpWordFlag(cmd *cobra.Command, typed string) string {
+	typed = strings.ToLower(typed)
+	if len([]rune(typed)) < 4 {
+		return ""
+	}
+	var found []string
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if f.Hidden || f.Name == "help" || f.Name == "version" || !listsFlag(cmd, f) || opposite(typed, f.Name) {
+			return
+		}
+		if slices.Contains(strings.FieldsFunc(strings.ToLower(f.Usage), func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-'
+		}), typed) {
+			found = append(found, f.Name)
+		}
+	})
+	if len(found) != 1 {
+		return ""
+	}
+	return "--" + found[0]
 }
 
 // oppositePrefixes are the starts a word and its opposite differ by, the rest
