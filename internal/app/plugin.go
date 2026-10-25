@@ -664,7 +664,20 @@ func discovered(name string) (pluginhost.Untrusted, *view.Error) {
 // the docs and `plugin new` send an author to build it, ~/.local/bin, is on
 // no $PATH until somebody put it there, and the failure that followed — two
 // errors and an empty list — never said the directory was the problem.
+//
+// A path is not a name, and was answered as one: `rta plugin trust
+// ./rta-plugin-weather` was told rta finds a plugin as
+// `rta-plugin-./rta-plugin-weather` on $PATH. The argument is the name a plugin
+// is installed under, and the person holding the file is told so, with the
+// name the file announces when it announces one.
 func notFoundHint(name string) string {
+	if strings.ContainsRune(name, '/') {
+		hint := "this takes the name a plugin is installed under, not a path: rta runs only what it finds on $PATH"
+		if ns, ok := pluginhost.Namespace(filepath.Base(name)); ok && plugin.ValidName(ns) {
+			hint += " — put " + filepath.Base(name) + " in a directory on $PATH, then `rta plugin trust " + ns + "`"
+		}
+		return hint
+	}
 	binary := pluginhost.BinaryName(name)
 	if home, err := os.UserHomeDir(); err == nil {
 		dir := filepath.Join(home, ".local", "bin")

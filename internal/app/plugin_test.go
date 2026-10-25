@@ -1768,6 +1768,28 @@ func TestNoBuiltinOffersAnAgentACredentialOrAnUndescribedInputUnlessItIsOnPurpos
 	}
 }
 
+// A path is not the name a plugin is installed under, and the hint said rta
+// looks for `rta-plugin-./rta-plugin-weather` on $PATH.
+func TestPluginTrustGivenAPathSaysItTakesAName(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+	run := session(t, registry.New())
+	for arg, want := range map[string]string{
+		"./rta-plugin-weather":        "`rta plugin trust weather`",
+		"/opt/tools/rta-plugin-tides": "`rta plugin trust tides`",
+		"./build/weather":             "not a path",
+	} {
+		_, _, err := run("plugin", "trust", arg)
+		var verr *view.Error
+		if !errors.As(err, &verr) || verr.Code != "plugin.trust.notfound" {
+			t.Fatalf("%s: err = %v, want plugin.trust.notfound", arg, err)
+		}
+		if !strings.Contains(verr.Hint, want) || strings.Contains(verr.Hint, "rta-plugin-./") || strings.Contains(verr.Hint, "rta-plugin-/") {
+			t.Errorf("%s: hint = %q, want it to say %s", arg, verr.Hint, want)
+		}
+	}
+}
+
 // The first install step in the docs builds into ~/.local/bin, which is on no
 // $PATH until somebody put it there, and the failure that followed was two
 // errors that never named the directory. When the file is there, the refusal
