@@ -218,6 +218,18 @@ type themeForm struct {
 	validators map[string]func(string) error
 }
 
+// touched says whether a box holds something other than what the block had on
+// disk when the editor opened, which is what esc and ctrl+c would lose: a box
+// typed in and emptied again is the box it was, as on a capability form.
+func (tf *themeForm) touched() bool {
+	for key, v := range tf.bindings {
+		if *v != tf.target.stored[key] {
+			return true
+		}
+	}
+	return false
+}
+
 func newThemeForm(target themeTarget) *themeForm {
 	tf := &themeForm{
 		target:   target,

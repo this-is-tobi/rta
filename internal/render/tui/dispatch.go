@@ -542,10 +542,18 @@ func (m Model) themeKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	}
 	switch msg.String() {
 	case "esc":
+		// Asks first when a colour was typed, as a capability form does: esc
+		// threw ten boxes of edits away without a word.
+		if m.themeForm != nil && m.themeForm.touched() {
+			return m.openDialog(discardFormDialog()), nil, true
+		}
 		m.themeForm = nil
 		m.mode = modeDashboard
 		return m, nil, true
 	case "ctrl+c":
+		if m.themeForm != nil && m.themeForm.touched() {
+			return m.openDialog(discardFormDialog()), nil, true
+		}
 		return m.quit()
 	case "shift+enter", "alt+enter", "ctrl+s":
 		nm, cmd := m.fastSubmitThemeForm()
