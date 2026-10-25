@@ -104,7 +104,7 @@ func runAt(_ context.Context, req plugin.Request) (view.View, error) {
 	when := strings.TrimSpace(req.String("when"))
 	t, unit, err := resolve(when, stdtime.Now())
 	if err != nil {
-		return nil, err
+		return nil, err.WithInput("when")
 	}
 	// A clock keeps to the three rows it can tell you something with. The other
 	// two are the answer to a conversion and stay on it, and on the page that
@@ -120,7 +120,7 @@ func runAt(_ context.Context, req plugin.Request) (view.View, error) {
 		loc, zoneErr := stdtime.LoadLocation(name)
 		if zoneErr != nil {
 			return nil, view.Errorf("time.at.zone", "%q is not a timezone rta could load: %v", name, zoneErr).
-				WithHint("an IANA name like Europe/Paris, America/New_York or UTC")
+				WithHint("an IANA name like Europe/Paris, America/New_York or UTC").WithInput("zone")
 		}
 		pairs = append(pairs, view.Pair{Key: loc.String(), Value: withZone(t.In(loc))})
 	}

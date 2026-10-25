@@ -90,7 +90,7 @@ func runAnsi(_ context.Context, req plugin.Request) (view.View, error) {
 		if s := req.Surface(); s == plugin.SurfaceTUI || s == plugin.SurfaceMCP {
 			hint = "give it in " + s.InputName("input")
 		}
-		return nil, view.Errorf("debug.ansi.noinput", "no text to explain").WithHint(hint)
+		return nil, view.Errorf("debug.ansi.noinput", "no text to explain").WithHint(hint).WithInput("input")
 	}
 	input, spelled := unspell(input)
 	t := explainAnsi(input)
@@ -107,7 +107,7 @@ func stdinError(err error) *view.Error {
 	case errors.Is(err, pipein.ErrTooLarge):
 		return view.Errorf("debug.ansi.stdin", "stdin holds more than the %s debug ansi explains",
 			format.Bytes(maxPipedInput)).
-			WithHint("pipe the part that misbehaves: head -c 65536 capture.log | rta debug ansi")
+			WithHint("pipe the part that misbehaves: head -c 65536 capture.log | rta debug ansi").WithInput("input")
 	default:
 		return view.Errorf("debug.ansi.stdin", "reading stdin: %v", err)
 	}

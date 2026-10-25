@@ -103,7 +103,7 @@ func verifierFrom(ctx context.Context, req plugin.Request) (*verifier, *view.Err
 	if key != "" {
 		keys, notes, verr := keysFrom(key, req.Surface())
 		if verr != nil {
-			return nil, verr
+			return nil, verr.WithInput("key")
 		}
 		v.keys, v.notes = keys, notes
 	}
@@ -121,7 +121,7 @@ func joseInput(req plugin.Request, field, code, what, hint string) (string, *vie
 		switch {
 		case errors.Is(err, pipein.ErrTooLarge):
 			return "", view.Errorf(code+".stdin", "stdin holds more than the %s a %s can be",
-				format.Bytes(maxPipedToken), what)
+				format.Bytes(maxPipedToken), what).WithInput(field)
 		case err != nil:
 			return "", view.Errorf(code+".stdin", "reading stdin: %v", err)
 		}
@@ -133,7 +133,7 @@ func joseInput(req plugin.Request, field, code, what, hint string) (string, *vie
 		if s := req.Surface(); s == plugin.SurfaceTUI || s == plugin.SurfaceMCP {
 			hint = "give it in " + s.InputName(field)
 		}
-		return "", view.Errorf(code+".empty", "no %s to read", what).WithHint(hint)
+		return "", view.Errorf(code+".empty", "no %s to read", what).WithHint(hint).WithInput(field)
 	}
 	return raw, nil
 }
@@ -214,7 +214,7 @@ func decodeCompact(token string, depth int, check *verifier) (view.View, *view.E
 		got = "no dots at all"
 	}
 	return nil, view.Errorf("codec.jwt.invalid", "not a JOSE token: it has %s", got).
-		WithHint("a signed token (JWS) is header.payload.signature, and an encrypted one (JWE) has five parts")
+		WithHint("a signed token (JWS) is header.payload.signature, and an encrypted one (JWE) has five parts").WithInput("token")
 }
 
 // decodeSegment decodes one base64url part, forgiving the dialects a strict
@@ -286,7 +286,7 @@ const segmentHint = "every part of a token is base64url, and its header decodes 
 
 // notBase64URL refuses a part of a token that no base64 dialect reads.
 func notBase64URL(what string, err error) *view.Error {
-	return view.Errorf("codec.jwt.invalid", "the %s is not base64url: %v", what, err).WithHint(segmentHint)
+	return view.Errorf("codec.jwt.invalid", "the %s is not base64url: %v", what, err).WithHint(segmentHint).WithInput("token")
 }
 
 // notAnObject refuses a header that decoded and is not one JSON object. Bytes
@@ -297,9 +297,9 @@ func notBase64URL(what string, err error) *view.Error {
 func notAnObject(what string, err error) *view.Error {
 	var syntax *json.SyntaxError
 	if errors.Is(err, errNotObject) || errors.As(err, &syntax) && syntax.Offset <= 1 {
-		return view.Errorf("codec.jwt.invalid", "the %s does not decode to a JSON object", what).WithHint(segmentHint)
+		return view.Errorf("codec.jwt.invalid", "the %s does not decode to a JSON object", what).WithHint(segmentHint).WithInput("token")
 	}
-	return view.Errorf("codec.jwt.invalid", "the %s is not a JSON object: %v", what, err).WithHint(segmentHint)
+	return view.Errorf("codec.jwt.invalid", "the %s is not a JSON object: %v", what, err).WithHint(segmentHint).WithInput("token")
 }
 
 // page collects the sections a decode produces and what it noticed on the way,
@@ -900,7 +900,7 @@ func keyHeld(alg string) (who, noun string) {
 func decodeJSONSerialization(input string, check *verifier, s plugin.Surface) (view.View, *view.Error) {
 	doc, err := decodeObject([]byte(input))
 	if err != nil {
-		return nil, view.Errorf("codec.jwt.invalid", "reading the JSON serialization: %v", err)
+		return nil, view.Errorf("codec.jwt.invalid", "reading the JSON serialization: %v", err).WithInput("token")
 	}
 	p := &page{jsonForm: true}
 	p.ambiguous(doc, "JSON serialization", "RFC 7515 §7.2")
@@ -917,10 +917,10 @@ func decodeJSONSerialization(input string, check *verifier, s plugin.Surface) (v
 		return p.jsonJWS(doc, check)
 	case doc.has("kty") || doc.has("keys"):
 		return nil, view.Errorf("codec.jwt.notatoken", "this is a JSON Web Key, not a token").
-			WithHint(s.CapabilityName("codec.jwk") + " reads keys and key sets")
+			WithHint(s.CapabilityName("codec.jwk") + " reads keys and key sets").WithInput("token")
 	}
 	return nil, view.Errorf("codec.jwt.invalid", "a JSON object, but neither a JWS nor a JWE: it has no payload, signature or ciphertext").
-		WithHint("the JSON forms carry `payload` and `signature(s)`, or `ciphertext` and `iv`")
+		WithHint("the JSON forms carry `payload` and `signature(s)`, or `ciphertext` and `iv`").WithInput("token")
 }
 
 // signer is one signature of a JSON JWS, or one recipient of a JSON JWE: the
@@ -953,7 +953,7 @@ func (p *page) readSigner(m object, protectedWhat, valueName string) (signer, *v
 	if prot, ok := m.values["protected"]; ok {
 		seg, isString := prot.(string)
 		if !isString {
-			return signer{}, view.Errorf("codec.jwt.invalid", "the %s is not a string", protectedWhat)
+			return signer{}, view.Errorf("codec.jwt.invalid", "the %s is not a string", protectedWhat).WithInput("token")
 		}
 		hdr, dialect, verr := decodeHeader(seg, protectedWhat)
 		if verr != nil {
@@ -964,7 +964,7 @@ func (p *page) readSigner(m object, protectedWhat, valueName string) (signer, *v
 	}
 	if u, ok := m.values["header"]; ok {
 		if s.unprotected, s.shared = asObject(u); !s.shared {
-			return signer{}, view.Errorf("codec.jwt.invalid", "an unprotected header is not a JSON object")
+			return signer{}, view.Errorf("codec.jwt.invalid", "an unprotected header is not a JSON object").WithInput("token")
 		}
 	}
 	s.value = m.str(valueName)
@@ -1045,7 +1045,7 @@ func (p *page) jsonJWS(doc object, check *verifier) (view.View, *view.Error) {
 	if !detached {
 		var ok bool
 		if payload, ok = doc.values["payload"].(string); !ok {
-			return nil, view.Errorf("codec.jwt.invalid", "the payload member is not a string")
+			return nil, view.Errorf("codec.jwt.invalid", "the payload member is not a string").WithInput("token")
 		}
 	}
 	var signers []signer
@@ -1053,7 +1053,7 @@ func (p *page) jsonJWS(doc object, check *verifier) (view.View, *view.Error) {
 		for i, item := range list {
 			m, ok := asObject(item)
 			if !ok {
-				return nil, view.Errorf("codec.jwt.invalid", "signature %d is not a JSON object", i+1)
+				return nil, view.Errorf("codec.jwt.invalid", "signature %d is not a JSON object", i+1).WithInput("token")
 			}
 			s, verr := p.readSigner(m, fmt.Sprintf("protected header of signature %d", i+1), "signature")
 			if verr != nil {
@@ -1070,7 +1070,7 @@ func (p *page) jsonJWS(doc object, check *verifier) (view.View, *view.Error) {
 		signers = append(signers, s)
 	}
 	if len(signers) == 0 {
-		return nil, view.Errorf("codec.jwt.invalid", "a JWS with an empty signatures list")
+		return nil, view.Errorf("codec.jwt.invalid", "a JWS with an empty signatures list").WithInput("token")
 	}
 	// Only when checking, where every signature costs a check per key;
 	// decoded, one costs no more than reading its header.
@@ -1088,7 +1088,7 @@ func (p *page) jsonJWS(doc object, check *verifier) (view.View, *view.Error) {
 		if first, this := b64Reading(signers[0].protected), b64Reading(s.protected); this != first {
 			return nil, view.Errorf("codec.jwt.invalid", "the signatures disagree about b64, which RFC 7797 §3 forbids: "+
 				"signature 1 %s, and signature %d %s", first, i+2, this).
-				WithHint("a conforming verifier refuses the token, whatever its signatures say")
+				WithHint("a conforming verifier refuses the token, whatever its signatures say").WithInput("token")
 		}
 	}
 
@@ -1185,14 +1185,21 @@ func verifyEach(check *verifier, signers []signer, payload string, detached bool
 		return leads[0], nil, errs[0]
 	}
 	if good < 0 {
-		best, parts := errs[0], make([]string, n)
+		best, parts, input := errs[0], make([]string, n), errs[0].Input
 		for i, verr := range errs {
 			parts[i] = fmt.Sprintf("signature %d of %d: %s", i+1, n, verr.Message)
 			if specificity(verr.Code) > specificity(best.Code) {
 				best = verr
 			}
+			// One box only when every signature's refusal names that box. One
+			// verified signature is all the call needs, so two refused over two
+			// different boxes are each fixed by either one, and the box of the
+			// refusal that leads the message is no more the fix than the other.
+			if verr.Input != input {
+				input = ""
+			}
 		}
-		return "", nil, view.Errorf(best.Code, "%s", strings.Join(parts, "; ")).WithHint(best.Hint)
+		return "", nil, view.Errorf(best.Code, "%s", strings.Join(parts, "; ")).WithHint(best.Hint).WithInput(input)
 	}
 	var others []string
 	for i := range signers {
@@ -1236,7 +1243,7 @@ func (p *page) jsonJWE(doc object) (view.View, *view.Error) {
 	}
 	shared, hasShared := asObject(doc.values["unprotected"])
 	if doc.has("unprotected") && !hasShared {
-		return nil, view.Errorf("codec.jwt.invalid", "the shared unprotected header is not a JSON object")
+		return nil, view.Errorf("codec.jwt.invalid", "the shared unprotected header is not a JSON object").WithInput("token")
 	}
 
 	var recipients []signer
@@ -1244,7 +1251,7 @@ func (p *page) jsonJWE(doc object) (view.View, *view.Error) {
 		for i, item := range list {
 			m, ok := asObject(item)
 			if !ok {
-				return nil, view.Errorf("codec.jwt.invalid", "recipient %d is not a JSON object", i+1)
+				return nil, view.Errorf("codec.jwt.invalid", "recipient %d is not a JSON object", i+1).WithInput("token")
 			}
 			r, verr := p.readSigner(m, fmt.Sprintf("header of recipient %d", i+1), "encrypted_key")
 			if verr != nil {
@@ -1257,7 +1264,7 @@ func (p *page) jsonJWE(doc object) (view.View, *view.Error) {
 		recipients = append(recipients, signer{unprotected: top.unprotected, shared: top.shared, value: top.value})
 	}
 	if len(recipients) == 0 {
-		return nil, view.Errorf("codec.jwt.invalid", "a JWE with an empty recipients list")
+		return nil, view.Errorf("codec.jwt.invalid", "a JWE with an empty recipients list").WithInput("token")
 	}
 
 	p.add("header", "protected header", p.render(top.protected, "protected header", "RFC 7516 §4"))
