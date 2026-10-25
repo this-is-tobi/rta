@@ -516,12 +516,17 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		return nil, view.AsError(err, "core.dashboard.write")
 	}
 
+	// A preview says what the run would do, in the words `config set` and
+	// `profile set` use for theirs ("would set", "would create"); it said
+	// "would have added", and the hide beside it "would have hid".
 	verb := "added"
-	if existed {
+	switch {
+	case existed && dryRun:
+		verb = "would update"
+	case existed:
 		verb = "updated"
-	}
-	if dryRun {
-		verb = "would have " + verb
+	case dryRun:
+		verb = "would add"
 	}
 	pairsOut := []view.Pair{}
 	switch {
@@ -777,7 +782,7 @@ func runDashboardRemove(cmd *cobra.Command, id string, dryRun bool) (view.View, 
 	}
 	label, verb := "wrote", "removed"
 	if dryRun {
-		label, verb = "would write", "would have removed"
+		label, verb = "would write", "would remove"
 	}
 	return view.KeyValue{Pairs: append([]view.Pair{
 		{Key: label, Value: verb + " " + key + " from the dashboard" + inView(drawn) + " in " + dashboardFile(drawn)},
@@ -911,8 +916,11 @@ func runDashboardHide(cmd *cobra.Command, id string, reg *registry.Registry, hid
 		verb, back = "brought back", "`rta dashboard hide "+removeLine(config.Tile{ID: id, Profile: ref})+inViewFlag(drawn)+"` hides it again"
 	}
 	label := "wrote"
-	if dryRun {
-		label, verb = "would write", "would have "+verb
+	switch {
+	case dryRun && hide:
+		label, verb = "would write", "would hide"
+	case dryRun:
+		label, verb = "would write", "would bring back"
 	}
 	return view.KeyValue{Pairs: append([]view.Pair{
 		{Key: label, Value: verb + " " + key + inView(drawn) + " in " + dashboardFile(drawn)},
