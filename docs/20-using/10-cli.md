@@ -134,6 +134,8 @@ rta kv get missing-key -o json
 
 The code is stable across versions; the message is not. Match on the code.
 
+An error about one input names it in `input`, the way the capability declares it, so a script can tell which flag to change without reading the sentence: `rta gen password --length 0 -o json` answers `core.input.range` with `"input": "length"`. An error that is not about one input, a connection that failed or two flags that conflict, has none.
+
 ## `--dry-run`
 
 Reports what would happen without doing it, on any capability that changes something:

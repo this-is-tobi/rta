@@ -127,6 +127,19 @@ func usageError(cmd *cobra.Command, err error) error {
 	return &view.Error{Code: CodeUsage, Message: err.Error(), Hint: hint}
 }
 
+// usageErrorOn is usageError for a mistake about one of a capability's inputs,
+// naming it (view.Error.Input), so -o json tells a script which flag or
+// argument to change as the checks made once the command line has parsed do.
+// input "" names none.
+func usageErrorOn(cmd *cobra.Command, err error, input string) error {
+	coded := usageError(cmd, err)
+	var ve *view.Error
+	if input != "" && errors.As(coded, &ve) && ve.Input == "" {
+		return ve.WithInput(input)
+	}
+	return coded
+}
+
 // codeUsageErrors makes every argument check in the tree answer with
 // usageError: cobra's own validators (NoArgs, MaximumNArgs…) return plain
 // errors, and there is no hook for them the way there is for flags. After the
@@ -220,9 +233,29 @@ func checkCommandLine(cmd *cobra.Command, output string) error {
 			Hint: "--output takes " + formatNames()}
 	}
 	if err := cmd.ValidateRequiredFlags(); err != nil {
-		return usageError(cmd, err)
+		return usageErrorOn(cmd, err, missingFlagInput(cmd))
 	}
 	return usageError(cmd, cmd.ValidateFlagGroups())
+}
+
+// missingFlagInput is the input a capability's command was refused for leaving
+// out, when it left out one: the one flag cobra holds required and was not
+// given (requiredOnCommandLine). "" for two or more, which no one flag answers,
+// and on a command that is not a capability's, whose flags are no inputs.
+func missingFlagInput(cmd *cobra.Command) string {
+	if _, capability := cmd.Annotations[annotSafety]; !capability {
+		return ""
+	}
+	var missing []string
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		if required := f.Annotations[cobra.BashCompOneRequiredFlag]; len(required) > 0 && required[0] == "true" && !f.Changed {
+			missing = append(missing, f.Name)
+		}
+	})
+	if len(missing) != 1 {
+		return ""
+	}
+	return missing[0]
 }
 
 // CodeOutputInvalid is the refusal of an output format nobody typed: one from
@@ -1463,7 +1496,7 @@ func refuseMissingOption(err error, c *plugin.Capability) *view.Error {
 	for _, f := range c.Inputs {
 		if f.Name == m[1] && len(f.Options) > 0 {
 			return &view.Error{Code: CodeUsage, Message: err.Error(),
-				Hint: "--" + f.Name + " takes one of " + strings.Join(f.Options, ", ")}
+				Hint: "--" + f.Name + " takes one of " + strings.Join(f.Options, ", "), Input: f.Name}
 		}
 	}
 	return nil
@@ -1512,7 +1545,7 @@ func refuseFlagValue(cmd *cobra.Command, err error, c *plugin.Capability) *view.
 	if flag == nil {
 		return nil
 	}
-	var want string
+	var want, input string
 	switch flag.Value.Type() {
 	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "count":
 		want = "a whole number"
@@ -1530,7 +1563,13 @@ func refuseFlagValue(cmd *cobra.Command, err error, c *plugin.Capability) *view.
 	}
 	if c != nil {
 		for _, f := range c.Inputs {
-			if f.Name == name && f.Bounds() != "" {
+			if f.Name != name {
+				continue
+			}
+			// Named only for a flag the capability declares: --detail and the
+			// other flags the host adds are no input of the capability's.
+			input = f.Name
+			if f.Bounds() != "" {
 				want += " " + f.Bounds()
 			}
 		}
@@ -1543,7 +1582,7 @@ func refuseFlagValue(cmd *cobra.Command, err error, c *plugin.Capability) *view.
 	}
 	return &view.Error{Code: CodeUsage,
 		Message: fmt.Sprintf("`%s` takes %s for --%s, not %s", cmd.CommandPath(), want, name, quoted),
-		Hint:    hint}
+		Hint:    hint, Input: input}
 }
 
 // unknownFlagName pulls the flag out of pflag's unknown-flag error. Matching
@@ -1896,7 +1935,7 @@ func positionalArgsValidator(fields []plugin.Field) cobra.PositionalArgs {
 		if len(args) < required {
 			for i, f := range fields {
 				if i >= len(args) && f.Required {
-					return fmt.Errorf("missing <%s> — usage: %s", f.Name, cmd.UseLine())
+					return usageErrorOn(cmd, fmt.Errorf("missing <%s> — usage: %s", f.Name, cmd.UseLine()), f.Name)
 				}
 			}
 		}
@@ -2175,6 +2214,12 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	v, runErr := c.Run(ctx, req)
 	if runErr != nil {
 		ve := view.AsError(runErr, c.ID+".failed")
+		// An input this capability does not declare is no input of this call:
+		// a plugin's error holds whatever its handler wrote (ErrorInput), and
+		// -o json would hand a script a name no flag answers to.
+		if _, ok := c.ErrorInput(ve); !ok && ve.Input != "" {
+			ve = ve.WithInput("")
+		}
 		// A failure is the one moment an unhonoured config section explains
 		// something, so it is said here and nowhere else — see
 		// ConfigNotApplied. On the Hint rather than beside it, because Hint is
@@ -2189,7 +2234,7 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		// one.
 		var answered *plugin.AnsweredError
 		if errors.As(runErr, &answered) && answered.View != nil {
-			if err := show(answered.View); err != nil {
+			if err := show(c.HeldWarnings(answered.View, anyInput)); err != nil {
 				return err
 			}
 		}
@@ -2206,8 +2251,13 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	if v == nil {
 		return nil
 	}
-	return show(v)
+	return show(c.HeldWarnings(v, anyInput))
 }
+
+// anyInput keeps every input a capability declares (Capability.HeldWarnings):
+// what -o json tells a script of a warning is held to the declaration, as what
+// it tells it of an error is.
+func anyInput(plugin.Field) bool { return true }
 
 func collectValues(cmd *cobra.Command, c plugin.Capability, args []string) (map[string]any, error) {
 	values := map[string]any{}

@@ -268,8 +268,8 @@ func TestFencedWordsTheRefusalForWhoeverCanActOnIt(t *testing.T) {
 		if verr == nil {
 			t.Fatalf("%v: a value outside the fence was let through", tc.surface)
 		}
-		if verr.Code != "core.profile.fenced" {
-			t.Errorf("%v: code = %q", tc.surface, verr.Code)
+		if verr.Code != "core.profile.fenced" || verr.Input != "namespace" {
+			t.Errorf("%v: code = %q, naming the input %q", tc.surface, verr.Code, verr.Input)
 		}
 		if !strings.Contains(verr.Message, tc.input+" is outside what profile \"staging\" reaches: staging, staging-jobs") {
 			t.Errorf("%v: message = %q", tc.surface, verr.Message)
@@ -282,7 +282,8 @@ func TestFencedWordsTheRefusalForWhoeverCanActOnIt(t *testing.T) {
 
 	// A blank is told apart from a wrong value, because the fix differs.
 	blank := Fenced("staging", conn, c, plugin.Inputs{Caller: map[string]any{"namespace": ""}}, noEnv, plugin.SurfaceCLI)
-	if blank == nil || !strings.Contains(blank.Message, "--namespace is blank, and profile \"staging\" reaches only: staging, staging-jobs") {
+	if blank == nil || blank.Input != "namespace" ||
+		!strings.Contains(blank.Message, "--namespace is blank, and profile \"staging\" reaches only: staging, staging-jobs") {
 		t.Errorf("a blank = %v", blank)
 	}
 
@@ -295,7 +296,8 @@ func TestFencedWordsTheRefusalForWhoeverCanActOnIt(t *testing.T) {
 	// And the switch.
 	widened := Fenced("staging", conn, c, plugin.Inputs{Caller: map[string]any{"namespace": "staging", "all-namespaces": true}},
 		noEnv, plugin.SurfaceCLI)
-	if widened == nil || widened.Code != "core.profile.fenced.switch" ||
+	// The switch is what to change, so it is the input the refusal names.
+	if widened == nil || widened.Code != "core.profile.fenced.switch" || widened.Input != "all-namespaces" ||
 		!strings.Contains(widened.Message, "--all-namespaces reads past --namespace, which profile \"staging\" fences to: staging, staging-jobs") {
 		t.Errorf("a widening switch = %v", widened)
 	}

@@ -86,7 +86,9 @@ func (p *Page) AddAs(id, title string, run Handler, safety Safety, values map[st
 		if what == "" {
 			what = title
 		}
-		p.Warn(HandlerFailure(err, "the "+what+" section", "page.section.failed"))
+		// Without the input the sibling's refusal names, which is an input of
+		// the sibling's call and not one this page takes.
+		p.Warn(HandlerFailure(err, "the "+what+" section", "page.section.failed").WithInput(""))
 		return p
 	}
 	return p.PutAs(id, title, v)
