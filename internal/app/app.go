@@ -730,6 +730,15 @@ func unknownWord(cmd *cobra.Command, arg string, rest []string, topic bool) erro
 	if cmd.DisableSuggestions || strings.TrimSpace(arg) == "" {
 		return errors.New(msg)
 	}
+	// `rta version` is the first thing a person types at a tool they have just
+	// installed, since every tool they used before this one has the command, and
+	// rta's answer is the flag. Before any match, as a help topic too: a plugin
+	// that lists "version" among its keywords — an overview shows the server's —
+	// is a whole-word match, which used to win, so somebody asking which rta
+	// they run was sent to `rta etcd overview` and `rta mariadb status`.
+	if arg == "version" && !cmd.HasParent() {
+		return &view.Error{Code: CodeUsage, Message: msg, Hint: "`rta --version` prints the version"}
+	}
 	// cobra sets the distance on the root alone, inside Execute, and leaves
 	// every subcommand at zero — where SuggestionsFor matches on prefix only
 	// and `lst` earns no `list`. The root's own value, applied here.
@@ -847,12 +856,10 @@ func undoes(typed, name string) bool {
 }
 
 // notACommandHint says where a word typed at the root may live when it is no
-// command and resembles none: the next step for the two things a person at a
-// first prompt types that rta does not have as a command.
-//
-// `rta version`, which every tool they have used before this one answers, and
-// the name of a service — `rta pg`, `rta vault` — which is a plugin and is
-// installed, not built in. The plugin case reads only what is already on the
+// command and resembles none: the name of a service — `rta pg`, `rta vault` —
+// which is a plugin and is installed, not built in. (The other thing a person
+// at a first prompt types that rta does not have, `rta version`, is answered
+// before any of this, by unknownWord.) It reads only what is already on the
 // machine: the first-party names rta ships, and an attached index's manifests,
 // which are local files. A first-party name is answered with the install, which
 // attaches the first-party index itself; any other word with nothing attached
@@ -873,9 +880,6 @@ func undoes(typed, name string) bool {
 func notACommandHint(cmd *cobra.Command, arg string, near []string) string {
 	if cmd.HasParent() {
 		return ""
-	}
-	if arg == "version" {
-		return "`rta --version` prints the version"
 	}
 	if !plugin.ValidName(arg) {
 		return ""

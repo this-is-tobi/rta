@@ -111,6 +111,26 @@ func TestAnUnknownWordAtTheRootPointsAtWhereItMayLive(t *testing.T) {
 		t.Errorf("`rta version` was sent to %q", hint)
 	}
 
+	// Whatever the plugins call themselves: seven first-party overviews list
+	// "version" among their keywords, and that whole-word match answered first.
+	if err := reg.Register(plugin.Plugin{
+		Name: "store", Summary: "a service with a version",
+		Capabilities: []plugin.Capability{{
+			ID: "store.overview", Summary: "how the service is", Safety: plugin.Read,
+			Keywords: []string{"status", "version"},
+			Run:      func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	withKeyword := NewRoot(reg, "test")
+	for _, topic := range []bool{false, true} {
+		var ve *view.Error
+		if !errors.As(unknownWord(withKeyword, "version", nil, topic), &ve) || ve.Hint != "`rta --version` prints the version" {
+			t.Errorf("`rta version` (as a help topic: %v) beside a plugin with the keyword was answered %+v", topic, ve)
+		}
+	}
+
 	// A first-party service: the install, which attaches the index it lives in when it has to.
 	msg, hint := hintOf("vault")
 	if !strings.Contains(hint, "`rta plugin install vault`") {
