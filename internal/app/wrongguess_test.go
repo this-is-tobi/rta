@@ -220,6 +220,22 @@ func TestTheOppositeOfASwitchIsToldWhatLeavingItOutDoes(t *testing.T) {
 	}
 }
 
+// The other side of a verb is not its near miss either: `rta mcp uninstall
+// claude` was offered `rta mcp install claude`. A command that names the word
+// among its keywords still is the answer, which is how `plugin uninstall`
+// finds remove.
+func TestTheOppositeOfACommandIsNotOffered(t *testing.T) {
+	if ve := hintFor(t, "mcp", "uninstall", "claude"); strings.Contains(ve.Hint, "install claude") {
+		t.Errorf("`rta mcp uninstall claude` was offered %q", ve.Hint)
+	}
+	if ve := hintFor(t, "plugin", "uninstall", "pg"); !strings.Contains(ve.Hint, "`rta plugin remove pg`") {
+		t.Errorf("`rta plugin uninstall pg` was told %q, want plugin remove", ve.Hint)
+	}
+	if !opposite("deactivate", "activate") || !opposite("uninstall", "install") {
+		t.Error("de- and un- are not read as reversing the word")
+	}
+}
+
 // Only a flag the help lists is offered: `--dry-run` is accepted by a command
 // that only reads and listed by none, so `sys cpu --dryrun` is not sent to a
 // help screen that does not mention it.
