@@ -203,7 +203,7 @@ A destructive capability never runs from its form. What opens instead is its own
 | --- | --- |
 | `enter` | Open the row |
 | `e` | Edit inputs and run again; `esc` on that form comes back to this result, an error included |
-| `r` | Re-run |
+| `r` | Re-run: refresh a read, retry a failure. A write that succeeded is run again only when it is idempotent, and a destructive call that succeeded never is: `e` does it again, through its question |
 | `y` | Copy as JSON |
 | `d` | Delete |
 | `pgup/pgdn` or `space` | A page up or down an answer taller than the pane: `space` and `f` page down, `b` pages up |

@@ -801,11 +801,18 @@ func rowKey(f plugin.Field, raw string) (any, error) {
 // repeated by a second press of the key the footer calls "refresh" — two
 // notes, with nothing asked. Doing it again is `e`, which opens the boxes on
 // what the result was made with and runs on a submit, so it is a decision.
+//
+// Nor is a destructive call that succeeded, idempotent or not. `r` runs on the
+// yes given for the first run, and an idempotent DELETE promises that a second
+// one changes nothing more, which is the server's promise and not one rta can
+// check: the key the footer calls "refresh" would send it again, asking
+// nothing. A failed one is still retried on that yes, as any failure is.
 func (m Model) canRerun() bool {
 	if m.current.Run == nil || (m.result.view == nil && m.result.err == nil) {
 		return false
 	}
-	if m.result.err == nil && m.current.Safety != plugin.Read && !m.current.Idempotent {
+	if m.result.err == nil && m.current.Safety != plugin.Read &&
+		(!m.current.Idempotent || m.current.Safety == plugin.Destructive) {
 		return false
 	}
 	return true
