@@ -293,16 +293,16 @@ func openAt(req plugin.Request, files *repoFiles, root, path string, what reads)
 		// repository at any level, so the directory is named whole, and as
 		// being outside one.
 		if errors.Is(err, git.ErrRepositoryNotExists) {
-			return view.Errorf("git.notarepo", "%s is not inside a git repository", root).WithHint(hint)
+			return view.Errorf("git.notarepo", "%s is not inside a git repository", root).WithHint(hint).WithInput("path")
 		}
-		return view.Errorf("git.notarepo", "%s is not a git repository: %v", path, err).WithHint(hint)
+		return view.Errorf("git.notarepo", "%s is not a git repository: %v", path, err).WithHint(hint).WithInput("path")
 	}
 	// A directory that is not there is not a repository that is absent:
 	// "/srv/app is not a git repository: stat /srv/app: no such file or
 	// directory" sent a mistyped path to git init.
 	noSuchDirectory := func() *view.Error {
 		return view.Errorf("git.path.notfound", "no such directory: %s", root).
-			WithHint("name a directory inside a git repository")
+			WithHint("name a directory inside a git repository").WithInput("path")
 	}
 	top, err := files.at(root)
 	if errors.Is(err, iofs.ErrNotExist) {
@@ -788,7 +788,7 @@ const gitDirName = ".git"
 func repoRoot(req plugin.Request, path string) (string, *view.Error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return "", view.Errorf("git.path.invalid", "%s: %v", path, err)
+		return "", view.Errorf("git.path.invalid", "%s: %v", path, err).WithInput("path")
 	}
 	look := &beneathRoots{req: req}
 	defer look.close()

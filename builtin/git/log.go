@@ -61,7 +61,7 @@ func runLog(ctx context.Context, req plugin.Request) (view.View, error) {
 	if file := req.String("file"); file != "" {
 		rel, verr := repoFile(repo, file, req.Surface(), req.Surface().InputName("file"))
 		if verr != nil {
-			return nil, verr
+			return nil, verr.WithInput("file")
 		}
 		opts.PathFilter = within(rel)
 		if rel != "." {

@@ -188,7 +188,7 @@ func readPipedWords(req plugin.Request) (string, *view.Error) {
 	switch {
 	case errors.Is(err, pipein.ErrTooLarge):
 		return "", view.Errorf("keys.restore.stdin", "stdin holds far more than a seed phrase").
-			WithHint("pipe the 24 words alone, or give them in " + req.Surface().InputName("words"))
+			WithHint("pipe the 24 words alone, or give them in " + req.Surface().InputName("words")).WithInput("words")
 	case err != nil:
 		return "", view.Errorf("keys.restore.stdin", "reading stdin: %v", err)
 	}
@@ -233,15 +233,16 @@ func unlockKey(req plugin.Request, path string, data []byte) (any, *view.Error) 
 		// empty or damaged, when it is the other half, and fine.
 		if _, _, _, _, perr := ssh.ParseAuthorizedKey(data); perr == nil {
 			return nil, view.Errorf("keys.key.public", "%s holds a public key, and a backup needs the private one", path).
-				WithHint("the private key is the file of the same name without .pub — a public key can be shared, and has nothing to back up")
+				WithHint("the private key is the file of the same name without .pub — a public key can be shared, and has nothing to back up").
+				WithInput("key")
 		}
 		return nil, view.Errorf("keys.key.invalid", "parsing %s: %v", path, err).
-			WithHint("expected an SSH private key, e.g. ~/.ssh/id_ed25519")
+			WithHint("expected an SSH private key, e.g. ~/.ssh/id_ed25519").WithInput("key")
 	}
 	if locked.PublicKey != nil && locked.PublicKey.Type() != ssh.KeyAlgoED25519 {
 		return nil, view.Errorf("keys.backup.unsupported", "%s: unsupported key type %s", path, locked.PublicKey.Type()).
 			WithHint("word-based backup supports ed25519 keys only (`ssh-keygen -t ed25519` makes one) — " +
-				"RSA and ECDSA keys have no single seed to encode")
+				"RSA and ECDSA keys have no single seed to encode").WithInput("key")
 	}
 	try := func(pass string) (any, bool) {
 		if pass == "" {
@@ -266,11 +267,11 @@ func unlockKey(req plugin.Request, path string, data []byte) (any, *view.Error) 
 		}
 		return nil, view.Errorf("keys.key.locked", "could not unlock %s", path).
 			WithHint("that is the key's own passphrase — give " + req.Surface().InputName("passphrase") +
-				" or set " + plugin.LocalEnvVar("keys.backup", "passphrase"))
+				" or set " + plugin.LocalEnvVar("keys.backup", "passphrase")).WithInput("passphrase")
 	}
 	return nil, view.Errorf("keys.key.locked", "%s is passphrase-protected", path).
 		WithHint("set " + plugin.LocalEnvVar("keys.backup", "passphrase") + " or give " +
-			req.Surface().InputName("passphrase"))
+			req.Surface().InputName("passphrase")).WithInput("passphrase")
 }
 
 // probeKey reads a private key file and reports what can be learned without
@@ -503,16 +504,16 @@ func publishRestoredKey(privPath string, priv ed25519.PrivateKey, passphrase []b
 	defer shutdown.Hold()()
 	written, err := publish(privPath, privBytes, 0o600, maxSSHKeyFile)
 	if err != nil {
-		return "", view.Errorf("keys.restore.write", "writing %s: %v", privPath, err)
+		return "", view.Errorf("keys.restore.write", "writing %s: %v", privPath, err).WithInput("out")
 	}
 	if !bytes.Equal(written, privBytes) {
-		return "", view.Errorf("keys.restore.exists", "%s already exists", privPath)
+		return "", view.Errorf("keys.restore.exists", "%s already exists", privPath).WithInput("out")
 	}
 
 	pubPath := privPath + ".pub"
 	writtenPub, err := publish(pubPath, pubBytes, 0o644, maxSSHKeyFile)
 	if err != nil {
-		return "", view.Errorf("keys.restore.write", "writing %s: %v", pubPath, err)
+		return "", view.Errorf("keys.restore.write", "writing %s: %v", pubPath, err).WithInput("out")
 	}
 	if !bytes.Equal(writtenPub, pubBytes) {
 		// "Restore again" alone cannot fix this: privPath is already
@@ -524,7 +525,8 @@ func publishRestoredKey(privPath string, priv ed25519.PrivateKey, passphrase []b
 		// operator toward an instruction that could not succeed as given.
 		return "", view.Errorf("keys.restore.exists", "%s already exists — %s was already written and is not removed automatically",
 			pubPath, privPath).
-			WithHint(fmt.Sprintf("move or remove both %s and %s, or restore to a different path, then try again", privPath, pubPath))
+			WithHint(fmt.Sprintf("move or remove both %s and %s, or restore to a different path, then try again", privPath, pubPath)).
+			WithInput("out")
 	}
 	return ssh.FingerprintSHA256(sshPub), nil
 }

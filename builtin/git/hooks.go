@@ -51,7 +51,7 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 
 	fs, verr := hooksFilesystem(repo)
 	if verr != nil {
-		return nil, verr
+		return nil, verr.WithInput("path")
 	}
 	dir, base, ownedByOperator, warnings, err := hooksDir(ctx, req, repo, fs)
 	if verr := refusedByTheGate(err); verr != nil {
