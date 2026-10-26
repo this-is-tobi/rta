@@ -91,7 +91,7 @@ The chart's defaults are safe; these are the ones you have to choose.
 
 The `kube` and `cnpg` plugins are the obvious thing to want from a pod, and getting there is four problems of which [RBAC](../95-reference/10-glossary.md#acronyms) is the last.
 
-rta runs plugins with a deliberately narrow environment — `PATH`, `HOME`, `TMPDIR`, `TZ`, `LANG`, `SSL_CERT_*`, `LC_*` and nothing else. Those plugins shell out to `kubectl`, so `KUBECONFIG` never reaches them; and because `KUBERNETES_SERVICE_HOST` and `KUBERNETES_SERVICE_PORT` are stripped too, kubectl's own in-cluster fallback cannot fire either. A pod with a perfectly good projected ServiceAccount token gets *"there is no kubeconfig on this machine"*.
+rta runs plugins with a deliberately narrow environment — `PATH`, `HOME`, `TMPDIR`, `TZ`, `LANG`, `SSL_CERT_*`, `LC_*`, the proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`) and nothing else. Those plugins shell out to `kubectl`, so `KUBECONFIG` never reaches them; and because `KUBERNETES_SERVICE_HOST` and `KUBERNETES_SERVICE_PORT` are stripped too, kubectl's own in-cluster fallback cannot fire either. A pod with a perfectly good projected ServiceAccount token gets *"there is no kubeconfig on this machine"*.
 
 What works is to synthesise one. All four pieces are needed together:
 

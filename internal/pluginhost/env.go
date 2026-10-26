@@ -31,6 +31,16 @@ import (
 //     plugin that makes an HTTPS request fails on exactly the networks most
 //     likely to be running this, with an error about certificate verification
 //     that names nothing the user can act on.
+//   - HTTP_PROXY, HTTPS_PROXY, NO_PROXY and their lower-case spellings — the
+//     egress proxy a network that has one requires, read by Go's net/http and
+//     by the tools plugins shell out to. rta's own built-ins read them in
+//     process, so without them `http.get` reached a service through the proxy
+//     and every plugin making a request failed on the same machine, with a
+//     dial timeout that names nothing to change. A proxy's URL can carry a
+//     username and password, and those cross with it: the plugin is a binary
+//     the operator trusted by its digest, already handed the credentials of
+//     whatever it connects to, and the proxy is the operator's own
+//     environment — the trade SSL_CERT_* makes, for the same networks.
 //
 // go-plugin's own handshake variables are added by go-plugin itself after this
 // list is applied, so they are deliberately absent here.
@@ -42,6 +52,12 @@ var allowedEnv = []string{
 	"LANG",
 	"SSL_CERT_FILE",
 	"SSL_CERT_DIR",
+	"HTTP_PROXY",
+	"HTTPS_PROXY",
+	"NO_PROXY",
+	"http_proxy",
+	"https_proxy",
+	"no_proxy",
 }
 
 // allowedEnvPrefixes covers the families where the name is not fixed. LC_ has
