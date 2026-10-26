@@ -635,6 +635,12 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			nm, cmd := m.toggleView(t)
 			return nm, cmd, true
 		}
+		// After the view's own keys, which win a letter the pager also has
+		// (d on a list of notes), and before the pane's pager gets them, on
+		// walks' conditions; otherwise the pager has them as before.
+		if step, ok := m.pageStep(msg); ok && m.walks(step) {
+			return m.walkRows(step), nil, true
+		}
 	}
 	switch msg.String() {
 	case "home", "end":
@@ -789,11 +795,23 @@ func (m Model) wheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 		m.keepSelectionDrawn()
 		return m, nil
 	case modeResult, modeConfirm:
+		// A list's wheel walks its cursor with the pane, as its page keys
+		// do (walkRows), on the same condition.
+		step := 0
 		switch msg.Button {
 		case tea.MouseWheelUp:
-			m.viewport.ScrollUp(3)
+			step = -wheelStep
 		case tea.MouseWheelDown:
-			m.viewport.ScrollDown(3)
+			step = wheelStep
+		}
+		if m.mode == modeResult && step != 0 && m.walks(step) {
+			return m.walkRows(step), nil
+		}
+		switch msg.Button {
+		case tea.MouseWheelUp:
+			m.viewport.ScrollUp(wheelStep)
+		case tea.MouseWheelDown:
+			m.viewport.ScrollDown(wheelStep)
 		}
 		return m, nil
 	case modeBrowse:

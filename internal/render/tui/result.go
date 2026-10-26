@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -79,12 +80,7 @@ func (r resultMsg) cleaned() resultMsg {
 // current width; interactive lists get their selected row accented.
 func (m *Model) renderResult() {
 	var buf bytes.Buffer
-	// Fill: this is a bordered pane of a fixed size, so a table narrower than
-	// the frame is not restraint, it is a gap where a title could have been.
-	opts := cli.Options{Format: cli.Pretty, Width: max(m.width-4, 20), Fill: true, Screen: true}
-	if m.interactive() {
-		opts.Highlight = m.row + 1
-	}
+	opts := m.resultOptions()
 	switch {
 	case m.result.err != nil:
 		_ = cli.RenderError(&buf, m.result.err, opts)
@@ -99,20 +95,43 @@ func (m *Model) renderResult() {
 	}
 	m.viewport.SetContent(content)
 	if m.interactive() {
-		// Keep the selected row in view: meta(2) + table chrome(2) + row,
-		// below whatever a page draws above its table.
-		line := m.row + 4
-		if page, isPage := m.result.raw.(view.Sections); isPage {
-			_, at, _ := rowTable(page)
-			line += linesAbove(page, at, opts)
-		}
-		top, h := m.viewport.YOffset(), m.viewport.Height()
+		// Keep the selected row in view.
+		line, top, h := m.rowLine(opts), m.viewport.YOffset(), m.viewport.Height()
 		if line < top {
 			m.viewport.SetYOffset(line)
 		} else if line >= top+h-1 {
 			m.viewport.SetYOffset(line - h + 2)
 		}
 	}
+}
+
+// resultOptions is how the pane draws the current result.
+func (m Model) resultOptions() cli.Options {
+	// Fill: this is a bordered pane of a fixed size, so a table narrower than
+	// the frame is not restraint, it is a gap where a title could have been.
+	opts := cli.Options{Format: cli.Pretty, Width: max(m.width-4, 20), Fill: true, Screen: true}
+	if m.interactive() {
+		opts.Highlight = m.row + 1
+	}
+	return opts
+}
+
+// rowLine is the line of the answer the cursor's row is drawn on: meta(2) +
+// table chrome(2) + row, below whatever a page draws above its table.
+func (m Model) rowLine(opts cli.Options) int {
+	line := m.row + 4
+	if page, isPage := m.result.raw.(view.Sections); isPage {
+		_, at, _ := rowTable(page)
+		line += linesAbove(page, at, opts)
+	}
+	return line
+}
+
+// rowShown says whether the cursor's row is on the pane, by the rule the render
+// keeps it there by.
+func (m Model) rowShown() bool {
+	line, top := m.rowLine(m.resultOptions()), m.viewport.YOffset()
+	return line >= top && line < top+m.viewport.Height()-1
 }
 
 // linesAbove is how many lines a page draws above its section at: the
@@ -390,6 +409,16 @@ func (m Model) selectedAction(key string) (capAction, bool) {
 // afterwards; anything still missing — edit content, a destructive
 // confirmation — opens a form first.
 func (m Model) runAction(a capAction, tbl view.Table) (tea.Model, tea.Cmd) {
+	// The row an action acts on is one on screen. On a page with more than a
+	// pane beyond its list the pager carries the pane past the list (walks),
+	// and the cursor's row off it; an action pressed there acted on a row
+	// nobody could see, which on the grant roster is x revoking a grant at
+	// once. So the press brings the row back, and the next one acts on it.
+	if a.src == srcRow && m.mode == modeResult && m.interactive() && !m.rowShown() {
+		m.renderResult()
+		m.guide(fmt.Sprintf("%s %s acts on the highlighted row, back on screen now — press %s again", a.key, a.label, a.key))
+		return m, nil
+	}
 	if where, ok := m.follows(a); !ok {
 		m.refuse(a.cap.ID + " acts on this machine only, and these rows are " + where + "'s")
 		return m, nil
@@ -919,6 +948,69 @@ func (m Model) toEnd(last bool) Model {
 	if walked {
 		m.renderResult()
 	}
+	return m
+}
+
+// pageStep is how many rows a pager's key moves the cursor of a list: a page
+// or half of one, as the pane under it turns, and false for a key that is not
+// one of them. The pane's own bindings say which keys those are, so a list
+// answers to exactly the keys a long answer pages on.
+func (m Model) pageStep(msg tea.KeyPressMsg) (int, bool) {
+	keys, page := m.viewport.KeyMap, max(m.viewport.Height(), 1)
+	switch {
+	case key.Matches(msg, keys.PageDown):
+		return page, true
+	case key.Matches(msg, keys.PageUp):
+		return -page, true
+	case key.Matches(msg, keys.HalfPageDown):
+		return max(page/2, 1), true
+	case key.Matches(msg, keys.HalfPageUp):
+		return -max(page/2, 1), true
+	}
+	return 0, false
+}
+
+// walks says whether a page key or the wheel moves the cursor of a list by step
+// (walkRows), where it otherwise moves the pane alone, as on any long answer.
+//
+// On a list in an answer taller than the pane, which is where the bar teaches
+// the keys: one that fits has every row on screen and its pane does not move.
+// And only while the cursor's row is on the pane and has rows left that way,
+// because a list can be one part of a page — the grant roster draws the guard
+// and the roles in force above its table and a note below it, and a page can
+// hold more than a pane of text on either side of one. Walked at its first or
+// last row, the cursor stayed put and the render pulled the pane back onto it,
+// so nothing beyond the table could be paged or wheeled to. Walked from off the
+// pane, a step would jump the pane to the row from wherever the person had read
+// to. So at either end of the list the keys turn the pane, as they always did,
+// and the walk starts again once the cursor's row comes back on screen.
+func (m Model) walks(step int) bool {
+	if !m.interactive() || !m.scrolls() || !m.rowShown() {
+		return false
+	}
+	tbl, _, _ := rowTable(m.result.raw)
+	if step < 0 {
+		return m.row > 0
+	}
+	return m.row < len(tbl.Rows)-1
+}
+
+// walkRows moves the cursor of a list by step rows and the pane by as many
+// lines as the cursor moved, so a page turned keeps the cursor where it was on
+// the screen, on the row that is there now. Both, for toEnd's reason: the pager
+// under the pane moved only the pane, and a cursor left above it was the row the
+// next action acted on, out of sight (x on the grant roster revoked it) — and
+// the next j pulled the pane back to it, so a page could not be turned at all.
+// A step cut short by the end of the list moves the pane no further than the
+// cursor, which leaves the last row where the cursor was and the next step to
+// the pager (walks). The render keeps the row in view where the pane could not
+// move as far.
+func (m Model) walkRows(step int) Model {
+	tbl, _, _ := rowTable(m.result.raw)
+	from := m.row
+	m.row = min(max(m.row+step, 0), max(len(tbl.Rows)-1, 0))
+	m.viewport.SetYOffset(m.viewport.YOffset() + m.row - from)
+	m.renderResult()
 	return m
 }
 
