@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"runtime/debug"
@@ -96,7 +97,11 @@ func FuzzAppKeys(f *testing.F) {
 			label: "program",
 			start: func() Model { m, _ := realModel(t, 100, 30); return m },
 			msg:   appMsg,
-			view:  true,
+			// Short, and drawn every few messages: the fuzzer takes an input that
+			// runs for seconds to be a hung process and gives up on it, and a
+			// render is most of what one message costs.
+			most:      250,
+			viewEvery: 4,
 		}.run(t, picks)
 	})
 }
@@ -217,14 +222,17 @@ type storm struct {
 	// restart returns a model to carry on with, and true, when the one it was
 	// given has left the screen being asked about.
 	restart func(Model) (Model, bool)
-	// view renders after every message, since a panic in drawing is as final.
-	view bool
+	// most is how many messages are sent, 3000 where it is left out.
+	most int
+	// viewEvery renders after that many messages, since a panic in drawing is as
+	// final; the end of a run is drawn whatever it is.
+	viewEvery int
 }
 
 func (s storm) run(t *testing.T, picks []byte) {
 	t.Helper()
-	if len(picks) > 3000 {
-		picks = picks[:3000]
+	if most := cmp.Or(s.most, 3000); len(picks) > most {
+		picks = picks[:most]
 	}
 	m := s.start()
 
@@ -242,7 +250,7 @@ func (s storm) run(t *testing.T, picks []byte) {
 			}
 			done <- ""
 		}()
-		for _, pick := range picks {
+		for i, pick := range picks {
 			msg := s.msg(pick)
 			mu.Lock()
 			trail = append(trail, describe(msg))
@@ -255,7 +263,7 @@ func (s storm) run(t *testing.T, picks []byte) {
 			if s.restart != nil {
 				m, _ = s.restart(m)
 			}
-			if s.view {
+			if s.viewEvery > 0 && i%s.viewEvery == 0 {
 				_ = m.View()
 			}
 			count.Add(1)
