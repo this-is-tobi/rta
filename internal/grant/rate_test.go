@@ -2,6 +2,7 @@ package grant
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -239,5 +240,98 @@ func TestARateLimitOnOneScopeIsNotBlamedForAnUnrelatedMissingOne(t *testing.T) {
 	}
 	if !strings.Contains(verr.Message, "secretB") {
 		t.Fatalf("refusal does not name the actually-uncovered scope: %v", verr)
+	}
+}
+
+// atPace is n grants each at the most --rate allows in a day, with every one
+// of those uses still inside its window: the most pace history the file can be
+// asked to carry for them.
+func atPace(n int) []Grant {
+	now := time.Now()
+	recent := make([]time.Time, MaxRate)
+	for i := range recent {
+		recent[i] = now.Add(-time.Duration(i) * time.Minute).UTC().Truncate(time.Second)
+	}
+	grants := make([]Grant, n)
+	for i := range grants {
+		grants[i] = paced("note.add", fmt.Sprintf("record-%d", i), MaxRate, "24h")
+		grants[i].Issued, grants[i].Expires = now, now.Add(time.Hour)
+		grants[i].Uses, grants[i].Recent = MaxRate, recent
+	}
+	return grants
+}
+
+// The pace history is stored without indentation. Each use inside a window
+// is a timestamp in the file, and indented four levels deep each cost 32
+// bytes, so the file filled at about 8,000 of them across every rate-limited
+// grant — nine grants at a thousand a day — and from then on every counted
+// call was refused, the call itself being what could not be written down.
+// The seal is over the grants and not the bytes, so how the file is laid out
+// is free to change.
+func TestNineGrantsAtTheirFullPaceStillFitTheFile(t *testing.T) {
+	setup(t)
+	if verr := Save(atPace(9)); verr != nil {
+		t.Fatalf("nine grants at %d calls a day: %v", MaxRate, verr)
+	}
+	stored, verr := loadAll()
+	if verr != nil || len(stored) != 9 || len(stored[0].Recent) != MaxRate {
+		t.Fatalf("read back %d grants, %v, want nine with their history", len(stored), verr)
+	}
+}
+
+// When it is the pace history that fills the file, the refusal says so. It
+// said that grants stand and to revoke some, to an operator holding a few
+// grants whose calls were what had grown it: what helps is a rate with fewer
+// calls or a shorter window, and time, as the calls leave their windows.
+func TestAFileFilledByPaceHistoryIsRefusedForThat(t *testing.T) {
+	setup(t)
+	verr := Save(atPace(20))
+	if verr == nil || verr.Code != "core.grant.full" {
+		t.Fatalf("Save = %v, want core.grant.full", verr)
+	}
+	if !strings.Contains(verr.Message, "timestamps") || !strings.Contains(verr.Message, "20 rate-limited grants") {
+		t.Errorf("message = %q, want the pace history named as what fills the file", verr.Message)
+	}
+	if !strings.Contains(verr.Hint, "--rate") || !strings.Contains(verr.Hint, "24h") {
+		t.Errorf("hint = %q, want a smaller rate and the longest window named", verr.Hint)
+	}
+}
+
+// Uses that have left their window are not written back, whichever grant the
+// write was for. Only a call on the grant itself forgot them, so a grant
+// nobody called again kept its last window's uses until it expired: counted
+// by nothing, and filling the file for every other grant's counted calls,
+// while the refusal said the history empties as calls leave their windows and
+// waiting out the longest changed nothing.
+func TestUsesOutsideTheirWindowAreNotWrittenBack(t *testing.T) {
+	setup(t)
+	idle := atPace(20)
+	for i := range idle {
+		idle[i].RateWindow = "1h"
+		stale := make([]time.Time, len(idle[i].Recent))
+		for j := range stale {
+			stale[j] = idle[i].Recent[j].Add(-2 * time.Hour)
+		}
+		idle[i].Recent = stale
+	}
+	busy := paced("note.add", "busy", 5, "1h")
+	busy.Issued, busy.Expires = time.Now(), time.Now().Add(time.Hour)
+	inside := time.Now().Add(-10 * time.Minute).UTC().Truncate(time.Second)
+	busy.Uses, busy.Recent = 2, []time.Time{time.Now().Add(-90 * time.Minute).UTC().Truncate(time.Second), inside}
+
+	if verr := Save(append(idle, busy)); verr != nil {
+		t.Fatalf("twenty idle grants whose uses all left the window: %v", verr)
+	}
+	stored, verr := loadAll()
+	if verr != nil || len(stored) != 21 {
+		t.Fatalf("read back %d grants, %v, want all 21", len(stored), verr)
+	}
+	for _, g := range stored[:20] {
+		if g.Recent != nil {
+			t.Fatalf("%s kept %d uses outside its window", g.Scope, len(g.Recent))
+		}
+	}
+	if got := stored[20].Recent; len(got) != 1 || !got[0].Equal(inside) {
+		t.Errorf("busy kept %v, want only the use inside its window", got)
 	}
 }

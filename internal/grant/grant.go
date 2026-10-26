@@ -382,9 +382,10 @@ func (g Grant) counted() bool { return g.MaxUses > 0 || g.RateMax != 0 || g.Rate
 
 // mark records n uses at now, and forgets what has left the window.
 //
-// The pruning is here rather than on a timer because this is the only code
-// with a reason to look, and it is what keeps Recent bounded by the limit
-// the operator chose rather than by how long the grant has existed.
+// The pruning is here rather than on a timer because this and Save, which
+// forgets the same for every grant it writes, are the code with a reason to
+// look, and it is what keeps Recent bounded by the limit the operator chose
+// rather than by how long the grant has existed.
 func (g *Grant) mark(now time.Time, n int) {
 	if _, _, limited := g.rateRoom(now); !limited {
 		return
@@ -392,25 +393,30 @@ func (g *Grant) mark(now time.Time, n int) {
 	for i := 0; i < n; i++ {
 		g.Recent = append(g.Recent, now.UTC().Truncate(time.Second))
 	}
+	g.Recent = g.inWindow(now)
+}
+
+// inWindow is Recent less the uses that have left the rate's window at now,
+// in a slice of its own, so the caller's file as read is not rewritten under
+// it. Recent as it is when the window does not parse: rateRoom reads that as
+// no room at all, and forgetting uses would not change it.
+func (g Grant) inWindow(now time.Time) []time.Time {
 	d, err := format.ParseDuration(g.RateWindow)
 	if err != nil || d <= 0 {
-		return
+		return g.Recent
 	}
 	cut := now.Add(-d)
-	kept := g.Recent[:0]
+	// nil rather than an empty slice when nothing is left: canonical() is
+	// json.Marshal over the parsed grants and `"recent":[]` is not the same
+	// bytes as an omitted field, so an empty one left behind would change
+	// the seal of a grant nothing had happened to.
+	var kept []time.Time
 	for _, t := range g.Recent {
 		if t.After(cut) {
 			kept = append(kept, t)
 		}
 	}
-	g.Recent = kept
-	if len(g.Recent) == 0 {
-		// nil rather than an empty slice: canonical() is json.Marshal over
-		// the parsed grants and `"recent":[]` is not the same bytes as an
-		// omitted field, so an empty one left behind would change the seal of
-		// a grant nothing had happened to.
-		g.Recent = nil
-	}
+	return kept
 }
 
 // unmark takes back the n most recent timestamps, for a call that failed.
@@ -1178,6 +1184,15 @@ func loadAll() ([]Grant, *view.Error) {
 // expires: the call that spent its last use may still be in flight, and refund
 // needs the row.
 //
+// Nor is a use that has left its rate's window. mark forgets those only for
+// the grant a call spends, so a rate-limited grant nobody called again kept
+// its last window's uses until it expired, up to a day: counted by nothing,
+// since rateRoom reads only the window, and written back by every other
+// grant's spend, where they filled the file for every counted call while
+// core.grant.full said the history empties as calls leave their windows.
+// Recent is the seal's to vouch for and not the guard's (guardcheck.go), so
+// it is rewritten here as freely as mark rewrites it on every call.
+//
 // What cannot be made to fit is refused here, where a person is standing, and
 // not discovered on the next call: a file that is written is a file that reads.
 func Save(grants []Grant) *view.Error {
@@ -1185,7 +1200,11 @@ func Save(grants []Grant) *view.Error {
 	if err != nil {
 		return view.Errorf("core.grant.write", "creating %s: %v", dir, err)
 	}
-	grants = withoutExpired(grants, time.Now())
+	now := time.Now()
+	grants = withoutExpired(grants, now)
+	for i := range grants {
+		grants[i].Recent = grants[i].inWindow(now)
+	}
 	canon, err := canonical(grants)
 	if err != nil {
 		return view.Errorf("core.grant.write", "encoding grants: %v", err)
@@ -1194,11 +1213,23 @@ func Save(grants []Grant) *view.Error {
 	if verr != nil {
 		return verr
 	}
-	data, err := json.MarshalIndent(sealed{Seal: sealOf(key, canon), Grants: grants}, "", "  ")
+	// Not indented. The pace history is one timestamp per call still inside
+	// a rate's window, up to MaxRate a grant, and four levels deep each one
+	// cost 32 bytes, most of them spaces: about 8,000 across every
+	// rate-limited grant filled the file, nine grants at a thousand calls a
+	// day, and from then on every counted call was refused, the call being
+	// what could not be written down. The seal is over canonical(), the
+	// grants and not these bytes, so how the file is laid out is free to
+	// change, and a file written either way reads either way.
+	mac := sealOf(key, canon)
+	data, err := json.Marshal(sealed{Seal: mac, Grants: grants})
 	if err != nil {
 		return view.Errorf("core.grant.write", "encoding grants: %v", err)
 	}
 	if len(data) > maxGrantFile {
+		if verr := paceFull(grants, mac, len(data)); verr != nil {
+			return verr
+		}
 		return view.Errorf("core.grant.full",
 			"%d grants stand, and %s would be %d KiB with them, more than the %d KiB rta reads back",
 			len(grants), Path(), (len(data)+1023)>>10, maxGrantFile>>10).
@@ -1212,6 +1243,47 @@ func Save(grants []Grant) *view.Error {
 		return view.Errorf("core.grant.write", "writing %s: %v", Path(), err)
 	}
 	return nil
+}
+
+// paceFull is core.grant.full for a file the pace history fills: the grants
+// would fit without it, and the timestamps of the calls still inside their
+// rates' windows are what does not. nil when that is not so, and the plain
+// refusal stands. mac is the seal the file would carry and size its length.
+//
+// Said apart because the plain refusal's advice is wrong here. It counts the
+// grants and says to revoke some, to an operator holding a handful whose
+// calls are what grew the file — and the call that met it was refused for
+// want of room to write it down. What helps is a rate with fewer calls or a
+// shorter window, and time, as the calls leave their windows.
+func paceFull(grants []Grant, mac string, size int) *view.Error {
+	paced, stamps, longest, window := 0, 0, time.Duration(0), ""
+	bare := slices.Clone(grants)
+	for i, g := range grants {
+		if len(g.Recent) == 0 {
+			continue
+		}
+		paced++
+		stamps += len(g.Recent)
+		if d, err := format.ParseDuration(g.RateWindow); err == nil && d > longest {
+			longest, window = d, g.RateWindow
+		}
+		bare[i].Recent = nil
+	}
+	if paced == 0 {
+		return nil
+	}
+	without, err := json.Marshal(sealed{Seal: mac, Grants: bare})
+	if fits := err == nil && len(without) <= maxGrantFile; !fits {
+		return nil
+	}
+	return view.Errorf("core.grant.full",
+		"%s would be %d KiB, more than the %d KiB rta reads back, and %d KiB of it is the pace history of %s: "+
+			"%d timestamps, one for each call still inside its rate's window",
+		Path(), (size+1023)>>10, maxGrantFile>>10, (size-len(without)+1023)>>10,
+		format.Count(paced, "rate-limited grant", "rate-limited grants"), stamps).
+		WithHint("the history empties as calls leave their windows, the longest here " + window +
+			"; issue a grant again with fewer calls or a shorter window in --rate, and it keeps less of it; " +
+			"the grants in the file are unchanged")
 }
 
 // withoutExpired is grants less the ones whose time has passed, by the same
