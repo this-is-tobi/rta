@@ -144,3 +144,33 @@ func TestAFlagThatNamesAnOutputFormatIsAnsweredWithTheOutputFlag(t *testing.T) {
 		t.Errorf("a capability's own --format was refused: %v", err)
 	}
 }
+
+// A list flag swallows the next flag as a string flag does, and a flag's
+// one-letter form is a flag's spelling too, a persistent one included.
+func TestAListFlagOrAShorthandSwallowedSaysTheFlagNeedsAValue(t *testing.T) {
+	ports := tlsDemo("demo.net.port", plugin.Field{Name: "host", Type: plugin.String, Positional: true},
+		plugin.Field{Name: "ports", Type: plugin.StringSlice}, plugin.Field{Name: "timeout", Type: plugin.String})
+	for _, args := range [][]string{{"localhost", "--ports", "--timeout", "2s"}, {"localhost", "--ports", "-o", "json"}} {
+		root := &cobra.Command{Use: "rta", SilenceUsage: true, SilenceErrors: true}
+		root.PersistentFlags().StringP("output", "o", "", "how to print it")
+		attach(root, ports, &globalOpts{})
+		codeUsageErrors(root)
+		root.SetArgs(append(slices.Clone(ports.Words()[1:]), args...))
+		var ve *view.Error
+		if err := root.Execute(); !errors.As(err, &ve) || ve.Message != "--ports needs a value, and the next word, "+args[2]+", looks like a flag" {
+			t.Errorf("%v: refused with %v, want --ports to need a value", args, err)
+		}
+	}
+	// A value that only starts with a dash is a value: the stdin marker, a
+	// negative number.
+	free := tlsDemo("demo.net.port", plugin.Field{Name: "note", Type: plugin.String}, plugin.Field{Name: "ports", Type: plugin.StringSlice})
+	for _, word := range []string{"-", "-5"} {
+		root := &cobra.Command{Use: "rta", SilenceUsage: true, SilenceErrors: true}
+		attach(root, free, &globalOpts{})
+		codeUsageErrors(root)
+		root.SetArgs(append(slices.Clone(free.Words()[1:]), "--ports", word))
+		if err := root.Execute(); err != nil {
+			t.Errorf("--ports %s: refused with %v, want it taken as a value", word, err)
+		}
+	}
+}

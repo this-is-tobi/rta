@@ -114,16 +114,19 @@ func switchValueHint(cmd *cobra.Command) string {
 // word looked like a flag, and, when the input declares its answers, which they
 // are. A value that is the name of a flag of the same command is a mistake and
 // never an answer, so there is no spelling to ask for it on purpose.
+//
+// A list flag swallows the same way, and so does a flag's one-letter form,
+// the persistent ones included: `rta net port localhost --ports -o json` gave
+// --ports the port "-o" and refused "json" as an argument with no flag, under
+// a hint about where values go.
 func refuseSwallowedFlag(cmd *cobra.Command, c plugin.Capability) error {
 	var refused error
 	cmd.Flags().Visit(func(f *pflag.Flag) {
-		if refused != nil || f.Value.Type() != "string" {
+		if refused != nil {
 			return
 		}
-		word := f.Value.String()
-		name, dashed := strings.CutPrefix(word, "--")
-		name, _, _ = strings.Cut(name, "=")
-		if !dashed || name == f.Name || cmd.Flags().Lookup(name) == nil {
+		word, swallowed := swallowedFlag(cmd, f)
+		if !swallowed {
 			return
 		}
 		hint := "give --" + f.Name + " its value first, as in `" + cmd.CommandPath() + " --" + f.Name + " <value> " + word + "`"
@@ -137,4 +140,35 @@ func refuseSwallowedFlag(cmd *cobra.Command, c plugin.Capability) error {
 			Hint:    hint}
 	})
 	return refused
+}
+
+// swallowedFlag is the word f was given that is the spelling of another of the
+// command's flags, long (`--host`, `--host=db`) or one-letter (`-o`), and
+// whether there was one. Only a flag that takes text can have swallowed one:
+// the parser of any other kind has refused the word already (refuseFlagValue).
+func swallowedFlag(cmd *cobra.Command, f *pflag.Flag) (string, bool) {
+	var words []string
+	switch f.Value.Type() {
+	case "string":
+		words = []string{f.Value.String()}
+	case "stringSlice", "stringArray":
+		if list, ok := f.Value.(pflag.SliceValue); ok {
+			words = list.GetSlice()
+		}
+	}
+	for _, word := range words {
+		if name, long := strings.CutPrefix(word, "--"); long {
+			name, _, _ = strings.Cut(name, "=")
+			if name != f.Name && cmd.Flags().Lookup(name) != nil {
+				return word, true
+			}
+			continue
+		}
+		if letter, short := strings.CutPrefix(word, "-"); short && len(letter) == 1 {
+			if g := cmd.Flags().ShorthandLookup(letter); g != nil && g != f {
+				return word, true
+			}
+		}
+	}
+	return "", false
 }
