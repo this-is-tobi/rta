@@ -3,6 +3,7 @@ package kv
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/internal/shutdown"
 	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/internal/textclean"
@@ -132,6 +134,45 @@ func restoreTrailingNewline(edited, original []byte) []byte {
 	return bytes.TrimSuffix(edited[:len(edited)-1], []byte("\r"))
 }
 
+// readEdited reads back the value the editor left at path, original as it was
+// before, no further than one entry holds (maxValueBytes).
+//
+// **An entry is held to the bound however it arrives.** kv set held --file and
+// a typed value to it, and this read whatever the editor left: `:r
+// ~/logs/big.log` in vim, saved, and the log was stored, to be decrypted and
+// encrypted again by every later call, with up to five copies of it kept in
+// the entry's history.
+//
+// The bound is the value's, so it is held after restoreTrailingNewline takes
+// off the "\n" or "\r\n" the editor added, and the file is read two bytes past
+// it to leave room for them. Held to the file instead, a value of exactly the
+// bound, opened in vim and saved unchanged, would come back a byte over and be
+// refused.
+func readEdited(path string, original []byte) ([]byte, *view.Error) {
+	f, err := os.Open(path)
+	if err != nil {
+		// Some editors write by rename and take the original with them if
+		// they are killed. Saying so beats "no such file or directory".
+		return nil, view.Errorf("kv.edit.gone", "the editor left no file behind: %v", err).
+			WithHint("nothing was changed")
+	}
+	defer func() { _ = f.Close() }()
+	edited, err := pathin.ReadAll(f, path, maxValueBytes+len("\r\n"))
+	var tooLarge *pathin.TooLargeError
+	if err != nil && !errors.As(err, &tooLarge) {
+		return nil, view.Errorf("kv.edit.gone", "reading back what the editor wrote: %v", err).
+			WithHint("nothing was changed")
+	}
+	if err == nil {
+		edited = restoreTrailingNewline(edited, original)
+	}
+	if err != nil || len(edited) > maxValueBytes {
+		verr := valueTooLarge("the edited value")
+		return nil, verr.WithHint("nothing was changed — " + verr.Hint)
+	}
+	return edited, nil
+}
+
 // runEdit opens a value in an editor and stores whatever comes back.
 func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	// An editor is a person at a keyboard. Checked before anything else, so
@@ -200,14 +241,10 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, view.Errorf("kv.edit.failed", "%s: %v", argv[0], err).
 			WithHint("nothing was changed — set $EDITOR to something on this machine")
 	}
-	edited, err := os.ReadFile(path)
-	if err != nil {
-		// Some editors write by rename and take the original with them if
-		// they are killed. Saying so beats "no such file or directory".
-		return nil, view.Errorf("kv.edit.gone", "the editor left no file behind: %v", err).
-			WithHint("nothing was changed")
+	edited, verr := readEdited(path, e.Value)
+	if verr != nil {
+		return nil, verr
 	}
-	edited = restoreTrailingNewline(edited, e.Value)
 
 	if bytes.Equal(edited, e.Value) {
 		// Not a no-op for tidiness: writing here would re-encrypt the whole

@@ -292,6 +292,11 @@ func Store(name, value, description, origin string) *view.Error {
 	if name == "" {
 		return view.Errorf("kv.key.empty", "no entry named")
 	}
+	// The bound kv set and kv edit hold a value to, since an entry is held to
+	// it however it arrives; checked before the store is unlocked for it.
+	if len(value) > maxValueBytes {
+		return valueTooLarge("the value")
+	}
 	req := plugin.NewRequest(map[string]any{
 		"passphrase": hostPassphrase(),
 		"identity":   os.Getenv(identityEnv),
