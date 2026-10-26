@@ -6,10 +6,13 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/shirou/gopsutil/v4/process"
 
 	"github.com/this-is-tobi/rta/internal/render/theme"
@@ -345,6 +348,71 @@ func TestPSSortValidation(t *testing.T) {
 	// Empty sort defaults to cpu (handlers may be called without CLI defaults).
 	if _, err := runPS(context.Background(), plugin.NewRequest(map[string]any{"limit": 1}, false, false)); err != nil {
 		t.Errorf("empty sort should default to cpu: %v", err)
+	}
+}
+
+// The machine's memory is read once for a listing, and each process's once.
+// gopsutil's MemoryPercent reads both itself, so asking it and then for the
+// resident size read the machine's total once per process and every process
+// twice: 800 sysctl calls or /proc/meminfo parses, and 1600 process reads,
+// before the CPU window had begun, on every refresh of a ps tile.
+//
+// Counting the reads through virtualMemory alone would not see MemoryPercent
+// come back, since gopsutil reads the total inside it without passing through
+// the var. So the total the var hands over is one no machine has, a single
+// byte: a share worked out from it is over 100% for every process holding
+// any memory, and a share MemoryPercent worked out from the real total is not.
+func TestPSReadsTheMachinesMemoryOncePerListing(t *testing.T) {
+	var reads atomic.Int32
+	old := virtualMemory
+	virtualMemory = func(context.Context) (*mem.VirtualMemoryStat, error) {
+		reads.Add(1)
+		return &mem.VirtualMemoryStat{Total: 1}, nil
+	}
+	t.Cleanup(func() { virtualMemory = old })
+
+	v, err := runPS(context.Background(), plugin.NewRequest(map[string]any{"limit": 1000, "sort": "mem"}, false, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tbl := v.(view.Table)
+	if n := reads.Load(); n != 1 {
+		t.Errorf("the machine's memory was read %d times for one listing of %d processes, want once", n, tbl.Total)
+	}
+	fromTheListingsTotal := 0
+	for _, row := range tbl.Rows {
+		share, err := strconv.ParseFloat(row[3], 64)
+		if err != nil {
+			t.Fatalf("Mem%% = %q: %v", row[3], err)
+		}
+		if share > 0 && share <= 100 {
+			t.Fatalf("process %s holds %s%% of the machine: a share of a total read another way than the listing's",
+				row[0], row[3])
+		}
+		if share > 100 {
+			fromTheListingsTotal++
+		}
+	}
+	if fromTheListingsTotal == 0 {
+		t.Errorf("no process in the listing of %d held any memory, so no share was worked out", len(tbl.Rows))
+	}
+}
+
+// A machine whose total could not be read gives no share, rather than a
+// division by nothing.
+func TestPSGivesNoMemoryShareWhenTheTotalIsUnknown(t *testing.T) {
+	old := virtualMemory
+	virtualMemory = func(context.Context) (*mem.VirtualMemoryStat, error) { return nil, errors.New("unreadable") }
+	t.Cleanup(func() { virtualMemory = old })
+
+	v, err := runPS(context.Background(), plugin.NewRequest(map[string]any{"limit": 5, "sort": "mem"}, false, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range v.(view.Table).Rows {
+		if row[3] != "0.0" {
+			t.Errorf("Mem%% = %q with no total to divide by, want 0.0", row[3])
+		}
 	}
 }
 

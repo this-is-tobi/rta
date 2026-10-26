@@ -771,6 +771,10 @@ func hostAddrs() []string {
 	return out
 }
 
+// virtualMemory is how sys.ps reads the machine's memory, a var so a test can
+// count the reads.
+var virtualMemory = mem.VirtualMemoryWithContext
+
 func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 	limit := req.Int("limit")
 	if limit <= 0 {
@@ -797,6 +801,17 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	rows := make([]row, 0, len(procs))
 	unread := 0
+	// The machine's total once for the listing, and each process's memory
+	// once. gopsutil's MemoryPercent reads both itself, so asking it for the
+	// share and then for the resident size read the total once per process
+	// and every process twice: on a host of 800 processes, 800 sysctl calls
+	// or /proc/meminfo parses and 1600 process reads, all before the CPU
+	// window opens, at every refresh of a ps tile. A total that cannot be read
+	// gives every row no share, as MemoryPercent did then.
+	var machine uint64
+	if vm, err := virtualMemory(ctx); err == nil && vm != nil {
+		machine = vm.Total
+	}
 	for _, p := range procs {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -812,10 +827,12 @@ func runPS(ctx context.Context, req plugin.Request) (view.View, error) {
 			unread++
 			continue
 		}
-		memPct, _ := p.MemoryPercentWithContext(ctx)
-		r := row{proc: p, name: name, mem: memPct}
+		r := row{proc: p, name: name}
 		if mi, err := p.MemoryInfoWithContext(ctx); err == nil && mi != nil {
 			r.rss = mi.RSS
+			if machine > 0 {
+				r.mem = float32(100 * float64(mi.RSS) / float64(machine))
+			}
 		}
 		if taskUnreadable(runtime.GOOS, r.rss) {
 			unread++
