@@ -197,19 +197,19 @@ func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error
 	// says rather than making somebody reassemble it from three tables.
 	// Page.section forces detail:false, so this is the same handler and not a
 	// second implementation — and it cannot recurse.
-	summary, serr := p.Run(runOverview, plugin.Read, nil)
+	summary, serr := p.Run(overviewCapability(), nil)
 	if serr != nil {
 		p.Warn(plugin.HandlerFailure(serr, "the summary section", "page.section.failed"))
 	} else {
 		p.PutAs("summary", "summary", summary)
 	}
-	p.AddAs("status", "status", runStatus, plugin.Read, nil)
-	p.AddAs("log", "log", runLog, plugin.Read, map[string]any{"limit": detailLogLimit})
-	p.AddAs("branches", "branches", runBranches, plugin.Read, nil)
+	p.AddAs("status", "status", statusCapability(), nil)
+	p.AddAs("log", "log", logCapability(), map[string]any{"limit": detailLogLimit})
+	p.AddAs("branches", "branches", branchesCapability(), nil)
 	// Last, because it is the section that changes least often — and present
 	// at all because "which server does this reach" is the question a branch
 	// name only half answers.
-	p.AddAs("remotes", "remotes", runRemotes, plugin.Read, nil)
+	p.AddAs("remotes", "remotes", remotesCapability(), nil)
 
 	if p.Empty() {
 		// What the summary said, when it is why: every section fails for the

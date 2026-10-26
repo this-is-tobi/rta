@@ -599,7 +599,7 @@ func treeDetail(ctx context.Context, req plugin.Request, path string, tree view.
 	// using the space in what I am looking at" rather than starting an
 	// unbounded scan from a keypress. Its own limit, because usage ranks
 	// biggest-first and a tree's per-directory entry cap means something else.
-	p.AddAs("largest", "largest entries", runUsage, plugin.Read, map[string]any{
+	p.AddAs("largest", "largest entries", Plugin().Capability("fs.usage"), map[string]any{
 		"path":  path,
 		"depth": req.Int("depth"),
 		"limit": detailUsageTop,

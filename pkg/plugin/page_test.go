@@ -19,6 +19,11 @@ func titles(s view.Sections) []string {
 	return out
 }
 
+// readCap is a capability any caller may call, running run.
+func readCap(run plugin.Handler) plugin.Capability {
+	return plugin.Capability{ID: "demo.part", Safety: plugin.Read, Run: run}
+}
+
 func text(body string) plugin.Handler {
 	return func(context.Context, plugin.Request) (view.View, error) {
 		return view.Text{Body: body}, nil
@@ -32,10 +37,10 @@ func TestPageDropsSectionsThatCannotAnswer(t *testing.T) {
 	silent := func(context.Context, plugin.Request) (view.View, error) { return nil, nil }
 
 	p := plugin.NewPage(t.Context(), plugin.NewRequest(nil, false, false))
-	p.Add("host", text("host"), plugin.Read, nil)
-	p.Add("sensors", broken, plugin.Read, nil)
-	p.Add("quiet", silent, plugin.Read, nil)
-	p.Add("load", text("load"), plugin.Read, nil)
+	p.Add("host", readCap(text("host")), nil)
+	p.Add("sensors", readCap(broken), nil)
+	p.Add("quiet", readCap(silent), nil)
+	p.Add("load", readCap(text("load")), nil)
 
 	got := titles(p.View())
 	if len(got) != 2 || got[0] != "host" || got[1] != "load" {
@@ -53,7 +58,7 @@ func TestPageSectionsInheritTheCallersInputs(t *testing.T) {
 		return view.Text{Body: seen}, nil
 	}
 	base := plugin.NewRequest(map[string]any{"identity": "~/.ssh/id_ed25519"}, false, false)
-	plugin.NewPage(t.Context(), base).Add("keys", echo, plugin.Read, nil)
+	plugin.NewPage(t.Context(), base).Add("keys", readCap(echo), nil)
 
 	if seen != "~/.ssh/id_ed25519" {
 		t.Fatalf("section did not inherit the page's inputs: %q", seen)
@@ -70,7 +75,7 @@ func TestPageClearsDetailForTheSectionsItEmbeds(t *testing.T) {
 		return view.Text{Body: "x"}, nil
 	}
 	base := plugin.NewRequest(map[string]any{"detail": true}, false, false)
-	plugin.NewPage(t.Context(), base).Add("part", echo, plugin.Read, nil)
+	plugin.NewPage(t.Context(), base).Add("part", readCap(echo), nil)
 
 	if detail {
 		t.Fatal("detail leaked into an embedded section")
@@ -84,7 +89,7 @@ func TestPageSectionValuesOverrideInheritedOnes(t *testing.T) {
 		return view.Text{Body: got}, nil
 	}
 	base := plugin.NewRequest(map[string]any{"kind": "note"}, false, false)
-	plugin.NewPage(t.Context(), base).Add("keys", echo, plugin.Read, map[string]any{"kind": "cert"})
+	plugin.NewPage(t.Context(), base).Add("keys", readCap(echo), map[string]any{"kind": "cert"})
 
 	if got != "cert" {
 		t.Fatalf("kind = %q, want the section's own value", got)
@@ -141,30 +146,48 @@ func TestALinkIsToldForItsFieldUntilTheFieldIsReplaced(t *testing.T) {
 	}
 }
 
-// A regression test for a real architectural gap: Page
-// composes a handler directly, with none of the checks the MCP
-// bridge applies to a capability an MCP call actually names — no grant, no
-// --allow-write/--allow-destructive gate. Nothing in the registry embeds a
-// Write or Destructive handler today, but nothing prevented a future one
-// from doing so either, and the gap would have been invisible until
-// exploited. AddAs/Add/Run now require the caller to state the safety
-// class and panic rather than silently embed anything but Read.
-func TestPageRefusesToEmbedAnythingButRead(t *testing.T) {
-	write := func(context.Context, plugin.Request) (view.View, error) { return view.Text{}, nil }
+// A page's embedded calls run direct, with none of the checks the MCP bridge
+// applies to a capability a call names, so a page embeds only what any of its
+// callers could call with nobody's leave. The check reads what the embedded
+// capability declares, never a safety class the caller restates beside a
+// handler: that form took plugin.Read for a read that needs a grant, reveals a
+// value or answers the person at the terminal alone, and a free page embedding
+// one handed its answer to a caller the gate would have refused, with a record
+// naming the page. A capability looked up by an ID its plugin does not declare
+// has no handler, and is refused rather than dropped as a section that failed.
+func TestPageRefusesToEmbedACapabilityItsCallerCouldNotCall(t *testing.T) {
+	run := text("x")
 	p := plugin.NewPage(t.Context(), plugin.NewRequest(nil, false, false))
-
-	assertPanics := func(name string, f func()) {
-		t.Helper()
-		defer func() {
-			if recover() == nil {
-				t.Errorf("%s: did not panic embedding a non-Read handler", name)
-			}
-		}()
-		f()
+	for name, c := range map[string]plugin.Capability{
+		"a write":                   {ID: "demo.set", Safety: plugin.Write, Run: run},
+		"a destructive one":         {ID: "demo.rm", Safety: plugin.Destructive, Run: run},
+		"a read that needs a grant": {ID: "demo.probe", Safety: plugin.Read, NeedsGrant: true, Run: run},
+		"a read for a person only":  {ID: "demo.mine", Safety: plugin.Read, HumanOnly: true, Run: run},
+		"a reveal":                  {ID: "demo.get", Safety: plugin.Read, Reveals: true, Run: run},
+		"no handler":                {ID: "demo.none", Safety: plugin.Read},
+	} {
+		for form, embed := range map[string]func(){
+			"Add":   func() { p.Add("x", c, nil) },
+			"AddAs": func() { p.AddAs("x", "x", c, nil) },
+			"Run":   func() { _, _ = p.Run(c, nil) },
+		} {
+			func() {
+				defer func() {
+					if recover() == nil {
+						t.Errorf("%s embedded %s", form, name)
+					}
+				}()
+				embed()
+			}()
+		}
 	}
-	assertPanics("Add", func() { p.Add("x", write, plugin.Write, nil) })
-	assertPanics("AddAs", func() { p.AddAs("x", "x", write, plugin.Destructive, nil) })
-	assertPanics("Run", func() { _, _ = p.Run(write, plugin.Write, nil) })
+	if !p.Empty() {
+		t.Fatalf("a refused capability left a section: %v", titles(p.View()))
+	}
+	p.AddAs("free", "free", readCap(run), nil)
+	if got := titles(p.View()); len(got) != 1 || got[0] != "free" {
+		t.Errorf("a read anybody may call was not embedded: %v", got)
+	}
 }
 
 func TestPagePutIgnoresNilViews(t *testing.T) {
@@ -188,11 +211,11 @@ func TestAPageSectionsNilViewErrorIsNoFailure(t *testing.T) {
 	answered := func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, none }
 
 	p := plugin.NewPage(t.Context(), plugin.NewRequest(nil, false, false))
-	p.Add("host", answered, plugin.Read, nil)
+	p.Add("host", readCap(answered), nil)
 	if got := titles(p.View()); len(got) != 1 || got[0] != "host" {
 		t.Errorf("a section that answered was left out: %v", got)
 	}
-	if _, err := p.Run(answered, plugin.Read, nil); err != nil {
+	if _, err := p.Run(readCap(answered), nil); err != nil {
 		t.Errorf("Page.Run handed on a failure for a call that worked: %#v", err)
 	}
 	// And an error that is not the nil pointer itself is the failure it says.
@@ -210,7 +233,7 @@ func TestAPageSectionsNilViewErrorIsNoFailure(t *testing.T) {
 func TestAPageSectionsEmptyFailureWarnsCodedAndWorded(t *testing.T) {
 	empty := func(context.Context, plugin.Request) (view.View, error) { return nil, &view.Error{} }
 	p := plugin.NewPage(t.Context(), plugin.NewRequest(nil, false, false))
-	p.Add("sensors", empty, plugin.Read, nil)
+	p.Add("sensors", readCap(empty), nil)
 	w := p.View().Warnings
 	if len(w) != 1 || w[0].Code != "page.section.failed" || w[0].Message == "" {
 		t.Errorf("the empty failure warned as %#v", w)

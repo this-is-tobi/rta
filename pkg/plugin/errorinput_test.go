@@ -55,9 +55,9 @@ func TestAWarningsInputIsHeldToTheDeclaration(t *testing.T) {
 // the sibling's refusal named is one of the sibling's call: the page takes none.
 func TestASiblingsRefusalOnAPageNamesNoInput(t *testing.T) {
 	p := NewPage(context.Background(), NewRequest(nil, false, false))
-	p.AddAs("rows", "rows", func(context.Context, Request) (view.View, error) {
+	p.AddAs("rows", "rows", Capability{ID: "demo.rows", Safety: Read, Run: func(context.Context, Request) (view.View, error) {
 		return nil, view.Errorf("demo.nosuch", "no such row").WithInput("id")
-	}, Read, nil)
+	}}, nil)
 	page := p.View()
 	if len(page.Warnings) != 1 || page.Warnings[0].Input != "" {
 		t.Errorf("warnings = %+v, want the sibling's refusal naming no input", page.Warnings)

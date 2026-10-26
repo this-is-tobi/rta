@@ -44,37 +44,26 @@ func NewPage(ctx context.Context, base Request) *Page {
 	return &Page{ctx: ctx, base: base}
 }
 
-// Add runs a sibling handler and appends its view as a titled section,
+// Add runs a sibling capability and appends its view as a titled section,
 // skipping it if the handler fails or returns nothing. values overlay the
 // page's inherited inputs.
-func (p *Page) Add(title string, run Handler, safety Safety, values map[string]any) *Page {
-	return p.AddAs("", title, run, safety, values)
+func (p *Page) Add(title string, c Capability, values map[string]any) *Page {
+	return p.AddAs("", title, c, values)
 }
 
 // AddAs is Add with an explicit stable section id, for a section a script or
 // an agent addresses by name. See view.Section for why the title cannot serve
 // as that handle.
 //
-// safety must be Read, and this panics otherwise. A Page's embedded calls
-// run direct: grant.Reserve and every other check the MCP bridge applies
-// wrap the one Capability an MCP call named, not a handler a sibling
-// capability calls internally, so nothing here could gate a Write or
-// Destructive section even if it wanted to. Requiring the caller to state
-// the safety class, checked immediately rather than trusted, is what turns
-// "nothing currently composes anything ungated" into "nothing ever can" —
-// found by review: every embedded call in the registry
-// today happens to be Read, but nothing stopped a future one from not
-// being, and the gap would have been invisible until it was exploited.
-func (p *Page) AddAs(id, title string, run Handler, safety Safety, values map[string]any) *Page {
-	if run == nil {
-		return p
-	}
-	if safety != Read {
-		panic(fmt.Sprintf("plugin: Page.AddAs(%q): embedding a %s handler bypasses grant enforcement — "+
-			"Page composes a call directly, with none of the checks the MCP bridge applies to a named "+
-			"capability, so only Read handlers may be embedded", id, safety))
-	}
-	v, err := run(p.ctx, p.section(values))
+// c must be a capability every caller of the page could call with nobody's
+// leave, and this panics otherwise (embeddable). A Page's embedded calls run
+// direct: grant.Reserve and every other check the MCP bridge applies wrap
+// the one Capability an MCP call named, not a handler a sibling capability
+// calls internally, so nothing here could gate a section even if it wanted
+// to.
+func (p *Page) AddAs(id, title string, c Capability, values map[string]any) *Page {
+	embeddable(fmt.Sprintf("Page.AddAs(%q)", id), c)
+	v, err := c.Run(p.ctx, p.section(values))
 	if err = Failure(err); err != nil {
 		// The section is still dropped — that is the whole point of a
 		// composed page surviving one bad sensor — but it stops being
@@ -121,20 +110,57 @@ func (p *Page) Warn(e *view.Error) *Page {
 	return p
 }
 
-// Run executes a sibling handler with the page's inherited inputs without
+// Run executes a sibling capability with the page's inherited inputs without
 // appending anything, for the cases where the caller wants to decide what a
 // failure should look like rather than have the section dropped.
 //
-// safety must be Read, checked the same way and for the same reason as
-// AddAs.
-func (p *Page) Run(run Handler, safety Safety, values map[string]any) (view.View, error) {
-	if safety != Read {
-		panic(fmt.Sprintf("plugin: Page.Run: embedding a %s handler bypasses grant enforcement — "+
-			"Page composes a call directly, with none of the checks the MCP bridge applies to a named "+
-			"capability, so only Read handlers may be embedded", safety))
-	}
-	v, err := run(p.ctx, p.section(values))
+// c is held to what AddAs holds it to, for the same reason.
+func (p *Page) Run(c Capability, values map[string]any) (view.View, error) {
+	embeddable("Page.Run", c)
+	v, err := c.Run(p.ctx, p.section(values))
 	return v, Failure(err)
+}
+
+// embeddable panics unless c is a capability any caller of a page may call
+// with nobody's leave: Read, and neither NeedsGrant, HumanOnly nor Reveals.
+//
+// **The declaration, never a word restated beside a handler.** The page
+// used to take a handler and the safety class its caller said it had, and
+// checked the word: plugin.Read passed for a read that needs a grant — a
+// destination the caller chooses, as net.probe and the http reads take —
+// and for one that reveals a value or answers the person at the terminal
+// alone. A free page embedding one handed its answer to a caller the gate
+// would have refused, with a record naming the page. Nothing in rta embedded
+// one; nothing stopped a page from it either. Taking the Capability makes
+// the check read what the gate reads.
+//
+// A capability with no handler is refused too: it is what a lookup by an ID
+// the plugin does not declare returns (Plugin.Capability), and dropped as a
+// section that failed it would be a page one heading shorter for a typo.
+//
+// HostSpecific is not held here, because the page's own capability is not
+// known to it: a page offered over a remote transport embeds what describes
+// this machine only if its author put it there. Every page in rta describes
+// the same machine as its sections.
+func embeddable(where string, c Capability) {
+	var why string
+	switch {
+	case c.Run == nil:
+		why = "has no handler, which is what a lookup by an ID its plugin does not declare returns"
+	case c.Safety != Read:
+		why = "is " + string(c.Safety)
+	case c.NeedsGrant:
+		why = "needs a grant"
+	case c.HumanOnly:
+		why = "answers the person at the terminal alone"
+	case c.Reveals:
+		why = "reveals a value another view withholds"
+	default:
+		return
+	}
+	panic(fmt.Sprintf("plugin: %s: %q %s — a Page composes a call directly, with none of the checks "+
+		"the MCP bridge applies to a named capability, so it embeds only a Read capability that "+
+		"needs no grant", where, c.ID, why))
 }
 
 // section derives the request an embedded call runs with.

@@ -162,18 +162,18 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 // Sections whose capability fails on this platform (sensors, typically) are
 // simply absent — a partial report beats a failed one.
 func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error) {
-	p := plugin.NewPage(ctx, req)
+	p, declared := plugin.NewPage(ctx, req), Plugin()
 	// The id is the capability the section came from, not a slug of its
 	// heading: a reader of `sys overview --detail` in JSON can line the
 	// "storage" section up with `rta sys disk` and get the same shape, and
 	// the heading stays free to be reworded. See view.Section.
-	p.AddAs("host", "host", runHost, plugin.Read, nil)
-	p.AddAs("cpu", "cpu", runCPU, plugin.Read, map[string]any{"cores": true}) // per-core bar chart
-	p.AddAs("mem", "memory", runMem, plugin.Read, nil)
-	p.AddAs("load", "load", runLoad, plugin.Read, nil)
-	p.AddAs("disk", "storage", runDisk, plugin.Read, nil)
-	p.AddAs("temp", "sensors", runTemp, plugin.Read, nil)
-	p.AddAs("ps", "top processes", runPS, plugin.Read, map[string]any{"limit": detailTopN, "sort": "cpu"})
+	p.AddAs("host", "host", declared.Capability("sys.host"), nil)
+	p.AddAs("cpu", "cpu", declared.Capability("sys.cpu"), map[string]any{"cores": true}) // per-core bar chart
+	p.AddAs("mem", "memory", declared.Capability("sys.mem"), nil)
+	p.AddAs("load", "load", declared.Capability("sys.load"), nil)
+	p.AddAs("disk", "storage", declared.Capability("sys.disk"), nil)
+	p.AddAs("temp", "sensors", declared.Capability("sys.temp"), nil)
+	p.AddAs("ps", "top processes", declared.Capability("sys.ps"), map[string]any{"limit": detailTopN, "sort": "cpu"})
 
 	if p.Empty() {
 		return nil, view.Errorf("sys.overview.unavailable", "no host telemetry readable on this platform")
