@@ -171,7 +171,7 @@ profiles:
 			if err := sub.Flags().Set("profile", tc.profile); err != nil {
 				t.Fatal(err)
 			}
-			_, closeTunnel, _ := resolveProfile(context.Background(), sub, c, nil)
+			_, closeTunnel, _ := resolveProfile(context.Background(), sub, c, nil, nil)
 			if closeTunnel == nil {
 				t.Fatal("the teardown is nil, so runCapability's deferred close panics here")
 			}

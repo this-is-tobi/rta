@@ -63,8 +63,11 @@ type boundProfile struct {
 // the call and before checking the error: a failure that happens after the
 // forward came up closes it here, and a connection that names no cluster
 // returns a no-op.
+//
+// The environment is looked up in the configuration the command tree was built
+// from (globalOpts.loadedConfig), not in a read of its own.
 func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
-	caller map[string]any,
+	caller map[string]any, opts *globalOpts,
 ) (boundProfile, func(), *view.Error) {
 	noop := func() {}
 	if !plugin.Profilable(c) {
@@ -111,7 +114,7 @@ func resolveProfile(ctx context.Context, cmd *cobra.Command, c plugin.Capability
 	case stated:
 		name, conn = profile.AdHocName, adHoc
 	default:
-		cfg, err := config.Load()
+		cfg, err := opts.loadedConfig()
 		if err != nil {
 			return boundProfile{}, noop, view.AsError(err, "core.profile.config")
 		}

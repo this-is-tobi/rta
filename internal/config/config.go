@@ -540,11 +540,45 @@ func parse(path string, data []byte) (Config, error) {
 // other caller stops at the error, so what comes back with it is only ever
 // read by the one that does not.
 func Load() (Config, error) {
-	cfg, err := LoadFile()
+	r, err := Read()
+	return r.Config(), err
+}
+
+// Reading is one read of the configuration's files, for a caller that asks
+// more than one question of them: what they state together (Config), and
+// which of their keys rta does not read (Check).
+//
+// It exists for the CLI's startup. Every file is parsed twice over in a read,
+// and once more for Check, and a command run at a terminal read the whole set
+// for its tree, again for the notice about ignored keys, and again for each
+// step that looked at the environment switched on — four reads of one set of
+// files in one process that had read them already. A Reading is not a cache:
+// it is the files as they were when it was made, held by whoever made it, and
+// a process that lives long enough for them to change (the TUI, `rta mcp
+// serve`) reads them again rather than keep one.
+type Reading struct{ s *stack }
+
+// Read reads the configuration's files once. A set that does not read is an
+// error and a Reading whose Config is the zero one, as LoadFile's is.
+func Read() (Reading, error) {
+	s, err := readStack()
+	if err != nil {
+		return Reading{}, err
+	}
+	return Reading{s: s}, nil
+}
+
+// Config is what Load answers for these files: what they state together, with
+// the environment's overrides laid over it, a reading that failed included.
+func (r Reading) Config() Config {
+	var cfg Config
+	if r.s != nil {
+		cfg = r.s.merged()
+	}
 	if out := os.Getenv("RTA_OUTPUT"); out != "" {
 		cfg.Output = out
 	}
-	return cfg, err
+	return cfg
 }
 
 // lockFile is the sentinel beside the config file, named after the file

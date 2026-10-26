@@ -733,6 +733,18 @@ type globalOpts struct {
 	// question that precedes the real one is not asked about nothing
 	// (confirmByPreview).
 	nothingToDo bool
+	// config is the configuration NewRoot built the tree from (WithReading).
+	config func() (config.Config, error)
+}
+
+// loadedConfig is the configuration the command tree was built from, which a
+// step of a command asks rather than reading the files again; a command
+// attached outside NewRoot, which has none, reads them.
+func (o *globalOpts) loadedConfig() (config.Config, error) {
+	if o == nil || o.config == nil {
+		return config.Load()
+	}
+	return o.config()
 }
 
 // groupRunE is what a command that only groups other commands does with its
@@ -962,29 +974,37 @@ func notACommandHint(cmd *cobra.Command, arg string, near []string) string {
 // RootOption adjusts how NewRoot builds the command tree.
 type RootOption func(*rootSettings)
 
+// readConfig is config.Read, the read NewRoot makes when it is handed none: a
+// var so that a test can count the reads one command makes, which is the
+// number WithReading exists to hold at one.
+var readConfig = config.Read
+
 type rootSettings struct {
-	load func() (config.Config, error)
+	read func() (config.Reading, error)
 }
 
-// WithConfig hands NewRoot the configuration the caller has already read, as
-// config.Load returned it, so the tree is built from the same read the rest of
-// startup used instead of from a second one.
+// WithReading hands NewRoot the configuration the caller has already read, as
+// config.Read returned it, so the tree is built from the same read the rest of
+// startup used instead of from a second one, and so is everything the command
+// then asks of the files: the notice about keys rta does not read, whether a
+// read fans out, the environment a call resolves.
 //
 // Measured, not tidiness: the file was parsed once in main for the plugin
 // sections and the palette and parsed again here for the default output
 // format, and goccy/go-yaml parses a 350-line config with twenty-five
 // profiles in about two milliseconds — a tenth of every command's startup,
-// spent a second time on an identical file. A single read is also the
-// stronger statement of what main's comment already promises: nothing
-// discovers its own configuration halfway through a run.
-func WithConfig(cfg config.Config, err error) RootOption {
-	return func(s *rootSettings) { s.load = func() (config.Config, error) { return cfg, err } }
+// spent a second time on an identical file. With an environment switched on,
+// a read at a terminal then parsed every file three times more, once for each
+// of those questions. A single read is also the stronger statement of what
+// main's comment already promises: nothing discovers its own configuration
+// halfway through a run.
+func WithReading(r config.Reading, err error) RootOption {
+	return func(s *rootSettings) { s.read = func() (config.Reading, error) { return r, err } }
 }
 
 // NewRoot builds the root cobra command over the given registry.
 func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cobra.Command {
-	opts := &globalOpts{}
-	settings := rootSettings{load: config.Load}
+	settings := rootSettings{read: readConfig}
 	for _, option := range options {
 		option(&settings)
 	}
@@ -998,7 +1018,9 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 	agentsession.SetSelf(version)
 	// Config is optional; a broken file must not brick the CLI — doctor and
 	// init both diagnose it, so they need the binary to still run.
-	cfg, cfgErr := settings.load()
+	reading, cfgErr := settings.read()
+	cfg := reading.Config()
+	opts := &globalOpts{config: func() (config.Config, error) { return cfg, cfgErr }}
 	defaultOutput := cfg.Output
 	if defaultOutput == "" {
 		defaultOutput = "pretty"
@@ -1052,7 +1074,7 @@ func NewRoot(reg *registry.Registry, version string, options ...RootOption) *cob
 				ASCII:           cli.ASCIIOnly(os.Getenv),
 			})
 			WarnUntrustedPlugins(cmd.ErrOrStderr(), opts.output != "pretty")
-			WarnConfigProblems(cmd.ErrOrStderr(), cmd, opts.output != "pretty")
+			warnConfigProblems(cmd.ErrOrStderr(), cmd, opts.output != "pretty", reading.Check)
 			return nil
 		},
 		Long: "rta is a single extendable binary offering one consistent interface over the tools you juggle daily — " +
@@ -2249,14 +2271,14 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	}
 	// A read that names an environment and none of its targets runs on each
 	// (fanout.go); everything else resolves exactly one.
-	if targets := fanOutTargets(cmd, c, values); len(targets) > 0 {
+	if targets := fanOutTargets(cmd, c, values, opts); len(targets) > 0 {
 		return runFanOut(ctx, cmd, c, values, opts, renderOpts, targets)
 	}
 	// The profile, and the values it contributes. A person at a terminal
 	// needs no grant for any of this: the gate is on the MCP surface, because
 	// the operator writing the profile and the operator running the command
 	// are the same person, and consent to yourself is not a thing.
-	bound, closeTunnel, verr := resolveProfile(ctx, cmd, c, values)
+	bound, closeTunnel, verr := resolveProfile(ctx, cmd, c, values, opts)
 	// Deferred before the error check on purpose: a `kube:` connection whose
 	// forward came up and whose next step then failed still has a port open,
 	// and closeTunnel is never nil.
