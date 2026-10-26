@@ -667,9 +667,10 @@ func TestConcurrentReserveDoesNotOverspendAOneTimeGrant(t *testing.T) {
 func TestReserveFastPathIsNotFooledByAGrantThatArrivesMidCheck(t *testing.T) {
 	setup(t)
 
-	// About 150 bytes a grant sealed, so 1200 is about 180 KiB: under
-	// maxGrantFile with room to spare for the grant the race adds.
-	const noise = 1200
+	// About 115 bytes a grant sealed, so 1600 is about 180 KiB: under
+	// maxGrantFile with room to spare for the grant the race adds. (It was
+	// 1200 at 150 bytes, while the file was written indented.)
+	const noise = 1600
 	future := time.Now().Add(time.Hour)
 	padding := make([]Grant, noise)
 	for i := range padding {

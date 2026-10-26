@@ -479,6 +479,34 @@ func TestAGrantSpentToItsLastUseIsKeptUntilItExpires(t *testing.T) {
 	}
 }
 
+// A file written indented, as rta wrote it before the pace history made the
+// spaces count, reads as it did: the seal is over the grants and not over how
+// the file was laid out, so an upgrade keeps every grant standing.
+func TestAGrantFileWrittenIndentedStillReads(t *testing.T) {
+	setup(t)
+	g := paced("kv.get", "k", 5, "1h")
+	g.Recent = []time.Time{time.Now().Add(-time.Minute).UTC().Truncate(time.Second)}
+	issue(t, g)
+	compact, err := os.ReadFile(Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var indented bytes.Buffer
+	if err := json.Indent(&indented, compact, "", "  "); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(Path(), indented.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if verr := call(t, declare("kv.get", plugin.Write, "key", true), map[string]any{"key": "k"}, "", ""); verr != nil {
+		t.Fatalf("the indented file does not authorize the call it covers: %v", verr)
+	}
+	stored, verr := loadAll()
+	if verr != nil || len(stored) != 1 || len(stored[0].Recent) != 2 {
+		t.Fatalf("read back %+v, %v, want the grant with both uses in its window", stored, verr)
+	}
+}
+
 // A file that is written is a file that reads: loadAll refuses one over
 // maxGrantFile on every gated call, so a Save that would make one is refused
 // where a person is standing, and the file as it was keeps answering.
