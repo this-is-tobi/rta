@@ -149,8 +149,15 @@ func TestLoadTokenFile(t *testing.T) {
 	})
 	t.Run("duplicate token", func(t *testing.T) {
 		path := writeTokenFile(t, 0o600, "alice tok-a-0123456789abcdef\nbob tok-a-0123456789abcdef\n")
-		if _, _, err := LoadTokenFile(path); err == nil {
+		_, _, err := LoadTokenFile(path)
+		if err == nil {
 			t.Fatal("the same token assigned to two labels was accepted")
+		}
+		// By the line that holds it first, not by that line's first word:
+		// see TestATokenFileRefusalNeverQuotesATokenFromIt.
+		if !strings.Contains(err.Error(), ":2:") || !strings.Contains(err.Error(), "line 1") ||
+			strings.Contains(err.Error(), "alice") {
+			t.Errorf("the refusal = %v, want line 2 refused for the token line 1 holds, by number", err)
 		}
 	})
 	t.Run("bad label charset", func(t *testing.T) {
@@ -174,6 +181,49 @@ func TestLoadTokenFile(t *testing.T) {
 			t.Fatal("a nonexistent file was accepted")
 		}
 	})
+}
+
+// A refusal of the token file goes to stderr at startup, which is the
+// journal, the pod log or the MCP client's server log: wherever it lands,
+// somebody besides the operator reads it. Each line here is one an operator
+// writes by mistake, and each holds the credential where a refusal used to
+// quote it: a token with no label, a comment after the pair, the two words
+// the wrong way round (the short "label" is then taken as the token and the
+// token as the label), and the same with a token whose alphabet is not a
+// label's.
+//
+// And the pair reversed with a label long enough to pass for a token, out of
+// the documented recipe: `rta gen token` writes 64 hex digits, which is a
+// valid label too, so the line loaded, the label became the bearer
+// credential — a few words anybody could guess — and the real token the
+// agent's name, recorded in the ledger and printed wherever an agent is.
+// A first word of that shape is refused as a label.
+func TestATokenFileRefusalNeverQuotesATokenFromIt(t *testing.T) {
+	const given = "3f9c0123456789abcdef3f9c"
+	generated := strings.Repeat("3f9c0123456789ab", 4)
+	for name, body := range map[string]string{
+		"a token alone":               given + "\n",
+		"a comment after a pair":      "ci " + given + "  # rotated\n",
+		"the two words reversed":      given + " ci\n",
+		"reversed, not a label":       "3f9c+01234567/89abcdef== ci-runner-of-the-night\n",
+		"reversed, with a long label": generated + " claude-desktop-laptop\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := writeTokenFile(t, 0o600, "alice tok-a-0123456789abcdef\n"+body)
+			_, _, err := LoadTokenFile(path)
+			if err == nil {
+				t.Fatal("the line was accepted")
+			}
+			for _, word := range []string{given, "3f9c+01234567/89abcdef==", generated} {
+				if strings.Contains(err.Error(), word) {
+					t.Fatalf("the refusal quotes the token: %v", err)
+				}
+			}
+			if !strings.Contains(err.Error(), ":2:") {
+				t.Errorf("the refusal does not name the line: %v", err)
+			}
+		})
+	}
 }
 
 func TestServeRequiresAVerifier(t *testing.T) {

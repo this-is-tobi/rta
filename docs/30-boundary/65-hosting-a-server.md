@@ -12,7 +12,7 @@ A caller now has to prove who it is over the wire, since there is no parent proc
 
 | Flag | Proves |
 | --- | --- |
-| `--token-file <path>` | A static, operator-issued token — one `label token` pair per line in a file only the operator can read; world-readable files are refused, and so is a token shorter than 16 characters (`rta gen token` makes one) |
+| `--token-file <path>` | A static, operator-issued token — one `label token` pair per line in a file only the operator can read; world-readable files are refused, and so is a token shorter than 16 characters (`rta gen token` makes one) and a label of 32 hex digits or more, which is a token written first |
 | `--oidc-issuer`, `--oidc-audience`, `--oidc-subject` | A real identity provider's token, for one of the named subjects. An issuer and audience alone identify an application, not a person, so at least one `--oidc-subject` is required — [OIDC](./70-oidc.md) is the full setup, including the Keycloak audience mapper without which every token is rejected |
 
 The file is the label and the token, so `rta gen token`, which prints the token among a few facts about it, is taken from its JSON answer:
