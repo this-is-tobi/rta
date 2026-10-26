@@ -83,8 +83,8 @@ func (e *TooLargeError) Error() string {
 func WrongPath(err error) bool {
 	var notAFile *NotAFileError
 	var tooLarge *TooLargeError
-	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.EISDIR) ||
-		errors.Is(err, atomicfile.ErrNotRegular) || errors.As(err, &notAFile) || errors.As(err, &tooLarge)
+	return plugin.PathInput("path", err) != "" || errors.Is(err, atomicfile.ErrNotRegular) ||
+		errors.As(err, &notAFile) || errors.As(err, &tooLarge)
 }
 
 // Input is the input a refusal to read the path it holds names
