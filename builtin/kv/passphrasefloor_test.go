@@ -85,6 +85,51 @@ func TestAShortPassphraseTypedAtThePromptIsRefusedBeforeTheValue(t *testing.T) {
 	}
 }
 
+// What is typed once and short is refused before it is asked for again, as the
+// guard's passphrase is (passkey.Prompt): a person made to confirm what is about
+// to be refused has typed it twice for nothing. The real prompt runs here, with
+// the terminal's read stubbed.
+func TestAShortNewPassphraseIsRefusedBeforeItIsAskedForAgain(t *testing.T) {
+	setup(t)
+	var prompts []string
+	origRead, origCan := readSecret, canPrompt
+	readSecret = func(prompt string) ([]byte, error) { prompts = append(prompts, prompt); return []byte("abc"), nil }
+	canPrompt = func(req plugin.Request) bool { return req.Surface() == plugin.SurfaceCLI }
+	t.Cleanup(func() { readSecret, canPrompt = origRead, origCan })
+	prompted = ""
+	t.Cleanup(func() { prompted = "" })
+
+	_, err := runSet(context.Background(), cliReq(map[string]any{"key": "k", "value": "v"}))
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "kv.passphrase.short" {
+		t.Fatalf("err = %#v, want kv.passphrase.short", err)
+	}
+	if len(prompts) != 1 {
+		t.Errorf("the terminal was asked %q, want one question: the first answer was already too short", prompts)
+	}
+}
+
+// Enter, or ^D, at a prompt that was shown is not a call with no terminal to
+// ask at, which is what the hint for the CLI says to go and find.
+func TestAnEmptyAnswerAtThePromptIsNotToldToRunAtATerminal(t *testing.T) {
+	setup(t)
+	origRead, origCan := readSecret, canPrompt
+	readSecret = func(string) ([]byte, error) { return nil, nil }
+	canPrompt = func(req plugin.Request) bool { return req.Surface() == plugin.SurfaceCLI }
+	t.Cleanup(func() { readSecret, canPrompt = origRead, origCan })
+	prompted = ""
+	t.Cleanup(func() { prompted = "" })
+
+	_, err := runSet(context.Background(), cliReq(map[string]any{"key": "k", "value": "v"}))
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "kv.passphrase.missing" {
+		t.Fatalf("err = %#v, want kv.passphrase.missing", err)
+	}
+	if strings.Contains(ve.Hint, "at a terminal") || !strings.Contains(ve.Hint, "prompt") {
+		t.Errorf("hint = %q, want what happened at the prompt, and the variable", ve.Hint)
+	}
+}
+
 // The floor is on setting and never on using. A store made before it existed,
 // under a passphrase of three characters, opens, reads and takes new keys under
 // that same passphrase, since a write to an existing store re-encrypts it under
