@@ -16,6 +16,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/plumbing/object"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -130,6 +131,52 @@ func commitFileAt(t *testing.T, repo *git.Repository, dir, name, content, messag
 		t.Fatal(err)
 	}
 	return hash
+}
+
+// commitUnchecked commits name with content as the repository's only file,
+// staged and committed through the object store, since go-git's Add refuses a
+// name it would not check out, and git itself a few of them. Nothing is
+// written to the working tree.
+func commitUnchecked(t *testing.T, repo *git.Repository, name, content string) {
+	t.Helper()
+	store := repo.Storer
+	put := func(kind plumbing.ObjectType, encode func(plumbing.EncodedObject) error) plumbing.Hash {
+		obj := store.NewEncodedObject()
+		obj.SetType(kind)
+		if err := encode(obj); err != nil {
+			t.Fatal(err)
+		}
+		hash, err := store.SetEncodedObject(obj)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return hash
+	}
+	blob := put(plumbing.BlobObject, func(obj plumbing.EncodedObject) error {
+		w, err := obj.Writer()
+		if err != nil {
+			return err
+		}
+		if _, err := w.Write([]byte(content)); err != nil {
+			return err
+		}
+		return w.Close()
+	})
+	tree := put(plumbing.TreeObject, (&object.Tree{Entries: []object.TreeEntry{
+		{Name: name, Mode: filemode.Regular, Hash: blob},
+	}}).Encode)
+	commit := put(plumbing.CommitObject, (&object.Commit{
+		Author: *signature(), Committer: *signature(), Message: "first", TreeHash: tree,
+	}).Encode)
+	if err := store.SetReference(plumbing.NewHashReference(plumbing.Master, commit)); err != nil {
+		t.Fatal(err)
+	}
+	idx := &index.Index{Version: 2, Entries: []*index.Entry{
+		{Name: name, Hash: blob, Mode: filemode.Regular, Size: uint32(len(content))},
+	}}
+	if err := store.SetIndex(idx); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // writeFile writes content to name (relative to dir) without staging or

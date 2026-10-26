@@ -230,7 +230,7 @@ func TestWhatTheNextCommandDependsOnIsAWarning(t *testing.T) {
 // A status that could not be read is a row in the words every overview uses,
 // and the verdict says so too.
 func TestAnUnreadableTreeIsSaidByTheRowAndTheVerdict(t *testing.T) {
-	dir := controlNamedRepo(t)
+	dir := editedControlNamedRepo(t)
 	pairs := overviewPairsOn(t, dir, plugin.SurfaceCLI)
 	if got := valueIn(t, pairs, "working tree"); !strings.HasPrefix(got, "could not be read — ") || theme.ClassifyStatus(got) != theme.StatusWarn {
 		t.Errorf("working tree = %q", got)
