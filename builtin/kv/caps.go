@@ -680,9 +680,6 @@ func runSet(_ context.Context, req plugin.Request) (view.View, error) {
 	if madeStore {
 		msg += "\nmade a new store — locked with the passphrase this call used, and nothing recovers it"
 	}
-	if specs := req.StringSlice("recipient"); len(specs) > 0 {
-		msg += "\nstore re-encrypted — " + req.Surface().CapabilityName("kv.recipients") + " lists who can read it"
-	}
 	return view.Text{Body: msg}, nil
 }
 
