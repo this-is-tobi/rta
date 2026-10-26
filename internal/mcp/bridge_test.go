@@ -2240,4 +2240,27 @@ func TestRefusedArtifactsAreReportedAtServerStartup(t *testing.T) {
 			t.Fatalf("problems = %v, want the collision named", problems)
 		}
 	})
+
+	// The name is the part of a file name on $PATH after the prefix, and
+	// nothing approved that file. `rta mcp serve` prints the problem to
+	// stderr as it is, so a name holding an escape sequence reached the
+	// operator's terminal raw inside the remedy and was acted on there, and a
+	// Hangul filler, which strconv.Quote leaves as it is, read as no
+	// character at all. Both mentions are the listed name, quoted with each
+	// such character written out.
+	t.Run("a name a reader would not see as itself", func(t *testing.T) {
+		name := "weather\x1b]0;owned\a\u3164"
+		problems := Options{Untrusted: []string{name}, Origin: builtInOrigin("demo")}.Problems(reg)
+		if len(problems) != 1 {
+			t.Fatalf("problems = %q, want exactly one", problems)
+		}
+		got := problems[0]
+		if strings.ContainsAny(got, "\x1b\a\u3164") {
+			t.Errorf("problem = %q, writes the name's hidden characters as they are", got)
+		}
+		listed := `"weather\x1b]0;owned\a\u3164"`
+		if n := strings.Count(got, listed); n != 2 {
+			t.Errorf("problem = %q, names %s %d times, want both mentions", got, listed, n)
+		}
+	})
 }
