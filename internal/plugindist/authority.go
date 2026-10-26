@@ -4,6 +4,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -24,8 +25,9 @@ type declChange struct {
 
 // declarationDiff lists what changed between two declarations, in the
 // dimensions an authorization hangs off: each capability's safety class and
-// grant, whether it reveals a value a masked view withholds, and the
-// credential locations the plugin asks to read. A capability changing safety class,
+// grant, whether it reveals a value a masked view withholds, who it is offered
+// to (an agent at all, a remote caller), and the credential locations the
+// plugin asks to read. A capability changing safety class,
 // or a destructive one appearing, is the supply-chain event that matters —
 // and precisely what a signature does not tell you.
 func declarationDiff(old, next plugin.Plugin) []string {
@@ -91,6 +93,14 @@ func declarationChanges(old, next plugin.Plugin) []declChange {
 			// side: what stood between the plugin and the operation is gone,
 			// and nothing will ask the operator again.
 			caps = append(caps, declChange{"! " + c.ID + "  no longer needs a grant", true})
+		} else if grant.Required(prev, "") && !grant.Required(c, "") {
+			// The same gate taken away without touching the flag. Every class
+			// above read needs a grant whether or not it says so (grant.Required),
+			// so a destructive capability declared read again, with no flag, is
+			// callable by any agent with nothing asked — and the safety line
+			// above calls that a fall, which it is in harm and is not in who
+			// may call it.
+			caps = append(caps, declChange{"! " + c.ID + "  no longer needs a grant", true})
 		}
 		// What a capability says its answer is is what the operator reads in a
 		// consent and what the host tells a caller about the call, so a plugin
@@ -104,6 +114,28 @@ func declarationChanges(old, next plugin.Plugin) []declChange {
 		}
 		if prev.Reveals && !c.Reveals {
 			caps = append(caps, declChange{"! " + c.ID + "  no longer declares that it " + revealsText, true})
+		}
+		// Who a capability is offered to is authority as much as its class.
+		// HumanOnly is stronger than a grant — a call no agent may make at
+		// all — so dropping it puts a tool in front of every agent that was
+		// never one, under an id the operator approved as the person's own;
+		// pg.restore going from destructive and HumanOnly to read printed
+		// only "destructive → read", a fall, and landed in a sweep. Dropping
+		// HostSpecific offers a capability to a remote, HTTP-transport
+		// caller, which is growth when something stood in front of it there
+		// (a grant, or a value it reveals) and news when it is an open read.
+		if prev.HumanOnly && !c.HumanOnly {
+			caps = append(caps, declChange{"! " + c.ID + "  now offered to agents", true})
+		}
+		if !prev.HumanOnly && c.HumanOnly {
+			caps = append(caps, declChange{line: "! " + c.ID + "  no longer offered to agents"})
+		}
+		if prev.HostSpecific && !c.HostSpecific {
+			caps = append(caps, declChange{"! " + c.ID + "  now offered to remote callers",
+				grant.Required(c, "") || c.Reveals})
+		}
+		if !prev.HostSpecific && c.HostSpecific {
+			caps = append(caps, declChange{line: "! " + c.ID + "  no longer offered to remote callers"})
 		}
 		delete(was, c.ID)
 	}

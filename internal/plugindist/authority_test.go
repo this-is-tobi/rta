@@ -26,6 +26,14 @@ func TestWideningsNameEveryGrowthAndNothingElse(t *testing.T) {
 		c.Reveals = true
 		return c
 	}
+	humanOnly := func(c plugin.Capability) plugin.Capability {
+		c.HumanOnly = true
+		return c
+	}
+	hostSpecific := func(c plugin.Capability) plugin.Capability {
+		c.HostSpecific = true
+		return c
+	}
 	decl := func(caps []plugin.Capability, needs ...plugin.Need) plugin.Plugin {
 		return plugin.Plugin{Name: "pg", Capabilities: caps, Needs: needs}
 	}
@@ -68,9 +76,44 @@ func TestWideningsNameEveryGrowthAndNothingElse(t *testing.T) {
 		next: decl([]plugin.Capability{cap_("pg.query", plugin.Write, false)}),
 		want: []string{"! pg.query  read → write"},
 	}, {
-		name: "a safety class falling widens nothing",
+		name: "a safety class falling that keeps the grant widens nothing",
+		old:  decl([]plugin.Capability{cap_("pg.query", plugin.Destructive, false)}),
+		next: decl([]plugin.Capability{cap_("pg.query", plugin.Write, false)}),
+	}, {
+		name: "a safety class falling to a flagged read widens nothing",
+		old:  decl([]plugin.Capability{cap_("pg.query", plugin.Destructive, false)}),
+		next: decl([]plugin.Capability{cap_("pg.query", plugin.Read, true)}),
+	}, {
+		// Every class above read needs a grant whether or not it says so, so
+		// falling to an unflagged read takes the gate away as surely as
+		// dropping the flag.
+		name: "a safety class falling to an unflagged read loses the grant",
 		old:  decl([]plugin.Capability{cap_("pg.query", plugin.Destructive, false)}),
 		next: decl([]plugin.Capability{cap_("pg.query", plugin.Read, false)}),
+		want: []string{"! pg.query  no longer needs a grant"},
+	}, {
+		name: "a capability no agent could call becoming a tool is growth",
+		old:  decl([]plugin.Capability{humanOnly(cap_("pg.restore", plugin.Destructive, false))}),
+		next: decl([]plugin.Capability{cap_("pg.restore", plugin.Destructive, false)}),
+		want: []string{"! pg.restore  now offered to agents"},
+	}, {
+		name: "dropping HumanOnly and the class at once is caught on both counts",
+		old:  decl([]plugin.Capability{humanOnly(cap_("pg.restore", plugin.Destructive, false))}),
+		next: decl([]plugin.Capability{cap_("pg.restore", plugin.Read, false)}),
+		want: []string{"! pg.restore  no longer needs a grant", "! pg.restore  now offered to agents"},
+	}, {
+		name: "a capability becoming HumanOnly widens nothing",
+		old:  decl([]plugin.Capability{cap_("pg.restore", plugin.Destructive, false)}),
+		next: decl([]plugin.Capability{humanOnly(cap_("pg.restore", plugin.Destructive, false))}),
+	}, {
+		name: "a gated capability offered to remote callers is growth",
+		old:  decl([]plugin.Capability{hostSpecific(cap_("sys.reboot", plugin.Destructive, false))}),
+		next: decl([]plugin.Capability{cap_("sys.reboot", plugin.Destructive, false)}),
+		want: []string{"! sys.reboot  now offered to remote callers"},
+	}, {
+		name: "an open read offered to remote callers is news",
+		old:  decl([]plugin.Capability{hostSpecific(cap_("sys.cpu", plugin.Read, false))}),
+		next: decl([]plugin.Capability{cap_("sys.cpu", plugin.Read, false)}),
 	}, {
 		name: "a capability newly put behind a grant widens nothing",
 		old:  decl([]plugin.Capability{cap_("pg.vacuum", plugin.Write, false)}),
