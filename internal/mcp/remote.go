@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -256,6 +258,19 @@ func StaticTokenVerifier(tokens map[string]string) auth.TokenVerifier {
 // enough" is a judgement rta cannot make honestly from the bytes alone.
 const minTokenLen = 16
 
+// tokenShaped is a label that is the shape `rta gen token` writes, refused as
+// a label because it is far likelier to be a token in the label's place.
+// That output is 64 hex digits, which grant.CheckAgent accepts, so a pair
+// written the wrong way round with a label of sixteen characters or more —
+// `claude-desktop-laptop` — loaded silently: the label became the bearer
+// credential, words anybody could guess, and the token the agent's name,
+// recorded in the ledger and printed wherever an agent is. Thirty-two digits
+// and up, so that `--length 16` is caught too; no name a person chose for a
+// caller is that many hex digits and nothing else. A token of another
+// alphabet in the label's place still loads, and nothing on the line can
+// tell rta which word is which.
+var tokenShaped = regexp.MustCompile(`^[0-9a-fA-F]{32,}$`)
+
 // LoadTokenFile reads a static-token file: one "label token" pair per
 // non-blank, non-comment line, whitespace-separated. A line starting with #
 // is a comment.
@@ -320,7 +335,17 @@ func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, e
 		return nil, groupReadable, err
 	}
 	tokens = map[string]string{}
-	seen := map[string]string{} // token -> label, to name a duplicate's other half
+	seen := map[string]int{} // token -> the line holding it, to name a duplicate's other half
+	// A refusal below names lines and never a word of one. It is printed on
+	// stderr at startup, which is the journal, the pod log or the MCP
+	// client's server log, read by people the file's mode keeps out, and no
+	// word on a line can be told for certain to be a label rather than a
+	// token: a token alone, a comment after the pair, or the pair the wrong
+	// way round, where the "label" checked is the token and its alphabet is
+	// often a label's. That holds for a line that passes every check too —
+	// a reversed pair whose label is long enough to pass for a token does —
+	// so a duplicate is named by the line that holds it first, not by that
+	// line's label.
 	for i, line := range strings.Split(string(raw), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -328,21 +353,34 @@ func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, e
 		}
 		fields := strings.Fields(line)
 		if len(fields) != 2 {
-			return nil, groupReadable, fmt.Errorf("%s:%d: expected \"label token\", got %q", path, i+1, line)
+			got := fmt.Sprintf("%d words", len(fields))
+			if len(fields) == 1 {
+				got = "one word"
+			}
+			if slices.ContainsFunc(fields[1:], func(w string) bool { return strings.HasPrefix(w, "#") }) {
+				got += ", and a comment has a line of its own"
+			}
+			return nil, groupReadable, fmt.Errorf("%s:%d: expected \"label token\", got %s", path, i+1, got)
 		}
 		label, token := fields[0], fields[1]
 		if len(token) < minTokenLen {
-			return nil, groupReadable, fmt.Errorf("%s:%d: the token for %q is too short at %d characters — a bearer token is "+
-				"the whole credential on this transport, and one shorter than %d is guessable; `rta gen token` makes one",
-				path, i+1, label, len(token), minTokenLen)
+			return nil, groupReadable, fmt.Errorf("%s:%d: the token, the second word, is too short at %d characters — a "+
+				"bearer token is the whole credential on this transport, and one shorter than %d is guessable; "+
+				"`rta gen token` makes one", path, i+1, len(token), minTokenLen)
 		}
 		if verr := grant.CheckAgent(label); verr != nil || label == "" {
-			return nil, groupReadable, fmt.Errorf("%s:%d: label %q is not a valid token label", path, i+1, label)
+			return nil, groupReadable, fmt.Errorf("%s:%d: the label, the first word, is not a valid one: letters, "+
+				"digits, - _ and . only, at most %d of them", path, i+1, grant.MaxAgentName)
 		}
-		if other, dup := seen[token]; dup {
-			return nil, groupReadable, fmt.Errorf("%s:%d: this token is already assigned to %q", path, i+1, other)
+		if tokenShaped.MatchString(label) {
+			return nil, groupReadable, fmt.Errorf("%s:%d: the label, the first word, has the shape of a token, "+
+				"%d hex digits — is the pair the wrong way round? It is \"label token\", the label naming "+
+				"who holds the token", path, i+1, len(label))
 		}
-		seen[token] = label
+		if first, dup := seen[token]; dup {
+			return nil, groupReadable, fmt.Errorf("%s:%d: this token is already assigned on line %d", path, i+1, first)
+		}
+		seen[token] = i + 1
 		tokens[token] = label
 	}
 	if len(tokens) == 0 {
