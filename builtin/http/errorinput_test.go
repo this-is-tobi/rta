@@ -73,7 +73,11 @@ func TestARefusalOfOneInputNamesIt(t *testing.T) {
 		{"a URL no parser takes", "GET",
 			map[string]any{"url": "http://exa mple.invalid/"}, "http.request.invalid", "url"},
 		{"a scheme the client does not speak", "GET",
-			map[string]any{"url": "ftp://127.0.0.1:1/x"}, "http.request.failed", "url"},
+			map[string]any{"url": "ftp://127.0.0.1:1/x"}, "http.request.invalid", "url"},
+		// Refused before the address guard looks the name up: a lookup that
+		// failed would have answered http.request.failed.
+		{"a scheme the client does not speak, at a name", "GET",
+			map[string]any{"url": "ftp://name-that-is-never-looked-up.invalid/x"}, "http.request.invalid", "url"},
 		{"https to a server that answers in plain http", "GET",
 			map[string]any{"url": "https://" + strings.TrimPrefix(srv.URL, "http://")}, "http.request.failed", "url"},
 		{"a connection the port refused", "GET",
@@ -161,7 +165,6 @@ func TestOnlyAFailureOfTheURLAsTypedNamesIt(t *testing.T) {
 		err   error
 		input string
 	}{
-		"a scheme it does not speak":         {failed(errors.New(`unsupported protocol scheme "ftp"`)), "url"},
 		"a plain http answer":                {failed(stdhttp.ErrSchemeMismatch), "url"},
 		"a host that does not exist":         {failed(notFound("nope.example")), "url"},
 		"the same host, written in capitals": {failed(notFound("NOPE.example")), "url"},
@@ -199,5 +202,16 @@ func TestAFileThatCannotBeReadNamesNoInput(t *testing.T) {
 	if _, verr := requestBody(plugin.NewRequest(map[string]any{"data-file": shut}, false, false)); verr == nil ||
 		verr.Code != "http.data.file" || verr.Input != "" {
 		t.Errorf("the body file: %+v, want http.data.file naming none", verr)
+	}
+}
+
+// A dry run of a URL this client cannot send refuses it as the run would,
+// rather than previewing a request that could never leave.
+func TestADryRunOfASchemeTheClientDoesNotSpeakIsRefused(t *testing.T) {
+	c := capabilityOf(t, "http.get")
+	_, err := c.Run(context.Background(), plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{
+		Caller: map[string]any{"url": "ftp://example.invalid/x"}}), true, false).WithSurface(plugin.SurfaceCLI))
+	if verr := view.AsError(err, "x"); verr == nil || verr.Code != "http.request.invalid" || verr.Input != "url" {
+		t.Errorf("a dry run of an ftp URL = %+v, want http.request.invalid naming url", verr)
 	}
 }
