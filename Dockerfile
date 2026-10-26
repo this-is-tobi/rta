@@ -42,7 +42,14 @@ RUN mkdir /rta-home && chown 65532:65532 /rta-home
 # vault, qdrant...) with no /etc/ssl/certs to verify against; distroless's
 # static variant is the standard fix for exactly that gap in a CGO_ENABLED=0
 # binary that still needs to do real TLS.
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+#
+# The Debian 13 variant, because Debian 12 left regular security support for
+# its LTS tail and the debian12 image followed: its current build carries the
+# advisories for ca-certificates and tzdata that Debian has fixed, so rebuilding
+# on it cleared nothing and the weekly scan of the released image stayed red.
+# The binary is static, so the base's libc never mattered; what the move buys
+# is a base that is still rebuilt on Debian's regular security releases.
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99
 
 COPY --from=build /out/rta /usr/local/bin/rta
 COPY --from=build /rta-home /rta-home
