@@ -803,6 +803,56 @@ func TestTreeDetailComposesUsageWithinTheSameBound(t *testing.T) {
 	}
 }
 
+// A scan bounded by a depth says what the bound left out of its sizes. Nothing
+// did: at the tree's default of two levels, its detail page ranked
+// node_modules/ by its first two levels, a few hundred kilobytes of the
+// gigabyte under it, as if that were all it held, and `fs usage --depth 1`
+// sized every directory by its own files with nothing to say so.
+func TestAUsageBoundedByDepthSaysWhatItLeftOut(t *testing.T) {
+	root := fixture(t, map[string]int{
+		"top.bin": 10, "shallow/a.bin": 10, "shallow/deep/buried.bin": 1 << 20, "other/x/y/z.bin": 1,
+	})
+	depthWarning := func(warnings []view.Error) *view.Error {
+		for i := range warnings {
+			if warnings[i].Code == "fs.usage.depth" {
+				return &warnings[i]
+			}
+		}
+		return nil
+	}
+
+	tbl := run(t, runUsage, map[string]any{"path": root, "depth": 1, "limit": 20}).(view.Table)
+	w := depthWarning(tbl.Warnings)
+	if w == nil {
+		t.Fatalf("a scan cut at depth 1 said nothing of it: %+v", tbl.Warnings)
+	}
+	if !strings.Contains(w.Message, "2 directories") || !strings.Contains(w.Hint, "--depth 0") {
+		t.Errorf("warning = %+v, want the two directories left out and the depth that measures them", w)
+	}
+	if all := run(t, runUsage, map[string]any{"path": root, "depth": 0, "limit": 20}).(view.Table); depthWarning(all.Warnings) != nil {
+		t.Errorf("a scan with no bound warned of one: %+v", all.Warnings)
+	}
+
+	page := run(t, runUsage, map[string]any{"path": root, "depth": 1, "limit": 20, "detail": true}).(view.Sections)
+	if summary := page.Items[0].View.(view.KeyValue); !slices.ContainsFunc(summary.Pairs, func(p view.Pair) bool {
+		return p.Key == "below depth" && strings.Contains(p.Value, "2 directories")
+	}) {
+		t.Errorf("the detail summary does not say what the depth left out: %+v", summary.Pairs)
+	}
+
+	tree := run(t, runTree, map[string]any{"path": root, "depth": 1, "limit": 12, "detail": true}).(view.Sections)
+	for _, s := range tree.Items {
+		if s.ID != "largest" {
+			continue
+		}
+		if depthWarning(s.View.(view.Table).Warnings) == nil {
+			t.Errorf("the tree's largest entries do not say their sizes stop at its depth: %+v", s.View)
+		}
+		return
+	}
+	t.Error("the tree's detail page has no largest section")
+}
+
 // blinded makes one subdirectory unreadable and returns the fixture root.
 func blinded(t *testing.T, files map[string]int, dir string) string {
 	t.Helper()

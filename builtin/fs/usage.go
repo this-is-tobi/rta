@@ -52,7 +52,13 @@ type scanner struct {
 	// entries are, and said apart from them, since it is neither unreadable
 	// nor elsewhere.
 	withheld int
-	largest  []fileSize
+	// belowDepth counts the directories maxDepth kept the walk out of. What
+	// they hold is in no size, which is the bound doing its job, and is said
+	// (depthWarning): a ranking cut at two levels looks exactly like a
+	// complete one, and node_modules/ sized by its first two levels is a
+	// rounding error of what it holds.
+	belowDepth int
+	largest    []fileSize
 	// apparent counts each file by its length, as `du --apparent-size` does;
 	// without it a file is the disk it takes (sizeOf).
 	apparent bool
@@ -166,6 +172,7 @@ func (s *scanner) walk(ctx context.Context, dir *pathin.Dir, rel string, depth i
 				continue
 			}
 			if s.maxDepth > 0 && depth >= s.maxDepth {
+				s.belowDepth++
 				continue
 			}
 			sub, ok := s.descend(dir, item.Name())
@@ -304,7 +311,25 @@ func runUsage(ctx context.Context, req plugin.Request) (view.View, error) {
 			Hint: why + " — " + req.Surface().InputName("detail") + " breaks the scan down",
 		})
 	}
+	if s.belowDepth > 0 {
+		t.Warnings = append(t.Warnings, depthWarning(req.Surface(), path, s))
+	}
 	return t, nil
+}
+
+// depthWarning says what a scan bounded by a depth left out of its sizes.
+//
+// Named by fs.usage and its own depth, not by the input of whoever asked:
+// fs.tree's detail page composes this scan with the tree's depth, where 0 is
+// refused, so "depth 0" alone would send its reader to a value the page they
+// are on does not take.
+func depthWarning(sf plugin.Surface, path string, s *scanner) view.Error {
+	return view.Error{
+		Code: "fs.usage.depth",
+		Message: fmt.Sprintf("the scan went %s below %s, so what is in %s deeper went unmeasured and is in none of the sizes here",
+			format.CountOf(s.maxDepth, "level"), path, format.CountOf(s.belowDepth, "directory")),
+		Hint: sf.CapabilityName("fs.usage") + " with " + sf.InputTo("depth", 0) + " measures everything beneath",
+	}
 }
 
 // usageTable ranks the entries under path. With none, it carries the sentence
@@ -373,6 +398,13 @@ func usageDetail(ctx context.Context, req plugin.Request, path string,
 		summary = append(summary, view.Pair{
 			Key:   "withheld",
 			Value: format.CountOf(s.withheld, "entry") + " of rta's own state, which no agent may look into",
+		})
+	}
+	if s.belowDepth > 0 {
+		summary = append(summary, view.Pair{
+			Key: "below depth",
+			Value: format.CountOf(s.belowDepth, "directory") + " more than " +
+				format.CountOf(s.maxDepth, "level") + " down, not measured",
 		})
 	}
 
