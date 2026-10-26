@@ -986,6 +986,18 @@ type Plugin struct {
 	Needs []Need
 }
 
+// Capability is the capability p declares as id, for a Page that embeds a
+// sibling by its declaration, or the zero Capability when p declares none by
+// that name, which a Page refuses to embed.
+func (p Plugin) Capability(id string) Capability {
+	for _, c := range p.Capabilities {
+		if c.ID == id {
+			return c
+		}
+	}
+	return Capability{}
+}
+
 // Need names one credential location a plugin may ask to read.
 //
 // **A closed set, and deliberately not a path.** A plugin naming its own path

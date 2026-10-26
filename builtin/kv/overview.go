@@ -151,7 +151,7 @@ func finishOverview(ctx context.Context, req plugin.Request, summary view.KeyVal
 		p.PutAs("folders", "top-level folders", counted.foldersTable(req.Surface()))
 	}
 	if facts.mode == modeKeys {
-		p.AddAs("readers", "readers", runRecipients, plugin.Read, nil)
+		p.AddAs("readers", "readers", Plugin().Capability("kv.recipients"), nil)
 	}
 	return p.View()
 }

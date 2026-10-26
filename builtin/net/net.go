@@ -1091,7 +1091,7 @@ func detailedOverview(ctx context.Context, req plugin.Request) (view.View, error
 	// A hosts file that could not be read left the page one heading shorter,
 	// which reads exactly like a machine whose hosts file has nothing in it,
 	// on the page somebody opens to find out why a name resolves oddly.
-	if v, err := p.Run(runHostsList, plugin.Read, nil); err != nil {
+	if v, err := p.Run(Plugin().Capability("net.hosts.list"), nil); err != nil {
 		p.Warn(view.AsError(err, "net.hosts.unreadable"))
 	} else if t, ok := v.(view.Table); ok && len(t.Rows) > 0 {
 		p.PutAs("hosts", "hosts file", t)

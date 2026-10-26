@@ -89,8 +89,10 @@ Give a detail page's sections an id. `view.Section` carries both an `ID` and a `
 
 ```go
 p.PutAs("summary", "at a glance", summary)
-p.AddAs("stations", "nearby stations", listStations, plugin.Read, nil)
+p.AddAs("stations", "nearby stations", Plugin().Capability("weather.stations"), nil)
 ```
+
+`AddAs` and `Run` take the sibling's declaration, not its handler: a section runs directly, with none of the checks a call by name meets, so a page embeds only a capability any of its callers could call with nobody's leave — a read that needs no grant, reveals nothing and is not `HumanOnly` — and panics on anything else, or on an ID your plugin does not declare.
 
 It is optional — `Put` and `Add` work, and `Key()` falls back to the title — but then rewording a heading silently renames the handle. `sdktest` says so.
 
