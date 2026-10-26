@@ -19,6 +19,7 @@ import (
 	"io/fs"
 	"math/big"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -366,14 +367,30 @@ type handshake struct {
 // dialCerts fetches the peer chain from a live host, and never touches the
 // filesystem.
 func dialCerts(ctx context.Context, sf plugin.Surface, target string, timeout time.Duration) ([]*x509.Certificate, *handshake, error) {
+	// A colon is the sign of a port only in what is not an IPv6 address, which
+	// holds colons with a port or without: `2001:db8::1` was "too many colons"
+	// and `[2001:db8::1]` "missing port", where an IPv4 address or a name was
+	// dialled at 443. netip and not net.ParseIP, so that a link-local address
+	// with its zone is an address too.
 	addr := target
-	if !strings.Contains(addr, ":") {
-		addr += ":443"
+	switch _, ipErr := netip.ParseAddr(target); {
+	case ipErr == nil:
+		addr = net.JoinHostPort(target, "443")
+	case strings.HasPrefix(target, "[") && strings.HasSuffix(target, "]"):
+		addr = target + ":443"
+	case !strings.Contains(target, ":"):
+		addr = target + ":443"
 	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
+		// Over MCP this is cert.expiry's dial, which takes no file there
+		// (expiryChain).
+		hint := "use host, host:port, [ipv6]:port, an https:// URL or a PEM file path"
+		if sf == plugin.SurfaceMCP {
+			hint = "use host, host:port, [ipv6]:port or an https:// URL"
+		}
 		return nil, nil, view.Errorf("cert.target.invalid", "invalid target %q: %v", target, err).
-			WithHint("use host, host:port, or a PEM file path").WithInput("target")
+			WithHint(hint).WithInput("target")
 	}
 	if looksLikeFile(target) || looksLikeFile(host) {
 		return nil, nil, view.Errorf("cert.target.notahost", "%q is a file path, not a host[:port]", target).
