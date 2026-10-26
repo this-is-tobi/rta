@@ -56,9 +56,14 @@ func TestARequestRefusedForAnUntrustedCertificatePointsAtWhatTheServerPresented(
 		!strings.Contains(verr.Hint, "`rta cert chain self-signed.example.org:8443`") {
 		t.Errorf("hint %q for a certificate that did not verify", verr.Hint)
 	}
-	// Over MCP the same pointer is the tool, with the host in it.
-	mcp := requestFailed(plugin.SurfaceMCP, "GET", "https://self-signed.example.org/x", err)
-	if !strings.Contains(mcp.Hint, "cert_chain") || !strings.Contains(mcp.Hint, "self-signed.example.org") {
+	// Over MCP cert_chain reads a file and dials no host: called with this
+	// one it answers cert.file.notfound for "<server cwd>/host:8443". The
+	// chain is the operator's to read, and the tool an agent can call with a
+	// grant is the probe, which names the certificate and its end.
+	mcp := requestFailed(plugin.SurfaceMCP, "GET", "https://self-signed.example.org:8443/x", err)
+	if strings.Contains(mcp.Hint, "cert_chain") ||
+		!strings.Contains(mcp.Hint, plugin.AskOperator("cert chain self-signed.example.org:8443")) ||
+		!strings.Contains(mcp.Hint, "`net_probe` tool") {
 		t.Errorf("hint %q over MCP", mcp.Hint)
 	}
 }
