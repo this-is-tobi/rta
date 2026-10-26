@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1128,8 +1129,10 @@ func doctorRoles(add func(check, status, detail string)) {
 				broken = append(broken, err.Error())
 			}
 		}
-		for name, n := range seen {
-			if n > 1 {
+		// By name, not in the map's order: a row that changes between two runs
+		// on the same files is not one to act on, or to diff.
+		for _, name := range slices.Sorted(maps.Keys(seen)) {
+			if n := seen[name]; n > 1 {
 				broken = append(broken, fmt.Sprintf("%q is defined in %d files, and `grant issue` refuses to pick", name, n))
 			}
 		}
