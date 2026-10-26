@@ -740,9 +740,14 @@ func (m Model) footerFor(screen mode) string {
 	// string so a view rendered for another screen under this state — which
 	// no key sequence reaches, but tests do — keeps its own bar.
 	if m.armedDelete != "" && screen == m.mode {
-		label := "delete profile " + m.armedDelete + " and revoke the grants naming it"
+		// The names as a listing shows them (textclean.Name), and not drawn raw:
+		// a profile's name and a plugin key are a config file's, which a drop-in
+		// or a repository can bring, and this is the line read to know exactly
+		// what goes. A right-to-left override reordered what followed it and an
+		// escape sequence could hide it; quoted, the oddness is what is seen.
+		label := "delete profile " + textclean.Name(m.armedDelete) + " and revoke the grants naming it"
 		if screen == modeProfilePlugins {
-			label = "remove " + m.armedDelete + " from " + m.profileOpen
+			label = "remove " + textclean.Name(m.armedDelete) + " from " + textclean.Name(m.profileOpen)
 		}
 		if m.width > 0 {
 			label = ansi.Truncate(label, max(m.width-3, 8), "…")
