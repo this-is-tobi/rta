@@ -845,6 +845,32 @@ func Append(e Entry) (err error) {
 	return writeHead(key, e)
 }
 
+// recordOnDisk reports whether any part of a record is in the data directory:
+// the active file with anything in it, the end mark, the retirement anchors,
+// or a file named like a rolled segment. A directory that cannot be listed
+// counts as holding one, so that not being able to look is never the reason
+// a key is minted.
+func recordOnDisk() bool {
+	if info, err := os.Stat(Path()); err == nil && info.Size() > 0 {
+		return true
+	}
+	for _, p := range []string{headPath(), retiredPath()} {
+		if _, err := os.Lstat(p); err == nil {
+			return true
+		}
+	}
+	entries, err := os.ReadDir(paths.Data())
+	if err != nil {
+		return !errors.Is(err, os.ErrNotExist)
+	}
+	for _, de := range entries {
+		if _, ok := segmentNumber(de.Name()); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // Started reports whether a record exists to be written to, so a diagnosis can
 // ask Writable of one that is there without creating one that is not.
 func Started() bool {
@@ -909,10 +935,17 @@ func begin() (key []byte, release func(), err error) {
 	// them read as edited, and named entry 1 as the culprit. And a key
 	// that is present but too short is named by its path with the next
 	// step, because the server's stderr is the only place this is seen.
+	//
+	// A record is any of its files, not the active one alone. Asking only
+	// that one let a key go missing beside the active file's removal after a
+	// roll: a new key was minted, every rolled segment failed its tail check
+	// and was listed as not rta's, the old end mark failed its seal and was
+	// overwritten, and the record verified whole from a new entry 1, with
+	// rta's own history reported as a stranger's.
 	keyPath := seal.Path(keyFile)
 	if _, statErr := os.Stat(keyPath); os.IsNotExist(statErr) {
-		if info, err := os.Stat(Path()); err == nil && info.Size() > 0 {
-			return nil, nil, fmt.Errorf("%s is missing beside a record that is not empty; rta will not mint a new key over an existing record — restore it, or move agent-log*.jsonl aside to start a new one", keyPath)
+		if recordOnDisk() {
+			return nil, nil, fmt.Errorf("%s is missing beside an existing record; rta will not mint a new key over it — restore the key, or move every agent-log* file in %s aside to start a new record", keyPath, paths.Data())
 		}
 	}
 	key, err = seal.Key(keyFile, true)
