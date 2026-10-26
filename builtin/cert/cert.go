@@ -247,8 +247,8 @@ func dialTimeout(req plugin.Request) time.Duration {
 // A target the bounds refuse is refused as they refuse it, and not dialled:
 // taken for "not a file" like any other failed stat, rta's own state under a
 // root was dialled as a host, and the answer was a DNS lookup of the path.
-// The state is nil exactly when the certificates came from a file.
-func loadCerts(ctx context.Context, req plugin.Request, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, error) {
+// The handshake is nil exactly when the certificates came from a file.
+func loadCerts(ctx context.Context, req plugin.Request, target string, timeout time.Duration) ([]*x509.Certificate, *handshake, error) {
 	_, err := pathin.Stat(req, target)
 	var refused *view.Error
 	switch {
@@ -348,9 +348,24 @@ func looksLikeFile(target string) bool {
 const overMCPReadsAFile = "Over MCP it reads a PEM or DER file under the server's roots and dials no host; " +
 	"`cert.expiry` checks a live host, with a grant."
 
+// handshake is what a dial to a host answered, and the host it was made to.
+//
+// **The name a chain is verified for is the one the dial used.** It was read
+// a second time off the target as typed, and net.SplitHostPort reads
+// "https://example.com" as the host "https" and gives up on
+// "https://example.com:8443", leaving the whole URL: a sound certificate,
+// dialled at the right host, was INVALID as "valid for example.com, not
+// https". Carried from the dial, the name cannot be spelled two ways again.
+// The state's own ServerName will not do: it is the SNI sent, which is empty
+// for an IP address, and an IP address is a name a certificate answers to.
+type handshake struct {
+	tls.ConnectionState
+	host string
+}
+
 // dialCerts fetches the peer chain from a live host, and never touches the
 // filesystem.
-func dialCerts(ctx context.Context, sf plugin.Surface, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, error) {
+func dialCerts(ctx context.Context, sf plugin.Surface, target string, timeout time.Duration) ([]*x509.Certificate, *handshake, error) {
 	addr := target
 	if !strings.Contains(addr, ":") {
 		addr += ":443"
@@ -388,7 +403,7 @@ func dialCerts(ctx context.Context, sf plugin.Surface, target string, timeout ti
 	if len(state.PeerCertificates) == 0 {
 		return nil, nil, view.Errorf("cert.none", "no certificates presented by %s", addr)
 	}
-	return state.PeerCertificates, &state, nil
+	return state.PeerCertificates, &handshake{ConnectionState: state, host: host}, nil
 }
 
 // maxPEMBytes is more than any certificate file anybody keeps: the system
@@ -599,19 +614,15 @@ func chainVerdict(reason string) string {
 	return reason
 }
 
-// hostOf is the name a chain from target is verified for: its host, where
-// loadCerts dialled one (state), and none for a file. Told by the state and
-// not by a second look at the path, which a file swapped or withheld since the
-// first would have answered as a host.
-func hostOf(state *tls.ConnectionState, target string) string {
+// hostOf is the name a chain is verified for: the host loadCerts dialled, and
+// none for a file. Told by the handshake and not by a second look at the path,
+// which a file swapped or withheld since the first would have answered as a
+// host.
+func hostOf(state *handshake) string {
 	if state == nil {
 		return ""
 	}
-	host := target
-	if h, _, err := net.SplitHostPort(target); err == nil {
-		host = h
-	}
-	return host
+	return state.host
 }
 
 func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
@@ -634,7 +645,7 @@ func runInspect(ctx context.Context, req plugin.Request) (view.View, error) {
 		{Key: "public-key", Value: publicKeyOf(leaf)},
 	}
 	pairs = append(pairs, usagePairs(leaf)...)
-	pairs = append(pairs, view.Pair{Key: "chain", Value: verify(certs, hostOf(state, target))})
+	pairs = append(pairs, view.Pair{Key: "chain", Value: verify(certs, hostOf(state))})
 	// Beside the date it is about. expires-in counts down to an end that a
 	// certificate not yet valid is a long way from, which read as a sound one.
 	if now := time.Now(); now.Before(leaf.NotBefore) {
@@ -1081,9 +1092,9 @@ func expiryRow(ctx context.Context, req plugin.Request, target string, warnDays 
 // sibling cert.inspect was refused for the same string. A path over MCP is
 // still dialled, and refused as the file path it is; cert.inspect and cert.chain
 // are what read a certificate file there, under the server's roots.
-func expiryChain(ctx context.Context, req plugin.Request, target string, timeout time.Duration) ([]*x509.Certificate, *tls.ConnectionState, *view.Error) {
+func expiryChain(ctx context.Context, req plugin.Request, target string, timeout time.Duration) ([]*x509.Certificate, *handshake, *view.Error) {
 	var chain []*x509.Certificate
-	var state *tls.ConnectionState
+	var state *handshake
 	var err error
 	if req.Surface() == plugin.SurfaceMCP {
 		dial := target
