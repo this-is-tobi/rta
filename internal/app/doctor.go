@@ -1497,9 +1497,15 @@ func doctorRecord(add func(check, status, detail string)) {
 // like grants that stopped working; here it is named, with the way out.
 func doctorSelection(add func(check, status, detail string)) {
 	if _, err := profile.ReadSelection(); err != nil {
-		add("profile selection", "error", err.Error()+" — every profile is refused to agents until it is "+
-			"written again: `rta use <profile>` to switch one on, `rta use --off` for none")
+		add("profile selection", "error", unverifiedSelection(err))
 	}
+}
+
+// unverifiedSelection is a selection file that cannot be believed, what that
+// costs and the way out, in the words doctor and `rta use` both give it.
+func unverifiedSelection(err error) string {
+	return err.Error() + " — every profile is refused to agents until it is " +
+		"written again: `rta use <profile>` to switch one on, `rta use --off` for none"
 }
 
 // recordNote is how far back an intact record goes. Retention is reported

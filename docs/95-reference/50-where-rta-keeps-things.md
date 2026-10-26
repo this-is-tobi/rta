@@ -26,7 +26,7 @@ Nothing in the config grants anything. It holds connection profiles, dashboard p
 | Grants | `grants.json`, with its seal key `grants.key` | Sealed against tampering |
 | Agent record | `agent-log.jsonl`, with its seal key `agent-log.key` | Hash-chained; [The record](../30-boundary/40-audit-trail.md) |
 | Locks | `lockdown.json`, with `lockdown.key` | Sealed like the grants; [Locks](../30-boundary/45-stop-an-agent-now.md) |
-| Switched-on profile | `profile.json` | Which profile `rta use` switched on, and until when. Not sealed, because all it can do is remove a bound: a file that goes missing leaves the grants alone deciding, which the sealed grants are the answer to; [Profiles](../20-using/40-profiles.md) |
+| Switched-on profile | `profile.json`, with its seal key `profile.key` | Which profile `rta use` switched on, and until when. Sealed like the grants: a file that was edited, truncated or removed holds every profile shut to agents until `rta use` writes it again; [Profiles](../20-using/40-profiles.md#switching-authorizes-nothing) |
 | Plugins | `trusted.json` (what you approved), `plugins/store/` and `plugins/bin/` (what an index installed, and the links that find it), `plugin-cache/` with `plugin-cache.key` (what each plugin build declared, sealed, so a run does not start every plugin to ask), `indexes/` (the clones) | [Using plugins](../40-plugins/10-plugins.md) |
 | Notebook and shortlists | `notes.json`, `recent.json` | [The CLI](../20-using/10-cli.md) |
 | Team policy | `.rta-policy.yaml`, walking up from the working directory | [Team policy](../30-boundary/50-team-policy.md) |
