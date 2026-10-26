@@ -95,6 +95,14 @@ type pluginRow struct {
 	// process has not, so the row must say something neither "trusted" nor
 	// "waiting" covers. Empty until somebody presses the key.
 	decided string
+	// withdrawable is whether the operator's own record holds an approval
+	// under this plugin's name, which is what t takes back: plugintrust.Remove
+	// reads that file alone, by name. False for an artifact the system root
+	// alone trusts, every plugin of the full image among them, where t only
+	// refuses, since that trust is the image's or the package's to take back.
+	// Read when the rows are built, for the reason pluginRows reads the record
+	// once: the bar asking on every paint would read a file on every keystroke.
+	withdrawable bool
 	// ungranted is what this plugin declares it needs to read and has not
 	// been allowed.
 	//
@@ -290,6 +298,14 @@ func pluginRows(reg *registry.Registry, dash config.Dashboard, untrusted []plugi
 	// Read once for the pane rather than per row per frame: these are files,
 	// and the plugin list is redrawn on every keystroke.
 	allowed := plugintrust.Load()
+	own := map[string]bool{}
+	for _, e := range allowed.Entries() {
+		if !e.System {
+			for _, name := range e.Names {
+				own[name] = true
+			}
+		}
+	}
 	locked := map[string]plugindist.LockEntry{}
 	for _, e := range plugindist.ReadLock() {
 		locked[e.Digest] = e
@@ -305,7 +321,7 @@ func pluginRows(reg *registry.Registry, dash config.Dashboard, untrusted []plugi
 	rows := make([]pluginRow, 0, len(reg.Plugins())+len(untrusted))
 	for _, p := range reg.Plugins() {
 		origin, _ := reg.Origin(p.Name)
-		row := pluginRow{plugin: p, origin: origin}
+		row := pluginRow{plugin: p, origin: origin, withdrawable: own[p.Name]}
 		records := locked
 		if row.group() == groupSystem {
 			records = rooted
@@ -794,6 +810,58 @@ func reachLabel(row pluginRow, text string) string {
 	return safetyStyle(row.reach()).Render(text)
 }
 
+// pluginFooterItems is the pane's bar, for the row the cursor is on.
+//
+// **What t does is the row's, so the bar says the row's word.** One bar for
+// every row taught "t approve" over a plugin that is approved and running, and
+// t there takes that approval away at once: somebody pressing what the bar
+// called approve, to confirm a plugin they trust, withdrew it. And on a
+// built-in or failed row, most of the pane, t and a only said why they do
+// nothing, which is the dead key this app keeps taking off its bars.
+func (m Model) pluginFooterItems() []hintItem {
+	var row pluginRow
+	if m.pluginSel < len(m.plugins) {
+		row = m.plugins[m.pluginSel]
+	}
+	items := []hintItem{item(bindColumn), item(bindToggle)}
+	if word := row.trustWord(); word != "" {
+		items = append(items, labelled(bindTrust, word))
+	}
+	if row.allowable() {
+		items = append(items, item(bindAllow))
+	}
+	items = append(items, item(bindConfig))
+	if row.usable() {
+		items = append(items, labelled(bindOpen, "capabilities"))
+	}
+	// The key that opened the pane closes it — the habit every pane with a
+	// letter shortcut trains, and one nobody needs told.
+	return append(items, alias(item(bindBack), "p"), item(bindQuit))
+}
+
+// trustWord is what t does on the row, in the bar's words, and "" where it
+// only says why it does nothing: trustSelected's refusals in its order, so the
+// two cannot disagree. An approval taken back in this session has nothing of
+// it left in the file to take, and neither has one the system root alone
+// gives (withdrawable).
+func (r pluginRow) trustWord() string {
+	switch {
+	case r.failed != nil, !r.external() && !r.waiting:
+		return ""
+	case r.waiting:
+		return bindTrust.label
+	case r.decided == decidedUntrust, !r.withdrawable:
+		return ""
+	}
+	return "take back"
+}
+
+// allowable says whether a opens the allow form on the row: startAllowForm's
+// refusals, the other way round.
+func (r pluginRow) allowable() bool {
+	return r.failed == nil && r.external() && !r.waiting && r.decided != decidedUntrust && len(r.plugin.Needs) > 0
+}
+
 // trustSelected takes the trust decision the pane is showing, without leaving
 // it.
 //
@@ -833,8 +901,10 @@ func (m *Model) trustSelected() string {
 		return m.refused(row.plugin.Name + " was not in the trusted list")
 	}
 	// The row stays as it was: what went was the operator's copy of an
-	// artifact the system root trusts too, and it runs again next time.
+	// artifact the system root trusts too, and it runs again next time. With
+	// that copy gone, t has nothing left to take there.
 	if len(plugintrust.SystemTrusted(row.plugin.Name)) > 0 {
+		m.plugins[m.pluginSel].withdrawable = false
 		return "took your approval back from " + row.plugin.Name + " — the system root trusts it as well, " +
 			"so it keeps loading; " + plugintrust.SystemHint
 	}
