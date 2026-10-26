@@ -52,7 +52,7 @@ func TestPruneKeepsWhatRunsAndWithdrawsTrustFromTheRest(t *testing.T) {
 		}
 	}
 	current(t, "hello", cur)
-	if verr := recordInstall(LockEntry{Name: "hello", Digest: cur}); verr != nil {
+	if verr := recordInstall(LockEntry{Name: "hello", Digest: cur}, nil); verr != nil {
 		t.Fatal(verr)
 	}
 

@@ -52,7 +52,7 @@ func TestUpgradeAllContinuesPastFailuresAndHonoursTheIndexFilter(t *testing.T) {
 		//nolint:misspell // an index name, not a word
 		Version: "1.0.0", Index: "elsewhere",
 	}
-	if verr := recordInstall(ghost); verr != nil {
+	if verr := recordInstall(ghost, nil); verr != nil {
 		t.Fatal(verr)
 	}
 

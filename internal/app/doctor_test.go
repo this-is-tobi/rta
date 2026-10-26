@@ -514,6 +514,26 @@ func TestTheDoctorDoesNotCallAManagedCopyShadowedForTheSpellingOfItsDirectory(t 
 	}
 }
 
+// A record that does not parse is shown as empty everywhere it is read for
+// display, which reads as "nothing managed" when it is the opposite: every
+// managed plugin is in it, and the next install or removal refuses over it.
+func TestTheDoctorSaysWhenTheLockDoesNotParse(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	t.Setenv("RTA_SYSTEM_DIR", "")
+	if err := os.MkdirAll(filepath.Dir(plugindist.LockPath()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plugindist.LockPath(), []byte(`{"plugins":[{"name":"pg","digest":"cc"},]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var rows []string
+	doctorManagedPlugins(func(check, status, detail string) { rows = append(rows, check+" "+status+" "+detail) })
+	if len(rows) != 1 || !strings.HasPrefix(rows[0], "managed plugins warn") ||
+		!strings.Contains(rows[0], plugindist.LockPath()) {
+		t.Fatalf("doctor over a lock that does not parse: %q, want one warning naming the file", rows)
+	}
+}
+
 // A copy in the system root that is the one running shadows the managed copy
 // like any other, and is not a stray to go and remove: discovery ranks the root
 // above the operator's store by design, which `rta plugin remove` cannot undo.

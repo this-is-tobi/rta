@@ -102,13 +102,13 @@ func TestAnIndexIsAttachedUpdatedAndDetached(t *testing.T) {
 
 	// Provenance holds the index in place until the plugin is gone.
 	if verr := recordInstall(LockEntry{Name: "pg", Digest: "d", Index: "lab",
-		InstalledAt: time.Now()}); verr != nil {
+		InstalledAt: time.Now()}, nil); verr != nil {
 		t.Fatal(verr)
 	}
 	if verr := RemoveIndex("lab"); verr == nil || verr.Code != "plugin.index.held" {
 		t.Fatalf("removing a referenced index: %v, want plugin.index.held", verr)
 	}
-	if verr := recordRemoval("pg"); verr != nil {
+	if verr := recordRemoval("pg", nil); verr != nil {
 		t.Fatal(verr)
 	}
 	if verr := RemoveIndex("lab"); verr != nil {

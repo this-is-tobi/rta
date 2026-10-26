@@ -774,8 +774,14 @@ func removeIndex(name string, dryRun bool) *view.Error {
 	if !ok {
 		return noSuchIndex(name)
 	}
+	// Read so that a record which cannot be read refuses the detach rather
+	// than reading as one that holds nothing (ReadLockForChange).
+	locked, verr := ReadLockForChange()
+	if verr != nil {
+		return verr
+	}
 	var held []string
-	for _, e := range ReadLock() {
+	for _, e := range locked {
 		if e.Index == name {
 			held = append(held, e.Name)
 		}

@@ -1607,6 +1607,10 @@ func tamperedNote(ids []string) string {
 // mismatch here is a fact about drift, stated rather than repaired —
 // the lockfile records, it never authorizes.
 func doctorManagedPlugins(add func(check, status, detail string)) {
+	if _, verr := plugindist.ReadLockForChange(); verr != nil {
+		add("managed plugins", "warn", verr.Message+" — nothing below is listed from it, and "+
+			"`rta plugin install`, `upgrade`, `remove` and `prune` refuse until it is fixed or removed")
+	}
 	for _, e := range plugindist.ReadLock() {
 		short := e.Digest
 		if len(short) > 12 {

@@ -51,6 +51,18 @@ func prune(dryRun bool) ([]Pruned, *view.Error) {
 		}
 		return nil, view.Errorf("plugin.prune.store", "%v", err)
 	}
+	// The record's half of what is kept, read so that one which cannot be
+	// read refuses the prune: shown as empty, it left bin/ alone to say which
+	// copy was current, and a copy the record names while an install is
+	// mid-way was then pruned (ReadLockForChange).
+	locked, verr := ReadLockForChange()
+	if verr != nil {
+		return nil, verr
+	}
+	recorded := map[string]string{}
+	for _, l := range locked {
+		recorded[l.Name] = l.Digest
+	}
 	var out []Pruned
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -61,8 +73,8 @@ func prune(dryRun bool) ([]Pruned, *view.Error) {
 		if cur, ok := CurrentDigest(name); ok {
 			keep[cur] = true
 		}
-		if l, ok := LockedFor(name); ok && l.Digest != "" {
-			keep[l.Digest] = true
+		if d := recorded[name]; d != "" {
+			keep[d] = true
 		}
 		p := Pruned{Name: name}
 		stored := StoredDigests(name)

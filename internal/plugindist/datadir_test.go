@@ -16,7 +16,7 @@ import (
 func TestWritingUnderTheDataDirectoryCreatesItOwnerOnly(t *testing.T) {
 	for name, write := range map[string]func(t *testing.T){
 		"the lockfile": func(t *testing.T) {
-			if verr := mutateLock(func(e []LockEntry) []LockEntry { return e }); verr != nil {
+			if verr := mutateLock(nil, func(e []LockEntry) []LockEntry { return e }); verr != nil {
 				t.Fatal(verr)
 			}
 		},
