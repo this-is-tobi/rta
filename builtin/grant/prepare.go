@@ -46,6 +46,73 @@ type buildNotes struct {
 // surface asking, for the names a refusal gives inputs and calls.
 func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact func(string) (string, bool),
 	spec operatorid.IssueSpec, from string) (core.Grant, buildNotes, *view.Error) {
+	return build(sf, catalog, artifact, spec, from, nil)
+}
+
+// BuildAnswered is buildGrant for the third way a grant is asked for: the
+// answer to a parked call (`agent allow --ttl`), which issues the grant the
+// call was missing. It returns the grant unsigned, and the note a capped
+// window earns, in grant allow's words.
+//
+// The same function and not a copy of it. The answer built its grants by
+// hand from the request file, which nothing seals, and drifted: it skipped
+// the plugin build once (see boundArtifact), parsed --ttl under a code and a
+// hint of its own, and never asked whether the agent's name is one a server
+// can run as, so a request naming a lookalike issued a grant `grant list`
+// shows as the real agent's and that authorized nothing. Three things
+// differ, and only these, because only these are the call's to say rather
+// than the config's:
+//
+//   - the target is the one capability the call named, by its ID exactly
+//     (answeredTarget), where grant allow takes a plugin's name too.
+//   - pin is the connection the call was made through, carried in the
+//     request, rather than whatever the profile resolves to now: the answer
+//     is consent about the place the agent asked about, and a profile edited
+//     since makes this grant cover nothing rather than follow the name.
+//   - an empty agent is the server launched with no name, which asked, and
+//     not a name nobody typed: it is still held to CheckAgent like any other.
+func BuildAnswered(sf plugin.Surface, catalog func() []plugin.Capability, artifact func(string) (string, bool),
+	spec operatorid.IssueSpec, from, pin string) (core.Grant, string, *view.Error) {
+	if verr := answeredTarget(sf, catalog, spec.Target); verr != nil {
+		return core.Grant{}, "", verr
+	}
+	g, notes, verr := build(sf, catalog, artifact, spec, from, &answered{pin: pin})
+	if verr != nil {
+		return core.Grant{}, "", verr
+	}
+	return g, cappedNote(notes), nil
+}
+
+// answered is what an answer to a parked call brings that a typed grant
+// reads for itself; see BuildAnswered.
+type answered struct{ pin string }
+
+// answeredTarget refuses an answer's grant on anything but a capability ID in
+// the catalog, compared as given and never normalized.
+//
+// A call parks naming the one capability it is, always, so a target that is
+// a plugin's name, or one build turns into a plugin's name by trimming its
+// ".*", came from a request file something other than rta wrote: nothing
+// seals it, and its digest is unkeyed. build takes a plugin's name, because a
+// person typing grant allow may mean the whole plugin; from an answer it was a
+// grant on every capability the plugin has, destructive ones included, and
+// signed if the guard is on, to an operator who was shown one call.
+func answeredTarget(sf plugin.Surface, catalog func() []plugin.Capability, target string) *view.Error {
+	for _, c := range catalog() {
+		if c.ID == target {
+			return nil
+		}
+	}
+	return view.Errorf("grant.answer.target",
+		"%q is not the ID of a capability rta has, and a grant answering a call is on the one capability it named",
+		target).
+		WithHint("a call parks naming one capability by its ID, so this request was written by something other " +
+			"than rta, or for a plugin since removed; a grant on more than one capability is `" +
+			sf.Call("grant.allow") + "`'s to issue, on purpose")
+}
+
+func build(sf plugin.Surface, catalog func() []plugin.Capability, artifact func(string) (string, bool),
+	spec operatorid.IssueSpec, from string, answer *answered) (core.Grant, buildNotes, *view.Error) {
 	var notes buildNotes
 	target := core.Normalize(spec.Target)
 	if target == "" {
@@ -72,12 +139,14 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 	// grant binds to the binary the operator is consenting about rather than
 	// to the name a replacement would answer to. Empty for a built-in, which
 	// has no artifact separate from the rta the operator chose to run.
-	digest, verr := BoundArtifact(sf, artifact, target)
+	digest, verr := boundArtifact(sf, artifact, target)
 	if verr != nil {
 		return core.Grant{}, notes, verr
 	}
-	profile, pin, verr := checkProfile(target, spec.Profile)
-	if verr != nil {
+	profile, pin := strings.TrimSpace(spec.Profile), ""
+	if answer != nil {
+		pin = answer.pin
+	} else if profile, pin, verr = checkProfile(target, spec.Profile); verr != nil {
 		return core.Grant{}, notes, verr
 	}
 	ttl, asked, byPolicy, capWhere, verr := parseTTL(sf, spec.TTL, target)
@@ -116,9 +185,10 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 	// (resolveAgent); the operator channel deliberately does not, because a
 	// server that filled the name in would be choosing who an operator's
 	// signature authorizes — and checkPrepared would refuse the draft for
-	// exactly that reason.
+	// exactly that reason. An answer names whoever asked, which may be the
+	// server launched with no name (BuildAnswered).
 	agent := strings.TrimSpace(spec.Agent)
-	if agent == "" {
+	if agent == "" && answer == nil {
 		return core.Grant{}, notes, view.Errorf("grant.noagent",
 			"name the agent this is for, with %s", sf.InputName("agent")).
 			WithHint("the name is the one from `rta mcp serve --as`, which " +
@@ -164,7 +234,7 @@ func checkMaxUses(sf plugin.Surface, n int) *view.Error {
 	return nil
 }
 
-// BoundArtifact is the artifact a grant on target is issued against: the
+// boundArtifact is the artifact a grant on target is issued against: the
 // digest of the plugin answering for target's namespace, empty for a
 // built-in. Every path that builds a grant asks it, because a grant with the
 // wrong answer here covers nothing — the gate compares it exactly (see
@@ -172,7 +242,7 @@ func checkMaxUses(sf plugin.Surface, n int) *view.Error {
 // `grant list` shows as live and the call it was issued for is refused. The
 // answer to a parked call (`agent allow --ttl`) once skipped it, and said the
 // next calls were covered.
-func BoundArtifact(sf plugin.Surface, artifact func(string) (string, bool), target string) (string, *view.Error) {
+func boundArtifact(sf plugin.Surface, artifact func(string) (string, bool), target string) (string, *view.Error) {
 	digest, known := artifact(core.Namespace(target))
 	if !known {
 		return "", view.Errorf("grant.unknownplugin",

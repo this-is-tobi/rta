@@ -22,7 +22,11 @@ func catalog() []plugin.Capability {
 		{ID: "kv.get", Summary: "reveal", Safety: plugin.Write, Scope: "key",
 			Inputs: []plugin.Field{{Name: "key", Type: plugin.String, Positional: true}}},
 		{ID: "kv.set", Summary: "store", Safety: plugin.Write},
+		{ID: "kv.rename", Summary: "rename", Safety: plugin.Write, Scope: "key",
+			Inputs: []plugin.Field{{Name: "key", Type: plugin.String, Positional: true}}},
 		{ID: "note.add", Summary: "add", Safety: plugin.Write},
+		{ID: "http.get", Summary: "fetch", Safety: plugin.Write, Scope: "url",
+			Inputs: []plugin.Field{{Name: "url", Type: plugin.String, Positional: true}}},
 	}
 }
 

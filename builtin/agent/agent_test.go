@@ -288,8 +288,9 @@ func TestAllowWithATTLOnAPluginCapabilityIssuesAGrantThatCoversTheNextCall(t *te
 	t.Cleanup(p.Close)
 
 	answering := func(ns string) (string, bool) { return build, ns == "hello" }
+	withHello := func() []plugin.Capability { return append(catalog(), hello) }
 	var allow plugin.Capability
-	for _, c := range Plugin(catalog, answering).Capabilities {
+	for _, c := range Plugin(withHello, answering).Capabilities {
 		if c.ID == "agent.allow" {
 			allow = c
 		}
@@ -600,6 +601,109 @@ func TestABadTTLDoesNotUndoTheAnswer(t *testing.T) {
 	}
 	if !strings.Contains(joined, "not issued") {
 		t.Fatalf("the failure was not reported: %s", joined)
+	}
+	// In grant allow's words, since it is grant allow's rule: the answer had
+	// its own parser, and its own hint, which had drifted from the one a
+	// person typing the same duration into `grant allow` was given.
+	if !strings.Contains(joined, "write it with a unit: 30s, 15m, 2h, 1d") {
+		t.Errorf("the bad --ttl was not named as grant allow names it: %s", joined)
+	}
+}
+
+// A --ttl answer builds its grants as grant allow does, through the same
+// checks. It built them by hand from the request file, which nothing seals,
+// and skipped the agent-name check among others: a request naming
+// claude-desktop spelled with U+2011, a lookalike of its hyphen, issued a
+// grant to a name `grant allow` and `mcp serve --as` both refuse, which read
+// in `grant list` like the real agent's grant and authorized nothing. The
+// call itself is still released; no grant is issued, and the answer says why.
+// The letter is planted by code point: a source file may not hold a
+// lookalike.
+func TestATTLAnswerToALookalikeAgentNameIssuesNoGrant(t *testing.T) {
+	isolate(t)
+	p, err := consent.Ask(consent.Call{
+		Cap: "kv.get", Safety: "write", Scopes: []string{"db-password"}, Agent: "claude" + string(rune(0x2011)) + "desktop",
+		Args: map[string]any{"key": "db-password"}, Why: "no active grant",
+	}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+
+	v, err := run(t, "agent.allow", map[string]any{"id": p.Request.ID, "ttl": "15m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairs := map[string]string{}
+	for _, pair := range v.(view.KeyValue).Pairs {
+		pairs[pair.Key] = pair.Value
+	}
+	if pairs["for"] != "this call only" || !strings.Contains(pairs["grant"], "not issued") ||
+		!strings.Contains(pairs["grant"], "not allowed in an agent name") {
+		t.Errorf("answered %+v, want the call alone released and the name refused", pairs)
+	}
+	if grants, verr := grant.Load(); verr != nil || len(grants) != 0 {
+		t.Fatalf("grants = %+v, %v — want none issued to the lookalike", grants, verr)
+	}
+}
+
+// A --ttl answer grants the one capability the call named, by its ID. A call
+// parks naming one, always, and the request file is not sealed: one naming a
+// plugin, or "kv.*", which the builder trims to the plugin's name as it does
+// for a person typing grant allow, was answered with a grant on every kv
+// capability, destructive ones included. Nor is a folder named in such a
+// request answered with a grant allow call on the plugin.
+func TestATTLAnswerToARequestNamingAPluginIssuesNoGrant(t *testing.T) {
+	for _, tc := range []struct{ target, record string }{{"kv", ""}, {"kv.*", "db-password"}, {"kv", "prod/"}} {
+		isolate(t)
+		var records []string
+		if tc.record != "" {
+			records = []string{tc.record}
+		}
+		r := park(t, tc.target, records...)
+		v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "15m"})
+		if err != nil {
+			t.Fatalf("%q: %v", tc.target, err)
+		}
+		pairs := map[string]string{}
+		for _, pair := range v.(view.KeyValue).Pairs {
+			pairs[pair.Key] = pair.Value
+		}
+		if pairs["for"] != "this call only" || !strings.Contains(pairs["grant"], "not issued") ||
+			!strings.Contains(pairs["grant"], "not the ID of a capability") {
+			t.Errorf("%q %q: answered %+v, want the call alone released and the target refused", tc.target, tc.record, pairs)
+		}
+		if strings.Contains(pairs["next"], "grant allow kv") {
+			t.Errorf("%q %q: next = %q, a grant on the whole plugin", tc.target, tc.record, pairs["next"])
+		}
+		if grants, verr := grant.Load(); verr != nil || len(grants) != 0 {
+			t.Fatalf("%q %q: grants = %+v, %v — want none", tc.target, tc.record, grants, verr)
+		}
+	}
+}
+
+// A --ttl grant's window starts when it is written. The builder ran before
+// the passphrase was asked for and the call decided, and stamped the grant
+// then, so the time the person took to type came off a window the answer
+// still promised whole: "for the next 15m" and a grant ending sooner.
+func TestATTLGrantsWindowStartsWhenItIsIssued(t *testing.T) {
+	isolate(t)
+	built := time.Now().Add(-10 * time.Minute)
+	prepared := []grant.Grant{{Target: "kv.get", Scope: "db-password", TTL: "15m",
+		Issued: built, Expires: built.Add(15 * time.Minute)}}
+	note, verr := alsoGrant(prepared, "", nil)
+	if verr != nil {
+		t.Fatal(verr)
+	}
+	if !strings.Contains(note, "for the next 15m") {
+		t.Errorf("note = %q, want the whole window promised", note)
+	}
+	grants, verr := grant.Load()
+	if verr != nil || len(grants) != 1 {
+		t.Fatalf("grants = %+v, %v — want the one", grants, verr)
+	}
+	if d := time.Until(grants[0].Expires); d < 14*time.Minute {
+		t.Errorf("the grant has %s left, want the 15m the answer promised", d)
 	}
 }
 
