@@ -380,19 +380,32 @@ func (o Options) Problems(reg *registry.Registry) []string {
 	// place `rta mcp serve` can say it: an agent reporting "no such tool" is
 	// indistinguishable from a plugin that was never installed.
 	for _, ns := range o.Untrusted {
+		// Shown as a listed name, never as it is. It is the part of a file
+		// name after the prefix, in any directory on $PATH, and nothing
+		// approved that file: a repository whose direnv adds its own bin/ can
+		// put one there. `rta mcp serve` prints these lines to stderr as they
+		// are, so an escape sequence in the name reached the operator's
+		// terminal raw inside the remedy and was acted on there, by an
+		// artifact whose whole point is that it has not been allowed to do
+		// anything yet. %q did not cover the other mention either: strconv
+		// leaves a Hangul filler or a variation selector as it is, and the
+		// name read as one without it. Quoted with each such character
+		// written out, the name also tells the reader it is odd, where
+		// stripping would show another name.
+		name := plugin.ListedName(ns)
 		// A name something already answers to is a different problem, and
 		// saying "none of its capabilities are exposed" about it would be
 		// false — the registered plugin's tools are in tools/list.
 		if o.knows(ns) {
 			out = append(out, fmt.Sprintf(
-				"an artifact on $PATH named %q was found and not run, and %q is already "+
+				"an artifact on $PATH named %s was found and not run, and %s is already "+
 					"registered — trusting it would collide rather than add anything; remove "+
-					"the file or rename it", ns, ns))
+					"the file or rename it", name, name))
 			continue
 		}
 		out = append(out, fmt.Sprintf(
-			"plugin %q is installed and was not run, so none of its capabilities are exposed"+
-				" — `rta plugin trust %s` approves it, and the next server start loads it", ns, ns))
+			"plugin %s is installed and was not run, so none of its capabilities are exposed"+
+				" — `rta plugin trust %s` approves it, and the next server start loads it", name, name))
 	}
 
 	return out
