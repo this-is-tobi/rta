@@ -69,7 +69,7 @@ func TestABoolFromTheEnvironmentFollowsThePicker(t *testing.T) {
 	if got, answered := values["tls"]; answered {
 		t.Errorf("an untouched switch answered %v — it is a display, not an answer", got)
 	}
-	name, filled, _, verr := m.resolveProfile(c, values)
+	name, filled, _, verr := resolvedRun(m, c, values)
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -97,7 +97,7 @@ func TestClearingAnEnvironmentBoxDoesNotPinTheDeclaredDefault(t *testing.T) {
 	*form.bindings[profileInput] = "prod"
 	values := form.values()
 	c := dbPlugin().Capabilities[0]
-	name, filled, _, verr := m.resolveProfile(c, values)
+	name, filled, _, verr := resolvedRun(m, c, values)
 	if verr != nil {
 		t.Fatal(verr)
 	}

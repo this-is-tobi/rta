@@ -520,7 +520,7 @@ func TestACommandInsideTheBindWindowStillReachesTheEnvironment(t *testing.T) {
 	m.active, m.bound = "prod", nil
 
 	c := dbPlugin().Capabilities[0]
-	name, filled, _, verr := m.resolveProfile(c, map[string]any{})
+	name, filled, _, verr := resolvedRun(m, c, map[string]any{})
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -682,7 +682,7 @@ func TestEditingTheSwitchedOnEnvironmentTakesEffectWithoutRestarting(t *testing.
 	applySwitch(t, &m)
 
 	c := dbPlugin().Capabilities[0]
-	if _, filled, _, _ := m.resolveProfile(c, map[string]any{}); filled["host"] != "prod.internal" {
+	if _, filled, _, _ := resolvedRun(m, c, map[string]any{}); filled["host"] != "prod.internal" {
 		t.Fatalf("the switch did not take: %v", filled)
 	}
 
@@ -700,7 +700,7 @@ func TestEditingTheSwitchedOnEnvironmentTakesEffectWithoutRestarting(t *testing.
 	// an edit happened.
 	applySwitch(t, &m)
 
-	name, filled, _, verr := m.resolveProfile(c, map[string]any{})
+	name, filled, _, verr := resolvedRun(m, c, map[string]any{})
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -770,7 +770,7 @@ func TestARunBetweenTicksSeesTheEdit(t *testing.T) {
 	// No tick, no screen transition, nothing that knows an edit happened —
 	// the state a session is in one second after saving.
 	c := dbPlugin().Capabilities[0]
-	name, filled, _, verr := m.resolveProfile(c, map[string]any{})
+	name, filled, _, verr := resolvedRun(m, c, map[string]any{})
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -811,7 +811,7 @@ func TestALapsedEnvironmentStopsSupplyingItsConnection(t *testing.T) {
 			t.Fatal(verr)
 		}
 		applySwitch(t, &m)
-		if _, filled, _, _ := m.resolveProfile(c, map[string]any{}); filled["host"] != "prod.internal" {
+		if _, filled, _, _ := resolvedRun(m, c, map[string]any{}); filled["host"] != "prod.internal" {
 			t.Fatalf("the switch did not take: %v", filled)
 		}
 
@@ -822,7 +822,7 @@ func TestALapsedEnvironmentStopsSupplyingItsConnection(t *testing.T) {
 		if got := profile.Active(); got != "" {
 			t.Fatalf("the fixture did not lapse: profile.Active() = %q", got)
 		}
-		name, filled, _, verr := m.resolveProfile(c, map[string]any{})
+		name, filled, _, verr := resolvedRun(m, c, map[string]any{})
 		if verr != nil {
 			t.Fatal(verr)
 		}
@@ -880,7 +880,7 @@ func TestAConfigWriteMidResolveDoesNotUnprofileTheCall(t *testing.T) {
 	}
 
 	c := dbPlugin().Capabilities[0]
-	name, filled, _, verr := m.resolveProfile(c, map[string]any{})
+	name, filled, _, verr := resolvedRun(m, c, map[string]any{})
 	if verr != nil {
 		t.Fatal(verr)
 	}

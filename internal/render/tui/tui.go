@@ -866,6 +866,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.releaseRun()
+		// A live view's refresh whose connection's credential could not be
+		// fetched never ran, and what is on screen stays, flashed, with the
+		// next refresh armed: the promise refreshInPlace keeps for a resolve
+		// failure, which this was until the fetch moved into the run. Landed
+		// as an answer, a kv sitting that ran out or a slow `kube:` Secret
+		// read put an error page over the rows until the next tick.
+		if msg.live && msg.unfilled {
+			m.refuse(msg.err.Message)
+			return m, m.liveTick()
+		}
 		// Cleaned once, at the top, rather than at each place a string is
 		// drawn — and above every branch below, because the flash path returns
 		// early and would otherwise draw a raw one-liner.
