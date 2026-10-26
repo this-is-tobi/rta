@@ -48,18 +48,27 @@ func (f Finding) String() string {
 // none either: LoadFile names that fault with the parser's own line, and
 // listing every key of files nothing could read would be noise beside it.
 func Check() ([]Finding, error) {
-	s, err := readStack()
+	r, err := Read()
 	if err != nil {
 		return nil, err
 	}
+	return r.Check(), nil
+}
+
+// Check is Check of the files this reading read, from the text it holds:
+// nothing is read again. A reading that failed has none.
+func (r Reading) Check() []Finding {
+	if r.s == nil {
+		return nil
+	}
 	var found []Finding
-	for _, l := range s.layers {
+	for _, l := range r.s.layers {
 		for _, f := range CheckText(l.text) {
 			f.File = l.path
 			found = append(found, f)
 		}
 	}
-	return found, nil
+	return found
 }
 
 // CheckText is Check over text already in hand: what `rta config edit` holds

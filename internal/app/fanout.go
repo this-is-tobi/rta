@@ -41,7 +41,7 @@ import (
 // where it goes, nor one that left the environment (`--no-profile`).
 
 // fanOutTargets is the targets a call fans out to, or nil when it does not.
-func fanOutTargets(cmd *cobra.Command, c plugin.Capability, values map[string]any) []string {
+func fanOutTargets(cmd *cobra.Command, c plugin.Capability, values map[string]any, opts *globalOpts) []string {
 	if c.Safety != plugin.Read || !plugin.Profilable(c) || noProfile(cmd) {
 		return nil
 	}
@@ -62,7 +62,7 @@ func fanOutTargets(cmd *cobra.Command, c plugin.Capability, values map[string]an
 	if name == "" {
 		return nil
 	}
-	cfg, err := config.Load()
+	cfg, err := opts.loadedConfig()
 	if err != nil {
 		return nil
 	}
@@ -158,7 +158,7 @@ func runFanOut(ctx context.Context, cmd *cobra.Command, c plugin.Capability, val
 func runOnTarget(ctx context.Context, cmd *cobra.Command, c plugin.Capability, values map[string]any,
 	opts *globalOpts,
 ) (view.View, *view.Error) {
-	bound, closeTunnel, verr := resolveProfile(ctx, cmd, c, values)
+	bound, closeTunnel, verr := resolveProfile(ctx, cmd, c, values, opts)
 	defer closeTunnel()
 	if verr != nil {
 		return nil, verr

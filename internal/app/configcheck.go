@@ -309,6 +309,16 @@ func configCheckCommand(reg *registry.Registry, render renderFn) *cobra.Command 
 // asked for. Not for the commands that report the file in full, where it would
 // say the same thing twice.
 func WarnConfigProblems(w io.Writer, cmd *cobra.Command, machineReadable bool) {
+	warnConfigProblems(w, cmd, machineReadable, func() []config.Finding {
+		found, _ := config.Check()
+		return found
+	})
+}
+
+// warnConfigProblems is WarnConfigProblems with the keys asked of check, which
+// the root passes as the Check of the reading the tree was built from: the
+// files are not read again for a line at startup.
+func warnConfigProblems(w io.Writer, cmd *cobra.Command, machineReadable bool, check func() []config.Finding) {
 	if machineReadable || reportsConfigItself(cmd) {
 		return
 	}
@@ -316,8 +326,8 @@ func WarnConfigProblems(w io.Writer, cmd *cobra.Command, machineReadable bool) {
 		fmt.Fprintf(w, "rta: %s is left in %s, which rta no longer reads (it reads %s now) — `rta doctor` says how to move %s\n",
 			strings.Join(left.held, ", "), left.old, left.own, format.Plural(len(left.held), "it", "them"))
 	}
-	found, err := config.Check()
-	if err != nil || len(found) == 0 {
+	found := check()
+	if len(found) == 0 {
 		return
 	}
 	where := config.Path()

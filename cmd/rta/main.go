@@ -161,10 +161,13 @@ func main() {
 	// start over it would make config a liability rather than a convenience.
 	// `rta doctor` reports them.
 	//
-	// Load rather than LoadFile because this one read is also the tree's: it
-	// goes to NewRoot below, which wants RTA_OUTPUT laid over the file, and
-	// nothing between here and there writes the config back.
-	cfg, cfgErr := config.Load()
+	// A Reading, whose Config is Load's rather than LoadFile's, because this
+	// one read is also the tree's: it goes to NewRoot below, which wants
+	// RTA_OUTPUT laid over the file and asks the same read every later
+	// question of the files (app.WithReading), and nothing between here and
+	// there writes the config back.
+	reading, cfgErr := config.Read()
+	cfg := reading.Config()
 	app.ReportConfigError(os.Stderr, cfgErr, os.Args[1:])
 	app.SetPluginConfig(pluginconf.Resolve(cfg, reg.Origin))
 
@@ -178,7 +181,7 @@ func main() {
 	// color, never the run.
 	app.ApplyTheme(cfg, profile.Active())
 
-	root := app.NewRoot(reg, buildVersion(), app.WithConfig(cfg, cfgErr))
+	root := app.NewRoot(reg, buildVersion(), app.WithReading(reading, cfgErr))
 	interrupts.Attach(root, host.CloseAll)
 
 	err = app.Execute(ctx, root, buildVersion(), buildCommit())
