@@ -276,6 +276,37 @@ func TestAnHTTPSURLIsReadAsTheHostItNames(t *testing.T) {
 	}
 }
 
+// A host named by its URL has its chain verified for that host. The name was
+// read off the target as typed, and net.SplitHostPort reads
+// "https://example.com" as the host "https" and gives up on one with a port,
+// so a sound certificate was INVALID: "valid for example.com, not https", or
+// not the whole URL. The name is asked of the dial: macOS's verifier refuses
+// the test's own CA before it looks at a name, so the chain row alone says
+// nothing there.
+func TestTheChainOfAnHTTPSURLIsVerifiedForTheHostItNames(t *testing.T) {
+	addr, _ := startTLS(t)
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"https://" + addr, "https://" + addr + "/a/b?c=d"} {
+		_, state, err := loadCerts(context.Background(), req(nil), target, 5*time.Second)
+		if err != nil {
+			t.Fatalf("dialling %s: %v", target, err)
+		}
+		if got := hostOf(state); got != host {
+			t.Errorf("%s is verified for %q, want %q, the host it was dialled at", target, got, host)
+		}
+		v, err := runInspect(context.Background(), req(map[string]any{"target": target, "timeout": "5s"}))
+		if err != nil {
+			t.Fatalf("inspect %s: %v", target, err)
+		}
+		if chain := pairValue(v.(view.KeyValue), "chain"); strings.Contains(chain, "https") {
+			t.Errorf("inspect %s: chain = %q, want it verified for %s", target, chain, host)
+		}
+	}
+}
+
 // The common name is optional, and a chain drew a certificate without one as a
 // branch with no name: an intermediate known by its organisation, a leaf with
 // an empty subject and its names in the SAN.
