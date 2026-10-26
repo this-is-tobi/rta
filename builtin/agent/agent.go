@@ -1467,6 +1467,11 @@ func answeredBy(req plugin.Request) string {
 	return grant.Origin(req.Surface(), term.IsTerminal(int(stdio.Real().Fd())))
 }
 
+// decide is how an allow is written, a var so a test can refuse it after a
+// role was issued: the one failure that has something already done to report
+// in it, and one a test cannot reach in time by waiting out a deadline.
+var decide = consent.Decide
+
 func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability, artifact func(string) (string, bool)) (view.View, error) {
 	// As given, never trimmed, in show and deny too: the id is the one value
 	// in an answer that says which question it answers, and allow and deny
@@ -1493,19 +1498,44 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 			req.Surface().InputName("role"), req.Surface().InputName("ttl"))
 	}
 	ttl := strings.TrimSpace(req.String("ttl"))
+	// The team's ceiling binds a live "yes" exactly as it binds `grant allow`:
+	// `never`/`neverProfile` are documented as needing nobody's agreement, not
+	// as a default a rushed answer can override. Without this, a capability or
+	// connection the policy forbids outright still reached internal/mcp's
+	// askConsent — Reserve's refusal for "ceiling-suppressed" and "simply
+	// ungranted" is deliberately the same core.grant.required, so an agent
+	// cannot tell the two apart — and a bare `agent allow <id>` approved it
+	// with no ceiling check anywhere in the path. Checked here, at the one
+	// place a live approval is minted, rather than duplicated where the call
+	// gets parked — a second gate that could disagree with this one is the
+	// mistake checkAgainst's own comment (internal/grant/grant.go) already
+	// names.
+	//
+	// First, before anything is asked or issued, and on every path: dry runs,
+	// --yes and the TUI included. It ran here only for a person at a terminal
+	// and otherwise after --role had issued the whole role, so a call the
+	// policy forbids was refused with every line of the role already standing
+	// and nothing in the answer to say so; and a preview promised a role and a
+	// release that the ceiling was going to refuse.
+	if verr := checkCeiling(r); verr != nil {
+		return nil, verr
+	}
 	// A person at a terminal is shown what they are about to release, and asked
 	// (confirmAllow). After the refusals that need no answer from anybody, so a
 	// yes is never followed by a no the ceiling already knew.
 	if !req.DryRun && !req.Yes && atTerminal(req) {
-		if verr := checkCeiling(r); verr != nil {
-			return nil, verr
-		}
 		if !confirmAllow(r, allowQuestion(r, roleName, ttl), revealsValue(catalog, r.Cap)) {
 			return declined(req.Surface(), r), nil
 		}
 	}
 	var issued view.View
 	if roleName != "" {
+		// Asked again, because a confirmation lasts as long as the person
+		// reading the card takes, and a call that stopped waiting meanwhile
+		// is not one to issue a day's authority in answer to.
+		if _, ok := consent.Find(id); !ok {
+			return nil, unknownRequest(req.Surface(), id)
+		}
 		sub := plugin.NewRequest(map[string]any{
 			"role": roleName, "agent": r.Agent, "passphrase": req.String("passphrase"),
 		}, req.DryRun, req.Yes).WithSurface(req.Surface())
@@ -1524,22 +1554,6 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 			what += " (" + shown + ")"
 		}
 		return view.Text{Body: fmt.Sprintf("would allow %s for the agent waiting on request %s", what, id)}, nil
-	}
-	// The team's ceiling binds a live "yes" exactly as it binds `grant allow`:
-	// `never`/`neverProfile` are documented as needing nobody's agreement, not
-	// as a default a rushed answer can override. Without this, a capability or
-	// connection the policy forbids outright still reached internal/mcp's
-	// askConsent — Reserve's refusal for "ceiling-suppressed" and "simply
-	// ungranted" is deliberately the same core.grant.required, so an agent
-	// cannot tell the two apart — and a bare `agent allow <id>` approved it
-	// with no ceiling check anywhere in the path; only the --ttl branch below,
-	// through alsoGrant, ever consulted the ceiling, and only after this
-	// approval had already run. Checked here, at the one place a live
-	// approval is minted, rather than duplicated where the call gets parked —
-	// a second gate that could disagree with this one is the mistake
-	// checkAgainst's own comment (internal/grant/grant.go) already names.
-	if verr := checkCeiling(r); verr != nil {
-		return nil, verr
 	}
 	// The guard, before the decision and not after: answering consumes the
 	// parked request, so a passphrase refused past that point would release
@@ -1569,8 +1583,29 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 		}
 		signer = &s
 	}
-	if err := consent.Decide(id, true, answeredBy(req)); err != nil {
-		return nil, view.Errorf("agent.allow.failed", "%v", err)
+	if err := decide(id, true, answeredBy(req)); err != nil {
+		if issued == nil {
+			return nil, view.Errorf("agent.allow.failed", "%v", err)
+		}
+		// The role was issued a moment ago and stands, whatever became of
+		// the call: issuing it can take a passphrase and as long as typing
+		// it takes, and a call's deadline can pass meanwhile. Still a
+		// failure, because releasing the call is what was asked and it did
+		// not happen — `agent allow <id> --role dev --yes && next` must not
+		// run next — but one that names the role, who it went to and the
+		// call that takes it back, as grant issue names the grants it wrote
+		// before one failed. The bare agent.allow.failed this was hid every
+		// grant just written. The agent and the take-back are the receipt's,
+		// read from it rather than worked out again here: issuing resolved
+		// the agent, which for a call made by the unnamed server is not the
+		// request's empty one.
+		agent, back := roleReceipt(issued)
+		verr := view.Errorf("agent.allow.unreleased", "%s was not released: %v; role %s was issued to %s and stands",
+			callNamed(r.Cap, r.Scopes), err, roleName, agent)
+		if back != "" {
+			verr = verr.WithHint("`" + back + "` takes the role back")
+		}
+		return nil, verr
 	}
 	pairs := []view.Pair{
 		{Key: "allowed", Value: callNamed(r.Cap, r.Scopes)},
@@ -1633,6 +1668,27 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 		return view.Sections{Items: items}, nil
 	}
 	return view.KeyValue{Pairs: pairs}, nil
+}
+
+// roleReceipt is who the receipt of an issued role says it went to, and the
+// call it gives to take the role back, empty where it says neither.
+func roleReceipt(issued view.View) (agent, back string) {
+	s, _ := issued.(view.Sections)
+	for _, item := range s.Items {
+		kv, ok := item.View.(view.KeyValue)
+		if item.ID != "role" || !ok {
+			continue
+		}
+		for _, p := range kv.Pairs {
+			switch p.Key {
+			case "agent":
+				agent = p.Value
+			case "take back":
+				back = p.Value
+			}
+		}
+	}
+	return agent, back
 }
 
 // checkCeiling holds a parked call to the team's ceiling as a grant for it
