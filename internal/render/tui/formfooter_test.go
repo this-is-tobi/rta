@@ -75,6 +75,29 @@ func TestARefusalTooLongForTheBarLosesItsMiddleAndSaysSo(t *testing.T) {
 	}
 }
 
+// A hint that opens with what to do keeps it. The message is what went wrong
+// and fits in half the room, so the cut falls inside the hint and not on its
+// first words, which it took when the start was a third of the bar.
+const folderRefusal = `db/ ends in a slash, so it names a folder rather than an entry — ` +
+	`drop the trailing slash — a folder is not stored, it is what the names share, ` +
+	`and a kv.get grant scoped to db/ already covers everything under it`
+
+func TestACutRefusalKeepsItsMessageAndTheOpeningOfItsHint(t *testing.T) {
+	for _, w := range []int{120, 100, 80} {
+		m := formAt(t, w)
+		m.refuse(folderRefusal)
+		text := said(barRows(m))
+		for _, want := range []string{
+			"✗ db/ ends in a slash, so it names a folder rather than an entry — drop the trailing slash",
+			"covers everything under it",
+		} {
+			if !strings.Contains(text, want) {
+				t.Errorf("width %d: %q is gone:\n%s", w, want, text)
+			}
+		}
+	}
+}
+
 // The hints go before the message does, lowest ranked first, and how to leave
 // outlasts them all.
 func TestHintsGiveWayToARefusalAndHowToLeaveIsTheLastToGo(t *testing.T) {
