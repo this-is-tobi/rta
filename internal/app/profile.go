@@ -407,6 +407,10 @@ func profileCompletions(instances bool) []cobra.Completion {
 	if err != nil {
 		return nil
 	}
+	var caps []plugin.Capability
+	if installed != nil {
+		caps = installed.Capabilities()
+	}
 	var out []cobra.Completion
 	for _, name := range cfg.ProfileNames() {
 		p := cfg.Profiles[name]
@@ -420,9 +424,9 @@ func profileCompletions(instances bool) []cobra.Completion {
 		}
 		var seen []string
 		for _, key := range p.PluginKeys() {
-			if _, label, _ := config.SplitKey(key); label != "" && !slices.Contains(seen, label) {
+			if ns, label, _ := config.SplitKey(key); label != "" && !slices.Contains(seen, label) {
 				seen = append(seen, label)
-				out = append(out, cobra.CompletionWithDesc(name+"/"+label, connAddress(p.Plugins[key], p.Note)))
+				out = append(out, cobra.CompletionWithDesc(name+"/"+label, connAddress(ns, caps, p.Plugins[key], p.Note)))
 			}
 		}
 	}
@@ -1431,7 +1435,7 @@ func profileFlagCompletions(cfg config.Config, c plugin.Capability, active, toCo
 			desc := p.Note
 			if instance := config.RefInstance(ref); instance != "" {
 				if _, conn, ok := p.ForInstance(ns, instance); ok {
-					desc = connAddress(conn, p.Note)
+					desc = connAddress(ns, []plugin.Capability{c}, conn, p.Note)
 				}
 			}
 			out = append(out, cobra.CompletionWithDesc(ref, desc))

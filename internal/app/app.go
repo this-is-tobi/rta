@@ -1366,15 +1366,38 @@ func attach(parent *cobra.Command, c plugin.Capability, opts *globalOpts) {
 // connAddress names where one instance points, for a completion description —
 // the one line that tells two instances of a plugin apart, which the
 // profile's note cannot do since every instance shares it.
-func connAddress(conn config.Connection, fallback string) string {
+//
+// The keys are first the plugin's own: the config key of each input that the
+// capabilities of ns among caps declare as where a connection goes, a URL
+// before an address before a host, since each says more than the next. A
+// fixed list of likely names was all there was, and it did not hold
+// `address`, which redis, etcd, qdrant and s3 declare, so two instances of
+// any of them were both described by the note. The list stays after the
+// declared keys, for a plugin that declares no endpoint and for a caller
+// with no registry to ask.
+func connAddress(ns string, caps []plugin.Capability, conn config.Connection, fallback string) string {
 	if conn.Kube != "" {
 		return conn.Kube
 	}
 	if conn.SSH != "" {
 		return conn.SSH
 	}
+	var keys []string
+	for _, role := range []plugin.EndpointRole{plugin.EndpointURL, plugin.EndpointAddress, plugin.EndpointHost} {
+		for _, c := range caps {
+			if plugin.Namespace(c.ID) != ns {
+				continue
+			}
+			for _, f := range c.Inputs {
+				if f.Endpoint == role && f.Config != "" && !slices.Contains(keys, f.Config) {
+					keys = append(keys, f.Config)
+				}
+			}
+		}
+	}
 	// The most address-like set: keys, in the order a person would look.
-	for _, k := range []string{"host", "endpoint", "url", "bucket", "database", "addr"} {
+	keys = append(keys, "host", "endpoint", "url", "bucket", "database", "addr")
+	for _, k := range keys {
 		if v, ok := conn.Set[k]; ok {
 			return fmt.Sprintf("%v", v)
 		}
