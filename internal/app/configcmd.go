@@ -5,7 +5,6 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
-	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -33,7 +32,7 @@ import (
 // so no tool on the MCP surface may write it: a tool that did would be a way
 // for an agent to change its own limits.
 func newConfigCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
-	render := configRender(opts)
+	render := viewRender(opts, true)
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "Show and change the config file",
@@ -61,24 +60,6 @@ func newConfigCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 		configSetCommand(reg, render, opts), configUnsetCommand(reg, render, opts),
 		configEditCommand(reg, render, opts), configCheckCommand(reg, render), configSchemaCommand(reg))
 	return cmd
-}
-
-// configRender draws a config command's answer. Exempt from a broken default
-// output format, since fixing one is what these commands are for, and drawn in
-// pretty when it names nothing, as doctor does.
-func configRender(opts *globalOpts) renderFn {
-	return func(cmd *cobra.Command, v view.View, verr *view.Error) error {
-		format, err := opts.format()
-		if err != nil {
-			format = cli.Pretty
-		}
-		renderOpts := renderOptions(cmd, format, opts.noColor)
-		if verr != nil {
-			_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
-			return Rendered(verr)
-		}
-		return cli.Render(cmd.OutOrStdout(), v, renderOpts)
-	}
 }
 
 func configShowCommand(reg *registry.Registry, render renderFn) *cobra.Command {

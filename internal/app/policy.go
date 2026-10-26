@@ -52,18 +52,7 @@ func operatorPolicyPath() (string, *view.Error) {
 }
 
 func newPolicyCommand(opts *globalOpts) *cobra.Command {
-	render := func(cmd *cobra.Command, v view.View, verr *view.Error) error {
-		format, err := opts.format()
-		if err != nil {
-			return err
-		}
-		renderOpts := renderOptions(cmd, format, opts.noColor)
-		if verr != nil {
-			_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
-			return Rendered(verr)
-		}
-		return cli.Render(cmd.OutOrStdout(), v, renderOpts)
-	}
+	render := viewRender(opts, false)
 
 	cmd := &cobra.Command{
 		Use:   "policy",
