@@ -544,15 +544,13 @@ func (m Model) openThemeEditor(name string) (tea.Model, tea.Cmd) {
 	m.themePick = nil
 	cfg, err := config.LoadFile()
 	if err != nil {
-		m.mode = modeDashboard
 		m.refuse("theme not opened: " + err.Error())
-		return m, nil
+		return m.leaveThemeEditor()
 	}
 	target, ok := themeTargetFor(cfg, name)
 	if !ok {
-		m.mode = modeDashboard
 		m.refuse("theme not opened: no profile " + name + " any more")
-		return m, nil
+		return m.leaveThemeEditor()
 	}
 	m.themeForm = newThemeForm(target)
 	m.mode = modeTheme
@@ -616,11 +614,11 @@ func (m Model) saveTheme() (tea.Model, tea.Cmd) {
 		return cfg, true
 	}); err != nil {
 		m.refuse("theme not saved: " + err.Error())
-		return m, nil
+		return m.leaveThemeEditor()
 	}
 	if gone {
 		m.refuse("theme not saved: no profile " + target.name + " any more")
-		return m, nil
+		return m.leaveThemeEditor()
 	}
 
 	// The palette of the environment in force, not the block just saved on its
@@ -710,11 +708,22 @@ func (m Model) afterThemePickUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	case huh.StateCompleted:
 		return m.openThemeEditor(m.themePick.value)
 	case huh.StateAborted:
-		m.themePick = nil
-		m.mode = modeDashboard
-		return m, nil
+		return m.leaveThemeEditor()
 	}
 	return m, cmd
+}
+
+// leaveThemeEditor is every way off the theme screen but a save that worked,
+// which starts the refresh again itself.
+//
+// Through backToDashboard and not by setting the mode: the dashboard's refresh
+// chain re-arms only while the dashboard is up (the tickMsg case), so the tick
+// that fell due while somebody looked at the palette was dropped, and a way back
+// that only set the mode left every tile to go stale for good, the switch
+// unread with them, until some other screen's way back happened to start it.
+func (m Model) leaveThemeEditor() (tea.Model, tea.Cmd) {
+	m.themePick, m.themeForm = nil, nil
+	return m.backToDashboard()
 }
 
 // fastSubmitThemePick accepts the highlighted palette, so the shortcut that
@@ -728,8 +737,7 @@ func (m Model) fastSubmitThemePick() (tea.Model, tea.Cmd) {
 // mirroring updateForm's shape for the one mode it does not handle.
 func (m Model) updateThemeForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.themeForm == nil {
-		m.mode = modeDashboard
-		return m, nil
+		return m.leaveThemeEditor()
 	}
 	model, cmd := m.themeForm.form.Update(msg)
 	if f, ok := model.(*huh.Form); ok {
@@ -746,9 +754,7 @@ func (m Model) afterThemeFormUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	case huh.StateCompleted:
 		return m.saveTheme()
 	case huh.StateAborted:
-		m.themeForm = nil
-		m.mode = modeDashboard
-		return m, nil
+		return m.leaveThemeEditor()
 	}
 	return m, cmd
 }

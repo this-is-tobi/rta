@@ -327,9 +327,7 @@ func (m Model) discardFormAnswer(yes bool) (tea.Model, tea.Cmd) {
 	case !yes:
 		return m, nil
 	case m.mode == modeTheme && m.themeForm != nil:
-		m.themeForm = nil
-		m.mode = modeDashboard
-		return m, nil
+		return m.leaveThemeEditor()
 	case m.mode == modeForm && m.form != nil:
 		return m.closeForm()
 	}
