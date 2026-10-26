@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/match"
 	"github.com/this-is-tobi/rta/internal/registry"
@@ -331,10 +330,12 @@ func cardOf(reg *registry.Registry, c plugin.Capability) view.KeyValue {
 	// This card already answers "why did that host appear?" and "what do I
 	// write?"; without the path it does not answer "into which file", and an
 	// operator had to run `rta doctor` for the third of the three questions.
-	// Only when something here can actually read a file.
+	// Only when something here can actually read a file. The file is the one
+	// `config set` on the line below would write, which is the drop-in that
+	// states the section when one does.
 	for _, f := range c.Inputs {
 		if f.Config != "" {
-			pairs = append(pairs, view.Pair{Key: "config file", Value: config.Path()})
+			pairs = append(pairs, view.Pair{Key: "config file", Value: configFileOf(configSection(reg, c))})
 			if line := configSetLine(reg, configSection(reg, c)+"."+f.Config); line != "" {
 				pairs = append(pairs, view.Pair{Key: "set a key", Value: line})
 			}

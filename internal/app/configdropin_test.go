@@ -217,6 +217,45 @@ func TestDoctorReportsABrokenDropInWhenThereIsNoConfigFile(t *testing.T) {
 	}
 }
 
+// What a refusal or a card says to edit is the file that states it. Three of
+// them named config.yaml whatever file held the unit, and a person who opened
+// it found no such key: the output default, the plugin section explain points
+// at, and the profile whose two entries repin refuses to fold together.
+func TestARefusalOrACardNamesTheDropInThatStatesTheUnit(t *testing.T) {
+	t.Run("the output default", func(t *testing.T) {
+		dir, path := split(t, map[string]string{"config.d/ui.yaml": "output: jsno\n"})
+		t.Setenv("RTA_CONFIG", path)
+		t.Setenv("RTA_OUTPUT", "")
+		want := filepath.Join(dir, "config.d", "ui.yaml")
+		if got := invalidOutputDefault("jsno").Message; !strings.Contains(got, want) {
+			t.Errorf("refusal = %q, want it to name %s", got, want)
+		}
+	})
+	t.Run("the plugin section explain points at", func(t *testing.T) {
+		dir, path := split(t, map[string]string{"config.d/db.yaml": "plugins:\n  db:\n    host: db.internal\n"})
+		out, errOut, err := runConfigAt(t, setRegistry(t), path, "explain", "db.status", "-o", "json")
+		if err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+		if want := filepath.Join(dir, "config.d", "db.yaml"); !strings.Contains(out, want) {
+			t.Errorf("explain does not name %s:\n%s", want, out)
+		}
+	})
+	t.Run("the profile repin refuses", func(t *testing.T) {
+		dir, path := split(t, map[string]string{"config.d/team.yaml": "profiles:\n  staging:\n    plugins:\n" +
+			"      pg@111111111111:\n        set:\n          host: db.one.internal\n" +
+			"      pg@333333333333:\n        set:\n          host: db.two.internal\n"})
+		_, errOut, err := runConfigAt(t, pgRegistryAt(t, pgNewDigest), path,
+			"profile", "repin", "--all", "--plugin", "pg", "-o", "json")
+		if err == nil || !strings.Contains(errOut, "two entries") {
+			t.Fatalf("want the collision refused: %v %q", err, errOut)
+		}
+		if want := filepath.Join(dir, "config.d", "team.yaml"); !strings.Contains(errOut, want) {
+			t.Errorf("the refusal does not name %s: %q", want, errOut)
+		}
+	})
+}
+
 // A unit two files state is a fault of the files together: it is reported once,
 // as the files', and not once under each of them.
 func TestConfigCheckReportsAUnitStatedTwiceOnce(t *testing.T) {
