@@ -468,6 +468,48 @@ func TestShowEmptyBodyExplainsItself(t *testing.T) {
 	}
 }
 
+// A note's body can be emptied. An empty value is how every surface says
+// "keep the current one", so nothing could: the TUI's form, cleared and
+// submitted, said "updated note 3" and kept the body, an empty --body was
+// nothing to change, and removing the note and adding it again gave it another id,
+// which every "#3" naming it then missed. `clear` names the fields to empty.
+func TestEditClearEmptiesTheFieldsItNames(t *testing.T) {
+	setup(t)
+	text(t, runAdd, map[string]any{"title": "draft", "body": "old body", "tag": []string{"work"}, "due": "2030-01-02"}, false)
+	stored := func() (body string, tags []string, due bool) {
+		t.Helper()
+		s, err := load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		it := s.Items[0]
+		return it.Body, it.Tags, it.Due != nil
+	}
+
+	text(t, runEdit, map[string]any{"id": 1, "clear": []string{"body"}, "parent": noParentChange}, false)
+	if body, tags, due := stored(); body != "" || len(tags) != 1 || !due {
+		t.Errorf("after clearing the body: body %q, tags %q, due %v — want the body alone emptied", body, tags, due)
+	}
+
+	// The edit form opens on the note as it is, so beside what is cleared it
+	// sends the values the note holds, which change nothing.
+	text(t, runEdit, map[string]any{
+		"id": 1, "title": "draft", "tag": []string{"work"}, "due": "2030-01-02",
+		"clear": []string{"tag", "due"}, "parent": noParentChange,
+	}, false)
+	if _, tags, due := stored(); len(tags) != 0 || due {
+		t.Errorf("after clearing the tags and the due date: tags %q, due %v", tags, due)
+	}
+
+	// A new value for a field and an order to empty it say opposite things.
+	_, err := runEdit(context.Background(), req(map[string]any{
+		"id": 1, "body": "new", "clear": []string{"body"}, "parent": noParentChange,
+	}, false))
+	if ve := view.AsError(err, "x"); ve.Code != "note.edit.clearandset" || ve.Input != "clear" {
+		t.Errorf("a body given and cleared at once = %+v, want note.edit.clearandset naming clear", ve)
+	}
+}
+
 func TestEditNothingToChangeIsCoded(t *testing.T) {
 	setup(t)
 	text(t, runAdd, map[string]any{"title": "x"}, false)
@@ -475,6 +517,21 @@ func TestEditNothingToChangeIsCoded(t *testing.T) {
 	ve := view.AsError(err, "x")
 	if ve.Code != "note.edit.nochange" || ve.Hint == "" {
 		t.Errorf("want note.edit.nochange with hint, got %+v", ve)
+	}
+}
+
+// A clear list of empty elements names no field, so it is nothing to change
+// too, rather than a save of the note as it was answered "updated note 1".
+// The input guard lets an empty element through, and MCP sends a JSON list as
+// []any.
+func TestEditClearNamingNothingIsNothingToChange(t *testing.T) {
+	setup(t)
+	text(t, runAdd, map[string]any{"title": "x", "body": "kept"}, false)
+	for _, clear := range []any{[]string{""}, []any{""}, []string{"", ""}} {
+		v, err := runEdit(context.Background(), req(map[string]any{"id": 1, "clear": clear, "parent": noParentChange}, false))
+		if ve := view.AsError(err, "x"); ve == nil || ve.Code != "note.edit.nochange" {
+			t.Errorf("clear %#v = %v, %v, want note.edit.nochange", clear, v, err)
+		}
 	}
 }
 

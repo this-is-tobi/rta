@@ -19,6 +19,7 @@ package note
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,6 +53,16 @@ var (
 	dueField = plugin.Field{Name: "due", Type: plugin.String,
 		Help:    "due date: " + itemstore.DueForms,
 		Suggest: suggestDue}
+	// clearField is note.edit's way to empty a field, which an empty value
+	// cannot say: empty is "keep the current one" on every surface, the TUI's
+	// form included, which opens on the note as it is. A body had no other
+	// way, where tags had `-` and a due date `none`, so it could not be
+	// emptied at all short of removing the note and adding it again under
+	// another id, which every "#3" naming it then missed. A list of the
+	// fields rather than another magic value inside the body, which would
+	// have made that value one no body could hold.
+	clearField = plugin.Field{Name: "clear", Type: plugin.StringSlice, Options: []string{"body", "tag", "due"},
+		Help: "fields to empty: body, tag (every tag), due"}
 )
 
 // suggestTags offers the tags this store already uses, most used first.
@@ -203,8 +214,9 @@ func Plugin() plugin.Plugin {
 			{
 				ID: "note.edit", Summary: "Edit a note's title, body, tags, due date or parent", Safety: plugin.Write, Idempotent: true,
 				Flash: true,
-				Description: "Empty fields keep their current value. A `tag` of - clears all tags; " +
-					"a `due` of none clears the due date.",
+				Description: "Empty fields keep their current value, and `clear` empties the ones it " +
+					"names: the body, the tags or the due date. A `tag` of - also clears all tags, and a " +
+					"`due` of none the due date.",
 				Inputs: append([]plugin.Field{
 					{Name: "id", Type: plugin.Int, Positional: true, Required: true,
 						Suggest: suggestAnyID, Help: "note id"},
@@ -212,7 +224,7 @@ func Plugin() plugin.Plugin {
 					{Name: "body", Type: plugin.Text, Help: "new body, markdown supported (empty keeps the current one)"},
 					{Name: "parent", Type: plugin.Int, Default: noParentChange, Suggest: suggestOpenIDs,
 						Help: "move it under this note id (0 makes it top-level)"},
-				}, tagField, dueField),
+				}, tagField, dueField, clearField),
 				Run:     runEdit,
 				Prefill: prefillEdit,
 			},
@@ -742,10 +754,15 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	rawTags := req.StringSlice("tag")
 	rawDue := req.String("due")
 	parent := req.Int("parent")
-	if title == "" && body == "" && len(rawTags) == 0 && rawDue == "" && parent == noParentChange {
+	// An empty element names no field: the input guard lets one through, as
+	// it does in every list, so `"clear": [""]` would otherwise pass for
+	// something to change and rewrite the note as it was.
+	emptied := slices.DeleteFunc(slices.Clone(req.StringSlice("clear")), func(f string) bool { return f == "" })
+	if title == "" && body == "" && len(rawTags) == 0 && rawDue == "" && parent == noParentChange && len(emptied) == 0 {
 		return nil, view.Errorf("note.edit.nochange", "nothing to change").
 			WithHint("give the new content in one or more of " + strings.Join(inputNames(req.Surface(),
-				"title", "body", "tag", "due", "parent"), ", "))
+				"title", "body", "tag", "due", "parent"), ", ") + ", or name what to empty in " +
+				req.Surface().InputName("clear"))
 	}
 	// Held across the whole load-decide-save below — see itemstore.Lock.
 	unlock, err := itemstore.Lock(storeFile)
@@ -795,6 +812,13 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 		dueChanged = true
 	}
+	if field := clearedAndSet(s.Items[i], emptied, body, rawTags, due); field != "" {
+		sf := req.Surface()
+		return nil, view.Errorf("note.edit.clearandset", "%s is given a new value and named in %s at once",
+			sf.InputName(field), sf.InputName("clear")).
+			WithHint("to set it, leave it out of " + sf.InputName("clear") + "; to empty it, give it no value").
+			WithInput("clear")
+	}
 	if req.DryRun {
 		return view.Text{Body: fmt.Sprintf("would update note %d: %s", id, s.Items[i].Title)}, nil
 	}
@@ -810,6 +834,16 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	if dueChanged {
 		s.Items[i].Due = due
 	}
+	for _, field := range emptied {
+		switch field {
+		case "body":
+			s.Items[i].Body = ""
+		case "tag":
+			s.Items[i].Tags = nil
+		case "due":
+			s.Items[i].Due = nil
+		}
+	}
 	if parent != noParentChange {
 		s.Items[i].Parent = parent
 	}
@@ -817,6 +851,34 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, err
 	}
 	return view.Text{Body: fmt.Sprintf("updated note %d: %s", id, s.Items[i].Title)}, nil
+}
+
+// clearedAndSet names the first of the fields to empty (emptied, as `clear`
+// gave them) that the call also gives a new value, "" for none: the two say
+// opposite things, and either reading would throw the other away.
+//
+// A value the note already holds is no new one. The TUI's form opens on the
+// note as it is and sends every box back, so a body cleared there arrives
+// beside the body it held, which is no contradiction. A due date is compared
+// by its day, as the form spells it.
+func clearedAndSet(it itemstore.Item, emptied []string, body string, rawTags []string, due *time.Time) string {
+	for _, field := range emptied {
+		switch field {
+		case "body":
+			if body != "" && body != it.Body {
+				return field
+			}
+		case "tag":
+			if tags := applyTags(rawTags); len(tags) > 0 && !slices.Equal(tags, it.Tags) {
+				return field
+			}
+		case "due":
+			if due != nil && (it.Due == nil || due.Format(time.DateOnly) != it.Due.Format(time.DateOnly)) {
+				return field
+			}
+		}
+	}
+	return ""
 }
 
 // namedIDs reads the ids a verb that takes several was given. Each is the
