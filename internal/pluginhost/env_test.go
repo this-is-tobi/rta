@@ -52,6 +52,31 @@ func TestNothingSecretReachesAPluginsEnvironment(t *testing.T) {
 	}
 }
 
+// A network that requires an egress proxy names it in the environment, and
+// rta's built-ins reached through it while every plugin making a request
+// timed out on the same machine. Every spelling Go's net/http reads crosses;
+// a proxy variable it does not read is still dropped.
+func TestTheProxyANetworkRequiresReachesAPlugin(t *testing.T) {
+	host := []string{
+		"HTTP_PROXY=http://proxy.corp:3128",
+		"HTTPS_PROXY=http://proxy.corp:3128",
+		"NO_PROXY=localhost,.corp",
+		"http_proxy=http://proxy.corp:3128",
+		"https_proxy=http://proxy.corp:3128",
+		"no_proxy=localhost,.corp",
+		"ALL_PROXY=socks5://proxy.corp:1080",
+	}
+	got := strings.Join(childEnv(host), "\n")
+	for _, want := range host[:6] {
+		if !strings.Contains(got, want) {
+			t.Errorf("%s did not cross, and a plugin behind that proxy cannot reach anything without it", want)
+		}
+	}
+	if strings.Contains(got, "ALL_PROXY") {
+		t.Errorf("ALL_PROXY crossed, which net/http does not read:\n%s", got)
+	}
+}
+
 // TMPDIR is on the allowlist as a security measure rather than a convenience,
 // and it is the one entry most likely to be deleted by somebody tidying the
 // list. Dropping it moves every plugin's os.CreateTemp("", …) from a per-user
