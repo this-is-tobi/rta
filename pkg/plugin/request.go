@@ -179,9 +179,14 @@ func (r Request) WithConfinement(check func(field, path string) (string, *view.E
 // direct in-process caller — allows everything and returns the path unchanged,
 // so a handler may call this unconditionally.
 //
-// Not carried across the plugin-host wire: an external plugin gets its bound
-// from the sandbox it runs in, which is enforced by the operating
-// system rather than by a promise the plugin makes.
+// **In a plugin's own process over MCP it refuses every path.** The host
+// judges the paths a call names before the call crosses the plugin-host
+// wire, and the roots do not cross with it, so nothing on the plugin's side
+// can judge a path derived from one (pkg/sdk's refuseDerived). Nor does a
+// plugin's sandbox bound it: on Linux a plugin runs unconfined, and on macOS
+// its sandbox denies rta's own files and the credential directories and
+// knows nothing of the roots. A plugin that opens a derived path without
+// asking is bounded by that sandbox alone.
 func (r Request) Confine(field, path string) (string, *view.Error) {
 	if r.confine == nil {
 		return path, nil
@@ -246,8 +251,9 @@ func (r Request) WithLinkTargets(tell func(dir, target string) string) Request {
 //
 // An unconfined request — every surface with a person behind it, and every
 // direct in-process caller — tells every target as it is, so a handler may
-// call this unconditionally. Not carried across the plugin-host wire, like
-// Confine.
+// call this unconditionally. In a plugin's own process over MCP it tells no
+// target, for Confine's reason: whether one leads outside the roots is the
+// host's to say, and the roots are not there.
 func (r Request) LinkTarget(dir, target string) string {
 	if r.targets == nil {
 		return target
@@ -269,9 +275,11 @@ func (r Request) LinkTarget(dir, target string) string {
 // that open for the built-ins, and the only reader of this.
 //
 // The zero Bounds is every surface with a person behind it and every direct
-// in-process caller: nothing to confine, and a path opens by name. Not
-// carried across the plugin-host wire, like Confine: an external plugin opens
-// its paths in its own process, where an *os.Root of the host's is not.
+// in-process caller: nothing to confine, and a path opens by name. It is
+// also what a plugin's own process has over MCP, since an *os.Root of the
+// host's does not cross the plugin-host wire: a plugin opens by name the
+// path the host judged, and a caller who can write inside a root can swap it
+// for a link between the two, which nothing on either side sees.
 type Bounds struct {
 	// Root judges path as the surface judges any path it is given, and
 	// returns the root it lies under, opened, and where it lies in it,

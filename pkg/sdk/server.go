@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/sdk/wire"
@@ -78,9 +79,13 @@ func (s *server) Call(ctx context.Context, req *rtav1.CallRequest) (resp *rtav1.
 		}
 	}()
 
+	surface := wire.SurfaceFromProto(req.GetSurface())
 	pr := plugin.NewRequest(wire.ValuesFromProto(req.GetValues()), req.GetDryRun(), req.GetYes()).
-		WithSurface(wire.SurfaceFromProto(req.GetSurface())).
+		WithSurface(surface).
 		WithProfile(req.GetProfile(), wire.TunnelFromProto(req.GetTunnel()))
+	if surface == plugin.SurfaceMCP {
+		pr = pr.WithConfinement(refuseDerived).WithLinkTargets(untoldTarget)
+	}
 
 	v, runErr := c.Run(ctx, pr)
 	if runErr = plugin.Failure(runErr); runErr != nil {
@@ -89,6 +94,38 @@ func (s *server) Call(ctx context.Context, req *rtav1.CallRequest) (resp *rtav1.
 		}}, nil
 	}
 	return &rtav1.CallResponse{Result: &rtav1.CallResponse_View{View: wire.ViewToProto(v)}}, nil
+}
+
+// refuseDerived is Request.Confine for a call an agent made: every path a
+// handler worked out from the ones it was given is refused, the empty one
+// aside, which names no path.
+//
+// The host judges each path an agent sends against the server's roots before
+// the call crosses, and the roots do not cross with it, so nothing in this
+// process can judge a path the handler reached from one — the repository a
+// walk up from a directory finds, the file a config names. Confine let every
+// such path through on the claim that the plugin's sandbox bounds it, and
+// none does: on Linux a plugin runs unconfined, and on macOS its sandbox
+// denies rta's own files and the credential directories and knows nothing of
+// the roots. A handler that asks is told no, rather than answered from
+// outside a root the operator drew; one that never asks is bounded by its
+// sandbox and nothing else, which docs/95-reference/20-the-path-gate.md says.
+func refuseDerived(field, path string) (string, *view.Error) {
+	if strings.TrimSpace(path) == "" {
+		return path, nil
+	}
+	return "", view.Errorf("core.mcp.path.derived",
+		"%s: %q, which this call reached from the path it was given, cannot be checked against this "+
+			"server's roots from a plugin", field, path).
+		WithHint("a server judges only the paths a call names, and a plugin runs where its roots are not " +
+			"known — name this path in the call itself, if an input takes one")
+}
+
+// untoldTarget is Request.LinkTarget for a call an agent made: no link's text,
+// since whether it names a place outside the roots is the host's to say and
+// the roots are not here (refuseDerived).
+func untoldTarget(string, string) string {
+	return "a path this plugin cannot check against the server's roots"
 }
 
 // Prefill returns current values for editing in place.
