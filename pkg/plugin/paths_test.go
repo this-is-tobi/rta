@@ -1,7 +1,9 @@
 package plugin
 
 import (
+	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -26,6 +28,26 @@ func TestExpandHomeResolvesOnlyALeadingTilde(t *testing.T) {
 	} {
 		if got := ExpandHome(in); got != want {
 			t.Errorf("ExpandHome(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A path that leads nowhere is the box's to fix, and a file that is there and
+// cannot be read is nobody's box.
+func TestPathInputNamesTheBoxOnlyWhenThePathIsWrong(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want string
+	}{
+		{&os.PathError{Op: "open", Path: "/x", Err: syscall.ENOENT}, "file"},
+		{&os.PathError{Op: "open", Path: "/x/y", Err: syscall.ENOTDIR}, "file"},
+		{&os.PathError{Op: "read", Path: "/x", Err: syscall.EISDIR}, "file"},
+		{&os.PathError{Op: "open", Path: "/x", Err: syscall.EACCES}, ""},
+		{&os.PathError{Op: "read", Path: "/x", Err: syscall.EIO}, ""},
+		{nil, ""},
+	} {
+		if got := PathInput("file", c.err); got != c.want {
+			t.Errorf("PathInput(file, %v) = %q, want %q", c.err, got, c.want)
 		}
 	}
 }
