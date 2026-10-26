@@ -13,11 +13,14 @@
 //
 // It stops a writer that cannot read the directory it is writing to. That
 // is not a contrivance: it is precisely the shape a filesystem sandbox
-// creates. A confined plugin under the deny set is refused reads of rta's
-// data directory and was never refused writes, so it could blind-overwrite
-// a state file — no read required, since the structs are public — and hand
-// itself standing authority. Forging a seal needs the key, and reading the
-// key needs the read the sandbox denies.
+// creates, and it is the shape rta's own had. A confined plugin under the
+// deny set was refused reads of rta's data directory and not writes, so it
+// could blind-overwrite a state file — no read required, since the structs
+// are public — and hand itself standing authority. Forging a seal needs the
+// key, and reading the key needs the read the sandbox denies. The deny set
+// now refuses the writes too (pluginhost's tier1), and the seal is the
+// second line behind it, for any writer without the key that a sandbox
+// leaves able to write.
 //
 // It does NOT stop anything that can read this directory. Same-uid means no
 // secret here is a secret from an attacker at that uid: they read the key

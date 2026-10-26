@@ -14,15 +14,18 @@
 // watching dashboard asks for status every few seconds, and recording
 // polls would churn real history out of retention.
 //
-// The chain's threat model is internal/seal's: it
-// stops a writer that cannot read (a confined plugin appending a flattering
-// line cannot make it verify) and it stops nothing running at the
-// operator's own uid, which can read the key and rewrite the whole file.
-// That is tamper-evidence against accident and against confined code, never
-// proof against a determined local attacker — and saying so is the point,
-// because a log that claims more than it delivers is worse than no log.
-// Confined code is macOS-only, so off it the first half is empty and only
-// the accident half is left; internal/seal names the platforms.
+// The chain's threat model is internal/seal's: a line written without the
+// key cannot be made to verify, and a line removed or a file cut short
+// shows, and it stops nothing running at the operator's own uid that
+// reads the key and rewrites the whole record. A confined plugin is denied
+// this directory outright, reads and writes (pluginhost's deny set), so the
+// writes the chain shows are the ones made without the key from outside
+// that sandbox: a plugin off macOS, an agent's own shell, a script, all at
+// the operator's uid, and an accident. Removing lines is the edit that
+// needs no key, and the end mark below is what makes it show. That is
+// tamper-evidence, never proof against a determined local attacker — and
+// saying so is the point, because a log that claims more than it delivers
+// is worse than no log.
 //
 // # Rotation, and why the chain survives it
 //
@@ -45,12 +48,12 @@
 //
 // A chain shows an edited line and a line removed from the middle, and on
 // its own it shows nothing at all about lines removed from the *end*: a
-// truncated file is a shorter file that still verifies, which would let the
-// confined plugin erase its own trail by deleting rather than
-// by writing. So the last entry's sequence and seal are also kept in
+// truncated file is a shorter file that still verifies, which would let
+// anything that can delete a line erase a trail by deleting rather than by
+// writing. So the last entry's sequence and seal are also kept in
 // `agent-log-head.json`, sealed under the same key. Rolling the record back
-// now means forging that too, and forging it needs the key that reading is
-// denied. And the call after a cut does not move the mark back to where the
+// now means forging that too, and forging it needs the key. And the call
+// after a cut does not move the mark back to where the
 // cut left the record: it writes the mark it found into its own sealed
 // entry (Entry.Cut), so the truncation stays visible after it.
 //
@@ -60,7 +63,7 @@
 // matched `agent-log.NNNNN.jsonl`, and that made the retention policy
 // something anybody who could create a file could drive. Creating a file is
 // the cheapest write there is, and the naming scheme is in this source, so a
-// writer that cannot read — the whole threat model above — could plant eight
+// writer without the key — the whole threat model above — could plant eight
 // files under unused numbers, watch the next rotation count far too many
 // segments, and have rta retire the oldest, which are the real ones. Each was
 // anchored on the way out, so afterwards the record verified clean and
@@ -440,7 +443,7 @@ func segmentNumber(name string) (int, bool) {
 //
 // It was, and that made the retention policy something anybody who could
 // create a file could drive. The threat model this package states is a
-// writer that cannot read, and creating a file is the cheapest write there
+// writer without the key, and creating a file is the cheapest write there
 // is: the naming scheme is in this source, so `agent-log.90000.jsonl` is a
 // name anybody can produce, and eight of them made rta count far too many
 // segments at the next rotation and retire the oldest — which are the real
