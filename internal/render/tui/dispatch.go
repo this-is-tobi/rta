@@ -194,33 +194,43 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 				return nm, cmd, true
 			}
 		}
-		return m, nil, true
+		// And the tile's action where it has no Copy, which a capability
+		// cannot declare beside an action on c (plugin.Validate): kv.list
+		// binds c to copy a row's value, the bar said so, and this answered
+		// nothing.
+		return m.tileAction(msg.String())
 	default:
-		// Selected-tile actions: one key opens a sibling capability
-		// (e.g. `a` on the note tile opens the add form). A bare Read
-		// action skips open's form and runs on its defaults — openTile's
-		// own fast path, for the tile promise that names it: "press w to
-		// answer" has to land on the queue, not on a form for the optional
-		// remote-flow inputs the local queue never needs.
-		if a, ok := m.selectedAction(msg.String()); ok {
-			m.origin = modeDashboard
-			m.trail = nil
-			if a.src != srcNone {
-				nm, cmd := m.rowActionOnATile(a)
-				return nm, cmd, true
-			}
-			if a.bare && a.cap.Safety == plugin.Read {
-				m.current = a.cap
-				m.lastValues, m.lastYes = nil, false
-				m.row = 0
-				m.refreshPending = false
-				return m, m.startRun(a.cap, nil, false), true
-			}
-			nm, cmd := m.openAction(a.cap)
-			return nm, cmd, true
-		}
+		return m.tileAction(msg.String())
 	}
 	return m, nil, true
+}
+
+// tileAction runs the selected tile's action on key: one key opens a sibling
+// capability (e.g. `a` on the note tile opens the add form). A bare Read
+// action skips open's form and runs on its defaults — openTile's own fast
+// path, for the tile promise that names it: "press w to answer" has to land on
+// the queue, not on a form for the optional remote-flow inputs the local queue
+// never needs. A key that is no action of the tile does nothing.
+func (m Model) tileAction(key string) (tea.Model, tea.Cmd, bool) {
+	a, ok := m.selectedAction(key)
+	if !ok {
+		return m, nil, true
+	}
+	m.origin = modeDashboard
+	m.trail = nil
+	if a.src != srcNone {
+		nm, cmd := m.rowActionOnATile(a)
+		return nm, cmd, true
+	}
+	if a.bare && a.cap.Safety == plugin.Read {
+		m.current = a.cap
+		m.lastValues, m.lastYes = nil, false
+		m.row = 0
+		m.refreshPending = false
+		return m, m.startRun(a.cap, nil, false), true
+	}
+	nm, cmd := m.openAction(a.cap)
+	return nm, cmd, true
 }
 
 func (m Model) pluginsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
