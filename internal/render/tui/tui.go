@@ -19,6 +19,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
@@ -395,6 +396,14 @@ func New(reg *registry.Registry, dash config.Dashboard,
 	// Filtering is untouched — the filter input renders on its own row
 	// whether or not the title does (bubbles list.titleView).
 	l.Filter = catalogueFilter
+	// q and ctrl+c quit from browseKeys, and esc goes back; the list's own
+	// quit key is one rta never meant to have. bubbles 2.1.1 bound it to q and
+	// esc, which browseKeys answered first; 2.2.1 binds it to v, a key nothing
+	// here handles, so pressing v in the catalogue ended the program. A binding
+	// with no keys matches nothing, however the list enables it, and ctrl+c
+	// (ForceQuit) stays, since that is the key a typed filter leaves to the
+	// list.
+	l.KeyMap.Quit = key.NewBinding()
 	l.SetShowHelp(false)
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
