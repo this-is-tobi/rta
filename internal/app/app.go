@@ -2287,27 +2287,8 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
 		return Rendered(verr)
 	}
-	inputs := plugin.Inputs{
-		Caller:      values,
-		Profile:     bound.filled,
-		ProfileName: bound.name,
-		Tunnel:      bound.tunnel,
-		Fence:       bound.fence,
-		Config:      PluginConfig(c),
-		// The heading Config sits under, for a refusal to name the line.
-		ConfigSection: PluginConfigSection(c),
-	}
-	req := plugin.ResolveRequest(c, inputs, opts.dryRun, opts.yes).WithSurface(plugin.SurfaceCLI)
-	// The required checks cobra cannot make: of a config-backed input, since
-	// making it at parse time would run before config was consulted, and of
-	// any required input given empty — `--host ""`, a bare "" argument —
-	// which cobra counts as given. One left off the command line cobra has
-	// already refused, at parse time, with the usage beside it. The host's
-	// own check (plugin.CheckRequired), asked here rather than left to the
-	// guard inside c.Run: a refusal from there is a failure, and a failure
-	// gets ConfigNotApplied's "so this ran with the declared defaults" beside
-	// it, about a call that did not run.
-	if verr := plugin.CheckRequired(c, req); verr != nil {
+	inputs, req, verr := preparedRun(c, values, bound, opts)
+	if verr != nil {
 		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
 		return Rendered(verr)
 	}
@@ -2333,6 +2314,67 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		return cli.Render(cmd.OutOrStdout(), v, renderOpts)
 	}
 	v, runErr := c.Run(ctx, req)
+	v, ve := ranAs(c, v, runErr, values, bound, opts)
+	if ve != nil {
+		// A failure that carries its answer (plugin.AnsweredError) is drawn
+		// first, whole, as doctor draws its report before it exits 1: stdout is
+		// the table either way, and stderr and the status say it was not a clean
+		// one.
+		if v != nil {
+			if err := show(v); err != nil {
+				return err
+			}
+		}
+		_ = cli.RenderError(cmd.ErrOrStderr(), ve, renderOpts)
+		return Rendered(ve)
+	}
+	if v == nil {
+		return nil
+	}
+	return show(v)
+}
+
+// preparedRun is the request a capability runs with once its environment is
+// resolved: what was typed and what the environment fills, with the plugin's
+// configuration, held to the inputs it must carry.
+//
+// It and ranAs are the run of a single call (runCapability) and of each target
+// of a fan-out (runOnTarget) alike. Fan-out began as a copy of the single
+// path, and the rules the single path gained after it — a warning's undeclared
+// input cut, an answered failure's table kept, what was typed remembered —
+// did not reach the copy; one run in two places is how the next one does.
+func preparedRun(c plugin.Capability, values map[string]any, bound boundProfile,
+	opts *globalOpts,
+) (plugin.Inputs, plugin.Request, *view.Error) {
+	inputs := plugin.Inputs{
+		Caller:      values,
+		Profile:     bound.filled,
+		ProfileName: bound.name,
+		Tunnel:      bound.tunnel,
+		Fence:       bound.fence,
+		Config:      PluginConfig(c),
+		// The heading Config sits under, for a refusal to name the line.
+		ConfigSection: PluginConfigSection(c),
+	}
+	req := plugin.ResolveRequest(c, inputs, opts.dryRun, opts.yes).WithSurface(plugin.SurfaceCLI)
+	// The required checks cobra cannot make: of a config-backed input, since
+	// making it at parse time would run before config was consulted, and of
+	// any required input given empty — `--host ""`, a bare "" argument —
+	// which cobra counts as given. One left off the command line cobra has
+	// already refused, at parse time, with the usage beside it. The host's
+	// own check (plugin.CheckRequired), asked here rather than left to the
+	// guard inside c.Run: a refusal from there is a failure, and a failure
+	// gets ConfigNotApplied's "so this ran with the declared defaults" beside
+	// it, about a call that did not run.
+	return inputs, req, plugin.CheckRequired(c, req)
+}
+
+// ranAs makes what a run returned, v and runErr, what the command shows: the
+// view held to the declaration, or the refusal with the view a failure carried
+// beside it (plugin.AnsweredError), nil when it carried none.
+func ranAs(c plugin.Capability, v view.View, runErr error, values map[string]any, bound boundProfile,
+	opts *globalOpts,
+) (view.View, *view.Error) {
 	if runErr != nil {
 		ve := view.AsError(runErr, c.ID+".failed")
 		// An input this capability does not declare is no input of this call:
@@ -2349,30 +2391,23 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		if note := ConfigNotApplied(c); note != "" {
 			ve = ve.WithHint(strings.TrimSpace(ve.Hint + " · " + note))
 		}
-		// A failure that carries its answer (plugin.AnsweredError) is drawn
-		// first, whole, as doctor draws its report before it exits 1: stdout is
-		// the table either way, and stderr and the status say it was not a clean
-		// one.
 		var answered *plugin.AnsweredError
 		if errors.As(runErr, &answered) && answered.View != nil {
-			if err := show(c.HeldWarnings(answered.View, anyInput)); err != nil {
-				return err
-			}
+			return c.HeldWarnings(answered.View, anyInput), ve
 		}
-		_ = cli.RenderError(cmd.ErrOrStderr(), ve, renderOpts)
-		return Rendered(ve)
+		return nil, ve
 	}
 	// Remembered after the run succeeded, and from `values` rather than from
-	// `req`: a declared default is not a choice anybody made, and a host
+	// the request: a declared default is not a choice anybody made, and a host
 	// the environment filled in is already offered by the environment. What
 	// this keeps is what the person typed and it worked.
 	if !opts.dryRun {
 		recent.Record(plugin.SurfaceCLI, c, bound.name, values)
 	}
 	if v == nil {
-		return nil
+		return nil, nil
 	}
-	return show(c.HeldWarnings(v, anyInput))
+	return c.HeldWarnings(v, anyInput), nil
 }
 
 // anyInput keeps every input a capability declares (Capability.HeldWarnings):
