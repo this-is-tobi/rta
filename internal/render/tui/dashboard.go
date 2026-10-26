@@ -41,6 +41,9 @@ type tile struct {
 	// source says where this tile came from, which is what H has to know:
 	// an automatic tile is hidden by ID, an entry somebody wrote is removed.
 	source tileSource
+	// stated is the entry a stated or an added tile was built from, as the
+	// file states it: the one H on a stated tile takes out (dropEntry).
+	stated config.Tile
 	// expanded marks one panel of several that one entry became, because
 	// the profile it names — or the one switched on — holds several
 	// connections for the plugin (expandTiles). H hides such a panel by
@@ -899,7 +902,7 @@ func statedTiles(reg *registry.Registry, entries []config.Tile, source tileSourc
 		if c.Safety != plugin.Read {
 			continue
 		}
-		t := tile{cap: c, values: ct.With, profile: ct.Profile, source: source,
+		t := tile{cap: c, values: ct.With, profile: ct.Profile, source: source, stated: ct,
 			width: ct.Width, widthDemand: ct.Width > 0, height: ct.Height,
 			section: strings.TrimSpace(ct.Section)}
 		// A value that cannot be read is the config check's to name; the tile runs
