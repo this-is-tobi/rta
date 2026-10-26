@@ -49,6 +49,12 @@ type resultMsg struct {
 	// nobody asked for by pressing anything: it lands only on the view it
 	// refreshes, where seq alone let it land wherever the reader had gone.
 	live bool
+	// unfilled marks a run that never started because its connection's
+	// references could not be fetched (fillRefs): where the call goes failed,
+	// and not the call. A live view's refresh flashes it and keeps its rows,
+	// as refreshInPlace does a resolve failure, which this was until the fetch
+	// moved off the update loop into the run (runCmd).
+	unfilled bool
 }
 
 // cleaned is r as it arrives on screen: view cleaned once, for everything the

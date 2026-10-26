@@ -311,11 +311,10 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 	all := cf.values()
 	values := withoutPicker(c, all)
 	// The coordinate is checked before anything is fetched, which is why this
-	// is pickedConn + fillConn rather than resolveProfile: a tab that is
-	// about to be refused must not read a credential first. Resolving first
-	// meant a `kube:`-referenced Secret was fetched — a real access in the
-	// cluster's audit log, caused by a keypress that then did nothing — and
-	// the fetch stalled the update loop for it.
+	// is pickedConn, with the credential fetched by the listing below: a tab
+	// that is about to be refused must not read a credential first. Resolving
+	// first meant a `kube:`-referenced Secret was fetched — a real access in
+	// the cluster's audit log, caused by a keypress that then did nothing.
 	name, conn, filled, verr := m.pickedConn(c, all)
 	if verr != nil {
 		m.refuse(verr.Message)
@@ -338,12 +337,6 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refuse(words + " — tab moves on")
 		return m, nil
 	}
-	if filled == nil && name != "" {
-		if filled, verr = m.fillConn(name, conn, c, values); verr != nil {
-			m.refuse(verr.Message)
-			return m, nil
-		}
-	}
 	cfg := m.configFor(c)
 	// The connection's fence resolves too, as it does for a run: a sibling a
 	// fence of one entry fills, or a list it fills whole, is what the call will
@@ -356,23 +349,34 @@ func (m Model) completeFromService(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// allowlist the run will be gated by, so a config edited under an open form
 	// moves the request and the answer together, never one without the other.
 	fence := profile.FenceOf(conn)
-	resolved := plugin.Resolve(c, plugin.Inputs{
-		Caller: values, Profile: filled, ProfileName: name, Config: cfg.values,
-		ConfigSection: cfg.section, Fence: fence,
-	})
-	// The box's own text is the partial, whatever any layer had in mind for
-	// this field: a listing narrows on what is typed, not on a default. For a
-	// list that text is the element being typed, as the string it is: the
-	// chosen ones are no business of the plugin's, and req.StringSlice reads
-	// the one name as a list of one.
-	resolved[f.Name] = box.partial
-	req := plugin.LiveRequest(resolved)
 	what := f.Name + " completions"
 	// Same as the cluster path: one fetch per value, so a service that
 	// answers nothing leaves tab free to move on rather than asking again.
 	cf.fetchedFor[f.Name] = box.typed
 	m.guide("completing…")
 	return m, func() tea.Msg {
+		// The credential is read here, with the listing, and not before the
+		// press returned, for runCmd's reason: a `kube:` Secret is a cluster
+		// round trip and a store held by a passphrase a second of scrypt, and
+		// on the update loop the form froze for it with no key answered. Its
+		// refusal is the press's answer, flashed as the listing's would be.
+		if filled == nil && name != "" {
+			var verr *view.Error
+			if filled, verr = fillRefs(context.Background(), name, conn, c, values); verr != nil {
+				return completeMsg{form: cf, field: f.Name, err: verr}
+			}
+		}
+		resolved := plugin.Resolve(c, plugin.Inputs{
+			Caller: values, Profile: filled, ProfileName: name, Config: cfg.values,
+			ConfigSection: cfg.section, Fence: fence,
+		})
+		// The box's own text is the partial, whatever any layer had in mind for
+		// this field: a listing narrows on what is typed, not on a default. For a
+		// list that text is the element being typed, as the string it is: the
+		// chosen ones are no business of the plugin's, and req.StringSlice reads
+		// the one name as a list of one.
+		resolved[f.Name] = box.partial
+		req := plugin.LiveRequest(resolved)
 		ctx, cancel := context.WithTimeout(context.Background(), completeTimeout)
 		defer cancel()
 		// Held to the rule every other Suggest answer is (candidateValues):

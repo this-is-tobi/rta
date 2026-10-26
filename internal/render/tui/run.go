@@ -399,6 +399,15 @@ func configOf(pc PluginConfig, c plugin.Capability) statedConfig {
 // call" is the tunnel's whole lifetime rule, which is exactly
 // the scope of this function.
 //
+// **And the connection's references are fetched here**, when filled is nil for
+// a named environment (resolveProfile): a `kube:` Secret is a cluster round
+// trip and a store held by a passphrase a second of scrypt, which on the update
+// loop froze the screen before the running one was drawn, with esc unanswered
+// until it came back. Here it is under the spinner and the run's own context,
+// so esc ends it. Its refusal is the call's failure, a result even for a dry
+// run, as it was when it was fetched before the run: there is nothing to
+// confirm about a call that cannot be made.
+//
 // dryRun asks the capability what it would do instead of doing it, and hands
 // the answer back as a previewMsg for the confirmation screen (confirm.go)
 // rather than as a result: same resolution, same forward, same request shape
@@ -410,6 +419,12 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 	// and the environment over it.
 	collected := values
 	return func() tea.Msg {
+		if profileName != "" && filled == nil {
+			var verr *view.Error
+			if filled, verr = fillRefs(ctx, profileName, conn, c, collected); verr != nil {
+				return resultMsg{cap: c, err: verr, seq: seq, unfilled: true}
+			}
+		}
 		dialled, via, closeTunnel, verr := profile.Dial(ctx, profileName, conn, c, collected, plugin.SurfaceTUI)
 		defer closeTunnel()
 		if verr != nil {
@@ -600,6 +615,13 @@ func (m *Model) startRun(c plugin.Capability, values map[string]any, yes bool) t
 // naming a cluster still has to open a forward, and that happens off the update
 // loop in runCmd rather than here — this function is called from Update, where
 // blocking for the ~54 ms an open costs would be a visible stall on a keypress.
+//
+// For the same reason the values are nil for a named environment whose
+// references are still to be fetched, which runCmd does: only the standing
+// bind's answer, already fetched, comes back filled. What is decided here is
+// what can be decided from the config file alone, which environment and
+// whether its fence lets the call through, so a refusal is still answered
+// before anything is fetched.
 func (m Model) resolveProfile(c plugin.Capability, values map[string]any,
 ) (string, map[string]any, config.Connection, *view.Error) {
 	name, conn, filled, verr := m.pickedConn(c, values)
@@ -613,13 +635,6 @@ func (m Model) resolveProfile(c plugin.Capability, values map[string]any,
 	if verr := profile.Fenced(name, conn, c, plugin.Inputs{
 		Caller: withoutPicker(c, values), Config: cfg.values, ConfigSection: cfg.section,
 	}, os.LookupEnv, plugin.SurfaceTUI); verr != nil {
-		return "", nil, config.Connection{}, verr
-	}
-	if filled != nil {
-		return name, filled, conn, nil
-	}
-	filled, verr = m.fillConn(name, conn, c, values)
-	if verr != nil {
 		return "", nil, config.Connection{}, verr
 	}
 	return name, filled, conn, nil
@@ -727,18 +742,21 @@ func (m Model) pickedConn(c plugin.Capability, values map[string]any,
 	return name, conn, nil, nil
 }
 
-// fillConn resolves the connection's references for one call — the half of
-// resolveProfile with fetching in it.
+// fillRefs resolves the connection's references for one call — the half of
+// resolveProfile with fetching in it, which a run (runCmd) and a tab's listing
+// (completeFromService) make off the update loop, bounded at bindTimeout
+// within the context they are made in.
 //
 // Fill, not Bind: a person is waiting, so a `secrets:` reference is
 // fetched. The TUI owns the screen, so kv can ask for a passphrase with a
 // masked field rather than a terminal prompt — kv.Reveal never prompts, so
 // what this gets is the environment's answer or a clear failure.
 //
-// Fill and not Dial, for bindCmd's reason: this runs on the update loop.
-func (m Model) fillConn(name string, conn config.Connection, c plugin.Capability,
+// Fill and not Dial: the forward is the run's to open, for the length of the
+// call (runCmd).
+func fillRefs(ctx context.Context, name string, conn config.Connection, c plugin.Capability,
 	values map[string]any) (map[string]any, *view.Error) {
-	ctx, cancel := context.WithTimeout(context.Background(), bindTimeout)
+	ctx, cancel := context.WithTimeout(ctx, bindTimeout)
 	defer cancel()
 	return profile.Fill(ctx, name, conn, c, values, os.LookupEnv, kv.RevealAs(plugin.SurfaceTUI))
 }

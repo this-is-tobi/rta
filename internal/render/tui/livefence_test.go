@@ -286,7 +286,11 @@ func TestAHeldPressResolvesNoCredential(t *testing.T) {
 		setBox(nm.form, "namespace", namespace)
 		*nm.form.bindings[profileInput] = "staging"
 
-		nm.Update(tabKey)
+		// What the press asks for is run as well: the credential is read with
+		// the listing, off the update loop, and a refused press asks for none.
+		if _, cmd := nm.Update(tabKey); cmd != nil {
+			cmd()
+		}
 		if lr.calls() != 0 {
 			t.Fatalf("the service was asked %d times, with the credential unresolved", lr.calls())
 		}

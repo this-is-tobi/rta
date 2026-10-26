@@ -97,7 +97,7 @@ func TestChangingThePickerMovesTheCall(t *testing.T) {
 	}
 
 	c := dbPlugin().Capabilities[0]
-	name, filled, _, verr := m.resolveProfile(c, values)
+	name, filled, _, verr := resolvedRun(m, c, values)
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -126,7 +126,7 @@ func TestPickingTheBaseConfigurationClearsTheEnvironmentsValues(t *testing.T) {
 	*form.bindings[profileInput] = profileNoneLabel
 	values := form.values()
 	c := dbPlugin().Capabilities[0]
-	name, filled, _, verr := m.resolveProfile(c, values)
+	name, filled, _, verr := resolvedRun(m, c, values)
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -152,7 +152,7 @@ func TestATypedValueStillBeatsTheEnvironment(t *testing.T) {
 		t.Fatalf("host = %v, want what was typed", got)
 	}
 	c := dbPlugin().Capabilities[0]
-	name, filled, _, verr := m.resolveProfile(c, values)
+	name, filled, _, verr := resolvedRun(m, c, values)
 	if verr != nil {
 		t.Fatal(verr)
 	}
