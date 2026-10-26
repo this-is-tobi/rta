@@ -6,8 +6,10 @@ import (
 	"errors"
 	"io"
 	stdnet "net"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -213,4 +215,30 @@ func nxResolver() *stdnet.Resolver {
 		}()
 		return client, nil
 	}}
+}
+
+// A web request that got no answer is worded for how far it got: a name the
+// resolver says does not exist names the host, and only a request that ran out
+// of time is offered the deadline.
+func TestAWebRequestThatGotNoAnswerSaysHowFarItGot(t *testing.T) {
+	failed := func(err error) error { return &url.Error{Op: "Get", URL: "https://nope.example", Err: err} }
+	nx := failed(&stdnet.OpError{Op: "dial", Net: "tcp",
+		Err: &stdnet.DNSError{Err: "no such host", Name: "nope.example", IsNotFound: true}})
+	if v := webUnreachable(plugin.SurfaceCLI, "https://nope.example", "nope.example", nx); v.Input != "host" ||
+		strings.Contains(v.Hint, "timeout") || !strings.Contains(v.Hint, "does not exist in DNS") {
+		t.Errorf("a name that does not exist = %+v", v)
+	}
+	for why, c := range map[string]struct {
+		err      error
+		deadline bool
+	}{
+		"a resolver that did not answer": {failed(&stdnet.DNSError{Err: "i/o timeout", Name: "nope.example", IsTimeout: true}), true},
+		"a deadline":                     {failed(context.DeadlineExceeded), true},
+		"a connection the port refused":  {failed(errors.New("dial tcp 192.0.2.1:443: connect: connection refused")), false},
+	} {
+		v := webUnreachable(plugin.SurfaceCLI, "https://nope.example", "nope.example", c.err)
+		if v.Input != "" || strings.Contains(v.Hint, "--timeout") != c.deadline {
+			t.Errorf("%s: %+v, want no input and the deadline offered: %v", why, v, c.deadline)
+		}
+	}
 }
