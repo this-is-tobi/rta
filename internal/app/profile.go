@@ -498,11 +498,25 @@ func runUse(cmd *cobra.Command, args []string, dryRun bool) (view.View, *view.Er
 		// reason currentView keeps them apart: `rta use` has just answered
 		// "staging lapsed", and --off calling the same record "nothing was
 		// switched on" contradicts it while clearing it.
-		s := profile.LoadSelection()
+		//
+		// A file that does not verify is a third case, and the one this
+		// command exists for: it holds every profile shut to agents, doctor
+		// names --off as the way out, and read the lenient way it answered
+		// "nothing to switch off" to the person about to open the fence.
+		// Why it was not believed is said back to the operator, and is not a
+		// failure of this command, which is the remedy for it.
+		s, readErr := profile.ReadSelection()
+		unbelieved := ""
+		if readErr != nil {
+			unbelieved = readErr.Error()
+		}
 		was := s.Name(now)
 		lapsed := was == "" && s.Active != ""
 		if dryRun {
 			switch {
+			case unbelieved != "":
+				return view.Text{Body: "Would write the selection file again with nothing switched on — it does not " +
+					"verify now (" + unbelieved + "), so every profile is refused to agents."}, nil
 			case lapsed:
 				return view.Text{Body: s.Active + " has already lapsed, so there is nothing to switch off."}, nil
 			case was == "":
@@ -514,6 +528,9 @@ func runUse(cmd *cobra.Command, args []string, dryRun bool) (view.View, *view.Er
 			return nil, verr
 		}
 		switch {
+		case unbelieved != "":
+			return view.Text{Body: "Wrote the selection file again with nothing switched on — it did not verify (" +
+				unbelieved + "); agents can name profiles again, and commands run against the base configuration."}, nil
 		case lapsed:
 			return view.Text{Body: s.Active + " had already lapsed — commands already run against the base configuration."}, nil
 		case was == "":
@@ -521,7 +538,14 @@ func runUse(cmd *cobra.Command, args []string, dryRun bool) (view.View, *view.Er
 		}
 		return view.Text{Body: "Switched off " + was + " — commands run against the base configuration."}, nil
 	case len(args) == 0:
-		return currentView(cfg, profile.LoadSelection(), now), nil
+		// Read strictly for the same reason --off is: the refusal an agent
+		// meets while the file does not verify sends the operator here, and
+		// "Nothing switched on" is what the lenient read makes of it.
+		s, err := profile.ReadSelection()
+		if err != nil {
+			return view.Text{Body: "Cannot tell what is switched on: " + unverifiedSelection(err) + "."}, nil
+		}
+		return currentView(cfg, s, now), nil
 	default:
 		name := strings.TrimSpace(args[0])
 		// A switch is the whole environment; an instance is one connection

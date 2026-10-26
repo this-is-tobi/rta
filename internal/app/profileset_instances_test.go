@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -199,5 +201,42 @@ func TestUseOffSaysASwitchHadLapsed(t *testing.T) {
 	}
 	if got := profile.LoadSelection(); got.Active != "" {
 		t.Errorf("use --off left %+v behind", got)
+	}
+}
+
+// A selection file that does not verify holds the fence shut: every profile is
+// refused to agents, and the refusal's note sends the operator to `rta use`.
+// That command read the file the lenient way and answered "Nothing switched
+// on", and --off --dry-run "nothing to switch off", while --off is what opens
+// the fence again.
+func TestUseSaysTheSelectionFileDoesNotVerify(t *testing.T) {
+	run := session(t, setRegistry(t))
+	if err := os.MkdirAll(filepath.Dir(profile.SelectionPath()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(profile.SelectionPath(), []byte(`{"active":"prod"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, _, err := run("use")
+	if err != nil || strings.Contains(out, "Nothing switched on") || !strings.Contains(out, "refused to agents") ||
+		!strings.Contains(out, "rta use --off") {
+		t.Errorf("use = %q, %v; want the file named as one that does not verify, with the way out", out, err)
+	}
+
+	out, _, err = run("use", "--off", "--dry-run")
+	if err != nil || strings.Contains(out, "nothing to switch off") || !strings.Contains(out, "Would write") {
+		t.Errorf("use --off --dry-run = %q, %v; want the rewrite it would make", out, err)
+	}
+	if profile.Fence() != profile.Unverified {
+		t.Error("the dry run wrote the selection file")
+	}
+
+	out, _, err = run("use", "--off")
+	if err != nil || strings.Contains(out, "Nothing was switched on") || !strings.Contains(out, "can name profiles again") {
+		t.Errorf("use --off = %q, %v; want it to say it wrote the file again", out, err)
+	}
+	if got := profile.Fence(); got != "" {
+		t.Errorf("after use --off the fence is %q, want open", got)
 	}
 }
