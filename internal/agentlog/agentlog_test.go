@@ -497,3 +497,50 @@ func TestAKeyIsNeverMintedOverAnExistingRecord(t *testing.T) {
 		t.Fatalf("an empty key is not named by its path: %v", err)
 	}
 }
+
+// The record is every one of its files. With the record rolled, removing the
+// key and the active file left segments, the end mark and anchors behind, and
+// a new key was minted over them: the old segments read as not rta's, the old
+// mark was overwritten, and the record verified whole from a new entry 1.
+func TestAKeyIsNeverMintedOverWhatIsLeftOfARolledRecord(t *testing.T) {
+	isolate(t)
+	small(t, 1<<10, 40)
+	fill(t, 12)
+	files, _ := Segments()
+	if len(files) < 2 {
+		t.Fatalf("the record did not roll, so this test proves nothing: %v", files)
+	}
+	mark, err := os.ReadFile(headPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{seal.Path(keyFile), Path()} {
+		if err := os.Remove(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	err = Append(Entry{Cap: "sys.mem", Outcome: Ran, Auth: Open})
+	if err == nil || !strings.Contains(err.Error(), "will not mint") || !strings.Contains(err.Error(), "every agent-log* file") {
+		t.Fatalf("a fresh key was minted over a rolled record: %v", err)
+	}
+	if _, err := os.Stat(seal.Path(keyFile)); !os.IsNotExist(err) {
+		t.Fatalf("a key was written anyway: %v", err)
+	}
+	if now, _ := os.ReadFile(headPath()); string(now) != string(mark) {
+		t.Fatal("the old end mark was rewritten")
+	}
+
+	// And with every piece moved aside, a new record starts.
+	dir := filepath.Dir(Path())
+	entries, _ := os.ReadDir(dir)
+	for _, de := range entries {
+		if strings.HasPrefix(de.Name(), "agent-log") {
+			if err := os.Remove(filepath.Join(dir, de.Name())); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := Append(Entry{Cap: "sys.mem", Outcome: Ran, Auth: Open}); err != nil {
+		t.Fatalf("an empty directory did not start a record: %v", err)
+	}
+}
