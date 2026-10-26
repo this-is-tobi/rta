@@ -87,7 +87,7 @@ func (m Model) dialogKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	d := *m.dialog
 	switch msg.String() {
 	case "ctrl+c":
-		return m, tea.Quit, true
+		return m.quit()
 	case "enter", " ", "space":
 		nm, cmd := m.answerDialog(d.focus == focusConfirm)
 		return nm, cmd, true

@@ -44,6 +44,10 @@ type resultMsg struct {
 	// seq identifies the run this result belongs to. A result from a run the
 	// user walked away from must not appear over whatever they walked to.
 	seq int
+	// live marks the answer of a live view's refresh (refreshInPlace), which
+	// nobody asked for by pressing anything: it lands only on the view it
+	// refreshes, where seq alone let it land wherever the reader had gone.
+	live bool
 }
 
 // cleaned is r as it arrives on screen: view cleaned once, for everything the

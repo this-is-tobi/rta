@@ -84,7 +84,7 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	}
 	switch msg.String() {
 	case "q", "ctrl+c":
-		return m, tea.Quit, true
+		return m.quit()
 	case "b", ":":
 		m.mode = modeBrowse
 		return m, nil, true
@@ -226,7 +226,7 @@ func (m Model) dashboardKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 func (m Model) pluginsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.String() {
 	case "q", "ctrl+c":
-		return m, tea.Quit, true
+		return m.quit()
 	case "esc", "p":
 		m.mode = modeDashboard
 		m.tickGen++
@@ -309,7 +309,7 @@ func (m Model) profilesKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	// key that sometimes means "no, the other thing" is not an emergency key.
 	if m.armedDelete != "" {
 		if msg.String() == "ctrl+c" {
-			return m, tea.Quit, true
+			return m.quit()
 		}
 		fire := msg.String() == "y"
 		m.armedDelete = ""
@@ -324,7 +324,7 @@ func (m Model) profilesKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	}
 	switch msg.String() {
 	case "q", "ctrl+c":
-		return m, tea.Quit, true
+		return m.quit()
 	case "esc", "f":
 		nm, cmd := m.backToDashboard()
 		return nm, cmd, true
@@ -386,7 +386,7 @@ func (m Model) profilePluginsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool
 	// lives there and on Model.armedDelete.
 	if m.armedDelete != "" {
 		if msg.String() == "ctrl+c" {
-			return m, tea.Quit, true
+			return m.quit()
 		}
 		fire := msg.String() == "y"
 		m.armedDelete = ""
@@ -403,7 +403,7 @@ func (m Model) profilePluginsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool
 	row, open := m.openProfile()
 	switch msg.String() {
 	case "q", "ctrl+c":
-		return m, tea.Quit, true
+		return m.quit()
 	case "esc", "left", "h":
 		m.profileOpen = ""
 		m.mode = modeProfiles
@@ -444,7 +444,7 @@ func (m Model) browseKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	}
 	switch msg.String() {
 	case "q", "ctrl+c":
-		return m, tea.Quit, true
+		return m.quit()
 	case "esc":
 		// Back to the dashboard; restart its refresh loop. With a filter
 		// applied, esc belongs to the list, which clears it.
@@ -640,7 +640,7 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	case "home", "end":
 		return m.toEnd(msg.String() == "end"), nil, true
 	case "q":
-		return m, tea.Quit, true
+		return m.quit()
 	case "esc":
 		if !m.atTop() && len(m.trail) > 0 {
 			// A leaf result: back to the view it was opened from.
@@ -730,9 +730,10 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 // context that would have killed it. Best effort, since the process is
 // leaving and the kill runs on a goroutine the exit races; it is still the
 // only thing that makes the forward's teardown reachable from ctrl+c at
-// all. One helper for every screen rather than a line in runningKeys: a
-// live view refreshes under the result screen, so a run can be in flight
-// there too.
+// all. One helper for every screen and every quit key, q as much as ctrl+c,
+// rather than a line in runningKeys: a live view refreshes under the result
+// screen and is still answering on the screen esc went to, and a dry run is
+// in flight under a confirmation, so a run can be in flight on any of them.
 func (m Model) quit() (tea.Model, tea.Cmd, bool) {
 	if m.cancelRun != nil {
 		m.cancelRun()
@@ -850,7 +851,8 @@ func (m Model) wheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
-		return m, tea.Quit
+		nm, cmd, _ := m.quit()
+		return nm, cmd
 	case "esc":
 		m.searchEditing = false
 		m.query = ""
