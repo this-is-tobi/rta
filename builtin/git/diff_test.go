@@ -31,6 +31,27 @@ func TestDiffCommitShowsWhatThatCommitChanged(t *testing.T) {
 	}
 }
 
+// A name go-git would not check out is a name like any other to a diff, which
+// writes nothing. The lookup of HEAD's version went through go-git's, which
+// refuses `git~1` (the 8.3 short name NTFS gives a `.git`) and answered the
+// refusal as "HEAD has nothing there", so a file git has no objection to, once
+// edited, was diffed as a new one, whole, with no hash for what it was.
+func TestAFileNamedLikeAnNTFSShortNameIsDiffedAsTheEditItIs(t *testing.T) {
+	dir, repo := testRepo(t)
+	commitUnchecked(t, repo, "git~1", "one\n")
+	writeFile(t, dir, "git~1", "one\ntwo\n")
+
+	body := text(t, runDiff, req(t, dir, nil))
+	for _, want := range []string{"--- a/git~1", "+two", " one"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("diff lacks %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "new file") || strings.Contains(body, "+one") {
+		t.Errorf("an edit of a committed file is diffed as a new one:\n%s", body)
+	}
+}
+
 // A change of mode is a change, shown as git shows it: the two mode lines and
 // no hunk. The status lists the path, and the diff said nothing of it, so a
 // script that gained its execute bit, or lost it, was a change the answer to

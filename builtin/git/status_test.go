@@ -182,13 +182,15 @@ func TestStatusReportsUnmergedPathsAsGitDoes(t *testing.T) {
 	}
 }
 
-// Git takes an escape character in a file name, and go-git's tree reader
-// refuses it, so one such file anywhere in HEAD stopped git.status and git.diff
-// whole, with "from: invalid path ...: contains control character": which side
-// "from" was, and what to do about it, left for the reader. The path is named,
-// escaped, and so is the way out.
+// Git takes an escape character in a file name, and a reader shown one would
+// see it with the escape taken out, as a name no file has. go-git's tree reader
+// refused it until it stopped, so one such file anywhere in HEAD stopped
+// git.status and git.diff whole, with "from: invalid path ...: contains control
+// character": which side "from" was, and what to do about it, left for the
+// reader. A path that would be shown is refused by rta now, named, escaped, and
+// with the way out.
 func TestAPathWithAControlCharacterIsNamedAndTheWayOutSaid(t *testing.T) {
-	dir := controlNamedRepo(t)
+	dir := editedControlNamedRepo(t)
 	for name, run := range map[string]func() error{
 		"status": func() error { _, err := runStatus(context.Background(), req(t, dir, nil)); return err },
 		"diff":   func() error { _, err := runDiff(context.Background(), req(t, dir, nil)); return err },

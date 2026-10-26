@@ -63,7 +63,7 @@ func pairRenames(repo *git.Repository, status git.Status) {
 	sort.Strings(deleted)
 	gone := map[string][]string{}
 	for _, p := range deleted {
-		if e, _ := head.entry(p); e != nil && (e.Mode == filemode.Regular || e.Mode == filemode.Executable) {
+		if e := head.entry(p); e != nil && (e.Mode == filemode.Regular || e.Mode == filemode.Executable) {
 			gone[e.Hash.String()] = append(gone[e.Hash.String()], p)
 		}
 	}

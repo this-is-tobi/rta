@@ -78,30 +78,64 @@ func TestOverviewCompactSaysWhatKindOfChange(t *testing.T) {
 	}
 }
 
-// controlNamedRepo is a repository whose HEAD holds a file named with an
-// escape sequence: legal to git, and refused by go-git's tree reader, which
-// stops a status or a diff of it. Skipped where there is no git to commit one.
-func controlNamedRepo(t *testing.T) string {
+// committedByGit is a repository whose HEAD holds a file called name, committed
+// by git and not by go-git, whose Add refuses a name it would not check out.
+// Skipped where there is no git to do it.
+func committedByGit(t *testing.T, name, content string) string {
 	t.Helper()
 	machineConfig(t, "")
 	dir, _ := testRepo(t)
-	writeFile(t, dir, "bad\x1b[31mred.txt", "x\n")
+	writeFile(t, dir, name, content)
 	for _, args := range [][]string{
 		{"add", "-A"},
 		{"-c", "user.name=t", "-c", "user.email=t@example.org", "-c", "commit.gpgsign=false", "commit", "-m", "odd name"},
 	} {
 		if _, ok := gitSays(t, dir, args...); !ok {
-			t.Skip("no git to commit a path with a control character in its name")
+			t.Skipf("no git to commit a file called %q", name)
 		}
 	}
 	return dir
+}
+
+// controlNamedRepo is a repository whose HEAD holds a file named with an
+// escape sequence, legal to git, and unchanged since.
+func controlNamedRepo(t *testing.T) string {
+	t.Helper()
+	return committedByGit(t, "bad\x1b[31mred.txt", "x\n")
+}
+
+// editedControlNamedRepo is controlNamedRepo with that file changed since,
+// which is what puts its name in front of a reader: a status lists it, and a
+// terminal would show it with the escape taken out, as a name no file has.
+func editedControlNamedRepo(t *testing.T) string {
+	t.Helper()
+	dir := controlNamedRepo(t)
+	writeFile(t, dir, "bad\x1b[31mred.txt", "x\ny\n")
+	return dir
+}
+
+// A name nothing lists is no reason to refuse a repository. go-git's tree
+// reader refused every name in HEAD that a checkout would not write, so one
+// such file stopped the status of a clean working tree that never mentions it.
+func TestAControlNamedFileNothingListsIsNotARefusal(t *testing.T) {
+	dir := controlNamedRepo(t)
+	if rows := table(t, runStatus, req(t, dir, nil)).Rows; len(rows) != 0 {
+		t.Errorf("status lists %v, want nothing: the file is committed and unchanged", rows)
+	}
+	v, err := runOverview(context.Background(), req(t, dir, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := kvValue(t, v.(view.KeyValue), "working tree"); got != "clean" {
+		t.Errorf("working tree = %q, want clean", got)
+	}
 }
 
 // A status that could not be read is a row saying so. The line was left out,
 // and an overview with no working-tree line reads as a repository with nothing
 // to report on, which is the answer for a bare one and not for a checkout.
 func TestOverviewSaysWhenItCouldNotReadTheWorkingTree(t *testing.T) {
-	dir := controlNamedRepo(t)
+	dir := editedControlNamedRepo(t)
 	v, err := runOverview(context.Background(), req(t, dir, nil))
 	if err != nil {
 		t.Fatal(err)

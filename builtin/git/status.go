@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	iofs "io/fs"
+	"iter"
+	"maps"
 	"os"
 	pathpkg "path"
 	"path/filepath"
@@ -194,6 +196,9 @@ func worktreeStatusAt(ctx context.Context, deadline time.Time, repo *git.Reposit
 	}
 	if verr := budget.refusal(root); verr != nil {
 		return nil, nil, verr
+	}
+	if name, found := firstControlPath(maps.Keys(status)); found {
+		return nil, nil, controlPathError{name}
 	}
 	return status, read.unapplied(), nil
 }
@@ -428,27 +433,85 @@ func statusFailed(code string, err error) *view.Error {
 //
 // **A name git accepts stopped a status, and said so in go-git's words.** Git
 // takes any byte but NUL and / in a file name, an escape character included,
-// and go-git's tree reader refuses a path holding a control character, on the
+// and go-git's tree reader refused a path holding a control character, on the
 // ground that checking one out would write it into a terminal or a file name
 // as it is. One such file committed anywhere in a repository made git.status
 // and git.diff fail whole, with "from: invalid path "a\x1b[31mb": contains
 // control character": which side of the comparison "from" was, and what to do
 // about it, left for the reader to work out. The path is named, escaped, and
-// so is the way out: git lists it and git renames it.
+// so is the way out: git lists it and git renames it. The refusal is rta's own
+// now (controlPathRefusal), and what go-git still words so is put the same way.
 func readFailed(code, what string, err error) *view.Error {
+	var listed controlPathError
+	if errors.As(err, &listed) {
+		return controlPathRefusal(what, listed.name)
+	}
 	const phrase = "contains control character"
 	if msg := err.Error(); strings.Contains(msg, phrase) {
 		name := ""
 		if _, after, found := strings.Cut(msg, "invalid path "); found {
 			if quoted, _, ok := quotedPrefixOf(after); ok {
-				name = " " + strconv.Quote(quoted)
+				name = quoted
 			}
 		}
-		return view.Errorf("git.path.control", "%s: a path in this repository holds a control character:%s", what, name).
-			WithHint("rta reads repositories with go-git, which refuses such a name; `git ls-files` shows it and " +
-				"`git mv` renames it, after which this reads")
+		return controlPathRefusal(what, name)
 	}
 	return view.Errorf(code, "%s: %v", what, err)
+}
+
+// controlPathRefusal is the refusal of a repository with a path in it that
+// holds a control character, which names the path as Go writes a string and
+// says the way out.
+//
+// **A refusal of rta's own, since go-git stopped making it for it.** Its tree
+// reader refused such a name until 5.19.3, whose walks for status and for a
+// diff between trees take any name git does, and every path was then shown to
+// the reader with the character taken out (textclean.Terminal), so a file
+// called `bad<ESC>[31mred.txt` was listed as `badred.txt`, a name no file has.
+// Refused when the path is one that would be shown, then, and not for one left
+// in HEAD that nothing lists.
+func controlPathRefusal(what, name string) *view.Error {
+	named := ""
+	if name != "" {
+		named = " " + strconv.Quote(name)
+	}
+	return view.Errorf("git.path.control", "%s: a path in this repository holds a control character:%s", what, named).
+		WithHint("a control character in a name cannot be shown as written, and left out it names another file: " +
+			"`git ls-files` shows the path and `git mv` renames it, after which this reads")
+}
+
+// firstControlPath is the first of names, in the order strings sort, that
+// holds a control character, as go-git's tree reader counts one: a byte under
+// 0x20, or DEL.
+func firstControlPath(names iter.Seq[string]) (string, bool) {
+	first, found := "", false
+	for name := range names {
+		if !hasControlByte(name) || (found && name >= first) {
+			continue
+		}
+		first, found = name, true
+	}
+	return first, found
+}
+
+// controlPathError is a status that listed a path holding a control character.
+//
+// Not a *view.Error on its way out of worktreeStatus: the one that is, is the
+// refusal of the call's time, which fails an overview whole, where a status it
+// could not read is a row of it. readFailed makes the refusal from it.
+type controlPathError struct{ name string }
+
+func (e controlPathError) Error() string {
+	return "path " + strconv.Quote(e.name) + " holds a control character"
+}
+
+func hasControlByte(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 // quotedPrefixOf is the Go-quoted string s opens with, unquoted, and what
@@ -626,7 +689,7 @@ func kindChanges(repo *git.Repository, tree boundDir, status git.Status, budget 
 		}
 		fs := status[path]
 		if fs.Staging == git.Modified {
-			if was, _ := head.entry(path); was != nil && kindOf(was.Mode) != kindOf(entry.Mode) {
+			if was := head.entry(path); was != nil && kindOf(was.Mode) != kindOf(entry.Mode) {
 				fs.Staging = typeChanged
 			}
 		}

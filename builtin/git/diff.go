@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	iofs "io/fs"
+	"iter"
 	"os"
 	pathpkg "path"
 	"path/filepath"
@@ -285,6 +286,9 @@ func diffCommit(ctx context.Context, repo *git.Repository, spec string, gate fun
 		return nil, interrupted(shortHash(commit.Hash))
 	case err != nil:
 		return nil, readFailed("git.diff.failed", "diffing "+spec, err)
+	}
+	if name, found := firstControlPath(changeNames(changes)); found {
+		return nil, controlPathRefusal("diffing "+spec, name)
 	}
 	changes, large, refused, cut, unseen := boundChanges(repo, changes, gate)
 	body, coarse, err := commitPatch(ctx, repo, changes, deadline)
@@ -729,13 +733,25 @@ func submoduleLine(name string, from, to plumbing.Hash) string {
 func gitlinkAt(head *headFiles, entryOf func(string) *index.Entry, path string) (plumbing.Hash, bool) {
 	var from plumbing.Hash
 	link := false
-	if e, _ := head.entry(path); e != nil && e.Mode == filemode.Submodule {
+	if e := head.entry(path); e != nil && e.Mode == filemode.Submodule {
 		from, link = e.Hash, true
 	}
 	if e := entryOf(path); e != nil && e.Mode == filemode.Submodule {
 		link = true
 	}
 	return from, link
+}
+
+// changeNames is the path each side of each change names, the empty one of a
+// side that is not there included.
+func changeNames(changes object.Changes) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for _, c := range changes {
+			if !yield(c.From.Name) || !yield(c.To.Name) {
+				return
+			}
+		}
+	}
 }
 
 // headFiles is HEAD's tree looked up path by path, each directory's tree
@@ -746,9 +762,20 @@ func gitlinkAt(head *headFiles, entryOf func(string) *index.Entry, path string) 
 // decode each directory's tree again, and a working tree's diff asked three
 // of them per changed file: ten thousand changed files cost 6 s in lookups
 // alone. The directories are kept instead, and a file is found in its own.
+//
+// **Looked up in the entries as the tree stores them, not through go-git's
+// lookups.** FindEntry and TreeEntryFile hold a name to what is safe to write
+// into a working tree, and refuse one with a `.git` in it, a `git~1`, a `..`:
+// a refusal this read as "HEAD has nothing there", so a modified file called
+// `git~1`, which git has no objection to, was diffed as a new one, whole.
+// Nothing here writes a name anywhere, which is the case go-git's own status
+// and tree-diff walks now leave unvalidated (SkipPathValidation), and every
+// path looked up is one the status listed already.
 type headFiles struct {
-	root *object.Tree
-	dirs map[string]*object.Tree
+	store  storer.EncodedObjectStorer
+	root   *object.Tree
+	dirs   map[string]*object.Tree
+	byName map[*object.Tree]map[string]*object.TreeEntry
 }
 
 // headFilesOf is HEAD's tree, nil where there is no HEAD to read one from —
@@ -766,7 +793,27 @@ func headFilesOf(repo *git.Repository) *headFiles {
 	if err != nil {
 		return nil
 	}
-	return &headFiles{root: tree, dirs: map[string]*object.Tree{}}
+	return &headFiles{
+		store:  repo.Storer,
+		root:   tree,
+		dirs:   map[string]*object.Tree{},
+		byName: map[*object.Tree]map[string]*object.TreeEntry{},
+	}
+}
+
+// find is t's entry called name, the first where a malformed tree holds two.
+func (h *headFiles) find(t *object.Tree, name string) *object.TreeEntry {
+	names, ok := h.byName[t]
+	if !ok {
+		names = make(map[string]*object.TreeEntry, len(t.Entries))
+		for i := range t.Entries {
+			if _, taken := names[t.Entries[i].Name]; !taken {
+				names[t.Entries[i].Name] = &t.Entries[i]
+			}
+		}
+		h.byName[t] = names
+	}
+	return names[name]
 }
 
 // tree is the tree of dir, a path from the root with no trailing slash, nil
@@ -781,30 +828,42 @@ func (h *headFiles) tree(dir string) *object.Tree {
 	var t *object.Tree
 	parent, base := pathpkg.Split(dir)
 	if p := h.tree(strings.TrimSuffix(parent, "/")); p != nil {
-		if e, err := p.FindEntry(base); err == nil && e.Mode == filemode.Dir {
-			t, _ = p.Tree(base)
+		if e := h.find(p, base); e != nil && e.Mode == filemode.Dir {
+			t, _ = object.GetTree(h.store, e.Hash)
 		}
 	}
 	h.dirs[dir] = t
 	return t
 }
 
-// entry is HEAD's entry at path, and the tree holding it; nil for either
-// where HEAD holds nothing there, or there is no HEAD.
-func (h *headFiles) entry(path string) (*object.TreeEntry, *object.Tree) {
+// entry is HEAD's entry at path; nil where HEAD holds nothing there, or there
+// is no HEAD.
+func (h *headFiles) entry(path string) *object.TreeEntry {
 	if h == nil {
-		return nil, nil
+		return nil
 	}
 	dir, name := pathpkg.Split(path)
 	t := h.tree(strings.TrimSuffix(dir, "/"))
 	if t == nil {
-		return nil, nil
+		return nil
 	}
-	e, err := t.FindEntry(name)
+	return h.find(t, name)
+}
+
+// contents is what the blob e names holds, and whether it could be read: a
+// submodule's entry names a commit in another repository, which is not.
+func (h *headFiles) contents(e *object.TreeEntry) (string, bool, error) {
+	blob, err := object.GetBlob(h.store, e.Hash)
 	if err != nil {
-		return nil, nil
+		return "", false, nil
 	}
-	return e, t
+	r, err := blob.Reader()
+	if err != nil {
+		return "", false, err
+	}
+	defer r.Close()
+	body, err := io.ReadAll(r)
+	return string(body), err == nil, err
 }
 
 // indexLookup finds a path's entry in idx, nil where it has none, by halving
@@ -1099,7 +1158,7 @@ func (w *workingFiles) at(path string) os.FileInfo {
 // holding a file to maxDiffBytes and the lot to maxTotalDiffBytes costs no
 // read of either.
 func sideSizes(repo *git.Repository, head *headFiles, path string, disk os.FileInfo) (from, to int64) {
-	if e, _ := head.entry(path); e != nil {
+	if e := head.entry(path); e != nil {
 		if size, err := repo.Storer.EncodedObjectSize(e.Hash); err == nil {
 			from = size
 		}
@@ -1120,14 +1179,14 @@ func diffOneFile(tree boundDir, head *headFiles, path string, disk os.FileInfo, 
 ) (fp diff.FilePatch, coarsely bool, err error) {
 	var from *diffFile
 	oldContent := ""
-	if e, dir := head.entry(path); e != nil {
-		if f, err := dir.TreeEntryFile(e); err == nil {
-			c, err := f.Contents()
-			if err != nil {
-				return nil, false, err
-			}
-			oldContent = c
-			from = &diffFile{path: path, hash: f.Hash, mode: f.Mode}
+	if e := head.entry(path); e != nil {
+		body, readable, err := head.contents(e)
+		if err != nil {
+			return nil, false, err
+		}
+		if readable {
+			oldContent = body
+			from = &diffFile{path: path, hash: e.Hash, mode: e.Mode}
 		}
 	}
 
