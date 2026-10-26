@@ -708,6 +708,34 @@ func (cf *capForm) retype(name string, msg tea.Msg) {
 	}
 }
 
+// pastedLine is a paste into a one-line box without the line endings it ends
+// with.
+//
+// A line copied from a terminal, or put on the clipboard from a file, comes
+// with the line's own newline, and the box's text input turns every line ending
+// it is given into a space (bubbles' textinput sanitizer). Every box was once
+// read trimmed, which took that space away; a secret keeps its edges now
+// (boxAnswer), and the same paste was saved as `s3cr3t ` from a form where `rta
+// kv set`'s prompt saves `s3cr3t`, and a passphrase pasted into U was refused.
+// The prompt reads one line, and a copied line's newline is no second line
+// (stdio.ReadSecretLine).
+//
+// Taken off the paste, before the input turns it into a space, and not off the
+// value: once it is a space nothing tells it from a space that is the secret's
+// last character, which is kept, typed or pasted. Only line endings go, CR or
+// LF as the terminal sends them and both as a file written elsewhere has them,
+// and only at the end; one inside the paste is still the space the input makes
+// of it. Every one-line box takes the paste this way and not only a masked one:
+// any other drops the space around its value anyway, so what it answers is the
+// same, and the box no longer shows a space nobody typed.
+func pastedLine(msg tea.Msg) tea.Msg {
+	if p, ok := msg.(tea.PasteMsg); ok {
+		p.Content = strings.TrimRight(p.Content, "\r\n")
+		return p
+	}
+	return msg
+}
+
 // touched reports whether the form differs from what it opened with: something typed,
 // a choice made or a switch flipped, and not undone. A box typed in and emptied
 // again is the box it was, which is why this compares the form with how it
@@ -1181,8 +1209,8 @@ func (cf *capForm) snapshot() map[string]any {
 		if !bound || cf.hidden(f.Name) {
 			continue
 		}
-		if raw := strings.TrimSpace(s.Get()); raw != "" {
-			out[f.Name] = typedValue(f, raw)
+		if v, ok := boxAnswer(f, s.Get()); ok {
+			out[f.Name] = v
 		}
 	}
 	return out
@@ -1787,9 +1815,8 @@ func (cf *capForm) answer(f plugin.Field) (any, bool) {
 	if !ok {
 		return nil, false
 	}
-	raw := strings.TrimSpace(*bound)
-	if raw != "" {
-		return typedValue(f, raw), true
+	if v, ok := boxAnswer(f, *bound); ok {
+		return v, true
 	}
 	// An emptied box answers nothing. The declared default used to stand in
 	// here, and it stood in as a *caller* value — which beat the environment
@@ -1799,6 +1826,27 @@ func (cf *capForm) answer(f plugin.Field) (any, bool) {
 	// the run gets the same default when nothing outranks it, which is
 	// exactly when something should.
 	return nil, false
+}
+
+// boxAnswer is what a box holding text answers, in the type its field
+// declared, and false for one holding nothing but space.
+//
+// Read without the space around it, except a secret, which is what was typed:
+// the command line and an agent's call keep a value exactly, and kv stores the
+// bytes it is given. Trimmed here, `  s3cr3t ` set from a form was stored as
+// another secret than the same command stored, and a store whose passphrase was
+// chosen at the prompt with a space at an end could never be unlocked from the
+// TUI. A list of secrets is the list grammar's to read (typedValue), which
+// decides about the space at an element's ends as the CLI's list flag does.
+func boxAnswer(f plugin.Field, text string) (any, bool) {
+	raw := strings.TrimSpace(text)
+	switch {
+	case raw == "":
+		return nil, false
+	case f.Type == plugin.Secret:
+		return text, true
+	}
+	return typedValue(f, raw), true
 }
 
 // typedValue converts one box's text to the type its field declared. Shared by

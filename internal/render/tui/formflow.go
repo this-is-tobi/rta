@@ -298,6 +298,7 @@ func (m Model) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if name, ok := m.focusedInput(); ok {
 		m.form.retype(name, msg)
+		msg = pastedLine(msg)
 	}
 	model, cmd := m.form.form.Update(msg)
 	if f, ok := model.(*huh.Form); ok {
