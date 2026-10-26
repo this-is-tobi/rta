@@ -66,7 +66,7 @@ func remotePending(ctx context.Context, req plugin.Request, server string) (view
 	// answers this machine's queue, where that call is not.
 	if len(table.Rows) == 0 {
 		table.Empty = fmt.Sprintf("nothing is waiting on %s — a parked call appears here, and "+
-			"`%s` releases it", server, sf.Call("agent.allow", plugin.Arg{Name: "id", Value: "<id>", Positional: true},
+			"`%s` releases it", server, sf.Call("agent.allow", plugin.Arg{Name: "id", Value: plugin.Placeholder("id"), Positional: true},
 			plugin.Arg{Name: "server", Value: server}))
 	}
 	if len(cl.Tampered) == 0 {
@@ -140,8 +140,8 @@ func remoteAnswer(ctx context.Context, req plugin.Request, catalog func() []plug
 			"%s does not combine with %s: a standing grant is its own signed flow",
 			sf.InputName(standing), sf.InputName("server")).
 			WithHint("answer this call first, " + how + sf.Call("grant.allow",
-				plugin.Arg{Name: "target", Value: "<target>", Positional: true},
-				plugin.Arg{Name: "agent", Value: "<agent>"}, plugin.Arg{Name: "ttl", Value: "<ttl>"},
+				plugin.Arg{Name: "target", Value: plugin.Placeholder("target"), Positional: true},
+				plugin.Arg{Name: "agent", Value: plugin.Placeholder("agent")}, plugin.Arg{Name: "ttl", Value: plugin.Placeholder("ttl")},
 				plugin.Arg{Name: "server", Value: server}) + "`")
 	}
 	if req.DryRun {

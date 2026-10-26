@@ -739,24 +739,25 @@ func stillCovering(live []core.Grant, spec operatorid.RevokeSpec) *core.Grant {
 // the operator is trying to take back. That case is the plain "no active
 // grant for X, for agent codex", which says what the revoke was narrowed to.
 //
-// server is "" for this machine's own store and a placeholder for the one the
-// operator channel reaches: the revoke that would take the nearest grant back
-// is then said with the `--server` it needs, since the sentence is read where
-// the command is typed and the server that answers is not this machine.
-func unknownRevokeTarget(sf plugin.Surface, server string, catalog func() []plugin.Capability,
+// server is nil for this machine's own store and a plugin.Placeholder for the
+// one the operator channel reaches: the revoke that would take the nearest
+// grant back is then said with the `--server` it needs, since the sentence is
+// read where the command is typed and the server that answers is not this
+// machine.
+func unknownRevokeTarget(sf plugin.Surface, server any, catalog func() []plugin.Capability,
 	spec operatorid.RevokeSpec, out operatorid.RevokeOutcome) *view.Error {
 	if spec.Target == "" || out.NoneActive || out.Revoked > 0 || out.Still != nil ||
 		targetExists(catalog, spec.Target) || holdsUnder(spec.Target) {
 		return nil
 	}
 	hint := sf.CapabilityName("grant.list") + " shows what is currently allowed"
-	if server != "" {
+	if server != nil {
 		hint = "`" + sf.Call("grant.list", plugin.Arg{Name: "server", Value: server}) +
 			"` shows what is currently allowed there"
 	}
 	if nearest := nearestStandingTarget(spec.Target); nearest != "" {
 		args := []plugin.Arg{{Name: "target", Value: nearest, Positional: true}}
-		if server != "" {
+		if server != nil {
 			args = append(args, plugin.Arg{Name: "server", Value: server})
 		}
 		hint = "did you mean " + nearest + "? `" + sf.Call("grant.revoke", args...) + "` takes it back; " + hint
@@ -951,7 +952,7 @@ func grantNeeded(sf plugin.Surface, catalog func() []plugin.Capability, target, 
 	if takesProfile {
 		until, fix = " "+plugin.UntilAProfile, "profile"
 		hint += "; a call that names a connection needs one: `" + sf.Call("grant.allow",
-			plugin.Arg{Name: "target", Value: target, Positional: true}, plugin.Arg{Name: "profile", Value: "<name>"}) + "`"
+			plugin.Arg{Name: "target", Value: target, Positional: true}, plugin.Arg{Name: "profile", Value: plugin.Placeholder("name")}) + "`"
 	}
 	switch {
 	case human == len(caps) && len(caps) == 1:
@@ -1289,7 +1290,7 @@ func RevokeRemote(catalog func() []plugin.Capability) func(spec operatorid.Revok
 			strings.TrimSpace(spec.Agent) == "" && strings.TrimSpace(spec.Role) == "" {
 			sf := plugin.SurfaceUnknown
 			return operatorid.RevokeOutcome{}, view.Errorf("grant.notarget", "name a capability, or give %s", sf.InputName("all")).
-				WithHint("`" + sf.Call("grant.list", plugin.Arg{Name: "server", Value: "<name>"}) +
+				WithHint("`" + sf.Call("grant.list", plugin.Arg{Name: "server", Value: plugin.Placeholder("name")}) +
 					"` shows what is currently allowed there")
 		}
 		// The record as sent, as `grant revoke` takes it here, and white space
@@ -1302,7 +1303,7 @@ func RevokeRemote(catalog func() []plugin.Capability) func(spec operatorid.Revok
 		if verr != nil {
 			return operatorid.RevokeOutcome{}, verr
 		}
-		if verr := unknownRevokeTarget(plugin.SurfaceUnknown, "<name>", catalog, spec, out); verr != nil {
+		if verr := unknownRevokeTarget(plugin.SurfaceUnknown, plugin.Placeholder("name"), catalog, spec, out); verr != nil {
 			return operatorid.RevokeOutcome{}, verr
 		}
 		return out, nil
@@ -1541,5 +1542,5 @@ func stillConnected(sf plugin.Surface) string {
 	}
 	return strings.Join(running, ", ") + " are still connected (reads stay open): `" +
 		sf.Call("lock.add", plugin.Arg{Name: "all", Value: true}) + "` freezes them all, or `" +
-		sf.Call("lock.add", plugin.Arg{Name: "name", Value: "<name>", Positional: true}) + "` one"
+		sf.Call("lock.add", plugin.Arg{Name: "name", Value: plugin.Placeholder("name"), Positional: true}) + "` one"
 }

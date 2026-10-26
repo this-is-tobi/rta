@@ -163,8 +163,8 @@ func runEdit(_ context.Context, req plugin.Request) (view.View, error) {
 	// does preserve bytes named in the hint.
 	if !utf8.Valid(e.Value) {
 		return nil, view.Errorf("kv.edit.binary", "%s is not text (%s), and an editor would not give it back unchanged", textclean.Record(key), e.Kind).
-			WithHint("`" + req.Surface().Call("kv.get", keyArg(key), plugin.Arg{Name: "out", Value: "<file>"}) +
-				"`, edit that, then `" + req.Surface().Call("kv.set", keyArg(key), plugin.Arg{Name: "file", Value: "<file>"}) + "`")
+			WithHint("`" + req.Surface().Call("kv.get", keyArg(key), plugin.Arg{Name: "out", Value: plugin.Placeholder("file")}) +
+				"`, edit that, then `" + req.Surface().Call("kv.set", keyArg(key), plugin.Arg{Name: "file", Value: plugin.Placeholder("file")}) + "`")
 	}
 
 	argv := editorCommand()

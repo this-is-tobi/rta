@@ -85,7 +85,7 @@ func requestNamed(req plugin.Request, target string) (string, *view.Error) {
 	}
 	return "", view.Errorf("agent.request.several", "%d calls are waiting, so say which:\n%s",
 		len(waiting), strings.Join(lines, "\n")).
-		WithHint("`" + sf.Call(target, plugin.Arg{Name: "id", Value: "<id>", Positional: true}) + "`").WithInput("id")
+		WithHint("`" + sf.Call(target, plugin.Arg{Name: "id", Value: plugin.Placeholder("id"), Positional: true}) + "`").WithInput("id")
 }
 
 // atTerminal reports whether a person can be asked something: the command line,

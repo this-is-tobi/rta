@@ -113,6 +113,23 @@ type Arg struct {
 	Positional bool
 }
 
+// Placeholder is an Arg's Value that stands for what the reader types in its
+// place rather than giving a value: Placeholder("file") is <file>, spelled
+// bare on the CLI as a usage line spells it, and as the text "<file>" over
+// MCP and in a TUI box.
+//
+// **Marked, never guessed from the text.** A string that looked like one —
+// a word in angle brackets — was printed bare, and an Arg's value is very
+// often somebody else's: the grant refusal hands the operator a command
+// whose record is the one the agent named, and a key of <src> was printed
+// `rta grant allow kv.get <src> --agent claude --ttl 15m`, which a shell
+// reads as two redirections and a grant on the record "claude" for every
+// agent. Every string is quoted when it has to be, and only this type is not.
+type Placeholder string
+
+// String is p as a usage line spells it, <file>.
+func (p Placeholder) String() string { return "<" + string(p) + ">" }
+
 // Call spells capability id called with args, whole and with its values, the
 // way a caller on s makes that call: `rta kv get db-password` on the CLI,
 // `kv_get {"key":"db-password"}` over MCP — the tool and the arguments to
@@ -210,6 +227,8 @@ func readsAsFlag(word string) bool { return len(word) > 1 && word[0] == '-' }
 // others still read as themselves.
 func mcpValue(v any) string {
 	switch t := v.(type) {
+	case Placeholder:
+		v = t.String()
 	case string:
 		if !utf8.ValidString(t) {
 			return "<not UTF-8: " + glyph.Quote(t) + ">"
@@ -235,7 +254,7 @@ func mcpValue(v any) string {
 }
 
 // cliValue is v as a command line carries it: one shell word that reads back
-// as v, byte for byte (shellquote.Arg) — except a placeholder, <file> or
+// as v, byte for byte (shellquote.Arg) — except a Placeholder, <file> or
 // <key>, which stands for what the reader types in its place, and which a
 // usage line spells bare.
 //
@@ -244,11 +263,11 @@ func mcpValue(v any) string {
 // a $(…) or a backquoted command still runs on paste. An empty value is a
 // pair of quotes rather than nothing, since it is a word the call gives.
 func cliValue(v any) string {
+	if p, ok := v.(Placeholder); ok {
+		return p.String()
+	}
 	text := fmt.Sprint(v)
-	switch {
-	case placeholder(text):
-		return text
-	case text == "":
+	if text == "" {
 		return "''"
 	}
 	return shellquote.Arg(text)
@@ -263,9 +282,9 @@ func cliValue(v any) string {
 // itself spelled as the octal escapes of its bytes, which the shell turns
 // back into it: the line is printed before it is pasted, and a character the
 // renderer cleaned would not survive the trip. An empty s is a pair of
-// single quotes, a word the line gives. Not cliValue, which leaves a usage
-// line's <file> bare: here s is somebody's data, and a database named <x> is
-// a redirect unquoted.
+// single quotes, a word the line gives. A database named <x> is quoted, as
+// cliValue quotes every string that is no Placeholder: unquoted it is a
+// redirect.
 func ShellWord(s string) string {
 	if s == "" {
 		return "''"
@@ -325,14 +344,6 @@ func boxList(list []string) string {
 		quoted[i] = glyph.Quote(e)
 	}
 	return "<a list no box text holds: " + strings.Join(quoted, ", ") + ">"
-}
-
-// placeholder reports whether text is one word in angle brackets, <file>.
-func placeholder(text string) bool {
-	if len(text) < 3 || text[0] != '<' || text[len(text)-1] != '>' {
-		return false
-	}
-	return strings.Trim(text[1:len(text)-1], "abcdefghijklmnopqrstuvwxyz-") == ""
 }
 
 // InputName names one of a capability's inputs the way a caller on s gives

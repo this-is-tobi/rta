@@ -1444,7 +1444,7 @@ func emptyRoster(sf plugin.Surface, withGuard bool, opts rosterOpts, standing in
 		head = "guard  " + guardLine(sf, nil, nil) + "\n\n"
 	}
 	allowOne := "Allow one with: " + sf.Call("grant.allow",
-		plugin.Arg{Name: "target", Value: "<capability>", Positional: true}, plugin.Arg{Name: "ttl", Value: "15m"})
+		plugin.Arg{Name: "target", Value: plugin.Placeholder("capability"), Positional: true}, plugin.Arg{Name: "ttl", Value: "15m"})
 	// An empty list is the ordinary answer and a dropped file is not, so the
 	// difference has to be visible here: this is the one screen where
 	// somebody looking for a grant they issued will come looking for it.
@@ -2004,7 +2004,7 @@ func runRevoke(ctx context.Context, req plugin.Request, catalog func() []plugin.
 	if verr != nil {
 		return nil, verr
 	}
-	if verr := unknownRevokeTarget(req.Surface(), "", catalog, spec, out); verr != nil {
+	if verr := unknownRevokeTarget(req.Surface(), nil, catalog, spec, out); verr != nil {
 		return nil, verr
 	}
 	bundle := ""

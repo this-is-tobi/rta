@@ -20,8 +20,8 @@ import (
 //
 // sf is the surface asking, for the call its refusal offers instead.
 func copyToClipboard(sf plugin.Surface, value []byte) *view.Error {
-	another := "take the value another way: `" + sf.Call("kv.get", keyArg("<key>"),
-		plugin.Arg{Name: "out", Value: "<file>"}) + "`"
+	another := "take the value another way: `" + sf.Call("kv.get", keyArg(plugin.Placeholder("key")),
+		plugin.Arg{Name: "out", Value: plugin.Placeholder("file")}) + "`"
 	ok, failed, tried := clipboard.Copy(value)
 	if ok {
 		return nil

@@ -212,8 +212,8 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 		{Key: "key", Value: guard.Fingerprint()},
 		{Key: "cleared", Value: format.Count(len(held), "grant", "grants") + " issued before the guard"},
 		{Key: "issuance", Value: req.Surface().Call("grant.allow",
-			plugin.Arg{Name: "target", Value: "<capability>", Positional: true},
-			plugin.Arg{Name: "server", Value: "<this-server>"}) + ", from an enrolled machine"},
+			plugin.Arg{Name: "target", Value: plugin.Placeholder("capability"), Positional: true},
+			plugin.Arg{Name: "server", Value: plugin.Placeholder("this-server")}) + ", from an enrolled machine"},
 	}
 	if groupReadable {
 		// The serve path prints the same fact; the enrollment path is the

@@ -48,3 +48,24 @@ func TestTheHintQuotesAProfileNameTheAgentChose(t *testing.T) {
 		t.Errorf("hint = %q, want the profile as one quoted word: %s", verr.Hint, want)
 	}
 }
+
+// A record in angle brackets read as a usage line's placeholder and was
+// printed bare, and bare it is two redirections: pasted in a repository
+// holding ./src, `grant allow kv.get <src> --agent claude --ttl 15m` read
+// stdin from src, truncated a file named --agent, and granted kv.get on the
+// record "claude" to every agent. A record is the agent's, and is quoted
+// whatever it looks like.
+func TestTheHintQuotesARecordThatLooksLikeAPlaceholder(t *testing.T) {
+	setup(t)
+	c := declare("kv.get", plugin.Write, "key", true)
+	for _, record := range []string{"<src>", "<file>", "<a-b>"} {
+		_, verr := Reserve(c, map[string]any{"key": record}, Caller{Agent: "claude"})
+		if verr == nil || verr.Code != "core.grant.required" {
+			t.Fatalf("%q: went through ungranted: %v", record, verr)
+		}
+		want := "grant allow kv.get '" + record + "' --agent claude --ttl 15m`"
+		if !strings.Contains(verr.Hint, want) {
+			t.Errorf("%q: hint = %q, want the record as one quoted word: %q", record, verr.Hint, want)
+		}
+	}
+}

@@ -399,7 +399,7 @@ func bundleFlagRefusal(sf plugin.Surface, src role.Source, name string) *view.Er
 	if name == "safety" {
 		return view.Errorf("grant.issue.bundleflag", "%s is for an environment: a role names its capabilities itself, so there is no class for it to pick",
 			sf.InputName(name)).
-			WithHint("`" + sf.Call("grant.issue", plugin.Arg{Name: "profile", Value: "<env>"}, plugin.Arg{Name: "safety", Value: "write"}) +
+			WithHint("`" + sf.Call("grant.issue", plugin.Arg{Name: "profile", Value: plugin.Placeholder("env")}, plugin.Arg{Name: "safety", Value: "write"}) +
 				"` issues an environment's capabilities of that class").WithInput(name)
 	}
 	stem := "<capability>"

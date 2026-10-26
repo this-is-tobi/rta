@@ -459,7 +459,7 @@ func connectedTable(agent string) (view.Table, error) {
 // the next one as sf, the surface showing it, makes it.
 func nothingWaiting(sf plugin.Surface) string {
 	return "nothing is waiting — a parked call appears here, and `" +
-		sf.Call("agent.allow", plugin.Arg{Name: "id", Value: "<id>", Positional: true}) + "` releases it"
+		sf.Call("agent.allow", plugin.Arg{Name: "id", Value: plugin.Placeholder("id"), Positional: true}) + "` releases it"
 }
 
 // connectedView and waitingView are the overview's sections, which a screen

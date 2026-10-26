@@ -508,7 +508,7 @@ func runTags(_ context.Context, req plugin.Request) (view.View, error) {
 	t := view.Table{Columns: []view.Column{{Name: "Tag"}, {Name: "Notes", Kind: view.KindNumber}}}
 	if len(names) == 0 {
 		t.Empty = "No tags yet — `" + req.Surface().Call("note.add", titleArg,
-			plugin.Arg{Name: "tag", Value: "<name>"}) + "` adds one"
+			plugin.Arg{Name: "tag", Value: plugin.Placeholder("name")}) + "` adds one"
 	}
 	for _, name := range names {
 		t.Rows = append(t.Rows, []string{name, strconv.Itoa(counts[name])})
@@ -594,7 +594,7 @@ func metaPairs(s itemstore.Store, it itemstore.Item) view.KeyValue {
 func contentView(sf plugin.Surface, it itemstore.Item) view.Text {
 	if strings.TrimSpace(it.Body) == "" {
 		return view.Text{Empty: "This note is empty — `" + sf.Call("note.edit", idArg(it.ID),
-			plugin.Arg{Name: "body", Value: "<body>"}) + "` writes it"}
+			plugin.Arg{Name: "body", Value: plugin.Placeholder("body")}) + "` writes it"}
 	}
 	return view.Text{Body: strings.TrimRight(it.Body, "\n"), Markdown: true}
 }
@@ -723,7 +723,7 @@ func prefillEdit(_ context.Context, req plugin.Request) (map[string]any, error) 
 
 // titleArg and idArg are the positional inputs a call note's pages hand over
 // takes: a title the reader writes in, and the note it is about.
-var titleArg = plugin.Arg{Name: "title", Value: "<title>", Positional: true}
+var titleArg = plugin.Arg{Name: "title", Value: plugin.Placeholder("title"), Positional: true}
 
 func idArg(id int) plugin.Arg { return plugin.Arg{Name: "id", Value: id, Positional: true} }
 

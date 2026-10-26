@@ -178,7 +178,7 @@ func expandEnvironment(sf plugin.Surface, catalog func() []plugin.Capability, en
 		}
 		return b, view.Errorf("grant.issue.instance", "%q is one connection of %s, and a bundle covers every connection in it", env, name).
 			WithHint("name the environment, `" + name + "`; one connection is a grant of its own: `" +
-				sf.Call("grant.allow", plugin.Arg{Name: "target", Value: "<capability>", Positional: true},
+				sf.Call("grant.allow", plugin.Arg{Name: "target", Value: plugin.Placeholder("capability"), Positional: true},
 					plugin.Arg{Name: "profile", Value: env}) + "`").WithInput("profile")
 	}
 	ceiling, verr := core.Ceiling()
