@@ -618,12 +618,6 @@ func (m Model) pluginsView() string {
 		// left-hand column. A fixed column on the left scans well and costs
 		// the thing worth more: with it there, the text lines cannot begin
 		// where the name begins, and the pane has two competing left edges.
-		mark := " "
-		if selected {
-			mark = theme.AccentTxt.Render("❯")
-		}
-		label := " " + strings.ToUpper(row.plugin.Name) + " "
-
 		// **The words of this band are drawn in the status colours by hand and not
 		// through theme.Grade, and that is the rule.** Whether a tile is on, and
 		// whether rta runs an artifact, approved, untrusted, failed to start or not
@@ -654,14 +648,7 @@ func (m Model) pluginsView() string {
 			right = " " + theme.WarnText.Render("untrusted") + " "
 		}
 
-		rule := max(inner-lipgloss.Width(label)-lipgloss.Width(right)-3, 0)
-		name := theme.Key.Render(label)
-		if selected {
-			name = theme.Title.Render(label)
-		}
-		b.WriteString(theme.Subtle.Render("─") + mark + name +
-			theme.Subtle.Render(strings.Repeat("─", rule)) +
-			right + theme.Subtle.Render("─") + "\n")
+		b.WriteString(bandRule(strings.ToUpper(row.plugin.Name), right, selected, inner) + "\n")
 
 		indent := strings.Repeat(" ", pluginTextAt)
 		summary := theme.Subtle.Render(row.plugin.Summary)

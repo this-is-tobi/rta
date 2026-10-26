@@ -79,21 +79,11 @@ func renderBands(bands []band, sel, scroll, visible, inner int) string {
 	for i := scroll; i < len(bands) && i < scroll+visible; i++ {
 		row := bands[i]
 
-		mark := " "
-		plainName := strings.ToUpper(textclean.Terminal(row.name))
-		name := theme.Key.Render(" " + plainName + " ")
-		if i == sel {
-			mark = theme.AccentTxt.Render("❯")
-			name = theme.Title.Render(" " + plainName + " ")
-		}
 		right := ""
 		if len(row.right) > 0 {
 			right = " " + strings.Join(row.right, theme.Subtle.Render(" · ")) + " "
 		}
-		rule := max(inner-lipgloss.Width(" "+plainName+" ")-lipgloss.Width(right)-3, 0)
-		b.WriteString(theme.Subtle.Render("─") + mark + name +
-			theme.Subtle.Render(strings.Repeat("─", rule)) +
-			right + theme.Subtle.Render("─") + "\n")
+		b.WriteString(bandRule(strings.ToUpper(textclean.Terminal(row.name)), right, i == sel, inner) + "\n")
 
 		indent := strings.Repeat(" ", pluginTextAt)
 		for j := 0; j < max(len(row.detail), bandHeight-1); j++ {
@@ -113,6 +103,31 @@ func renderBands(bands []band, sel, scroll, visible, inner int) string {
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// bandRule is a band's first line, inner cells wide: "─❯ NAME ──── status ─",
+// the name plain text and the status already styled, the marker there when the
+// band is the selection.
+//
+// **What a narrow band gives up is the end of the name, and the status never**,
+// renderSectionHeader's rule for the same reason: the status is what a person
+// scans the right-hand side for, and here it is whether an environment is on —
+// whether this is production — and whether rta runs a plugin at all. Drawn whole
+// and cut at the panel's edge, a band lost exactly that, "invalid" at 44
+// columns and narrower the "[on …]" before it. The name is what has the room to
+// give, and is cut with an ellipsis down to that alone; a pane too narrow for
+// the status beside it is cut at its edge, as any line wider than it is.
+func bandRule(name, right string, selected bool, inner int) string {
+	if room := inner - lipgloss.Width(right) - 5; lipgloss.Width(name) > room {
+		name = ansi.Truncate(name, max(room, 1), "…")
+	}
+	mark, label := " ", theme.Key.Render(" "+name+" ")
+	if selected {
+		mark, label = theme.AccentTxt.Render("❯"), theme.Title.Render(" "+name+" ")
+	}
+	rule := max(inner-lipgloss.Width(" "+name+" ")-lipgloss.Width(right)-3, 0)
+	return theme.Subtle.Render("─") + mark + label + theme.Subtle.Render(strings.Repeat("─", rule)) +
+		right + theme.Subtle.Render("─")
 }
 
 // bandsFit is how many bands, from the one at from, fit in a body of this height
