@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -89,6 +90,34 @@ func TestAnUntrustedFileNameReachesTheNoticeQuotedAndNotActedOn(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("the notice does not show the name as %s: %q", want, got)
 		}
+	}
+}
+
+// A configuration that does not load is said at startup the way every other
+// refusal is: drawn with its hint, and cleaned. It was printed as it came. The
+// YAML parser's error quotes the lines around the fault, so an escape sequence
+// on one of them reached the terminal before every command, and the hint,
+// which says how to find the fault, was dropped.
+func TestAConfigThatDoesNotLoadIsReportedCleanedAndWithItsHint(t *testing.T) {
+	saved := stderrIsTerminal
+	t.Cleanup(func() { stderrIsTerminal = saved })
+	stderrIsTerminal = func() bool { return false }
+
+	_, path := split(t, map[string]string{
+		"config.yaml": "theme:\n  good: \"#3ED598\"\n  title: \"\x1b]0;owned\a\"\n  bad: [\n",
+	})
+	t.Setenv("RTA_CONFIG", path)
+	_, err := config.Load()
+	if err == nil || !strings.Contains(err.Error(), "\x1b") {
+		t.Fatalf("the parse error no longer quotes the line around the fault, so this proves nothing: %v", err)
+	}
+	var out bytes.Buffer
+	ReportConfigError(&out, err, nil)
+	if strings.ContainsAny(out.String(), "\x1b\a") {
+		t.Errorf("the refusal wrote the file's control characters to the terminal: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "config.invalid") || !strings.Contains(out.String(), "rta config edit") {
+		t.Errorf("the refusal lost its code or its hint: %q", out.String())
 	}
 }
 

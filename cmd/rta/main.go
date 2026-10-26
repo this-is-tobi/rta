@@ -165,9 +165,7 @@ func main() {
 	// goes to NewRoot below, which wants RTA_OUTPUT laid over the file, and
 	// nothing between here and there writes the config back.
 	cfg, cfgErr := config.Load()
-	if cfgErr != nil {
-		fmt.Fprintln(os.Stderr, "rta:", cfgErr)
-	}
+	app.ReportConfigError(os.Stderr, cfgErr, os.Args[1:])
 	app.SetPluginConfig(pluginconf.Resolve(cfg, reg.Origin))
 
 	// Before the command tree, so every renderer — CLI, TUI and help alike —

@@ -634,6 +634,30 @@ func ReportLoadProblems(w io.Writer, problems []error, args []string) {
 	}
 }
 
+// ReportConfigError says, at startup, that the configuration did not load, in
+// the same form and for the same reasons ReportLoadProblems says a plugin did
+// not: drawn by the renderer, in pretty whatever -o asks for, honouring a
+// --no-color in args.
+//
+// It was a line of its own words, the error's message as it came, which lost
+// two things. The hint — `rta config edit` opens the file and says what is
+// wrong — is not in the message, so the line said a file was broken and not
+// how to find where. And the YAML parser's message quotes the lines around the
+// fault as they are in the file, so an escape sequence on one of them was acted
+// on by the terminal before every command. The file is the operator's, but a
+// drop-in from a shared dotfiles repository, or ./.rta.yaml read for want of a
+// config directory, is somebody else's bytes; the renderer cleans what it
+// draws.
+func ReportConfigError(w io.Writer, err error, args []string) {
+	if err == nil {
+		return
+	}
+	opts := renderOptions(nil, cli.Pretty, !stderrIsTerminal() || noColorOnCommandLine(args))
+	if cli.RenderError(w, view.AsError(err, "config.invalid"), opts) != nil {
+		fmt.Fprintln(w, "rta:", textclean.Terminal(err.Error()))
+	}
+}
+
 // loadProblem is one cause LoadPlugins reported, and whom it stopped, each
 // named as its problem named it: "plugin kv".
 type loadProblem struct {
