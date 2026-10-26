@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -180,7 +181,7 @@ func TestARefusalOfOneInputNamesIt(t *testing.T) {
 				lockedToAKey(t)
 				return map[string]any{"key": "k"}
 			}},
-		{name: "an identity for a store locked with a passphrase", cap: "kv.set", code: "kv.identity.wrongmode", input: "identity",
+		{name: "an identity typed for a store locked with a passphrase", cap: "kv.set", code: "kv.identity.wrongmode", input: "identity",
 			given: func(t *testing.T) map[string]any {
 				set(t, "k", "v")
 				private, _ := writeSSHKeypair(t, t.TempDir(), "id_ed25519")
@@ -310,5 +311,24 @@ func TestAFileThatCannotBeReadNamesNoInput(t *testing.T) {
 	}
 	if _, verr := parseIdentities(req, shut); verr == nil || verr.Code != "kv.identity.unreadable" || verr.Input != "" {
 		t.Errorf("the identity: %+v, want kv.identity.unreadable naming none", verr)
+	}
+}
+
+// An identity the environment supplied is not one anybody typed, and a store
+// locked with a passphrase refuses it in words that say where it came from and
+// on no box: RTA_KV_IDENTITY fills the input of a call that names none, and
+// nothing typed into the form takes its place.
+func TestAnIdentityFromTheEnvironmentIsNamedForWhereItCameFrom(t *testing.T) {
+	setup(t)
+	set(t, "k", "v")
+	private, _ := writeSSHKeypair(t, t.TempDir(), "id_ed25519")
+	t.Setenv(identityEnv, private)
+	// What Resolve hands the handler when the environment fills the input.
+	_, err := runSet(context.Background(), plugin.NewRequest(map[string]any{"key": "k2", "value": "v", "identity": private}, false, false).
+		WithSurface(plugin.SurfaceCLI))
+	verr := view.AsError(err, "x")
+	if verr == nil || verr.Code != "kv.identity.wrongmode" || verr.Input != "" ||
+		!strings.Contains(verr.Hint, identityEnv+" names a key") || !strings.Contains(verr.Hint, "unset it") {
+		t.Errorf("an identity from the environment = %+v, want kv.identity.wrongmode naming %s and no input", verr, identityEnv)
 	}
 }

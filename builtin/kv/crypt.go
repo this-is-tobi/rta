@@ -804,9 +804,23 @@ func refuseSilentIdentity(req plugin.Request) *view.Error {
 	// identity, which never changes the set, and kv.rekey refuses a call
 	// naming no reader with kv.rekey.nokey.
 	sf := req.Surface()
-	return view.Errorf("kv.identity.wrongmode", "this store is locked with a passphrase, not keys").
-		WithHint(identityName(sf) + " cannot open it, and writing does not change the lock — to switch it to " +
-			"that key, " + rekeyOnly(sf, "that key")).WithInput("identity")
+	refusal := view.Errorf("kv.identity.wrongmode", "this store is locked with a passphrase, not keys")
+	// **The identity can be the environment's.** RTA_KV_IDENTITY fills the
+	// input of every call that names none (EnvFallback), so somebody who set
+	// it for a store locked to keys, and then wrote to this one, was told that
+	// --identity could not open it without having typed one, and the TUI opened
+	// the form again on an identity box that was empty: the value was never in
+	// it, and nothing typed there takes the environment's place. Named for what
+	// it is, then, and on no box. Over MCP the identity is always the
+	// operator's environment's, and identityName already says so.
+	if env := os.Getenv(identityEnv); env != "" && req.String("identity") == env && sf != plugin.SurfaceMCP {
+		return refusal.WithHint(identityEnv + " names a key, and a passphrase opens this store: unset it, and leave out " +
+			identityName(sf) + ", to write with the passphrase, or to lock the store to that key, " +
+			rekeyOnly(sf, "that key"))
+	}
+	return refusal.WithHint(identityName(sf) + " cannot open it, and writing does not change the lock — leave it out " +
+		"to write with the passphrase, or to switch the store to that key, " + rekeyOnly(sf, "that key")).
+		WithInput("identity")
 }
 
 // identityRequired is the refusal of a store locked to keys that was given no
