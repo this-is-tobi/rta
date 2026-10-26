@@ -640,6 +640,39 @@ func TestOSVReportsAnErrorStatus(t *testing.T) {
 	}
 }
 
+// An answer from osv.dev is read only as far as any real one goes. Both reads
+// decoded the body to its end, and a JSON decoder holds a value whole before
+// it unmarshals it: a proxy the machine trusts, or a mirror misbehaving,
+// streaming for the length of the timeout had every one of the eight record
+// fetches and the batch query buffer what it sent, in the process that
+// enforces every grant, from a read that needs none.
+func TestAnOSVAnswerPastAnyRealOneIsRefusedNotBuffered(t *testing.T) {
+	pad := func(w io.Writer, n int) {
+		chunk := strings.Repeat("x", 64<<10)
+		for ; n > 0; n -= len(chunk) {
+			_, _ = io.WriteString(w, chunk[:min(len(chunk), n)])
+		}
+	}
+	srv := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+		limit := osvBatchMaxBytes
+		if r.Method == stdhttp.MethodGet {
+			limit = osvRecordMaxBytes
+		}
+		_, _ = io.WriteString(w, `{"results":[{"vulns":[{"id":"GHSA-1"}]}],"id":"GHSA-1","pad":"`)
+		pad(w, limit)
+		_, _ = io.WriteString(w, `"}`)
+	}))
+	defer srv.Close()
+
+	_, err := queryOSVAt(context.Background(), srv.Client(), srv.URL, []component{{ecosystem: "npm", name: "a", version: "1"}})
+	if err == nil || !strings.Contains(err.Error(), "more than") {
+		t.Errorf("a batch answer past the bound = %v, want it refused as more than any answer holds", err)
+	}
+	if _, ok := fetchOSVRecord(context.Background(), srv.Client(), srv.URL+"/GHSA-1"); ok {
+		t.Error("a record past the bound was read and kept")
+	}
+}
+
 func TestDepsGradesAffectedPackages(t *testing.T) {
 	comps := []component{
 		{ecosystem: "Go", name: "example.com/clean", version: "v1.0.0"},

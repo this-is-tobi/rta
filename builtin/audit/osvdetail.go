@@ -2,7 +2,6 @@ package audit
 
 import (
 	"context"
-	"encoding/json"
 	stdhttp "net/http"
 	"sort"
 	"strconv"
@@ -390,7 +389,7 @@ func fetchOSVRecord(ctx context.Context, client *stdhttp.Client, url string) (os
 		return osvRecord{}, false
 	}
 	var rec osvRecord
-	if json.NewDecoder(resp.Body).Decode(&rec) != nil {
+	if decodeOSV(resp.Body, osvRecordMaxBytes, &rec) != nil {
 		return osvRecord{}, false
 	}
 	return rec, true
