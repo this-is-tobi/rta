@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -229,5 +230,83 @@ func TestAParkedCallCanBeAnsweredWithItsRole(t *testing.T) {
 	}
 	if a := p.Wait(context.Background()); !a.Answered || !a.Allowed {
 		t.Fatalf("the call itself was not decided: %+v", a)
+	}
+}
+
+// parkFor parks a kv.get on db-password for a connected agent, the call a
+// role's line answers.
+func parkFor(t *testing.T, agent string) consent.Request {
+	t.Helper()
+	if err := presence.Start(presence.Record{ID: presence.NewID(), Agent: agent, Since: time.Now(), PID: os.Getpid()}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := consent.Ask(consent.Call{Cap: "kv.get", Safety: "write", Scopes: []string{"db-password"}, Agent: agent,
+		Args: map[string]any{"key": "db-password"}, Why: "no active grant"}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(p.Close)
+	return p.Request
+}
+
+// A call the team's ceiling forbids is refused before its role is issued, a
+// preview included. The ceiling was asked about the call only after every
+// line of the role had been written, and away from a terminal or with --yes
+// that was the only time it was asked: the answer was the policy refusal
+// alone, and the role's grants stood behind it with no receipt and no line
+// to take them back.
+func TestARoleIsNotIssuedForACallTheCeilingForbids(t *testing.T) {
+	configDir := roleSetup(t)
+	ownRole(t, configDir, "  dev:\n    grants:\n      - kv.set\n      - note.add\n")
+	withPolicy(t, "never:\n  - kv.get\n")
+	r := parkFor(t, "claude")
+
+	allow := capability(t, "agent.allow")
+	for _, dry := range []bool{true, false} {
+		values := plugin.Resolve(allow, plugin.Inputs{Caller: map[string]any{"id": r.ID, "role": "dev"}})
+		_, err := allow.Run(context.Background(), plugin.NewRequest(values, dry, true).WithSurface(plugin.SurfaceCLI))
+		var ve *view.Error
+		if !errors.As(err, &ve) || ve.Code != "grant.policy.refused" {
+			t.Fatalf("dry run %v: answered with %v, want the policy refusal", dry, err)
+		}
+	}
+	if grants, verr := core.Load(); verr != nil || len(grants) != 0 {
+		t.Fatalf("grants after the refusal: %+v, %v — want none issued", grants, verr)
+	}
+	if _, ok := consent.Find(r.ID); !ok {
+		t.Fatal("the parked request was consumed by a refused answer")
+	}
+}
+
+// A role issued for a call that then cannot be released is a failure that
+// names the role, not a bare one and not a success. The answer is decided
+// after the role is issued, which can take a passphrase and as long as the
+// person takes to type it, and a call's deadline can pass meanwhile: the
+// answer was the bare agent.allow.failed, and the role stood without a word.
+// Answered with a view instead, the command exited 0, and a script's next step
+// ran for a call that was never released.
+func TestARoleIssuedForACallThatCouldNotBeReleasedIsStillReported(t *testing.T) {
+	configDir := roleSetup(t)
+	ownRole(t, configDir, "  dev:\n    grants:\n      - kv.set\n      - kv.get db-password\n")
+	r := parkFor(t, "claude")
+	decided := decide
+	decide = func(string, bool, string) error { return errors.New("no request \"" + r.ID + "\" is waiting") }
+	t.Cleanup(func() { decide = decided })
+
+	v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "role": "dev"})
+	var ve *view.Error
+	if !errors.As(err, &ve) || ve.Code != "agent.allow.unreleased" {
+		t.Fatalf("answered %+v, %v — want agent.allow.unreleased", v, err)
+	}
+	for _, want := range []string{"kv.get db-password was not released", "no request", "role dev was issued to claude and stands"} {
+		if !strings.Contains(ve.Message, want) {
+			t.Errorf("message = %q, want it to say %q", ve.Message, want)
+		}
+	}
+	if want := "rta grant revoke --role dev --agent claude"; !strings.Contains(ve.Hint, want) {
+		t.Errorf("hint = %q, want the call that takes the role back, %q", ve.Hint, want)
+	}
+	if grants, verr := core.Load(); verr != nil || len(grants) != 2 {
+		t.Fatalf("grants = %+v, %v — want the role's two", grants, verr)
 	}
 }
