@@ -1535,7 +1535,7 @@
   },
   {
     "name": "note_edit",
-    "description": "Edit a note's title, body, tags, due date or parent\n\nEmpty fields keep their current value. A `tag` of - clears all tags; a `due` of none clears the due date.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.edit`.",
+    "description": "Edit a note's title, body, tags, due date or parent\n\nEmpty fields keep their current value, and `clear` empties the ones it names: the body, the tags or the due date. A `tag` of - also clears all tags, and a `due` of none the due date.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.edit`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1544,6 +1544,18 @@
         "body": {
           "description": "new body, markdown supported (empty keeps the current one)",
           "type": "string"
+        },
+        "clear": {
+          "description": "fields to empty: body, tag (every tag), due",
+          "items": {
+            "enum": [
+              "body",
+              "tag",
+              "due"
+            ],
+            "type": "string"
+          },
+          "type": "array"
         },
         "due": {
           "description": "due date: today, tomorrow, a weekday, +3d, 2w, next-week, 10-20 or yyyy-mm-dd",
