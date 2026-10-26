@@ -633,27 +633,8 @@ func runUse(cmd *cobra.Command, args []string, dryRun bool) (view.View, *view.Er
 // default, and the operator's whole connection inventory is exactly what an
 // ungranted agent must not be handed. Living here keeps it off that surface by
 // construction rather than by a flag somebody has to remember.
-// renderFn is the closure each command group builds over its global options:
-// render this view, or render this refusal to stderr and fail.
-//
-// Named because the group is no longer one function — `set` and `rm` live in
-// profileset.go — and passing it is what keeps `--output` meaning the same
-// thing on every subcommand.
-type renderFn func(*cobra.Command, view.View, *view.Error) error
-
 func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
-	render := func(cmd *cobra.Command, v view.View, verr *view.Error) error {
-		format, err := opts.format()
-		if err != nil {
-			return err
-		}
-		renderOpts := renderOptions(cmd, format, opts.noColor)
-		if verr != nil {
-			_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
-			return Rendered(verr)
-		}
-		return cli.Render(cmd.OutOrStdout(), v, renderOpts)
-	}
+	render := viewRender(opts, false)
 	cmd := &cobra.Command{
 		Use:   "profile",
 		Short: "The environments you have configured",

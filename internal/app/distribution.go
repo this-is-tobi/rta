@@ -13,7 +13,6 @@ import (
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/plugindist"
-	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -26,15 +25,6 @@ import (
 // the pinned config heading and the credential variable, handed over at the
 // one moment the operator has the digest in hand (a control that
 // requires homework is a control that gets turned off).
-
-func renderView(cmd *cobra.Command, opts *globalOpts, v view.View) error {
-	format, err := opts.format()
-	if err != nil {
-		return err
-	}
-	return cli.Render(cmd.OutOrStdout(), v,
-		renderOptions(cmd, format, opts.noColor))
-}
 
 // asWarnings puts what an index could not answer beside what the others did.
 // A partial catalogue that renders like a whole one is the same failure

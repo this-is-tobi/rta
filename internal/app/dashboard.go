@@ -15,7 +15,6 @@ import (
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
-	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/internal/render/tui"
 	"github.com/this-is-tobi/rta/internal/textclean"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -58,18 +57,7 @@ import (
 // cannot use, or that does not cover its plugin: the tile would name prod
 // while its numbers came from localhost.
 func newDashboardCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
-	render := func(cmd *cobra.Command, v view.View, verr *view.Error) error {
-		format, err := opts.format()
-		if err != nil {
-			return err
-		}
-		renderOpts := renderOptions(cmd, format, opts.noColor)
-		if verr != nil {
-			_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
-			return Rendered(verr)
-		}
-		return cli.Render(cmd.OutOrStdout(), v, renderOpts)
-	}
+	render := viewRender(opts, false)
 	cmd := &cobra.Command{
 		Use:   "dashboard",
 		Short: "The TUI's landing screen: what is on it, and what to add",
