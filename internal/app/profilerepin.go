@@ -193,7 +193,7 @@ func runProfileRepin(cmd *cobra.Command, only string, all bool, reg *registry.Re
 						"%s holds two entries for %q — %s and %s — and repinning would fold one onto the other",
 						name, named(instance), first, key).
 						WithHint("keep the one whose set:/secrets: block you want by removing the other from " +
-							config.Path() + ", then repin — nothing was written")
+							config.Where("profiles", name) + ", then repin — nothing was written")
 					return cfg, false
 				}
 				claimed[instance] = key

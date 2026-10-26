@@ -359,7 +359,9 @@ func renderOptions(cmd *cobra.Command, format cli.Format, noColor bool) cli.Opti
 
 // invalidOutputDefault names where the default came from, in the words
 // somebody would search for it by: the variable, or the key and the file it is
-// in. The precedence is config.Load's — the environment over the file.
+// in — a drop-in may state it, and naming config.yaml then sent the reader to
+// a file without the key. The precedence is config.Load's — the environment
+// over the file.
 func invalidOutputDefault(value string) *view.Error {
 	if os.Getenv("RTA_OUTPUT") != "" {
 		return &view.Error{Code: CodeOutputInvalid,
@@ -368,7 +370,7 @@ func invalidOutputDefault(value string) *view.Error {
 				" — unset it for pretty, or pass -o for one command"}
 	}
 	return &view.Error{Code: CodeOutputInvalid,
-		Message: fmt.Sprintf("output: %q in %s is not an output format", value, config.Path()),
+		Message: fmt.Sprintf("output: %q in %s is not an output format", value, config.Where("output", "")),
 		Hint: "output: takes " + formatNames() +
 			" — remove the key for pretty, or pass -o for one command"}
 }
