@@ -171,6 +171,45 @@ func TestAWithheldRevealIsNotRecordedAsRevealed(t *testing.T) {
 	}
 }
 
+// The other bound an answer is held to, what a model can hold, refuses too: a
+// table whose one row is over it cannot be cut to any row at all. The agent got
+// core.mcp.result.toolarge and no value, and the row said ran and revealed with
+// no code, so an operator counting which values went to agents counted one that
+// never did and could not see why the agent failed.
+func TestARevealTooLargeForAResultIsNotRecordedAsRevealed(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{
+		Name: "vault", Summary: "a store",
+		Capabilities: []plugin.Capability{{
+			ID: "vault.item.get", Summary: "the value of a record",
+			Safety: plugin.Write, NeedsGrant: true, Scope: "key", Idempotent: true, Reveals: true,
+			Inputs: []plugin.Field{{Name: "key", Type: plugin.String, Required: true, Positional: true, Help: "which record"}},
+			Run: func(context.Context, plugin.Request) (view.View, error) {
+				return view.Table{
+					Columns: []view.Column{{Name: "key"}, {Name: "payload"}},
+					Rows:    [][]string{{"prod/db", strings.Repeat("v", maxResultBytes+(40<<10))}},
+				}, nil
+			},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := connectWith(t, reg, Options{})
+	allowRecord(t, "vault.item.get", "prod/db", 0)
+	res := callTool(t, s, "vault_item_get", map[string]any{"key": "prod/db"})
+	if !res.IsError || !strings.Contains(res.Content[0].(*sdk.TextContent).Text, "core.mcp.result.toolarge") {
+		t.Fatalf("a row over what a result may hold was not refused: %.200s", res.Content[0].(*sdk.TextContent).Text)
+	}
+	entries, err := agentlog.Read(1)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("record: %v %v", entries, err)
+	}
+	if got := entries[0]; got.Outcome != agentlog.Ran || got.Revealed || got.Code != "core.mcp.result.toolarge" || got.Reason == "" {
+		t.Errorf("an answer too large to send is recorded as %+v, want ran, not revealed, with the code and why", got)
+	}
+}
+
 // What the answer is, said by the host and after the plugin's own words, where
 // a plugin cannot imitate it: the stored value itself, in the agent's context.
 // The masked sibling says no such thing, because its answer is not one.

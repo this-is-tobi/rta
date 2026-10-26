@@ -923,12 +923,19 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				return errResult(ve), nil
 			}
 		}
-		res, err := fittedResult(cleaned, narrowingFor(c))
+		res, tooLarge, err := fittedResult(cleaned, narrowingFor(c))
 		if err != nil {
 			return nil, err
 		}
-		// After the limit, so a value the operator's cap held back is not
-		// recorded as one that went out.
+		// What a model can hold is the other bound, and a view it cannot be cut
+		// to — a tree, a table whose first row is over it — is withheld the same
+		// way the operator's limit withholds one.
+		if tooLarge != nil {
+			withheld(rec, tooLarge)
+			return errResult(tooLarge), nil
+		}
+		// After both limits, so a value either held back is not recorded as one
+		// that went out.
 		rec.Revealed = c.Reveals
 		return res, nil
 	}
@@ -1401,7 +1408,11 @@ func nameUnder(root, p string) bool {
 // And bounded (fitResult): unbounded is what a result may be to a person at a
 // terminal, who scrolls, and what a model's context is not.
 func viewResult(v view.View) (*sdk.CallToolResult, error) {
-	return fittedResult(cleanedView(v), narrowingFor(plugin.Capability{}))
+	res, tooLarge, err := fittedResult(cleanedView(v), narrowingFor(plugin.Capability{}))
+	if tooLarge != nil {
+		return errResult(tooLarge), nil
+	}
+	return res, err
 }
 
 // cleanedView is v masked and made safe to read, whole: what the operator's
@@ -1424,21 +1435,28 @@ func cleanedView(v view.View) view.View {
 }
 
 // fittedResult is a cleaned view cut to what a model can hold (fitResult) and
-// encoded as the one JSON text a result is sent as.
-func fittedResult(v view.View, narrow narrowing) (*sdk.CallToolResult, error) {
+// encoded as the one JSON text a result is sent as, or the refusal of a view
+// that cannot be cut.
+//
+// The refusal comes back on its own and not as a result already made of it,
+// because the caller has a record to keep: a call whose answer was refused here
+// ran and handed over nothing, which the row has to say (withheld). Folded into
+// an error result, it was indistinguishable from an answer that went out, and a
+// Reveals capability's row said a value had been revealed that never was.
+func fittedResult(v view.View, narrow narrowing) (*sdk.CallToolResult, *view.Error, error) {
 	v, tooLarge := fitResult(v, narrow)
 	if tooLarge != nil {
-		return errResult(tooLarge), nil
+		return nil, tooLarge, nil
 	}
 	m, err := view.ToMap(v)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	raw, err := view.Marshal(m)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: string(raw)}}}, nil
+	return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: string(raw)}}}, nil, nil
 }
 
 func errResult(e *view.Error) *sdk.CallToolResult { return errResultAs(e, nil) }
