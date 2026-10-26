@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -341,8 +342,18 @@ func longName(key string) string {
 const (
 	// annotSafety marks a command materialised from a capability, with its
 	// safety class: what separates one that reads from a hand-written command
-	// that is not in readOnlyCommands.
+	// that is not marked annotReadOnly.
 	annotSafety = "rta.help.safety"
+	// annotReadOnly marks a hand-written command that never writes and never
+	// asks. It accepts --yes and --dry-run because every command does, and
+	// lists neither. A command without it lists both, which is the safe way to
+	// be wrong.
+	//
+	// Marked where the command is defined, as outputExempt is, and not in a
+	// list of command paths here: nothing beside a new command said the list
+	// existed, and `rta dashboard views` and `rta dashboard sections` were
+	// added after it and listed both flags on two read-only listings.
+	annotReadOnly = "rta.help.readonly"
 	// annotKeywords carries a capability's Keywords, space-separated, on the
 	// command made from it, for the search that finds a command by a word its
 	// name does not hold (commandItems).
@@ -382,25 +393,23 @@ func hasConnection(c plugin.Capability) bool {
 	})
 }
 
-// readOnlyCommands are the hand-written commands that never write and never
-// ask. They accept --yes and --dry-run because every command does, and list
-// neither. A command left out lists both, which is the safe way to be wrong.
-var readOnlyCommands = map[string]bool{
-	"rta explain": true, "rta doctor": true, "rta config schema": true, "rta profile list": true,
-	"rta profile show": true, "rta dashboard list": true, "rta plugin list": true,
-	"rta plugin search": true, "rta plugin outdated": true, "rta plugin doc": true,
-	"rta plugin manifest": true, "rta plugin index list": true, "rta policy show": true,
-	"rta mcp serve": true, "rta config get": true, "rta config path": true, "rta config check": true,
-	"rta config show": true,
+// readOnly is the Annotations a command carries to be marked annotReadOnly,
+// with any others it carries (outputExempt) merged in.
+func readOnly(also ...map[string]string) map[string]string {
+	out := map[string]string{annotReadOnly: "true"}
+	for _, a := range also {
+		maps.Copy(out, a)
+	}
+	return out
 }
 
 // previewingReads are the reads whose --dry-run means something: the request
 // goes somewhere — a URL with a token on it, a host and a payload — or ends in
 // a file, and the preview shows where before anything leaves. A read of this
 // machine has nothing to preview, which is why commandWrites hides the flag on
-// every other read; these are named here rather than declared, as
-// readOnlyCommands are, because a plugin's Read cannot say it honours a dry
-// run and the host would list the flag on a capability that ignores it.
+// every other read; these are named here rather than declared, as a read-only
+// command is, because a plugin's Read cannot say it honours a dry run and the
+// host would list the flag on a capability that ignores it.
 var previewingReads = map[string]bool{
 	"rta http get": true, "rta http head": true, "rta net probe": true, "rta cert pem": true,
 }
@@ -430,7 +439,7 @@ func commandWrites(cmd *cobra.Command) bool {
 	case cmd.Annotations[annotSafety] != "":
 		return cmd.Annotations[annotSafety] != string(plugin.Read)
 	}
-	return !readOnlyCommands[cmd.CommandPath()]
+	return cmd.Annotations[annotReadOnly] == ""
 }
 
 // sentence capitalises the first letter of a description written as a fragment

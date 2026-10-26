@@ -639,8 +639,9 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 func newPluginSearchCommand(opts *globalOpts) *cobra.Command {
 	var safety string
 	cmd := &cobra.Command{
-		Use:   "search [term]",
-		Short: "List what the attached indexes claim to offer",
+		Use:         "search [term]",
+		Annotations: readOnly(),
+		Short:       "List what the attached indexes claim to offer",
 		Long: "Answers from the manifests alone — nothing is fetched or executed. Every\n" +
 			"row is a claim, labelled with the index making it; install is where\n" +
 			"claims meet evidence.",
@@ -717,8 +718,9 @@ func newPluginSearchCommand(opts *globalOpts) *cobra.Command {
 func newPluginOutdatedCommand(opts *globalOpts) *cobra.Command {
 	var index string
 	cmd := &cobra.Command{
-		Use:   "outdated",
-		Short: "List installed plugins whose index no longer agrees with what is installed",
+		Use:         "outdated",
+		Annotations: readOnly(),
+		Short:       "List installed plugins whose index no longer agrees with what is installed",
 		Long: "Compares each installed plugin's recorded version against what its index\n" +
 			"currently claims. Like search, nothing is fetched or executed — this is a\n" +
 			"hint worth a look, not a verdict: `rta plugin upgrade <name>` is what\n" +
@@ -832,9 +834,10 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 		"pin the index at this commit, tag or branch; absent, it follows its default branch and `index update` moves it")
 	root.AddCommand(add)
 	root.AddCommand(&cobra.Command{
-		Use:   "list",
-		Short: "List attached indexes",
-		Args:  cobra.NoArgs,
+		Use:         "list",
+		Annotations: readOnly(),
+		Short:       "List attached indexes",
+		Args:        cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			indexes := plugindist.Indexes()
 			// Origin is shown because it decides something: an index
@@ -971,7 +974,7 @@ func newPluginManifestCommand(opts *globalOpts) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:         "manifest <binary>",
-		Annotations: outputExempt(),
+		Annotations: readOnly(outputExempt()),
 		Short:       "Write an index manifest from a plugin binary's own declaration",
 		Long: "Runs the binary the way a load does — sandboxed — and writes the index\n" +
 			"entry its declaration implies: name, version, summary, every capability\n" +

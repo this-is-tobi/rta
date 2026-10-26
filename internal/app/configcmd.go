@@ -84,7 +84,7 @@ func configRender(opts *globalOpts) renderFn {
 func configShowCommand(reg *registry.Registry, render renderFn) *cobra.Command {
 	return &cobra.Command{
 		Use:               "show",
-		Annotations:       outputExempt(),
+		Annotations:       readOnly(outputExempt()),
 		Short:             "Where the config file is, and every key it states",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
@@ -98,7 +98,7 @@ func configShowCommand(reg *registry.Registry, render renderFn) *cobra.Command {
 func configPathCommand(render renderFn) *cobra.Command {
 	return &cobra.Command{
 		Use:               "path",
-		Annotations:       outputExempt(),
+		Annotations:       readOnly(outputExempt()),
 		Short:             "The config file's path, for a script or an editor",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
@@ -111,7 +111,7 @@ func configPathCommand(render renderFn) *cobra.Command {
 func configGetCommand(reg *registry.Registry, render renderFn) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "get <key>",
-		Annotations:       outputExempt(),
+		Annotations:       readOnly(outputExempt()),
 		Short:             "What a key is set to, as bare text for a script",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeConfigKeys(reg),

@@ -212,7 +212,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:         "serve",
-		Annotations: outputExempt(),
+		Annotations: readOnly(outputExempt()),
 		Short:       "Serve capabilities as MCP tools, over stdio or HTTP",
 		Long: "Serve every registered capability as an MCP tool, over stdio by default" +
 			" or over HTTP with --http.\n\n" +

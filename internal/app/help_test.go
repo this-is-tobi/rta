@@ -182,6 +182,8 @@ func TestAFlagIsListedOnlyWhereItMeansSomething(t *testing.T) {
 		{[]string{"kv"}, []string{"--output"}, []string{"--yes", "--dry-run"}},
 		{[]string{"doctor"}, []string{"--output"}, []string{"--yes", "--dry-run"}},
 		{[]string{"plugin", "index", "list"}, []string{"--output"}, []string{"--yes", "--dry-run"}},
+		{[]string{"dashboard", "views"}, []string{"--output"}, []string{"--yes", "--dry-run"}},
+		{[]string{"dashboard", "sections"}, []string{"--output"}, []string{"--yes", "--dry-run"}},
 		{[]string{"profile", "set"}, []string{"--dry-run", "--yes"}, nil},
 		{[]string{"grant", "allow"}, []string{"--profile", "--yes"}, nil},
 		{[]string{"dashboard", "add"}, []string{"--profile"}, nil},
