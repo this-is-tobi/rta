@@ -285,7 +285,9 @@ func runURL(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 		out, err := unescape(value)
 		if err != nil {
-			return nil, view.Errorf("codec.url.invalid", "not a valid URL-escaped value: %v", err).WithInput("value")
+			return nil, view.Errorf("codec.url.invalid", "not a valid URL-escaped value: %v", err).
+				WithHint("a % begins an escape of two hex digits, as %20 for a space; a % meant as itself is written %25").
+				WithInput("value")
 		}
 		return decoded([]byte(out)), nil
 	}
