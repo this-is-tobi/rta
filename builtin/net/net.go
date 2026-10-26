@@ -697,6 +697,16 @@ const portScanWorkers = 64
 // does not need — it tells them to do the thing that was just refused.
 var errTooManyPorts = fmt.Errorf("more than %d ports requested", maxScanPorts)
 
+// lookupPortHost is how net.port resolves the host it scans, a var so a test
+// can answer for a name without a resolver.
+var lookupPortHost = stdnet.DefaultResolver.LookupIPAddr
+
+// portLookupTimeout is the floor of the one lookup a scan makes, the default
+// net.dns gives a query. A port's timeout is for the port; a resolver on the
+// far side of a VPN can take longer than two seconds for a first answer, and
+// the scan it held up is as good once it has one.
+const portLookupTimeout = 5 * time.Second
+
 // parsePorts expands "22,80,8000-8010" into a sorted port list.
 func parsePorts(spec string) ([]int, error) {
 	seen := map[int]bool{}
@@ -766,10 +776,28 @@ func runPort(ctx context.Context, req plugin.Request) (view.View, error) {
 	}
 	timeout := req.Duration("timeout")
 
+	// **One lookup for the scan, before any port is tried.** Each port's dial
+	// looked the name up again, inside that port's timeout: up to 4096 queries
+	// for one call, the ports of a round-robin name tried at whichever address
+	// each lookup gave, and a resolver slow to answer the first query failed
+	// the first wave of ports in the lookup while later ones were answered from
+	// its cache. Those ports read "closed", next to rows that showed the name
+	// resolved, and a lookup that failed is no answer from a port. Resolved
+	// once, a name that does not resolve is refused as one, and every row is
+	// the answer of the addresses it gave.
+	lctx, cancel := context.WithTimeout(ctx, max(timeout, portLookupTimeout))
+	ips, err := lookupPortHost(lctx, host)
+	cancel()
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if err != nil || len(ips) == 0 {
+		return nil, namingHost(resolveFailed("net.port.resolve", req.Surface(), host, err), err)
+	}
+
 	type result struct {
 		port int
 		open bool
-		err  error
 	}
 	results := make([]result, len(ports))
 	// A worker pool, not a goroutine per port that then queues on a semaphore.
@@ -785,20 +813,14 @@ func runPort(ctx context.Context, req plugin.Request) (view.View, error) {
 	// each remaining port an already-dead context.
 	jobs := make(chan int)
 	var wg sync.WaitGroup
-	dialer := &stdnet.Dialer{Timeout: timeout}
 	for range min(portScanWorkers, len(ports)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				conn, err := dialer.DialContext(ctx, "tcp",
-					stdnet.JoinHostPort(host, strconv.Itoa(ports[i])))
-				if err == nil {
-					_ = conn.Close()
-				}
 				// Written by index, so the rows keep the caller's port order
 				// without a sort and without a lock.
-				results[i] = result{port: ports[i], open: err == nil, err: err}
+				results[i] = result{port: ports[i], open: scanDialer.answers(ctx, ips, ports[i], timeout)}
 			}
 		}()
 	}
@@ -814,23 +836,6 @@ feed:
 	wg.Wait()
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
-	}
-	// A name the resolver could not answer for reached no port, so a table of
-	// "closed" would tell whoever mistyped the host that every port on it is
-	// shut. Every port failing in the resolver is that case; one port that did
-	// resolve makes the failures of the rest the host's answer after all.
-	var unresolved error
-	for _, r := range results {
-		if !isResolveFailure(r.err) {
-			unresolved = nil
-			break
-		}
-		unresolved = r.err
-	}
-	if unresolved != nil {
-		var dnsErr *stdnet.DNSError
-		errors.As(unresolved, &dnsErr)
-		return nil, namingHost(resolveFailed("net.port.resolve", req.Surface(), host, dnsErr), dnsErr)
 	}
 
 	t := view.Table{Columns: []view.Column{
@@ -848,6 +853,135 @@ feed:
 	}
 	t.Total = len(t.Rows)
 	return t, nil
+}
+
+// portDialer tries a port at the addresses its host resolved to the way
+// net.Dialer tries the addresses of a name it resolves itself, which is how
+// every port was dialled before a scan looked its host up once. A Dialer
+// cannot be handed addresses, only a name it would resolve again, so the two
+// of its rules that decide whether a port reads open are kept here, unchanged.
+//
+// **Each address gets at least two seconds while the timeout lasts.** The
+// timeout is shared among the addresses not yet tried, and a share under two
+// seconds is raised to two, or to all that is left, so the first addresses
+// take time from the last. An even split with no floor would give each of a
+// name's four addresses 250ms of net.port's 1s minimum, and an
+// intercontinental round trip, or a first SYN lost and resent after a second,
+// would read "closed" on a port that a dial by name reads open with the whole
+// second.
+//
+// **The other address family is raced, 300ms after the first began or as soon
+// as it has failed.** Tried in turn, a name whose IPv6 route drops packets
+// would spend the whole timeout on its AAAA address and never try its IPv4
+// one: the port would read closed where a dial by name reads it open.
+//
+// dial, now and fallbackDelay are fields so a test can stand in for the
+// network and the clock, and see the deadline each address is given.
+type portDialer struct {
+	dial          func(ctx context.Context, network, address string) (stdnet.Conn, error)
+	now           func() time.Time
+	fallbackDelay time.Duration
+}
+
+// scanDialer is the portDialer net.port dials with, on net.Dialer's values.
+var scanDialer = portDialer{
+	dial:          new(stdnet.Dialer).DialContext,
+	now:           time.Now,
+	fallbackDelay: 300 * time.Millisecond,
+}
+
+// minAddressShare is the least of a port's timeout one address is given while
+// that much is left: net.Dialer's own floor.
+const minAddressShare = 2 * time.Second
+
+// answers reports whether port accepts a connection at any of ips within
+// timeout. ips are in the order the resolver gave them, which puts the family
+// it prefers first.
+func (d portDialer) answers(ctx context.Context, ips []stdnet.IPAddr, port int, timeout time.Duration) bool {
+	ctx, cancel := context.WithDeadline(ctx, d.now().Add(timeout))
+	// Cancelled on return, which also stops a racer still dialling: its
+	// result goes to a channel with room for it that nobody reads.
+	defer cancel()
+	// The sooner of the port's deadline and the caller's, since what is
+	// shared out is the time the call has left, as the dialler shares it.
+	deadline, _ := ctx.Deadline()
+	var primaries, fallbacks []stdnet.IPAddr
+	for _, ip := range ips {
+		if (ip.IP.To4() != nil) == (ips[0].IP.To4() != nil) {
+			primaries = append(primaries, ip)
+		} else {
+			fallbacks = append(fallbacks, ip)
+		}
+	}
+	if len(fallbacks) == 0 {
+		return d.inTurn(ctx, deadline, primaries, port)
+	}
+	type outcome struct{ primary, open bool }
+	results := make(chan outcome, 2)
+	race := func(family []stdnet.IPAddr, primary bool) {
+		results <- outcome{primary: primary, open: d.inTurn(ctx, deadline, family, port)}
+	}
+	go race(primaries, true)
+	fallback := time.NewTimer(d.fallbackDelay)
+	defer fallback.Stop()
+	failed := 0
+	for {
+		select {
+		case <-fallback.C:
+			go race(fallbacks, false)
+		case r := <-results:
+			if r.open {
+				return true
+			}
+			if failed++; failed == 2 {
+				return false
+			}
+			// Stop reports that the other family had not begun: the first
+			// failed inside its 300ms, and the other need not wait out the
+			// rest of them.
+			if r.primary && fallback.Stop() {
+				fallback.Reset(0)
+			}
+		}
+	}
+}
+
+// inTurn tries port at each of ips in order until one accepts, each given its
+// share of what is left until deadline.
+func (d portDialer) inTurn(ctx context.Context, deadline time.Time, ips []stdnet.IPAddr, port int) bool {
+	for i, ip := range ips {
+		if ctx.Err() != nil {
+			return false
+		}
+		until, ok := addressDeadline(d.now(), deadline, len(ips)-i)
+		if !ok {
+			return false
+		}
+		actx, cancel := context.WithDeadline(ctx, until)
+		conn, err := d.dial(actx, "tcp", stdnet.JoinHostPort(ip.String(), strconv.Itoa(port)))
+		cancel()
+		if err == nil {
+			_ = conn.Close()
+			return true
+		}
+	}
+	return false
+}
+
+// addressDeadline is when the next of remaining addresses must have answered
+// by, at now with deadline for them all: an even share of what is left, raised
+// to minAddressShare or to all of it, as net.Dialer's partialDeadline gives
+// it. ok is false when nothing is left.
+func addressDeadline(now, deadline time.Time, remaining int) (until time.Time, ok bool) {
+	left := deadline.Sub(now)
+	if left <= 0 {
+		return time.Time{}, false
+	}
+	share := left / time.Duration(remaining)
+	if share < minAddressShare {
+		share = min(left, minAddressShare)
+	}
+	return now.Add(share), true
 }
 
 // runOverview assembles the local network overview. Everything is read from the

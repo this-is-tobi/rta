@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -201,6 +203,235 @@ func TestPortScan(t *testing.T) {
 	}
 	if states["1"] != "closed" {
 		t.Errorf("port 1 reported %q", states["1"])
+	}
+}
+
+// A scan looks its host up once and tries every port at what it resolved to.
+// Each port's dial looked the name up again, inside that port's timeout: up
+// to 4096 queries for one call, and a resolver slow to answer the first of
+// them failed the first wave of ports in the lookup while the later ones were
+// answered from its cache, so a port nobody had reached read "closed" in a
+// table whose other rows said the name resolved.
+func TestAScanLooksItsHostUpOnceAndTriesEveryPortAtWhatItResolvedTo(t *testing.T) {
+	ln, err := stdnet.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	open := ln.Addr().(*stdnet.TCPAddr).Port
+
+	var lookups atomic.Int32
+	old := lookupPortHost
+	lookupPortHost = func(_ context.Context, host string) ([]stdnet.IPAddr, error) {
+		lookups.Add(1)
+		if host != "scan-me.invalid" {
+			return nil, &stdnet.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+		}
+		return []stdnet.IPAddr{{IP: stdnet.ParseIP("127.0.0.1")}}, nil
+	}
+	t.Cleanup(func() { lookupPortHost = old })
+
+	v, err := runPort(context.Background(), req(map[string]any{
+		"host": "scan-me.invalid", "ports": strconv.Itoa(open) + ",1-100", "timeout": "2s",
+	}))
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	states := map[string]string{}
+	for _, row := range v.(view.Table).Rows {
+		states[row[0]] = row[1]
+	}
+	if states[strconv.Itoa(open)] != "open" || states["1"] != "closed" {
+		t.Errorf("port %d = %q and port 1 = %q, want the listener open and the rest closed",
+			open, states[strconv.Itoa(open)], states["1"])
+	}
+	if n := lookups.Load(); n != 1 {
+		t.Errorf("the host was looked up %d times for one scan, want once", n)
+	}
+}
+
+// Each address a name resolves to is tried in turn, as the dialler tried them
+// for the name: a service on one family alone, `localhost` bound to ::1 or to
+// 127.0.0.1, answers on either.
+func TestAPortIsOpenWhenAnyAddressOfTheHostAnswers(t *testing.T) {
+	ln, err := stdnet.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	open := ln.Addr().(*stdnet.TCPAddr).Port
+
+	old := lookupPortHost
+	lookupPortHost = func(context.Context, string) ([]stdnet.IPAddr, error) {
+		// localhost as a resolver gives it, ::1 first. The listener is on
+		// 127.0.0.1 alone, so ::1 refuses at once, or fails at once on a
+		// runner with no IPv6 loopback.
+		return []stdnet.IPAddr{{IP: stdnet.ParseIP("::1")}, {IP: stdnet.ParseIP("127.0.0.1")}}, nil
+	}
+	t.Cleanup(func() { lookupPortHost = old })
+
+	v, err := runPort(context.Background(), req(map[string]any{
+		"host": "two-addresses.invalid", "ports": strconv.Itoa(open), "timeout": "2s",
+	}))
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if got := v.(view.Table).Rows[0][1]; got != "open" {
+		t.Errorf("port %d = %q, want open: the second address answers", open, got)
+	}
+}
+
+// documentationIPs is n addresses of one family from the ranges kept for
+// documentation, which nothing answers on.
+func documentationIPs(v6 bool, n int) []stdnet.IPAddr {
+	ips := make([]stdnet.IPAddr, n)
+	for i := range ips {
+		ips[i] = stdnet.IPAddr{IP: stdnet.IPv4(192, 0, 2, byte(i+1))}
+		if v6 {
+			ips[i] = stdnet.IPAddr{IP: stdnet.ParseIP("2001:db8::" + strconv.Itoa(i+1))}
+		}
+	}
+	return ips
+}
+
+// accepted is the connection a stand-in address that answers hands back.
+func accepted() (stdnet.Conn, error) {
+	c, other := stdnet.Pipe()
+	_ = other.Close()
+	return c, nil
+}
+
+// A port's timeout is shared among a name's addresses as net.Dialer shares it
+// when it dials the name: what is left, split among the addresses not yet
+// tried, and at least two seconds to each while that much is left. At
+// net.port's 1s minimum and its 2s default, the first address has the whole
+// timeout, as it had when the scan dialled by name; an even split would give
+// each of four addresses a quarter, and a 300ms round trip or a lost SYN
+// would read "closed" on an open port.
+func TestAPortsTimeoutIsSharedAmongTheHostsAddressesAsTheDiallerSharesIt(t *testing.T) {
+	for name, tc := range map[string]struct {
+		timeout time.Duration
+		addrs   int
+		refuse  bool            // each address refuses at once rather than saying nothing
+		want    []time.Duration // the share each address tried was given, in order
+	}{
+		"1s among four addresses":                {time.Second, 4, false, []time.Duration{time.Second}},
+		"2s among four addresses":                {2 * time.Second, 4, false, []time.Duration{2 * time.Second}},
+		"5s among four: the last goes without":   {5 * time.Second, 4, false, []time.Duration{2 * time.Second, 2 * time.Second, time.Second}},
+		"10s among four: an even split":          {10 * time.Second, 4, false, []time.Duration{2500 * time.Millisecond, 2500 * time.Millisecond, 2500 * time.Millisecond, 2500 * time.Millisecond}},
+		"1s among four that refuse: each has it": {time.Second, 4, true, []time.Duration{time.Second, time.Second, time.Second, time.Second}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			now := time.Now()
+			var shares []time.Duration
+			d := portDialer{
+				now: func() time.Time { return now },
+				dial: func(ctx context.Context, _, _ string) (stdnet.Conn, error) {
+					until, _ := ctx.Deadline()
+					shares = append(shares, until.Sub(now))
+					if tc.refuse {
+						return nil, errors.New("connection refused")
+					}
+					// Nothing answered: the address's share is spent, on the
+					// clock the dialer reads rather than on the test's.
+					now = until
+					return nil, os.ErrDeadlineExceeded
+				},
+			}
+			if d.answers(context.Background(), documentationIPs(false, tc.addrs), 443, tc.timeout) {
+				t.Fatal("open, with no address answering")
+			}
+			if !slices.Equal(shares, tc.want) {
+				t.Errorf("the addresses were given %v, want %v", shares, tc.want)
+			}
+		})
+	}
+}
+
+// answersWithin is d.answers at ips with a minute's timeout, failing the test
+// rather than hanging it once the call has waited 30s: a dialer waiting out a
+// delay or a timeout it had no need to is what the tests using it are about.
+func answersWithin(t *testing.T, d portDialer, ips []stdnet.IPAddr) bool {
+	t.Helper()
+	done := make(chan bool, 1)
+	go func() { done <- d.answers(context.Background(), ips, 443, time.Minute) }()
+	select {
+	case open := <-done:
+		return open
+	case <-time.After(30 * time.Second):
+		t.Fatal("still dialling after 30s, waiting on an address family it had no need to")
+		return false
+	}
+}
+
+// The other address family is raced, as net.Dialer races it for a name: a
+// name whose IPv6 route drops packets is open at its IPv4 address. Tried in
+// turn, the AAAA addresses would hold the whole timeout and the A address
+// would never be tried.
+func TestAPortIsOpenAtTheOtherFamilyWhileTheFirstSaysNothing(t *testing.T) {
+	for name, tc := range map[string]struct {
+		fallbackDelay time.Duration
+		first         func(context.Context) (stdnet.Conn, error)
+	}{
+		// The delay is the dialler's 300ms in production; what is pinned
+		// here is that the other family is tried while the first still
+		// waits, not how long it waits first.
+		"the first family says nothing": {0, func(ctx context.Context) (stdnet.Conn, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}},
+		// A first family that has failed sends the dialler to the other at
+		// once, with no delay left to wait out: an hour here, so waiting it
+		// out fails the test.
+		"the first family refuses": {time.Hour, func(context.Context) (stdnet.Conn, error) {
+			return nil, errors.New("connection refused")
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			start := time.Now()
+			var v4 atomic.Bool
+			d := portDialer{
+				now:           func() time.Time { return start },
+				fallbackDelay: tc.fallbackDelay,
+				dial: func(ctx context.Context, _, address string) (stdnet.Conn, error) {
+					host, _, _ := stdnet.SplitHostPort(address)
+					if stdnet.ParseIP(host).To4() == nil {
+						return tc.first(ctx)
+					}
+					v4.Store(true)
+					return accepted()
+				},
+			}
+			ips := append(documentationIPs(true, 2), documentationIPs(false, 1)...)
+			if open := answersWithin(t, d, ips); !open || !v4.Load() {
+				t.Errorf("open = %v, IPv4 tried = %v: want the IPv4 address's answer", open, v4.Load())
+			}
+		})
+	}
+}
+
+// Every address of both families is tried before a port reads closed, and
+// the second family as soon as the first has failed.
+func TestAPortIsClosedOnlyOnceEveryAddressHasFailed(t *testing.T) {
+	var mu sync.Mutex
+	var tried []string
+	d := portDialer{
+		now:           time.Now,
+		fallbackDelay: time.Hour,
+		dial: func(_ context.Context, _, address string) (stdnet.Conn, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			tried = append(tried, address)
+			return nil, errors.New("connection refused")
+		},
+	}
+	ips := append(documentationIPs(true, 2), documentationIPs(false, 2)...)
+	if answersWithin(t, d, ips) {
+		t.Fatal("open, with every address refusing")
+	}
+	want := []string{"[2001:db8::1]:443", "[2001:db8::2]:443", "192.0.2.1:443", "192.0.2.2:443"}
+	if !slices.Equal(tried, want) {
+		t.Errorf("tried %v, want each family in the resolver's order, the first first: %v", tried, want)
 	}
 }
 
