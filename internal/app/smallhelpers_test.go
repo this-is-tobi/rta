@@ -28,9 +28,33 @@ func TestAConnectionsAddressIsTheMostAddressLikeThingItStates(t *testing.T) {
 		{config.Connection{Set: map[string]any{"port": 5432}}, "the default"},
 		{config.Connection{}, "the default"},
 	} {
-		if got := connAddress(tc.conn, "the default"); got != tc.want {
+		if got := connAddress("pg", nil, tc.conn, "the default"); got != tc.want {
 			t.Errorf("connAddress(%+v) = %q, want %q", tc.conn, got, tc.want)
 		}
+	}
+}
+
+// The keys a connection is told apart by are the ones its plugin declares as
+// where it points. redis, etcd, qdrant and s3 call theirs `address`, which a
+// fixed list of likely names did not hold, so two instances of one were both
+// described by the profile's note.
+func TestAConnectionsAddressIsTheKeyItsPluginDeclaresAsTheEndpoint(t *testing.T) {
+	caps := []plugin.Capability{
+		{ID: "redis.key.list", Inputs: []plugin.Field{
+			{Name: "address", Type: plugin.String, Config: "address", Endpoint: plugin.EndpointAddress},
+			{Name: "db", Type: plugin.Int, Config: "db"},
+		}},
+		{ID: "other.list", Inputs: []plugin.Field{
+			{Name: "db", Type: plugin.String, Config: "db", Endpoint: plugin.EndpointURL},
+		}},
+	}
+	sessions := config.Connection{Set: map[string]any{"address": "10.0.0.5:6379", "db": 2}}
+	if got := connAddress("redis", caps, sessions, "the note"); got != "10.0.0.5:6379" {
+		t.Errorf("connAddress = %q, want the address redis declares as its endpoint", got)
+	}
+	// Another namespace's declaration says nothing about this one's keys.
+	if got := connAddress("redis", caps, config.Connection{Set: map[string]any{"db": 2}}, "the note"); got != "the note" {
+		t.Errorf("connAddress = %q, want the note: db is an endpoint of another plugin only", got)
 	}
 }
 
