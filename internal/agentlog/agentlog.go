@@ -50,7 +50,9 @@
 // by writing. So the last entry's sequence and seal are also kept in
 // `agent-log-head.json`, sealed under the same key. Rolling the record back
 // now means forging that too, and forging it needs the key that reading is
-// denied.
+// denied. And the call after a cut does not move the mark back to where the
+// cut left the record: it writes the mark it found into its own sealed
+// entry (Entry.Cut), so the truncation stays visible after it.
 //
 // # Which files are the record
 //
@@ -370,6 +372,21 @@ type Entry struct {
 	// reports it as information: anything removed from the end before
 	// this entry cannot be detected, everything after it can.
 	MarkLost bool `json:"markLost,omitempty"`
+	// Cut says the record was shorter than its end mark when this entry was
+	// written: the mark verified, at entry Cut, and the last entry on disk
+	// was the one before this. Each entry is written before the mark that
+	// counts it, so a mark ahead of the record is never a crash; it is
+	// entries removed from the end.
+	//
+	// The next entry used to close over that. It chained to whatever the cut
+	// had left, moved the mark back to itself, and from then on the record
+	// verified whole: a truncation, or a deleted active file, was visible
+	// only until the next call, which is the moment an agent's own call is
+	// written. So the entry carries the mark it found, inside its seal,
+	// and Verify reports it as a break. Not as information, as MarkLost is:
+	// MarkLost admits a lost marker, and this admits lost evidence, which
+	// nothing may re-anchor away. omitempty for the seal's reason above.
+	Cut int64 `json:"cut,omitempty"`
 	// Prev is the previous entry's MAC, and Seal this entry's. Together they
 	// are the chain — across files as well as within one.
 	//
@@ -676,6 +693,12 @@ func writeHead(key []byte, e Entry) error {
 	return atomicfile.Write(headPath(), body, 0o600)
 }
 
+// headPresent reports whether a mark file is there, verified or not.
+func headPresent() bool {
+	_, err := os.Lstat(headPath())
+	return err == nil
+}
+
 // readHead returns the high-water mark, or ok=false when there is none or
 // it does not verify. An unverifiable mark is treated as absent, and absent
 // is itself reported: both mean nothing trustworthy says where the record
@@ -741,7 +764,16 @@ func Append(e Entry) (err error) {
 	}
 	e.Seq = last.Seq + 1
 	e.Prev = last.Seal
-	if _, ok := readHead(key); !ok && last.Seq > 0 {
+	// The mark is read once and compared with what is on disk. Ahead of it,
+	// entries were removed from the end (Entry.Cut). Missing or unverifiable
+	// beside a record, nothing vouched for the end (Entry.MarkLost); and a
+	// mark file that is there and does not verify is that too when nothing
+	// else is left, since a record that never had a mark has no mark file.
+	h, marked := readHead(key)
+	switch {
+	case marked && h.Seq > last.Seq:
+		e.Cut = h.Seq
+	case !marked && (last.Seq > 0 || headPresent()):
 		e.MarkLost = true
 	}
 	if e.At.IsZero() {
@@ -1506,6 +1538,8 @@ func Verify() (Report, error) {
 			default:
 				if !verifies(key, []byte(line), e) {
 					rep.Broken, rep.Why = e.Seq, "its contents do not match its seal"
+				} else if e.Cut > 0 {
+					rep.Broken, rep.Why = e.Seq, cutWhy(e)
 				}
 			}
 			if rep.Broken != 0 {
@@ -1548,8 +1582,17 @@ func Verify() (Report, error) {
 	return rep, nil
 }
 
-// plural keeps the two truncation messages readable without pulling a
-// dependency in for one sentence.
+// cutWhy is Verify's reason for an entry written over a cut (Entry.Cut). The
+// entry's number is the first one the cut took, written again: entries are
+// numbered from what is on disk, so the old ones it names are gone.
+func cutWhy(e Entry) string {
+	if e.Seq == 1 {
+		return fmt.Sprintf("when entry 1 was written nothing was left of a record rta had written to entry %d, so the whole record had been removed", e.Cut)
+	}
+	return fmt.Sprintf("when entry %d was written the record stopped at entry %d and rta had last written entry %d, so %s been removed from the end",
+		e.Seq, e.Seq-1, e.Cut, format.Count(int(e.Cut-e.Seq+1), "entry had", "entries had")) //nolint:gosec // a gap in the ledger, counted in entries, never past an int
+}
+
 // lineReader walks a file line by line with no ceiling on a line's length.
 // bufio.Scanner stops at its buffer with "token too long", and a record
 // holding one oversized row — written before rows were bounded — would

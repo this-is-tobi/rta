@@ -430,6 +430,108 @@ func TestEmptyingTheRecordEntirelyIsVisible(t *testing.T) {
 	}
 }
 
+// The two above call Verify straight after the cut, and the cut was visible
+// only until then: the next call chained to whatever was left, moved the mark
+// back to itself, and the record verified whole. The next call is the one an
+// agent makes, so a cut that lasts until then is not visible at all.
+func TestATruncationIsStillVisibleAfterTheNextCall(t *testing.T) {
+	isolate(t)
+	for i := 0; i < 5; i++ {
+		write(t, Entry{Cap: "sys.cpu", Outcome: Ran, Auth: Open})
+	}
+	raw, err := os.ReadFile(Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.SplitAfter(string(raw), "\n")
+	if err := os.WriteFile(Path(), []byte(strings.Join(lines[:2], "")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	write(t, Entry{Cap: "sys.mem", Outcome: Ran, Auth: Open})
+	write(t, Entry{Cap: "sys.mem", Outcome: Ran, Auth: Open})
+
+	rep, err := Verify()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Broken != 3 {
+		t.Fatalf("broken = %d (%s), want the entry written over the cut, 3", rep.Broken, rep.Why)
+	}
+	want := "when entry 3 was written the record stopped at entry 2 and rta had last written entry 5, so 3 entries had been removed from the end"
+	if rep.Why != want {
+		t.Fatalf("why = %q\nwant %q", rep.Why, want)
+	}
+	if rep.Unanchored {
+		t.Fatal("a cut was offered for re-anchoring, which would erase it")
+	}
+	got, _ := Read(0)
+	if len(got) != 4 || got[2].Cut != 5 || got[3].Cut != 0 {
+		t.Fatalf("the cut is not sealed into entry 3 alone: %+v", got)
+	}
+}
+
+func TestADeletedRecordIsStillVisibleAfterTheNextCall(t *testing.T) {
+	isolate(t)
+	write(t,
+		Entry{Cap: "sys.cpu", Outcome: Ran, Auth: Open},
+		Entry{Cap: "kv.get", Outcome: Ran, Auth: Live},
+	)
+	if err := os.Remove(Path()); err != nil {
+		t.Fatal(err)
+	}
+	write(t, Entry{Cap: "sys.mem", Outcome: Ran, Auth: Open})
+
+	rep, err := Verify()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Broken != 1 || !strings.Contains(rep.Why, "the whole record had been removed") {
+		t.Fatalf("a deleted record read as a new one after one call: %+v", rep)
+	}
+}
+
+// The same with the record rolled: the active file goes, the segments stay,
+// and the next call chains to the newest segment's last entry.
+func TestDeletingTheActiveFileOfARolledRecordIsStillVisible(t *testing.T) {
+	isolate(t)
+	small(t, 1<<10, 40)
+	fill(t, 12)
+	if _, err := os.Stat(Path()); err != nil {
+		t.Fatalf("no active file to delete, so this test proves nothing: %v", err)
+	}
+	if err := os.Remove(Path()); err != nil {
+		t.Fatal(err)
+	}
+	write(t, Entry{Cap: "sys.mem", Outcome: Ran, Auth: Open})
+
+	rep, err := Verify()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Broken == 0 || !strings.Contains(rep.Why, "rta had last written entry 12") {
+		t.Fatalf("the deleted active file was closed over: %+v", rep)
+	}
+}
+
+// A mark file that is there and does not verify, beside nothing, is not a
+// fresh machine: a fresh machine has no mark file. It is admitted like a
+// missing mark beside a record.
+func TestAnUnverifiableMarkBesideNothingIsAdmitted(t *testing.T) {
+	isolate(t)
+	write(t, Entry{Cap: "sys.cpu", Outcome: Ran, Auth: Open})
+	if err := os.Remove(Path()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(headPath(), []byte(`{"seq":0,"seal":"","mac":"forged"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	write(t, Entry{Cap: "sys.mem", Outcome: Ran, Auth: Open})
+	got, _ := Read(0)
+	if len(got) != 1 || !got[0].MarkLost {
+		t.Fatalf("the unverifiable mark was healed in silence: %+v", got)
+	}
+}
+
 func TestRemovingTheMarkIsItselfVisible(t *testing.T) {
 	// An attacker who cannot forge the mark can still delete it, and a
 	// missing mark has to read as "nothing says where this ends" rather than
@@ -566,8 +668,11 @@ func TestARecordThatLostSomethingSaysSo(t *testing.T) {
 	write(t, Entry{Cap: "sys.cpu", Outcome: Ran, Auth: Open})
 
 	// A directory where the file should be: every append fails, and none of
-	// them may fail quietly.
-	if err := os.Remove(Path()); err != nil {
+	// them may fail quietly. The record is moved aside for it and put back,
+	// not removed: a record that lost its entries is a cut, which Verify
+	// reports, and the question here is only the calls that were never
+	// written.
+	if err := os.Rename(Path(), Path()+".aside"); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(Path(), 0o755); err != nil {
@@ -579,6 +684,9 @@ func TestARecordThatLostSomethingSaysSo(t *testing.T) {
 		}
 	}
 	if err := os.Remove(Path()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(Path()+".aside", Path()); err != nil {
 		t.Fatal(err)
 	}
 
