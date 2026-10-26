@@ -67,6 +67,42 @@ func TestMCPServeHelpNamesWhatTheLocalityGateHides(t *testing.T) {
 // each is checked and refused before this command builds anything that
 // could accept a connection.
 
+// The token file and the roster are denied to every plugin, which is decided
+// as the plugins load, before anything parses the command line: they are
+// found on it in each spelling pflag takes for a string flag, the last one
+// winning, and nothing after a bare -- — and the names searched for are the
+// serve command's own flags, so renaming one cannot leave the search behind.
+func TestTheServersFilesAreFoundBeforeTheCommandLineIsParsed(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"mcp", "serve", "--as", "x", "--http", ":8443", "--token-file", "tokens.txt"}, []string{"tokens.txt"}},
+		{[]string{"mcp", "serve", "--token-file=a", "--operators", "ops.txt", "--operators-url", "https://x"}, []string{"a", "ops.txt"}},
+		{[]string{"mcp", "serve", "--operators-url=https://x", "--operators=ops.txt", "--token-file", "a", "--token-file", "b"}, []string{"b", "ops.txt"}},
+		{[]string{"note", "add", "--", "--token-file", "a"}, nil},
+		{[]string{"mcp", "serve", "--token-file"}, nil},
+		{[]string{"mcp", "serve", "--as", "x"}, nil},
+	} {
+		if got := serveFilesOnCommandLine(c.args); !slices.Equal(got, c.want) {
+			t.Errorf("%v = %q, want %q", c.args, got, c.want)
+		}
+	}
+	reg, err := NewRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	serve, _, err := NewRoot(reg, "test").Find([]string{"mcp", "serve"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, flag := range []string{tokenFileFlag, operatorsFlag} {
+		if f := serve.Flags().Lookup(flag); f == nil || f.Value.Type() != "string" || f.Shorthand != "" {
+			t.Errorf("--%s is not a long-only string flag of mcp serve: %+v", flag, f)
+		}
+	}
+}
+
 func TestHTTPRefusesConsentWithoutOperators(t *testing.T) {
 	cmd := NewRoot(registry.New(), "test")
 	cmd.SetArgs([]string{"mcp", "serve", "--as", "probe", "--http", "127.0.0.1:0", "--consent"})

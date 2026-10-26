@@ -534,6 +534,39 @@ func TestTheDoctorSaysWhenTheLockDoesNotParse(t *testing.T) {
 	}
 }
 
+// A file of rta's own at a path the sandbox profile cannot spell is left out
+// of what a plugin is denied, so that its spelling does not stop every plugin
+// loading. The confinement row counts what is denied, and read alone it lets
+// the operator take the key for one of them: the file gets a warning of its
+// own, where there is a sandbox to be left out of.
+func TestTheDoctorNamesAFileOfRtasOwnThePluginSandboxLeavesOut(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("RTA_DATA_DIR", filepath.Join(home, "data"))
+	t.Setenv("RTA_CONFIG", filepath.Join(home, "config", "config.yaml"))
+	key := filepath.Join(home, `the "work" box`, "rta.txt")
+	t.Setenv("RTA_KV_IDENTITY", key)
+	var rows []string
+	doctorConfinement(func(check, status, detail string) { rows = append(rows, check+" "+status+" "+detail) }, false)
+	var warned []string
+	for _, r := range rows {
+		if strings.Contains(r, key) {
+			warned = append(warned, r)
+		}
+	}
+	if !pluginhost.Confined() {
+		if len(warned) != 0 {
+			t.Errorf("no plugin is confined here, yet a row names what the sandbox leaves out: %q", warned)
+		}
+		return
+	}
+	if len(warned) != 1 || !strings.HasPrefix(warned[0], "plugin confinement warn") {
+		t.Fatalf("doctor = %q, want one warning naming %s", rows, key)
+	}
+	if !strings.HasPrefix(rows[0], "plugin confinement ok") {
+		t.Errorf("the confinement row itself = %q, want it to stand: every other entry is denied", rows[0])
+	}
+}
+
 // A copy in the system root that is the one running shadows the managed copy
 // like any other, and is not a stray to go and remove: discovery ranks the root
 // above the operator's store by design, which `rta plugin remove` cannot undo.

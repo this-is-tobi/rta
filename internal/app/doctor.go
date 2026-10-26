@@ -1359,6 +1359,16 @@ func doctorConfinement(add func(check, status, detail string), detail bool) {
 		// is the page-versus-run drift this codebase keeps finding, in the
 		// direction that overstates what is protected.
 		add("plugin confinement", "ok", sandboxDetail(deny, detail))
+		// A file of rta's own whose path the profile has no spelling for is
+		// left out of it rather than stopping every plugin loading
+		// (pluginhost.ResolveAllowing), which leaves it readable by any
+		// plugin. The row above counts what is denied; this says what is not
+		// and what would put it back.
+		for _, f := range deny.Unnamed {
+			add("plugin confinement", "warn", f+" is rta's own and is not denied to a plugin: its path "+
+				"holds a quote, a backslash or a line break, which the sandbox profile cannot spell — "+
+				"move it to a path without one (the MCP path gate refuses it either way)")
+		}
 	}
 }
 

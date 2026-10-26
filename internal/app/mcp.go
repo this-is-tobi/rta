@@ -193,6 +193,58 @@ func localityGated(reg *registry.Registry) string {
 // machine can hold of it.
 const maxResultCeilingMiB = 256
 
+// The flags of `mcp serve` that name a file of rta's own, which
+// ProtectServeFiles reads before the command line is parsed.
+const (
+	tokenFileFlag = "token-file"
+	operatorsFlag = "operators"
+)
+
+// ProtectServeFiles hands paths.Protect the token file and the operator
+// roster a command line names, before anything has parsed it.
+//
+// Before, because of when a plugin's sandbox is decided: main loads the
+// plugins first, since the command tree is built from what they declare, and
+// the deny set each is resolved under then is the one every relaunch of it
+// reuses. Read from cobra's parse, the files would be denied to no plugin at
+// all. So they are found here the way outputOnCommandLine finds --output, in
+// the spellings pflag takes for a string, --token-file f and
+// --token-file=f, the last one winning as it does for pflag, and nothing
+// after a bare -- is a flag. A command line that names them on any other
+// command is refused by that command; the plugins of that run are denied
+// one more file before it stops.
+func ProtectServeFiles(args []string) { paths.Protect(serveFilesOnCommandLine(args)...) }
+
+// serveFilesOnCommandLine is the token file and the roster args name, the
+// ones not named left out.
+func serveFilesOnCommandLine(args []string) []string {
+	found := map[string]string{}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		for _, flag := range []string{tokenFileFlag, operatorsFlag} {
+			if a == "--"+flag && i+1 < len(args) {
+				i++
+				found[flag] = args[i]
+				break
+			}
+			if v, ok := strings.CutPrefix(a, "--"+flag+"="); ok {
+				found[flag] = v
+				break
+			}
+		}
+	}
+	var files []string
+	for _, flag := range []string{tokenFileFlag, operatorsFlag} {
+		if f := found[flag]; f != "" {
+			files = append(files, f)
+		}
+	}
+	return files
+}
+
 func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	var (
 		consentOn     bool
@@ -727,7 +779,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	cmd.Flags().StringVar(&observeAddr, "observe", "",
 		"serve liveness, readiness and Prometheus counters on this second address (e.g. 127.0.0.1:9090) — "+
 			"never the --http one: probes answer without a credential, /metrics needs the same bearer token MCP does")
-	cmd.Flags().StringVar(&tokenFile, "token-file", "",
+	cmd.Flags().StringVar(&tokenFile, tokenFileFlag, "",
 		"bearer tokens allowed to connect, one \"label token\" pair per line; required with --http "+
 			"unless --oidc-issuer is set")
 	cmd.Flags().StringVar(&oidcIssuer, "oidc-issuer", "",
@@ -738,7 +790,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	cmd.Flags().StringSliceVar(&oidcSubjects, "oidc-subject", nil,
 		"subject (\"sub\" claim) allowed to authenticate (repeatable); required with --oidc-issuer, "+
 			"since an issuer and audience alone name an application, not a person")
-	cmd.Flags().StringVar(&operatorsFile, "operators", "",
+	cmd.Flags().StringVar(&operatorsFile, operatorsFlag, "",
 		"operator public keys allowed to manage this server remotely, one \"label base64-pubkey\" "+
 			"per line (`rta operator status` prints yours); mounts /operator/v1 beside the MCP endpoint")
 	cmd.Flags().StringVar(&operatorsURL, "operators-url", "",

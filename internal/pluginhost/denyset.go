@@ -191,6 +191,12 @@ type DenySet struct {
 	// anywhere else gains nothing — the carve-out is for the layout rta
 	// chose, not for wherever an executable happens to sit.
 	Own []string
+	// Unnamed is what of rta's own the operator keeps elsewhere
+	// (paths.OwnFiles) at a path the profile has no spelling for, left out
+	// of the sets above for ResolveAllowing's reason, and so readable and
+	// writable by a plugin. Listed so that `rta doctor` can say so rather
+	// than report a denial that is not there.
+	Unnamed []string
 }
 
 // Resolve builds the deny set for this machine.
@@ -224,6 +230,33 @@ func ResolveAllowing(granted []plugin.Need) (DenySet, error) {
 	var d DenySet
 	for _, p := range tier1() {
 		d.NoAccess = append(d.NoAccess, withTarget(p)...)
+	}
+	// And what of rta's own the operator keeps elsewhere: the store's key
+	// where RTA_KV_IDENTITY names it, and the token file and roster this
+	// `rta mcp serve` was started with (paths.OwnFiles says why each). With
+	// tier1, in the tier that wins, so a key kept in ~/.ssh stays denied to a
+	// plugin granted NeedSSH: the grant is for the credentials a plugin
+	// connects with, and rta's own key is not one of them.
+	//
+	// **A path the profile cannot spell is left out, and reported, rather
+	// than refusing the set.** validate's rule — fail the launch, never drop
+	// a rule — is right for rta's own directories, whose places rta decides,
+	// and wrong here: these are wherever an operator put them, the set is
+	// resolved for every launch on every platform, and refusing it stopped
+	// every plugin loading over the spelling of one file, on Linux too, where
+	// no profile is ever built. Nor is a wider rule a way round it: the
+	// nearest ancestor that can be spelled may be the home directory, and
+	// denying that denies most of what any plugin does. Left out, the file is
+	// open to a plugin as any file outside the deny set is; Unnamed carries
+	// it to `rta doctor`, which says so, and the MCP path gate, which renders
+	// nothing, refuses it all the same.
+	for _, f := range paths.OwnFiles() {
+		spellings := withTarget(f)
+		if validate(spellings) != nil {
+			d.Unnamed = append(d.Unnamed, f)
+			continue
+		}
+		d.NoAccess = append(d.NoAccess, spellings...)
 	}
 	// **In plugin.Needs() order, never the map's.** Go randomises map
 	// iteration, and this slice is hashed into the process cache key
@@ -380,9 +413,20 @@ func resolveDeepest(abs string) string {
 //
 // It fails the build of the command loudly rather than dropping the entry:
 // silently omitting a rule is how a deny set shrinks to nothing without
-// anybody noticing.
+// anybody noticing. (A file of rta's own kept where the operator chose is
+// the one exception, left out and reported instead — ResolveAllowing says
+// why.)
+//
+// Parentheses are not refused. Inside a quoted string they are characters
+// like any other, which a profile has to be able to spell for a key synced
+// under `~/Dropbox (Personal)`: proven against /usr/bin/sandbox-exec, a
+// path holding `)) (allow default) ((` denies what it names, and denies the
+// path listed before it too, which an `(allow default)` that had closed the
+// form would have reopened (TestParenthesesInAPathAreCharactersOfIt). What
+// ends a string is a quote, and a backslash, a newline or a carriage return
+// is what %q and SBPL might read two different ways; those stay refused.
 func validate(entries []string) error {
-	const forbidden = "\"\n\r()\\"
+	const forbidden = "\"\n\r\\"
 	for _, e := range entries {
 		if i := strings.IndexAny(e, forbidden); i >= 0 {
 			return fmt.Errorf("refusing to build a sandbox profile: path %q contains %q, "+

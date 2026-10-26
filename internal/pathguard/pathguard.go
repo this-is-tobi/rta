@@ -124,7 +124,11 @@ func configDenied() []string {
 	if legacy := paths.LegacyConfigDir(); legacy != "" {
 		denied = append(denied, legacy)
 	}
-	return denied
+	// What of rta's own the operator keeps elsewhere, file by file
+	// (paths.OwnFiles): the store's key, and the token file an HTTP server
+	// reads, documented in the very directory a server is rooted at by
+	// default.
+	return append(denied, paths.OwnFiles()...)
 }
 
 // Roots reports what this guard allows, for a message that has to say so.

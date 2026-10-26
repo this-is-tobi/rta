@@ -439,3 +439,54 @@ func TestADenyPathBelowASymlinkDeniesTheRealFile(t *testing.T) {
 		t.Errorf("the link spelling still reads: %s", out)
 	}
 }
+
+// validate lets parentheses into a profile, and this is why that is safe
+// rather than why it is convenient: inside a quoted string SBPL reads them as
+// characters of the path. A key synced under ~/Dropbox (Personal)/ is denied
+// as named and the file beside it stays readable; and a path spelled to close
+// the form — `)) (allow default) ((` — closes nothing, since an
+// (allow default) that had escaped the string would come after the denial
+// listed before it and, last match winning, reopen what that one names.
+func TestParenthesesInAPathAreCharactersOfIt(t *testing.T) {
+	if err := available(); err != nil {
+		t.Skipf("no sandbox-exec: %v", err)
+	}
+	home := t.TempDir()
+	key := filepath.Join(home, "Dropbox (Personal)", "keys", "rta.txt")
+	beside := filepath.Join(filepath.Dir(key), "notes.txt")
+	secret := filepath.Join(home, "secret", "kv.identity")
+	injected := filepath.Join(home, "x)) (allow default) ((y", "f")
+	for f, body := range map[string]string{
+		key: "AGE-SECRET-KEY-1", beside: "readable", secret: "AGE-SECRET-KEY-2", injected: "named",
+	} {
+		if err := os.MkdirAll(filepath.Dir(f), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var noAccess []string
+	for _, p := range []string{key, secret, filepath.Dir(injected)} {
+		noAccess = append(noAccess, withTarget(p)...)
+	}
+	if err := validate(noAccess); err != nil {
+		t.Fatalf("the fixture's paths were refused: %v", err)
+	}
+	d := DenySet{NoAccess: noAccess, NoMove: ancestors(noAccess)}
+
+	for _, denied := range []string{key, secret, injected} {
+		name, argv := wrap(d, "/bin/cat", []string{denied})
+		if out, err := exec.Command(name, argv...).CombinedOutput(); err == nil {
+			t.Errorf("a confined process read %s: %s", denied, out)
+		}
+	}
+	name, argv := wrap(d, "/bin/cat", []string{beside})
+	if out, err := exec.Command(name, argv...).CombinedOutput(); err != nil || string(out) != "readable" {
+		t.Errorf("the file beside the key was denied too, so the rule named more than the key: %v %s", err, out)
+	}
+	name, argv = wrap(d, "/bin/mv", []string{filepath.Dir(filepath.Dir(key)), filepath.Join(home, "moved")})
+	if out, err := exec.Command(name, argv...).CombinedOutput(); err == nil {
+		t.Errorf("a confined process renamed the folder above the key out from under its rule: %s", out)
+	}
+}
