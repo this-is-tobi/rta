@@ -46,6 +46,15 @@ package view
 //     also makes the order of map-then-redact irrelevant rather than
 //     load-bearing.
 //
+//   - KeyValue.Numbers is named by its keys, and they are visited too. They
+//     were the last strings this walk skipped — the drift test filled struct
+//     fields and never a map's keys — so a plugin's number named with
+//     invisible characters reached a model as sent, beside pairs that had
+//     every one of them stripped. A number whose name f would change is
+//     dropped rather than renamed: a name is lower case with underscores,
+//     which no cleaning touches, two odd names could clean to one, and
+//     Redact matches the mapped Redacted against these names.
+//
 // f must be pure. It is called once per string and may be called on strings
 // that turn out not to need it.
 //
@@ -75,8 +84,9 @@ func mapStrings(v View, f func(string) string) (View, bool) {
 	case KeyValue:
 		pairs, pc := mapPairs(t.Pairs, f)
 		red, rc := mapNames(t.Redacted, f)
-		if pc || rc {
-			t.Pairs, t.Redacted = pairs, red
+		numbers, nc := mapNumbers(t.Numbers, f)
+		if pc || rc || nc {
+			t.Pairs, t.Redacted, t.Numbers = pairs, red, numbers
 			return t, true
 		}
 	case Table:
@@ -146,6 +156,31 @@ func mapPairs(in []Pair, f func(string) string) ([]Pair, bool) {
 	}
 	if !changed {
 		return in, false
+	}
+	return out, true
+}
+
+// mapNumbers keeps the numbers whose names f leaves as they are (MapStrings
+// says why the others are dropped and not renamed).
+func mapNumbers(in map[string]float64, f func(string) string) (map[string]float64, bool) {
+	var dropped []string
+	for name := range in {
+		if f(name) != name {
+			dropped = append(dropped, name)
+		}
+	}
+	if len(dropped) == 0 {
+		return in, false
+	}
+	out := make(map[string]float64, len(in)-len(dropped))
+	for name, n := range in {
+		out[name] = n
+	}
+	for _, name := range dropped {
+		delete(out, name)
+	}
+	if len(out) == 0 {
+		return nil, true
 	}
 	return out, true
 }

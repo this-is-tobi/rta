@@ -26,14 +26,23 @@ var columnKinds = []struct {
 	{view.KindUsage, rtav1.ColumnKind_COLUMN_KIND_USAGE},
 }
 
-// finiteNumbers is a page's numbers without the ones JSON cannot write: a NaN or
-// an infinity in one plugin's page would otherwise fail the page, whole, for every
-// caller that asks for it as JSON, and the host reads this from outside its own
-// code. Nil when none is left, so that an empty map and an absent one read alike.
-func finiteNumbers(in map[string]float64) map[string]float64 {
+// wellFormedNumbers is a page's numbers without the ones JSON cannot write and
+// the ones whose names are not names. Nil when none is left, so that an empty map
+// and an absent one read alike.
+//
+// A NaN or an infinity in one plugin's page would otherwise fail the page, whole,
+// for every caller that asks for it as JSON, and the host reads this from outside
+// its own code.
+//
+// A name is what a script and an agent address the number by, and view.KeyValue
+// says what one is: lower case with underscores. Nothing held a plugin to it, so
+// a name could be a sentence, a path, or characters a model reads and a person
+// does not see, in the one part of a page a reader takes for a field name rather
+// than text. Every name rta's own pages use is inside this grammar.
+func wellFormedNumbers(in map[string]float64) map[string]float64 {
 	var out map[string]float64
 	for name, n := range in {
-		if math.IsNaN(n) || math.IsInf(n, 0) {
+		if math.IsNaN(n) || math.IsInf(n, 0) || !numberName(name) {
 			continue
 		}
 		if out == nil {
@@ -42,6 +51,27 @@ func finiteNumbers(in map[string]float64) map[string]float64 {
 		out[name] = n
 	}
 	return out
+}
+
+// maxNumberName bounds a number's name: the longest rta's own pages use is a
+// third of it.
+const maxNumberName = 64
+
+// numberName reports whether s is a name a number may have: a lower-case
+// letter, then lower-case letters, digits and underscores (`load15`,
+// `value_bytes`).
+func numberName(s string) bool {
+	if s == "" || len(s) > maxNumberName || s[0] < 'a' || s[0] > 'z' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		switch c := s[i]; {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func columnKindToProto(k view.ColumnKind) rtav1.ColumnKind {
@@ -218,7 +248,7 @@ func ViewFromProto(v *rtav1.View) view.View {
 				return view.Pair{Key: p.GetKey(), Value: p.GetValue()}
 			}),
 			Redacted: k.KeyValue.GetRedacted(),
-			Numbers:  finiteNumbers(k.KeyValue.GetNumbers()),
+			Numbers:  wellFormedNumbers(k.KeyValue.GetNumbers()),
 		}
 	case *rtav1.View_Table:
 		t := view.Table{

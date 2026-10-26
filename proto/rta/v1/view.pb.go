@@ -403,7 +403,9 @@ type KeyValue struct {
 	// The page's counts and sizes as numbers, by name (lower case, underscores,
 	// the unit in the name: value_bytes), for the formats a program reads. A way
 	// to read what the pairs already say, never more than they say: a name that
-	// is in redacted loses its number. A host drops a number that is not finite.
+	// is in redacted loses its number. A host drops a number that is not finite,
+	// and one whose name is not a lower-case letter followed by lower-case
+	// letters, digits and underscores, at most 64 bytes.
 	Numbers       map[string]float64 `protobuf:"bytes,3,rep,name=numbers,proto3" json:"numbers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"fixed64,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

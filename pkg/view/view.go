@@ -58,10 +58,12 @@ type KeyValue struct {
 	// never a second page, so a name here is a fact the pairs already say.
 	//
 	// A name is lower case with underscores and says its unit when it has one
-	// (`value_bytes`, `file_bytes`). Never a number that is masked: a name in
-	// Redacted drops its number (Redact), but a number for a value the page does
-	// not show at all is the producer's to leave out. A non-finite number cannot
-	// be written in JSON and is dropped on the way in from a plugin.
+	// (`value_bytes`, `file_bytes`): a lower-case letter, then lower-case
+	// letters, digits and underscores, at most 64 bytes. Never a number that is
+	// masked: a name in Redacted drops its number (Redact), but a number for a
+	// value the page does not show at all is the producer's to leave out. A
+	// non-finite number cannot be written in JSON, and a name outside that
+	// grammar is not a name; both are dropped on the way in from a plugin.
 	Numbers map[string]float64 `json:"numbers,omitempty"`
 }
 

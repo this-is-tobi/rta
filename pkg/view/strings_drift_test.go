@@ -160,6 +160,17 @@ func fillStrings(v reflect.Value, path string, out map[string]string, depth int)
 		if v.Len() > 0 {
 			fillStrings(v.Index(0), path+"[0]", out, depth+1)
 		}
+	case reflect.Map:
+		// A map's keys are strings a renderer shows as much as a field is:
+		// KeyValue.Numbers is named by its keys, and they went to a model
+		// uncleaned while every field beside them was checked here.
+		if v.Type().Key() == reflect.TypeOf("") && v.CanSet() {
+			s := fmt.Sprintf("SENTINEL%d", len(out))
+			out[s] = path + "[key]"
+			m := reflect.MakeMap(v.Type())
+			m.SetMapIndex(reflect.ValueOf(s), reflect.Zero(v.Type().Elem()))
+			v.Set(m)
+		}
 	case reflect.Interface:
 		if v.CanSet() && v.Type().Name() == "View" {
 			inner := reflect.New(reflect.TypeOf(Text{})).Elem()
