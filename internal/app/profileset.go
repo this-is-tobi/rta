@@ -1473,6 +1473,18 @@ func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry, d
 		pairs = append(pairs, view.Pair{Key: "dashboard", Value: "its own screen, " +
 			format.Count(len(block.Tiles)+len(block.Add), "tile", "tiles") + ", " + went})
 	}
+	// A tile elsewhere pinned to it stays, and is drawn through a profile
+	// nothing can look up on every refresh from now on. It is not taken with
+	// the profile — it is somebody's arrangement of a screen, which the
+	// grants below are not — but it is named, with the way to take it down,
+	// so that the screen is not where this is first learnt.
+	left := "left"
+	if dryRun {
+		left = "would leave"
+	}
+	for _, tile := range tilesPinnedTo(scope, name) {
+		pairs = append(pairs, view.Pair{Key: left, Value: tile})
+	}
 	// The switch follows, or this machine stays switched on to a name nothing
 	// can look up — and because the selection also bounds agents, every agent
 	// call would then be refused against it.

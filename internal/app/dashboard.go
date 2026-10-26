@@ -410,10 +410,7 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		// "your call", which the CLI is right to say of a single run and
 		// the dashboard answers by showing every one (tui.expandTiles) —
 		// so a profile that expands is checked connection by connection.
-		refs := tui.InstancesOf(cfg, "")(ref, plugin.Namespace(id))
-		if len(refs) == 0 {
-			refs = []string{ref}
-		}
+		refs := tileRefs(cfg, ref, id)
 		for _, r := range refs {
 			if _, verr := profile.Lookup(cfg, c, r, withTrust{installed}); verr != nil {
 				return nil, verr
@@ -637,6 +634,67 @@ func removeLine(t config.Tile) string {
 		return t.ID
 	}
 	return t.ID + " --profile " + t.Profile
+}
+
+// tileTakeDown is how a person takes a tile of view v off the screen: an added
+// entry with `rta dashboard rm`, and one stated in `tiles:` by editing that
+// list, which rm does not touch.
+func tileTakeDown(t config.Tile, v string, stated bool) string {
+	if stated {
+		return "take it out of `tiles:` in " + dashboardFile(v)
+	}
+	return "`rta dashboard rm " + removeLine(t) + inViewFlag(v) + "` takes it down"
+}
+
+// tileRefs is each reference a tile pinned to ref is drawn through: one per
+// connection when ref is a bare profile holding several for the tile's
+// plugin, which the dashboard draws as a panel each (tui.expandTiles), and
+// ref itself otherwise. Lookup refuses that bare name as a call that must say
+// which, so whatever checks a pinned tile asks it of these instead.
+func tileRefs(cfg config.Config, ref, id string) []string {
+	if refs := tui.InstancesOf(cfg, "")(ref, plugin.Namespace(id)); len(refs) > 0 {
+		return refs
+	}
+	return []string{ref}
+}
+
+// tileProfileGone reports whether a refusal of a pinned tile's profile means
+// there is nothing left to draw it through — no such profile, no such
+// instance in it, nothing in it for the plugin — for which taking the tile
+// down is the remedy. Every other refusal is about a profile that is still
+// there and wants fixing, and its own hint says how: a pin that drifted wants
+// `rta profile repin`, not the screen rearranged around it.
+func tileProfileGone(verr *view.Error) bool {
+	switch verr.Code {
+	case "core.profile.unknown", "core.profile.instance", "core.profile.mismatch":
+		return true
+	}
+	return false
+}
+
+// tilesPinnedTo is each tile pinned to profile name or to one of its
+// instances that stays when the profile is removed — the dashboard's and its
+// views', not those of the profile's own screen, which go with it — as the
+// sentence a receipt gives it.
+func tilesPinnedTo(cfg config.Config, name string) []string {
+	// Asked of a config without the profile, made here: the dry run's still
+	// has it, so its own screen was listed as a view left behind, and the
+	// real run's had lost it only because Mutate's config shares its
+	// Profiles map with the one taken before the delete.
+	cfg.Profiles = maps.Clone(cfg.Profiles)
+	delete(cfg.Profiles, name)
+	var out []string
+	for _, v := range append([]string{""}, cfg.ViewNames()...) {
+		block := blockOf(cfg, v)
+		for i, t := range append(slices.Clone(block.Tiles), block.Add...) {
+			if t.Profile == "" || config.RefName(t.Profile) != name {
+				continue
+			}
+			out = append(out, "tile "+t.Key()+inView(v)+", which then draws an error — "+
+				tileTakeDown(t, v, i < len(block.Tiles)))
+		}
+	}
+	return out
 }
 
 // parseTileInputs turns `--set key=value` into the tile's `with:` block,

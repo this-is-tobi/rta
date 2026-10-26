@@ -90,7 +90,7 @@ unfenced  only.port, only.schema — calls through this connection are no longer
 
 One plugin per invocation. A profile spanning three plugins is three lines, and each of them is independently re-runnable — including in parallel: every writer of the config file takes a lock across the whole read-modify-write, so concurrent runs cannot lose each other's profiles.
 
-`rta profile rm <name>` removes the environment, switches it off if it was on, and **revokes every grant naming it**. That last part is not tidiness: a grant naming a profile nothing can look up authorizes nothing, so leaving it behind is a row in `rta grant list` that reads like access and is not. `--plugin` removes one entry and keeps the environment.
+`rta profile rm <name>` removes the environment, switches it off if it was on, and **revokes every grant naming it**. That last part is not tidiness: a grant naming a profile nothing can look up authorizes nothing, so leaving it behind is a row in `rta grant list` that reads like access and is not. A dashboard tile pinned to it with `--profile` stays, since it is your arrangement of a screen, and is named in what the command prints with the `rta dashboard rm` that takes it down; until then it draws an error, and `rta doctor` names it too. `--plugin` removes one entry and keeps the environment.
 
 ### What it refuses
 
