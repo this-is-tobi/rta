@@ -438,6 +438,11 @@ var PassphraseField = plugin.Field{
 	Help: "the guard passphrase",
 }
 
+// PassphraseCodes prefixes the codes of the passphrase's own refusals
+// (.argv, .required, .short, …): the prompt's, and the host's refusal of the
+// field on the command line, which has to name it the same way.
+const PassphraseCodes = "core.guard.passphrase"
+
 // PromptSecret reads the passphrase for a guard-gated capability: the
 // request's own Secret field first (the TUI's masked input), then a prompt
 // when a person is there to answer one — builtin/kv's promptPassphrase
@@ -456,7 +461,7 @@ func PromptSecret(req plugin.Request, confirm bool) (string, *view.Error) {
 	return passkey.Prompt(req, confirm, passkey.PromptText{
 		Subject: "the guard",
 		Prompt:  "Guard passphrase: ",
-		Codes:   "core.guard.passphrase",
+		Codes:   PassphraseCodes,
 		Empty:   "an empty passphrase is not a guard",
 	})
 }
@@ -465,8 +470,10 @@ func PromptSecret(req plugin.Request, confirm bool) (string, *view.Error) {
 // guard would not have prompted at all: with it off nothing reads
 // --passphrase, and a value nobody reads is still a value in shell history.
 // The issuing commands call it before they check whether the guard is on.
+// The host refuses the flag before any capability runs (internal/app), so
+// this is their own backstop for a request that did not come through it.
 func RefuseArgv(req plugin.Request) *view.Error {
-	return passkey.Argv(req, "core.guard.passphrase")
+	return passkey.Argv(req, PassphraseCodes)
 }
 
 // Enable generates the keypair, wraps the private half under passphrase, and

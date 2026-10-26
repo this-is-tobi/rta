@@ -193,3 +193,34 @@ func TestAPassphraseTheCommandLineRefusesIsNotOfferedThere(t *testing.T) {
 		t.Errorf("a refused run issued %q", heldTargets(t))
 	}
 }
+
+// A passphrase on the command line is refused by every command that declares
+// one, whether or not the run would have read it. Only grant allow and grant
+// issue refused it themselves: renew read it only with the guard on, agent
+// allow only for a --ttl under the guard, grant list and revoke only with
+// --server, and guard off never once remote. With the guard off each of them
+// went on with the passphrase in shell history, teaching the habit the
+// refusal exists to break. An empty flag carries no passphrase, and is not
+// refused for one.
+func TestEveryCommandRefusesAPassphraseOnTheCommandLine(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	for _, c := range []struct {
+		args []string
+		code string
+	}{
+		{[]string{"grant", "renew", "kv.get", "--passphrase", "hunter22-x"}, "core.guard.passphrase.argv"},
+		{[]string{"agent", "allow", "5473aa62", "--ttl", "1h", "--passphrase", "hunter22-x"}, "core.guard.passphrase.argv"},
+		{[]string{"grant", "guard", "off", "--passphrase", "hunter22-x"}, "core.guard.passphrase.argv"},
+		{[]string{"grant", "revoke", "kv.get", "--passphrase", "hunter22-x"}, "core.operator.passphrase.argv"},
+		{[]string{"grant", "list", "--passphrase", "hunter22-x"}, "core.operator.passphrase.argv"},
+	} {
+		_, err := runIn(t, stagingOfBuiltIns, c.args...)
+		var verr *view.Error
+		if !errors.As(err, &verr) || verr.Code != c.code {
+			t.Errorf("`rta %s` ended in %v, want %s", strings.Join(c.args, " "), err, c.code)
+		}
+	}
+	if _, err := runIn(t, stagingOfBuiltIns, "grant", "list", "--passphrase", ""); err != nil {
+		t.Errorf("an empty --passphrase was refused: %v", err)
+	}
+}
