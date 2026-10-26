@@ -176,7 +176,8 @@ plugin cnpg   ok   ~/.local/bin/rta-plugin-cnpg (5 capabilities, 24757826bbf5)
 | Learns which of your profiles a call came through | ✅ its name, and whether rta opened a `kube:` or `ssh:` forward for the call — so a receipt can name `--profile` rather than a forward that has closed — and nothing else: never the coordinate, which values the profile filled, or where its credentials come from |
 | Invents an output format | ❌ — one envelope, so `--output` works everywhere |
 | Runs before you approve its digest | ❌ |
-| Bypasses grants, path roots or the safety gate | ❌ — all enforced host-side |
+| Bypasses grants or the safety gate | ❌ — enforced host-side |
+| Reads outside the path roots an agent's server was given | ❌ for every path a call names, judged host-side before the plugin sees it; a path the plugin works out for itself is refused over MCP when it asks (`req.Confine`), and bounded by its sandbox alone when it does not — on macOS rta's own files and the credential directories, on Linux nothing |
 
 A plugin's write and destructive capabilities cost a grant, exactly like a built-in's, and that grant is pinned to the plugin's artifact. Nothing about being a plugin buys extra reach.
 

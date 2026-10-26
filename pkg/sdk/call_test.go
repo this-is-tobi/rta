@@ -262,3 +262,52 @@ func TestAnExternalPluginsHandlerIsToldItsProfile(t *testing.T) {
 		}
 	}
 }
+
+// The server's roots are not sent to a plugin, so a plugin cannot check a
+// path it worked out from the ones it was given — the repository a walk up
+// from a directory finds — against them, or tell whether a link it came
+// across leads out of them. Request.Confine passed every such path and
+// LinkTarget told every link as it is, on the claim that the plugin's sandbox
+// bounds it, which nothing does: on Linux a plugin is not confined, and on
+// macOS its sandbox knows nothing of the roots. Over MCP both fail closed; at
+// a terminal both are as they were, since a person can read their own files.
+func TestAPluginRefusesAPathItDerivedOverMCPAndTellsNoLinkTarget(t *testing.T) {
+	var confined, told string
+	var refused *view.Error
+	p := plugin.Plugin{
+		Name: "demo", Summary: "d",
+		Capabilities: []plugin.Capability{{
+			ID: "demo.walk", Summary: "d", Safety: plugin.Read,
+			Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+				confined, refused = req.Confine("repository", "/home/you/.git")
+				told = req.LinkTarget("/home/you/work", "../.ssh/id_ed25519")
+				return view.Text{}, nil
+			},
+		}},
+	}
+	s := newServer(p)
+	call := func(surface rtav1.Surface) {
+		t.Helper()
+		confined, told, refused = "unset", "unset", nil
+		if _, err := s.Call(context.Background(), roundTrip(t,
+			&rtav1.CallRequest{CapabilityId: "demo.walk", Surface: surface})); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	call(rtav1.Surface_SURFACE_MCP)
+	if refused == nil || refused.Code != "core.mcp.path.derived" || confined != "" {
+		t.Errorf("over MCP a derived path was let through: %q, %v", confined, refused)
+	}
+	if strings.Contains(told, ".ssh") {
+		t.Errorf("over MCP a link's target was told as it is: %q", told)
+	}
+
+	for _, surface := range []rtav1.Surface{rtav1.Surface_SURFACE_CLI, rtav1.Surface_SURFACE_TUI} {
+		call(surface)
+		if refused != nil || confined != "/home/you/.git" || told != "../.ssh/id_ed25519" {
+			t.Errorf("%v: the path came back %q (%v) and the link as %q, want both as they are",
+				surface, confined, refused, told)
+		}
+	}
+}
