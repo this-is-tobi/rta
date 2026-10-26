@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.51.0](https://github.com/this-is-tobi/rta/compare/v0.50.0...v0.51.0) (2026-10-26)
+
+
+### Features
+
+* **plugin:** plugin.PathInput says whether a path input is the box a read refusal names ([0b63c13](https://github.com/this-is-tobi/rta/commit/0b63c13c8aea2294b1c6989e117f45732ce634a6))
+
+
+### Bug Fixes
+
+* **audit:** a site that does not exist in DNS says so, and names the host ([0e5bfa5](https://github.com/this-is-tobi/rta/commit/0e5bfa5130d455a81c3c24bb905715da6da3def6))
+* **cli:** a list flag or a one-letter flag swallowed says the flag needs a value ([ab82203](https://github.com/this-is-tobi/rta/commit/ab82203a3b79ba30b2e6d297601cbbdbabccea7a))
+* **codec:** a URL escape that does not decode says how one is written ([3845d93](https://github.com/this-is-tobi/rta/commit/3845d93ac0effa8ef80517be7cc1a7cd9cd31c24))
+* **fs:** a path through a file is no such path, and names the path ([90f67f7](https://github.com/this-is-tobi/rta/commit/90f67f7b1023ca8fa73d13e2b1f2bf9762cc9959))
+* **git:** go-git 5.19.3 reads names it refused, so rta refuses the ones it cannot show ([d42c8eb](https://github.com/this-is-tobi/rta/commit/d42c8ebe79f7471161e50499328a95b5f7d5dd7c))
+* **http:** a scheme the client does not speak is refused before the host is looked up ([7e3090b](https://github.com/this-is-tobi/rta/commit/7e3090b5bd0db949e4e119aace89b80a6edf3427))
+* **kv:** a passphrase store refusing RTA_KV_IDENTITY says so, and names no box ([46b6363](https://github.com/this-is-tobi/rta/commit/46b6363de7112ec9f94aa106b1cfde05b76abde4))
+* **kv:** one entry holds up to 16 MiB, and --file reads no further ([614eb4f](https://github.com/this-is-tobi/rta/commit/614eb4f42d54c7d254ca18d139f2a1c13dfb02bd))
+* **kv:** the passphrase prompt refuses a short answer at once and does not send an empty one away ([1da76ca](https://github.com/this-is-tobi/rta/commit/1da76cada7fe24fef84952ad69c6223c99300998))
+* **net:** a host in digits and dots that is no IPv4 address is refused before any lookup ([736aed9](https://github.com/this-is-tobi/rta/commit/736aed9b999114f68d4e0354e6f7c6b2b1aee788))
+* **tui:** a refusal too long for the bar keeps its message whole and cuts inside the hint ([e0e570e](https://github.com/this-is-tobi/rta/commit/e0e570e0b5aab56e9919326852c577fe12f6a843))
+* **tui:** alt+d with the cursor before the last character of a box no longer ends the program ([d34f22a](https://github.com/this-is-tobi/rta/commit/d34f22ae6d91c20bb45667c9e33c06c668d02061))
+* **tui:** bubbles 2.2.1 ends the freeze on a word back in an empty box ([e439dac](https://github.com/this-is-tobi/rta/commit/e439dace2d20d5fc450d3a0272e59377cada706e))
+
+
+### Code Refactoring
+
+* **kv:** kv set declares no recipient, so its receipt never re-encrypts ([6bdb0c1](https://github.com/this-is-tobi/rta/commit/6bdb0c1ea6c09cc2f7fe4e3bbd72f61960695e69))
+
+
+### Dependencies
+
+* **deps:** go-jose, age, the MCP SDK and gRPC move to releases with hardening fixes ([9f20a83](https://github.com/this-is-tobi/rta/commit/9f20a838a61e0515e3cc5214212f2720b39d689b))
+* **docker:** the narrow image moves to Debian 13's distroless, the full one to Alpine 3.22.7 ([6f077be](https://github.com/this-is-tobi/rta/commit/6f077be6eb07f76ff617ecc1481f41c6e7cdbc7a))
+
 ## [0.50.0](https://github.com/this-is-tobi/rta/compare/v0.49.1...v0.50.0) (2026-10-25)
 
 
