@@ -262,12 +262,25 @@ func requestFailed(sf plugin.Surface, method, url string, err error) *view.Error
 	// host is reachable and a longer deadline would change nothing. This client
 	// has no way round a certificate (it is the point of it), so the way
 	// forward is to see what the server presented — a tool of this binary's own.
+	//
+	// Over MCP cert.chain reads a file under the roots and dials no host, so
+	// the call it was pointed at answered cert.file.notfound for "<server
+	// cwd>/host:8443": two calls spent and a refusal that read as a missing
+	// file. There the chain is the operator's to read, and the tool an agent
+	// may call, with a grant, is the probe, which names the certificate and
+	// its end but not who signed it.
 	var unverified *tls.CertificateVerificationError
 	if errors.As(err, &unverified) {
 		hint := "the server answered, but its certificate did not pass this machine's checks"
 		if parsed, perr := neturl.Parse(url); perr == nil && parsed.Host != "" {
-			hint += " — `" + sf.Call("cert.chain", plugin.Arg{Name: "target", Value: parsed.Host, Positional: true}) +
-				"` shows what it presented"
+			chain := plugin.Arg{Name: "target", Value: parsed.Host, Positional: true}
+			if sf == plugin.SurfaceMCP {
+				hint += " — " + plugin.AskOperator(strings.TrimPrefix(plugin.SurfaceCLI.Call("cert.chain", chain), "rta ")) +
+					", which shows what it presented; " + sf.CapabilityWith("net.probe", "tls") +
+					" names the certificate and when it ends, with a grant"
+			} else {
+				hint += " — `" + sf.Call("cert.chain", chain) + "` shows what it presented"
+			}
 		}
 		return verr.WithHint(hint)
 	}
