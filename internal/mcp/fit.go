@@ -30,17 +30,19 @@ const maxResultBytes = 80 << 10
 // a whole one.
 //
 // The view is already masked and cleaned (viewResult), so this only removes.
-// narrow words the way to a smaller answer for the tool that was called.
-func fitResult(v view.View, narrow narrowing) (view.View, *view.Error) {
-	if size(v) <= maxResultBytes {
+// n is what it weighs encoded, which the caller has measured already and which
+// is not measured again. narrow words the way to a smaller answer for the tool
+// that was called.
+func fitResult(v view.View, n int, narrow narrowing) (view.View, *view.Error) {
+	if n <= maxResultBytes {
 		return v, nil
 	}
-	if cut, ok := shrink(v, maxResultBytes, narrow); ok {
+	if cut, ok := shrink(v, n, maxResultBytes, narrow); ok {
 		return cut, nil
 	}
 	return nil, view.Errorf("core.mcp.result.toolarge",
 		"the answer is %d KiB, over the %d KiB a tool result may hold, and this kind of answer cannot be cut",
-		size(v)>>10, maxResultBytes>>10).
+		n>>10, maxResultBytes>>10).
 		WithHint(narrow(0))
 }
 
@@ -105,31 +107,51 @@ func joinWith(items []string, sep, last string) string {
 	return strings.Join(items[:len(items)-1], sep) + last + items[len(items)-1]
 }
 
-// size is what v weighs once encoded the way viewResult sends it.
-func size(v view.View) int {
+// encoded is v as the one JSON text a result is sent as.
+func encoded(v view.View) ([]byte, error) {
 	m, err := view.ToMap(v)
 	if err != nil {
-		return 0
+		return nil, err
 	}
-	raw, err := view.Marshal(m)
+	return view.Marshal(m)
+}
+
+// size is what v weighs once encoded the way viewResult sends it.
+func size(v view.View) int {
+	raw, err := encoded(v)
 	if err != nil {
 		return 0
 	}
 	return len(raw)
 }
 
+// valueSize is what s weighs as a pair's value, plus what a page holding only
+// that pair weighs besides, which cancels out wherever two are compared. The
+// encoding of a string is a function of the string alone, so the weight of a
+// page with one value changed is the weight of the page with the value's
+// weight swapped.
+//
+// Measured through the same encoding as the page rather than worked out from
+// the string, since the encoding is several passes and each could write the
+// same string at a different length (an invalid byte is six bytes the first
+// time and three the next).
+func valueSize(s string) int {
+	return size(view.KeyValue{Pairs: []view.Pair{{Value: s}}})
+}
+
 // shrink returns v cut to encode within limit bytes, and false when v is of a
-// shape that cannot be, or when nothing of it is left to show.
-func shrink(v view.View, limit int, narrow narrowing) (view.View, bool) {
+// shape that cannot be, or when nothing of it is left to show. n is what v
+// weighs, which every caller has measured already.
+func shrink(v view.View, n, limit int, narrow narrowing) (view.View, bool) {
 	switch t := v.(type) {
 	case view.Table:
 		return shrinkTable(t, limit, narrow)
 	case view.Text:
 		return shrinkText(t, limit)
 	case view.KeyValue:
-		return shrinkPairs(t, limit)
+		return shrinkPairs(t, n, limit)
 	case view.Sections:
-		return shrinkSections(t, limit, narrow)
+		return shrinkSections(t, n, limit, narrow)
 	}
 	return nil, false
 }
@@ -203,10 +225,28 @@ func cutText(s string, n int) string {
 // shrinkPairs cuts the longest values, one at a time, until the rest fits: a
 // response body is a pair beside a status and some headers, and the status is
 // the part that must survive.
-func shrinkPairs(kv view.KeyValue, limit int) (view.View, bool) {
+//
+// total is what the page weighs, and each cut of a value it tries is measured
+// as that value alone against what the rest of the page weighs (valueSize). It
+// used to encode the whole page for every cut it tried, which is once per step
+// of the search for each value it cut: a redis hash of a hundred large fields
+// was minutes of CPU on the call, and a page whose keys alone were over the
+// budget blanked its values one whole-page encoding after another, to be
+// refused at the end. The cut it lands on is the same one, byte for byte, and
+// TestACutIsTheSameCutHoweverCheaplyItIsFound holds it to that.
+func shrinkPairs(kv view.KeyValue, total, limit int) (view.View, bool) {
 	pairs := append([]view.Pair(nil), kv.Pairs...)
-	out := func() view.KeyValue { o := kv; o.Pairs = pairs; return o }
-	for size(out()) > limit {
+	// Every value blank is the least the page can weigh, so a page over the
+	// budget even then is refused without blanking them one at a time first.
+	blank := kv
+	blank.Pairs = make([]view.Pair, len(pairs))
+	for i, p := range pairs {
+		blank.Pairs[i] = view.Pair{Key: p.Key}
+	}
+	if size(blank) > limit {
+		return nil, false
+	}
+	for total > limit {
 		longest := 0
 		for i, p := range pairs {
 			if len(p.Value) > len(pairs[longest].Value) {
@@ -217,42 +257,58 @@ func shrinkPairs(kv view.KeyValue, limit int) (view.View, bool) {
 		if len(whole) == 0 {
 			return nil, false
 		}
-		n := largest(min(len(whole), limit), func(n int) bool {
-			pairs[longest].Value = cutText(whole, n)
-			return size(out()) <= limit
-		})
+		rest := total - valueSize(whole)
+		fits := func(n int) bool { return rest+valueSize(cutText(whole, n)) <= limit }
+		// A page whose other values still put it over the budget however short
+		// this one is cut has it blanked without a search for a cut, since a
+		// longer cut weighs no less and none fits.
+		n := 0
+		if fits(1) {
+			n = largest(min(len(whole), limit), fits)
+		}
 		pairs[longest].Value = cutText(whole, n)
 		if n == 0 {
 			pairs[longest].Value = ""
 		}
+		total = rest + valueSize(pairs[longest].Value)
 	}
-	return out(), true
+	kv.Pairs = pairs
+	return kv, true
 }
 
 // shrinkSections cuts the largest section, and then the next, until the page
 // fits; a section that cannot be cut is left whole, and a page whose parts
 // all are too big is refused.
-func shrinkSections(s view.Sections, limit int, narrow narrowing) (view.View, bool) {
+//
+// What each section weighs is measured once and again only when it is cut, and
+// the page once a step, where every section used to be encoded again on every
+// step to find the largest, and the page twice. total is what the page weighs.
+func shrinkSections(s view.Sections, total, limit int, narrow narrowing) (view.View, bool) {
 	items := append([]view.Section(nil), s.Items...)
 	out := func() view.Sections { o := s; o.Items = items; return o }
 	stuck := make([]bool, len(items))
-	for size(out()) > limit {
+	weights := make([]int, len(items))
+	for i, it := range items {
+		weights[i] = size(it.View)
+	}
+	for total > limit {
 		pick := -1
-		for i, it := range items {
-			if !stuck[i] && (pick < 0 || size(it.View) > size(items[pick].View)) {
+		for i := range items {
+			if !stuck[i] && (pick < 0 || weights[i] > weights[pick]) {
 				pick = i
 			}
 		}
 		if pick < 0 {
 			return nil, false
 		}
-		excess := size(out()) - limit
-		cut, ok := shrink(items[pick].View, max(size(items[pick].View)-excess, 0), narrow)
+		cut, ok := shrink(items[pick].View, weights[pick], max(weights[pick]-(total-limit), 0), narrow)
 		if !ok {
 			stuck[pick] = true
 			continue
 		}
 		items[pick].View = cut
+		weights[pick] = size(cut)
+		total = size(out())
 	}
 	return out(), true
 }

@@ -915,15 +915,21 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// is the answer, which a model cannot read at that size and an SDK would
 		// encode a second time for the structured copy. The operator's limit is
 		// on what the call produced, not on what is left once it is shortened.
+		//
+		// Encoded once, here, and that encoding is what is measured against
+		// both limits and what is sent when it fits: every answer used to be
+		// encoded three times over, twice only to be measured.
 		cleaned := cleanedView(c.HeldWarnings(v, func(f plugin.Field) bool { return !f.Local }))
-		if limit := opts.resultLimit(); limit > 0 {
-			if n := size(cleaned); n > limit {
-				ve := plugin.ResultTooLarge(c.ID, n, limit)
-				withheld(rec, ve)
-				return errResult(ve), nil
-			}
+		raw, err := encoded(cleaned)
+		if err != nil {
+			return nil, err
 		}
-		res, tooLarge, err := fittedResult(cleaned, narrowingFor(c))
+		if limit := opts.resultLimit(); limit > 0 && len(raw) > limit {
+			ve := plugin.ResultTooLarge(c.ID, len(raw), limit)
+			withheld(rec, ve)
+			return errResult(ve), nil
+		}
+		res, tooLarge, err := fittedResult(cleaned, raw, narrowingFor(c))
 		if err != nil {
 			return nil, err
 		}
@@ -1408,7 +1414,12 @@ func nameUnder(root, p string) bool {
 // And bounded (fitResult): unbounded is what a result may be to a person at a
 // terminal, who scrolls, and what a model's context is not.
 func viewResult(v view.View) (*sdk.CallToolResult, error) {
-	res, tooLarge, err := fittedResult(cleanedView(v), narrowingFor(plugin.Capability{}))
+	cleaned := cleanedView(v)
+	raw, err := encoded(cleaned)
+	if err != nil {
+		return nil, err
+	}
+	res, tooLarge, err := fittedResult(cleaned, raw, narrowingFor(plugin.Capability{}))
 	if tooLarge != nil {
 		return errResult(tooLarge), nil
 	}
@@ -1436,25 +1447,24 @@ func cleanedView(v view.View) view.View {
 
 // fittedResult is a cleaned view cut to what a model can hold (fitResult) and
 // encoded as the one JSON text a result is sent as, or the refusal of a view
-// that cannot be cut.
+// that cannot be cut. raw is v encoded (encoded), which is what is sent when it
+// fits, so an answer that fits is encoded once.
 //
 // The refusal comes back on its own and not as a result already made of it,
 // because the caller has a record to keep: a call whose answer was refused here
 // ran and handed over nothing, which the row has to say (withheld). Folded into
 // an error result, it was indistinguishable from an answer that went out, and a
 // Reveals capability's row said a value had been revealed that never was.
-func fittedResult(v view.View, narrow narrowing) (*sdk.CallToolResult, *view.Error, error) {
-	v, tooLarge := fitResult(v, narrow)
-	if tooLarge != nil {
-		return nil, tooLarge, nil
-	}
-	m, err := view.ToMap(v)
-	if err != nil {
-		return nil, nil, err
-	}
-	raw, err := view.Marshal(m)
-	if err != nil {
-		return nil, nil, err
+func fittedResult(v view.View, raw []byte, narrow narrowing) (*sdk.CallToolResult, *view.Error, error) {
+	if len(raw) > maxResultBytes {
+		cut, tooLarge := fitResult(v, len(raw), narrow)
+		if tooLarge != nil {
+			return nil, tooLarge, nil
+		}
+		var err error
+		if raw, err = encoded(cut); err != nil {
+			return nil, nil, err
+		}
 	}
 	return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: string(raw)}}}, nil, nil
 }
