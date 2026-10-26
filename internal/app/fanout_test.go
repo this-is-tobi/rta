@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/recent"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -154,6 +155,50 @@ func TestLeavingTheEnvironmentDoesNotFanOut(t *testing.T) {
 	out, _, err := runSwitchedOutcome(t, fanOutRegistry(t), fanOutConfig, "db", "status", "--no-profile")
 	if err != nil || strings.Contains(out, "SHARDS/") {
 		t.Errorf("%q %v", out, err)
+	}
+}
+
+// Each target of a fan-out is run the way a single call is, and three rules the
+// single call gained after fan-out was written did not reach it: a warning
+// naming an input the capability does not declare is cut from it, a failure
+// that carries its answer keeps the answer, and what was typed on a run that
+// worked is offered back.
+func TestEachTargetOfAFanOutEndsTheWayASingleCallDoes(t *testing.T) {
+	host := plugin.Field{Name: "host", Type: plugin.String, Default: "localhost", Config: "host", Local: true, Help: "host"}
+	reg := registry.New()
+	if err := reg.Register(plugin.Plugin{
+		Name: "lst", Summary: "lists",
+		Capabilities: []plugin.Capability{{
+			ID: "lst.list", Summary: "list", Safety: plugin.Read,
+			Inputs: []plugin.Field{host, {Name: "namespace", Type: plugin.String, Help: "namespace"}},
+			Run: func(_ context.Context, req plugin.Request) (view.View, error) {
+				table := view.Table{Columns: []view.Column{{Name: "Name"}}, Rows: [][]string{{"on " + req.String("host")}},
+					Warnings: []view.Error{{Code: "lst.partial", Message: "one shard skipped", Input: "ns"}}}
+				if req.String("host") == "b.internal" {
+					return nil, &plugin.AnsweredError{View: table, Err: view.Errorf("lst.partial", "b answered in part")}
+				}
+				return table, nil
+			},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	config := "profiles:\n  shards:\n    plugins:\n" +
+		"      lst/a:\n        set:\n          host: a.internal\n" +
+		"      lst/b:\n        set:\n          host: b.internal\n"
+
+	out, errOut, err := runWith(t, reg, config, "lst", "list", "--profile", "shards", "--namespace", "kube-system", "-o", "json")
+	if err == nil || !strings.Contains(errOut, "1 of 2 targets failed") {
+		t.Fatalf("want one target failed: %v\n%s", err, errOut)
+	}
+	if strings.Contains(out, `"input": "ns"`) {
+		t.Errorf("a warning names an input no command line has:\n%s", out)
+	}
+	if !strings.Contains(out, "on b.internal") {
+		t.Errorf("the answer the failed target carried is not on the page:\n%s", out)
+	}
+	if got := recent.Load()[recent.Key("shards/a", "lst.list", "namespace")]; !slices.Equal(got, []string{"kube-system"}) {
+		t.Errorf("the namespace typed on the run that worked is not offered back: %v", got)
 	}
 }
 

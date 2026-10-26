@@ -131,8 +131,9 @@ func runFanOut(ctx context.Context, cmd *cobra.Command, c plugin.Capability, val
 			// it, and the page is every target's: no input is the page's to fix.
 			w.Input = ""
 			page.Warnings = append(page.Warnings, w)
-			continue
 		}
+		// A failure that carried its answer is that target's section all the
+		// same, as the single call draws it before its refusal.
 		if v != nil {
 			page.Items = append(page.Items, view.Section{Title: target, View: v})
 		}
@@ -154,7 +155,8 @@ func runFanOut(ctx context.Context, cmd *cobra.Command, c plugin.Capability, val
 
 // runOnTarget is the single-target path of runCapability for a read: the
 // target's connection resolved, its forward opened for this call and closed
-// after it, then the run.
+// after it, then the run, which is runCapability's own (preparedRun, ranAs).
+// A refusal can come back with a view beside it, the answer a failure carried.
 func runOnTarget(ctx context.Context, cmd *cobra.Command, c plugin.Capability, values map[string]any,
 	opts *globalOpts,
 ) (view.View, *view.Error) {
@@ -163,26 +165,10 @@ func runOnTarget(ctx context.Context, cmd *cobra.Command, c plugin.Capability, v
 	if verr != nil {
 		return nil, verr
 	}
-	inputs := plugin.Inputs{
-		Caller:        values,
-		Profile:       bound.filled,
-		ProfileName:   bound.name,
-		Tunnel:        bound.tunnel,
-		Fence:         bound.fence,
-		Config:        PluginConfig(c),
-		ConfigSection: PluginConfigSection(c),
-	}
-	req := plugin.ResolveRequest(c, inputs, opts.dryRun, opts.yes).WithSurface(plugin.SurfaceCLI)
-	if verr := plugin.CheckRequired(c, req); verr != nil {
+	_, req, verr := preparedRun(c, values, bound, opts)
+	if verr != nil {
 		return nil, verr
 	}
 	v, err := c.Run(ctx, req)
-	if err != nil {
-		ve := view.AsError(err, c.ID+".failed")
-		if note := ConfigNotApplied(c); note != "" {
-			ve = ve.WithHint(strings.TrimSpace(ve.Hint + " · " + note))
-		}
-		return nil, ve
-	}
-	return v, nil
+	return ranAs(c, v, err, values, bound, opts)
 }
