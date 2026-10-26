@@ -873,7 +873,7 @@ func doctorProfiles(reg *registry.Registry, add func(check, status, detail strin
 				note := name + " is switched on with no deadline"
 				if left, deadline := sel.Left(now); deadline {
 					note = fmt.Sprintf("%s is switched on for another %s", name,
-						left.Round(time.Minute))
+						profile.ShortDuration(left))
 				}
 				add("profile", "info", note+" — while it is, `rta mcp serve` refuses "+
 					"every other profile, whatever grants exist")

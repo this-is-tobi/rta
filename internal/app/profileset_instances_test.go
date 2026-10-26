@@ -204,6 +204,46 @@ func TestUseOffSaysASwitchHadLapsed(t *testing.T) {
 	}
 }
 
+// The time a switch has left is written the way its badge writes it. `rta use`
+// and doctor printed a Duration rounded to the minute, "1h30m0s" beside a
+// badge reading "1h30m", and "0s" for a switch with twenty seconds to run.
+func TestUseAndDoctorSayTheTimeLeftTheWayTheBadgeDoes(t *testing.T) {
+	reg := setRegistry(t)
+	run := session(t, reg)
+	if _, stderr, err := run("profile", "set", "staging",
+		"--plugin", "db", "--set", "host=staging.internal"); err != nil {
+		t.Fatalf("set: %v\n%s", err, stderr)
+	}
+	// Under a minute the time left is rounded to the second, and it is read
+	// after the selection is saved: the last case starts 400ms over, so that
+	// anything up to 900ms between the save and the second read still says
+	// 20s on a loaded runner.
+	for _, c := range []struct {
+		left time.Duration
+		want string
+	}{
+		{90*time.Minute + 20*time.Second, "1h30m"},
+		{20*time.Second + 400*time.Millisecond, "20s"},
+	} {
+		until := time.Now().Add(c.left)
+		if verr := profile.SaveSelection(profile.Selection{Active: "staging", Until: &until}); verr != nil {
+			t.Fatal(verr)
+		}
+		if out, _, err := run("use"); err != nil || !strings.Contains(out, "("+c.want+" left)") {
+			t.Errorf("use = %q, %v; want %q left", out, err, c.want)
+		}
+		var said string
+		doctorProfiles(reg, func(check, status, detail string) {
+			if check == "profile" && status == "info" {
+				said = detail
+			}
+		})
+		if !strings.Contains(said, "for another "+c.want+" —") {
+			t.Errorf("doctor says %q; want %q left", said, c.want)
+		}
+	}
+}
+
 // A selection file that does not verify holds the fence shut: every profile is
 // refused to agents, and the refusal's note sends the operator to `rta use`.
 // That command read the file the lenient way and answered "Nothing switched
