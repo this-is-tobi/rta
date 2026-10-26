@@ -19,8 +19,6 @@ func TestAPathThatCouldCloseAPolicyFormIsRefused(t *testing.T) {
 	for _, bad := range []string{
 		`/tmp/x")) (allow file-read* (subpath "/`,
 		`/tmp/quote"here`,
-		"/tmp/paren(here",
-		"/tmp/paren)here",
 		"/tmp/new\nline",
 		"/tmp/carriage\rreturn",
 		`/tmp/back\slash`,
@@ -29,13 +27,17 @@ func TestAPathThatCouldCloseAPolicyFormIsRefused(t *testing.T) {
 			t.Errorf("%q was accepted into a policy", bad)
 		}
 	}
-	// And the ordinary case still passes, including the spaces and unicode
-	// real home directories have in them.
+	// And the ordinary case still passes, including the spaces, unicode and
+	// parentheses real home directories and synced folders have in them —
+	// inside the quotes a parenthesis closes nothing, which the darwin test
+	// TestParenthesesInAPathAreCharactersOfIt runs rather than asserts.
 	for _, ok := range []string{
 		"/Users/someone/.ssh",
 		"/Users/Ada Lovelace/Library/Application Support/rta",
 		"/home/user/.local/share/rta",
 		"/Users/tobi/Développement/rta",
+		"/Users/someone/Dropbox (Personal)/keys/rta.txt",
+		"/tmp/x)) (allow default) ((y",
 	} {
 		if err := validate([]string{ok}); err != nil {
 			t.Errorf("%q was refused: %v", ok, err)

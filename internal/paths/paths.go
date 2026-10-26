@@ -18,6 +18,8 @@ import (
 	"runtime"
 	"sync"
 	"syscall"
+
+	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
 // Data resolves where local state lives: RTA_DATA_DIR overrides (tests,
@@ -314,6 +316,84 @@ func LegacyConfigDir() string {
 		return ""
 	}
 	return old
+}
+
+// KVIdentityEnv names the key a key-mode store is unlocked with, wherever the
+// operator keeps it: the secrets page tells them to keep it anywhere and name
+// it here, and it is how a server an MCP client starts is handed one.
+const KVIdentityEnv = "RTA_KV_IDENTITY"
+
+// protected is what Protect was told, for OwnFiles.
+var protected struct {
+	sync.Mutex
+	files []string
+}
+
+// Protect adds to OwnFiles files of rta's own named on its command line, the
+// bearer tokens and the operator roster `rta mcp serve --http` reads. A
+// relative name is taken from the working directory now, as the command that
+// reads the file takes it.
+func Protect(files ...string) {
+	protected.Lock()
+	defer protected.Unlock()
+	for _, f := range files {
+		if f == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(f); err == nil {
+			f = abs
+		}
+		protected.files = append(protected.files, f)
+	}
+}
+
+// OwnFiles is what of rta's own lies outside its data and configuration
+// directories, where the operator chose to put it: the key KVIdentityEnv
+// names, and what Protect was told. The plugin sandbox denies each to a
+// plugin for reading and writing, unless its path is one the sandbox profile
+// cannot spell (pluginhost.ResolveAllowing), and the MCP path gate refuses
+// each to a path argument, as they do rta's directories — and for the
+// reasons they do: the key decrypts every copy of the store, which a backup
+// of the data directory is meant to be "ciphertext and nothing else"
+// without; a token read is every agent's credential on the HTTP transport;
+// and a line written into the token file or the roster is a caller or an
+// operator the operator never enrolled, from the next start on.
+//
+// A name that is a directory is left out. Each of these is a file, and a
+// directory named in its place by mistake — the home directory, the root a
+// server is serving — would deny everything under it to every plugin and
+// every path argument, for a run that is about to refuse the name anyway.
+// A name that does not exist yet is kept, as the deny set keeps every other.
+//
+// The key is named as kv names it when it opens it: a leading ~ is the home
+// directory (plugin.ExpandHome, the rule pathguard.ExpandTilde gives kv),
+// and anything else relative is taken from the working directory. Nothing
+// expands the tilde before rta sees it in an MCP client's JSON env, a systemd
+// Environment= line or a quoted export, which are how a server is handed a
+// key, and read literally it named a directory called ~ under the working
+// directory while the key itself was denied nowhere. The two files on the
+// command line are taken as LoadTokenFile and LoadRoster take them, with no
+// tilde of their own: a shell expands one it is given unquoted.
+func OwnFiles() []string {
+	var files []string
+	if key := os.Getenv(KVIdentityEnv); key != "" {
+		key = plugin.ExpandHome(key)
+		if abs, err := filepath.Abs(key); err == nil {
+			key = abs
+		}
+		files = append(files, key)
+	}
+	protected.Lock()
+	files = append(files, protected.files...)
+	protected.Unlock()
+	out := files[:0]
+	for _, f := range files {
+		if info, err := os.Stat(f); err == nil && info.IsDir() {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // ownedByUs reports that info names a file this account owns. A FileInfo that

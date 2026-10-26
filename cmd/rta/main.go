@@ -121,6 +121,11 @@ func main() {
 	// and the grace starts at Attach.
 	ctx, interrupts := app.WatchSignals(context.Background())
 
+	// Before the plugins, whose sandboxes are decided as they load: the
+	// token file and the roster `mcp serve --http` was named are denied to
+	// them as rta's own files, and nothing has parsed the command line yet.
+	app.ProtectServeFiles(os.Args[1:])
+
 	// External plugins, before the command tree is built: cobra materializes
 	// one command per capability, so a capability that arrives afterwards has
 	// nothing to attach to.

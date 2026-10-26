@@ -8,3 +8,11 @@ func SetUserConfigDir(f func() (string, error)) (restore func()) {
 	userConfigDir = f
 	return func() { userConfigDir = was }
 }
+
+// ForgetProtected empties what Protect was told, which outlives a test as it
+// outlives nothing in a process that is rta.
+func ForgetProtected() {
+	protected.Lock()
+	defer protected.Unlock()
+	protected.files = nil
+}
