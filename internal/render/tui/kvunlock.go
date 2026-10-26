@@ -45,6 +45,16 @@ func (m Model) unlockStore() (tea.Model, tea.Cmd) {
 		m.refuse("nothing to unlock — there is no store yet, or the environment already opens it")
 		return m, nil
 	}
+	return m.openUnlock(prompt)
+}
+
+// openUnlock opens the unlock form asking for prompt, from the dashboard U is a
+// key of. Said, as every other way into a form says where it was opened from:
+// leaving the form goes back to the origin, and the one left behind by the last
+// screen to open a form was the catalogue, the profiles pane or the plugins
+// pane, where esc landed with the dashboard's refresh never started again.
+func (m Model) openUnlock(prompt string) (tea.Model, tea.Cmd) {
+	m.origin = modeDashboard
 	return m.open(unlockCapability(prompt))
 }
 

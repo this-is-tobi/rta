@@ -230,3 +230,23 @@ func TestAnUnlockForTooShortATimeNamesTheForBox(t *testing.T) {
 		t.Errorf("a ten-second session = %+v, want kv.session.ttl naming for", verr)
 	}
 }
+
+// U is a key of the dashboard, and its form closed to whichever screen the
+// last one to open a form had left behind: open a capability from the
+// catalogue, go back to the dashboard, press U and then esc, and the catalogue
+// was on screen, with the dashboard's refresh not started again. It closes to
+// the dashboard it was opened on.
+func TestLeavingTheUnlockFormGoesBackToTheDashboard(t *testing.T) {
+	m, _ := kvModel(t)
+	m.mode, m.origin = modeDashboard, modeBrowse
+	next, _ := m.openUnlock("the store's passphrase")
+	form := next.(Model)
+	if form.mode != modeForm || form.form == nil || form.form.cap.ID != unlockID {
+		t.Fatalf("mode = %v, form = %+v", form.mode, form.form)
+	}
+	gen := form.tickGen
+	back, cmd := form.Update(keyMsg("esc"))
+	if got := back.(Model); got.mode != modeDashboard || got.tickGen == gen || cmd == nil {
+		t.Errorf("esc on the unlock form went to %v (refresh restarted %v), want the dashboard", got.mode, got.tickGen != gen)
+	}
+}
