@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	stdhttp "net/http"
 	"strings"
+
+	"github.com/this-is-tobi/rta/pkg/format"
 )
 
 // One question to OSV, for every dependency at once.
@@ -28,6 +31,39 @@ const (
 	// osvBatchMax is the endpoint's documented ceiling per request.
 	osvBatchMax = 1000
 )
+
+// osvBatchMaxBytes and osvRecordMaxBytes bound what one answer from osv.dev is
+// read to, as every other built-in that asks a fixed service bounds its read
+// (eolapi, gitignore). Both were decoded to their end, and a JSON decoder
+// holds a value whole before it unmarshals it: a proxy the machine trusts, or
+// a mirror misbehaving, streaming for the length of the timeout had the batch
+// query and each of the eight record fetches buffer what it sent, in the
+// process that enforces every grant, from a read that needs none.
+//
+// Generous, since the point is refusing a runaway answer, not rationing a real
+// one. A batch answer is identifiers alone, under a hundred bytes each, and a
+// thousand packages with a hundred advisories apiece stay under 8 MiB. A
+// record that lists every affected version runs to a few hundred kilobytes; a
+// bound set too tight would leave the advisory ungraded without a word, which
+// is the cost of guessing low.
+const (
+	osvBatchMaxBytes  = 32 << 20
+	osvRecordMaxBytes = 8 << 20
+)
+
+// decodeOSV reads one answer from osv.dev into v, no further than max bytes,
+// and says so past them rather than handing on the syntax error a cut-off
+// body would decode to.
+func decodeOSV(body io.Reader, max int, v any) error {
+	data, err := io.ReadAll(io.LimitReader(body, int64(max)+1))
+	if err != nil {
+		return err
+	}
+	if len(data) > max {
+		return fmt.Errorf("osv.dev answered more than %s, past any answer it gives", format.Bytes(max))
+	}
+	return json.Unmarshal(data, v)
+}
 
 type osvQuery struct {
 	Package osvPackage `json:"package"`
@@ -95,14 +131,14 @@ func queryOSVAt(ctx context.Context, client *stdhttp.Client, endpoint string, co
 		if err != nil {
 			return nil, err
 		}
-		var parsed osvResponse
-		decodeErr := json.NewDecoder(resp.Body).Decode(&parsed)
 		status := resp.StatusCode
-		_ = resp.Body.Close()
-
 		if status != stdhttp.StatusOK {
+			_ = resp.Body.Close()
 			return nil, fmt.Errorf("osv.dev returned %s", strings.TrimSpace(resp.Status))
 		}
+		var parsed osvResponse
+		decodeErr := decodeOSV(resp.Body, osvBatchMaxBytes, &parsed)
+		_ = resp.Body.Close()
 		if decodeErr != nil {
 			return nil, fmt.Errorf("reading osv.dev response: %w", decodeErr)
 		}
