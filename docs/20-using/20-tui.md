@@ -207,7 +207,7 @@ A destructive capability never runs from its form. What opens instead is its own
 | `r` | Re-run: refresh a read, retry a failure. A write that succeeded is run again only when it is idempotent, and a destructive call that succeeded never is: `e` does it again, through its question |
 | `y` | Copy as JSON |
 | `d` | Delete |
-| `pgup/pgdn` or `space` | A page up or down an answer taller than the pane: `space` and `f` page down, `b` pages up |
+| `pgup/pgdn` or `space` | A page up or down an answer taller than the pane: `space` and `f` page down, `b` pages up. On a list the cursor goes with the page, and with the mouse wheel, so the row an action acts on is the one on screen. Past the list's first or last row, the page above or below it turns as any other; an action pressed with its row off screen brings the row back, and the next press acts |
 | `ctrl+u` or `ctrl+d` | Half a page up or down, as `u` and `d` do where the view has no key of its own on them |
 | `home` or `end` | The top of the answer and the bottom — on a list, the first row and the last, with the cursor |
 | `esc` | Stop a run that is still going; on a result, go back |
