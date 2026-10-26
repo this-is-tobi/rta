@@ -256,6 +256,28 @@ func TestARefusalOrACardNamesTheDropInThatStatesTheUnit(t *testing.T) {
 	})
 }
 
+// The receipt of `profile rm` named the file it was removed from by asking which
+// file states the profile, after it had been removed: nothing did any more,
+// and the answer was config.yaml. The dry run, asked before, named the drop-in.
+func TestProfileRmNamesTheDropInItRemovedTheProfileFrom(t *testing.T) {
+	for _, dry := range []bool{true, false} {
+		dir, path := split(t, map[string]string{
+			"config.d/team.yaml": "profiles:\n  prod:\n    plugins:\n      db:\n        set:\n          host: db.prod.internal\n",
+		})
+		args := []string{"profile", "rm", "prod", "--yes", "-o", "json"}
+		if dry {
+			args = append(args, "--dry-run")
+		}
+		out, errOut, err := runConfigAt(t, setRegistry(t), path, args...)
+		if err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+		if want := filepath.Join(dir, "config.d", "team.yaml"); !strings.Contains(out, want) {
+			t.Errorf("dry run %v: the receipt does not name %s:\n%s", dry, want, out)
+		}
+	}
+}
+
 // A unit two files state is a fault of the files together: it is reported once,
 // as the files', and not once under each of them.
 func TestConfigCheckReportsAUnitStatedTwiceOnce(t *testing.T) {

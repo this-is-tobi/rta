@@ -1382,6 +1382,9 @@ func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry, d
 		return nil, verr
 	}
 	want := strings.TrimSpace(mustString(cmd, "plugin"))
+	// Asked before the write: once the profile is gone nothing states it, and
+	// the answer is config.yaml whichever drop-in it was removed from.
+	from := config.Where("profiles", name)
 	var (
 		verr    *view.Error
 		key     string
@@ -1457,7 +1460,7 @@ func runProfileRemove(cmd *cobra.Command, name string, reg *registry.Registry, d
 		return card, nil
 	}
 
-	pairs := []view.Pair{{Key: removeLabel, Value: "profile " + name + " from " + config.Where("profiles", name)}}
+	pairs := []view.Pair{{Key: removeLabel, Value: "profile " + name + " from " + from}}
 	// A screen written in the entry is part of it and is not kept anywhere
 	// else: said, so removing an environment is not also quietly removing the
 	// tiles somebody arranged for it.
