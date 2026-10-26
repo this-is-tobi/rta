@@ -126,6 +126,9 @@ func runSend(ctx context.Context, req plugin.Request) (view.View, error) {
 	// parked agent call.
 	if req.DryRun {
 		host := req.String("host")
+		if verr := dottedNumber(host); verr != nil {
+			return nil, verr
+		}
 		port := req.Int("port")
 		if port < 1 || port > 65535 {
 			return nil, view.Errorf("net.probe.badport", "port %d is out of range", port).
@@ -178,6 +181,36 @@ func resolveFailed(code string, sf plugin.Surface, host string, err error) *view
 // that the name does not exist, which is what a mistyped host gets. A resolver
 // that did not answer, or answered with a failure of its own, names none: the
 // host may be right, and the network is what failed.
+// dottedNumber refuses a host written only in digits and dots that is no IPv4
+// address — 192.168.1.256, 10.0.0, 192.168.01.1 — saying which part is wrong.
+// It went to the resolver as a name, and came back as a host that does not
+// exist, under a hint to ask the resolver again; no top-level domain is all
+// digits (RFC 3696, section 2), so the lookup could never succeed, and the
+// mistake is in the number.
+func dottedNumber(host string) *view.Error {
+	if !strings.Contains(host, ".") || strings.Trim(host, "0123456789.") != "" || stdnet.ParseIP(host) != nil {
+		return nil
+	}
+	parts := strings.Split(host, ".")
+	why := fmt.Sprintf("an address has four parts, and this has %d", len(parts))
+	for _, p := range parts {
+		n, _ := strconv.Atoi(p)
+		switch {
+		case p == "":
+			why = "a part is empty"
+		case n > 255:
+			why = p + " is more than 255"
+		case len(p) > 1 && p[0] == '0':
+			why = p + " has a leading zero"
+		default:
+			continue
+		}
+		break
+	}
+	return view.Errorf("net.host.invalid", "%s is not an IPv4 address: %s", host, why).
+		WithHint("an IPv4 address is four numbers from 0 to 255 with no leading zeros, as 192.168.1.10").WithInput("host")
+}
+
 func namingHost(verr *view.Error, err error) *view.Error {
 	if !isNotFound(err) {
 		return verr
@@ -187,6 +220,9 @@ func namingHost(verr *view.Error, err error) *view.Error {
 
 func probe(ctx context.Context, req plugin.Request, send string) (view.View, error) {
 	host := req.String("host")
+	if verr := dottedNumber(host); verr != nil {
+		return nil, verr
+	}
 	port := req.Int("port")
 	if port < 1 || port > 65535 {
 		return nil, view.Errorf("net.probe.badport", "port %d is out of range", port).

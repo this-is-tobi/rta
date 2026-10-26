@@ -228,3 +228,31 @@ func TestASystemFileThatCannotBeReadNamesNoInput(t *testing.T) {
 		}
 	}
 }
+
+// A host written in digits and dots that is no IPv4 address is refused before
+// anything is looked up, saying which part is wrong: it went to the resolver as
+// a name, and came back as a host that does not exist.
+func TestADottedNumberThatIsNoAddressIsRefusedBeforeAnyLookup(t *testing.T) {
+	for host, says := range map[string]string{
+		"192.168.1.256": "256 is more than 255",
+		"10.0.0":        "this has 3",
+		"192.168.01.1":  "01 has a leading zero",
+		"1.2.3.4.":      "a part is empty",
+	} {
+		for id, h := range map[string]plugin.Handler{"net.ping": runPing, "net.port": runPort, "net.trace": runTrace, "net.probe": runProbe} {
+			ve := refusedInput(t, id, h, map[string]any{"host": host, "port": 443}, false, "net.host.invalid")
+			if ve.Input != "host" || !strings.Contains(ve.Message, says) {
+				t.Errorf("%s %s: %+v, want it naming host and saying %q", id, host, ve, says)
+			}
+		}
+		// net.send's dry run is held to what its run would refuse.
+		if ve := refusedInput(t, "net.send", runSend, map[string]any{"host": host, "port": 443, "data": "x"}, true, "net.host.invalid"); ve.Input != "host" {
+			t.Errorf("net.send dry run %s: %+v", host, ve)
+		}
+	}
+	for _, host := range []string{"127.0.0.1", "10.0.0.1", "example.com", "::1", "host-1.example"} {
+		if verr := dottedNumber(host); verr != nil {
+			t.Errorf("%s: refused as %v, want it taken", host, verr)
+		}
+	}
+}
