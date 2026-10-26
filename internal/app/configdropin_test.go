@@ -184,6 +184,39 @@ func TestDoctorSaysHowManyDropInsTheConfigIsReadFrom(t *testing.T) {
 	}
 }
 
+// A configuration that is all drop-ins has no config.yaml, and the config row
+// took that for "no config file" whenever the drop-ins did not read: a profile
+// two of them state, or one that does not parse, was "ok — rta runs on its
+// defaults" while every other command refused it.
+func TestDoctorReportsABrokenDropInWhenThereIsNoConfigFile(t *testing.T) {
+	for name, files := range map[string]map[string]string{
+		"a profile stated twice": {
+			"config.d/10-team.yaml": "profiles:\n  prod:\n    note: team\n",
+			"config.d/20-me.yaml":   "profiles:\n  prod:\n    note: mine\n",
+		},
+		"a drop-in that does not parse": {
+			"config.d/10-team.yaml": "profiles: [\n",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, path := split(t, files)
+			t.Setenv("RTA_CONFIG", path)
+			var status, detail string
+			doctorConfig(func(check, s, d string) {
+				if check == "config" && status == "" {
+					status, detail = s, d
+				}
+			})
+			if status != "error" || strings.Contains(detail, "no config file") {
+				t.Errorf("the config row = %s: %q", status, detail)
+			}
+			if !strings.Contains(detail, " — ") {
+				t.Errorf("the config row lost the refusal's hint: %q", detail)
+			}
+		})
+	}
+}
+
 // A unit two files state is a fault of the files together: it is reported once,
 // as the files', and not once under each of them.
 func TestConfigCheckReportsAUnitStatedTwiceOnce(t *testing.T) {

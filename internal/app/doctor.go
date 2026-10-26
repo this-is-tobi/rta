@@ -294,6 +294,13 @@ func hintTail(hint string) string {
 	return " — " + hint
 }
 
+// refusalDetail is a refusal as one row's detail: its message and its hint,
+// which err.Error() alone drops.
+func refusalDetail(err error) string {
+	ve := view.AsError(err, "config.invalid")
+	return ve.Message + hintTail(ve.Hint)
+}
+
 // doctorReport is the report the registry hands to whatever shows it beside the
 // capabilities, which asks for the summary form.
 func doctorReport(reg *registry.Registry) view.View { return doctorTable(reg, false) }
@@ -460,17 +467,28 @@ func doctorTerminal(add func(check, status, detail string)) {
 // it can come from are one shell apart: `RTA_OUTPUT=json` in a shell rc looks
 // exactly like `output: json` in the file until something says which is which,
 // and the file is the one that can be edited.
+//
+// The files are read before anything is concluded from config.yaml being
+// absent. A configuration that is all drop-ins has none, and when the
+// drop-ins did not read — one that does not parse, a profile two of them
+// state — the count of them stayed at zero and the row said "no config file
+// — rta runs on its defaults" while every other command refused them. The
+// rows after this one skip on the same refusal, so this row is the only
+// place it is said.
 func doctorConfig(add func(check, status, detail string)) {
 	cfgPath := config.Path()
-	dropIns := 0
-	if files, err := config.Files(); err == nil {
-		dropIns = len(files) - 1
+	files, err := config.Files()
+	if err != nil {
+		add("config", "error", refusalDetail(err))
+		doctorLegacyConfig(add)
+		return
 	}
+	dropIns := len(files) - 1
 	if _, statErr := os.Stat(cfgPath); statErr != nil && dropIns == 0 {
 		add("config", "ok", "no config file — rta runs on its defaults; one at "+cfgPath+
 			" would change them"+outputSource(config.Config{}))
 	} else if cfg, err := config.Load(); err != nil {
-		add("config", "error", err.Error())
+		add("config", "error", refusalDetail(err))
 	} else {
 		onDisk, _ := config.LoadFile()
 		detail := cfgPath + outputSource(onDisk)
