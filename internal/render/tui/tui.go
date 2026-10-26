@@ -590,6 +590,9 @@ func (m Model) reopenTop() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if k, ok := msg.(tea.KeyPressMsg); ok && m.dropsKey(k) {
+		return m, nil
+	}
 	next, cmd := m.update(msg)
 	if nm, ok := next.(Model); ok {
 		return nm.fitCatalogue().fitResult(), cmd
