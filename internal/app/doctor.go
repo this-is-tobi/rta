@@ -145,6 +145,16 @@ var stderrIsTerminal = func() bool { return term.IsTerminal(int(os.Stderr.Fd()))
 // something already answers to is not a pending decision — approving it
 // earns a namespace collision on the next start — so it is not counted among
 // the plugins waiting to be loaded, or offered that remedy.
+//
+// **Each name is shown as a listed name, never as it is.** It is the part of
+// a file name after the prefix, in any directory on $PATH, and nothing
+// approved that file: a repository whose direnv adds its own bin/ can put
+// one there. A name holding an OSC sequence was written to the terminal
+// before every command and acted on — the clipboard set, the title rewritten
+// — by an artifact whose whole point is that it has not been allowed to do
+// anything yet. Every table goes through the renderer's cleaning; this line
+// is a Fprintf, so it quotes the odd name itself, which also tells the
+// reader the name is odd where stripping would show another name.
 func WarnUntrustedPlugins(w io.Writer, machineReadable bool) {
 	if machineReadable {
 		return
@@ -152,10 +162,10 @@ func WarnUntrustedPlugins(w io.Writer, machineReadable bool) {
 	var waiting, colliding []string
 	for _, u := range untrustedPluginsFound {
 		if u.Taken {
-			colliding = append(colliding, u.Name)
+			colliding = append(colliding, plugin.ListedName(u.Name))
 			continue
 		}
-		waiting = append(waiting, u.Name)
+		waiting = append(waiting, plugin.ListedName(u.Name))
 	}
 	if n := len(waiting); n > 0 {
 		fmt.Fprintf(w,

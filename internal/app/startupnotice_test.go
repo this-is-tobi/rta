@@ -66,6 +66,32 @@ func TestACollidingArtifactIsNotOfferedTrustAsTheRemedy(t *testing.T) {
 	}
 }
 
+// The names in the notice are file names on $PATH that nobody approved, and a
+// file name may hold an escape sequence. Written as it is, the terminal acted
+// on it before every command: OSC 52 set the clipboard, OSC 0 the title. Each
+// is shown as a listed name is, quoted with the escape written out, so the
+// reader also sees that the name is odd.
+func TestAnUntrustedFileNameReachesTheNoticeQuotedAndNotActedOn(t *testing.T) {
+	waiting, colliding := "weather\x1b]0;owned\a", "kv\x1b]52;c;aGk=\a"
+	SetUntrustedPlugins([]pluginhost.Untrusted{
+		{Name: waiting, Path: "/usr/local/bin/rta-plugin-" + waiting, Digest: strings.Repeat("cd", 32)},
+		{Name: colliding, Path: "/usr/local/bin/rta-plugin-" + colliding, Digest: strings.Repeat("ab", 32), Taken: true},
+	})
+	t.Cleanup(func() { SetUntrustedPlugins(nil) })
+
+	var out bytes.Buffer
+	WarnUntrustedPlugins(&out, false)
+	got := out.String()
+	if strings.ContainsAny(got, "\x1b\a") {
+		t.Errorf("the notice wrote a file name's control characters to the terminal: %q", got)
+	}
+	for _, want := range []string{`"weather\x1b]0;owned\a"`, `"kv\x1b]52;c;aGk=\a"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the notice does not show the name as %s: %q", want, got)
+		}
+	}
+}
+
 // The wiring, not just the function.
 //
 // The notice's condition has two halves and only one of them was reachable
