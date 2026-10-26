@@ -6,6 +6,7 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/internal/toolcall"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -69,7 +70,13 @@ func followProfiles(server *sdk.Server, reg *registry.Registry, opts Options, of
 			case "tools/call":
 				if r, ok := req.(*sdk.CallToolRequest); ok && r.Params != nil {
 					if _, watched := p.caps[r.Params.Name]; watched {
-						p.refresh()
+						// The read the list was brought up to date with is the
+						// one the call is judged by (Options.connectionsFor):
+						// a second one would be the file parsed twice for one
+						// request, and two reads are what an edit can land
+						// between.
+						live, known := p.refresh()
+						ctx = context.WithValue(ctx, connectionsKey{}, connectionsRead{cfg: live, known: known})
 					}
 				}
 			}
@@ -79,12 +86,13 @@ func followProfiles(server *sdk.Server, reg *registry.Registry, opts Options, of
 }
 
 // refresh registers again every tool whose answer to "does it take a profile"
-// is no longer the one it was registered under. A file that cannot be read
-// says nothing about which tools have profiles, so it moves none.
-func (p *profileTools) refresh() {
+// is no longer the one it was registered under, and returns the read it judged
+// that from. A file that cannot be read says nothing about which tools have
+// profiles, so it moves none.
+func (p *profileTools) refresh() (config.Config, bool) {
 	live, known := p.opts.profileSet()
 	if !known {
-		return
+		return live, known
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -98,4 +106,5 @@ func (p *profileTools) refresh() {
 		p.server.AddTool(toolDef(c, shown), handler(c, p.opts, p.reg))
 		p.published[c.ID] = takes
 	}
+	return live, known
 }

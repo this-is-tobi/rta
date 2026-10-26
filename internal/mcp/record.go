@@ -304,8 +304,12 @@ func maskedValue(v any) any {
 // question — consent is off, the refusal was not about a missing grant, or
 // the session fence forbids asking — so the caller knows to record the
 // gate's own refusal rather than a decision nobody made.
+//
+// pin is the stamp the grant gate judged the call by, and the question carries
+// that one rather than a stamp of its own: the operator is asked about the
+// connection the gate saw, and the caller holds an approval to it.
 func askConsent(ctx context.Context, c plugin.Capability, opts Options, values map[string]any,
-	profileName string, verr *view.Error, rec *agentlog.Entry) (allowed bool, decided *view.Error) {
+	profileName, pin string, verr *view.Error, rec *agentlog.Entry) (allowed bool, decided *view.Error) {
 	if !opts.Consent || verr == nil {
 		return false, nil
 	}
@@ -341,7 +345,7 @@ func askConsent(ctx context.Context, c plugin.Capability, opts Options, values m
 		Safety:  string(c.Safety),
 		Scopes:  grant.Scopes(c, values),
 		Profile: profileName,
-		Pin:     opts.connStamp(profileName, grant.Namespace(c.ID)),
+		Pin:     pin,
 		Agent:   opts.Agent,
 		Args:    auditArgs(c, values),
 		Why:     verr.Message,

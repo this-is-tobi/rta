@@ -113,6 +113,11 @@ func refusalWords(code string) string {
 		return "credential unreadable"
 	case "core.profile.tunnel.unavailable":
 		return "forward did not open"
+	case "core.profile.moved":
+		// Not "connection unusable", which the prefix below would make it:
+		// the connection is fine, and the row is read by the operator who
+		// approved the call and is looking for why it did not run.
+		return "profile edited while it waited"
 	}
 	switch {
 	case strings.HasPrefix(code, "core.lock."):

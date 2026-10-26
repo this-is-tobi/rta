@@ -207,6 +207,10 @@ func TestResultPhrasesAreReadFromTheCodesTheRecordAlreadyCarries(t *testing.T) {
 		{agentlog.Entry{Outcome: agentlog.Refused, Code: "core.profile.secret.unavailable"}, "refused · credential unreadable"},
 		{agentlog.Entry{Outcome: agentlog.Refused, Code: "core.profile.tunnel.unavailable"}, "refused · forward did not open"},
 		{agentlog.Entry{Outcome: agentlog.Refused, Code: "core.profile.unusable"}, "refused · connection unusable"},
+		// An approval for a connection the profile stopped naming while the call
+		// waited: nothing about the connection is unusable, and the operator who
+		// answered is the one who wonders why the call did not run.
+		{agentlog.Entry{Outcome: agentlog.Refused, Auth: agentlog.Live, Code: "core.profile.moved"}, "refused · profile edited while it waited"},
 		{agentlog.Entry{Outcome: agentlog.Refused, Code: "kv.passphrase.missing"}, "refused · kv.passphrase.missing"},
 		// A row from before the code and the reason were stored apart.
 		{agentlog.Entry{Outcome: agentlog.Refused, Reason: "core.grant.required: no active grant for kv.get"}, "refused · no grant"},

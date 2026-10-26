@@ -342,7 +342,12 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// file that cannot be read says nothing of whether the area has
 		// connections, so no name is refused as unknown on its strength; it goes
 		// on to the gate, which refuses what nobody granted.
-		connections, connectionsKnown := opts.profileSet()
+		//
+		// It is the call's one read: the grant gate's pin is stamped from it and
+		// the connection is resolved from it, so the two cannot be two moments
+		// of a file somebody is editing (Options.connectionsFor). The one other
+		// read is after a consent wait, and is compared with this one.
+		connections, connectionsKnown := opts.connectionsFor(ctx)
 		takesProfile := toolcall.TakesProfile(c, connections.ProfilesFor(plugin.Namespace(c.ID))) ||
 			!connectionsKnown && plugin.Profilable(c)
 		if verr := toolcall.Validate(c, takesProfile, values); verr != nil {
@@ -506,7 +511,9 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		// grant issued against a different one for the same *name* stops
 		// covering it. Computed from the same read profile.Lookup uses below,
 		// so a mismatch means "you consented to a different connection" and
-		// never "this process has not noticed your edit".
+		// never "this process has not noticed your edit". A name that resolves
+		// to nothing stamps as empty, which no profiled grant carries, so the
+		// call is refused: an unknown profile is not a reason to skip a check.
 		//
 		// The agent name goes in the same way and subtracts in the same
 		// direction: it is the operator's own word for the client at the far
@@ -559,7 +566,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		by := grant.Caller{
 			Agent:   opts.Agent,
 			Profile: profileName,
-			Pin:     opts.connStamp(profileName, grant.Namespace(c.ID)),
+			Pin:     profile.ConnStampFor(connections, profileName, grant.Namespace(c.ID)),
 			Digest:  opts.artifact(grant.Namespace(c.ID)),
 			Active:  opts.active(),
 		}
@@ -571,7 +578,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			// person, and proceed on their word.
 			// Everything about the refusal is preserved for the case where
 			// the answer never comes.
-			allowed, decided := askConsent(ctx, c, opts, gated, profileName, verr, rec)
+			allowed, decided := askConsent(ctx, c, opts, gated, profileName, by.Pin, verr, rec)
 			if !allowed {
 				if decided == nil {
 					// Never asked: the refusal is the gate's own.
@@ -621,6 +628,34 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				refusedBy(rec, verr)
 				return errResult(verr), nil
 			}
+			// And the connection, for the same reason. The question carried the
+			// pin of the connection the profile named when the call parked, and
+			// the operator answered that; the call is filled from the file as it
+			// is now, since a profile they removed or re-aimed meanwhile is not
+			// one to run on from memory. So the file is read again and the two
+			// compared: an edit during the wait — `rta profile set staging
+			// host=...` while the question sat on their screen — would otherwise
+			// send the approved call to a connection nobody was asked about,
+			// while `--ttl` issued a grant pinned to the one they were.
+			//
+			// The agent is told that much and nothing of where either connection
+			// goes: it named the profile and was asked about, so that it changed
+			// is no news of the operator's inventory. Its retry parks a fresh
+			// question about the connection as it is now.
+			if profileName != "" {
+				connections, _ = opts.profileSet()
+				if profile.ConnStampFor(connections, profileName, grant.Namespace(c.ID)) != by.Pin {
+					verr := view.Errorf("core.profile.moved",
+						"%s was not run: the connection it names changed while it waited for an answer, and the answer was about the one before",
+						plugin.ToolName(c.ID)).
+						WithHint("call it again, and the operator is asked about the connection as it is now")
+					refusedBy(rec, verr)
+					rec.Note = "the profile was edited while the call waited for an answer, so the answer was about " +
+						"a connection it no longer names and the call was not run; a grant issued with the answer " +
+						"is pinned to the connection before the edit"
+					return errResult(verr), nil
+				}
+			}
 			// Approved live: there is no grant, so there is no use to
 			// refund either.
 			release = func() {}
@@ -651,7 +686,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		var fence plugin.Fence
 		via := plugin.TunnelNone
 		if profileName != "" {
-			conn, verr := profile.Lookup(opts.profiles(), c, profileName, reg)
+			conn, verr := profile.Lookup(connections, c, profileName, reg)
 			if verr != nil {
 				release()
 				rec.Outcome, rec.Code = agentlog.Refused, "core.profile.unusable"

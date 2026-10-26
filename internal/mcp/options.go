@@ -266,36 +266,39 @@ func (o Options) active() string {
 	return o.Active()
 }
 
-// connStamp fingerprints the connection a call on this profile and namespace
-// would be filled from, for the grant gate to compare a pin against.
-//
-// **Read from o.Profiles, the same config the fill will use.** internal/app
-// loads it once at startup, deliberately, so that a profile removed from the
-// file stops being reachable at the next server start. Stamping from a fresh
-// read instead would refuse every call on an environment edited since this
-// process began — with "re-issue the grant" offered as a remedy that could
-// never work, because the server would go on computing the older stamp. Taken
-// from what the call will actually resolve through, a mismatch means the one
-// thing it should: this grant was consented to for a different connection.
-//
-// A name that resolves to nothing stamps as empty, which no profiled grant
-// carries, so the call is refused. That is the right zero for a gate: an
-// unknown profile is not a reason to skip a check.
-func (o Options) connStamp(name, namespace string) string {
-	return profile.ConnStampFor(o.profiles(), name, namespace)
+// connectionsRead is one read of the operator's connections, carried on a
+// tools/call's context from the middleware that made it (followProfiles) to the
+// handler that judges and runs the call.
+type connectionsRead struct {
+	cfg   config.Config
+	known bool
 }
 
-// profiles is the connection set a call resolves through: the file as it is
-// now, or the startup snapshot when no reader was wired.
-func (o Options) profiles() config.Config {
-	cfg, _ := o.profileSet()
-	return cfg
+type connectionsKey struct{}
+
+// connectionsFor is the read a call is judged and filled from: the one the
+// middleware made for this request when it made one, and a read of its own
+// otherwise.
+//
+// **One read per call, and the reason is not the parse it saves.** The gate's
+// pin, takeProfile's rule and the connection the call is filled from were each
+// read from the file separately, so an edit landing between two of them — an
+// agent with a shell flipping a host in a loop is enough — had a grant pinned
+// to staging's connection judged against one read and a call filled from the
+// next, against whatever staging named a moment later. From one read, a
+// mismatch can mean only what the pin is for: this grant was issued against a
+// different connection.
+func (o Options) connectionsFor(ctx context.Context) (config.Config, bool) {
+	if r, ok := ctx.Value(connectionsKey{}).(connectionsRead); ok {
+		return r.cfg, r.known
+	}
+	return o.profileSet()
 }
 
-// profileSet is profiles with whether the operator's connections are known at
-// all: false only when the file has not read since the server started and did
-// not read at startup either, which is the one state with no snapshot to
-// answer from.
+// profileSet is the operator's connections as the file has them now, with
+// whether they are known at all: false only when the file has not read since
+// the server started and did not read at startup either, which is the one
+// state with no snapshot to answer from.
 func (o Options) profileSet() (config.Config, bool) {
 	if o.Reload != nil {
 		if live, err := o.Reload(); err == nil {
