@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 
 	"github.com/this-is-tobi/rta/internal/config"
@@ -67,7 +68,7 @@ func (m *Model) hideSelected() string {
 		note = fmt.Sprintf("hid %s — `rta dashboard unhide %s --profile %s` brings it back",
 			gone.key(), gone.cap.ID, gone.profile)
 	case gone.source == tileStated:
-		m.dash.Tiles = dropTile(m.dash.Tiles, gone.key())
+		m.dash.Tiles = dropEntry(m.dash.Tiles, gone)
 		note = fmt.Sprintf("removed %s from the stated dashboard", gone.key())
 	case gone.source == tileAdded:
 		way := addedEntry(m.dash.Add, gone).AddCommand(m.view)
@@ -363,6 +364,32 @@ func (m *Model) save() error {
 	// reads it as its own rather than as an edit to adopt (syncDashboard).
 	m.dashOnDisk = dashStamp(m.view, m.dash)
 	return nil
+}
+
+// dropEntry removes the one stated entry the tile t was built from.
+//
+// Not dropTile, which removes every entry of the key. A stated list may hold
+// many tiles of one key (a kube.pod.list for each namespace), and H on one of
+// them took them all out of the file while only the one selected left the
+// screen: the others stayed drawn until the next start, which drew none of them
+// and said nothing. An added entry is still withdrawn by its key, as `rta
+// dashboard rm` withdraws it, so the screen and the command keep agreeing.
+//
+// Matched by the whole entry as the file states it (tile.stated), and not by
+// its key and inputs: two entries may share both and differ in their section,
+// size or pace, each drawn, and the last of them was taken whichever was
+// selected, so the next start brought back the panel that was hidden and lost
+// the one that was kept. Nor by where the entry stood when the tiles were
+// built: a move reorders the list and a hide shortens it, and neither builds
+// the tiles again. Two entries alike in every field draw alike, and the file
+// is the same whichever of them goes.
+func dropEntry(entries []config.Tile, t tile) []config.Tile {
+	for i := len(entries) - 1; i >= 0; i-- {
+		if reflect.DeepEqual(entries[i], t.stated) {
+			return slices.Delete(slices.Clone(entries), i, i+1)
+		}
+	}
+	return entries
 }
 
 // dropTile removes every entry with the given key (config.Tile.Key).
