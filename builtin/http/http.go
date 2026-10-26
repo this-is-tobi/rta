@@ -247,11 +247,6 @@ func requestFailed(sf plugin.Surface, method, url string, err error) *view.Error
 	if hint := plugin.CertPolicyHint(err); hint != "" {
 		return verr.WithHint(hint)
 	}
-	// Nothing was sent: the transport refused the URL's scheme before it
-	// dialled, which reachability and a longer deadline cannot change.
-	if strings.Contains(err.Error(), "unsupported protocol scheme") {
-		return verr.WithHint("this client speaks http and https; write the URL with one of them").WithInput("url")
-	}
 	// The server answered, in plain http, to a request that spoke TLS: it was
 	// reached, so reachability is not the question, and the scheme is the fix. A
 	// name that might be private keeps the https a URL without a scheme gets
@@ -591,12 +586,17 @@ func doRequest(ctx context.Context, method string, req plugin.Request) (view.Vie
 		return nil, view.Errorf("http.request.invalid", "building request: %v", err).WithInput("url")
 	}
 	// What net/http itself will not send is refused here, before anything
-	// leaves, a dry run included. A URL with no host, `http:///x`, builds a
-	// request, and a header name with a space in it or a value holding a line
-	// break is set on one; each failed only inside the transport, after the
-	// host was looked up, as a request that "failed" under the hint for a host
-	// that does not answer.
-	if (httpReq.URL.Scheme == "http" || httpReq.URL.Scheme == "https") && httpReq.URL.Host == "" {
+	// leaves, a dry run included. A scheme this client does not speak, a URL
+	// with no host, `http:///x`, and a header name with a space in it or a value
+	// holding a line break each built a request; each failed only inside the
+	// transport, after the address guard had looked the host up, as a request
+	// that "failed", under the hint for a name that did not resolve when it did
+	// not, and a dry run previewed a request that could never be sent.
+	if s := httpReq.URL.Scheme; s != "http" && s != "https" {
+		return nil, view.Errorf("http.request.invalid", "%s is not an http or https URL", url).
+			WithHint("this client speaks http and https; write the URL with one of them").WithInput("url")
+	}
+	if httpReq.URL.Host == "" {
 		return nil, view.Errorf("http.request.invalid", "%s names no host", url).
 			WithHint("write the URL with the host in it, as https://api.example.com/items").WithInput("url")
 	}

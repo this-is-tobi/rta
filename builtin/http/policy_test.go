@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // A request refused for a certificate Apple's verifier holds to its
@@ -87,13 +88,15 @@ func TestARequestHintFollowsHowFarItGot(t *testing.T) {
 // A scheme the client does not speak is the URL's fault and not the network's.
 // `http get ftp://host` was told to check the URL was reachable and that
 // --timeout extends the deadline, neither of which has anything to do with a
-// request that was never sent.
+// request that was never sent. It is refused before the host is looked up.
 func TestARequestForASchemeItDoesNotSpeakSaysSo(t *testing.T) {
-	err := &url.Error{Op: "Get", URL: "ftp://example.com", Err: errors.New(`unsupported protocol scheme "ftp"`)}
-	verr := requestFailed(plugin.SurfaceCLI, "GET", "ftp://example.com", err)
-	if strings.Contains(verr.Hint, "reachable") || strings.Contains(verr.Hint, "timeout") ||
-		!strings.Contains(verr.Hint, "http and https") {
-		t.Errorf("hint %q for a scheme the client does not speak", verr.Hint)
+	c := capabilityOf(t, "http.get")
+	_, err := c.Run(context.Background(), plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{
+		Caller: map[string]any{"url": "ftp://example.com"}}), false, false).WithSurface(plugin.SurfaceCLI))
+	verr := view.AsError(err, "x")
+	if verr == nil || verr.Code != "http.request.invalid" || strings.Contains(verr.Hint, "reachable") ||
+		strings.Contains(verr.Hint, "timeout") || !strings.Contains(verr.Hint, "http and https") {
+		t.Errorf("a scheme the client does not speak = %+v", verr)
 	}
 }
 
