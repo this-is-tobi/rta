@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -130,6 +131,108 @@ func TestDashboardAddOfANumberOrAListIsUnchangedTheSecondTime(t *testing.T) {
 		if after := fileText(t, config.Path()); after != before {
 			t.Errorf("%v: the repeat rewrote the file:\n%s\nwas:\n%s", args, after, before)
 		}
+	}
+}
+
+// A tile pinned to a profile is drawn through that profile on every refresh,
+// so removing the profile leaves a tile that draws an error for good.
+// Removing it said nothing of the tile, and doctor checked only that the
+// tile's capability exists.
+func TestATilePinnedToARemovedProfileIsNamedByRmAndByDoctor(t *testing.T) {
+	reg := setRegistry(t)
+	run := session(t, reg)
+	if _, errOut, err := run("profile", "set", "prod", "--plugin", "db", "--set", "host=prod.internal"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if _, errOut, err := run("dashboard", "add", "db.status", "--profile", "prod"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	takeDown := "`rta dashboard rm db.status --profile prod`"
+	for _, dry := range []bool{true, false} {
+		args := []string{"profile", "rm", "prod", "--yes"}
+		if dry {
+			args = append(args, "--dry-run")
+		}
+		out, errOut, err := run(args...)
+		if err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+		if !strings.Contains(out, "db.status@prod") || !strings.Contains(out, takeDown) {
+			t.Errorf("dry run %v: the receipt does not name the tile left pinned to prod:\n%s", dry, out)
+		}
+	}
+
+	warned := dashboardWarnings(reg)
+	if len(warned) != 1 || !strings.Contains(warned[0], "db.status@prod") || !strings.Contains(warned[0], takeDown) {
+		t.Errorf("doctor's dashboard rows = %q, want one naming the tile and the way to take it down", warned)
+	}
+
+	// A tile on the profile's own screen goes with the profile, which the
+	// receipt says; it is not also one left behind with a command to take it
+	// down. The dry run listed it as both while the real run did not, because
+	// the real run's config had already lost the profile through a shared map.
+	ownScreen := "profiles:\n  staging:\n    plugins:\n      db/orders:\n        set:\n          host: orders.internal\n" +
+		"    dashboard:\n      add:\n      - id: db.status\n        profile: staging/orders\n"
+	if err := os.WriteFile(config.Path(), []byte(ownScreen), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, dry := range []bool{true, false} {
+		args := []string{"profile", "rm", "staging", "--yes"}
+		if dry {
+			args = append(args, "--dry-run")
+		}
+		out, errOut, err := run(args...)
+		if err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+		if !strings.Contains(out, "its own screen, 1 tile") || strings.Contains(out, "db.status@staging/orders") {
+			t.Errorf("dry run %v: the receipt names a tile of the screen that goes as one left behind:\n%s", dry, out)
+		}
+	}
+}
+
+// dashboardWarnings is what doctor warns of the dashboard.
+func dashboardWarnings(reg *registry.Registry) []string {
+	var warned []string
+	doctorDashboardTiles(reg, func(check, status, detail string) {
+		if check == "dashboard" && status == "warn" {
+			warned = append(warned, detail)
+		}
+	})
+	return warned
+}
+
+// Doctor resolves a pinned tile the way the dashboard draws it. A bare name
+// over several connections of the plugin is drawn as one panel per
+// connection, and `dashboard add` accepts it for that reason; doctor asked
+// Lookup of the bare name, which refuses it as a call that must say which,
+// and warned of a working tile with the command that takes it down — a warn
+// that fails `rta doctor --strict` on a correct config. A refusal that does
+// not mean the profile is gone keeps its own remedy.
+func TestDoctorResolvesAPinnedTileTheWayTheDashboardDrawsIt(t *testing.T) {
+	reg := setRegistry(t)
+	run := session(t, reg)
+	for _, label := range []string{"one", "two"} {
+		if _, errOut, err := run("profile", "set", "lab", "--plugin", "db/"+label, "--set", "host="+label+".internal"); err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+	}
+	if _, errOut, err := run("dashboard", "add", "db.status", "--profile", "lab"); err != nil {
+		t.Fatalf("%v %q", err, errOut)
+	}
+	if warned := dashboardWarnings(reg); len(warned) != 0 {
+		t.Errorf("doctor warns of a tile drawn as one panel per connection: %q", warned)
+	}
+
+	badTTL := "profiles:\n  lab:\n    ttl: forever\n    plugins:\n      db:\n        set:\n          host: lab.internal\n" +
+		"dashboard:\n  add:\n  - id: db.status\n    profile: lab\n"
+	if err := os.WriteFile(config.Path(), []byte(badTTL), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	warned := dashboardWarnings(reg)
+	if len(warned) != 1 || !strings.Contains(warned[0], "not a duration") ||
+		!strings.Contains(warned[0], "remove it for no deadline") || strings.Contains(warned[0], "dashboard rm") {
+		t.Errorf("doctor's dashboard rows = %q, want the profile's own refusal with its own remedy", warned)
 	}
 }
 

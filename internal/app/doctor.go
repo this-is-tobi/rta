@@ -527,7 +527,8 @@ func doctorConfigKeys(add func(check, status, detail string)) {
 // whose capability the registry does not have: one that was renamed or removed,
 // a plugin no longer installed, or a typo. The dashboard draws such a tile as
 // nothing at all, so the config row's "1 dashboard tile" was true and the
-// screen still missed it.
+// screen still missed it. And one for each refusal a tile pinned to a profile
+// draws instead of its numbers.
 func doctorDashboardTiles(reg *registry.Registry, add func(check, status, detail string)) {
 	cfg, err := config.LoadFile()
 	if err != nil {
@@ -538,12 +539,39 @@ func doctorDashboardTiles(reg *registry.Registry, add func(check, status, detail
 		blocks[name] = blockOf(cfg, name)
 	}
 	for _, name := range append([]string{""}, cfg.ViewNames()...) {
-		for _, t := range append(slices.Clone(blocks[name].Tiles), blocks[name].Add...) {
-			if _, ok := reg.Capability(t.ID); ok {
+		stated := len(blocks[name].Tiles)
+		for i, t := range append(slices.Clone(blocks[name].Tiles), blocks[name].Add...) {
+			c, ok := reg.Capability(t.ID)
+			if !ok {
+				e := capabilityNotFound(reg, t.ID)
+				add("dashboard", "warn", "tile "+t.ID+inView(name)+" draws nothing: "+e.Message+" — "+e.Hint)
 				continue
 			}
-			e := capabilityNotFound(reg, t.ID)
-			add("dashboard", "warn", "tile "+t.ID+inView(name)+" draws nothing: "+e.Message+" — "+e.Hint)
+			// A tile pinned to a profile is drawn through it on every
+			// refresh, and one the profile no longer covers — removed,
+			// renamed, its instance gone — draws that refusal for good. Asked
+			// the way the dashboard draws it: a bare name over several
+			// connections is a panel each, which Lookup of the bare name
+			// refuses as a call that must say which, so a working tile was
+			// warned of, and `doctor --strict` failed a correct config. One
+			// row per distinct refusal, since a profile-wide one is the same
+			// for every panel.
+			if t.Profile == "" {
+				continue
+			}
+			said := map[string]bool{}
+			for _, ref := range tileRefs(cfg, t.Profile, t.ID) {
+				_, verr := profile.Lookup(cfg, c, ref, withTrust{reg})
+				if verr == nil || said[verr.Message] {
+					continue
+				}
+				said[verr.Message] = true
+				remedy := verr.Hint
+				if tileProfileGone(verr) {
+					remedy = tileTakeDown(t, name, i < stated)
+				}
+				add("dashboard", "warn", "tile "+t.Key()+inView(name)+" draws an error: "+verr.Message+" — "+remedy)
+			}
 		}
 	}
 	for _, p := range danglingViews(cfg, cfg) {
