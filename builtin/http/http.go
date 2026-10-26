@@ -25,6 +25,7 @@ import (
 	"golang.org/x/net/http/httpguts"
 
 	"github.com/this-is-tobi/rta/builtin/internal/pathin"
+	"github.com/this-is-tobi/rta/internal/credname"
 	"github.com/this-is-tobi/rta/internal/headerlist"
 	"github.com/this-is-tobi/rta/internal/session"
 	"github.com/this-is-tobi/rta/pkg/format"
@@ -905,7 +906,10 @@ func wouldDelete(req plugin.Request, url string, header stdhttp.Header, from []v
 // it — including the headers, with anything carrying a credential masked, and
 // the file a credential would be read from (from) beside them. The point is
 // to inspect a request before it leaves, not to reprint the secret you are
-// about to send.
+// about to send. A header is masked by the rule that keeps one out of the
+// completion history (credname): the closed three this kept, Authorization,
+// Cookie and Proxy-Authorization, printed PRIVATE-TOKEN, X-Api-Key and
+// X-Vault-Token in clear.
 func dryRunView(method, url string, httpReq *stdhttp.Request, data string, from []view.Pair) view.View {
 	pairs := []view.Pair{
 		{Key: "dry run", Value: "nothing was sent"},
@@ -921,7 +925,7 @@ func dryRunView(method, url string, httpReq *stdhttp.Request, data string, from 
 	for _, name := range names {
 		value := strings.Join(httpReq.Header.Values(name), ", ")
 		key := "header:" + name
-		if name == "Authorization" || name == "Cookie" || name == "Proxy-Authorization" {
+		if credname.Header(name) {
 			redacted = append(redacted, key)
 		}
 		pairs = append(pairs, view.Pair{Key: key, Value: value})
