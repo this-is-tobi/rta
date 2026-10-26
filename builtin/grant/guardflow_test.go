@@ -220,6 +220,48 @@ func TestGuardOffProvesThePassphraseAndClears(t *testing.T) {
 	}
 }
 
+// A grant signed while the guard comes off is refused once it is off, not
+// stored beside a guard that is gone. Clearing the grants and removing the
+// guard were two writes under two locks, and a passphrase-signed issuance
+// between them landed a row every later read refused as orphaned.
+func TestAGrantSignedWhileTheGuardComesOffIsRefusedNotOrphaned(t *testing.T) {
+	setup(t)
+	guardOn(t, "correct horse")
+	allow, off := guardCap(t, "grant.allow"), guardCap(t, "grant.guard.off")
+	signed := reqTUI(map[string]any{"target": "kv.get", "ttl": "15m", "passphrase": "correct horse"})
+	if _, err := allow.Run(context.Background(), signed); err != nil {
+		t.Fatal(err)
+	}
+
+	let := holdTransition(t)
+	disabled := make(chan error, 1)
+	go func() {
+		_, err := off.Run(context.Background(), reqTUI(map[string]any{"passphrase": "correct horse"}))
+		disabled <- err
+	}()
+	waitCleared(t, disabled)
+
+	issued := make(chan error, 1)
+	go func() {
+		_, err := allow.Run(context.Background(), signed)
+		issued <- err
+	}()
+	answer := pending(issued)
+	let()
+	if err := <-disabled; err != nil {
+		t.Fatalf("the guard did not come off: %v", err)
+	}
+
+	if err := answer(); err == nil {
+		t.Error("a guard-signed grant was stored as the guard came off")
+	} else if got := code(t, err); got != "core.grant.guard.off" {
+		t.Errorf("the issuance was refused with %s, want core.grant.guard.off", got)
+	}
+	if _, verr := core.Load(); verr != nil {
+		t.Fatalf("the grants do not read back after the guard came off: %v", verr)
+	}
+}
+
 // Enabling clears what was issued without a passphrase — blessing it
 // wholesale would launder exactly what the guard exists to pin.
 func TestEnablingClearsPreGuardGrants(t *testing.T) {

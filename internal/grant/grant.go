@@ -1367,6 +1367,63 @@ func Mutate(f func([]Grant) ([]Grant, bool)) *view.Error {
 	return Save(next)
 }
 
+// ClearFor empties the grant file and then runs transition — a change of
+// the guard — under the one grant lock, and puts the grants back if the
+// transition fails.
+//
+// Every row is signed, or not, for the guard that stood when it was written,
+// so the guard cannot change over rows it did not write: enabling over
+// unsigned ones reads as forgery, disabling under signed ones as an orphaned
+// file. Clearing and changing the guard used to be two writes under two
+// locks, and a `grant allow` landing between them was checked against the
+// guard that was about to go — passed, wrote its row, and the next read
+// refused the whole file with every grant-gated call behind it. Issuance
+// checks the guard inside its own locked write (guardIssuable), so holding
+// that lock across both steps is what closes the window.
+//
+// Clear first, change second, for the crash: dying between the two leaves an
+// empty file under the old guard, which reads fine and which a retry
+// finishes. The other order leaves the new guard over the old rows, which is
+// the alarm above raised by the recovery. The writes happen in that order for
+// unlocked readers too, the fast path of every gated call: old rows, then
+// none, then the new guard over none. A single unlocked read can still
+// straddle the change, because loadAll reads the rows and then asks the guard
+// about them separately (guardChecked): it pairs the old rows with the new
+// guard and is refused, as forged or orphaned, and the next read is not. It
+// fails closed, as every refusal here does: no row is ever honoured under a
+// guard that did not write it.
+//
+// And back if the transition fails, because what it checks — a roster small
+// enough to read back, a passphrase, a state file nobody else wrote — is
+// checked when it writes, after the clear, and a refusal must not have taken
+// every grant on its way out. Restoring under the same lock puts back exactly
+// the rows read, beside the guard they were written for, which is still the
+// one standing.
+func ClearFor(transition func() *view.Error) *view.Error {
+	unlock, verr := acquireLock()
+	if verr != nil {
+		return verr
+	}
+	defer unlock()
+	stored, verr := loadAll()
+	if verr != nil {
+		return verr
+	}
+	if verr := Save(nil); verr != nil {
+		return verr
+	}
+	terr := transition()
+	if terr == nil {
+		return nil
+	}
+	if verr := Save(stored); verr != nil {
+		return view.Errorf(terr.Code, "%s — and the %s it cleared could not be put back: %s",
+			terr.Message, format.Count(len(stored), "grant", "grants"), verr.Message).
+			WithHint(terr.Hint)
+	}
+	return terr
+}
+
 // Required reports whether a capability needs a grant before an agent may
 // call it, given the profile the call names.
 //
