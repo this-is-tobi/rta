@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
+	stdnet "net"
 	stdhttp "net/http"
 	"net/url"
 	"sort"
@@ -174,8 +176,7 @@ func runWeb(ctx context.Context, req plugin.Request) (view.View, error) {
 	httpReq.Header.Set("Origin", corsProbeOrigin)
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return nil, view.Errorf("audit.web.unreachable", "requesting %s: %v", target, err).
-			WithHint("check the host is reachable over HTTPS; " + req.Surface().InputName("timeout") + " extends the deadline")
+		return nil, webUnreachable(req.Surface(), target, u.Hostname(), err)
 	}
 	defer resp.Body.Close()
 
@@ -855,4 +856,26 @@ func auditCookies(r *findings.Report, resp *stdhttp.Response) {
 		r.Add(grpCookies, attr.check, findings.Warn,
 			strings.Join(weak, ", ")+" — "+attr.why, attr.ref)
 	}
+}
+
+// webUnreachable is the refusal of a request that got no answer, worded for
+// how far it got, as http's requestFailed words its own: every failure was told
+// to check the host was reachable and that a longer deadline would help, and
+// neither makes a mistyped name exist or a refused port listen. A name the
+// resolver answered does not exist is the host's mistake and the input to
+// change; a resolver that did not answer names none, since the name may be
+// right. host is the name the request was for.
+func webUnreachable(sf plugin.Surface, target, host string, err error) *view.Error {
+	verr := view.Errorf("audit.web.unreachable", "requesting %s: %v", target, err)
+	var dnsErr *stdnet.DNSError
+	if errors.As(err, &dnsErr) && dnsErr.IsNotFound && strings.EqualFold(dnsErr.Name, host) {
+		return verr.WithHint(host + " does not exist in DNS: check its spelling — `" +
+			sf.Call("net.dns", plugin.Arg{Name: "name", Value: host, Positional: true}) +
+			"` asks the resolver for it directly").WithInput("host")
+	}
+	var netErr stdnet.Error
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
+		return verr.WithHint("check the host is reachable over HTTPS; " + sf.InputName("timeout") + " extends the deadline")
+	}
+	return verr.WithHint("check the host is reachable over HTTPS")
 }
