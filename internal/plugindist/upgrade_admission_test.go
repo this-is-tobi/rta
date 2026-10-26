@@ -126,10 +126,10 @@ func TestUpgradeRefusesALockfileDigestThatIsAPath(t *testing.T) {
 			// drops leaves no entry for the next case to mutate.
 			entry := orig
 			entry.Digest = tc.digest
-			if verr := recordInstall(entry); verr != nil {
+			if verr := recordInstall(entry, nil); verr != nil {
 				t.Fatal(verr)
 			}
-			t.Cleanup(func() { _ = recordInstall(orig) })
+			t.Cleanup(func() { _ = recordInstall(orig, nil) })
 
 			_, verr := Upgrade(context.Background(), "hello", io.Discard)
 			if verr == nil {

@@ -55,7 +55,7 @@ A registry artifact is pulled **anonymously**: rta sends no credential to any re
 
 The install report shows what the plugin declares — a `declares` row listing its capabilities, with how many are reads, writes and destructive and how many need a grant — and, for a plugin that wants one, an `asks to read` row naming each credential location. You see both at the one moment you have the digest in front of you. Installing does not grant what it asks to read — `rta plugin allow` is still a separate decision, and this is what makes it an informed one.
 
-Only then does it land: the managed store, the trust entry, and `rta.lock`, which records what rta *computed* rather than what anybody claimed.
+Only then does it land: the managed store, the trust entry, and `rta.lock`, which records what rta *computed* rather than what anybody claimed. `rta.lock` is plain JSON beside the store, and every command that acts on what it records — `install`, `upgrade`, `remove`, `prune` and `index remove` — refuses one that does not parse (`plugin.lock.unreadable`) before it changes anything: each decides from the record, which one that does not parse cannot answer, and writing it back from what could be read would drop every other plugin's entry. `rta doctor` says so too. Fix the file, or remove it and install each plugin again.
 
 **Installing is the trust decision.** There is no separate `rta plugin trust` afterwards — you approved the artifact by installing it, having seen it verified. The report ends on a `trust` row that says so, with the digest approved and `rta plugin untrust <name>` to take it back; under `--dry-run` the row says what installing would approve, and the row `to install it` says to run the command again without the flag.
 

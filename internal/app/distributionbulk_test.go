@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -91,6 +93,31 @@ func TestASweepWithNothingInstalledSaysSo(t *testing.T) {
 				t.Errorf("out = %q, want it to say there was nothing to do", out)
 			}
 		})
+	}
+}
+
+// A record that does not parse lists nothing, and a sweep took that for
+// nothing to do: `remove --all` and `upgrade --all` answered "no plugin is
+// installed" over every plugin the record holds. Each refuses as the
+// single-name form does, the preview included.
+func TestASweepOverALockThatDoesNotParseRefuses(t *testing.T) {
+	run := session(t, registry.New())
+	if err := os.MkdirAll(filepath.Dir(plugindist.LockPath()), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plugindist.LockPath(), []byte(`{"plugins":[{"name":"pg","digest":"cc"},]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"plugin", "upgrade", "--all"},
+		{"plugin", "upgrade", "--all", "--dry-run"},
+		{"plugin", "remove", "--all", "--yes"},
+		{"plugin", "remove", "--all", "--dry-run"},
+	} {
+		_, _, err := run(args...)
+		if verr := refusal(t, err); verr.Code != "plugin.lock.unreadable" {
+			t.Errorf("%v = %s (%s), want plugin.lock.unreadable", args, verr.Code, verr.Message)
+		}
 	}
 }
 

@@ -66,7 +66,11 @@ func install(ctx context.Context, spec string, stderr io.Writer, dryRun bool) (R
 		return Report{}, verr
 	}
 	m := listed.Manifest
-	if _, held := LockedFor(m.Name); held {
+	_, held, verr := lockedForChange(m.Name)
+	if verr != nil {
+		return Report{}, verr
+	}
+	if held {
 		return Report{}, view.Errorf("plugin.install.installed", "%s is already installed", m.Name).
 			WithHint("`rta plugin upgrade " + m.Name + "` moves it; " +
 				"`rta plugin remove " + m.Name + "` takes it out")
@@ -222,23 +226,29 @@ func installFrom(ctx context.Context, listed Listed, stderr io.Writer, dryRun bo
 	// present and upgrade as unmanaged: the exit lets all three finish, or,
 	// taken before the first, begins none. Nothing before this is held — the
 	// fetch and the verification launch run as long as they run.
+	//
+	// The first two run inside recordInstall, under rta.lock's own lock and
+	// after it has been read, so that a record which cannot be read refuses
+	// the install before anything lands rather than after (mutateLock).
 	defer shutdown.Hold()()
-	dest, verr := place(m.Name, digest, staged)
-	if verr != nil {
-		return Report{}, verr
-	}
-	// Install is the trust decision: the operator typed it, against a digest
-	// rta just computed and a declaration rta just verified. Recording it
-	// here is what makes the plugin loadable without a second command.
-	if verr := plugintrust.Add(digest, m.Name, dest); verr != nil {
-		return Report{}, verr
-	}
 	entry := LockEntry{
 		Name: m.Name, Digest: digest, Version: m.Version,
 		Index: listed.Index, URL: plat.URL, Signature: sig,
 		InstalledAt: time.Now().UTC().Truncate(time.Second),
 	}
-	if verr := recordInstall(entry); verr != nil {
+	var dest string
+	verr = recordInstall(entry, func() *view.Error {
+		var verr *view.Error
+		if dest, verr = place(m.Name, digest, staged); verr != nil {
+			return verr
+		}
+		// Install is the trust decision: the operator typed it, against a
+		// digest rta just computed and a declaration rta just verified.
+		// Recording it here is what makes the plugin loadable without a
+		// second command.
+		return plugintrust.Add(digest, m.Name, dest)
+	})
+	if verr != nil {
 		return Report{}, verr
 	}
 	return Report{
@@ -559,7 +569,10 @@ func remove(name string, dryRun bool) (Removed, *view.Error) {
 		return Removed{}, view.Errorf("plugin.remove.spec", "%q is not a plugin name", name)
 	}
 	digests := StoredDigests(name)
-	_, locked := LockedFor(name)
+	_, locked, verr := lockedForChange(name)
+	if verr != nil {
+		return Removed{}, verr
+	}
 	if len(digests) == 0 && !locked {
 		return Removed{}, view.Errorf("plugin.remove.unknown", "%s is not managed by rta", name).
 			WithHint("`rta plugin list` shows what is loadable; a plugin you copied onto " +
@@ -574,19 +587,20 @@ func remove(name string, dryRun bool) (Removed, *view.Error) {
 	// plugin rta.lock still records and nothing trusts, which install then
 	// refuses as present and upgrade as untrusted, or a lock entry naming a
 	// store that is gone: the exit lets all three finish, or, taken before the
-	// first, begins none.
+	// first, begins none. The first two run inside recordRemoval, after
+	// rta.lock has been read, as an install's do (mutateLock).
 	defer shutdown.Hold()()
-	// By digest, never by name: untrusting by name would also revoke an
-	// unmanaged same-named binary the operator trusted deliberately.
-	for _, d := range digests {
-		if verr := withdrawStored(d); verr != nil {
-			return Removed{}, verr
+	verr = recordRemoval(name, func() *view.Error {
+		// By digest, never by name: untrusting by name would also revoke an
+		// unmanaged same-named binary the operator trusted deliberately.
+		for _, d := range digests {
+			if verr := withdrawStored(d); verr != nil {
+				return verr
+			}
 		}
-	}
-	if verr := removeStored(name); verr != nil {
-		return Removed{}, verr
-	}
-	if verr := recordRemoval(name); verr != nil {
+		return removeStored(name)
+	})
+	if verr != nil {
 		return Removed{}, verr
 	}
 	return Removed{Name: name, Digests: digests, Orphans: orphanedConfig(name)}, nil
@@ -644,7 +658,10 @@ func PreviewUpgrade(ctx context.Context, name string, stderr io.Writer) (Upgrade
 // sweep needs and what an operator naming a single plugin does not, since they
 // are already reading the diff this would be protecting them from.
 func upgrade(ctx context.Context, name string, stderr io.Writer, dryRun, guard bool) (Upgraded, *view.Error) {
-	locked, held := LockedFor(name)
+	locked, held, verr := lockedForChange(name)
+	if verr != nil {
+		return Upgraded{}, verr
+	}
 	if !held {
 		return Upgraded{}, view.Errorf("plugin.upgrade.unknown", "%s is not managed by rta", name).
 			WithHint("`rta plugin install " + name + "` installs it; a copy you put on $PATH " +

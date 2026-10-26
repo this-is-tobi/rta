@@ -131,6 +131,12 @@ func upgradeAllView(outcomes []plugindist.UpgradeOutcome, dryRun bool) (view.Vie
 }
 
 func runPluginUpgradeAll(cmd *cobra.Command, opts *globalOpts, index string) error {
+	// The sweep goes through what the record lists, and a record that cannot
+	// be read lists nothing: refused here, or the answer is "no plugin is
+	// installed" over every plugin it holds.
+	if _, verr := plugindist.ReadLockForChange(); verr != nil {
+		return verr
+	}
 	sweep := plugindist.UpgradeAll
 	if opts.dryRun {
 		sweep = plugindist.PreviewUpgradeAll
@@ -253,7 +259,12 @@ func runPluginRemoveAll(cmd *cobra.Command, opts *globalOpts) error {
 			}
 		}
 	}
-	locked := plugindist.ReadLock()
+	// Read as a removal reads it, so that a record which cannot be read is
+	// refused rather than answered "no plugin is installed".
+	locked, verr := plugindist.ReadLockForChange()
+	if verr != nil {
+		return verr
+	}
 	if len(locked) == 0 {
 		opts.nothingToDo = true
 		return renderView(cmd, opts, view.Text{Body: "no plugin is installed"})

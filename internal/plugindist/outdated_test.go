@@ -19,7 +19,7 @@ func TestOutdatedComparesRecordedAgainstClaimed(t *testing.T) {
 		t.Fatal(verr)
 	}
 	if verr := recordInstall(LockEntry{Name: "pg", Digest: "d", Version: "0.1.0",
-		Index: "lab", InstalledAt: time.Now()}); verr != nil {
+		Index: "lab", InstalledAt: time.Now()}, nil); verr != nil {
 		t.Fatal(verr)
 	}
 
@@ -56,7 +56,7 @@ func TestOutdatedNamesThePluginTheIndexNoLongerCarries(t *testing.T) {
 		t.Fatal(verr)
 	}
 	if verr := recordInstall(LockEntry{Name: "redis", Digest: "d", Version: "0.1.0",
-		Index: "lab", InstalledAt: time.Now()}); verr != nil {
+		Index: "lab", InstalledAt: time.Now()}, nil); verr != nil {
 		t.Fatal(verr)
 	}
 
