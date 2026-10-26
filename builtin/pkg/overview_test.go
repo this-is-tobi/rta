@@ -276,7 +276,7 @@ func TestASlowManagerOnATileIsUnreadableAndTheRestAreAnswered(t *testing.T) {
 		t.Errorf("the tile took %v: the deadline did not bound it", took)
 	}
 	got := valueOf(t, pairs, "apt")
-	if !strings.HasPrefix(got, "could not be read — apt did not answer within 300ms") || strings.Contains(got, "1m0s") {
+	if !strings.HasPrefix(got, "could not be read — apt did not answer within ") || !namesTheDeadline(t, got, tileDeadline) {
 		t.Errorf("apt = %q, want it to name the deadline that fired, not the minute a manager is otherwise given", got)
 	}
 	if got := valueOf(t, pairs, "brew"); got != "outdated 2" {
@@ -285,6 +285,22 @@ func TestASlowManagerOnATileIsUnreadableAndTheRestAreAnswered(t *testing.T) {
 	if got := valueOf(t, pairs, "status"); got != "warn — apt could not be read" {
 		t.Errorf("status = %q", got)
 	}
+}
+
+// namesTheDeadline reports whether msg, a refusal that says "did not answer
+// within <limit>", names deadline rather than the minute: what was left of it
+// when the command was asked, rounded to 10ms. That is the deadline itself on
+// an idle machine and 10ms under it on one busy enough to spend a few
+// milliseconds getting there (make ci, where an exact "300ms" failed as
+// "290ms"), so anything from half the deadline up to it is the deadline.
+func namesTheDeadline(t *testing.T, msg string, deadline time.Duration) bool {
+	t.Helper()
+	_, after, ok := strings.Cut(msg, "did not answer within ")
+	if !ok {
+		return false
+	}
+	named, err := time.ParseDuration(strings.Fields(after)[0])
+	return err == nil && named > deadline/2 && named <= deadline
 }
 
 // By hand there is no deadline of the tile's, only the minute a command is given.
@@ -315,7 +331,7 @@ func TestADeadlineIsNamedByTheLimitThatFired(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
 	defer cancel()
-	if _, verr := runStatus(ctx, "slow"); verr == nil || !strings.Contains(verr.Message, "did not answer within 200ms") {
+	if _, verr := runStatus(ctx, "slow"); verr == nil || !namesTheDeadline(t, verr.Message, 200*time.Millisecond) {
 		t.Errorf("runStatus under a 200ms page deadline = %+v", verr)
 	}
 	// And the minute otherwise, which is not waited for here.
