@@ -546,9 +546,8 @@ func (m Model) themeKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 				m.themePick.form = clearFilter(m.themePick.form)
 				return m, nil, true
 			}
-			m.themePick = nil
-			m.mode = modeDashboard
-			return m, nil, true
+			nm, cmd := m.leaveThemeEditor()
+			return nm, cmd, true
 		case "ctrl+c":
 			return m.quit()
 		case "shift+enter", "alt+enter", "ctrl+s":
@@ -564,9 +563,8 @@ func (m Model) themeKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		if m.themeForm != nil && m.themeForm.touched() {
 			return m.openDialog(discardFormDialog()), nil, true
 		}
-		m.themeForm = nil
-		m.mode = modeDashboard
-		return m, nil, true
+		nm, cmd := m.leaveThemeEditor()
+		return nm, cmd, true
 	case "ctrl+c":
 		if m.themeForm != nil && m.themeForm.touched() {
 			return m.openDialog(discardFormDialog()), nil, true
