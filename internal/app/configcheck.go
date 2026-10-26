@@ -233,7 +233,7 @@ func problemsTable(problems []configProblem, empty string) view.Table {
 func configCheckCommand(reg *registry.Registry, render renderFn) *cobra.Command {
 	return &cobra.Command{
 		Use:         "check",
-		Annotations: outputExempt(),
+		Annotations: readOnly(outputExempt()),
 		Short:       "Name what in the config file rta ignores or cannot use",
 		Long: "Holds the file, and each file of its config.d beside it, to everything rta reads it for\n" +
 			"and lists what does not apply: a key\n" +

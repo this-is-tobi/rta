@@ -662,6 +662,7 @@ func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 	}
 	list := &cobra.Command{
 		Use:               "list",
+		Annotations:       readOnly(),
 		Short:             "List configured environments and whether each one is usable",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
@@ -685,6 +686,7 @@ func newProfileCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command 
 	}
 	show := &cobra.Command{
 		Use:               "show <profile>",
+		Annotations:       readOnly(),
 		Short:             "What one environment sets, and where each value comes from",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeProfileRefs,

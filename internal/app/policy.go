@@ -90,6 +90,7 @@ func newPolicyCommand(opts *globalOpts) *cobra.Command {
 func policyShowCommand(render func(*cobra.Command, view.View, *view.Error) error) *cobra.Command {
 	return &cobra.Command{
 		Use:               "show",
+		Annotations:       readOnly(),
 		Short:             "What ceiling is in force, and where rta looked for it",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,

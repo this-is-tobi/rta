@@ -32,9 +32,10 @@ import (
 // gets wrong.
 func newPluginListCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List the plugins rta has and what each one offers",
+		Use:         "list",
+		Annotations: readOnly(),
+		Aliases:     []string{"ls"},
+		Short:       "List the plugins rta has and what each one offers",
 		Long: "One line per plugin: its purpose, how many capabilities it has and whether\n" +
 			"any of them write or destroy.\n\n" +
 			"Once any plugin is not built in to the rta binary, a Source column says where\n" +

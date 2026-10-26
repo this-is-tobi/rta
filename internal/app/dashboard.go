@@ -81,6 +81,7 @@ func newDashboardCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comman
 	}
 	list := &cobra.Command{
 		Use:               "list",
+		Annotations:       readOnly(),
 		Short:             "Every tile bare `rta` would draw, and where each came from",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,
@@ -98,8 +99,9 @@ func newDashboardCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comman
 	}
 	addViewFlag(list, "list the tiles of this view")
 	sections := &cobra.Command{
-		Use:   "sections",
-		Short: "The dashboard's sections: which view draws them, how each starts, and how many tiles are in it",
+		Use:         "sections",
+		Annotations: readOnly(),
+		Short:       "The dashboard's sections: which view draws them, how each starts, and how many tiles are in it",
 		Long: "A section draws tiles together under one header that folds. This lists each one every view draws or" +
 			" states — its name, how many tiles it holds as bare `rta` would draw them now, whether it starts folded" +
 			" and its own column count — the way `rta dashboard views` lists the views. A group the panels of one" +
@@ -117,6 +119,7 @@ func newDashboardCommand(reg *registry.Registry, opts *globalOpts) *cobra.Comman
 	}
 	views := &cobra.Command{
 		Use:               "views",
+		Annotations:       readOnly(),
 		Short:             "The dashboard's views, which profiles link them, and the one drawn now",
 		Args:              cobra.NoArgs,
 		ValidArgsFunction: cobra.NoFileCompletions,

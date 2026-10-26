@@ -48,7 +48,7 @@ func newDoctorCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	var detail, strict bool
 	cmd := &cobra.Command{
 		Use:         "doctor",
-		Annotations: outputExempt(),
+		Annotations: readOnly(outputExempt()),
 		Short:       "Check rta's environment and report actionable findings",
 		Long: "Checks what rta can see on this machine and what an agent could reach through it.\n\n" +
 			"Rows are ordered by what needs you: error, then warn, then info, then ok. An info row is a " +

@@ -18,7 +18,7 @@ import (
 func configSchemaCommand(reg *registry.Registry) *cobra.Command {
 	return &cobra.Command{
 		Use:         "schema",
-		Annotations: outputExempt(),
+		Annotations: readOnly(outputExempt()),
 		Short:       "Print the config file's JSON Schema, for editor completion",
 		Long: "Prints a JSON Schema describing every key the config file may carry, with the\n" +
 			"explanation an editor shows on hover, and each installed plugin's own keys under\n" +

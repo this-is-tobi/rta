@@ -21,8 +21,9 @@ import (
 // is what the MCP resources will serve.
 func newExplainCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
-		Use:   "explain [capability]",
-		Short: "Describe capabilities: inputs, safety class, invocation forms",
+		Use:         "explain [capability]",
+		Annotations: readOnly(),
+		Short:       "Describe capabilities: inputs, safety class, invocation forms",
 		Long: "Without arguments, lists every registered capability.\n" +
 			"With a capability ID (e.g. sys.cpu), prints its full card:\n" +
 			"summary, safety class, inputs, and CLI/MCP invocation forms.\n" +
