@@ -157,6 +157,35 @@ type PromptText struct {
 	Empty string
 }
 
+// Argv refuses a passphrase that arrived on the command line, whether or
+// not anything would go on to read it. Prompt applies it when a passphrase
+// is wanted; this is also for the callers that want none right now — the
+// guard is off, so nothing reads the flag — where a value nobody reads is
+// still a value in shell history, and a command that accepted it in silence
+// taught the habit the guard then has to break. codes is the caller's error
+// code prefix, the same one Prompt takes.
+func Argv(req plugin.Request, codes string) *view.Error {
+	if req.Surface() != plugin.SurfaceCLI {
+		return nil
+	}
+	return OnArgv(req.String("passphrase"), codes)
+}
+
+// OnArgv is Argv for a value already known to have come from the command
+// line: the host's own check, made for every capability that declares one of
+// these passphrases before the capability runs (internal/app), so a command
+// cannot accept one in silence by forgetting to ask. An empty or blank value
+// carries no passphrase and is not refused for one.
+func OnArgv(value, codes string) *view.Error {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return view.Errorf(codes+".argv",
+		"the passphrase must not travel on the command line — argv is readable by "+
+			"every process you run, and shell history keeps it").
+		WithHint("run again without --passphrase and answer the prompt")
+}
+
 // Prompt reads a passphrase for a gated capability: the request's own Secret
 // field first (the TUI's masked input), then a terminal prompt when a person
 // is there to answer one — echo off, prompt to stderr so an eval'd or
@@ -170,23 +199,6 @@ type PromptText struct {
 // travelled on argv, which every process running as you can read while the
 // command runs and which shell history keeps when it ends. The TUI's masked
 // field and the prompt are the channels that land nowhere.
-// Argv refuses a passphrase that arrived on the command line, whether or
-// not anything would go on to read it. Prompt applies it when a passphrase
-// is wanted; this is also for the callers that want none right now — the
-// guard is off, so nothing reads the flag — where a value nobody reads is
-// still a value in shell history, and a command that accepted it in silence
-// taught the habit the guard then has to break. codes is the caller's error
-// code prefix, the same one Prompt takes.
-func Argv(req plugin.Request, codes string) *view.Error {
-	if req.Surface() != plugin.SurfaceCLI || strings.TrimSpace(req.String("passphrase")) == "" {
-		return nil
-	}
-	return view.Errorf(codes+".argv",
-		"the passphrase must not travel on the command line — argv is readable by "+
-			"every process you run, and shell history keeps it").
-		WithHint("run again without --passphrase and answer the prompt")
-}
-
 func Prompt(req plugin.Request, confirm bool, text PromptText) (string, *view.Error) {
 	// Refused here and not only by the callers' surface gates: this package
 	// is the stated single home of "how the passphrase arrives", so the

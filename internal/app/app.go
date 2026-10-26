@@ -29,6 +29,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/internal/match"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/internal/passkey"
 	"github.com/this-is-tobi/rta/internal/plugindist"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/profile"
@@ -2022,20 +2023,61 @@ func declareFlags(cmd *cobra.Command, c plugin.Capability) {
 // refuses outright (passkey.Argv): the guard's and the operator key's, which
 // arrive at a prompt on the CLI and in the masked box of a form. The flag is
 // still parsed, so a person who types it is told why and what to do instead
-// rather than that it does not exist — but nothing lists it, because a flag
-// that is refused on every run reads in `--help`, in completion and on the
-// explain card as one to try.
+// (refuseArgvSecrets) rather than that it does not exist — but nothing lists
+// it, because a flag that is refused on every run reads in `--help`, in
+// completion and on the explain card as one to try.
 //
 // Told by the declaration itself, the way the TUI picks these two out for its
 // masked box (answers.go, quick.go), and not by shape: keys.add's --passphrase
 // is a Local secret with no environment variable too, and the CLI takes it.
 func argvRefused(f plugin.Field) bool {
-	for _, refused := range []plugin.Field{guard.PassphraseField, operatorid.PassphraseField} {
-		if f.Name == refused.Name && f.Help == refused.Help {
-			return true
+	_, refused := argvCodes(f)
+	return refused
+}
+
+// argvCodes is the code prefix a refusal of f on the command line carries,
+// the one its own prompt's refusals carry, when f is one argvRefused names.
+func argvCodes(f plugin.Field) (string, bool) {
+	for _, refused := range []struct {
+		field plugin.Field
+		codes string
+	}{
+		{guard.PassphraseField, guard.PassphraseCodes},
+		{operatorid.PassphraseField, operatorid.PassphraseCodes},
+	} {
+		if f.Name == refused.field.Name && f.Help == refused.field.Help {
+			return refused.codes, true
 		}
 	}
-	return false
+	return "", false
+}
+
+// refuseArgvSecrets refuses a passphrase argvRefused names when the command
+// line carried one, before the capability runs and whether or not it would
+// have read it.
+//
+// Here, once, and not in each capability. It was each capability's to ask
+// (passkey.Argv, guard.RefuseArgv), and the ones that read the field only
+// sometimes — renew and agent allow only with the guard on, grant list and
+// revoke only with --server, guard off never once remote — never asked
+// otherwise, so with the guard off they went on with the passphrase in shell
+// history and the habit the refusal exists to break. A command that declares
+// the field tomorrow is covered without remembering to be. The flag is the
+// command line's alone, so the TUI's masked box, which is what the input is
+// declared for, never meets this; passkey.Prompt keeps its own check for a
+// request that did not come through here.
+func refuseArgvSecrets(cmd *cobra.Command, c plugin.Capability) *view.Error {
+	for _, f := range c.Inputs {
+		codes, refused := argvCodes(f)
+		if !refused || !cmd.Flags().Changed(f.Name) {
+			continue
+		}
+		value, _ := cmd.Flags().GetString(f.Name)
+		if verr := passkey.OnArgv(value, codes); verr != nil {
+			return verr
+		}
+	}
+	return nil
 }
 
 // requiredOnCommandLine is whether the line itself has to carry the input as a
@@ -2121,6 +2163,14 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 	// byte-indistinguishable from a complete one, which is the one thing a
 	// machine-readable format must never be ambiguous about.
 	renderOpts := renderOptions(cmd, format, opts.noColor)
+
+	// Before anything else, a dry run and the destructive gate included: a
+	// passphrase on argv is already in shell history, and no answer to the
+	// command is worth teaching that it was fine to type it there.
+	if verr := refuseArgvSecrets(cmd, c); verr != nil {
+		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
+		return Rendered(verr)
+	}
 
 	// Safety gate: a destructive capability runs only when somebody has said
 	// so. A person at a terminal is asked, further down, once the target is

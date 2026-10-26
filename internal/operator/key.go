@@ -233,13 +233,17 @@ var PassphraseField = plugin.Field{
 	Help: "the operator key's passphrase",
 }
 
+// PassphraseCodes prefixes the codes of the passphrase's own refusals, for
+// guard.PassphraseCodes' reason.
+const PassphraseCodes = "core.operator.passphrase"
+
 // PromptSecret reads the operator passphrase — the shared passkey flow with
 // this key's words, and the same argv refusal.
 func PromptSecret(req plugin.Request, confirm bool) (string, *view.Error) {
 	return passkey.Prompt(req, confirm, passkey.PromptText{
 		Subject: "the operator key",
 		Prompt:  "Operator passphrase: ",
-		Codes:   "core.operator.passphrase",
+		Codes:   PassphraseCodes,
 		Empty:   "an empty passphrase is not an identity",
 	})
 }
