@@ -1,11 +1,15 @@
 package app
 
 import (
+	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // `rta dashboard add` and `rm` write the `add:` list `rta profile set` cannot,
@@ -77,6 +81,55 @@ func TestDashboardAddIsIdempotentPerKey(t *testing.T) {
 	}
 	if add := loadedConfig(t).Dashboard.Add; len(add) != 1 || add[0].With["dbname"] != "other" {
 		t.Errorf("add = %v, want one entry carrying the new value", add)
+	}
+}
+
+// A number and a list are read back from the file as YAML decodes them, a
+// uint64 and a []any, and typed from the command line as an int and a
+// []string. Compared as Go values the two never matched, so a repeat of a
+// tile with either was "updated" and written on every run of a script that
+// relies on the add being idempotent.
+func TestDashboardAddOfANumberOrAListIsUnchangedTheSecondTime(t *testing.T) {
+	reg := setRegistry(t)
+	if err := reg.Register(plugin.Plugin{
+		Name: "ps", Summary: "processes",
+		Capabilities: []plugin.Capability{{
+			ID: "ps.list", Summary: "list", Safety: plugin.Read,
+			Inputs: []plugin.Field{
+				{Name: "limit", Type: plugin.Int, Default: 10, Help: "rows"},
+				{Name: "ports", Type: plugin.StringSlice, Help: "ports"},
+			},
+			Run: func(context.Context, plugin.Request) (view.View, error) { return view.Text{Body: "ok"}, nil },
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	run := session(t, reg)
+	for _, args := range [][]string{
+		{"--set", "limit=20"},
+		{"--set", "ports=22", "--set", "ports=80"},
+	} {
+		add := append([]string{"dashboard", "add", "ps.list"}, args...)
+		if _, errOut, err := run(add...); err != nil {
+			t.Fatalf("%v %q", err, errOut)
+		}
+		before := fileText(t, config.Path())
+		for _, dry := range []bool{true, false} {
+			again := add
+			if dry {
+				again = append(slices.Clone(add), "--dry-run")
+			}
+			out, errOut, err := run(again...)
+			if err != nil {
+				t.Fatalf("%v %q", err, errOut)
+			}
+			if !strings.Contains(out, "unchanged") {
+				t.Errorf("%v (dry run %v) was not reported as unchanged: %q", args, dry, out)
+			}
+		}
+		if after := fileText(t, config.Path()); after != before {
+			t.Errorf("%v: the repeat rewrote the file:\n%s\nwas:\n%s", args, after, before)
+		}
 	}
 }
 

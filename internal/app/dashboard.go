@@ -1,14 +1,15 @@
 package app
 
 import (
+	"bytes"
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/goccy/go-yaml"
 	"github.com/spf13/cobra"
 
 	"github.com/this-is-tobi/rta/internal/config"
@@ -498,7 +499,14 @@ func runDashboardAdd(cmd *cobra.Command, id string, reg *registry.Registry, dryR
 		}
 		existed = at >= 0
 		if existed {
-			unchanged = reflect.DeepEqual(add[at], entry)
+			// Compared as the file would hold them, the way profile set
+			// compares, and not as Go values: the tile read back holds a
+			// number as the uint64 and a list as the []any YAML decodes, and
+			// the entry the int and []string the flags typed, so a repeat of
+			// either was never equal and was written as an update every time.
+			before, beforeErr := yaml.Marshal(add[at])
+			after, afterErr := yaml.Marshal(entry)
+			unchanged = beforeErr == nil && afterErr == nil && bytes.Equal(before, after)
 			if unchanged || dryRun {
 				return cfg, false
 			}
