@@ -655,7 +655,7 @@ func folderHint(sf plugin.Surface, s store, key string) string {
 // that points there. An agent is told only that the call it has makes the
 // store: which lock it gets is the operator's to choose, and a passphrase store
 // is not the agent's to open.
-func NoStoreNext(sf plugin.Surface, key string) string {
+func NoStoreNext(sf plugin.Surface, key any) string {
 	if sf == plugin.SurfaceMCP {
 		return sf.CapabilityName("kv.set") + " creates it the first time it runs"
 	}
@@ -697,7 +697,7 @@ func operatorsCall(sf plugin.Surface, id string, args ...plugin.Arg) string {
 }
 
 // keyArg is a key given to a kv call Surface.Call spells, by its place.
-func keyArg(key string) plugin.Arg { return plugin.Arg{Name: "key", Value: key, Positional: true} }
+func keyArg(key any) plugin.Arg { return plugin.Arg{Name: "key", Value: key, Positional: true} }
 
 // HasStore reports whether a store has been made on this machine. The one
 // fact about it that needs no passphrase, and the one that tells "that entry

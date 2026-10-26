@@ -165,7 +165,7 @@ func runRestore(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 		if _, live := s.Entries[key]; live {
 			return nil, view.Errorf("kv.restore.taken", "%s was removed and then set again", textclean.Record(key)).
-				WithHint("`" + sf.Call("kv.rename", keyArg(key), plugin.Arg{Name: "new-name", Value: "<other>", Positional: true}) +
+				WithHint("`" + sf.Call("kv.rename", keyArg(key), plugin.Arg{Name: "new-name", Value: plugin.Placeholder("other"), Positional: true}) +
 					"` frees the name, or `" + sf.Call("kv.rm", keyArg(key), plugin.Arg{Name: "purge", Value: true}) +
 					"` drops the removed one")
 		}

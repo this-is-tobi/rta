@@ -124,7 +124,7 @@ func TestDoctorReportsAHealthyEmptyMachine(t *testing.T) {
 // first made two ways in out of one.
 func TestDoctorSendsAnEmptyKVStoreTheSameWayEveryKVHintDoes(t *testing.T) {
 	isolate(t)
-	want := "none yet — " + kv.NoStoreNext(plugin.SurfaceCLI, "<key>")
+	want := "none yet — " + kv.NoStoreNext(plugin.SurfaceCLI, plugin.Placeholder("key"))
 	if got := report(t)["kv store"][1]; got != want {
 		t.Errorf("kv store detail = %q, want %q", got, want)
 	}

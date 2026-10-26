@@ -334,7 +334,7 @@ func runEnv(_ context.Context, req plugin.Request) (view.View, error) {
 			sf := req.Surface()
 			return nil, view.Errorf("kv.env.collision", "%s and %s both become %s", textclean.Record(other), textclean.Record(k), name).
 				WithHint("rename one — `" + sf.Call("kv.rename", keyArg(k),
-					plugin.Arg{Name: "new-name", Value: "<new-name>", Positional: true}) +
+					plugin.Arg{Name: "new-name", Value: plugin.Placeholder("new-name"), Positional: true}) +
 					"` — or export them in separate calls, each with its own " + sf.InputName("prefix"))
 		}
 		from[name] = k
@@ -943,7 +943,7 @@ func runInit(_ context.Context, req plugin.Request) (view.View, error) {
 	if !generate && identity == "" && os.Getenv(identityEnv) == "" {
 		return nil, view.Errorf("kv.init.nokey", "name a key, or generate one").
 			WithHint(sf.InputName("generate") + " makes a key for this store, or " + identityName(sf) +
-				" names one already held, e.g. ~/.ssh/id_ed25519 — or skip init: " + NoStoreNext(sf, "<key>"))
+				" names one already held, e.g. ~/.ssh/id_ed25519 — or skip init: " + NoStoreNext(sf, plugin.Placeholder("key")))
 	}
 
 	var generated string
@@ -1000,7 +1000,7 @@ func runRekey(_ context.Context, req plugin.Request) (view.View, error) {
 		// `--generate` with the one lock they were not asking for.
 		return nil, view.Errorf("kv.rekey.nostore", "no store yet — nothing to re-key").
 			WithHint(sf.CapabilityWith("kv.init", "generate") + " makes one locked to a key — or " +
-				NoStoreNext(sf, "<key>"))
+				NoStoreNext(sf, plugin.Placeholder("key")))
 	}
 	generate := req.Bool("generate")
 	adding := req.StringSlice("recipient")
@@ -1250,7 +1250,7 @@ func readStoreFacts(req plugin.Request) (storeFacts, *view.Error) {
 	case os.IsNotExist(err):
 		return storeFacts{where: append(where, view.Pair{
 			Key:   "state",
-			Value: "no store yet — " + NoStoreNext(req.Surface(), "<key>"),
+			Value: "no store yet — " + NoStoreNext(req.Surface(), plugin.Placeholder("key")),
 		})}, nil
 	case err != nil:
 		return storeFacts{}, view.Errorf("kv.store.unreadable", "reading %s: %v", path, err)
@@ -1477,9 +1477,9 @@ func withHeldPassphrase(req plugin.Request) plugin.Request {
 // history, so the call they are shown does not carry one; an agent has no prompt
 // and gives its value as an argument.
 func setCall(sf plugin.Surface) string {
-	args := []plugin.Arg{keyArg("<key>")}
+	args := []plugin.Arg{keyArg(plugin.Placeholder("key"))}
 	if sf == plugin.SurfaceMCP {
-		args = append(args, plugin.Arg{Name: "value", Value: "<value>", Positional: true})
+		args = append(args, plugin.Arg{Name: "value", Value: plugin.Placeholder("value"), Positional: true})
 	}
 	return sf.Call("kv.set", args...)
 }
@@ -1535,7 +1535,7 @@ func callList(calls ...[2]string) string {
 func emptyList(sf plugin.Surface, stored int, folder, kind, match string) string {
 	if stored == 0 {
 		if !fileExists(storePath()) {
-			return "No keys stored yet — " + NoStoreNext(sf, "<key>")
+			return "No keys stored yet — " + NoStoreNext(sf, plugin.Placeholder("key"))
 		}
 		return "No keys stored yet — " + sf.CapabilityName("kv.set") + " adds one"
 	}

@@ -109,15 +109,23 @@ func TestAWholeCallIsSpelledTheWayItsSurfaceMakesIt(t *testing.T) {
 	if got, want := SurfaceCLI.Call("note.add", Arg{Name: "title", Value: "", Positional: true}), `rta note add ''`; got != want {
 		t.Errorf("an empty value on the CLI = %s, want %s", got, want)
 	}
-	// A placeholder stands for what the reader types, bare as a usage line
-	// spells it; anything else in angle brackets is a value like any other.
-	got := SurfaceCLI.Call("kv.get", Arg{Name: "key", Value: "<key>", Positional: true},
-		Arg{Name: "out", Value: "<file>"}, Arg{Name: "note", Value: "<a b>"})
+	// A Placeholder stands for what the reader types, bare as a usage line
+	// spells it. A string in angle brackets is a value like any other, and is
+	// quoted: it is often somebody else's, an agent's key among them, and
+	// bare it is a redirection.
+	got := SurfaceCLI.Call("kv.get", Arg{Name: "key", Value: Placeholder("key"), Positional: true},
+		Arg{Name: "out", Value: Placeholder("file")}, Arg{Name: "note", Value: "<a b>"})
 	if want := `rta kv get <key> --out <file> --note '<a b>'`; got != want {
 		t.Errorf("placeholders on the CLI = %s, want %s", got, want)
 	}
-	if got, want := SurfaceMCP.Call("kv.get", Arg{Name: "key", Value: "<key>"}), `kv_get {"key":"<key>"}`; got != want {
+	if got, want := SurfaceCLI.Call("kv.get", Arg{Name: "key", Value: "<src>", Positional: true}), `rta kv get '<src>'`; got != want {
+		t.Errorf("a value in angle brackets on the CLI = %s, want %s", got, want)
+	}
+	if got, want := SurfaceMCP.Call("kv.get", Arg{Name: "key", Value: Placeholder("key")}), `kv_get {"key":"<key>"}`; got != want {
 		t.Errorf("a placeholder over MCP = %s, want %s", got, want)
+	}
+	if got, want := SurfaceTUI.Call("kv.get", Arg{Name: "key", Value: Placeholder("key")}), "kv.get key=<key>"; got != want {
+		t.Errorf("a placeholder in the TUI = %s, want %s", got, want)
 	}
 }
 
@@ -234,7 +242,7 @@ func TestAListIsGivenTheWayItsSurfaceTakesOne(t *testing.T) {
 		{SurfaceTUI, SurfaceTUI.InputTo("tag", []string{"ops", "db"}), "the tag box set to ops,db"},
 		{SurfaceTUI, SurfaceTUI.InputTo("tag", []string{"ops", "night shift"}), `the tag box set to "ops,night shift"`},
 		{SurfaceCLI, SurfaceCLI.InputTo("tag", []string{}), "--tag ''"},
-		{SurfaceCLI, SurfaceCLI.InputTo("tag", []string{"<key>", "<a b>"}), "--tag <key> --tag '<a b>'"},
+		{SurfaceCLI, SurfaceCLI.InputTo("tag", []string{"<key>", "<a b>"}), "--tag '<key>' --tag '<a b>'"},
 		{SurfaceMCP, SurfaceMCP.InputTo("tag", []string{}), `the "tag" argument set to []`},
 		{SurfaceCLI, SurfaceCLI.SettingTo("recipient", []string{"age1a", "age1b"}), "--recipient age1a --recipient age1b"},
 		{SurfaceMCP, SurfaceMCP.SettingTo("recipient", []string{"age1a", "age1b"}), "the operator's `recipient` set to [\"age1a\",\"age1b\"]"},
@@ -329,7 +337,7 @@ func TestAValueThatReadsAsAFlagFollowsTheEndOfFlags(t *testing.T) {
 	key := func(v any) Arg { return Arg{Name: "key", Value: v, Positional: true} }
 	for _, c := range []struct{ got, want string }{
 		{SurfaceCLI.Call("kv.get", key("--help")), "rta kv get -- --help"},
-		{SurfaceCLI.Call("kv.set", key("-x"), Arg{Name: "file", Value: "<file>"}, Arg{Name: "tls", Value: false}),
+		{SurfaceCLI.Call("kv.set", key("-x"), Arg{Name: "file", Value: Placeholder("file")}, Arg{Name: "tls", Value: false}),
 			"rta kv set --file <file> --tls=false -- -x"},
 		{SurfaceCLI.Call("net.hosts.rm", Arg{Name: "hostname", Value: []string{"a", "-b"}, Positional: true},
 			Arg{Name: "tag", Value: []string{"x"}}), "rta net hosts rm --tag x -- a -b"},
@@ -532,10 +540,10 @@ func TestAnInputIsGivenWithItsValueTheWayItsSurfaceGivesIt(t *testing.T) {
 	}
 	// A placeholder stands for what the reader types: bare on a command line,
 	// and a string in the JSON an agent sends.
-	if got, want := SurfaceCLI.InputTo("database", "<name>"), "--database <name>"; got != want {
+	if got, want := SurfaceCLI.InputTo("database", Placeholder("name")), "--database <name>"; got != want {
 		t.Errorf("a placeholder on the CLI = %s, want %s", got, want)
 	}
-	if got, want := SurfaceMCP.InputTo("database", "<name>"), `the "database" argument set to "<name>"`; got != want {
+	if got, want := SurfaceMCP.InputTo("database", Placeholder("name")), `the "database" argument set to "<name>"`; got != want {
 		t.Errorf("a placeholder over MCP = %s, want %s", got, want)
 	}
 
