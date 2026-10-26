@@ -10,10 +10,12 @@
 | --- | --- |
 | `p` | Open the inventory (and close it) |
 | `space` | Show or hide its dashboard tile |
-| `t` | Approve an artifact, or take an approval back |
+| `t` | Approve an artifact that is waiting to run, or take back the approval of one that runs |
 | `a` | Choose which credential locations it may read |
 | `c` | Configure it |
 | `enter` | Its capabilities, in the search bar |
+
+The footer offers each key on the rows it acts on, and says which way `t` goes there: `t approve` on a row that is not run, `t take back` on one your own record approves. A plugin the system root alone trusts, as every plugin of the full image is, offers no `t`: that trust is the image's or the package's, and rta reads it without writing it. A built-in or failed row offers neither `t` nor `a`, an approved plugin offers `a` only when it asks to read something, and `enter` is offered where there are capabilities to open.
 
 ### Grouped by where the bytes came from
 

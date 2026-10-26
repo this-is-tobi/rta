@@ -90,6 +90,12 @@ func (m Model) startAllowForm(row pluginRow) (tea.Model, tea.Cmd) {
 		m.refuse(row.plugin.Name + " has not been approved to run yet — press t first, " +
 			"because running at all is the decision that comes before reading anything")
 		return m, nil
+	case row.decided == decidedUntrust:
+		// Its entry went with the approval, so there is no record left to hold a
+		// grant: plugintrust.Allow would refuse the form once it was filled in.
+		m.refuse("approval was taken back from " + row.plugin.Name +
+			" — it can be allowed nothing until it is approved again")
+		return m, nil
 	case len(row.plugin.Needs) == 0:
 		m.refuse(row.plugin.Name + " does not ask to read any credential location")
 		return m, nil

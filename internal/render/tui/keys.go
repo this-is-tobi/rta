@@ -600,13 +600,7 @@ func (m Model) screenItems(screen mode) []hintItem {
 	case modeResult:
 		return m.resultFooterItems()
 	case modePlugins:
-		return []hintItem{
-			item(bindColumn), item(bindToggle), item(bindTrust), item(bindAllow), item(bindConfig),
-			labelled(bindOpen, "capabilities"),
-			// The key that opened the pane closes it — the habit every pane
-			// with a letter shortcut trains, and one nobody needs told.
-			alias(item(bindBack), "p"), item(bindQuit),
-		}
+		return m.pluginFooterItems()
 	case modeProfiles:
 		return m.profileFooterItems()
 	case modeProfilePlugins:
