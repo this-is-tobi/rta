@@ -165,6 +165,10 @@ type Model struct {
 	// that tile's index would have handed it.
 	selected int
 	header   string
+	// layout is the dashboard's rows, their heights and the room under the
+	// search for one paint, or one pass of clampScroll, and nil the rest of the
+	// time (grid.go, layoutMemo).
+	layout *layoutMemo
 	// folds is what this session folded or unfolded, by screen and section name,
 	// on top of how the file starts each one (sections.go says why it is not
 	// written).

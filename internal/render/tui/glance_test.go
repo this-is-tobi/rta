@@ -34,7 +34,7 @@ func notebook() view.Table {
 
 func glanced(t *testing.T, v view.View, inner int) []string {
 	t.Helper()
-	lines, ok := glanceTable(v, inner)
+	lines, ok := glanceTable(v, inner, everyLine)
 	if !ok {
 		t.Fatalf("a table of %v at %d cells was left to the renderer", v, inner)
 	}
@@ -74,7 +74,7 @@ func TestATableTooWideForItsTileIsOneLinePerRow(t *testing.T) {
 // A table that has the room is drawn by the renderer as the grid it has always
 // been; the reshaping is for the box that cannot hold one.
 func TestATableThatFitsIsLeftToTheRenderer(t *testing.T) {
-	if lines, ok := glanceTable(notebook(), 100); ok {
+	if lines, ok := glanceTable(notebook(), 100, everyLine); ok {
 		t.Errorf("a table with room for its grid was reshaped:\n%s", strings.Join(lines, "\n"))
 	}
 }
@@ -221,16 +221,16 @@ func TestAGlancedTableKeepsWhatTheRendererPutsUnderATable(t *testing.T) {
 // and a stub of text is left to the renderer's cards instead of drawn as a
 // column of ellipses.
 func TestATileTooNarrowForAGlanceIsLeftToTheRenderer(t *testing.T) {
-	if lines, ok := glanceTable(notebook(), 14); ok {
+	if lines, ok := glanceTable(notebook(), 14, everyLine); ok {
 		t.Errorf("a 14-cell tile was reshaped:\n%s", strings.Join(lines, "\n"))
 	}
-	if _, ok := glanceTable(view.Text{Body: "not a table"}, 35); ok {
+	if _, ok := glanceTable(view.Text{Body: "not a table"}, 35, everyLine); ok {
 		t.Error("a text view was reshaped as a table")
 	}
 	empty := notebook()
 	empty.Rows = nil
 	empty.Empty = "Nothing here yet"
-	if _, ok := glanceTable(empty, 35); ok {
+	if _, ok := glanceTable(empty, 35, everyLine); ok {
 		t.Error("an empty table was reshaped, and its sentence is the renderer's to draw")
 	}
 }
@@ -263,7 +263,7 @@ func TestAPathTooLongForItsTileIsCutInTheMiddle(t *testing.T) {
 		t.Error("the view the capability returned was edited in place; the copy key reads it")
 	}
 
-	body := plain(tileBody(kv, 36))
+	body := plain(tileBody(kv, 36, everyLine))
 	if n := strings.Count(strings.TrimRight(body, "\n"), "\n") + 1; n > 4 {
 		t.Errorf("the tile still takes %d lines:\n%s", n, body)
 	}
@@ -373,7 +373,7 @@ func TestAGlancedTableIsCleanedOfTerminalEscapes(t *testing.T) {
 	tbl.Columns[4].Name = "Note\x1b]0;owned\x07"
 	for _, body := range []string{
 		strings.Join(glanced(t, tbl, 35), "\n"),
-		plain(tileBody(tbl, 35)),
+		plain(tileBody(tbl, 35, everyLine)),
 	} {
 		if strings.ContainsAny(body, "\x1b\a\r") {
 			t.Errorf("a control character reached the screen through a glanced table: %q", body)
@@ -384,7 +384,7 @@ func TestAGlancedTableIsCleanedOfTerminalEscapes(t *testing.T) {
 	}
 
 	kv := view.KeyValue{Pairs: []view.Pair{{Key: "store", Value: "/home/somebody/\x1b]52;c;aGk=\x07/a/long/path/to/the/file.age"}}}
-	if body := plain(tileBody(kv, 30)); strings.ContainsAny(body, "\x1b\a") {
+	if body := plain(tileBody(kv, 30, everyLine)); strings.ContainsAny(body, "\x1b\a") {
 		t.Errorf("a control character reached the screen through a cut path: %q", body)
 	}
 }
@@ -477,7 +477,7 @@ func TestAGradedColumnTooWideIsCutBeforeItIsDropped(t *testing.T) {
 // from its first word, so a red ERROR stays red with its reason cut short.
 func TestACutVerdictKeepsItsColour(t *testing.T) {
 	tbl := certExpiry()
-	lines, ok := glanceTable(tbl, 34)
+	lines, ok := glanceTable(tbl, 34, everyLine)
 	if !ok {
 		t.Fatal("the table was left to the renderer")
 	}

@@ -203,7 +203,7 @@ func TestAPausedTileKeepsItsPauseWordingAndNotItsOldAnswer(t *testing.T) {
 		t.Fatal("the fixture's tile is not paused")
 	}
 	// The box wraps a sentence where it likes, so what it says is read as words.
-	text := strings.Join(strings.Fields(plain(strings.Join(tileLines(m.asReturned(1), 60, false), "\n"))), " ")
+	text := strings.Join(strings.Fields(plain(strings.Join(tileLines(m.asReturned(1), 60, false, everyLine), "\n"))), " ")
 	if !strings.Contains(text, "paused — credentials refused") {
 		t.Errorf("a paused tile:\n%s", text)
 	}
@@ -265,11 +265,11 @@ func TestATileThatDeclaresAnHourOrMoreIsNotRunWhenTheTUIOpens(t *testing.T) {
 		t.Error("the launch refresh dispatched a run of a tile that declares two hours")
 	}
 
-	body := plain(strings.Join(tileLines(m.asReturned(1), 38, false), "\n"))
+	body := plain(strings.Join(tileLines(m.asReturned(1), 38, false, everyLine), "\n"))
 	if !strings.Contains(body, "not run yet — r runs it") || strings.Contains(body, "loading") {
 		t.Errorf("the deferred tile says:\n%s", body)
 	}
-	if got, want := fgBefore(t, strings.Join(tileLines(m.asReturned(1), 38, false), "\n"), "not run yet"), colourOf(t, theme.Subtle); got != want {
+	if got, want := fgBefore(t, strings.Join(tileLines(m.asReturned(1), 38, false, everyLine), "\n"), "not run yet"), colourOf(t, theme.Subtle); got != want {
 		t.Errorf("the sentence is drawn in %s, want the muted %s", got, want)
 	}
 
@@ -289,7 +289,7 @@ func TestATileWithAShorterPaceLaunchesAsToday(t *testing.T) {
 		if !m.tiles[1].due(time.Now()) {
 			t.Errorf("%s: the tile is not run at launch", name)
 		}
-		if body := plain(strings.Join(tileLines(m.asReturned(1), 38, false), "\n")); strings.Contains(body, "not run yet") {
+		if body := plain(strings.Join(tileLines(m.asReturned(1), 38, false, everyLine), "\n")); strings.Contains(body, "not run yet") {
 			t.Errorf("%s: the tile says it was not run:\n%s", name, body)
 		}
 	}
