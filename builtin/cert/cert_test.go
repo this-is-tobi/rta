@@ -352,6 +352,35 @@ func TestDialFailureIsCodedWithHint(t *testing.T) {
 	}
 }
 
+// An IPv6 address is a host like any other, dialled at 443 when it names no
+// port. A colon anywhere in the target was taken for a port, and every IPv6
+// address holds one, so `cert expiry 2001:db8::1` was "too many colons" and
+// `[2001:db8::1]` "missing port", where an IPv4 address or a name was dialled
+// at 443. The dial is made with its context already done, so the address it
+// was made to is read off its refusal and nothing leaves the machine.
+func TestAnIPv6AddressThatNamesNoPortIsDialledAt443(t *testing.T) {
+	done, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, c := range []struct{ target, addr string }{
+		{"2001:db8::1", "[2001:db8::1]:443"},
+		{"[2001:db8::1]", "[2001:db8::1]:443"},
+		{"[2001:db8::1]:8443", "[2001:db8::1]:8443"},
+		{"fe80::1%lo0", "[fe80::1%lo0]:443"},
+		{"192.0.2.1", "192.0.2.1:443"},
+		{"192.0.2.1:8443", "192.0.2.1:8443"},
+	} {
+		_, _, err := dialCerts(done, plugin.SurfaceCLI, c.target, time.Second)
+		if ve := view.AsError(err, "x"); ve.Code != "cert.dial.failed" || !strings.HasPrefix(ve.Message, "connecting to "+c.addr+":") {
+			t.Errorf("%s: %v, want it dialled at %s", c.target, err, c.addr)
+		}
+	}
+
+	_, _, err := dialCerts(done, plugin.SurfaceCLI, "a:b:c", time.Second)
+	if ve := view.AsError(err, "x"); ve.Code != "cert.target.invalid" || !strings.Contains(ve.Hint, "[ipv6]:port") {
+		t.Errorf("a target that is no address: %+v, want cert.target.invalid with a hint that spells an IPv6 host", ve)
+	}
+}
+
 // The summaries of the four that take a host or a file name a host, and over
 // MCP none of them dials one: an agent picks a tool by its first line, sends a
 // host, and is refused. What differs there is said in each one's text.
