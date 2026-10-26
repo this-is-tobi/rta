@@ -75,7 +75,7 @@ func runResolverList(_ context.Context, req plugin.Request) (view.View, error) {
 	pairs := []view.Pair{{Key: "file", Value: named}}
 	// Who owns the file comes first: it decides whether anything else here
 	// is worth changing.
-	if what, _ := managedBy(req, path, link, ""); what != "" {
+	if what, _, _ := managedBy(req, path, link, ""); what != "" {
 		pairs = append(pairs, view.Pair{Key: "managed by", Value: what + " — edits here get overwritten"})
 	} else {
 		pairs = append(pairs, view.Pair{Key: "managed by", Value: "nothing — safe to edit"})
@@ -113,7 +113,8 @@ func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 	}
 	path := resolverPath(req)
-	if verr := guardManaged(req, path, req.Bool("force")); verr != nil {
+	forced, verr := guardManaged(req, path, req.Bool("force"))
+	if verr != nil {
 		return nil, verr
 	}
 	lines, verr := readLines(req, path, maxResolvBytes)
@@ -156,8 +157,8 @@ func runResolverSet(_ context.Context, req plugin.Request) (view.View, error) {
 		return nil, verr
 	}
 	body := fmt.Sprintf("%s in %s\nprevious version saved to %s", summary, path, saved)
-	if what, _ := managedBy(req, path, "", ""); what != "" {
-		body += fmt.Sprintf("\n\nwarning: %s is %s — this change will be overwritten", path, what)
+	if forced != "" {
+		body += "\n\nwarning: " + forced
 	}
 	return view.Text{Body: body}, nil
 }
