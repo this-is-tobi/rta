@@ -3,6 +3,7 @@ package kv
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -258,6 +259,12 @@ var promptNewPassphrase = func() (first, again string, err error) {
 	if err != nil || len(f) == 0 {
 		return "", "", err
 	}
+	// Before the second asking, as the guard's is (passkey.Prompt): a person who
+	// has just typed a short one twice has been made to confirm what is about to
+	// be refused.
+	if verr := passkey.CheckNew(string(f), "kv.passphrase", "the store"); verr != nil {
+		return "", "", verr
+	}
 	a, err := readSecret("Once more: ")
 	return string(f), string(a), err
 }
@@ -348,6 +355,7 @@ func givenOrAskedPassphrase(req plugin.Request) (string, *view.Error) {
 	if prompted != "" {
 		return prompted, nil
 	}
+	hint := passphraseHint(req.Surface())
 	if canPrompt(req) {
 		p, verr := askPassphrase()
 		if verr != nil {
@@ -357,8 +365,12 @@ func givenOrAskedPassphrase(req plugin.Request) (string, *view.Error) {
 			prompted = p
 			return p, nil
 		}
+		// A prompt was shown and came back empty, enter or ^D: the hint for a
+		// call with no terminal to ask at would send somebody who is at one to
+		// where they already are.
+		hint = "nothing was typed at the prompt — run it again and type one, or set " + passphraseEnv
 	}
-	return "", view.Errorf("kv.passphrase.missing", "no passphrase provided").WithHint(passphraseHint(req.Surface())).
+	return "", view.Errorf("kv.passphrase.missing", "no passphrase provided").WithHint(hint).
 		WithInput("passphrase")
 }
 
@@ -382,7 +394,10 @@ func askPassphrase() (string, *view.Error) {
 		return p, nil
 	}
 	first, again, err := promptNewPassphrase()
+	var refused *view.Error
 	switch {
+	case errors.As(err, &refused):
+		return "", refused
 	case err != nil:
 		return "", nil //nolint:nilerr // see above: an unanswered prompt is "no passphrase"
 	case first != again:
