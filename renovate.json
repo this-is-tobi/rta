@@ -53,6 +53,12 @@
       "groupName": "Go toolchain"
     },
     {
+      "description": "gcfg moves with go-git, never ahead of it. builtin/git reads config and includes with the reader go-git's own decoder uses, so a file one refuses the other refused already; go-git v5 requires gcfg v1, and gcfg v2 (a new import path) arrives with go-git v6, which moves both together.",
+      "matchDepNames": ["github.com/go-git/gcfg"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
       "description": "Reusable workflows are called at the moving v0 major tag on purpose until github-workflows reaches v1 - don't pin or bump them.",
       "matchDepNames": ["this-is-tobi/github-workflows"],
       "enabled": false
