@@ -240,6 +240,9 @@ func resolveHops(ctx context.Context, hops []hop) {
 
 func runTrace(ctx context.Context, req plugin.Request) (view.View, error) {
 	host := req.String("host")
+	if verr := dottedNumber(host); verr != nil {
+		return nil, verr
+	}
 	maxHops := min(max(req.Int("max-hops"), 1), 64)
 	probes := min(max(req.Int("probes"), 1), 10)
 	timeout := max(req.Duration("timeout"), time.Second)

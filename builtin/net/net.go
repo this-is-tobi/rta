@@ -392,6 +392,9 @@ func Plugin() plugin.Plugin {
 
 func runPing(ctx context.Context, req plugin.Request) (view.View, error) {
 	host := req.String("host")
+	if verr := dottedNumber(host); verr != nil {
+		return nil, verr
+	}
 	pinger, err := probing.NewPinger(host)
 	if err != nil {
 		return nil, namingHost(resolveFailed("net.ping.resolve", req.Surface(), host, err), err)
@@ -745,6 +748,9 @@ func parsePorts(spec string) ([]int, error) {
 
 func runPort(ctx context.Context, req plugin.Request) (view.View, error) {
 	host := req.String("host")
+	if verr := dottedNumber(host); verr != nil {
+		return nil, verr
+	}
 	ports, err := parsePorts(req.String("ports"))
 	if errors.Is(err, errTooManyPorts) {
 		return nil, view.Errorf("net.port.toomany", "%v", err).
