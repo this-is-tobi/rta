@@ -139,6 +139,7 @@ func TestUseSwitchesOnAndOff(t *testing.T) {
 	if got := profile.Active(); got != "prod" {
 		t.Errorf("active = %q, want prod", got)
 	}
+	m.profiles = m.profileRows() // as the key does after every press
 	if flash := m.useSelectedProfile(); !strings.Contains(flash, "switched off") {
 		t.Errorf("second press did not switch off: %q", flash)
 	}

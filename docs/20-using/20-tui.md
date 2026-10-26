@@ -231,7 +231,7 @@ An environment that runs otherwise than its file states is marked `warn`, and th
 | Key | What it does |
 | --- | --- |
 | `f` | Open profiles |
-| `u` | Use this one |
+| `u` | Use this one; on the one that is on, switch it off, which the footer says as `u switch off`. On a row that no longer says what is in force, because its window ran out or another terminal switched, it switches nothing: the pane is put right and says so, and the next `u` acts on what it shows |
 | `enter` | The plugins inside it |
 | `n` | New |
 | `d` | Delete |

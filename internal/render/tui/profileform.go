@@ -993,7 +993,26 @@ func (m *Model) useSelectedProfile() string {
 		return ""
 	}
 	row := m.profiles[m.profileSel]
-	if profile.LoadSelection().Name(time.Now()) == row.name {
+	on := profile.LoadSelection().Name(time.Now()) == row.name
+	// u does what the screen says it does, and the screen says what the rows
+	// said when they were last built, on a key: no tick runs on this pane. A
+	// window that ran out, or `rta use --off` or `rta use other` in another
+	// terminal, left a row reading on with the bar teaching u as switch off,
+	// and the press switched the environment on for a fresh window, the
+	// opposite of the fail-safe direction the bar promised; `rta use` run
+	// elsewhere left one reading off, and u as use switched it off. A row that
+	// no longer says what is in force switches nothing: the key puts the rows
+	// right (profilesKeys rebuilds them), and the next press acts on what the
+	// screen then shows.
+	if on != row.active {
+		note := row.name + " is on now, switched on elsewhere — u switches it off"
+		if !on {
+			note = row.name + " is not on any more — its window ran out or it was switched off elsewhere; u switches it on"
+		}
+		m.guide(note)
+		return note
+	}
+	if on {
 		if verr := profile.SaveSelection(profile.Selection{}); verr != nil {
 			return m.refused("not saved: " + verr.Error())
 		}

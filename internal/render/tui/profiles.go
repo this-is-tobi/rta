@@ -419,6 +419,12 @@ type profileRow struct {
 
 func (r profileRow) valid() bool { return r.problem == "" }
 
+// on says whether the row reads switched on at now, as its state column draws
+// it: active, and its window, where it has one, not yet run out.
+func (r profileRow) on(now time.Time) bool {
+	return r.active && (r.until == nil || now.Before(*r.until))
+}
+
 // connRow is one plugin inside an environment: what it sets and where its
 // credentials come from.
 type connRow struct {
@@ -841,8 +847,18 @@ func (m Model) profileFooterItems() []hintItem {
 	if len(m.profiles) == 0 {
 		return []hintItem{item(bindNew), alias(item(bindBack), "f"), item(bindQuit)}
 	}
+	// u on the environment that is on switches it off (useSelectedProfile),
+	// and a bar that called it "use" there was read as `rta use`, which renews
+	// the window: pressed to keep an environment going, it took every
+	// profiled reach away mid-task. The toggle stays, the fail-safe direction
+	// one keystroke away, and the bar says which way it goes, from what the
+	// row's state column says beside it.
+	use := item(bindUse)
+	if m.profileSel < len(m.profiles) && m.profiles[m.profileSel].on(time.Now()) {
+		use = labelled(bindUse, "switch off")
+	}
 	items := []hintItem{
-		item(bindColumn), item(bindUse), alias(labelled(bindOpen, "plugins"), "right", "l"),
+		item(bindColumn), use, alias(labelled(bindOpen, "plugins"), "right", "l"),
 		alias(item(bindConfig), "e"), item(bindNew), item(bindRemove),
 	}
 	if m.selectedProfileHasUnsetCredential() {
