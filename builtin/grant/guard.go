@@ -38,35 +38,18 @@ func runGuardOn(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	// Clear first, enable second: a crash between the two leaves grants
-	// cleared and the guard off, which is inconvenient and safe. The other
-	// order leaves the guard on over unsigned rows, which loadAll would then
-	// refuse as forgery — an alarm raised by the recovery, seal.go's own
-	// phrase for the wrong shape.
-	//
 	// Cleared rather than migrated, and legacy() owns the argument: a
 	// migration that re-signs what it finds is the same hole with more
 	// steps, because the rows being blessed are exactly the rows whose
 	// authorship the guard exists to pin. Grants are a day at most; what
-	// this costs is re-issued in minutes, with the passphrase.
-	// Both under the one grant lock: cleared and enabled used to be two
-	// writes under two locks, and a `grant allow` in between passed the
-	// guard check (still off), persisted an unsigned row, and the next
-	// read refused the whole file as forged — a fail-closed alarm raised
-	// by the recovery. Enabled inside the mutation, the window is gone;
-	// a crash between the two writes leaves the guard on over an empty
-	// file, which is the safe side.
-	var enableErr *view.Error
-	if verr := core.Mutate(func([]core.Grant) ([]core.Grant, bool) {
-		if _, enableErr = guard.Enable(pass); enableErr != nil {
-			return nil, false
-		}
-		return nil, true
+	// this costs is re-issued in minutes, with the passphrase. ClearFor
+	// carries the ordering, the lock and the crash story every guard
+	// transition shares.
+	if verr := core.ClearFor(func() *view.Error {
+		_, verr := guard.Enable(pass)
+		return verr
 	}); verr != nil {
 		return nil, verr
-	}
-	if enableErr != nil {
-		return nil, enableErr
 	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: "guard", Value: "on — issuing or renewing a grant now asks for the passphrase"},
@@ -104,12 +87,7 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 				"disabling the remote guard needs a person at a terminal").
 				WithHint("run this at a terminal, or from the TUI")
 		}
-		if verr := core.Mutate(func([]core.Grant) ([]core.Grant, bool) {
-			return nil, true
-		}); verr != nil {
-			return nil, verr
-		}
-		if verr := guard.DisableRemote(); verr != nil {
+		if verr := core.ClearFor(guard.DisableRemote); verr != nil {
 			return nil, verr
 		}
 		return view.KeyValue{Pairs: []view.Pair{
@@ -133,12 +111,7 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 	// Clear while the guard still stands, then remove it — the mirror of
 	// enable's ordering, with the same crash story: dying between the two
 	// leaves the guard on over an empty file, which a retry finishes.
-	if verr := core.Mutate(func([]core.Grant) ([]core.Grant, bool) {
-		return nil, true
-	}); verr != nil {
-		return nil, verr
-	}
-	if verr := guard.Disable(pass); verr != nil {
+	if verr := core.ClearFor(func() *view.Error { return guard.Disable(pass) }); verr != nil {
 		return nil, verr
 	}
 	return view.KeyValue{Pairs: []view.Pair{
@@ -224,12 +197,7 @@ func runGuardRemote(_ context.Context, req plugin.Request) (view.View, error) {
 		}
 		return view.Text{Body: body}, nil
 	}
-	if verr := core.Mutate(func([]core.Grant) ([]core.Grant, bool) {
-		return nil, true
-	}); verr != nil {
-		return nil, verr
-	}
-	if verr := guard.EnableRemote(signers, canonical); verr != nil {
+	if verr := core.ClearFor(func() *view.Error { return guard.EnableRemote(signers, canonical) }); verr != nil {
 		return nil, verr
 	}
 	operatorsCell := strings.Join(signerLabels, ", ")
