@@ -1327,7 +1327,7 @@ func currentView(cfg config.Config, s profile.Selection, now time.Time) view.Vie
 	pairs = append(pairs, view.Pair{Key: "covers", Value: strings.Join(p.Namespaces(), ", ")})
 	if left, deadline := s.Left(now); deadline {
 		pairs = append(pairs, view.Pair{Key: "until", Value: s.Until.Format(time.RFC3339) +
-			" (" + left.Round(time.Minute).String() + " left)"})
+			" (" + profile.ShortDuration(left) + " left)"})
 	} else {
 		pairs = append(pairs, view.Pair{Key: "until", Value: "no deadline — `rta use --off` ends it"})
 	}
