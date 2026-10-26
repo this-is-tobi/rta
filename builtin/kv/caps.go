@@ -3,8 +3,8 @@ package kv
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -377,8 +377,12 @@ func valueToStore(req plugin.Request) (value []byte, filename string, piped, giv
 		if err != nil {
 			return nil, "", false, false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err).WithInput(pathin.Input("file", err))
 		}
-		data, err := io.ReadAll(f)
-		if err != nil {
+		data, err := pathin.ReadAll(f, path, maxValueBytes)
+		var tooLarge *pathin.TooLargeError
+		switch {
+		case errors.As(err, &tooLarge):
+			return nil, "", false, false, valueTooLarge(path).WithInput("file")
+		case err != nil:
 			return nil, "", false, false, view.Errorf("kv.file.unreadable", "reading %s: %v", path, err).WithInput(pathin.Input("file", err))
 		}
 		// Exactly what was on disk. Trimming a trailing newline was a
@@ -398,7 +402,25 @@ func valueToStore(req plugin.Request) (value []byte, filename string, piped, giv
 	if raw == "" {
 		return nil, "", false, false, nil
 	}
+	if len(raw) > maxValueBytes {
+		return nil, "", false, false, valueTooLarge("the value").WithInput("value")
+	}
 	return []byte(raw), "", false, true, nil
+}
+
+// maxValueBytes is the most one entry holds. The store is one file, decrypted
+// whole to read any entry and encrypted whole at every write, so a large file
+// kept in it is paid for by every later call; and what --file names is read
+// only this far, since /dev/zero, a pipe that never closes or a log under the
+// roots an agent names were read until memory ran out.
+const maxValueBytes = 16 << 20
+
+// valueTooLarge is the refusal of a value over maxValueBytes; what names it.
+func valueTooLarge(what string) *view.Error {
+	return view.Errorf("kv.value.toolarge", "%s is over %s, the most one entry of the store holds",
+		what, format.Bytes(maxValueBytes)).
+		WithHint("the store is one file, read and written whole at every call — keep a large file where it is, " +
+			"and store the secret that opens it")
 }
 
 // throughDescriptor reports whether path names one of this process's open
