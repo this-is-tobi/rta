@@ -507,9 +507,20 @@ func wrapped(text string, w, maxLines, reserve int) []string {
 // what went wrong, and so does more of the end, since that is where a remedy
 // goes; the cut is marked, and made between words where there is a word to cut
 // at.
+//
+// A refusal is "what went wrong — its hint", and a third of the room is about
+// what a short message takes, so the start ended with the message and the cut
+// began on the first words of the hint: "drop the trailing slash" went, and
+// the reasons after it stayed. When the message fits in half the room it is
+// kept whole and the start goes on into the hint by a third of what is left.
 func elide(text string, w, maxLines, reserve int) string {
 	capacity := maxLines*w - reserve - 2 // the mark of the cut and the space after it
 	headCells := capacity / 3
+	if message, _, ok := strings.Cut(text, " — "); ok {
+		if lead := ansi.StringWidth(message) + 3; lead <= capacity/2 { // 3 for the dash and its spaces
+			headCells = lead + (capacity-lead)/3
+		}
+	}
 	total := ansi.StringWidth(text)
 	head := ansi.Truncate(text, headCells, "")
 	if len(head) < len(text) && text[len(head)] != ' ' {
