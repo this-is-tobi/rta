@@ -817,6 +817,37 @@ func TestMutateSeesTheGrantsLoadHides(t *testing.T) {
 	}
 }
 
+// A refund for one call leaves every other call's spent row where it is.
+//
+// refund used to save only the rows still Active, and a row spent to its last
+// use is not Active — so giving back an unrelated call's use deleted it. The
+// call that spent it was still in flight; when it then failed before reaching
+// the capability, its own refund found no row, and a one-time grant stayed
+// spent for a call that never ran.
+func TestARefundForOneCallKeepsAnotherCallsSpentGrant(t *testing.T) {
+	setup(t)
+	issue(t, Grant{Target: "kv.get", Scope: "prod/db", MaxUses: 1})
+	issue(t, Grant{Target: "note.add", MaxUses: 10})
+	get := declare("kv.get", plugin.Write, "key", true)
+	add := declare("note.add", plugin.Write, "", true)
+
+	releaseGet, verr := Reserve(get, map[string]any{"key": "prod/db"}, Caller{})
+	if verr != nil {
+		t.Fatalf("the one-time call was refused: %v", verr)
+	}
+	releaseAdd, verr := Reserve(add, nil, Caller{})
+	if verr != nil {
+		t.Fatalf("the unrelated call was refused: %v", verr)
+	}
+	// The unrelated call fails first, then the one-time call does too.
+	releaseAdd()
+	releaseGet()
+
+	if verr := gate(t, get, map[string]any{"key": "prod/db"}, "", ""); verr != nil {
+		t.Fatalf("the one-time grant stayed spent for a call that failed: %v", verr)
+	}
+}
+
 // Declining is how --dry-run and "there was nothing to revoke" get their
 // answer: the decision is taken under the same lock as the write it refuses,
 // so the file cannot change between deciding and reporting.

@@ -2295,16 +2295,16 @@ func refund(spent []spentUse) *view.Error {
 	if !changed {
 		return nil
 	}
-	// Prune on the way out, the same rule Load applies on the way in, so a
-	// refund does not resurrect anything that expired while the call ran.
-	now := time.Now()
-	keep := make([]Grant, 0, len(grants))
-	for _, g := range grants {
-		if g.Active(now) {
-			keep = append(keep, g)
-		}
-	}
-	return Save(keep)
+	// Everything loadAll returned goes back, spent rows included, and Save's
+	// own withoutExpired is the only pruning — so nothing that expired while
+	// the call ran comes back, and nothing else is lost either. This used to
+	// keep only the Active rows, which drops every row spent to its last use:
+	// a refund for one call deleted the row another call had just spent, and
+	// when that call then failed before reaching its capability, its refund
+	// found nothing to give back to and a one-time grant stayed spent for a
+	// call that never ran. Save's rule is the one this has to agree with: a
+	// spent grant stays until it expires, because a refund may still need it.
+	return Save(grants)
 }
 
 func anyLimited(grants []Grant) bool {
