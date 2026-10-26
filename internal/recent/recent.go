@@ -45,6 +45,7 @@ import (
 	"sync"
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
+	"github.com/this-is-tobi/rta/internal/credname"
 	"github.com/this-is-tobi/rta/internal/headerlist"
 	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/textclean"
@@ -259,7 +260,7 @@ func offerable(c plugin.Capability, profile string, values map[string]any) map[s
 		// application/json` is two entries that are each wrong to keep: half a
 		// header offered back as an input, and, for a credential, the half after
 		// the comma that the check below cannot recognise as one — `X-Api-Key:
-		// a, b` was refused, and `b` was remembered. By name, as credentialName
+		// a, b` was refused, and `b` was remembered. By name, as credname.Field
 		// is: the list is the shape of the input and nothing else says so.
 		if f.Name == "header" {
 			raws = headerlist.Join(raws)
@@ -293,43 +294,14 @@ func worthOffering(f plugin.Field) bool {
 	case plugin.Secret, plugin.SecretSlice, plugin.Text, plugin.Bool:
 		return false
 	}
-	if credentialName(f.Name) || credentialName(f.Config) {
+	// A backstop to the type: a field named for a credential and declared a
+	// plain String is one a plugin got wrong (credname).
+	if credname.Field(f.Name) || credname.Field(f.Config) {
 		return false
 	}
 	// A closed set is already offered in full, and offering three of its
 	// members again above the list is noise.
 	return len(f.Options) == 0
-}
-
-// credentialWords are the names a field carries when it holds a credential,
-// whatever type its author declared it as.
-//
-// A backstop, not the rule. `Type: Secret` is the rule, and it is what keeps a
-// value out of a form's plain box as well as out of this file — but a
-// declaration can be wrong, and this one was: builtin/http declared `bearer`
-// and `basic` as plain Strings, so a token went to disk and came back on a
-// completion list rendered in the clear. That is fixed at the declaration;
-// this is here because the next plugin to get it wrong will not be one this
-// repo can edit.
-//
-// Being wrong in this direction costs a suggestion nobody sees, which is why a
-// name heuristic is acceptable here and would not be anywhere a value is
-// actually gated.
-var credentialWords = []string{
-	"secret", "token", "password", "passwd", "credential", "auth", "bearer", "apikey",
-}
-
-func credentialName(name string) bool {
-	if name == "" {
-		return false
-	}
-	lower := strings.ToLower(name)
-	for _, w := range credentialWords {
-		if strings.Contains(lower, w) {
-			return true
-		}
-	}
-	return false
 }
 
 // credentialHeader reports whether a value is a header that carries a
@@ -350,13 +322,7 @@ func credentialHeader(v string) bool {
 	if !isHeader || strings.ContainsAny(name, " \t") {
 		return false
 	}
-	name = strings.NewReplacer("-", "", "_", "").Replace(strings.ToLower(name))
-	for _, w := range credentialHeaderWords {
-		if strings.Contains(name, w) {
-			return true
-		}
-	}
-	return false
+	return credname.Header(name)
 }
 
 // urlCarriesCredential reports whether a value is a URL with a credential in
@@ -377,23 +343,12 @@ func urlCarriesCredential(v string) bool {
 		return true
 	}
 	for param := range u.Query() {
-		name := strings.NewReplacer("-", "", "_", "").Replace(strings.ToLower(param))
-		if name == "sig" {
+		if credname.Param(param) {
 			return true
-		}
-		for _, w := range credentialHeaderWords {
-			if strings.Contains(name, w) {
-				return true
-			}
 		}
 	}
 	return false
 }
-
-// credentialHeaderWords are what a header that carries a credential has in
-// its name, hyphens removed: the credential words fields use, plus the ones
-// particular to headers — the key, the cookie, the session, the signature.
-var credentialHeaderWords = append([]string{"cookie", "session", "signature", "key"}, credentialWords...)
 
 // entries renders one supplied value as the strings to remember.
 func entries(v any) []string {

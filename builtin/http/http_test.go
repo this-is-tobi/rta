@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -675,6 +676,33 @@ func TestDryRunMasksCredentials(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "s3cr3t") {
 		t.Fatalf("the dry run echoed the credential: %s", raw)
+	}
+}
+
+// A header an API takes its key in is masked as Authorization is. The dry run
+// masked Authorization, Cookie and Proxy-Authorization by name and nothing
+// else, so `--header 'PRIVATE-TOKEN: glpat-…' --dry-run` printed GitLab's
+// token, and X-Api-Key and X-Vault-Token theirs, while the completion history
+// had long known them for credentials and forgot them.
+func TestADryRunMasksEveryHeaderNamedForACredential(t *testing.T) {
+	v, err := doRequest(context.Background(), "POST", plugin.NewRequest(map[string]any{
+		"url": "https://example.com", "timeout": "5s",
+		"header": []string{"PRIVATE-TOKEN: glpat-1", "X-Api-Key: key-2", "X-Vault-Token: hvs.3",
+			"X-Auth-Token: t-4", "Cookie: s=5", "X-Request-Id: shown"},
+	}, true, true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kv := v.(view.KeyValue)
+	for _, h := range []string{"Private-Token", "X-Api-Key", "X-Vault-Token", "X-Auth-Token", "Cookie"} {
+		if !slices.Contains(kv.Redacted, "header:"+h) {
+			t.Errorf("%s is not masked: redacted %q", h, kv.Redacted)
+		}
+	}
+	for _, h := range []string{"X-Request-Id", "Content-Type", "Accept"} {
+		if slices.Contains(kv.Redacted, "header:"+h) {
+			t.Errorf("%s, which carries no credential, is masked", h)
+		}
 	}
 }
 
