@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/this-is-tobi/rta/builtin/internal/pathin"
 	"github.com/this-is-tobi/rta/internal/pathguard"
@@ -436,7 +437,10 @@ func pathError(code, path string, err error) *view.Error {
 		return refused
 	}
 	switch {
-	case os.IsNotExist(err):
+	// A path through a file, `/etc/hosts/x`, names nothing either: the
+	// operating system says ENOTDIR of it, and it was refused as a failure of
+	// the read, naming no input, where the path is what is wrong.
+	case os.IsNotExist(err) || errors.Is(err, syscall.ENOTDIR):
 		return view.Errorf(code+".notfound", "no such path: %s", path).
 			WithHint("check its spelling, and that it exists on the machine running rta").WithInput("path")
 	case os.IsPermission(err):
