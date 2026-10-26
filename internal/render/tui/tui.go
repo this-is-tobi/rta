@@ -851,6 +851,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq != 0 && msg.seq != m.runSeq {
 			return m, nil
 		}
+		// A live view's refresh is the reader's only while they read it. Its
+		// answer to somebody who pressed e or esc meanwhile switched the screen
+		// back to the result, over the form, which stayed open and unseen with
+		// the next letters typed for it going to the result's keys, which act
+		// on the selected row. Dropped, and the run let go, which is all it
+		// still held.
+		if msg.live && (m.mode != modeResult || m.current.ID != msg.cap.ID) {
+			m.releaseRun()
+			return m, nil
+		}
 		m.releaseRun()
 		// Cleaned once, at the top, rather than at each place a string is
 		// drawn — and above every branch below, because the flash path returns

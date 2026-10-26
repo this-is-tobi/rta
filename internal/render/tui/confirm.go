@@ -183,7 +183,7 @@ func (m Model) confirmKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		nm, cmd := m.cancelConfirm()
 		return nm, cmd, true
 	case "q", "ctrl+c":
-		return m, tea.Quit, true
+		return m.quit()
 	}
 	return m, nil, false
 }
