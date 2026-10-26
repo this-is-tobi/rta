@@ -25,7 +25,7 @@ func TestDeclaredPriorityBeatsTheShapeOfAColumnWhenATileGivesOneUp(t *testing.T)
 	}
 	var narrow string
 	for inner := 40; inner >= 12; inner-- {
-		lines, ok := glanceTable(tbl, inner)
+		lines, ok := glanceTable(tbl, inner, everyLine)
 		if !ok {
 			continue
 		}

@@ -39,7 +39,7 @@ func TestTheRealRosterIsGlancedAsOneLinePerGrantAndStaysATable(t *testing.T) {
 	}
 	want := map[string]string{"note.add": "15m", "net.dns": "30m", "kv.get": "1h"}
 	for _, inner := range []int{36, 45, 60} {
-		lines := strings.Split(plain(tileBody(v, inner)), "\n")
+		lines := strings.Split(plain(tileBody(v, inner, everyLine)), "\n")
 		for _, line := range lines {
 			if w := len([]rune(line)); w > inner {
 				t.Errorf("at %d cells a line is %d wide: %q", inner, w, line)

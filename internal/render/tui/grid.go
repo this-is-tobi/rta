@@ -125,6 +125,46 @@ func (m Model) span(i int) int {
 // as long as every row held exactly cols tiles, and all four of which had to
 // be found and changed together the moment one did not.
 func (m Model) tileRows() []gridRow {
+	if m.layout != nil && m.layout.rows != nil {
+		return *m.layout.rows
+	}
+	rows := m.packTileRows()
+	if m.layout != nil {
+		m.layout.rows = &rows
+	}
+	return rows
+}
+
+// layoutMemo is the dashboard's layout while one paint, or one pass of
+// clampScroll, asks for it: which tile sits on which row, how tall each row is
+// and the room the rows have. A nil field is not asked yet.
+//
+// **Asked dozens of times a paint, and the same each time.** The window, the
+// last row it may start on, how many rows fit and what each is drawn at all
+// walked every row's height, a height is the tallest of its tiles drawn in full,
+// a tile's width packed the whole grid again to find its row, and the room
+// rendered the footer. Twelve tiles, four of them lists of five hundred pods,
+// took tens of milliseconds a frame, and a held arrow key, which paints and
+// scrolls on every repeat, lagged behind the hand. Nothing it holds moves while
+// a paint is drawn, or while clampScroll moves the window, which is the one
+// thing it changes and none of these read; so it lives on a copy of the model
+// for the one, and is dropped on the way out of the other, and no answer, key
+// or resize ever finds it.
+type layoutMemo struct {
+	rows    *[]gridRow
+	heights []int
+	budget  *int
+}
+
+// withLayout is m with a layout to fill as it is asked: for a paint, which
+// draws from a copy of the model that no answer outlives.
+func (m Model) withLayout() Model {
+	m.layout = &layoutMemo{}
+	return m
+}
+
+// packTileRows is tileRows worked out from the tiles.
+func (m Model) packTileRows() []gridRow {
 	runs := m.sectionRuns()
 	var rows []gridRow
 	next := 0
@@ -217,6 +257,10 @@ func (m Model) rowAndCol(idx int) (int, int) {
 // varies row to row instead of being one constant for the whole grid. A header
 // is the one row that is one line, whatever is under it.
 func (m Model) rowHeights() []int {
+	if m.layout != nil && m.layout.heights != nil {
+		// A copy, since drawnHeights writes into what it is handed.
+		return slices.Clone(m.layout.heights)
+	}
 	rows := m.tileRows()
 	heights := make([]int, 0, len(rows))
 	limit := m.rowLimit()
@@ -226,6 +270,9 @@ func (m Model) rowHeights() []int {
 			continue
 		}
 		heights = append(heights, m.rowHeight(row, limit))
+	}
+	if m.layout != nil {
+		m.layout.heights = slices.Clone(heights)
 	}
 	return heights
 }
@@ -371,7 +418,14 @@ func (m Model) rowsVisibleFrom(first int) int {
 // dashRowBudget is how many lines the tile rows have between the header with
 // the search bar under it and the footer.
 func (m Model) dashRowBudget() int {
-	return m.height - 1 - lipgloss.Height(m.dashFooter()) - m.searchHeight()
+	if m.layout != nil && m.layout.budget != nil {
+		return *m.layout.budget
+	}
+	budget := m.height - 1 - lipgloss.Height(m.dashFooter()) - m.searchHeight()
+	if m.layout != nil {
+		m.layout.budget = &budget
+	}
+	return budget
 }
 
 // tilesFit is whether the room under the search holds the least a tile row is
@@ -443,6 +497,13 @@ func (m Model) maxScroll() int {
 // when it is the first row under it: a window that opened on the middle of a
 // section says nothing about which section that is.
 func (m *Model) clampScroll() {
+	// The layout once for every step of the walk below, which asked for all of
+	// it again at each one (layoutMemo). Dropped on the way out: what changes
+	// next is what this model is kept for.
+	if m.layout == nil {
+		m.layout = &layoutMemo{}
+		defer func() { m.layout = nil }()
+	}
 	m.scroll = min(m.scroll, m.maxScroll())
 	if m.selected == 0 {
 		return
@@ -733,16 +794,15 @@ func (m Model) tileReturned(i int) view.View {
 	return m.tileRaw[rawKey(t)].view
 }
 
-// tileContentLines renders one tile's body at width, full length — the
-// natural content driving both how tall its row needs to be (tileRowHeight)
-// and what renderTile then clamps to whatever height that row settled on.
-func tileContentLines(t tile, width int) []string { return tileLines(t, width, false) }
-
-// tileLines is tileContentLines for a tile that may be the selection, which
-// matters to one sentence (keyPromised). The row's height is sized from the
-// tile unselected, which is the longer of the two, so selecting a tile never
-// asks its row for room it was not given.
-func tileLines(t tile, width int, selected bool) []string {
+// tileLines renders one tile's body at width — the natural content driving
+// both how tall its row needs to be (tileRowHeight) and what renderTile then
+// clamps to whatever height that row settled on — and no glanced row past most
+// lines, the most either of them reads (glanceTable).
+//
+// selected matters to one sentence (keyPromised). The row's height is sized
+// from the tile unselected, which is the longer of the two, so selecting a tile
+// never asks its row for room it was not given.
+func tileLines(t tile, width int, selected bool, most int) []string {
 	inner := width - 4
 	body := ""
 	switch {
@@ -752,7 +812,7 @@ func tileLines(t tile, width int, selected bool) []string {
 		// current one, and the panel's border says when it was current.
 		kept := t
 		kept.view = t.kept.view
-		body = dimmed(tileBody(keyPromised(kept, selected), inner))
+		body = dimmed(tileBody(keyPromised(kept, selected), inner, most))
 	case t.err != nil:
 		if say, quiet := quietSentence(t); quiet {
 			body = theme.Subtle.Render(ansi.Wordwrap(say, max(inner, 1), ""))
@@ -762,7 +822,7 @@ func tileLines(t tile, width int, selected bool) []string {
 		_ = cli.RenderError(&buf, pausedAs(t), cli.Options{Format: cli.Pretty, Width: inner})
 		body = buf.String()
 	case t.view != nil:
-		body = tileBody(keyPromised(t, selected), inner)
+		body = tileBody(keyPromised(t, selected), inner, most)
 	case t.deferred(time.Now()):
 		body = theme.Subtle.Render(ansi.Wordwrap(notRunYet, max(inner, 1), ""))
 	default:
@@ -876,7 +936,7 @@ func isWordRune(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode
 // existed (a fully-shown tile never grew past tileHeight; nothing had a
 // floor before because every row was the same fixed height).
 func tileRowHeight(t tile, width int) int {
-	h := len(tileContentLines(t, width)) + 2 // + top/bottom border
+	h := len(tileLines(t, width, false, tileHeight)) + 2 // + top/bottom border
 	return min(max(h, tileMinHeight), tileHeight)
 }
 
@@ -895,7 +955,7 @@ func noteWidth(note string) int {
 // exact width × height cells, so overflowing content can never make one tile
 // taller than its row.
 func renderTile(t tile, width, height int, selected, heavy bool) string {
-	lines := tileLines(t, width, selected)
+	lines := tileLines(t, width, selected, height)
 	preview := height - 2
 	if len(lines) > preview {
 		lines = lines[:max(preview-1, 0)]
@@ -1324,6 +1384,7 @@ func (m Model) dashFooter() string { return m.footerFor(modeDashboard) }
 
 // dashboardView lays the search bar and uniform preview tiles out.
 func (m Model) dashboardView() string {
+	m = m.withLayout()
 	header := theme.Title.Render(" rta") + theme.Subtle.Render("  dashboard")
 	// Where am I. The one fact worth spending header space on: every tile below
 	// is showing that environment, and every command run from this screen lands

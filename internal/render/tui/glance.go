@@ -44,9 +44,11 @@ const (
 	glanceProse = 16
 )
 
-// tileBody draws a tile's view at the width its box leaves for content.
-func tileBody(v view.View, inner int) string {
-	if lines, ok := glanceTable(v, inner); ok {
+// tileBody draws a tile's view at the width its box leaves for content, and no
+// glanced row past most lines, which is as many as its box can show
+// (glanceTable).
+func tileBody(v view.View, inner, most int) string {
+	if lines, ok := glanceTable(v, inner, most); ok {
 		return strings.Join(lines, "\n")
 	}
 	// Cleaned before it is measured, because the renderer cleans what it draws
@@ -96,7 +98,14 @@ func tileRenderOptions(inner int) cli.Options {
 // next to go it is squeezed to ten cells first, the cell keeping the colour its
 // first word gave it, and the prose goes before the verdict does: a path is what
 // a box gives up when it cannot hold the path and the grade.
-func glanceTable(v view.View, inner int) ([]string, bool) {
+//
+// No line is drawn past most, the lines the box can show: the rows under it are
+// cut there, and what follows them, the count and the warnings, is past the cut
+// with them. Every row is still measured, so a column is as wide, and kept or
+// dropped, as it would be with the whole table drawn. A dashboard draws each
+// tile more than once a frame, and drew every row of a list of five hundred
+// pods each time to show nine of them, which a held arrow key felt.
+func glanceTable(v view.View, inner, most int) ([]string, bool) {
 	t, ok := view.Redact(v).(view.Table)
 	if !ok || len(t.Rows) == 0 || len(t.Columns) < 2 || inner < glanceFlexMin*2 {
 		return nil, false
@@ -128,6 +137,9 @@ func glanceTable(v view.View, inner int) ([]string, bool) {
 		return strings.ToUpper(t.Columns[i].Name), theme.Header
 	})}
 	for _, row := range rows {
+		if len(lines) > most {
+			return lines, true
+		}
 		lines = append(lines, glanceLine(t, kept, widths, cut, func(i int) (string, lipgloss.Style) {
 			return row[i], glanceCellStyle(t.Columns[i].Kind, row[i])
 		}))

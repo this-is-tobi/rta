@@ -124,7 +124,7 @@ func TestOnlyTwoRefusalsInARowPauseATile(t *testing.T) {
 func TestAPausedTileSaysSoAndStaysBad(t *testing.T) {
 	m := askedAgain(t, dbDashboard(t, &scriptedRuns{errs: []*view.Error{refused()}}))
 	// The box wraps a sentence where it likes, so what it says is read as words.
-	body := strings.Join(strings.Fields(plain(strings.Join(tileLines(m.tiles[1], 38, false), "\n"))), " ")
+	body := strings.Join(strings.Fields(plain(strings.Join(tileLines(m.tiles[1], 38, false, everyLine), "\n"))), " ")
 	for _, want := range []string{"paused — credentials refused", "db.auth.failed", "rejected", "r asks again"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the paused tile does not say %q:\n%s", want, body)
@@ -135,7 +135,7 @@ func TestAPausedTileSaysSoAndStaysBad(t *testing.T) {
 	}
 
 	unpaused := dbDashboard(t, &scriptedRuns{errs: []*view.Error{refused()}})
-	if body := plain(strings.Join(tileLines(unpaused.tiles[1], 38, false), "\n")); strings.Contains(body, "paused") {
+	if body := plain(strings.Join(tileLines(unpaused.tiles[1], 38, false, everyLine), "\n")); strings.Contains(body, "paused") {
 		t.Errorf("a tile refused once says it is paused:\n%s", body)
 	}
 }
