@@ -96,7 +96,7 @@ RUN mkdir -p /etc/rta && install -d -m 0700 -o 65532 -g 65532 /rta-home && \
       --kube prod/app-b/svc/postgres:5432 \
       --secret password=kube:postgres-creds/password
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=setup /usr/local/bin/ /usr/local/bin/
 COPY --from=setup /usr/local/lib/rta /usr/local/lib/rta
 COPY --from=setup /etc/rta /etc/rta
