@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.51.1](https://github.com/this-is-tobi/rta/compare/v0.51.0...v0.51.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* **agent:** a --ttl answer builds its grants with grant allow's builder and its checks ([a414339](https://github.com/this-is-tobi/rta/commit/a414339ec16f3a62a7f7d2724eb6e36ebee13460))
+* **agent:** allow --role asks the ceiling before issuing the role, and reports a role it issued ([3e89dec](https://github.com/this-is-tobi/rta/commit/3e89decf5d93ccd975bfcafbd46efd5cfa1819cc))
+* **agentlog:** a cut record stays broken after the next call instead of healing ([9ecae64](https://github.com/this-is-tobi/rta/commit/9ecae640bc8924a36ec5429ecde953bd0cd87336))
+* **agentlog:** no key is minted while any file of the record is left ([ca3ef74](https://github.com/this-is-tobi/rta/commit/ca3ef7420a7aaffc060c42a56757d5807d706efe))
+* **app:** a config that does not load is reported with its hint and cleaned at startup ([706de88](https://github.com/this-is-tobi/rta/commit/706de88ef823b7446a858ef15f4b4acb623036eb))
+* **app:** each target of a fan-out is run by the single call's own code ([8f9f7b4](https://github.com/this-is-tobi/rta/commit/8f9f7b46b80170178582aa0fe1c1efea4d9971cc))
+* **app:** every command refuses a passphrase on the command line, before it runs ([c421c49](https://github.com/this-is-tobi/rta/commit/c421c499a3fe2a5a1f34f88b8b79ec4828266195))
+* **app:** the startup notice shows an untrusted plugin's name quoted, not as raw bytes ([86f0109](https://github.com/this-is-tobi/rta/commit/86f0109b18e83d2aeba50de0aefb459f3b2ebc47))
+* **config:** a refusal or a card names the drop-in that states what it is about ([e7e8f57](https://github.com/this-is-tobi/rta/commit/e7e8f5705eabdba20a1ee6cb468d2ad8a36e9fd1))
+* **dashboard:** adding a tile again with a number or a list input is unchanged ([00be016](https://github.com/this-is-tobi/rta/commit/00be01642fb0732ddce923b6a4cb5ccd83b3f3cc))
+* **doctor:** a config of drop-ins that do not read is an error, not "no config file" ([be9007f](https://github.com/this-is-tobi/rta/commit/be9007ff1386093d56726bd32da6c2804acf9f76))
+* **doctor:** roles defined twice are named in order of their names, the same every run ([18d0b67](https://github.com/this-is-tobi/rta/commit/18d0b6705563c644bac6aefaa25c1e7df11c2303))
+* **grant:** a refund keeps the rows other calls have spent, so their uses can still come back ([beba9e3](https://github.com/this-is-tobi/rta/commit/beba9e3766863e6c37c866d50d518894ad368729))
+* **grant:** every guard transition clears the grants and changes the guard under one lock ([62498b7](https://github.com/this-is-tobi/rta/commit/62498b72e1abf82207df536e56aa9f29653be4b5))
+* **grant:** the grant file is written compact, and says when the rate history is what fills it ([f615a77](https://github.com/this-is-tobi/rta/commit/f615a77135c41878247fb9e428a4819ec8e7e13c))
+* **help:** dashboard views and sections no longer list --yes and --dry-run ([b026cb4](https://github.com/this-is-tobi/rta/commit/b026cb491c3b7d68bc6c234ef77d075e65dad163))
+* **mcp:** a call is judged and filled from one config read, and an edit during consent refuses it ([ff90212](https://github.com/this-is-tobi/rta/commit/ff90212e4fb8263d024bfde41f072ea467e84f9d))
+* **mcp:** a refused plugin's name is shown quoted at server start, not as raw bytes ([85f3dd3](https://github.com/this-is-tobi/rta/commit/85f3dd3fefe1645aa7f331390b437bc24c1bf920))
+* **mcp:** an answer too large to cut to 80 KiB is recorded as withheld, not as revealed ([b3a3276](https://github.com/this-is-tobi/rta/commit/b3a3276dd7e80d7bd57be7eb3c70ca492140a14e))
+* **plugindist:** an upgrade that offers a capability to agents is held back ([f6cfb94](https://github.com/this-is-tobi/rta/commit/f6cfb949e1010943acdca9c7976cba339997e711))
+* **pluginhost:** a plugin reaches through the egress proxy the network requires ([f4e92c9](https://github.com/this-is-tobi/rta/commit/f4e92c9552096b670ac50a197250053df33556f9))
+* **profile:** an instance is described by the key its plugin declares as the endpoint ([75bc046](https://github.com/this-is-tobi/rta/commit/75bc0467a95dd274e8204ed1a20a6fa1163c0bfc))
+* **profile:** profile rm and doctor name a dashboard tile pinned to a profile that is gone ([7ea11ea](https://github.com/this-is-tobi/rta/commit/7ea11eaa973f75cd85813d8488e62abfc60bea2f))
+* **profile:** profile rm names the drop-in it removed the profile from ([ffc354c](https://github.com/this-is-tobi/rta/commit/ffc354cd9de6d6fa5ffc60196a19e8ad98c4ea2c))
+* **profile:** rta use and doctor write the time a switch has left as its badge does ([f8fac59](https://github.com/this-is-tobi/rta/commit/f8fac59057662ec21793df86c38bd8833f770bc9))
+* **profile:** rta use says a selection file that does not verify holds every profile shut ([53a2da3](https://github.com/this-is-tobi/rta/commit/53a2da3fe2ee52e8012ca2fe00c5ed57b2a22ec2))
+* **view:** a number's name is cleaned like every other string, and a plugin's must be a name ([8ba3391](https://github.com/this-is-tobi/rta/commit/8ba33917441b006371d85a1fd6d4aff54e270e14))
+
+
+### Performance Improvements
+
+* **app:** a command reads the configuration's files once ([80fb2d7](https://github.com/this-is-tobi/rta/commit/80fb2d7ca50a6f8fe4b92f1a413644e716d53af5))
+* **mcp:** an answer is encoded once, and a cut is found without encoding the page per probe ([169d310](https://github.com/this-is-tobi/rta/commit/169d31068202812367d92db6c62a1f989a95f0e0))
+
+
+### Code Refactoring
+
+* **app:** one render-or-refuse closure, and the shared helpers in files of their own ([3ec86aa](https://github.com/this-is-tobi/rta/commit/3ec86aadfea096bbcd3713298ac37a695e39eba7))
+
 ## [0.51.0](https://github.com/this-is-tobi/rta/compare/v0.50.0...v0.51.0) (2026-10-26)
 
 
