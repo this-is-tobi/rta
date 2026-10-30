@@ -2,9 +2,13 @@ package operator
 
 import (
 	"crypto/ed25519"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
+	"math"
 	"sync"
 	"time"
 )
@@ -125,22 +129,34 @@ var timingDummy = ed25519.PublicKey{
 	0x65, 0x32, 0x15, 0x77, 0x1d, 0xe2, 0x43, 0xa6, 0x3a, 0xc0, 0x48, 0xa1, 0x8b, 0x59, 0xda, 0x29,
 }
 
-// Nonces is a server's single-use challenge store, in memory beside the
-// roster: what makes a captured envelope worthless a second time. Issuance
-// is unauthenticated — a challenge proves nothing and grants nothing — so
-// the store is sized and evicted for an unauthenticated caller's worst
-// behaviour: flooding it evicts the flood's own oldest entries first, which
-// degrades an operator's in-flight challenge to a retry, never the server to
-// a refusal-of-service that locks the one human out.
+// Nonces is a server's single-use challenge store: what makes a captured
+// envelope worthless a second time.
+//
+// **A challenge is minted, not stored.** It carries its own expiry and random
+// bytes under a MAC keyed by a secret this process made and never shows, so
+// issuing one writes nothing down and checking one (Fresh) needs nothing but
+// the key. The store holds a nonce only once a call carrying it has proved an
+// enrolled key (Spend), and only until it expires. Issuance is
+// unauthenticated — a challenge proves nothing and grants nothing — and it
+// used to put every challenge in one shared pool of 4096, evicting the oldest:
+// a stranger asking for challenges faster than an operator's round trip
+// evicted the operator's challenge, and kept doing so for every retry, which
+// was a refusal-of-service of the remote incident path (lock.add,
+// grant.revoke) for anybody who could reach the route. Now a stranger's
+// challenges cost a MAC each and nothing on the heap, and what can fill the
+// store is calls an enrolled key signed.
+//
+// The nonce used to burn before the signature was checked, so that a captured
+// challenge could not be tried against at leisure. Against ed25519 there is
+// nothing to try: a signature is not guessed. What single use is for is
+// replay, and a nonce recorded after the signature verifies refuses a replay
+// as surely as one burned before it.
 type Nonces struct {
-	mu   sync.Mutex
-	ttl  time.Duration
-	cap  int
-	live map[string]time.Time
-	// order holds nonces oldest-first for eviction; consumed ones stay as
-	// harmless stale entries until GC reaches them, so eviction is O(1)
-	// amortized instead of a scan.
-	order []string
+	ttl time.Duration
+	key [32]byte
+
+	mu    sync.Mutex
+	spent map[string]time.Time
 }
 
 // NonceTTL is how long a challenge waits to be spent. It bounds the gap
@@ -148,64 +164,98 @@ type Nonces struct {
 // seconds, in practice, since the client unlocks the key before asking.
 const NonceTTL = 2 * time.Minute
 
-// nonceCap bounds the live set. 4096 outstanding challenges is three orders
-// of magnitude past human-paced use; past it, the oldest go first.
-const nonceCap = 4096
+// spentCap bounds the record of spent nonces. Only a call an enrolled key
+// signed adds to it, so filling it takes thousands of signed calls inside one
+// TTL; past it the one closest to expiry goes, which reopens that one call to
+// replay by whoever captured it off TLS — where refusing instead would lock
+// out the operator trying to lock the flooding key.
+const spentCap = 4096
+
+// nonceRandom is the challenge's random part, and nonceMAC its tag: an
+// expiry of eight bytes, then these.
+const (
+	nonceRandom = 16
+	nonceMAC    = 32
+	nonceSize   = 8 + nonceRandom + nonceMAC
+)
 
 // NewNonces builds a store; zero ttl means NonceTTL.
 func NewNonces(ttl time.Duration) *Nonces {
 	if ttl <= 0 {
 		ttl = NonceTTL
 	}
-	return &Nonces{ttl: ttl, cap: nonceCap, live: map[string]time.Time{}}
+	n := &Nonces{ttl: ttl, spent: map[string]time.Time{}}
+	// No error to handle: since Go 1.24 a source that fails ends the
+	// program, so there is no store left without its key.
+	_, _ = rand.Read(n.key[:])
+	return n
 }
 
-// Issue mints a fresh challenge.
+// Issue mints a fresh challenge, good for the store's TTL.
 func (n *Nonces) Issue() (string, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
+	raw := make([]byte, nonceSize)
+	binary.BigEndian.PutUint64(raw, uint64(time.Now().Add(n.ttl).UnixNano()))
+	if _, err := rand.Read(raw[8 : 8+nonceRandom]); err != nil {
 		return "", err
 	}
-	nonce := base64.RawURLEncoding.EncodeToString(raw)
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	now := time.Now()
-	for len(n.order) > 0 {
-		head := n.order[0]
-		exp, ok := n.live[head]
-		if ok && now.Before(exp) && len(n.live) < n.cap {
-			break
-		}
-		n.order = n.order[1:]
-		delete(n.live, head)
-	}
-	n.live[nonce] = now.Add(n.ttl)
-	n.order = append(n.order, nonce)
-	// order can outgrow live: Consume deletes from the map and leaves its
-	// stale entry for GC to reach. The loop above stops at the first live
-	// head, so an issue-and-consume flood would otherwise grow order without
-	// bound for a TTL window. Past the cap the oldest go regardless of
-	// liveness — evicting a live challenge is the documented degradation
-	// (a retry), an unbounded slice is a memory bill.
-	for len(n.order) > n.cap {
-		head := n.order[0]
-		n.order = n.order[1:]
-		delete(n.live, head)
-	}
-	return nonce, nil
+	copy(raw[8+nonceRandom:], n.tag(raw[:8+nonceRandom]))
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
-// Consume spends a challenge: true exactly once per Issue, within the TTL.
-// It is called before signature verification, not after — burning the nonce
-// on first sight means a captured challenge cannot be brute-forced against
-// at leisure, and costs a legitimate caller nothing but a fresh challenge.
-func (n *Nonces) Consume(nonce string) bool {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	exp, ok := n.live[nonce]
+func (n *Nonces) tag(body []byte) []byte {
+	mac := hmac.New(sha256.New, n.key[:])
+	mac.Write(body)
+	return mac.Sum(nil)
+}
+
+// Fresh reports whether nonce is a challenge this store minted that has not
+// expired, and when it does. It reads nothing but the nonce, so it runs before
+// the signature check: an envelope a stranger made up costs a MAC.
+func (n *Nonces) Fresh(nonce string) (time.Time, bool) {
+	raw, err := base64.RawURLEncoding.Strict().DecodeString(nonce)
+	if err != nil || len(raw) != nonceSize {
+		return time.Time{}, false
+	}
+	if !hmac.Equal(raw[8+nonceRandom:], n.tag(raw[:8+nonceRandom])) {
+		return time.Time{}, false
+	}
+	// Past the int64 range is no expiry Issue wrote, which the MAC already
+	// says; held here too, so the conversion below cannot wrap.
+	at := binary.BigEndian.Uint64(raw)
+	if at > math.MaxInt64 {
+		return time.Time{}, false
+	}
+	exp := time.Unix(0, int64(at))
+	return exp, time.Now().Before(exp)
+}
+
+// Spend records the nonce of a call whose signature verified: true the first
+// time, false for every replay of it inside its life. A nonce that is not
+// Fresh never spends.
+func (n *Nonces) Spend(nonce string) bool {
+	exp, ok := n.Fresh(nonce)
 	if !ok {
 		return false
 	}
-	delete(n.live, nonce)
-	return time.Now().Before(exp)
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if _, seen := n.spent[nonce]; seen {
+		return false
+	}
+	if len(n.spent) >= spentCap {
+		now := time.Now()
+		var soonest string
+		for k, at := range n.spent {
+			if !now.Before(at) {
+				delete(n.spent, k)
+			} else if soonest == "" || at.Before(n.spent[soonest]) {
+				soonest = k
+			}
+		}
+		if len(n.spent) >= spentCap {
+			delete(n.spent, soonest)
+		}
+	}
+	n.spent[nonce] = exp
+	return true
 }
