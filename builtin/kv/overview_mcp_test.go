@@ -67,7 +67,10 @@ func TestAnAgentIsToldWhoToAskWhenTheStoreCannotBeOpened(t *testing.T) {
 		t.Fatalf("a store the server cannot open made the overview an error: %+v", res.Content)
 	}
 	answer := res.Content[0].(*sdk.TextContent).Text
-	for _, want := range []string{"needs a key at hand", "ask the operator to set RTA_KV_PASSPHRASE", "locked with"} {
+	// And the better lock beside the variable: a passphrase in a server's
+	// environment is one written into a client's configuration in the clear.
+	for _, want := range []string{"needs a key at hand", "ask the operator to set RTA_KV_PASSPHRASE", "locked with",
+		"or, better, to lock the store to a key file this server can read"} {
 		if !strings.Contains(answer, want) {
 			t.Errorf("the answer lacks %q:\n%s", want, answer)
 		}

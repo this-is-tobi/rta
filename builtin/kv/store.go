@@ -218,7 +218,13 @@ func passphraseSource(req plugin.Request) string {
 func passphraseHint(sf plugin.Surface) string {
 	switch sf {
 	case plugin.SurfaceMCP:
-		return "ask the operator to set " + passphraseEnv + " in the environment rta mcp serve runs in"
+		// Both ways, the key named as the better one. A passphrase in a
+		// server's environment is the passphrase written into a client's
+		// configuration in the clear, which rta doctor warns about, and was the
+		// only way this offered; a store locked to a key is opened by the server
+		// from a file kept beside the config, with no passphrase in any file.
+		return "ask the operator to set " + passphraseEnv + " in the environment rta mcp serve runs in, " +
+			"or, better, to lock the store to a key file this server can read, which keeps no passphrase in its configuration"
 	case plugin.SurfaceTUI:
 		return fmt.Sprintf("set %s or give %s", passphraseEnv, sf.InputName("passphrase"))
 	}
