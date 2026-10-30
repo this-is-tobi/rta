@@ -126,6 +126,11 @@ func build(sf plugin.Surface, catalog func() []plugin.Capability, artifact func(
 	// it was supposedly just allowed to make, and is refused anyway.
 	if !targetExists(catalog, target) {
 		hint := "rta explain lists capability IDs, rta plugin list lists plugin names — check for a typo"
+		if nearest := nearestTarget(catalog, target); nearest != "" {
+			// The closest name first, as a mistyped command is answered: this
+			// is where a person types IDs from memory while an agent waits.
+			hint = "did you mean " + nearest + "? " + hint
+		}
 		if more := notInstalledHint(catalog, target); more != "" {
 			hint += "; " + more
 		}
@@ -781,6 +786,22 @@ func holdsUnder(target string) bool {
 		}
 	}
 	return false
+}
+
+// nearestTarget is the capability ID or plugin name a target that names
+// neither was most likely meant for, or "" when none is close enough.
+func nearestTarget(catalog func() []plugin.Capability, typed string) string {
+	var names []string
+	seen := map[string]bool{typed: true}
+	for _, c := range catalog() {
+		for _, n := range []string{c.ID, core.Namespace(c.ID)} {
+			if !seen[n] {
+				seen[n] = true
+				names = append(names, n)
+			}
+		}
+	}
+	return near.Word(typed, names)
 }
 
 // nearestStandingTarget is the target of an active grant that a mistyped name

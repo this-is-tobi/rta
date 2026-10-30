@@ -640,6 +640,15 @@ func TestUnknownTargetIsRefused(t *testing.T) {
 	if grants, _ := core.Load(); len(grants) != 0 {
 		t.Errorf("the refused grant was written anyway: %+v", grants)
 	}
+	// The closest name leads the hint, as it does for a mistyped command; a
+	// name close to nothing gets none.
+	if !strings.HasPrefix(verr.Hint, "did you mean kv.get? ") {
+		t.Errorf("hint = %q, want it to offer kv.get", verr.Hint)
+	}
+	_, err = allowH(context.Background(), req(map[string]any{"target": "zzzzzzzz"}))
+	if !asError(err, &verr) || strings.Contains(verr.Hint, "did you mean") {
+		t.Errorf("a target near nothing = %v, want no suggestion", err)
+	}
 }
 
 // A namespace target is not itself a capability ID, and must not be treated
