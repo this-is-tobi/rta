@@ -106,7 +106,7 @@ func TestALockedAgentsCallIsNeverParked(t *testing.T) {
 func TestLockVerbsFreezeAndLiftOverTheChannel(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	signer, roster := enrolled(t, "tobi")
-	addr := startOperatorWith(t, OperatorConfig{Roster: roster})
+	addr := startOperatorWith(t, OperatorConfig{Roster: roster, Agent: "claude"})
 	at := "http://" + addr
 	call := func(verb string, payload []byte) (int, []byte) {
 		return postEnvelope(t, addr, signer.Sign(at, fetchChallenge(t, addr), verb, payload))
