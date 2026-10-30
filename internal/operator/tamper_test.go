@@ -20,6 +20,13 @@ func swapPublicKey(t *testing.T, path string) ed25519.PublicKey {
 	if err != nil {
 		t.Fatal(err)
 	}
+	writePublicKey(t, path, base64.StdEncoding.EncodeToString(outside))
+	return outside
+}
+
+// writePublicKey puts encoded where the state file keeps its verification key.
+func writePublicKey(t *testing.T, path, encoded string) {
+	t.Helper()
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -28,7 +35,7 @@ func swapPublicKey(t *testing.T, path string) ed25519.PublicKey {
 	if err := json.Unmarshal(raw, &st); err != nil {
 		t.Fatal(err)
 	}
-	st["publicKey"] = base64.StdEncoding.EncodeToString(outside)
+	st["publicKey"] = encoded
 	out, err := json.Marshal(st)
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +43,6 @@ func swapPublicKey(t *testing.T, path string) ed25519.PublicKey {
 	if err := os.WriteFile(path, out, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return outside
 }
 
 // The unlock is held to the file: a verification key the passphrase does not
@@ -71,5 +77,33 @@ func TestAWrongPassphraseOverASwappedFileIsStillTheWrongPassphrase(t *testing.T)
 	swapPublicKey(t, Path())
 	if _, verr := Unlock("battery staple"); verr == nil || verr.Code != "core.operator.passphrase" {
 		t.Fatalf("Unlock with the wrong passphrase = %v, want core.operator.passphrase", verr)
+	}
+}
+
+// A verification key that is not an ed25519 one makes a file that does not
+// parse: no fingerprint, no roster line and no unlock, where it used to get a
+// fingerprint of whatever bytes it decoded to and look like a key.
+func TestAVerificationKeyThatIsNotAKeyIsACorruptFile(t *testing.T) {
+	for label, encoded := range map[string]string{
+		"31 bytes":   base64.StdEncoding.EncodeToString(make([]byte, 31)),
+		"64 bytes":   base64.StdEncoding.EncodeToString(make([]byte, 64)),
+		"not base64": "not a key",
+	} {
+		t.Run(label, func(t *testing.T) {
+			freshHome(t)
+			if _, verr := Init("correct horse"); verr != nil {
+				t.Fatal(verr)
+			}
+			writePublicKey(t, Path(), encoded)
+			if fp := Fingerprint(); fp != "" {
+				t.Errorf("Fingerprint = %q for a key that is not one", fp)
+			}
+			if _, verr := RosterLine("alice"); verr == nil || verr.Code != "core.operator.corrupt" {
+				t.Errorf("RosterLine = %v, want core.operator.corrupt", verr)
+			}
+			if _, verr := Unlock("correct horse"); verr == nil || verr.Code != "core.operator.corrupt" {
+				t.Errorf("Unlock = %v, want core.operator.corrupt", verr)
+			}
+		})
 	}
 }

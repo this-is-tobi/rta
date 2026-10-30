@@ -45,6 +45,28 @@ func Fingerprint(pub ed25519.PublicKey) string {
 	return hex.EncodeToString(sum[:4])
 }
 
+// ParsePublicKey decodes a verification key as rta writes one, standard
+// base64 of an ed25519 public key, and is the one decoder every reader of a
+// state file or a roster uses: a key that decodes to some other length
+// would otherwise get a fingerprint, a roster line and a status row of its
+// own, and look like a key until the first signature it fails.
+//
+// Strict, because base64 is not injective by default: a 32-byte key ends
+// its encoding with two padding bits the lenient decoder ignores, so four
+// spellings name one key. The roster's one-label-per-key rule is an
+// anti-impersonation check, and with roles it became a security boundary —
+// the same key enrolled twice, once role=read and once bare, would let a
+// watching key answer as a full operator and cross into the guard's
+// signing set. Strict decoding leaves one spelling per key, the one
+// EncodeToString writes.
+func ParsePublicKey(encoded string) (ed25519.PublicKey, bool) {
+	pub, err := base64.StdEncoding.Strict().DecodeString(encoded)
+	if err != nil || len(pub) != ed25519.PublicKeySize {
+		return nil, false
+	}
+	return ed25519.PublicKey(pub), true
+}
+
 // Pairs reports whether pub is the public half of priv.
 //
 // A state file keeps both halves: the private one inside the passphrase's

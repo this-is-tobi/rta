@@ -115,6 +115,13 @@ type state struct {
 	// a roster. The client anchors the same value independently: it refuses
 	// to sign authority naming any server but the one it dialed.
 	Server string `json:"server,omitempty"`
+
+	// keys are the verification keys decoded — PublicKey alone, or every
+	// operator's — set by load, which refuses a file carrying a key that is
+	// not an ed25519 one: a status line printing a fingerprint for a key no
+	// signature can verify against is a guard that looks on and honours
+	// nothing.
+	keys []ed25519.PublicKey
 }
 
 // OperatorKey is one enrolled remote signer: a label for the surfaces that
@@ -226,6 +233,20 @@ func load() (state, *view.Error) {
 	if !local && !remote {
 		return st, corruptState()
 	}
+	encoded := []string{st.PublicKey}
+	if remote {
+		encoded = encoded[:0]
+		for _, op := range st.Operators {
+			encoded = append(encoded, op.PublicKey)
+		}
+	}
+	for _, e := range encoded {
+		pub, ok := passkey.ParsePublicKey(e)
+		if !ok {
+			return st, corruptState()
+		}
+		st.keys = append(st.keys, pub)
+	}
 	return st, nil
 }
 
@@ -336,11 +357,7 @@ func trustMaterial() []byte {
 		sort.Strings(keys)
 		return []byte(st.Server + "\n" + strings.Join(keys, "\n"))
 	}
-	pub, err := base64.StdEncoding.DecodeString(st.PublicKey)
-	if err != nil {
-		return nil
-	}
-	return pub
+	return st.keys[0]
 }
 
 // trustDigest is trustMaterial at full hash width, for the Pin. Empty when
@@ -375,25 +392,7 @@ func Verifier() (func(msg []byte, sig string) bool, *view.Error) {
 	if verr != nil {
 		return nil, verr
 	}
-	var encoded []string
-	if st.remote() {
-		for _, op := range st.Operators {
-			encoded = append(encoded, op.PublicKey)
-		}
-	} else {
-		encoded = []string{st.PublicKey}
-	}
-	keys := make([]ed25519.PublicKey, 0, len(encoded))
-	for _, e := range encoded {
-		pub, err := base64.StdEncoding.DecodeString(e)
-		if err != nil || len(pub) != ed25519.PublicKeySize {
-			return nil, view.Errorf("core.guard.corrupt",
-				"%s carries an unreadable verification key", Path()).
-				WithHint("no grant is honoured while this stands; `rm " + Path() + " " + grantsHint() +
-					"` starts clean, then `rta grant guard on` (or `... guard remote`) again")
-		}
-		keys = append(keys, ed25519.PublicKey(pub))
-	}
+	keys := st.keys
 	return func(msg []byte, sig string) bool {
 		raw, err := base64.StdEncoding.DecodeString(sig)
 		if err != nil {
@@ -543,8 +542,7 @@ func EnableRemote(ops []OperatorKey, server string) *view.Error {
 				"so a grant issued for this server verifies on no other")
 	}
 	for _, op := range ops {
-		pub, err := base64.StdEncoding.DecodeString(op.PublicKey)
-		if err != nil || len(pub) != ed25519.PublicKeySize {
+		if _, ok := passkey.ParsePublicKey(op.PublicKey); !ok {
 			return view.Errorf("core.guard.remote.key", "%q does not carry an ed25519 public key", op.Label)
 		}
 	}
@@ -597,7 +595,7 @@ func Unlock(passphrase string) (Signer, *view.Error) {
 		return Signer{}, view.Errorf("core.guard.corrupt",
 			"%s carries an unreadable key", Path())
 	}
-	if pub, err := base64.StdEncoding.DecodeString(st.PublicKey); err != nil || !passkey.Pairs(priv, pub) {
+	if !passkey.Pairs(priv, st.keys[0]) {
 		return Signer{}, view.Errorf("core.guard.tampered",
 			"%s names a verification key its passphrase does not unlock: the file was changed outside rta, "+
 				"and a grant signed by the key it names would be honoured", Path()).

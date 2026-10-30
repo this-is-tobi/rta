@@ -75,6 +75,10 @@ type state struct {
 	// Key is the ed25519 signing key, age-encrypted under the operator
 	// passphrase (scrypt), base64 of the ciphertext.
 	Key string `json:"key"`
+
+	// pub is PublicKey decoded, set by load, which refuses a file whose
+	// PublicKey is not an ed25519 key.
+	pub ed25519.PublicKey
 }
 
 // Path is where the operator key lives, in the same data directory as every
@@ -125,7 +129,11 @@ func load() (state, *view.Error) {
 		return st, view.Errorf("core.operator.off", "no operator key here yet").
 			WithHint("rta operator init")
 	}
-	if err := json.Unmarshal(data, &st); err != nil || st.PublicKey == "" || st.Key == "" {
+	var parsed bool
+	if err := json.Unmarshal(data, &st); err == nil && st.Key != "" {
+		st.pub, parsed = passkey.ParsePublicKey(st.PublicKey)
+	}
+	if !parsed {
 		return st, view.Errorf("core.operator.corrupt",
 			"%s does not parse as an operator key — it has been modified or truncated", Path()).
 			WithHint("`rm " + Path() + "` and `rta operator init` mint a fresh key; every server " +
@@ -140,11 +148,7 @@ func Fingerprint() string {
 	if verr != nil {
 		return ""
 	}
-	pub, err := base64.StdEncoding.DecodeString(st.PublicKey)
-	if err != nil {
-		return ""
-	}
-	return passkey.Fingerprint(pub)
+	return passkey.Fingerprint(st.pub)
 }
 
 // Created reports when the key was minted, zero when there is none.
@@ -223,16 +227,11 @@ func Unlock(passphrase string) (Signer, *view.Error) {
 		return Signer{}, view.Errorf("core.operator.corrupt",
 			"%s carries an unreadable key", Path())
 	}
-	pub, err := base64.StdEncoding.DecodeString(st.PublicKey)
-	if err != nil {
-		return Signer{}, view.Errorf("core.operator.corrupt",
-			"%s carries an unreadable verification key", Path())
-	}
 	unlocked := priv.Public().(ed25519.PublicKey)
-	if !passkey.Pairs(priv, pub) {
+	if !passkey.Pairs(priv, st.pub) {
 		return Signer{}, view.Errorf("core.operator.tampered",
 			"%s names verification key %s, and its passphrase unlocks key %s: the file was changed outside rta",
-			Path(), passkey.Fingerprint(pub), passkey.Fingerprint(unlocked)).
+			Path(), passkey.Fingerprint(st.pub), passkey.Fingerprint(unlocked)).
 			WithHint("a roster line `rta operator status` printed since then enrolls the key the file names, " +
 				"not yours: on every server you enrolled on, keep only a line whose key has fingerprint " +
 				passkey.Fingerprint(unlocked) + " — then look for what wrote " + Path())
