@@ -18,7 +18,7 @@ func refusalCode(t *testing.T, err error) string {
 	return verr.Code
 }
 
-// `plugin rm` is `plugin remove`: every other namespace removes with rm.
+// `plugin rm` is `plugin rm`: every other namespace removes with rm.
 func TestPluginRmIsPluginRemove(t *testing.T) {
 	run := session(t, registry.New())
 	_, _, err := run("plugin", "rm", "ghost", "--dry-run")

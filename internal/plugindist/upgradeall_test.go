@@ -45,7 +45,7 @@ func TestUpgradeAllContinuesPastFailuresAndHonoursTheIndexFilter(t *testing.T) {
 
 	// A record for a plugin whose index is not attached. Written the way
 	// somebody with the data dir has it, which is also the ordinary way it
-	// happens: `rta plugin index remove` outlives the installs it fed.
+	// happens: `rta plugin index rm` outlives the installs it fed.
 	ghost := LockEntry{
 		Name:   "ghost",
 		Digest: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",

@@ -47,7 +47,7 @@ var commandKeywords = map[string][]string{
 	"rta grant allow":    {"permit", "authorize"},
 	"rta lock add":       {"freeze", "block"},
 	"rta lock rm":        {"unlock", "unfreeze", "unblock"},
-	"rta plugin remove":  {"uninstall"},
+	"rta plugin rm":      {"uninstall"},
 	"rta mcp install":    {"connect", "register"},
 	"rta cert":           {"certificate", "certificates"},
 	"rta config":         {"settings", "theme", "colors", "colours", "cfg", "preferences"},
@@ -137,7 +137,7 @@ func suggestCommands(group *cobra.Command, word string, likenesses bool) suggest
 		// A likeness is never the other side of the word: `rta mcp uninstall`
 		// was offered `rta mcp install`, two letters away and the reverse of
 		// what was asked. A whole-word match above is left alone, since a
-		// command that names the word among its keywords (plugin remove, for
+		// command that names the word among its keywords (plugin rm, for
 		// uninstall) is the answer.
 		if r.Score >= match.Likely && !opposite(strings.ToLower(word), cmds[r.Index].Name()) {
 			likely = append(likely, cmds[r.Index])

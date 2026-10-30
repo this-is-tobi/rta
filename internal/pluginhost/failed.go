@@ -99,7 +99,7 @@ func remedyFor(f Found) string {
 	dir := filepath.Dir(f.Path)
 	switch {
 	case dir == filepath.Clean(ManagedBin()):
-		return "`rta plugin remove " + f.Name + "` uninstalls it"
+		return "`rta plugin rm " + f.Name + "` uninstalls it"
 	case SystemBin() != "" && dir == filepath.Clean(SystemBin()):
 		return ""
 	}

@@ -79,7 +79,7 @@ rta plugin untrust pg        # withdraw approval
 rta plugin untrust --all     # withdraw every approval you have recorded
 ```
 
-`untrust` answers with `approvals withdrawn` and `approvals left`, or `approvals to withdraw` and `approvals left after` under `--dry-run`. An approved plugin that cannot start has a `failed to start` row in `rta plugin list` and in `rta doctor`, and the message it failed with ends with the way out, `rta plugin untrust <name>`. `rta plugin rm` is `rta plugin remove`.
+`untrust` answers with `approvals withdrawn` and `approvals left`, or `approvals to withdraw` and `approvals left after` under `--dry-run`. An approved plugin that cannot start has a `failed to start` row in `rta plugin list` and in `rta doctor`, and the message it failed with ends with the way out, `rta plugin untrust <name>`. `rta plugin rm` is `rta plugin rm`.
 
 There is deliberately no `rta plugin trust --all`. Approving is the decision the whole boundary exists to make somebody take one artifact at a time, and a flag that approved everything discovered on a `$PATH` would approve whatever appeared there this morning. The withdrawing direction has no such problem, which is why `--all` exists on that side alone — the same reason `rta plugin allow` has no bulk form either.
 

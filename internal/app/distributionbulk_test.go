@@ -56,7 +56,7 @@ func TestTheIndexFilterIsRefusedWithoutASweep(t *testing.T) {
 }
 
 // Sweeping the whole trust store or the whole managed store is a different
-// size of act from the single-name form, and `plugin remove` already holds
+// size of act from the single-name form, and `plugin rm` already holds
 // that line for one plugin. Neither may proceed on a bare command.
 func TestBulkWithdrawalsNeedConfirmation(t *testing.T) {
 	for _, args := range [][]string{

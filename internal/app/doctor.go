@@ -1648,7 +1648,7 @@ func doctorManagedPlugins(add func(check, status, detail string)) {
 		switch {
 		case !linked:
 			status, detail = "warn", detail+" — the store's bin link is gone; "+
-				"`rta plugin install "+e.Name+"` after `rta plugin remove "+e.Name+"` restores it"
+				"`rta plugin install "+e.Name+"` after `rta plugin rm "+e.Name+"` restores it"
 		case current != e.Digest:
 			status, detail = "warn", detail+fmt.Sprintf(
 				" — the store serves %.12s while rta.lock records %s: an upgrade that did not "+
@@ -1670,7 +1670,7 @@ func doctorManagedPlugins(add func(check, status, detail string)) {
 				status = "warn"
 				detail += " — shadowed: calls run " + p.Identity.Path + ", not the managed copy"
 				// A copy in the system root is no stray: discovery ranks it above the
-				// operator's store by design, and `rta plugin remove` cannot undo that.
+				// operator's store by design, and `rta plugin rm` cannot undo that.
 				// Said, since "shadowed" reads as a $PATH mistake to go and fix.
 				if plugindist.InSystemRoot(p.Identity.Path) {
 					detail += " (it is in the system root, which outranks the operator's store)"

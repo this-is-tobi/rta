@@ -29,14 +29,14 @@ import (
 // `profile repin` already settled: a name, or --all, and never both. A bulk
 // flag that silently won an argument with an explicit name would be the worst
 // of the three available behaviours.
-func bulkScope(args []string, all bool, code, verb string) (string, *view.Error) {
+func bulkScope(cmd *cobra.Command, args []string, all bool, code, verb string) (string, *view.Error) {
 	name := ""
 	if len(args) == 1 {
 		name = args[0]
 	}
 	if name == "" && !all {
 		return "", view.Errorf(code, "name a plugin, or pass --all to %s every one of them", verb).
-			WithHint("`rta plugin " + verb + " pg`, or `rta plugin " + verb + " --all`")
+			WithHint("`" + cmd.CommandPath() + " pg`, or `" + cmd.CommandPath() + " --all`")
 	}
 	if name != "" && all {
 		return "", view.Errorf(code,

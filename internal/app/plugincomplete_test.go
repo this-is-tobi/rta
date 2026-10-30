@@ -73,8 +73,8 @@ func TestPluginCommandsCompleteTheNamesTheyTake(t *testing.T) {
 func TestPluginCommandsAreWiredToTheirCompletions(t *testing.T) {
 	root := NewRoot(testRegistry(t), "test")
 	for path, want := range map[string]bool{
-		"plugin install": true, "plugin upgrade": true, "plugin remove": true,
-		"plugin index update": true, "plugin index remove": true,
+		"plugin install": true, "plugin upgrade": true, "plugin rm": true,
+		"plugin index update": true, "plugin index rm": true,
 	} {
 		cmd, _, err := root.Find(strings.Fields(path))
 		if err != nil || cmd == nil {

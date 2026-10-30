@@ -40,7 +40,7 @@ func TestAWordNamedSomewhereElseInTheTreeIsAnsweredWithWhereItIs(t *testing.T) {
 		"dns":            "`rta net dns`",
 		"disk":           "`rta sys disk`",
 		"install pg":     "`rta plugin install pg`",
-		"uninstall pg":   "`rta plugin remove pg`",
+		"uninstall pg":   "`rta plugin rm pg`",
 		"status":         "`rta agent overview`",
 		"log":            "`rta agent log`",
 		"history":        "`rta agent log`",
@@ -98,8 +98,8 @@ func TestASynonymOfACommandIsNotToldItMightBeAService(t *testing.T) {
 			t.Errorf("`rta %s` was told %q", word, ve.Hint)
 		}
 	}
-	if ve := hintFor(t, "plugin", "uninstall", "pg"); !strings.Contains(ve.Hint, "`rta plugin remove pg`") {
-		t.Errorf("`rta plugin uninstall pg` was told %q, not that it is plugin remove", ve.Hint)
+	if ve := hintFor(t, "plugin", "uninstall", "pg"); !strings.Contains(ve.Hint, "`rta plugin rm pg`") {
+		t.Errorf("`rta plugin uninstall pg` was told %q, not that it is plugin rm", ve.Hint)
 	}
 }
 
@@ -228,8 +228,8 @@ func TestTheOppositeOfACommandIsNotOffered(t *testing.T) {
 	if ve := hintFor(t, "mcp", "uninstall", "claude"); strings.Contains(ve.Hint, "install claude") {
 		t.Errorf("`rta mcp uninstall claude` was offered %q", ve.Hint)
 	}
-	if ve := hintFor(t, "plugin", "uninstall", "pg"); !strings.Contains(ve.Hint, "`rta plugin remove pg`") {
-		t.Errorf("`rta plugin uninstall pg` was told %q, want plugin remove", ve.Hint)
+	if ve := hintFor(t, "plugin", "uninstall", "pg"); !strings.Contains(ve.Hint, "`rta plugin rm pg`") {
+		t.Errorf("`rta plugin uninstall pg` was told %q, want plugin rm", ve.Hint)
 	}
 	if !opposite("deactivate", "activate") || !opposite("uninstall", "install") {
 		t.Error("de- and un- are not read as reversing the word")
