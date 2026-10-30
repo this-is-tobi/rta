@@ -986,8 +986,11 @@ func (c *Client) adopt(raw *rtav1.Plugin) error {
 
 // attach wires one capability's handlers to the connection.
 func (c *Client) attach(dst *plugin.Capability, raw *rtav1.Capability) {
-	id := dst.ID
+	id, declared := dst.ID, dst.Inputs
 	dst.Run = func(ctx context.Context, req plugin.Request) (view.View, error) {
+		if verr := c.deny.namedFile(id, declared, req); verr != nil {
+			return nil, verr
+		}
 		return c.call(ctx, id, req)
 	}
 	if raw.GetHasPrefill() {
