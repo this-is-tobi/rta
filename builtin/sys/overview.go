@@ -285,8 +285,14 @@ func (f overviewFacts) loadRow() row {
 	if f.cores <= 0 {
 		return row{key: "load", value: fmt.Sprintf("%.2f · %.2f · %.2f", l.load1, l.load5, l.load15)}
 	}
-	shown := math.Round(l.load1 / float64(f.cores) * 100)
-	fact := fmt.Sprintf("%.0f%%/core", shown)
+	// The five-minute average, not the one-minute one. The minute's is the
+	// noisiest reading a host has: a test run or an IDE indexing puts it past
+	// the core count for a minute at a time, and the first tile on the
+	// screen went red and back again through ordinary work, which teaches a
+	// person to read past red. Five minutes is a machine that stays busy, and
+	// it is the row of sys.load that grades the same way.
+	shown := math.Round(l.load5 / float64(f.cores) * 100)
+	fact := fmt.Sprintf("%.0f%%/core (5 min)", shown)
 	r := row{key: "load", headline: "load " + fact}
 	switch {
 	case shown >= loadOverloaded*100:

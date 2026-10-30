@@ -26,7 +26,7 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 │ disk    ok — 41% of / (380.1 of     │ │ waiting on you  0                    │
 │         926.4 GiB)                  │ │ needs grant     0                    │
 │ mem     ok — 25.7 of 36.0 GiB       │ │ connected now   none                 │
-│ load    ok — 22%/core               │ │ last hour       0                    │
+│ load    ok — 22%/core (5 min)       │ │ last hour       0                    │
 │ cpu     10.9% of 14 cores           │ │ last call       nothing recorded     │
 │ swap    20.9 of 22.0 GiB (95%)      │ │                 yet                  │
 │ host    laptop.home · up 4d 19h     │ │ … enter for details                  │

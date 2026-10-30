@@ -65,7 +65,7 @@ func TestTheCompactOverviewLeadsWithTheVerdictAndEndsWithTheHost(t *testing.T) {
 		"status": "ok",
 		"disk":   "ok — 40% of / (200.0 of 500.0 GiB)",
 		"mem":    "ok — 24.0 of 36.0 GiB",
-		"load":   "ok — 32%/core",
+		"load":   "ok — 32%/core (5 min)",
 		"cpu":    "20.1% of 14 cores",
 		"swap":   "2.0 of 4.0 GiB (50%)",
 		"host":   "build-1 · up 3d 4h",
@@ -113,7 +113,7 @@ func TestEveryVerdictLeadsWithAWordTheThemeGrades(t *testing.T) {
 	warn := calm()
 	warn.disk = diskFact{mount: "/", used: 440 * gib, total: 500 * gib, percent: 88}
 	warn.mem.pressure = pressureWarn
-	warn.load = loadFact{load1: 10, load5: 9, load15: 8}
+	warn.load = loadFact{load1: 9, load5: 10, load15: 8}
 	warn.swap = swapFact{used: 3.5 * gib, total: 4 * gib, percent: 87.5}
 
 	for _, tc := range []struct {
@@ -168,11 +168,14 @@ func TestTheStatusRowNamesTheWorstFact(t *testing.T) {
 		{"memory pressure critical", with(func(f *overviewFacts) { f.mem.pressure = pressureCritical }),
 			"fail — memory pressure critical"},
 		{"load past a core each", with(func(f *overviewFacts) {
-			f.load = loadFact{load1: 15.4, load5: 9, load15: 5}
-		}), "fail — load 110%/core"},
+			f.load = loadFact{load1: 9, load5: 15.4, load15: 5}
+		}), "fail — load 110%/core (5 min)"},
 		{"load past seventy percent", with(func(f *overviewFacts) {
-			f.load = loadFact{load1: 10.5, load5: 9, load15: 5}
-		}), "warn — load 75%/core"},
+			f.load = loadFact{load1: 9, load5: 10.5, load15: 5}
+		}), "warn — load 75%/core (5 min)"},
+		{"a minute past every core over five calm ones", with(func(f *overviewFacts) {
+			f.load = loadFact{load1: 30, load5: 4, load15: 3}
+		}), "ok"},
 		{"a warning and a failure: the failure is named", with(func(f *overviewFacts) {
 			f.disk = diskFact{mount: "/", used: 440 * gib, total: 500 * gib, percent: 88}
 			f.mem.pressure = pressureCritical
@@ -214,7 +217,7 @@ func TestTheRowsAreGradedFromTheFigureThatIsPrinted(t *testing.T) {
 		{0.694, "ok"}, {0.696, "warn"}, {0.994, "warn"}, {0.996, "overloaded"}, {1.5, "overloaded"},
 	} {
 		f := calm()
-		f.load = loadFact{load1: tc.perCore * float64(f.cores)}
+		f.load = loadFact{load5: tc.perCore * float64(f.cores)}
 		_, v := rowsOf(t, f)
 		if !strings.HasPrefix(v["load"], tc.lead+" — ") {
 			t.Errorf("a load of %.3f a core reads %q, want it to lead with %q", tc.perCore, v["load"], tc.lead)
