@@ -232,7 +232,7 @@ func Plugin() plugin.Plugin {
 				ID: "note.done", Summary: "Check notes off", Safety: plugin.Write, Idempotent: true,
 				Flash: true,
 				Description: "Done for a task, filed for a note: either way it leaves the default " +
-					"list and stays findable through note.list's `all`, and in note.search. Several " +
+					"list and stays findable through `note.list`'s `all`, and in `note.search`. Several " +
 					"ids check off several notes in one call, all or none: an id that is not a note " +
 					"refuses the call before anything changes. A plain note is made a to-do and checked " +
 					"off in the same call, since asking to be done with it says what it is.",

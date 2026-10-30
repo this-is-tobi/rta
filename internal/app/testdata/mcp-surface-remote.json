@@ -293,7 +293,7 @@
   },
   {
     "name": "cert_tls",
-    "description": "Report the negotiated TLS version and cipher for a host\n\nOver MCP this always refuses: a file has no handshake to report, and a host is not dialled by this tool. net_probe with `tls` reports a host's TLS version and cipher, with a grant.\n\nSafety: read.",
+    "description": "Report the negotiated TLS version and cipher for a host\n\nOver MCP this always refuses: a file has no handshake to report, and a host is not dialled by this tool. `net_probe` with `tls` reports a host's TLS version and cipher, with a grant.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -488,7 +488,7 @@
   },
   {
     "name": "eol_products",
-    "description": "Search the endoflife.date catalogue: names, aliases and categories\n\nLists the products endoflife.date tracks, with the aliases eol_check and eol_watch accept for each. A term narrows the list to products whose name, label or alias contains it. Without one the first products are listed and the total says how many there are; `limit` shows more.\n\nSafety: read.",
+    "description": "Search the endoflife.date catalogue: names, aliases and categories\n\nLists the products endoflife.date tracks, with the aliases `eol_check` and `eol_watch` accept for each. A term narrows the list to products whose name, label or alias contains it. Without one the first products are listed and the total says how many there are; `limit` shows more.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -515,7 +515,7 @@
   },
   {
     "name": "eol_watch",
-    "description": "Grade every product and cycle on a configured watchlist at once\n\nRuns eol_check over a list of products, each optionally pinned to one release cycle or a range of them as product@cycle — postgresql@15, postgresql@13..16, nodejs, debian@bookworm. Write the list once as `plugins: eol: products:` in your config or a profile and it is what this grades from then on. A product the API does not know, or a cycle the product does not have, is one row saying so; the rest of the list is still graded.\n\nSafety: read.",
+    "description": "Grade every product and cycle on a configured watchlist at once\n\nRuns `eol_check` over a list of products, each optionally pinned to one release cycle or a range of them as product@cycle — postgresql@15, postgresql@13..16, nodejs, debian@bookworm. Write the list once as `plugins: eol: products:` in your config or a profile and it is what this grades from then on. A product the API does not know, or a cycle the product does not have, is one row saying so; the rest of the list is still graded.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -656,7 +656,7 @@
   },
   {
     "name": "gitignore_list",
-    "description": "List the templates github/gitignore offers\n\nLists the templates in the github/gitignore repository, with the name gitignore_show takes for each: the main ones for languages, frameworks and tools, the global ones for operating systems and editors, and the community ones. A term narrows the list to the templates whose name contains it, or to one kind when the term is main, global or community. Without one the first templates are listed and the total says how many there are; `limit` shows more.\n\nAlso called: ignore, template, generate.\n\nSafety: read.",
+    "description": "List the templates github/gitignore offers\n\nLists the templates in the github/gitignore repository, with the name `gitignore_show` takes for each: the main ones for languages, frameworks and tools, the global ones for operating systems and editors, and the community ones. A term narrows the list to the templates whose name contains it, or to one kind when the term is main, global or community. Without one the first templates are listed and the total says how many there are; `limit` shows more.\n\nAlso called: ignore, template, generate.\n\nSafety: read.",
     "read_only_hint": true,
     "idempotent_hint": true,
     "input_schema": {
@@ -695,7 +695,7 @@
       "additionalProperties": false,
       "properties": {
         "templates": {
-          "description": "template names as gitignore_list shows them: Go, Node, macOS; or a qualified name, Global/macOS, when a name could mean two",
+          "description": "template names as `gitignore_list` shows them: Go, Node, macOS; or a qualified name, Global/macOS, when a name could mean two",
           "items": {
             "type": "string"
           },
@@ -933,7 +933,7 @@
   },
   {
     "name": "kv_env",
-    "description": "Print stored values as shell exports\n\nOutput for a shell to evaluate, which loads secrets into its session without ever writing them to a file. Key names become environment names (db-password → DB_PASSWORD). A `format` of dotenv writes .env syntax instead. Same grant requirement as kv_get: this reveals values. Naming no key means every key, which is a wider ask and needs a grant for kv_env itself rather than one per key.\n\nSafety: write.\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.env`.",
+    "description": "Print stored values as shell exports\n\nOutput for a shell to evaluate, which loads secrets into its session without ever writing them to a file. Key names become environment names (db-password → DB_PASSWORD). A `format` of dotenv writes .env syntax instead. Same grant requirement as `kv_get`: this reveals values. Naming no key means every key, which is a wider ask and needs a grant for `kv_env` itself rather than one per key.\n\nSafety: write.\n\nReturns the stored value itself, not a masked copy, and it becomes part of your context.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.env`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
@@ -1091,7 +1091,7 @@
   },
   {
     "name": "kv_rename",
-    "description": "Rename a key, keeping its value and its history\n\nThe entry moves inside the store, the value is never decrypted into anything but memory, and its description, kind, source and timestamps travel with it: the one way to rename that reveals nothing, where kv_get, kv_set and kv_rm took two grants and put the secret in the open. A name already taken is refused rather than overwritten, since that would destroy the secret in it, which is `kv_rm`'s question. A grant has to cover both names, `key` and `new-name`, because a key's name decides which grants can read it; a folder grant covers a move inside the folder.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\" and one \"new-name\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.rename`.",
+    "description": "Rename a key, keeping its value and its history\n\nThe entry moves inside the store, the value is never decrypted into anything but memory, and its description, kind, source and timestamps travel with it: the one way to rename that reveals nothing, where `kv_get`, `kv_set` and `kv_rm` took two grants and put the secret in the open. A name already taken is refused rather than overwritten, since that would destroy the secret in it, which is `kv_rm`'s question. A grant has to cover both names, `key` and `new-name`, because a key's name decides which grants can read it; a folder grant covers a move inside the folder.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\" and one \"new-name\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.rename`.",
     "destructive_hint": false,
     "input_schema": {
       "additionalProperties": false,
@@ -1158,14 +1158,14 @@
   },
   {
     "name": "kv_set",
-    "description": "Set (or overwrite) a stored value\n\nThe value is given as `value`; a call with none is refused unless its `description` or `kind` relabel an entry that already exists, which leaves the secret and both timestamps untouched, so correcting what something is for does not reset the age kv_list reports. The kind (certificate, private key, json, file, string) is detected from the content unless `kind` says otherwise. Writing never changes who can read the store: that is `kv_rekey`. Setting a key that already exists replaces the secret and keeps the old one, the last 5 values listed by `kv_history` and brought back by `kv_restore` with a `revision`. It still needs a per-key grant: an agent that can overwrite a secret can break what reads it, undo or not.\n\nAlso called: secret, password, save, write, credential, encrypt.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.set`.",
+    "description": "Set (or overwrite) a stored value\n\nThe value is given as `value`; a call with none is refused unless its `description` or `kind` relabel an entry that already exists, which leaves the secret and both timestamps untouched, so correcting what something is for does not reset the age `kv_list` reports. The kind (certificate, private key, json, file, string) is detected from the content unless `kind` says otherwise. Writing never changes who can read the store: that is `kv_rekey`. Setting a key that already exists replaces the secret and keeps the old one, the last 5 values listed by `kv_history` and brought back by `kv_restore` with a `revision`. It still needs a per-key grant: an agent that can overwrite a secret can break what reads it, undo or not.\n\nAlso called: secret, password, save, write, credential, encrypt.\n\nSafety: write.\n\nRequires a grant a person issued for this capability (optionally narrowed to one \"key\"). You cannot issue one yourself — ask the operator to run `rta grant allow kv.set`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {
       "additionalProperties": false,
       "properties": {
         "description": {
-          "description": "what this is for — shown by kv_list",
+          "description": "what this is for — shown by `kv_list`",
           "type": "string"
         },
         "key": {
@@ -1513,7 +1513,7 @@
   },
   {
     "name": "note_done",
-    "description": "Check notes off\n\nDone for a task, filed for a note: either way it leaves the default list and stays findable through note_list's `all`, and in note_search. Several ids check off several notes in one call, all or none: an id that is not a note refuses the call before anything changes. A plain note is made a to-do and checked off in the same call, since asking to be done with it says what it is.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.done`.",
+    "description": "Check notes off\n\nDone for a task, filed for a note: either way it leaves the default list and stays findable through `note_list`'s `all`, and in `note_search`. Several ids check off several notes in one call, all or none: an id that is not a note refuses the call before anything changes. A plain note is made a to-do and checked off in the same call, since asking to be done with it says what it is.\n\nSafety: write.\n\nRequires a grant a person issued for this capability. You cannot issue one yourself — ask the operator to run `rta grant allow note.done`.",
     "destructive_hint": false,
     "idempotent_hint": true,
     "input_schema": {

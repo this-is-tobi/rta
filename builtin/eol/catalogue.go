@@ -17,8 +17,8 @@ func productsCapability() plugin.Capability {
 		Summary:    "Search the endoflife.date catalogue: names, aliases and categories",
 		Safety:     plugin.Read,
 		Idempotent: true,
-		Description: "Lists the products endoflife.date tracks, with the aliases eol.check " +
-			"and eol.watch accept for each. A term narrows the list to products whose " +
+		Description: "Lists the products endoflife.date tracks, with the aliases `eol.check` " +
+			"and `eol.watch` accept for each. A term narrows the list to products whose " +
 			"name, label or alias contains it. Without one the first products are listed and the " +
 			"total says how many there are; `limit` shows more.",
 		NoPreview: true,

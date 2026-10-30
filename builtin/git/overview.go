@@ -34,7 +34,7 @@ func overviewCapability() plugin.Capability {
 			"that fetch's age once it is a day old, whether the working tree is clean, the stash, and " +
 			"the latest commit. With `detail` it expands into the same " +
 			"status, log and branches views their own capabilities return — one shape, not a " +
-			"second implementation of each. The working tree is read as git.status reads it, and past its " +
+			"second implementation of each. The working tree is read as `git.status` reads it, and past its " +
 			"two seconds the overview is refused as git.status.timeout.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),

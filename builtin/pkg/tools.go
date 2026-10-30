@@ -100,7 +100,7 @@ func toolsCapability() plugin.Capability {
 			"when it refuses, or cannot be reached, the first row says so and the rows " +
 			"after it say they were not checked. Binaries placed by `go install` need no " +
 			"entry — they carry their module path, and the Go module proxy knows the " +
-			"latest; they are listed under the go manager in pkg.outdated.\n\n" +
+			"latest; they are listed under the go manager in `pkg.outdated`.\n\n" +
 			"Sources come from configuration only, never from a caller: a network " +
 			"destination somebody else chose is not a free read.",
 		Inputs: []plugin.Field{toolsField()},

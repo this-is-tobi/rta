@@ -63,7 +63,7 @@ func Plugin() plugin.Plugin {
 					"exactly as if they had the file, with no passphrase of their own to guess. Classified as " +
 					"a write for the same reason `kv.get` is: revealing key material is the sensitive act, not " +
 					"changing anything. Never an MCP tool rather than only requiring a grant — the " +
-					"same precedent grant.allow and grant.revoke set, for the same reason: once the " +
+					"same precedent `grant.allow` and `grant.revoke` set, for the same reason: once the " +
 					"words exist they work forever until the underlying key is rotated, with no " +
 					"per-call log and nothing a grant's expiry can take back. ed25519 only: the algorithm has " +
 					"a single 32-byte seed to encode; RSA and ECDSA keys do not.",
@@ -79,20 +79,20 @@ func Plugin() plugin.Plugin {
 			{
 				ID: "keys.add", Summary: "Generate an ed25519 SSH key, ready to back up",
 				Safety: plugin.Write, Idempotent: true, HumanOnly: true,
-				Description: "ed25519 and nothing else, which is the same rule keys.backup " +
+				Description: "ed25519 and nothing else, which is the same rule `keys.backup` " +
 					"already enforces from the other end: a key generated here can always be " +
 					"turned into words, and one that could not would be a key this plugin " +
 					"cannot do its own job on. Writes <out> at 0600 and <out>.pub at 0644, " +
-					"refusing to touch either if it already exists — the discipline keys.restore " +
+					"refusing to touch either if it already exists — the discipline `keys.restore` " +
 					"uses, for the sharper reason here: overwriting a private key destroys access " +
 					"to everything that key authorises, with nothing to restore from. " +
 					"`passphrase` encrypts the key being written and is always typed, never read " +
-					"from the environment, for keys.restore's `new-passphrase` reason: generating " +
+					"from the environment, for `keys.restore`'s `new-passphrase` reason: generating " +
 					"a key is a one-off act, not a standing credential for the session. " +
 					"At a terminal, left out, it is asked for twice with echo off and an empty answer " +
 					"means none; the flag is for a script, since a passphrase in argv is in `ps` and " +
 					"in shell history. The receipt says whether the key has one. " +
-					"Never an MCP tool, the same rule keys.backup and keys.restore follow: " +
+					"Never an MCP tool, the same rule `keys.backup` and `keys.restore` follow: " +
 					"a key an agent generated is a credential nobody watched being made. " +
 					"There is deliberately no keys.rm — deleting a key file is irreversible loss " +
 					"of access, `rm` is a command everybody already has, and the shell they run " +
@@ -121,7 +121,7 @@ func Plugin() plugin.Plugin {
 					"harmless difference to expect, not a sign anything went wrong. A " +
 					"comment (the user@host after the key material in a .pub file) is never encoded in the " +
 					"words and is lost on backup; `comment` puts one back. `new-passphrase` locks the " +
-					"key being written here — a different secret from keys.backup's `passphrase`, which unlocks " +
+					"key being written here — a different secret from `keys.backup`'s `passphrase`, which unlocks " +
 					"the key being read there, named differently on purpose and, unlike `passphrase`, never " +
 					"read from the environment: a restore is a one-off action, not a standing credential for " +
 					"the session, so this always has to be typed explicitly rather than inherited from " +
@@ -129,7 +129,7 @@ func Plugin() plugin.Plugin {
 					"At a terminal, left out, it is asked for twice with echo off and an empty answer " +
 					"means none; the flag is for a script, since a passphrase in argv is in `ps` and " +
 					"in shell history. The receipt says whether the key has one. " +
-					"Never an MCP tool, the same rule keys.backup follows and for the same reason.",
+					"Never an MCP tool, the same rule `keys.backup` follows and for the same reason.",
 				Inputs: []plugin.Field{
 					{Name: "out", Type: plugin.Path, Positional: true, Required: true,
 						Help: "where to write the restored private key (and <out>.pub)"},

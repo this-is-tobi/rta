@@ -215,7 +215,7 @@ func overviewCapability() plugin.Capability {
 			"and the tables themselves.\n\n" +
 			"Not on the automatic dashboard: this runs a dozen tools and asks four " +
 			"registries. Name it in `dashboard: tiles:` once you have decided that is fine " +
-			"every few seconds — most people want it once a morning, which is pkg.overview run by hand.\n\n" +
+			"every few seconds — most people want it once a morning, which is `pkg.overview` run by hand.\n\n" +
 			"Nothing in pkg is reachable over MCP, reads included: what is installed here and " +
 			"what is behind is the map an attacker draws first, and it is not an agent's to read.",
 		Inputs: []plugin.Field{toolsField()},
