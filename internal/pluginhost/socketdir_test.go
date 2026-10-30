@@ -55,7 +55,7 @@ func leftovers(t *testing.T, tmp string) []string {
 
 // The socket is made in a directory of rta's own, this user's alone, and
 // goes with the process: after an ordinary call, after a restart that
-// replaced a crashed process, and after a close. go-plugin removed it on
+// replaced a crashed process, and after a close. go-plugin rmd it on
 // none of them — with its broker multiplexed, the listener it closes is not
 // the one the socket was bound through — and one developer's TMPDIR held
 // 74,664 of them.

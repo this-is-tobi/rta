@@ -569,7 +569,7 @@ func TestTheDoctorNamesAFileOfRtasOwnThePluginSandboxLeavesOut(t *testing.T) {
 
 // A copy in the system root that is the one running shadows the managed copy
 // like any other, and is not a stray to go and remove: discovery ranks the root
-// above the operator's store by design, which `rta plugin remove` cannot undo.
+// above the operator's store by design, which `rta plugin rm` cannot undo.
 // The row says which it is, and says nothing of the root for a copy that sits
 // anywhere else.
 func TestTheDoctorSaysWhenTheCopyShadowingAManagedPluginIsTheSystemRoots(t *testing.T) {

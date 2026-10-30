@@ -1164,7 +1164,7 @@ func TestRemoveSaysWhatTheSystemRootKeepsTrusting(t *testing.T) {
 	}
 }
 
-// D3: plugin remove is destructive (it withdraws trust from every stored
+// D3: plugin rm is destructive (it withdraws trust from every stored
 // artifact) and needs --yes the same way a Destructive capability does,
 // checked before plugindist.Remove runs for a plugin that is installed.
 func TestPluginRemoveWithoutConfirmationRefuses(t *testing.T) {
@@ -1174,7 +1174,7 @@ func TestPluginRemoveWithoutConfirmationRefuses(t *testing.T) {
 	}
 	_, _, err := run("plugin", "remove", "probe")
 	if err == nil {
-		t.Fatal("plugin remove ran with no --yes and no --dry-run")
+		t.Fatal("plugin rm ran with no --yes and no --dry-run")
 	}
 	verr, ok := err.(*view.Error)
 	if !ok || verr.Code != CodeConfirmRequired {

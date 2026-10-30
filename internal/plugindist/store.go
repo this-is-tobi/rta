@@ -65,7 +65,7 @@ func InSystemRoot(path string) bool {
 //
 // **The system root is a word of its own, and "installed by rta" would not be
 // true of it.** A full image's plugins were put there by `rta plugin install`
-// at build time, but they are not the reader's installs: `rta plugin remove`
+// at build time, but they are not the reader's installs: `rta plugin rm`
 // and `upgrade` answer that such a plugin "is not managed by rta", `untrust`
 // refuses to withdraw what the root trusts, and where the operator's own store
 // holds a copy of the same plugin it is the root's that runs. It is not "found

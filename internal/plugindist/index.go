@@ -298,7 +298,7 @@ func addIndex(ctx context.Context, name, url, ref string, dryRun bool) *view.Err
 	if _, err := os.Stat(dir); err == nil {
 		return view.Errorf("plugin.index.exists", "an index called %q is already attached", name).
 			WithHint("`rta plugin index update " + name + "` refreshes it; " +
-				"`rta plugin index remove " + name + "` detaches it")
+				"`rta plugin index rm " + name + "` detaches it")
 	}
 	if verr := requireGit("attaching an index"); verr != nil {
 		return verr
@@ -509,7 +509,7 @@ func (s indexStage) attach(name, dir string) *view.Error {
 		return view.Errorf("plugin.index.exists", "an index called %q was attached while this one "+
 			"was being cloned", name).
 			WithHint("`rta plugin index list` shows where it came from; " +
-				"`rta plugin index remove " + name + "` detaches it")
+				"`rta plugin index rm " + name + "` detaches it")
 	}
 	return view.Errorf("plugin.index.add", "attaching the clone: %v", err)
 }
@@ -748,7 +748,7 @@ func refuseUpdate(name string, bad []*view.Error) *view.Error {
 		verr = bad[0]
 	}
 	hint := "the update was pulled, and search and install refuse " + name + " until its upstream is an " +
-		"index again; `rta plugin index remove " + name + "` detaches it"
+		"index again; `rta plugin index rm " + name + "` detaches it"
 	if verr.Hint != "" {
 		hint = verr.Hint + "; " + hint
 	}
@@ -790,7 +790,7 @@ func removeIndex(name string, dryRun bool) *view.Error {
 		sort.Strings(held)
 		return view.Errorf("plugin.index.held",
 			"%s installed %s from this index", strings.Join(held, ", "), name).
-			WithHint("`rta plugin remove <name>` first, or leave the index attached")
+			WithHint("`rta plugin rm <name>` first, or leave the index attached")
 	}
 	if dryRun {
 		return nil

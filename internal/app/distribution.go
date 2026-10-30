@@ -267,7 +267,7 @@ func credentialVars(p plugin.Plugin) []string {
 func newPluginRemoveCommand(opts *globalOpts) *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{
-		Use:   "remove <name> | --all",
+		Use:   "rm <name> | --all",
 		Short: "Uninstall a managed plugin",
 		Long: "Removes the store entry, the bin/ link, your trust in every stored\n" +
 			"digest, and the rta.lock record — and names the config statements that\n" +
@@ -277,7 +277,7 @@ func newPluginRemoveCommand(opts *globalOpts) *cobra.Command {
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeManaged,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, verr := bulkScope(args, all, "plugin.remove.scope", "remove")
+			name, verr := bulkScope(cmd, args, all, "plugin.remove.scope", "remove")
 			if verr != nil {
 				return verr
 			}
@@ -573,7 +573,7 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeManaged,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, verr := bulkScope(args, all, "plugin.upgrade.scope", "upgrade")
+			name, verr := bulkScope(cmd, args, all, "plugin.upgrade.scope", "upgrade")
 			if verr != nil {
 				return verr
 			}
@@ -913,7 +913,7 @@ func newPluginIndexCommand(opts *globalOpts) *cobra.Command {
 		},
 	})
 	root.AddCommand(&cobra.Command{
-		Use:   "remove <name>",
+		Use:   "rm <name>",
 		Short: "Detach an index",
 		Long: "Refused while an installed plugin records this index as its provenance:\n" +
 			"rta.lock exists to answer where a binary came from, and detaching the\n" +

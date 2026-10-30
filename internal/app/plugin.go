@@ -493,7 +493,7 @@ func newPluginUntrustCommand(opts *globalOpts) *cobra.Command {
 			"the system root is left alone: rta reads that file and never writes it.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			which, verr := bulkScope(args, all, "plugin.untrust.scope", "untrust")
+			which, verr := bulkScope(cmd, args, all, "plugin.untrust.scope", "untrust")
 			if verr != nil {
 				return verr
 			}

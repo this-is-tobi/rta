@@ -11,7 +11,7 @@ import (
 )
 
 // The commands that are not capabilities ask the same question a capability
-// does, at a terminal: `profile rm` and `plugin remove` were the ones that
+// does, at a terminal: `profile rm` and `plugin rm` were the ones that
 // still sent a person away to type the command again with a flag.
 func TestProfileRemoveAsksAPersonAtATerminal(t *testing.T) {
 	run := session(t, setRegistry(t))

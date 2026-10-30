@@ -73,7 +73,7 @@ func install(ctx context.Context, spec string, stderr io.Writer, dryRun bool) (R
 	if held {
 		return Report{}, view.Errorf("plugin.install.installed", "%s is already installed", m.Name).
 			WithHint("`rta plugin upgrade " + m.Name + "` moves it; " +
-				"`rta plugin remove " + m.Name + "` takes it out")
+				"`rta plugin rm " + m.Name + "` takes it out")
 	}
 	return installFrom(ctx, listed, stderr, dryRun, nil)
 }
@@ -347,7 +347,7 @@ func describeStored(ctx context.Context, name, want string) (plugin.Plugin, *vie
 	if !hexDigest.MatchString(want) {
 		return plugin.Plugin{}, view.Errorf("plugin.upgrade.lock",
 			"rta.lock records %q as %s's digest, which is not a digest", want, name).
-			WithHint("the lockfile has been edited by hand or corrupted; `rta plugin remove " +
+			WithHint("the lockfile has been edited by hand or corrupted; `rta plugin rm " +
 				name + "` and a fresh install rewrite it")
 	}
 	path := filepath.Join(StoreDir(), name, want, pluginhost.BinaryName(name))
@@ -355,20 +355,20 @@ func describeStored(ctx context.Context, name, want string) (plugin.Plugin, *vie
 	if err != nil {
 		return plugin.Plugin{}, view.Errorf("plugin.upgrade.old",
 			"the installed %s cannot be read: %v", name, err).
-			WithHint("`rta plugin remove " + name + "` and a fresh install replace it")
+			WithHint("`rta plugin rm " + name + "` and a fresh install replace it")
 	}
 	if id.Digest != want {
 		return plugin.Plugin{}, view.Errorf("plugin.upgrade.drift",
 			"the installed %s hashes to %s and rta.lock records %s — refusing to run it",
 			name, short(id.Digest), short(want)).
-			WithHint("something rewrote the store after rta placed it there; `rta plugin remove " +
+			WithHint("something rewrote the store after rta placed it there; `rta plugin rm " +
 				name + "` and a fresh install replace it")
 	}
 	if !plugintrust.Load().Trusts(id.Digest) {
 		return plugin.Plugin{}, view.Errorf("plugin.upgrade.untrusted",
 			"%s (%s) is installed and not trusted — refusing to run it to read its declaration",
 			name, short(id.Digest)).
-			WithHint("`rta plugin trust " + name + "` restores the approval, or `rta plugin remove " +
+			WithHint("`rta plugin trust " + name + "` restores the approval, or `rta plugin rm " +
 				name + "` takes the artifact out")
 	}
 	host := pluginhost.New()
@@ -380,7 +380,7 @@ func describeStored(ctx context.Context, name, want string) (plugin.Plugin, *vie
 	if err != nil {
 		return plugin.Plugin{}, view.Errorf("plugin.upgrade.old",
 			"the installed %s cannot describe itself: %v", name, err).
-			WithHint("`rta plugin remove " + name + "` and a fresh install replace it")
+			WithHint("`rta plugin rm " + name + "` and a fresh install replace it")
 	}
 	return client.Declared, nil
 }
@@ -559,7 +559,7 @@ func Remove(name string) (Removed, *view.Error) {
 
 // PreviewRemove answers what Remove would report — the same validation, the
 // same digests and orphans — without withdrawing trust or touching the
-// store or the lockfile, for `rta plugin remove --dry-run`.
+// store or the lockfile, for `rta plugin rm --dry-run`.
 func PreviewRemove(name string) (Removed, *view.Error) {
 	return remove(name, true)
 }

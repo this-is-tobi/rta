@@ -101,7 +101,7 @@ func TestTheWayOutDependsOnWhereThePluginLives(t *testing.T) {
 		{"in the managed store", func(t *testing.T) string {
 			t.Setenv("PATH", t.TempDir())
 			return ManagedBin()
-		}, "`rta plugin remove boom`"},
+		}, "`rta plugin rm boom`"},
 		{"in the system root", func(t *testing.T) string {
 			t.Setenv("PATH", t.TempDir())
 			return SystemBin()

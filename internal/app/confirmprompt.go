@@ -160,7 +160,7 @@ func confirmCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capabil
 }
 
 // confirmByPreview is the same question for a destructive command that is not a
-// capability — `plugin remove`, `plugin prune`, `profile rm` — and so has no
+// capability — `plugin rm`, `plugin prune`, `profile rm` — and so has no
 // dry run of the registry's to run. The command is its own preview: it is run
 // again with --dry-run on, its answer drawn on standard error as a capability's
 // is, and then the question is asked.
