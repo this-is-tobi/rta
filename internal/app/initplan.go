@@ -86,7 +86,9 @@ func planInit(ctx context.Context) initPlan {
 		// For every project where the client has a flag for that: this is a
 		// person setting a machine up, and a registration that holds only in the
 		// directory they happened to run init from is not what they asked for.
-		req := installRequest{client: c, as: c.name, global: c.globalArgs != nil || c.alwaysGlobal, dryRun: true}
+		// With consent on, as `rta mcp install` registers it (serveOptions).
+		req := installRequest{client: c, as: c.name, global: c.globalArgs != nil || c.alwaysGlobal, dryRun: true,
+			serve: serveOptions{consent: true}}
 		shown, err := installClient(ctx, io.Discard, req)
 		if err != nil || shown.block {
 			plan.notes = append(plan.notes, view.Pair{Key: c.name, Value: "`rta mcp install " + c.name +

@@ -112,9 +112,19 @@ type mcpClient struct {
 // the server, so a flag that is not in the registered line is a flag that is
 // not set.
 //
-// Every one is off by default, and the zero value is the registration that was
-// always made. Nothing here widens what a registered agent can reach — consent
+// Consent is on for a registration unless --no-consent says otherwise, and the
+// rest are off. Nothing here widens what a registered agent can reach — consent
 // asks where a refusal was, and a root narrows or moves a gate that is on.
+//
+// Consent on, for a server `rta mcp install` registers and not for one
+// `rta mcp serve` starts: a registration is a stdio server on the machine of
+// the person who just made it, and with consent off the loop the product is
+// for — an agent is refused, the person allows it, the agent retries — had no
+// answer on any screen but a shell, typing back a grant read out of the
+// agent's chat. A parked call waits at most --consent-wait and is refused
+// after it, so nobody watching costs a refusal later, never a call let
+// through. A server started by hand, or over --http for a team, may have
+// nobody watching, and keeps its own default, off.
 type serveOptions struct {
 	consent       bool
 	consentNotify bool
@@ -482,6 +492,7 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 		maxResultMiB  int
 		roots         []string
 		consentOn     bool
+		noConsent     bool
 		consentNotify bool
 	)
 
@@ -510,9 +521,10 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 			"says there is nothing to do, and a different name, path or option replaces " +
 			"the old registration through the client's own commands.\n\n" +
 			"The server's own options go into the registered line, because the client " +
-			"is what launches the server: --consent asks you instead of refusing a call " +
-			"that needs a grant, --root widens the path gate, --max-result bounds an " +
-			"answer. All are off unless given.",
+			"is what launches the server: it asks you instead of refusing a call that " +
+			"needs a grant unless --no-consent is given, and --consent-notify rings this " +
+			"desktop when it does; --root widens the path gate, --max-result bounds an " +
+			"answer.",
 		// ExactArgs alone. OnlyValidArgs refused a client it did not know in
 		// cobra's words — `invalid argument "nope" for "rta mcp install"` — one
 		// step ahead of the check in RunE that names every client rta does
@@ -544,7 +556,11 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 				client = otherClient(args[0])
 			}
 
-			serve := serveOptions{consent: consentOn, consentNotify: consentNotify}
+			if noConsent && cmd.Flags().Changed("consent") {
+				return serveUsage("--consent and --no-consent say two different things",
+					"drop one: a registration asks you by default, and --no-consent registers it to refuse")
+			}
+			serve := serveOptions{consent: consentOn && !noConsent, consentNotify: consentNotify}
 			if cmd.Flags().Changed("consent-wait") {
 				serve.consentWait = consentWait
 			}
@@ -588,8 +604,10 @@ func newMCPInstallCommand(opts *globalOpts) *cobra.Command {
 		"print what to add without running the client's own command")
 	cmd.Flags().BoolVar(&global, "global", false,
 		"install for every project instead of just this one, where the client supports it")
-	cmd.Flags().BoolVar(&consentOn, "consent", false,
-		"register the server to ask you instead of refusing when a call needs a grant (off by default)")
+	cmd.Flags().BoolVar(&consentOn, "consent", true,
+		"register the server to ask you instead of refusing when a call needs a grant")
+	cmd.Flags().BoolVar(&noConsent, "no-consent", false,
+		"register the server to refuse a call that needs a grant, instead of asking you")
 	cmd.Flags().BoolVar(&consentNotify, "consent-notify", false,
 		"with --consent, also ring this machine's desktop notification when a call is parked")
 	cmd.Flags().DurationVar(&consentWait, "consent-wait", consent.DefaultWait,

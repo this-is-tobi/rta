@@ -127,8 +127,8 @@ func TestInstallRunsTheClientsOwnCommand(t *testing.T) {
 			t.Fatalf("argv[%d] = %q, want %q (full: %v)", i, got[i], w, got)
 		}
 	}
-	tail := strings.Join(got[len(got)-4:], " ")
-	if tail != "mcp serve --as claude" {
+	tail := strings.Join(got[len(got)-5:], " ")
+	if tail != "mcp serve --as claude --consent" {
 		t.Errorf("the server is launched as %q, want it named", tail)
 	}
 	if !strings.Contains(out, "registered") {
@@ -169,7 +169,7 @@ func TestMCPInstallAnswersWithAViewInTheFormatAskedFor(t *testing.T) {
 	}
 	pairs = answerPairs(t, out)
 	if pairs["registered"] != "Claude Code" || pairs["as"] != "claude" ||
-		!strings.HasSuffix(pairs["ran"], "mcp serve --as claude") ||
+		!strings.HasSuffix(pairs["ran"], "mcp serve --as claude --consent") ||
 		!strings.Contains(pairs["reach"], "--agent claude") || !strings.Contains(pairs["next"], "restart Claude Code") {
 		t.Errorf("answered %v, want the client, the name, the command it ran, what comes next and what it reaches", pairs)
 	}
@@ -245,7 +245,7 @@ func TestMCPInstallDrawsTheBlockAsItIsOnANarrowTerminal(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s: no block after the pairs:\n%s", name, out)
 		}
-		if want := strings.TrimRight(client.block(self, serveArgs(name, serveOptions{})), "\n"); strings.TrimRight(drawnBlock, "\n") != want {
+		if want := strings.TrimRight(client.block(self, serveArgs(name, serveOptions{consent: true})), "\n"); strings.TrimRight(drawnBlock, "\n") != want {
 			t.Errorf("%s: the block was reshaped on a 30-column terminal:\n%s\nwant:\n%s", name, drawnBlock, want)
 		}
 		if strings.Contains(pairsDrawn, "mcpServers") || strings.Contains(pairsDrawn, "mcp_servers") {
@@ -311,7 +311,7 @@ func TestTheAgentNameDefaultsToTheClientAndIsOverridable(t *testing.T) {
 		"mcp", "install", "claude", "--as", "work-laptop"); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(argvOf(t, argv), " "); !strings.HasSuffix(got, "--as work-laptop") {
+	if got := strings.Join(argvOf(t, argv), " "); !strings.HasSuffix(got, "--as work-laptop --consent") {
 		t.Errorf("--as was ignored: %s", got)
 	}
 }

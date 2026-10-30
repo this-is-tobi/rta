@@ -94,37 +94,49 @@ rta mcp install claude
 ```
 registered  Claude Code
 as          claude
-ran         /usr/local/bin/claude mcp add rta -- /usr/local/bin/rta mcp serve --as claude
+ran         /usr/local/bin/claude mcp add rta -- /usr/local/bin/rta mcp serve --as claude --consent
 scope       this directory only (/home/you/project) — add --global for every project
+consent     a call that needs a grant waits for you instead of being refused — `rta agent pending` lists it, `rta agent allow <id>` answers
+notify      off — add --consent-notify to have this desktop ring when a call is parked
 next        restart Claude Code in this directory, ask it to call sys_overview, and `rta agent overview` shows it connected
-reach       only the reads that aim nowhere it chooses until you say otherwise — `rta grant allow <capability> --agent claude` lets one more thing through, and it expires on its own
+reach       a call that needs a grant waits for your answer — `rta agent pending` lists it; `rta grant allow <capability> --agent claude` grants ahead of time, and it expires on its own
 ```
 
 That registers rta with Claude Code for the directory you ran it in, under the name `claude` (the `scope` line says so, and `--global` registers it for every project). The name matters: grants you issue while talking to one client do not follow every other client on this machine. A client with no command of its own gets the block to add printed instead, and rta writes nothing: `rta mcp install cursor --show`. [Connecting your AI tool](../30-boundary/60-ai-clients.md) has every client.
 
-### Ask, get refused, allow, ask again
+### Ask, and be asked
 
 Start Claude Code in this directory and ask it two things.
 
 First, *"Call the rta `sys_overview` tool."* It runs. A read that aims nowhere the agent chooses needs no grant.
 
-Second, *"Use the rta `note_add` tool to add a note titled remember the milk."* It is refused, because a write costs a grant, and the refusal carries the exact line to run:
-
-```
-a person has to allow this first — ask the operator to run `rta grant allow note.add --agent claude --ttl 15m`
-```
-
-Run that line yourself, in your own terminal. An agent cannot issue a grant, and that is the point:
+Second, *"Use the rta `note_add` tool to add a note titled remember the milk."* A write costs a grant, and the server was registered to ask you rather than refuse, so the call waits for your answer — ninety seconds by default (`--consent-wait`), then it is refused. In the [TUI](../20-using/20-tui.md), bare `rta`, a line across the top says `● 1 call waiting — w to answer`; at a terminal:
 
 ```bash
-rta grant allow note.add --agent claude --ttl 15m
+rta agent pending
 ```
 
 ```
-claude may call note.add for 15m (until 01:46:07)
+╭──────────┬────────┬────────────┬────────┬────────┬─────────┬────────────────────────┬────────────╮
+│ ID       │ AGENT  │ CAPABILITY │ RECORD │ SAFETY │ PROFILE │ WOULD DO               │ EXPIRES IN │
+├──────────┼────────┼────────────┼────────┼────────┼─────────┼────────────────────────┼────────────┤
+│ 0a5df861 │ claude │ note.add   │ —      │ write  │         │ title="remember the    │      1m25s │
+│          │        │            │        │        │         │ milk"                  │            │
+╰──────────┴────────┴────────────┴────────┴────────┴─────────┴────────────────────────┴────────────╯
 ```
 
-Ask for the note again. This time it is added, and the record shows all three calls, the refusal included:
+Answer it yourself, in your own terminal. An agent cannot answer for itself, and that is the point:
+
+```bash
+rta agent allow 0a5df861
+```
+
+```
+allowed  note.add
+for      this call only
+```
+
+The note is added, the agent is told so, and the record shows both calls:
 
 ```bash
 rta agent log
@@ -135,12 +147,13 @@ rta agent log
 │ AT       │ CAPABILITY   │ RESULT             │
 ├──────────┼──────────────┼────────────────────┤
 │ 01:31:07 │ sys.overview │ ran                │
-│ 01:31:07 │ note.add     │ refused · no grant │
-│ 01:31:12 │ note.add     │ ran · by grant     │
+│ 01:31:12 │ note.add     │ ran · you approved │
 ╰──────────┴──────────────┴────────────────────╯
 ```
 
-That loop is the whole product: the agent asks, rta refuses what it was never given, you decide in one line, and everything is written down. At a terminal the record is one line per call, with a column for the agent only once there is more than one to tell apart and one for the record a call named only once a call named one; `rta agent log --detail`, a pipe or `-o json` gives every field of every call, the arguments and the reason a refusal gave included. `rta grant list` shows what is allowed right now, and the grant is gone by itself in fifteen minutes.
+`rta agent allow 0a5df861 --ttl 15m` also issues the grant you would have typed, so the same question is not asked again for fifteen minutes, and `rta agent deny 0a5df861` refuses it. A server registered with `--no-consent` refuses the call instead, and the refusal carries the line that lets it through: `rta grant allow note.add --agent claude --ttl 15m`.
+
+That loop is the whole product: the agent asks, rta asks you for what it was never given, you decide in one line, and everything is written down. At a terminal the record is one line per call, with a column for the agent only once there is more than one to tell apart and one for the record a call named only once a call named one; `rta agent log --detail`, a pipe or `-o json` gives every field of every call, the arguments and the reason a refusal gave included. `rta grant list` shows what is allowed right now, and a grant is gone by itself when its time is up.
 
 ### What the agent can reach now
 

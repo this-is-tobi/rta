@@ -213,18 +213,23 @@ func TestTheServersOptionsAreRegisteredAndShown(t *testing.T) {
 	}
 }
 
-// Every option is off unless given: the registration anyone who passes none of
-// them makes is the one it always was.
+// A registration asks instead of refusing unless --no-consent says otherwise,
+// and every other option is off unless given.
 func TestNothingIsRegisteredThatWasNotAskedFor(t *testing.T) {
 	calls := loggingClient(t, "claude", "exit 0")
 	if _, _, err := run(t, testRegistry(t), "mcp", "install", "claude"); err != nil {
 		t.Fatal(err)
 	}
 	line := calls()[0]
-	for _, flag := range []string{"--consent", "--max-result", "--root", "--consent-wait"} {
-		if strings.Contains(line, flag) {
-			t.Errorf("%q registered %s without being asked", line, flag)
-		}
+	if !strings.HasSuffix(line, "mcp serve --as claude --consent") {
+		t.Errorf("%q, want the server registered to ask and nothing else", line)
+	}
+	if _, _, err := run(t, testRegistry(t), "mcp", "install", "claude", "--no-consent"); err != nil {
+		t.Fatal(err)
+	}
+	all := calls()
+	if last := all[len(all)-1]; !strings.HasSuffix(last, "mcp serve --as claude") {
+		t.Errorf("%q, want --no-consent to register the server to refuse", last)
 	}
 }
 
@@ -234,8 +239,9 @@ func TestNothingIsRegisteredThatWasNotAskedFor(t *testing.T) {
 func TestOptionsThatCannotWorkAreRefusedBeforeAnythingIsRegistered(t *testing.T) {
 	calls := loggingClient(t, "claude", "exit 0")
 	for name, args := range map[string][]string{
-		"notify without consent":   {"--consent-notify"},
-		"wait without consent":     {"--consent-wait", "1m"},
+		"notify without consent":   {"--no-consent", "--consent-notify"},
+		"wait without consent":     {"--no-consent", "--consent-wait", "1m"},
+		"consent both ways":        {"--consent", "--no-consent"},
 		"wait past the maximum":    {"--consent", "--consent-wait", "20m"},
 		"max-result below one":     {"--max-result", "0"},
 		"max-result above ceiling": {"--max-result", "999"},
@@ -270,7 +276,7 @@ func TestARootIsRegisteredAbsolute(t *testing.T) {
 // answered with a failure, and not with a second registration.
 func TestAnIdenticalRegistrationIsLeftAlone(t *testing.T) {
 	calls := loggingClient(t, "claude", "exit 0")
-	claudeHas(t, scopeLocal, "mcp", "serve", "--as", "claude")
+	claudeHas(t, scopeLocal, "mcp", "serve", "--as", "claude", "--consent")
 
 	out, errOut, err := run(t, testRegistry(t), "mcp", "install", "claude", "-o", "json")
 	if err != nil {
@@ -333,7 +339,7 @@ func TestAReplacementThatFailsPutsTheOldRegistrationBack(t *testing.T) {
 // taken out after the new one is in.
 func TestGlobalTakesOutTheDirectoryOnlyRegistrationItWouldBeShadowedBy(t *testing.T) {
 	calls := loggingClient(t, "claude", "exit 0")
-	claudeHas(t, scopeLocal, "mcp", "serve", "--as", "claude", "--consent")
+	claudeHas(t, scopeLocal, "mcp", "serve", "--as", "claude", "--consent", "--consent-notify")
 
 	out, errOut, err := run(t, testRegistry(t), "mcp", "install", "claude", "--global", "-o", "json")
 	if err != nil {
@@ -344,8 +350,8 @@ func TestGlobalTakesOutTheDirectoryOnlyRegistrationItWouldBeShadowedBy(t *testin
 		t.Fatalf("claude was run as %v, want the user-level add and then the local removal", got)
 	}
 	removed := answerPairs(t, out)["removed"]
-	if !strings.Contains(removed, "directory-only registration") || !strings.Contains(removed, "--consent") {
-		t.Errorf("removed = %q, want it to say what went and that it carried --consent", removed)
+	if !strings.Contains(removed, "directory-only registration") || !strings.Contains(removed, "--consent-notify") {
+		t.Errorf("removed = %q, want it to say what went and that it carried --consent-notify", removed)
 	}
 }
 
@@ -431,9 +437,9 @@ func claudeHasWithEnv(t *testing.T, scope claudeScope, env map[string]any, args 
 func TestAReplacementThatWouldDropTheOperatorsVariablesIsRefused(t *testing.T) {
 	calls := loggingClient(t, "claude", "exit 0")
 	claudeHasWithEnv(t, scopeLocal, map[string]any{"XDG_DATA_HOME": "/custom/data", "TOKEN": "hunter2"},
-		"mcp", "serve", "--as", "claude")
+		"mcp", "serve", "--as", "claude", "--consent")
 
-	_, _, err := run(t, testRegistry(t), "mcp", "install", "claude", "--consent")
+	_, _, err := run(t, testRegistry(t), "mcp", "install", "claude", "--no-consent")
 	var ve *view.Error
 	if !errors.As(err, &ve) || ve.Code != "core.mcp.install.env" {
 		t.Fatalf("err = %#v, want core.mcp.install.env", err)
@@ -497,7 +503,7 @@ func TestAnIdenticalRegistrationInAClientsFileIsLeftAlone(t *testing.T) {
 	}
 	// JSONC, as VS Code's own file is when the operator has annotated it.
 	body := "{\n  // added by hand\n  \"servers\": {\n    \"rta\": {\"command\": " + jsonString(self) +
-		", \"args\": [\"mcp\", \"serve\", \"--as\", \"vscode\"],},\n  },\n}\n"
+		", \"args\": [\"mcp\", \"serve\", \"--as\", \"vscode\", \"--consent\"],},\n  },\n}\n"
 	if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
