@@ -160,7 +160,7 @@ rta note rm 4 --yes
 
 ## `--help`
 
-Every command's `--help` describes what it does, the arguments it takes, and the flags it accepts, laid out for the width of your terminal — eighty columns in a pipe, `COLUMNS` when you set it.
+Every command's `--help` says what it does in a line, then how to type it (`USAGE`), its `ARGUMENTS`, `EXAMPLES` and `FLAGS`, and ends with the `DETAILS` that explain the rest, laid out for the width of your terminal — eighty columns in a pipe, `COLUMNS` when you set it.
 
 ```bash
 rta cert expiry --help

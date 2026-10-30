@@ -87,7 +87,7 @@ func shapeCompletion(root *cobra.Command) {
 			shell.RunE = func(cmd *cobra.Command, _ []string) error {
 				if isTTY() {
 					var steps strings.Builder
-					newHelper(helpWidth()).prose(&steps, cmd.Long)
+					newHelper(helpWidth()).prose(&steps, cmd.Long, 2)
 					_, err := fmt.Fprintln(cmd.OutOrStdout(), strings.TrimRight(steps.String(), "\n"))
 					return err
 				}

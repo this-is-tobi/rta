@@ -128,18 +128,35 @@ type row struct {
 }
 
 // render is the whole screen: what the command is, where to start (the root
-// only), how to type it, examples, the commands under it, and its flags.
+// only), how to type it, what its arguments are, examples, the commands under
+// it, its flags, and then the rest of what there is to say about it.
+//
+// In that order, the one clig.dev gives and gh and kubectl use: what a person
+// came to --help for is how to type the command, and a command's long text ran
+// to seventeen lines before its usage line on grant allow, under a heading
+// style of its own ("Arguments:") above the upper-case ones. The root keeps
+// its introduction on top, since there is no usage line for it to bury.
 func (h *helper) render(cmd *cobra.Command) string {
 	var b strings.Builder
 	b.WriteString("\n")
-	h.prose(&b, cmp.Or(cmd.Long, cmd.Short))
 	root := !cmd.HasParent()
+	details, args := splitArguments(cmd.Long)
+	summary := cmd.Short
+	if root || summary == "" {
+		summary, details = cmp.Or(details, cmd.Short), ""
+	}
+	details = withoutSummary(details, summary)
+	h.prose(&b, summary, 2)
 	if root {
 		h.section(&b, "start here")
 		h.rows(&b, startHere, h.keyWidth(startHere))
 	}
 	h.section(&b, "usage")
 	h.line(&b, helpIndent, h.usage(cmd))
+	if args != "" {
+		h.section(&b, "arguments")
+		h.arguments(&b, args)
+	}
 	if examples := exampleLines(cmd); len(examples) > 0 {
 		h.section(&b, "examples")
 		for _, ex := range examples {
@@ -162,6 +179,10 @@ func (h *helper) render(cmd *cobra.Command) string {
 		h.section(&b, "flags")
 		h.rows(&b, flags, keyWidth)
 	}
+	if details != "" {
+		h.section(&b, "details")
+		h.prose(&b, details, helpIndent)
+	}
 	if root {
 		// The start block is at the top, and the top is what a terminal of
 		// twenty-four rows has already scrolled away by the time this much help
@@ -169,7 +190,7 @@ func (h *helper) render(cmd *cobra.Command) string {
 		// first thing to type is said again at the foot of it.
 		b.WriteString("\n")
 		h.prose(&b, "New here? `rta sys overview` shows it working. `rta <command> --help` shows a command's "+
-			"examples, and `rta explain` lists every capability with what it needs. Documentation: "+docsURL)
+			"examples, and `rta explain` lists every capability with what it needs. Documentation: "+docsURL, 2)
 	}
 	return b.String()
 }
@@ -186,7 +207,7 @@ func (h *helper) line(b *strings.Builder, indent int, s string) {
 // by its own line breaks (an indented block, a list, a fence) left as written.
 // The Arguments block is both: its rows are hung again at this width, because
 // they were wrapped for a wide one.
-func (h *helper) prose(b *strings.Builder, long string) {
+func (h *helper) prose(b *strings.Builder, long string, indent int) {
 	long = strings.TrimSpace(long)
 	if long == "" {
 		return
@@ -197,24 +218,53 @@ func (h *helper) prose(b *strings.Builder, long string) {
 		}
 		switch {
 		case strings.HasPrefix(p, "Arguments:\n"):
+			h.line(b, 2, "Arguments:")
 			h.arguments(b, p)
 		case !strings.HasPrefix(p, " ") && (!strings.Contains(p, "\n") || isProse(p)):
-			for _, line := range wrapWords(p, h.width-4) {
-				h.line(b, 2, line)
+			for _, line := range wrapWords(p, h.width-indent-2) {
+				h.line(b, indent, line)
 			}
 		default:
 			for _, line := range strings.Split(p, "\n") {
-				h.line(b, 2, line)
+				h.line(b, indent, line)
 			}
 		}
 	}
 }
 
-// arguments hangs the rows argumentsBlock wrote: a name, a gap, and a
-// description that continues under itself.
+// splitArguments takes the Arguments block argumentsBlock put at the end of a
+// command's long text out of it, for a section of its own: it travels inside
+// Long because an agent reads it in the tool's description, and a person reads
+// it under its heading, beside the usage line it explains.
+func splitArguments(long string) (rest, args string) {
+	var kept []string
+	for _, p := range strings.Split(strings.TrimSpace(long), "\n\n") {
+		if strings.HasPrefix(p, "Arguments:\n") {
+			args = p
+			continue
+		}
+		kept = append(kept, p)
+	}
+	return strings.Join(kept, "\n\n"), args
+}
+
+// withoutSummary is a command's long text without its first paragraph when that
+// paragraph is the summary already printed above the usage line, as most are:
+// Long begins by saying what the command is, and the details section is for
+// what comes after.
+func withoutSummary(details, summary string) string {
+	first, rest, _ := strings.Cut(details, "\n\n")
+	norm := func(s string) string { return strings.TrimSuffix(strings.TrimSpace(s), ".") }
+	if summary != "" && norm(first) == norm(summary) {
+		return strings.TrimSpace(rest)
+	}
+	return details
+}
+
+// arguments hangs the rows argumentsBlock wrote, under the section heading the
+// caller drew: a name, a gap, and a description that continues under itself.
 func (h *helper) arguments(b *strings.Builder, block string) {
 	lines := strings.Split(block, "\n")
-	h.line(b, 2, lines[0])
 	var rows []row
 	for _, line := range lines[1:] {
 		trimmed := strings.TrimSpace(line)
