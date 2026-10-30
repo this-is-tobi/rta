@@ -89,8 +89,8 @@ func TestRevealAsSaysWhatToRunToThePersonAtTheTerminal(t *testing.T) {
 		sf   plugin.Surface
 		want string
 	}{
-		{plugin.SurfaceCLI, "`rta kv set staging-db-password` creates the store, locked with a passphrase you choose, and the entry"},
-		{plugin.SurfaceTUI, "`kv.set key=staging-db-password` creates the store, locked with a passphrase you choose, and the entry"},
+		{plugin.SurfaceCLI, "`rta kv set staging-db-password` creates the store, asking you to lock it with a passphrase or a key file, and the entry"},
+		{plugin.SurfaceTUI, "`kv.set key=staging-db-password` creates the store, asking you to lock it with a passphrase or a key file, and the entry"},
 	} {
 		_, verr := RevealAs(c.sf)(missing)
 		if verr == nil || verr.Hint != c.want {
@@ -169,7 +169,7 @@ func TestRevealForServerWordsItsRefusalsForTheOperatorWhoReadsTheRecord(t *testi
 	}
 
 	if verr := refusedWith("no store"); verr.Hint !=
-		"`rta kv set staging-db-password` creates the store, locked with a passphrase you choose, and the entry" {
+		"`rta kv set staging-db-password` creates the store, asking you to lock it with a passphrase or a key file, and the entry" {
 		t.Errorf("no store: hint = %q", verr.Hint)
 	}
 	text(t, runSet, map[string]any{"key": "another-entry", "value": "x"}, false)

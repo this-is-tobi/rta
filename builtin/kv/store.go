@@ -237,28 +237,94 @@ var promptPassphrase = func() (string, error) {
 	return string(secret), err
 }
 
-// newStoreNote is what a person is told before choosing the passphrase a store
-// that does not exist yet is locked with. The three things it says are the ones
-// that cannot be taken back afterwards: nothing recovers a forgotten
-// passphrase, the key file `kv init --generate` makes is the other lock and
-// anything running as the person can read it, and an MCP server — which
-// inherits an environment and has no terminal — opens a passphrase store only
-// from the passphrase in that environment (docs/20-using/50-secrets.md).
+// newStoreNote is what a person is told before choosing how a store that does
+// not exist yet is locked (askWhoReads). The things it says are the ones that
+// cannot be taken back afterwards: nothing recovers a forgotten passphrase, an
+// MCP server — which inherits an environment and has no terminal — opens a
+// passphrase store only from the passphrase in that environment, and the key
+// file that is the other lock is read by anything running as the person
+// (docs/20-using/50-secrets.md).
 func newStoreNote() string {
-	return "New store — choose a passphrase of at least 8 characters. You type it each\n" +
-		"time, and it cannot be recovered. " + plugin.SurfaceCLI.CapabilityWith("kv.init", "generate") + " uses a\n" +
-		"key file instead, which anything running as you can read. Agents cannot use a\n" +
-		"passphrase store unless " + passphraseEnv + " is set in their server's environment."
+	return "New store. A passphrase, of at least 8 characters, is typed each time and cannot\n" +
+		"be recovered, and agents cannot use a passphrase store unless " + passphraseEnv + "\n" +
+		"is set in their server's environment. A key file needs no passphrase: rta opens\n" +
+		"the store with it for you and for an agent's server, whose calls still need your\n" +
+		"grant, and anything running as you can read it. It would be kept at\n" +
+		"  " + defaultIdentity()
+}
+
+// newLock is the answer askWhoReads was given, once a process: "" until it asks.
+var newLock string
+
+// askWhoReads is whether the store about to be made is to be locked to a key
+// file made for it: generate says so, or the person at a terminal, asked.
+//
+// The first store used to be a passphrase store whatever it was for, with a
+// note before the prompt saying what that meant to an agent and another
+// command, `kv init --generate`, for the other lock. A store made for an agent
+// was then one its server could not open until the passphrase was written into
+// the client's configuration in the clear. Asked only when nothing has chosen:
+// a passphrase given or in the environment is a choice, and so is a key named,
+// which the callers check first. An unanswered question is the passphrase, as
+// it was before it was asked.
+func askWhoReads(req plugin.Request) bool {
+	if req.Bool("generate") {
+		return true
+	}
+	if !canPrompt(req) || req.DryRun || lookupPassphrase(req) != "" || prompted != "" {
+		return false
+	}
+	if newLock == "" {
+		newLock = "passphrase"
+		if key, err := promptWhoReads(); err == nil && key {
+			newLock = "key"
+		}
+	}
+	return newLock == "key"
+}
+
+// promptWhoReads asks the question askWhoReads puts, after newStoreNote, and
+// reports a yes. No is the default, the passphrase store a first write has
+// always made. Overridable in tests.
+var promptWhoReads = func() (key bool, err error) {
+	fmt.Fprintln(os.Stderr, newStoreNote())
+	answer, err := readAnswer("Lock it to a key file instead of a passphrase? [y/N] ")
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "y", "yes":
+		return true, err
+	}
+	return false, err
+}
+
+// readAnswer reads one line typed at the terminal, shown as it is typed. A
+// byte at a time, so nothing typed after it is taken from the passphrase prompt
+// that follows, which reads the same descriptor (readSecret).
+var readAnswer = func(prompt string) (string, error) {
+	fmt.Fprint(os.Stderr, prompt)
+	var line []byte
+	one := make([]byte, 1)
+	for len(line) < 64 {
+		n, err := stdio.Real().Read(one)
+		if n == 1 && one[0] == '\n' {
+			break
+		}
+		if n == 1 {
+			line = append(line, one[0])
+		}
+		if err != nil {
+			return string(line), err
+		}
+	}
+	return string(line), nil
 }
 
 // promptNewPassphrase asks for the passphrase of a store about to be created,
-// twice and after newStoreNote: a typo in the only prompt there was is a store
-// nobody can open, with the first secret already inside it. It returns both
-// answers rather than deciding whether they match, so that the comparison lives
-// in chooseNewPassphrase and a test can stub the terminal and still reach it.
-// Overridable in tests.
+// twice, and after the question that chose it (askWhoReads): a typo in the only
+// prompt there was is a store nobody can open, with the first secret already
+// inside it. It returns both answers rather than deciding whether they match,
+// so that the comparison lives in chooseNewPassphrase and a test can stub the
+// terminal and still reach it. Overridable in tests.
 var promptNewPassphrase = func() (first, again string, err error) {
-	fmt.Fprintln(os.Stderr, newStoreNote())
 	f, err := readSecret("New passphrase: ")
 	// Nothing typed is no choice: asking it a second time would have a person
 	// who pressed ^D, or enter, confirm an answer they had just withdrawn.
@@ -435,6 +501,9 @@ func lockBeforeValue(req plugin.Request) *view.Error {
 	}
 	if mode, _, verr := currentMode(); verr != nil || mode != modePassphrase || identityPath(req) != "" {
 		return verr
+	}
+	if askWhoReads(req) {
+		return nil
 	}
 	_, verr := resolvePassphrase(req)
 	return verr
@@ -653,19 +722,34 @@ func folderHint(sf plugin.Surface, s store, key string) string {
 		format.CountOf(len(inside), "key"), named, len(inside)-maxFolderNames, list)
 }
 
+// LockUnchosen reports whether a store about to be made has nothing choosing
+// its lock: no store yet, no key this machine holds for it, and no passphrase
+// in the environment. It is the case kv.set asks a person at a terminal about
+// (askWhoReads), and the one the TUI asks about before its form, which hands
+// the answer over as generate.
+func LockUnchosen() bool {
+	if fileExists(storePath()) {
+		return false
+	}
+	if mode, _, verr := currentMode(); verr != nil || mode != modePassphrase {
+		return false
+	}
+	none := plugin.NewRequest(nil, false, false)
+	return identityPath(none) == "" && lookupPassphrase(none) == ""
+}
+
 // NoStoreNext is the next step every surface gives while there is no store, in
 // one wording so that `kv status`, a refusal naming a missing key, `kv rekey`
-// and `rta doctor` cannot send a person two different ways. It is the default,
-// which a first `kv set` is; the key file is the alternative, and is offered
-// where the lock is actually chosen (newStoreNote), not repeated in every line
-// that points there. An agent is told only that the call it has makes the
+// and `rta doctor` cannot send a person two different ways. The choice of lock
+// is put where the store is made (askWhoReads, and the TUI's question before
+// the form), not spelled out in every line that points there. An agent is told only that the call it has makes the
 // store: which lock it gets is the operator's to choose, and a passphrase store
 // is not the agent's to open.
 func NoStoreNext(sf plugin.Surface, key any) string {
 	if sf == plugin.SurfaceMCP {
 		return sf.CapabilityName("kv.set") + " creates it the first time it runs"
 	}
-	return "`" + sf.Call("kv.set", keyArg(key)) + "` creates one, locked with a passphrase you choose"
+	return "`" + sf.Call("kv.set", keyArg(key)) + "` creates one, and asks you to lock it with a passphrase or a key file"
 }
 
 // identityName names the identity input for a hint, as the caller on sf

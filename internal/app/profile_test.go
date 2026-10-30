@@ -360,7 +360,7 @@ profiles:
 		t.Fatal("a profile naming an entry of a store nobody made succeeded")
 	}
 	for _, want := range []string{"core.profile.secret.failed", "no store on this machine yet",
-		"`rta kv set staging-db-password` creates the store, locked with a passphrase you choose, and the entry"} {
+		"`rta kv set staging-db-password` creates the store, asking you to lock it with a passphrase or a key file, and the entry"} {
 		if !strings.Contains(errOut, want) {
 			t.Errorf("the refusal does not say %q:\n%s", want, errOut)
 		}

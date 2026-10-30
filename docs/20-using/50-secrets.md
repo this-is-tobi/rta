@@ -12,7 +12,7 @@ rta kv list
 
 ## Choosing the lock, once
 
-A passphrase store needs no setup — that is what you get by default, and the first `rta kv set` makes it. With no store yet it says what a passphrase commits you to: you type it every time, it cannot be recovered, and an agent's server can open the store only with `RTA_KV_PASSPHRASE` set in its environment. It asks for the passphrase twice, then for the value, and a new passphrase needs at least eight characters, counted as characters and not bytes; a store locked under a shorter one before that rule keeps opening. On a store that exists it asks for the passphrase first, so a wrong one costs nothing you had typed. Everything else is a one-time decision:
+The first `rta kv set` makes the store, and at a terminal it asks first how to lock it. A passphrase, the default, is typed every time and cannot be recovered, and an agent's server can open the store only with `RTA_KV_PASSPHRASE` set in its environment. A key file made for the store needs no passphrase anywhere: rta opens the store with it for you and for an agent's server, whose calls still need your grant, and anything running as you can read it. The TUI asks the same once the key is named, and `--generate` gives the answer where nobody is asked. A passphrase is asked for twice, then the value, and a new passphrase needs at least eight characters, counted as characters and not bytes; a store locked under a shorter one before that rule keeps opening. On a store that exists it asks for the passphrase first, so a wrong one costs nothing you had typed. Everything else is a one-time decision:
 
 ```bash
 rta kv init --generate

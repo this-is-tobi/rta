@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -52,6 +53,7 @@ const (
 	dialogLockStore dialogID = iota + 1
 	dialogDiscardForm
 	dialogDiscardStep
+	dialogNewStore
 )
 
 const (
@@ -115,6 +117,8 @@ func (m Model) answerDialog(yes bool) (tea.Model, tea.Cmd) {
 		return m.discardFormAnswer(yes)
 	case dialogDiscardStep:
 		return m.discardStepAnswer(yes)
+	case dialogNewStore:
+		return m.newStoreAnswer(yes)
 	}
 	return m, nil
 }
@@ -303,6 +307,51 @@ func discardStepDialog() dialog {
 		cancel:  "Keep editing",
 		focus:   focusCancel,
 	}
+}
+
+// kvSet is the capability whose first write makes the store.
+const kvSet = "kv.set"
+
+// newStoreAsk is the first write's form between its stages, held while the
+// question is up: the key it was given and the values its second stage opens on.
+type newStoreAsk struct {
+	base, defaults map[string]any
+}
+
+// newStoreDialog is the question the CLI puts before choosing a passphrase
+// (kv's askWhoReads), over the form that would make the store, once its key is
+// named. A yes locks it to a key file made for it; a no, the answer focus
+// starts on, is the passphrase store a first write has always made, so the
+// question changes nothing for someone who does not read it.
+func newStoreDialog() dialog {
+	return dialog{
+		id:    dialogNewStore,
+		title: "Lock the new store to a key file?",
+		body: "A passphrase is typed each time and nothing recovers it, and an agent's server opens a passphrase " +
+			"store only with RTA_KV_PASSPHRASE in its environment. A key file needs no passphrase: rta opens the " +
+			"store with it for you and for an agent's server, whose calls still need your grant, and anything " +
+			"running as you can read it.",
+		confirm: "Use a key file",
+		cancel:  "Use a passphrase",
+		focus:   focusCancel,
+	}
+}
+
+// newStoreAnswer opens the second stage the question was asked before, with
+// the answer in its generate box: the key is made with the store, when the
+// form is sent, and leaving the form makes neither.
+func (m Model) newStoreAnswer(yes bool) (tea.Model, tea.Cmd) {
+	ask := m.newStore
+	m.newStore = nil
+	if ask == nil || m.mode != modeForm || m.form == nil {
+		return m, nil
+	}
+	defaults := maps.Clone(ask.defaults)
+	if defaults == nil {
+		defaults = map[string]any{}
+	}
+	defaults["generate"] = yes
+	return m.stageTwo(ask.base, defaults)
 }
 
 func discardFormDialog() dialog {

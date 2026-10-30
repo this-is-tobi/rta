@@ -20,7 +20,7 @@ import (
 func TestEveryNoStoreHintGivesTheSameNextStep(t *testing.T) {
 	setup(t)
 	ctx := context.Background()
-	const step = "`rta kv set db-password` creates one, locked with a passphrase you choose"
+	const step = "`rta kv set db-password` creates one, and asks you to lock it with a passphrase or a key file"
 
 	_, err := runGet(ctx, cliReq(map[string]any{"key": "db-password"}))
 	if ve := view.AsError(err, "x"); ve.Code != "kv.notfound" || ve.Hint != "no store yet — "+step {
@@ -45,7 +45,7 @@ func TestEveryNoStoreHintGivesTheSameNextStep(t *testing.T) {
 	}
 
 	_, err = runRekey(ctx, cliReq(map[string]any{"generate": true}))
-	if ve := view.AsError(err, "x"); ve.Code != "kv.rekey.nostore" || !strings.Contains(ve.Hint, "creates one, locked with a passphrase you choose") {
+	if ve := view.AsError(err, "x"); ve.Code != "kv.rekey.nostore" || !strings.Contains(ve.Hint, "creates one, and asks you to lock it with a passphrase or a key file") {
 		t.Errorf("rekey with no store: %+v", ve)
 	}
 	// A re-key is a choice of lock, so it is also told how to make the store
@@ -82,7 +82,7 @@ func TestNoStoreRecipientsShowsACallThatKeepsTheValueOffTheCommandLine(t *testin
 			t.Fatal(err)
 		}
 		got := v.(view.Table).Empty
-		if !strings.Contains(got, want) || !strings.Contains(got, "a passphrase you choose, if you never run init") ||
+		if !strings.Contains(got, want) || !strings.Contains(got, "a passphrase or a key file, as you choose when it asks") ||
 			(sf == plugin.SurfaceCLI && strings.Contains(got, "<value>")) {
 			t.Errorf("%s: %q, want it to contain %q (and, at a terminal, no value)", sf, got, want)
 		}

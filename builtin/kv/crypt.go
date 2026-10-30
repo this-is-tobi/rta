@@ -717,6 +717,12 @@ func writeKeys(req plugin.Request, embedded []string) (recipients []age.Recipien
 	}
 
 	identity := identityPath(req)
+	if identity == "" && !fileExists(storePath()) && askWhoReads(req) {
+		if _, verr := generateIdentity(req.Surface(), defaultIdentity()); verr != nil {
+			return nil, nil, nil, verr
+		}
+		identity = defaultIdentity()
+	}
 	if identity == "" || fileExists(storePath()) {
 		passphrase, verr := resolvePassphrase(req)
 		if verr != nil {

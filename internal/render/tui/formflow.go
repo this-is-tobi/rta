@@ -9,6 +9,7 @@ import (
 	huh "charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/this-is-tobi/rta/builtin/kv"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -356,17 +357,14 @@ func (m Model) afterFormUpdate(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 				}
 				return m.formError(m.current, err)
 			}
-			keys, rest := keyFields(m.current)
-			next := m.runForm(m.current, rest, over(defaults, m.form.secondAnswers), base)
-			next.inherit(m.form)
-			next.about = aboutStage(keys, base)
-			next.firstStage = &firstStage{carry: m.form.base, answers: base, about: m.form.about, touched: m.form.touched()}
-			// Answers carried back from a refusal of the key are this step's
-			// own, so going back from it asks before they are lost.
-			next.stepEdited = len(m.form.secondAnswers) > 0
-			m.form = next
-			m.fitForm()
-			return m, m.form.form.Init()
+			// The first write makes the store, and when nothing has chosen its
+			// lock it is asked here, after the key and before the value, where
+			// a terminal asks it (newStoreDialog).
+			if m.current.ID == kvSet && kv.LockUnchosen() {
+				m.newStore = &newStoreAsk{base: base, defaults: defaults}
+				return m.openDialog(newStoreDialog()), nil
+			}
+			return m.stageTwo(base, defaults)
 		}
 		// Kept until the run answers, so that its refusal of one of these
 		// boxes is answered on them (reopenOn). Each start is a statement of
@@ -400,6 +398,23 @@ func (m Model) fastSubmitForm() (tea.Model, tea.Cmd) {
 	}
 	m.form.form = advanceFormBySyntheticEnter(m.form.form)
 	return m.afterFormUpdate(nil)
+}
+
+// stageTwo opens the second stage of the form on screen, the one its first
+// stage's answers (base) chose, seeded with the record's current values
+// (defaults) under whatever a refusal of the key carried back.
+func (m Model) stageTwo(base, defaults map[string]any) (tea.Model, tea.Cmd) {
+	keys, rest := keyFields(m.current)
+	next := m.runForm(m.current, rest, over(defaults, m.form.secondAnswers), base)
+	next.inherit(m.form)
+	next.about = aboutStage(keys, base)
+	next.firstStage = &firstStage{carry: m.form.base, answers: base, about: m.form.about, touched: m.form.touched()}
+	// Answers carried back from a refusal of the key are this step's
+	// own, so going back from it asks before they are lost.
+	next.stepEdited = len(m.form.secondAnswers) > 0
+	m.form = next
+	m.fitForm()
+	return m, m.form.form.Init()
 }
 
 // backToStageOne is esc on the second stage of a form that asks in two (the
