@@ -652,6 +652,7 @@ func TestShiftTabWalksBackWhatTabWalks(t *testing.T) {
 	tab := tea.KeyPressMsg{Code: tea.KeyTab}
 	back := tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
 
+	m = onSearchLine(m)
 	one := step(m, tab)
 	two := step(one, tab)
 	if one.currentStop() == m.currentStop() || two.currentStop() == one.currentStop() {
@@ -679,6 +680,7 @@ func TestHomeAndEndSelectTheFirstAndTheLastTile(t *testing.T) {
 		out, _ := m.Update(tea.KeyPressMsg{Code: code})
 		return out.(Model)
 	}
+	m = onSearchLine(m)
 	if m.selected != 0 || len(m.tiles) < 5 {
 		t.Fatalf("the test needs the cold start over several tiles: selected %d of %d", m.selected, len(m.tiles))
 	}

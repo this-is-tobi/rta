@@ -45,7 +45,7 @@ rta
 
 Bare `rta` on a terminal opens the interactive TUI — a live dashboard with a search bar over every capability, one tile per plugin, and forms for anything that takes input. In a pipe it prints help instead, so a script never hangs on an invisible TUI.
 
-Type to search, `enter` to run, `esc` to go back, `ctrl+c` to quit.
+`/` and type to search, `enter` to run, `esc` to go back, `ctrl+c` to quit. The letters are commands until `/` opens the search — `t` is the theme, `p` the plugins.
 
 ## 4. Find out what anything does
 

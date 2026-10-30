@@ -7,8 +7,32 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// The landing screen opens with the search line selected, and a letter pressed
-// there is a command exactly as it is on every tile: the search takes the
+// onSearchLine puts the selection on the search line, which the dashboard no
+// longer opens on (Model.startingTile), for what is about the line itself.
+func onSearchLine(m Model) Model {
+	m.selected = 0
+	return m
+}
+
+// The dashboard opens on its first tile and not on the search line: selected,
+// the line wears the prompt glyph a box that takes typing wears, and its letters
+// are commands, so `cert` typed at it opened the theme editor. On a tile the line
+// says the key that opens it, and nothing on the first screen looks like a box.
+func TestTheDashboardOpensOnItsFirstTile(t *testing.T) {
+	m, _ := realModel(t, 120, 40)
+	if m.selected == 0 || m.tiles[m.selected].search {
+		t.Fatalf("a cold start selects %d, want the first tile", m.selected)
+	}
+	if line := m.renderSearchBar(120, false); !strings.Contains(line, "press / to search") || strings.Contains(line, "❯") {
+		t.Errorf("the idle line at a cold start is %q, want no prompt glyph and the key that searches", line)
+	}
+	if up := press(t, m, "up"); up.selected != 0 {
+		t.Errorf("up from the first tile selected %d, want the search line", up.selected)
+	}
+}
+
+// On the search line a letter pressed
+// is a command exactly as it is on every tile: the search takes the
 // keyboard on `/` or `enter` and not on the first letter of whatever was meant
 // to be a shortcut. A cold start that swallowed `p`, `t` and `q` as the start of
 // a query made the keys of the dashboard depend on where the selection happened
@@ -26,9 +50,7 @@ func TestALetterOnTheSearchLineIsACommandAndNotAQuery(t *testing.T) {
 	}
 	for _, tc := range cases {
 		base, _ := realModel(t, 120, 40)
-		if base.selected != 0 {
-			t.Fatalf("a cold start selects %d, want the search line", base.selected)
-		}
+		base = onSearchLine(base)
 		got := press(t, base, tc.key)
 		if got.searchEditing || got.query != "" {
 			t.Errorf("%s on the search line started a search: editing=%v query=%q", tc.key, got.searchEditing, got.query)
@@ -38,7 +60,7 @@ func TestALetterOnTheSearchLineIsACommandAndNotAQuery(t *testing.T) {
 		}
 	}
 	base, _ := realModel(t, 120, 40)
-	if _, cmd := base.Update(keyMsg("q")); cmd == nil {
+	if _, cmd := onSearchLine(base).Update(keyMsg("q")); cmd == nil {
 		t.Error("q on the search line did not quit, as it does on every tile")
 	}
 }
@@ -46,6 +68,7 @@ func TestALetterOnTheSearchLineIsACommandAndNotAQuery(t *testing.T) {
 // What opens the search from each place the selection can be.
 func TestTheSearchOpensOnSlashAnywhereAndOnEnterOnTheLine(t *testing.T) {
 	base, _ := realModel(t, 120, 40)
+	base = onSearchLine(base)
 	if m := press(t, base, "enter"); !m.searchEditing || m.query != "" {
 		t.Errorf("enter on the line left editing=%v query %q, want the box open and empty", m.searchEditing, m.query)
 	}
@@ -104,6 +127,7 @@ func typeWord(t *testing.T, m Model, word string) Model {
 // advertised that the line cannot do.
 func TestTheFooterOnTheSearchLineTeachesTheKeysItAnswers(t *testing.T) {
 	m, _ := realModel(t, 160, 40)
+	m = onSearchLine(m)
 	bar := footerOf(m.dashboardView(), footerMaxLines)
 	for _, want := range []string{"enter search", "p plugins", "f profiles", "t theme", "U unlock", "q quit"} {
 		if !strings.Contains(bar, want) {
@@ -128,6 +152,7 @@ func TestTheFooterOnTheSearchLineTeachesTheKeysItAnswers(t *testing.T) {
 // offered both there promised two keys that were not answered.
 func TestTheSearchLineAnswersNeitherMoveNorHide(t *testing.T) {
 	m, _ := realModel(t, 160, 40)
+	m = onSearchLine(m)
 	for _, key := range []string{"[", "]", "H"} {
 		got := press(t, m, key)
 		if got.flash != "" && got.flash != m.flash {
@@ -188,10 +213,18 @@ func TestAPasteIsCleanedAndBoundedBeforeItIsDrawnBack(t *testing.T) {
 	}
 }
 
-func TestAPasteGoesToTheTileOrFormThatHasTheKeyboard(t *testing.T) {
+// Nothing on the dashboard but the search takes text, so a paste with a tile
+// selected is a search as it is on the line, and the line takes the selection
+// as / gives it. A form that has the keyboard keeps the paste: it is not the
+// dashboard.
+func TestAPasteWithATileSelectedIsASearchToo(t *testing.T) {
 	base, _ := realModel(t, 120, 40)
 	selected := press(t, base, "down")
-	if m := pasted(t, selected, "dns"); m.query != "" || m.searchEditing {
-		t.Errorf("a paste with a tile selected started a search: editing=%v %q", m.searchEditing, m.query)
+	if selected.selected == 0 {
+		t.Fatal("the test needs a tile selected")
+	}
+	if m := pasted(t, selected, "dns"); m.query != "dns" || !m.searchEditing || m.selected != 0 {
+		t.Errorf("a paste with a tile selected left editing=%v %q, selected %d, want a search for dns on the line",
+			m.searchEditing, m.query, m.selected)
 	}
 }
