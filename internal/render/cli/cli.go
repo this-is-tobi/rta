@@ -13,7 +13,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
 	"github.com/charmbracelet/colorprofile"
@@ -508,33 +507,6 @@ func prettyWarnings(w io.Writer, warnings []view.Error, st styles) error {
 		}
 	}
 	return nil
-}
-
-// prettyMarkdown renders markdown text with glamour. Styles are fixed rather
-// than auto-detected: auto-style queries the terminal, which is unsafe inside
-// TUI paints and pipes. On any renderer error the raw body is still shown.
-func prettyMarkdown(w io.Writer, body string, st styles) error {
-	style := "dark"
-	if !st.color {
-		style = "notty"
-	}
-	width := st.width
-	if width <= 0 {
-		width = 80
-	}
-	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle(style),
-		glamour.WithWordWrap(width),
-	)
-	if err == nil {
-		if out, rerr := r.Render(body); rerr == nil {
-			// Cleaned after glamour as well as before: see cleanRendered.
-			_, werr := fmt.Fprintln(w, strings.Trim(cleanRendered(out, st.color), "\n"))
-			return werr
-		}
-	}
-	_, err = fmt.Fprintln(w, strings.TrimRight(body, "\n"))
-	return err
 }
 
 func prettyKeyValue(w io.Writer, kv view.KeyValue, st styles) error {

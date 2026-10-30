@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/charmbracelet/x/ansi"
 	"regexp"
 	"strings"
 	"testing"
@@ -95,10 +96,11 @@ func TestNoEscapeSequenceReachesTheTerminal(t *testing.T) {
 // A markdown body cannot spell a sequence out for the markdown renderer to
 // write.
 //
-// goldmark decodes character references, so &#x1b; is six ASCII characters in
-// the note — nothing sanitize has a reason to touch — and a real ESC in what
-// glamour writes after it. A note an agent added over MCP put an OSC 52 on the
-// operator's clipboard the moment they ran `rta note show`. &#x9d; and &#x8d;
+// A renderer that decodes character references makes &#x1b; — six ASCII
+// characters in the note, nothing sanitize has a reason to touch — a real ESC
+// in what it writes: glamour's goldmark did, and a note an agent added over MCP
+// put an OSC 52 on the operator's clipboard the moment they ran `rta note
+// show`. rta's own renderer decodes none, and this holds whichever does. &#x9d; and &#x8d;
 // are holes in the cp1252 table HTML maps &#128;-&#159; through, so they come
 // out as the C1 controls themselves; &#8238; is the right-to-left override.
 func TestAMarkdownCharacterReferenceCannotSpellASequence(t *testing.T) {
@@ -107,8 +109,7 @@ func TestAMarkdownCharacterReferenceCannotSpellASequence(t *testing.T) {
 		"&#x9d;0;t&#x9c; &#x8d; and [a link](https://example.com/&#x1b;]0;t&#x07;) end"
 	sgr := regexp.MustCompile(regexp.QuoteMeta(esc) + `\[[0-9;:]*m`)
 	// What a styled render may keep, taken out before looking for what it
-	// may not: its colour, and the OSC 8 around a link, which glamour writes
-	// with the destination as goldmark left it — the reference undecoded.
+	// may not: its colour, and the OSC 8 around a link a renderer may write.
 	kept := regexp.MustCompile(regexp.QuoteMeta(esc) + `(\[[0-9;:]*m|\]8;[^` + esc + bel + `]*` + bel + `)`)
 	for _, noColor := range []bool{true, false} {
 		var buf bytes.Buffer
@@ -130,18 +131,18 @@ func TestAMarkdownCharacterReferenceCannotSpellASequence(t *testing.T) {
 	}
 }
 
-// What cleaning the rendered markdown keeps: glamour's styling and a link
-// whose target reads as what it is, on a terminal; nothing at all when the
-// output is not styled, where an escape is bytes in a file.
-func TestRenderedMarkdownKeepsItsStylingAndAnHonestLink(t *testing.T) {
+// What cleaning the rendered markdown keeps: its styling, and a link drawn as
+// its text with the address printed beside it, on a terminal; nothing at all
+// when the output is not styled, where an escape is bytes in a file.
+func TestRenderedMarkdownKeepsItsStylingAndShowsWhereALinkGoes(t *testing.T) {
 	esc := string(rune(0x1b))
 	md := view.Text{Body: "see [the docs](https://example.com/a) now", Markdown: true}
 	var buf bytes.Buffer
 	if err := Render(&buf, md, Options{Format: Pretty, Width: 80}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), esc+"]8;") || !strings.Contains(buf.String(), esc+"[") {
-		t.Errorf("a styled render lost its link or its colour: %q", buf.String())
+	if !strings.Contains(buf.String(), esc+"[") || !strings.Contains(ansi.Strip(buf.String()), "the docs (https://example.com/a)") {
+		t.Errorf("a styled render lost its colour, or the address of its link: %q", buf.String())
 	}
 	buf.Reset()
 	if err := Render(&buf, md, Options{Format: Pretty, NoColor: true, Width: 80}); err != nil {

@@ -71,6 +71,9 @@ type glyphs struct {
 	full, empty string
 	// marker points at the selected record, and is as wide as its absence.
 	marker string
+	// bullet heads an item of a markdown list, and quote the lines of a quoted
+	// block, as a note's body draws them (prettyMarkdown).
+	bullet, quote string
 	// plot is what a line chart's series are drawn with, and axis the ticks
 	// down its left edge, which asciigraph draws with characters of its own
 	// that no option reaches: the plain one when axis is ASCII (see
@@ -87,7 +90,8 @@ var unicodeGlyphs = glyphs{
 	branch: "├── ", last: "└── ", trunk: "│   ", gap: "    ",
 	full: "█", empty: "░",
 	marker: "▸ ",
-	plot:   asciigraph.DefaultCharSet,
+	bullet: "•", quote: "│ ",
+	plot: asciigraph.DefaultCharSet,
 }
 
 var asciiGlyphs = glyphs{
@@ -98,6 +102,7 @@ var asciiGlyphs = glyphs{
 	branch: "|-- ", last: "`-- ", trunk: "|   ", gap: "    ",
 	full: "#", empty: ".",
 	marker: "> ",
+	bullet: "*", quote: "| ",
 	plot: asciigraph.CharSet{
 		Horizontal: "-", VerticalLine: "|",
 		ArcDownRight: "+", ArcDownLeft: "+", ArcUpRight: "+", ArcUpLeft: "+",
