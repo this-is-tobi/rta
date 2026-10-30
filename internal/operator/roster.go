@@ -261,17 +261,11 @@ func LoadRoster(path string) (Roster, bool, error) {
 		if verr := grant.CheckAgent(label); verr != nil || label == "" {
 			return Roster{}, groupReadable, fmt.Errorf("%s:%d: label %q is not a valid operator label", path, i+1, label)
 		}
-		// Strict, because base64 is not injective by default: a 32-byte key
-		// ends its encoding with two padding bits the lenient decoder ignores,
-		// so four spellings name one key. This file's one-label-per-key rule
-		// is an anti-impersonation check, and with roles it became a security
-		// boundary — the same key enrolled twice, once role=read and once
-		// bare, would let a watching key answer as a full operator and cross
-		// into the guard's signing set. Strict decoding leaves one spelling
-		// per key (the one RosterLine prints), and the dedup below keys on
-		// the decoded bytes anyway, so neither layer's removal reopens this.
-		pub, err := base64.StdEncoding.Strict().DecodeString(encoded)
-		if err != nil || len(pub) != ed25519.PublicKeySize {
+		// Strict (passkey.ParsePublicKey says why), and the dedup below keys
+		// on the decoded bytes anyway, so neither layer's removal reopens
+		// one key enrolled under two labels.
+		pub, ok := passkey.ParsePublicKey(encoded)
+		if !ok {
 			return Roster{}, groupReadable, fmt.Errorf("%s:%d: %q is not an ed25519 public key — "+
 				"`rta operator status` on the operator's own machine prints the line to paste here", path, i+1, encoded)
 		}
@@ -287,7 +281,7 @@ func LoadRoster(path string) (Roster, bool, error) {
 		labels[label] = true
 		fp := passkey.Fingerprint(pub)
 		r.keys[fp] = append(r.keys[fp], rosterEntry{
-			label: label, key: ed25519.PublicKey(pub), role: role, expires: expires})
+			label: label, key: pub, role: role, expires: expires})
 	}
 	if r.Len() == 0 {
 		return Roster{}, groupReadable, fmt.Errorf("%s enrolls no operators", path)

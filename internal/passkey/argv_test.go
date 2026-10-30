@@ -3,7 +3,9 @@ package passkey
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -49,5 +51,35 @@ func TestAPassphraseOnTheCommandLineIsRefusedOnlyThere(t *testing.T) {
 	tui := plugin.NewRequest(map[string]any{"passphrase": "hunter2"}, false, false).WithSurface(plugin.SurfaceTUI)
 	if verr := Argv(tui, "core.guard"); verr != nil {
 		t.Errorf("TUI with a passphrase: %v, want nothing refused — its field is masked", verr)
+	}
+}
+
+// A verification key is 32 bytes in the one spelling EncodeToString writes.
+// The all-zero key's last character carries two bits no byte uses, so
+// setting one gives a second spelling the lenient decoder reads as the same
+// key, which is what the roster's one-label-per-key rule cannot have.
+func TestAPublicKeyHasOneLengthAndOneSpelling(t *testing.T) {
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := ParsePublicKey(base64.StdEncoding.EncodeToString(pub)); !ok || !got.Equal(pub) {
+		t.Fatalf("a real key did not parse back to itself: %v, %v", got, ok)
+	}
+	zero := base64.StdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize))
+	second := strings.TrimSuffix(zero, "A=") + "B="
+	if lenient, err := base64.StdEncoding.DecodeString(second); err != nil || len(lenient) != ed25519.PublicKeySize {
+		t.Fatalf("the second spelling is not one the lenient decoder reads: %v", err)
+	}
+	for label, encoded := range map[string]string{
+		"31 bytes":          base64.StdEncoding.EncodeToString(make([]byte, 31)),
+		"33 bytes":          base64.StdEncoding.EncodeToString(make([]byte, 33)),
+		"a second spelling": second,
+		"not base64":        "not a key at all",
+		"empty":             "",
+	} {
+		if _, ok := ParsePublicKey(encoded); ok {
+			t.Errorf("%s parsed as a verification key", label)
+		}
 	}
 }
