@@ -502,7 +502,10 @@ func goInstallTarget(ctx context.Context, bin string) (string, *view.Error) {
 		return "", verr
 	}
 	pkgPath, _, _ := goModuleOf(st.out)
-	if pkgPath == "" {
+	// The path goes to `go install` as its argument, read out of a binary's
+	// build info, which whoever built the binary wrote: one beginning with a
+	// dash would be taken for a flag, and no package path begins with one.
+	if pkgPath == "" || strings.HasPrefix(pkgPath, "-") {
 		return "", view.Errorf("pkg.go.unknown", "%s in %s was not built by go install, or carries no module path", bin, dir).
 			WithInput("package")
 	}
