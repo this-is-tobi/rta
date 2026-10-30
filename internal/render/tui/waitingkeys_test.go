@@ -14,7 +14,7 @@ import (
 func TestWOpensTheQueueFromTheLandingScreenWhileACallWaits(t *testing.T) {
 	m, _ := realModel(t, 100, 30)
 	m = learn(t, m, oneCall())
-	if m.selected != 0 {
+	if m.selected != m.startingTile() {
 		t.Fatalf("the test needs the cold start, selected is %d", m.selected)
 	}
 	opened := press(t, m, "w")

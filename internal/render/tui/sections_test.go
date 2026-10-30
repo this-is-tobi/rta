@@ -624,6 +624,7 @@ func TestTheWindowReachesTheLastRowOfASectionedDashboard(t *testing.T) {
 		tiles = append(tiles, config.Tile{ID: "alpha.status", Profile: fmt.Sprintf("p%d", i), Section: fmt.Sprintf("s%d", i/2)})
 	}
 	m := sectioned(t, config.Dashboard{Tiles: tiles}, 40, 16)
+	m = onSearchLine(m)
 	last := len(m.tileRows()) - 1
 	m.scroll = 1 << 10
 	m.clampScroll()

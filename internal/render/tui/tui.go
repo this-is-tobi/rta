@@ -454,9 +454,28 @@ func New(reg *registry.Registry, dash config.Dashboard,
 	// follows it may expand into its connections; the first build above
 	// had no environment in hand.
 	m.rebuildTiles()
+	m.selected = m.startingTile()
 	deferSlowLaunches(m.tiles, time.Now())
 	m.notePins(readStamps())
 	return m
+}
+
+// startingTile is where the selection rests when the dashboard opens: the
+// first tile on a row, or the search line when there is none.
+//
+// Not the search line. Selected, it is drawn with the prompt glyph every
+// shell and palette uses for a box that takes typing, while its letters are
+// commands until / or enter opens it: a first run that typed `cert` at it got
+// the theme editor from the t. On a tile the line reads `press / to search`,
+// and the first thing that happens to a person typing is what they asked for
+// or nothing, never a screen they did not.
+func (m Model) startingTile() int {
+	for i, t := range m.tiles {
+		if !t.search && (t.section == "" || !m.collapsed(t.section)) {
+			return i
+		}
+	}
+	return 0
 }
 
 // wheelStep is how many rows one notch of the wheel moves. Three is what

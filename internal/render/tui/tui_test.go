@@ -235,8 +235,7 @@ func TestDashboardIsTheLanding(t *testing.T) {
 func TestDashboardBKeyOpensBrowse(t *testing.T) {
 	tm := newDashboard(t)
 	waitFor(t, tm, "dashboard")
-	// On a tile: at a cold start the search bar holds the selection and `b` is
-	// a letter of a query, which `:` is not.
+	// From a tile, where the letters are commands; `:` is browse's other key.
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyRight})
 	tm.Send(tea.KeyPressMsg{Code: ':', Text: ":"})
 	waitFor(t, tm, "capabilities") // browse status bar
@@ -245,7 +244,7 @@ func TestDashboardBKeyOpensBrowse(t *testing.T) {
 
 func TestDashboardEnterOpensTileDetail(t *testing.T) {
 	tm := newDashboard(t)
-	// Tile 0 is the search tile; tile 1 auto-picks demo.hello.
+	// Tile 0 is the search tile; the dashboard opens on tile 1, demo.hello.
 	waitFor(t, tm, "HELLO-FROM-CAPABILITY")
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyRight})
 	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -259,10 +258,10 @@ func TestDashboardEnterOpensTileDetail(t *testing.T) {
 
 func TestDashboardLiveSearchOpensMatch(t *testing.T) {
 	tm := newDashboard(t)
-	waitFor(t, tm, "enter to search")
-	// Selection starts on the search bar: enter focuses it, typing filters
-	// on the fly, enter opens the selected match.
-	tm.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+	waitFor(t, tm, "press / to search")
+	// / opens the search from the tile the dashboard opens on, typing
+	// filters on the fly, and enter opens the selected match.
+	tm.Send(tea.KeyPressMsg{Code: '/', Text: "/"})
 	for _, r := range "needy" {
 		tm.Send(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
@@ -565,7 +564,7 @@ func TestDashboardTileActionsOpenForm(t *testing.T) {
 func TestDashboardActionKeysDoNotFireOnOtherTiles(t *testing.T) {
 	m := New(noteRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "note.list"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
-	same, _ := sized.(Model).Update(tea.KeyPressMsg{Code: 'a', Text: "a"}) // selection on search tile
+	same, _ := onSearchLine(sized.(Model)).Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	if same.(Model).mode != modeDashboard {
 		t.Fatalf("a on the search tile changed mode to %v", same.(Model).mode)
 	}
@@ -581,7 +580,7 @@ func TestDashboardScrollFollowsSelection(t *testing.T) {
 	// so each row shrinks to tileMinHeight; height 15 -> one visible tile row
 	// at that floor (avail 7, one 6-row band fits and a second does not).
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 15})
-	sm := sized.(Model)
+	sm := onSearchLine(sized.(Model))
 	if sm.dashRowsVisible() != 1 {
 		t.Fatalf("visible rows = %d, want 1", sm.dashRowsVisible())
 	}
