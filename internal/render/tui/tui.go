@@ -172,9 +172,18 @@ type Model struct {
 	// folds is what this session folded or unfolded, by screen and section name,
 	// on top of how the file starts each one (sections.go says why it is not
 	// written).
-	folds      map[foldKey]fold
-	scroll     int  // first visible dashboard tile row
-	origin     mode // where the current result/form was opened from
+	folds  map[foldKey]fold
+	scroll int  // first visible dashboard tile row
+	origin mode // where the current result/form was opened from
+	// formBehind says the first screen of this flow was answered by a form,
+	// which esc on that result opens again on what it sent — the way `e`
+	// opens it, without the credentials (startForm). Cleared by every launch.
+	formBehind bool
+	// backQuery and backSel are the search the flow on screen was launched
+	// from, the box esc opens again on the way back (closeToOrigin), with its
+	// match still selected. Empty for a flow the search did not start.
+	backQuery  string
+	backSel    int
 	mode       mode
 	current    plugin.Capability // capability being viewed/run
 	lastValues map[string]any    // inputs of the last run, reused by re-run
@@ -966,6 +975,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current = msg.cap
 		m.result = msg
 		m.enterTrail(msg.cap, m.lastValues)
+		// A run with no form behind it — `r`, a refresh, a live tick — is
+		// the same screen again, and keeps what was behind it.
+		if sub != nil && (len(m.trail) == 0 || len(m.trail) == 1 && m.isTop(msg.cap)) {
+			m.formBehind = true
+		}
 		tail := false
 		if tbl, _, ok := rowTable(msg.view); ok {
 			m.row = min(m.row, max(len(tbl.Rows)-1, 0))
@@ -1066,6 +1080,10 @@ func (m Model) closeToOrigin() (tea.Model, tea.Cmd) {
 	// saving an edit and the screen behind the form agreeing with it does.
 	bind := tea.Batch(m.syncActive(), m.syncTiles())
 	m.mode = m.origin
+	if m.origin == modeDashboard && m.backQuery != "" {
+		m.searchEditing, m.query, m.searchSel = true, m.backQuery, m.backSel
+	}
+	m.backQuery, m.backSel, m.formBehind = "", 0, false
 	if m.origin == modeDashboard {
 		m.tickGen++
 		return m, tea.Batch(bind, refreshTiles(m.tiles, m.tickGen, m.pluginCfg, m.connFor))
@@ -1085,6 +1103,7 @@ func (m Model) openTile(idx int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.origin = modeDashboard
+	m.backQuery, m.formBehind = "", false
 	// A tile is Read by construction (buildTiles refuses anything else), so
 	// this is the fast path rather than the gate. Anything that is not gets
 	// the same form-and-confirm every other surface gives it.
@@ -1109,6 +1128,7 @@ func (m Model) openTile(idx int) (tea.Model, tea.Cmd) {
 func (m Model) open(c plugin.Capability) (tea.Model, tea.Cmd) {
 	m.current = c
 	m.trail = nil
+	m.formBehind = false
 	m.row = 0
 	m.refreshPending = false
 	if values, ok := m.quickRun(c); ok {

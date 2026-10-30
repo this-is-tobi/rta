@@ -51,7 +51,7 @@ On a machine that has just been set up, at 80 columns by 24 rows, it looks like 
 | `tab` `shift+tab` | Select the next tile, or the one before it, which from the first tile is the search bar |
 | `home` `end` | Select the first tile or the last, from the search bar or from any tile — the header of a section where one opens or closes the dashboard, since a folded section holds no tile to rest on |
 | `enter` | Open — on the search line, start the search — or fold and unfold a [section](./25-dashboard-and-theme.md#sections-group-tiles-and-fold-the-group), on its header (`space` does the same there) |
-| `esc` | Back |
+| `esc` | Back one screen: from a result to the form that sent it, open on what you typed but a credential, from a form to the search it was opened from, with its query, and from the search to the dashboard |
 | `q` or `ctrl+c` | Quit |
 | `?` | Every key the screen answers, aliases included — what the footer had no room for. On a terminal with fewer rows than the list has lines it takes two columns, so none is cut |
 | `[` `]` | Move a tile — or the whole section, with its header selected |
