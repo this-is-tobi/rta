@@ -19,6 +19,10 @@ func TestThePermissionLabelSaysWhoNeedsTheGrant(t *testing.T) {
 		{plugin.Capability{ID: "a.b", Safety: plugin.Write, NeedsGrant: true}, "write · agents need grant"},
 		{plugin.Capability{ID: "a.b", Safety: plugin.Destructive}, "destructive · agents need grant"},
 		{plugin.Capability{ID: "a.b", Safety: plugin.Write, HumanOnly: true}, "write · not for agents"},
+		// A reveal is classed write for its gates and changes nothing, so it is
+		// called what it does.
+		{plugin.Capability{ID: "a.b", Safety: plugin.Write, Reveals: true, NeedsGrant: true, Scope: "key"},
+			"reveal · agents need grant"},
 	} {
 		if got := permissionText(tc.c); got != tc.want {
 			t.Errorf("permissionText(%s %s) = %q, want %q", tc.c.ID, tc.c.Safety, got, tc.want)

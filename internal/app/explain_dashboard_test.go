@@ -117,3 +117,25 @@ func TestPaceReadsAsAPersonWritesIt(t *testing.T) {
 		}
 	}
 }
+
+// The card keeps the class every gate reads, and says beside it when the
+// capability hands back the value itself: "safety write" alone told a reader
+// that kv.get changes the store.
+func TestTheCardSaysWhenACapabilityRevealsTheValue(t *testing.T) {
+	reg, _ := NewRegistry()
+	get, ok := reg.Capability("kv.get")
+	if !ok {
+		t.Fatal("no kv.get")
+	}
+	card := cardOf(reg, get)
+	if got := pairValue(card, "safety"); got != "write" {
+		t.Errorf("kv.get safety = %q, want the class the gates read, write", got)
+	}
+	if got := pairValue(card, "reveals"); !strings.Contains(got, "stored value itself") {
+		t.Errorf("kv.get reveals = %q, want it to say the value comes back", got)
+	}
+	list, _ := reg.Capability("kv.list")
+	if got := pairValue(cardOf(reg, list), "reveals"); got != "" {
+		t.Errorf("kv.list reveals = %q, want no such row", got)
+	}
+}

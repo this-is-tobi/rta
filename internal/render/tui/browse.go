@@ -380,7 +380,7 @@ func cell(s string, w int) string {
 // permissionText is the permission column's value, unstyled — what the
 // column is measured against.
 func permissionText(c plugin.Capability) string {
-	s := string(c.Safety)
+	s := classWord(c)
 	if c.HumanOnly {
 		return s + " · not for agents"
 	}
@@ -398,11 +398,24 @@ func permissionText(c plugin.Capability) string {
 	return s
 }
 
+// classWord is the safety class as a person reads it in the catalogue: the
+// class, except for a capability that reveals a value another view masks,
+// which is classed write so that every gate treats it as the act it is
+// (plugin.Capability.Reveals) and changes nothing. "write" beside kv.get told
+// the reader the store changes when it is called; "reveal" says what it does,
+// and the colour and the grant beside it still say what it costs.
+func classWord(c plugin.Capability) string {
+	if c.Reveals && c.Safety == plugin.Write {
+		return "reveal"
+	}
+	return string(c.Safety)
+}
+
 // permissionSentence is permissionText said out for the row under the cursor, in
 // the words the docs use for the column: a capability an agent can call at once,
 // one it can call once a person has issued a grant, and one it can never call.
 func permissionSentence(c plugin.Capability) string {
-	s := string(c.Safety) + " · "
+	s := classWord(c) + " · "
 	switch {
 	case c.HumanOnly:
 		return s + "never for an agent — yours alone"

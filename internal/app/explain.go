@@ -182,6 +182,12 @@ func cardOf(reg *registry.Registry, c plugin.Capability) view.KeyValue {
 		{Key: "cli", Value: cliForm(c)},
 		{Key: "mcp-tool", Value: toolName(c)},
 	}
+	// The class is the gate's, and a reveal is classed write so that every gate
+	// treats it as the act it is while it changes nothing; this says which.
+	if c.Reveals {
+		pairs = append(pairs, view.Pair{Key: "reveals",
+			Value: "the stored value itself, which becomes part of the caller's context; nothing is changed"})
+	}
 	// The safety class alone no longer says what an agent may do, so the
 	// card has to say the rest of it. Not for a capability that is never a
 	// tool: what a grant would cost an agent is not a fact about it, and a
