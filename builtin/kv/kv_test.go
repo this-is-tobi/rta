@@ -29,6 +29,9 @@ import (
 // at age's shipped work factor it would spend minutes doing nothing else.
 func TestMain(m *testing.M) {
 	scryptWorkFactor = 10
+	// No test reads the terminal: one that lets a person be asked answers
+	// this question itself (newTerminal), and every other is answered no.
+	promptWhoReads = func() (bool, error) { return false, nil }
 	os.Exit(m.Run())
 }
 
@@ -39,6 +42,8 @@ func setup(t *testing.T) string {
 	// it back until a tile began to say whether it was open.
 	forgetSession()
 	t.Cleanup(forgetSession)
+	newLock = ""
+	t.Cleanup(func() { newLock = "" })
 	dir := t.TempDir()
 	t.Setenv("RTA_DATA_DIR", dir)
 	t.Setenv(passphraseEnv, "")

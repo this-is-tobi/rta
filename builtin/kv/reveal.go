@@ -196,7 +196,7 @@ func hostOpenHint(sf plugin.Surface, verr *view.Error) *view.Error {
 // puts beside a host: that is a note to read, and typed it would be part of
 // the key.
 func makeStoreHint(sf plugin.Surface, key string) string {
-	const result = "creates the store, locked with a passphrase you choose, and the entry"
+	const result = "creates the store, asking you to lock it with a passphrase or a key file, and the entry"
 	if sf == plugin.SurfaceMCP {
 		return plugin.AskOperator("kv set "+textclean.WithoutNote(textclean.Record(key))) + " — it " + result
 	}

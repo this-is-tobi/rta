@@ -22,13 +22,20 @@ type terminal struct {
 	first    string
 	again    string
 	value    string
+	// key is the answer to who reads a store about to be made: yes, a key
+	// file, or no, a passphrase.
+	key bool
 }
 
 func newTerminal(t *testing.T) *terminal {
 	t.Helper()
 	tm := &terminal{existing: "correct horse battery staple", first: "correct horse battery staple",
 		again: "correct horse battery staple", value: "s3cret"}
-	origPrompt, origNew, origValue, origCan := promptPassphrase, promptNewPassphrase, promptValue, canPrompt
+	origPrompt, origNew, origValue, origCan, origWho := promptPassphrase, promptNewPassphrase, promptValue, canPrompt, promptWhoReads
+	promptWhoReads = func() (bool, error) {
+		tm.events = append(tm.events, "who reads")
+		return tm.key, nil
+	}
 	promptPassphrase = func() (string, error) {
 		tm.events = append(tm.events, "passphrase")
 		return tm.existing, nil
@@ -42,9 +49,10 @@ func newTerminal(t *testing.T) *terminal {
 		return []byte(tm.value), false, nil
 	}
 	canPrompt = func(req plugin.Request) bool { return req.Surface() == plugin.SurfaceCLI }
-	prompted = ""
+	prompted, newLock = "", ""
 	t.Cleanup(func() {
 		promptPassphrase, promptNewPassphrase, promptValue, canPrompt, prompted = origPrompt, origNew, origValue, origCan, ""
+		promptWhoReads, newLock = origWho, ""
 	})
 	return tm
 }
@@ -69,7 +77,7 @@ func TestFirstSetChoosesThePassphraseBeforeTheValue(t *testing.T) {
 	if _, err := runSet(context.Background(), cliReq(map[string]any{"key": "db", "passphrase": ""})); err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"new passphrase", "value"}; !slices.Equal(tm.events, want) {
+	if want := []string{"who reads", "new passphrase", "value"}; !slices.Equal(tm.events, want) {
 		t.Fatalf("asked %q, want %q", tm.events, want)
 	}
 	got, err := runGet(context.Background(), req(map[string]any{"key": "db", "passphrase": "chosen passphrase"}, false))
@@ -92,7 +100,7 @@ func TestFirstSetRefusesPassphrasesThatDiffer(t *testing.T) {
 	if ve := verrOf(t, err); ve.Code != "kv.passphrase.mismatch" || ve.Hint == "" {
 		t.Fatalf("want kv.passphrase.mismatch with a hint, got %+v", ve)
 	}
-	if want := []string{"new passphrase"}; !slices.Equal(tm.events, want) {
+	if want := []string{"who reads", "new passphrase"}; !slices.Equal(tm.events, want) {
 		t.Errorf("asked %q, want %q: the value must not be asked for after a typo", tm.events, want)
 	}
 	if _, statErr := os.Stat(dir + "/" + storeFile); !os.IsNotExist(statErr) {
@@ -111,7 +119,7 @@ func TestFirstSetWithAValueStillChoosesThePassphraseTwice(t *testing.T) {
 	if ve := verrOf(t, err); ve.Code != "kv.passphrase.mismatch" {
 		t.Fatalf("want kv.passphrase.mismatch, got %+v", ve)
 	}
-	if !slices.Equal(tm.events, []string{"new passphrase"}) {
+	if !slices.Equal(tm.events, []string{"who reads", "new passphrase"}) {
 		t.Errorf("asked %q", tm.events)
 	}
 }
@@ -152,7 +160,7 @@ func TestFirstSetOfALabelledKeyChoosesThePassphraseBeforeTheValue(t *testing.T) 
 	})); err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"new passphrase", "value"}; !slices.Equal(tm.events, want) {
+	if want := []string{"who reads", "new passphrase", "value"}; !slices.Equal(tm.events, want) {
 		t.Errorf("asked %q, want %q", tm.events, want)
 	}
 }
@@ -208,10 +216,11 @@ func TestNewStoreNoteSaysWhatTheChoiceCommitsTo(t *testing.T) {
 	note := strings.Join(strings.Fields(newStoreNote()), " ")
 	for _, want := range []string{
 		"cannot be recovered",
-		"`rta kv init --generate`",
 		"key file",
 		"anything running as you can read",
-		"Agents cannot use a passphrase store unless " + passphraseEnv + " is set in their server's environment",
+		"agents cannot use a passphrase store unless " + passphraseEnv + " is set in their server's environment",
+		"whose calls still need your grant",
+		defaultIdentity(),
 	} {
 		if !strings.Contains(note, want) {
 			t.Errorf("the note does not say %q:\n%s", want, note)

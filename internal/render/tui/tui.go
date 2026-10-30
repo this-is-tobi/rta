@@ -211,6 +211,9 @@ type Model struct {
 	// dialog is a question over the screen, modal while it is up (dialog.go); nil
 	// when none is asked.
 	dialog *dialog
+	// newStore is the form the new store's question was asked before, opened
+	// with the answer (dialog.go, newStoreAnswer); nil when none waits.
+	newStore *newStoreAsk
 	// said is what the footer says when the answer that was just given
 	// finishes, in place of the capability's own "done" (answers.go).
 	said string

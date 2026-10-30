@@ -82,6 +82,15 @@ var (
 		Name: "passphrase", Type: plugin.Secret, Local: true, EnvFallback: true, Group: "credentials",
 		Help: "the store's passphrase; a store not made yet is locked with it, and nothing recovers it",
 	}
+	// generateField is the other lock a store not made yet can take, offered
+	// where the store is born as kv.init offers it: a key file made for it,
+	// which an agent's server opens with no passphrase in its configuration.
+	// Local, because which lock the operator's secrets get is not a question
+	// for an agent, and a key file written on the host is not its to make.
+	generateField = plugin.Field{
+		Name: "generate", Type: plugin.Bool, Local: true, Group: "credentials",
+		Help: "lock a store not made yet to a key file made for it, which an agent's server can read, instead of a passphrase",
+	}
 	identityField = plugin.Field{
 		Name: "identity", Type: plugin.Path, Local: true, EnvFallback: true, Group: "credentials",
 		Help: "private key to unlock with, e.g. ~/.ssh/id_ed25519",
@@ -107,7 +116,7 @@ func storeActions() []plugin.Action {
 
 // creatingFields are unlockFields for the operation that can make the store.
 func creatingFields(extra ...plugin.Field) []plugin.Field {
-	return append(extra, newStorePassphraseField, identityField)
+	return append(extra, newStorePassphraseField, generateField, identityField)
 }
 
 // Plugin returns the kv plugin declaration.
