@@ -51,7 +51,8 @@ func Plugin() plugin.Plugin {
 				Summary: "Your operator key at a glance — or a remote server's, given one",
 				Description: "Without `server`: whether this machine holds an operator key, its " +
 					"fingerprint, and the exact line to paste into a server's roster (`rta mcp serve " +
-					"--operators`). With `server` (a name from remotes.yaml, beside your config): asks that server " +
+					"--operators`), made from the key the passphrase unlocks, so a key file someone " +
+					"changed cannot enroll their key in your name. With `server` (a name from remotes.yaml, beside your config): asks that server " +
 					"who it is — version, agent name, guard state, enrolled operators — as a signed " +
 					"call, so it also proves your enrollment end to end.",
 				Safety:     plugin.Read,
@@ -62,7 +63,7 @@ func Plugin() plugin.Plugin {
 						Help: "the label to print in the roster line"},
 					{Name: "server", Type: plugin.String, Local: true, Remote: true,
 						Help: "ask this server from remotes.yaml instead of describing the local key"},
-					id.PassphraseField.OnlyWith("server"),
+					id.PassphraseField,
 				},
 				HumanOnly: true,
 				Run:       runStatus,
@@ -93,14 +94,10 @@ func runInit(_ context.Context, req plugin.Request) (view.View, error) {
 	if verr != nil {
 		return nil, verr
 	}
-	line, verr := id.RosterLine(label)
-	if verr != nil {
-		return nil, verr
-	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: "operator key", Value: "minted — " + id.Path()},
 		{Key: "fingerprint", Value: signer.Fingerprint()},
-		{Key: "enroll", Value: enrollLine + line},
+		{Key: "enroll", Value: enrollLine + signer.RosterLine(label)},
 		{Key: "forgotten?", Value: "rm " + id.Path() + " and init again — every roster then needs the new line"},
 	}}, nil
 }
@@ -125,15 +122,25 @@ func runStatus(ctx context.Context, req plugin.Request) (view.View, error) {
 	if verr := id.CheckLabel(label); verr != nil {
 		return nil, verr
 	}
-	line, verr := id.RosterLine(label)
+	// The line is made from the key the passphrase unlocks, which the unlock
+	// holds the file's public half to (core.operator.tampered): read from the
+	// file, it enrolled whatever key the file named.
+	if req.DryRun {
+		return view.Text{Body: "would ask the passphrase and print the line that enrolls the key it unlocks"}, nil
+	}
+	pass, verr := id.PromptSecret(req, false)
+	if verr != nil {
+		return nil, verr
+	}
+	signer, verr := id.Unlock(pass)
 	if verr != nil {
 		return nil, verr
 	}
 	return view.KeyValue{Pairs: []view.Pair{
 		{Key: "operator key", Value: id.Path()},
-		{Key: "fingerprint", Value: id.Fingerprint()},
+		{Key: "fingerprint", Value: signer.Fingerprint()},
 		{Key: "since", Value: id.Created().Local().Format("2006-01-02 15:04")},
-		{Key: "enroll", Value: enrollLine + line},
+		{Key: "enroll", Value: enrollLine + signer.RosterLine(label)},
 	}}, nil
 }
 

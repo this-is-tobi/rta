@@ -92,6 +92,16 @@ type Signer struct {
 // Fingerprint names the key this Signer speaks for.
 func (s Signer) Fingerprint() string { return s.fingerprint }
 
+// RosterLine is the line to paste into a server's roster to enroll this key,
+// made from the key itself. The file keeps the public half in the clear, and a
+// line read from it enrolls whatever key the file names: one a process that
+// can write the data directory put there would be enrolled on the next server
+// the line was pasted into. A Signer is the unwrapped key, so this line can
+// only name the key the passphrase opens.
+func (s Signer) RosterLine(label string) string {
+	return label + " " + base64.StdEncoding.EncodeToString(s.priv.Public().(ed25519.PublicKey))
+}
+
 // GrantSigner adapts this operator key to sign grant authority — the same
 // bytes, same domain context, same verification path as the local guard's
 // own signatures, because on a server whose guard enrolls this key (remote
@@ -146,8 +156,10 @@ func Created() time.Time {
 	return st.Created
 }
 
-// RosterLine is the line an operator pastes into a server's roster file to
-// enroll this key: "label base64-pubkey", the format LoadRoster reads.
+// RosterLine is the roster line the key file names, "label base64-pubkey",
+// the format LoadRoster reads: read from the file and not verified against the
+// key, which is what tests build rosters with. What a person is shown to paste
+// is Signer.RosterLine, from the unlocked key.
 func RosterLine(label string) (string, *view.Error) {
 	st, verr := load()
 	if verr != nil {

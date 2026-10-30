@@ -2,6 +2,10 @@ package operator
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -70,12 +74,49 @@ func TestInitMintsAndStatusPrintsTheSameKey(t *testing.T) {
 	}
 
 	v, err = capability(t, "operator.status").Run(context.Background(),
-		reqTUI(map[string]any{"label": "tobi"}))
+		reqTUI(map[string]any{"label": "tobi", "passphrase": "correct horse"}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := pairs(t, v)["fingerprint"]; got != minted["fingerprint"] {
-		t.Fatalf("status fingerprint = %q, want %q", got, minted["fingerprint"])
+	status := pairs(t, v)
+	if status["fingerprint"] != minted["fingerprint"] || status["enroll"] != minted["enroll"] {
+		t.Fatalf("status = %+v, want the fingerprint and the line init printed", status)
+	}
+}
+
+// The line to paste is made from the key the passphrase unlocks: a key file
+// whose public half was swapped is refused, where the line read from the file
+// enrolled the swapped key on the next server it was pasted into.
+func TestStatusPrintsNoRosterLineFromAKeyFileSomeoneChanged(t *testing.T) {
+	t.Setenv("RTA_DATA_DIR", t.TempDir())
+	if _, err := capability(t, "operator.init").Run(context.Background(),
+		reqTUI(map[string]any{"passphrase": "correct horse", "label": "tobi"})); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(id.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st map[string]any
+	if err := json.Unmarshal(raw, &st); err != nil {
+		t.Fatal(err)
+	}
+	outside, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st["publicKey"] = base64.StdEncoding.EncodeToString(outside)
+	changed, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(id.Path(), changed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = capability(t, "operator.status").Run(context.Background(),
+		reqTUI(map[string]any{"label": "tobi", "passphrase": "correct horse"}))
+	if verr, ok := err.(*view.Error); !ok || verr.Code != "core.operator.tampered" {
+		t.Fatalf("status over a changed key file = %v, want core.operator.tampered", err)
 	}
 }
 
