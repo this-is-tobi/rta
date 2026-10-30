@@ -49,7 +49,7 @@ func lockServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := "http://" + ln.Addr().String()
-	srv := httptest.NewUnstartedServer(mcp.NewOperatorHandler(mcp.OperatorConfig{Roster: roster, URL: base}))
+	srv := httptest.NewUnstartedServer(mcp.NewOperatorHandler(mcp.OperatorConfig{Roster: roster, URL: base, Agent: "claude"}))
 	srv.Listener.Close()
 	srv.Listener = ln
 	srv.Start()
@@ -195,7 +195,7 @@ func TestRemoteLockAddListAndRmEndToEnd(t *testing.T) {
 func TestTheRemoteReadPathRendersTheServersTable(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	lockServer(t)
-	for _, spec := range [][2]string{{"claude", ""}, {"codex", "1h"}} {
+	for _, spec := range [][2]string{{"claude", ""}, {lockdown.Everyone, "1h"}} {
 		l, verr := lockdown.Build("agent", spec[0], "", spec[1], "terminal")
 		if verr != nil {
 			t.Fatal(verr)

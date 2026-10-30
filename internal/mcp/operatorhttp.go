@@ -619,7 +619,13 @@ func (h *operatorHandler) dispatch(env operator.Envelope, label string, role ope
 		if verr != nil {
 			return nil, verr
 		}
-		return operator.LockList{Locks: locks}, nil
+		mine := locks[:0]
+		for _, l := range locks {
+			if h.lockApplies(l) {
+				mine = append(mine, l)
+			}
+		}
+		return operator.LockList{Locks: mine}, nil
 	case operator.VerbLockAdd:
 		// Dispatched directly rather than wired from the app layer like the
 		// grant and consent verbs, for the same reason grant.list is: locks
@@ -633,6 +639,10 @@ func (h *operatorHandler) dispatch(env operator.Envelope, label string, role ope
 		if verr != nil {
 			return nil, verr
 		}
+		if !h.lockOwned(l) && !machineWide(l) {
+			return nil, lockScope(l, "lock")
+		}
+		l.Via = h.cfg.URL
 		if verr := lockdown.Add(l); verr != nil {
 			return nil, verr
 		}
@@ -646,11 +656,16 @@ func (h *operatorHandler) dispatch(env operator.Envelope, label string, role ope
 		if verr != nil {
 			return nil, verr
 		}
-		removed, verr := lockdown.Remove(kind, spec.Name)
+		found, refused, verr := lockdown.RemoveIf(kind, spec.Name, func(l lockdown.Lock) bool {
+			return h.lockOwned(l) || h.placedHere(l)
+		})
 		if verr != nil {
 			return nil, verr
 		}
-		return operator.LockRmOutcome{Removed: removed}, nil
+		if refused {
+			return nil, lockScope(lockdown.Lock{Kind: kind, Name: spec.Name}, "lift")
+		}
+		return operator.LockRmOutcome{Removed: found}, nil
 	default:
 		return nil, view.Errorf("core.operator.verb",
 			"this server does not answer %q — its rta may be older than your client", env.Verb).
@@ -725,6 +740,59 @@ func (h *operatorHandler) checkSubmitted(g grant.Grant, label string) *view.Erro
 			"the submitted grant outlives this server's ceiling (%s allowed)", limit)
 	}
 	return grant.CheckCeiling(g.Target, g.Scope, g.Profile)
+}
+
+// The lock verbs act on the locks this server owns. The lock file is every
+// server's of this account, while a roster is one server's trust decision —
+// the consent verbs' reason (OperatorConfig.Consent), and it held for the
+// locks too: an operator enrolled on staging lifted the lock the terminal had
+// placed on prod's agent, or on one of prod's operator keys, and read every
+// lock on the machine. A server owns its own agent and its roster's
+// operators; a lock on every agent or on a credential is machine-wide, and it
+// applies here as much as anywhere, so it may be placed through any server
+// and is lifted only through the one that placed it, or at the terminal.
+
+// lockOwned reports whether l names this server's own agent or an operator of
+// its roster.
+func (h *operatorHandler) lockOwned(l lockdown.Lock) bool {
+	switch l.Kind {
+	case lockdown.KindAgent:
+		return h.cfg.Agent != "" && l.Name == h.cfg.Agent
+	case lockdown.KindOperator:
+		for _, o := range h.cfg.Roster.Operators() {
+			if o.Label == l.Name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// machineWide reports whether l freezes something every server of this
+// account shares: every agent, or a credential.
+func machineWide(l lockdown.Lock) bool {
+	return (l.Kind == lockdown.KindAgent && l.Name == lockdown.Everyone) || l.Kind == lockdown.KindCredential
+}
+
+// placedHere reports whether l was placed through this server's channel.
+func (h *operatorHandler) placedHere(l lockdown.Lock) bool {
+	return l.Via != "" && l.Via == h.cfg.URL
+}
+
+// lockApplies reports whether l is one this server's operators are shown: what
+// it owns, what it placed, and the machine-wide locks, which hold here too.
+func (h *operatorHandler) lockApplies(l lockdown.Lock) bool {
+	return h.lockOwned(l) || machineWide(l) || h.placedHere(l)
+}
+
+// lockScope refuses a lock this server does not own, to place (verb "lock")
+// or to lift.
+func lockScope(l lockdown.Lock, verb string) *view.Error {
+	return view.Errorf("core.operator.lock.scope",
+		"the %s %q is not this server's to %s: its operators lock its own agent and its own operators, "+
+			"and lift a lock on every agent or on a credential only through the server that placed it",
+		l.Kind, l.Name, verb).
+		WithHint("lock or lift it at that machine's terminal, or through the server it belongs to")
 }
 
 // consentOffered is the guard.Remote() precheck's reasoning one verb

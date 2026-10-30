@@ -117,8 +117,14 @@ type Lock struct {
 	Note string `json:"note,omitempty"`
 	// By records who set it: "terminal", or operator:<label> for a lock
 	// placed over the operator channel.
-	By string    `json:"by,omitempty"`
-	At time.Time `json:"at"`
+	By string `json:"by,omitempty"`
+	// Via is the canonical URL of the server whose operator channel placed
+	// it, empty for one placed at the terminal. The file is every server's of
+	// this account, and a label is one roster's word, so it is what lets a
+	// server lift a lock it placed on every agent, and no lock another
+	// server's operators placed.
+	Via string    `json:"via,omitempty"`
+	At  time.Time `json:"at"`
 	// Expires zero means until removed — incident locks usually are.
 	Expires time.Time `json:"expires,omitempty"`
 
@@ -461,12 +467,25 @@ func Add(l Lock) *view.Error {
 // Remove lifts one lock. The second return says whether it was there —
 // "nothing was locked" and "unlocked" are different sentences.
 func Remove(kind Kind, name string) (bool, *view.Error) {
-	found := false
-	verr := mutate(func(stored []Lock) ([]Lock, bool) {
+	found, _, verr := RemoveIf(kind, name, func(Lock) bool { return true })
+	return found, verr
+}
+
+// RemoveIf lifts one lock when may allows it, judged on the row as it stands
+// under the file's lock, so the row judged is the row removed: a lock placed
+// again in between, by somebody else, is not taken by an answer about the one
+// it replaced. found says the row was there, refused that may kept it.
+func RemoveIf(kind Kind, name string, may func(Lock) bool) (found, refused bool, verr *view.Error) {
+	verr = mutate(func(stored []Lock) ([]Lock, bool) {
 		out := stored[:0]
 		for _, s := range stored {
 			if s.Kind == kind && s.Name == name {
 				found = true
+				if !may(s) {
+					refused = true
+					out = append(out, s)
+					continue
+				}
 				continue
 			}
 			out = append(out, s)
@@ -478,9 +497,9 @@ func Remove(kind Kind, name string) (bool, *view.Error) {
 		// is reachable — which is the cheap half. It also leaves any
 		// already-expired rows on disk until the next Add, and that costs
 		// nothing: load() drops them on every read and match() re-checks.
-		return out, found
+		return out, found && !refused
 	})
-	return found, verr
+	return found, refused, verr
 }
 
 // Pin is a serving process's view of the locks, re-read per check so a
