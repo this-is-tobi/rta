@@ -30,10 +30,10 @@ rta sys overview          # your machine at a glance: cpu, memory, disk, load
 rta                       # the interactive dashboard, with a search over every capability
 rta doctor                # what rta can reach from here, the rows that need you first
 rta init                  # find the AI clients on this machine and offer to connect each, one question each
-rta mcp install claude    # or connect one by name: it reads what is local and is refused anything else
+rta mcp install claude    # or connect one by name: it reads what is local and asks you for anything else
 ```
 
-Ask Claude Code to add a note and the refusal carries the exact line that would allow it, which is the loop the rest of rta is built around. [Quick start](./docs/10-getting-started/20-quickstart.md) walks it in ten minutes, and [Start here](./docs/01-readme.md) lays out four tracks: try it, give an agent access safely, run it for a team, and extend it.
+Ask Claude Code to add a note and rta asks you first — `rta agent pending` shows the call and `rta agent allow` lets it through — which is the loop the rest of rta is built around. [Quick start](./docs/10-getting-started/20-quickstart.md) walks it in ten minutes, and [Start here](./docs/01-readme.md) lays out four tracks: try it, give an agent access safely, run it for a team, and extend it.
 
 ## Documentation
 
@@ -43,7 +43,7 @@ Ask Claude Code to add a note and the refusal carries the exact line that would 
 
 *Getting started*
 - [Installation](./docs/10-getting-started/10-installation.md) *- Download it, put it on `$PATH`, check it works, and where the two supported systems differ*
-- [Quick start](./docs/10-getting-started/20-quickstart.md) *- Ten minutes: the CLI, the TUI, and an agent you connect, refuse and allow*
+- [Quick start](./docs/10-getting-started/20-quickstart.md) *- Ten minutes: the CLI, the TUI, and an agent you connect and answer*
 - [Connect an agent](./docs/10-getting-started/30-connect-an-agent.md) *- Registering a client, naming it, and checking that it reached rta*
 - [Other ways to install](./docs/10-getting-started/40-other-ways-to-install.md) *- From source, the container image, the Helm chart, and the plugins that arrive from an index*
 

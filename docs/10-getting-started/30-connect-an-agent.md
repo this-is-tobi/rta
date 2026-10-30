@@ -1,6 +1,6 @@
 # Connect an agent
 
-[Quick start](./20-quickstart.md) connected Claude Code in one command and took a refused call through to a grant. This page is the same connection done on purpose: how an agent reaches rta, how to register every client you use, why each one gets a name, and how to tell it is working.
+[Quick start](./20-quickstart.md) connected Claude Code in one command and answered the first call it asked about. This page is the same connection done on purpose: how an agent reaches rta, how to register every client you use, why each one gets a name, and how to tell it is working.
 
 If your agent can run shell commands, read [What rta actually bounds](../30-boundary/10-the-boundary.md) first. Everything here assumes the agent goes through the server.
 
@@ -78,14 +78,14 @@ The path registered is the one you ran rta by when it is on `PATH` and is the sa
 
 ### Server options belong in the registration
 
-The client launches `rta mcp serve`, so a server option is only set if it is in the line the client was given. `rta mcp install` takes the ones that belong there, each off unless you pass it: `--consent`, `--consent-notify` and `--consent-wait` for [live consent](../30-boundary/35-roles-consent-and-the-guard.md#live-consent-when-you-would-rather-be-asked), `--root` (repeatable) for [the path gate](../95-reference/20-the-path-gate.md), and `--max-result` for [the ceiling on an answer](../30-boundary/20-mcp.md#how-large-a-result-may-be).
+The client launches `rta mcp serve`, so a server option is only set if it is in the line the client was given. `rta mcp install` takes the ones that belong there. [Live consent](../30-boundary/35-roles-consent-and-the-guard.md#live-consent-when-you-would-rather-be-asked) is on unless you pass `--no-consent`: a call that needs a grant waits for your answer instead of being refused, `--consent-notify` rings this desktop when one does, and `--consent-wait` bounds how long it waits. The rest are off unless you pass them: `--root` (repeatable) for [the path gate](../95-reference/20-the-path-gate.md), and `--max-result` for [the ceiling on an answer](../30-boundary/20-mcp.md#how-large-a-result-may-be).
 
 ```bash
-rta mcp install claude --consent --consent-notify --root ~/projects
+rta mcp install claude --consent-notify --root ~/projects
 # registers: rta mcp serve --as claude --consent --consent-notify --root /Users/you/projects
 ```
 
-The options show under `ran`, `--dry-run` and `--show`. A `--root` is registered as the absolute path it names and has to exist, and naming any replaces the default root, the directory the client starts the server in. `--consent-notify` and `--consent-wait` without `--consent` are refused, since they would configure nothing.
+The options show under `ran`, `--dry-run` and `--show`. A `--root` is registered as the absolute path it names and has to exist, and naming any replaces the default root, the directory the client starts the server in. `--consent-notify` and `--consent-wait` beside `--no-consent` are refused, since they would configure nothing.
 
 ### Running it again
 
@@ -119,7 +119,7 @@ The name is your word, not the agent's. A client announces itself in the protoco
 
 ## What it can reach on day one
 
-With no grant, an agent can run the reads that aim nowhere it chooses, and nothing else. Everything that writes or deletes, and every read aimed at a destination the agent names, is refused until you allow it, and the refusal carries the exact command to run. [MCP and the safety gate](../30-boundary/20-mcp.md#what-is-exposed-before-you-decide-anything) is the whole rule, and [Grants](../30-boundary/30-grants.md) is how to allow one thing narrowly.
+With no grant, an agent can run the reads that aim nowhere it chooses, and nothing else. Everything that writes or deletes, and every read aimed at a destination the agent names, waits for your answer on a server `rta mcp install` registered, and is refused on one registered with `--no-consent`, with the exact command that would allow it. [MCP and the safety gate](../30-boundary/20-mcp.md#what-is-exposed-before-you-decide-anything) is the whole rule, and [Grants](../30-boundary/30-grants.md) is how to allow one thing narrowly.
 
 ## Check that it is working
 
