@@ -20,6 +20,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/internal/yamlguard"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -76,6 +77,11 @@ func ServerURL(name string) (string, *view.Error) {
 	data, err := io.ReadAll(f)
 	if err != nil {
 		return "", view.Errorf("core.operator.remotes", "reading %s: %v", RemotesPath(), err)
+	}
+	// Refused before it is decoded, as every YAML file rta reads is: an
+	// alias expands into as many copies as it is used.
+	if err := yamlguard.RefuseAnchors(data); err != nil {
+		return "", view.Errorf("core.operator.remotes", "parsing %s: %v", RemotesPath(), err)
 	}
 	var rf remotesFile
 	if err := yaml.Unmarshal(data, &rf); err != nil {
