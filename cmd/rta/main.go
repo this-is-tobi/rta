@@ -92,6 +92,12 @@ func versionFrom(stamp, module string) string {
 }
 
 func main() {
+	// A plugin started under strict confinement, which this process becomes
+	// (pluginhost.ConfineMain) before anything below touches its descriptors.
+	if len(os.Args) > 1 && os.Args[1] == pluginhost.ConfineCommand {
+		pluginhost.ConfineMain(os.Args[2:])
+	}
+
 	// Before anything reads a secret into this address space. Confinement
 	// documented this in two places and it was implemented in none, which is
 	// the worst shape a security claim can have.

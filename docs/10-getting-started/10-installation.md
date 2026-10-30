@@ -68,7 +68,7 @@ rta is built for macOS and Linux, on `amd64` and `arm64`, and the two systems di
 | | macOS | Linux |
 | --- | --- | --- |
 | Packages | none: the release archive | a `.deb`, `.rpm` or `.apk` as well as the archive |
-| Plugin confinement | applied: each plugin runs under `sandbox-exec`, with rta's own state and your credential locations denied | none: a plugin runs with your user's access, and `rta doctor` says `none on linux`; process groups and the environment allowlist still apply |
+| Plugin confinement | applied: each plugin runs under `sandbox-exec`, with rta's own state and your credential locations denied | none unless the configuration says `confine: strict`, which holds each plugin to what it needs with Landlock; without it a plugin runs with your user's access, and `rta doctor` says `none on linux`; process groups and the environment allowlist still apply |
 | A port forward a killed `rta mcp serve` left behind | stopped by the next `rta mcp serve` | ended by the kernel along with the server that started it |
 | Copying a value (`kv copy`) | `pbcopy` | `wl-copy`, `xclip` or `xsel`, whichever the session has |
 | Desktop notifications (`--consent-notify`) | `osascript` | `notify-send` |

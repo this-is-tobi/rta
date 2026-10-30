@@ -297,6 +297,13 @@
       "additionalProperties": false,
       "description": "rta's config file. Zero config is a valid config: everything here is optional, and rta works without the file existing at all.",
       "properties": {
+        "confine": {
+          "description": "strict holds each plugin on Linux to what it needs \u2014 the system, a temporary directory of its own, its own binary, the tools on its PATH outside the home directory and the credential locations `rta plugin allow` granted it \u2014 with Landlock, and refuses to start a plugin where the kernel cannot. macOS confines every plugin with its deny list either way.",
+          "enum": [
+            "strict"
+          ],
+          "type": "string"
+        },
         "dashboard": {
           "additionalProperties": false,
           "description": "The TUI's landing screen. With nothing set it builds itself, one tile per registered plugin, and plugins installed later still appear.",

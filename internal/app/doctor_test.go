@@ -538,32 +538,44 @@ func TestTheDoctorSaysWhenTheLockDoesNotParse(t *testing.T) {
 // of what a plugin is denied, so that its spelling does not stop every plugin
 // loading. The confinement row counts what is denied, and read alone it lets
 // the operator take the key for one of them: the file gets a warning of its
-// own, where there is a sandbox to be left out of.
+// own, where there is a sandbox to be left out of. `confine: strict` changes
+// nothing where the deny list confines, so the warning stands with it set.
 func TestTheDoctorNamesAFileOfRtasOwnThePluginSandboxLeavesOut(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("RTA_DATA_DIR", filepath.Join(home, "data"))
-	t.Setenv("RTA_CONFIG", filepath.Join(home, "config", "config.yaml"))
-	key := filepath.Join(home, `the "work" box`, "rta.txt")
-	t.Setenv("RTA_KV_IDENTITY", key)
-	var rows []string
-	doctorConfinement(func(check, status, detail string) { rows = append(rows, check+" "+status+" "+detail) }, false)
-	var warned []string
-	for _, r := range rows {
-		if strings.Contains(r, key) {
-			warned = append(warned, r)
+	for _, conf := range []string{"", "confine: strict\n"} {
+		home := t.TempDir()
+		t.Setenv("RTA_DATA_DIR", filepath.Join(home, "data"))
+		t.Setenv("RTA_CONFIG", filepath.Join(home, "config", "config.yaml"))
+		if conf != "" {
+			if err := os.MkdirAll(filepath.Join(home, "config"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(home, "config", "config.yaml"), []byte(conf), 0o600); err != nil {
+				t.Fatal(err)
+			}
 		}
-	}
-	if !pluginhost.Confined() {
-		if len(warned) != 0 {
-			t.Errorf("no plugin is confined here, yet a row names what the sandbox leaves out: %q", warned)
+		key := filepath.Join(home, `the "work" box`, "rta.txt")
+		t.Setenv("RTA_KV_IDENTITY", key)
+		var rows []string
+		doctorConfinement(func(check, status, detail string) { rows = append(rows, check+" "+status+" "+detail) }, false)
+		var warned []string
+		for _, r := range rows {
+			if strings.Contains(r, key) {
+				warned = append(warned, r)
+			}
 		}
-		return
-	}
-	if len(warned) != 1 || !strings.HasPrefix(warned[0], "plugin confinement warn") {
-		t.Fatalf("doctor = %q, want one warning naming %s", rows, key)
-	}
-	if !strings.HasPrefix(rows[0], "plugin confinement ok") {
-		t.Errorf("the confinement row itself = %q, want it to stand: every other entry is denied", rows[0])
+		if !pluginhost.Confined() {
+			if len(warned) != 0 {
+				t.Errorf("config %q: no deny list confines here, yet a row names what it leaves out: %q", conf, warned)
+			}
+			continue
+		}
+		if len(warned) != 1 || !strings.HasPrefix(warned[0], "plugin confinement warn") {
+			t.Fatalf("config %q: doctor = %q, want one warning naming %s", conf, rows, key)
+		}
+		if !strings.HasPrefix(rows[0], "plugin confinement ok") {
+			t.Errorf("config %q: the confinement row itself = %q, want it to stand: every other entry is denied",
+				conf, rows[0])
+		}
 	}
 }
 

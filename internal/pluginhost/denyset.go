@@ -194,9 +194,18 @@ type DenySet struct {
 	// Unnamed is what of rta's own the operator keeps elsewhere
 	// (paths.OwnFiles) at a path the profile has no spelling for, left out
 	// of the sets above for ResolveAllowing's reason, and so readable and
-	// writable by a plugin. Listed so that `rta doctor` can say so rather
-	// than report a denial that is not there.
+	// writable by a plugin the deny list confines. Listed so that `rta
+	// doctor` can say so rather than report a denial that is not there, and
+	// so that strict, which spells nothing, leaves it out (strictPolicy).
 	Unnamed []string
+
+	// Strict is a launch under `confine: strict` on Linux, which allows
+	// rather than denies (confine_linux.go): Readable is what of the
+	// credential locations this artifact was granted, and Shim the rta
+	// executable that starts the plugin confined.
+	Strict   bool
+	Readable []string
+	Shim     string
 }
 
 // Resolve builds the deny set for this machine.
@@ -267,16 +276,21 @@ func ResolveAllowing(granted []plugin.Need) (DenySet, error) {
 	// test and not a comment.
 	paths := tier2()
 	for _, need := range plugin.Needs() {
-		if allowed[need] {
-			continue
-		}
-		if p := paths[need]; p != "" {
+		p := paths[need]
+		switch {
+		case p == "":
+		case allowed[need]:
+			d.Readable = append(d.Readable, withTarget(p)...)
+		default:
 			d.NoRead = append(d.NoRead, withTarget(p)...)
 		}
 	}
 	d.NoAccess, d.NoRead = dedupe(d.NoAccess), dedupe(d.NoRead)
 	d.NoMove = ancestors(append(append([]string{}, d.NoAccess...), d.NoRead...))
 	if err := validate(append(append(append([]string{}, d.NoAccess...), d.NoRead...), d.NoMove...)); err != nil {
+		return DenySet{}, err
+	}
+	if err := strictReady(&d); err != nil {
 		return DenySet{}, err
 	}
 	return d, nil

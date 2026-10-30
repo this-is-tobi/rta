@@ -212,6 +212,9 @@ func (s *stack) merged() Config {
 		if c.Output != "" {
 			out.Output = c.Output
 		}
+		if c.Confine != "" {
+			out.Confine = c.Confine
+		}
 		if dashboardSet(c.Dashboard) {
 			base = c.Dashboard
 		}
@@ -264,6 +267,9 @@ func (s *stack) split(next Config) []Config {
 	}
 	if next.Output != "" {
 		parts[place("output")].Output = next.Output
+	}
+	if next.Confine != "" {
+		parts[place("confine")].Confine = next.Confine
 	}
 	if dashboardSet(next.Dashboard) {
 		base := next.Dashboard
@@ -363,6 +369,9 @@ func unitsOf(c Config) []string {
 	if c.Output != "" {
 		units = append(units, "output")
 	}
+	if c.Confine != "" {
+		units = append(units, "confine")
+	}
 	if dashboardSet(c.Dashboard) {
 		units = append(units, "dashboard")
 	}
@@ -390,8 +399,8 @@ func describeUnit(unit string) string {
 	kind, name, named := strings.Cut(unit, "/")
 	if !named {
 		switch kind {
-		case "output":
-			return "`output`"
+		case "output", "confine":
+			return "`" + kind + "`"
 		default:
 			return "the `" + kind + ":` block"
 		}

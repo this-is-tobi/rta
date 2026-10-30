@@ -20,11 +20,19 @@ import (
 // rule is about the package and a helper is something a new test can forget
 // to call; a test that wants a directory of its own still sets one.
 func TestMain(m *testing.M) {
+	// The test binary is the shim for the tests that start one (ConfineMain),
+	// as rta is for a real launch: handed over before anything else.
+	if len(os.Args) > 1 && os.Args[1] == ConfineCommand {
+		ConfineMain(os.Args[2:])
+	}
 	dir, err := os.MkdirTemp("", "rta-pluginhost-tests")
 	if err != nil {
 		panic(err)
 	}
 	os.Setenv("RTA_DATA_DIR", dir)
+	// Resolve reads whether plugins are confined strictly, so the tests read
+	// a configuration of their own and not the machine's.
+	os.Setenv("RTA_CONFIG", dir+"/config.yaml")
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)

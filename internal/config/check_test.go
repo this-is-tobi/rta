@@ -40,7 +40,7 @@ func TestCheckNamesTheKeysOfTheFileRtaIgnores(t *testing.T) {
 		{"a top-level key written inside the dashboard", "dashboard:\n  output: json\n",
 			[]string{"dashboard.output (line 2): is not a key rta reads (output belongs at the top level of the file)"}},
 		{"a key that resembles nothing", "zzzzzz: 1\n",
-			[]string{"zzzzzz (line 1): is not a key rta reads (keys here: output, dashboard, plugins, profiles, theme, roles)"}},
+			[]string{"zzzzzz (line 1): is not a key rta reads (keys here: output, confine, dashboard, plugins, profiles, theme, roles)"}},
 		{"a dotted path written as one key", "dashboard.width: 3\n",
 			[]string{"dashboard.width (line 1): is a dotted path written as one key, and the file nests it " +
 				"(write it nested, `dashboard: {width: <value>}`, or let `rta config set dashboard.width <value>` do it)"}},

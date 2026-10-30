@@ -1345,13 +1345,23 @@ func doctorStore(add func(check, status, detail string), detail bool) {
 // confinement review succeeds identically on a confined macOS host.
 func doctorConfinement(add func(check, status, detail string), detail bool) {
 	deny, denyErr := pluginhost.Resolve()
+	strict, abi, _ := pluginhost.Strict()
 	switch {
 	case denyErr != nil:
 		add("plugin confinement", "error", denyErr.Error())
+	case !pluginhost.Confined() && strict:
+		add("plugin confinement", "ok", fmt.Sprintf("strict, with Landlock ABI %d — a plugin reaches the system, "+
+			"a temporary directory of its own, its own binary, the tools on its PATH outside the home directory "+
+			"and the credential locations `rta plugin allow` granted it, and nothing else", abi))
 	case !pluginhost.Confined():
 		add("plugin confinement", "info", "none on "+runtime.GOOS+
 			" — plugins run with this user's full access; process groups and the "+
-			"environment allowlist still apply")
+			"environment allowlist still apply, and `confine: strict` in the configuration confines them with Landlock")
+	case strict:
+		// The setting is Linux's, and saying nothing of it would read as it
+		// doing something here.
+		add("plugin confinement", "ok", sandboxDetail(deny, detail)+
+			" (`confine: strict` is a Linux setting: this platform confines every plugin with its deny list)")
 	default:
 		// The carve-out is named here and not only in the chapter, because
 		// this row is what that chapter tells people to read instead of
@@ -1359,11 +1369,16 @@ func doctorConfinement(add func(check, status, detail string), detail bool) {
 		// is the page-versus-run drift this codebase keeps finding, in the
 		// direction that overstates what is protected.
 		add("plugin confinement", "ok", sandboxDetail(deny, detail))
-		// A file of rta's own whose path the profile has no spelling for is
-		// left out of it rather than stopping every plugin loading
-		// (pluginhost.ResolveAllowing), which leaves it readable by any
-		// plugin. The row above counts what is denied; this says what is not
-		// and what would put it back.
+	}
+	// A file of rta's own whose path the profile has no spelling for is
+	// left out of it rather than stopping every plugin loading
+	// (pluginhost.ResolveAllowing), which leaves it readable by any
+	// plugin. The row above counts what is denied; this says what is not
+	// and what would put it back. Wherever the deny list is what confines,
+	// with `confine: strict` set or not, since the setting changes nothing
+	// on this platform; Landlock under strict spells nothing, and leaves the
+	// file out as it leaves out the rest of rta's own.
+	if denyErr == nil && pluginhost.Confined() {
 		for _, f := range deny.Unnamed {
 			add("plugin confinement", "warn", f+" is rta's own and is not denied to a plugin: its path "+
 				"holds a quote, a backslash or a line break, which the sandbox profile cannot spell — "+
