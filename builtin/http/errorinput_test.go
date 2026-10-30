@@ -179,9 +179,23 @@ func TestOnlyAFailureOfTheURLAsTypedNamesIt(t *testing.T) {
 		}
 	}
 
-	blocked := &blockedAddrError{host: "nope.example", ip: stdnet.ParseIP("10.0.0.1")}
-	if got := blockedRefusal(plugin.SurfaceCLI, "GET", target, blocked).Input; got != "" {
-		t.Errorf("the address guard names input %q: what the host is, not how the URL was typed, is refused", got)
+	// The address guard never names the URL: what the host is, not how the URL
+	// was typed, is refused. It names local-network where that switch is what
+	// lets the call through, and nothing over MCP or for an address no switch
+	// opens.
+	for _, c := range []struct {
+		ip    string
+		sf    plugin.Surface
+		input string
+	}{
+		{"10.0.0.1", plugin.SurfaceCLI, "local-network"},
+		{"10.0.0.1", plugin.SurfaceMCP, ""},
+		{"169.254.169.254", plugin.SurfaceCLI, ""},
+	} {
+		blocked := &blockedAddrError{host: "nope.example", ip: stdnet.ParseIP(c.ip)}
+		if got := blockedRefusal(c.sf, "GET", target, blocked).Input; got != c.input {
+			t.Errorf("the address guard on %s, %v, names input %q, want %q", c.ip, c.sf, got, c.input)
+		}
 	}
 }
 

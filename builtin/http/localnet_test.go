@@ -29,8 +29,13 @@ func TestAPersonAtTheTerminalMayReachAServiceOfTheirOwn(t *testing.T) {
 
 	for _, sf := range []plugin.Surface{plugin.SurfaceCLI, plugin.SurfaceTUI} {
 		hit = false
-		if _, err := doRequest(context.Background(), "GET", req(map[string]any{"url": srv.URL}).WithSurface(sf)); err == nil || hit {
+		_, err := doRequest(context.Background(), "GET", req(map[string]any{"url": srv.URL}).WithSurface(sf))
+		if err == nil || hit {
 			t.Fatalf("%v: a loopback address was reached without being asked for", sf)
+		}
+		// The refusal names the box that allows it, so a form opens again on it.
+		if in := view.AsError(err, "x").Input; in != "local-network" {
+			t.Errorf("%v: the refusal names input %q, want local-network", sf, in)
 		}
 		v, err := doRequest(context.Background(), "GET", req(map[string]any{"url": srv.URL, "local-network": true}).WithSurface(sf))
 		if err != nil {
@@ -56,6 +61,9 @@ func TestOwnNetworkNeverOpensTheMetadataAddresses(t *testing.T) {
 		_, err := doRequest(context.Background(), "GET",
 			req(map[string]any{"url": "http://" + host + ":9/", "local-network": true, "timeout": "1s"}).WithSurface(plugin.SurfaceCLI))
 		blocked := err != nil && view.AsError(err, "x").Code == "http.request.blocked"
+		if blocked && view.AsError(err, "x").Input != "" {
+			t.Errorf("%s: the refusal names input %q, want none: no box allows it", host, view.AsError(err, "x").Input)
+		}
 		if !blocked {
 			t.Errorf("%s with local-network was not refused: %v", host, err)
 		}
