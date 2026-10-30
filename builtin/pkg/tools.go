@@ -417,9 +417,16 @@ func hasAny(s string, tokens []string) bool {
 // API's own digest field when GitHub has computed one, else the first
 // checksums asset that names it. Empty with no error means the release
 // publishes nothing, which is the caller's decision to refuse or override.
+//
+// The API's field is read only when it is a digest, 64 lowercase hex
+// characters after its prefix, and is otherwise none, leaving the checksums
+// files to decide, which are held to the same shape (plugindist.ParseChecksums).
+// It is the network's answer: it was taken as it came, and a field of three
+// characters ended the process at the mismatch message, which shows the first
+// twelve.
 func expectedDigest(ctx context.Context, c *registryClient, rel release, assetName, apiDigest string) (string, *view.Error) {
-	if strings.HasPrefix(apiDigest, "sha256:") {
-		return strings.TrimPrefix(apiDigest, "sha256:"), nil
+	if d, ok := strings.CutPrefix(apiDigest, "sha256:"); ok && plugindist.IsSHA256Hex(d) {
+		return d, nil
 	}
 	byName := map[string]string{}
 	for _, a := range rel.Assets {
