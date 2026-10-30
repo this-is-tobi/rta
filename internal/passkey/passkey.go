@@ -45,6 +45,22 @@ func Fingerprint(pub ed25519.PublicKey) string {
 	return hex.EncodeToString(sum[:4])
 }
 
+// Pairs reports whether pub is the public half of priv.
+//
+// A state file keeps both halves: the private one inside the passphrase's
+// ciphertext, the public one in the clear beside it, so that a roster line,
+// a fingerprint or a signature check needs no passphrase. Nothing ties the
+// two together but this comparison. Without it, a process that can write
+// the file swaps the public half for a key of its own and every reader of
+// the file believes it: the operator's roster line enrolls that key on the
+// next server it is pasted into, and the guard honours grants that key
+// signed, while the passphrase still unlocks the real key and says nothing.
+// An unlock is the one moment both halves are in hand, so it is where the
+// file is held to them.
+func Pairs(priv ed25519.PrivateKey, pub []byte) bool {
+	return len(pub) == ed25519.PublicKeySize && priv.Public().(ed25519.PublicKey).Equal(ed25519.PublicKey(pub))
+}
+
 // ErrPassphrase marks an unwrap that failed on the passphrase itself rather
 // than on the ciphertext's encoding. age cannot tell a wrong passphrase from
 // corrupt ciphertext, but a stored key that base64-decoded and then failed
