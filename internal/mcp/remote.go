@@ -18,6 +18,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/paths"
 )
 
 // The HTTP transport: a caller proves who it is over the wire, instead of
@@ -282,9 +283,8 @@ const minTokenLen = 16
 // This file is the entire trust anchor for the static-token path, and unlike
 // grants.json — which rta writes itself at 0600 and protects with an HMAC
 // seal against tampering, not exposure — rta never writes this one; the
-// operator does, by whatever means they chose, and a permission check at
-// load time is the only guarantee available that a wider read did not
-// happen along the way.
+// operator does, by whatever means they chose, so it is held to
+// paths.CheckTrustAnchor at load.
 func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, err error) {
 	f, err := atomicfile.Open(path)
 	if err != nil {
@@ -299,22 +299,10 @@ func LoadTokenFile(path string) (tokens map[string]string, groupReadable bool, e
 	if err != nil {
 		return nil, false, err
 	}
-	mode := info.Mode().Perm()
-	// 0o037: every world bit, plus group write (2) and group execute (1).
-	// Group read (0o040) is deliberately absent from the mask — it warns
-	// instead, see above. Worth spelling the digits out, because the first
-	// attempt at this wrote 0o027 and a comment claiming it covered group
-	// execute; 2 is write alone, and only the test for an 0o610 file said
-	// so. A permission mask is exactly the place a plausible-looking
-	// constant goes unchallenged.
-	if mode&0o037 != 0 {
-		return nil, false, fmt.Errorf(
-			"%s has weak permissions (mode %s) — someone besides its owner can write or execute "+
-				"it, or any account on this machine can read it, and it is the entire trust anchor "+
-				"for the static-token path; chmod 600 it",
-			path, mode)
+	groupReadable, err = paths.CheckTrustAnchor(path, info, "it is the entire trust anchor for the static-token path")
+	if err != nil {
+		return nil, false, err
 	}
-	groupReadable = mode&0o040 != 0
 	raw, err := io.ReadAll(f)
 	if err != nil {
 		return nil, groupReadable, err

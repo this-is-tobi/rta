@@ -322,3 +322,54 @@ func ownedByUs(info fs.FileInfo) bool {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	return ok && int(st.Uid) == os.Getuid()
 }
+
+// ErrWeakMode is what a trust anchor refused for its mode wraps
+// (CheckTrustAnchor): a chmod answers it, where another path would not.
+var ErrWeakMode = errors.New("weak permissions")
+
+// CheckTrustAnchor holds a file an operator hands rta as a trust anchor — a
+// roster, a token file, remotes.yaml — to the discipline OpenSSH's StrictModes
+// holds an authorized_keys file to; decides is what the file decides, for the
+// refusal ("it decides who may operate this server"). rta never writes those
+// files, so a check at load is the only guarantee available that a wider
+// write did not happen along the way. info is the open handle's, so the file
+// checked is the file read.
+//
+// Group write or execute, or any world bit, refuses. Group read reports
+// groupReadable for the caller to warn about, because what it costs depends
+// on the file: a token file's group holds every token, a roster's holds no
+// secret at all.
+//
+// A mode says nothing about the account that owns the file: a roster at 0640
+// owned by somebody else is one that account rewrites to enroll itself, with
+// no bit a mode check refuses. So the owner must be this account or root, who
+// could have written the file anyway: root is what a Kubernetes Secret or a
+// package mounts one as.
+func CheckTrustAnchor(path string, info fs.FileInfo, decides string) (groupReadable bool, err error) {
+	mode := info.Mode().Perm()
+	// 0o037: every world bit, plus group write (2) and group execute (1).
+	// Worth spelling the digits out, because the first attempt at this wrote
+	// 0o027 and a comment claiming it covered group execute; 2 is write
+	// alone, and only the test for an 0o610 file said so. A permission mask
+	// is exactly the place a plausible-looking constant goes unchallenged.
+	if mode&0o037 != 0 {
+		return false, fmt.Errorf("%s has %w (mode %s) — someone besides its owner can write or execute it, "+
+			"or any account on this machine can read it, and %s; chmod 600 it", path, ErrWeakMode, mode, decides)
+	}
+	if uid, ok := ownedByUsOrRoot(info); !ok {
+		return false, fmt.Errorf("%s is owned by uid %d, neither this account nor root — that account can "+
+			"rewrite it, and %s; chown it", path, uid, decides)
+	}
+	return mode&0o040 != 0, nil
+}
+
+// ownedByUsOrRoot is the owner CheckTrustAnchor accepts, and the owner info
+// has, for the refusal. A FileInfo that carries no owner is not vouched for.
+func ownedByUsOrRoot(info fs.FileInfo) (uid int, ok bool) {
+	st, has := info.Sys().(*syscall.Stat_t)
+	if !has {
+		return -1, false
+	}
+	uid = int(st.Uid)
+	return uid, uid == os.Geteuid() || uid == 0
+}

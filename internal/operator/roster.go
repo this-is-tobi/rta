@@ -3,7 +3,6 @@ package operator
 import (
 	"crypto/ed25519"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -14,6 +13,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/internal/passkey"
+	"github.com/this-is-tobi/rta/internal/paths"
 )
 
 // Roster is the set of operator keys a server trusts, loaded once at
@@ -159,25 +159,16 @@ func (r Roster) Operators() []OperatorInfo {
 	return out
 }
 
-// ErrWeakMode is what a roster refused for its mode wraps (LoadRoster).
-var ErrWeakMode = errors.New("weak permissions")
-
 // LoadRoster reads a roster file: one "label base64-pubkey" pair per
 // non-blank, non-comment line — the line RosterLine prints — optionally
 // followed by key=value annotations: `role=read` and `expires=YYYY-MM-DD`.
 // Anything unrecognized in the annotation position refuses the whole
 // load rather than falling back to a full enrollment: `roel=read` silently
 // meaning "full operator" is exactly the failure a restriction annotation
-// must not have. The same permission discipline as mcp.LoadTokenFile, for
-// the same reason spelled there: this file is the entire trust anchor for
-// the operator channel, rta never writes it, and a permission check at
-// load time is the only available guarantee that a wider write did not
-// happen along the way. Group write or execute, or any world bit, refuses;
-// group read only warns — unlike a token file the roster holds no secret
-// at all, but a group-writable one is enrollment for whoever shares the
-// group.
-//
-// A roster refused for its mode wraps ErrWeakMode, which a chmod answers.
+// must not have. The file is the entire trust anchor for the operator
+// channel, held to paths.CheckTrustAnchor: group read only warns, since the
+// roster holds no secret, but a group-writable one is enrollment for
+// whoever shares the group.
 func LoadRoster(path string) (Roster, bool, error) {
 	f, err := atomicfile.Open(path)
 	if err != nil {
@@ -188,14 +179,10 @@ func LoadRoster(path string) (Roster, bool, error) {
 	if err != nil {
 		return Roster{}, false, err
 	}
-	mode := info.Mode().Perm()
-	if mode&0o037 != 0 {
-		return Roster{}, false, fmt.Errorf(
-			"%s has %w (mode %s) — someone besides its owner can write or execute "+
-				"it, or any account on this machine can read it, and it decides who may operate "+
-				"this server; chmod 600 it", path, ErrWeakMode, mode)
+	groupReadable, err := paths.CheckTrustAnchor(path, info, "it decides who may operate this server")
+	if err != nil {
+		return Roster{}, false, err
 	}
-	groupReadable := mode&0o040 != 0
 	raw, err := io.ReadAll(f)
 	if err != nil {
 		return Roster{}, groupReadable, err
