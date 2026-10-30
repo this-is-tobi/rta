@@ -218,6 +218,7 @@ func (m Model) tileAction(key string) (tea.Model, tea.Cmd, bool) {
 	}
 	m.origin = modeDashboard
 	m.trail = nil
+	m.backQuery, m.formBehind = "", false
 	if a.src != srcNone {
 		nm, cmd := m.rowActionOnATile(a)
 		return nm, cmd, true
@@ -669,6 +670,13 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 			return nm, cmd, true
 		}
 		m.trail = nil
+		// One screen back is the form that sent this, open on what it sent;
+		// esc on that form goes on to where the flow began.
+		if m.formBehind && m.current.Run != nil && hasInputs(m.current) {
+			m.formBehind = false
+			nm, cmd := m.startForm(m.current, m.lastValues)
+			return nm, cmd, true
+		}
 		nm, cmd := m.closeToOrigin()
 		return nm, cmd, true
 	case "r":
@@ -898,7 +906,9 @@ func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// and the bar read `net.dnsnote.add` — the old query was still there
 		// with the cursor at its end, and nothing on screen said so until
 		// "no matches". A launcher's query is spent by launching; the result
-		// screen already names what was picked.
+		// screen already names what was picked. It is kept apart for esc,
+		// which walks back to the box open on it, where it is on screen.
+		m.backQuery, m.backSel = m.query, m.searchSel
 		m.query, m.searchSel = "", 0
 		m.origin = modeDashboard
 		m.trail = nil

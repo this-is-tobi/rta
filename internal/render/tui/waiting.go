@@ -246,6 +246,7 @@ func (m Model) openQueue() (tea.Model, tea.Cmd, bool) {
 	}
 	m.origin = modeDashboard
 	m.trail = nil
+	m.backQuery, m.formBehind = "", false
 	m.current = c
 	m.lastValues, m.lastYes = nil, false
 	m.row = 0
