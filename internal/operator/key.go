@@ -216,7 +216,16 @@ func Unlock(passphrase string) (Signer, *view.Error) {
 		return Signer{}, view.Errorf("core.operator.corrupt",
 			"%s carries an unreadable verification key", Path())
 	}
-	return Signer{priv: priv, fingerprint: passkey.Fingerprint(pub)}, nil
+	unlocked := priv.Public().(ed25519.PublicKey)
+	if !passkey.Pairs(priv, pub) {
+		return Signer{}, view.Errorf("core.operator.tampered",
+			"%s names verification key %s, and its passphrase unlocks key %s: the file was changed outside rta",
+			Path(), passkey.Fingerprint(pub), passkey.Fingerprint(unlocked)).
+			WithHint("a roster line `rta operator status` printed since then enrolls the key the file names, " +
+				"not yours: on every server you enrolled on, keep only a line whose key has fingerprint " +
+				passkey.Fingerprint(unlocked) + " — then look for what wrote " + Path())
+	}
+	return Signer{priv: priv, fingerprint: passkey.Fingerprint(unlocked)}, nil
 }
 
 // PassphraseField is the input an operator-gated capability declares so the

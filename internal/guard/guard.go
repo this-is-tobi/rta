@@ -597,6 +597,13 @@ func Unlock(passphrase string) (Signer, *view.Error) {
 		return Signer{}, view.Errorf("core.guard.corrupt",
 			"%s carries an unreadable key", Path())
 	}
+	if pub, err := base64.StdEncoding.DecodeString(st.PublicKey); err != nil || !passkey.Pairs(priv, pub) {
+		return Signer{}, view.Errorf("core.guard.tampered",
+			"%s names a verification key its passphrase does not unlock: the file was changed outside rta, "+
+				"and a grant signed by the key it names would be honoured", Path()).
+			WithHint("`rm " + Path() + " " + grantsHint() + "` and `rta grant guard on` start clean, which " +
+				"clears every grant, those that key signed among them — then look for what wrote the file")
+	}
 	return Signer{priv: priv}, nil
 }
 
