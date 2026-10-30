@@ -2,8 +2,11 @@ package pluginhost
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/this-is-tobi/rta/internal/config"
 )
 
 // Confinement on macOS is sandbox-exec wrapping the plugin's argv.
@@ -111,3 +114,26 @@ func available() error {
 // `rta doctor` can say so per machine rather than implying a guarantee that
 // holds on one OS out of three.
 func Confined() bool { return confined }
+
+// Strict reports whether the configuration asks for strict confinement, which
+// is a Linux setting: macOS confines every plugin with the deny list whatever
+// it says, so the answer is for `rta doctor` to say so, and nothing here
+// changes with it.
+func Strict() (on bool, abi int, err error) {
+	cfg, err := config.Load()
+	return err == nil && cfg.Confine == "strict", 0, nil
+}
+
+// strictReady has nothing to fill in on macOS (Strict).
+func strictReady(*DenySet) error { return nil }
+
+// confineLaunch is a strict launch's own temporary directory, which macOS,
+// confining with a deny list, has no rule to add for.
+func confineLaunch(*exec.Cmd, DenySet, string) {}
+
+// ConfineMain is the Linux shim (ConfineCommand), which nothing starts here:
+// a command line that names it on macOS was not written by rta.
+func ConfineMain([]string) {
+	fmt.Fprintln(os.Stderr, "rta: "+ConfineCommand+" confines a plugin on Linux, and this is macOS")
+	os.Exit(70)
+}

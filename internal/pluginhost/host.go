@@ -637,6 +637,7 @@ func (h *Host) start(ctx context.Context, id Identity, deny DenySet, args []stri
 	// this launch's, made just now, and a command built to be inspected
 	// would leave one behind every time.
 	cmd.Env = append(cmd.Env, goplugin.EnvUnixSocketDir+"="+sockDir)
+	confineLaunch(cmd, deny, sockDir)
 
 	words := &lastWords{}
 	client := goplugin.NewClient(&goplugin.ClientConfig{

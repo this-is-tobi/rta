@@ -88,6 +88,13 @@ func Schema() map[string]any {
 				"type":        "string",
 				"enum":        []any{"pretty", "json", "yaml", "csv", "md"},
 			},
+			"confine": map[string]any{
+				"description": "strict holds each plugin on Linux to what it needs — " + strictReach + " — with " +
+					"Landlock, and refuses to start a plugin where the kernel cannot. macOS confines " +
+					"every plugin with its deny list either way.",
+				"type": "string",
+				"enum": []any{"strict"},
+			},
 			"dashboard": map[string]any{
 				"description": "The TUI's landing screen. With nothing set it builds itself, " +
 					"one tile per registered plugin, and plugins installed later still appear.",
@@ -484,3 +491,8 @@ func heightSchema(what, inherits string) map[string]any {
 		"maximum": MaxHeight,
 	}
 }
+
+// strictReach is what a plugin reaches under `confine: strict`, as the schema
+// says it.
+const strictReach = "the system, a temporary directory of its own, its own binary, the tools on its PATH " +
+	"outside the home directory and the credential locations `rta plugin allow` granted it"

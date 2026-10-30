@@ -232,7 +232,19 @@ type Dashboard struct {
 // Config is the persisted configuration.
 type Config struct {
 	// Output is the default --output format when the flag is not given.
-	Output    string    `yaml:"output,omitempty" json:"output,omitempty"`
+	Output string `yaml:"output,omitempty" json:"output,omitempty"`
+	// Confine is how plugin processes are confined beyond what the platform
+	// does by default. "strict", the one value, holds each plugin on Linux to
+	// what it needs — the system, a temporary directory of its own, its own
+	// binary, the tools on its PATH outside the home directory and the
+	// credential locations `rta plugin allow` granted it — with Landlock, and
+	// refuses to start a plugin where the kernel cannot
+	// (pluginhost.ResolveAllowing).
+	// macOS confines every plugin with its deny list either way.
+	//
+	// A layer can set it and none can unset it: a file that does not state
+	// it leaves what another states, and strict is the only word it takes.
+	Confine   string    `yaml:"confine,omitempty" json:"confine,omitempty"`
 	Dashboard Dashboard `yaml:"dashboard,omitempty" json:"dashboard,omitempty"`
 	// Plugins holds each plugin's own settings, so an operator states a
 	// connection once instead of retyping it on every invocation.

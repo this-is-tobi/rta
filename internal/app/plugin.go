@@ -1275,6 +1275,10 @@ func agentReach(_ *registry.Registry, c plugin.Capability) string {
 // readable would be contradicting itself on the same screen — the sort of
 // small dishonesty that teaches people to stop reading the number.
 func confinementLine(allowed ...plugin.Need) string {
+	if strict, _, err := pluginhost.Strict(); !pluginhost.Confined() && strict && err == nil {
+		return "strict: the system, a temporary directory of its own, its own binary, the tools on its PATH " +
+			"outside the home directory and the credential locations it was granted"
+	}
 	if !pluginhost.Confined() {
 		return "none on this platform — see `rta doctor`"
 	}
