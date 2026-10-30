@@ -449,7 +449,7 @@ func repoRoot(t *testing.T) string {
 // the *test* imports of every module in the graph to establish the pruned
 // form. Measured directly: with a cold GOMODCACHE and GOPROXY=off, tidy fails
 // on golang.org/x/exp/maps — a test-only dependency of a dependency four
-// hops down (xo/terminfo, via glamour) — that `go mod graph` in rta's own,
+// hops down (xo/terminfo, via colorprofile) — that `go mod graph` in rta's own,
 // already-tidy checkout never touches, because rta's pruned graph has no
 // reason to load it either. Nothing here can warm that offline: the set is a
 // property of eager loading on an untidy module, not of what rta happens to

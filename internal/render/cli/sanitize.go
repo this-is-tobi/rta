@@ -50,29 +50,28 @@ func cleanPtr(e *view.Error) *view.Error {
 }
 
 // cleanRendered is sanitize for what a renderer wrote rather than for what it
-// was handed: glamour's output, which is the one place this package prints a
-// string it did not build itself.
+// was handed: a markdown body drawn with styles (prettyMarkdown), where the
+// author's text and the renderer's sequences are in one string.
 //
-// Cleaning the body first is not enough, and cannot be made enough. goldmark
-// decodes character references, so &#x1b;]52;…&#x07; is ASCII in a note —
-// nothing Terminal has a reason to touch — and a real OSC 52 in what glamour
-// writes. A note body is what an agent with a note grant writes over MCP, so
+// Cleaning the body first is not enough, and cannot be made enough. A
+// renderer that decodes character references — glamour's goldmark did —
+// makes &#x1b;]52;…&#x07;, ASCII in a note and nothing Terminal has a reason
+// to touch, a real OSC 52 in what it writes. A note body is what an agent with a note grant writes over MCP, so
 // that was an agent putting text on the operator's clipboard, and rewriting
 // the window title, the moment they read the note. &#x9d; and &#x8d; come out
 // as the C1 controls themselves (holes in the cp1252 table HTML maps
-// &#128;-&#159; through), and &#8238; as the right-to-left override. Escaping
-// every "&" before glamour runs would stop it too, and would also stop
-// &amp; and &mdash; meaning what the author wrote them to mean.
+// &#128;-&#159; through), and &#8238; as the right-to-left override.
+// prettyMarkdown decodes none, and the walk below holds whichever renderer
+// draws, which is why it stays after the renderer changed.
 //
 // So the output is walked sequence by sequence and allowed to keep only what a
 // markdown renderer needs: SGR, which is colour and nothing else, and an OSC 8
-// link whose target reads as what it is — glamour prints that target beside
-// the label too, so the link hides nothing the screen does not show. Text
+// link whose target reads as what it is, for a renderer that writes one;
+// prettyMarkdown prints a link's address beside its text and writes none. Text
 // between them goes through Terminal, which drops the C0 and C1 controls and
 // spells out the reorder characters; every other sequence and control is
 // dropped whole. Unstyled output keeps no sequence at all: it is a pipe or
-// --no-color, where an escape is bytes in a file, and glamour writes its
-// links even there.
+// --no-color, where an escape is bytes in a file.
 func cleanRendered(s string, styled bool) string {
 	var out, run strings.Builder
 	flush := func() {

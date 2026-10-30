@@ -527,9 +527,9 @@ func TestCSVErrorsFallBackToProseOnPurpose(t *testing.T) {
 	}
 }
 
-// TestMarkdownTextIsRendered: on styled output a markdown Text view goes
-// through glamour (heading markers disappear); without color the notty style
-// keeps markdown source — honest, grep-able pipe output. Plain Text stays
+// TestMarkdownTextIsRendered: on styled output a markdown Text view is drawn
+// by prettyMarkdown (heading markers give way to the heading style); without
+// color the markers stay — honest, grep-able pipe output. Plain Text stays
 // verbatim everywhere, and structured formats always carry the raw body.
 func TestMarkdownTextIsRendered(t *testing.T) {
 	md := view.Text{Body: "# Title\n\nsome *emphasis* here", Markdown: true}
@@ -571,7 +571,7 @@ func TestMarkdownWrapsToWidth(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, line := range strings.Split(buf.String(), "\n") {
-		if len(line) > 45 { // small glamour margin tolerance
+		if len(line) > 45 { // a small margin over the width
 			t.Fatalf("line exceeds width: %q", line)
 		}
 	}

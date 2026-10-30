@@ -65,7 +65,7 @@ func checkDeclaration(t reporter, p plugin.Plugin) bool {
 // inside rta, on the author's first run, with the plugin named in the trace
 // only if they are lucky.
 //
-// The cost is that a plugin author's *test* binary links glamour, lipgloss and
+// The cost is that a plugin author's *test* binary links lipgloss and
 // asciigraph. Their plugin binary does not; nothing here is imported by
 // pkg/plugin or pkg/view.
 func checkViews(t reporter, seen []observed, cfg config) {
