@@ -33,7 +33,7 @@ profiles:
 
 The same fact, spelled for a service behind a jump host rather than in a cluster. The head is an `~/.ssh/config` alias, and everything your SSH config says about it keeps working — rta shells out to `ssh`.
 
-One forward per call, torn down afterwards. A cached port-forward outlives the pod it points at, and a stale tunnel to a rescheduled pod fails in a way nobody can read.
+One forward per call, torn down afterwards. A cached port-forward outlives the pod it points at, and a stale tunnel to a rescheduled pod fails in a way nobody can read. While it is up, a forward is a port on `127.0.0.1` that any account on this machine can connect to, as the same `kubectl port-forward` or `ssh -L` typed by hand is: on a machine you share with other people, a service that trusts where a connection comes from — a redis with no password, an internal HTTP API — is reachable by them for the length of the call. Give such a service a credential of its own, or reach it from a machine you do not share.
 
 A forward is also torn down when the server that opened it is killed outright: on Linux the kernel ends it with its parent, and on macOS, which has no such signal, the next `rta mcp serve` finds what a killed one left in `forwards/` under the data directory and stops it — only when the process that started it is gone and the pid still has the start time that was written down, so a pid the kernel has reused is never signalled. Until then a forward left by a `kill -9` is a loopback listener into the cluster; `rta mcp serve` says on its stderr how many it stopped.
 
