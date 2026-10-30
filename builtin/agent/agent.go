@@ -611,10 +611,17 @@ func runOverview(_ context.Context, req plugin.Request) (view.View, error) {
 	if tile {
 		listed, why, listing = "", "", 0
 	}
+	// A grant that could not be read leaves only the retries to tell what was
+	// answered, which errs towards asking: the row is a prompt, not the gate.
+	standing, _ := grant.Load()
+	needsGrant, answered := unanswered(needsGrant, entries, standing, time.Now())
 	needs := "0"
 	if len(needsGrant) > 0 {
 		needs = "pending " + refusalCount(needsGrant, listed, listing)
 		found.Warn(needsGrantVerdict(len(needsGrant), tile))
+	}
+	if answered > 0 {
+		needs += fmt.Sprintf(" · %d answered", answered)
 	}
 	rows := []activityRow{
 		{Pair: view.Pair{Key: "waiting on you", Value: nowWaiting}},
