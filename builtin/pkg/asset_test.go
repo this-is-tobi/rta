@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -267,5 +268,58 @@ func TestAnOversizedChecksumsFileIsRefusedWithoutBeingRead(t *testing.T) {
 	}
 	if taken := after.TotalAlloc - before.TotalAlloc; taken > 8<<20 {
 		t.Errorf("refusing a %d-byte checksums file took %d bytes", len(huge), taken)
+	}
+}
+
+// A digest field from the API that is not a digest is none: the checksums
+// files decide, and with none published the refusal says the release
+// publishes no digest. It was taken as it came, and a field of three
+// characters ended the process where the mismatch message shows twelve.
+func TestAnAPIDigestThatIsNotADigestIsReadAsNone(t *testing.T) {
+	goos, arch := here(t)
+	name := "tool-" + goos + "-" + arch
+	body := []byte("#!/bin/sh\necho new\n")
+	for _, c := range []struct {
+		label     string
+		checksums string
+		want      string
+	}{
+		{"no checksums file", "", "pkg.tool.unverified"},
+		{"a checksums file naming another digest", strings.Repeat("0", 64) + "  " + name + "\n", "pkg.tool.checksum"},
+	} {
+		t.Run(c.label, func(t *testing.T) {
+			var srv *httptest.Server
+			srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/repos/o/tool/releases/latest":
+					assets := `{"name":"` + name + `","browser_download_url":"` + srv.URL + `/dl/` + name +
+						`","size":` + itoa(len(body)) + `,"digest":"sha256:abc"}`
+					if c.checksums != "" {
+						assets += `,{"name":"checksums.txt","browser_download_url":"` + srv.URL +
+							`/dl/checksums.txt","size":` + itoa(len(c.checksums)) + `}`
+					}
+					_, _ = w.Write([]byte(`{"tag_name":"v1.0.0","assets":[` + assets + `]}`))
+				case "/dl/" + name:
+					_, _ = w.Write(body)
+				case "/dl/checksums.txt":
+					_, _ = w.Write([]byte(c.checksums))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			t.Cleanup(srv.Close)
+			old := http.DefaultTransport
+			http.DefaultTransport = srv.Client().Transport
+			t.Cleanup(func() { http.DefaultTransport = old })
+			rc := newRegistryClient()
+			rc.http = srv.Client()
+			rc.github = srv.URL
+			placedAt(t, "tool")
+
+			_, verr := installTool(context.Background(), plugin.SurfaceCLI, rc, tool{Bin: "tool", Owner: "o", Repo: "tool"}, false, false)
+			if verr == nil || verr.Code != c.want {
+				t.Fatalf("an API digest of sha256:abc = %v, want %s", verr, c.want)
+			}
+		})
 	}
 }

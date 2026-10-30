@@ -246,7 +246,7 @@ func (p Platform) check(name string) *view.Error {
 	if verr := checkArtifactURL(name, p.OS+"/"+p.Arch, p.URL); verr != nil {
 		return verr
 	}
-	if !sha256Hex(p.SHA256) {
+	if !IsSHA256Hex(p.SHA256) {
 		return bad("%s (%s/%s): sha256 %q is not 64 hex characters", name, p.OS, p.Arch, p.SHA256)
 	}
 	if p.Bin != "" {
@@ -324,7 +324,9 @@ func token(s string) bool {
 	return true
 }
 
-func sha256Hex(s string) bool {
+// IsSHA256Hex reports whether s is a SHA-256 digest as rta writes and
+// compares one: 64 lowercase hex characters.
+func IsSHA256Hex(s string) bool {
 	if len(s) != 64 {
 		return false
 	}
