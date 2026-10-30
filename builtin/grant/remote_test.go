@@ -160,10 +160,26 @@ func TestRemoteAllowThenRevokeEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	v, err := guardCap(t, "grant.allow").Run(context.Background(), reqTUI(map[string]any{
+	allow := map[string]any{
 		"target": "kv.get", "ttl": "15m", "note": "remote e2e", "agent": "lab-agent",
 		"server": "lab", "passphrase": "correct horse",
-	}))
+	}
+	// The dry run is the server's draft, prepared for real and never signed.
+	v, err := guardCap(t, "grant.allow").Run(context.Background(),
+		plugin.NewRequest(allow, true, true).WithSurface(plugin.SurfaceTUI))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"would let lab-agent on lab call kv.get for 15m", "nothing is signed", "plugin build: built in"} {
+		if body := v.(view.Text).Body; !strings.Contains(body, want) {
+			t.Fatalf("dry-run allow does not say %q: %s", want, body)
+		}
+	}
+	if held, verr := core.Load(); verr != nil || len(held) != 0 {
+		t.Fatalf("held after a dry run = %+v, %v", held, verr)
+	}
+
+	v, err = guardCap(t, "grant.allow").Run(context.Background(), reqTUI(allow))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,6 +272,62 @@ func TestAHostilePrepareIsNotASigningOracle(t *testing.T) {
 	}
 	if issueReached {
 		t.Fatal("the widened draft was signed and submitted anyway")
+	}
+}
+
+// The two bindings no field of the ask can check — the plugin build and a
+// profile's connection pin — are the server's to fill and are signed as
+// drafted, so the dry run shows them, and stops before the issue verb.
+func TestARemoteDryRunShowsTheBuildAndPinTheServerDrafted(t *testing.T) {
+	setup(t)
+	operatorid.ScryptWorkFactor = 10
+	if _, verr := operatorid.Init("correct horse"); verr != nil {
+		t.Fatal(verr)
+	}
+	issueReached := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/operator/v1/challenge":
+			_ = json.NewEncoder(w).Encode(map[string]string{"nonce": "draft-nonce"})
+		case "/operator/v1/call":
+			var env operatorid.Envelope
+			_ = json.NewDecoder(r.Body).Decode(&env)
+			if env.Verb == operatorid.VerbGrantIssue {
+				issueReached = true
+			}
+			now := time.Now()
+			_ = json.NewEncoder(w).Encode(operatorid.Prepared{Grant: core.Grant{
+				Target: "mysql.query", Profile: "prod", Agent: "lab-agent",
+				From: core.FromOperatorPrefix + "tobi", Issued: now, Expires: now.Add(15 * time.Minute),
+				TTL: "15m", Server: "http://" + r.Host,
+				Digest:     "sha256:feedface00112233445566778899aabbccddeeff00112233445566778899aabb",
+				ProfilePin: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			}})
+		}
+	}))
+	defer srv.Close()
+	confDir := t.TempDir()
+	t.Setenv("RTA_CONFIG", filepath.Join(confDir, "config.yaml"))
+	if err := os.WriteFile(filepath.Join(confDir, "remotes.yaml"),
+		[]byte("servers:\n  lab:\n    url: "+srv.URL+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := guardCap(t, "grant.allow").Run(context.Background(), plugin.NewRequest(map[string]any{
+		"target": "mysql.query", "profile": "prod", "ttl": "15m", "agent": "lab-agent",
+		"server": "lab", "passphrase": "correct horse",
+	}, true, true).WithSurface(plugin.SurfaceTUI))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := v.(view.Text).Body
+	for _, want := range []string{"plugin build: sha256:feedf", "connection pin: 0123456789ab", "nothing is signed"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the draft does not say %q: %s", want, body)
+		}
+	}
+	if issueReached {
+		t.Fatal("a dry run signed and submitted the draft")
 	}
 }
 

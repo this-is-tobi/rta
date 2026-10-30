@@ -139,10 +139,6 @@ func remoteAllow(ctx context.Context, req plugin.Request, server string) (view.V
 	if verr != nil {
 		return nil, verr
 	}
-	if req.DryRun {
-		return view.Text{Body: "would ask " + base + " to prepare this grant under its own policy, " +
-			"sign the result with the operator key, and submit it — the passphrase is asked first"}, nil
-	}
 	pass, verr := operatorid.PromptSecret(req, false)
 	if verr != nil {
 		return nil, verr
@@ -166,6 +162,9 @@ func remoteAllow(ctx context.Context, req plugin.Request, server string) (view.V
 	if verr := checkPrepared(req.Surface(), spec, base, prepared.Grant); verr != nil {
 		return nil, verr
 	}
+	if req.DryRun {
+		return view.Text{Body: draftBody(server, prepared)}, nil
+	}
 	g := prepared.Grant
 	core.SignWith(signer.GrantSigner(), &g)
 	var issued core.Grant
@@ -181,6 +180,28 @@ func remoteAllow(ctx context.Context, req plugin.Request, server string) (view.V
 		msg += "\n" + n
 	}
 	return view.Text{Body: msg}, nil
+}
+
+// draftBody is the server's draft, for a dry run, which prepares for real and
+// stops before the signature: the receipt's sentence, then the two bindings
+// the server decides and checkPrepared cannot hold to anything asked — the
+// plugin build the grant would stand on, and for a profile the pin of the
+// connection it would reach. Those are signed as drafted, so they are shown
+// where the operator can read them first: a server whose plugin was swapped
+// drafts the swapped build's digest honestly, and the dry run is the one
+// place that says so before the key blesses it.
+func draftBody(server string, p operatorid.Prepared) string {
+	g := p.Grant
+	msg := fmt.Sprintf("would let %s on %s %s for %s%s%s — nothing is signed on a dry run",
+		subject(g), server, describe(g), format.Duration(g.Expires.Sub(g.Issued)), usesSuffix(g.MaxUses), rateSuffix(g))
+	msg += "\nplugin build: " + core.RosterArtifact(g.Digest, core.ArtifactCurrent)
+	if g.Profile != "" {
+		msg += "\nconnection pin: " + core.ShortDigest(g.ProfilePin)
+	}
+	for _, n := range p.Notes {
+		msg += "\n" + n
+	}
+	return msg
 }
 
 // checkPrepared holds the server's draft to what was asked. False economy
