@@ -118,12 +118,11 @@ func TestAShortTerminalGivesEachOfTwoRowsHalfTheRoom(t *testing.T) {
 		t.Errorf("%d tiles say there is more behind enter, want 4:\n%s", got, short)
 	}
 
+	// A tall one has room for more than the cap, and the two rows share it.
 	m = filled(t, m, 80, 60)
 	tall := plain(m.View().Content)
-	for i, h := range m.rowHeights() {
-		if h != tileHeight {
-			t.Errorf("row %d is %d lines on a 60-line terminal, want the full %d", i, h, tileHeight)
-		}
+	if h := m.rowHeights(); len(h) != 2 || h[0] <= tileHeight || h[0]-h[1] > 1 || h[1]-h[0] > 1 {
+		t.Errorf("the rows of a 60-line terminal are %v, want two sharing the room above the cap of %d", h, tileHeight)
 	}
 	if got := strings.Count(tall, "╭"); got != 4 {
 		t.Errorf("a 60-line terminal shows %d tiles, want 4:\n%s", got, tall)

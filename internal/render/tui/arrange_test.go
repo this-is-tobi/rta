@@ -377,9 +377,11 @@ func TestAShortTileShrinksItsRow(t *testing.T) {
 	}
 }
 
-// A tile whose content genuinely overflows still gets the full tileHeight —
-// nothing that used to fit (or truncate the same way) regresses.
-func TestATallTileKeepsTheOldMaxHeight(t *testing.T) {
+// A tile whose content overflows the cap takes the room the screen leaves
+// under the grid, up to what it needs: one row of thirty lines on a 40-line
+// terminal is drawn whole, where it used to stop at "… enter for details"
+// above an empty band of screen. While the rows do not all fit, the cap holds.
+func TestATallTileTakesTheRoomTheScreenLeaves(t *testing.T) {
 	m := New(heightRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "tall.info"}}}, nil)
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	sm := sized.(Model)
@@ -388,8 +390,29 @@ func TestATallTileKeepsTheOldMaxHeight(t *testing.T) {
 	// having completed rather than asserting on the "loading…" placeholder.
 	sm.tiles[1].view = view.Text{Body: strings.Repeat("line\n", 30)}
 	heights := sm.rowHeights()
-	if len(heights) != 1 || heights[0] != tileHeight {
-		t.Fatalf("heights = %v, want a single row at the max %d", heights, tileHeight)
+	if want := 30 + 2; len(heights) != 1 || heights[0] != want {
+		t.Fatalf("heights = %v, want a single row of %d, the thirty lines and two borders", heights, want)
+	}
+	if strings.Contains(plain(sm.View().Content), "enter for details") {
+		t.Errorf("a tile with the room for all of itself still says there is more:\n%s", plain(sm.View().Content))
+	}
+
+	four := make([]config.Tile, 4)
+	for i := range four {
+		four[i] = config.Tile{ID: "tall.info"}
+	}
+	m = New(heightRegistry(t), config.Dashboard{Tiles: four}, nil)
+	sized, _ = m.Update(tea.WindowSizeMsg{Width: 60, Height: 40})
+	sm = sized.(Model)
+	for i := range sm.tiles {
+		if !sm.tiles[i].search {
+			sm.tiles[i].view = view.Text{Body: strings.Repeat("line\n", 30)}
+		}
+	}
+	for r, h := range sm.rowHeights() {
+		if h != tileHeight {
+			t.Errorf("row %d of four that do not fit is %d lines, want the cap of %d", r, h, tileHeight)
+		}
 	}
 }
 
@@ -403,8 +426,8 @@ func TestTilesSharingARowMatchTheTallestOne(t *testing.T) {
 	sm.tiles[1].view = view.Text{Body: "one line"}
 	sm.tiles[2].view = view.Text{Body: strings.Repeat("line\n", 30)}
 	heights := sm.rowHeights()
-	if len(heights) != 1 || heights[0] != tileHeight {
-		t.Fatalf("heights = %v, want one row at the max %d, set by the tall tile", heights, tileHeight)
+	if want := 30 + 2; len(heights) != 1 || heights[0] != want {
+		t.Fatalf("heights = %v, want one row of %d, set by the tall tile", heights, want)
 	}
 	shortPanel := renderTile(sm.tiles[1], sm.tileWidth(1), heights[0], false, false)
 	tallPanel := renderTile(sm.tiles[2], sm.tileWidth(2), heights[0], false, false)
@@ -420,30 +443,32 @@ func TestTilesSharingARowMatchTheTallestOne(t *testing.T) {
 func TestTileAtWalksVariableRowHeights(t *testing.T) {
 	m := New(heightRegistry(t), config.Dashboard{Tiles: []config.Tile{{ID: "short.info"}, {ID: "tall.info"}}}, nil)
 	// 60 cols -> 1 column grid, so short.info and tall.info land in separate
-	// rows (heights 6 and 11) rather than sharing one.
+	// rows rather than sharing one: the short one at the floor, the tall one
+	// at whatever the screen leaves it.
 	sized, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 30})
 	sm := sized.(Model)
 	sm.tiles[1].view = view.Text{Body: "one line"}
 	sm.tiles[2].view = view.Text{Body: strings.Repeat("line\n", 30)}
 	heights := sm.rowHeights()
-	if len(heights) != 2 || heights[0] != tileMinHeight || heights[1] != tileHeight {
-		t.Fatalf("heights = %v, want [%d %d]", heights, tileMinHeight, tileHeight)
+	if len(heights) != 2 || heights[0] != tileMinHeight || heights[1] <= tileMinHeight {
+		t.Fatalf("heights = %v, want the floor of %d and a taller row", heights, tileMinHeight)
 	}
+	short, tall := heights[0], heights[1]
 
-	// Row 0 (short.info, height 6) starts right after the search band.
+	// Row 0 (short.info) starts right after the search band.
 	row0Start := 1 + sm.searchHeight()
-	row1Start := row0Start + tileMinHeight
-	for _, y := range []int{row0Start, row0Start + tileMinHeight - 1} {
+	row1Start := row0Start + short
+	for _, y := range []int{row0Start, row0Start + short - 1} {
 		if got := sm.tileAt(5, y); got != 1 {
 			t.Errorf("tileAt(5, %d) = %d, want 1 (short.info)", y, got)
 		}
 	}
-	for _, y := range []int{row1Start, row1Start + tileHeight - 1} {
+	for _, y := range []int{row1Start, row1Start + tall - 1} {
 		if got := sm.tileAt(5, y); got != 2 {
 			t.Errorf("tileAt(5, %d) = %d, want 2 (tall.info)", y, got)
 		}
 	}
-	if got := sm.tileAt(5, row1Start+tileHeight); got != -1 {
+	if got := sm.tileAt(5, row1Start+tall); got != -1 {
 		t.Errorf("tileAt below the last row = %d, want -1", got)
 	}
 }
