@@ -19,6 +19,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/atomicfile"
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/grant"
+	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
@@ -69,11 +70,8 @@ func ServerURL(name string) (string, *view.Error) {
 	if err != nil {
 		return "", view.Errorf("core.operator.remotes", "reading %s: %v", RemotesPath(), err)
 	}
-	if mode := info.Mode().Perm(); mode&0o037 != 0 {
-		return "", view.Errorf("core.operator.remotes",
-			"%s has weak permissions (mode %s) — someone besides its owner can write or execute it, "+
-				"and it decides where your signed operator calls go", RemotesPath(), mode).
-			WithHint("chmod 600 " + RemotesPath())
+	if _, err := paths.CheckTrustAnchor(RemotesPath(), info, "it decides where your signed operator calls go"); err != nil {
+		return "", view.Errorf("core.operator.remotes", "%v", err)
 	}
 	data, err := io.ReadAll(f)
 	if err != nil {

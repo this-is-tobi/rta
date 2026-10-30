@@ -13,6 +13,7 @@ import (
 	core "github.com/this-is-tobi/rta/internal/grant"
 	"github.com/this-is-tobi/rta/internal/guard"
 	operatorid "github.com/this-is-tobi/rta/internal/operator"
+	"github.com/this-is-tobi/rta/internal/paths"
 	"github.com/this-is-tobi/rta/internal/stdio"
 	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -127,7 +128,7 @@ func runGuardOff(_ context.Context, req plugin.Request) (view.View, error) {
 func rosterInput(err error) string {
 	var read *fs.PathError
 	switch {
-	case errors.Is(err, operatorid.ErrWeakMode):
+	case errors.Is(err, paths.ErrWeakMode):
 		return ""
 	case errors.As(err, &read):
 		return pathin.Input("operators", err)
