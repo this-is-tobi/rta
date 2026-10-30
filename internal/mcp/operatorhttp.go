@@ -162,18 +162,23 @@ func (h *operatorHandler) call(w http.ResponseWriter, r *http.Request) {
 		h.refuse(w, fmt.Sprintf("the body does not parse as an envelope: %v", err))
 		return
 	}
-	// The nonce burns before the signature is checked: a captured challenge
-	// must not be a thing an attacker can brute-force signatures against at
-	// leisure, and a legitimate caller's failed attempt costs one round trip
-	// for a fresh one.
-	if !h.nonces.Consume(env.Nonce) {
-		h.refuse(w, fmt.Sprintf("nonce not honoured (spent, expired, or never issued) for fingerprint %q", env.Fingerprint))
+	// The challenge is checked first, from its own MAC, and spent only once
+	// the signature has verified (operator.Nonces says why): what a
+	// stranger sends costs this server a MAC and a verify, and leaves
+	// nothing behind.
+	if _, fresh := h.nonces.Fresh(env.Nonce); !fresh {
+		h.refuse(w, fmt.Sprintf("nonce not honoured (expired, or not minted by this server) for fingerprint %q", env.Fingerprint))
 		return
 	}
 	id, ok := h.cfg.Roster.Verify(env, h.cfg.URL)
 	if !ok {
 		h.refuse(w, fmt.Sprintf("signature rejected for fingerprint %q, verb %q — a valid-looking envelope "+
 			"may have been signed for a different server than %q", env.Fingerprint, env.Verb, h.cfg.URL))
+		return
+	}
+	if !h.nonces.Spend(env.Nonce) {
+		h.refuse(w, fmt.Sprintf("nonce already spent: a replay of a call %s (%s) made, verb %q",
+			id.Label, env.Fingerprint, env.Verb))
 		return
 	}
 	h.logf("%s (%s) called %s", id.Label, env.Fingerprint, env.Verb)

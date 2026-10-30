@@ -217,13 +217,16 @@ func TestANonceSpendsExactlyOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !n.Consume(nonce) {
+	if _, fresh := n.Fresh(nonce); !fresh {
+		t.Fatal("a nonce just issued is not fresh")
+	}
+	if !n.Spend(nonce) {
 		t.Fatal("a fresh nonce did not spend")
 	}
-	if n.Consume(nonce) {
+	if n.Spend(nonce) {
 		t.Fatal("a nonce spent twice")
 	}
-	if n.Consume("never-issued") {
+	if n.Spend("never-issued") {
 		t.Fatal("an invented nonce spent")
 	}
 }
@@ -235,8 +238,77 @@ func TestAnExpiredNonceDoesNotSpend(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(time.Millisecond)
-	if n.Consume(nonce) {
+	if _, fresh := n.Fresh(nonce); fresh {
+		t.Fatal("an expired nonce is fresh")
+	}
+	if n.Spend(nonce) {
 		t.Fatal("an expired nonce spent")
+	}
+}
+
+// A challenge is held to its MAC: one this store did not mint, or one with a
+// byte of its expiry changed to live longer, is not fresh, and neither is a
+// challenge another server minted.
+func TestANonceThisStoreDidNotMintIsNotFresh(t *testing.T) {
+	n := NewNonces(0)
+	nonce, err := n.Issue()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(nonce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw[0] ^= 0x01
+	if _, fresh := n.Fresh(base64.RawURLEncoding.EncodeToString(raw)); fresh {
+		t.Fatal("a nonce with its expiry changed is fresh")
+	}
+	if _, fresh := NewNonces(0).Fresh(nonce); fresh {
+		t.Fatal("another store's nonce is fresh")
+	}
+}
+
+// Issuing stores nothing, so an unauthenticated flood of challenges cannot
+// evict an operator's: theirs stays fresh and spends after any number of
+// others. It used to share one pool of 4096 with the flood, and a stranger
+// asking faster than the operator's round trip refused every retry.
+func TestAChallengeFloodLeavesAnOperatorsChallengeFresh(t *testing.T) {
+	n := NewNonces(time.Hour)
+	mine, err := n.Issue()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 * spentCap {
+		if _, err := n.Issue(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n.mu.Lock()
+	held := len(n.spent)
+	n.mu.Unlock()
+	if held != 0 {
+		t.Fatalf("issuing %d challenges stored %d of them", 2*spentCap, held)
+	}
+	if !n.Spend(mine) {
+		t.Fatal("the operator's challenge did not spend after a flood of others")
+	}
+}
+
+// What can fill the store is spent nonces, each a call an enrolled key signed;
+// past the cap the one closest to expiry goes, so the record stays bounded.
+func TestTheRecordOfSpentNoncesIsBounded(t *testing.T) {
+	n := NewNonces(time.Hour)
+	for range 2 * spentCap {
+		nonce, err := n.Issue()
+		if err != nil {
+			t.Fatal(err)
+		}
+		n.Spend(nonce)
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if len(n.spent) > spentCap {
+		t.Fatalf("the store holds %d spent nonces, cap is %d", len(n.spent), spentCap)
 	}
 }
 
@@ -260,30 +332,6 @@ func TestTheClientRefusesRedirects(t *testing.T) {
 	if !strings.Contains(verr.Message, "redirect") {
 		t.Fatalf("the refusal does not name the redirect: %s", verr.Message)
 	}
-}
-
-// Consume leaves its stale entry in order for GC; an issue-and-consume flood
-// with one live head parked in front must not grow the slice without bound
-// for a TTL window.
-func TestAFloodCannotGrowTheNonceStoreUnbounded(t *testing.T) {
-	n := NewNonces(time.Hour)
-	parked, err := n.Issue()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i := 0; i < 2*nonceCap; i++ {
-		nonce, err := n.Issue()
-		if err != nil {
-			t.Fatal(err)
-		}
-		n.Consume(nonce)
-	}
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	if len(n.order) > n.cap {
-		t.Fatalf("order holds %d entries, cap is %d", len(n.order), n.cap)
-	}
-	_ = parked
 }
 
 // A role annotation subtracts from an enrollment; anything unrecognized in
