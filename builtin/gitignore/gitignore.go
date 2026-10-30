@@ -40,7 +40,7 @@ func listCapability() plugin.Capability {
 		Idempotent: true,
 		NoPreview:  true,
 		Keywords:   []string{"ignore", "template", "generate"},
-		Description: "Lists the templates in the github/gitignore repository, with the name gitignore.show " +
+		Description: "Lists the templates in the github/gitignore repository, with the name `gitignore.show` " +
 			"takes for each: the main ones for languages, frameworks and tools, the global ones for " +
 			"operating systems and editors, and the community ones. A term narrows the list to " +
 			"the templates whose name contains it, or to one kind when the term is main, global " +
@@ -83,7 +83,7 @@ func showCapability() plugin.Capability {
 			"act on, a carriage return among them, so a pattern that holds one, as macOS's Icon " +
 			"does, reads differently there. Names are matched without regard to case; a qualified " +
 			"name such as Global/macOS names one template when a bare name could mean two, and a " +
-			"few nicknames (vscode, golang, mac) are understood. gitignore.list shows what exists.",
+			"few nicknames (vscode, golang, mac) are understood. `gitignore.list` shows what exists.",
 		Agent: "Prints the named github/gitignore templates as one .gitignore file, each file's text " +
 			"under its own ### name ### line. `templates` takes names as gitignore.list shows them, in " +
 			"any case, or a qualified name such as Global/macOS when a bare name could mean two.",
@@ -93,7 +93,7 @@ func showCapability() plugin.Capability {
 		},
 		Inputs: []plugin.Field{
 			{Name: "templates", Type: plugin.StringSlice, Positional: true, Required: true,
-				Help: "template names as gitignore.list shows them: Go, Node, macOS; or a qualified name, Global/macOS, when a name could mean two"},
+				Help: "template names as `gitignore.list` shows them: Go, Node, macOS; or a qualified name, Global/macOS, when a name could mean two"},
 		},
 		Run: runShow,
 	}

@@ -5,6 +5,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode"
@@ -140,10 +141,10 @@ func (h *helper) render(cmd *cobra.Command) string {
 	var b strings.Builder
 	b.WriteString("\n")
 	root := !cmd.HasParent()
-	details, args := splitArguments(cmd.Long)
-	summary := cmd.Short
+	details, args := splitArguments(asCommands(cmd.Root(), cmd.Long))
+	summary := asCommands(cmd.Root(), cmd.Short)
 	if root || summary == "" {
-		summary, details = cmp.Or(details, cmd.Short), ""
+		summary, details = cmp.Or(details, summary), ""
 	}
 	details = withoutSummary(details, summary)
 	h.prose(&b, summary, 2)
@@ -230,6 +231,29 @@ func (h *helper) prose(b *strings.Builder, long string, indent int) {
 			}
 		}
 	}
+}
+
+// capabilityRef is a capability ID in backticks, the way the text a capability
+// declares names another: its description and its inputs' help are shown on
+// every surface at once and have none to ask (plugin.Surface), so they name a
+// capability by its ID.
+var capabilityRef = regexp.MustCompile("`([a-z][a-z0-9-]*(?:\\.[a-z0-9-]+)+)`")
+
+// asCommands spells each capability text names in backticks as the command
+// that runs it, `kv.get` as `rta kv get`: on a terminal the ID is no command
+// anybody types, and "shown by `grant.list`" sent a person looking for one.
+// Only an ID the command tree answers for exactly, so a dotted word that is a
+// config key or an error code is left as written, and an ID written bare —
+// the value to type in "e.g. kv.get" — is no reference to rewrite.
+func asCommands(root *cobra.Command, text string) string {
+	return capabilityRef.ReplaceAllStringFunc(text, func(ref string) string {
+		words := strings.Split(strings.Trim(ref, "`"), ".")
+		found, rest, err := root.Find(words)
+		if err != nil || len(rest) > 0 || found.CommandPath() != root.Name()+" "+strings.Join(words, " ") {
+			return ref
+		}
+		return "`" + found.CommandPath() + "`"
+	})
 }
 
 // splitArguments takes the Arguments block argumentsBlock put at the end of a
@@ -366,7 +390,7 @@ func (h *helper) flagRows(cmd *cobra.Command) []row {
 		if f.Shorthand != "" {
 			key = "-" + f.Shorthand + ", " + key
 		}
-		r := row{key: key, desc: sentence(f.Usage)}
+		r := row{key: key, desc: sentence(asCommands(cmd.Root(), f.Usage))}
 		if f.DefValue != "" && f.DefValue != "false" && f.DefValue != "0" && f.DefValue != "[]" {
 			r.note = "(" + f.DefValue + ")"
 		}

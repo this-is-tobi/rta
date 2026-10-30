@@ -48,7 +48,7 @@ func watchCapability() plugin.Capability {
 		Summary:    "Grade every product and cycle on a configured watchlist at once",
 		Safety:     plugin.Read,
 		Idempotent: true,
-		Description: "Runs eol.check over a list of products, each optionally pinned to one " +
+		Description: "Runs `eol.check` over a list of products, each optionally pinned to one " +
 			"release cycle or a range of them as product@cycle — postgresql@15, " +
 			"postgresql@13..16, nodejs, debian@bookworm. Write the list once as " +
 			"`plugins: eol: products:` in your config or a profile and it is what this " +

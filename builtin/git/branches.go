@@ -32,7 +32,7 @@ func branchesCapability() plugin.Capability {
 			"remote-tracking branches follow as `remotes/<remote>/<name>`. A detached HEAD is its own " +
 			"row, and a branch checked out in another worktree is marked `worktree`: git refuses to " +
 			"check it out here. What a branch tracks is read from every file of config git reads, " +
-			"over MCP from the repository's own, as git.remotes reads a remote.",
+			"over MCP from the repository's own, as `git.remotes` reads a remote.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 			{Name: "all", Type: plugin.Bool, Config: "all", Help: "include remote-tracking branches"},

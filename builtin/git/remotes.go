@@ -28,7 +28,7 @@ func remotesCapability() plugin.Capability {
 			"first url and pushes to every pushurl where one is set, and to every url where none is. " +
 			"Read from every file of config git reads, as git reads it, including a " +
 			"url.<base>.insteadOf rewrite; over MCP only the repository's own config is read, as " +
-			"git.config shows it there. A credential embedded in a URL is masked.",
+			"`git.config` shows it there. A credential embedded in a URL is masked.",
 		Inputs: []plugin.Field{
 			pathField("repository path, or a subdirectory of one"),
 		},

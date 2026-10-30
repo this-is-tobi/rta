@@ -119,7 +119,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					{Name: "max-uses", Type: plugin.Int, Help: "expire after this many calls that run, failures included (0 = unlimited)"},
 					{Name: "rate", Type: plugin.String, Suggest: suggestRate,
 						Help: "how fast it may be used, as calls/window — e.g. 10/1h"},
-					{Name: "note", Type: plugin.String, Help: "why — shown by grant.list"},
+					{Name: "note", Type: plugin.String, Help: "why — shown by `grant.list`"},
 					// One passphrase field serves both gates that can ask: the
 					// local guard's, and — with --server — the operator key's.
 					// Same name, same channels, same argv refusal.
@@ -172,7 +172,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 						Help: "with profile: expire each grant after this many calls that run, failures included (0 = unlimited) — each grant, not the bundle"},
 					{Name: "rate", Type: plugin.String, Suggest: suggestRate,
 						Help: "with profile: how fast each grant may be used, as calls/window — each grant, not the bundle"},
-					{Name: "note", Type: plugin.String, Help: "with profile: why — shown by grant.list"},
+					{Name: "note", Type: plugin.String, Help: "with profile: why — shown by `grant.list`"},
 					guard.PassphraseField,
 				},
 				Run: func(_ context.Context, req plugin.Request) (view.View, error) {
@@ -249,7 +249,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"With `server` (a name from remotes.yaml): the same roster read from a " +
 					"remote rta server as a signed operator call, each grant's plugin build judged by that " +
 					"server, your operator key's passphrase asked first. Can only be run by a person at a " +
-					"terminal, the same as grant.allow/renew/revoke: " +
+					"terminal, the same as `grant.allow`, `grant.renew` and `grant.revoke`: " +
 					"the roster names every agent by name, which is exactly the cross-agent visibility an " +
 					"agent asking about itself must not get.",
 				Inputs: []plugin.Field{
@@ -279,7 +279,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				ID: "grant.revoke", Summary: "Take an agent's access back", Safety: plugin.Write, Idempotent: true,
 				Flash:     true,
 				HumanOnly: true,
-				Description: "Can only be run by a person at a terminal, the same as grant.allow and " +
+				Description: "Can only be run by a person at a terminal, the same as `grant.allow` and " +
 					"for the same reason: consent state belongs to whoever is deciding it, not to " +
 					"whoever is currently being granted or denied. Each selector narrows, and one left " +
 					"out matches every grant — `exact` makes them name one grant, a left-out record, " +
@@ -313,7 +313,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				Description: "Turns issuance from something any process running as you can do into " +
 					"something that needs a secret only you hold: every grant is signed with a key " +
 					"that exists only encrypted under the passphrase, and a grant without that " +
-					"signature is not honoured. An agent that runs grant.allow from a shell " +
+					"signature is not honoured. An agent that runs `grant.allow` from a shell " +
 					"is refused, however it invokes the binary — prevention for the ordinary " +
 					"self-granting path, where the origin column could only detect it after the " +
 					"fact. Enabling clears the grants currently held: they were issued without a " +
@@ -347,7 +347,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"reads), after which a grant is honoured only if signed by one of them — issued " +
 					"from an enrolled operator's own machine over the operator channel, never from a " +
 					"shell here. No key material lives on this machine at all: nothing to steal, " +
-					"nothing to phish, and grant.allow at this terminal is refused by " +
+					"nothing to phish, and `grant.allow` at this terminal is refused by " +
 					"construction. Enabling clears the grants currently held, for guard-on's reason. " +
 					"Run where the server runs, at provisioning time.",
 				Inputs: []plugin.Field{

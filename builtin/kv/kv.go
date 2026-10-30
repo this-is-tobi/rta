@@ -240,8 +240,8 @@ func Plugin() plugin.Plugin {
 				Description: "Output for a shell to evaluate, which loads secrets into its session " +
 					"without ever writing them to a file. Key names become environment " +
 					"names (db-password → DB_PASSWORD). A `format` of dotenv writes .env syntax instead. " +
-					"Same grant requirement as kv.get: this reveals values. Naming no key means " +
-					"every key, which is a wider ask and needs a grant for kv.env itself rather " +
+					"Same grant requirement as `kv.get`: this reveals values. Naming no key means " +
+					"every key, which is a wider ask and needs a grant for `kv.env` itself rather " +
 					"than one per key.",
 				Inputs: unlockFields([]plugin.Field{
 					{Name: "key", Type: plugin.StringSlice, Positional: true, Help: "keys to export (default: all)",
@@ -259,7 +259,7 @@ func Plugin() plugin.Plugin {
 				Description: "The value is given as `value`; a call with none is refused unless " +
 					"its `description` or `kind` relabel an entry that already exists, which leaves the " +
 					"secret and both timestamps untouched, so correcting what something is for does not reset " +
-					"the age kv.list reports. The kind (certificate, private key, json, file, string) is " +
+					"the age `kv.list` reports. The kind (certificate, private key, json, file, string) is " +
 					"detected from the content unless `kind` says otherwise. Writing never changes who can " +
 					"read the store: that is `kv.rekey`. Setting a key that already exists replaces the " +
 					"secret and keeps the old one, the last " + strconv.Itoa(maxRevisions) + " values listed by `kv.history` and brought back " +
@@ -279,7 +279,7 @@ func Plugin() plugin.Plugin {
 					// kind of whatever it found. An MCP caller sends the value;
 					// a person at a terminal keeps --file exactly as before.
 					{Name: "file", Type: plugin.Path, Local: true, Help: "read the value from this file instead"},
-					{Name: "description", Type: plugin.String, Help: "what this is for — shown by kv.list"},
+					{Name: "description", Type: plugin.String, Help: "what this is for — shown by `kv.list`"},
 					{Name: "kind", Type: plugin.String, Options: kinds,
 						Help: "override the kind detected from the content"},
 				}...),
@@ -322,8 +322,8 @@ func Plugin() plugin.Plugin {
 				ScopeAlso: []string{"new-name"},
 				Description: "The entry moves inside the store, the " +
 					"value is never decrypted into anything but memory, and its description, kind, source and " +
-					"timestamps travel with it: the one way to rename that reveals nothing, where kv.get, " +
-					"kv.set and kv.rm took two grants and put the secret in the open. A name already taken is " +
+					"timestamps travel with it: the one way to rename that reveals nothing, where `kv.get`, " +
+					"`kv.set` and `kv.rm` took two grants and put the secret in the open. A name already taken is " +
 					"refused rather than overwritten, since that would destroy the secret in it, which is " +
 					"`kv.rm`'s question. A grant has to cover both names, `key` and `new-name`, because a " +
 					"key's name decides which grants can read it; a folder grant covers a move inside the " +

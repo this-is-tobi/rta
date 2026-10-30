@@ -193,7 +193,7 @@ func Plugin(catalog func() []plugin.Capability, report func() view.View) plugin.
 				// about a project nobody named is a question with no subject.
 				NoPreview: true,
 				Description: "Answers the question an advisory raises second: did we ask for this, or did something " +
-					"else pull it in, and if so what. Reads the same manifests as audit.deps and draws the " +
+					"else pull it in, and if so what. Reads the same manifests as `audit.deps` and draws the " +
 					"package at the root with everything that requires it beneath, up to the dependencies the " +
 					"project asks for by name. Nothing is resolved, installed or fetched. go.mod marks a " +
 					"require direct or indirect and stores no edges; the JavaScript lockfiles, Cargo, uv, " +

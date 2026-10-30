@@ -43,7 +43,7 @@ func diffCapability() plugin.Capability {
 			"against its first parent; two arbitrary commits are not compared. " +
 			"One diff reads at most 16 MiB of a file and 64 MiB in all, looks at no more than 10000 files and " +
 			"spends two seconds matching lines; the lines after the patch name each file left out or diffed " +
-			"coarsely. An untracked file under an ignore file git.status did not apply is named, never shown. " +
+			"coarsely. An untracked file under an ignore file `git.status` did not apply is named, never shown. " +
 			"Over MCP a link in the working tree is diffed only where it names a place under " +
 			"the roots.",
 		Inputs: []plugin.Field{

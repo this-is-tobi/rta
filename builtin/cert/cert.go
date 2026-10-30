@@ -211,7 +211,7 @@ func Plugin() plugin.Plugin {
 				// model reads it, because the target input otherwise reads as
 				// the one the other three accept.
 				Description: "Over MCP this always refuses: a file has no handshake to report, and a host is not " +
-					"dialled by this tool. net.probe with `tls` reports a host's TLS version and cipher, with " +
+					"dialled by this tool. `net.probe` with `tls` reports a host's TLS version and cipher, with " +
 					"a grant.",
 				Inputs:  []plugin.Field{targetField, timeoutField},
 				Refresh: handshakeRefresh,
