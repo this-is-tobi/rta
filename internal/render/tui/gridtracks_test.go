@@ -138,8 +138,8 @@ func TestAShortRowSharesWhatIsLeftEvenly(t *testing.T) {
 	}
 }
 
-// `height:` lifts the cap on a tile that has more to show, and a row takes its
-// tallest tile. A tile that states none is what it was.
+// `height:` sets a row's height, and a row takes its tallest tile. A row that
+// states none takes what its tiles need, as far as the screen has room.
 func TestAStatedHeightLiftsTheCapAndTheRowTakesTheTallest(t *testing.T) {
 	build := func(tall, other int) Model {
 		m := New(heightRegistry(t), config.Dashboard{Width: 6, Tiles: []config.Tile{
@@ -151,8 +151,8 @@ func TestAStatedHeightLiftsTheCapAndTheRowTakesTheTallest(t *testing.T) {
 		sm.tiles[2].view = view.Text{Body: "short"}
 		return sm
 	}
-	if got := build(0, 0).rowHeights()[0]; got != tileHeight {
-		t.Fatalf("with none stated a row is %d lines, want the cap of %d", got, tileHeight)
+	if got, want := build(0, 0).rowHeights()[0], 40+2; got != want {
+		t.Fatalf("with none stated a row is %d lines, want the %d its forty lines need", got, want)
 	}
 	if got := build(20, 0).rowHeights()[0]; got != 20 {
 		t.Errorf("a tile that says 20 draws its row at %d", got)

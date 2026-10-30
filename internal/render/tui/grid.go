@@ -252,10 +252,11 @@ func (m Model) rowAndCol(idx int) (int, int) {
 
 // rowHeights returns each tile row's height, in row order: the tallest
 // natural content among that row's tiles, clamped to [tileMinHeight,
-// tileHeight]. Tiles within a row always share the row's height, the same
-// invariant TestTilesOnSameRowAreUniform checks — only the height itself now
-// varies row to row instead of being one constant for the whole grid. A header
-// is the one row that is one line, whatever is under it.
+// tileHeight], and then given what the screen leaves under the grid
+// (shareSpareRoom). Tiles within a row always share the row's height, the same
+// invariant TestTilesOnSameRowAreUniform checks — only the height itself
+// varies row to row. A header is the one row that is one line, whatever is
+// under it.
 func (m Model) rowHeights() []int {
 	if m.layout != nil && m.layout.heights != nil {
 		// A copy, since drawnHeights writes into what it is handed.
@@ -271,10 +272,53 @@ func (m Model) rowHeights() []int {
 		}
 		heights = append(heights, m.rowHeight(row, limit))
 	}
+	m.shareSpareRoom(rows, heights)
 	if m.layout != nil {
 		m.layout.heights = slices.Clone(heights)
 	}
 	return heights
+}
+
+// shareSpareRoom hands the lines a dashboard leaves under its last row to the
+// rows the limit cut, a line at a time across them, and never past what a row
+// needs to be drawn whole. The limit caps a row while the screen may not hold
+// every row; on one tall enough for all of them — a wide terminal packs the
+// tiles into few rows — a tile ending "… enter for details" above an empty
+// band of screen was that cap cutting for nothing. Shared out evenly, so one
+// long list does not take all of it. A row with a stated height keeps it, as
+// rowHeight says, and nothing is shared while the rows do not all fit: a
+// dashboard that scrolls has no lines to spare.
+func (m Model) shareSpareRoom(rows []gridRow, heights []int) {
+	if m.height <= 0 {
+		return
+	}
+	spare := m.dashRowBudget()
+	for _, h := range heights {
+		spare -= h
+	}
+	if spare <= 0 {
+		return
+	}
+	need := make([]int, len(rows))
+	for r, row := range rows {
+		if row.isHeader() || slices.ContainsFunc(row.cells, func(i int) bool { return m.tiles[i].height > 0 }) {
+			continue
+		}
+		for _, i := range row.cells {
+			drawn := len(tileLines(m.asReturned(i), m.tileWidth(i), false, heights[r]+spare)) + 2 // + top/bottom border
+			need[r] = max(need[r], drawn)
+		}
+	}
+	for grew := true; grew && spare > 0; {
+		grew = false
+		for r := range heights {
+			if heights[r] < need[r] && spare > 0 {
+				heights[r]++
+				spare--
+				grew = true
+			}
+		}
+	}
 }
 
 // rowHeight is how tall one row of tiles is drawn: the tallest of what its tiles

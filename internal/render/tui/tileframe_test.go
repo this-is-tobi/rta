@@ -134,7 +134,7 @@ func TestARowFollowsItsTileFromOnePaintToTheNext(t *testing.T) {
 		m = next.(Model)
 	}
 	after := m.withLayout().rowHeights()
-	if before[0] != tileHeight || after[0] >= before[0] {
+	if after[0] >= before[0] {
 		t.Errorf("the first row is %d lines before and %d after its lists emptied", before[0], after[0])
 	}
 }
