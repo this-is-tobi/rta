@@ -332,9 +332,15 @@ func blockedRefusal(sf plugin.Surface, method, url string, err error) *view.Erro
 	}
 	hint := "rta's http client connects only to public addresses — never loopback, private, " +
 		"link-local, shared (100.64.0.0/10) or reserved ones, where cloud metadata endpoints live"
+	// The box that would let the call through, where there is one, so a form
+	// opens again on it: the switch that allows a loopback or private address.
+	// None otherwise. The URL is not mistyped — what its host is, is refused —
+	// and an agent is never told of local-network, which is the operator's.
+	input := ""
 	if sf == plugin.SurfaceMCP {
 		hint += " — and a grant naming this URL does not change that"
 	} else if reasonFor(blocked.ip, true) == "" {
+		input = "local-network"
 		// A loopback or private address is what a service of one's own is on,
 		// which a person at the terminal may ask for by name (withOwnNetwork).
 		hint += " — at the terminal too, unless you ask for it: " + sf.InputName("local-network") +
@@ -343,7 +349,7 @@ func blockedRefusal(sf plugin.Surface, method, url string, err error) *view.Erro
 	} else {
 		hint += " — at the terminal too, with no way round it: nothing of your own is at an address like that"
 	}
-	return view.Errorf("http.request.blocked", "%s %s: %v", method, url, err).WithHint(hint)
+	return view.Errorf("http.request.blocked", "%s %s: %v", method, url, err).WithHint(hint).WithInput(input)
 }
 
 func runMethod(method string) plugin.Handler {
