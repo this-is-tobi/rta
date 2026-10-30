@@ -48,9 +48,12 @@ func TestEveryHelpScreenFitsTheTerminal(t *testing.T) {
 			for _, l := range exampleLines(c) {
 				verbatim["    "+l] = true
 			}
+			// At either indent the long text is drawn at: the summary's, and the
+			// details section's under its heading.
 			for _, l := range strings.Split(c.Long, "\n") {
 				if strings.HasPrefix(l, " ") {
 					verbatim["  "+l] = true
+					verbatim["    "+l] = true
 				}
 			}
 			for _, line := range strings.Split(plainHelp(c, width), "\n") {
