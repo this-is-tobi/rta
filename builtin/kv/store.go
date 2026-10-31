@@ -298,17 +298,19 @@ var promptWhoReads = func() (key bool, err error) {
 
 // readAnswer reads one line typed at the terminal, shown as it is typed. A
 // byte at a time, so nothing typed after it is taken from the passphrase prompt
-// that follows, which reads the same descriptor (readSecret).
+// that follows, which reads the same descriptor (readSecret). The whole line is
+// read and its first 64 bytes kept: stopping at the 64th left the rest of a
+// longer line for that prompt, which took it as the first answer.
 var readAnswer = func(prompt string) (string, error) {
 	fmt.Fprint(os.Stderr, prompt)
 	var line []byte
 	one := make([]byte, 1)
-	for len(line) < 64 {
+	for {
 		n, err := stdio.Real().Read(one)
 		if n == 1 && one[0] == '\n' {
 			break
 		}
-		if n == 1 {
+		if n == 1 && len(line) < 64 {
 			line = append(line, one[0])
 		}
 		if err != nil {
