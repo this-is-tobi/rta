@@ -1,6 +1,7 @@
 package net
 
 import (
+	stdnet "net"
 	"strings"
 	"testing"
 
@@ -53,12 +54,18 @@ func TestADNSLookupThatCouldNotBeMadeIsNotNoRecords(t *testing.T) {
 // The other side of the same line: a name that really does not exist is an
 // answer, and keeps saying so. Without this the fix is indistinguishable from
 // turning every empty result into a failure.
+//
+// Asked of a resolver the test runs, through the same declared input as the
+// test above. It asked the machine's own, and a machine whose resolver could
+// not be reached — a laptop on a network that drops it, a sandbox — reported
+// the lookup failed, which is the other test's answer and the right one there:
+// this one is about what rta makes of a resolver saying no such name.
 func TestANameThatDoesNotExistIsStillNoRecords(t *testing.T) {
 	_, err := runDNS(t.Context(), plugin.NewRequest(map[string]any{
-		"name": "no-such-name-rta-test.invalid", "type": "auto", "timeout": "5s",
+		"name": "no-such-name-rta-test.invalid", "type": "auto", "server": nxdomainServer(t), "timeout": "5s",
 	}, false, false))
 	if err == nil {
-		t.Skip("this resolver answers for .invalid, so there is nothing to assert")
+		t.Fatal("a resolver that said no such name produced no error at all")
 	}
 	verr, ok := err.(*view.Error)
 	if !ok {
@@ -67,4 +74,41 @@ func TestANameThatDoesNotExistIsStillNoRecords(t *testing.T) {
 	if verr.Code != "net.dns.norecords" {
 		t.Errorf("a nonexistent name reported %s, want net.dns.norecords: %s", verr.Code, verr.Message)
 	}
+}
+
+// nxdomainServer answers every question with NXDOMAIN, what a resolver says of
+// a name that does not exist, and returns its address. Only the header and the
+// question go back: whatever followed the question in the query, an EDNS
+// record among it, is not part of the answer.
+func nxdomainServer(t *testing.T) string {
+	t.Helper()
+	pc, err := stdnet.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+	go func() {
+		buf := make([]byte, 1500)
+		for {
+			n, from, err := pc.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			end := 12
+			for end < n && buf[end] != 0 {
+				end += int(buf[end]) + 1
+			}
+			end += 1 + 4 // the name's last label, then its type and class
+			if end > n {
+				continue
+			}
+			answer := append([]byte(nil), buf[:end]...)
+			answer[2] = 0x80 | buf[2]&0x79 // a response, with the opcode and recursion asked for
+			answer[3] = 0x80 | 3           // recursion available, NXDOMAIN
+			answer[4], answer[5] = 0, 1    // the one question
+			clear(answer[6:12])            // no answers, authorities or additions
+			_, _ = pc.WriteTo(answer, from)
+		}
+	}()
+	return pc.LocalAddr().String()
 }
