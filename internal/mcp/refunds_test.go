@@ -39,9 +39,10 @@ profiles:
           nothere: [x]
 `, t.TempDir())
 		f.grantFor(t, "broken", 1)
-		// The agent hears an ungranted call's words, whatever is wrong with the
-		// profile; the row says what it was.
-		assertCode(t, f.call(t, map[string]any{"profile": "broken"}), "core.grant.required")
+		// The agent hears that the profile cannot be used, whatever is wrong
+		// with it, as it hears of a credential nothing filled below; the row
+		// says what it was.
+		assertCode(t, f.call(t, map[string]any{"profile": "broken"}), "core.profile.unusable")
 		if entries, err := agentlog.Read(1); err != nil || len(entries) != 1 || entries[0].Code != "core.profile.unusable" {
 			t.Fatalf("the ledger recorded %+v (%v), want the call refused as an unusable profile", entries, err)
 		}
