@@ -1694,15 +1694,15 @@ func judged(grants []core.Grant, bound func(core.Grant) core.ArtifactState) []co
 // Beside the rows and not in a cell, because the Capability cell is what a row
 // action reads back to revoke by (RecordOfRoster), and one advisory a grant: the
 // rows are all there, and a surface heads the roster as partial only for what
-// is missing. Counted as the grant covers (reachOf), so a plugin with nothing
-// that needs a grant says nothing.
+// is missing. Counted as the grant covers (core.ReachOf), so a plugin with
+// nothing that needs a grant says nothing.
 func wideWarnings(sf plugin.Surface, catalog func() []plugin.Capability, grants []core.Grant) []view.Error {
 	var out []view.Error
 	for _, g := range grants {
 		if strings.Contains(g.Target, ".") {
 			continue
 		}
-		gated, destructive, reveals := reachOf(catalog, g)
+		gated, destructive, reveals := core.ReachOf(catalog(), g)
 		if len(gated) == 0 {
 			continue
 		}
@@ -1711,7 +1711,7 @@ func wideWarnings(sf plugin.Surface, catalog func() []plugin.Capability, grants 
 			whose = " for " + g.Agent
 		}
 		msg := fmt.Sprintf("%s is a whole-plugin grant%s: it covers %s an agent needs a grant for, %s",
-			g.Target, whose, format.Count(len(gated), "capability", "capabilities"), destructiveSummary(destructive))
+			g.Target, whose, format.Count(len(gated), "capability", "capabilities"), core.DestructiveSummary(destructive))
 		if len(reveals) > 0 {
 			msg += fmt.Sprintf(", and %s that reveal%s stored values (%s), each for every record it reaches",
 				strconv.Itoa(len(reveals)), format.Plural(len(reveals), "s", ""), strings.Join(reveals, ", "))

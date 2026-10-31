@@ -1789,9 +1789,9 @@ func checkAgainst(c plugin.Capability, values map[string]any, grants []Grant, by
 	// fix the problem is worse than one that hands them nothing — they run it,
 	// see success, and go looking for the cause somewhere else.
 	//
-	// The subject is the namespace rather than the capability when a profile is
-	// in play: an operator granting access to a connection almost never means
-	// "and only the status call".
+	// The subject is the capability, with a profile as without one. The grant
+	// on the whole plugin is the bridge's to offer beside it (WithPluginWide),
+	// since only the bridge has the catalogue that says what that grant covers.
 	return refuseMissing(c, missing, by.Profile, by.Agent)
 }
 
@@ -2137,44 +2137,11 @@ func refuseMissing(c plugin.Capability, missing []string, profile, agent string)
 	// fix the problem is worse than one that hands them nothing — they run it,
 	// see success, and go looking for the cause somewhere else.
 	//
-	// The subject is the namespace rather than the capability when a profile is
-	// in play: an operator granting access to a connection almost never means
-	// "and only the status call".
-	// Quoted only when it has to be: kv places no restriction on a key's
-	// characters, so a scope like "db password" built into this hint by
-	// plain concatenation produces a command that is not the one command it
-	// looks like — a shell splits it into an extra argument. Quoting only
-	// the scopes that need it keeps the common case (a bare word) reading
-	// exactly as it always has.
+	// **And it names the capability, profile or not.** It named the plugin
+	// whenever a profile was in play, so the command an agent relayed for a
+	// read was one that let it delete as well; see WithPluginWide, which is
+	// where the plugin is offered now, second and with what it covers.
 	//
-	// **Spelled by Call, because the record is the agent's.** A word that opens
-	// on a dash is a flag wherever it stands in a command line, and the hint
-	// put the record where the target goes: `grant allow kv.get --agent=other
-	// --agent claude` is a grant on every record, not the one refused, and a
-	// key of --note=… wrote the agent's words into the grant's note. Call puts
-	// the flags first and `--` before the words that may read as flags, and
-	// leaves every other command in the order it always had.
-	command := func(record string) string {
-		subject := c.ID
-		if profile != "" {
-			subject = Namespace(c.ID)
-		}
-		args := []plugin.Arg{{Name: "target", Value: subject, Positional: true}}
-		if record != "" {
-			args = append(args, plugin.Arg{Name: "record", Value: record, Positional: true})
-		}
-		if profile != "" {
-			args = append(args, plugin.Arg{Name: "profile", Value: profile})
-		}
-		// And the agent, for the same reason as the profile: covers() matches
-		// it exactly, so on a server started `--as claude` the command without
-		// `--agent claude` issues a row that authorizes nothing.
-		if agent != "" {
-			args = append(args, plugin.Arg{Name: "agent", Value: agent})
-		}
-		args = append(args, plugin.Arg{Name: "ttl", Value: "15m"})
-		return strings.TrimPrefix(plugin.SurfaceCLI.Call("grant.allow", args...), "rta ")
-	}
 	// One command for each record the call names that nothing covers, because
 	// a grant covers one record: handed only the first of a rename's two keys
 	// or of three certificate hosts, the operator ran it, the agent retried and
@@ -2183,7 +2150,7 @@ func refuseMissing(c plugin.Capability, missing []string, profile, agent string)
 	// has named every one.
 	commands := make([]string, 0, min(len(missing), maxHintCommands))
 	for _, record := range missing[:min(len(missing), maxHintCommands)] {
-		commands = append(commands, plugin.AskOperator(command(record)))
+		commands = append(commands, plugin.AskOperator(allowCommand(c.ID, record, profile, agent)))
 	}
 	hint := "a person has to allow this first — " + strings.Join(commands, ", and ")
 	if rest := len(missing) - len(commands); rest > 0 {
@@ -2192,6 +2159,40 @@ func refuseMissing(c plugin.Capability, missing []string, profile, agent string)
 	// The one command line an agent is handed, and in the one form that
 	// hands it on (plugin.AskOperator): only a person issues a grant.
 	return view.Errorf("core.grant.required", "no active grant for %s", describe(tool, missing)).WithHint(hint)
+}
+
+// allowCommand is the `grant allow` a refusal hands on for target, after
+// "rta", naming the record, the profile and the agent the call came with.
+//
+// Quoted only when it has to be: kv places no restriction on a key's
+// characters, so a scope like "db password" built into this hint by plain
+// concatenation produces a command that is not the one command it looks like —
+// a shell splits it into an extra argument. Quoting only the scopes that need
+// it keeps the common case (a bare word) reading exactly as it always has.
+//
+// **Spelled by Call, because the record is the agent's.** A word that opens on
+// a dash is a flag wherever it stands in a command line, and the hint put the
+// record where the target goes: `grant allow kv.get --agent=other --agent
+// claude` is a grant on every record, not the one refused, and a key of
+// --note=… wrote the agent's words into the grant's note. Call puts the flags
+// first and `--` before the words that may read as flags, and leaves every
+// other command in the order it always had.
+func allowCommand(target, record, profile, agent string) string {
+	args := []plugin.Arg{{Name: "target", Value: target, Positional: true}}
+	if record != "" {
+		args = append(args, plugin.Arg{Name: "record", Value: record, Positional: true})
+	}
+	if profile != "" {
+		args = append(args, plugin.Arg{Name: "profile", Value: profile})
+	}
+	// And the agent, for the same reason as the profile: covers() matches it
+	// exactly, so on a server started `--as claude` the command without
+	// `--agent claude` issues a row that authorizes nothing.
+	if agent != "" {
+		args = append(args, plugin.Arg{Name: "agent", Value: agent})
+	}
+	args = append(args, plugin.Arg{Name: "ttl", Value: "15m"})
+	return strings.TrimPrefix(plugin.SurfaceCLI.Call("grant.allow", args...), "rta ")
 }
 
 // maxHintCommands is how many grant commands a refusal spells out before it

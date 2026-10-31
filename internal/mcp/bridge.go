@@ -573,6 +573,10 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 		release, covering, verr := grant.ReserveNaming(c, gated, by)
 		if verr != nil {
 			verr = opts.ended.explain(verr, c, gated, by, refusalKey(ctx, opts))
+			// The gate names the call's own capability; the grant on the
+			// whole plugin over this profile is offered after it, counted
+			// from the catalogue the gate does not have.
+			verr = grant.WithPluginWide(verr, c, gated, reg.Capabilities(), by)
 			// Nobody pre-authorized it. With consent enabled, that is a
 			// question rather than an answer: park the call, ask the
 			// person, and proceed on their word.

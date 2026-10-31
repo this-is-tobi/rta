@@ -195,9 +195,14 @@ func agentText(c plugin.Capability, tools map[string]bool, profiled, authored bo
 		// a call on a namespace with connections has to name one: the command
 		// for the capability alone would be run, succeed, and leave every
 		// call refused (grant.refuseMissing says the same of the refusal).
+		//
+		// The capability and not its plugin, as the refusal names it: a model
+		// relays the command it was given, and the plugin's would have let
+		// every capability of it through on that profile, destructive ones
+		// included, for a person who was asked about this one.
 		if profiled {
 			b.WriteString(". You cannot issue one yourself — " +
-				plugin.AskOperator("grant allow "+plugin.Namespace(c.ID)+" --profile <profile>") +
+				plugin.AskOperator("grant allow "+c.ID+" --profile <profile>") +
 				", naming the profile you call it with.")
 		} else {
 			b.WriteString(". You cannot issue one yourself — " + plugin.AskOperator("grant allow "+c.ID) + ".")
