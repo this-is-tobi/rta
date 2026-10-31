@@ -140,10 +140,7 @@ var (
 // and a granted location around rta's own state alone, since it lies in the
 // home directory by design (a kv key kept in a granted ~/.ssh).
 func strictPolicy(d DenySet, name string) []string {
-	own := slices.Clone(d.NoAccess)
-	for _, f := range d.Unnamed {
-		own = append(own, withTarget(f)...)
-	}
+	own := d.ownFiles()
 	offList := own
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
 		offList = append(slices.Clone(own), withTarget(home)...)
