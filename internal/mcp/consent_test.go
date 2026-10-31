@@ -747,12 +747,14 @@ func TestACancelledCallStopsWaiting(t *testing.T) {
 	// is not, because closing the request comes *before* recording the call.
 	// Waiting on the earlier of the two put the race straight back. This is
 	// also the assertion worth making — a call nobody answered is still a
-	// call that happened, and it belongs in the record.
+	// call that happened, and it belongs in the record. The row is not the
+	// end of the write either (settleRecord).
 	deadline = time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		entries, _ := agentlog.Read(0)
 		for _, e := range entries {
 			if e.Cap == "demo.item.reveal" && e.Outcome == agentlog.Refused {
+				settleRecord(t)
 				return
 			}
 		}
