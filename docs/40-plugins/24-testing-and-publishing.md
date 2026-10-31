@@ -42,6 +42,18 @@ Reads that cannot be driven stay a log line: that is missing coverage, not a bro
 
 The values you supply go through the same input check the host puts in front of your handler, so one outside a field's `Options` or its `Min` and `Max` is not run: the host would refuse it before your handler saw it, and a result for a call that cannot happen checks nothing. The suite says so, and for a `Write` or `Destructive` capability that is a failure, like a missing value. So is a key that names nothing: an ID under your plugin's name that none of your capabilities has, the scaffold's `greet` after you renamed it, or an input its capability does not declare, whose value would reach no handler while the suite went green over the capability it was meant for. A key under another plugin's name is left to that plugin's check, so one map can supply several. `detail` is the one name you may give that no capability declares, on one that sets `Detailed`.
 
+**To test one handler, call it as rta does.** `sdktest.Run(ctx, Plugin(), id, values, dryRun)` hands that capability's handler the values with the declared defaults laid under them, the CLI as the surface, refuses what rta refuses before any handler runs, a required input left out or a value outside what its field declares, and returns what the handler answered as the host reads it. `plugin.NewRequest(values, …)` alone gives the handler the zero value of every input you declared a default for, a call no surface makes:
+
+```go
+func TestThingGetReadsTheDefaultPort(t *testing.T) {
+	v, err := sdktest.Run(context.Background(), Plugin(), "acme.thing.get", map[string]any{"name": "a"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// …assert on v
+}
+```
+
 ## Conventions worth following
 
 Use the shared verb vocabulary. `sdktest` warns on a novel verb, and when your word has a standard spelling it names it — it will tell you rta writes `remove` as `rm`, in four places already. A word that names a different act in your domain is not rewritten for you: `delete` stays where an HTTP method or a store's own verb means it, and `dump`, `query` and `destroy` are not taken for `show`, `search` and `rm`. The whole list:

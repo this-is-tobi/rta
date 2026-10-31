@@ -30,11 +30,17 @@
 //
 // # What it cannot see
 //
-// The inertness check watches a directory, so it catches a dry run that
-// writes to disk and nothing else. The `http post --dry-run` bug that
-// motivates the rule sent an HTTP request; on-box, nothing had changed, and
-// this suite would have passed it. A dry run that reaches off the machine is
-// still the author's problem to get right.
+// The inertness check watches a directory, so on its own it catches a dry run
+// that writes to disk and nothing else. The `http post --dry-run` bug that
+// motivates the rule sent an HTTP request; on-box, nothing had changed. A
+// capability's connection inputs pointed at Nowhere(dir) in WithInputs is how
+// the suite sees that too: a dry run that connects there fails. One that
+// reaches some other address is still the author's problem to get right.
+//
+// # Testing one handler
+//
+// Run calls one capability the way rta does, for a test of what its handler
+// answers; Check is for the rules every capability is held to.
 package sdktest
 
 import (
@@ -365,12 +371,8 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 			continue
 		}
 
-		// No Config and no Profile: a conformance run has no operator, and
-		// therefore neither a configuration file nor a named connection. A
-		// capability that only works once somebody has written one is a
-		// capability this suite should see failing.
-		values := plugin.Resolve(c, plugin.Inputs{Caller: inputs[c.ID]})
-		if missing := missingRequired(c, values); len(missing) > 0 {
+		req := request(c, inputs[c.ID], mutating)
+		if missing := missingRequired(c, req.Values()); len(missing) > 0 {
 			// A read that cannot be driven is a coverage gap. A *mutating* one
 			// is this suite failing at the only job it has ever caught anything
 			// doing: RuleDryRun exists because `http post --dry-run` and then
@@ -395,12 +397,6 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 				rule, c.ID, strings.Join(missing, ", "))
 			continue
 		}
-
-		// SurfaceCLI, not SurfaceUnknown: the suite stands in for a person at
-		// a terminal running --dry-run, and a capability that refuses a
-		// surface (git's remote reads refuse MCP) must be asked as the surface it
-		// is meant to serve.
-		req := plugin.NewRequest(values, mutating, false).WithSurface(plugin.SurfaceCLI)
 
 		// The check the host puts in front of every handler it registers
 		// (plugin.GuardInputs), so the suite runs what the host would run.
@@ -487,6 +483,47 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 		}
 	}
 	return out
+}
+
+// request is the Request rta hands c's handler for values typed at a terminal:
+// the declared defaults laid under them, as every surface lays them
+// (plugin.Resolve), and the CLI as the surface asking.
+//
+// No Config and no Profile: a run of the suite has no operator, and therefore
+// neither a configuration file nor a named connection. A capability that only
+// works once somebody has written one is a capability this suite should see
+// failing. SurfaceCLI, not SurfaceUnknown: the suite stands in for a person at
+// a terminal running --dry-run, and a capability that refuses a surface (git's
+// remote reads refuse MCP) must be asked as the surface it is meant to serve.
+func request(c plugin.Capability, values map[string]any, dryRun bool) plugin.Request {
+	return plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{Caller: values}), dryRun, false).
+		WithSurface(plugin.SurfaceCLI)
+}
+
+// Run calls p's capability id as rta runs it for a person at a terminal, for a
+// test of what its handler answers: values as they were typed, with the
+// declared defaults under them; refused as rta refuses a call before any
+// handler runs, a required input missing or a value outside what its field
+// declares; and the answer read as the host reads it. The suite drives every
+// capability the same way.
+//
+// plugin.NewRequest(values, …) alone hands the handler the zero value for
+// every input it declares a default for, a call no surface ever makes, so a
+// test written on it passes for a handler that breaks the first time
+// somebody runs it.
+func Run(ctx context.Context, p plugin.Plugin, id string, values map[string]any, dryRun bool) (view.View, error) {
+	for _, c := range p.Capabilities {
+		if c.ID != id {
+			continue
+		}
+		req := request(c, values, dryRun)
+		if verr := plugin.CheckRequest(c, req); verr != nil {
+			return nil, verr
+		}
+		v, err := c.Run(ctx, req)
+		return v, plugin.Failure(err)
+	}
+	return nil, fmt.Errorf("sdktest.Run: %s has no capability %q", p.Name, id)
 }
 
 // missingRequired names the required inputs that have no value, which is what
