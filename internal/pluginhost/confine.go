@@ -66,6 +66,12 @@ func (d DenySet) namedFile(id string, inputs []plugin.Field, req plugin.Request)
 // that leads out of it is refused at the open, and one elsewhere that leads
 // in is not; a check that read the spelling would refuse what works and pass
 // what the open then refuses.
+//
+// And not one of rta's own, which the policy carves out of a granted location
+// (strictPolicy): a store's key kept in a granted ~/.ssh passed here, so the
+// call naming it was handed to the plugin, whose open the kernel refused, and
+// the person read the plugin's "permission denied" on the box that named the
+// file where plugin.confine.file would have said why.
 func (d DenySet) readable(path string) bool {
 	at, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -74,7 +80,23 @@ func (d DenySet) readable(path string) bool {
 	if at, err = filepath.Abs(at); err != nil {
 		return false
 	}
+	if slices.ContainsFunc(d.ownFiles(), func(own string) bool { return inside(at, own) }) {
+		return false
+	}
 	return slices.ContainsFunc(d.Readable, func(granted string) bool {
 		return slices.ContainsFunc(withTarget(granted), func(form string) bool { return inside(at, form) })
 	})
+}
+
+// ownFiles is rta's own state as strict keeps it out of every location it
+// allows: what the deny set refuses outright, and what of rta's own the
+// operator keeps where the macOS profile cannot name it (Unnamed), each with
+// where it leads. One list for the policy and for the gate in front of it, so
+// the two cannot come to disagree about what is rta's.
+func (d DenySet) ownFiles() []string {
+	own := slices.Clone(d.NoAccess)
+	for _, f := range d.Unnamed {
+		own = append(own, withTarget(f)...)
+	}
+	return own
 }
