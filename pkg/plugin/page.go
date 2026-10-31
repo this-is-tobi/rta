@@ -20,7 +20,9 @@ import (
 // leaks down into the parts. Page answers them once:
 //
 //   - Embedded calls inherit the page's inputs (an unlock key, a target
-//     host) so a composed section can reach what the caller reached.
+//     host) so a composed section can reach what the caller reached, over
+//     the defaults the embedded capability declares, as the host lays them
+//     for a call it runs itself.
 //   - "detail" is cleared for embedded calls unless asked for explicitly:
 //     sections are the parts, and a part that expanded into its own full
 //     page would nest a report inside a report.
@@ -63,7 +65,7 @@ func (p *Page) Add(title string, c Capability, values map[string]any) *Page {
 // to.
 func (p *Page) AddAs(id, title string, c Capability, values map[string]any) *Page {
 	embeddable(fmt.Sprintf("Page.AddAs(%q)", id), c)
-	v, err := c.Run(p.ctx, p.section(values))
+	v, err := c.Run(p.ctx, p.section(c, values))
 	if err = Failure(err); err != nil {
 		// The section is still dropped — that is the whole point of a
 		// composed page surviving one bad sensor — but it stops being
@@ -117,7 +119,7 @@ func (p *Page) Warn(e *view.Error) *Page {
 // c is held to what AddAs holds it to, for the same reason.
 func (p *Page) Run(c Capability, values map[string]any) (view.View, error) {
 	embeddable("Page.Run", c)
-	v, err := c.Run(p.ctx, p.section(values))
+	v, err := c.Run(p.ctx, p.section(c, values))
 	return v, Failure(err)
 }
 
@@ -163,9 +165,23 @@ func embeddable(where string, c Capability) {
 		"needs no grant", where, c.ID, why))
 }
 
-// section derives the request an embedded call runs with.
-func (p *Page) section(values map[string]any) Request {
-	overlay := make(map[string]any, len(values)+1)
+// section derives the request an embedded call to c runs with: what c
+// declares as defaults, under the page's own inputs, under values.
+//
+// The host lays a capability's declared defaults before its handler runs
+// (Resolve), and a section is a call the host never saw. Without them a
+// handler read "" for an input declared with one: a target list whose
+// `health` defaults to `any` matched nothing, and a page summing up three
+// targets showed an empty section beneath the sum, with no warning, since
+// the handler had answered.
+func (p *Page) section(c Capability, values map[string]any) Request {
+	given := p.base.Values()
+	overlay := make(map[string]any, len(values)+len(c.Inputs)+1)
+	for _, f := range c.Inputs {
+		if _, set := given[f.Name]; !set && f.Default != nil {
+			overlay[f.Name] = f.Default
+		}
+	}
 	overlay["detail"] = false
 	for k, v := range values {
 		overlay[k] = v
