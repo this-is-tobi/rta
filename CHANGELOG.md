@@ -1,5 +1,92 @@
 # Changelog
 
+## [0.52.0](https://github.com/this-is-tobi/rta/compare/v0.51.1...v0.52.0) (2026-10-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* **operator:** over the operator channel, lock add and lock rm refuse an agent or an operator the server does not own, a server started without --as owns no agent, and lock list shows only the locks that apply to the server asked.
+* **operator:** rta operator status without --server asks for the operator key's passphrase, at a terminal or in the TUI's masked box.
+* **mcp:** rta mcp install and rta init register servers with --consent. Running rta mcp install again over an existing registration replaces it with one that asks; --no-consent keeps a registration that refuses.
+* **plugin:** Page.Add(title, c, values), Page.AddAs(id, title, c, values) and Page.Run(c, values) take a plugin.Capability in place of a Handler and a Safety.
+* **plugin:** a plugin hint that passes a string such as "<path>" as an Arg's value, or to InputTo or SettingTo, now prints it quoted on a command line ('<path>'). Pass plugin.Placeholder("path") to keep it bare.
+
+### Features
+
+* **kv:** the first store asks whether a passphrase or a key file locks it ([349243e](https://github.com/this-is-tobi/rta/commit/349243e529e88dd7a64a0375d67565c6359e2138))
+* **mcp:** a server rta mcp install registers asks you instead of refusing ([1d93b85](https://github.com/this-is-tobi/rta/commit/1d93b853c3f728ad69d56a922e1f97496045d9db))
+* **note:** note edit empties the fields clear names, the body among them ([4008ad3](https://github.com/this-is-tobi/rta/commit/4008ad32d086814b7296d05890488e6fe40bde2e))
+* **plugin:** confine: strict holds each plugin on Linux to what it needs, with Landlock ([f2ad155](https://github.com/this-is-tobi/rta/commit/f2ad15539b59f127d35575b38ce395b9dcf62975))
+* **plugin:** under strict, a call that names a file is refused before the plugin is sent it ([62892e6](https://github.com/this-is-tobi/rta/commit/62892e604a1e785f7b75637ffb3723e3bed05450))
+
+
+### Bug Fixes
+
+* **agent:** a refusal the operator answered is no longer pending ([2b1bbd3](https://github.com/this-is-tobi/rta/commit/2b1bbd3a285814ea87f9762627f15c19985121b7))
+* **audit:** an answer from osv.dev is read only as far as any real one goes ([1d4e38c](https://github.com/this-is-tobi/rta/commit/1d4e38cff2e2ec7fa7255c5514329eeaad8ef366))
+* **cert:** an https:// target's chain is verified for the host it names ([8705906](https://github.com/this-is-tobi/rta/commit/870590619f8dbf7c26737e695823be555b7d85dc))
+* **cert:** an IPv6 address that names no port is dialled at 443 ([7665c11](https://github.com/this-is-tobi/rta/commit/7665c1155bf05b2cd258daa3dd65f0be86fb70f5))
+* **fs:** a usage scan bounded by a depth says what it left out of its sizes ([8ba274b](https://github.com/this-is-tobi/rta/commit/8ba274b7daa6e700cfc445d6ee532a8aa3d3db6a))
+* **grant:** a mistyped grant target is offered the closest capability ([29d573b](https://github.com/this-is-tobi/rta/commit/29d573b445e7a55651e4c4ffa398b005645c01a2))
+* **grant:** a remote dry run is the server's draft, with the plugin build and connection pin ([64c0370](https://github.com/this-is-tobi/rta/commit/64c0370975403ffa312e7693754f9efa694a26fd))
+* **guard,operator:** an unlock refuses a verification key its passphrase does not unlock ([0016533](https://github.com/this-is-tobi/rta/commit/001653390757598bdef9144b0d3566f3e2fbd1a3))
+* **help:** a capability the help names is spelled as the command that runs it ([eb07a31](https://github.com/this-is-tobi/rta/commit/eb07a31812e675db28f1ecadb4ea77483bae269d))
+* **help:** a command's help leads with how to type it, and ends with the details ([7b93608](https://github.com/this-is-tobi/rta/commit/7b93608d63d9fe767993c183a96459c25e5d70eb))
+* **http:** a dry run masks every header named for a credential, by the history's rule ([04102b8](https://github.com/this-is-tobi/rta/commit/04102b83d0fc091c982e14ba476a1f2da513a849))
+* **http:** a loopback refusal names local-network, so the form opens again on it ([a1aa137](https://github.com/this-is-tobi/rta/commit/a1aa137f966b211c8f8b633f59fbdb3f26e82391))
+* **http:** over MCP a certificate refusal hands the chain to the operator, not to cert_chain ([675560d](https://github.com/this-is-tobi/rta/commit/675560d36c95fc9a6c6ce2eeb69422272e9aa55a))
+* **kv:** an agent that cannot open the store is told of the better lock too ([2ba0856](https://github.com/this-is-tobi/rta/commit/2ba085660af4cdbee0b589077adf1860d58c0c07))
+* **kv:** an edited value is held to the 16 MiB an entry holds, and so is the TUI's ([9e14966](https://github.com/this-is-tobi/rta/commit/9e1496693241a310bb90eaa49b37841919c09ecf))
+* **mcp:** a token file refused at startup is named by its line, never by a word of it ([0355866](https://github.com/this-is-tobi/rta/commit/0355866826685b93dd464b3e5352927ff3f023c9))
+* **net:** a forced resolver set over a symlink says the link is gone ([662bd4f](https://github.com/this-is-tobi/rta/commit/662bd4f68aa9e78f4044aa48ca21a6273eb2d328))
+* **net:** a port scan looks its host up once, and a failed lookup is never "closed" ([feb5ffb](https://github.com/this-is-tobi/rta/commit/feb5ffb0eacd1cb1726cfec2f85b372864db4f12))
+* **operator,mcp:** a roster, token file or remotes.yaml owned by another account is refused ([4a54e04](https://github.com/this-is-tobi/rta/commit/4a54e04c4f6bb2ae36226cc05cce0b9cf17c2add))
+* **operator,pkg:** remotes.yaml refuses YAML anchors, and go install is never handed a flag ([33b7678](https://github.com/this-is-tobi/rta/commit/33b767895ffcb4127eb411769c3afc3f03cdd2d3))
+* **operator:** a flood of challenges no longer pushes out an operator's ([2f035b6](https://github.com/this-is-tobi/rta/commit/2f035b6a805ce5951679da0173362facd9c6704f))
+* **operator:** a server's operators lock what that server owns, not another's ([1391923](https://github.com/this-is-tobi/rta/commit/1391923e1fb18c6405488ab9f82f5c20198cce1a))
+* **operator:** the roster line to paste is made from the key the passphrase unlocks ([703844b](https://github.com/this-is-tobi/rta/commit/703844b2172fe883a840655959acae2969fd2c79))
+* **passkey:** a verification key is 32 bytes in one spelling, and both state files hold to it ([97e9bad](https://github.com/this-is-tobi/rta/commit/97e9bad1646ed3da6fce23884f2431029cc33305))
+* **pkg:** an API digest that is not a digest is read as none, not sliced ([f128691](https://github.com/this-is-tobi/rta/commit/f1286911a1141c4c93d9957af9bb36c64a7ca2af))
+* **plugin:** a command acting on rta.lock refuses one it cannot read, before changing anything ([e0e2e13](https://github.com/this-is-tobi/rta/commit/e0e2e1393d4a2d43bef28bc11662737312969d2e))
+* **plugin:** a page embeds a sibling by its declaration and refuses one a caller could not call ([d3b7195](https://github.com/this-is-tobi/rta/commit/d3b71955884c1bf18f00b157f4f5fa2e1bae5628))
+* **plugin:** a value in angle brackets is quoted on a command line unless marked a placeholder ([42c42e1](https://github.com/this-is-tobi/rta/commit/42c42e1b6278b9b40372b9a397e93633d9a0da11))
+* **plugin:** plugin remove and plugin index remove are named rm, as every removal is ([bf4a9dc](https://github.com/this-is-tobi/rta/commit/bf4a9dcbaf2f3fd303769e2b1503ae5e68083cbb))
+* **plugin:** the store's key and a server's token file and roster are denied as rta's own ([87e6ae2](https://github.com/this-is-tobi/rta/commit/87e6ae22aebe3a00041bdd2509d236364ed280b6))
+* **sdk:** a plugin refuses a path it derived over MCP, since no sandbox bounds it to the roots ([5372af4](https://github.com/this-is-tobi/rta/commit/5372af4439e6bf3354bd6a68d427a0b21a75a54a))
+* **sys:** the overview grades the host's load over five minutes, not one ([30ae6ee](https://github.com/this-is-tobi/rta/commit/30ae6ee772a5e218ab025768ae12a957c8197507))
+* **tui,explain:** a capability that reveals a value is called what it does, not "write" ([41e69e8](https://github.com/this-is-tobi/rta/commit/41e69e8213d47f55e062887f8d1f28a98f955269))
+* **tui:** a live view's refresh lands only on that view, and every quit cancels the run in flight ([10ca7fb](https://github.com/this-is-tobi/rta/commit/10ca7fb20d792228256ff749228ee6aa87fcad5c))
+* **tui:** a narrow band cuts the end of its name and draws its status whole ([16433d7](https://github.com/this-is-tobi/rta/commit/16433d7868483402019b0170718fdea40ef08f9f))
+* **tui:** a run and a tab fetch the connection's credential off the update loop ([61386f7](https://github.com/this-is-tobi/rta/commit/61386f7d9cc82608d729c4d6f135f9ee14c38c28))
+* **tui:** a secret typed into a form keeps its edges, as the CLI and an agent's call keep them ([95e0a8c](https://github.com/this-is-tobi/rta/commit/95e0a8cb37f02903bb063733acfe1528bf8ab510))
+* **tui:** c on a tile runs the tile's own c action when the tile declares no copy ([79a126e](https://github.com/this-is-tobi/rta/commit/79a126ec1ba38de146ae15e7f1f4f7e70526305e))
+* **tui:** esc walks back one screen, to the form and then to the search ([f8fef74](https://github.com/this-is-tobi/rta/commit/f8fef7478f68b81841a3c05b5276e00e7017f5f1))
+* **tui:** every way off the theme screen starts the dashboard's refresh again ([d1f4f72](https://github.com/this-is-tobi/rta/commit/d1f4f726a8b5329c065b09d8faba81d5839933b3))
+* **tui:** hiding one of several stated tiles of one capability removes only its own entry ([0816554](https://github.com/this-is-tobi/rta/commit/0816554c2119b4ee2be82686d39799b0245579e3))
+* **tui:** leaving the U unlock form goes back to the dashboard it was opened on ([3a9bdbf](https://github.com/this-is-tobi/rta/commit/3a9bdbf52bab863cb97959056c826ff77d4f24a6))
+* **tui:** paging a list moves its cursor with the pane, so an action acts on a row on screen ([45c24a1](https://github.com/this-is-tobi/rta/commit/45c24a1c55840c11f03ecb242da5226e6e9a55dc))
+* **tui:** the dashboard opens on its first tile, not on a search line that looks like a box ([0e77b28](https://github.com/this-is-tobi/rta/commit/0e77b2885189e5364cbef296cb57af4b1f4489f1))
+* **tui:** the delete question names the profile or plugin key as a listing shows it ([367af83](https://github.com/this-is-tobi/rta/commit/367af83e398ce265b1bcbb961a6ec3b77b3233fc))
+* **tui:** the lines left under the dashboard go to the tiles cut short ([6c3c5a6](https://github.com/this-is-tobi/rta/commit/6c3c5a6b174b106198c82ca7ae7a3e39889d43d8))
+* **tui:** the plugin bar says t takes approval back where it does, and teaches no key that refuses ([41b99f5](https://github.com/this-is-tobi/rta/commit/41b99f58ada1189c4c9fc657f58d94f4b38f251c))
+* **tui:** the profiles pane says u switches off on the environment that is on ([9c0e2e9](https://github.com/this-is-tobi/rta/commit/9c0e2e9a70976f2fdb94f7127b962350c3d4293e))
+
+
+### Performance Improvements
+
+* **sys:** ps reads the machine's memory once per listing, and each process's once ([dedf784](https://github.com/this-is-tobi/rta/commit/dedf7843246c1aa32654d3604d4a94aecb3e1da7))
+* **tui:** a dashboard paint works its layout out once and draws no list row past what a tile shows ([f73f615](https://github.com/this-is-tobi/rta/commit/f73f61575fc46f373dbbfab2a56178a5c7257ce2))
+
+
+### Code Refactoring
+
+* **cli:** markdown is drawn by rta's own renderer, and glamour is gone ([635ca8e](https://github.com/this-is-tobi/rta/commit/635ca8ef4130eac65ebc4f05f24cd626b6ab33b4))
+
+
+### Dependencies
+
+* **deps:** update golang.org/x/net to v0.62.0 [security] ([3153b57](https://github.com/this-is-tobi/rta/commit/3153b57f51558a2a93200dd6c0d55fb5316bd38f))
+
 ## [0.51.1](https://github.com/this-is-tobi/rta/compare/v0.51.0...v0.51.1) (2026-10-27)
 
 
