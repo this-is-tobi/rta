@@ -265,6 +265,27 @@ func (s *stack) split(next Config) []Config {
 		}
 		return 0
 	}
+	// A plugin's section under a heading no file states yet goes to the file
+	// that states another heading of the same plugin, the first in reading
+	// order. That is a repin — the pin moved to the installed build, by `rta
+	// config repin` or the TUI's config editor — and the section staying where
+	// it was kept is the move the person made. Placed by heading alone it went
+	// to the config file, so repinning a section kept in a drop-in moved it out
+	// of that drop-in.
+	placePlugin := func(heading string) int {
+		if i, ok := s.owner["plugins/"+heading]; ok {
+			return i
+		}
+		ns, _, _ := strings.Cut(heading, "@")
+		for i, l := range s.layers {
+			for stated := range l.cfg.Plugins {
+				if statedNS, _, _ := strings.Cut(stated, "@"); statedNS == ns {
+					return i
+				}
+			}
+		}
+		return 0
+	}
 	if next.Output != "" {
 		parts[place("output")].Output = next.Output
 	}
@@ -287,7 +308,7 @@ func (s *stack) split(next Config) []Config {
 		parts[place("theme")].Theme = next.Theme
 	}
 	for k, v := range next.Plugins {
-		p := &parts[place("plugins/"+k)]
+		p := &parts[placePlugin(k)]
 		if p.Plugins == nil {
 			p.Plugins = map[string]map[string]any{}
 		}

@@ -58,7 +58,8 @@ func newConfigCommand(reg *registry.Registry, opts *globalOpts) *cobra.Command {
 	}
 	cmd.AddCommand(configShowCommand(reg, render), configPathCommand(render), configGetCommand(reg, render),
 		configSetCommand(reg, render, opts), configUnsetCommand(reg, render, opts),
-		configEditCommand(reg, render, opts), configCheckCommand(reg, render), configSchemaCommand(reg))
+		configEditCommand(reg, render, opts), configCheckCommand(reg, render), configSchemaCommand(reg),
+		configRepinCommand(render, opts))
 	return cmd
 }
 
