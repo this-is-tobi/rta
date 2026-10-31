@@ -64,6 +64,57 @@ type repinRow struct {
 	profile, key, status string
 }
 
+// repinOrigin is the artifact a repin of ns points pins at, refused before
+// anything is touched when there is none to point at. area is the second word
+// of the refusals' codes, "profile" or "config", and redo the command a dev
+// build's refusal names for after the build is installed.
+//
+// The two gates checkPin opens with: repinning to an artifact that is not
+// installed, or to a namespace that has no artifact at all, is not a smaller
+// version of the operation, it is a different and wrong one. Its remaining
+// cases all ask whether a pin matches what is installed — which is the thing a
+// repin exists to rewrite, so asking it here would refuse every pin worth
+// repinning.
+func repinOrigin(ns, area, redo string) (registry.Origin, *view.Error) {
+	var (
+		o     registry.Origin
+		known bool
+	)
+	if installed != nil {
+		o, known = installed.Origin(ns)
+	}
+	if !known {
+		// Installed-and-unapproved told apart from missing, the distinction
+		// checkPin draws and for a reason that lands hardest right here: trust
+		// is keyed on the digest, so a rebuild drops the approval, and repin is
+		// the command somebody runs *after* a rebuild. Told "not a registered
+		// plugin", they go looking for an install that is already on the disk.
+		if w, ok := installed.(interface{ Untrusted(string) bool }); ok && w.Untrusted(ns) {
+			return o, view.Errorf("core."+area+".untrustedplugin",
+				"%q is installed and has not been run", ns).
+				WithHint("`rta plugin trust " + ns + "` approves the artifact; rebuilding a " +
+					"plugin changes it, so it needs approving again")
+		}
+		return o, view.Errorf("core."+area+".unknownplugin",
+			"%q is not a registered plugin", ns).
+			WithHint("`rta plugin list` shows what is installed, including anything found and not run")
+	}
+	if !o.External() {
+		return o, view.Errorf("core."+area+".pinned",
+			"%q is built in and has no artifact to pin", ns).
+			WithHint("nothing to repin — a built-in namespace is never pinned")
+	}
+	// A build that plugin dev made for this run is not installed either, and
+	// is the one a hint might have named: everything written to it would be
+	// pinned to the digest of a build made for that run only.
+	if o.Dev {
+		return o, view.Errorf("core."+area+".repin.dev",
+			"%q is the build this run made from a directory, for this run only", ns).
+			WithHint("install the build, then run `" + redo + "` outside plugin dev")
+	}
+	return o, nil
+}
+
 func runProfileRepin(cmd *cobra.Command, only string, all bool, reg *registry.Registry, dryRun bool) (view.View, *view.Error) {
 	if verr := refuseUnhonouredConfig(); verr != nil {
 		return nil, verr
@@ -89,47 +140,9 @@ func runProfileRepin(cmd *cobra.Command, only string, all bool, reg *registry.Re
 			"%q is not a valid instance label", wantInstance).
 			WithHint("lowercase letters, digits and dashes, starting with a letter")
 	}
-	// The two gates checkPin opens with, made here before anything is touched:
-	// repinning to an artifact that is not installed, or to a namespace that
-	// has no artifact at all, is not a smaller version of the operation, it is
-	// a different and wrong one. Its remaining cases all ask whether an entry's
-	// pin matches what is installed — which is the thing this command exists to
-	// rewrite, so asking it here would refuse every entry worth repinning.
-	var (
-		o     registry.Origin
-		known bool
-	)
-	if installed != nil {
-		o, known = installed.Origin(ns)
-	}
-	if !known {
-		// Installed-and-unapproved told apart from missing, the distinction
-		// checkPin draws and for a reason that lands hardest right here: trust
-		// is keyed on the digest, so a rebuild drops the approval, and repin is
-		// the command somebody runs *after* a rebuild. Told "not a registered
-		// plugin", they go looking for an install that is already on the disk.
-		if w, ok := installed.(interface{ Untrusted(string) bool }); ok && w.Untrusted(ns) {
-			return nil, view.Errorf("core.profile.untrustedplugin",
-				"%q is installed and has not been run", ns).
-				WithHint("`rta plugin trust " + ns + "` approves the artifact; rebuilding a " +
-					"plugin changes it, so it needs approving again")
-		}
-		return nil, view.Errorf("core.profile.unknownplugin",
-			"%q is not a registered plugin", ns).
-			WithHint("`rta plugin list` shows what is installed, including anything found and not run")
-	}
-	if !o.External() {
-		return nil, view.Errorf("core.profile.pinned",
-			"%q is built in and has no artifact to pin", ns).
-			WithHint("nothing to repin — a built-in namespace is never pinned")
-	}
-	// A build that plugin dev made for this run is not installed either, and
-	// is the one a hint might have named: every entry written to it would be
-	// pinned to the digest of a build made for that run only.
-	if o.Dev {
-		return nil, view.Errorf("core.profile.repin.dev",
-			"%q is the build this run made from a directory, for this run only", ns).
-			WithHint("install the build, then run `rta profile repin --all --plugin " + ns + "` outside plugin dev")
+	o, refused := repinOrigin(ns, "profile", "rta profile repin --all --plugin "+ns)
+	if refused != nil {
+		return nil, refused
 	}
 	newPin := o.Short()
 
