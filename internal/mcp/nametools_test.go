@@ -71,7 +71,10 @@ func TestAnInputsHelpNamesOtherToolsByTheirToolNames(t *testing.T) {
 // A namespace with connections takes only calls that name one, and a grant
 // that names none covers none of them: the command the description hands the
 // operator has to name a profile, or it is run, succeeds and changes nothing.
-func TestAProfiledToolsGrantCommandNamesTheNamespaceAndAProfile(t *testing.T) {
+// And it names the capability, as the refusal does: the plugin's would have
+// let every capability of it through on that profile, destructive ones
+// included.
+func TestAProfiledToolsGrantCommandNamesTheCapabilityAndAProfile(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("RTA_CONFIG", dir+"/config.yaml")
 	const yaml = "profiles:\n  staging:\n    plugins:\n      demo:\n        set:\n          host: staging.internal\n"
@@ -87,8 +90,11 @@ func TestAProfiledToolsGrantCommandNamesTheNamespaceAndAProfile(t *testing.T) {
 		Inputs: []plugin.Field{{Name: "host", Type: plugin.String, Default: "localhost", Config: "host", Local: true}},
 	}
 	with := toolDef(c, Options{Profiles: cfg}).Description
-	if !strings.Contains(with, "ask the operator to run `rta grant allow demo --profile <profile>`") {
+	if !strings.Contains(with, "ask the operator to run `rta grant allow demo.query --profile <profile>`") {
 		t.Errorf("a profiled namespace is handed a grant command that covers no call:\n%s", with)
+	}
+	if strings.Contains(with, "grant allow demo --profile") {
+		t.Errorf("the description hands on a grant on the whole plugin for one capability:\n%s", with)
 	}
 	without := toolDef(c, Options{}).Description
 	if !strings.Contains(without, "ask the operator to run `rta grant allow demo.query`") || strings.Contains(without, "--profile") {

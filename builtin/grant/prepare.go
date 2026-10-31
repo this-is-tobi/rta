@@ -6,7 +6,6 @@ import (
 	"maps"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -291,7 +290,7 @@ func breadthNote(catalog func() []plugin.Capability, g core.Grant) string {
 	if strings.Contains(g.Target, ".") {
 		return ""
 	}
-	gated, destructive, _ := reachOf(catalog, g)
+	gated, destructive, _ := core.ReachOf(catalog(), g)
 	if len(gated) == 0 {
 		if g.Profile != "" && targetExists(catalog, g.Target) {
 			return fmt.Sprintf("note: no capability of %s takes a profile, so a grant naming %s covers no call — "+
@@ -299,7 +298,7 @@ func breadthNote(catalog func() []plugin.Capability, g core.Grant) string {
 		}
 		return ""
 	}
-	which := destructiveSummary(destructive)
+	which := core.DestructiveSummary(destructive)
 	return fmt.Sprintf("note: %s covers %s an agent needs a grant for, %s — name one to allow only it",
 		g.Target, format.Count(len(gated), "capability", "capabilities"), which)
 }
@@ -337,7 +336,7 @@ func revealNote(catalog func() []plugin.Capability, g core.Grant) string {
 	if g.Scope != "" {
 		return ""
 	}
-	_, _, ids := reachOf(catalog, g)
+	_, _, ids := core.ReachOf(catalog(), g)
 	switch len(ids) {
 	case 0:
 		return ""
@@ -371,7 +370,7 @@ const kvNamespace = "kv"
 func credentialNote(catalog func() []plugin.Capability, g core.Grant) string {
 	readsStore := false
 	for _, c := range catalog() {
-		if core.Namespace(c.ID) == kvNamespace && c.Reveals && reachedBy(g, c) {
+		if core.Namespace(c.ID) == kvNamespace && c.Reveals && g.Reaches(c) {
 			readsStore = true
 			break
 		}
@@ -430,61 +429,6 @@ func shownNames(names []string) []string {
 		out[i] = plugin.ListedName(name)
 	}
 	return out
-}
-
-// reachOf is what a grant covers in the catalogue, by the three counts the
-// receipt gives of a plugin-wide one and the roster repeats: every capability it
-// reaches, the destructive among them, and the ones that reveal a stored value.
-// Each is sorted, so a sentence built from them reads the same every time.
-func reachOf(catalog func() []plugin.Capability, g core.Grant) (gated, destructive, reveals []string) {
-	for _, c := range catalog() {
-		if !reachedBy(g, c) {
-			continue
-		}
-		gated = append(gated, c.ID)
-		if c.Safety == plugin.Destructive {
-			destructive = append(destructive, c.ID)
-		}
-		if c.Reveals {
-			reveals = append(reveals, c.ID)
-		}
-	}
-	sort.Strings(gated)
-	sort.Strings(destructive)
-	sort.Strings(reveals)
-	return gated, destructive, reveals
-}
-
-// reachedBy reports whether a grant covers calls of c: c is the capability it
-// names, or inside the plugin it names; it is one an agent can call at all, and
-// one that needs this grant (core.Required); and a grant that names a profile
-// covers only a capability a call can name one on (plugin.Profilable), since
-// the grant matches the connection exactly and no call of the others has any.
-func reachedBy(g core.Grant, c plugin.Capability) bool {
-	if c.HumanOnly || !core.Required(c, g.Profile) {
-		return false
-	}
-	if g.Profile != "" && !plugin.Profilable(c) {
-		return false
-	}
-	return c.ID == g.Target || (!strings.Contains(g.Target, ".") && core.Namespace(c.ID) == g.Target)
-}
-
-// destructiveSummary counts the destructive capabilities and names the first
-// few. Never "and 1 other": the fourth name is shorter than saying there is one.
-func destructiveSummary(ids []string) string {
-	if len(ids) == 0 {
-		return "none destructive"
-	}
-	shown := ids[:min(3, len(ids))]
-	if len(ids) == 4 {
-		shown = ids
-	}
-	which := strconv.Itoa(len(ids)) + " destructive (" + strings.Join(shown, ", ")
-	if rest := len(ids) - len(shown); rest > 0 {
-		which += " and " + format.Count(rest, "other", "others")
-	}
-	return which + ")"
 }
 
 // givenRecord refuses a record that is nothing but white space, the one
