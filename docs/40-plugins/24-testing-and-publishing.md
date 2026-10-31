@@ -40,7 +40,7 @@ func conformanceInputs(dir string) map[string]map[string]any {
 
 Reads that cannot be driven stay a log line: that is missing coverage, not a broken promise, and demanding a live target for every diagnostic is exactly what rta's own fixture deliberately refuses to do.
 
-The values you supply go through the same input check the host puts in front of your handler, so one outside a field's `Options` or its `Min` and `Max` is not run: the host would refuse it before your handler saw it, and a result for a call that cannot happen checks nothing. The suite says so, and for a `Write` or `Destructive` capability that is a failure, like a missing value.
+The values you supply go through the same input check the host puts in front of your handler, so one outside a field's `Options` or its `Min` and `Max` is not run: the host would refuse it before your handler saw it, and a result for a call that cannot happen checks nothing. The suite says so, and for a `Write` or `Destructive` capability that is a failure, like a missing value. So is a key that names nothing: an ID under your plugin's name that none of your capabilities has, the scaffold's `greet` after you renamed it, or an input its capability does not declare, whose value would reach no handler while the suite went green over the capability it was meant for. A key under another plugin's name is left to that plugin's check, so one map can supply several. `detail` is the one name you may give that no capability declares, on one that sets `Detailed`.
 
 ## Conventions worth following
 

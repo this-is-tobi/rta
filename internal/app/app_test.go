@@ -789,7 +789,7 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		"fs.hash":   {"path": payload},
 
 		// Local state, against the temp data dir.
-		"kv.copy":     {"key": "absent", "to": "absent-copy"},
+		"kv.copy":     {"key": "absent"},
 		"lock.add":    {"kind": "agent", "name": "nobody"},
 		"lock.rm":     {"kind": "agent", "name": "nobody"},
 		"kv.edit":     {"key": "absent"},
@@ -840,12 +840,6 @@ func conformanceInputs(dir string) map[string]map[string]any {
 		// plugins ship the same defect.
 		"net.send": {"host": "127.0.0.1", "port": 1, "data": "conformance\n"},
 
-		// Only present under -tags ai, and an unused key in the lean build.
-		// --base-url at a dead port for the same reason http.post gets one,
-		// with a sharper edge: the request this would send costs the operator
-		// money and goes to a third party.
-		"ai.ask": {"prompt": []string{"conformance"}, "base-url": "http://127.0.0.1:1/v1", "key": "conformance"},
-
 		// Files the mutating net capabilities edit, redirected into the
 		// watched directory. Without this they are skipped, and hosts/resolver
 		// editing is exactly the shape --dry-run exists for.
@@ -877,6 +871,14 @@ func TestBuiltinsPassTheConformanceSuite(t *testing.T) {
 			t.Setenv("RTA_KV_IDENTITY", "")
 			sdktest.Check(t, p, sdktest.WithInputs(conformanceInputs))
 		})
+	}
+	// Each plugin's check holds the keys in its own namespace; a key for a
+	// namespace no plugin has any more is this test's to catch. "ai.ask"
+	// outlived the plugin it was for, and supplied nothing.
+	for id := range conformanceInputs(t.TempDir()) {
+		if _, ok := reg.Capability(id); !ok {
+			t.Errorf("conformanceInputs supplies %q, which no built-in declares", id)
+		}
 	}
 }
 
