@@ -19,6 +19,8 @@ import (
 	"sync"
 	"syscall"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
@@ -425,6 +427,9 @@ var ErrWeakMode = errors.New("weak permissions")
 // no bit a mode check refuses. So the owner must be this account or root, who
 // could have written the file anyway: root is what a Kubernetes Secret or a
 // package mounts one as.
+//
+// Nor does either say anything about the directories above it, which is the
+// half of StrictModes the file's own check leaves out (heldAbove).
 func CheckTrustAnchor(path string, info fs.FileInfo, decides string) (groupReadable bool, err error) {
 	mode := info.Mode().Perm()
 	// 0o037: every world bit, plus group write (2) and group execute (1).
@@ -440,7 +445,64 @@ func CheckTrustAnchor(path string, info fs.FileInfo, decides string) (groupReada
 		return false, fmt.Errorf("%s is owned by uid %d, neither this account nor root — that account can "+
 			"rewrite it, and %s; chown it", path, uid, decides)
 	}
+	if err := heldAbove(path, decides); err != nil {
+		return false, err
+	}
 	return mode&0o040 != 0, nil
+}
+
+// heldAbove walks every directory above a trust anchor, up to the root, and
+// refuses one another account may write, or one owned by neither this account
+// nor root. A directory somebody else can write is a file they can replace:
+// unlinking the anchor and writing their own in its place needs no bit of the
+// file, so its mode and owner, checked above, were the attacker's to choose. A
+// sticky directory is the exception, since only an entry's owner may unlink or
+// rename it there: /tmp is shared that way, and so is the directory Kubernetes
+// mounts a Secret into, where the chart keeps the token file and the roster.
+//
+// The path as given and the file it leads to are both walked: a link in a
+// directory somebody else writes is a link they can point at another file, and
+// the file it leads to lies in directories of its own. A directory that is not
+// there holds nothing to replace.
+func heldAbove(path, decides string) error {
+	starts := []string{path}
+	if real, err := filepath.EvalSymlinks(path); err == nil && real != path {
+		starts = append(starts, real)
+	}
+	walked := map[string]bool{}
+	for _, start := range starts {
+		abs, err := filepath.Abs(start)
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		for dir := filepath.Dir(abs); !walked[dir]; dir = filepath.Dir(dir) {
+			walked[dir] = true
+			info, err := os.Stat(dir)
+			switch {
+			case errors.Is(err, fs.ErrNotExist):
+				continue
+			case err != nil:
+				return fmt.Errorf("%s is in %s, which cannot be checked (%w), and %s", path, dir, err, decides)
+			}
+			// A directory on a filesystem mounted read-only is one nobody
+			// writes, whatever its bits say: Kubernetes gives a Secret's
+			// volume the pod's fsGroup and group write with it, and the
+			// chart's root filesystem is read-only throughout.
+			if errors.Is(unix.Access(dir, unix.W_OK), unix.EROFS) {
+				continue
+			}
+			if mode := info.Mode(); mode.Perm()&0o022 != 0 && mode&fs.ModeSticky == 0 {
+				return fmt.Errorf("%s is in %s, whose %w (mode %s) let another account write in it — it can replace "+
+					"the file, and %s; chmod go-w %s, or keep the file somewhere only you write",
+					path, dir, ErrWeakMode, mode.Perm(), decides, dir)
+			}
+			if uid, ok := ownedByUsOrRoot(info); !ok {
+				return fmt.Errorf("%s is in %s, owned by uid %d, neither this account nor root — that account "+
+					"can replace the file, and %s; keep it in a directory you or root own", path, dir, uid, decides)
+			}
+		}
+	}
+	return nil
 }
 
 // ownedByUsOrRoot is the owner CheckTrustAnchor accepts, and the owner info
