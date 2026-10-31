@@ -112,6 +112,41 @@ func filterHoldsEsc(f *huh.Form) bool {
 	return false
 }
 
+// enterFinishes is whether enter on the box under the cursor finishes the form
+// rather than moving on: the box is one the form has to have answered, it holds
+// an answer, and so does every other such box the form is asking about.
+//
+// Enter walked every box, the optional ones too, and finishing early was ctrl+s
+// or shift+enter, which a person had to know. A form with one box that mattered
+// and a block of connection settings the configuration already filled cost a
+// press per box, or a key nobody guessed. A web form finishes on enter, and so
+// does this one — from a required box only. Pressing enter down a form to look
+// at what it asks is what people do (formEnterWord), so enter on a box the form
+// does not need still moves on, and on the last box it still does what
+// finishing does. The walk that ends early is the one that has just answered
+// the last box the form needs, and the footer says so before the key is
+// pressed.
+//
+// A picker with its filter open keeps enter, which applies the filter there.
+func (cf *capForm) enterFinishes() bool {
+	if cf == nil || cf.form == nil || cf.form.State != huh.StateNormal || filterHoldsEsc(cf.form) {
+		return false
+	}
+	at := slices.Index(cf.widgets, cf.form.GetFocusedField())
+	if at < 0 || at >= len(cf.fields) || !requiredHere(cf.fields[at]) {
+		return false
+	}
+	for _, f := range cf.fields {
+		if !requiredHere(f) || cf.hidden(f.Name) {
+			continue
+		}
+		if _, answered := cf.answer(f); !answered {
+			return false
+		}
+	}
+	return true
+}
+
 // environmentAbove is whether the run form's environment picker is above the box
 // under the cursor, which is when the footer says how to reach it.
 //
@@ -143,7 +178,9 @@ func (cf *capForm) environmentAbove() bool {
 
 // formEnterWord names enter by what it does where the cursor is: "next" on every
 // field but the last, and on the last the thing that completing the form does,
-// which afterFormUpdate decides and this reads in the same order.
+// which afterFormUpdate decides and this reads in the same order. A required box
+// that answers the last of them finishes the form too (enterFinishes), and is
+// named the same way.
 //
 // The footer said "next" on the last field of every form, with the ways to
 // submit listed beside it as keys that were not enter — and enter ran the call,
@@ -152,7 +189,7 @@ func (cf *capForm) environmentAbove() bool {
 // look at its fields is what people do.
 func (m Model) formEnterWord() string {
 	cf := m.form
-	if cf == nil || !onLastField(cf.form) {
+	if cf == nil || !onLastField(cf.form) && !cf.enterFinishes() {
 		return "next"
 	}
 	switch {

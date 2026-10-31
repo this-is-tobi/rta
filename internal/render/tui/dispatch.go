@@ -530,6 +530,14 @@ func (m Model) formKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	case "shift+enter", "alt+enter", "ctrl+s":
 		nm, cmd := m.fastSubmitForm()
 		return nm, cmd, true
+	case "enter":
+		// A required box that answers the last of them finishes the form, as
+		// ctrl+s does (enterFinishes); every other enter is the form's own,
+		// which moves on.
+		if m.form != nil && m.form.enterFinishes() {
+			nm, cmd := m.fastSubmitForm()
+			return nm, cmd, true
+		}
 	case "tab":
 		// Tab is the app's one completion key. On the completing fields it
 		// may open a socket — the one place a form may, and only because
