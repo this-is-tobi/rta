@@ -2180,6 +2180,15 @@ func runCapability(ctx context.Context, cmd *cobra.Command, c plugin.Capability,
 		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
 		return Rendered(verr)
 	}
+	// A plugin whose section rta could not apply does not run on its own
+	// defaults instead (ConfigWithheld). Before the destructive gate, so nobody
+	// is asked to confirm a call that cannot run, and before any profile is
+	// bound or forward opened, a dry run included: what it would preview is a
+	// call to a destination nobody configured.
+	if verr := ConfigWithheld(c); verr != nil {
+		_ = cli.RenderError(cmd.ErrOrStderr(), verr, renderOpts)
+		return Rendered(verr)
+	}
 
 	// Safety gate: a destructive capability runs only when somebody has said
 	// so. A person at a terminal is asked, further down, once the target is
@@ -2293,6 +2302,7 @@ func preparedRun(c plugin.Capability, values map[string]any, bound boundProfile,
 		Config:      PluginConfig(c),
 		// The heading Config sits under, for a refusal to name the line.
 		ConfigSection: PluginConfigSection(c),
+		HoldAmbient:   ConfigDisplaced(c),
 	}
 	req := plugin.ResolveRequest(c, inputs, opts.dryRun, opts.yes).WithSurface(plugin.SurfaceCLI)
 	// The required checks cobra cannot make: of a config-backed input, since
@@ -2302,8 +2312,8 @@ func preparedRun(c plugin.Capability, values map[string]any, bound boundProfile,
 	// already refused, at parse time, with the usage beside it. The host's
 	// own check (plugin.CheckRequired), asked here rather than left to the
 	// guard inside c.Run: a refusal from there is a failure, and a failure
-	// gets ConfigNotApplied's "so this ran with the declared defaults" beside
-	// it, about a call that did not run.
+	// gets ConfigNotApplied's "so this ran without it" beside it, about a call
+	// that did not run.
 	return inputs, req, plugin.CheckRequired(c, req)
 }
 

@@ -627,6 +627,8 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				Origin:        reg.Origin,
 				Config:        pluginConfig.For,
 				ConfigSection: pluginConfig.Section,
+				Withheld:      pluginConfig.Withheld,
+				Displaced:     pluginConfig.Displaced,
 				Profiles:      profileCfg,
 				ProfilesErr:   cfgErr,
 				// The schema above is a snapshot; what a call resolves through

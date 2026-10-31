@@ -366,6 +366,12 @@ func coordinatePort(conn config.Connection) int {
 type statedConfig struct {
 	values  map[string]any
 	section string
+	// withheld is the refusal of the plugin's calls when its section could
+	// not be applied (PluginConfig.Withheld), nil when it was or none exists.
+	withheld *view.Error
+	// displaced is a run that dropped the section for another build
+	// (PluginConfig.Displaced), for plugin.Inputs.HoldAmbient.
+	displaced bool
 }
 
 // configFor is the operator's stated config for the plugin a capability
@@ -382,7 +388,11 @@ func configOf(pc PluginConfig, c plugin.Capability) statedConfig {
 	if pc == nil || len(words) == 0 {
 		return statedConfig{}
 	}
-	return statedConfig{values: pc.For(words[0]), section: pc.Section(words[0])}
+	cfg := statedConfig{values: pc.For(words[0]), section: pc.Section(words[0]), displaced: pc.Displaced(words[0])}
+	if p, withheld := pc.Withheld(words[0]); withheld {
+		cfg.withheld = p.Refusal()
+	}
+	return cfg
 }
 
 // runCmd executes a capability off the update loop. yes reflects an explicit
@@ -419,6 +429,15 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 	// and the environment over it.
 	collected := values
 	return func() tea.Msg {
+		// A plugin whose section rta could not apply does not run on its own
+		// defaults instead, a dry run included: refused before anything is
+		// fetched or opened, as at a terminal.
+		if cfg.withheld != nil {
+			if dryRun {
+				return previewMsg{cap: c, err: cfg.withheld, seq: seq}
+			}
+			return resultMsg{cap: c, err: cfg.withheld, seq: seq}
+		}
 		if profileName != "" && filled == nil {
 			var verr *view.Error
 			if filled, verr = fillRefs(ctx, profileName, conn, c, collected); verr != nil {
@@ -459,7 +478,7 @@ func runCmd(ctx context.Context, seq int, c plugin.Capability, values map[string
 		// a caller who supplies one value must not lose the other defaults.
 		req := plugin.ResolveRequest(c, plugin.Inputs{
 			Caller: values, Profile: filled, ProfileName: profileName, Tunnel: via, Config: cfg.values,
-			ConfigSection: cfg.section, Fence: profile.FenceOf(conn),
+			ConfigSection: cfg.section, Fence: profile.FenceOf(conn), HoldAmbient: cfg.displaced,
 		}, dryRun, yes).WithSurface(plugin.SurfaceTUI)
 		// A default, not an override. Forcing detail on unconditionally made
 		// the D toggle on kv.list dead: toggleView set detail=false, this put

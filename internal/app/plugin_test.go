@@ -1481,13 +1481,17 @@ func TestPluginDevSaysThatTheInstalledCopysPinsDoNotApplyToTheBuild(t *testing.T
 	if verr := registerDev(reg, devClientFor(dev, "fedcba9876543210fedcba"), &stderr); verr != nil {
 		t.Fatal(verr)
 	}
-	for _, want := range []string{"the directory instead", "a `plugins:` section", "profile entries pinned to the installed copy", "do not apply"} {
+	for _, want := range []string{"the directory instead", "a `plugins:` section", "profile entries pinned to the installed copy",
+		"do not apply", "credentials in the environment go only to a destination named on the command line"} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Errorf("the notice does not say %q: %q", want, stderr.String())
 		}
 	}
 	if got, _ := reg.Origin("pg"); !got.Dev {
 		t.Errorf("the registry does not mark %+v as made for this run", got)
+	}
+	if !ConfigDisplaced(dev.Capabilities[0]) {
+		t.Error("the run that dropped pg's section does not hold its ambient credentials")
 	}
 
 	// A build that is the installed artifact keeps what was pinned to it, and

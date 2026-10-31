@@ -11,6 +11,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/guard"
 	"github.com/this-is-tobi/rta/internal/lockdown"
 	"github.com/this-is-tobi/rta/internal/pathguard"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
@@ -106,6 +107,16 @@ type Options struct {
 	// so a refusal of one names the line to change. nil names the bare
 	// namespace, which is right for every built-in.
 	ConfigSection func(namespace string) string
+	// Withheld answers why the operator's section for a namespace was not
+	// applied when none of its sections was (pluginconf.Resolver.Withheld):
+	// every call of that plugin is refused before any gate. nil withholds
+	// nothing.
+	Withheld func(namespace string) (pluginconf.Problem, bool)
+	// Displaced answers whether this run dropped a namespace's section for
+	// another artifact than the one it is pinned to — a `plugin dev` build
+	// serving in place of the installed copy — which keeps the ambient
+	// credentials off a call that names no endpoint (plugin.Inputs.HoldAmbient).
+	Displaced func(namespace string) bool
 	// Secrets fetches a `secrets:` reference for a profile. nil means this
 	// server resolves none, which withholds credentials rather than granting
 	// any — a profile that needs one then fails to connect, saying so.
@@ -362,6 +373,19 @@ func (o Options) configSection(c plugin.Capability) string {
 		return ""
 	}
 	return o.ConfigSection(words[0])
+}
+
+// withheld is Withheld asked of c's plugin.
+func (o Options) withheld(c plugin.Capability) (pluginconf.Problem, bool) {
+	if o.Withheld == nil {
+		return pluginconf.Problem{}, false
+	}
+	return o.Withheld(plugin.Namespace(c.ID))
+}
+
+// displaced is Displaced asked of c's plugin.
+func (o Options) displaced(c plugin.Capability) bool {
+	return o.Displaced != nil && o.Displaced(plugin.Namespace(c.ID))
 }
 
 // Problems reports what this server could not honour, and why.

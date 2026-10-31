@@ -92,6 +92,15 @@ Every upgrade keeps the previous artifact in the store, so a rollback is a re-in
 
 An upgrade also leaves the grants standing on the plugin covering nothing: each is bound to the build it was issued against, and the new build is another artifact. `rta grant list` marks every such grant `(replaced)` and `rta doctor` warns of them; `rta grant allow` issues each again for the build installed now.
 
+And it leaves your configuration pinned to the old build. A `plugins:` section whose heading names the old digest no longer applies, and rta refuses every call of the plugin until it names the build installed, as `core.config.unapplied`, rather than run them without it: without it a call goes to the plugin's own default destination, with whatever credentials you exported for the one the section named. A profile entry naming the old digest is refused the same way. The upgrade's receipt names both, and the command that moves each:
+
+```bash
+rta config repin --plugin pg                 # the plugins: section, every key kept, in the file it is in
+rta profile repin --all --plugin pg          # every profile entry
+```
+
+A section written with no pin, or one too short to trust, is refused and pinned the same way. Two sections for the one plugin, the old pin left beside the new, are refused by `config repin` rather than folded together, since which one's keys you keep is yours to say. A config file read from the working directory is not honoured at all, and a call runs without its sections rather than refuse on the word of a file you did not name.
+
 ## Related
 
 - [Using plugins](./10-plugins.md) — trust and confinement

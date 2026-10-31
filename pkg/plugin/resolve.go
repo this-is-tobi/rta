@@ -73,6 +73,14 @@ type Inputs struct {
 	// section that has to be written `pg@<pin>:`, a key the file does not
 	// have. Empty is the namespace, which is every built-in's heading.
 	ConfigSection string
+
+	// HoldAmbient keeps the ambient RTA_<NS>_<INPUT> credentials out of a call
+	// that does not name where it goes (Capability.NamesEndpoint). Not a layer.
+	// A surface sets it for a plugin whose operator section this run does not
+	// apply — a `plugin dev` build run in place of an installed copy — since
+	// the credential was exported for the destination that section names, and
+	// without it the call goes to the plugin's own default.
+	HoldAmbient bool
 }
 
 // Resolve turns the values a surface collected into the values a handler
@@ -258,7 +266,14 @@ func resolve(c Capability, in Inputs) (map[string]any, map[string]origin) {
 	// carries its own credential (RTA_PROFILE_<P>_<INPUT>, which
 	// internal/profile reads into in.Profile above) or it carries none and
 	// the connection fails saying so.
-	if in.ProfileName == "" {
+	//
+	// **And held while the call goes where nobody said** (HoldAmbient), the same
+	// pairing one step over: a `plugin dev` run drops the section pinned to the
+	// installed copy, and RTA_PROM_TOKEN, exported for the server that section
+	// named, went to whatever listened on the plugin's default port. A call that
+	// names its endpoint has been aimed by the person who typed it, and gets the
+	// credential as it would anywhere.
+	if in.ProfileName == "" && (!in.HoldAmbient || c.NamesEndpoint(in.Caller)) {
 		for _, f := range c.Inputs {
 			if !f.Local || !f.EnvFallback {
 				continue

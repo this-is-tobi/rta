@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/pluginhost"
 	"github.com/this-is-tobi/rta/internal/profile"
 	"github.com/this-is-tobi/rta/internal/registry"
@@ -113,10 +114,15 @@ type runRef struct {
 // config editor re-resolves after it saves, and it saves by moving a stale
 // pin to the installed digest: a heading kept from the resolution before
 // would name the pin the save just removed, beside values read under the
-// new one.
+// new one. The same holds for what the resolution refused: a section that
+// was not applied refuses the plugin's calls (Withheld) until that save, and
+// a run that dropped one for another build (Displaced) keeps the ambient
+// credentials off a call aimed nowhere.
 type PluginConfig interface {
 	For(namespace string) map[string]any
 	Section(namespace string) string
+	Withheld(namespace string) (pluginconf.Problem, bool)
+	Displaced(namespace string) bool
 }
 
 // Model is the TUI shell.

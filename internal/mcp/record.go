@@ -499,8 +499,9 @@ func propose(ctx context.Context, c plugin.Capability, opts Options,
 	// surface, so a capability that refuses MCP refuses its preview too, and
 	// the same resolution, so what is previewed is what would run.
 	v, err := c.Run(ctx, plugin.ResolveRequest(c, plugin.Inputs{
-		Caller: values,
-		Config: opts.pluginConfig(c),
+		Caller:      values,
+		Config:      opts.pluginConfig(c),
+		HoldAmbient: opts.displaced(c),
 	}, true, true).WithSurface(plugin.SurfaceMCP))
 	if err != nil {
 		// A preview that fails says nothing and blocks nothing: the operator

@@ -1083,9 +1083,12 @@ func registerDev(reg *registry.Registry, c *pluginhost.Client, stderr io.Writer)
 			// What stops applying is said, since nothing else would: the
 			// section is dropped without a word, and a profile entry for the
 			// installed copy is refused as a stale pin in a run that never
-			// asked to change the pin.
+			// asked to change the pin. And what still applies, since it once
+			// did not say: a credential in the environment, which goes only
+			// where the command line aims the call (plugin.Inputs.HoldAmbient).
 			notice += ", so a `plugins:` section and the profile entries pinned to the installed " +
-				"copy do not apply to it"
+				"copy do not apply to it, and credentials in the environment go only to a destination " +
+				"named on the command line"
 		}
 		fmt.Fprintln(stderr, notice)
 	}

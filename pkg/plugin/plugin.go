@@ -1044,6 +1044,27 @@ func KnownNeed(n Need) bool { return slices.Contains(needs, n) }
 // against the plugin's own default host with nothing reporting why.
 func EndpointRoles() []EndpointRole { return slices.Clone(endpointRoles) }
 
+// NamesEndpoint reports whether values name any of the inputs that say where
+// c's call goes — the host, the port, the address or the URL. Not the TLS
+// switch, which says how to talk, never where.
+//
+// The one reading of "the caller aimed this call" for the two places that
+// decide on it: a forward is not opened for a call aimed elsewhere
+// (internal/profile's Dial), and the ambient credentials stay out of one that
+// is not aimed at all while a run drops the section that would have aimed it
+// (Inputs.HoldAmbient).
+func (c Capability) NamesEndpoint(values map[string]any) bool {
+	for _, f := range c.Inputs {
+		if f.Endpoint == EndpointNone || f.Endpoint == EndpointTLS {
+			continue
+		}
+		if _, given := values[f.Name]; given {
+			return true
+		}
+	}
+	return false
+}
+
 // AgentText is the text an agent is shown after c's Summary: what c wrote for
 // it (Agent), and Description when c wrote nothing separate. The one place the
 // choice is made, so the tool listing, the conformance suite and the budgets
