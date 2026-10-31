@@ -12,7 +12,7 @@ func TestPlugin(t *testing.T) {
 
 It runs the catalogue-wide invariants rta holds its own built-ins to — the shared verb vocabulary, every declared view rendering in every format it claims, dry-run honesty on anything that writes, declared text, and the hints your source words at run time, that spell no flag for an agent to look for ([Declared text is checked](./23-safety-and-credentials.md#declared-text-is-checked)). It found a built-in sending real bytes on `--dry-run` the first time it was pointed at rta's own catalogue.
 
-What it runs is worth knowing before you point it at a connection. Each `Read` capability is run once, for real, with its declared defaults — whatever it reads, it reads — except one that declares `NoPreview`, which it skips and says so. A `Write` or `Destructive` capability is never run for real: it is run once with `DryRun` set, against a temporary `RTA_DATA_DIR`, and the suite fails if the directory changed. It cannot see what leaves the machine, so a dry run that sends a request is still yours to get right; that is what pointing a connection input at `127.0.0.1:1` below is for. The test sets `RTA_DATA_DIR` for its duration, so it must not be parallel.
+What it runs is worth knowing before you point it at a connection. Each `Read` capability is run once, for real, with its declared defaults — whatever it reads, it reads — except one that declares `NoPreview`, which it skips and says so. A `Write` or `Destructive` capability is never run for real: it is run once with `DryRun` set, against a temporary `RTA_DATA_DIR`, and the suite fails if the directory changed. It watches one address too: `sdktest.Nowhere(dir)` is a listener it opens for the run, and a dry run that connects to it fails the same rule, so a connection input pointed there catches a dry run that sends its request. What leaves the machine for anywhere else is still yours to get right. The test sets `RTA_DATA_DIR` for its duration, so it must not be parallel.
 
 `sdktest.Skip(rule, capabilityID, why)` opts one capability out of one rule, and the reason is printed on every run so a rule never quietly stops applying: `sdktest.RuleDryRun` (the dry run leaves the data directory as it was), `RuleViews` (every view survives the JSON encoding), `RuleVerbs` (the last ID segment is a verb the catalogue uses, a warning only), `RuleRedaction` (a secret in an answer is marked), `RuleActions` (what the TUI may do with a result holds against the result), `RuleSpelling` (the declared text spells nothing only a terminal can act on, by capability ID, or by the plugin's name for its own summary), and `RuleWording` (what an agent is shown stays in budget and speaks to an agent, and a time says its unit). The declaration check, the one registration makes, has no waiver, and neither has the source check `WithSource` adds. That check also notes, under `RuleCodes`, a code the source spells ending `.forbidden`, `.unauthorized` or `.unauthenticated` and the ending to use instead, because the host reads a refused credential from `.auth.failed` or `.denied` alone ([A credential the service refused](./22-answers-errors-and-hints.md#a-credential-the-service-refused)); it is a note a `go test -v` run shows, never a failure.
 
@@ -25,14 +25,15 @@ Two rules make the difference between a real check and a green nothing:
 ```go
 func conformanceInputs(dir string) map[string]map[string]any {
 	return map[string]map[string]any{
-		// Point anything that connects at somewhere nothing is listening, so
-		// a dry run that stops being dry fails as a refused connection rather
-		// than as a request against somebody's real service.
-		"acme.thing.set": {"address": "127.0.0.1:1", "name": "conformance"},
+		// Point anything that connects at the address the suite watches: a
+		// dry run that connects to it fails the suite. Aimed at a port where
+		// nothing listens, it failed with a refused connection, an error the
+		// suite took for the dry run's answer.
+		"acme.thing.set": {"address": sdktest.Nowhere(dir), "name": "conformance"},
 		// Point every path inside dir, which is the directory the suite
 		// watches — a write that should not have happened is then a test
 		// failure rather than a file in a temp directory nobody looks at.
-		"acme.thing.get": {"address": "127.0.0.1:1", "out": filepath.Join(dir, "got")},
+		"acme.thing.get": {"address": sdktest.Nowhere(dir), "out": filepath.Join(dir, "got")},
 	}
 }
 ```

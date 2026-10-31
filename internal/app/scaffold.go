@@ -489,16 +489,16 @@ func TestPlugin(t *testing.T) {
 // required input — without one the suite cannot run it.
 //
 // Two rules make the difference between a real check and a green nothing:
-// point anything that connects at somewhere nothing is listening
-// (127.0.0.1:1), so a dry run that stops being dry fails as a refused
-// connection instead of reaching a real service; and point every path input
-// inside dir, which is the directory the suite watches — a write that should
-// not have happened is then a test failure rather than a file in a temp
-// directory nobody looks at.
+// point anything that connects at sdktest.Nowhere(dir), an address the suite
+// watches, so a dry run that stops being dry and connects fails the suite
+// instead of reaching a real service; and point every path input inside dir,
+// which is the directory the suite watches — a write that should not have
+// happened is then a test failure rather than a file in a temp directory
+// nobody looks at.
 //
 //	return map[string]map[string]any{
-//		"{{.Name}}.thing.set": {"endpoint": "127.0.0.1:1", "name": "conformance"},
-//		"{{.Name}}.thing.get": {"endpoint": "127.0.0.1:1", "out": filepath.Join(dir, "got")},
+//		"{{.Name}}.thing.set": {"endpoint": sdktest.Nowhere(dir), "name": "conformance"},
+//		"{{.Name}}.thing.get": {"endpoint": sdktest.Nowhere(dir), "out": filepath.Join(dir, "got")},
 //	}
 func conformanceInputs(dir string) map[string]map[string]any {
 	return map[string]map[string]any{
