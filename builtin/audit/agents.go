@@ -1077,8 +1077,9 @@ func HumanOnlyVerbs(catalog func() []plugin.Capability) []string {
 
 // handDenied is what the shell must not reach and no declaration marks: the
 // store whole, because its listing alone is reconnaissance, and the three
-// verbs that admit a plugin, which are commands rather than capabilities.
-var handDenied = []string{"kv", "plugin trust", "plugin allow", "plugin install"}
+// commands that admit a plugin or open a location to one, which are commands
+// rather than capabilities.
+var handDenied = []string{"kv", "plugin trust", "plugin access", "plugin install"}
 
 func denyBlock(catalog func() []plugin.Capability) string {
 	names := append(append(HumanOnlyPlugins(catalog), handDenied...), HumanOnlyVerbs(catalog)...)

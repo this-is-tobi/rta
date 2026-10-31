@@ -115,7 +115,7 @@ func installView(rep plugindist.Report, dryRun bool) view.View {
 		}
 		pairs = append(pairs, view.Pair{Key: "asks to read",
 			Value: strings.Join(asks, ", ") + " — not granted by installing; " +
-				"`rta plugin allow " + rep.Name + "` decides"})
+				"`rta plugin access add " + rep.Name + "` decides"})
 	}
 	installedLabel := "installed"
 	// What to do next depends on what the plugin reads from a config. One that

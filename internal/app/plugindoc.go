@@ -74,7 +74,7 @@ func pluginDocView(p plugin.Plugin) (view.View, *view.Error) {
 		head += "\n" + p.Summary + "\n"
 	}
 	if len(p.Needs) > 0 {
-		head += "\nAsks for " + needsLine(p.Needs) + " — granted, or not, with `rta plugin allow " + p.Name + "`.\n"
+		head += "\nAsks for " + needsLine(p.Needs) + " — granted, or not, with `rta plugin access add " + p.Name + "`.\n"
 	}
 	page := view.Sections{Items: []view.Section{
 		{View: view.Text{Body: head, Markdown: true}},

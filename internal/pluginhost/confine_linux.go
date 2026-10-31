@@ -22,7 +22,7 @@ import (
 // additive, fixed for the life of the process. So strict is the stricter
 // model and not the same one — a plugin may reach the system, a temporary
 // directory of its own, its own binary, the directories on its PATH outside the home directory and the
-// credential locations `rta plugin allow` granted it, and nothing else of the
+// credential locations `rta plugin access add` gave it, and nothing else of the
 // home directory — and it is the
 // operator's to turn on, on a server that runs plugins it does not otherwise
 // watch, where tools are the system's.

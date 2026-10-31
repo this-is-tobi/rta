@@ -52,7 +52,7 @@ type Manifest struct {
 	// matters. Checked at install in both directions like the capability set,
 	// so an index cannot quietly omit one.
 	//
-	// Claiming a need is not being granted it — `rta plugin allow` is still a
+	// Claiming a need is not being granted it — `rta plugin access add` is still a
 	// separate decision against the digest. This is what makes the decision an
 	// informed one.
 	Needs []plugin.Need `yaml:"needs,omitempty"`

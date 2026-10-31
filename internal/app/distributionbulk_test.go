@@ -155,7 +155,7 @@ func TestAnEmptyPluginListingIsATableToAParser(t *testing.T) {
 	}{
 		{[]string{"plugin", "outdated"}, "no plugin is installed", "Plugin,Installed,Available,Index"},
 		{[]string{"plugin", "index", "list"}, "no index is attached", "Index,Origin,Pinned,Plugins,Problems"},
-		{[]string{"plugin", "allow"}, "No installed plugin asks", "Plugin,Asks For,Status,To Allow"},
+		{[]string{"plugin", "access"}, "No installed plugin asks", "Plugin,Asks For,Status,Next"},
 		{[]string{"plugin", "trust"}, "Nothing is waiting", "Plugin,Digest,Artifact,To Load It"},
 	} {
 		name := strings.Join(c.args, " ")

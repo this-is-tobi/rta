@@ -148,14 +148,17 @@ func documentArguments(root *cobra.Command) {
 		"rta explain": {{"capability", "capability ID to print in full, e.g. sys.cpu — omit to list every one, or give a plugin (sys) to list its own"}},
 		"rta mcp install": {{"client",
 			"MCP client to register rta in: " + strings.Join(clients, ", ")}},
-		"rta plugin allow": {
-			{"name", "plugin to allow — omit to list what every loaded plugin asks for"},
-			{"location...", "credential locations to allow, from the ones that plugin declares — " +
-				"omit to allow everything it declares"},
+		"rta plugin access add": {
+			{"name", "plugin to give access to"},
+			{"location...", "credential locations it may read, from the ones that plugin declares — " +
+				"omit for everything it declares"},
 		},
-		"rta plugin dev":      {{"dir", "directory holding the plugin's source (default: the current directory)"}},
-		"rta plugin disallow": {{"name", "plugin to withdraw every allowed location from"}},
-		"rta plugin doc":      {{"binary", "path to the plugin binary, run sandboxed to read its declaration"}},
+		"rta plugin dev": {{"dir", "directory holding the plugin's source (default: the current directory)"}},
+		"rta plugin access rm": {
+			{"name", "plugin to take access back from"},
+			{"location...", "locations to take back — omit for every one it was given"},
+		},
+		"rta plugin doc": {{"binary", "path to the plugin binary, run sandboxed to read its declaration"}},
 		"rta plugin index add": {
 			{"name", "name to attach the index under — `official` is reserved for the first-party one"},
 			{"repository", "git repository to clone — omit only for `official`, which rta knows by name"},

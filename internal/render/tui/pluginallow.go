@@ -11,11 +11,11 @@ import (
 	"github.com/this-is-tobi/rta/pkg/plugin"
 )
 
-// Allowing a plugin to read a credential location, from the pane that shows
+// Giving a plugin access to a credential location, from the pane that shows
 // what it is asking for.
 //
-// The pane already named the gap — "needs kubeconfig and has not been allowed
-// — `rta plugin allow weather`" — and then sent somebody to another window to
+// The pane already named the gap — "needs kubeconfig and has no access to it
+// — `rta plugin access add weather`" — and then sent somebody to another window to
 // act on it. That is the same shell-out the trust key removed, one permission
 // further along, and the same argument applies: the digest, the artifact path
 // and the list of locations are all on screen while the decision is made,
@@ -25,7 +25,7 @@ import (
 //
 // **The two decisions are not the same size, so they do not get the same
 // control.** Approving an artifact says "these bytes may run", which is one
-// yes/no about one thing already named on the row. Allowing is plural and
+// yes/no about one thing already named on the row. Access is plural and
 // asymmetric: a plugin declares several locations, and `a` as a bare key would
 // hand over *every* location it declared, from a cursor position, with the
 // row's own text as the only description of what was granted. A keypress that
@@ -34,11 +34,11 @@ import (
 //
 // The form also makes withdrawal expressible, which a key cannot: plugintrust
 // .Allow states the whole grant rather than adding to it, so a checkbox list
-// submitted with one box cleared *is* the disallow, and there is no second
+// submitted with one box cleared *is* the `access rm`, and there is no second
 // control to learn.
 
 // allowFields turns a plugin's declared needs into one checkbox each, seeded
-// from what it is allowed right now — so the form opens showing the current
+// from what it may read right now — so the form opens showing the current
 // grant rather than an empty one somebody would have to rebuild from memory.
 func allowFields(row pluginRow, allowed []string) []plugin.Field {
 	fields := make([]plugin.Field, 0, len(row.plugin.Needs))
@@ -62,7 +62,7 @@ func allowFields(row pluginRow, allowed []string) []plugin.Field {
 // allowHelp is what a box says it lets the plugin read: the place on this
 // machine, from the table the sandbox keeps the plugin out of it by, and the
 // word the plugin declared. A person approving "kubeconfig" is approving a
-// word; the path is what they recognise, and `rta plugin allow` prints it
+// word; the path is what they recognise, and `rta plugin access add` prints it
 // beside the same choice.
 func allowHelp(name string, n plugin.Need) string {
 	if path := pluginhost.Tier2Path(n); path != "" {
@@ -81,7 +81,7 @@ func (m Model) startAllowForm(row pluginRow) (tea.Model, tea.Cmd) {
 		return m, nil
 	case !row.external() && !row.waiting:
 		m.refuse(row.plugin.Name + " is built into rta — it reads what rta reads, " +
-			"and there is no separate artifact to allow")
+			"and there is no separate artifact to give access to")
 		return m, nil
 	case row.waiting:
 		// plugintrust.Allow refuses this case too, but its error arrives after
@@ -94,7 +94,7 @@ func (m Model) startAllowForm(row pluginRow) (tea.Model, tea.Cmd) {
 		// Its entry went with the approval, so there is no record left to hold a
 		// grant: plugintrust.Allow would refuse the form once it was filled in.
 		m.refuse("approval was taken back from " + row.plugin.Name +
-			" — it can be allowed nothing until it is approved again")
+			" — it can be given no access until it is approved again")
 		return m, nil
 	case len(row.plugin.Needs) == 0:
 		m.refuse(row.plugin.Name + " does not ask to read any credential location")
@@ -103,7 +103,7 @@ func (m Model) startAllowForm(row pluginRow) (tea.Model, tea.Cmd) {
 
 	fields := allowFields(row, plugintrust.Load().Allowed(row.origin.Digest))
 	synth := plugin.Capability{
-		ID:      row.plugin.Name + ".allow",
+		ID:      row.plugin.Name + ".access",
 		Summary: "credential locations " + row.plugin.Name + " may read",
 		// Write rather than Read: this changes a standing permission on this
 		// machine. Not Destructive — nothing is deleted, and clearing every box

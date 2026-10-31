@@ -696,7 +696,7 @@ func TestWithinIsNotAPrefixComparison(t *testing.T) {
 
 // **A plugin author has to be able to exercise their own declaration**, and
 // almost could not: `rta plugin dev` rebuilds the plugin on every run, so the
-// temporary binary's digest is new each time and `rta plugin allow` — which
+// temporary binary's digest is new each time and `rta plugin access add` — which
 // names an artifact — could never reach it. The mechanism would have been
 // usable by everybody except the people writing for it.
 //
@@ -730,7 +730,7 @@ func TestTheDevReportSaysWhatItAllowedAndWhatInstallingWillNot(t *testing.T) {
 	if !strings.Contains(out, "kubeconfig") {
 		t.Errorf("the report does not name what it allowed:\n%s", out)
 	}
-	if !strings.Contains(out, "rta plugin allow clusters") {
+	if !strings.Contains(out, "rta plugin access add clusters") {
 		t.Errorf("the report does not say what installing it will need:\n%s", out)
 	}
 
@@ -761,35 +761,35 @@ func TestTheDevReportSaysWhatItAllowedAndWhatInstallingWillNot(t *testing.T) {
 }
 
 // A second `allow` naming a different location must add to what an earlier
-// one granted, not replace it — disallow is its own command specifically
+// one granted, not replace it — `access rm` is its own command specifically
 // because taking access away is meant to be deliberate, and Allow itself
 // stores exactly the list it is given.
 func TestMergedAllowAddsRatherThanReplaces(t *testing.T) {
 	had := []string{"kv.file"}
 	want := []plugin.Need{"net.hosts"}
 
-	got := mergedAllow(had, want)
+	got := mergedAccess(had, want)
 
 	if !slices.Contains(got, "kv.file") {
-		t.Errorf("mergedAllow(%v, %v) = %v, dropped a location an earlier call already granted",
+		t.Errorf("mergedAccess(%v, %v) = %v, dropped a location an earlier call already granted",
 			had, want, got)
 	}
 	if !slices.Contains(got, "net.hosts") {
-		t.Errorf("mergedAllow(%v, %v) = %v, missing the newly requested location", had, want, got)
+		t.Errorf("mergedAccess(%v, %v) = %v, missing the newly requested location", had, want, got)
 	}
 }
 
 // Asking again for something already allowed must not duplicate it — the
 // list plugintrust.Allow stores is what a report reads back and what a
-// person sees in `rta plugin allow` with no arguments.
+// person sees in `rta plugin access`.
 func TestMergedAllowDoesNotDuplicate(t *testing.T) {
 	had := []string{"kv.file"}
 	want := []plugin.Need{"kv.file"}
 
-	got := mergedAllow(had, want)
+	got := mergedAccess(had, want)
 
 	if len(got) != 1 {
-		t.Errorf("mergedAllow(%v, %v) = %v, want the one location once", had, want, got)
+		t.Errorf("mergedAccess(%v, %v) = %v, want the one location once", had, want, got)
 	}
 }
 
@@ -798,10 +798,10 @@ func TestMergedAllowDoesNotDuplicate(t *testing.T) {
 func TestMergedAllowWithNothingPreviouslyAllowed(t *testing.T) {
 	want := []plugin.Need{"kv.file", "net.hosts"}
 
-	got := mergedAllow(nil, want)
+	got := mergedAccess(nil, want)
 
 	if len(got) != 2 || !slices.Contains(got, "kv.file") || !slices.Contains(got, "net.hosts") {
-		t.Errorf("mergedAllow(nil, %v) = %v, want exactly the two requested", want, got)
+		t.Errorf("mergedAccess(nil, %v) = %v, want exactly the two requested", want, got)
 	}
 }
 
@@ -837,7 +837,7 @@ func TestPluginAllowReadsAGrantByWhatThePluginDeclares(t *testing.T) {
 		t.Errorf("status = %q for a plugin whose kubeconfig is denied, want warn", got)
 	}
 
-	if _, errOut, err := run("plugin", "allow", "lab"); err != nil {
+	if _, errOut, err := run("plugin", "access", "add", "lab"); err != nil {
 		t.Fatalf("%v %q", err, errOut)
 	}
 	if got := plugintrust.Load().Allowed(digest); !slices.Equal(got, []string{string(plugin.NeedKubeconfig)}) {

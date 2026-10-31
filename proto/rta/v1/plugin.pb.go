@@ -1448,7 +1448,7 @@ type Plugin struct {
 	// "npmrc", "pypirc", "git-credentials".
 	//
 	// A request, never a grant. Plugins run confined and those locations are
-	// denied by default; `rta plugin allow` is where an operator decides, and
+	// denied by default; `rta plugin access add` is where an operator decides, and
 	// the decision attaches to the artifact's digest exactly as trust does. A
 	// value rta does not know is refused at registration rather than ignored,
 	// so a plugin cannot declare a requirement nothing can show or grant.

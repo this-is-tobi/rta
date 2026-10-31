@@ -199,9 +199,9 @@ func TestDoctorNamesACredentialLocationGrantedAndWithheld(t *testing.T) {
 	t.Cleanup(func() { SetLoadedPlugins(nil) })
 
 	rows := report(t)
-	check(t, rows, "plugin lab"+withheld[:4], "warn", "has not been allowed to")
-	check(t, rows, "plugin lab"+granted[:4], "ok", "allowed to read kubeconfig")
-	if !strings.Contains(rows["plugin lab"+granted[:4]][1], "disallow") {
+	check(t, rows, "plugin lab"+withheld[:4], "warn", "has no access to it")
+	check(t, rows, "plugin lab"+granted[:4], "ok", "may read kubeconfig")
+	if !strings.Contains(rows["plugin lab"+granted[:4]][1], "access rm") {
 		t.Errorf("the granted row does not say how to take it back: %q",
 			rows["plugin lab"+granted[:4]][1])
 	}

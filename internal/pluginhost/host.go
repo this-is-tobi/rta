@@ -439,7 +439,7 @@ func (h *Host) OpenIdentified(ctx context.Context, id Identity, args ...string) 
 // just typed is a stronger act of approval than a digest in a file. Without
 // it a plugin author cannot exercise their own declaration at all — the
 // temporary binary is rebuilt on every run, so its digest is new every time
-// and `rta plugin allow` could never name it. The mechanism would be usable
+// and `rta plugin access add` could never name it. The mechanism would be usable
 // by everybody except the people writing for it.
 //
 // Nothing else calls this. An installed plugin's grant is read from the trust

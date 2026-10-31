@@ -654,7 +654,7 @@ func (m Model) pluginsView() string {
 		summary := theme.Subtle.Render(row.plugin.Summary)
 		if len(row.ungranted) > 0 {
 			summary = theme.WarnText.Render("needs " + needList(row.ungranted) +
-				" and has not been allowed — `rta plugin allow " + row.plugin.Name + "`")
+				" and has no access to it — `rta plugin access add " + row.plugin.Name + "`")
 		}
 		if row.waiting {
 			summary = theme.WarnText.Render("installed and not run — nothing has trusted this artifact")

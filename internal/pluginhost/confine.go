@@ -47,7 +47,7 @@ func (d DenySet) namedFile(id string, inputs []plugin.Field, req plugin.Request)
 			name = sf.ArgumentName(f.Name)
 		}
 		hint := "strict fixes what a plugin may open when it starts, before any call names a file, so a call can " +
-			"hand it only a file already there in a location `rta plugin allow` granted it; this one runs only " +
+			"hand it only a file already there in a location `rta plugin access add` gave it; this one runs only " +
 			"where the configuration leaves `confine` unset"
 		if sf == plugin.SurfaceMCP {
 			hint = "this server starts its plugins under `confine: strict`, which fixes what one may open before " +

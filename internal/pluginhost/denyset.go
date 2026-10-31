@@ -122,7 +122,7 @@ func asNeeds(stored []string) []plugin.Need {
 }
 
 // declaredOnly is a stored grant narrowed to what the artifact itself
-// declared it needs — the only locations `rta plugin allow` ever offers, so
+// declared it needs — the only locations `rta plugin access add` ever offers, so
 // the only ones an operator can have agreed to. A location in the record
 // that the declaration does not name stays denied, which is asNeeds' safe
 // direction for the same reason: nobody asked for it.

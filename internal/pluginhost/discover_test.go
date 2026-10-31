@@ -515,7 +515,7 @@ func TestAnEmptySystemRootIsNoRoot(t *testing.T) {
 
 // An allow in the record for a location the artifact never declared opens
 // nothing. hello declares no need at all, so a record allowing it kubeconfig
-// — written by hand, or by anything but `rta plugin allow`, which offers only
+// — written by hand, or by anything but `rta plugin access add`, which offers only
 // the declaration — leaves it as confined as every other plugin, and leaves
 // one process behind rather than a second, unconfined-for-kubeconfig one.
 func TestAnAllowTheArtifactNeverDeclaredRelaxesNothing(t *testing.T) {

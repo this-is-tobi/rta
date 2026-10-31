@@ -81,7 +81,7 @@ rta plugin untrust --all     # withdraw every approval you have recorded
 
 `untrust` answers with `approvals withdrawn` and `approvals left`, or `approvals to withdraw` and `approvals left after` under `--dry-run`. An approved plugin that cannot start has a `failed to start` row in `rta plugin list` and in `rta doctor`, and the message it failed with ends with the way out, `rta plugin untrust <name>`. `rta plugin rm` is `rta plugin rm`.
 
-There is deliberately no `rta plugin trust --all`. Approving is the decision the whole boundary exists to make somebody take one artifact at a time, and a flag that approved everything discovered on a `$PATH` would approve whatever appeared there this morning. The withdrawing direction has no such problem, which is why `--all` exists on that side alone — the same reason `rta plugin allow` has no bulk form either.
+There is deliberately no `rta plugin trust --all`. Approving is the decision the whole boundary exists to make somebody take one artifact at a time, and a flag that approved everything discovered on a `$PATH` would approve whatever appeared there this morning. The withdrawing direction has no such problem, which is why `--all` exists on that side alone — the same reason `rta plugin access add` has no bulk form either.
 
 **Trust attaches to the artifact's content digest, not its name.** Rebuilding or replacing a plugin needs approving again. That is the feature, not friction: a plugin's bytes changing under a name you already approved is precisely the event worth stopping for.
 
@@ -131,9 +131,9 @@ plugin confinement   ok   sandbox-exec: 2 paths denied read+write (rta's own sta
 
 Read that row rather than assuming it. It states what is denied on *this* machine. rta's own state is its data and config directories and the files of its own you keep elsewhere: the key `RTA_KV_IDENTITY` names, a leading `~` read as your home the way kv reads it — denied even to a plugin you allowed `~/.ssh`, should the key be one in it — and the `--token-file` and `--operators` files of `rta mcp serve --http`, since a token read there is a caller's credential and a line written there is a caller or an operator you never enrolled. Each is denied to the plugins of the rta process that was handed it: a server's plugins are denied the key in its environment and the files on its command line, which is the case that matters, since an agent reaches plugins only through the server it talks to, while a plugin started from your terminal or the TUI is denied the key your shell names and not a server's token file. A file at a path the sandbox profile cannot spell, one holding a quote, a backslash or a line break, is left out rather than stopping every plugin loading, and `rta doctor` names it in a warning of its own. On Linux rta applies no sandbox unless the configuration says `confine: strict`: without it a plugin runs with your user's full access, the row says `none on linux`, and only the process-group and environment-allowlist rules hold. [Supported platforms](../10-getting-started/10-installation.md#supported-platforms) lists the other places the two systems differ.
 
-`confine: strict`, on a line of its own in the configuration, confines each plugin on Linux with Landlock, the kernel's own sandbox, which needs no privilege and works inside a container. It is the stricter model and not the macOS one: a deny list cannot be written in Landlock, so strict is an allow list. A plugin reaches the system, a temporary directory of its own, its own binary, the tools on its PATH outside the home directory and the credential locations `rta plugin allow` granted it, and nothing else of the home directory; rta's own state is never on the list. That holds inside a directory the list allows, too. The chart keeps a server's token file and [roster](../95-reference/10-glossary.md#terms) under `/etc/rta`, and a store's key may be kept in a granted `~/.ssh`. A directory holding some of rta's own, or the home directory, is allowed entry by entry without it. Each plugin is started through rta itself, which restricts the one thread that then becomes the plugin, so the domain holds for everything the plugin runs. The network is left alone. The row then reads `strict, with Landlock ABI <n>`, and a kernel without Landlock (before Linux 5.13, or with it off) is a plugin that does not start, with the reason, rather than one that runs looser than you asked. On macOS the setting does nothing, and the row says so: the deny list above confines every plugin there either way.
+`confine: strict`, on a line of its own in the configuration, confines each plugin on Linux with Landlock, the kernel's own sandbox, which needs no privilege and works inside a container. It is the stricter model and not the macOS one: a deny list cannot be written in Landlock, so strict is an allow list. A plugin reaches the system, a temporary directory of its own, its own binary, the tools on its PATH outside the home directory and the credential locations `rta plugin access add` gave it, and nothing else of the home directory; rta's own state is never on the list. That holds inside a directory the list allows, too. The chart keeps a server's token file and [roster](../95-reference/10-glossary.md#terms) under `/etc/rta`, and a store's key may be kept in a granted `~/.ssh`. A directory holding some of rta's own, or the home directory, is allowed entry by entry without it. Each plugin is started through rta itself, which restricts the one thread that then becomes the plugin, so the domain holds for everything the plugin runs. The network is left alone. The row then reads `strict, with Landlock ABI <n>`, and a kernel without Landlock (before Linux 5.13, or with it off) is a plugin that does not start, with the reason, rather than one that runs looser than you asked. On macOS the setting does nothing, and the row says so: the deny list above confines every plugin there either way.
 
-What a plugin may open under strict is fixed when it starts, and one process serves many calls, so a call cannot hand it a file. rta refuses a call that names one before the plugin is sent it (`plugin.confine.file`), unless the file is already there in a location `rta plugin allow` granted the plugin. So under strict a capability that writes or reads a file you name does not run: a dump, a backup, a snapshot, a restore, a download or an upload. `kube serviceaccount provision` can only print its kubeconfig. A [TLS](../95-reference/10-glossary.md#acronyms) file a profile names (`ca-file`, `cert-file`, `key-file`) is opened by the plugin itself, so under strict it belongs under one of the system's directories, `/etc` being the usual one. Anywhere else, the home directory included, that read fails with `permission denied`.
+What a plugin may open under strict is fixed when it starts, and one process serves many calls, so a call cannot hand it a file. rta refuses a call that names one before the plugin is sent it (`plugin.confine.file`), unless the file is already there in a location `rta plugin access add` gave the plugin. So under strict a capability that writes or reads a file you name does not run: a dump, a backup, a snapshot, a restore, a download or an upload. `kube serviceaccount provision` can only print its kubeconfig. A [TLS](../95-reference/10-glossary.md#acronyms) file a profile names (`ca-file`, `cert-file`, `key-file`) is opened by the plugin itself, so under strict it belongs under one of the system's directories, `/etc` being the usual one. Anywhere else, the home directory included, that read fails with `permission denied`.
 
 The row's last clause is the one exception, and it is there because of what macOS does rather than because a plugin was trusted with something: the Security framework initialises from the main executable's location, so a process that cannot read its own directory cannot verify a [TLS](../95-reference/10-glossary.md#acronyms) certificate at all. Without the carve-out no managed plugin could reach an `https://` address, while a copy of the same plugin on `$PATH` could. It is reads only, of that one directory, and only for an artifact rta installed there, or for the private copy it starts a `$PATH` plugin from.
 
@@ -144,30 +144,30 @@ Some plugins exist to use a credential location. `kube` and `cnpg` shell out to 
 Such a plugin **declares** what it needs. Declaring is asking, never getting:
 
 ```bash
-rta plugin allow                  # what each plugin asks for, and what it has
-rta plugin allow cnpg             # allow everything it declares
-rta plugin allow cnpg kubeconfig  # or just that one
-rta plugin disallow cnpg          # take it back
+rta plugin access                      # what each plugin asks for, and what it has
+rta plugin access add cnpg             # everything it declares
+rta plugin access add cnpg kubeconfig  # or just that one
+rta plugin access rm cnpg              # take it back
 ```
 
 This is deliberately a second decision, separate from `rta plugin trust`. Letting an artifact run and letting it read your cluster credentials are different questions, and an answer to the first must not stand in for the second. Both attach to the artifact's digest, so **rebuilding a plugin asks again** — for the credential grant exactly as for trust, and for the same reason.
 
-You can only allow what the artifact asked for. A location a plugin never declared is access nobody requested, so there is no way to hand it over — and a record that names one anyway, written by anything but `rta plugin allow`, opens nothing.
+You can only give a plugin what its artifact asked for. A location a plugin never declared is access nobody requested, so there is no way to hand it over — and a record that names one anyway, written by anything but `rta plugin access add`, opens nothing.
 
 A plugin whose need is not granted still runs. It fails at the call that wanted the file, which is the honest outcome — and `rta doctor` names it as a decision rather than leaving you to read someone else's "operation not permitted":
 
 ```
 plugin cnpg   warn   ~/.local/bin/rta-plugin-cnpg (5 capabilities, e1a4fcaacd73)
-                     — asks to read kubeconfig and has not been allowed to;
-                     calls that need it fail. `rta plugin allow cnpg`
+                     — asks to read kubeconfig and has no access to it;
+                     calls that need it fail. `rta plugin access add cnpg`
 ```
 
 It names the granted side too, because a standing permission is the thing worth being able to point at:
 
 ```
 plugin cnpg   ok   ~/.local/bin/rta-plugin-cnpg (5 capabilities, 24757826bbf5)
-                   — allowed to read kubeconfig;
-                   `rta plugin disallow cnpg` takes it back
+                   — may read kubeconfig;
+                   `rta plugin access rm cnpg` takes it back
 ```
 
 ## What a plugin can and cannot do

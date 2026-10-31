@@ -950,7 +950,7 @@ func TestAnUnknownNeedIsRefused(t *testing.T) {
 }
 
 // A location asked for twice is asked for once, and saying so here is what
-// keeps every count downstream honest: `rta plugin allow` would offer the
+// keeps every count downstream honest: `rta plugin access add` would offer the
 // operator one location on two rows, and an index manifest cannot carry the
 // duplicate at all — so a plugin that registered with one would be a plugin
 // nobody could publish.

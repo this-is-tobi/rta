@@ -153,7 +153,7 @@ func (p Plugin) Validate() error {
 	// and is really "never asked".
 	// Deduplicated for the same reason capability IDs are, one loop down: the
 	// set is what every surface counts, prints and grants against. A repeat
-	// makes `rta plugin allow` offer one location twice and makes an index's
+	// makes `rta plugin access add` offer one location twice and makes an index's
 	// claim about it unrepresentable — a manifest refuses a duplicate — so the
 	// plugin that would be unpublishable is refused here, where its author is,
 	// rather than later where somebody else is.

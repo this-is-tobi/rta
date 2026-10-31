@@ -1345,7 +1345,7 @@ func TestThePluginPaneNamesACredentialItHasNotBeenAllowed(t *testing.T) {
 	if !strings.Contains(out, "kubeconfig") {
 		t.Errorf("the pane never names what the plugin is short of:\n%s", out)
 	}
-	if !strings.Contains(out, "rta plugin allow clusters") {
+	if !strings.Contains(out, "rta plugin access add clusters") {
 		t.Errorf("the pane names the problem and not the fix:\n%s", out)
 	}
 
@@ -1360,7 +1360,7 @@ func TestThePluginPaneNamesACredentialItHasNotBeenAllowed(t *testing.T) {
 	}
 	m.plugins = pluginRows(reg, m.dash, nil)
 	out = plain(m.pluginsView())
-	if strings.Contains(out, "rta plugin allow clusters") {
+	if strings.Contains(out, "rta plugin access add clusters") {
 		t.Errorf("the pane still asks for a decision that was made:\n%s", out)
 	}
 	if !strings.Contains(out, "reads a cluster through kubectl") {
