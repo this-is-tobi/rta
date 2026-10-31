@@ -149,9 +149,10 @@ func configKeysView(reg *registry.Registry, p plugin.Plugin) view.View {
 		}
 	}
 	t.Total = len(t.Rows)
-	note := "Under `plugins: " + p.Name + ":` in rta's configuration, or in a profile's `set:`. An installed " +
-		"plugin's section is pinned to the artifact — `plugins: " + p.Name + "@<digest>:` — and " +
-		"`rta doctor` prints the exact line. The caller always wins, so a configured value is a " +
+	note := "Under `plugins: " + p.Name + "@<digest>:` in rta's configuration, or in a profile's `set:`. " +
+		"An installed plugin's section is pinned to the artifact it is for, and `rta doctor` prints the " +
+		"exact line; `plugins: " + p.Name + ":`, with no digest, is for a build that is not installed, such " +
+		"as one `rta plugin dev` runs. The caller always wins, so a configured value is a " +
 		"default, never a lock. A profile can state a lock where it matters: its `only:` list fences " +
 		"an input to the values that connection reaches, and a call outside it is refused."
 	return view.Sections{Items: []view.Section{

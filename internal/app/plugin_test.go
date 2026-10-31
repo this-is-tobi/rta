@@ -1592,7 +1592,9 @@ func TestTheDevReportSaysWhenNoAgentCanCallACapability(t *testing.T) {
 	}
 	setByConfig := plugin.Capability{ID: "acme.station.show", Summary: "show a station", Safety: plugin.Read,
 		Inputs: []plugin.Field{{Name: "name", Type: plugin.String, Required: true, Local: true, Config: "name"}}}
-	if got := agentReach(nil, setByConfig); got != "yes, by default" {
+	// Configurable is also a connection a profile can name, and a call naming
+	// one needs a grant for it whatever its class: the column says until when.
+	if got := agentReach(nil, setByConfig); !strings.HasPrefix(got, "yes, until a profile names its connection") {
 		t.Errorf("a capability an operator can configure reads %q", got)
 	}
 }

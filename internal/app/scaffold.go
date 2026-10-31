@@ -267,8 +267,8 @@ func buildsAgainst(s scaffold) string {
 		return rtaModule + " " + s.RtaVersion + ", the rta that scaffolded it, so the SDK it " +
 			"builds against is the one whose host will load it"
 	}
-	return "the latest " + rtaModule + " `go mod tidy` resolves — this rta carries no release " +
-		"version, so go.mod names none; pin it with `go get " + rtaModule + "@<version>`"
+	return "the latest " + rtaModule + " release, which `go mod tidy` writes into go.mod — this rta " +
+		"is not a release itself, so the scaffold names none; pin one with `go get " + rtaModule + "@<version>`"
 }
 
 // releasedVersion is the rta module version a scaffold should require, from
