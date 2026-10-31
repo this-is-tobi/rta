@@ -1321,6 +1321,13 @@ func agentReach(_ *registry.Registry, c plugin.Capability) string {
 		return "no — for the person at the terminal, never an agent"
 	case grant.Required(c, ""):
 		return "with a grant a person issues"
+	case plugin.Profilable(c):
+		// A read is free on the base connection only: a call naming a
+		// profile needs a grant whatever its class (grant.Required), and a
+		// tool whose area has a profile requires the call to name one. "yes,
+		// by default" read as a capability an agent keeps once the operator
+		// has configured the service, which is how one is nearly always used.
+		return "yes, until a profile names its connection — then with a grant for that profile"
 	default:
 		return "yes, by default"
 	}
