@@ -46,7 +46,7 @@ type configKey struct {
 func settingKeys(reg *registry.Registry) []configKey {
 	slots := theme.Fields()
 	keys := make([]configKey, 0, 5+len(slots))
-	keys = append(keys, outputKey(), widthKey(), heightKey(), refreshKey(),
+	keys = append(keys, outputKey(), confineKey(), widthKey(), heightKey(), refreshKey(),
 		capabilityListKey(reg, "dashboard.hidden", "tiles to leave off the screen",
 			"nothing is hidden",
 			func(c *config.Config) *[]string { return &c.Dashboard.Hidden }),
@@ -57,6 +57,36 @@ func settingKeys(reg *registry.Registry) []configKey {
 		keys = append(keys, themeKey(slot))
 	}
 	return append(keys, themeStatusKey())
+}
+
+// confineKey is `confine`, how plugins are held beyond what the platform does:
+// strict, the one word the file takes (config.Config.Confine). `rta doctor`
+// tells a person to write it, so `config set` takes it rather than leaving it a
+// line to type into the file by hand. Unset is the platform's own: the deny
+// list on macOS, nothing on Linux.
+func confineKey() configKey {
+	const strict = "strict"
+	return configKey{
+		Name: "confine", Help: "how plugins are confined: strict holds each, on Linux, to what it needs, with Landlock",
+		Default: "the platform's own: the deny list on macOS, none on Linux", Example: strict, Options: []string{strict},
+		parse: func(values []string) (any, *view.Error) {
+			if verr := oneValue("confine", strict, values); verr != nil {
+				return nil, verr
+			}
+			if values[0] != strict {
+				return nil, view.Errorf("core.config.set.option", "confine takes %s", strict).
+					WithHint("`rta config unset confine` leaves plugins confined as the platform confines them")
+			}
+			return strict, nil
+		},
+		read:  func(c config.Config) (any, bool) { return c.Confine, c.Confine != "" },
+		write: func(c *config.Config, v any) { c.Confine = v.(string) },
+		drop: func(c *config.Config) bool {
+			had := c.Confine != ""
+			c.Confine = ""
+			return had
+		},
+	}
 }
 
 func oneValue(name, example string, values []string) *view.Error {
