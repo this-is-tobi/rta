@@ -41,6 +41,25 @@ func blockingRegistry(t *testing.T, honoursContext bool, started chan<- struct{}
 	return reg
 }
 
+// settleRecord waits for the write of a row the test has just seen in the
+// record to end, for a test whose call finishes after the test has stopped
+// waiting on it: the client hung up, or the server stopped without it.
+//
+// **The row is not the end of the write.** agentlog.Append writes the record's
+// end mark after the row, and a test that ended on seeing the row let the mark
+// land in whatever data directory the next test had set by then: a mark with
+// no key beside it is a record whose key is missing, so every call needing a
+// grant in that test was refused with "agent-log.key is missing beside an
+// existing record" — TestALapsedSwitchStopsBounding failing on a slow runner,
+// for a switch it had nothing to do with. Writable takes the lock Append
+// holds to its end, so it returns only once that write has.
+func settleRecord(t *testing.T) {
+	t.Helper()
+	if err := agentlog.Writable(); err != nil {
+		t.Logf("waiting for the record to settle: %v", err)
+	}
+}
+
 // The SDK cuts a handler's context loose from the one the server runs under,
 // so a stop asked of the server ended nothing that was running: a call went on
 // for as long as it liked, and a plugin that never answered held the process
@@ -86,12 +105,14 @@ func TestRunReturnsWithinItsGraceWhateverACallDoes(t *testing.T) {
 	release := make(chan struct{})
 	// The call is still running when Run returns, and writes its row to the
 	// ledger when it ends: let it end while this test's data directory is the
-	// one in force, and wait for the row, or it lands in the next test's.
+	// one in force, and wait for the row, or it lands in the next test's — and
+	// past the row, for the end of its write (settleRecord).
 	t.Cleanup(func() {
 		close(release)
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
 			if rows, err := agentlog.Read(10); err == nil && len(rows) > 0 {
+				settleRecord(t)
 				return
 			}
 			time.Sleep(10 * time.Millisecond)
