@@ -50,6 +50,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -203,6 +204,7 @@ func Check(t *testing.T, p plugin.Plugin, opts ...Option) {
 	// run's dry-run comparison pass for the wrong reason.
 	dir := t.TempDir()
 	t.Setenv("RTA_DATA_DIR", dir)
+	openNowhere(t, dir)
 
 	var inputs map[string]map[string]any
 	if cfg.inputs != nil {
@@ -362,11 +364,19 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 		}
 
 		var before snapshot
+		watch := watching(dir)
 		if mutating {
 			var err error
 			if before, err = snap(dir); err != nil {
 				t.Errorf("sdktest: %s: %s: snapshotting %s: %v", RuleDryRun, c.ID, dir, err)
 				continue
+			}
+			// What the reads before it sent is theirs to send.
+			if watch != nil {
+				if _, err := watch.reached(); err != nil {
+					t.Errorf("sdktest: %s: %s: %v", RuleDryRun, c.ID, err)
+					continue
+				}
 			}
 		}
 
@@ -388,6 +398,18 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 		if serr != nil {
 			t.Errorf("sdktest: %s: %s: snapshotting %s: %v", RuleDryRun, c.ID, dir, serr)
 			continue
+		}
+		if watch != nil {
+			// The data directory is what a dry run must leave alone on this
+			// machine, and the service is what it must leave alone elsewhere.
+			switch dialled, err := watch.reached(); {
+			case err != nil:
+				t.Errorf("sdktest: %s: %s: %v", RuleDryRun, c.ID, err)
+			case dialled > 0:
+				t.Errorf("sdktest: %s: %s connected to the address sdktest.Nowhere gives under --dry-run "+
+					"(%d %s): a dry run reports what the call would do and sends nothing",
+					RuleDryRun, c.ID, dialled, format.Plural(dialled, "connection", "connections"))
+			}
 		}
 		if diff := before.diff(after); len(diff) > 0 {
 			// The whole point of --dry-run is that it is safe to run on
