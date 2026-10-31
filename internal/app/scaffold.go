@@ -486,7 +486,8 @@ func TestPlugin(t *testing.T) {
 // from their declared defaults, keyed by capability id: the greeting's one
 // required input is here, so the suite runs it and holds what it returns to
 // every renderer. Add an entry for each capability you declare that has a
-// required input — without one the suite cannot run it.
+// required input — without one the suite cannot run it — and rename the entry
+// with the capability: a key or an input naming nothing fails the suite.
 //
 // Two rules make the difference between a real check and a green nothing:
 // point anything that connects at sdktest.Nowhere(dir), an address the suite

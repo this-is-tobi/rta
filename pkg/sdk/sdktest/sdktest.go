@@ -231,6 +231,7 @@ func checkAll(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[st
 	if !checkDeclaration(t, p) {
 		return
 	}
+	checkGivenInputs(t, p, inputs)
 	checkVerbs(t, p, cfg)
 	checkKeywords(t, p, cfg)
 	checkReach(t, p, cfg)
@@ -246,6 +247,64 @@ func checkAll(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[st
 	checkViews(t, seen, cfg)
 	checkRedaction(t, seen, cfg)
 	checkActions(t, seen, cfg)
+}
+
+// checkGivenInputs holds what WithInputs names to what p declares. A key that
+// names no capability, or an input its capability does not declare, reaches
+// nothing, and said nothing: the scaffold's entry kept supplying the
+// capability an author had renamed, and the one it had become was driven
+// without it — or, needing it, not at all — with the suite green.
+//
+// A failure rather than a note, since it is the test that is wrong and not the
+// plugin, and the coverage it costs is the reason the option exists.
+//
+// Only the keys in p's own namespace are p's: one map can supply a catalogue
+// of plugins, each checked against it in turn, as rta checks its built-ins.
+// A key whose namespace is no plugin's at all is the catalogue's test to
+// catch, since no single plugin's check can tell it from another plugin's.
+func checkGivenInputs(t reporter, p plugin.Plugin, inputs map[string]map[string]any) {
+	t.Helper()
+	caps := make(map[string]plugin.Capability, len(p.Capabilities))
+	for _, c := range p.Capabilities {
+		caps[c.ID] = c
+	}
+	ids := make([]string, 0, len(inputs))
+	for id := range inputs {
+		if strings.HasPrefix(id, p.Name+".") {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		c, ok := caps[id]
+		if !ok {
+			t.Errorf("sdktest: WithInputs names %q, which is no capability of %s, so its values reach nothing",
+				id, p.Name)
+			continue
+		}
+		names := make([]string, 0, len(inputs[id]))
+		for name := range inputs[id] {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			if !takes(c, name) {
+				t.Errorf("sdktest: WithInputs gives %s an input %q it does not declare, so the value reaches nothing",
+					id, name)
+			}
+		}
+	}
+}
+
+// takes reports whether a call of c can carry a value named name: an input c
+// declares, or the host's own "detail" on a capability that draws one.
+func takes(c plugin.Capability, name string) bool {
+	for _, f := range c.Inputs {
+		if f.Name == name {
+			return true
+		}
+	}
+	return name == "detail" && c.Detailed
 }
 
 // skipLines renders the declared opt-outs in a stable order, because test
