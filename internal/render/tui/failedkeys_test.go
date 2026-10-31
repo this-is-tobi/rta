@@ -108,7 +108,7 @@ func TestAKeyThatDidNothingIsNotFlashedWithTheCheck(t *testing.T) {
 		m := dashboardModel(t)
 		m.armed = &armedAnswer{}
 		got := sent(t, m, keyMsg("x"))
-		if !flashedAsRefusal(got) || !strings.Contains(got.flash, "nothing allowed") {
+		if !flashedAsRefusal(got) || !strings.Contains(got.flash, "nothing approved") {
 			t.Errorf("flash = %q (refusal %v)", got.flash, flashedAsRefusal(got))
 		}
 	})

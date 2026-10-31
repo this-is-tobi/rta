@@ -104,7 +104,7 @@ func Exposition(artifact func(string) (string, bool)) (string, error) {
 
 	waiting, pendingErr := consent.Pending()
 	metric(&b, "rta_agent_pending", "gauge",
-		"Calls parked right now, waiting for a person to allow or deny them.",
+		"Calls parked right now, waiting for a person to approve or deny them.",
 		[]sample{{value: float64(len(waiting))}})
 	// The companion gauge rta_record_intact already sets the pattern: a
 	// count on its own cannot say whether it is trustworthy, so the reader's

@@ -32,7 +32,7 @@ func issue(t *testing.T, g Grant) {
 		t.Fatalf("load: %v", verr)
 	}
 	// Both stamps, because both are set by the only thing that issues a grant
-	// for real (builtin/grant's runAllow). Issued in particular: Active caps
+	// for real (builtin/grant's runApprove). Issued in particular: Active caps
 	// a grant at Issued+MaxTTL, so a fixture that leaves it zero is a grant
 	// that expired in the year 1 and tests a rule nobody wrote.
 	if g.Issued.IsZero() {

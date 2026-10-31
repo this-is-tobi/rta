@@ -155,11 +155,11 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 			},
 			{
 				ID:      "agent.pending",
-				Summary: "Calls parked right now, waiting for you to allow or deny",
+				Summary: "Calls parked right now, waiting for you to approve or deny",
 				Description: "With `rta mcp serve --consent`, a call that needs a grant nobody " +
 					"issued is parked instead of refused, and waits for you. Each row is one such " +
 					"call: its id, what it wants, against which connection, and how long it will " +
-					"keep waiting. Answer with `agent.allow` or `agent.deny`. " +
+					"keep waiting. Answer with `agent.approve` or `agent.deny`. " +
 					"With `server` (a name from remotes.yaml): the same queue read from a " +
 					"remote rta server as a signed operator call, your operator key's passphrase " +
 					"asked first.",
@@ -178,7 +178,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				// `a` and `d` are the verbs' own initials, and the asymmetry between them
 				// is the point. Deny is bare, so it runs on the keypress — the safe answer
 				// is one key, and a denial the operator did not mean costs the agent a
-				// retry. Allow is not, so the TUI opens its form (--ttl above all):
+				// retry. Approve is not, so the TUI opens its form (--ttl above all):
 				// granting access stops for a confirmation, which is the direction that
 				// cannot be taken back once a secret has been read. The asymmetry used to
 				// fall out of the declarations alone — deny had no second input — until the
@@ -188,7 +188,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				// `d` also means "done" on the task lists, and net.hosts.list avoided
 				// exactly that overlap. It is deliberate here: this screen is a security
 				// prompt rather than another list, both keys spell their own verb, and the
-				// mistake the overlap could produce — denying a call meant to be allowed —
+				// mistake the overlap could produce — denying a call meant to be approved —
 				// is the recoverable one.
 				//
 				// enter is "show" on every list, and a parked call has more to show than a
@@ -206,7 +206,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				// until `r`.
 				Actions: []plugin.Action{
 					{Key: "enter", Label: "show", Target: "agent.show", Source: plugin.ActionRow, Bare: true},
-					{Key: "a", Label: "allow", Target: "agent.allow", Source: plugin.ActionRow},
+					{Key: "a", Label: "approve", Target: "agent.approve", Source: plugin.ActionRow},
 					{Key: "d", Label: "deny", Target: "agent.deny", Source: plugin.ActionRow, Bare: true},
 					{Key: "L", Label: "lock", Target: "lock.add", Source: plugin.ActionRow, Seed: map[string]string{"name": "agent"}},
 				},
@@ -221,8 +221,8 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 					"what running it would actually do, taken from the capability's own dry run. " +
 					"That last part is the difference between approving an intention and approving " +
 					"an outcome. For a kv call it also says when this shell has nothing that opens the " +
-					"store, since allowing would then release a call that fails. Answer with " +
-					"`agent.allow` or `agent.deny`.",
+					"store, since approving would then release a call that fails. Answer with " +
+					"`agent.approve` or `agent.deny`.",
 				Safety:     plugin.Read,
 				Idempotent: true,
 				Inputs: []plugin.Field{
@@ -236,16 +236,16 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				// The two answers again from the detail page, so reading it does not mean
 				// going back to the list to act on what you read.
 				Actions: []plugin.Action{
-					{Key: "a", Label: "allow", Target: "agent.allow", Source: plugin.ActionSelf},
+					{Key: "a", Label: "approve", Target: "agent.approve", Source: plugin.ActionSelf},
 					{Key: "d", Label: "deny", Target: "agent.deny", Source: plugin.ActionSelf, Bare: true},
 					{Key: "L", Label: "lock", Target: "lock.add", Source: plugin.ActionSelf, Seed: map[string]string{"name": "agent"}},
 				},
 				Run: runShow(catalog),
 			},
 			{
-				ID:      "agent.allow",
+				ID:      "agent.approve",
 				Flash:   true,
-				Summary: "Allow one parked call",
+				Summary: "Approve one parked call",
 				Description: "Authorizes exactly the call the request names, and nothing else — " +
 					"the agent's call proceeds, and no standing state is created. At a terminal it " +
 					"shows the call first — the capability, the record, the arguments and what its " +
@@ -277,7 +277,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 				},
 				HumanOnly: true,
 				Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
-					return runAllow(ctx, req, catalog, artifact)
+					return runApprove(ctx, req, catalog, artifact)
 				},
 			},
 			{
@@ -459,7 +459,7 @@ func connectedTable(agent string) (view.Table, error) {
 // the next one as sf, the surface showing it, makes it.
 func nothingWaiting(sf plugin.Surface) string {
 	return "nothing is waiting — a parked call appears here, and `" +
-		sf.Call("agent.allow", plugin.Arg{Name: "id", Value: plugin.Placeholder("id"), Positional: true}) + "` releases it"
+		sf.Call("agent.approve", plugin.Arg{Name: "id", Value: plugin.Placeholder("id"), Positional: true}) + "` releases it"
 }
 
 // connectedView and waitingView are the overview's sections, which a screen
@@ -1474,17 +1474,17 @@ func answeredBy(req plugin.Request) string {
 	return grant.Origin(req.Surface(), term.IsTerminal(int(stdio.Real().Fd())))
 }
 
-// decide is how an allow is written, a var so a test can refuse it after a
+// decide is how an approval is written, a var so a test can refuse it after a
 // role was issued: the one failure that has something already done to report
 // in it, and one a test cannot reach in time by waiting out a deadline.
 var decide = consent.Decide
 
-func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability, artifact func(string) (string, bool)) (view.View, error) {
+func runApprove(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability, artifact func(string) (string, bool)) (view.View, error) {
 	// As given, never trimmed, in show and deny too: the id is the one value
-	// in an answer that says which question it answers, and allow and deny
+	// in an answer that says which question it answers, and approve and deny
 	// declare it their record. An id is eight hex digits, so one with white
 	// space around it names nothing waiting, and unknownRequest says so.
-	id, verr := requestNamed(req, "agent.allow")
+	id, verr := requestNamed(req, "agent.approve")
 	if verr != nil {
 		return nil, verr
 	}
@@ -1501,7 +1501,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// question about one call must not quietly become a day's authority.
 	roleName := strings.TrimSpace(req.String("role"))
 	if roleName != "" && strings.TrimSpace(req.String("ttl")) != "" {
-		return nil, view.Errorf("agent.allow.either", "%s issues the whole role; %s issues this one line — pick one",
+		return nil, view.Errorf("agent.approve.either", "%s issues the whole role; %s issues this one line — pick one",
 			req.Surface().InputName("role"), req.Surface().InputName("ttl"))
 	}
 	ttl := strings.TrimSpace(req.String("ttl"))
@@ -1511,7 +1511,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	// connection the policy forbids outright still reached internal/mcp's
 	// askConsent — Reserve's refusal for "ceiling-suppressed" and "simply
 	// ungranted" is deliberately the same core.grant.required, so an agent
-	// cannot tell the two apart — and a bare `agent allow <id>` approved it
+	// cannot tell the two apart — and a bare `agent approve <id>` approved it
 	// with no ceiling check anywhere in the path. Checked here, at the one
 	// place a live approval is minted, rather than duplicated where the call
 	// gets parked — a second gate that could disagree with this one is the
@@ -1528,10 +1528,10 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 		return nil, verr
 	}
 	// A person at a terminal is shown what they are about to release, and asked
-	// (confirmAllow). After the refusals that need no answer from anybody, so a
+	// (confirmApprove). After the refusals that need no answer from anybody, so a
 	// yes is never followed by a no the ceiling already knew.
 	if !req.DryRun && !req.Yes && atTerminal(req) {
-		if !confirmAllow(r, allowQuestion(r, roleName, ttl), revealsValue(catalog, r.Cap)) {
+		if !confirmApprove(r, approveQuestion(r, roleName, ttl), revealsValue(catalog, r.Cap)) {
 			return declined(req.Surface(), r), nil
 		}
 	}
@@ -1560,7 +1560,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 		if shown := textclean.CallRecords(r.Scopes); shown != "" {
 			what += " (" + shown + ")"
 		}
-		return view.Text{Body: fmt.Sprintf("would allow %s for the agent waiting on request %s", what, id)}, nil
+		return view.Text{Body: fmt.Sprintf("would approve %s for the agent waiting on request %s", what, id)}, nil
 	}
 	// The guard, before the decision and not after: answering consumes the
 	// parked request, so a passphrase refused past that point would release
@@ -1583,7 +1583,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 		//
 		// Measured, never assumed. This was FromForm unconditionally once, on
 		// the argument that answering a parked request is always a person —
-		// but `rta agent allow` runs from any shell, and an agent that parks
+		// but `rta agent approve` runs from any shell, and an agent that parks
 		// a call through its own MCP session can answer it the same way it
 		// would run `grant allow`. The assumption made this the one issuing
 		// path where a self-issued grant got recorded as the *most* trusted
@@ -1604,22 +1604,22 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 	}
 	if err := decide(id, true, answeredBy(req)); err != nil {
 		if issued == nil {
-			return nil, view.Errorf("agent.allow.failed", "%v", err)
+			return nil, view.Errorf("agent.approve.failed", "%v", err)
 		}
 		// The role was issued a moment ago and stands, whatever became of
 		// the call: issuing it can take a passphrase and as long as typing
 		// it takes, and a call's deadline can pass meanwhile. Still a
 		// failure, because releasing the call is what was asked and it did
-		// not happen — `agent allow <id> --role dev --yes && next` must not
+		// not happen — `agent approve <id> --role dev --yes && next` must not
 		// run next — but one that names the role, who it went to and the
 		// call that takes it back, as grant issue names the grants it wrote
-		// before one failed. The bare agent.allow.failed this was hid every
+		// before one failed. The bare agent.approve.failed this was hid every
 		// grant just written. The agent and the take-back are the receipt's,
 		// read from it rather than worked out again here: issuing resolved
 		// the agent, which for a call made by the unnamed server is not the
 		// request's empty one.
 		agent, back := roleReceipt(issued)
-		verr := view.Errorf("agent.allow.unreleased", "%s was not released: %v; role %s was issued to %s and stands",
+		verr := view.Errorf("agent.approve.unreleased", "%s was not released: %v; role %s was issued to %s and stands",
 			callNamed(r.Cap, r.Scopes), err, roleName, agent)
 		if back != "" {
 			verr = verr.WithHint("`" + back + "` takes the role back")
@@ -1627,12 +1627,12 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 		return nil, verr
 	}
 	pairs := []view.Pair{
-		{Key: "allowed", Value: callNamed(r.Cap, r.Scopes)},
+		{Key: "approved", Value: callNamed(r.Cap, r.Scopes)},
 		{Key: "for", Value: "this call only"},
 	}
 	// The bridge refuses a frozen agent before any other gate, so this
 	// answer releases nothing while the lock stands — said here, because
-	// "allowed" on the operator's screen and "refused" on the agent's is
+	// "approved" on the operator's screen and "refused" on the agent's is
 	// the one disagreement between the two that nothing else explains.
 	if l, _ := lockdown.NewPin().Frozen(lockdown.KindAgent, r.Agent); l != nil {
 		lift := plugin.Arg{Name: "name", Value: r.Agent, Positional: true}
@@ -1657,7 +1657,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 			note, verr = alsoGrant(prepared, capped, signer)
 		}
 		if verr != nil {
-			// The call is already allowed; a bad --ttl must not read as if
+			// The call is already approved; a bad --ttl must not read as if
 			// nothing happened. The hint beside it, since the grant that was
 			// not issued is often one the operator can still issue on
 			// purpose, and the hint is how. A note beside a failure is the
@@ -1671,7 +1671,7 @@ func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.C
 			if verr.Hint != "" {
 				pairs = append(pairs, view.Pair{Key: "next", Value: verr.Hint})
 			}
-			return view.KeyValue{Pairs: pairs}, nil //nolint:nilerr // the call is already allowed; the grant that failed is reported in the answer, not as one
+			return view.KeyValue{Pairs: pairs}, nil //nolint:nilerr // the call is already approved; the grant that failed is reported in the answer, not as one
 		}
 		pairs[1] = view.Pair{Key: "for", Value: note}
 	}
@@ -1787,7 +1787,7 @@ func noNarrowGrant(sf plugin.Surface, r consent.Request, ttl string) *view.Error
 	if len(calls) > 1 {
 		issues = "issue"
 	}
-	return view.Errorf("agent.allow.folder",
+	return view.Errorf("agent.approve.folder",
 		"%s %s in a slash, so a grant on it would cover every record under it, not this call's alone",
 		andList(folders), ends).
 		WithHint(andList(calls) + " " + issues + " that, if every record under it is what you mean")
@@ -1933,7 +1933,7 @@ func runDeny(ctx context.Context, req plugin.Request) (view.View, error) {
 
 // unknownRequest is the answer when an id names nothing answerable.
 //
-// Every capability here that takes an id funnels through it — show, allow and
+// Every capability here that takes an id funnels through it — show, approve and
 // deny — so that the one case worth distinguishing is distinguished in one
 // place. That case is a request that *is* on disk and does not describe the
 // call it is bound to: something rewrote it after rta parked it, which is an
@@ -2064,7 +2064,7 @@ func argsLine(args map[string]any) string {
 //
 // Counted in runes, and cut on a rune boundary. A byte slice through text an
 // agent chose ends in a replacement character whenever it is not ASCII — in
-// the column a person reads while deciding whether to allow the call, which
+// the column a person reads while deciding whether to approve the call, which
 // is the last place to put a mystery character.
 func clip(line string) string {
 	const wide = 60

@@ -60,7 +60,7 @@ func TestTheDoorbellNamesTheCommandAndNoRequestId(t *testing.T) {
 		t.Fatalf("nothing was shown: %v", err)
 	}
 	shown := string(raw)
-	if !strings.Contains(shown, "note.rm needs your answer · rta agent allow\n") {
+	if !strings.Contains(shown, "note.rm needs your answer · rta agent approve\n") {
 		t.Errorf("the doorbell does not read as the command that answers it: %q", shown)
 	}
 	if strings.Contains(shown, req.ID) || regexp.MustCompile(`\b[0-9a-f]{8}\b`).MatchString(shown) {

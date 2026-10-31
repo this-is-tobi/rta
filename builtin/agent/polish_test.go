@@ -124,7 +124,7 @@ func TestTheOverviewNamesWhatIsLocked(t *testing.T) {
 
 // The bridge refuses a frozen agent before any other gate, so an answer
 // releases nothing while the lock stands. The operator's screen says so
-// rather than reporting "allowed" for a call that is about to be refused.
+// rather than reporting "approved" for a call that is about to be refused.
 func TestAllowingALockedAgentsCallSaysItIsRefusedAnyway(t *testing.T) {
 	isolate(t)
 	p, err := consent.Ask(consent.Call{
@@ -136,7 +136,7 @@ func TestAllowingALockedAgentsCallSaysItIsRefusedAnyway(t *testing.T) {
 	}
 	t.Cleanup(p.Close)
 	lock(t, "claude")
-	v, err := run(t, "agent.allow", map[string]any{"id": p.Request.ID})
+	v, err := run(t, "agent.approve", map[string]any{"id": p.Request.ID})
 	if err != nil {
 		t.Fatal(err)
 	}

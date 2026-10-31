@@ -8,7 +8,7 @@ import "github.com/this-is-tobi/rta/pkg/plugin"
 func testCatalog() []plugin.Capability {
 	return []plugin.Capability{
 		{ID: "grant.allow", HumanOnly: true}, {ID: "grant.list", HumanOnly: true},
-		{ID: "agent.allow", HumanOnly: true},
+		{ID: "agent.approve", HumanOnly: true},
 		{ID: "kv.get"}, {ID: "kv.copy", HumanOnly: true},
 		{ID: "audit.web"}, {ID: "audit.doctor", HumanOnly: true},
 	}

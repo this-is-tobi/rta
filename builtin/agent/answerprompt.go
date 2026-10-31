@@ -26,16 +26,16 @@ import (
 // copying an eight-digit hex string off a notification that has already gone
 // is the step that gets skipped, or typed from memory against the wrong call.
 // With several parked the answer is a list to choose from, never a guess —
-// allowing the wrong one of two is not a mistake the next command takes back.
+// approving the wrong one of two is not a mistake the next command takes back.
 //
 // Only the local queue. A remote server's answer is signed over the digest of
 // what the operator's own machine read (remoteAnswer), and reading the queue
 // to pick the one request would cost the operator key's passphrase twice.
 //
-// **An allow that nothing shows the call for needs its id.** The one call that
+// **An approval that nothing shows the call for needs its id.** The one call that
 // is parked when the command is typed is not necessarily the one parked when a
 // script's `--yes` runs, and with the card skipped nothing ever puts the
-// call that was meant beside the call that was answered. So a bare allow is
+// call that was meant beside the call that was answered. So a bare approve is
 // for the person at a terminal, who is shown the call and asked, and for a dry
 // run; `--yes` and anything that is not a terminal name the request, as
 // they always had to. Showing and denying are never a release, so they guess.
@@ -57,12 +57,12 @@ func requestNamed(req plugin.Request, target string) (string, *view.Error) {
 	switch len(q.Waiting) {
 	case 1:
 		only := q.Waiting[0]
-		if target == "agent.allow" && !req.DryRun && (req.Yes || !atTerminal(req)) {
+		if target == "agent.approve" && !req.DryRun && (req.Yes || !atTerminal(req)) {
 			return "", view.Errorf("agent.request.unnamed",
-				"%s is waiting, and nothing here would show it to you before it is allowed, so name it",
+				"%s is waiting, and nothing here would show it to you before it is approved, so name it",
 				callNamed(only.Cap, only.Scopes)).
 				WithHint("`" + sf.Call(target, plugin.Arg{Name: "id", Value: only.ID, Positional: true}) +
-					"` allows it; at a terminal `" + sf.Call(target) + "` alone shows the call and asks").WithInput("id")
+					"` approves it; at a terminal `" + sf.Call(target) + "` alone shows the call and asks").WithInput("id")
 		}
 		return only.ID, nil
 	case 0:
@@ -117,22 +117,22 @@ func askLine(in io.Reader, out io.Writer, card, prompt string) (string, error) {
 	return strings.TrimSpace(line), err
 }
 
-// confirmAllow shows a person at a terminal the call they are about to
+// confirmApprove shows a person at a terminal the call they are about to
 // release, and asks.
 //
 // **The prompt is for the person, not a gate.** Without a terminal, and with
 // --yes, the answer is given as it always was, because the one-shot answer
 // releases a single call an agent with a shell could have made itself (the
-// reasoning at the guard in runAllow) and a prompt only a pty can answer is no
+// reasoning at the guard in runApprove) and a prompt only a pty can answer is no
 // control against anything that can open one. What it prevents is the other
-// kind of mistake: `agent allow 6904368d` copied off a notification approved
+// kind of mistake: `agent approve 6904368d` copied off a notification approved
 // a note removal that was never on screen. The card is the capability, the
 // record, the arguments and what the capability's own dry run said it would
 // do — the page `agent show` draws, in the few lines a question has room for.
 //
 // Anything but y or yes is no, a closed input included: the call stays parked,
 // and the person is told how to refuse it now or leave it to expire.
-func confirmAllow(r consent.Request, question string, reveals bool) bool {
+func confirmApprove(r consent.Request, question string, reveals bool) bool {
 	// Written to the terminal directly, past the renderer that cleans everything
 	// else a person reads here, so the card is cleaned on the way out: a record or
 	// a preview carrying a cursor movement must not be able to redraw the card
@@ -145,7 +145,7 @@ func confirmAllow(r consent.Request, question string, reveals bool) bool {
 	return false
 }
 
-// allowQuestion is the question, which says what saying yes goes beyond the one
+// approveQuestion is the question, which says what saying yes goes beyond the one
 // call: a grant that keeps answering it, or the whole role the call's line
 // belongs to. The person who typed --ttl or --role asked for that, and is
 // still shown it, because the card above it is the thing they are agreeing to.
@@ -156,15 +156,15 @@ func confirmAllow(r consent.Request, question string, reveals bool) bool {
 // "keep allowing it", was a grant of net.send to that host on any port and with
 // any data: the question has to say that, beside the card that shows only the
 // one call.
-func allowQuestion(r consent.Request, role, ttl string) string {
+func approveQuestion(r consent.Request, role, ttl string) string {
 	switch {
 	case role != "":
-		return "Allow this call, and issue the role " + role + " to " + agentOr(r.Agent) + "?"
+		return "Approve this call, and issue the role " + role + " to " + agentOr(r.Agent) + "?"
 	case ttl != "":
-		return "Allow this call, and keep allowing " + callNamed(r.Cap, r.Scopes) +
+		return "Approve this call, and keep allowing " + callNamed(r.Cap, r.Scopes) +
 			", whatever else it is called with, for " + ttl + "?"
 	}
-	return "Allow once?"
+	return "Approve once?"
 }
 
 // agentOr is the agent a question names, or the unnamed server's own words.
@@ -275,12 +275,12 @@ func declinedOn(sf plugin.Surface, r consent.Request, server string) view.View {
 		args = append(args, plugin.Arg{Name: "server", Value: server})
 	}
 	return view.KeyValue{Pairs: []view.Pair{
-		{Key: "not allowed", Value: callNamed(r.Cap, r.Scopes) + " is still waiting"},
+		{Key: "not approved", Value: callNamed(r.Cap, r.Scopes) + " is still waiting"},
 		{Key: "to refuse it now", Value: "`" + sf.Call("agent.deny", args...) + "`; left alone it expires and the agent is told"},
 	}}
 }
 
-// revealsLine is what a person allowing a call that reveals is told: the
+// revealsLine is what a person approving a call that reveals is told: the
 // answer is the stored value, and it goes where the agent's answers go.
 const revealsLine = "the stored value itself, not a masked copy — it becomes part of the agent's context"
 
@@ -300,10 +300,10 @@ func revealsValue(catalog func() []plugin.Capability, id string) bool {
 	return false
 }
 
-// kvWarning is what a person allowing a kv call is told before the agent finds
+// kvWarning is what a person approving a kv call is told before the agent finds
 // out: this shell has nothing that opens the store unattended, and a server
 // inherits the environment it was started from — the assumption `rta doctor`
-// makes on the agent's behalf (kv.Unlockable). Allowing releases the call and
+// makes on the agent's behalf (kv.Unlockable). Approving releases the call and
 // the call then fails, and the agent reads kv.passphrase.missing a minute after
 // the operator said yes, with nothing on the operator's screen to connect the
 // two.
@@ -321,7 +321,7 @@ func kvWarning(r consent.Request) string {
 		return ""
 	}
 	return "no passphrase or key here opens the kv store unattended — unless the server has one, " +
-		"the agent gets kv.passphrase.missing once you allow"
+		"the agent gets kv.passphrase.missing once you approve"
 }
 
 // notPreviewedBrief is notPreviewed for a card, which has a line for it and

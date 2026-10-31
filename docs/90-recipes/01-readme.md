@@ -237,7 +237,7 @@ A call needing a grant nobody issued parks rather than failing:
 ```bash
 rta agent pending
 rta agent show                 # including what it would do, from its own --dry-run
-rta agent allow                # shows the call and asks `Allow once? [y/N]`
+rta agent approve              # shows the call and asks `Approve once? [y/N]`
 ```
 
 [Grants](../30-boundary/35-roles-consent-and-the-guard.md#live-consent-when-you-would-rather-be-asked) says what answering does, that it creates no standing grant, and why this is off by default: only turn it on when you are actually present.

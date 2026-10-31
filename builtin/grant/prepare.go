@@ -50,7 +50,7 @@ func buildGrant(sf plugin.Surface, catalog func() []plugin.Capability, artifact 
 }
 
 // BuildAnswered is buildGrant for the third way a grant is asked for: the
-// answer to a parked call (`agent allow --ttl`), which issues the grant the
+// answer to a parked call (`agent approve --ttl`), which issues the grant the
 // call was missing. It returns the grant unsigned, and the note a capped
 // window earns, in grant allow's words.
 //
@@ -245,7 +245,7 @@ func checkMaxUses(sf plugin.Surface, n int) *view.Error {
 // wrong answer here covers nothing — the gate compares it exactly (see
 // core.Grant.Digest), so one issued with no digest on a plugin is the row
 // `grant list` shows as live and the call it was issued for is refused. The
-// answer to a parked call (`agent allow --ttl`) once skipped it, and said the
+// answer to a parked call (`agent approve --ttl`) once skipped it, and said the
 // next calls were covered.
 func boundArtifact(sf plugin.Surface, artifact func(string) (string, bool), target string) (string, *view.Error) {
 	digest, known := artifact(core.Namespace(target))

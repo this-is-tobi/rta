@@ -119,13 +119,13 @@ func TestRemotePendingAllowAndDenyEndToEnd(t *testing.T) {
 		t.Fatalf("show view is %T, want Sections", v)
 	}
 
-	v, rerr = remoteCap(t, "agent.allow").Run(context.Background(),
+	v, rerr = remoteCap(t, "agent.approve").Run(context.Background(),
 		remoteReq(map[string]any{"id": parked.Request.ID, "server": "lab", "passphrase": "correct horse"}))
 	if rerr != nil {
 		t.Fatal(rerr)
 	}
 	kv, ok := v.(view.KeyValue)
-	if !ok || kv.Pairs[0].Key != "allowed" || kv.Pairs[0].Value != "kv.get db-password" {
+	if !ok || kv.Pairs[0].Key != "approved" || kv.Pairs[0].Value != "kv.get db-password" {
 		t.Fatalf("allow said: %+v", v)
 	}
 	// The decision file's By is the channel's attribution: the roster label
@@ -174,7 +174,7 @@ func TestRemotePendingAllowAndDenyEndToEnd(t *testing.T) {
 // An empty remote queue says how to answer the server's next parked call,
 // not this machine's.
 //
-// It carried the local sentence, whose `rta agent allow <id>` answers the
+// It carried the local sentence, whose `rta agent approve <id>` answers the
 // queue on the machine it is typed on: followed from a --server listing, it
 // finds no such request, and the call parked on the server times out.
 func TestAnEmptyRemoteQueueNamesItsServer(t *testing.T) {
@@ -190,7 +190,7 @@ func TestAnEmptyRemoteQueueNamesItsServer(t *testing.T) {
 		t.Fatalf("an empty remote queue = %#v, want the table with no rows", v)
 	}
 	// Asked from the TUI, which names the call its own way.
-	for _, want := range []string{"nothing is waiting on lab", "`agent.allow id=<id> server=lab`"} {
+	for _, want := range []string{"nothing is waiting on lab", "`agent.approve id=<id> server=lab`"} {
 		if !strings.Contains(table.Empty, want) {
 			t.Errorf("empty = %q, want it to say %q", table.Empty, want)
 		}
@@ -240,7 +240,7 @@ func TestRemotePendingSurfacesTamperedRequests(t *testing.T) {
 		t.Errorf("two tampered requests:\n got %s\nwant %s", got, want)
 	}
 
-	_, rerr = remoteCap(t, "agent.allow").Run(context.Background(),
+	_, rerr = remoteCap(t, "agent.approve").Run(context.Background(),
 		remoteReq(map[string]any{"id": "beef0001", "server": "lab", "passphrase": "correct horse"}))
 	verr, ok := rerr.(*view.Error)
 	if !ok || verr.Code != "agent.request.tampered" {
@@ -305,7 +305,7 @@ func TestConsentAnswersAreScopedToTheServersOwnName(t *testing.T) {
 // --ttl mints standing authority, and remotely that is the prepare-and-sign
 // flow with its own review step — never a side effect of answering.
 func TestARemoteAllowRefusesTTL(t *testing.T) {
-	_, rerr := remoteCap(t, "agent.allow").Run(context.Background(),
+	_, rerr := remoteCap(t, "agent.approve").Run(context.Background(),
 		remoteReq(map[string]any{"id": "aa", "server": "lab", "ttl": "15m"}))
 	verr, ok := rerr.(*view.Error)
 	if !ok || verr.Code != "agent.remote.ttl" {
@@ -323,7 +323,7 @@ func TestARemoteAllowRefusesTTL(t *testing.T) {
 func TestARemoteAllowRefusesRole(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	t.Setenv("RTA_CONFIG", filepath.Join(t.TempDir(), "config.yaml"))
-	_, rerr := remoteCap(t, "agent.allow").Run(context.Background(),
+	_, rerr := remoteCap(t, "agent.approve").Run(context.Background(),
 		remoteReq(map[string]any{"id": "aa", "server": "lab", "role": "dev"}))
 	verr, ok := rerr.(*view.Error)
 	if !ok || verr.Code != "agent.remote.role" {
@@ -371,7 +371,7 @@ func TestAHostileQueueEntryIsNotAnswered(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, rerr := remoteCap(t, "agent.allow").Run(context.Background(),
+	_, rerr := remoteCap(t, "agent.approve").Run(context.Background(),
 		remoteReq(map[string]any{"id": "aa", "server": "evil", "passphrase": "correct horse"}))
 	verr, ok := rerr.(*view.Error)
 	if !ok || verr.Code != "agent.answer.dishonest" {

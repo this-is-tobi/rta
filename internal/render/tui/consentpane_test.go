@@ -36,8 +36,8 @@ func TestTheConsentQueueCanBeAnsweredFromTheTUI(t *testing.T) {
 		byKey[a.key] = a
 	}
 	allow, ok := byKey["a"]
-	if !ok || allow.cap.ID != "agent.allow" {
-		t.Fatalf("a = %+v, want agent.allow", allow)
+	if !ok || allow.cap.ID != "agent.approve" {
+		t.Fatalf("a = %+v, want agent.approve", allow)
 	}
 	deny, ok := byKey["d"]
 	if !ok || deny.cap.ID != "agent.deny" {
@@ -71,24 +71,24 @@ func TestTheConsentQueueCanBeAnsweredFromTheTUI(t *testing.T) {
 			t.Fatalf("%s on the detail page does not act on the request it is showing", a.cap.ID)
 		}
 	}
-	if from["a"] != "agent.allow" || from["d"] != "agent.deny" {
+	if from["a"] != "agent.approve" || from["d"] != "agent.deny" {
 		t.Fatalf("the detail page offers %v", from)
 	}
 }
 
 func TestTheRowUnderTheCursorIsTheRequestThatGetsAnswered(t *testing.T) {
 	// The identity comes from the first column, so agent.pending's first
-	// column has to be the id agent.allow takes — the one agreement between
+	// column has to be the id agent.approve takes — the one agreement between
 	// two files that nothing else checks.
 	reg := realRegistry(t)
 	pending, ok := reg.Capability("agent.pending")
 	if !ok {
 		t.Fatal("no agent.pending")
 	}
-	allow, _ := reg.Capability("agent.allow")
+	allow, _ := reg.Capability("agent.approve")
 	keys := firstPositional(allow)
 	if len(keys) != 1 || keys[0].Name != "id" {
-		t.Fatalf("agent.allow's identity is %+v, want a single positional id", keys)
+		t.Fatalf("agent.approve's identity is %+v, want a single positional id", keys)
 	}
 	_ = pending
 
@@ -146,7 +146,7 @@ func TestDenyIsOneKeyAndAllowStopsToConfirm(t *testing.T) {
 	if deny.Safety == plugin.Destructive {
 		t.Fatal("deny is destructive, so it would stop for a confirmation it does not need")
 	}
-	allow := mustCap(t, reg, "agent.allow")
+	allow := mustCap(t, reg, "agent.approve")
 	if rest := fieldsAfter(allow, map[string]any{"id": "x"}); len(rest) == 0 {
 		t.Fatal("allow runs on a keypress — granting access has to stop for a confirmation")
 	}

@@ -113,7 +113,7 @@ func TestTheRosterAdvertisesTheKeysItAnswers(t *testing.T) {
 		}
 	}
 	_ = parkCall(t, "note.rm", "2", "would remove note 2")
-	if bar := barOf(screenOf(t, "agent.pending", nil)); !strings.Contains(bar, "A allow longer") {
+	if bar := barOf(screenOf(t, "agent.pending", nil)); !strings.Contains(bar, "A approve for a while") {
 		t.Errorf("the queue's bar lacks the capital A:\n%s", bar)
 	}
 }

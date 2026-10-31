@@ -419,7 +419,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 			if httpAddr != "" {
 				// A parked call needs a person positioned to answer it. Over
 				// HTTP that person is an enrolled operator answering through
-				// the channel — `rta agent allow <id> --server <name>` — so
+				// the channel — `rta agent approve <id> --server <name>` — so
 				// --consent stands or falls with --operators: without a
 				// roster there is still nobody to reach, and a control nobody
 				// can exercise must not be allowed to pretend it works (the
@@ -427,7 +427,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 				if consentOn && operatorsFile == "" {
 					return serveUsage("--consent over --http needs --operators",
 						"a parked call waits for a person, and enrolled operators answering with "+
-							"`rta agent allow --server` are the only people positioned to; see "+
+							"`rta agent approve --server` are the only people positioned to; see "+
 							"docs/30-boundary/66-operators.md")
 				}
 				if tokenFile == "" && oidcIssuer == "" {
@@ -800,7 +800,7 @@ func newMCPServeCommand(reg *registry.Registry, version string) *cobra.Command {
 	// Off by default, and the default is the important half: a call parked
 	// in a server nobody is watching is worse than a refusal.
 	cmd.Flags().BoolVar(&consentOn, "consent", false,
-		"ask instead of refusing when a call needs a grant nobody issued — you answer with `rta agent allow`")
+		"ask instead of refusing when a call needs a grant nobody issued — you answer with `rta agent approve`")
 	cmd.Flags().DurationVar(&consentWait, "consent-wait", consent.DefaultWait,
 		"how long a parked call waits for your answer before it is refused")
 	cmd.Flags().BoolVar(&consentNotify, "consent-notify", false,

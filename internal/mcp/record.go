@@ -377,7 +377,7 @@ func askConsent(ctx context.Context, c plugin.Capability, opts Options, values m
 		return false, nil
 	}
 	defer parked.Close()
-	fmt.Fprintf(os.Stderr, "rta: %s is waiting for you — `rta agent allow %s` (or deny), %s\n",
+	fmt.Fprintf(os.Stderr, "rta: %s is waiting for you — `rta agent approve %s` (or deny), %s\n",
 		c.ID, parked.Request.ID, parked.Request.Deadline.Local().Format("15:04:05"))
 	if opts.ConsentNotify {
 		ringDoorbell(ctx, c.ID, parked.Request)
@@ -543,7 +543,7 @@ var bell struct {
 //
 // The command carries no request id. The id is eight hex digits on a banner
 // that is gone in a few seconds, and copying it off was the whole cost of
-// answering; `rta agent allow` finds the waiting call itself, and shows it
+// answering; `rta agent approve` finds the waiting call itself, and shows it
 // before it asks.
 func ringDoorbell(ctx context.Context, capID string, r consent.Request) {
 	bell.Lock()
@@ -553,7 +553,7 @@ func ringDoorbell(ctx context.Context, capID string, r consent.Request) {
 	}
 	err := notify.Send(ctx, notify.Note{
 		Title: "rta — an agent is waiting",
-		Body:  capID + " needs your answer · rta agent allow",
+		Body:  capID + " needs your answer · rta agent approve",
 		TTL:   time.Until(r.Deadline),
 	})
 	if err != nil {

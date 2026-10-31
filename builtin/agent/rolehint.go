@@ -39,7 +39,7 @@ func roleHint(sf plugin.Surface, r consent.Request) string {
 				which = "lines " + andList(used)
 			}
 			return fmt.Sprintf("%s of %s — `%s` issues the whole role, then this call", which, s.Name,
-				sf.Call("agent.allow", plugin.Arg{Name: "id", Value: r.ID, Positional: true},
+				sf.Call("agent.approve", plugin.Arg{Name: "id", Value: r.ID, Positional: true},
 					plugin.Arg{Name: "role", Value: s.Name}))
 		}
 	}

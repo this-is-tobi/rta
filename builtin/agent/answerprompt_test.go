@@ -45,13 +45,13 @@ func TestWithOneCallParkedAnswersNeedNoId(t *testing.T) {
 	q := terminal(t, "y")
 	v, err := allowAt(t, nil, false, false)
 	if err != nil {
-		t.Fatalf("agent allow with no id at a terminal: %v", err)
+		t.Fatalf("agent approve with no id at a terminal: %v", err)
 	}
 	if q.count != 1 || !strings.Contains(q.card, "note.rm 4") {
-		t.Errorf("the one parked call was allowed without being shown: asked %d times, card %q", q.count, q.card)
+		t.Errorf("the one parked call was approved without being shown: asked %d times, card %q", q.count, q.card)
 	}
 	if got := v.(view.KeyValue).Pairs[0].Value; got != "note.rm 4" {
-		t.Errorf("allowed %q, want the call that was parked (%s)", got, again.ID)
+		t.Errorf("approved %q, want the call that was parked (%s)", got, again.ID)
 	}
 }
 
@@ -81,7 +81,7 @@ func TestABareAllowThatNothingShowsTheCallForNamesTheCallInstead(t *testing.T) {
 			t.Fatalf("%s: err = %v, want agent.request.unnamed", name, err)
 		}
 		verr := err.(*view.Error)
-		if !strings.Contains(verr.Message, "note.rm 3") || !strings.Contains(verr.Hint, "rta agent allow "+r.ID) {
+		if !strings.Contains(verr.Message, "note.rm 3") || !strings.Contains(verr.Hint, "rta agent approve "+r.ID) {
 			t.Errorf("%s: the refusal does not name the call and the command: %+v", name, verr)
 		}
 		if _, ok := consent.Find(r.ID); !ok {
@@ -89,7 +89,7 @@ func TestABareAllowThatNothingShowsTheCallForNamesTheCallInstead(t *testing.T) {
 		}
 	}
 	if _, err := allowAt(t, nil, true, false); err != nil {
-		t.Errorf("a dry run names the call it would allow and needs no id: %v", err)
+		t.Errorf("a dry run names the call it would approve and needs no id: %v", err)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestWithSeveralCallsParkedAnAnswerWithNoIdListsThemAndAnswersNone(t *testin
 	isolate(t)
 	a := park(t, "kv.get", "db-password")
 	b := park(t, "note.rm", "3")
-	for _, id := range []string{"agent.allow", "agent.deny", "agent.show"} {
+	for _, id := range []string{"agent.approve", "agent.deny", "agent.show"} {
 		_, err := run(t, id, nil)
 		if err == nil {
 			t.Fatalf("%s with two calls waiting and no id answered one of them", id)
@@ -122,9 +122,9 @@ func TestWithSeveralCallsParkedAnAnswerWithNoIdListsThemAndAnswersNone(t *testin
 
 func TestAnAnswerWithNoIdAndNothingWaitingSaysSo(t *testing.T) {
 	isolate(t)
-	_, err := run(t, "agent.allow", nil)
+	_, err := run(t, "agent.approve", nil)
 	if err == nil {
-		t.Fatal("agent allow with nothing parked succeeded")
+		t.Fatal("agent approve with nothing parked succeeded")
 	}
 	if got := codeOfErr(t, err); got != "agent.request.none" {
 		t.Errorf("code %q, want agent.request.none", got)
@@ -135,9 +135,9 @@ func TestAnAnswerWithNoIdAndNothingWaitingSaysSo(t *testing.T) {
 // request is named, never picked.
 func TestARemoteAnswerStillNamesTheRequest(t *testing.T) {
 	isolate(t)
-	_, err := run(t, "agent.allow", map[string]any{"server": "lab"})
+	_, err := run(t, "agent.approve", map[string]any{"server": "lab"})
 	if err == nil || codeOfErr(t, err) != "agent.request.unnamed" {
-		t.Fatalf("agent allow --server with no id: %v", err)
+		t.Fatalf("agent approve --server with no id: %v", err)
 	}
 }
 
@@ -164,7 +164,7 @@ func terminal(t *testing.T, answer string) *asked {
 
 func allowAt(t *testing.T, values map[string]any, dryRun, yes bool) (view.View, error) {
 	t.Helper()
-	c := capability(t, "agent.allow")
+	c := capability(t, "agent.approve")
 	return c.Run(context.Background(), plugin.NewRequest(
 		plugin.Resolve(c, plugin.Inputs{Caller: values}), dryRun, yes).WithSurface(plugin.SurfaceCLI))
 }
@@ -184,7 +184,7 @@ func parkedRemoval(t *testing.T) consent.Request {
 	return p.Request
 }
 
-// `agent allow 6904368d` copied off a notification approved a note removal that
+// `agent approve 6904368d` copied off a notification approved a note removal that
 // was never on screen. At a terminal the call is put in front of the person
 // first, with what the capability's own dry run said it would do.
 func TestAtATerminalAllowShowsTheCallAndWaitsForAYes(t *testing.T) {
@@ -203,10 +203,10 @@ func TestAtATerminalAllowShowsTheCallAndWaitsForAYes(t *testing.T) {
 			t.Errorf("the card does not carry %q:\n%s", want, q.card)
 		}
 	}
-	if q.prompt != "Allow once? [y/N] " {
+	if q.prompt != "Approve once? [y/N] " {
 		t.Errorf("prompt = %q", q.prompt)
 	}
-	if got := v.(view.KeyValue).Pairs[0]; got.Key != "allowed" {
+	if got := v.(view.KeyValue).Pairs[0]; got.Key != "approved" {
 		t.Errorf("a yes was answered with %+v", got)
 	}
 }
@@ -248,7 +248,7 @@ func TestAnythingButYesLeavesTheCallWaiting(t *testing.T) {
 				t.Fatal("a call that was not allowed is no longer waiting")
 			}
 			kvv := v.(view.KeyValue)
-			if kvv.Pairs[0].Key != "not allowed" || !strings.Contains(kvv.Pairs[1].Value, "rta agent deny "+r.ID) {
+			if kvv.Pairs[0].Key != "not approved" || !strings.Contains(kvv.Pairs[1].Value, "rta agent deny "+r.ID) {
 				t.Errorf("the refusal to answer says %+v, want how to refuse it now", kvv.Pairs)
 			}
 		})
@@ -298,11 +298,11 @@ func TestWithoutATerminalAllowKeepsItsOldBehaviour(t *testing.T) {
 func TestTheQuestionSaysWhatAYesGoesBeyondTheOneCall(t *testing.T) {
 	r := consent.Request{Cap: "kv.get", Scopes: []string{"db-password"}, Agent: "claude"}
 	for _, c := range []struct{ role, ttl, want string }{
-		{"", "", "Allow once?"},
-		{"", "15m", "Allow this call, and keep allowing kv.get db-password, whatever else it is called with, for 15m?"},
-		{"dev", "", "Allow this call, and issue the role dev to claude?"},
+		{"", "", "Approve once?"},
+		{"", "15m", "Approve this call, and keep allowing kv.get db-password, whatever else it is called with, for 15m?"},
+		{"dev", "", "Approve this call, and issue the role dev to claude?"},
 	} {
-		if got := allowQuestion(r, c.role, c.ttl); got != c.want {
+		if got := approveQuestion(r, c.role, c.ttl); got != c.want {
 			t.Errorf("role %q ttl %q: %q, want %q", c.role, c.ttl, got, c.want)
 		}
 	}
@@ -428,11 +428,11 @@ func TestNoWarningWhenThereIsNoStoreToUnlock(t *testing.T) {
 
 func TestAClosedInputEndsTheQuestionsLine(t *testing.T) {
 	var out bytes.Buffer
-	answer, err := askLine(strings.NewReader(""), &out, "card\n", "Allow once? [y/N] ")
+	answer, err := askLine(strings.NewReader(""), &out, "card\n", "Approve once? [y/N] ")
 	if err == nil || answer != "" {
 		t.Fatalf("a closed input answered %q, %v", answer, err)
 	}
-	if got, want := out.String(), "card\nAllow once? [y/N] \n"; got != want {
+	if got, want := out.String(), "card\nApprove once? [y/N] \n"; got != want {
 		t.Errorf("wrote %q, want %q: what follows would run on from the question", got, want)
 	}
 	out.Reset()

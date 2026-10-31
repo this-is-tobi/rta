@@ -2067,7 +2067,7 @@ func (b byExpiry) Swap(i, j int) {
 
 // identity names a grant across a reload.
 //
-// The fields runAllow dedupes on, plus the moment of consent — which together
+// The fields runApprove dedupes on, plus the moment of consent — which together
 // are what makes two rows the same decision rather than two decisions that
 // happen to look alike. Needed because a refund runs after the grant file has
 // been written and re-read, so an index means nothing by then, and matching by

@@ -29,11 +29,11 @@ func withPolicy(t *testing.T, body string) {
 // allowing runs grant.allow the way a person does, returning what they read.
 func allowing(t *testing.T, values map[string]any) (string, *view.Error) {
 	t.Helper()
-	v, err := runAllow(context.Background(), req(values), catalog, builtIn)
+	v, err := runApprove(context.Background(), req(values), catalog, builtIn)
 	if err != nil {
 		verr, ok := err.(*view.Error)
 		if !ok {
-			t.Fatalf("runAllow: %v", err)
+			t.Fatalf("runApprove: %v", err)
 		}
 		return "", verr
 	}

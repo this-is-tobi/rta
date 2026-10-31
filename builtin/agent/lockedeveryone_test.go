@@ -52,7 +52,7 @@ func TestAllowingForAFrozenAgentNamesTheLockThatHoldsIt(t *testing.T) {
 	isolate(t)
 	freezeAgent(t, lockdown.Everyone)
 	r := parkedRemoval(t)
-	v, err := run(t, "agent.allow", map[string]any{"id": r.ID})
+	v, err := run(t, "agent.approve", map[string]any{"id": r.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestAllowingForAFrozenAgentNamesTheLockThatHoldsIt(t *testing.T) {
 	isolate(t)
 	freezeAgent(t, "claude")
 	r = parkedRemoval(t)
-	v, err = run(t, "agent.allow", map[string]any{"id": r.ID})
+	v, err = run(t, "agent.approve", map[string]any{"id": r.ID})
 	if err != nil {
 		t.Fatal(err)
 	}

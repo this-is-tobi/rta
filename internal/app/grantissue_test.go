@@ -144,7 +144,7 @@ func TestGrantIssueIsLocalAndTakesOneOfARoleAndAnEnvironment(t *testing.T) {
 // ever.
 func TestAPassphraseTheCommandLineRefusesIsNotOfferedThere(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
-	for _, command := range [][]string{{"grant", "issue"}, {"grant", "allow"}, {"grant", "renew"}, {"agent", "allow"}} {
+	for _, command := range [][]string{{"grant", "issue"}, {"grant", "allow"}, {"grant", "renew"}, {"agent", "approve"}} {
 		help, err := runIn(t, stagingOfBuiltIns, append(command, "--help")...)
 		if err != nil || strings.Contains(help, "--passphrase") {
 			t.Errorf("%v --help lists the passphrase flag (%v):\n%s", command, err, help)
@@ -209,7 +209,7 @@ func TestEveryCommandRefusesAPassphraseOnTheCommandLine(t *testing.T) {
 		code string
 	}{
 		{[]string{"grant", "renew", "kv.get", "--passphrase", "hunter22-x"}, "core.guard.passphrase.argv"},
-		{[]string{"agent", "allow", "5473aa62", "--ttl", "1h", "--passphrase", "hunter22-x"}, "core.guard.passphrase.argv"},
+		{[]string{"agent", "approve", "5473aa62", "--ttl", "1h", "--passphrase", "hunter22-x"}, "core.guard.passphrase.argv"},
 		{[]string{"grant", "guard", "off", "--passphrase", "hunter22-x"}, "core.guard.passphrase.argv"},
 		{[]string{"grant", "revoke", "kv.get", "--passphrase", "hunter22-x"}, "core.operator.passphrase.argv"},
 		{[]string{"grant", "list", "--passphrase", "hunter22-x"}, "core.operator.passphrase.argv"},

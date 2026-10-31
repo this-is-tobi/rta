@@ -234,7 +234,7 @@ func (o serveOptions) withRoots(roots []string) (serveOptions, *view.Error) {
 func (o serveOptions) pairs() []view.Pair {
 	var out []view.Pair
 	if o.consent {
-		how := "a call that needs a grant waits for you instead of being refused — `rta agent pending` lists it, `rta agent allow <id>` answers"
+		how := "a call that needs a grant waits for you instead of being refused — `rta agent pending` lists it, `rta agent approve <id>` answers"
 		if o.consentWait > 0 {
 			how += "; it is refused anyway after " + durationFlag(o.consentWait)
 		}

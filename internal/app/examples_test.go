@@ -125,7 +125,7 @@ func TestTheDailyCommandsHaveExamples(t *testing.T) {
 	root := NewRoot(reg, "test")
 	for _, path := range []string{
 		"grant allow", "grant revoke", "grant issue", "grant list", "grant renew",
-		"lock add", "lock rm", "agent log", "agent allow", "agent show", "use",
+		"lock add", "lock rm", "agent log", "agent approve", "agent show", "use",
 		"kv set", "kv init", "plugin install", "plugin trust", "mcp install", "mcp serve",
 		"policy init", "doctor", "init", "profile set",
 	} {

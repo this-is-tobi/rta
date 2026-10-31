@@ -18,7 +18,7 @@ func TestCompletionOffersOnlyWhatAGrantCanCover(t *testing.T) {
 		return []plugin.Capability{
 			{ID: "sys.host", Summary: "host", Safety: plugin.Read},
 			{ID: "grant.allow", Summary: "allow", Safety: plugin.Write, HumanOnly: true},
-			{ID: "agent.allow", Summary: "answer", Safety: plugin.Write, HumanOnly: true},
+			{ID: "agent.approve", Summary: "answer", Safety: plugin.Write, HumanOnly: true},
 			{ID: "kv.get", Summary: "reveal", Safety: plugin.Write},
 		}
 	}
@@ -42,7 +42,7 @@ func TestCompletionOffersOnlyWhatAGrantCanCover(t *testing.T) {
 			t.Errorf("completion lacks %q:\n%s", want, offered)
 		}
 	}
-	for _, refused := range []string{"grant.allow", "agent.allow", "agent\t", "grant\t", "sys.host"} {
+	for _, refused := range []string{"grant.allow", "agent.approve", "agent\t", "grant\t", "sys.host"} {
 		if strings.Contains(offered, refused) {
 			t.Errorf("completion offers %q, which a grant cannot cover:\n%s", refused, offered)
 		}

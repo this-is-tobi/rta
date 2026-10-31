@@ -33,7 +33,7 @@ rta init                  # find the AI clients on this machine and offer to con
 rta mcp install claude    # or connect one by name: it reads what is local and asks you for anything else
 ```
 
-Ask Claude Code to add a note and rta asks you first — `rta agent pending` shows the call and `rta agent allow` lets it through — which is the loop the rest of rta is built around. [Quick start](./docs/10-getting-started/20-quickstart.md) walks it in ten minutes, and [Start here](./docs/01-readme.md) lays out four tracks: try it, give an agent access safely, run it for a team, and extend it.
+Ask Claude Code to add a note and rta asks you first — `rta agent pending` shows the call and `rta agent approve` lets it through — which is the loop the rest of rta is built around. [Quick start](./docs/10-getting-started/20-quickstart.md) walks it in ten minutes, and [Start here](./docs/01-readme.md) lays out four tracks: try it, give an agent access safely, run it for a team, and extend it.
 
 ## Documentation
 

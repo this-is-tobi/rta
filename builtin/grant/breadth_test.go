@@ -55,7 +55,7 @@ func TestAGrantNamingAProfileOnAPluginThatTakesNoneSaysItCoversNoCall(t *testing
 // The same count, as the receipt of the command says it.
 func TestTheReceiptCountsWhatTheProfiledGrantCovers(t *testing.T) {
 	envSetup(t)
-	v, err := runAllow(context.Background(), plugin.NewRequest(map[string]any{
+	v, err := runApprove(context.Background(), plugin.NewRequest(map[string]any{
 		"target": "db", "profile": "staging", "ttl": "1h", "agent": "test",
 	}, true, true).WithSurface(plugin.SurfaceCLI), envCatalog, builtIn)
 	if err != nil {

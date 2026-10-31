@@ -35,27 +35,27 @@ func TestARefusalOfTheIdOrTheSinceNamesIt(t *testing.T) {
 	isolate(t)
 	_, err := run(t, "agent.log", map[string]any{"since": "whenever"})
 	namesInput(t, "agent.log", err, "agent.log.since", "since")
-	for _, capID := range []string{"agent.show", "agent.allow", "agent.deny"} {
+	for _, capID := range []string{"agent.show", "agent.approve", "agent.deny"} {
 		_, err := run(t, capID, map[string]any{"id": "nosuch"})
 		namesInput(t, capID, err, "agent.request.unknown", "id")
 		_, err = run(t, capID, map[string]any{"server": "lab"})
 		namesInput(t, capID, err, "agent.request.unnamed", "id")
 	}
-	_, err = run(t, "agent.allow", nil)
-	namesInput(t, "agent.allow", err, "agent.request.none", "")
+	_, err = run(t, "agent.approve", nil)
+	namesInput(t, "agent.approve", err, "agent.request.none", "")
 
 	var verr *view.Error
 	_, verr = findRemote(operatorid.ConsentList{}, "lab", "nosuch")
 	namesInput(t, "agent.show", verr, "agent.request.unknown", "id")
 	_, verr = AnswerRemote("claude")(operatorid.AnswerSpec{ID: "nosuch", Allow: true}, "tobi")
-	namesInput(t, "agent.allow", verr, "agent.request.unknown", "id")
+	namesInput(t, "agent.approve", verr, "agent.request.unknown", "id")
 
 	was := atTerminal
 	t.Cleanup(func() { atTerminal = was })
 	atTerminal = func(plugin.Request) bool { return false }
 	parkedRemoval(t)
 	_, err = allowAt(t, nil, false, false)
-	namesInput(t, "agent.allow", err, "agent.request.unnamed", "id")
+	namesInput(t, "agent.approve", err, "agent.request.unnamed", "id")
 	park(t, "kv.get", "db-password")
 	_, err = run(t, "agent.deny", nil)
 	namesInput(t, "agent.deny", err, "agent.request.several", "id")

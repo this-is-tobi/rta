@@ -9,7 +9,7 @@ import (
 )
 
 // **A grant an agent issued itself must not look like one you issued** — and
-// this path assumed it always was one. `agent allow --ttl` stamped FromForm
+// this path assumed it always was one. `agent approve --ttl` stamped FromForm
 // unconditionally, on the argument that answering a parked request is always
 // a person; but the capability runs from any shell, so an agent that parked a
 // call through its own MCP session could answer it and mint a standing grant
@@ -21,9 +21,9 @@ func TestAnsweringFromAShellDoesNotRecordAPerson(t *testing.T) {
 	r := park(t, "kv.get", "db-password")
 
 	// The test harness is the attack shape: SurfaceCLI with no terminal on
-	// fd 0 — exactly what `rta agent allow` looks like from an agent's shell
+	// fd 0 — exactly what `rta agent approve` looks like from an agent's shell
 	// tool.
-	if _, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "15m"}); err != nil {
+	if _, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "15m"}); err != nil {
 		t.Fatal(err)
 	}
 	grants, verr := grant.Load()
@@ -45,7 +45,7 @@ func TestAnsweringFromTheTUIRecordsAForm(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.get", "db-password")
 
-	c := capability(t, "agent.allow")
+	c := capability(t, "agent.approve")
 	req := plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{
 		Caller: map[string]any{"id": r.ID, "ttl": "15m"},
 	}), false, false).WithSurface(plugin.SurfaceTUI)

@@ -2067,7 +2067,7 @@ func argvCodes(f plugin.Field) (string, bool) {
 //
 // Here, once, and not in each capability. It was each capability's to ask
 // (passkey.Argv, guard.RefuseArgv), and the ones that read the field only
-// sometimes — renew and agent allow only with the guard on, grant list and
+// sometimes — renew and agent approve only with the guard on, grant list and
 // revoke only with --server, guard off never once remote — never asked
 // otherwise, so with the guard off they went on with the passphrase in shell
 // history and the habit the refusal exists to break. A command that declares

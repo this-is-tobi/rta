@@ -69,7 +69,7 @@ func TestAOnAParkedCallSaysWhatItWouldAllowAndWaits(t *testing.T) {
 		t.Errorf("armed for %v, want the call under the cursor, %s", armed.armed.base["id"], id)
 	}
 	bar := barOf(armed)
-	for _, want := range []string{"enter", "allow claude's note.rm 2 once", "would remove note 2: third note", "A for a while", "esc cancel"} {
+	for _, want := range []string{"enter", "approve claude's note.rm 2 once", "would remove note 2: third note", "A for a while", "esc cancel"} {
 		if !strings.Contains(bar, want) {
 			t.Errorf("the bar lacks %q:\n%s", want, bar)
 		}
@@ -86,11 +86,11 @@ func TestEnterAllowsTheCallTheLineNamedAndNothingWider(t *testing.T) {
 	// gets answered is the one that was named.
 	armed.row = 5
 	ran := press(t, armed, "enter")
-	if ran.mode != modeRunning || ran.current.ID != "agent.allow" {
-		t.Fatalf("enter left %v on %q, want agent.allow running", ran.mode, ran.current.ID)
+	if ran.mode != modeRunning || ran.current.ID != "agent.approve" {
+		t.Fatalf("enter left %v on %q, want agent.approve running", ran.mode, ran.current.ID)
 	}
 	if ran.lastValues["id"] != id || len(ran.lastValues) != 1 {
-		t.Errorf("allowed with %v, want exactly the id %s and no ttl or role", ran.lastValues, id)
+		t.Errorf("approved with %v, want exactly the id %s and no ttl or role", ran.lastValues, id)
 	}
 	if ran.form != nil || ran.armed != nil {
 		t.Error("a form or an armed answer survived the run")
@@ -149,10 +149,10 @@ func TestTheAllowFormNamesTheCallItIsAbout(t *testing.T) {
 func TestTheFooterSaysWhatWasAllowedWhenItIsDone(t *testing.T) {
 	_ = parkCall(t, "note.rm", "2", "would remove note 2: third note")
 	ran := press(t, press(t, screenOf(t, "agent.pending", nil), "a"), "enter")
-	next, _ := ran.Update(resultMsg{cap: ran.current, view: view.Text{Body: "allowed"}, seq: ran.runSeq})
+	next, _ := ran.Update(resultMsg{cap: ran.current, view: view.Text{Body: "approved"}, seq: ran.runSeq})
 	done := next.(Model)
-	if !strings.Contains(done.flash, "allowed claude's note.rm 2 once") {
-		t.Errorf("the footer says %q after the answer, want the call that was allowed", done.flash)
+	if !strings.Contains(done.flash, "approved claude's note.rm 2 once") {
+		t.Errorf("the footer says %q after the answer, want the call that was approved", done.flash)
 	}
 	if done.said != "" {
 		t.Error("what was said outlived the answer")
@@ -171,7 +171,7 @@ func TestTheCallsOwnPageAnswersWithTheSameKeys(t *testing.T) {
 	if armed.armed == nil || armed.armed.base["id"] != id {
 		t.Fatalf("a on the page armed %+v, want the call it shows", armed.armed)
 	}
-	if !strings.Contains(barOf(armed), "allow claude's note.rm 2 once") {
+	if !strings.Contains(barOf(armed), "approve claude's note.rm 2 once") {
 		t.Errorf("the bar does not name the call:\n%s", barOf(armed))
 	}
 	if form := press(t, page, "A"); form.mode != modeForm || !formFields(form)["ttl"] {
@@ -189,7 +189,7 @@ func TestEnterRefusesACallThatIsGoneOrIsNotTheOneShown(t *testing.T) {
 	armed := press(t, screenOf(t, "agent.pending", nil), "a")
 
 	changed := armed
-	changed.armed = &armedAnswer{act: armed.armed.act, base: armed.armed.base, line: "allow claude's kv.get once", done: "x"}
+	changed.armed = &armedAnswer{act: armed.armed.act, base: armed.armed.base, line: "approve claude's kv.get once", done: "x"}
 	if got := press(t, changed, "enter"); got.mode != modeResult || !strings.Contains(got.flash, "changed after it was shown") {
 		t.Errorf("a call that is not the one named ran: mode %v flash %q", got.mode, got.flash)
 	}

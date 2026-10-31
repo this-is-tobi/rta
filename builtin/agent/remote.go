@@ -13,10 +13,10 @@ import (
 	"github.com/this-is-tobi/rta/pkg/view"
 )
 
-// The client half of remote consent: `rta agent pending/show/allow/deny
+// The client half of remote consent: `rta agent pending/show/approve/deny
 // --server <name>`, each a signed operator call. The one deliberate
 // asymmetry from the local flow, stated where it is implemented: locally a
-// bare `agent allow <id>` is passphrase-free because it releases a single
+// bare `agent approve <id>` is passphrase-free because it releases a single
 // call an agent with a shell could have run directly — and that
 // shell-equivalence argument does not travel. A network caller is
 // precisely not the person at the machine, so every remote answer costs
@@ -62,11 +62,11 @@ func remotePending(ctx context.Context, req plugin.Request, server string) (view
 	table := pendingTable(sf, cl.Waiting)
 	// The empty queue's sentence names the server twice, where the local
 	// one names neither: the command it offers is how somebody answers the
-	// next call parked here, and `rta agent allow <id>` without --server
+	// next call parked here, and `rta agent approve <id>` without --server
 	// answers this machine's queue, where that call is not.
 	if len(table.Rows) == 0 {
 		table.Empty = fmt.Sprintf("nothing is waiting on %s — a parked call appears here, and "+
-			"`%s` releases it", server, sf.Call("agent.allow", plugin.Arg{Name: "id", Value: plugin.Placeholder("id"), Positional: true},
+			"`%s` releases it", server, sf.Call("agent.approve", plugin.Arg{Name: "id", Value: plugin.Placeholder("id"), Positional: true},
 			plugin.Arg{Name: "server", Value: server}))
 	}
 	if len(cl.Tampered) == 0 {
@@ -111,13 +111,13 @@ func remoteShow(ctx context.Context, req plugin.Request, server, id string) (vie
 	return showView(req.Surface(), r), nil
 }
 
-// remoteAnswer is `agent allow <id> --server` and `agent deny <id>
+// remoteAnswer is `agent approve <id> --server` and `agent deny <id>
 // --server`: fetch the request, derive the digest from what this machine
 // read, and send the answer inside the signed envelope.
 func remoteAnswer(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability, server, id string, allow bool) (view.View, error) {
 	verb := "deny"
 	if allow {
-		verb = "allow"
+		verb = "approve"
 	}
 	// --ttl and --role mint standing grants, which remotely is its own
 	// signed prepare-and-issue flow with its own review step — folding it
@@ -169,15 +169,15 @@ func remoteAnswer(ctx context.Context, req plugin.Request, catalog func() []plug
 			WithHint("the server's queue said one thing and bound another; treat that machine as suspect")
 	}
 	// **The call is shown before a signed release leaves, as it is for a local
-	// one** (confirmAllow). The digest above proves the card describes the call
+	// one** (confirmApprove). The digest above proves the card describes the call
 	// it is bound to, and it was the one thing between the operator's passphrase
 	// and the release: an id copied off a notification was approved without the
 	// call ever being on a screen this person looked at. The operator key is
 	// open by now, so the question costs no second passphrase. Without a
 	// terminal and with --yes it is answered as it always was, for the reason
-	// runAllow gives.
+	// runApprove gives.
 	if allow && !req.Yes && atTerminal(req) {
-		if !confirmAllow(r, allowQuestion(r, "", ""), revealsValue(catalog, r.Cap)) {
+		if !confirmApprove(r, approveQuestion(r, "", ""), revealsValue(catalog, r.Cap)) {
 			return declinedOn(req.Surface(), r, server), nil
 		}
 	}
@@ -189,7 +189,7 @@ func remoteAnswer(ctx context.Context, req plugin.Request, catalog func() []plug
 	what := callNamed(out.Cap, out.Scopes)
 	if allow {
 		return view.KeyValue{Pairs: []view.Pair{
-			{Key: "allowed", Value: what},
+			{Key: "approved", Value: what},
 			{Key: "for", Value: "this call only, on " + server},
 		}}, nil
 	}

@@ -13,7 +13,7 @@ import (
 
 // A signed answer to a call parked on another machine is as much a release as a
 // local one, and the local one puts the call in front of the person first
-// because `agent allow 89b90745` copied off a notification once approved a
+// because `agent approve 89b90745` copied off a notification once approved a
 // removal nobody had on screen. The remote one fetched the request, derived its
 // digest and sent the answer, and showed nothing: the operator's passphrase and
 // an id were all it took, and the call was never on a screen they were looking
@@ -30,7 +30,7 @@ func TestARemoteAllowAtATerminalShowsTheCallAndAsksFirst(t *testing.T) {
 	}
 	defer parked.Close()
 	allow := func() (view.View, error) {
-		return remoteCap(t, "agent.allow").Run(context.Background(), plugin.NewRequest(
+		return remoteCap(t, "agent.approve").Run(context.Background(), plugin.NewRequest(
 			map[string]any{"id": parked.Request.ID, "server": "lab", "passphrase": "correct horse"}, false, false).
 			WithSurface(plugin.SurfaceTUI))
 	}
@@ -48,7 +48,7 @@ func TestARemoteAllowAtATerminalShowsTheCallAndAsksFirst(t *testing.T) {
 			t.Errorf("the card does not carry %q:\n%s", want, q.card)
 		}
 	}
-	if kv, ok := v.(view.KeyValue); !ok || kv.Pairs[0].Key != "not allowed" {
+	if kv, ok := v.(view.KeyValue); !ok || kv.Pairs[0].Key != "not approved" {
 		t.Errorf("a no was answered with %+v", v)
 	} else if want := plugin.SurfaceTUI.Call("agent.deny",
 		plugin.Arg{Name: "id", Value: parked.Request.ID, Positional: true}, plugin.Arg{Name: "server", Value: "lab"}); !strings.Contains(kv.Pairs[1].Value, want) {
@@ -68,7 +68,7 @@ func TestARemoteAllowAtATerminalShowsTheCallAndAsksFirst(t *testing.T) {
 	if q.count != 1 {
 		t.Fatalf("asked %d times on the yes, want once", q.count)
 	}
-	if kv, ok := v.(view.KeyValue); !ok || kv.Pairs[0].Key != "allowed" {
+	if kv, ok := v.(view.KeyValue); !ok || kv.Pairs[0].Key != "approved" {
 		t.Fatalf("a yes was answered with %+v", v)
 	}
 	released, stop := context.WithTimeout(context.Background(), 3*time.Second)

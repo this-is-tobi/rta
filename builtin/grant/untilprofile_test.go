@@ -12,7 +12,7 @@ import (
 func needlessFor(t *testing.T, target string) *view.Error {
 	t.Helper()
 	completionSetup(t)
-	_, err := runAllow(context.Background(), req(map[string]any{"target": target, "agent": "test"}), completionCatalog, builtIn)
+	_, err := runApprove(context.Background(), req(map[string]any{"target": target, "agent": "test"}), completionCatalog, builtIn)
 	var verr *view.Error
 	if err == nil || !asError(err, &verr) {
 		t.Fatalf("allow %s = %v, want a refusal", target, err)

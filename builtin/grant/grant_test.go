@@ -114,11 +114,11 @@ func revokeH(ctx context.Context, req plugin.Request) (view.View, error) {
 	return runRevoke(ctx, req, catalog)
 }
 
-// allowH adapts runAllow (now closed over catalog, like every other target
+// allowH adapts runApprove (now closed over catalog, like every other target
 // lookup in this package) to the plugin.Handler shape the rest of this file
 // drives its capabilities through.
 func allowH(ctx context.Context, req plugin.Request) (view.View, error) {
-	return runAllow(ctx, req, catalog, builtIn)
+	return runApprove(ctx, req, catalog, builtIn)
 }
 
 func TestPluginValidates(t *testing.T) {
