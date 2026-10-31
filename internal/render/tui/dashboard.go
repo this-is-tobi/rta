@@ -1056,6 +1056,11 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 				"%s did not answer within %s", t.cap.ID, deadline).
 				WithHint("enter opens it on its own screen, where a run is not on the dashboard's clock")
 		}
+		// A tile of a plugin whose section rta could not apply shows that, and
+		// not a read of the plugin's default destination.
+		if cfg.withheld != nil {
+			return tileMsg{key: key, idx: idx, err: cfg.withheld}
+		}
 		// A tile is a call too: the fence a profile states is about what is
 		// asked of the connection, whoever wrote the tile, and a refused tile is
 		// a visible error in its panel rather than a quiet read of somewhere
@@ -1091,7 +1096,7 @@ func tileCmd(idx int, t tile, cfg statedConfig, profileName string,
 		}
 		req := plugin.ResolveRequest(t.cap, plugin.Inputs{
 			Caller: t.values, Profile: filled, ProfileName: profileName, Tunnel: via, Config: cfg.values,
-			ConfigSection: cfg.section, Fence: profile.FenceOf(conn),
+			ConfigSection: cfg.section, Fence: profile.FenceOf(conn), HoldAmbient: cfg.displaced,
 		}, false, false).WithSurface(plugin.SurfaceTUI)
 		v, err := t.cap.Run(ctx, req)
 		if err != nil {

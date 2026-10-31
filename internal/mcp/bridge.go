@@ -354,6 +354,20 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			refusedBy(rec, verr)
 			return errResult(forAgent(c, verr)), nil
 		}
+		// A plugin whose section in the operator's file was not applied does
+		// not run on its own defaults instead (pluginconf.Resolver.Withheld),
+		// here as at a terminal. Before the gate, so the call spends no grant
+		// and parks no question it could only be refused after. The agent is
+		// told that much, and the record which section and why, with the
+		// command that fixes it: the operator's file is the operator's to read.
+		if p, withheld := opts.withheld(c); withheld {
+			verr := view.Errorf("core.config.unapplied",
+				"%s was not run: rta did not apply the operator's configuration of %s, and it does not run without it",
+				plugin.ToolName(c.ID), plugin.Namespace(c.ID)).WithHint(readTheRecord())
+			refusedBy(rec, verr)
+			rec.Note = cut(p.String(), maxReason)
+			return errResult(verr), nil
+		}
 		// The profile comes out of the arguments here — before defaults, before
 		// Local-stripping, and above all before the gate — because it is the
 		// host's, not the capability's. "profile" is a reserved input name, so
@@ -809,6 +823,7 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 			Config:      opts.pluginConfig(c),
 			// The heading Config sits under, for a refusal to name the line.
 			ConfigSection: opts.configSection(c),
+			HoldAmbient:   opts.displaced(c),
 		}, false, true).WithSurface(plugin.SurfaceMCP).
 			// The same guard the arguments went through, carried into the
 			// handler for the paths it derives from them rather than

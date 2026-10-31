@@ -37,6 +37,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/near"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
+	"github.com/this-is-tobi/rta/pkg/view"
 )
 
 // minPinLen matches internal/profile's, internal/plugintrust's and
@@ -49,6 +50,24 @@ const minPinLen = 8
 type Resolver struct {
 	sections map[string]map[string]any
 	headings map[string]string
+	// withheld is, by namespace, why the section the operator's own file wrote
+	// for a registered plugin was not applied, when no other section for it
+	// was. Every call of that plugin is refused until it is (see Withheld).
+	withheld map[string]Problem
+	// displaced is the namespaces a run gave another artifact than the one
+	// their section was matched to (Without).
+	displaced map[string]bool
+}
+
+// repinTail is what a hint about a section's pin adds for an installed plugin:
+// the command that writes the installed pin into the heading. Not for a build
+// made for one run, which no section should be pinned to, and which the same
+// command, typed in that run, refuses.
+func repinTail(ns string, o registry.Origin) string {
+	if o.Dev {
+		return ""
+	}
+	return "; `rta config repin --plugin " + ns + "` points the section at it"
 }
 
 // Problem is one stated thing rta could not honour, and what to do about it.
@@ -81,7 +100,8 @@ type Origin func(namespace string) (registry.Origin, bool)
 
 // Resolve matches every stated section to the artifact it names.
 func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
-	r := &Resolver{sections: map[string]map[string]any{}, headings: map[string]string{}}
+	r := &Resolver{sections: map[string]map[string]any{}, headings: map[string]string{},
+		withheld: map[string]Problem{}, displaced: map[string]bool{}}
 	var problems []Problem
 
 	// Sorted, so `rta doctor` prints the same order twice running and a
@@ -123,6 +143,16 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 		return r, problems
 	}
 
+	// The first section of each registered plugin that could not be applied, for
+	// withheld below. Sorted like everything else here, so which one a refusal
+	// names is the same one twice running.
+	unapplied := map[string]Problem{}
+	refuse := func(ns string, p Problem) {
+		problems = append(problems, p)
+		if _, seen := unapplied[ns]; !seen {
+			unapplied[ns] = p
+		}
+	}
 	for _, section := range names {
 		ns, pin, pinned := strings.Cut(section, "@")
 		o, known := origin(ns)
@@ -136,18 +166,18 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 			// identity, so accepting one would imply a check that is not
 			// happening.
 			if pinned {
-				problems = append(problems, Problem{Section: section,
+				refuse(ns, Problem{Section: section,
 					Reason: fmt.Sprintf("%q is built in and has no artifact to pin", ns),
 					Hint:   "write it as `" + ns + ":`"})
 				continue
 			}
 			r.sections[ns], r.headings[ns] = cfg.Plugins[section], section
 		case !pinned:
-			hint := "write it as `" + ns + "@" + o.Short() + ":`"
+			hint := "write it as `" + ns + "@" + o.Short() + ":`" + repinTail(ns, o)
 			if o.Dev {
 				hint = o.Which(ns) + "; pin the section to the build you install"
 			}
-			problems = append(problems, Problem{Section: section,
+			refuse(ns, Problem{Section: section,
 				Reason: fmt.Sprintf("%q is an installed plugin, so its config must name the artifact it is for", ns),
 				Hint:   hint})
 		case len(pin) < minPinLen:
@@ -158,17 +188,25 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 			// whole point — back into trusting whatever currently answers to
 			// the name. An empty pin is the extreme case of this, not a
 			// separate one.
-			problems = append(problems, Problem{Section: section,
+			refuse(ns, Problem{Section: section,
 				Reason: fmt.Sprintf("this pin for %q is too short to trust", ns),
-				Hint:   o.Which(ns) + " — at least " + strconv.Itoa(minPinLen) + " hex characters"})
+				Hint:   o.Which(ns) + " — at least " + strconv.Itoa(minPinLen) + " hex characters" + repinTail(ns, o)})
 		case !strings.HasPrefix(o.Digest, pin):
 			// A stale pin is the ordinary case after an upgrade, and saying
 			// which digest is installed is the whole point.
-			problems = append(problems, Problem{Section: section,
+			refuse(ns, Problem{Section: section,
 				Reason: "this pin does not match " + o.Called(ns),
-				Hint:   o.Which(ns)})
+				Hint:   o.Which(ns) + repinTail(ns, o)})
 		default:
 			r.sections[ns], r.headings[ns] = cfg.Plugins[section], section
+		}
+	}
+	// A plugin with a section that applied is not withheld for a second one
+	// that did not: that is the old pin an upgrade left beside the new one, and
+	// `rta doctor` reports it as the leftover it is.
+	for ns, p := range unapplied {
+		if _, applied := r.sections[ns]; !applied {
+			r.withheld[ns] = p
 		}
 	}
 	return r, problems
@@ -177,14 +215,60 @@ func Resolve(cfg config.Config, origin Origin) (*Resolver, []Problem) {
 // For returns the operator's values for one namespace, or nil.
 //
 // nil is the answer for every plugin that stated nothing, every plugin whose
-// pin did not match, and every plugin rta has not heard of — the three cases
-// are deliberately indistinguishable here, because at the point of a call
-// they mean the same thing and the difference is a diagnostic, not a branch.
+// pin did not match, and every plugin rta has not heard of. Whether a call may
+// run at all without the values is not For's to say: Withheld answers that,
+// before anything is resolved.
 func (r *Resolver) For(namespace string) map[string]any {
 	if r == nil {
 		return nil
 	}
 	return r.sections[namespace]
+}
+
+// Withheld reports why the section the operator wrote for namespace was not
+// applied, when it was not and no other section for it was: a stale pin after
+// an upgrade, a heading with no pin or one too short, a pin on a built-in. A
+// call of that plugin is refused rather than run, and every surface asks this
+// before it resolves anything for the call (Problem.Refusal words it for a
+// person).
+//
+// **It used to run on the plugin's declared defaults instead**, and that was
+// the plugin's default destination with the operator's own credentials: after
+// `rta plugin upgrade pg` the host in `plugins.pg@<old>:` stopped applying,
+// `rta pg status` went to localhost, and an exported RTA_PG_PASSWORD went with
+// it. The run said so only when it failed. A stale profile has always
+// refused instead (core.profile.stalepin); a stale section is the same
+// statement about the same artifact.
+//
+// Only for the operator's own file. A config file read from the working
+// directory is not honoured at all (Resolve), and a section of one is never
+// withheld: refusing on its word would let a file in whatever directory
+// somebody is standing in stop a plugin from running.
+func (r *Resolver) Withheld(namespace string) (Problem, bool) {
+	if r == nil {
+		return Problem{}, false
+	}
+	p, ok := r.withheld[namespace]
+	return p, ok
+}
+
+// Displaced reports whether this run gave namespace another artifact than the
+// one its section was matched to (Without): a `plugin dev` build in place of
+// an installed copy whose section therefore does not apply.
+func (r *Resolver) Displaced(namespace string) bool {
+	return r != nil && r.displaced[namespace]
+}
+
+// Refusal is p as the refusal of a call of the plugin it is about, for a
+// person: what was not applied, and that the plugin does not run without it.
+func (p Problem) Refusal() *view.Error {
+	ns, _, _ := strings.Cut(p.Section, "@")
+	verr := view.Errorf("core.config.unapplied",
+		"rta did not apply your `plugins.%s` section (%s), and %s does not run without it", p.Section, p.Reason, ns)
+	if p.Hint != "" {
+		verr = verr.WithHint(p.Hint)
+	}
+	return verr
 }
 
 // Without is r for a run in which namespace names another artifact than the
@@ -199,18 +283,34 @@ func (r *Resolver) For(namespace string) map[string]any {
 // copy, and the values an operator pinned to the installed bytes are exactly
 // what the package exists not to hand to whatever else answers to the name.
 // Nil stays nil, and r itself is not changed.
+//
+// A section withheld for the installed copy is left out with it: what it
+// refused was a call of the installed bytes, and this run calls others. The
+// namespace is Displaced from then on, which is what keeps the operator's
+// ambient credentials from following the run's default destination
+// (plugin.Inputs.HoldAmbient).
 func (r *Resolver) Without(namespace string) *Resolver {
 	if r == nil {
 		return nil
 	}
 	out := &Resolver{
-		sections: make(map[string]map[string]any, len(r.sections)),
-		headings: make(map[string]string, len(r.headings)),
+		sections:  make(map[string]map[string]any, len(r.sections)),
+		headings:  make(map[string]string, len(r.headings)),
+		withheld:  make(map[string]Problem, len(r.withheld)),
+		displaced: map[string]bool{namespace: true},
 	}
 	for ns, section := range r.sections {
 		if ns != namespace {
 			out.sections[ns], out.headings[ns] = section, r.headings[ns]
 		}
+	}
+	for ns, p := range r.withheld {
+		if ns != namespace {
+			out.withheld[ns] = p
+		}
+	}
+	for ns := range r.displaced {
+		out.displaced[ns] = true
 	}
 	return out
 }

@@ -473,10 +473,15 @@ func stalePinPairs(name, from, to string, dryRun bool) []view.Pair {
 		pairs = append(pairs, view.Pair{Key: "your profiles", Value: note})
 	}
 	if section {
+		// Said as what it does to the next call, since that is refused now
+		// rather than run without the section (pluginconf.Resolver.Withheld), and
+		// with the one command that moves it, as the profiles' line above names
+		// theirs.
 		pin := "plugins." + name + "@" + shortDigest(from)
-		note := pin + " no longer applies; the new pin is " + newPin
+		repin := "`rta config repin --plugin " + name + "` points it at " + newPin
+		note := pin + " no longer applies, and " + name + "'s calls are refused until " + repin
 		if dryRun {
-			note = pin + " still applies — after the upgrade it will not; the new pin is " + newPin
+			note = pin + " still applies — after the upgrade " + name + "'s calls are refused until " + repin
 		}
 		pairs = append(pairs, view.Pair{Key: "your pin", Value: note})
 	}

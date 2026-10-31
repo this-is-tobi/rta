@@ -718,7 +718,7 @@ func Dial(ctx context.Context, name string, conn config.Connection, c plugin.Cap
 	caller map[string]any, sf plugin.Surface,
 ) (map[string]any, plugin.Tunnel, func(), *view.Error) {
 	noop := func() {}
-	if !conn.Tunnelled() || callerNamedEndpoint(c, caller) {
+	if !conn.Tunnelled() || c.NamesEndpoint(caller) {
 		return nil, plugin.TunnelNone, noop, nil
 	}
 	if verr := forwardTLSRefusal(name, conn, c, caller, sf); verr != nil {
@@ -1474,22 +1474,6 @@ func checkSecretRefs(name, key string, conn config.Connection, ns string, inst I
 		}
 	}
 	return problems
-}
-
-// callerNamedEndpoint reports whether the caller supplied any of the inputs
-// that say where a forward goes — the host, the port, the address or the URL.
-// Not the TLS switch, which a forward also fills and which says how to talk,
-// never where: see Dial.
-func callerNamedEndpoint(c plugin.Capability, caller map[string]any) bool {
-	for _, f := range c.Inputs {
-		if f.Endpoint == plugin.EndpointNone || f.Endpoint == plugin.EndpointTLS {
-			continue
-		}
-		if _, given := caller[f.Name]; given {
-			return true
-		}
-	}
-	return false
 }
 
 // forwardTLSRefusal refuses a caller's TLS-role input given as anything but

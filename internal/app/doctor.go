@@ -262,18 +262,24 @@ func PluginConfigSection(c plugin.Capability) string {
 // for this capability's plugin, or "".
 //
 // SetPluginConfig's argument for keeping these out of every command stands: a
-// stale pin is a fact about an installation, and printing it before a command
-// that worked is noise. It does not cover the case where the command *fails*.
-// There the operator sees a message naming the wrong cause — rebuild a
-// plugin, and `rta pg table list` reports "rejected the credentials for
-// postgres", because the section was skipped and the declared defaults ran.
-// The database really did refuse; the reason it was asked that question is
-// three commands away in `rta doctor` and nothing connects them.
+// section that is not honoured is a fact about an installation, and printing
+// it before a command that worked is noise. It does not cover the case where
+// the command *fails*. There the operator sees a message naming the wrong
+// cause — `rta pg table list` reports "rejected the credentials for
+// postgres", because the section was skipped. The database really did refuse;
+// the reason it was asked that question is three commands away in `rta
+// doctor` and nothing connects them.
 //
-// So it is attached to failures only, where it explains something.
+// So it is attached to failures only, where it explains something. A section
+// of the operator's own file that was not applied never gets this far, since
+// the call is refused before it runs (ConfigWithheld); what reaches a failure
+// is a section of a file read from the working directory, which rta reads
+// and does not honour. Not when another section of the plugin applied: an old
+// pin left beside the new one is reported by `rta doctor`, and the call ran
+// with the new one.
 func ConfigNotApplied(c plugin.Capability) string {
 	words := c.Words()
-	if len(words) == 0 {
+	if len(words) == 0 || pluginConfig.Section(words[0]) != "" {
 		return ""
 	}
 	for _, p := range pluginConfigProblem {
@@ -281,11 +287,32 @@ func ConfigNotApplied(c plugin.Capability) string {
 		// matched on the namespace it names rather than compared whole.
 		if ns, _, _ := strings.Cut(p.Section, "@"); ns == words[0] {
 			return "rta did not apply your `plugins." + p.Section + "` section (" +
-				p.Reason + "), so this ran with " + words[0] + "'s declared defaults" +
-				hintTail(p.Hint)
+				p.Reason + "), so this ran without it" + hintTail(p.Hint)
 		}
 	}
 	return ""
+}
+
+// ConfigWithheld is the refusal of a call of c's plugin when its section in
+// the operator's file could not be applied (pluginconf.Resolver.Withheld), nil
+// for every other call.
+func ConfigWithheld(c plugin.Capability) *view.Error {
+	words := c.Words()
+	if len(words) == 0 {
+		return nil
+	}
+	if p, withheld := pluginConfig.Withheld(words[0]); withheld {
+		return p.Refusal()
+	}
+	return nil
+}
+
+// ConfigDisplaced reports whether this run dropped the section of c's plugin
+// because it runs another artifact than the one the section is pinned to: a
+// `plugin dev` build in place of the installed copy.
+func ConfigDisplaced(c plugin.Capability) bool {
+	words := c.Words()
+	return len(words) > 0 && pluginConfig.Displaced(words[0])
 }
 
 func hintTail(hint string) string {

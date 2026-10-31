@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/this-is-tobi/rta/internal/config"
+	"github.com/this-is-tobi/rta/internal/pluginconf"
 	"github.com/this-is-tobi/rta/internal/registry"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
@@ -18,6 +19,10 @@ type builtinConfig map[string]any
 
 func (b builtinConfig) For(string) map[string]any { return b }
 func (b builtinConfig) Section(ns string) string  { return ns }
+func (b builtinConfig) Withheld(string) (pluginconf.Problem, bool) {
+	return pluginconf.Problem{}, false
+}
+func (b builtinConfig) Displaced(string) bool { return false }
 
 // A config value naming none of a closed set's options is refused by the
 // CLI, naming the key. The run form seeds from the same config, and huh,

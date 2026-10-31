@@ -1676,17 +1676,18 @@ func failingCapability(t *testing.T) (*registry.Registry, registry.Origin) {
 	return reg, origin
 }
 
-// Rebuild a plugin and its digest changes, so the operator's section stops
-// applying — by design. What they see is the capability failing
-// against the *declared defaults*, with an error naming the database's
-// refusal and nothing naming the reason it was asked that question. `rta
-// doctor` knows; the failure did not say so.
+// A section of a file read from the working directory is not honoured, and a
+// call runs without it. What the person sees is the capability failing, with
+// an error naming the database's refusal and nothing naming the reason it was
+// asked that question. `rta doctor` knows; the failure says so too.
 func TestAFailureSaysWhenTheOperatorsSectionWasNotApplied(t *testing.T) {
-	reg, _ := failingCapability(t)
+	reg, origin := failingCapability(t)
 	t.Cleanup(func() { SetPluginConfig(nil, nil) })
-	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
-		"pg@0000000000": {"host": "db.internal"}, // a pin from before the rebuild
-	}}), reg.Origin))
+	// A literal rather than trustedConfig: the zero Config is one nobody named,
+	// which is what a working-directory file loads as.
+	SetPluginConfig(pluginconf.Resolve(config.Config{Plugins: map[string]map[string]any{
+		"pg@" + origin.Short(): {"host": "db.internal"},
+	}}, reg.Origin))
 
 	_, errOut, err := run(t, reg, "pg", "query")
 	if err == nil {
@@ -1696,11 +1697,62 @@ func TestAFailureSaysWhenTheOperatorsSectionWasNotApplied(t *testing.T) {
 	if !strings.Contains(errOut, "check the role name") {
 		t.Errorf("the plugin's hint was lost:\n%s", errOut)
 	}
-	if !strings.Contains(errOut, "plugins.pg@0000000000") {
+	if !strings.Contains(errOut, "plugins.pg@"+origin.Short()) || !strings.Contains(errOut, "ran without it") {
 		t.Errorf("the failure does not name the section rta ignored:\n%s", errOut)
 	}
-	if !strings.Contains(errOut, "abcdef012345") {
-		t.Errorf("the failure does not name the installed digest to repin to:\n%s", errOut)
+	if !strings.Contains(errOut, "$RTA_CONFIG") {
+		t.Errorf("the failure does not say how to have the file honoured:\n%s", errOut)
+	}
+}
+
+// A section of the operator's own file pinned to another build than the one
+// installed — the state every upgrade leaves — refuses the plugin's calls. It
+// used to run them on the declared defaults, so the call went to the plugin's
+// default destination with the credential the operator had exported for the
+// one the section named.
+func TestAStaleSectionRefusesThePluginsCalls(t *testing.T) {
+	reg := pgRegistryAt(t, pgNewDigest)
+	t.Cleanup(func() { SetPluginConfig(nil, nil) })
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
+		"pg@111111111111": {"host": "db.internal"},
+	}}), reg.Origin))
+
+	for _, args := range [][]string{{"pg", "status"}, {"pg", "status", "--dry-run"}} {
+		out, errOut, err := run(t, reg, args...)
+		if err == nil || strings.Contains(out, "reached") {
+			t.Fatalf("%v ran without the operator's section:\n%s", args, out)
+		}
+		for _, want := range []string{"core.config.unapplied", "plugins.pg@111111111111",
+			"pg@222222222222", "rta config repin --plugin pg"} {
+			if !strings.Contains(errOut, want) {
+				t.Errorf("%v: the refusal does not say %q:\n%s", args, want, errOut)
+			}
+		}
+	}
+}
+
+// Refused before the destructive gate: nobody is asked to confirm a call that
+// cannot run.
+func TestAStaleSectionIsRefusedBeforeTheConfirmation(t *testing.T) {
+	origin := registry.Origin{Path: "/usr/local/bin/rta-plugin-pg", Digest: pgNewDigest}
+	reg := registry.New()
+	if err := reg.RegisterFrom(plugin.Plugin{Name: "pg", Summary: "pg", Capabilities: []plugin.Capability{{
+		ID: "pg.drop", Summary: "drop a table", Safety: plugin.Destructive,
+		Inputs: []plugin.Field{{Name: "host", Type: plugin.String, Default: "localhost", Config: "host", Help: "host"}},
+		Run: func(context.Context, plugin.Request) (view.View, error) {
+			return view.Text{Body: "dropped"}, nil
+		},
+	}}}, origin); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { SetPluginConfig(nil, nil) })
+	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
+		"pg@111111111111": {"host": "db.internal"},
+	}}), reg.Origin))
+
+	_, errOut, err := run(t, reg, "pg", "drop")
+	if err == nil || !strings.Contains(errOut, "core.config.unapplied") || strings.Contains(errOut, "--yes") {
+		t.Errorf("a call that cannot run asked for confirmation first (%v):\n%s", err, errOut)
 	}
 }
 
@@ -1737,12 +1789,14 @@ func TestNoNoteWhenTheSectionAppliedOrTheRunSucceeded(t *testing.T) {
 		t.Errorf("pg's failure reported another plugin's unhonoured section:\n%s", errOut)
 	}
 
-	// A run that succeeds says nothing either, however stale the pin — which
-	// is SetPluginConfig's argument and the reason this is on failures only.
+	// A run that succeeds says nothing either, though the section was not
+	// honoured — which is SetPluginConfig's argument and the reason this is on
+	// failures only. A working-directory file's, since the operator's own one
+	// refuses the call instead (TestAStaleSectionRefusesThePluginsCalls).
 	okReg, _ := configCapability(t)
-	SetPluginConfig(pluginconf.Resolve(trustedConfig(t, config.Config{Plugins: map[string]map[string]any{
+	SetPluginConfig(pluginconf.Resolve(config.Config{Plugins: map[string]map[string]any{
 		"pg@0000000000": {"host": "db.internal"},
-	}}), okReg.Origin))
+	}}, okReg.Origin))
 	out, errOut, err := run(t, okReg, "pg", "query", "--host", "typed.example")
 	if err != nil {
 		t.Fatalf("run: %v", err)

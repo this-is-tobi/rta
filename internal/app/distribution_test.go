@@ -166,11 +166,18 @@ func TestAnUpgradeNamesWhatTheConfigPinnedAndHowToMoveIt(t *testing.T) {
 		!strings.Contains(v, "`rta profile repin --all --plugin hello`") || !strings.Contains(v, "hello@099d72c38cfc") {
 		t.Errorf("profiles row = %q", v)
 	}
-	if v := got["your pin"]; !strings.Contains(v, "plugins.hello@6db7eaeebf84 no longer applies") {
+	// The section's line says what happens to the next call, now refused, and
+	// names the command that moves the section, as the profiles' line does.
+	if v := got["your pin"]; !strings.Contains(v, "plugins.hello@6db7eaeebf84 no longer applies") ||
+		!strings.Contains(v, "calls are refused") || !strings.Contains(v, "`rta config repin --plugin hello`") ||
+		!strings.Contains(v, "hello@099d72c38cfc") {
 		t.Errorf("pin row = %q", v)
 	}
 	if v := pairs(true)["your profiles"]; !strings.Contains(v, "will refuse after the upgrade") {
 		t.Errorf("a dry run speaks of what has already happened: %q", v)
+	}
+	if v := pairs(true)["your pin"]; !strings.Contains(v, "still applies") || !strings.Contains(v, "rta config repin") {
+		t.Errorf("a dry run's pin row = %q", v)
 	}
 }
 
