@@ -1475,7 +1475,7 @@ func hardBreakOverlong(wrapped string, budget int) []string {
 	lines := strings.Split(wrapped, "\n")
 	out := make([]string, 0, len(lines))
 	for _, line := range lines {
-		if ansi.StringWidth(line) <= budget {
+		if cellWidth(line) <= budget {
 			out = append(out, line)
 			continue
 		}
@@ -1498,13 +1498,20 @@ func breakToken(line string, budget int) []string {
 	if strings.ContainsRune(line, ansiEscape) {
 		return strings.Split(ansi.Hardwrap(line, budget, false), "\n")
 	}
+	// The width of what is left, kept by subtracting each piece cut off it.
+	// Measured afresh on every pass, it made one line cost its length times
+	// the number of pieces: a value of a megabyte with a separator every
+	// sixty characters, which any server rta reads can send, took a minute
+	// and a half of CPU to lay out at a terminal.
 	var out []string
-	for ansi.StringWidth(line) > budget {
+	left := cellWidth(line)
+	for left > budget {
 		cut := separatorCut(line, budget)
 		if cut == 0 {
 			return append(out, strings.Split(ansi.Hardwrap(line, budget, false), "\n")...)
 		}
 		out = append(out, line[:cut])
+		left -= cellWidth(line[:cut])
 		line = line[cut:]
 	}
 	if line != "" {
@@ -1519,18 +1526,23 @@ func breakToken(line string, budget int) []string {
 // Byte indices against a cell budget: a separator is ASCII, and every
 // continuation byte of a multi-byte rune is >= 0x80, so no non-ASCII
 // character can be mistaken for one — including the U+2011 shieldHyphens has
-// already put in place of every "-". The width is measured on the prefix, so
-// a wide rune earlier in the token is charged correctly.
+// already put in place of every "-". The width is the sum of the pieces
+// between one separator and the next, each measured once, so a wide rune
+// earlier in the token is charged correctly without the prefix being measured
+// again from its start at every separator.
 func separatorCut(line string, budget int) int {
 	cut, floor := 0, tokenBreakFloor(budget)
+	width, from := 0, 0
 	for i := 0; i < len(line); i++ {
 		if !strings.ContainsRune(tokenBreaks, rune(line[i])) {
 			continue
 		}
-		switch w := ansi.StringWidth(line[:i+1]); {
-		case w > budget:
+		width += cellWidth(line[from : i+1])
+		from = i + 1
+		switch {
+		case width > budget:
 			return cut
-		case w >= floor:
+		case width >= floor:
 			cut = i + 1
 		}
 	}
@@ -1538,6 +1550,11 @@ func separatorCut(line string, budget int) int {
 }
 
 const ansiEscape = 0x1b
+
+// cellWidth is what the three functions above measure a line with: a variable
+// so a test can count what they measure, which holds them to measuring a line
+// once over without timing them.
+var cellWidth = ansi.StringWidth
 
 // styles resolves the theme for one render call; color=false collapses
 // everything to plain text (pipes, --no-color).
