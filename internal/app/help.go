@@ -383,7 +383,10 @@ func (h *helper) flagRows(cmd *cobra.Command) []row {
 	cmd.InheritedFlags()
 	var rows []row
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if f.Hidden || f.Name == "help" || f.Name == "version" || !listsFlag(cmd, f) {
+		// The root's --version is listed below, as the version row; a command's
+		// own --version is a flag like any other, and `plugin manifest`'s, the
+		// version to claim, was left out of its FLAGS while its example used it.
+		if f.Hidden || f.Name == "help" || f.Name == "version" && !cmd.HasParent() || !listsFlag(cmd, f) {
 			return
 		}
 		key := "--" + f.Name
