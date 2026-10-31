@@ -42,7 +42,7 @@ import (
 var commandKeywords = map[string][]string{
 	"rta agent overview": {"status", "activity"},
 	"rta agent log":      {"history", "record", "calls"},
-	"rta agent allow":    {"approve"},
+	"rta agent approve":  {"allow", "accept"},
 	"rta agent deny":     {"reject"},
 	"rta grant allow":    {"permit", "authorize"},
 	"rta lock add":       {"freeze", "block"},

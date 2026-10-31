@@ -158,14 +158,14 @@ func RolesInForce() (string, *view.Error) {
 	return rolesInForce(grants), nil
 }
 
-// IssueRole is the issue flow for another built-in: agent.allow answers a
+// IssueRole is the issue flow for another built-in: agent.approve answers a
 // parked call with the whole role its line belongs to. Same lines printed,
 // same ceiling per line, same one passphrase, same team-role rule.
 func IssueRole(req plugin.Request, catalog func() []plugin.Capability, artifact func(string) (string, bool)) (view.View, error) {
 	return runIssue(req, catalog, artifact)
 }
 
-// SuggestRoles completes a role name, for agent.allow's --role.
+// SuggestRoles completes a role name, for agent.approve's --role.
 func SuggestRoles(ctx context.Context, req plugin.Request) []string { return suggestRoles(ctx, req) }
 
 // EffectiveWindow is windowWords for doctor's roles row.

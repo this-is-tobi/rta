@@ -195,18 +195,18 @@ func TestACallNamingNoRecordIsNotShownAsAnEmptyOne(t *testing.T) {
 		}
 	}
 
-	c := capability(t, "agent.allow")
+	c := capability(t, "agent.approve")
 	dry, err := c.Run(context.Background(), plugin.NewRequest(
 		plugin.Resolve(c, plugin.Inputs{Caller: map[string]any{"id": r.ID}}), true, false).WithSurface(plugin.SurfaceCLI))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if body := dry.(view.Text).Body; strings.Contains(body, `""`) || strings.Contains(body, "()") ||
-		!strings.Contains(body, "would allow kv.set for the agent waiting") {
+		!strings.Contains(body, "would approve kv.set for the agent waiting") {
 		t.Errorf("the dry run reads %q, want the capability alone", body)
 	}
 
-	v, err = run(t, "agent.allow", map[string]any{"id": r.ID})
+	v, err = run(t, "agent.approve", map[string]any{"id": r.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestAllowReleasesExactlyOneCall(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.get", "db-password")
 
-	v, err := run(t, "agent.allow", map[string]any{"id": r.ID})
+	v, err := run(t, "agent.approve", map[string]any{"id": r.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestAllowWithATTLAlsoIssuesTheGrantYouWouldHaveTyped(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.get", "db-password")
 
-	if _, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "15m"}); err != nil {
+	if _, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "15m"}); err != nil {
 		t.Fatal(err)
 	}
 	grants, verr := grant.Load()
@@ -291,7 +291,7 @@ func TestAllowWithATTLOnAPluginCapabilityIssuesAGrantThatCoversTheNextCall(t *te
 	withHello := func() []plugin.Capability { return append(catalog(), hello) }
 	var allow plugin.Capability
 	for _, c := range Plugin(withHello, answering).Capabilities {
-		if c.ID == "agent.allow" {
+		if c.ID == "agent.approve" {
 			allow = c
 		}
 	}
@@ -328,7 +328,7 @@ func TestAllowWithATTLAppliesTheTeamCeilingAndSaysSo(t *testing.T) {
 	withPolicy(t, "maxTTL: 15m\n")
 	r := park(t, "kv.get", "db-password")
 
-	v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "4h"})
+	v, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "4h"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +357,7 @@ func TestAllowWithATTLAppliesTheTeamCeilingAndSaysSo(t *testing.T) {
 
 // The bare "this call only" answer is the one place a live approval actually
 // executes the capability — see the comment beside grant.CheckCeiling in
-// runAllow. A `never` rule is documented as needing nobody's agreement, so it
+// runApprove. A `never` rule is documented as needing nobody's agreement, so it
 // has to stop this exactly as it already stops alsoGrant's --ttl branch,
 // tested above.
 func TestAllowIsRefusedWhenTheTeamCeilingForbidsTheTarget(t *testing.T) {
@@ -365,7 +365,7 @@ func TestAllowIsRefusedWhenTheTeamCeilingForbidsTheTarget(t *testing.T) {
 	withPolicy(t, "never:\n  - kv.get\n")
 	r := park(t, "kv.get", "db-password")
 
-	_, err := run(t, "agent.allow", map[string]any{"id": r.ID})
+	_, err := run(t, "agent.approve", map[string]any{"id": r.ID})
 	if err == nil {
 		t.Fatal("a ceiling-forbidden target was allowed")
 	}
@@ -390,7 +390,7 @@ func TestAOneShotAllowHoldsEachRecordToTheCeiling(t *testing.T) {
 	isolate(t)
 	withPolicy(t, "requireScope:\n  - kv.rename\n")
 	r := park(t, "kv.rename", "db-password", "db-password-old")
-	v, err := run(t, "agent.allow", map[string]any{"id": r.ID})
+	v, err := run(t, "agent.approve", map[string]any{"id": r.ID})
 	if err != nil {
 		t.Fatalf("a call naming both its records was refused as naming none: %v", err)
 	}
@@ -408,7 +408,7 @@ func TestAOneShotAllowHoldsEachRecordToTheCeiling(t *testing.T) {
 	}
 	t.Cleanup(p.Close)
 	var ve *view.Error
-	if _, err := run(t, "agent.allow", map[string]any{"id": p.Request.ID}); !errors.As(err, &ve) ||
+	if _, err := run(t, "agent.approve", map[string]any{"id": p.Request.ID}); !errors.As(err, &ve) ||
 		ve.Code != "grant.policy.refused" {
 		t.Fatalf("a call on a forbidden connection: %v, want the policy refusal", err)
 	}
@@ -441,7 +441,7 @@ func TestARemoteAllowHoldsEachRecordToTheCeiling(t *testing.T) {
 func TestATTLOnACallNamingSeveralRecordsGrantsEachOfThem(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.rename", "db-password", "db-password-old")
-	v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "15m"})
+	v, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "15m"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +474,7 @@ func TestATTLOnACallNamingSeveralRecordsGrantsEachOfThem(t *testing.T) {
 func TestATTLOnSeveralRecordsOneAFolderGrantsNone(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.rename", "prod/", "scratch/db-password")
-	v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "1h"})
+	v, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "1h"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -507,7 +507,7 @@ func TestATTLIsRefusedForARecordThatIsAFolder(t *testing.T) {
 		t.Run(record, func(t *testing.T) {
 			isolate(t)
 			r := park(t, capID, record)
-			v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "1h"})
+			v, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "1h"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -515,7 +515,7 @@ func TestATTLIsRefusedForARecordThatIsAFolder(t *testing.T) {
 			for _, p := range v.(view.KeyValue).Pairs {
 				pairs[p.Key] = p.Value
 			}
-			if pairs["allowed"] == "" || pairs["for"] != "this call only" {
+			if pairs["approved"] == "" || pairs["for"] != "this call only" {
 				t.Errorf("the call itself was not allowed for itself alone: %+v", pairs)
 			}
 			if !strings.Contains(pairs["grant"], "not issued") || !strings.Contains(pairs["grant"], "every record under it") {
@@ -537,7 +537,7 @@ func TestATTLIsRefusedForARecordThatIsAFolder(t *testing.T) {
 func TestATTLOnAFolderThatClimbsSaysSo(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.get", "prod/%2e%2e/")
-	v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "1h"})
+	v, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "1h"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,7 +565,7 @@ func TestATTLOnARecordOfWhiteSpaceIssuesNoGrant(t *testing.T) {
 	for _, blank := range []string{" ", "\t", string(rune(0xa0))} {
 		isolate(t)
 		r := park(t, "kv.get", blank)
-		v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "1h"})
+		v, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "1h"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -573,7 +573,7 @@ func TestATTLOnARecordOfWhiteSpaceIssuesNoGrant(t *testing.T) {
 		for _, p := range v.(view.KeyValue).Pairs {
 			pairs[p.Key] = p.Value
 		}
-		if pairs["allowed"] == "" || pairs["for"] != "this call only" {
+		if pairs["approved"] == "" || pairs["for"] != "this call only" {
 			t.Errorf("%q: the call itself was not allowed for itself alone: %+v", blank, pairs)
 		}
 		if !strings.Contains(pairs["grant"], "not issued") || !strings.Contains(pairs["grant"], "only white space") {
@@ -591,7 +591,7 @@ func TestATTLOnARecordOfWhiteSpaceIssuesNoGrant(t *testing.T) {
 func TestABadTTLDoesNotUndoTheAnswer(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.get", "db-password")
-	v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "sometime"})
+	v, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "sometime"})
 	if err != nil {
 		t.Fatalf("a bad --ttl lost the whole answer: %v", err)
 	}
@@ -630,7 +630,7 @@ func TestATTLAnswerToALookalikeAgentNameIssuesNoGrant(t *testing.T) {
 	}
 	t.Cleanup(p.Close)
 
-	v, err := run(t, "agent.allow", map[string]any{"id": p.Request.ID, "ttl": "15m"})
+	v, err := run(t, "agent.approve", map[string]any{"id": p.Request.ID, "ttl": "15m"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -661,7 +661,7 @@ func TestATTLAnswerToARequestNamingAPluginIssuesNoGrant(t *testing.T) {
 			records = []string{tc.record}
 		}
 		r := park(t, tc.target, records...)
-		v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "15m"})
+		v, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "15m"})
 		if err != nil {
 			t.Fatalf("%q: %v", tc.target, err)
 		}
@@ -718,7 +718,7 @@ func TestDenyIsAnAnswer(t *testing.T) {
 func TestAnswerAnUnknownRequestNamesWhatIsWaiting(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.get", "db-password")
-	_, err := run(t, "agent.allow", map[string]any{"id": "nosuch"})
+	_, err := run(t, "agent.approve", map[string]any{"id": "nosuch"})
 	var ve *view.Error
 	if !errors.As(err, &ve) || ve.Code != "agent.request.unknown" {
 		t.Fatalf("err = %v", err)
@@ -737,7 +737,7 @@ func TestAnAnswerNamesItsRequestExactly(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.get", "db-password")
 	for _, id := range []string{" " + r.ID, r.ID + " ", r.ID + string(rune(0xa0))} {
-		for _, capID := range []string{"agent.show", "agent.allow", "agent.deny"} {
+		for _, capID := range []string{"agent.show", "agent.approve", "agent.deny"} {
 			_, err := run(t, capID, map[string]any{"id": id})
 			var ve *view.Error
 			if !errors.As(err, &ve) || ve.Code != "agent.request.unknown" {
@@ -898,7 +898,7 @@ func TestARewrittenRequestIsRefusedAsOneRatherThanAsAStaleID(t *testing.T) {
 		doc["args"] = map[string]any{}
 		doc["preview"] = "would report the current CPU load"
 	})
-	for _, id := range []string{"agent.show", "agent.allow", "agent.deny"} {
+	for _, id := range []string{"agent.show", "agent.approve", "agent.deny"} {
 		_, err := run(t, id, map[string]any{"id": r.ID})
 		var ve *view.Error
 		if !errors.As(err, &ve) || ve.Code != "agent.request.tampered" {
@@ -924,7 +924,7 @@ func TestAnUnknownIDIsStillJustAnUnknownID(t *testing.T) {
 	// ordinary case of an id that expired or was already answered.
 	isolate(t)
 	park(t, "kv.get", "db-password")
-	_, err := run(t, "agent.allow", map[string]any{"id": "nosuch"})
+	_, err := run(t, "agent.approve", map[string]any{"id": "nosuch"})
 	var ve *view.Error
 	if !errors.As(err, &ve) || ve.Code != "agent.request.unknown" {
 		t.Fatalf("err = %v, want the plain unknown-id refusal", err)
@@ -934,7 +934,7 @@ func TestAnUnknownIDIsStillJustAnUnknownID(t *testing.T) {
 func TestDryRunAnswersNothing(t *testing.T) {
 	isolate(t)
 	r := park(t, "kv.get", "db-password")
-	c := capability(t, "agent.allow")
+	c := capability(t, "agent.approve")
 	req := plugin.NewRequest(map[string]any{"id": r.ID}, true, false).WithSurface(plugin.SurfaceCLI)
 	if _, err := c.Run(context.Background(), req); err != nil {
 		t.Fatal(err)
@@ -1381,7 +1381,7 @@ func TestTheDetailedOverviewReportsABrokenChain(t *testing.T) {
 // looks like: bytes appended by something that is not agentlog.Append.
 // The one agreement between this file and internal/render/tui: a row action
 // takes the record's identity from the first column, so the pending table's
-// first column has to be the input agent.allow and agent.deny name. Nothing
+// first column has to be the input agent.approve and agent.deny name. Nothing
 // else checks it, and reordering the columns for looks would silently aim
 // every TUI answer at a capability name instead of a request id.
 func TestTheFirstColumnIsTheIdAnAnswerIsAimedBy(t *testing.T) {
@@ -1398,7 +1398,7 @@ func TestTheFirstColumnIsTheIdAnAnswerIsAimedBy(t *testing.T) {
 	if len(table.Rows) != 1 || table.Rows[0][0] != r.ID {
 		t.Fatalf("the first cell is %q, want the request id %q", table.Rows[0][0], r.ID)
 	}
-	for _, id := range []string{"agent.allow", "agent.deny"} {
+	for _, id := range []string{"agent.approve", "agent.deny"} {
 		c := capability(t, id)
 		var positional string
 		for _, f := range c.Inputs {

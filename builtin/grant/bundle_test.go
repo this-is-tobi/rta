@@ -471,7 +471,7 @@ func TestAGrantOnAnUnusableProfileSaysWhyEveryCallIsRefused(t *testing.T) {
 		`"db" is built in and has no artifact to pin (write it as ` + "`db:`)"
 	allow := func(profile string) string {
 		t.Helper()
-		v, err := runAllow(context.Background(), issueReq(map[string]any{
+		v, err := runApprove(context.Background(), issueReq(map[string]any{
 			"target": "db.query", "profile": profile, "agent": "test", "ttl": "1h"}, false, false), envCatalog, builtIn)
 		if err != nil {
 			t.Fatalf("allow on %s: %v", profile, err)
@@ -694,7 +694,7 @@ func TestTheRevokeOfABundleNamesTheCallThatIssuedItAndKeepsTheNote(t *testing.T)
 }
 
 func allowEnvH(ctx context.Context, req plugin.Request) (view.View, error) {
-	return runAllow(ctx, req, envCatalog, builtIn)
+	return runApprove(ctx, req, envCatalog, builtIn)
 }
 
 // The passphrase is asked for once however many grants are signed with it, and

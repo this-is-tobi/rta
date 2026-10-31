@@ -129,7 +129,7 @@ func Plugin(catalog func() []plugin.Capability, artifact func(string) (string, b
 							"the grant under its own policy, you sign it with your operator key"},
 				},
 				Run: func(ctx context.Context, req plugin.Request) (view.View, error) {
-					return runAllow(ctx, req, catalog, artifact)
+					return runApprove(ctx, req, catalog, artifact)
 				},
 			},
 			{
@@ -683,7 +683,7 @@ func profileHint(cfg config.Config, ns string) string {
 	return "no profiles are configured — see `rta profile list`"
 }
 
-func runAllow(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability,
+func runApprove(ctx context.Context, req plugin.Request, catalog func() []plugin.Capability,
 	artifact func(string) (string, bool),
 ) (view.View, error) {
 	if server := req.String("server"); server != "" {

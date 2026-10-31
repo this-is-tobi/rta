@@ -41,7 +41,7 @@ func TestAGrantNothingCouldSpendIsRefusedWhateverItNames(t *testing.T) {
 		}
 	}
 	allow := func(target string) error {
-		_, err := runAllow(context.Background(), req(map[string]any{"target": target}), cat, builtIn)
+		_, err := runApprove(context.Background(), req(map[string]any{"target": target}), cat, builtIn)
 		return err
 	}
 	for _, target := range []string{"sys", "grant.list", "grant"} {

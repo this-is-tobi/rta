@@ -15,18 +15,18 @@ import (
 
 // Answering: what the keys do where you decide something about an agent.
 //
-// Three questions an operator is asked, on two screens. Is this parked call
-// allowed to run; is this grant taken back; are all of them. Each used to open
-// a form, because the declarations ask for one — agent.allow stops for its
+// Three questions an operator is asked, on two screens. Does this parked call
+// run; is this grant taken back; are all of them. Each used to open
+// a form, because the declarations ask for one — agent.approve stops for its
 // ttl, role and passphrase, grant.revoke for nine boxes — and a form for a
 // question with a one-word answer is a form somebody walks through on enter
-// without reading: the allow form never said which call it was about.
+// without reading: the approve form never said which call it was about.
 //
 // So the answer is one key and one line, and the form is a second key away for
 // the person who wants the other inputs.
 //
-//   - `a` on a parked call says what it would allow, in one line in the footer,
-//     and `enter` allows exactly that call, once. Granting access stops for
+//   - `a` on a parked call says what it would approve, in one line in the footer,
+//     and `enter` approves exactly that call, once. Granting access stops for
 //     a confirmation, which is the direction that cannot be taken back once a
 //     secret has been read; what changed is that the confirmation shows the
 //     call and its preview where the form never did. `A` opens the form, for a
@@ -50,11 +50,11 @@ import (
 // they are.
 
 const (
-	allowCapability  = "agent.allow"
-	denyCapability   = "agent.deny"
-	revokeCapability = "grant.revoke"
-	rosterCapability = "grant.list"
-	lockCapability   = "lock.add"
+	approveCapability = "agent.approve"
+	denyCapability    = "agent.deny"
+	revokeCapability  = "grant.revoke"
+	rosterCapability  = "grant.list"
+	lockCapability    = "lock.add"
 )
 
 // armedAnswer is a one-key answer that has said what it would do and waits for
@@ -66,7 +66,7 @@ type armedAnswer struct {
 	base map[string]any
 	line string
 	// done is what the footer says once it has run, in the past tense: the
-	// capability's own "agent.allow done" does not say which call.
+	// capability's own "agent.approve done" does not say which call.
 	done string
 }
 
@@ -80,14 +80,14 @@ func (m Model) answer(a capAction, base map[string]any) (tea.Model, tea.Cmd, boo
 		return m, nil, false
 	}
 	switch a.cap.ID {
-	case allowCapability:
+	case approveCapability:
 		id, _ := base["id"].(string)
 		call, ok := waitingByID(id)
 		if !ok {
 			m.refuse("that call is not waiting any more — it was answered, or it ran out")
 			return m, nil, true
 		}
-		m.armed = &armedAnswer{act: a, base: base, line: call.allowLine(), done: call.allowedLine()}
+		m.armed = &armedAnswer{act: a, base: base, line: call.approveLine(), done: call.approvedLine()}
 		return m, nil, true
 	case denyCapability:
 		// Declared bare and run as declared: all this adds is the receipt. The
@@ -122,7 +122,7 @@ func (m Model) armedKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	case "ctrl+c":
 		return m.quit()
 	case "enter":
-		// The call is read again before it is allowed, so that the line the
+		// The call is read again before it is approved, so that the line the
 		// operator confirmed is the call that gets answered: whatever the file
 		// says now has to be what was shown. The decision itself is bound to
 		// the call's digest and cannot authorize a different one (internal/
@@ -133,7 +133,7 @@ func (m Model) armedKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		case !ok:
 			m.refuse("that call is not waiting any more — it was answered, or it ran out")
 			return m, nil, true
-		case call.allowLine() != armed.line:
+		case call.approveLine() != armed.line:
 			m.refuse("that call changed after it was shown — look at it again")
 			return m, nil, true
 		}
@@ -146,7 +146,7 @@ func (m Model) armedKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		nm, cmd := m.runSeeded(armed.act, armed.base)
 		return nm, cmd, true
 	}
-	m.refuse("nothing allowed — the call is still waiting")
+	m.refuse("nothing approved — the call is still waiting")
 	return m, nil, true
 }
 
@@ -166,12 +166,12 @@ func (m Model) armedItems() []hintItem {
 }
 
 // answerKeys are the two capitals that answer on the screens that have the
-// lower-case key: A for the form of the allow `a` shortcut, X for every grant.
+// lower-case key: A for the form of the approve `a` shortcut, X for every grant.
 func (m Model) answerKeys(key string, tbl view.Table) (tea.Model, tea.Cmd, bool) {
 	switch key {
 	case "A":
 		for _, a := range capActions(m.reg, m.current.ID) {
-			if a.cap.ID == allowCapability && a.key == "a" {
+			if a.cap.ID == approveCapability && a.key == "a" {
 				a.form = true
 				nm, cmd := m.runAction(a, tbl)
 				return nm, cmd, true
@@ -189,8 +189,8 @@ func (m Model) answerKeys(key string, tbl view.Table) (tea.Model, tea.Cmd, bool)
 // answerHints are the capitals above, for the footer of a screen that answers
 // to them: beside the key they extend, so the pair reads as one idea.
 func (m Model) answerHints(a capAction) []hintItem {
-	if a.cap.ID == allowCapability && a.key == "a" {
-		return []hintItem{action("A", "allow longer")}
+	if a.cap.ID == approveCapability && a.key == "a" {
+		return []hintItem{action("A", "approve for a while")}
 	}
 	return nil
 }
@@ -217,7 +217,7 @@ func (m Model) revokeAll() (tea.Model, tea.Cmd) {
 // call: the allow form is reached from a queue that may hold several, and
 // its title used to be the capability's summary whichever call it was for.
 func aboutCall(c plugin.Capability, base map[string]any) string {
-	if c.ID != allowCapability {
+	if c.ID != approveCapability {
 		return ""
 	}
 	id, _ := base["id"].(string)
@@ -255,11 +255,11 @@ func aboutLock(f *capForm) string {
 
 // guardIdle is the inputs of c a form should ask: the same, less the guard's
 // passphrase box when the guard is off and so nothing would read it. The box
-// is on agent.allow for the one case that needs it — a standing grant under a
+// is on agent.approve for the one case that needs it — a standing grant under a
 // guard — and was drawn for everybody, under a label that named a guard most
 // machines do not have.
 func guardIdle(c plugin.Capability) []plugin.Field {
-	if c.ID != allowCapability || guard.Enabled() {
+	if c.ID != approveCapability || guard.Enabled() {
 		return c.Inputs
 	}
 	out := make([]plugin.Field, 0, len(c.Inputs))

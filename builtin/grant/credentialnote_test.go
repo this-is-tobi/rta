@@ -47,7 +47,7 @@ func kvCatalog() []plugin.Capability {
 
 func allowReceipt(t *testing.T, catalog func() []plugin.Capability, values map[string]any) string {
 	t.Helper()
-	v, err := runAllow(context.Background(), req(values), catalog, builtIn)
+	v, err := runApprove(context.Background(), req(values), catalog, builtIn)
 	if err != nil {
 		t.Fatalf("allow %v: %v", values, err)
 	}

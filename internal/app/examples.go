@@ -76,9 +76,9 @@ var examples = map[string][]string{
 		"rta agent log --since 2h --limit 50",
 		"rta agent log --detail      # and whether the chain still verifies",
 	},
-	"rta agent allow": {
-		"rta agent allow 5473aa62             # this call, and nothing wider",
-		"rta agent allow 5473aa62 --ttl 15m   # and the same question for 15m",
+	"rta agent approve": {
+		"rta agent approve 5473aa62             # this call, and nothing wider",
+		"rta agent approve 5473aa62 --ttl 15m   # and the same question for 15m",
 	},
 	"rta agent show": {
 		"rta agent show 5473aa62   # everything about it, and what it would do",

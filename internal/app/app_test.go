@@ -814,8 +814,8 @@ func conformanceInputs(dir string) map[string]map[string]any {
 
 		// Ids nothing is parked under: the dry-run rule watches the directory,
 		// and a request that does not exist still has to leave it alone.
-		"agent.allow": {"id": "absent"},
-		"agent.deny":  {"id": "absent"},
+		"agent.approve": {"id": "absent"},
+		"agent.deny":    {"id": "absent"},
 
 		// keys.restore is driven with a real mnemonic on purpose. The all-zero
 		// entropy BIP39 vector reaches the key derivation and the write, which

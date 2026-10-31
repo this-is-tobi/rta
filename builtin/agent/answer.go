@@ -68,7 +68,7 @@ func AnswerRemote(agent string) func(spec operatorid.AnswerSpec, label string) (
 				WithHint("reach it through the server that parked it")
 		}
 		// The team's ceiling binds a remote "yes" exactly as it binds the local
-		// one — runAllow's reasoning verbatim, and it has to run on this
+		// one — runApprove's reasoning verbatim, and it has to run on this
 		// machine: the ceiling is this server's policy, and the operator's own
 		// machine checking its local policy file would be checking the wrong
 		// team's rules.

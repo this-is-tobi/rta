@@ -26,7 +26,7 @@ func TestAPointerThatMovedNamesThePageThatHoldsItsTopic(t *testing.T) {
 		{"internal/plugindist/install.go", "docs/40-plugins/24-testing-and-publishing.md", "a path on this machine"},
 		{"internal/mcp/remote.go", "docs/30-boundary/65-hosting-a-server.md", "world-readable files are refused"},
 		{"internal/mcp/bridge_test.go", "docs/40-plugins/23-safety-and-credentials.md", "HostSpecific"},
-		{"internal/app/mcp.go", "docs/30-boundary/66-operators.md", "agent allow"},
+		{"internal/app/mcp.go", "docs/30-boundary/66-operators.md", "agent approve"},
 		{"builtin/audit/agentscontainer.go", "docs/30-boundary/67-containers-and-images.md", "docker run"},
 		{"internal/guard/guard.go", "docs/30-boundary/10-the-boundary.md", "running as you"},
 		{"internal/operator/key.go", "docs/30-boundary/50-team-policy.md", "no subjects and no allow rules"},

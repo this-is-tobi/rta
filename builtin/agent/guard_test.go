@@ -30,7 +30,7 @@ func TestAllowWithATTLUnderTheGuard(t *testing.T) {
 	guardOn(t)
 	r := park(t, "kv.get", "db-password")
 
-	_, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "15m"})
+	_, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "15m"})
 	if err == nil {
 		t.Fatal("standing authority minted with no passphrase")
 	}
@@ -43,7 +43,7 @@ func TestAllowWithATTLUnderTheGuard(t *testing.T) {
 
 	// Through the TUI surface, the one that may carry the passphrase as a
 	// value — the CLI refuses it on argv.
-	c := capability(t, "agent.allow")
+	c := capability(t, "agent.approve")
 	tui := plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{
 		Caller: map[string]any{"id": r.ID, "ttl": "15m", "passphrase": "correct horse"},
 	}), false, false).WithSurface(plugin.SurfaceTUI)
@@ -63,7 +63,7 @@ func TestAOneShotAllowNeedsNoPassphraseUnderTheGuard(t *testing.T) {
 	isolate(t)
 	guardOn(t)
 	r := park(t, "kv.get", "db-password")
-	if _, err := run(t, "agent.allow", map[string]any{"id": r.ID}); err != nil {
+	if _, err := run(t, "agent.approve", map[string]any{"id": r.ID}); err != nil {
 		t.Fatalf("a plain allow was gated: %v", err)
 	}
 	if grants, _ := grant.Load(); len(grants) != 0 {
@@ -84,7 +84,7 @@ func TestATTLThatIssuesNothingAsksNoPassphraseUnderTheGuard(t *testing.T) {
 			isolate(t)
 			guardOn(t)
 			r := park(t, "kv.get", records...)
-			if _, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "1h"}); err != nil {
+			if _, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "1h"}); err != nil {
 				t.Fatalf("the answer was held for a passphrase buying nothing: %v", err)
 			}
 			if grants, _ := grant.Load(); len(grants) != 0 {
@@ -100,7 +100,7 @@ func TestATTLOnSeveralRecordsUnderTheGuardSignsEachGrant(t *testing.T) {
 	isolate(t)
 	guardOn(t)
 	r := park(t, "kv.rename", "db-password", "db-password-old")
-	c := capability(t, "agent.allow")
+	c := capability(t, "agent.approve")
 	tui := plugin.NewRequest(plugin.Resolve(c, plugin.Inputs{
 		Caller: map[string]any{"id": r.ID, "ttl": "15m", "passphrase": "correct horse"},
 	}), false, false).WithSurface(plugin.SurfaceTUI)

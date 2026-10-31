@@ -458,7 +458,7 @@ func (m Model) runSeeded(a capAction, base map[string]any) (tea.Model, tea.Cmd) 
 	// left, so fieldsAfter came back empty and startRun fired on one
 	// keypress. So a remote server chose which local principal an operator
 	// unlocked. The same shape reached grant.revoke from grant.list, and
-	// agent.allow/agent.deny from agent.pending. The `profile` case just
+	// agent.approve/agent.deny from agent.pending. The `profile` case just
 	// below is this bug already found once and fixed for one input: "the row
 	// identity from one connection, the call aimed at another".
 	//

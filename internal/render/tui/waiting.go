@@ -163,12 +163,12 @@ func (w waitingCall) describe() string {
 	return s
 }
 
-// allowedLine is allowLine once it has been done.
-func (w waitingCall) allowedLine() string {
+// approvedLine is approveLine once it has been done.
+func (w waitingCall) approvedLine() string {
 	if w.agent != "" {
-		return "allowed " + w.agent + "'s " + w.call + " once"
+		return "approved " + w.agent + "'s " + w.call + " once"
 	}
-	return "allowed " + w.call + " once"
+	return "approved " + w.call + " once"
 }
 
 // deniedLine is the receipt for a call that was turned down.
@@ -179,11 +179,11 @@ func (w waitingCall) deniedLine() string {
 	return "denied " + w.call
 }
 
-// allowLine is what pressing a would do, said as the question it answers.
-func (w waitingCall) allowLine() string {
-	s := "allow " + w.call + " once"
+// approveLine is what pressing a would do, said as the question it answers.
+func (w waitingCall) approveLine() string {
+	s := "approve " + w.call + " once"
 	if w.agent != "" {
-		s = "allow " + w.agent + "'s " + w.call + " once"
+		s = "approve " + w.agent + "'s " + w.call + " once"
 	}
 	if w.would != "" {
 		s += " — " + w.would

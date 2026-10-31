@@ -73,8 +73,8 @@ func TestACallOnALookalikeHostIsQueuedShownAndAskedWithTheNameItResolvesAs(t *te
 			t.Errorf("the card does not say %q:\n%s", want, q.card)
 		}
 	}
-	if want := "keep allowing http.get " + host + note + ", whatever"; !strings.Contains(allowQuestion(p.Request, "", "30m"), want) {
-		t.Errorf("the --ttl question does not say %q: %q", want, allowQuestion(p.Request, "", "30m"))
+	if want := "keep allowing http.get " + host + note + ", whatever"; !strings.Contains(approveQuestion(p.Request, "", "30m"), want) {
+		t.Errorf("the --ttl question does not say %q: %q", want, approveQuestion(p.Request, "", "30m"))
 	}
 }
 
@@ -85,7 +85,7 @@ func TestTheFolderAnAnswerDeclinedToGrantOnSaysWhatItsHostResolvesAs(t *testing.
 	isolate(t)
 	host := "https://g" + string(rune(0x456)) + "thub.com/"
 	r := park(t, "http.get", host)
-	v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "ttl": "1h"})
+	v, err := run(t, "agent.approve", map[string]any{"id": r.ID, "ttl": "1h"})
 	if err != nil {
 		t.Fatal(err)
 	}

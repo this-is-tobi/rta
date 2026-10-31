@@ -7,7 +7,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/consent"
 )
 
-// Allowing says which call it allowed ("allowed claude's note.rm 2 once") and
+// Approving says which call it approved ("approved claude's note.rm 2 once") and
 // denying said "agent.deny done": no agent, no capability, no record, and the row
 // then left the list. The answer that cannot be taken back is the one that left
 // the operator with no receipt of what it was.

@@ -57,7 +57,7 @@ func TestAPluginWideGrantCountsTheRevealsItCarries(t *testing.T) {
 // is what the dry run is for.
 func TestGrantAllowSaysSoOnTheReceipt(t *testing.T) {
 	setup(t)
-	v, err := runAllow(context.Background(),
+	v, err := runApprove(context.Background(),
 		plugin.NewRequest(map[string]any{"target": "vault.item.get", "ttl": "1h", "agent": "test"}, true, true).
 			WithSurface(plugin.SurfaceCLI), revealingCatalog, func(string) (string, bool) { return "", true })
 	if err != nil {

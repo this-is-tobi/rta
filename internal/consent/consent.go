@@ -477,7 +477,7 @@ func (p *Parked) Wait(ctx context.Context) Answer {
 	for {
 		if keyMissing {
 			// No key yet means nothing has ever answered on this machine;
-			// look again each tick, because the first `rta agent allow`
+			// look again each tick, because the first `rta agent approve`
 			// creates it.
 			if k, kerr := seal.Key(keyFile, false); kerr == nil {
 				key, keyMissing = k, false
@@ -628,7 +628,7 @@ func Scan() (Queue, error) {
 		}
 		// Answered is not waiting. The asker removes both files a poll
 		// interval after it reads the decision, and until then the request
-		// sat in this list looking answerable — a second `agent allow` in
+		// sat in this list looking answerable — a second `agent approve` in
 		// that window "succeeded" too. Only a decision that verifies counts:
 		// a forged one is ignored here exactly as Wait ignores it, so it
 		// cannot hide a question from the person it is aimed at.

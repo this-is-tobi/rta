@@ -217,10 +217,10 @@ func TestAParkedCallCanBeAnsweredWithItsRole(t *testing.T) {
 		t.Fatalf("show's role hint = %q", got)
 	}
 
-	if _, err := run(t, "agent.allow", map[string]any{"id": p.Request.ID, "role": "dev", "ttl": "1h"}); err == nil {
+	if _, err := run(t, "agent.approve", map[string]any{"id": p.Request.ID, "role": "dev", "ttl": "1h"}); err == nil {
 		t.Fatal("--role and --ttl together were accepted")
 	}
-	av, err := run(t, "agent.allow", map[string]any{"id": p.Request.ID, "role": "dev"})
+	av, err := run(t, "agent.approve", map[string]any{"id": p.Request.ID, "role": "dev"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestARoleIsNotIssuedForACallTheCeilingForbids(t *testing.T) {
 	withPolicy(t, "never:\n  - kv.get\n")
 	r := parkFor(t, "claude")
 
-	allow := capability(t, "agent.allow")
+	allow := capability(t, "agent.approve")
 	for _, dry := range []bool{true, false} {
 		values := plugin.Resolve(allow, plugin.Inputs{Caller: map[string]any{"id": r.ID, "role": "dev"}})
 		_, err := allow.Run(context.Background(), plugin.NewRequest(values, dry, true).WithSurface(plugin.SurfaceCLI))
@@ -286,7 +286,7 @@ func TestARoleIsNotIssuedForACallTheCeilingForbids(t *testing.T) {
 // names the role, not a bare one and not a success. The answer is decided
 // after the role is issued, which can take a passphrase and as long as the
 // person takes to type it, and a call's deadline can pass meanwhile: the
-// answer was the bare agent.allow.failed, and the role stood without a word.
+// answer was the bare agent.approve.failed, and the role stood without a word.
 // Answered with a view instead, the command exited 0, and a script's next step
 // ran for a call that was never released.
 func TestARoleIssuedForACallThatCouldNotBeReleasedIsStillReported(t *testing.T) {
@@ -297,10 +297,10 @@ func TestARoleIssuedForACallThatCouldNotBeReleasedIsStillReported(t *testing.T) 
 	decide = func(string, bool, string) error { return errors.New("no request \"" + r.ID + "\" is waiting") }
 	t.Cleanup(func() { decide = decided })
 
-	v, err := run(t, "agent.allow", map[string]any{"id": r.ID, "role": "dev"})
+	v, err := run(t, "agent.approve", map[string]any{"id": r.ID, "role": "dev"})
 	var ve *view.Error
-	if !errors.As(err, &ve) || ve.Code != "agent.allow.unreleased" {
-		t.Fatalf("answered %+v, %v — want agent.allow.unreleased", v, err)
+	if !errors.As(err, &ve) || ve.Code != "agent.approve.unreleased" {
+		t.Fatalf("answered %+v, %v — want agent.approve.unreleased", v, err)
 	}
 	for _, want := range []string{"kv.get db-password was not released", "no request", "role dev was issued to claude and stands"} {
 		if !strings.Contains(ve.Message, want) {

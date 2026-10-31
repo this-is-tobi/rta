@@ -170,7 +170,7 @@ func TestARowActionActsOnTheListingItWasPressedIn(t *testing.T) {
 // lock.rm's remaining inputs come off the row — so fieldsAfter was empty, and
 // lock.rm is Write rather than Destructive, so `x` ran a local `lock rm` on
 // one keypress against a principal the remote server had named. grant.revoke
-// off grant.list and agent.allow/deny off agent.pending are the same shape.
+// off grant.list and agent.approve/deny off agent.pending are the same shape.
 //
 // Two halves to the fix, and this asserts both: the aim travels, so the call
 // stays pointed at the machine whose rows are on screen; the passphrase does
