@@ -50,3 +50,31 @@ profiles:
 		t.Errorf("the reason column carries what the agent was not told: %q", e.Reason)
 	}
 }
+
+// A call let through on a profile it cannot use is not answered as a missing
+// grant. It was, with the command that issues one, and the agent held that
+// grant: the operator ran it, saw it succeed, and the next call was refused in
+// the same words. The agent's refusal carries the row's code now, and sends the
+// operator to the row.
+func TestAnUnusableProfileIsNotAnsweredAsAMissingGrant(t *testing.T) {
+	f := newFenceFixture(t, `
+profiles:
+  broken:
+    plugins:
+      app:
+        only:
+          nothere: [x]
+`, t.TempDir())
+	f.grantFor(t, "broken", 0)
+
+	text := contentText(t, f.call(t, map[string]any{"profile": "broken"}))
+	if !strings.Contains(text, "core.profile.unusable") || strings.Contains(text, "core.grant.required") {
+		t.Errorf("the refusal is not the one the record makes:\n%s", text)
+	}
+	if strings.Contains(text, "grant allow") {
+		t.Errorf("the agent is handed a grant it already holds as the fix:\n%s", text)
+	}
+	if !strings.Contains(text, "rta agent log --detail") {
+		t.Errorf("the refusal does not send the operator to the row that says why:\n%s", text)
+	}
+}

@@ -707,14 +707,14 @@ func call(ctx context.Context, c plugin.Capability, opts Options, reg *registry.
 				// read as an inventory.
 				//
 				// Not the same sentence the grant gate produces, and it does not
-				// need to be: this is only reachable *after* Reserve succeeded,
-				// so the agent already holds a grant naming this profile and the
-				// operator has already told it the name exists. The pairing that
+				// need to be: this is only reachable once a grant naming this
+				// profile covered the call or a person approved it, so the
+				// operator has already told the agent the name. The pairing that
 				// has to be indistinguishable — unknown name versus ungranted
 				// name — is both refused by the gate above, in the gate's own
 				// words. TestAnUnknownProfileAndAnUngrantedOneLookTheSame pins
 				// exactly that.
-				return errResult(ungranted(c, profileName, opts.Agent)), nil
+				return errResult(unusable(c, profileName)), nil
 			}
 			// The connection's fence, held to the values the call resolves to —
 			// after the grant gate, so a call nobody granted is refused exactly
@@ -1179,31 +1179,28 @@ func withoutCredentialedCommand(verr *view.Error) *view.Error {
 	return &out
 }
 
-// ungranted is the single refusal an agent gets for any profile it may not
-// use, whatever the reason — it does not exist, it belongs to another plugin,
-// it came from an untrusted file, or nobody has granted it.
+// unusable is the refusal an agent gets for a profile it was let through on
+// that cannot be used as it is configured: a key the plugin does not read, a
+// `set:` value outside its own `only:` list, a file rta does not trust.
 //
-// One sentence for four causes, on purpose. The name the caller supplied is
-// echoed so a person reading the transcript can see a typo in one line, and
-// the command they would have to run is spelled out, because the agent cannot
-// issue a grant itself and the whole exchange terminates at a human anyway.
-func ungranted(c plugin.Capability, name, agent string) *view.Error {
-	// Spelled by Call, as the gate's own hint is (grant.refuseMissing): the name
-	// and the agent are words a person pastes into a shell, so each is quoted
-	// when it has to be, and none is left to read as a flag or as a second
-	// command.
-	args := []plugin.Arg{
-		{Name: "target", Value: plugin.Namespace(c.ID), Positional: true},
-		{Name: "profile", Value: name},
-	}
-	if agent != "" {
-		args = append(args, plugin.Arg{Name: "agent", Value: agent})
-	}
-	args = append(args, plugin.Arg{Name: "ttl", Value: "15m"})
-	cmd := strings.TrimPrefix(plugin.SurfaceCLI.Call("grant.allow", args...), "rta ")
-	return view.Errorf("core.grant.required",
-		"agents may not use %s on profile %q without a person's consent", plugin.ToolName(c.ID), name).
-		WithHint(plugin.AskOperator(cmd))
+// One sentence for every cause, on purpose. Which one it is goes on the row
+// this call wrote, which the operator reads (readTheRecord), and an agent told
+// which would learn the operator's configuration one refusal at a time. The
+// name the caller supplied is echoed so a person reading the transcript can
+// see a typo in one line.
+//
+// **It used to answer as a missing grant**, core.grant.required with "agents
+// may not use pg_query on profile "prod" without a person's consent" and
+// `rta grant allow pg --profile prod` to relay. A call reaches this only once
+// a grant covered it or a person approved it, so the operator ran the command,
+// saw it succeed, and the next call was refused in the same words: the command
+// that does not fix the problem, which refuseMissing calls worse than none.
+// Now it carries the code the row carries, so the agent and the record agree
+// on what happened, and the hint sends the operator to the row.
+func unusable(c plugin.Capability, name string) *view.Error {
+	return view.Errorf("core.profile.unusable",
+		"%s was not run: profile %q cannot be used as it is configured", plugin.ToolName(c.ID), name).
+		WithHint(readTheRecord())
 }
 
 // ValidateArgs checks every argument the caller actually supplied
