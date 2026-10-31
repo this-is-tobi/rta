@@ -318,7 +318,7 @@ func readQuietly(path string) []Entry {
 // the operator's credential files those bytes may read is not the image's to
 // decide, for a file none of its users has mounted yet. The record's Allow
 // was read as if the operator had typed it, and the sandbox opened those
-// locations on every machine running the image, with `rta plugin allow` and
+// locations on every machine running the image, with `rta plugin access add` and
 // doctor reporting the grant as the operator's. Dropped here, where the
 // record is read, so nothing downstream can mistake it for one: an
 // operator's own grant starts from nothing and lives in their record.
@@ -405,7 +405,7 @@ func (s Set) Allowed(digest string) []string {
 // Replacing, because the command states the whole grant: adding would make a
 // location impossible to withdraw without withdrawing all of them, and a
 // permission you can only accumulate is one nobody trims. `rta plugin
-// disallow` is the empty case spelled as its own command, so taking access
+// access rm` is the taking away spelled as its own command, so taking access
 // away is a thing somebody typed rather than a subtlety of an argument list.
 //
 // Refused for an artifact that is not trusted: allowing bytes to read a
@@ -413,7 +413,7 @@ func (s Set) Allowed(digest string) []string {
 // means nothing and would outlive the reason it was written.
 func Allow(digest string, locations []string) *view.Error {
 	if digest == "" {
-		return view.Errorf("plugin.allow.nodigest", "cannot allow an artifact with no digest")
+		return view.Errorf("plugin.access.nodigest", "cannot give access to an artifact with no digest")
 	}
 	mu.Lock()
 	defer mu.Unlock()
@@ -443,11 +443,11 @@ func Allow(digest string, locations []string) *view.Error {
 		// operator's decision and lives in the operator's record, so the
 		// system entry is copied there with the grant on it. Trust is not
 		// changed by this — the digest was already allowed to run — and the
-		// copy is what lets `disallow` and `untrust` find it later.
+		// copy is what lets `access rm` and `untrust` find it later.
 		sys, ok := loadSystem()[digest]
 		if !ok {
-			return view.Errorf("plugin.allow.untrusted",
-				"that artifact is not trusted, so there is nothing to allow it").
+			return view.Errorf("plugin.access.untrusted",
+				"that artifact is not trusted, so there is nothing to give access to").
 				WithHint("`rta plugin trust <name>` first — running it at all is the decision " +
 					"that comes before reading anything")
 		}
@@ -546,7 +546,7 @@ const SystemHint = "that trust is the image's or the package's decision: build o
 //
 // **A withdrawal can succeed and the artifact go on loading.** Allow, and a
 // trust of an artifact the image already trusts, each write the operator a
-// copy of it — the copy is what lets disallow and untrust find it later — and
+// copy of it — the copy is what lets `access rm` and untrust find it later — and
 // Remove then takes the copy out and reports one approval gone, while Load
 // reads the image's entry underneath and the plugin runs on the next
 // command. Every surface answering an untrust asks this before it says the

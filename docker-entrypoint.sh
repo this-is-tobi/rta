@@ -1,20 +1,20 @@
 #!/bin/sh
 # Entrypoint for the full image. Its only job is the credential decision that
-# `rta plugin allow` records, and by default it does nothing at all.
+# `rta plugin access add` records, and by default it does nothing at all.
 #
 # # Why this exists
 #
 # rta makes two decisions about a plugin, and the image can only honestly
 # answer one of them. Trust — "these bytes may run" — is baked at build time,
 # because the bytes were built in that build and the digest it pins is theirs.
-# Allow — "these bytes may read my cluster credentials" — is a question about
+# Access — "these bytes may read my cluster credentials" — is a question about
 # *your* machine and your kubeconfig, so the image cannot answer it for
 # everyone who pulls it — and rta holds it to that: an allow written into the
 # image's own trusted.json is read as trust alone.
 #
 # But it is recorded in the state directory, and a container that is thrown
 # away after every run has no state directory to record it in. Without this,
-# using `kube` from an ephemeral container means running `rta plugin allow
+# using `kube` from an ephemeral container means running `rta plugin access add
 # kube` inside every single one of them. With a persistent volume mounted at
 # /rta-home the answer sticks and none of this is needed; this is for the
 # `docker run --rm` case, where it otherwise cannot stick at all.
@@ -32,15 +32,15 @@
 #   RTA_ALLOW_PLUGINS=kube,cnpg    only these
 #   unset                          nothing, and `rta plugin list` says warn
 #
-# Only ever what a plugin already declares it needs: `rta plugin allow <name>`
+# Only ever what a plugin already declares it needs: `rta plugin access add <name>`
 # cannot grant a location the artifact never asked for, so the widest this
 # reaches is still the union of what the bundled plugins declare.
 #
-# On Linux — which is what this image is — rta does not confine plugins, so
-# the denial this lifts is not enforced by the OS the way it is on macOS. It
-# still governs what rta itself will hand a plugin, and it is still the
-# operator-facing record of the decision, which is why answering it
-# deliberately is worth a variable rather than a shrug.
+# On Linux — which is what this image is — rta confines plugins only under
+# `confine: strict`, so without it the denial this lifts is not enforced by
+# the OS the way it is on macOS. It still governs what rta itself will hand a
+# plugin, and it is still the operator-facing record of the decision, which
+# is why answering it deliberately is worth a variable rather than a shrug.
 set -eu
 
 allow="${RTA_ALLOW_PLUGINS:-}"
@@ -60,20 +60,20 @@ if [ -n "$allow" ]; then
 	esac
 
 	for name in $names; do
-		if out=$(rta plugin allow "$name" 2>&1); then
+		if out=$(rta plugin access add "$name" 2>&1); then
 			continue
 		fi
 		# Most of the bundled plugins declare no credential location at all —
 		# s3 and vault take their credentials as inputs, eol talks to a public
-		# API — and `rta plugin allow` refuses those by design, because an
-		# operator may only allow what an artifact actually asked for.
+		# API — and `rta plugin access add` refuses those by design, because an
+		# operator may only give what an artifact actually asked for.
 		#
-		# Under `all` that is the ordinary case rather than a fault: "allow
+		# Under `all` that is the ordinary case rather than a fault: "give
 		# whatever asks" has nothing to say about a plugin that asks for
 		# nothing. Under an explicit list it is a fault, because somebody typed
 		# that name expecting it to mean something.
 		case "$out" in
-		*plugin.allow.none*)
+		*plugin.access.none*)
 			if [ "$every" = yes ]; then
 				continue
 			fi
@@ -83,7 +83,7 @@ if [ -n "$allow" ]; then
 		# so a failure to honour it is a misconfiguration worth seeing at start
 		# — the alternative is a capability refusing for an unrelated-looking
 		# reason much later, with nothing connecting it back to here.
-		echo "rta: RTA_ALLOW_PLUGINS names \"$name\", which could not be allowed:" >&2
+		echo "rta: RTA_ALLOW_PLUGINS names \"$name\", which could not be given access:" >&2
 		echo "$out" >&2
 		exit 1
 	done

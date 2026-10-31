@@ -20,7 +20,7 @@ import (
 // Each either re-verifies a decision the operator already made (upgrade: these
 // bytes replace bytes you approved, and the declaration diff is checked) or
 // withdraws one (untrust, remove). None of them manufactures consent, which is
-// why `rta plugin trust --all` and `rta plugin allow --all` are absent and
+// why `rta plugin trust --all` and `rta plugin access add --all` are absent and
 // should stay absent: "this binary may run" and "this binary may read my
 // kubeconfig" are the two questions the whole boundary is built to make
 // somebody answer one artifact at a time.

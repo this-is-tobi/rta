@@ -409,8 +409,8 @@ func TestAllowingAnUntrustedArtifactIsRefused(t *testing.T) {
 	if verr == nil {
 		t.Fatal("an untrusted artifact was allowed a credential location")
 	}
-	if verr.Code != "plugin.allow.untrusted" {
-		t.Errorf("code = %s, want plugin.allow.untrusted", verr.Code)
+	if verr.Code != "plugin.access.untrusted" {
+		t.Errorf("code = %s, want plugin.access.untrusted", verr.Code)
 	}
 	if got := Load().Allowed(digestA); len(got) != 0 {
 		t.Errorf("the refusal still wrote something: %v", got)
@@ -546,7 +546,7 @@ func TestABrokenSystemRecordCostsOnlyTheImagesPlugins(t *testing.T) {
 
 // A credential grant is the operator's decision and lives in the operator's
 // record: allowing an image-trusted artifact copies its entry there with the
-// grant on it, so disallow and untrust can find it later, and the image's
+// grant on it, so `access rm` and untrust can find it later, and the image's
 // record is not touched.
 func TestAllowingAnImageTrustedArtifactWritesTheOperatorsRecord(t *testing.T) {
 	isolated(t)
@@ -568,8 +568,8 @@ func TestAllowingAnImageTrustedArtifactWritesTheOperatorsRecord(t *testing.T) {
 	if string(before) != string(after) {
 		t.Error("allowing rewrote the system record")
 	}
-	if verr := Allow(digestB, []string{"kubeconfig"}); verr == nil || verr.Code != "plugin.allow.untrusted" {
-		t.Fatalf("allowing an artifact nobody trusted: %v, want plugin.allow.untrusted", verr)
+	if verr := Allow(digestB, []string{"kubeconfig"}); verr == nil || verr.Code != "plugin.access.untrusted" {
+		t.Fatalf("allowing an artifact nobody trusted: %v, want plugin.access.untrusted", verr)
 	}
 }
 

@@ -495,4 +495,4 @@ func heightSchema(what, inherits string) map[string]any {
 // strictReach is what a plugin reaches under `confine: strict`, as the schema
 // says it.
 const strictReach = "the system, a temporary directory of its own, its own binary, the tools on its PATH " +
-	"outside the home directory and the credential locations `rta plugin allow` granted it"
+	"outside the home directory and the credential locations `rta plugin access add` gave it"

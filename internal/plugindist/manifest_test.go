@@ -214,7 +214,7 @@ func TestTheSearchLineCountsEveryCapabilityTheGateAsksAGrantFor(t *testing.T) {
 	}
 }
 
-// A location rta has no way to allow cannot be claimed: `rta plugin allow`
+// A location rta has no way to allow cannot be claimed: `rta plugin access add`
 // works from a closed set, so an entry naming something outside it would be
 // asking the operator to approve a word.
 func TestAManifestCannotAskForALocationRtaCannotAllow(t *testing.T) {

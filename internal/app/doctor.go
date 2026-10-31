@@ -1352,7 +1352,7 @@ func doctorConfinement(add func(check, status, detail string), detail bool) {
 	case !pluginhost.Confined() && strict:
 		add("plugin confinement", "ok", fmt.Sprintf("strict, with Landlock ABI %d — a plugin reaches the system, "+
 			"a temporary directory of its own, its own binary, the tools on its PATH outside the home directory "+
-			"and the credential locations `rta plugin allow` granted it, and nothing else", abi))
+			"and the credential locations `rta plugin access add` gave it, and nothing else", abi))
 	case !pluginhost.Confined():
 		add("plugin confinement", "info", "none on "+runtime.GOOS+
 			" — plugins run with this user's full access; process groups and the "+
@@ -1452,17 +1452,17 @@ func doctorLoadedPlugins(add func(check, status, detail string)) {
 			allowed := trust.Allowed(p.Identity.Digest)
 			if missing := ungranted(p.Declared.Needs, allowed); len(missing) > 0 {
 				status = "warn"
-				detail += fmt.Sprintf(" — asks to read %s and has not been allowed to; "+
-					"calls that need it fail. `rta plugin allow %s`",
+				detail += fmt.Sprintf(" — asks to read %s and has no access to it; "+
+					"calls that need it fail. `rta plugin access add %s`",
 					needNames(missing), p.Declared.Name)
 			} else if len(p.Declared.Needs) > 0 {
 				// The granted case, said out loud. A credential location a
 				// plugin may read is a standing permission, and a tool whose
 				// argument is that authorisation should be something you can
 				// point at cannot report only the permissions it withheld.
-				// `rta plugin allow` lists it; doctor is where somebody reads
+				// `rta plugin access` lists it; doctor is where somebody reads
 				// what this machine is currently letting happen.
-				detail += fmt.Sprintf(" — allowed to read %s; `rta plugin disallow %s` takes it back",
+				detail += fmt.Sprintf(" — may read %s; `rta plugin access rm %s` takes it back",
 					needNames(p.Declared.Needs), p.Declared.Name)
 			}
 			add("plugin "+p.Declared.Name, status, detail)

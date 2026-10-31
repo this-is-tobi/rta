@@ -338,7 +338,7 @@ func TestAnUnknownStoredGrantIsDropped(t *testing.T) {
 
 // A stored grant opens only what the artifact declared. The record is a file,
 // and a location in it the declaration never named is access nobody was
-// offered — `rta plugin allow` lists the declaration and nothing else.
+// offered — `rta plugin access` lists the declaration and nothing else.
 func TestAStoredGrantOpensOnlyWhatTheArtifactDeclared(t *testing.T) {
 	stored := []string{"kubeconfig", "ssh", "aws"}
 	if got := declaredOnly(stored, []plugin.Need{plugin.NeedKubeconfig}); !slices.Equal(got, []plugin.Need{plugin.NeedKubeconfig}) {

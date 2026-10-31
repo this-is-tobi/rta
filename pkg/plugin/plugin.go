@@ -977,7 +977,7 @@ type Plugin struct {
 	// kubeconfig at all on macOS.
 	//
 	// **Declaring a need does not grant it.** The declaration says what the
-	// plugin is asking for; `rta plugin allow` is where somebody decides, and
+	// plugin is asking for; `rta plugin access add` is where somebody decides, and
 	// the decision attaches to the artifact's digest exactly as trust does, so
 	// a rebuild asks again. A plugin whose need is not granted still runs —
 	// with the ordinary denials — and fails at the operation that wanted the
@@ -1005,7 +1005,7 @@ func (p Plugin) Capability(id string) Capability {
 // mistake as letting a remote caller choose a destination — the operator would
 // be approving a string rather than a thing they recognise. These name
 // locations rta already knows about, one per entry of the deny list, so what
-// `rta plugin allow` prints is a location an operator can reason about.
+// `rta plugin access add` prints is a location an operator can reason about.
 type Need string
 
 const (

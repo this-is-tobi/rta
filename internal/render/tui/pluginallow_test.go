@@ -65,7 +65,7 @@ func TestTheAllowFormOpensSeededWithTheCurrentGrant(t *testing.T) {
 // The decision is about a place on this machine, so the box names the place.
 // "let weather read kubeconfig" asks a person to approve a word; the path is
 // what they recognise, and it is what the command line shows beside the same
-// choice (rta plugin allow). It comes from the table the sandbox denies by, so
+// choice (rta plugin access add). It comes from the table the sandbox denies by, so
 // what the box says and what the plugin is kept out of cannot differ.
 func TestTheAllowFormNamesTheFileEachBoxLetsAPluginRead(t *testing.T) {
 	home := t.TempDir()
@@ -84,7 +84,7 @@ func TestTheAllowFormNamesTheFileEachBoxLetsAPluginRead(t *testing.T) {
 
 // Submitting the form writes exactly the checked set, because Allow states the
 // whole grant. That is also what makes withdrawal expressible without a second
-// control: clearing a box is the disallow.
+// control: clearing a box is the `access rm`.
 func TestSubmittingTheAllowFormWritesTheWholeGrant(t *testing.T) {
 	t.Setenv("RTA_DATA_DIR", t.TempDir())
 	trustWeather(t)

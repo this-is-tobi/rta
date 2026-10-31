@@ -57,8 +57,7 @@ func newPluginCommand(reg *registry.Registry, version string, opts *globalOpts) 
 	root.AddCommand(newPluginListCommand(reg, opts))
 	root.AddCommand(newPluginTrustCommand(opts))
 	root.AddCommand(newPluginUntrustCommand(opts))
-	root.AddCommand(newPluginAllowCommand(opts))
-	root.AddCommand(newPluginDisallowCommand(opts))
+	root.AddCommand(newPluginAccessCommand(opts))
 	root.AddCommand(newPluginNewCommand(version, opts))
 	root.AddCommand(newPluginDevCommand(reg, version, opts))
 	install := newPluginInstallCommand(opts)
@@ -75,19 +74,19 @@ func newPluginCommand(reg *registry.Registry, version string, opts *globalOpts) 
 	return root
 }
 
-// newPluginAllowCommand implements `rta plugin allow`: the second decision,
+// newPluginAccessCommand implements `rta plugin access`: the second decision,
 // after trust and separate from it.
 //
 // On the platforms that confine plugins, a standard list of credential
 // locations is denied to all of them — a weather plugin has no business
-// reading a kubeconfig. (macOS confines; Linux does not, and says so
-// through `rta doctor` and confinementLine below. The allow list still governs
-// what a plugin *declares* it needs on every platform, which is what this
-// command edits; what changes is whether anything enforces the denial.) Some
-// plugins exist to use one, and for those the denial is not caution but
-// breakage: `~/.kube` was denied from the first commit of the plugin host, and
-// both plugins/kube and plugins/cnpg were unable to read a kubeconfig at all
-// on macOS, which is to say unable to do anything.
+// reading a kubeconfig. (macOS always confines; Linux confines under
+// `confine: strict`, and says which through `rta doctor` and confinementLine
+// below. The access record still governs what a plugin *declares* it needs on
+// every platform, which is what these commands edit; what changes is whether
+// anything enforces the denial.) Some plugins exist to use one, and for those
+// the denial is not caution but breakage: `~/.kube` was denied from the first
+// commit of the plugin host, and both plugins/kube and plugins/cnpg were unable
+// to read a kubeconfig at all on macOS, which is to say unable to do anything.
 //
 // The plugin declares what it needs; this is where somebody decides. Two
 // commands rather than one, because "these bytes may run" and "these bytes may
@@ -95,33 +94,53 @@ func newPluginCommand(reg *registry.Registry, version string, opts *globalOpts) 
 // first must not stand in for the second. Both attach to the digest, so a
 // rebuild asks both again.
 //
-// **Only what the plugin declared.** An operator cannot allow a location the
-// artifact never asked for: that would be handing out access nobody requested,
-// and the request is the only reason there is anything to weigh.
-func newPluginAllowCommand(opts *globalOpts) *cobra.Command {
+// A noun with add and rm, as lock, index and hosts are, and not a verb of its
+// own: it was `allow`, which named two other acts as well (a standing grant to
+// an agent, and once the answer to a parked call), and `rta plugin access add kube`
+// read as letting an agent use kube, which it never did.
+func newPluginAccessCommand(opts *globalOpts) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "allow [name] [location...]",
-		Short: "Let a plugin read a credential location it declares it needs",
+		Use:   "access",
+		Short: "The credential locations plugins ask to read, and what they may",
 		Long: "Where plugins run confined, rta denies them a standard list of\n" +
 			"credential locations — see `rta doctor` for whether this platform is one.\n" +
-			"A plugin that exists to use one declares which; this is where you decide.\n\n" +
+			"A plugin that exists to use one declares which, and `rta plugin access add`\n" +
+			"is where you decide.\n\n" +
 			"Separate from `rta plugin trust` on purpose: running an artifact and\n" +
 			"letting it read your credentials are different decisions. Both attach to\n" +
 			"the artifact's digest, so rebuilding a plugin asks again.\n\n" +
-			"With no argument, lists what every loaded plugin asks for and what it has.\n" +
-			"With a name and no locations, allows everything that plugin declares.",
-		Args: cobra.ArbitraryArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+			"Alone, it lists what every loaded plugin asks for and what it has.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			format, err := opts.format()
 			if err != nil {
 				return err
 			}
-			render := func(v view.View) error {
-				return cli.Render(cmd.OutOrStdout(), v,
-					renderOptions(cmd, format, opts.noColor))
-			}
-			if len(args) == 0 {
-				return render(needsInventory())
+			return cli.Render(cmd.OutOrStdout(), needsInventory(), renderOptions(cmd, format, opts.noColor))
+		},
+	}
+	cmd.AddCommand(newPluginAccessAddCommand(opts), newPluginAccessRmCommand(opts))
+	return cmd
+}
+
+// newPluginAccessAddCommand gives a plugin a location it asked for.
+//
+// **Only what the plugin declared.** An operator cannot give access to a
+// location the artifact never asked for: that would be handing out access
+// nobody requested, and the request is the only reason there is anything to
+// weigh.
+func newPluginAccessAddCommand(opts *globalOpts) *cobra.Command {
+	return &cobra.Command{
+		Use:   "add <name> [location...]",
+		Short: "Let a plugin read a credential location it declares it needs",
+		Long: "With no location, the plugin may read everything it declares; with\n" +
+			"some, those, beside what it already had. Only `rta plugin access rm`\n" +
+			"takes access back.",
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			format, err := opts.format()
+			if err != nil {
+				return err
 			}
 			c, verr := loadedByName(args[0])
 			if verr != nil {
@@ -133,10 +152,10 @@ func newPluginAllowCommand(opts *globalOpts) *cobra.Command {
 				// and not the plugin's. Somebody whose installed copy is
 				// older than the source they are reading gets this refusal,
 				// and the digest is the thread that leads them to why.
-				return view.Errorf("plugin.allow.none",
+				return view.Errorf("plugin.access.none",
 					"%s@%s declares no credential location it needs",
 					args[0], c.Identity.Short()).
-					WithHint("nothing to allow — a plugin only reaches a denied location " +
+					WithHint("nothing to give — a plugin only reaches a denied location " +
 						"when its own declaration asks for one, and this is the " +
 						"declaration of the artifact rta loaded")
 			}
@@ -144,28 +163,28 @@ func newPluginAllowCommand(opts *globalOpts) *cobra.Command {
 			if verr != nil {
 				return verr
 			}
-			union := mergedAllow(grantedOf(declared, plugintrust.Load().Allowed(c.Identity.Digest)), want)
-			allowLabel, next := "allowed", "it applies on your next `rta` command — the plugin is "+
+			union := mergedAccess(grantedOf(declared, plugintrust.Load().Allowed(c.Identity.Digest)), want)
+			label, next := "access added", "it applies on your next `rta` command — the plugin is "+
 				"relaunched with that location left out of its sandbox"
 			if opts.dryRun {
-				allowLabel, next = "would allow", "run without --dry-run to actually allow it"
+				label, next = "would add access", "run without --dry-run to actually add it"
 			} else if verr := plugintrust.Allow(c.Identity.Digest, union); verr != nil {
 				return verr
 			}
 			pairs := []view.Pair{
-				{Key: allowLabel, Value: c.Declared.Name},
+				{Key: label, Value: c.Declared.Name},
 				{Key: "digest", Value: c.Identity.Digest},
 			}
 			for _, loc := range union {
 				pairs = append(pairs, view.Pair{Key: "may read", Value: needLine(plugin.Need(loc))})
 			}
 			pairs = append(pairs, view.Pair{Key: "next", Value: next})
-			return render(view.KeyValue{Pairs: pairs})
+			return cli.Render(cmd.OutOrStdout(), view.KeyValue{Pairs: pairs}, renderOptions(cmd, format, opts.noColor))
 		},
 		ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			// The plugins that ask for something first, then that plugin's own
 			// declared locations — never the whole closed set, because a
-			// location the artifact did not ask for is not allowable.
+			// location the artifact did not ask for cannot be given.
 			var out []cobra.Completion
 			if len(args) == 0 {
 				for _, c := range loadedPlugins {
@@ -188,22 +207,26 @@ func newPluginAllowCommand(opts *globalOpts) *cobra.Command {
 			return out, cobra.ShellCompDirectiveNoFileComp
 		},
 	}
-	return cmd
 }
 
-// newPluginDisallowCommand withdraws it.
+// newPluginAccessRmCommand takes it back.
 //
-// Its own command rather than `allow` with no locations, because taking access
-// away has to be something somebody typed on purpose. `allow x` with an empty
-// list would be one keystroke away from `allow x`, and the two would mean
+// Its own command rather than `add` with no locations, because taking access
+// away has to be something somebody typed on purpose. `add x` with an empty
+// list would be one keystroke away from `add x`, and the two would mean
 // opposite things.
-func newPluginDisallowCommand(opts *globalOpts) *cobra.Command {
+//
+// The locations it names are checked against the record and not against the
+// declaration: a record can hold a location a newer build no longer declares,
+// and the way to clear one is to name it.
+func newPluginAccessRmCommand(opts *globalOpts) *cobra.Command {
 	return &cobra.Command{
-		Use:   "disallow <name>",
-		Short: "Withdraw a plugin's access to the locations it was allowed",
-		Long: "The plugin keeps running — this takes back only what `rta plugin allow`\n" +
-			"gave it, so the next call that wanted the file fails and says so.",
-		Args: cobra.ExactArgs(1),
+		Use:   "rm <name> [location...]",
+		Short: "Take back a plugin's access to the locations it was given",
+		Long: "The plugin keeps running — this takes back only what `rta plugin access add`\n" +
+			"gave it, so the next call that wanted the file fails and says so. With no\n" +
+			"location, everything it was given; with some, those.",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format, err := opts.format()
 			if err != nil {
@@ -215,29 +238,65 @@ func newPluginDisallowCommand(opts *globalOpts) *cobra.Command {
 			}
 			had := plugintrust.Load().Allowed(c.Identity.Digest)
 			if len(had) == 0 {
-				return view.Errorf("plugin.disallow.none",
-					"%s is not allowed any credential location", args[0]).
-					WithHint("nothing to withdraw")
+				return view.Errorf("plugin.access.empty",
+					"%s has no access to any credential location", args[0]).
+					WithHint("nothing to take back")
 			}
-			withdrawnLabel, next := "withdrawn", "it applies on your next `rta` command"
+			gone, kept := had, []string(nil)
+			if len(args) > 1 {
+				gone, kept = nil, nil
+				for _, a := range args[1:] {
+					if !slices.Contains(had, a) {
+						return view.Errorf("plugin.access.unheld",
+							"%s has no access to %q", args[0], a).
+							WithHint("it may read " + strings.Join(had, ", "))
+					}
+				}
+				for _, h := range had {
+					if slices.Contains(args[1:], h) {
+						gone = append(gone, h)
+					} else {
+						kept = append(kept, h)
+					}
+				}
+			}
+			label, next := "access removed", "it applies on your next `rta` command"
 			if opts.dryRun {
-				withdrawnLabel, next = "would withdraw", "run without --dry-run to actually withdraw it"
-			} else if verr := plugintrust.Allow(c.Identity.Digest, nil); verr != nil {
+				label, next = "would remove access", "run without --dry-run to actually remove it"
+			} else if verr := plugintrust.Allow(c.Identity.Digest, kept); verr != nil {
 				return verr
 			}
-			return cli.Render(cmd.OutOrStdout(), view.KeyValue{Pairs: []view.Pair{
-				{Key: withdrawnLabel, Value: c.Declared.Name},
+			pairs := []view.Pair{
+				{Key: label, Value: c.Declared.Name},
 				{Key: "digest", Value: c.Identity.Digest},
-				{Key: "no longer reads", Value: strings.Join(had, ", ")},
-				{Key: "next", Value: next},
-			}}, renderOptions(cmd, format, opts.noColor))
+			}
+			for _, loc := range gone {
+				pairs = append(pairs, view.Pair{Key: "no longer reads", Value: needLine(plugin.Need(loc))})
+			}
+			for _, loc := range kept {
+				pairs = append(pairs, view.Pair{Key: "still reads", Value: needLine(plugin.Need(loc))})
+			}
+			pairs = append(pairs, view.Pair{Key: "next", Value: next})
+			return cli.Render(cmd.OutOrStdout(), view.KeyValue{Pairs: pairs}, renderOptions(cmd, format, opts.noColor))
 		},
-		ValidArgsFunction: func(*cobra.Command, []string, string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		ValidArgsFunction: func(_ *cobra.Command, args []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			var out []cobra.Completion
 			set := plugintrust.Load()
-			for _, c := range loadedPlugins {
-				if len(set.Allowed(c.Identity.Digest)) > 0 {
-					out = append(out, c.Declared.Name)
+			if len(args) == 0 {
+				for _, c := range loadedPlugins {
+					if len(set.Allowed(c.Identity.Digest)) > 0 {
+						out = append(out, c.Declared.Name)
+					}
+				}
+				return out, cobra.ShellCompDirectiveNoFileComp
+			}
+			c, verr := loadedByName(args[0])
+			if verr != nil {
+				return nil, cobra.ShellCompDirectiveNoFileComp
+			}
+			for _, h := range set.Allowed(c.Identity.Digest) {
+				if !containsArg(args[1:], h) {
+					out = append(out, cobra.CompletionWithDesc(h, pluginhost.Tier2Path(plugin.Need(h))))
 				}
 			}
 			return out, cobra.ShellCompDirectiveNoFileComp
@@ -255,14 +314,14 @@ func needsInventory() view.View {
 	set := plugintrust.Load()
 	t := view.Table{Columns: []view.Column{
 		{Name: "Plugin"}, {Name: "Asks For"}, {Name: "Status", Kind: view.KindStatus},
-		{Name: "To Allow"},
+		{Name: "Next"},
 	}}
 	for _, c := range loadedPlugins {
 		if len(c.Declared.Needs) == 0 {
 			continue
 		}
 		allowed := set.Allowed(c.Identity.Digest)
-		status, action := "warn", "rta plugin allow "+c.Declared.Name
+		status, action := "warn", "rta plugin access add "+c.Declared.Name
 		if len(ungranted(c.Declared.Needs, allowed)) == 0 {
 			status, action = "ok", "—"
 		}
@@ -288,7 +347,7 @@ func loadedByName(name string) (*pluginhost.Client, *view.Error) {
 			return c, nil
 		}
 	}
-	return nil, view.Errorf("plugin.allow.notloaded", "no loaded plugin called %q", name).
+	return nil, view.Errorf("plugin.access.notloaded", "no loaded plugin called %q", name).
 		WithHint("`rta plugin list` shows what is loaded; an artifact that is not trusted " +
 			"is never run, so rta cannot know what it declares")
 }
@@ -303,7 +362,7 @@ func chosenNeeds(name string, asked []string, declared []plugin.Need) ([]plugin.
 	for _, a := range asked {
 		n := plugin.Need(a)
 		if !slices.Contains(declared, n) {
-			return nil, view.Errorf("plugin.allow.undeclared",
+			return nil, view.Errorf("plugin.access.undeclared",
 				"%s does not ask for %q", name, a).
 				WithHint("it declares " + needNames(declared) + " — a location the artifact " +
 					"never asked for is access nobody requested")
@@ -315,17 +374,17 @@ func chosenNeeds(name string, asked []string, declared []plugin.Need) ([]plugin.
 	return out, nil
 }
 
-// mergedAllow unions want into had, so a second `allow` naming a different
-// location adds to what an earlier one already granted rather than
+// mergedAccess unions want into had, so a second `access add` naming a
+// different location adds to what an earlier one already gave rather than
 // replacing it.
 //
-// plugintrust.Allow stores exactly the list it is given, and disallow is
+// plugintrust.Allow stores exactly the list it is given, and `access rm` is
 // its own command "because taking access away has to be something somebody
-// typed on purpose" (see its own doc comment). allow calling Allow with
+// typed on purpose" (see its own doc comment). add calling Allow with
 // only the locations named in one invocation would silently withdraw
-// whatever an earlier call had granted — the same removal disallow exists
+// whatever an earlier call had given — the same removal rm exists
 // to make deliberate, reached by accident instead.
-func mergedAllow(had []string, want []plugin.Need) []string {
+func mergedAccess(had []string, want []plugin.Need) []string {
 	union := append([]string{}, had...)
 	for _, n := range want {
 		if !slices.Contains(union, string(n)) {
@@ -348,7 +407,7 @@ func needLine(n plugin.Need) string {
 // the sandbox opens: pluginhost reads the record the same way. A location the
 // record holds and the declaration does not name opens nothing, so it is
 // carried into no new grant and counted by no status — a table reading the
-// record's length said "ok" for a plugin allowed ssh that asked for
+// record's length said "ok" for a plugin given ssh that asked for
 // kubeconfig, and had its kubeconfig denied.
 func grantedOf(declared []plugin.Need, allowed []string) []string {
 	var out []string
@@ -1153,7 +1212,7 @@ func devReport(reg *registry.Registry, c *pluginhost.Client) view.View {
 	if len(p.Needs) > 0 {
 		pairs = append(pairs, view.Pair{Key: "credentials",
 			Value: needNames(p.Needs) + " — readable here because you compiled it. " +
-				"Installed, it needs `rta plugin allow " + p.Name + "`"})
+				"Installed, it needs `rta plugin access add " + p.Name + "`"})
 	}
 	if p.Version != "" {
 		pairs = append(pairs, view.Pair{Key: "version", Value: p.Version})

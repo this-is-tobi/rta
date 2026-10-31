@@ -317,7 +317,7 @@ func (h *Host) LoadInto(ctx context.Context, reg *registry.Registry) []error {
 		// plugin costs nothing.
 		//
 		// **Only what the artifact declared**, and so read after its
-		// declaration rather than before it. `rta plugin allow` offers the
+		// declaration rather than before it. `rta plugin access add` offers the
 		// declared locations and no others, which is the whole of what an
 		// operator ever agreed to — but the record is a file, and whatever
 		// it holds was subtracted from the deny set as it stood: an allow

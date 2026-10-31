@@ -161,11 +161,12 @@ var (
 	// row marked "not run" is deciding whether to allow it, and that is the
 	// word for it.
 	bindTrust = binding{display: "t", keys: []string{"t"}, label: "approve", rank: rankAction}
-	// "allow" and not "grant": the file, the command (`rta plugin allow`) and
-	// the row's own warning all say allow, and a footer inventing a fourth
-	// word for the thing three other surfaces already name is how somebody
-	// comes to look for a `grant` subcommand that does something else.
-	bindAllow = binding{display: "a", keys: []string{"a"}, label: "allow", rank: rankAction}
+	// "access" and not "grant" or "allow": the command (`rta plugin access add`)
+	// and the row's own warning both say access, and a footer inventing another
+	// word for the thing two other surfaces already name is how somebody comes
+	// to look for a `grant` subcommand that does something else. Allow is the
+	// standing grant to an agent, which is another act.
+	bindAllow = binding{display: "a", keys: []string{"a"}, label: "access", rank: rankAction}
 
 	// z folds the section of the selected tile or header and Z every section, on a
 	// dashboard that has some. Letters rather than enter alone, which opens a

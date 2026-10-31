@@ -19,7 +19,7 @@ The first two steps run on your own machine, with your own cluster access; the r
 ```bash
 rta plugin index add official
 rta plugin install kube
-rta plugin allow kube
+rta plugin access add kube
 rta profile set payments-staging --note "payments, staging" \
     --plugin kube --set context=staging --set namespace=payments
 ```

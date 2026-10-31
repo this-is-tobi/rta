@@ -288,7 +288,7 @@ func TestAVerbTheDenyListNamesAloneHasNoAlias(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := NewRoot(reg, "test")
-	verbs := append(audit.HumanOnlyVerbs(reg.Capabilities), "plugin trust", "plugin allow", "plugin install")
+	verbs := append(audit.HumanOnlyVerbs(reg.Capabilities), "plugin trust", "plugin access", "plugin install")
 	for _, verb := range verbs {
 		cmd := commandAt(root, "rta "+verb)
 		if cmd == nil {

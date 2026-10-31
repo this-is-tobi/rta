@@ -232,12 +232,12 @@ serverDefaults:
       # @section -- Server defaults
       expires: ""
   plugins:
-    # -- Plugins to allow at startup, rendered as `RTA_ALLOW_PLUGINS`. Only an image using rta's
-    # `docker-entrypoint.sh` reads this - the full image does, the narrow image's entrypoint is rta
-    # itself and never sees it. This answers `allow` (may this plugin read a credential location),
-    # never `trust` (may this artifact run at all), which the full image carries in its read-only
-    # system root, outside the data volume. What `allow` records lands in the data volume and is
-    # carried across restarts by it.
+    # -- Plugins given the access they declare at startup, as `rta plugin access add` gives it,
+    # rendered as `RTA_ALLOW_PLUGINS`. Only an image using rta's `docker-entrypoint.sh` reads this -
+    # the full image does, the narrow image's entrypoint is rta itself and never sees it. This
+    # answers access (may this plugin read a credential location), never `trust` (may this artifact
+    # run at all), which the full image carries in its read-only system root, outside the data
+    # volume. What access records lands in the data volume and is carried across restarts by it.
     # @section -- Server defaults
     allow: []
     # - "kube"

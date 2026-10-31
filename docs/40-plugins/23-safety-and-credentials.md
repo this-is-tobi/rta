@@ -46,7 +46,7 @@ plugin.Plugin{
 }
 ```
 
-Declaring is asking. The operator runs `rta plugin allow <name>` to grant it, against your artifact's digest, and a rebuild asks again. Until then your plugin still loads and runs — it just fails at whatever call wanted the file, and `rta doctor` tells the operator which command fixes that.
+Declaring is asking. The operator runs `rta plugin access add <name>` to give it, against your artifact's digest, and a rebuild asks again. Until then your plugin still loads and runs — it just fails at whatever call wanted the file, and `rta doctor` tells the operator which command fixes that.
 
 `rta plugin dev` honours your declaration without any of that, for the same reason it skips trust: you compiled it from a directory you named in the command you just typed. Its report says what it allowed and what installing the plugin will need instead, so the difference is visible before somebody else hits it.
 
