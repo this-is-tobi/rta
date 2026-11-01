@@ -40,6 +40,7 @@ import (
 	"github.com/this-is-tobi/rta/internal/filelock"
 	"github.com/this-is-tobi/rta/internal/pathguard"
 	"github.com/this-is-tobi/rta/internal/paths"
+	"github.com/this-is-tobi/rta/pkg/format"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -164,7 +165,7 @@ func redactedSpec(spec string) string {
 	if isPrivateKey(spec) {
 		return "<a private key, not shown — recipients take the public half>"
 	}
-	return truncate(spec, 32)
+	return format.Clip(spec, 32)
 }
 
 // isPrivateKey reports whether a file's first meaningful line begins a private
@@ -956,13 +957,6 @@ func sameKey(a, b string) bool {
 		return spec
 	}
 	return keyOf(a) == keyOf(b)
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }
 
 func firstMeaningfulLine(s string) string {

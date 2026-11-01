@@ -349,12 +349,7 @@ func Clip(s string) string { return clipTo(s, compactDetail) }
 // what is worth reading, not a layout decision, and belongs here rather than
 // there.
 func clipTo(s string, max int) string {
-	s = strings.Join(strings.Fields(s), " ") // collapse whitespace/newlines
-	r := []rune(s)
-	if len(r) > max {
-		return string(r[:max-1]) + "…"
-	}
-	return s
+	return format.Clip(strings.Join(strings.Fields(s), " "), max) // collapse whitespace/newlines
 }
 
 // Plural counts a noun: Plural(2, "advisory") is "2 advisories".

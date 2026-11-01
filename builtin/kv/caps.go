@@ -1437,9 +1437,9 @@ func runRecipients(_ context.Context, req plugin.Request) (view.View, error) {
 		case len(fields) >= 2:
 			// An authorized-keys line: type, key, and an optional comment
 			// that is usually the only human-readable part.
-			t.Rows = append(t.Rows, []string{fields[0], truncate(fields[1], 24), strings.Join(fields[2:], " ")})
+			t.Rows = append(t.Rows, []string{fields[0], format.Clip(fields[1], 24), strings.Join(fields[2:], " ")})
 		default:
-			t.Rows = append(t.Rows, []string{"?", truncate(spec, 24), ""})
+			t.Rows = append(t.Rows, []string{"?", format.Clip(spec, 24), ""})
 		}
 	}
 	t.Total = len(t.Rows)

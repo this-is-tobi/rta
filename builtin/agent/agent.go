@@ -26,7 +26,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"golang.org/x/term"
 
@@ -2081,20 +2080,7 @@ func argsLine(args map[string]any) string {
 // agent chose ends in a replacement character whenever it is not ASCII — in
 // the column a person reads while deciding whether to approve the call, which
 // is the last place to put a mystery character.
-func clip(line string) string {
-	const wide = 60
-	if utf8.RuneCountInString(line) <= wide {
-		return line
-	}
-	cut := 0
-	for i := range line {
-		if cut == wide-1 {
-			return line[:i] + "…"
-		}
-		cut++
-	}
-	return line
-}
+func clip(line string) string { return format.Clip(line, 60) }
 
 // parseSince reads what "since" means to a person: a span back from now, a
 // day by its name or its date, or an exact instant.
