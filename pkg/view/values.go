@@ -212,7 +212,7 @@ func typedValues(t Table) [][]any {
 }
 
 // Value is the value of the cell at row and col as a program reads it, the one
-// json, yaml and MCP write for it: its producer's, where that is one its
+// json and yaml write for it: its producer's, where that is one its
 // column's kind takes, and otherwise the one its text already is (textValue).
 // "" for a cell with none, a malformed value of its producer's among them,
 // which is none rather than replaced by its text's.

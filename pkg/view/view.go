@@ -180,14 +180,16 @@ type Table struct {
 	// Oct 31` are what a screen should say and what no script can compare:
 	// `jq 'select(.used > ...)'` had nothing to compare. The kind says what a
 	// column is; this is what it holds. Rows stay the cells every surface
-	// draws — the TUI, pretty, md — and json, yaml and MCP carry these beside
-	// them as "values", a number as a number and null for a cell with none
+	// draws — the TUI, pretty, md — and json and yaml carry these beside them
+	// as "values", a number as a number and null for a cell with none
 	// (typedValues), while csv writes a cell's value in its place, since csv is
 	// read by programs alone — except a status's, whose text says more than the
-	// word it grades by. A producer that never fills them is drawn exactly as
-	// before, and encoded with the values its text already is: a status as the
-	// word it leads with and a count written as a number (textValue), so a
-	// plugin that fills nothing still hands a program those two.
+	// word it grades by. An MCP answer leaves them out: a model reads the cell,
+	// and to one they are the table a second time. A producer that never fills
+	// them is drawn exactly as before, and encoded with the values its text
+	// already is: a status as the word it leads with, a count written as a
+	// number and a time written in RFC 3339 (textValue), so a plugin that fills
+	// nothing still hands a program those three.
 	//
 	// Filled through Add, never by hand: Add keeps them in step with Rows, and
 	// a value out of step is a value on the wrong row. Never encoded under its

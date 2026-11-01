@@ -107,13 +107,40 @@ func joinWith(items []string, sep, last string) string {
 	return strings.Join(items[:len(items)-1], sep) + last + items[len(items)-1]
 }
 
-// encoded is v as the one JSON text a result is sent as.
+// encoded is v as the one JSON text a result is sent as: the envelope -o json
+// writes, without a table's values (withoutValues).
 func encoded(v view.View) ([]byte, error) {
 	m, err := view.ToMap(v)
 	if err != nil {
 		return nil, err
 	}
+	withoutValues(m)
 	return view.Marshal(m)
+}
+
+// withoutValues takes the values out of every table in m, an encoded view, at
+// whatever depth a page holds one.
+//
+// They are the rows again for a program, `994662584320` beside `926.4 GiB`
+// and `warn` beside `WARN soon · Oct 31`, and a model reads the cell as well
+// as the number: to one they are the same table a second time. sys.ps's answer
+// was 91% larger with them, and seven built-in tables 36% larger together, on
+// every call. The budget above counts what is sent, so a table that carried
+// them was also cut at fewer rows. That is the structured copy viewResult
+// stopped sending, for the same reason. What it gives up is a program reading
+// typed numbers from an MCP answer, and -o json is where those stay.
+func withoutValues(m map[string]any) {
+	if m["type"] == "table" {
+		delete(m, "values")
+	}
+	items, _ := m["items"].([]any)
+	for _, item := range items {
+		if s, ok := item.(map[string]any); ok {
+			if inner, ok := s["view"].(map[string]any); ok {
+				withoutValues(inner)
+			}
+		}
+	}
 }
 
 // size is what v weighs once encoded the way viewResult sends it.
@@ -171,8 +198,9 @@ func shrinkTable(t view.Table, limit int, narrow narrowing) (view.View, bool) {
 			lo, hi = len(rows)-k, len(rows)
 		}
 		out.Rows = rows[lo:hi]
-		// The values are cut with the rows they stand beside, or every value
-		// after the cut would be read as the next row's.
+		// The values are cut with the rows they stand beside. None is sent
+		// (withoutValues), and the table stays what Table promises whoever
+		// reads it next: one where every value is on its own row.
 		if t.Values != nil {
 			out.Values = t.Values[min(lo, len(t.Values)):min(hi, len(t.Values))]
 		}
