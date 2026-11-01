@@ -69,7 +69,7 @@ docker build -f Dockerfile.full --build-arg VERSION=<version> --build-arg RTA_PL
 docker push registry.example.com/platform/rta-kube:<version>
 ```
 
-`kube` is installed from the official index the way `rta plugin install` installs it — fetched, checked against the index's sha256, trusted by the digest rta computed — into the read-only system root a data volume cannot hide, with `kubectl` beside it. The external tools the full image carries come along, but an agent reaches a tool only through a capability — rta's own, or one a plugin in the image declares — and the only plugin here is `kube`. The image's entrypoint is what reads the chart's `plugins.allow`, below.
+`kube` is installed from the official index the way `rta plugin install` installs it — fetched, checked against the index's sha256, trusted by the digest rta computed — into the read-only system root a data volume cannot hide, with `kubectl` beside it. The external tools the full image carries come along, but an agent reaches a tool only through a capability — rta's own, or one a plugin in the image declares — and the only plugin here is `kube`. The image's entrypoint is what reads the chart's `plugins.access`, below.
 
 ## 4. Deploy it, holding the minted kubeconfig
 
@@ -99,7 +99,7 @@ servers:
         enabled: true
         existingSecret: rta-tobi-tokens
     plugins:
-      allow: ["kube"]
+      access: ["kube"]
     env:
       - name: HOME
         value: /home/rta
@@ -122,7 +122,7 @@ helm install rta oci://ghcr.io/this-is-tobi/rta/rta-chart --namespace rta --valu
 ```
 
 - **`HOME` and the mount** put the minted file where kubectl looks, `$HOME/.kube/config`: rta hands a plugin no `KUBECONFIG`, for the reason [Kubernetes](../30-boundary/80-kubernetes.md#giving-an-instance-access-to-the-cluster-it-runs-in) gives.
-- **`plugins.allow`** is rta's own question about that file — may `kube` read it — answered for this instance.
+- **`plugins.access`** is rta's own question about that file — may `kube` read it — answered for this instance.
 - **Nothing else in the pod reaches the cluster.** The chart leaves the pod's own ServiceAccount token unmounted and binds it no role, so the minted identity is the only one there.
 - **The config holds no profile.** One cluster and one identity make the identity the bound: a `kube` read is an ungated read, and each one lands in the record. A profile there would put every call behind a grant issued on the instance — the heavier shape, for when [the operator channel](../30-boundary/66-operators.md) is set up anyway.
 - **The pod has to reach the cluster at the address your context names**, since that is the address in the file. With the chart's NetworkPolicy on, that is one more egress rule.

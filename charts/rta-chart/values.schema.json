@@ -1205,7 +1205,7 @@
           "type": "object",
           "additionalProperties": true,
           "properties": {
-            "allow": {
+            "access": {
               "type": "array",
               "items": {
                 "type": "string"

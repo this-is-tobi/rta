@@ -183,7 +183,7 @@ ENV RTA_CONFIG=/rta-home/config.yaml \
 # which says the same thing about having a tool versus being granted the file.
 #
 # For the ephemeral case where no volume is mounted and the answer cannot
-# stick, docker-entrypoint.sh takes RTA_ALLOW_PLUGINS — opt-in, never on by
+# stick, docker-entrypoint.sh takes RTA_PLUGIN_ACCESS — opt-in, never on by
 # default, see that file for why the two decisions are split this way.
 #
 # `rta plugin list` here is the smoke test: every installed plugin launched

@@ -98,7 +98,7 @@ It needs the metrics to actually reach Prometheus, so `observability.metrics.ena
 
 Nothing else is needed for its plugins to load. The image keeps them, with their **trust**, in its read-only system root at `/usr/local/lib/rta`, which this chart's data volume never touches — so a fresh volume on `/rta-home` hides nothing, and `rta plugin list` in the pod shows every plugin trusted by the image on first start.
 
-`plugins.allow` renders `RTA_ALLOW_PLUGINS`, which answers a different question: whether a plugin may reach a credential location. Only an image using rta's `docker-entrypoint.sh` reads it.
+`plugins.access` renders `RTA_PLUGIN_ACCESS`, which answers a different question: whether a plugin may reach a credential location. Only an image using rta's `docker-entrypoint.sh` reads it.
 
 ## Kubernetes secret references
 

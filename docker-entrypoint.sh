@@ -28,8 +28,8 @@
 # the container — a compose file, a `docker run` line, a pod spec — rather
 # than buried in a layer.
 #
-#   RTA_ALLOW_PLUGINS=all          every bundled plugin
-#   RTA_ALLOW_PLUGINS=kube,cnpg    only these
+#   RTA_PLUGIN_ACCESS=all          every bundled plugin
+#   RTA_PLUGIN_ACCESS=kube,cnpg    only these
 #   unset                          nothing, and `rta plugin list` says warn
 #
 # Only ever what a plugin already declares it needs: `rta plugin access add <name>`
@@ -43,10 +43,18 @@
 # is why answering it deliberately is worth a variable rather than a shrug.
 set -eu
 
-allow="${RTA_ALLOW_PLUGINS:-}"
-if [ -n "$allow" ]; then
+# The variable's old name, refused rather than ignored: unread, it would leave
+# every plugin it names without the access somebody set it to give, with
+# nothing to say why.
+if [ -n "${RTA_ALLOW_PLUGINS:-}" ]; then
+	echo 'rta: RTA_ALLOW_PLUGINS is now RTA_PLUGIN_ACCESS, named for "rta plugin access add", which it runs' >&2
+	exit 1
+fi
+
+access="${RTA_PLUGIN_ACCESS:-}"
+if [ -n "$access" ]; then
 	every=no
-	case "$allow" in
+	case "$access" in
 	all)
 		every=yes
 		# Derived from what is actually in the image rather than a list
@@ -55,7 +63,7 @@ if [ -n "$allow" ]; then
 			\( -type f -o -type l \) 2>/dev/null | sed 's|.*/rta-plugin-||' | sort)
 		;;
 	*)
-		names=$(printf '%s' "$allow" | tr ',' ' ')
+		names=$(printf '%s' "$access" | tr ',' ' ')
 		;;
 	esac
 
@@ -83,7 +91,7 @@ if [ -n "$allow" ]; then
 		# so a failure to honour it is a misconfiguration worth seeing at start
 		# — the alternative is a capability refusing for an unrelated-looking
 		# reason much later, with nothing connecting it back to here.
-		echo "rta: RTA_ALLOW_PLUGINS names \"$name\", which could not be given access:" >&2
+		echo "rta: RTA_PLUGIN_ACCESS names \"$name\", which could not be given access:" >&2
 		echo "$out" >&2
 		exit 1
 	done
