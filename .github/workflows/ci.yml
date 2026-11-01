@@ -538,8 +538,8 @@ jobs:
   # Inline rather than a workflow call because there is nothing to call: the
   # check regenerates the schema from this module, so it needs a checkout and a
   # Go toolchain. Both actions are pinned by commit, the way the reusable
-  # workflows pin theirs — rta has no Renovate, so these do not float on their
-  # own and are moved by hand when they need moving.
+  # workflows pin theirs, and Renovate moves a pin and its version comment
+  # together.
   chart-schema-drift:
     name: Check chart schema drift
     needs: changes
@@ -550,6 +550,11 @@ jobs:
     steps:
     - name: Checks-out repository
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        # Nothing here pushes, and the last step builds and runs the pull
+        # request's own code: a token left in .git/config is one more thing
+        # that code could read.
+        persist-credentials: false
 
     - name: Set up Go
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
