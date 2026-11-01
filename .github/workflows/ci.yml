@@ -100,7 +100,7 @@ jobs:
       PROSE_PATTERNS: >-
         ["docs/*", "*.md", "LICENSE", "NOTICE", ".release-please-manifest.json",
         "charts/*", ".github/ct.yaml"]
-      # Two groups, each read by its own gates through `groups`.
+      # Three groups, each read by its own gates through `groups`.
       #
       # chart names the files the chart's gates read, prose to every gate
       # behind `code` and very much not to helm-docs, which fails on the
@@ -112,7 +112,13 @@ jobs:
       # pay on every run, and a pin that moved is the one change that can
       # only be checked by building. bump-plugins.yml opens exactly that pull
       # request, so this is what makes its green check mean something.
-      GROUPS: '{"chart": ["charts/*", ".github/ct.yaml"], "full-image": ["Dockerfile.full"]}'
+      #
+      # workflows: everything zizmor reads here, for scan-workflows. The
+      # repository holds no composite action and no dependabot config, the
+      # other two things it would.
+      GROUPS: >-
+        {"chart": ["charts/*", ".github/ct.yaml"], "full-image": ["Dockerfile.full"],
+        "workflows": [".github/workflows/*", ".github/zizmor.yml"]}
 
   lint:
     name: Lint
@@ -614,6 +620,20 @@ jobs:
     with:
       PR_NUMBER: ${{ github.event.pull_request.number }}
 
+  # The pipeline that ships a release is part of what a release can be
+  # compromised through. zizmor audits these workflows when one changes: a
+  # checkout that leaves its token in .git/config, an expression pasted into a
+  # script, an action on a tag someone can move, an action with a published
+  # advisory. A finding fails the pull request that brings it in, and
+  # .github/zizmor.yml says what it is told to accept, and why.
+  scan-workflows:
+    name: Scan workflows
+    needs: changes
+    if: ${{ fromJSON(needs.changes.outputs.groups).workflows }}
+    uses: this-is-tobi/github-workflows/.github/workflows/scan-zizmor.yml@v0
+    permissions:
+      contents: read
+
   # One required check to protect the branch with, rather than a list that has
   # to be edited every time a job is added. A skipped job is a pass; anything
   # else is not.
@@ -646,6 +666,7 @@ jobs:
     - test-chart
     - scan-secrets
     - scan-deps
+    - scan-workflows
     steps:
     # The context arrives through env rather than pasted into the script
     # between single quotes: it carries every job's outputs, and one quote in

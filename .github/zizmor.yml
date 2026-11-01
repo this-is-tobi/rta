@@ -1,0 +1,14 @@
+# zizmor configuration, read by the `scan-workflows` job of ci.yml. Every entry
+# says why a finding is accepted instead of fixed; delete it once the reason
+# stops being true.
+
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        # The workflow catalogue, called by its moving major tag: the same
+        # owner's, re-pointed on every release it makes. While v0 is still
+        # moving, a commit pin would be a bump here for every change upstream.
+        # Pin it by commit too once the catalogue ships v1. Every other action
+        # stays under zizmor's default, a commit pin, which they all have.
+        this-is-tobi/github-workflows/*: ref-pin
