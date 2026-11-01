@@ -92,7 +92,7 @@ func catalogView(capabilities []plugin.Capability) view.View {
 		{Name: "Summary"},
 	}}
 	for _, c := range capabilities {
-		t.Add(view.Plain(c.ID), view.Graded(string(c.Safety)), view.Plain(c.Summary))
+		t.Add(view.Plain(c.ID), view.Plain(string(c.Safety)), view.Plain(c.Summary))
 	}
 	t.Total = len(t.Rows)
 	return t

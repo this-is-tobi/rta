@@ -1305,7 +1305,7 @@ func reachTable(caps []plugin.Capability, holds func(plugin.Capability) bool) vi
 		if c.Scope != "" {
 			record = c.Scope
 		}
-		t.Add(view.Plain(c.ID), view.Graded(string(c.Safety)), view.Plain(record), view.Plain(c.Summary))
+		t.Add(view.Plain(c.ID), view.Plain(string(c.Safety)), view.Plain(record), view.Plain(c.Summary))
 	}
 	t.Total = len(t.Rows)
 	return t
@@ -1661,15 +1661,13 @@ func grantsTable(grants []core.Grant, stale func(core.Grant) bool, states []core
 
 // rosterCell is one cell of a grant's row with its value (view.Table.Values):
 // the roster's one duration and one timestamp are both its deadline, the time
-// left and the instant, and a status is the word it grades by.
+// left and the instant.
 func rosterCell(c view.Column, text string, g core.Grant, now time.Time) view.Cell {
 	switch c.Kind {
 	case view.KindDuration:
 		return view.Duration(text, g.Expires.Sub(now))
 	case view.KindTimestamp:
 		return view.Time(text, g.Expires)
-	case view.KindStatus:
-		return view.Graded(text)
 	}
 	return view.Plain(text)
 }

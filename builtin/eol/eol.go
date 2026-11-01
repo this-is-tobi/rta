@@ -308,7 +308,7 @@ func gradeRow(r eolapi.Release, warnDays int, now time.Time) []view.Cell {
 		released = view.Time(r.ReleaseDate, date)
 	}
 	return []view.Cell{view.Plain(r.Name), released, view.Plain(r.Latest.Name), view.Plain(ltsCell(r)), eol, in,
-		view.Graded(eolStatus(r, warnDays, now))}
+		view.Plain(eolStatus(r, warnDays, now))}
 }
 
 // ltsCell has three states, not two, because LtsFrom means something

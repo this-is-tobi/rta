@@ -390,7 +390,7 @@ func needsInventory() view.View {
 		if len(c.Declared.Needs) == 0 {
 			asks = "—"
 		}
-		row := []view.Cell{view.Plain(c.Declared.Name), view.Plain(asks), view.Graded(status), view.Plain(action)}
+		row := []view.Cell{view.Plain(c.Declared.Name), view.Plain(asks), view.Plain(status), view.Plain(action)}
 		if named {
 			row = append(row, view.Plain(dashIfNone(strings.Join(paths, ", "))))
 		}
@@ -1318,7 +1318,7 @@ func devReport(reg *registry.Registry, c *pluginhost.Client) view.View {
 		{Name: "Agents"},
 	}}
 	for _, cap := range p.Capabilities {
-		caps.Add(view.Plain(cap.ID), view.Graded(string(cap.Safety)), view.Plain(cliForm(cap)), view.Plain(agentReach(reg, cap)))
+		caps.Add(view.Plain(cap.ID), view.Plain(string(cap.Safety)), view.Plain(cliForm(cap)), view.Plain(agentReach(reg, cap)))
 	}
 	caps.Total = len(caps.Rows)
 

@@ -849,7 +849,7 @@ feed:
 			state = "open"
 			openCount++
 		}
-		t.Add(view.Count(r.port), view.Graded(state))
+		t.Add(view.Count(r.port), view.Plain(state))
 	}
 	t.Total = len(t.Rows)
 	return t, nil

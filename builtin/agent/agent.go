@@ -1115,14 +1115,11 @@ type logColumn struct {
 
 // valued is the column's cell for e with its value (view.Table.Values): the
 // record's own instant for the one timestamp column, `at`, whichever way its
-// text is written, and the word a status column grades by.
+// text is written.
 func (c logColumn) valued(e agentlog.Entry, stamp string) view.Cell {
 	text := c.cell(e, stamp)
-	switch c.Kind {
-	case view.KindTimestamp:
+	if c.Kind == view.KindTimestamp {
 		return view.Time(text, e.At)
-	case view.KindStatus:
-		return view.Graded(text)
 	}
 	return view.Plain(text)
 }
@@ -1281,7 +1278,7 @@ func pendingTable(sf plugin.Surface, reqs []consent.Request) view.Table {
 		// operator reads the bare record while answering for another
 		// (textclean.Record).
 		row := []view.Cell{
-			view.Plain(r.ID), view.Plain(r.Cap), view.Plain(recordsCell(r.Scopes)), view.Graded(r.Safety),
+			view.Plain(r.ID), view.Plain(r.Cap), view.Plain(recordsCell(r.Scopes)), view.Plain(r.Safety),
 			view.Plain(r.Profile), view.Plain(clip(what)), view.Duration(format.Duration(left), left),
 		}
 		if asking {

@@ -122,7 +122,7 @@ func runHooks(ctx context.Context, req plugin.Request) (view.View, error) {
 	// leave each value beside another hook's row.
 	sort.SliceStable(rows, func(i, j int) bool { return hookRank(rows[i].status) < hookRank(rows[j].status) })
 	for _, r := range rows {
-		t.Add(view.Plain(r.name), view.Graded(r.status), view.Plain(r.path))
+		t.Add(view.Plain(r.name), view.Plain(r.status), view.Plain(r.path))
 	}
 	t.Total = len(t.Rows)
 	return t, nil

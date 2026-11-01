@@ -184,8 +184,10 @@ type Table struct {
 	// them as "values", a number as a number and null for a cell with none
 	// (typedValues), while csv writes a cell's value in its place, since csv is
 	// read by programs alone — except a status's, whose text says more than the
-	// word it grades by. A producer that never fills them is drawn and encoded
-	// exactly as before.
+	// word it grades by. A producer that never fills them is drawn exactly as
+	// before, and encoded with the values its text already is: a status as the
+	// word it leads with and a count written as a number (textValue), so a
+	// plugin that fills nothing still hands a program those two.
 	//
 	// Filled through Add, never by hand: Add keeps them in step with Rows, and
 	// a value out of step is a value on the wrong row. Never encoded under its

@@ -77,7 +77,7 @@ func pluginsView(reg *registry.Registry) view.View {
 		add(plugindist.SourceOf(origin.Path),
 			view.Plain(p.Name),
 			view.Count(len(p.Capabilities)),
-			view.Graded(reach(p)),
+			view.Plain(reach(p)),
 			view.Plain(p.Summary),
 		)
 	}
@@ -86,7 +86,7 @@ func pluginsView(reg *registry.Registry) view.View {
 	// scrolls away. Above the untrusted rows because this is the plugin the
 	// operator expects to be working.
 	for _, f := range failedPluginsFound {
-		add(plugindist.SourceOf(f.Path), view.Plain(f.Name), view.Plain("—"), view.Graded(failedToStartStatus),
+		add(plugindist.SourceOf(f.Path), view.Plain(f.Name), view.Plain("—"), view.Plain(failedToStartStatus),
 			view.Plain(failedPluginDetail(f)))
 	}
 	// Installed and not run, in the same table rather than a section of its
@@ -109,7 +109,7 @@ func pluginsView(reg *registry.Registry) view.View {
 			detail = "found on $PATH (" + u.Short() + ") and not run — the name above is " +
 				"already taken, so trusting it would collide; remove or rename the file"
 		}
-		add(plugindist.SourceOf(u.Path), view.Plain(u.Name), view.Plain("—"), view.Graded("untrusted"), view.Plain(detail))
+		add(plugindist.SourceOf(u.Path), view.Plain(u.Name), view.Plain("—"), view.Plain("untrusted"), view.Plain(detail))
 	}
 	// Where the bytes came from, in the TUI inventory's own words, and only
 	// when it tells the rows apart. A stock install is built in all the way down,

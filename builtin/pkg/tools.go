@@ -262,7 +262,7 @@ func toolsTable(states []toolState) view.Table {
 			latest = s.Tag
 		}
 		t.Add(view.Plain(s.tool.Bin), view.Plain("github:"+s.tool.Owner+"/"+s.tool.Repo), view.Plain(s.Installed), view.Plain(latest),
-			view.Graded(status), view.Plain(s.Where))
+			view.Plain(status), view.Plain(s.Where))
 	}
 	t.Total = len(t.Rows)
 	return t
