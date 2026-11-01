@@ -1,0 +1,347 @@
+package tui
+
+import (
+	"cmp"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/this-is-tobi/rta/internal/render/theme"
+	"github.com/this-is-tobi/rta/internal/textclean"
+	"github.com/this-is-tobi/rta/pkg/view"
+)
+
+// Sorting a result: `S` on a result whose table has rows to put in order opens
+// a picker of the orders it can be read in — each column one way and the
+// other, and as the capability returned it — the way a web table sorts on its
+// header and a list on GitHub sorts from one menu. A menu rather than a key
+// per column or a column cursor, because a result's keys are most of a
+// keyboard already (every letter a plugin's row actions bind), and a menu
+// names the orders in words: "Size — largest first" is what a header arrow
+// stands for, said.
+//
+// **By what a cell is, not by how it is written.** A size sorts by its bytes
+// and a time by its moment, read through view.Table.Value — the value a
+// program gets in -o json — so 9.0 KiB comes after 10.0 GiB. A status sorts
+// by how bad it is, as the theme grades it, a name the way a person reads one
+// (pod-2 before pod-10). A cell with nothing to sort by — a dash, a blank, a
+// measurement nobody took — goes last whichever way the column is sorted,
+// and rows that tie keep the order they came in.
+//
+// **The order stays with the result.** A re-run and a live refresh of the same
+// capability come back in it, as a web table keeps its sort when it reloads,
+// and a result held behind a drill-down is restored in the order it was left
+// in. A masked column is not offered: sorting by it would say how the values
+// nobody may see compare.
+
+// tableOrder is how a result's table is sorted: by the column named, either
+// way. The zero order is the capability's own.
+type tableOrder struct {
+	column string
+	desc   bool
+}
+
+// pickValue spells o as a sort picker's value: a direction letter and the
+// column's name, or "" for the capability's own order.
+func (o tableOrder) pickValue() string {
+	if o.column == "" {
+		return ""
+	}
+	if o.desc {
+		return "d" + o.column
+	}
+	return "a" + o.column
+}
+
+// orderOfPick is pickValue read back.
+func orderOfPick(value string) tableOrder {
+	if len(value) < 2 {
+		return tableOrder{}
+	}
+	return tableOrder{column: value[1:], desc: value[0] == 'd'}
+}
+
+// orderWords are the two ways a column of kind reads in order, the one a
+// person scanning it wants first: the largest, the longest, the newest and
+// the worst at the top, and names from A.
+func orderWords(kind view.ColumnKind) (first, second string, firstDesc bool) {
+	switch kind {
+	case view.KindBytes:
+		return "largest first", "smallest first", true
+	case view.KindNumber, view.KindPercent, view.KindUsage:
+		return "highest first", "lowest first", true
+	case view.KindDuration:
+		return "longest first", "shortest first", true
+	case view.KindTimestamp:
+		return "newest first", "oldest first", true
+	case view.KindStatus:
+		return "worst first", "best first", false
+	}
+	return "A to Z", "Z to A", false
+}
+
+// orderSaid is o as the result's line says it.
+func orderSaid(t view.Table, o tableOrder) string {
+	col := orderColumn(t, o.column)
+	if col < 0 {
+		return ""
+	}
+	first, second, firstDesc := orderWords(t.Columns[col].Kind)
+	words := first
+	if o.desc != firstDesc {
+		words = second
+	}
+	said := "sorted by " + o.column + ", " + words
+	// A page of a longer list is sorted as far as it goes: the rows past it
+	// are not here to be put in order, and the line says so rather than
+	// letting "largest first" read as the largest of all of them.
+	if t.Total > len(t.Rows) {
+		said += ", on this page"
+	}
+	return said
+}
+
+// orderColumn is the index of the column named in t that may be sorted by, or
+// -1: a masked column may not.
+func orderColumn(t view.Table, name string) int {
+	if name == "" || slices.Contains(t.Redacted, name) {
+		return -1
+	}
+	return slices.IndexFunc(t.Columns, func(c view.Column) bool { return c.Name == name })
+}
+
+// orderOptions are the orders t can be read in: the capability's own first,
+// then each column it may be sorted by, the way a person wants it first and
+// then the other way.
+func orderOptions(t view.Table) []pickOption {
+	options := []pickOption{{label: "as returned"}}
+	for _, c := range t.Columns {
+		if orderColumn(t, c.Name) < 0 {
+			continue
+		}
+		first, second, firstDesc := orderWords(c.Kind)
+		label := textclean.Terminal(c.Name)
+		options = append(options,
+			pickOption{label: label + " — " + first, value: tableOrder{c.Name, firstDesc}.pickValue()},
+			pickOption{label: label + " — " + second, value: tableOrder{c.Name, !firstDesc}.pickValue()})
+	}
+	return options
+}
+
+// sortable reports whether the result on screen has a table with rows to put
+// in order and a column to put them in order by.
+func (m Model) sortable() bool {
+	tbl, _, ok := rowTable(m.result.raw)
+	return ok && m.result.returned != nil && len(tbl.Rows) > 1 && len(orderOptions(tbl)) > 1
+}
+
+// startSortPick opens the sort picker on the order the result is in.
+func (m Model) startSortPick() (tea.Model, tea.Cmd) {
+	tbl, _, _ := rowTable(m.result.raw)
+	return m.openPick(newPickForm(pickSort, "sort by", m.result.order.pickValue(), orderOptions(tbl), m.current, modeResult))
+}
+
+// sortResult puts the result's table in order o, the cursor staying on the row
+// it was on rather than on whatever row moved under it: the row an action acts
+// on is the one the cursor shows.
+func (m Model) sortResult(o tableOrder) Model {
+	at := m.row
+	if at < len(m.result.perm) {
+		at = m.result.perm[at]
+	}
+	m.result = m.result.inOrder(o)
+	m.row = at
+	if m.result.perm != nil {
+		m.row = max(slices.Index(m.result.perm, at), 0)
+	}
+	m.renderResult()
+	return m
+}
+
+// inOrder is r with its table in order o: the rows, and their values with
+// them, rearranged from the order the capability returned them in, and the
+// screen's copy cleaned again from that. An order the table cannot take — a
+// column a re-run no longer returns — leaves it as returned.
+func (r resultMsg) inOrder(o tableOrder) resultMsg {
+	if r.returned == nil || o == r.order {
+		return r
+	}
+	r.raw, r.order, r.perm = r.returned, tableOrder{}, nil
+	if v, perm, ok := ordered(r.returned, o); ok {
+		r.raw, r.order, r.perm = v, o, perm
+	}
+	r.view = view.MapStrings(r.raw, textclean.Terminal)
+	return r
+}
+
+// ordered is v with its row table (rowTable) sorted by o, and where each row
+// now shown came from.
+func ordered(v view.View, o tableOrder) (view.View, []int, bool) {
+	tbl, at, ok := rowTable(v)
+	if !ok {
+		return v, nil, false
+	}
+	col := orderColumn(tbl, o.column)
+	if col < 0 {
+		return v, nil, false
+	}
+	sorted, perm := sortTable(tbl, col, o.desc)
+	if at < 0 {
+		return sorted, perm, true
+	}
+	page := v.(view.Sections)
+	page.Items = slices.Clone(page.Items)
+	page.Items[at].View = sorted
+	return page, perm, true
+}
+
+// sortTable is t with its rows in order by column col, its values moved with
+// them, and perm[i] the row that is now row i. Stable, so rows that tie keep
+// the order they came in.
+func sortTable(t view.Table, col int, desc bool) (view.Table, []int) {
+	keys := make([]sortKey, len(t.Rows))
+	for i := range t.Rows {
+		keys[i] = keyOf(t, i, col)
+	}
+	perm := make([]int, len(t.Rows))
+	for i := range perm {
+		perm[i] = i
+	}
+	slices.SortStableFunc(perm, func(a, b int) int { return keys[a].compare(keys[b], desc) })
+	out := t
+	out.Rows = make([][]string, len(perm))
+	if t.Values != nil {
+		out.Values = make([][]string, len(perm))
+	}
+	for i, p := range perm {
+		out.Rows[i] = t.Rows[p]
+		if p < len(t.Values) {
+			out.Values[i] = t.Values[p]
+		}
+	}
+	return out, perm
+}
+
+// sortKey is what one cell is sorted by.
+type sortKey struct {
+	missing bool
+	number  float64
+	at      time.Time
+	rank    int
+	text    string
+	by      sortBy
+}
+
+type sortBy int
+
+const (
+	byText sortBy = iota
+	byNumber
+	byTime
+	byGrade
+)
+
+// keyOf is the key of row i's cell in column col.
+func keyOf(t view.Table, i, col int) sortKey {
+	var text string
+	if cells := t.Rows[i]; col < len(cells) {
+		text = strings.TrimSpace(cells[col])
+	}
+	k := sortKey{text: text, missing: text == "" || text == "-" || text == "—"}
+	switch t.Columns[col].Kind {
+	case view.KindNumber, view.KindBytes, view.KindPercent, view.KindUsage, view.KindDuration:
+		n, err := strconv.ParseFloat(t.Value(i, col), 64)
+		k.by, k.number, k.missing = byNumber, n, err != nil
+	case view.KindTimestamp:
+		at, err := time.Parse(time.RFC3339Nano, t.Value(i, col))
+		k.by, k.at, k.missing = byTime, at, err != nil
+	case view.KindStatus:
+		k.by, k.rank = byGrade, gradeRank(theme.ClassifyStatus(text))
+	}
+	return k
+}
+
+// gradeRank orders the grades worst first: what is failing, then what wants a
+// look, then what the theme cannot read, then what is fine, then what is
+// over and done with.
+func gradeRank(kind theme.StatusKind) int {
+	switch kind {
+	case theme.StatusBad:
+		return 0
+	case theme.StatusWarn:
+		return 1
+	case theme.StatusGood:
+		return 3
+	case theme.StatusMuted:
+		return 4
+	}
+	return 2
+}
+
+// compare orders k against o, a cell with nothing to sort by after every cell
+// with something whichever way the column is sorted.
+func (k sortKey) compare(o sortKey, desc bool) int {
+	switch {
+	case k.missing && o.missing:
+		return 0
+	case k.missing:
+		return 1
+	case o.missing:
+		return -1
+	}
+	var c int
+	switch k.by {
+	case byNumber:
+		c = cmp.Compare(k.number, o.number)
+	case byTime:
+		c = k.at.Compare(o.at)
+	case byGrade:
+		c = cmp.Or(cmp.Compare(k.rank, o.rank), naturalCompare(k.text, o.text))
+	default:
+		c = naturalCompare(k.text, o.text)
+	}
+	if desc {
+		return -c
+	}
+	return c
+}
+
+// naturalCompare orders text the way a person reads it: a run of digits as the
+// number it spells, so pod-2 comes before pod-10, and letters without regard
+// to case.
+func naturalCompare(a, b string) int {
+	for a != "" && b != "" {
+		if isDigit(a[0]) && isDigit(b[0]) {
+			da, db := digitsOf(a), digitsOf(b)
+			na, nb := strings.TrimLeft(da, "0"), strings.TrimLeft(db, "0")
+			if c := cmp.Or(cmp.Compare(len(na), len(nb)), strings.Compare(na, nb)); c != 0 {
+				return c
+			}
+			a, b = a[len(da):], b[len(db):]
+			continue
+		}
+		ra, sa := utf8.DecodeRuneInString(a)
+		rb, sb := utf8.DecodeRuneInString(b)
+		if c := cmp.Compare(unicode.ToLower(ra), unicode.ToLower(rb)); c != 0 {
+			return c
+		}
+		a, b = a[sa:], b[sb:]
+	}
+	return cmp.Compare(len(a), len(b))
+}
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+// digitsOf is the run of digits s begins with.
+func digitsOf(s string) string {
+	i := 0
+	for i < len(s) && isDigit(s[i]) {
+		i++
+	}
+	return s[:i]
+}

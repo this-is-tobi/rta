@@ -188,21 +188,11 @@ func typedValues(t Table) [][]any {
 	}
 	out := make([][]any, len(t.Rows))
 	found := false
-	for i, cells := range t.Rows {
+	for i := range t.Rows {
 		row := make([]any, len(t.Columns))
-		var values []string
-		if i < len(t.Values) {
-			values = t.Values[i]
-		}
 		for j, c := range t.Columns {
-			var value string
-			if j < len(values) {
-				value = values[j]
-			}
-			if value == "" && j < len(cells) {
-				value = textValue(c.Kind, cells[j])
-			}
-			if !ValueOK(c.Kind, value) {
+			value := t.Value(i, j)
+			if value == "" {
 				continue
 			}
 			switch c.Kind {
@@ -219,6 +209,33 @@ func typedValues(t Table) [][]any {
 		return nil
 	}
 	return out
+}
+
+// Value is the value of the cell at row and col as a program reads it, the one
+// json, yaml and MCP write for it: its producer's, where that is one its
+// column's kind takes, and otherwise the one its text already is (textValue).
+// "" for a cell with none, a malformed value of its producer's among them,
+// which is none rather than replaced by its text's.
+//
+// For a reader beside the encoder that orders or compares cells — the TUI's
+// sort — so a size sorts by the bytes a program would read, not by its text.
+func (t Table) Value(row, col int) string {
+	if row < 0 || row >= len(t.Rows) || col < 0 || col >= len(t.Columns) {
+		return ""
+	}
+	kind := t.Columns[col].Kind
+	if row < len(t.Values) && col < len(t.Values[row]) && t.Values[row][col] != "" {
+		if v := t.Values[row][col]; ValueOK(kind, v) {
+			return v
+		}
+		return ""
+	}
+	if cells := t.Rows[row]; col < len(cells) {
+		if v := textValue(kind, cells[col]); ValueOK(kind, v) {
+			return v
+		}
+	}
+	return ""
 }
 
 // textValue is the value a cell's text already is, for a cell whose producer

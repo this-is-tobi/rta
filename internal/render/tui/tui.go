@@ -980,6 +980,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.said = ""
 		m.mode = modeResult
 		m.current = msg.cap
+		// The order the reader put the table in stays with it across a re-run
+		// and a live refresh, as a web table keeps its sort when it reloads.
+		if m.result.cap.ID == msg.cap.ID {
+			msg = msg.inOrder(m.result.order)
+		}
 		m.result = msg
 		m.enterTrail(msg.cap, m.lastValues)
 		// A run with no form behind it — `r`, a refresh, a live tick — is
