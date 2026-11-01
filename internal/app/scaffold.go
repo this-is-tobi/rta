@@ -492,7 +492,9 @@ func TestPlugin(t *testing.T) {
 // Two rules make the difference between a real check and a green nothing:
 // point anything that connects at sdktest.Nowhere(dir), an address the suite
 // watches, so a dry run that stops being dry and connects fails the suite
-// instead of reaching a real service; and point every path input inside dir,
+// instead of reaching a real service (one that reads the service to say what
+// the call would reach says so with sdktest.Skip(sdktest.RuleDryRunOffline,
+// id, why)); and point every path input inside dir,
 // which is the directory the suite watches — a write that should not have
 // happened is then a test failure rather than a file in a temp directory
 // nobody looks at.

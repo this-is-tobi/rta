@@ -34,8 +34,10 @@
 // that writes to disk and nothing else. The `http post --dry-run` bug that
 // motivates the rule sent an HTTP request; on-box, nothing had changed. A
 // capability's connection inputs pointed at Nowhere(dir) in WithInputs is how
-// the suite sees that too: a dry run that connects there fails. One that
-// reaches some other address is still the author's problem to get right.
+// the suite sees that too: a dry run that connects there fails
+// RuleDryRunOffline, which one that reads the service to say what the call
+// would reach waives with Skip and why. One that reaches some other address
+// is still the author's problem to get right.
 //
 // # Testing one handler
 //
@@ -93,6 +95,18 @@ const (
 	// RuleDryRun: a Write or Destructive capability run with --dry-run leaves
 	// the data directory byte-identical.
 	RuleDryRun Rule = "dry-run"
+	// RuleDryRunOffline: a Write or Destructive capability run with --dry-run
+	// opens no connection to the address Nowhere gives, where WithInputs aimed
+	// one of its inputs there.
+	//
+	// A rule of its own so that waiving it leaves the data directory checked.
+	// A dry run that reads the service to say what the call would reach —
+	// which container a stop finds, how many objects a download copies — is
+	// a preview worth its connection, and so is the read of a capability
+	// classified Write for what it discloses, whose call changes nothing and
+	// has nothing short of itself to show. Each says so with Skip and why.
+	// What this rule is for is the dry run that sent the call it described.
+	RuleDryRunOffline Rule = "dry-run-offline"
 	// RuleVerbs: the last ID segment is a word the catalogue already uses.
 	// Warning only: see checkVerbs for why an error would be wrong here.
 	RuleVerbs Rule = "verbs"
@@ -454,16 +468,20 @@ func drive(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[strin
 			t.Errorf("sdktest: %s: %s: snapshotting %s: %v", RuleDryRun, c.ID, dir, serr)
 			continue
 		}
-		if watch != nil {
+		// A waived capability's connections are left for the next one's
+		// count to take as a read's, which is what they were.
+		if watch != nil && !cfg.skipped(RuleDryRunOffline, c.ID) {
 			// The data directory is what a dry run must leave alone on this
 			// machine, and the service is what it must leave alone elsewhere.
 			switch dialled, err := watch.reached(); {
 			case err != nil:
-				t.Errorf("sdktest: %s: %s: %v", RuleDryRun, c.ID, err)
+				t.Errorf("sdktest: %s: %s: %v", RuleDryRunOffline, c.ID, err)
 			case dialled > 0:
 				t.Errorf("sdktest: %s: %s connected to the address sdktest.Nowhere gives under --dry-run "+
-					"(%d %s): a dry run reports what the call would do and sends nothing",
-					RuleDryRun, c.ID, dialled, format.Plural(dialled, "connection", "connections"))
+					"(%d %s): a dry run reports what the call would do and sends nothing. One that reads "+
+					"the service to say what the call would reach says so with "+
+					"sdktest.Skip(sdktest.RuleDryRunOffline, %q, why)",
+					RuleDryRunOffline, c.ID, dialled, format.Plural(dialled, "connection", "connections"), c.ID)
 			}
 		}
 		if diff := before.diff(after); len(diff) > 0 {
