@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.56.0](https://github.com/this-is-tobi/rta/compare/v0.55.0...v0.56.0) (2026-11-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** a csv header of a size, a duration or a percentage column carries its unit: "Size (bytes)" where it was "Size".
+
+### Features
+
+* **cli:** a csv header says the unit its column's values are in ([32ef448](https://github.com/this-is-tobi/rta/commit/32ef44841bfa03794b845c5effdb694b697faec2))
+* **format:** a label clips to its characters, and a Kubernetes quantity reads as its number ([31d2853](https://github.com/this-is-tobi/rta/commit/31d2853e53df68c7ce9cac0247c9ee35146dacae))
+* **plugin:** a path made absolute, an endpoint's host, and a DNS hint for the host alone ([6263dc8](https://github.com/this-is-tobi/rta/commit/6263dc83929d0c84fc5861133629dafed263b100))
+* **tui:** the sorted column is marked on its heading, and a page sorts any of its tables ([f88669f](https://github.com/this-is-tobi/rta/commit/f88669f7d51986d714c5e29ca168ea0ab96cdf42))
+* **view:** plain rows, sizes in their producer's spelling, and one could-not-read line ([29d14a4](https://github.com/this-is-tobi/rta/commit/29d14a4ffbe3069f29c92a24d38487360fb4fe91))
+
+
+### Bug Fixes
+
+* **cli:** csv writes the value a cell's text holds, as json does ([2d35d1c](https://github.com/this-is-tobi/rta/commit/2d35d1c035fc57d2a13da6b857cdc8aff2b2dd11))
+* **git:** log and blame write a commit's time in the reader's zone ([9f2dfcf](https://github.com/this-is-tobi/rta/commit/9f2dfcfef7b8934c5da7c878f58dc87f19f230a4))
+* **tui:** a sort keeps ties in order, puts what is done last, and offers what it can sort by ([56af5e5](https://github.com/this-is-tobi/rta/commit/56af5e55dcfd920906f514f8dcab1278600f723d))
+* **tui:** a sorted result keeps the cursor on its row, through a refresh and back from a drill-down ([6ec291b](https://github.com/this-is-tobi/rta/commit/6ec291b88e7ddbcdb1df01da2c8eb3f4cbb97a56))
+* **view:** a number keeps all its digits in a page's json, in yaml and in csv ([b911fca](https://github.com/this-is-tobi/rta/commit/b911fcab6b1ce6576d3e95fe038b99baec4bf614))
+* **view:** values stay on their rows, an empty list writes them, and Init: is valued by its state ([8c3ae6d](https://github.com/this-is-tobi/rta/commit/8c3ae6d8e4c0a0a5a7d8363ffd08b068252b7f13))
+
 ## [0.55.0](https://github.com/this-is-tobi/rta/compare/v0.54.0...v0.55.0) (2026-11-01)
 
 
