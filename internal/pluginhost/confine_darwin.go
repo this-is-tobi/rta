@@ -127,6 +127,10 @@ func Strict() (on bool, abi int, err error) {
 // strictReady has nothing to fill in on macOS (Strict).
 func strictReady(*DenySet) error { return nil }
 
+// strictAllows has no policy to judge by on macOS, where no launch is strict
+// (Strict).
+func (DenySet) strictAllows(string, string) bool { return true }
+
 // confineLaunch is a strict launch's own temporary directory, which macOS,
 // confining with a deny list, has no rule to add for.
 func confineLaunch(*exec.Cmd, DenySet, string) {}

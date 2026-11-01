@@ -991,7 +991,8 @@ func (c *Client) attach(dst *plugin.Capability, raw *rtav1.Capability) {
 		if verr := c.deny.namedFile(id, declared, req); verr != nil {
 			return nil, verr
 		}
-		return c.call(ctx, id, req)
+		v, err := c.call(ctx, id, req)
+		return v, c.deny.deniedOpen(id, c.Identity.execPath(), req, err)
 	}
 	if raw.GetHasPrefill() {
 		dst.Prefill = func(ctx context.Context, req plugin.Request) (map[string]any, error) {
