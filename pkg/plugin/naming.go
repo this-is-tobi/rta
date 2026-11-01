@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net"
+	"net/url"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -567,8 +569,39 @@ func (s Surface) SettingsHint(id string) string {
 // capabilities, net.dns, which rta's tests hold to its registry: written out
 // in every connection plugin, a rename of the built-in would have left each of
 // them naming a call nothing answers.
+//
+// host may be the whole endpoint the connection was given: the call names
+// its host (HostOf), since net.dns resolves a name, and a URL handed to it
+// whole would ask DNS about a scheme, a port and a path.
 func (s Surface) DNSHint(host string) string {
-	return "`" + s.Call("net.dns", Arg{Name: "name", Value: host, Positional: true}) + "` shows what DNS returns"
+	return "`" + s.Call("net.dns", Arg{Name: "name", Value: HostOf(host), Positional: true}) + "` shows what DNS returns"
+}
+
+// HostOf is the host an endpoint names, in any form a connection setting
+// takes one: a URL (https://vault.example.com:8200/v1), host and port, an
+// IPv6 address in brackets with its port, or a bare host. For the sentence
+// that says which name did not resolve and the call that looks it up
+// (DNSHint), and for the name a server's certificate is checked against.
+//
+// A URL is taken apart by net/url, so the user and password a redis:// or
+// postgres:// URL may carry are never part of the host: cut at "://" and "@"
+// by hand, they were one mistake from a hint that repeats a password. A URL
+// that names no host (unix:///var/run/docker.sock) and an endpoint none of
+// the forms reads are returned as they are: split at its last colon, the
+// socket's URL read as a host called "unix". Four plugins carried their own
+// copy, one of them alone reading a URL.
+func HostOf(endpoint string) string {
+	e := strings.TrimSpace(endpoint)
+	if strings.Contains(e, "://") {
+		if u, err := url.Parse(e); err == nil && u.Hostname() != "" {
+			return u.Hostname()
+		}
+		return e
+	}
+	if host, _, err := net.SplitHostPort(e); err == nil {
+		return host
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(e, "["), "]")
 }
 
 // listed joins words as a sentence lists them: a, a and b, a, b and c.

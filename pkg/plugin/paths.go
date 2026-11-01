@@ -38,6 +38,14 @@ func ExpandHome(p string) string {
 	return filepath.Join(home, rest[1:])
 }
 
+// AbsPath is a path a person named as the absolute path it is: ~ expanded,
+// then resolved against the working directory. For a file a call writes or
+// reads and then names back (a dump's receipt, the CA a connection used),
+// where a relative path names a different file to whoever reads it from
+// another directory. Five plugins wrapped ExpandHome in filepath.Abs on their
+// own.
+func AbsPath(p string) (string, error) { return filepath.Abs(ExpandHome(p)) }
+
 // PathInput is the input a refusal to read the file a path input names is
 // about (view.Error.Input): input itself when err says the path is what is
 // wrong — nothing is there, a directory is where a file was wanted, or a file
