@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.57.0](https://github.com/this-is-tobi/rta/compare/v0.56.0...v0.57.0) (2026-11-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **view:** a timestamp value is no longer always RFC 3339: a program reading values must also take 2026-10-31T14:02:05 and 2026-10-31, which say the source gave no zone. eol's dates are valued as 2026-10-31 where they were 2026-10-31T00:00:00Z.
+
+### Features
+
+* **view:** a time with no zone is valued as one, and a date as a day ([b5d77e4](https://github.com/this-is-tobi/rta/commit/b5d77e482eac75ecf7bd9c93515864d7a1edff64))
+
 ## [0.56.0](https://github.com/this-is-tobi/rta/compare/v0.55.0...v0.56.0) (2026-11-01)
 
 
