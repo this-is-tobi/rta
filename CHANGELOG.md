@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.55.0](https://github.com/this-is-tobi/rta/compare/v0.54.0...v0.55.0) (2026-11-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **mcp:** a table in an MCP answer has no "values". A program that read them there runs the same command with -o json.
+* **tui:** a result's table sorts by any of its columns
+* **view:** a status, count or time with no value is valued from its text
+
+### Features
+
+* **plugin:** a strict plugin reads a path you name for it ([72c172b](https://github.com/this-is-tobi/rta/commit/72c172bf764dde3958ab7fb2d753f0535304674f))
+* **tui:** a result's table sorts by any of its columns ([c2ab513](https://github.com/this-is-tobi/rta/commit/c2ab51374877a83dc0d895831cb02057a6b75915))
+* **view:** a status, count or time with no value is valued from its text ([e46bc37](https://github.com/this-is-tobi/rta/commit/e46bc3734602729d9c563d39d7275f3395e5e9a7))
+
+
+### Performance Improvements
+
+* **mcp:** an answer sends a table's rows without their values ([3f89f07](https://github.com/this-is-tobi/rta/commit/3f89f076da55fa446108e18ce70c4031d3c26a51))
+
+
+### Code Refactoring
+
+* **tui:** the copy and the tile pickers are one picker ([adce72c](https://github.com/this-is-tobi/rta/commit/adce72c3132b4576550f9fce27545cc0be59f944))
+
 ## [0.54.0](https://github.com/this-is-tobi/rta/compare/v0.53.0...v0.54.0) (2026-11-01)
 
 
