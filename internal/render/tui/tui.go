@@ -99,6 +99,11 @@ func (i capItem) FilterValue() string { return filterTarget(i.c) }
 type runRef struct {
 	cap    plugin.Capability
 	values map[string]any
+	// What the reader left the result in when another took the screen: its
+	// order and the row the cursor was on, by its first cell (cursorKey), so
+	// that coming back from a drill-down shows it as it was left.
+	order  tableOrder
+	cursor string
 }
 
 // PluginConfig is the operator's per-plugin configuration as the shell reads
@@ -980,11 +985,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.said = ""
 		m.mode = modeResult
 		m.current = msg.cap
-		// The order the reader put the table in stays with it across a re-run
-		// and a live refresh, as a web table keeps its sort when it reloads.
-		if m.result.cap.ID == msg.cap.ID {
-			msg = msg.inOrder(m.result.order)
-		}
+		// The order the reader put the table in stays with it, as a web table
+		// keeps its sort when it reloads, and so does the row the cursor was
+		// on (heldState).
+		order, key, back := m.heldState(msg.cap.ID)
+		msg = msg.inOrder(order)
 		m.result = msg
 		m.enterTrail(msg.cap, m.lastValues)
 		// A run with no form behind it — `r`, a refresh, a live tick — is
@@ -994,12 +999,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		tail := false
 		if tbl, _, ok := rowTable(msg.view); ok {
-			m.row = min(m.row, max(len(tbl.Rows)-1, 0))
+			m.row = rowNamed(tbl, key, m.row)
 			// A log opens where things are now — its last row — and is
 			// walked back from there. On a refresh too: the newest row is
 			// the one that changed, so the cursor goes to it rather than
-			// staying on whatever row it was.
-			if tbl.Tail {
+			// staying on whatever row it was. In the log's own order, and not
+			// back from a drill-down: sorted newest first, its last row is
+			// the oldest, and the row somebody opened is the one they return
+			// to.
+			if tbl.Tail && order == (tableOrder{}) && !back {
 				m.row, tail = max(len(tbl.Rows)-1, 0), true
 			}
 		}

@@ -2,9 +2,11 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -174,5 +176,124 @@ func TestTheCursorStaysOnItsRowWhenTheTableIsSorted(t *testing.T) {
 		if got := tbl.Rows[m.row][0]; got != "small" {
 			t.Errorf("in order %+v the cursor is on %q, want the row it was on", o, got)
 		}
+	}
+}
+
+// cursorRow is the first cell of the row the cursor is on.
+func cursorRow(m Model) string {
+	tbl, _, _ := rowTable(m.result.view)
+	return tbl.Rows[m.row][0]
+}
+
+// A refresh that sorts a new row above the cursor leaves the cursor on the row
+// it was on, which the next key acts on: kept by index, each call newly parked
+// on a sorted queue moved it to another call.
+func TestARefreshKeepsTheCursorOnItsRowWhereTheSortMovedIt(t *testing.T) {
+	m := New(registry.New(), config.Dashboard{}, nil)
+	m.current = sortCap()
+	m.result = resultMsg{cap: sortCap(), view: storeListing()}.cleaned()
+	m = m.sortResult(tableOrder{column: "Size", desc: true})
+	m.row = 1
+	if got := cursorRow(m); got != "mid" {
+		t.Fatalf("the cursor starts on %q, want mid", got)
+	}
+	grown := storeListing()
+	grown.Add(view.Plain("giant"), view.Bytes(int64(20<<30)))
+	next, _ := m.Update(resultMsg{cap: sortCap(), view: grown})
+	if got := cursorRow(next.(Model)); got != "mid" {
+		t.Errorf("after a refresh that sorted giant above it the cursor is on %q, want mid", got)
+	}
+	gone := view.Table{Columns: storeListing().Columns}
+	gone.Add(view.Plain("huge"), view.Bytes(int64(10<<30)))
+	gone.Add(view.Plain("small"), view.Bytes(int64(512)))
+	shrunk, _ := next.(Model).Update(resultMsg{cap: sortCap(), view: gone})
+	if got := cursorRow(shrunk.(Model)); got != "small" {
+		t.Errorf("with its row gone the cursor is on %q, want the row that took its place", got)
+	}
+}
+
+// storeWithShow is a listing whose rows open a page of their own, so the
+// listing is held on the trail while the page is on screen.
+func storeWithShow(t *testing.T) (*registry.Registry, plugin.Capability, plugin.Capability) {
+	t.Helper()
+	reg := registry.New()
+	err := reg.Register(plugin.Plugin{Name: "store", Summary: "a store", Capabilities: []plugin.Capability{
+		{ID: "store.list", Summary: "list what is stored", Safety: plugin.Read, Idempotent: true,
+			Actions: []plugin.Action{{Key: "o", Label: "open", Target: "store.show", Source: plugin.ActionRow}},
+			Run:     func(context.Context, plugin.Request) (view.View, error) { return storeListing(), nil }},
+		{ID: "store.show", Summary: "show one", Safety: plugin.Read, Idempotent: true,
+			Inputs: []plugin.Field{{Name: "name", Type: plugin.String, Positional: true, Required: true, Help: "n"}},
+			Run: func(context.Context, plugin.Request) (view.View, error) {
+				return view.KeyValue{Pairs: []view.Pair{{Key: "size", Value: "9.0 KiB"}}}, nil
+			}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, _ := reg.Capability("store.list")
+	show, _ := reg.Capability("store.show")
+	return reg, list, show
+}
+
+// Back from a row's page, the listing is in the order it was left in and the
+// cursor on the row that was opened. It came back as returned with the cursor
+// at the same index, on another row, and a done or a deny then acted on that.
+func TestBackFromARowsPageTheListIsAsItWasLeft(t *testing.T) {
+	reg, list, show := storeWithShow(t)
+	m := New(reg, config.Dashboard{}, nil)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	shown, _ := sized.(Model).Update(resultMsg{cap: list, view: storeListing()})
+	sorted := shown.(Model).sortResult(tableOrder{column: "Size", desc: true})
+	sorted.row = 1
+	if got := cursorRow(sorted); got != "mid" {
+		t.Fatalf("the cursor starts on %q, want mid", got)
+	}
+	opened, _ := sorted.Update(resultMsg{cap: show, view: view.KeyValue{Pairs: []view.Pair{{Key: "size", Value: "9.0 KiB"}}}})
+	back, _ := opened.(Model).Update(resultMsg{cap: list, view: storeListing()})
+	bm := back.(Model)
+	if bm.result.order != (tableOrder{column: "Size", desc: true}) {
+		t.Errorf("back from the page the list is in order %+v, want Size largest first", bm.result.order)
+	}
+	if got := cursorRow(bm); got != "mid" {
+		t.Errorf("back from the page the cursor is on %q, want mid", got)
+	}
+}
+
+// logListing is a log as one reads: oldest first, the newest last.
+func logListing() view.Table {
+	t := view.Table{Columns: []view.Column{{Name: "Call"}, {Name: "At", Kind: view.KindTimestamp}}, Tail: true}
+	at := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+	for i := range 10 {
+		when := at.Add(time.Duration(i) * time.Minute)
+		t.Add(view.Plain(fmt.Sprintf("call-%02d", i)), view.Time(when.Format("15:04"), when))
+	}
+	return t
+}
+
+// A log opens on its newest row and goes back to it on a refresh, in its own
+// order. Sorted newest first, its last row is the oldest, and a refresh left
+// the cursor there and the pane at the bottom.
+func TestARefreshOfASortedLogKeepsItsRow(t *testing.T) {
+	logCap := sortCap()
+	logCap.ID = "store.log"
+	m := New(registry.New(), config.Dashboard{}, nil)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	opened, _ := sized.(Model).Update(resultMsg{cap: logCap, view: logListing()})
+	if got := cursorRow(opened.(Model)); got != "call-09" {
+		t.Fatalf("a log opened on %q, want its newest row", got)
+	}
+	newest := opened.(Model).sortResult(tableOrder{column: "At", desc: true})
+	if got := cursorRow(newest); got != "call-09" {
+		t.Fatalf("sorted newest first the cursor is on %q, want call-09", got)
+	}
+	refreshed, _ := newest.Update(resultMsg{cap: logCap, view: logListing()})
+	if rm := refreshed.(Model); cursorRow(rm) != "call-09" || rm.row != 0 {
+		t.Errorf("a refresh of the sorted log put the cursor on %q (row %d), want call-09 on top", cursorRow(rm), rm.row)
+	}
+	own := refreshed.(Model).sortResult(tableOrder{})
+	own.row = 3
+	again, _ := own.Update(resultMsg{cap: logCap, view: logListing()})
+	if got := cursorRow(again.(Model)); got != "call-09" {
+		t.Errorf("in its own order a refresh put the cursor on %q, want the newest row", got)
 	}
 }
