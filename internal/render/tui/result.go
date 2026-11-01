@@ -125,6 +125,9 @@ func (m Model) resultOptions() cli.Options {
 	if m.interactive() {
 		opts.Highlight = m.row + 1
 	}
+	if o := m.result.order; o.column != "" {
+		opts.Sorted = cli.SortMark{Section: o.section, Column: o.column, Desc: o.desc}
+	}
 	return opts
 }
 
@@ -236,8 +239,8 @@ func (m Model) resultMeta() string {
 			warn = theme.WarnText.Render(head)
 		}
 	}
-	if tbl, _, ok := rowTable(m.result.raw); ok && m.result.order.column != "" {
-		parts = append(parts, theme.Subtle.Render(orderSaid(tbl, m.result.order)))
+	if said := orderSaid(m.result.raw, m.result.order); said != "" {
+		parts = append(parts, theme.Subtle.Render(said))
 	}
 	return " " + fitMeta(parts, warn, m.viewport.Width())
 }

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"cmp"
+	"encoding/json"
 	"slices"
 	"strconv"
 	"strings"
@@ -43,30 +44,78 @@ import (
 // may see compare.
 
 // tableOrder is how a result's table is sorted: by the column named, either
-// way. The zero order is the capability's own.
+// way. On a page, section is the key (view.Section.Key) of the section whose
+// table it is, and "" for a table that is the whole result. The zero order is
+// the capability's own.
 type tableOrder struct {
-	column string
-	desc   bool
+	section string
+	column  string
+	desc    bool
 }
 
-// pickValue spells o as a sort picker's value: a direction letter and the
-// column's name, or "" for the capability's own order.
+// pickedOrder is a tableOrder as a picker's value carries it: JSON, since a
+// section's key and a column's name are a plugin's text and may hold any
+// character a separator could be.
+type pickedOrder struct {
+	Section string `json:"s,omitempty"`
+	Column  string `json:"c"`
+	Desc    bool   `json:"d,omitempty"`
+}
+
+// pickValue spells o as a sort picker's value, or "" for the capability's own
+// order.
 func (o tableOrder) pickValue() string {
 	if o.column == "" {
 		return ""
 	}
-	if o.desc {
-		return "d" + o.column
-	}
-	return "a" + o.column
+	b, _ := json.Marshal(pickedOrder{o.section, o.column, o.desc})
+	return string(b)
 }
 
 // orderOfPick is pickValue read back.
 func orderOfPick(value string) tableOrder {
-	if len(value) < 2 {
+	var p pickedOrder
+	if json.Unmarshal([]byte(value), &p) != nil || p.Column == "" {
 		return tableOrder{}
 	}
-	return tableOrder{column: value[1:], desc: value[0] == 'd'}
+	return tableOrder{p.Section, p.Column, p.Desc}
+}
+
+// placedTable is one of a result's tables, and where it is: the key and the
+// title of its section on a page, both "" for a table that is the result.
+type placedTable struct {
+	section, title string
+	table          view.Table
+}
+
+// tablesOf is every table of v a sort can reach: v itself, or each table a
+// page holds as one of its sections. A page with several tables sorts any of
+// them: fs.usage's detail page holds its biggest entries and its largest files,
+// and with the key reaching one table alone, neither could be sorted.
+func tablesOf(v view.View) []placedTable {
+	switch t := v.(type) {
+	case view.Table:
+		return []placedTable{{table: t}}
+	case view.Sections:
+		var out []placedTable
+		for _, it := range t.Items {
+			if tbl, ok := it.View.(view.Table); ok {
+				out = append(out, placedTable{section: it.Key(), title: it.Title, table: tbl})
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// tableAt is the table of v in the section keyed section (tablesOf).
+func tableAt(v view.View, section string) (placedTable, bool) {
+	for _, p := range tablesOf(v) {
+		if p.section == section {
+			return p, true
+		}
+	}
+	return placedTable{}, false
 }
 
 // orderWords are the two ways a column of kind reads in order, the one a
@@ -88,8 +137,14 @@ func orderWords(kind view.ColumnKind) (first, second string, firstDesc bool) {
 	return "A to Z", "Z to A", false
 }
 
-// orderSaid is o as the result's line says it.
-func orderSaid(t view.Table, o tableOrder) string {
+// orderSaid is o as the result's line says it, naming the table by its title
+// on a page that holds more than one.
+func orderSaid(v view.View, o tableOrder) string {
+	p, ok := tableAt(v, o.section)
+	if !ok {
+		return ""
+	}
+	t := p.table
 	col := orderColumn(t, o.column)
 	if col < 0 {
 		return ""
@@ -99,7 +154,11 @@ func orderSaid(t view.Table, o tableOrder) string {
 	if o.desc != firstDesc {
 		words = second
 	}
-	said := "sorted by " + o.column + ", " + words
+	name := o.column
+	if len(tablesOf(v)) > 1 {
+		name = p.title + " › " + name
+	}
+	said := "sorted by " + name + ", " + words
 	// A page of a longer list is sorted as far as it goes: the rows past it
 	// are not here to be put in order, and the line says so rather than
 	// letting "largest first" read as the largest of all of them.
@@ -148,20 +207,30 @@ func valued(t view.Table, col int) bool {
 	return true
 }
 
-// orderOptions are the orders t can be read in: the capability's own first,
-// then each column it may be sorted by, the way a person wants it first and
-// then the other way.
-func orderOptions(t view.Table) []pickOption {
+// orderOptions are the orders v can be read in: the capability's own first,
+// then each column of each of its tables with rows to put in order, the way a
+// person wants it first and then the other way. On a page with several tables
+// a column is named under its table's title: "largest files › Size".
+func orderOptions(v view.View) []pickOption {
 	options := []pickOption{{label: "as returned"}}
-	for i, c := range t.Columns {
-		if orderColumn(t, c.Name) < 0 || !valued(t, i) {
+	tables := tablesOf(v)
+	for _, p := range tables {
+		if len(p.table.Rows) < 2 {
 			continue
 		}
-		first, second, firstDesc := orderWords(c.Kind)
-		label := textclean.Terminal(c.Name)
-		options = append(options,
-			pickOption{label: label + " — " + first, value: tableOrder{c.Name, firstDesc}.pickValue()},
-			pickOption{label: label + " — " + second, value: tableOrder{c.Name, !firstDesc}.pickValue()})
+		for i, c := range p.table.Columns {
+			if orderColumn(p.table, c.Name) < 0 || !valued(p.table, i) {
+				continue
+			}
+			first, second, firstDesc := orderWords(c.Kind)
+			label := textclean.Terminal(c.Name)
+			if len(tables) > 1 {
+				label = textclean.Terminal(p.title) + " › " + label
+			}
+			options = append(options,
+				pickOption{label: label + " — " + first, value: tableOrder{p.section, c.Name, firstDesc}.pickValue()},
+				pickOption{label: label + " — " + second, value: tableOrder{p.section, c.Name, !firstDesc}.pickValue()})
+		}
 	}
 	return options
 }
@@ -169,14 +238,12 @@ func orderOptions(t view.Table) []pickOption {
 // sortable reports whether the result on screen has a table with rows to put
 // in order and a column to put them in order by.
 func (m Model) sortable() bool {
-	tbl, _, ok := rowTable(m.result.raw)
-	return ok && m.result.returned != nil && len(tbl.Rows) > 1 && len(orderOptions(tbl)) > 1
+	return m.result.returned != nil && len(orderOptions(m.result.raw)) > 1
 }
 
 // startSortPick opens the sort picker on the order the result is in.
 func (m Model) startSortPick() (tea.Model, tea.Cmd) {
-	tbl, _, _ := rowTable(m.result.raw)
-	return m.openPick(newPickForm(pickSort, "sort by", m.result.order.pickValue(), orderOptions(tbl), m.current, modeResult))
+	return m.openPick(newPickForm(pickSort, "sort by", m.result.order.pickValue(), orderOptions(m.result.raw), m.current, modeResult))
 }
 
 // sortResult puts the result's table in order o, the cursor staying on the row
@@ -272,25 +339,33 @@ func rowNamed(tbl view.Table, key string, i int) int {
 
 func abs(n int) int { return max(n, -n) }
 
-// ordered is v with its row table (rowTable) sorted by o, and where each row
-// now shown came from.
+// ordered is v with the table o names (tablesOf) sorted by o, and where each
+// of that table's rows now shown came from.
 func ordered(v view.View, o tableOrder) (view.View, []int, bool) {
-	tbl, at, ok := rowTable(v)
-	if !ok {
-		return v, nil, false
+	switch t := v.(type) {
+	case view.Table:
+		if col := orderColumn(t, o.column); o.section == "" && col >= 0 {
+			sorted, perm := sortTable(t, col, o.desc)
+			return sorted, perm, true
+		}
+	case view.Sections:
+		for i, it := range t.Items {
+			tbl, ok := it.View.(view.Table)
+			if !ok || it.Key() != o.section {
+				continue
+			}
+			col := orderColumn(tbl, o.column)
+			if col < 0 {
+				return v, nil, false
+			}
+			sorted, perm := sortTable(tbl, col, o.desc)
+			page := t
+			page.Items = slices.Clone(t.Items)
+			page.Items[i].View = sorted
+			return page, perm, true
+		}
 	}
-	col := orderColumn(tbl, o.column)
-	if col < 0 {
-		return v, nil, false
-	}
-	sorted, perm := sortTable(tbl, col, o.desc)
-	if at < 0 {
-		return sorted, perm, true
-	}
-	page := v.(view.Sections)
-	page.Items = slices.Clone(page.Items)
-	page.Items[at].View = sorted
-	return page, perm, true
+	return v, nil, false
 }
 
 // sortTable is t with its rows in order by column col, its values moved with

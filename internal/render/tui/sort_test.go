@@ -12,6 +12,7 @@ import (
 
 	"github.com/this-is-tobi/rta/internal/config"
 	"github.com/this-is-tobi/rta/internal/registry"
+	"github.com/this-is-tobi/rta/internal/render/cli"
 	"github.com/this-is-tobi/rta/pkg/plugin"
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -346,5 +347,59 @@ func TestASortedListCutAtItsLimitSaysItIsAPage(t *testing.T) {
 	whole.Warnings = []view.Error{{Code: "x.note", Message: "a note about every row", Advisory: true}}
 	if said := orderSaid(whole, tableOrder{column: "Commit"}); strings.Contains(said, "on this page") {
 		t.Errorf("a whole list with an advisory warning says %q", said)
+	}
+}
+
+// twoTables is a page as fs.usage --detail answers one: a summary, then two
+// tables of sizes.
+func twoTables() view.Sections {
+	return view.Sections{Items: []view.Section{
+		{ID: "summary", Title: "summary", View: view.KeyValue{Pairs: []view.Pair{{Key: "total", Value: "10.0 GiB"}}}},
+		{ID: "entries", Title: "biggest entries", View: storeListing()},
+		{ID: "largest-files", Title: "largest files anywhere beneath", View: storeListing()},
+	}}
+}
+
+// A page with several tables sorts any of them: the picker names each column
+// under its table's title, and the order chosen sorts that table alone, says
+// which on the line, is the one the heading is marked for, and survives a
+// refresh. With the key reaching a page's one table alone, neither of
+// fs.usage's could be sorted.
+func TestAPageWithTwoTablesSortsTheOneChosen(t *testing.T) {
+	m := New(registry.New(), config.Dashboard{}, nil)
+	sized, _ := m.Update(tea.WindowSizeMsg{Width: 180, Height: 40})
+	shown, _ := sized.(Model).Update(resultMsg{cap: sortCap(), view: twoTables()})
+	sm := shown.(Model)
+	if !sm.sortable() {
+		t.Fatal("a page with two tables cannot be sorted")
+	}
+	var labels []string
+	for _, o := range orderOptions(sm.result.raw) {
+		labels = append(labels, o.label)
+	}
+	for _, want := range []string{"biggest entries › Size — largest first", "largest files anywhere beneath › Size — largest first"} {
+		if !slices.Contains(labels, want) {
+			t.Errorf("offered %q, want %q among them", labels, want)
+		}
+	}
+
+	order := tableOrder{section: "largest-files", column: "Size", desc: true}
+	sorted := sm.sortResult(order)
+	files := func(m Model) []string { return firstColumn(m.result.raw.(view.Sections).Items[2].View.(view.Table)) }
+	if got := files(sorted); !slices.Equal(got, []string{"huge", "mid", "small", "unmeasured"}) {
+		t.Errorf("the largest files are %v, want them largest first", got)
+	}
+	if got := firstColumn(sorted.result.raw.(view.Sections).Items[1].View.(view.Table)); !slices.Equal(got, firstColumn(storeListing())) {
+		t.Errorf("the other table moved: %v", got)
+	}
+	if meta := plain(sorted.resultMeta()); !strings.Contains(meta, "sorted by largest files anywhere beneath › Size, largest first") {
+		t.Errorf("the line does not say which table is sorted: %q", meta)
+	}
+	if got := sorted.resultOptions().Sorted; got != (cli.SortMark{Section: "largest-files", Column: "Size", Desc: true}) {
+		t.Errorf("the heading is marked for %+v", got)
+	}
+	refreshed, _ := sorted.Update(resultMsg{cap: sortCap(), view: twoTables()})
+	if got := files(refreshed.(Model)); !slices.Equal(got, []string{"huge", "mid", "small", "unmeasured"}) {
+		t.Errorf("after a refresh the largest files are %v", got)
 	}
 }
