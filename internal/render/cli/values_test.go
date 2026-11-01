@@ -3,6 +3,7 @@ package cli
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/this-is-tobi/rta/pkg/view"
 )
@@ -16,7 +17,7 @@ func TestCSVWritesACellsValueAndPrettyItsText(t *testing.T) {
 	tbl.Add(view.Plain("/"), view.Bytes(int64(994662584320)), view.Status("WARN >80%", "warn"))
 	tbl.Add(view.Plain("/boot"), view.Plain("?"), view.Plain("unknown"))
 
-	if got, want := render(t, tbl, CSV), "Mount,Size,Status\n/,994662584320,WARN >80%\n/boot,?,unknown\n"; got != want {
+	if got, want := render(t, tbl, CSV), "Mount,Size (bytes),Status\n/,994662584320,WARN >80%\n/boot,?,unknown\n"; got != want {
 		t.Errorf("csv:\n%s\nwant:\n%s", got, want)
 	}
 	if got := render(t, tbl, Pretty); !strings.Contains(got, "926.4 GiB") || strings.Contains(got, "994662584320") {
@@ -31,6 +32,25 @@ func TestCSVWritesACellsValueAndPrettyItsText(t *testing.T) {
 	tbl.Redacted = []string{"Size"}
 	if got := render(t, tbl, CSV); strings.Contains(got, "994662584320") || !strings.Contains(got, view.Mask) {
 		t.Errorf("a redacted size reached csv:\n%s", got)
+	}
+}
+
+// csv names the unit each column's values are written in, since it carries no
+// kinds: a size in bytes, a length of time in seconds, a percentage in
+// percent. Not where the name says it already, not for a time, which says its
+// zone itself, and not for a column that writes no value.
+func TestCSVNamesTheUnitItsValuesAreIn(t *testing.T) {
+	tbl := view.Table{Columns: []view.Column{
+		{Name: "Name"}, {Name: "Size", Kind: view.KindBytes}, {Name: "Age", Kind: view.KindDuration},
+		{Name: "Use%", Kind: view.KindPercent}, {Name: "CPU", Kind: view.KindUsage},
+		{Name: "At", Kind: view.KindTimestamp}, {Name: "Raw", Kind: view.KindBytes},
+	}}
+	tbl.Add(view.Plain("a"), view.Bytes(int64(1024)), view.Duration("1m", time.Minute),
+		view.Number("47.6%", 47.6), view.Number("12%", 12),
+		view.Time("today", time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)), view.Plain("1.5 GiB"))
+	got, _, _ := strings.Cut(render(t, tbl, CSV), "\n")
+	if want := "Name,Size (bytes),Age (seconds),Use%,CPU (%),At,Raw"; got != want {
+		t.Errorf("header %q, want %q", got, want)
 	}
 }
 
