@@ -148,7 +148,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 			// answer for a bare one and not for a checkout whose status could
 			// not be read.
 			treeUnreadable = true
-			add("working tree", "could not be read — "+statusFailed("git.status.failed", err).Message)
+			add("working tree", view.CouldNotRead(statusFailed("git.status.failed", err).Message))
 		}
 	}
 

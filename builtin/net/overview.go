@@ -319,7 +319,7 @@ func statusOf(rows []row) view.Pair {
 func couldNotRead(key string, err error) row {
 	return row{
 		key:      key,
-		value:    "could not be read — " + err.Error(),
+		value:    view.CouldNotRead(err.Error()),
 		grade:    gradeWarn,
 		headline: key + " could not be read",
 	}

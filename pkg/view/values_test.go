@@ -60,6 +60,7 @@ func TestTheCellHelpersSpellTheirValues(t *testing.T) {
 	}{
 		{KindBytes, Bytes(uint64(1392640)), "1392640"},
 		{KindBytes, Bytes(-1), "-1"},
+		{KindBytes, Size("1.6GB", int64(1600000000)), "1600000000"},
 		{KindNumber, Count(42), "42"},
 		{KindPercent, Number("47.6", 47.6), "47.6"},
 		{KindNumber, Number("∞", math.Inf(1)), ""},
@@ -89,6 +90,33 @@ func TestTheCellHelpersSpellTheirValues(t *testing.T) {
 			if ValueOK(kind, v) {
 				t.Errorf("%q is taken as a %q column's value", v, kind)
 			}
+		}
+	}
+}
+
+// Size keeps its producer's spelling and values the count, where Bytes writes
+// rta's own; a row of text alone adds no value, so a table of nothing else
+// carries none; and a fact that could not be read is said in the words the
+// renderer grades amber, with or without a reason.
+func TestTheTextHelpersKeepTheirWords(t *testing.T) {
+	if c := Size("1.6GB", 1600000000); c.Text != "1.6GB" || c.Value != "1600000000" {
+		t.Errorf("Size = %+v, want docker's text beside the count", c)
+	}
+	var tbl Table
+	tbl.Add(PlainRow("member-2", "could not be read")...)
+	if len(tbl.Rows) != 1 || tbl.Rows[0][0] != "member-2" || tbl.Rows[0][1] != "could not be read" || tbl.Values != nil {
+		t.Errorf("rows %v, values %v: want one row of text and no values", tbl.Rows, tbl.Values)
+	}
+	if got := PlainRow(); len(got) != 0 {
+		t.Errorf("PlainRow() = %v, want no cells", got)
+	}
+	for why, want := range map[string]string{
+		"needs the nodes": "could not be read — needs the nodes",
+		"  ":              "could not be read",
+		"":                "could not be read",
+	} {
+		if got := CouldNotRead(why); got != want {
+			t.Errorf("CouldNotRead(%q) = %q, want %q", why, got, want)
 		}
 	}
 }

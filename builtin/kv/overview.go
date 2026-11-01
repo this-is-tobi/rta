@@ -117,7 +117,7 @@ func runOverview(ctx context.Context, req plugin.Request) (view.View, error) {
 			status = notOpened(req, lerr)
 			value := cannotOpen(req, lerr)
 			if tile {
-				value = couldNotRead(whyNot(req, lerr))
+				value = view.CouldNotRead(whyNot(req, lerr))
 			}
 			pairs = append(pairs, view.Pair{Key: "inventory", Value: value})
 		}
@@ -158,7 +158,6 @@ func finishOverview(ctx context.Context, req plugin.Request, summary view.KeyVal
 
 // couldNotRead is a line the page could not fill, in the words every overview
 // uses for one, which the theme draws as a warning.
-func couldNotRead(why string) string { return "could not be read — " + why }
 
 // unreadableStore is the page of a store the file system would not let this
 // process look at: the verdict, and the line that says what was refused with the
@@ -170,7 +169,7 @@ func unreadableStore(verr *view.Error) []view.Pair {
 	}
 	return []view.Pair{
 		{Key: "status", Value: "fail — unreadable store"},
-		{Key: "store", Value: couldNotRead(why)},
+		{Key: "store", Value: view.CouldNotRead(why)},
 	}
 }
 
