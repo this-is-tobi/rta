@@ -2000,11 +2000,11 @@ func runRevoke(ctx context.Context, req plugin.Request, catalog func() []plugin.
 	// The matching rules and the locked-snapshot discipline live in
 	// revokeOutcome, shared with the operator channel's revoke verb; the
 	// sentences live in revokeBody, shared with the remote flow's rendering.
-	out, gone, verr := revokeDetailed(spec, !req.DryRun)
+	out, gone, verr := revokeDetailed(spec, !req.DryRun, "")
 	if verr != nil {
 		return nil, verr
 	}
-	if verr := unknownRevokeTarget(req.Surface(), nil, catalog, spec, out); verr != nil {
+	if verr := unknownRevokeTarget(req.Surface(), nil, catalog, spec, out, ""); verr != nil {
 		return nil, verr
 	}
 	bundle := ""

@@ -157,7 +157,7 @@ func TestTheOperatorChannelWarnsOfAKeptCredentialToo(t *testing.T) {
 	configDir, _ := roleSetup(t)
 	writeFile(t, filepath.Join(configDir, "config.yaml"), hiddenCredentials)
 
-	p, verr := PrepareRemote(kvCatalog, builtIn)(operatorid.IssueSpec{Target: "kv.get", Scope: "staging-db-password", Agent: "claude"}, "alice")
+	p, verr := PrepareRemote("claude", kvCatalog, builtIn)(operatorid.IssueSpec{Target: "kv.get", Scope: "staging-db-password", Agent: "claude"}, "alice")
 	if verr != nil {
 		t.Fatal(verr)
 	}

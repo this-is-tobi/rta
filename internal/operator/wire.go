@@ -132,6 +132,12 @@ type RevokeOutcome struct {
 	// false, which is how the client knows to refuse before anything is
 	// taken back (a dry run asks first).
 	Exact bool `json:"exact,omitempty"`
+	// Agent is the agent the server narrowed the revoke to: its own, the one
+	// whose grants its operators reach. Said back so the client words the
+	// outcome with it — "revoked every grant" from a server that took back
+	// only its own agent's would read as the machine's file emptied. A server
+	// older than the field sends none.
+	Agent string `json:"agent,omitempty"`
 }
 
 // Status is VerbStatus's result.
@@ -177,10 +183,10 @@ func (o OperatorInfo) String() string {
 	return o.Label + " (" + strings.Join(notes, ", ") + ")"
 }
 
-// GrantList is VerbGrantList's result: the active grants as the server's own
-// store loads them — ceiling applied, expired rows dropped — plus how many
-// rows a tightened team policy is currently suppressing, the same number the
-// local listing prints.
+// GrantList is VerbGrantList's result: the active grants naming the server's
+// own agent as its store loads them — ceiling applied, expired rows dropped —
+// plus how many of those a tightened team policy is currently suppressing, the
+// number the local listing prints for the whole file.
 type GrantList struct {
 	Grants     []grant.Grant `json:"grants"`
 	Suppressed int           `json:"suppressed"`

@@ -318,14 +318,25 @@ func remoteRevoke(ctx context.Context, req plugin.Request, server string, spec o
 					"` shows what a revoke without it would match")
 		}
 		if spec.DryRun {
-			return view.Text{Body: revokeBody(req.Surface(), spec, server, seen, nil, "", true)}, nil
+			return view.Text{Body: revokeBody(req.Surface(), narrowedTo(spec, seen), server, seen, nil, "", true)}, nil
 		}
 	}
 	var out operatorid.RevokeOutcome
 	if verr := client.Call(ctx, operatorid.VerbGrantRevoke, spec, &out); verr != nil {
 		return nil, verr
 	}
-	return view.Text{Body: revokeBody(req.Surface(), spec, server, out, nil, "", req.DryRun)}, nil
+	return view.Text{Body: revokeBody(req.Surface(), narrowedTo(spec, out), server, out, nil, "", req.DryRun)}, nil
+}
+
+// narrowedTo is spec as the server applied it: a server answers for its own
+// agent alone (operator.RevokeOutcome.Agent), so a revoke that named none was
+// narrowed to that one, and is worded so — "revoked every grant" would read as
+// the machine's whole file.
+func narrowedTo(spec operatorid.RevokeSpec, out operatorid.RevokeOutcome) operatorid.RevokeSpec {
+	if spec.Agent == "" {
+		spec.Agent = out.Agent
+	}
+	return spec
 }
 
 // filterWords says what a roster was narrowed to: "the role dev", "the agent

@@ -217,7 +217,7 @@ func remoteRoster(t *testing.T) view.Table {
 // on the server had left covering nothing read there as live.
 func TestARemoteRosterIsMarkedAsTheServerJudgesIt(t *testing.T) {
 	setup(t)
-	remoteLabAs(t, mcp.OperatorConfig{Artifact: answering(helloRebuilt)})
+	remoteLabAs(t, mcp.OperatorConfig{Agent: "test", Artifact: answering(helloRebuilt)})
 	helloGrants(t)
 	tbl := remoteRoster(t)
 	if got := cell(t, tbl, rowFor(t, tbl, "hello.wipe"), "Artifact"); got != helloBuild[:12]+" (replaced)" {
@@ -244,7 +244,7 @@ func TestARemoteRosterIsMarkedAsTheServerJudgesIt(t *testing.T) {
 // nothing to mark, and no column on the compact roster, as here.
 func TestARemoteRosterMarksWhatTheServerDoesNotLoad(t *testing.T) {
 	setup(t)
-	remoteLabAs(t, mcp.OperatorConfig{Artifact: answering("")})
+	remoteLabAs(t, mcp.OperatorConfig{Agent: "test", Artifact: answering("")})
 	helloGrants(t)
 	if w := warning(t, remoteRoster(t), "grant.artifact.gone"); !strings.Contains(w.Message, "1 grant on lab names") ||
 		!strings.Contains(w.Hint, "`rta plugin list` on lab") {
@@ -252,7 +252,7 @@ func TestARemoteRosterMarksWhatTheServerDoesNotLoad(t *testing.T) {
 	}
 
 	setup(t)
-	remoteLabAs(t, mcp.OperatorConfig{Artifact: answering(helloBuild)})
+	remoteLabAs(t, mcp.OperatorConfig{Agent: "test", Artifact: answering(helloBuild)})
 	helloGrants(t)
 	if tbl := remoteRoster(t); hasColumn(tbl, "Artifact") || len(tbl.Warnings) != 0 {
 		t.Errorf("a remote roster whose builds all answer = %v / %v, want no column and no warning", tbl.Columns, tbl.Warnings)
@@ -264,7 +264,7 @@ func TestARemoteRosterMarksWhatTheServerDoesNotLoad(t *testing.T) {
 // drawing its grants as live or as dead.
 func TestARemoteRosterWithNoVerdictSaysUnknown(t *testing.T) {
 	setup(t)
-	remoteLabAs(t, mcp.OperatorConfig{})
+	remoteLabAs(t, mcp.OperatorConfig{Agent: "test"})
 	helloGrants(t)
 	tbl := remoteRoster(t)
 	for target, want := range map[string]string{"hello.wipe": helloBuild[:12] + " (unknown)", "kv.get": "built in (unknown)"} {

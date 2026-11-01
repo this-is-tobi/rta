@@ -1021,7 +1021,16 @@ func ClampTTL(d time.Duration) (time.Duration, bool, string) {
 // Expired and spent grants are not counted — those are gone on their own
 // terms, and reporting them here would make the ceiling look responsible for
 // the ordinary passage of time.
-func Suppressed() int {
+func Suppressed() int { return suppressed(func(Grant) bool { return true }) }
+
+// SuppressedFor is Suppressed over the grants naming agent: the count a
+// server's operator channel answers beside a listing of its own agent's
+// grants, which is all that listing shows.
+func SuppressedFor(agent string) int {
+	return suppressed(func(g Grant) bool { return g.Agent == agent })
+}
+
+func suppressed(counted func(Grant) bool) int {
 	ceiling, verr := Ceiling()
 	if verr != nil || ceiling.Empty() {
 		return 0
@@ -1033,7 +1042,7 @@ func Suppressed() int {
 	now := time.Now()
 	n := 0
 	for _, g := range all {
-		if !g.Active(now) {
+		if !g.Active(now) || !counted(g) {
 			continue
 		}
 		if ceiling.Forbids(g.Target, g.Scope, g.Profile) != "" ||
