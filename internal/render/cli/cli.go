@@ -190,7 +190,7 @@ func renderCSV(w io.Writer, v view.View, opts Options) error {
 	cw := csv.NewWriter(w)
 	header := make([]string, len(t.Columns))
 	for i, c := range t.Columns {
-		header[i] = csvSafeCell(c.Name)
+		header[i] = csvSafeCell(c.Name + csvUnit(t, i))
 	}
 	if err := cw.Write(header); err != nil {
 		return err
@@ -393,6 +393,35 @@ func csvSafeCell(s string) string {
 		return s
 	}
 	return "'" + s
+}
+
+// csvUnit is the unit a column's values are written in, after its name in the
+// header: " (bytes)" for a size, " (seconds)" for a length of time and " (%)"
+// for a percentage. csv carries no kinds, so 994662584320 under Size could be
+// bytes or KiB to whoever reads it, and 690.2 under Age seconds or minutes.
+// Only for a column that writes a value at all, and not where its name says
+// the unit already ("CPU%"); a time is RFC 3339 and says its zone itself.
+func csvUnit(t view.Table, col int) string {
+	var unit string
+	switch t.Columns[col].Kind {
+	case view.KindBytes:
+		unit = "bytes"
+	case view.KindDuration:
+		unit = "seconds"
+	case view.KindPercent, view.KindUsage:
+		unit = "%"
+	default:
+		return ""
+	}
+	if strings.Contains(strings.ToLower(t.Columns[col].Name), unit) {
+		return ""
+	}
+	for i := range t.Rows {
+		if t.Value(i, col) != "" {
+			return " (" + unit + ")"
+		}
+	}
+	return ""
 }
 
 func renderPretty(w io.Writer, v view.View, opts Options) error {
