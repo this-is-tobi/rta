@@ -239,17 +239,31 @@ HARD_FLAGS := -count=1 -race -shuffle=on
 hard: ## Run them with no cache, shuffled, under the race detector
 	go test $(HARD_FLAGS) ./...
 
-# `hard`, in the pieces CI runs on machines of their own at once (two packages
-# sliced by SHARD, below, and the rest). One package, the
+# The passes CI makes beside the race pass, on the machines that read the host
+# and for the coverage profile: no race detector, and the slowhost tag for the
+# wider bounds a busy machine needs on starting a plugin and on waiting for a
+# lock (internal/pluginhost/slow.go and internal/filelock/slow.go say why).
+PLAIN_FLAGS := -count=1 -shuffle=on -tags slowhost
+
+test-plain: ## The suite as CI runs it on arm64 Linux, and on macOS in the three pieces below
+	go test $(PLAIN_FLAGS) ./...
+
+# `hard` and `test-plain`, in the pieces CI runs on machines of their own at
+# once: two packages, sliced by SHARD below, and the rest. One package, the
 # terminal screens' (internal/render/tui), is the longest by a wide margin:
 # hundreds of in-process terminal programs, one after the other, and raced it is
 # expected to take about as long as the rest of the module does on a runner of
-# its own. `hard-rest` takes the others by what is left, so the two are a
-# partition of the module whatever is added to it and nothing can fall between
-# them. If the package named here is renamed, `hard-tui` fails and `hard-rest`
-# runs everything, which is slower and still complete.
-HARD_TUI := ./internal/render/tui
-HARD_APP := ./internal/app
+# its own. The rest is taken as what is left, so the pieces are a partition of
+# the module whatever is added to it and nothing can fall between them. If a
+# package named here is renamed, its piece fails and the rest runs everything,
+# which is slower and still complete.
+#
+# The plain pass is in the same three pieces on macOS alone. The runner there
+# is the slowest by far (the suite took 8 minutes where arm64 took 3), and in
+# one job it was the one the pipeline waited for. One partition for both
+# passes, so a package moved between pieces moves for both.
+SLICE_TUI := ./internal/render/tui
+SLICE_APP := ./internal/app
 
 # SHARD=i/n runs the i-th of n slices of one package's tests, dealt out by name
 # in the order the files list them. The two packages named here are the race
@@ -260,38 +274,45 @@ HARD_APP := ./internal/app
 # once more for no other purpose; a name that does not run on this platform is
 # one -run matches nothing with. Every top-level test, fuzz target and example
 # is dealt into exactly one slice, so the slices together are the package.
-define hard_slice
+# $(1) is the pass's flags and $(2) the package.
+define test_slice
 	@pattern=; \
 	if [ -n "$(SHARD)" ]; then \
-	  names=$$(grep -h -E '^func (Test|Fuzz|Example)[A-Za-z0-9_]*[(]' $(1)/*_test.go | \
+	  names=$$(grep -h -E '^func (Test|Fuzz|Example)[A-Za-z0-9_]*[(]' $(2)/*_test.go | \
 	    sed -E 's/^func ([A-Za-z0-9_]+).*/\1/' | sort -u); \
 	  slice=$$(printf '%s\n' "$$names" | \
 	    awk -v s="$(SHARD)" 'BEGIN { split(s, p, "/") } (NR - 1) % p[2] == p[1] - 1' | paste -sd'|' -); \
-	  test -n "$$slice" || { echo "SHARD=$(SHARD) of $(1) holds no test"; exit 1; }; \
+	  test -n "$$slice" || { echo "SHARD=$(SHARD) of $(2) holds no test"; exit 1; }; \
 	  pattern="^($$slice)$$"; \
 	fi; \
-	go test $(HARD_FLAGS) $${pattern:+-run "$$pattern"} $(1)
+	go test $(1) $${pattern:+-run "$$pattern"} $(2)
+endef
+
+# Every package but the two sliced ones. -e keeps a package that does not load
+# in the list, so that `go test` fails on it by name instead of the list quietly
+# leaving it out; an empty list is an error and not a pass. $(1) is the flags.
+define test_rest
+	pkgs=$$(go list -e ./... | grep -v -x -F "$$(go list -e $(SLICE_TUI) $(SLICE_APP))"); \
+	test -n "$$pkgs" && go test $(1) $$pkgs
 endef
 
 hard-tui: ## `hard` over the one package that takes longest (SHARD=i/n for a slice)
-	$(call hard_slice,$(HARD_TUI))
+	$(call test_slice,$(HARD_FLAGS),$(SLICE_TUI))
 
 hard-app: ## `hard` over the command tree's package (SHARD=i/n for a slice)
-	$(call hard_slice,$(HARD_APP))
+	$(call test_slice,$(HARD_FLAGS),$(SLICE_APP))
 
-# -e keeps a package that does not load in the list, so that `go test` fails on
-# it by name instead of the list quietly leaving it out; an empty list is an
-# error and not a pass.
 hard-rest: ## `hard` over every other package
-	pkgs=$$(go list -e ./... | grep -v -x -F "$$(go list -e $(HARD_TUI) $(HARD_APP))"); \
-	test -n "$$pkgs" && go test $(HARD_FLAGS) $$pkgs
+	$(call test_rest,$(HARD_FLAGS))
 
-# The passes CI makes beside the race pass, on the machines that read the host
-# and for the coverage profile: no race detector, and the slowhost tag for the
-# wider bounds a busy machine needs on starting a plugin and on waiting for a
-# lock (internal/pluginhost/slow.go and internal/filelock/slow.go say why).
-test-plain: ## The suite as CI runs it on macOS and arm64 Linux, with no race detector
-	go test -count=1 -shuffle=on -tags slowhost ./...
+plain-tui: ## `test-plain` over the terminal screens' package (SHARD=i/n for a slice)
+	$(call test_slice,$(PLAIN_FLAGS),$(SLICE_TUI))
+
+plain-app: ## `test-plain` over the command tree's package (SHARD=i/n for a slice)
+	$(call test_slice,$(PLAIN_FLAGS),$(SLICE_APP))
+
+plain-rest: ## `test-plain` over every other package
+	$(call test_rest,$(PLAIN_FLAGS))
 
 vet: ## go vet the root module
 	go vet ./...
@@ -495,7 +516,8 @@ clean: ## Remove build output and coverage artifacts
 # make would find it up to date and report success for a target that ran
 # nothing.
 .PHONY: help setup download tidy fmt build install \
-	cross snapshot size size-check bump-index test hard hard-tui hard-rest test-plain vet lint check \
+	cross snapshot size size-check bump-index test hard hard-tui hard-app hard-rest \
+	test-plain plain-tui plain-app plain-rest vet lint check \
 	fmt-check coverage coverage-html ci proto proto-lint proto-check \
 	chart-schema chart-schema-check chart-lint chart-docs \
 	clean

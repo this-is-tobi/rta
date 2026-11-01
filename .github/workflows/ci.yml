@@ -170,7 +170,9 @@ jobs:
   #                  packages in two slices each, and the rest (the Makefile
   #                  says which packages, how they are sliced, and why)
   #   test-coverage  the profile, from one plain run over the whole module
-  #   test-hosts     the suite, plain, on macOS and on arm64 Linux
+  #   test-hosts     the suite, plain, on arm64 Linux in one job and on macOS
+  #                  in the race pass's three pieces (the TUI, the commands
+  #                  and the rest), macOS being the slowest runner by far
   #
   # **What the other two machines no longer print is their coverage total.** The
   # operating system moves about half a percent of the statements covered
@@ -259,19 +261,29 @@ jobs:
       # reads as untested without this.
       COVERAGE_PACKAGES: ./...
 
-  # The suite as it is on the other two machines.
+  # The suite as it is on the other two machines: arm64 Linux in one job, and
+  # macOS in the pieces `make plain-*` cuts it into, which are the race pass's
+  # (the Makefile says which). The suite took 8 minutes on macOS where arm64
+  # took 3, and in one job it was the one the whole pipeline waited for. The
+  # commands carry the flags, since a TEST_COMMAND replaces the go test the
+  # workflow would otherwise put together from RACE, SHUFFLE and BUILD_TAGS.
   test-hosts:
-    name: Test (other hosts)
+    name: Test (other hosts, ${{ matrix.part }})
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - { part: "macOS, the TUI", runner: macos-latest, command: make plain-tui }
+        - { part: "macOS, the commands", runner: macos-latest, command: make plain-app }
+        - { part: "macOS, the rest", runner: macos-latest, command: make plain-rest }
+        - { part: "arm64 Linux", runner: ubuntu-24.04-arm, command: make test-plain }
     uses: this-is-tobi/github-workflows/.github/workflows/test-go.yml@v0
     permissions:
       contents: read
     with:
-      RACE: false
-      SHUFFLE: true
-      COUNT: "1"
-      BUILD_TAGS: '["slowhost"]'
+      TEST_COMMAND: ${{ matrix.command }}
       # The second machine — and the third. A suite that reads the host it
       # runs on passes on the host it was written on, and the first two
       # runners share a blind spot: ubuntu is amd64 and macOS reads sysctl
@@ -280,7 +292,7 @@ jobs:
       # gap hid a real bug (sys.cpu rendered a blank model on every Pi and
       # Graviton) until the suite was run in an arm64 container by hand; the
       # arm runner makes that reading automatic.
-      RUNNERS: '[["macos-latest"], ["ubuntu-24.04-arm"]]'
+      RUNNERS: ${{ format('[["{0}"]]', matrix.runner) }}
 
   # The tests that read prose, for every pull request the test jobs skip.
   #
