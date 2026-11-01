@@ -66,6 +66,32 @@ func TestTruncateNeverSplitsACharacter(t *testing.T) {
 	}
 }
 
+// Clip counts what a reader sees, characters and not bytes, never splits one,
+// and ends a line it cut on the ellipsis that says so, within the n it was
+// given.
+func TestClipCutsOnACharacterAndSaysItCut(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		n    int
+		want string
+	}{
+		{"short", 10, "short"},
+		{"exactly", 7, "exactly"},
+		{"abcdefgh", 5, "abcd…"},
+		{"café crème", 6, "café …"},
+		{"日本語のテキスト", 4, "日本語…"},
+		{"abc", 1, "…"},
+		{"abc", 0, ""},
+		{"abc", -3, ""},
+		{"", 3, ""},
+	} {
+		got := Clip(c.in, c.n)
+		if got != c.want || !utf8.ValidString(got) || utf8.RuneCountInString(got) > max(c.n, 0) {
+			t.Errorf("Clip(%q, %d) = %q, want %q", c.in, c.n, got, c.want)
+		}
+	}
+}
+
 // Head is Truncate without the note, for text that is somebody else's: the
 // start it keeps and the count it leaves out come back apart, so the count
 // can be said where the text cannot swallow it.

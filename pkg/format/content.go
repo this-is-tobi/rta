@@ -126,3 +126,27 @@ func Head(text string, limit int) (head string, rest int) {
 	}
 	return text[:cut], len(text) - cut
 }
+
+// Clip cuts s to at most n characters for a line a person reads, the last of
+// them an ellipsis when anything was cut: a label, a name in a cell, a reason
+// kept to one line. Characters and not bytes, for the reason Truncate gives,
+// and for the width a reader sees: three plugins and rta itself cut at a byte
+// offset, and a name with an accent in it came out with a replacement glyph
+// where its last letter was. Truncate and Head are for a body, whose reader
+// is told how much of it was left out.
+func Clip(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	if n <= 0 {
+		return ""
+	}
+	kept := 0
+	for i := range s {
+		if kept == n-1 {
+			return s[:i] + "…"
+		}
+		kept++
+	}
+	return s
+}
