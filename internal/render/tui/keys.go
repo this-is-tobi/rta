@@ -156,6 +156,8 @@ var (
 	bindAddResult = binding{display: "+", keys: []string{"+"}, label: "add as tile", rank: rankExtra}
 	bindSearch    = binding{display: "/", keys: []string{"/"}, label: "search", rank: rankExtra}
 	bindToggle    = binding{display: "space", keys: []string{" ", "space", "x"}, label: "show/hide", rank: rankPrimary}
+	// bindSort opens the orders a result's table can be read in (sort.go).
+	bindSort = binding{display: "S", keys: []string{"S"}, label: "sort", rank: rankExtra}
 	// "approve" rather than "trust", because the footer has to say what the
 	// key does and not what the subsystem is called: somebody looking at a
 	// row marked "not run" is deciding whether to allow it, and that is the

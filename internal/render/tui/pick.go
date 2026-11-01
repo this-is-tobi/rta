@@ -10,7 +10,8 @@ import (
 
 // A picker: one choice between labelled values, asked over the screen it was
 // opened from — which of several values to copy (copypick.go), which
-// connection a tile being added is about (addpick.go). What is asked and what
+// connection a tile being added is about (addpick.go), which order a result's
+// table is read in (sort.go). What is asked and what
 // the answer does belong to the kind. The rest is one screen: the form, its
 // keys, its frame, its bar and where cancelling goes back to. The two kinds
 // used to be two copies of it, alike line for line, and a third would have
@@ -24,20 +25,28 @@ const (
 	pickCopy pickKind = iota
 	// pickTile asks which connection a tile being added is about.
 	pickTile
+	// pickSort asks which order a result's table is read in (sort.go).
+	pickSort
 )
 
 // verb is what enter does on the picker, as its bar says it.
 func (k pickKind) verb() string {
-	if k == pickTile {
+	switch k {
+	case pickTile:
 		return "add"
+	case pickSort:
+		return "sort"
 	}
 	return "copy"
 }
 
 // noun is how the help overlay names the picker.
 func (k pickKind) noun() string {
-	if k == pickTile {
+	switch k {
+	case pickTile:
 		return "add picker"
+	case pickSort:
+		return "sort picker"
 	}
 	return "copy picker"
 }
@@ -142,9 +151,13 @@ func (m Model) fastSubmitPick() (tea.Model, tea.Cmd) {
 // confirmPick does what the answer is for.
 func (m Model) confirmPick() (tea.Model, tea.Cmd) {
 	p := *m.pick
-	if p.kind == pickTile {
+	switch p.kind {
+	case pickTile:
 		m.pick = nil
 		return m.addTile(p.cap, p.value)
+	case pickSort:
+		next, cmd := m.closePick()
+		return next.(Model).sortResult(orderOfPick(p.value)), cmd
 	}
 	next, cmd := m.closePick()
 	return next, tea.Batch(cmd, copyInBackground(p.value, copiedValue))

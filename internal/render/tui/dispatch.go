@@ -626,6 +626,13 @@ func (m Model) resultKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.String() {
 	case "home", "end":
 		return m.toEnd(msg.String() == "end"), nil, true
+	case "S":
+		// Any table, not only a list with actions: a leaf result's rows are
+		// read in an order as much as an actionable view's are.
+		if m.sortable() {
+			nm, cmd := m.startSortPick()
+			return nm, cmd, true
+		}
 	case "q":
 		return m.quit()
 	case "esc":

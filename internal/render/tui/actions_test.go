@@ -15,7 +15,7 @@ func TestTheShellsOwnKeysAreReservedToPlugins(t *testing.T) {
 	reserved := plugin.ReservedActionKeys()
 	for _, b := range []binding{
 		bindQuit, bindHelp, bindBack, bindOpen, bindRerun, bindEdit, bindCopy,
-		bindBrowse, bindSearch, bindSelect, bindScroll, bindColumn,
+		bindBrowse, bindSearch, bindSelect, bindScroll, bindColumn, bindSort,
 	} {
 		for _, k := range b.keys {
 			if len([]rune(k)) != 1 && k != "enter" && k != "esc" && k != "tab" {

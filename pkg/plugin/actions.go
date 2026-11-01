@@ -108,7 +108,7 @@ type Toggle struct {
 var reservedActionKeys = map[string]string{
 	"q": "quit", "esc": "back", "enter": "open", "r": "re-run", "e": "edit inputs", "y": "copy json",
 	"b": "browse", ":": "browse", "/": "search", "?": "help", "tab": "next",
-	"h": "left", "j": "down", "k": "up", "l": "right",
+	"h": "left", "j": "down", "k": "up", "l": "right", "S": "sort",
 }
 
 // ReservedActionKeys lists the keys an action may not bind, with what each

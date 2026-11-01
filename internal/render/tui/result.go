@@ -55,6 +55,12 @@ type resultMsg struct {
 	// as refreshInPlace does a resolve failure, which this was until the fetch
 	// moved off the update loop into the run (runCmd).
 	unfilled bool
+	// returned is raw as the capability returned it, before any sort, which
+	// every order the reader picks is made from again (sort.go); order is the
+	// one raw and view are in, and perm where each of their rows came from.
+	returned view.View
+	order    tableOrder
+	perm     []int
 }
 
 // cleaned is r as it arrives on screen: view cleaned once, for everything the
@@ -74,7 +80,7 @@ type resultMsg struct {
 // for view is the TUI's own drawing around the pane: the meta line's section
 // titles, a flashed one-liner.
 func (r resultMsg) cleaned() resultMsg {
-	r.raw = r.view
+	r.raw, r.returned = r.view, r.view
 	r.view = view.MapStrings(r.view, textclean.Terminal)
 	return r
 }
@@ -229,6 +235,9 @@ func (m Model) resultMeta() string {
 		if head := warningsHead(pageWarnings(v)); head != "" {
 			warn = theme.WarnText.Render(head)
 		}
+	}
+	if tbl, _, ok := rowTable(m.result.raw); ok && m.result.order.column != "" {
+		parts = append(parts, theme.Subtle.Render(orderSaid(tbl, m.result.order)))
 	}
 	return " " + fitMeta(parts, warn, m.viewport.Width())
 }
@@ -910,6 +919,11 @@ func (m Model) resultFooterItems() []hintItem {
 			keys = append(keys, item(bindRerun))
 		}
 		keys = append(keys, alias(item(bindScroll), "home", "end"))
+	}
+	// Outside the branch, as `e` below: a leaf result's table sorts as an
+	// actionable view's does.
+	if m.sortable() {
+		keys = append(keys, item(bindSort))
 	}
 	// Outside the branch: `e` answers at any scroll position, and a pane that
 	// only advertises it halfway down is advertising it where nobody is.
