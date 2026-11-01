@@ -92,6 +92,11 @@ func mapStrings(v View, f func(string) string) (View, bool) {
 	case Table:
 		cols, cc := mapColumns(t.Columns, f)
 		rows, rc := mapRows(t.Rows, f)
+		// The values too, though a well-formed one is digits, a time or a word
+		// that no cleaning changes: they reach a model beside the cells, and a
+		// plugin's value is its text until the encoder has held it to its
+		// kind, which writes one that f changed out of shape as none.
+		values, vc := mapRows(t.Values, f)
 		// Page.Next is as much plugin-controlled text as a cell is: it round
 		// trips through the caller and reaches a model in both the text and
 		// the structured halves of an MCP result. It was the one string on a
@@ -107,8 +112,8 @@ func mapStrings(v View, f func(string) string) (View, bool) {
 		red, dc := mapNames(t.Redacted, f)
 		warns, wc := mapErrors(t.Warnings, f)
 		empty := f(t.Empty)
-		if cc || rc || pc || dc || wc || empty != t.Empty {
-			t.Columns, t.Rows, t.Page, t.Redacted, t.Warnings, t.Empty = cols, rows, page, red, warns, empty
+		if cc || rc || vc || pc || dc || wc || empty != t.Empty {
+			t.Columns, t.Rows, t.Values, t.Page, t.Redacted, t.Warnings, t.Empty = cols, rows, values, page, red, warns, empty
 			return t, true
 		}
 	case Chart:

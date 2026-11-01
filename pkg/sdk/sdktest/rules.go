@@ -110,6 +110,42 @@ func checkErrorInput(t reporter, c plugin.Capability, verr *view.Error) {
 	}
 }
 
+// checkValues holds a table's values to what the host keeps of them
+// (view.Table.Values): row for row with the rows, a row's values one for each
+// of its cells, each well formed for its column's kind. The host drops what is
+// not, which is silent where it happens: the value is simply absent from
+// `-o json` and from what an agent reads, and nothing tells the author.
+func checkValues(t reporter, c plugin.Capability, tbl view.Table) {
+	t.Helper()
+	if len(tbl.Values) > len(tbl.Rows) {
+		t.Errorf("sdktest: %s: %s carries values for %d rows and has %d; fill a table with values through Table.Add",
+			RuleViews, c.ID, len(tbl.Values), len(tbl.Rows))
+		return
+	}
+	for i, values := range tbl.Values {
+		if len(values) == 0 {
+			continue
+		}
+		if len(values) != len(tbl.Rows[i]) {
+			t.Errorf("sdktest: %s: %s row %d has %d values for %d cells, so the host keeps none of them; fill it through Table.Add",
+				RuleViews, c.ID, i, len(values), len(tbl.Rows[i]))
+			return
+		}
+		for j, value := range values {
+			if value == "" || j >= len(tbl.Columns) {
+				continue
+			}
+			if col := tbl.Columns[j]; !view.ValueOK(col.Kind, value) {
+				t.Errorf("sdktest: %s: %s row %d column %q (kind %q) has the value %q, which the host drops; "+
+					"view.ValueOK says how a %q column's value is spelled, and the cell helpers (view.Bytes, view.Number, "+
+					"view.Time and the rest) spell it so",
+					RuleViews, c.ID, i, col.Name, col.Kind, value, col.Kind)
+				return
+			}
+		}
+	}
+}
+
 func checkOneView(t reporter, c plugin.Capability, v view.View) {
 	t.Helper()
 
@@ -173,6 +209,7 @@ func checkOneView(t reporter, c plugin.Capability, v view.View) {
 				break
 			}
 		}
+		checkValues(t, c, t2)
 	case view.Chart:
 		if t2.Kind != view.ChartLine && t2.Kind != view.ChartBar {
 			t.Errorf("sdktest: %s: %s has chart kind %q, want %q or %q",

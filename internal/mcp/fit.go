@@ -166,9 +166,15 @@ func shrinkTable(t view.Table, limit int, narrow narrowing) (view.View, bool) {
 	rows, total := t.Rows, max(t.Total, len(t.Rows))
 	with := func(k int) view.Table {
 		out := t
-		out.Rows = rows[:k]
+		lo, hi := 0, k
 		if t.Tail {
-			out.Rows = rows[len(rows)-k:]
+			lo, hi = len(rows)-k, len(rows)
+		}
+		out.Rows = rows[lo:hi]
+		// The values are cut with the rows they stand beside, or every value
+		// after the cut would be read as the next row's.
+		if t.Values != nil {
+			out.Values = t.Values[min(lo, len(t.Values)):min(hi, len(t.Values))]
 		}
 		out.Total = total
 		// A cursor names where the call the rows came from left off, which is

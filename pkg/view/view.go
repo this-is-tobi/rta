@@ -169,8 +169,30 @@ type Cursor struct {
 type Table struct {
 	Columns []Column   `json:"columns"`
 	Rows    [][]string `json:"rows"`
-	Total   int        `json:"total,omitempty"`
-	Page    *Cursor    `json:"page,omitempty"`
+	// Values are the rows again as a program reads them: row for row and cell
+	// for cell with Rows, each cell's value in the spelling its column's kind
+	// gives (ValueOK) — a byte count as its digits, a percentage as a number
+	// of percent, a duration in seconds, a time in RFC 3339, a status as the
+	// word it grades by — and "" for a cell that has none. A row may have none
+	// at all, and so may the table.
+	//
+	// **Because a cell is written for a person.** `926.4 GiB` and `WARN soon ·
+	// Oct 31` are what a screen should say and what no script can compare:
+	// `jq 'select(.used > ...)'` had nothing to compare. The kind says what a
+	// column is; this is what it holds. Rows stay the cells every surface
+	// draws — the TUI, pretty, md — and json, yaml and MCP carry these beside
+	// them as "values", a number as a number and null for a cell with none
+	// (typedValues), while csv writes a cell's value in its place, since csv is
+	// read by programs alone — except a status's, whose text says more than the
+	// word it grades by. A producer that never fills them is drawn and encoded
+	// exactly as before.
+	//
+	// Filled through Add, never by hand: Add keeps them in step with Rows, and
+	// a value out of step is a value on the wrong row. Never encoded under its
+	// own name; the envelope writes the typed form.
+	Values [][]string `json:"-"`
+	Total  int        `json:"total,omitempty"`
+	Page   *Cursor    `json:"page,omitempty"`
 	// Redacted names columns whose cells must be masked by every renderer.
 	// Column names rather than indices, so that reordering the columns cannot
 	// silently move the protection to the wrong one — and the same spelling
@@ -472,6 +494,27 @@ func Redact(v View) View {
 			rows[i] = cells
 		}
 		t.Rows = rows
+		// A masked cell's value goes with it: the size of a secret, the time a
+		// token was minted, are the secret's to keep as much as its text is.
+		// Cut to the columns as the cells are, and to the rows, so a value
+		// cannot outlive the cell it stands beside.
+		if t.Values != nil {
+			values := make([][]string, len(rows))
+			for i := range rows {
+				if i >= len(t.Values) || t.Values[i] == nil {
+					continue
+				}
+				n := min(len(t.Values[i]), len(rows[i]))
+				kept := make([]string, n)
+				for j := range kept {
+					if !mask[j] {
+						kept[j] = t.Values[i][j]
+					}
+				}
+				values[i] = kept
+			}
+			t.Values = values
+		}
 		return t
 	case Sections:
 		items := make([]Section, len(t.Items))
