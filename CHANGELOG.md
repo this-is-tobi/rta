@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.53.0](https://github.com/this-is-tobi/rta/compare/v0.52.0...v0.53.0) (2026-11-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** a plugin whose plugins: section is pinned to another build than the installed one, or not pinned, no longer runs on its defaults. Its calls are refused until `rta config repin --plugin <name>`, or a corrected heading, points the section at the installed build.
+* **plugin:** `rta plugin allow` and `rta plugin disallow` are now `rta plugin access add` and `rta plugin access rm`; listing is `rta plugin access`, and the error codes are plugin.access.* instead of plugin.allow.* and plugin.disallow.*. A Claude Code deny list holding `Bash(rta plugin allow:*)` needs `Bash(rta plugin access:*)` instead; `rta audit clients` prints the current list.
+* **agent:** `rta agent allow` is now `rta agent approve`; the capability agent.allow is agent.approve, and its error codes are agent.approve.* instead of agent.allow.*.
+
+### Features
+
+* **agent:** a parked call is approved, not allowed ([e5bb571](https://github.com/this-is-tobi/rta/commit/e5bb5711df2a6a5fafe68524ec8aaa8eda46c8d4))
+* **config:** confine is a key `rta config set` takes ([0cbf56d](https://github.com/this-is-tobi/rta/commit/0cbf56dc1e4834936615f9003818f0eaef32b6b2))
+* **config:** rta config repin points a plugins: section at the installed build ([f55bee1](https://github.com/this-is-tobi/rta/commit/f55bee16fb0c1b94010beab633887e03a4a9333d))
+* **plugin:** what a plugin may read is its access, given with access add ([1fa0468](https://github.com/this-is-tobi/rta/commit/1fa0468ea129d0d08c61f79de88716c1545369e3))
+* **sdk:** sdktest.Nowhere, an address a dry run fails the suite by reaching ([4513adf](https://github.com/this-is-tobi/rta/commit/4513adf81dd050771b9c70ec3f9c90a2bcb0940b))
+* **tui:** enter on the last required box answered finishes the form ([1e00700](https://github.com/this-is-tobi/rta/commit/1e0070026bfbb139c3fddfa2c021870833d012b5))
+
+
+### Bug Fixes
+
+* **config:** a plugins: section rta cannot apply refuses its plugin's calls ([ec6f66b](https://github.com/this-is-tobi/rta/commit/ec6f66b7e0b066f82b322c2a1bade6e6b5ab4319))
+* **grant:** a refusal over a profile names the capability it refused ([98cf895](https://github.com/this-is-tobi/rta/commit/98cf89589e5009d498706f1226b3ba8dfdab8dcf))
+* **help:** a command's own --version is listed in its flags ([a1776aa](https://github.com/this-is-tobi/rta/commit/a1776aa7bf1f7ed9b0a0f41a598fcb07c9d8c057))
+* **kv:** the first store's question reads the whole line it is answered with ([dc9d161](https://github.com/this-is-tobi/rta/commit/dc9d161a11b8e9bb87eeab9e649c6280b157aa16))
+* **mcp:** an unusable profile is refused as that, not as a missing grant ([9308134](https://github.com/this-is-tobi/rta/commit/93081344f60c76af0611093dde5176663b3df553))
+* **paths:** a trust anchor's directories are held to what the file is ([6458130](https://github.com/this-is-tobi/rta/commit/64581300f3ec2765a570109a4c0b86fbe30d760f))
+* **plugin:** a file strict keeps from a plugin is named as the setting's refusal ([3bd8869](https://github.com/this-is-tobi/rta/commit/3bd8869ac0fc8701dd94f7774feb158ea16a62d5))
+* **plugin:** dev, new and doc say what a profiled read and an installed plugin do ([50da195](https://github.com/this-is-tobi/rta/commit/50da19574425b1e8a58290a02280f7a21f0a8d1a))
+* **pluginhost:** strict refuses a call naming rta's own file in a granted place ([43ddf8c](https://github.com/this-is-tobi/rta/commit/43ddf8cba1496ca820bc1aef077b9953f9ef879e))
+* **render:** laying out one long line costs its length, not its square ([a4570bd](https://github.com/this-is-tobi/rta/commit/a4570bdc21b9d3eeea9e0f518e89420b99414ea4))
+* **sdk:** a dry run that reads to describe the call can waive the connection check alone ([963d3aa](https://github.com/this-is-tobi/rta/commit/963d3aaeb9134a5005a894fe68ed5d901a99bd4f))
+* **sdk:** a page's section runs with the defaults its capability declares ([3223e32](https://github.com/this-is-tobi/rta/commit/3223e320373ba98e667287d366b7ff330bc2f5e7))
+* **sdk:** a Skip that waives nothing fails sdktest ([59ee4e7](https://github.com/this-is-tobi/rta/commit/59ee4e793c52205387eae96f7ac47a04406750bd))
+* **sdk:** a WithInputs key that names nothing fails the suite ([b97566d](https://github.com/this-is-tobi/rta/commit/b97566d45b67d1e38764a08ea4fa6e4d63b99a13))
+
 ## [0.52.0](https://github.com/this-is-tobi/rta/compare/v0.51.1...v0.52.0) (2026-10-31)
 
 
