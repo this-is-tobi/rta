@@ -51,8 +51,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -252,6 +254,7 @@ func checkAll(t reporter, p plugin.Plugin, cfg config, dir string, inputs map[st
 		return
 	}
 	checkGivenInputs(t, p, inputs)
+	checkSkips(t, p, cfg)
 	checkVerbs(t, p, cfg)
 	checkKeywords(t, p, cfg)
 	checkReach(t, p, cfg)
@@ -325,6 +328,43 @@ func takes(c plugin.Capability, name string) bool {
 		}
 	}
 	return name == "detail" && c.Detailed
+}
+
+// waivable is every rule a Skip can waive. RuleCodes is not one: what it
+// notes is a literal in the source, which belongs to no capability.
+var waivable = []Rule{RuleDeclaration, RuleViews, RuleDryRun, RuleDryRunOffline, RuleVerbs,
+	RuleRedaction, RuleActions, RuleSpelling, RuleWording}
+
+// checkSkips holds what Skip names to what p declares, as checkGivenInputs
+// holds WithInputs: a Skip of a rule no Skip waives, or of an ID under p's
+// name that is none of p's capabilities, waives nothing — p's own name aside,
+// which RuleSpelling takes for the plugin's summary. Its line was printed on
+// every run all the same, so a waiver a rename left behind kept an exemption
+// on the record for a capability that no longer existed, while the one it
+// had become was held to the rule.
+//
+// Only IDs under p's name are p's, for checkGivenInputs' reason.
+func checkSkips(t reporter, p plugin.Plugin, cfg config) {
+	t.Helper()
+	declared := make(map[string]bool, len(p.Capabilities))
+	for _, c := range p.Capabilities {
+		declared[c.ID] = true
+	}
+	for _, rule := range slices.Sorted(maps.Keys(cfg.skips)) {
+		for _, id := range slices.Sorted(maps.Keys(cfg.skips[rule])) {
+			if id != p.Name && !strings.HasPrefix(id, p.Name+".") {
+				continue
+			}
+			switch {
+			case !slices.Contains(waivable, rule):
+				t.Errorf("sdktest: Skip names %q for %s, which is no rule a Skip waives, so it waives nothing",
+					rule, id)
+			case !declared[id] && (id != p.Name || rule != RuleSpelling):
+				t.Errorf("sdktest: %s: Skip names %q, which is no capability of %s, so it waives nothing",
+					rule, id, p.Name)
+			}
+		}
+	}
 }
 
 // skipLines renders the declared opt-outs in a stable order, because test
