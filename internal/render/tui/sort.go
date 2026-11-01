@@ -33,11 +33,14 @@ import (
 // measurement nobody took — goes last whichever way the column is sorted,
 // and rows that tie keep the order they came in.
 //
-// **The order stays with the result.** A re-run and a live refresh of the same
-// capability come back in it, as a web table keeps its sort when it reloads,
-// and a result held behind a drill-down is restored in the order it was left
-// in. A masked column is not offered: sorting by it would say how the values
-// nobody may see compare.
+// **The order stays with the result, and the cursor with its row.** A re-run
+// and a live refresh of the same capability come back in it, as a web table
+// keeps its sort when it reloads, and a result held behind a drill-down is
+// restored in the order it was left in. In both the cursor is put back on the
+// row it was on, found by its first cell, since a sorted refresh can put a
+// new row above it and the next key acts on whatever row the cursor is on. A
+// masked column is not offered: sorting by it would say how the values nobody
+// may see compare.
 
 // tableOrder is how a result's table is sorted: by the column named, either
 // way. The zero order is the capability's own.
@@ -178,6 +181,66 @@ func (r resultMsg) inOrder(o tableOrder) resultMsg {
 	r.view = view.MapStrings(r.raw, textclean.Terminal)
 	return r
 }
+
+// heldState is the order a result of capability id lands in and the row its
+// cursor goes back to (cursorKey), and whether that came from the trail: the
+// result on screen's when it is the same capability (a re-run, a refresh, a
+// live tick), and otherwise what the trail kept for id when it last left the
+// screen. The result on screen is kept on its own trail entry first, so that
+// coming back to it, after the drill-down this result may be, finds it.
+//
+// By the row and not its index. Kept by index, a refresh that sorted a newly
+// parked call above the cursor moved it to another call, and a list that came
+// back from a drill-down unsorted put it on another note, and the next key —
+// a deny, a done — acted on that one.
+func (m *Model) heldState(id string) (order tableOrder, key string, back bool) {
+	key = cursorKey(m.result.view, m.row)
+	if m.result.cap.ID == id {
+		return m.result.order, key, false
+	}
+	for i := range m.trail {
+		if m.trail[i].cap.ID == m.result.cap.ID {
+			m.trail[i].order, m.trail[i].cursor = m.result.order, key
+		}
+	}
+	for _, t := range m.trail {
+		if t.cap.ID == id {
+			return t.order, t.cursor, t.cursor != ""
+		}
+	}
+	return tableOrder{}, "", false
+}
+
+// cursorKey names row i of v's row table by its first cell, which names the
+// row on every screen (it is never given up), or is "" where there is no such
+// row.
+func cursorKey(v view.View, i int) string {
+	tbl, _, ok := rowTable(v)
+	if !ok || i < 0 || i >= len(tbl.Rows) || len(tbl.Rows[i]) == 0 {
+		return ""
+	}
+	return tbl.Rows[i][0]
+}
+
+// rowNamed is the row of tbl whose first cell is key, the one nearest i where
+// several are, and i kept inside the table where none is: a row that went is
+// replaced by the one that took its place.
+func rowNamed(tbl view.Table, key string, i int) int {
+	found := -1
+	if key != "" {
+		for j, row := range tbl.Rows {
+			if len(row) > 0 && row[0] == key && (found < 0 || abs(j-i) < abs(found-i)) {
+				found = j
+			}
+		}
+	}
+	if found >= 0 {
+		return found
+	}
+	return min(max(i, 0), max(len(tbl.Rows)-1, 0))
+}
+
+func abs(n int) int { return max(n, -n) }
 
 // ordered is v with its row table (rowTable) sorted by o, and where each row
 // now shown came from.
