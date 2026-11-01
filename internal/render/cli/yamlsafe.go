@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 )
@@ -31,9 +32,10 @@ import (
 // Fixed here rather than by cleaning the tab away, because the tab is the
 // data. A value rta was given is a value rta prints back.
 
-// yamlSafe returns v with every string the encoder would mishandle replaced
-// by one that emits itself correctly. Applied to the map ToMap already
-// builds, so nothing else in the render path has to know about it.
+// yamlSafe returns v with every string the encoder would mishandle, and every
+// number ToMap left as its text, replaced by one that emits itself correctly.
+// Applied to the map ToMap already builds, so nothing else in the render path
+// has to know about it.
 func yamlSafe(v any) any {
 	switch t := v.(type) {
 	case string:
@@ -41,6 +43,8 @@ func yamlSafe(v any) any {
 			return quotedScalar(t)
 		}
 		return t
+	case json.Number:
+		return plainNumber(t)
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, val := range t {
@@ -67,4 +71,14 @@ type quotedScalar string
 
 func (q quotedScalar) MarshalYAML() ([]byte, error) {
 	return []byte(strconv.Quote(string(q))), nil
+}
+
+// plainNumber is a number that writes itself as the digits it was given: one
+// no Go number holds exactly, which ToMap leaves as its json.Number. A
+// json.Number is a string underneath, and the encoder quoted it, so
+// 12345678901234567.89 came back a string.
+type plainNumber json.Number
+
+func (n plainNumber) MarshalYAML() ([]byte, error) {
+	return []byte(n), nil
 }

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"strconv"
 	"unicode/utf8"
 )
 
@@ -161,8 +163,11 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Decoded with its numbers as written: a page's body holds its sections'
+	// envelopes, values and all, and through float64 a page wrote
+	// 18446744073709551615 as 18446744073709552000.
 	var m map[string]any
-	if err := json.Unmarshal(body, &m); err != nil {
+	if err := decodeNumbers(body, &m); err != nil {
 		return nil, err
 	}
 	if m == nil {
@@ -264,37 +269,55 @@ func withArrays(v View) View {
 // is the thing a consumer cannot work around, because both look right on
 // their own.
 //
-// The conversion below puts the type back rather than the digits: a number
-// written without a fraction reads back as an integer, and one with a
-// fraction stays a float. json.Number holds the original text, so a value
-// past float64's exact range survives that too, which it did not before.
+// The conversion below puts the type back, and keeps the digits with it: a
+// number written without a fraction reads back as an integer, one with a
+// fraction as a float, and one that no Go number holds exactly as the
+// json.Number it is, its own text (asWritten says which).
 func ToMap(v View) (map[string]any, error) {
 	raw, err := Marshal(Envelope{View: v})
 	if err != nil {
 		return nil, fmt.Errorf("encoding view: %w", err)
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
 	var m map[string]any
-	if err := dec.Decode(&m); err != nil {
+	if err := decodeNumbers(raw, &m); err != nil {
 		return nil, fmt.Errorf("decoding view envelope: %w", err)
 	}
 	out, _ := asWritten(m).(map[string]any)
 	return out, nil
 }
 
-// asWritten replaces every json.Number with the Go type its text describes.
+// decodeNumbers decodes raw into m with every number left the json.Number it
+// was written as, so that nothing on the way through rounds it.
+func decodeNumbers(raw []byte, m *map[string]any) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	return dec.Decode(m)
+}
+
+// asWritten replaces every json.Number with the Go type its text describes,
+// where that type holds it exactly: an int64, past that a uint64, and a
+// float64 where it writes back as the number the text is.
+//
+// **Any other number stays a json.Number**, for each writer to print as it was
+// given. A table's values are decimal text all the way to here, and a query's
+// numbers are valued as the text the database sent: an UNSIGNED BIGINT up to
+// 2^64-1, a DECIMAL to sixty-five digits. Taken as the float64 nearest them,
+// 18446744073709551615 came out of yaml as 1.8446744073709552e+19, which reads
+// back as 2^64, and 12345678901234567.89 as 12345678901234568, where json
+// wrote every digit: the same cell, two numbers, and nothing reporting it.
 func asWritten(v any) any {
 	switch t := v.(type) {
 	case json.Number:
 		if i, err := t.Int64(); err == nil {
 			return i
 		}
-		if f, err := t.Float64(); err == nil {
+		if u, err := strconv.ParseUint(t.String(), 10, 64); err == nil {
+			return u
+		}
+		if f, err := t.Float64(); err == nil && writesBackAs(f, t.String()) {
 			return f
 		}
-		// Neither: keep the text rather than invent a number for it.
-		return t.String()
+		return t
 	case map[string]any:
 		for k, val := range t {
 			t[k] = asWritten(val)
@@ -307,4 +330,14 @@ func asWritten(v any) any {
 		return t
 	}
 	return v
+}
+
+// writesBackAs reports whether f, written in the fewest digits that read back
+// as it (as json, yaml and csv all write a float64), is the number text is.
+// Compared as exact fractions rather than as text, since 0.10, 1e-1 and 0.1
+// are one number: 0.1 is not a float64 exactly, and it writes back as 0.1.
+func writesBackAs(f float64, text string) bool {
+	written, ok := new(big.Rat).SetString(strconv.FormatFloat(f, 'g', -1, 64))
+	given, ok2 := new(big.Rat).SetString(text)
+	return ok && ok2 && written.Cmp(given) == 0
 }

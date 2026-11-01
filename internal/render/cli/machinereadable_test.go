@@ -284,3 +284,40 @@ func TestAFractionStaysAFraction(t *testing.T) {
 		t.Errorf("a whole value was written as a float:\n%s", out)
 	}
 }
+
+// json writes a value as the digits it holds, and yaml and a page's csv are
+// written from ToMap: an UNSIGNED BIGINT past an int64 came out of both as
+// 1.2345678901234567e+19, and a DECIMAL with more digits than a float64 holds
+// lost the last of them, while json had them all. The texts here hold none of
+// the digits, so each one found is a value, written as a number.
+func TestANumberKeepsEveryDigitInEveryFormat(t *testing.T) {
+	digits := []string{"18446744073709551615", "12345678901234567.89", "123456789012345678901234567890"}
+	tbl := view.Table{
+		Columns: []view.Column{{Name: "N", Kind: view.KindNumber}},
+		Rows:    [][]string{{"2^64 - 1"}, {"12.3 quadrillion"}, {"123 octillion"}},
+		Values:  [][]string{{digits[0]}, {digits[1]}, {digits[2]}},
+	}
+	page := view.Sections{Items: []view.Section{{Title: "numbers", View: tbl}}}
+	for _, c := range []struct {
+		name string
+		v    view.View
+		f    Format
+	}{
+		{"json", tbl, JSON},
+		{"yaml", tbl, YAML},
+		{"csv", tbl, CSV},
+		{"a page's json", page, JSON},
+		{"a page's yaml", page, YAML},
+		{"a page's csv", page, CSV},
+	} {
+		out := render(t, c.v, c.f)
+		for _, d := range digits {
+			if !strings.Contains(out, d) {
+				t.Errorf("%s lost digits of %s:\n%s", c.name, d, out)
+			}
+			if strings.Contains(out, `"`+d+`"`) {
+				t.Errorf("%s wrote %s as a string:\n%s", c.name, d, out)
+			}
+		}
+	}
+}
