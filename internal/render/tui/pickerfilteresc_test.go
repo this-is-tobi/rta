@@ -19,24 +19,24 @@ var escKey = tea.KeyPressMsg{Code: tea.KeyEscape}
 
 func TestEscInTheCopyPickersFilterClearsItAndTheNextCloses(t *testing.T) {
 	m := filterFor(t, openPickerOnThreePasswords(t), "sec")
-	if !filterHoldsEsc(m.copyPick.form) {
+	if !filterHoldsEsc(m.pick.form) {
 		t.Fatal("typing after / did not put a filter in force")
 	}
-	if bar := plain(m.footerFor(modeCopyPick)); !strings.Contains(bar, "esc clear") {
+	if bar := plain(m.footerFor(modePick)); !strings.Contains(bar, "esc clear") {
 		t.Errorf("the bar does not say esc clears the filter:\n%s", bar)
 	}
 	m = tap(m, escKey)
-	if bar := plain(m.footerFor(modeCopyPick)); !strings.Contains(bar, "esc cancel") {
+	if bar := plain(m.footerFor(modePick)); !strings.Contains(bar, "esc cancel") {
 		t.Errorf("the bar does not say esc cancels once the filter is gone:\n%s", bar)
 	}
-	if m.mode != modeCopyPick || m.copyPick == nil {
+	if m.mode != modePick || m.pick == nil {
 		t.Fatalf("esc with a filter in force closed the picker: mode %v", m.mode)
 	}
-	if filterHoldsEsc(m.copyPick.form) {
+	if filterHoldsEsc(m.pick.form) {
 		t.Error("one esc left the filter in force")
 	}
 	m = tap(m, escKey)
-	if m.mode != modeResult || m.copyPick != nil {
+	if m.mode != modeResult || m.pick != nil {
 		t.Errorf("esc with no filter did not close the picker: mode %v", m.mode)
 	}
 }
@@ -67,25 +67,25 @@ func TestEscInTheThemeOwnerPickersFilterClearsItAndTheNextCloses(t *testing.T) {
 func TestEscInTheAddPickersFilterClearsItAndTheNextCloses(t *testing.T) {
 	m := inCatalogue(t, addModel(t, twoInstanceConfig(), config.Dashboard{}), "db.slow")
 	m, _ = plus(m)
-	if m.mode != modeAddPick || m.addPick == nil {
+	if m.mode != modePick || m.pick == nil {
 		t.Fatalf("+ did not open the picker: mode %v", m.mode)
 	}
 	m = filterFor(t, m, "pro")
-	if !filterHoldsEsc(m.addPick.form) {
+	if !filterHoldsEsc(m.pick.form) {
 		t.Fatal("typing after / did not put a filter in force")
 	}
-	if bar := plain(m.footerFor(modeAddPick)); !strings.Contains(bar, "esc clear") {
+	if bar := plain(m.footerFor(modePick)); !strings.Contains(bar, "esc clear") {
 		t.Errorf("the bar does not say esc clears the filter:\n%s", bar)
 	}
 	m = tap(m, escKey)
-	if m.mode != modeAddPick || m.addPick == nil || filterHoldsEsc(m.addPick.form) {
-		t.Fatalf("esc with a filter in force: mode %v, picker %v; want the picker, unfiltered", m.mode, m.addPick != nil)
+	if m.mode != modePick || m.pick == nil || filterHoldsEsc(m.pick.form) {
+		t.Fatalf("esc with a filter in force: mode %v, picker %v; want the picker, unfiltered", m.mode, m.pick != nil)
 	}
-	if m.addPick.form.State != huh.StateNormal {
-		t.Errorf("the picker is %v after its filter was cleared", m.addPick.form.State)
+	if m.pick.form.State != huh.StateNormal {
+		t.Errorf("the picker is %v after its filter was cleared", m.pick.form.State)
 	}
 	m = tap(m, escKey)
-	if m.mode == modeAddPick || m.addPick != nil {
+	if m.mode == modePick || m.pick != nil {
 		t.Errorf("esc with no filter did not close the picker: mode %v", m.mode)
 	}
 }

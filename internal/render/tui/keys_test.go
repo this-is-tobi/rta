@@ -243,7 +243,7 @@ func TestATruncatedFooterSaysSo(t *testing.T) {
 // advertisedScreens are the screens whose keys rta writes itself, shared by
 // the two tests that hold a footer to what its screen does.
 //
-// The form-driven modes — modeForm, modeTheme, modeCopyPick,
+// The form-driven modes — modeForm, modeTheme, modePick,
 // modeBrowse-while-filtering — hand every key to huh or to the bubbles list,
 // which answer to the whole alphabet by typing it into a field; advertising
 // that is not a thing a footer can do or should try to.
@@ -484,7 +484,7 @@ func fingerprint(m Model) string {
 	return fmt.Sprintf("%v|%d|%d|%d|%d|%d|%d|%q|%v|%v|%v|%v|%d|%q|%d|%q|%v|%v|%q|%v|%s|%d|%v|%d",
 		m.mode, m.selected, m.pluginSel, m.pluginScroll, m.profileSel, m.profileScroll,
 		m.row, m.query, m.searchEditing, m.form != nil, m.themeForm != nil,
-		m.copyPick != nil, len(m.trail), m.flash, m.tickGen, m.armedDelete, m.armed != nil, m.previewing,
+		m.pick != nil, len(m.trail), m.flash, m.tickGen, m.armedDelete, m.armed != nil, m.previewing,
 		m.header, m.folds, asked, m.list.Index(), m.list.FilterState(), m.viewport.YOffset())
 }
 
@@ -614,7 +614,7 @@ func TestEscapeGoesBackFromEveryScreenThatHasABack(t *testing.T) {
 		},
 	})
 	pick := press(t, withResult.(Model), "c")
-	if pick.mode != modeCopyPick {
+	if pick.mode != modePick {
 		t.Fatalf("c did not open the copy picker: %v", pick.mode)
 	}
 	if back := press(t, pick, "esc"); back.mode != modeResult {

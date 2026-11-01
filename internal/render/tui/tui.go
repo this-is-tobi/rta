@@ -80,10 +80,9 @@ const (
 	modeProfiles
 	modeProfilePlugins
 	modeTheme
-	modeCopyPick
-	// modeAddPick asks which connection a tile being added is about
-	// (addpick.go).
-	modeAddPick
+	// modePick is a choice between labelled values over the screen it was
+	// asked from: a value to copy, a tile's connection (pick.go).
+	modePick
 	// modeConfirm is the destructive gate: a dry run on screen, and enter is
 	// the consent (confirm.go).
 	modeConfirm
@@ -143,8 +142,7 @@ type Model struct {
 	// themePick is the choice of whose palette the theme editor is on, which
 	// it opens on when there is more than one; nil once it has been made.
 	themePick *themePicker
-	copyPick  *copyPickForm
-	addPick   *addPickForm
+	pick      *pickForm
 	// dashOnDisk fingerprints the dashboard block as the file last stated
 	// it (dashStamp): what this session read at launch, or wrote itself.
 	// The tick compares the file against it, so a tile added from another
@@ -1051,10 +1049,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateThemePick(msg)
 		}
 		return m.updateThemeForm(msg)
-	case modeCopyPick:
-		return m.updateCopyPick(msg)
-	case modeAddPick:
-		return m.updateAddPick(msg)
+	case modePick:
+		return m.updatePick(msg)
 	case modeResult, modeConfirm:
 		m.viewport, cmd = m.viewport.Update(msg)
 	}
@@ -1074,8 +1070,7 @@ func (m Model) fitToWindow() Model {
 	// height of a window that no longer exists.
 	m.fitForm()
 	m.fitThemeForm()
-	m.fitCopyPick()
-	m.fitAddPick()
+	m.fitPick()
 	return m
 }
 
@@ -1223,10 +1218,8 @@ func (m Model) screen() tea.View {
 		v = tea.NewView(m.connsView())
 	case modeTheme:
 		v = tea.NewView(m.themeView())
-	case modeCopyPick:
-		v = tea.NewView(m.copyPickView())
-	case modeAddPick:
-		v = tea.NewView(m.addPickView())
+	case modePick:
+		v = tea.NewView(m.pickView())
 	case modeResult:
 		v = tea.NewView(m.resultView())
 		v.MouseMode = tea.MouseModeCellMotion // wheel scrolls long output

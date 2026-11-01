@@ -59,10 +59,8 @@ func (m Model) keyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return m.formKeys(msg)
 	case modeTheme:
 		return m.themeKeys(msg)
-	case modeCopyPick:
-		return m.copyPickKeys(msg)
-	case modeAddPick:
-		return m.addPickKeys(msg)
+	case modePick:
+		return m.pickKeys(msg)
 	case modeResult:
 		return m.resultKeys(msg)
 	case modeRunning:
@@ -479,24 +477,6 @@ func (m Model) browseKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
-func (m Model) addPickKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
-	switch msg.String() {
-	case "esc":
-		if m.addPick != nil && filterHoldsEsc(m.addPick.form) {
-			m.addPick.form = clearFilter(m.addPick.form)
-			return m, nil, true
-		}
-		nm, cmd := m.closeAddPick()
-		return nm, cmd, true
-	case "ctrl+c":
-		return m.quit()
-	case "shift+enter", "alt+enter", "ctrl+s":
-		nm, cmd := m.fastSubmitAddPick()
-		return nm, cmd, true
-	}
-	return m, nil, false
-}
-
 func (m Model) formKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.String() {
 	case "esc":
@@ -600,24 +580,6 @@ func (m Model) themeKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 		return nm, cmd, true
 	case "up", "down":
 		nm, cmd := m.browseInTheme(msg, msg.String() == "down")
-		return nm, cmd, true
-	}
-	return m, nil, false
-}
-
-func (m Model) copyPickKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
-	switch msg.String() {
-	case "esc":
-		if m.copyPick != nil && filterHoldsEsc(m.copyPick.form) {
-			m.copyPick.form = clearFilter(m.copyPick.form)
-			return m, nil, true
-		}
-		nm, cmd := m.closeCopyPick()
-		return nm, cmd, true
-	case "ctrl+c":
-		return m.quit()
-	case "shift+enter", "alt+enter", "ctrl+s":
-		nm, cmd := m.fastSubmitCopyPick()
 		return nm, cmd, true
 	}
 	return m, nil, false

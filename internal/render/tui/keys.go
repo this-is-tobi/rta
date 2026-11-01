@@ -670,25 +670,15 @@ func (m Model) screenItems(screen mode) []hintItem {
 		return append(hints,
 			labelled(bindOpen, word), item(bindFastSubmit), labelled(bindBack, "cancel"),
 		)
-	case modeCopyPick:
+	case modePick:
 		var hints []hintItem
-		esc := "cancel"
-		if m.copyPick != nil {
-			hints = fieldHints(m.copyPick.form, 1, nil)
-			esc = escLabel(m.copyPick.form)
+		verb, esc := "choose", "cancel"
+		if m.pick != nil {
+			hints = fieldHints(m.pick.form, 1, nil)
+			verb, esc = m.pick.kind.verb(), escLabel(m.pick.form)
 		}
 		return append(hints,
-			labelled(bindOpen, "copy"), item(bindFastSubmit), labelled(bindBack, esc),
-		)
-	case modeAddPick:
-		var hints []hintItem
-		esc := "cancel"
-		if m.addPick != nil {
-			hints = fieldHints(m.addPick.form, 1, nil)
-			esc = escLabel(m.addPick.form)
-		}
-		return append(hints,
-			labelled(bindOpen, "add"), item(bindFastSubmit), labelled(bindBack, esc),
+			labelled(bindOpen, verb), item(bindFastSubmit), labelled(bindBack, esc),
 		)
 	case modeRunning:
 		// "stop it" over "cancel": cancel is already this binding's label
@@ -843,7 +833,7 @@ func (m Model) footerFor(screen mode) string {
 // whose refusals are about what was typed in them.
 func formScreen(screen mode) bool {
 	switch screen {
-	case modeForm, modeTheme, modeCopyPick, modeAddPick:
+	case modeForm, modeTheme, modePick:
 		return true
 	}
 	return false
@@ -892,13 +882,9 @@ func (m Model) formErrors(screen mode) []error {
 		if m.themeForm != nil && m.themeForm.form != nil {
 			return m.themeForm.form.Errors()
 		}
-	case modeCopyPick:
-		if m.copyPick != nil && m.copyPick.form != nil {
-			return m.copyPick.form.Errors()
-		}
-	case modeAddPick:
-		if m.addPick != nil && m.addPick.form != nil {
-			return m.addPick.form.Errors()
+	case modePick:
+		if m.pick != nil && m.pick.form != nil {
+			return m.pick.form.Errors()
 		}
 	}
 	return nil

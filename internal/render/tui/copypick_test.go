@@ -87,7 +87,7 @@ func openPickerOnThreePasswords(t *testing.T) Model {
 	})
 	opened, _ := withResult.(Model).Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
 	om, ok := opened.(Model)
-	if !ok || om.mode != modeCopyPick {
+	if !ok || om.mode != modePick {
 		t.Fatalf("did not open the picker: mode = %v", om.mode)
 	}
 	return om
@@ -98,30 +98,30 @@ func openPickerOnThreePasswords(t *testing.T) Model {
 // that copies the first row's raw value, not its "1: " display label.
 func TestOpeningThePickerSeedsTheFirstRowsRawValue(t *testing.T) {
 	om := openPickerOnThreePasswords(t)
-	if got := om.copyPick.value; got != "first-pw" {
+	if got := om.pick.value; got != "first-pw" {
 		t.Errorf("seeded value = %q, want the first row's raw value, no \"1: \" label", got)
 	}
 }
 
-// confirmCopyPick copies whichever value the form landed on — exercised
+// confirmPick copies whichever value the form landed on — exercised
 // directly, the same way saveTheme/saveConfigForm's own tests set a
 // binding and call the save method rather than simulate huh's internal
 // keys for reaching that state.
 func TestConfirmingThePickerCopiesTheChosenRawValue(t *testing.T) {
 	stdin := fakeClipboard(t)
 	om := openPickerOnThreePasswords(t)
-	om.copyPick.value = "second-pw" // as if the operator had moved the highlight here
+	om.pick.value = "second-pw" // as if the operator had moved the highlight here
 
-	confirmed, cmd := om.confirmCopyPick()
+	confirmed, cmd := om.confirmPick()
 	cm, ok := confirmed.(Model)
 	if !ok {
-		t.Fatal("confirmCopyPick did not return a Model")
+		t.Fatal("confirmPick did not return a Model")
 	}
 
 	if cm.mode != modeResult {
 		t.Errorf("mode = %v, want modeResult once a value is chosen", cm.mode)
 	}
-	if cm.copyPick != nil {
+	if cm.pick != nil {
 		t.Error("the picker form is still attached after confirming")
 	}
 	cm = settleCopy(t, cm, cmd)
@@ -144,10 +144,10 @@ func TestConfirmingThePickerWithNoClipboardProgramFlashesTheFailure(t *testing.T
 	om := openPickerOnThreePasswords(t)
 	t.Setenv("PATH", t.TempDir())
 
-	confirmed, cmd := om.confirmCopyPick()
+	confirmed, cmd := om.confirmPick()
 	cm, ok := confirmed.(Model)
 	if !ok {
-		t.Fatal("confirmCopyPick did not return a Model")
+		t.Fatal("confirmPick did not return a Model")
 	}
 	cm = settleCopy(t, cm, cmd)
 	if cm.flash == "" || cm.mode != modeResult {
@@ -172,7 +172,7 @@ func TestEscapingThePickerCopiesNothing(t *testing.T) {
 	if am.mode != modeResult {
 		t.Errorf("mode = %v, want modeResult after cancelling", am.mode)
 	}
-	if am.copyPick != nil {
+	if am.pick != nil {
 		t.Error("the picker form is still attached after cancelling")
 	}
 	if _, err := os.Stat(stdin); err == nil {
@@ -183,7 +183,7 @@ func TestEscapingThePickerCopiesNothing(t *testing.T) {
 	}
 }
 
-// Resizing while the picker is open must not panic — fitCopyPick is the
+// Resizing while the picker is open must not panic — fitPick is the
 // same shape as fitForm/fitThemeForm, and both are covered for exactly
 // this at their own call sites.
 func TestResizingWhileThePickerIsOpenDoesNotPanic(t *testing.T) {
@@ -192,7 +192,7 @@ func TestResizingWhileThePickerIsOpenDoesNotPanic(t *testing.T) {
 }
 
 // End to end, through the real bubbletea program loop rather than a bare
-// Model.Update call: confirmCopyPick's own tests above prove the copy logic
+// Model.Update call: confirmPick's own tests above prove the copy logic
 // is correct once the form reaches huh.StateCompleted, but not that a
 // single real Enter press actually gets it there. It does — huh seeds a
 // Select's bound value to its first option before any key is pressed, and
@@ -288,21 +288,21 @@ func TestPressingCOnATileOpensThePickerAgainstItsOwnPreview(t *testing.T) {
 	})
 
 	pick := press(t, base, "c")
-	if pick.mode != modeCopyPick {
+	if pick.mode != modePick {
 		t.Fatalf("c on the tile did not open the picker: mode = %v", pick.mode)
 	}
-	if pick.copyPick.cap.ID != "gen.overview" {
-		t.Errorf("picker cap = %q, want gen.overview", pick.copyPick.cap.ID)
+	if pick.pick.cap.ID != "gen.overview" {
+		t.Errorf("picker cap = %q, want gen.overview", pick.pick.cap.ID)
 	}
-	if pick.copyPick.returnTo != modeDashboard {
-		t.Errorf("returnTo = %v, want modeDashboard", pick.copyPick.returnTo)
+	if pick.pick.returnTo != modeDashboard {
+		t.Errorf("returnTo = %v, want modeDashboard", pick.pick.returnTo)
 	}
 }
 
 // Confirming a tile-opened picker goes back to the dashboard, not
 // modeResult — and restarts tile refresh the same way every other screen
 // returning to the dashboard does (closeToOrigin's own property, reused
-// here through closeCopyPick).
+// here through closePick).
 func TestConfirmingATilePickerReturnsToTheDashboardAndRestartsRefresh(t *testing.T) {
 	stdin := fakeClipboard(t)
 	base := genTileModel(t, 120, 40)
@@ -315,13 +315,13 @@ func TestConfirmingATilePickerReturnsToTheDashboardAndRestartsRefresh(t *testing
 	beforeGen := base.tickGen
 
 	pick := press(t, base, "c")
-	if pick.mode != modeCopyPick {
+	if pick.mode != modePick {
 		t.Fatalf("did not open the picker: mode = %v", pick.mode)
 	}
-	confirmed, cmd := pick.confirmCopyPick()
+	confirmed, cmd := pick.confirmPick()
 	cm, ok := confirmed.(Model)
 	if !ok {
-		t.Fatal("confirmCopyPick did not return a Model")
+		t.Fatal("confirmPick did not return a Model")
 	}
 
 	if cm.mode != modeDashboard {
@@ -352,7 +352,7 @@ func TestPressingCOnATileWithNoCopySpecDoesNothing(t *testing.T) {
 	if after.mode != modeDashboard {
 		t.Errorf("mode = %v, want modeDashboard unchanged", after.mode)
 	}
-	if after.copyPick != nil {
+	if after.pick != nil {
 		t.Error("a picker opened for a tile whose capability declares no Copy")
 	}
 }

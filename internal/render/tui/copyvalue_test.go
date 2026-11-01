@@ -253,8 +253,8 @@ func TestPressingCOpensThePickerWhenMultipleValuesWereGenerated(t *testing.T) {
 	after, _ := withResult.(Model).Update(tea.KeyPressMsg{Code: 'c', Text: "c"})
 	nm := after.(Model)
 
-	if nm.mode != modeCopyPick {
-		t.Errorf("mode = %v, want modeCopyPick", nm.mode)
+	if nm.mode != modePick {
+		t.Errorf("mode = %v, want modePick", nm.mode)
 	}
 	if _, err := os.Stat(stdin); err == nil {
 		t.Error("opening the picker already reached the clipboard, before anything was chosen")
