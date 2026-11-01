@@ -2,7 +2,6 @@ package plugindist
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,7 +50,7 @@ func TestAnUpgradePassesALaunchRefusalOnAsItself(t *testing.T) {
 		t.Fatal(err)
 	}
 	longTMPDIR(t)
-	_, verr := Upgrade(context.Background(), "hello", io.Discard)
+	_, verr := Upgrade(context.Background(), "hello")
 	if verr == nil || verr.Code != "plugin.tmpdir.toolong" || !strings.Contains(verr.Hint, "TMPDIR") {
 		t.Fatalf("Upgrade = %v, want the launch's own plugin.tmpdir.toolong and its hint", verr)
 	}

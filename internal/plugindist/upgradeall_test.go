@@ -3,7 +3,6 @@ package plugindist
 import (
 	"context"
 	"fmt"
-	"io"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -24,7 +23,7 @@ func TestUpgradeAllVisitsEveryLockedPluginNotOnlyTheOutdatedOnes(t *testing.T) {
 		t.Fatalf("outdated = %v, want none — the fixture index has not moved", rows)
 	}
 
-	outcomes := UpgradeAll(context.Background(), "", io.Discard)
+	outcomes := UpgradeAll(context.Background(), "")
 	if len(outcomes) != 1 {
 		t.Fatalf("outcomes = %+v, want one for the installed plugin", outcomes)
 	}
@@ -56,7 +55,7 @@ func TestUpgradeAllContinuesPastFailuresAndHonoursTheIndexFilter(t *testing.T) {
 		t.Fatal(verr)
 	}
 
-	outcomes := UpgradeAll(context.Background(), "", io.Discard)
+	outcomes := UpgradeAll(context.Background(), "")
 	if len(outcomes) != 2 {
 		t.Fatalf("outcomes = %+v, want one per locked plugin", outcomes)
 	}
@@ -71,14 +70,14 @@ func TestUpgradeAllContinuesPastFailuresAndHonoursTheIndexFilter(t *testing.T) {
 		t.Fatalf("hello = %+v, want it upgraded despite ghost failing", o)
 	}
 
-	only := UpgradeAll(context.Background(), "lab", io.Discard)
+	only := UpgradeAll(context.Background(), "lab")
 	if len(only) != 1 || only[0].Name != "hello" {
 		t.Fatalf("--index lab = %+v, want only the plugin that came from lab", only)
 	}
 
 	// A name no attached index answers to is a typo, and a sweep that silently
 	// did nothing would read as "everything is up to date".
-	if got := UpgradeAll(context.Background(), "nosuch", io.Discard); len(got) != 0 {
+	if got := UpgradeAll(context.Background(), "nosuch"); len(got) != 0 {
 		t.Fatalf("--index nosuch = %+v, want nothing", got)
 	}
 }
@@ -88,7 +87,7 @@ func TestUpgradeAllContinuesPastFailuresAndHonoursTheIndexFilter(t *testing.T) {
 func TestPreviewUpgradeAllDecidesWithoutRecording(t *testing.T) {
 	first := installHello(t)
 
-	outcomes := PreviewUpgradeAll(context.Background(), "", io.Discard)
+	outcomes := PreviewUpgradeAll(context.Background(), "")
 	if len(outcomes) != 1 || outcomes[0].Problem != nil {
 		t.Fatalf("outcomes = %+v", outcomes)
 	}
@@ -153,7 +152,7 @@ func TestASweepHoldsBackAnUpgradeThatWouldWidenWhatThePluginMayDo(t *testing.T) 
 		t.Fatal(verr)
 	}
 
-	outcomes := UpgradeAll(context.Background(), "", io.Discard)
+	outcomes := UpgradeAll(context.Background(), "")
 	if len(outcomes) != 1 {
 		t.Fatalf("outcomes = %+v", outcomes)
 	}

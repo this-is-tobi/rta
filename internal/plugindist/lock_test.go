@@ -2,7 +2,6 @@ package plugindist
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,9 +92,9 @@ func TestAnInstallOverALockThatDoesNotParseLandsNothing(t *testing.T) {
 
 	for _, c := range []struct {
 		what    string
-		install func(context.Context, string, io.Writer) (Report, *view.Error)
+		install func(context.Context, string) (Report, *view.Error)
 	}{{"an install", Install}, {"a dry run", PreviewInstall}} {
-		_, verr := c.install(context.Background(), "hello", io.Discard)
+		_, verr := c.install(context.Background(), "hello")
 		refusedOverTheLock(t, c.what, verr, doc)
 	}
 	assertNothingInstalled(t, sha256Of(t, bin))
@@ -114,7 +113,7 @@ func TestNothingChangesWhatTheLockRecordsWhenTheLockDoesNotParse(t *testing.T) {
 	testData(t)
 	bin := hello(t)
 	attach(t, helloManifest(t, bin, ""))
-	rep, verr := Install(context.Background(), "hello", io.Discard)
+	rep, verr := Install(context.Background(), "hello")
 	if verr != nil {
 		t.Fatal(verr)
 	}
@@ -128,7 +127,7 @@ func TestNothingChangesWhatTheLockRecordsWhenTheLockDoesNotParse(t *testing.T) {
 		{"a removal", func() *view.Error { _, verr := Remove("hello"); return verr }},
 		{"a removal's dry run", func() *view.Error { _, verr := PreviewRemove("hello"); return verr }},
 		{"an upgrade", func() *view.Error {
-			_, verr := Upgrade(context.Background(), "hello", io.Discard)
+			_, verr := Upgrade(context.Background(), "hello")
 			return verr
 		}},
 		{"a prune", func() *view.Error { _, verr := Prune(); return verr }},
@@ -167,7 +166,7 @@ func TestARecordThatStopsParsingMidInstallStillLandsNothing(t *testing.T) {
 		doc = breakLock(t, `{"name":"pg","digest":"bbb","index":"official"}`)
 		return nil
 	}
-	_, verr = installFrom(context.Background(), listed, io.Discard, false, breakIt)
+	_, verr = installFrom(context.Background(), listed, false, breakIt)
 	refusedOverTheLock(t, "an install", verr, doc)
 	assertNothingInstalled(t, sha256Of(t, bin))
 	if _, err := os.Lstat(filepath.Join(BinDir(), pluginhost.BinaryName("hello"))); err == nil {

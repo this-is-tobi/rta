@@ -79,7 +79,7 @@ func newPluginInstallCommand(opts *globalOpts) *cobra.Command {
 			if opts.dryRun {
 				install = plugindist.PreviewInstall
 			}
-			rep, verr := install(cmd.Context(), args[0], cmd.ErrOrStderr())
+			rep, verr := install(cmd.Context(), args[0])
 			if verr != nil {
 				return verr
 			}
@@ -96,7 +96,6 @@ func installView(rep plugindist.Report, dryRun bool) view.View {
 		{Key: "from", Value: rep.Index + " → " + rep.URL},
 		{Key: "version", Value: rep.Version + " (the index's claim)"},
 		{Key: "digest", Value: shortDigest(rep.Digest) + " (computed by rta from the bytes)"},
-		{Key: "signature", Value: rep.Signature},
 		{Key: "declares", Value: declaresLine(rep.Declared)},
 	}
 	// Named here and not only at `rta plugin search`, because this is the
@@ -595,7 +594,7 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 			if opts.dryRun {
 				upgrade = plugindist.PreviewUpgrade
 			}
-			up, verr := upgrade(cmd.Context(), name, cmd.ErrOrStderr())
+			up, verr := upgrade(cmd.Context(), name)
 			if verr != nil {
 				return verr
 			}
@@ -611,7 +610,6 @@ func newPluginUpgradeCommand(opts *globalOpts) *cobra.Command {
 			pairs := []view.Pair{
 				{Key: upgradedLabel, Value: fmt.Sprintf("%s %s → %s", up.Name, up.FromVersion, up.Version)},
 				{Key: "digest", Value: shortDigest(up.FromDigest) + " → " + shortDigest(up.Digest)},
-				{Key: "signature", Value: up.Signature},
 			}
 			if len(up.Diff) == 0 {
 				pairs = append(pairs, view.Pair{Key: "declaration", Value: "unchanged"})

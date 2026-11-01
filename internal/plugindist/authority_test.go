@@ -2,7 +2,6 @@ package plugindist
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -236,7 +235,7 @@ func TestARefusedGateLeavesNoBytesNoTrustAndNoRecord(t *testing.T) {
 		saw = declared
 		return view.Errorf("plugin.upgrade.authority", "not on my watch")
 	}
-	if _, verr := installFrom(context.Background(), listed, io.Discard, false, refuse); verr == nil {
+	if _, verr := installFrom(context.Background(), listed, false, refuse); verr == nil {
 		t.Fatal("a refused gate installed anyway")
 	} else if verr.Code != "plugin.upgrade.authority" {
 		t.Fatalf("install = %s (%s), want the gate's own refusal", verr.Code, verr.Message)
@@ -261,7 +260,7 @@ func TestARefusedGateLeavesNoBytesNoTrustAndNoRecord(t *testing.T) {
 
 	// The control: the same install with nothing in its way does land. Without
 	// this, a fixture broken in any other way would read as a working gate.
-	if _, verr := installFrom(context.Background(), listed, io.Discard, false, nil); verr != nil {
+	if _, verr := installFrom(context.Background(), listed, false, nil); verr != nil {
 		t.Fatalf("an ungated install of the same artifact failed: %v", verr)
 	}
 	if !plugintrust.Load().Trusts(digest) {
