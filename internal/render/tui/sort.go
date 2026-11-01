@@ -103,10 +103,22 @@ func orderSaid(t view.Table, o tableOrder) string {
 	// A page of a longer list is sorted as far as it goes: the rows past it
 	// are not here to be put in order, and the line says so rather than
 	// letting "largest first" read as the largest of all of them.
-	if t.Total > len(t.Rows) {
+	if isPart(t) {
 		said += ", on this page"
 	}
 	return said
+}
+
+// isPart reports whether t is a part of a longer list: a total past its rows,
+// a cursor to more of them, or no total and a warning that says something is
+// missing, which is how a list stopped at its limit with nothing to count it
+// says it goes on (rowCount, warningsHead). Tested on the total alone, git log
+// at its limit sorted oldest first read as the repository's first commits.
+func isPart(t view.Table) bool {
+	if t.Total > len(t.Rows) || t.Page != nil && t.Page.Next != "" {
+		return true
+	}
+	return t.Total == 0 && slices.ContainsFunc(t.Warnings, func(w view.Error) bool { return !w.Advisory })
 }
 
 // orderColumn is the index of the column named in t that may be sorted by, or
@@ -118,13 +130,31 @@ func orderColumn(t view.Table, name string) int {
 	return slices.IndexFunc(t.Columns, func(c view.Column) bool { return c.Name == name })
 }
 
+// valued reports whether column col has anything to sort by: a column whose
+// kind sorts by value with a value in at least one row, or any other. A
+// plugin's table filled through Rows alone holds its sizes as text with no
+// value, and offered, a sort by one moved no row while the line said the
+// table was sorted by it.
+func valued(t view.Table, col int) bool {
+	switch t.Columns[col].Kind {
+	case view.KindNumber, view.KindBytes, view.KindPercent, view.KindUsage, view.KindDuration, view.KindTimestamp:
+		for i := range t.Rows {
+			if t.Value(i, col) != "" {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
 // orderOptions are the orders t can be read in: the capability's own first,
 // then each column it may be sorted by, the way a person wants it first and
 // then the other way.
 func orderOptions(t view.Table) []pickOption {
 	options := []pickOption{{label: "as returned"}}
-	for _, c := range t.Columns {
-		if orderColumn(t, c.Name) < 0 {
+	for i, c := range t.Columns {
+		if orderColumn(t, c.Name) < 0 || !valued(t, i) {
 			continue
 		}
 		first, second, firstDesc := orderWords(c.Kind)
@@ -324,14 +354,17 @@ func keyOf(t view.Table, i, col int) sortKey {
 		at, err := time.Parse(time.RFC3339Nano, t.Value(i, col))
 		k.by, k.at, k.missing = byTime, at, err != nil
 	case view.KindStatus:
-		k.by, k.rank = byGrade, gradeRank(theme.ClassifyStatus(text))
+		grade := theme.ClassifyStatus(text)
+		// What is over and done with (done, closed, disabled) is what neither
+		// order is for: last either way, beside what has nothing to sort by.
+		// Ranked above good, "best first" opened on the done to-dos.
+		k.by, k.rank, k.missing = byGrade, gradeRank(grade), k.missing || grade == theme.StatusMuted
 	}
 	return k
 }
 
 // gradeRank orders the grades worst first: what is failing, then what wants a
-// look, then what the theme cannot read, then what is fine, then what is
-// over and done with.
+// look, then what the theme cannot read, then what is fine.
 func gradeRank(kind theme.StatusKind) int {
 	switch kind {
 	case theme.StatusBad:
@@ -340,8 +373,6 @@ func gradeRank(kind theme.StatusKind) int {
 		return 1
 	case theme.StatusGood:
 		return 3
-	case theme.StatusMuted:
-		return 4
 	}
 	return 2
 }
@@ -364,7 +395,10 @@ func (k sortKey) compare(o sortKey, desc bool) int {
 	case byTime:
 		c = k.at.Compare(o.at)
 	case byGrade:
-		c = cmp.Or(cmp.Compare(k.rank, o.rank), naturalCompare(k.text, o.text))
+		// A tie in grade keeps the order the rows came in, which the sort is
+		// stable for: broken by the text, OVERDUE · Oct 20 came before
+		// OVERDUE · Sep 30, by the month's name.
+		c = cmp.Compare(k.rank, o.rank)
 	default:
 		c = naturalCompare(k.text, o.text)
 	}

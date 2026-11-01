@@ -297,3 +297,54 @@ func TestARefreshOfASortedLogKeepsItsRow(t *testing.T) {
 		t.Errorf("in its own order a refresh put the cursor on %q, want the newest row", got)
 	}
 }
+
+// Statuses of one grade keep the order they came in, either way, and what is
+// done with goes last either way: broken by text, OVERDUE · Oct 20 came before
+// OVERDUE · Sep 30, and "best first" opened on the done to-dos.
+func TestAStatusSortKeepsTiesInOrderAndPutsWhatIsDoneLast(t *testing.T) {
+	tbl := view.Table{Columns: []view.Column{{Name: "Due", Kind: view.KindStatus}}, Rows: [][]string{
+		{"OVERDUE · Sep 30"}, {"done"}, {"ok · Nov 30"}, {"OVERDUE · Oct 20"}, {"WARN soon · Nov 2"}, {"ok · Jan 5 2027"},
+	}}
+	for desc, want := range map[bool][]string{
+		false: {"OVERDUE · Sep 30", "OVERDUE · Oct 20", "WARN soon · Nov 2", "ok · Nov 30", "ok · Jan 5 2027", "done"},
+		true:  {"ok · Nov 30", "ok · Jan 5 2027", "WARN soon · Nov 2", "OVERDUE · Sep 30", "OVERDUE · Oct 20", "done"},
+	} {
+		got, _ := sortTable(tbl, 0, desc)
+		if !slices.Equal(firstColumn(got), want) {
+			t.Errorf("desc=%v: %v, want %v", desc, firstColumn(got), want)
+		}
+	}
+}
+
+// A column of a kind that sorts by value is not offered when no row has one: a
+// table filled through Rows alone holds its sizes as text, and a sort by one
+// moved nothing while the line said the table was sorted.
+func TestAColumnWithNothingToSortByIsNotOffered(t *testing.T) {
+	tbl := view.Table{Columns: []view.Column{{Name: "Name"}, {Name: "Size", Kind: view.KindBytes}, {Name: "State", Kind: view.KindStatus}},
+		Rows: [][]string{{"alpha", "1.5 GiB", "ok"}, {"beta", "300 MiB", "warn"}}}
+	var labels []string
+	for _, o := range orderOptions(tbl) {
+		labels = append(labels, o.label)
+	}
+	if slices.ContainsFunc(labels, func(l string) bool { return strings.HasPrefix(l, "Size") }) ||
+		!slices.ContainsFunc(labels, func(l string) bool { return strings.HasPrefix(l, "State") }) {
+		t.Errorf("offered %q, want Name and State and not Size", labels)
+	}
+}
+
+// A list stopped at its limit with nothing to count it is a page of a longer
+// one when a warning says it goes on, as git log at its limit does: sorted
+// oldest first it read as the repository's first commits. An advisory warning
+// sits beside a whole list and says nothing is missing.
+func TestASortedListCutAtItsLimitSaysItIsAPage(t *testing.T) {
+	cut := view.Table{Columns: []view.Column{{Name: "Commit"}}, Rows: [][]string{{"a"}, {"b"}},
+		Warnings: []view.Error{{Code: "git.log.older", Message: "older commits not shown"}}}
+	if said := orderSaid(cut, tableOrder{column: "Commit"}); !strings.HasSuffix(said, ", on this page") {
+		t.Errorf("a list cut at its limit says %q", said)
+	}
+	whole := cut
+	whole.Warnings = []view.Error{{Code: "x.note", Message: "a note about every row", Advisory: true}}
+	if said := orderSaid(whole, tableOrder{column: "Commit"}); strings.Contains(said, "on this page") {
+		t.Errorf("a whole list with an advisory warning says %q", said)
+	}
+}
